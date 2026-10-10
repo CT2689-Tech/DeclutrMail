@@ -237,7 +237,7 @@ describe('SettingsScreen', () => {
       ['Protected senders', '/settings/senders'],
       ['Privacy & data', '/settings/privacy'],
       ['Help & glossary', '/settings/help'],
-      [/plan & billing/i, '/billing'],
+      [/billing/i, '/billing'],
     ] as const) {
       expect(screen.getByRole('link', { name })).toHaveAttribute('href', href);
     }
@@ -817,18 +817,13 @@ describe('SettingsScreen', () => {
     renderScreen();
 
     await waitFor(() =>
-      expect(
-        screen.getByRole('link', { name: /plan & billing.*not enabled/i }),
-      ).toBeInTheDocument(),
+      expect(screen.getByRole('link', { name: /billing.*not enabled/i })).toBeInTheDocument(),
     );
     expect(screen.queryByText('Pro')).not.toBeInTheDocument();
     // The flag being off is deterministic — a retry would be noise.
     expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
     // The billing link still works — /billing owns the rest.
-    expect(screen.getByRole('link', { name: /plan & billing/i })).toHaveAttribute(
-      'href',
-      '/billing',
-    );
+    expect(screen.getByRole('link', { name: /billing/i })).toHaveAttribute('href', '/billing');
   });
 
   it('does not claim billing is disabled on a 503 that is not BILLING_DISABLED', async () => {
@@ -1295,7 +1290,7 @@ describe('SettingsScreen', () => {
       await screen.findByRole('heading', { name: 'Delete account and data' }),
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Privacy & data' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /plan & billing/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /billing/i })).toBeInTheDocument();
     // The "no mailboxes connected" empty state, not a broken list.
     expect(screen.getByText(/no mailboxes connected/i)).toBeInTheDocument();
     // No active mailbox ⇒ no session-scoped sync poll ⇒ no 409 risk.
