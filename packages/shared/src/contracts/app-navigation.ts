@@ -19,16 +19,7 @@ const APP_PATHS = [
   '/admin/security',
 ];
 
-/** Account controls remain available even before Gmail is ready. */
-export function isUserScopedAppPath(pathname: string): boolean {
-  return [
-    '/settings',
-    '/settings/privacy',
-    '/settings/help',
-    '/billing',
-    '/admin/security',
-  ].includes(pathname);
-}
+export { isUserScopedAppPath } from './account-navigation.js';
 
 /** Preserve a known local app destination without admitting hosts or normalized path tricks. */
 export function parseAppReturnTo(value: unknown): string | undefined {

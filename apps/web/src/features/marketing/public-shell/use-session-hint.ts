@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 export function useSessionHint(): boolean {
   const [present, setPresent] = useState(false);
   useEffect(() => {
-    setPresent(document.cookie.split(';').some((cookie) => cookie.trim().startsWith('dm_csrf=')));
+    setPresent(/(?:^|;\s*)dm_csrf=/.test(document.cookie));
   }, []);
   return present;
 }

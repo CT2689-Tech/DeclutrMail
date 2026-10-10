@@ -347,11 +347,17 @@ export function redirectAfterLogout(): void {
 async function redirectToLogin(): Promise<void> {
   if (redirecting || typeof window === 'undefined') return;
   redirecting = 'login';
-  const { parseAppReturnTo } = await import('@declutrmail/shared/contracts/app-navigation');
+  let returnTo: string | undefined;
+  try {
+    const { parseAppReturnTo } = await import('@declutrmail/shared/contracts/app-navigation');
+    returnTo = parseAppReturnTo(
+      `${window.location.pathname}${window.location.search}${window.location.hash}`,
+    );
+  } catch {
+    // A stale/offline chunk must still leave a dead session recoverable.
+    // Drop context rather than navigate to an unvalidated destination.
+  }
   if (redirecting !== 'login') return;
-  const returnTo = parseAppReturnTo(
-    `${window.location.pathname}${window.location.search}${window.location.hash}`,
-  );
   const query = new URLSearchParams({ returning: '1', ...(returnTo ? { returnTo } : {}) });
   window.location.assign(`/sign-in?${query}`);
 }

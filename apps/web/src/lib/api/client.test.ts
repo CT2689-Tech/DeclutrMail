@@ -204,6 +204,33 @@ describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', (
     resetFetchStub();
   });
 
+  it('still opens returning sign-in when the redirect validator chunk fails', async () => {
+    const assign = vi.fn();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { pathname: '/settings', search: '?cancelDeletion=1', hash: '#account', assign },
+    });
+    installFetchStub([
+      { method: 'GET', path: '/api/a', respond: () => new Response(null, { status: 401 }) },
+      {
+        method: 'POST',
+        path: '/api/auth/refresh',
+        respond: () => new Response(null, { status: 401 }),
+      },
+    ]);
+    vi.doMock('@declutrmail/shared/contracts/app-navigation', () => {
+      throw new Error('Synthetic chunk failure');
+    });
+    try {
+      const fresh = await import('./client');
+      await expect(fresh.apiGet('/api/a')).rejects.toMatchObject({ status: 401 });
+      await expect(fresh.apiGet('/api/a')).rejects.toMatchObject({ status: 401 });
+      expect(assign).toHaveBeenCalledExactlyOnceWith('/sign-in?returning=1');
+    } finally {
+      vi.doUnmock('@declutrmail/shared/contracts/app-navigation');
+    }
+  });
+
   it('keeps explicit sign-out when cache-clearing reads return a terminal 401', async () => {
     const assign = vi.fn();
     Object.defineProperty(window, 'location', {

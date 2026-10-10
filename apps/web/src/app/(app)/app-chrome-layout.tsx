@@ -1,6 +1,6 @@
 'use client';
 
-import { isUserScopedAppPath } from '@declutrmail/shared/contracts/app-navigation';
+import { isUserScopedAppPath } from '@declutrmail/shared/contracts/account-navigation';
 
 import { useEffect, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';

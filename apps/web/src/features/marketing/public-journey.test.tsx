@@ -1,3 +1,4 @@
+import { parseAppReturnTo as safePublicReturnTo } from '@declutrmail/shared/contracts/app-navigation';
 import { render, screen, within } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
@@ -5,7 +6,7 @@ import HowItWorksPage from '@/app/(marketing)/how-it-works/page';
 import MethodologyPage from '@/app/(marketing)/methodology/page';
 import { ProductJourney } from './landing/product-journey';
 import { AuthEntry } from './auth-entry/auth-entry';
-import { permissionEntryUrl, safePublicReturnTo } from './landing/urls';
+import { permissionEntryUrl } from './landing/urls';
 import { ArticlePage } from './learn/article-page';
 import HelpPage from '@/app/(marketing)/help/page';
 import { FAQ_ENTRIES } from './learn/faq-content';

@@ -50,11 +50,14 @@ export function useOnboardingGate({ exempt = false } = {}): {
       let cancelled = false;
       const search = window.location.search;
       const destination = `${window.location.pathname}${search}${window.location.hash}`;
-      void import('@/features/mailboxes/oauth-result').then(
-        ({ onboardingPathKeepingOAuthResult }) => {
+      void import('./onboarding-return-to')
+        .then(({ onboardingPathKeepingOAuthResult }) => {
           if (!cancelled) router.replace(onboardingPathKeepingOAuthResult(search, destination));
-        },
-      );
+        })
+        .catch(() => {
+          // A missing helper chunk must not strand the gated screen.
+          if (!cancelled) router.replace('/onboarding');
+        });
       return () => {
         cancelled = true;
       };

@@ -1,6 +1,7 @@
+import { onboardingPathKeepingOAuthResult } from '@/features/onboarding/onboarding-return-to';
 import { describe, expect, it } from 'vitest';
 
-import { connectErrorCode, oauthResultIn, onboardingPathKeepingOAuthResult } from './oauth-result';
+import { connectErrorCode, oauthResultIn } from './oauth-result';
 
 describe('oauthResultIn', () => {
   it('reads a closed reconnect result and its line', () => {

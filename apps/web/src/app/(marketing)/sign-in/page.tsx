@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 
 import { parseSignInResult } from '@declutrmail/shared/contracts';
 
-import { safePublicReturnTo } from '@/features/marketing/landing/urls';
+import { parseAppReturnTo as safePublicReturnTo } from '@declutrmail/shared/contracts/app-navigation';
 import { AuthEntry } from '@/features/marketing/auth-entry/auth-entry';
 import '@/features/marketing/auth-entry/auth-entry.css';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';

@@ -31,6 +31,7 @@ it('reauthenticates when the export replay still rejects the refreshed session',
       },
     },
   ]);
+  window.history.replaceState(null, '', '/settings/privacy');
   const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => undefined);
   const client = createTestQueryClient();
   const { result } = renderHook(() => useDataExport(), {
@@ -41,5 +42,5 @@ it('reauthenticates when the export replay still rejects the refreshed session',
   expect(refreshes).toBe(1);
   expect(exports).toBe(2);
   expect(assign).toHaveBeenCalledOnce();
-  expect(assign.mock.calls[0]?.[0]).toContain('/api/auth/google/start');
+  expect(assign.mock.calls[0]?.[0]).toBe('/sign-in?returning=1&returnTo=%2Fsettings%2Fprivacy');
 });
