@@ -22,18 +22,18 @@ unknown failures do not automatically retry. Existing failed rows are eligible
 after the same cooldown. Disconnect and pending deletion exclude scheduling and
 worker entry. Queue outages leave durable intent for the existing reconciler.
 
-| State / transition                                 | User sees                          | Persistence and queue consequence               | Verification |
-| -------------------------------------------------- | ---------------------------------- | ----------------------------------------------- | ------------ |
-| Recoverable terminal failure                       | Saved progress and scheduled retry | Error retained; durable deadline and budget     | Pending      |
-| Deadline not reached                               | Waiting; refresh retains deadline  | No early Gmail call                             | Pending      |
-| Due, repeated tick / concurrent claimant           | Scan resumes                       | One atomic claim and one mailbox job            | Pending      |
-| Resume partial scan                                | Saved progress, then ready         | Original snapshot; stored messages skipped      | Pending      |
-| Recovery budget exhausted                          | Failure and manual recovery        | Automatic attempts stop                         | Pending      |
-| Invalid grant / permission / permanent failure     | Reconnect or manual help           | No automatic retry                              | Pending      |
-| Ready reconnect, including previously disconnected | Existing app remains usable        | Cursor retained; incremental catch-up           | Pending      |
-| Expired history cursor                             | Existing resync recovery           | Fresh snapshot only when history is unavailable | Pending      |
-| Late old failure after reconnect / completion      | Fresh intent or ready state        | Old failure cannot overwrite new state          | Pending      |
-| Inactive / deletion-pending mailbox                | Existing inactive/paused state     | No provider work; no recovery claim             | Pending      |
+| State / transition                                 | User sees                          | Persistence and queue consequence               | Verification                                          |
+| -------------------------------------------------- | ---------------------------------- | ----------------------------------------------- | ----------------------------------------------------- |
+| Recoverable terminal failure                       | Saved progress and scheduled retry | Error retained; durable deadline and budget     | Passed: journey and worker regressions                |
+| Deadline not reached                               | Waiting; refresh retains deadline  | No early Gmail call                             | Passed: browser refresh and deadline regressions      |
+| Due, repeated tick / concurrent claimant           | Scan resumes                       | One atomic claim and one mailbox job            | Passed: reconciler regressions and real queue journey |
+| Resume partial scan                                | Saved progress, then ready         | Original snapshot; stored messages skipped      | Passed: real worker/API/browser journey               |
+| Recovery budget exhausted                          | Failure and manual recovery        | Automatic attempts stop                         | Passed: policy, reconciler and gate regressions       |
+| Invalid grant / permission / permanent failure     | Reconnect or manual help           | No automatic retry                              | Passed: policy and gate regressions                   |
+| Ready reconnect, including previously disconnected | Existing app remains usable        | Cursor retained; incremental catch-up           | Passed: reconnect journey and service regressions     |
+| Expired history cursor                             | Existing resync recovery           | Fresh snapshot only when history is unavailable | Passed: real incremental-to-initial worker journey    |
+| Late old failure after reconnect / completion      | Fresh intent or ready state        | Old failure cannot overwrite new state          | Passed: worker fencing and purge regressions          |
+| Inactive / deletion-pending mailbox                | Existing inactive/paused state     | No provider work; no recovery claim             | Passed: worker and reconciler regressions             |
 
 Verification uses synthetic accounts, real disposable PostgreSQL/Redis and the
 built-in browser. Provider adapters are deterministic stubs for failure, saved
@@ -109,8 +109,8 @@ is otherwise unchanged; normal cache-enabled build and budgets remain required i
 Latest completed focused checks: 91 API sync tests, 89 initial-worker/policy tests,
 59 gate tests; incremental tests also passed earlier. Independent architecture/schema/design review is clear after the purge-boundary fix.
 The full journey suite passed 20 tests with one disabled PostHog opt-in case skipped;
-the scheduled recovery Axe scan reported zero violations. Build/budgets and remote
-checks are pending.
+the scheduled recovery Axe scan reported zero violations. Local build/budgets
+subsequently passed as recorded below; remote checks are pending.
 
 ## Ready for remote checks
 
