@@ -29,6 +29,7 @@ import {
   STALE_SYNCING_AFTER_MS,
   type ReconcileOutcome,
 } from './initial-sync-reconciler.js';
+import { SyncService } from './sync.service.js';
 
 /**
  * Derived from the helper rather than rebuilt from `drizzle` + `schema`
@@ -111,6 +112,143 @@ beforeEach(async () => {
 });
 
 describe('reconcileInitialSyncs', () => {
+  it('keeps a capped provider deadline for manual retry without promising another automatic retry', async () => {
+    const id = await seedSyncState('manual@x.test', 'failed', STALE);
+    const deadline = new Date(Date.now() + 60_000);
+    await db
+      .update(providerSyncState)
+      .set({
+        errorCode: 'RateLimitError',
+        initialRecoveryAttempts: 3,
+        initialRetryAt: deadline,
+        progressPct: 40,
+        lastHistoryId: 123n,
+      })
+      .where(eq(providerSyncState.mailboxAccountId, id));
+    const service = new SyncService({} as never, {} as never, db as never);
+    const schedule = vi.spyOn(service, 'schedule').mockResolvedValue('added');
+    expect(await service.getStatus(id)).toMatchObject({
+      next_retry_at: null,
+      retry_available_at: deadline.toISOString(),
+    });
+    expect(await service.retryFailedInitialSync(id)).toBe('not_failed');
+    expect(schedule).not.toHaveBeenCalled();
+    await db
+      .update(providerSyncState)
+      .set({ initialRetryAt: new Date(Date.now() - 1_000) })
+      .where(eq(providerSyncState.mailboxAccountId, id));
+    expect(await service.retryFailedInitialSync(id)).toBe('requeued');
+    expect(
+      (
+        await db.select().from(providerSyncState).where(eq(providerSyncState.mailboxAccountId, id))
+      )[0],
+    ).toMatchObject({ progressPct: 40, lastHistoryId: 123n, initialRecoveryAttempts: 0 });
+  });
+
+  it.each(['InvalidGrantError', 'AuthExpiredError', 'ProviderPermissionError'])(
+    'requires reconnect instead of manually retrying %s',
+    async (errorCode) => {
+      const id = await seedSyncState('auth@x.test', 'failed', STALE);
+      await db
+        .update(providerSyncState)
+        .set({ errorCode })
+        .where(eq(providerSyncState.mailboxAccountId, id));
+      const service = new SyncService({} as never, {} as never, db as never);
+      const schedule = vi.spyOn(service, 'schedule');
+      expect(await service.retryFailedInitialSync(id)).toBe('not_failed');
+      expect(schedule).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    'InvalidGrantError',
+    'AuthExpiredError',
+    'ProviderPermissionError',
+    'PermanentError',
+    'ValidationError',
+    'Error',
+  ])('does not automatically retry %s', async (errorCode) => {
+    const id = await seedSyncState('permanent@x.test', 'failed', STALE);
+    await db
+      .update(providerSyncState)
+      .set({ errorCode })
+      .where(eq(providerSyncState.mailboxAccountId, id));
+    const schedule = vi.fn();
+    await reconcileInitialSyncs({
+      db: db as never,
+      schedule,
+      isShuttingDown: () => false,
+      now: () => new Date(Date.now() + 20 * 60_000),
+    });
+    expect(schedule).not.toHaveBeenCalled();
+  });
+
+  it('claims a due recovery only once and stops after the durable budget', async () => {
+    const id = await seedSyncState('bounded@x.test', 'failed', STALE);
+    await db
+      .update(providerSyncState)
+      .set({
+        errorCode: 'TransientError',
+        initialRecoveryAttempts: 2,
+        initialRetryAt: new Date(NOW.getTime() - 1),
+      })
+      .where(eq(providerSyncState.mailboxAccountId, id));
+    const schedule = vi.fn().mockResolvedValue('added');
+    await Promise.all([run(schedule), run(schedule)]);
+    const [row] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, id));
+    expect(row).toMatchObject({ readinessStatus: 'queued', initialRecoveryAttempts: 3 });
+    // Scheduling may observe the same queued intent; ensureInitialSyncJob deduplicates it.
+    await db
+      .update(providerSyncState)
+      .set({ readinessStatus: 'failed', errorCode: 'TransientError' })
+      .where(eq(providerSyncState.mailboxAccountId, id));
+    schedule.mockClear();
+    await reconcileInitialSyncs({
+      db: db as never,
+      schedule,
+      isShuttingDown: () => false,
+      now: () => new Date(Date.now() + 120 * 60_000),
+    });
+    expect(schedule).not.toHaveBeenCalled();
+  });
+
+  it('leaves a future failed deadline alone', async () => {
+    const id = await seedSyncState('cooldown@x.test', 'failed', STALE);
+    await db
+      .update(providerSyncState)
+      .set({ errorCode: 'RateLimitError', initialRetryAt: new Date(NOW.getTime() + 60_000) })
+      .where(eq(providerSyncState.mailboxAccountId, id));
+    const schedule = vi.fn();
+    await run(schedule);
+    expect(schedule).not.toHaveBeenCalled();
+  });
+  it('recovers an old transient terminal failure without discarding saved progress', async () => {
+    const id = await seedSyncState('terminal@x.test', 'failed', STALE);
+    await db
+      .update(providerSyncState)
+      .set({ errorCode: 'TransientError', progressPct: 40, lastHistoryId: 123n })
+      .where(eq(providerSyncState.mailboxAccountId, id));
+    // The heartbeat trigger uses real time; inject a future sweep for this regression.
+    const schedule = vi.fn().mockResolvedValue('added');
+    await reconcileInitialSyncs({
+      db: db as never,
+      schedule,
+      isShuttingDown: () => false,
+      now: () => new Date(Date.now() + 20 * 60_000),
+    });
+    expect(schedule).toHaveBeenCalledWith(id);
+    const [state] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, id));
+    expect(state).toMatchObject({
+      readinessStatus: 'queued',
+      progressPct: 40,
+      lastHistoryId: 123n,
+    });
+  });
   it('leaves paused sync intent intact and resumes it after deletion is cancelled', async () => {
     const paused = await seedSyncState('paused@x.test', 'queued', STALE);
     const [mailbox] = await db.select().from(mailboxAccounts).where(eq(mailboxAccounts.id, paused));

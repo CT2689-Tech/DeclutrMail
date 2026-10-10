@@ -1,0 +1,3 @@
+ALTER TABLE "provider_sync_state" DROP COLUMN "initial_attempt_id";
+ALTER TABLE "provider_sync_state" DROP COLUMN "initial_retry_at";
+ALTER TABLE "provider_sync_state" DROP COLUMN "initial_recovery_attempts";

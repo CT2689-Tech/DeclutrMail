@@ -247,6 +247,16 @@ export const Failed: StoryObj<typeof SyncGate> = {
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
 
+/** Persisted terminal recovery, with saved progress and a disabled early retry. */
+export const ScheduledRecovery: StoryObj<typeof SyncGate> = {
+  args: {
+    status: { ...FAILED, next_retry_at: '2026-10-10T12:15:00.000Z' },
+    nowMs: Date.parse('2026-10-10T12:00:00.000Z'),
+    mailboxId: MAILBOX_ID,
+  },
+  render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};
+
 /**
  * Failed on a permanent error — the longest failed copy. It names
  * support@declutrmail.com because the first-run gate has no route to Help.

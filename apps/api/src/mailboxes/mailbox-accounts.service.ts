@@ -263,8 +263,8 @@ export class MailboxAccountsService {
    * by `AuthSignupOrchestrator`. Returns the row id so the orchestrator
    * can wire up sync state in the same transaction, and `wasActive` —
    * whether the row was already `active` before this connect. A new or
-   * disconnected mailbox needs a full scan; only an already-active one
-   * can keep its synced state. `disconnect()` takes neither the workspace
+   * disconnected mailbox keeps its saved sync state; SyncService chooses
+   * initial resume or incremental catch-up. `disconnect()` takes neither the workspace
    * lock nor a transaction, so a racing disconnect can leave this a stale
    * `true` — which is safe: disconnect leaves the sync row and cursor
    * alone, this upsert re-activates the row with the fresh grant, and the

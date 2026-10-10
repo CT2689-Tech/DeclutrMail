@@ -211,6 +211,23 @@ describe('SyncGate render', () => {
     expect(quota).not.toContain('retry automatically');
   });
 
+  it('shows a persisted automatic retry deadline and keeps early retries disabled', () => {
+    const now = Date.UTC(2026, 9, 10, 12);
+    const html = renderToStaticMarkup(
+      withClient(
+        <SyncGate
+          mailboxId="synthetic-mailbox"
+          nowMs={now}
+          status={{ ...FAILED, next_retry_at: new Date(now + 15 * 60_000).toISOString() }}
+        />,
+      ),
+    );
+    expect(html).toContain('Your scan will resume');
+    expect(html).toContain('Your progress is saved.');
+    expect(html).toContain('retry automatically in about 15 minutes');
+    expect(html).toMatch(/disabled=""[^>]*>Retry scheduled/);
+  });
+
   /**
    * Copy is keyed on the Onboarding reason code derived from the worker
    * `error.name` stored on `provider_sync_state.error_code`. Transient /

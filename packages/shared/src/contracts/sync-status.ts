@@ -127,6 +127,10 @@ export const SyncStatusSchema = z
      * message-derived data.
      */
     updated_at: z.string().datetime().optional(),
+    /** Durable automatic initial-scan recovery deadline; null when none is scheduled. */
+    next_retry_at: z.string().datetime().nullable().optional(),
+    /** Earliest manual retry; can remain after the automatic recovery budget is exhausted. */
+    retry_available_at: z.string().datetime().nullable().optional(),
   })
   .strict();
 

@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import {
   deriveSenderId,
   isNonMail,
   mailboxAccounts,
+  mailboxDataDeletionRequests,
   mailMessages,
   providerSyncState,
   ruleMatchLabelClaimKey,
@@ -22,7 +24,7 @@ import {
   MailboxSyncReadyPayloadSchema,
   TOPICS,
 } from '@declutrmail/events';
-import { and, eq, gt, inArray, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { boundedMap } from './bounded-map.js';
@@ -32,7 +34,7 @@ import {
   logProtectionReleases,
   type AutomaticProtectionResult,
 } from './automatic-protection.js';
-import { getSyncMailboxEligibility } from './deletion-pause.js';
+import { deletionPendingSql, getSyncMailboxEligibility } from './deletion-pause.js';
 import {
   markDecisionsStale,
   messageGmailCategory,
@@ -48,7 +50,12 @@ import type { OutboxPublisher, OutboxTx } from './outbox-publisher.js';
 import { MAX_UNREADABLE_SHARE, MIN_UNREADABLE_FOR_SYSTEMIC } from './ports.js';
 import type { GmailAccess, GmailMessageMetadata, GmailMetadataClient } from './ports.js';
 import { deriveSenderKey, emailDomain, normalizeEmail, parseFromHeader } from './sender-key.js';
-import { TransientError, ValidationError } from './worker-errors.js';
+import { RateLimitError, TransientError, ValidationError } from './worker-errors.js';
+import {
+  INITIAL_RECOVERY_BASE_MS,
+  INITIAL_RECOVERY_LIMIT,
+  initialRecoveryDelay,
+} from './initial-sync-recovery.js';
 import type { WorkerContext } from './worker-context.js';
 import type { InitialSyncJobData } from './queue.js';
 import type { ScanCounts, ScanProgressStore } from './scan-progress.js';
@@ -301,6 +308,7 @@ function initialSyncLog(
 export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, InitialSyncResult> {
   override readonly workerName = 'InitialSyncWorker';
   override readonly policy = 'perMailboxPolicy' as const;
+  private readonly attemptIds = new WeakMap<WorkerContext, string>();
 
   constructor(private readonly deps: InitialSyncDeps) {
     super();
@@ -374,10 +382,24 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // choke point. `markQueued` resets the row off `ready` before any
     // intended re-sync, so those still run.
     const [syncRow] = await this.deps.db
-      .select({ readinessStatus: providerSyncState.readinessStatus })
+      .select({
+        readinessStatus: providerSyncState.readinessStatus,
+        initialRetryAt: providerSyncState.initialRetryAt,
+      })
       .from(providerSyncState)
       .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
       .limit(1);
+    if (syncRow?.initialRetryAt && syncRow.initialRetryAt.getTime() > Date.now()) {
+      initialSyncLog('skipped_recovery_cooldown', mailboxAccountId);
+      return {
+        messagesSynced: 0,
+        unreadable: 0,
+        sendersIndexed: 0,
+        gmailApiCalls: 0,
+        durationMs: Date.now() - startedAt,
+        stageTimings,
+      };
+    }
     if (syncRow?.readinessStatus === 'ready') {
       initialSyncLog('skipped_already_ready', mailboxAccountId);
       await this.recordSkippedRun(
@@ -397,6 +419,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       };
     }
 
+    const attemptId = randomUUID();
+    this.attemptIds.set(ctx, attemptId);
+
     // Stage 1 — fetching_metadata (resumable).
     // 2026-06-08 session: structured progress logs added so a stalled
     // sync surfaces immediately. Previously zero log output between
@@ -407,7 +432,14 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // the status route reads the row, then the counts, so this attempt's
     // bar is never paired with the last attempt's numbers.
     await this.reportScanProgress(mailboxAccountId, ctx.attempt, null, 'clear_start');
-    await this.upsertSyncState(mailboxAccountId, 'fetching_metadata', 5, 'syncing');
+    await this.upsertSyncState(
+      mailboxAccountId,
+      'fetching_metadata',
+      5,
+      'syncing',
+      attemptId,
+      true,
+    );
     initialSyncLog('getClient_begin', mailboxAccountId);
     const client = await this.deps.gmailAccess.getClient(mailboxAccountId);
     initialSyncLog('getClient_done', mailboxAccountId);
@@ -422,6 +454,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     const snapshotHistoryId = await this.captureInitialHistorySnapshot(
       mailboxAccountId,
       profile.historyId,
+      attemptId,
     );
 
     initialSyncLog('fetchAndStoreMetadata_begin', mailboxAccountId);
@@ -435,6 +468,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         counts.processed,
         counts.total,
         snapshotHistoryId,
+        attemptId,
       );
       // An empty mailbox has nothing to count against.
       if (counts.total > 0) {
@@ -450,7 +484,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
 
     ctx.signal?.throwIfAborted();
     // Stage 2 — building_sender_index (aggregates from mail_messages).
-    await this.upsertSyncState(mailboxAccountId, 'building_sender_index', 80, 'syncing');
+    await this.upsertSyncState(mailboxAccountId, 'building_sender_index', 80, 'syncing', attemptId);
     // The read is over; its counts describe nothing the gate shows now.
     await this.reportScanProgress(mailboxAccountId, ctx.attempt, null, 'clear_end');
     const sendersIndexed = await this.buildSenderIndex(mailboxAccountId, client, ctx.signal);
@@ -462,7 +496,13 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // runs the cascade over every sender and writes `triage_decisions`.
     // Best-effort — a score-enqueue failure must not fail the sync
     // (nothing retries it: `cron_sweep` has no producer).
-    await this.upsertSyncState(mailboxAccountId, 'computing_recommendations', 90, 'syncing');
+    await this.upsertSyncState(
+      mailboxAccountId,
+      'computing_recommendations',
+      90,
+      'syncing',
+      attemptId,
+    );
     if (this.deps.onSenderIndexBuilt) {
       try {
         await this.deps.onSenderIndexBuilt(mailboxAccountId);
@@ -480,7 +520,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     lap('computing_recommendations');
 
     // Stage 4 — finalizing.
-    await this.upsertSyncState(mailboxAccountId, 'finalizing', 97, 'syncing');
+    await this.upsertSyncState(mailboxAccountId, 'finalizing', 97, 'syncing', attemptId);
     lap('finalizing');
 
     // Stage 5 — ready. Persist the historyId snapshot so PR-D's
@@ -501,7 +541,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       stageTimings,
     };
     ctx.signal?.throwIfAborted();
-    await this.markReady(mailboxAccountId, snapshotHistoryId, result, ctx.attempt);
+    await this.markReady(mailboxAccountId, snapshotHistoryId, result, ctx.attempt, attemptId);
 
     return result;
   }
@@ -546,32 +586,57 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     if (!mailboxAccountId) {
       return;
     }
-    await this.recordTerminalFailure(mailboxAccountId, error, ctx.attempt);
+    await this.recordTerminalFailure(
+      mailboxAccountId,
+      error,
+      ctx.attempt,
+      this.attemptIds.get(ctx),
+    );
   }
 
   private async recordTerminalFailure(
     mailboxAccountId: string,
     error: Error,
     attempts: number,
+    attemptId?: string,
   ): Promise<void> {
+    if (!attemptId) {
+      await this.recordFailedRun(mailboxAccountId, error, attempts);
+      return;
+    }
+    const retryAfterMs = error instanceof RateLimitError ? error.retryAfterMs : undefined;
+    const delay = initialRecoveryDelay(error.name, 0, retryAfterMs);
+    const providerDelay =
+      Number.isFinite(retryAfterMs) && (retryAfterMs ?? 0) > 0 ? retryAfterMs! : 0;
+    const failureUpdate = {
+      currentStage: 'failed' as const,
+      readinessStatus: 'failed' as const,
+      errorCode: error.name,
+      initialRetryAt:
+        delay === null
+          ? null
+          : sql`CASE WHEN ${providerSyncState.initialRecoveryAttempts} < ${INITIAL_RECOVERY_LIMIT}
+              THEN now() + GREATEST(${INITIAL_RECOVERY_BASE_MS} * power(2, ${providerSyncState.initialRecoveryAttempts}), ${providerDelay}) * interval '1 millisecond'
+              ELSE CASE WHEN ${providerDelay} > 0 THEN now() + ${providerDelay} * interval '1 millisecond' ELSE NULL END END`,
+      updatedAt: sql`now()`,
+    };
+    const returning = {
+      mailboxAccountId: providerSyncState.mailboxAccountId,
+      initialRetryAt: providerSyncState.initialRetryAt,
+      initialRecoveryAttempts: providerSyncState.initialRecoveryAttempts,
+    };
     const failedUpsert = (tx: OutboxTx) =>
       tx
-        .insert(providerSyncState)
-        .values({
-          mailboxAccountId,
-          currentStage: 'failed',
-          readinessStatus: 'failed',
-          errorCode: error.name,
-        })
-        .onConflictDoUpdate({
-          target: providerSyncState.mailboxAccountId,
-          set: {
-            currentStage: 'failed',
-            readinessStatus: 'failed',
-            errorCode: error.name,
-            updatedAt: sql`now()`,
-          },
-        });
+        .update(providerSyncState)
+        .set(failureUpdate)
+        .where(
+          and(
+            eq(providerSyncState.mailboxAccountId, mailboxAccountId),
+            eq(providerSyncState.readinessStatus, 'syncing'),
+            eq(providerSyncState.initialAttemptId, attemptId),
+          ),
+        )
+        .returning(returning);
 
     // `mailbox.sync_failed` rides the SAME transaction as the failed
     // upsert (transactional outbox — mirror of markReady's publish).
@@ -606,7 +671,15 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     }
 
     await this.deps.db.transaction(async (tx) => {
-      await failedUpsert(tx);
+      const claimed = await failedUpsert(tx);
+      if (claimed.length === 0) return;
+      // Keep failure history, but send "needs attention / no automatic retry"
+      // only when user action is actually required.
+      if (
+        claimed[0]!.initialRetryAt &&
+        claimed[0]!.initialRecoveryAttempts < INITIAL_RECOVERY_LIMIT
+      )
+        return;
       await outbox.publish(tx, {
         topic: TOPICS.MAILBOX_SYNC_FAILED,
         aggregateId: mailboxAccountId,
@@ -652,11 +725,20 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     attempts: number,
   ): Promise<void> {
     try {
-      await this.deps.db.insert(syncRuns).values({
-        mailboxAccountId,
-        status: 'failed',
-        attempts,
-        errorCode: error.name,
+      await this.deps.db.transaction(async (tx) => {
+        // Serialize with indexed-data purge: a late callback either lands
+        // before the purge and is removed, or sees completed and writes nothing.
+        const [latest] = await tx
+          .select({ status: mailboxDataDeletionRequests.status })
+          .from(mailboxDataDeletionRequests)
+          .where(eq(mailboxDataDeletionRequests.mailboxAccountId, mailboxAccountId))
+          .orderBy(desc(mailboxDataDeletionRequests.requestedAt))
+          .limit(1)
+          .for('update');
+        if (latest?.status === 'completed') return;
+        await tx
+          .insert(syncRuns)
+          .values({ mailboxAccountId, status: 'failed', attempts, errorCode: error.name });
       });
     } catch (err) {
       const recordError = err instanceof Error ? err : new Error(String(err));
@@ -1613,12 +1695,13 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     processed: number,
     total: number,
     snapshotHistoryId: string,
+    attemptId?: string,
   ): Promise<void> {
     const pct = total === 0 ? 75 : 5 + Math.round((70 * processed) / total);
     await this.deps.db
       .update(providerSyncState)
       .set({
-        progressPct: Math.min(pct, 75),
+        progressPct: sql`GREATEST(${providerSyncState.progressPct}, ${Math.min(pct, 75)})`,
         currentStage: 'fetching_metadata',
         readinessStatus: 'syncing',
         lastHistoryId: sql`COALESCE(${providerSyncState.lastHistoryId}, ${snapshotHistoryId}::bigint)`,
@@ -1627,6 +1710,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       .where(
         and(
           eq(providerSyncState.mailboxAccountId, mailboxAccountId),
+          ...(attemptId ? [eq(providerSyncState.initialAttemptId, attemptId)] : []),
           or(
             eq(providerSyncState.currentStage, 'fetching_metadata'),
             eq(providerSyncState.readinessStatus, 'queued'),
@@ -1674,6 +1758,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   private async captureInitialHistorySnapshot(
     mailboxAccountId: string,
     candidateHistoryId: string,
+    attemptId: string,
   ): Promise<string> {
     // BigInt() still rejects a malformed id; the SQL gets it as text with an
     // explicit cast — a JS BigInt in a raw `sql` template is what CLAUDE.md
@@ -1688,7 +1773,12 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         lastHistoryId: sql`COALESCE(${providerSyncState.lastHistoryId}, ${candidate}::bigint)`,
         updatedAt: sql`now()`,
       })
-      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
+      .where(
+        and(
+          eq(providerSyncState.mailboxAccountId, mailboxAccountId),
+          eq(providerSyncState.initialAttemptId, attemptId),
+        ),
+      )
       .returning({ lastHistoryId: providerSyncState.lastHistoryId });
 
     if (row?.lastHistoryId === null || row?.lastHistoryId === undefined) {
@@ -1706,20 +1796,60 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       'fetching_metadata' | 'building_sender_index' | 'computing_recommendations' | 'finalizing',
     progressPct: number,
     readinessStatus: 'syncing',
+    attemptId: string,
+    claim = false,
   ): Promise<void> {
-    await this.deps.db
-      .insert(providerSyncState)
-      .values({ mailboxAccountId, currentStage: stage, progressPct, readinessStatus })
-      .onConflictDoUpdate({
-        target: providerSyncState.mailboxAccountId,
-        set: {
-          currentStage: stage,
-          progressPct,
-          readinessStatus,
-          errorCode: null,
-          updatedAt: sql`now()`,
-        },
-      });
+    const transition = {
+      currentStage: stage,
+      initialAttemptId: attemptId,
+      progressPct: sql`GREATEST(${providerSyncState.progressPct}, ${progressPct})`,
+      readinessStatus,
+      errorCode: null,
+      initialRetryAt: null,
+      updatedAt: sql`now()`,
+    };
+    const claimed = claim
+      ? await this.deps.db.transaction(async (tx) => {
+          const [eligible] = await tx
+            .select({ id: mailboxAccounts.id })
+            .from(mailboxAccounts)
+            .where(
+              and(
+                eq(mailboxAccounts.id, mailboxAccountId),
+                eq(mailboxAccounts.status, 'active'),
+                sql`NOT (${deletionPendingSql})`,
+              ),
+            )
+            .for('update');
+          if (!eligible) return [];
+          return await tx
+            .insert(providerSyncState)
+            .values({
+              mailboxAccountId,
+              currentStage: stage,
+              progressPct,
+              readinessStatus,
+              initialAttemptId: attemptId,
+            })
+            .onConflictDoUpdate({
+              target: providerSyncState.mailboxAccountId,
+              set: transition,
+              setWhere: sql`${providerSyncState.readinessStatus} <> 'ready' AND (${providerSyncState.initialRetryAt} IS NULL OR ${providerSyncState.initialRetryAt} <= now())`,
+            })
+            .returning({ id: providerSyncState.id });
+        })
+      : await this.deps.db
+          .update(providerSyncState)
+          .set(transition)
+          .where(
+            and(
+              eq(providerSyncState.mailboxAccountId, mailboxAccountId),
+              eq(providerSyncState.initialAttemptId, attemptId),
+            ),
+          )
+          .returning({ id: providerSyncState.id });
+
+    if (claimed.length === 0) throw new TransientError('Initial scan attempt superseded');
   }
 
   /**
@@ -1752,6 +1882,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     historyId: string,
     run: InitialSyncResult,
     attempts: number,
+    attemptId: string,
   ): Promise<void> {
     const lastHistoryId = BigInt(historyId);
     /**
@@ -1787,45 +1918,42 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       });
     const readyUpsert = (tx: OutboxTx) =>
       tx
-        .insert(providerSyncState)
-        .values({
-          mailboxAccountId,
+        .update(providerSyncState)
+        .set({
           currentStage: 'ready',
           readinessStatus: 'ready',
           progressPct: 100,
-          lastHistoryId,
-          historyIdUpdatedAt: sql`now()`,
-          // Ready means stamped on both branches: the stamp is what tells
-          // the next ready that this is not the mailbox's first.
-          lastSyncedAt: sql`now()`,
-        })
-        .onConflictDoUpdate({
-          target: providerSyncState.mailboxAccountId,
-          set: {
-            currentStage: 'ready',
-            readinessStatus: 'ready',
-            progressPct: 100,
-            errorCode: null,
-            // GREATEST(stored, snapshot) — never regress on a concurrent
-            // IncrementalSyncWorker's already-advanced cursor.
-            lastHistoryId: sql`CASE
+          errorCode: null,
+          initialRecoveryAttempts: 0,
+          initialRetryAt: null,
+          initialAttemptId: null,
+          // GREATEST(stored, snapshot) — never regress on a concurrent
+          // IncrementalSyncWorker's already-advanced cursor.
+          lastHistoryId: sql`CASE
             WHEN ${providerSyncState.lastHistoryId} IS NULL
-              OR EXCLUDED.${sql.identifier('last_history_id')} > ${providerSyncState.lastHistoryId}
-            THEN EXCLUDED.${sql.identifier('last_history_id')}
+              OR ${lastHistoryId.toString()}::bigint > ${providerSyncState.lastHistoryId}
+            THEN ${lastHistoryId.toString()}::bigint
             ELSE ${providerSyncState.lastHistoryId}
           END`,
-            historyIdUpdatedAt: sql`now()`,
-            lastSyncedAt: sql`now()`,
-            updatedAt: sql`now()`,
-          },
-        });
+          historyIdUpdatedAt: sql`now()`,
+          lastSyncedAt: sql`now()`,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(providerSyncState.mailboxAccountId, mailboxAccountId),
+            eq(providerSyncState.initialAttemptId, attemptId),
+          ),
+        )
+        .returning({ id: providerSyncState.id });
 
     const outbox = this.deps.outbox;
     if (!outbox) {
       // Registration gap (integration PR wires the publisher) — the
       // ready transition must never block on it, but the missing event
       // is a real gap (no preset seeding / apply sweep), so WARN.
-      await readyUpsert(this.deps.db);
+      if ((await readyUpsert(this.deps.db)).length === 0)
+        throw new TransientError('Initial scan attempt superseded');
       await runInsert(this.deps.db);
       console.warn(
         JSON.stringify({
@@ -1866,7 +1994,8 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         .for('update')
         .limit(1);
       const firstReady = (prior?.lastSyncedAt ?? null) === null;
-      await readyUpsert(tx);
+      if ((await readyUpsert(tx)).length === 0)
+        throw new TransientError('Initial scan attempt superseded');
       await runInsert(tx);
       await outbox.publish(tx, {
         topic: TOPICS.MAILBOX_SYNC_READY,
