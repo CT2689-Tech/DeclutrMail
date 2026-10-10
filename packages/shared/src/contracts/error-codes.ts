@@ -424,7 +424,7 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: 'Cancel scheduled deletion in Settings before restarting billing.',
+    message: 'Cancel deletion in Settings before restarting billing.',
   },
   NO_PENDING_DELETION: {
     status: 409,
