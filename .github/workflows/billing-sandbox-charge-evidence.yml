@@ -1,0 +1,51 @@
+name: Inspect an isolated Paddle sandbox upgrade charge
+on:
+  workflow_dispatch:
+    inputs:
+      fixture_run_id:
+        description: Original synthetic rehearsal run ID
+        required: true
+        type: string
+      scenario:
+        description: Original synthetic case
+        required: true
+        type: choice
+        options: [monthly, cycle]
+      transaction_id:
+        description: Exact owned upgrade transaction
+        required: true
+        type: string
+      subscription_id:
+        description: Exact owned subscription
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  inspect:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: Sandbox
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Read only the exact synthetic fixture
+        env:
+          PADDLE_ENV: sandbox
+          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
+          FIXTURE_RUN_ID: ${{ inputs.fixture_run_id }}
+          FIXTURE_CASE: ${{ inputs.scenario }}
+          FIXTURE_TRANSACTION_ID: ${{ inputs.transaction_id }}
+          FIXTURE_SUBSCRIPTION_ID: ${{ inputs.subscription_id }}
+        run: node scripts/billing-sandbox-charge-evidence.mjs "${{ runner.temp }}/charge-evidence.json"
+      - name: Retain sanitized evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sandbox-charge-evidence
+          path: ${{ runner.temp }}/charge-evidence.json
+          retention-days: 1
+          if-no-files-found: error

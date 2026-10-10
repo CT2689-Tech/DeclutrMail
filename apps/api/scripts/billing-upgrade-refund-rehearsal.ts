@@ -22,7 +22,8 @@ import { BillingWebhookService } from '../src/billing/billing-webhook.service.js
 import { BillingUpgradeRefundService } from '../src/billing/billing-upgrade-refund.service.js';
 import { BillingReconciliationService } from '../src/billing/billing-reconciliation.service.js';
 import { AutopilotReadService } from '../src/autopilot/autopilot.read-service.js';
-import { upgradeRecords } from '../src/billing/upgrade-intents.js';
+import { upgradeRecords, intentEvidence } from '../src/billing/upgrade-intents.js';
+import { matchesUpgradeCharge } from '../src/billing/billing-upgrade-refund.service.js';
 import type { DrizzleDb } from '../src/db/db.module.js';
 import type { NormalizedBillingEvent } from '../src/billing/billing-provider.interface.js';
 
@@ -80,6 +81,7 @@ type Fixture = {
   beforeRefundTransactionIds?: string[];
   adjustmentId?: string;
   result?: Record<string, unknown>;
+  chargeEvidence?: Record<string, unknown>;
 };
 const fixtures = {} as Record<CaseName, Fixture>;
 const verifiedEvents: Array<{ event: NormalizedBillingEvent; occurredAt: unknown }> = [];
@@ -100,6 +102,7 @@ async function record() {
               originalEnd: f.originalEnd,
               adjustmentId: f.adjustmentId,
               result: f.result,
+              chargeEvidence: f.chargeEvidence,
             },
           ]),
         ),
@@ -325,7 +328,7 @@ const server = createServer((req, res) => {
     if (req.method === 'GET' && url.pathname === '/') {
       res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store' });
       res.end(
-        '<!doctype html><html><head><meta charset="utf-8"><title>Isolated billing sandbox rehearsal</title></head><body><h1>Paddle sandbox — synthetic fixture only</h1><p>No real money, Gmail or app email delivery. Use virtual test card 4242 4242 4242 4242 and a reserved example.test email.</p><label>Private operator key <input id="operator" type="password" autocomplete="off"></label><button id="authenticate">Authenticate operator</button><label>Scenario <select id="scenario"><option value="monthly">Monthly upgrade reversal</option><option value="cycle">Cycle-change support hold</option></select></label><button id="buy">Buy synthetic Plus monthly</button><button id="upgrade">Upgrade fixture</button><button id="refund">Refund upgrade-only charge</button><button id="finish">Finish and clean up</button><p id="message"></p><pre id="state"></pre><script type="module" src="/client.js"></script></body></html>',
+        '<!doctype html><html><head><meta charset="utf-8"><title>Isolated billing sandbox rehearsal</title></head><body><h1>Paddle sandbox — synthetic fixture only</h1><p>No real money, Gmail or app email delivery. Use virtual test card 4242 4242 4242 4242 and a reserved example.test email.</p><label>Private operator key <input id="operator" type="password" autocomplete="off"></label><button id="authenticate">Authenticate operator</button><label>Scenario <select id="scenario"><option value="monthly">Monthly upgrade reversal</option><option value="cycle">Cycle-change support hold</option></select></label><button id="buy">Buy synthetic Plus monthly</button><button id="upgrade">Upgrade fixture</button><button id="refund">Refund upgrade-only charge</button><button id="finish">Finish and clean up</button><button id="abort">Abort and clean up</button><p id="message"></p><pre id="state"></pre><script type="module" src="/client.js"></script></body></html>',
       );
       return;
     }
@@ -350,6 +353,12 @@ const server = createServer((req, res) => {
     if (actionBusy || stopping) throw new Error('Fixture action already running or stopped');
     actionBusy = true;
     try {
+      if (url.pathname === '/abort') {
+        evidence.aborted = true;
+        stopping = true;
+        json(res, 200, { aborted: true, proofPassed: false });
+        return;
+      }
       if (url.pathname === '/finish') {
         await state('monthly');
         await state('cycle');
@@ -414,7 +423,47 @@ const server = createServer((req, res) => {
         );
         const transactionId = (bound?.payload as { transaction_id?: string } | undefined)
           ?.transaction_id;
-        if (!transactionId) throw new Error('Exact signed original upgrade charge is not bound');
+        if (!transactionId) {
+          // Diagnose only our signed fixture; preserve the refusal and never submit a refund.
+          const records = await upgradeRecords(db, sub.providerSubscriptionId);
+          const requested = records.find((r) => r.eventType === 'local.upgrade_requested');
+          const intentId = (requested?.payload as { intent_id?: string } | undefined)?.intent_id;
+          const facts = intentId
+            ? await intentEvidence(db, sub.providerSubscriptionId, intentId)
+            : null;
+          const scan = await api(
+            `/transactions?subscription_id=${encodeURIComponent(sub.providerSubscriptionId)}&origin=subscription_update&per_page=30`,
+          );
+          if (!Array.isArray(scan.data) || scan.meta?.pagination?.has_more !== false)
+            throw new Error('Incomplete fixture diagnostic scan');
+          const candidates = [];
+          for (const t of scan.data as Array<{ id: string }>) {
+            const exact = await paddle.readRefundTransaction(t.id);
+            if (
+              exact?.subscriptionId !== sub.providerSubscriptionId ||
+              exact.upgradeIntentId !== intentId
+            )
+              continue;
+            candidates.push({
+              transactionId: exact.id,
+              createdAt: exact.createdAt,
+              prorationAvailable: exact.lines !== null,
+              matchesFrozenIntent: Boolean(
+                facts?.target &&
+                facts.windowEnd &&
+                matchesUpgradeCharge(exact, facts.intent, facts.target, facts.windowEnd),
+              ),
+            });
+          }
+          f.chargeEvidence = {
+            reason: 'exact_upgrade_charge_not_bound',
+            requestedAt: facts?.intent.requested_at,
+            windowClosedAt: facts?.windowEnd,
+            signedCandidates: candidates,
+          };
+          await record();
+          throw new Error('Exact signed original upgrade charge is not bound');
+        }
         const proof = await transactionProof(sub.providerSubscriptionId);
         f.beforeRefundPositiveCount = proof.count;
         f.beforeRefundTransactionIds = proof.ids;

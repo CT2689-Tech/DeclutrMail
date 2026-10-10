@@ -189,6 +189,19 @@ async function readPage(url, key, fetchImpl) {
   }
 }
 
+/** Exact sandbox fixture reads; never follow dashboard URLs or accept a live key. */
+export async function readSandboxEntity(kind, id, env = process.env, fetchImpl = globalThis.fetch) {
+  const prefixes = { transactions: 'txn', subscriptions: 'sub', customers: 'ctm' };
+  if (
+    env.PADDLE_ENV !== 'sandbox' ||
+    !/^pdl_sdbx_apikey_[a-z\d]{26}_[a-zA-Z\d]{22}_[a-zA-Z\d]{3}$/.test(env.PADDLE_API_KEY ?? '') ||
+    !Object.hasOwn(prefixes, kind) ||
+    !validId(id, prefixes[kind])
+  )
+    throw new InspectionError('sandbox_fixture_boundary_required');
+  return readPage(`${HOST}/${kind}/${id}`, env.PADDLE_API_KEY, fetchImpl);
+}
+
 async function collectSection(section, key, fetchImpl) {
   const spec = SPECS[section];
   const items = [];
