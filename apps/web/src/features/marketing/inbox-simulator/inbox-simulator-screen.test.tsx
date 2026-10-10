@@ -349,7 +349,7 @@ describe('InboxSimulatorScreen', () => {
     expect(within(sheet).getAllByRole('listitem')).toHaveLength(4);
     expect(within(sheet).queryByText('Amazon Orders')).toBeNull();
 
-    fireEvent.click(within(sheet).getByRole('button', { name: /^Archive( [\d,]+)?$/ }));
+    fireEvent.click(within(sheet).getByRole('button', { name: /^Archive [\d,]+ emails?$/ }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByText('1 of 4 decisions complete')).toBeInTheDocument();
 
@@ -449,7 +449,9 @@ describe('InboxSimulatorScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: /Groupon — expand triage detail/ }));
     fireEvent.click(screen.getAllByRole('button', { name: /Later \(L\)/ })[0]!);
     const dialog = sheetFor(firstRow.senderName);
-    expect(within(dialog).getByRole('button', { name: /^Later/ })).toBeEnabled();
+    expect(
+      within(dialog).getByRole('button', { name: /^Move [\d,]+ emails? to Later$/ }),
+    ).toBeEnabled();
   });
 
   it('shows the real Triage Delete reach choice with matching sample counts', () => {
@@ -475,7 +477,7 @@ describe('InboxSimulatorScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: /Archive all 4/i }));
     fireEvent.click(
       within(sheetFor('amazon.com')).getByRole('button', {
-        name: /^Archive( [\d,]+)?$/,
+        name: /^Archive [\d,]+ emails?$/,
       }),
     );
     fireEvent.click(screen.getByRole('button', { name: /Unsubscribe \(U\)/ }));
@@ -684,7 +686,7 @@ describe('InboxSimulatorScreen', () => {
         fireEvent.click(screen.getByRole('button', { name: /Archive all 4/i }));
         fireEvent.click(
           within(sheetFor('amazon.com')).getByRole('button', {
-            name: /^Archive( [\d,]+)?$/,
+            name: /^Archive [\d,]+ emails?$/,
           }),
         );
         vi.setSystemTime(Date.now() + gapMs);
@@ -807,7 +809,7 @@ describe('InboxSimulatorScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: /Archive all 4/i }));
     fireEvent.click(
       within(sheetFor('amazon.com')).getByRole('button', {
-        name: /^Archive( [\d,]+)?$/,
+        name: /^Archive [\d,]+ emails?$/,
       }),
     );
     expect(screen.getByText('1 of 4 decisions complete')).toBeInTheDocument();
