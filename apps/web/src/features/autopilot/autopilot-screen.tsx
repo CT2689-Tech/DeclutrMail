@@ -943,7 +943,7 @@ export function AutopilotScreen({
                   : 'No rules change mail on their own',
               filter: 'acting' as const,
             },
-          ].map((card, index) => (
+          ].map((card) => (
             <a
               key={card.label}
               href={card.href}
@@ -953,32 +953,26 @@ export function AutopilotScreen({
               style={{
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 7,
-                padding: '18px 20px',
+                gap: 8,
+                padding: '20px',
                 border: `1px solid ${color.line}`,
-                borderRadius: 10,
-                background: index === 0 && suggestions.length > 0 ? color.card : color.fill,
+                borderRadius: tokens.radius.md,
+                background: color.card,
                 color: color.fg,
                 textDecoration: 'none',
               }}
             >
               <span
                 style={{
-                  color: color.primary,
-                  fontSize: text.xs,
-                  fontWeight: 700,
-                  letterSpacing: '0.12em',
-                  textTransform: 'uppercase',
+                  ...tokens.typography.kicker,
+                  color: color.fgMuted,
                 }}
               >
                 {card.label}
               </span>
               <strong
                 style={{
-                  fontFamily: tokens.font.display,
-                  fontSize: 26,
-                  fontWeight: 400,
-                  lineHeight: 1.1,
+                  ...tokens.typography.stat,
                 }}
               >
                 {card.count}
@@ -992,11 +986,7 @@ export function AutopilotScreen({
       )}
 
       {state.kind === 'ready' && rules.length > 0 && (
-        <div
-          role="group"
-          aria-label="Filter rules by status"
-          style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}
-        >
+        <div role="group" aria-label="Filter rules by status" className="dm-filter-tabs">
           {(
             [
               { id: 'all', label: 'All rules' },
@@ -1041,11 +1031,10 @@ export function AutopilotScreen({
             <h2
               id="rules-heading"
               style={{
-                fontSize: text.sm,
-                fontWeight: 600,
+                ...tokens.typography.sectionTitle,
                 margin: 0,
                 paddingLeft: 16,
-                color: color.fgMuted,
+                color: color.fg,
               }}
             >
               Rules
@@ -1131,7 +1120,7 @@ export function AutopilotScreen({
               >
                 <h2
                   id="pending-heading"
-                  style={{ fontSize: text.lg, fontWeight: 650, margin: 0, color: color.fg }}
+                  style={{ ...tokens.typography.sectionTitle, margin: 0, color: color.fg }}
                 >
                   Pending suggestions
                 </h2>

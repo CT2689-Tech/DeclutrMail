@@ -674,14 +674,14 @@ export function BillingScreen({
         gap: 20,
       }}
     >
-      <EditorialKicker>Your workspace / Plan & billing</EditorialKicker>
-      <h1 style={editorialTitleStyle}>Plan &amp; billing</h1>
+      <EditorialKicker>Your workspace / Billing</EditorialKicker>
+      <h1 style={editorialTitleStyle}>Billing</h1>
       <p style={{ margin: 0, color: color.fgSoft }}>
         Applies to this workspace and its connected inboxes.
       </p>
       <ScreenIntro
         id="billing"
-        title="Plan & billing"
+        title="Billing"
         body="Upgrades start today; downgrades and cancellations take effect after the period you've paid for."
       />
 
@@ -1365,10 +1365,7 @@ function CurrentPlanCard({
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
           <span
             style={{
-              fontFamily: font.sans,
-              fontSize: text['2xl'],
-              fontWeight: 650,
-              letterSpacing: '-0.02em',
+              ...tokens.typography.sectionTitle,
               color: color.fg,
             }}
           >
@@ -2045,7 +2042,7 @@ function FoundingBanner({ provider }: { provider: BillingProviderId }) {
     >
       <span aria-hidden>🏛️</span>
       <span>
-        <strong style={{ fontWeight: 650 }}>{promo.name} member</strong> — price locked at{' '}
+        <strong style={{ fontWeight: 600 }}>{promo.name} member</strong> — price locked at{' '}
         {formatMoney(promo.annual, currencyForProvider(provider))}/yr while your subscription stays
         active.
       </span>

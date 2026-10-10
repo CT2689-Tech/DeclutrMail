@@ -58,7 +58,7 @@ const NoiseArchiveSheet = dynamic(
   { ssr: false },
 );
 
-const { color, font, text } = tokens;
+const { color, text } = tokens;
 
 /** One column for every Brief state — header, lists and edge states align. */
 const COLUMN = editorialColumnStyle;
@@ -66,10 +66,10 @@ const COLUMN = editorialColumnStyle;
 const H1_STYLE = editorialTitleStyle;
 
 /**
- * Daily Brief screen (D61, D63, D67, D69, D70).
+ * Daily brief screen (D61, D63, D67, D69, D70).
  *
  * Layout (D61 + D63):
- *   1. One-line header — "Daily Brief" + the local-date the snapshot covers.
+ *   1. One-line header — "Daily brief" + the local-date the snapshot covers.
  *   2. Scan-friendly section links; the generated narrative is optional.
  *   3. Review section (the payload's `reply` candidates, max 6 per D63).
  *   4. FYI section (max 4 per D63).
@@ -328,7 +328,7 @@ function BriefBody({
           flexWrap: 'wrap',
         }}
       >
-        <h1 style={H1_STYLE}>Daily Brief</h1>
+        <h1 style={H1_STYLE}>Daily brief</h1>
         <BriefMeta
           brief={brief}
           days={days}
@@ -338,7 +338,7 @@ function BriefBody({
       </div>
       <ScreenIntro
         id="brief"
-        title="Daily Brief"
+        title="Daily brief"
         body={
           // "Yesterday" is only true of the latest Brief. Once the day
           // switcher reaches back, the same sentence over Saturday's
@@ -578,38 +578,31 @@ function BriefOverview({
         gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
       }}
     >
-      {sections.map((section, index) => (
+      {sections.map((section) => (
         <a
           key={section.href}
           href={section.href}
           style={{
             display: 'flex',
             flexDirection: 'column',
-            gap: 7,
-            padding: '18px 20px',
+            gap: 8,
+            padding: '20px',
             border: `1px solid ${color.line}`,
-            borderRadius: 10,
-            background: index === 0 ? color.card : color.fill,
+            borderRadius: tokens.radius.md,
+            background: color.card,
             color: color.fg,
             textDecoration: 'none',
           }}
         >
           <span
             style={{
-              color: color.primary,
-              fontSize: text.xs,
-              fontWeight: 700,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
+              ...tokens.typography.kicker,
+              color: color.fgMuted,
             }}
           >
             {section.label}
           </span>
-          <strong
-            style={{ fontFamily: font.display, fontSize: 26, fontWeight: 400, lineHeight: 1.1 }}
-          >
-            {section.count}
-          </strong>
+          <strong style={tokens.typography.stat}>{section.count}</strong>
           <span style={{ color: color.fgMuted, fontSize: text.sm, lineHeight: 1.45 }}>
             {section.detail} →
           </span>
@@ -652,11 +645,7 @@ function Narrative({ narrative }: { narrative: string }) {
         borderBottom: `1px solid ${color.lineSoft}`,
       }}
     >
-      <summary
-        style={{ cursor: 'pointer', color: color.fgSoft, fontSize: text.sm, fontWeight: 600 }}
-      >
-        Read generated note
-      </summary>
+      <summary className="dm-disclosure">Read generated note</summary>
       <ul
         style={{
           maxWidth: '68ch',
@@ -1040,33 +1029,29 @@ function SectionHeading({
         alignItems: 'baseline',
         gap: 6,
         margin: 0,
-        fontFamily: font.display,
-        fontSize: text['2xl'],
-        fontWeight: 400,
-        letterSpacing: '-0.01em',
+        ...tokens.typography.sectionTitle,
+        flexWrap: 'wrap',
         color: color.fg,
       }}
     >
       {label}
       <span
         style={{
-          color: color.fgMuted,
-          fontSize: text.md,
-          fontWeight: 500,
-          letterSpacing: 0,
-          fontVariantNumeric: 'tabular-nums',
+          ...tokens.typography.rowCount,
+          color: color.fgSoft,
+          background: color.fill,
+          padding: '2px 8px',
+          borderRadius: tokens.radius.pill,
+          alignSelf: 'center',
         }}
       >
-        · {countLabel}
+        {countLabel}
       </span>
       {subline && (
         <span
           style={{
+            ...tokens.typography.rowCount,
             color: color.fgMuted,
-            fontSize: text.md,
-            fontWeight: 500,
-            letterSpacing: 0,
-            fontVariantNumeric: 'tabular-nums',
           }}
         >
           · {subline}
@@ -1187,18 +1172,9 @@ function ReplyFyiRow({
                 level: 'info',
               });
             }}
-            style={{
-              fontSize: text.sm,
-              color: color.primary,
-              background: color.primarySoft,
-              borderRadius: 6,
-              padding: '8px 10px',
-              fontWeight: 650,
-              textDecoration: 'none',
-              whiteSpace: 'nowrap',
-            }}
+            className="dm-external-link"
           >
-            Open in Gmail
+            Open in Gmail <span aria-hidden="true">↗</span>
           </a>
         )}
       </div>
@@ -1366,14 +1342,9 @@ function NoiseRow({
                 data: { message_count: count },
               });
             }}
-            style={{
-              fontSize: text.sm,
-              color: color.primary,
-              textDecoration: 'none',
-              whiteSpace: 'nowrap',
-            }}
+            className="dm-external-link"
           >
-            Open in Gmail
+            Open in Gmail <span aria-hidden="true">↗</span>
           </a>
         )}
       </div>
@@ -1414,7 +1385,7 @@ function LoadingState() {
       style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 24 }}
     >
       <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
-      <h1 style={H1_STYLE}>Daily Brief</h1>
+      <h1 style={H1_STYLE}>Daily brief</h1>
       {[0, 1, 2, 3, 4].map((i) => (
         <div
           key={i}
@@ -1431,7 +1402,7 @@ function BriefErrorState({ error, onRetry }: { error: unknown; onRetry: () => vo
   return (
     <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 24 }}>
       <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
-      <h1 style={H1_STYLE}>Daily Brief</h1>
+      <h1 style={H1_STYLE}>Daily brief</h1>
       <RetryableErrorState
         headingLevel={2}
         title="We couldn't load your Brief"
@@ -1461,7 +1432,7 @@ function NotYetState({
   return (
     <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 24 }}>
       <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
-      <h1 style={H1_STYLE}>Daily Brief</h1>
+      <h1 style={H1_STYLE}>Daily brief</h1>
       <EmptyState
         headingLevel={2}
         title="Your Brief is not available yet"
@@ -1491,7 +1462,7 @@ function QuietInboxState() {
     <EmptyState
       headingLevel={2}
       title="No items in this edition."
-      description="There is nothing to review in this Daily Brief."
+      description="There is nothing to review in this Daily brief."
     />
   );
 }

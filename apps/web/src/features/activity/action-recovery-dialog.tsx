@@ -141,9 +141,7 @@ export function ActionRecoveryDialog({
           <h2
             id="action-recovery-title"
             style={{
-              fontSize: text.xl,
-              fontWeight: 650,
-              letterSpacing: '-0.02em',
+              ...tokens.typography.dialogTitle,
               margin: 0,
               color: color.fg,
             }}

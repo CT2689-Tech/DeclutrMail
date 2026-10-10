@@ -149,7 +149,7 @@ function ConsentStep({
           color: color.primary,
           fontFamily: font.sans,
           fontSize: text.sm,
-          fontWeight: 650,
+          fontWeight: 600,
           fontVariantNumeric: 'tabular-nums',
         }}
       >

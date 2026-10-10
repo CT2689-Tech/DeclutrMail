@@ -160,7 +160,7 @@ function SnoozedScreenContents({ initialNow }: { initialNow: number | undefined 
   // Below `sm` (D60 mobile treatment) the 4-track row grid overflows a
   // phone viewport — resolve the breakpoint once and thread it to the
   // rows so each restacks to a single column.
-  const isMobile = useIsAtMost('sm');
+  const isMobile = useIsAtMost('shell');
 
   return (
     <div
@@ -281,22 +281,22 @@ function BucketHeading({
           alignItems: 'baseline',
           gap: 6,
           margin: 0,
-          fontSize: text.lg,
-          fontWeight: 650,
-          letterSpacing: '-0.01em',
+          ...tokens.typography.sectionTitle,
           color: color.fg,
         }}
       >
         {WAKE_BUCKET_LABELS[bucket]}
         <span
           style={{
-            color: color.fgMuted,
-            fontSize: text.md,
-            fontWeight: 500,
-            fontVariantNumeric: 'tabular-nums',
+            ...tokens.typography.rowCount,
+            color: color.fgSoft,
+            background: color.fill,
+            borderRadius: radius.pill,
+            padding: '2px 8px',
+            alignSelf: 'center',
           }}
         >
-          · {count}
+          {count}
         </span>
       </h2>
     </li>
@@ -665,26 +665,24 @@ function SnoozeMenu({
             fontSize: text.sm,
             color: color.fgMuted,
             display: 'flex',
-            alignItems: 'center',
-            gap: 6,
+            alignItems: 'flex-start',
+            flexDirection: 'column',
+            minWidth: 0,
+            maxWidth: '100%',
+            gap: 8,
           }}
         >
-          Custom · {timeZone}
+          Custom · {timeZone.replaceAll('_', ' ')}
           <input
             type="datetime-local"
+            className="dm-field"
             value={custom}
             aria-invalid={customError !== null}
             onChange={(e) => setCustom(e.target.value)}
             style={{
-              fontSize: text.sm,
-              fontFamily: font.sans,
-              height: 36,
-              boxSizing: 'border-box',
-              padding: '0 12px',
-              border: 'none',
-              borderRadius: radius.md,
-              background: color.fill,
-              color: color.fg,
+              ...tokens.field,
+              maxWidth: '100%',
+              minWidth: 0,
             }}
           />
         </label>

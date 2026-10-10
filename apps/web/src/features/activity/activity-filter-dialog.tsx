@@ -98,8 +98,7 @@ function FilterSheet({ onClose, ...fields }: FilterFieldsProps & { onClose: () =
         >
           <span
             style={{
-              fontSize: text.xl,
-              fontWeight: 650,
+              ...tokens.typography.dialogTitle,
               letterSpacing: '-0.02em',
               color: color.fg,
             }}

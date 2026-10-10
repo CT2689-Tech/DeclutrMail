@@ -27,6 +27,7 @@ export interface HomeSenderPreview {
   name: string;
   domain: string;
   inboxCount: number;
+  brandMark?: boolean;
 }
 
 export interface HomePending {
@@ -39,7 +40,8 @@ export interface HomePending {
 
 /** Home points to senders with mail currently in the Inbox, not historical traffic. */
 export function selectHomeSenderPreviews(
-  rows: Pick<TriageDecisionRow, 'senderId' | 'senderName' | 'senderDomain' | 'inboxCount'>[],
+  rows: (Pick<TriageDecisionRow, 'senderId' | 'senderName' | 'senderDomain' | 'inboxCount'> &
+    Partial<Pick<TriageDecisionRow, 'brandMark'>>)[],
 ): HomeSenderPreview[] {
   return rows
     .filter(
@@ -56,6 +58,7 @@ export function selectHomeSenderPreviews(
       name: row.senderName,
       domain: row.senderDomain,
       inboxCount: row.inboxCount,
+      ...(row.brandMark !== undefined ? { brandMark: row.brandMark } : {}),
     }));
 }
 

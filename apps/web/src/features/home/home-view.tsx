@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ErrorState, ScreenIntro, Skeleton } from '@declutrmail/shared';
+import { Avatar, ErrorState, ScreenIntro, Skeleton } from '@declutrmail/shared';
 import {
   hasCapability,
   minimumTierForCapability,
@@ -35,28 +35,25 @@ export function HomeView({
       : state.kind === 'empty' && !state.syncing && (state.senders?.length ?? 0) > 0;
   return (
     <div className={styles.page} data-home-priority={prioritizeReview ? 'review' : 'intro'}>
-      <ScreenIntro id="home" title="How Home works" body="Undone actions are not counted." />
-      <header className={`${styles.header} ${prioritizeReview ? styles.headerPriority : ''}`}>
+      <ScreenIntro
+        id="home"
+        title="How Home works"
+        body="Start with the next review task or open a sender to inspect its email. Your progress comes from completed cleanup actions; undone actions are excluded. Open Activity to see outcomes and undo supported actions."
+      />
+      <header className={styles.header}>
         <div>
-          <EditorialKicker>Your personal space / Home</EditorialKicker>
+          <EditorialKicker>Your workspace / Home</EditorialKicker>
           <h1>
             A little room
             <br />
             for a <em>clearer day.</em>
           </h1>
-          <p className={styles.subtitle}>A clearer view. A little more room for what matters.</p>
+          <p className={styles.subtitle}>
+            Review what needs attention and see the progress you’ve made.
+          </p>
         </div>
-        {state.kind === 'ready' && !prioritizeReview && (
-          <CleanupStamp state={state} timeZone={timeZone} />
-        )}
       </header>
-      <HomeBody
-        state={state}
-        tier={tier}
-        workflows={workflows}
-        timeZone={timeZone}
-        prioritizeReview={prioritizeReview}
-      />
+      <HomeBody state={state} tier={tier} workflows={workflows} timeZone={timeZone} />
     </div>
   );
 }
@@ -64,26 +61,19 @@ export function HomeView({
 function CleanupStamp({
   state,
   timeZone,
-  deferred = false,
 }: {
   state: Extract<HomeState, { kind: 'ready' }>;
   timeZone: string;
-  deferred?: boolean;
 }) {
   return (
-    <section
-      className={`${styles.stamp} ${deferred ? styles.deferredStamp : ''}`}
-      aria-label="Your cleanup so far"
-    >
-      <span className={styles.eyebrow}>
-        The space
-        <br />
-        you’ve made
-      </span>
+    <section className={styles.stamp} aria-label="Your cleanup so far">
+      <span className={styles.eyebrow}>The space you’ve made</span>
       <strong data-testid="home-hero">{state.hero.value.toLocaleString('en-US')}</strong>
       <span>
-        {state.hero.label}
-        {state.since ? ` since ${formatSince(state.since, timeZone)}` : ''}
+        {state.hero.label}{' '}
+        {state.since && (
+          <span className={styles.since}>since {formatSince(state.since, timeZone)}</span>
+        )}
       </span>
       <small>Undone actions excluded</small>
     </section>
@@ -95,13 +85,11 @@ function HomeBody({
   tier,
   workflows,
   timeZone,
-  prioritizeReview,
 }: {
   state: HomeState;
   tier: TierId;
   workflows?: HomeWorkflows | undefined;
   timeZone: string;
-  prioritizeReview: boolean;
 }) {
   const hasAttention =
     state.kind === 'ready' &&
@@ -132,10 +120,10 @@ function HomeBody({
             </span>
             <h2>
               {state.syncing
-                ? 'Reading your Gmail'
+                ? 'Reading your Gmail.'
                 : state.senders?.length
-                  ? 'Your first review is ready'
-                  : 'Nothing cleared yet'}
+                  ? 'Your first review is ready.'
+                  : 'Nothing cleared yet.'}
             </h2>
             <p>
               {state.syncing
@@ -159,7 +147,7 @@ function HomeBody({
       return (
         <section className={styles.beginning} aria-label="Mailbox needs attention">
           <span className={styles.eyebrow}>Mailbox needs attention</span>
-          <h2>Gmail scan failed</h2>
+          <h2>Gmail scan failed.</h2>
           {/* `failedScanSettingsStep`'s sentences, inline: a new import of
               mailbox-health from this route regrouped shared chunks over
               other routes' bundle budgets. A test pins the two equal. */}
@@ -207,10 +195,14 @@ function HomeBody({
                   {state.secondary.length > 0 ? (
                     <SecondaryRow stats={state.secondary} />
                   ) : (
-                    <p className={styles.quietCopy}>
-                      Every considered decision makes room for what matters. Explore your senders to
-                      find your next step.
-                    </p>
+                    <div className={styles.emptyProgress}>
+                      <p className={styles.quietCopy}>
+                        Open Activity for individual outcomes and available Undo actions.
+                      </p>
+                      <Link href="/activity">
+                        View cleanup history <span aria-hidden="true">↗</span>
+                      </Link>
+                    </div>
                   )}
                   <p className={styles.footnote}>
                     From your cleanup history. Undone actions are excluded.
@@ -219,13 +211,14 @@ function HomeBody({
               )}
             </div>
           </section>
-          {prioritizeReview && <CleanupStamp state={state} timeZone={timeZone} deferred />}
+          <CleanupStamp state={state} timeZone={timeZone} />
           <section
             className={styles.overviewLower}
             style={!hasAttention ? { gridTemplateColumns: '1fr' } : undefined}
           >
             {hasAttention && (
               <div className={styles.attention}>
+                <span className={styles.eyebrow}>Ready for your review</span>
                 <h2>A little attention.</h2>
                 {state.action.href !== '/triage' &&
                   state.pending?.triagePending != null &&
@@ -326,7 +319,7 @@ function WorkspaceOverview({
           <h3>Catch up</h3>
           <WorkflowLink
             href="/brief"
-            title="Daily Brief"
+            title="Daily brief"
             detail={briefStatus}
             locked={access('brief')}
           />
@@ -353,7 +346,7 @@ function WorkspaceOverview({
           />
           <WorkflowLink
             href="/quiet"
-            title="Quiet Hours"
+            title="Quiet hours"
             detail="Choose when Autopilot holds its actions"
             locked={access('quiet')}
           />
@@ -403,9 +396,12 @@ function SenderPreviews({ senders }: { senders: HomeSenderPreview[] }) {
           key={sender.id}
           href={`/senders?sender=${encodeURIComponent(sender.id)}`}
         >
-          <span className={styles.avatar} aria-hidden="true">
-            {sender.name.slice(0, 1)}
-          </span>
+          <Avatar
+            name={sender.name}
+            domain={sender.domain}
+            size={36}
+            {...(sender.brandMark !== undefined ? { hasMark: sender.brandMark } : {})}
+          />
           <span className={styles.senderIdentity}>
             <strong>{sender.name}</strong>
             <small>{sender.domain}</small>
@@ -463,12 +459,13 @@ function SecondaryRow({ stats }: { stats: HomeStat[] }) {
 function PrimaryLink({ action }: { action: HomeAction }) {
   if (action.loading)
     return (
-      <span role="status" className={styles.primary}>
+      <span role="status" aria-live="polite" className={styles.loadingAction}>
+        <Skeleton variant="rect" width={16} height={16} />
         {action.label}
       </span>
     );
   return (
-    <Link href={action.href} data-dm-button="" className={styles.primary}>
+    <Link href={action.href} data-dm-button="" className="dm-button-link">
       {action.label}
       <span aria-hidden="true">↗</span>
     </Link>

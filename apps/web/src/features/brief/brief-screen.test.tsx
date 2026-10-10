@@ -604,10 +604,10 @@ describe('BriefScreen — populated', () => {
     renderScreen();
 
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /review · 2$/i })).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /review 2$/i })).toBeInTheDocument(),
     );
-    expect(screen.getByRole('heading', { name: /fyi · 1$/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /noise · 1 · 4 messages/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /fyi 1$/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /noise 1 · 4 messages/i })).toBeInTheDocument();
   });
 
   it('dates the Brief by the day it covers, not the day it ran', async () => {
@@ -650,9 +650,9 @@ describe('BriefScreen — populated', () => {
     renderScreen();
 
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /review · 2$/i })).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /review 2$/i })).toBeInTheDocument(),
     );
-    expect(screen.queryByRole('heading', { name: /review · 2 of 2/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /review 2 of 2/i })).not.toBeInTheDocument();
   });
 
   it('names the real total when the cap truncated the section', async () => {
@@ -673,9 +673,9 @@ describe('BriefScreen — populated', () => {
     renderScreen();
 
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /review · 2 of 8/i })).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /review 2 of 8/i })).toBeInTheDocument(),
     );
-    expect(screen.getByRole('heading', { name: /fyi · 1 of 5/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /fyi 1 of 5/i })).toBeInTheDocument();
   });
 
   it('falls back to a plain count on a Brief frozen before totals existed', async () => {
@@ -692,7 +692,7 @@ describe('BriefScreen — populated', () => {
     renderScreen();
 
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /review · 2$/i })).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /review 2$/i })).toBeInTheDocument(),
     );
   });
 
@@ -707,7 +707,7 @@ describe('BriefScreen — populated', () => {
 
     renderScreen();
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /review · 2/i })).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /review 2/i })).toBeInTheDocument(),
     );
     expect(screen.getByRole('link', { name: /start here 2 to review/i })).toHaveAttribute(
       'href',
@@ -778,7 +778,7 @@ describe('BriefScreen — populated', () => {
 
     renderScreen();
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /review · 2$/i })).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /review 2$/i })).toBeInTheDocument(),
     );
     expect(screen.queryByText(/via template/i)).not.toBeInTheDocument();
   });
@@ -877,7 +877,7 @@ describe('BriefScreen — D61 mark-opened mutation', () => {
     // Wait for the populated content so we know the effect had a
     // chance to run; then assert no POST was made.
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /review · 2$/i })).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /review 2$/i })).toBeInTheDocument(),
     );
     expect(postCount).toBe(0);
   });

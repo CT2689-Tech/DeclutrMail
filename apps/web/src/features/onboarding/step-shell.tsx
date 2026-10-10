@@ -55,7 +55,7 @@ export function StepShell({
           padding: 'clamp(24px, 4vw, 40px)',
           background: color.card,
           border: `1px solid ${color.border}`,
-          borderRadius: 12,
+          borderRadius: tokens.radius.lg,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',

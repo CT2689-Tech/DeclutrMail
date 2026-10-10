@@ -134,8 +134,7 @@ export function UpgradeModal() {
         <h2
           id="dm-upgrade-title"
           style={{
-            fontSize: text['2xl'],
-            fontWeight: 650,
+            ...tokens.typography.dialogTitle,
             letterSpacing: '-0.022em',
             lineHeight: 1.2,
             margin: 0,
