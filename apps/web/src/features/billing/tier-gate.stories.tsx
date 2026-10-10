@@ -58,7 +58,7 @@ function frame(tier: Me['tier']) {
         <AuthProvider>
           <TierGate
             capability="brief"
-            title="Your Morning Brief"
+            title="Daily brief"
             pitch="A daily summary of yesterday's email, in-app, at an hour you choose."
           >
             <div
