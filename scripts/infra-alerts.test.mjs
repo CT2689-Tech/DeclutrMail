@@ -30,6 +30,16 @@ test('runtime absence is gated until deployment and does not hide a missing sour
   const policies = infrastructurePolicies({ runtime: true });
   const absent = policies.find((p) => p.displayName.includes('missing or failing'));
   assert.equal(absent.conditions.length, 1);
+  const rule = absent.conditions[0].conditionPrometheusQueryLanguage;
+  assert.ok(rule.query.startsWith('(sum('));
+  assert.ok(rule.query.endsWith(') > 0'));
+  assert.ok(rule.query.includes('<= bool 0'));
+  // Both a flat counter and an entirely absent source must yield a positive
+  // scalar; a healthy source yields zero. A filtered comparison without bool
+  // would retain zero and silently lose flat-counter failures in sum().
+  assert.ok(rule.query.includes(' + sum('));
+  assert.equal(rule.labels.service, 'declutrmail-worker');
+  assert.equal(rule.duration, '0s');
   for (const source of ['mailbox', 'queue', 'scheduler', 'database', 'reconnect']) {
     assert.ok(
       absent.conditions.some((c) =>
