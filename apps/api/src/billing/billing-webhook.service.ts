@@ -70,9 +70,13 @@ import type {
   NormalizedSubscription,
 } from './billing-provider.interface.js';
 import { BillingCatalog } from './billing-catalog.js';
+import { lockSubscription } from './subscription-lock.js';
+import { BillingUpgradeRefundService } from './billing-upgrade-refund.service.js';
+import type { UpgradeRefundPolicy } from './upgrade-refund.types.js';
+import { appendUpgradeRecord, intentEvidence } from './upgrade-intents.js';
+export { lockSubscription } from './subscription-lock.js';
 
-/** Advisory-lock key for the D126 founding counter (arbitrary, unique). */
-const FOUNDING_LOCK_KEY = 117_126;
+import { claimFoundingRedemption, recordFoundingRedemption } from './founding-redemptions.js';
 
 /** Statuses that grant their tier (see header — paused grants nothing).
  *  Exported for the D249 reconciler, whose candidate filter must be the
@@ -220,7 +224,14 @@ export function projectWebhookPayload(
       projected.current_period_end = sub.currentPeriodEnd;
       projected.cancel_at_period_end = sub.cancelAtPeriodEnd;
       projected.pause_until = sub.pauseUntil;
+      if (sub.foundingAllocationEligible !== undefined) {
+        projected.founding_allocation_eligible = sub.foundingAllocationEligible;
+      }
       projected.workspace_id = sub.workspaceId;
+      if (event.upgradeRefundRestoration) {
+        projected.upgrade_refund_intent_id = event.upgradeRefundRestoration.intentId;
+        projected.upgrade_refund_adjustment_id = event.upgradeRefundRestoration.adjustmentId;
+      }
       break;
     }
     case 'payment':
@@ -241,6 +252,10 @@ export function projectWebhookPayload(
     case 'ignored':
       break;
   }
+  if ('refundReference' in event && event.refundReference) {
+    projected.adjustment_id = event.refundReference.adjustmentId;
+    projected.transaction_id = event.refundReference.transactionId;
+  }
   return projected;
 }
 
@@ -257,16 +272,6 @@ export function projectWebhookPayload(
  * Exported because the writers live in two services; a second lock
  * expression would silently stop excluding the first.
  */
-export async function lockSubscription(
-  tx: DrizzleDb,
-  provider: BillingProviderId,
-  providerSubscriptionId: string,
-): Promise<void> {
-  await tx.execute(
-    sql`SELECT pg_advisory_xact_lock(hashtext(${`${provider}:${providerSubscriptionId}`}))`,
-  );
-}
-
 @Injectable()
 export class BillingWebhookService {
   private readonly logger = new Logger(BillingWebhookService.name);
@@ -276,7 +281,12 @@ export class BillingWebhookService {
     private readonly catalog: BillingCatalog,
     /** D251 — the exported Autopilot facade the tier write demotes through. */
     private readonly autopilot: AutopilotReadService,
+    @Inject(BillingUpgradeRefundService) private readonly upgradeRefunds: UpgradeRefundPolicy,
   ) {}
+
+  async recoverUpgradeOperation(subscriptionId: string): Promise<void> {
+    await this.upgradeRefunds.observeCompletedTransaction(subscriptionId);
+  }
 
   async process(
     provider: BillingProviderId,
@@ -336,6 +346,66 @@ export class BillingWebhookService {
       eventArrivalSeq = inserted[0]!.arrivalSeq;
     }
 
+    // Classify the exact charge before any refund entitlement write. Provider
+    // reads/restoration stay outside transactions. Synthetic ordinary refund
+    // settlement from reconciliation already has transaction-scoped facts.
+    if (
+      provider === 'paddle' &&
+      (event.eventType.startsWith('adjustment.') || 'refundReference' in event) &&
+      (event.kind === 'refund_settled' ||
+        (event.kind === 'cancellation_scheduled' && event.reason === 'refund') ||
+        (event.kind === 'cancellation_revoked' && event.reason === 'refund_rejected'))
+    ) {
+      const decision = await this.upgradeRefunds.resolve(event);
+      if (decision.kind !== 'ordinary') {
+        if (decision.kind === 'restored') {
+          const restored = await this.process(
+            provider,
+            {
+              kind: 'subscription',
+              providerEventId: `local:upgrade-refund-restored:${decision.adjustmentId}`,
+              eventType: 'local.upgrade_refund_restored',
+              subscription: decision.subscription,
+              upgradeRefundRestoration: {
+                intentId: decision.intentId,
+                adjustmentId: decision.adjustmentId,
+              },
+            },
+            { occurred_at: decision.confirmedAt },
+          );
+          if (
+            restored.kind === 'unresolved' ||
+            !(await this.upgradeRefunds.confirmProjectedRestoration(decision))
+          )
+            throw new Error('Verified upgrade restoration could not be projected');
+        }
+        // Preserve the original arrival audit. Classification is separate,
+        // immutable evidence that this event did not write cancellation state.
+        await this.db.transaction(async (tx) => {
+          await tx
+            .insert(subscriptionEvents)
+            .values({
+              provider,
+              providerEventId: `local:upgrade-refund-classified:${event.providerEventId}`,
+              eventType: 'local.upgrade_refund_classified',
+              payload: {
+                kind: 'upgrade_refund_audit',
+                original_event_id: event.providerEventId,
+                provider_subscription_id: event.providerSubscriptionId,
+                refund_classification: decision.kind,
+              },
+              processedAt: new Date(),
+            })
+            .onConflictDoNothing();
+          await tx
+            .update(subscriptionEvents)
+            .set({ processedAt: new Date() })
+            .where(eq(subscriptionEvents.id, eventRowId));
+        });
+        return { kind: 'processed', effect: `upgrade_refund:${decision.kind}` };
+      }
+    }
+
     // 2. Apply the domain effect + stamp processed_at atomically.
     switch (event.kind) {
       case 'subscription':
@@ -347,6 +417,8 @@ export class BillingWebhookService {
       case 'refund_settled':
         return this.applyRefundSettlement(provider, event, eventRowId);
       case 'payment':
+        if (provider === 'paddle' && event.providerSubscriptionId)
+          await this.upgradeRefunds.observeCompletedTransaction(event.providerSubscriptionId);
         return this.applyPayment(provider, event, eventRowId);
       case 'ignored':
         await this.markProcessed(eventRowId);
@@ -479,6 +551,12 @@ export class BillingWebhookService {
               // revoked. The user believes they are renewing and is not
               // (Codex stop-review, 2026-07-31).
               sql`${subscriptionEvents.payload}->>'kind' IN ('subscription', 'cancellation_scheduled', 'cancellation_revoked')`,
+              sql`NOT EXISTS (
+                SELECT 1 FROM subscription_events classification
+                WHERE classification.provider = ${subscriptionEvents.provider}
+                  AND classification.event_type = 'local.upgrade_refund_classified'
+                  AND classification.payload->>'original_event_id' = ${subscriptionEvents.providerEventId}
+              )`,
             ),
           );
 
@@ -570,6 +648,8 @@ export class BillingWebhookService {
             scheduledChangeRequestedAt: subscriptions.scheduledChangeRequestedAt,
             cancelSource: subscriptions.cancelSource,
             entitlementEndsAt: subscriptions.entitlementEndsAt,
+            cancelAtPeriodEnd: subscriptions.cancelAtPeriodEnd,
+            foundingMember: subscriptions.foundingMember,
           })
           .from(subscriptions)
           .where(
@@ -579,6 +659,25 @@ export class BillingWebhookService {
             ),
           )
           .limit(1);
+        if (event.upgradeRefundRestoration) {
+          const evidence = await intentEvidence(
+            tx,
+            sub.providerSubscriptionId,
+            event.upgradeRefundRestoration.intentId,
+          );
+          if (
+            !current ||
+            current.status !== 'active' ||
+            current.cancelSource !== null ||
+            current.cancelAtPeriodEnd ||
+            !evidence ||
+            evidence.newerUpgrade ||
+            sub.providerPriceId !== evidence.intent.prior.priceId ||
+            Date.parse(sub.currentPeriodEnd ?? '') !== Date.parse(evidence.intent.prior.periodEnd)
+          ) {
+            throw new Error('Upgrade restoration state changed before projection');
+          }
+        }
         // A TRANSITION into canceled, not a state. `cancel_source` is the
         // provenance the refund/chargeback verdicts wrote earlier;
         // anything else — including a plain provider-side cancel and a
@@ -721,33 +820,27 @@ export class BillingWebhookService {
             .onConflictDoNothing();
         }
 
-        // D126 founding assignment — advisory lock + count, race-safe.
+        // Preserve an existing allocation even if this snapshot changes price.
+        if (current?.foundingMember) {
+          await recordFoundingRedemption(tx, provider, sub.providerSubscriptionId);
+        }
+        // D126: permanent allocation, serialized under the original global cap lock.
         let founding = false;
         if (entry.founding) {
-          const [existing] = await tx
-            .select({ foundingMember: subscriptions.foundingMember })
-            .from(subscriptions)
-            .where(
-              and(
-                eq(subscriptions.provider, provider),
-                eq(subscriptions.providerSubscriptionId, sub.providerSubscriptionId),
-              ),
-            )
-            .limit(1);
-          if (existing?.foundingMember) {
-            founding = true; // already claimed — replays never re-count
-          } else {
-            await tx.execute(sql`SELECT pg_advisory_xact_lock(${FOUNDING_LOCK_KEY})`);
-            const [row] = await tx
-              .select({ count: sql<number>`count(*)::int` })
-              .from(subscriptions)
-              .where(eq(subscriptions.foundingMember, true));
-            founding = (row?.count ?? 0) < this.catalog.foundingMaxRedemptions;
-            if (!founding) {
-              this.logger.warn(
-                `billing.founding.sold_out_purchase sub=${sub.providerSubscriptionId} — pro_annual_founding past 250, granting pro without price-lock flag`,
-              );
-            }
+          const eligible =
+            (sub.status === 'active' || sub.status === 'past_due') &&
+            sub.foundingAllocationEligible !== false;
+          founding = await claimFoundingRedemption(
+            tx,
+            provider,
+            sub.providerSubscriptionId,
+            this.catalog.foundingMaxRedemptions,
+            eligible,
+          );
+          if (!founding && eligible) {
+            this.logger.warn(
+              `billing.founding.sold_out_purchase sub=${sub.providerSubscriptionId} — pro_annual_founding past 250, granting pro without price-lock flag`,
+            );
           }
         }
 
@@ -813,6 +906,18 @@ export class BillingWebhookService {
 
         await this.recomputeWorkspaceTier(tx, workspaceId);
         await publishSubscriptionNotices(tx, noticeBefore);
+        if (event.upgradeRefundRestoration) {
+          await appendUpgradeRecord(
+            tx,
+            sub.providerSubscriptionId,
+            'local.upgrade_restore_completed',
+            event.upgradeRefundRestoration.intentId,
+            {
+              intent_id: event.upgradeRefundRestoration.intentId,
+              adjustment_id: event.upgradeRefundRestoration.adjustmentId,
+            },
+          );
+        }
 
         // A granting webhook is the cross-device "payment landed" signal
         // — the pending-checkout row it supersedes comes down with it

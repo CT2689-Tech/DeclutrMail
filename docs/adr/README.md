@@ -30,6 +30,8 @@ Status values: Proposed | Accepted | Superseded by ADR-NNNN.
 
 | [0043](./0043-warm-editorial-product-system.md) | Accepted | Warm Editorial product system | D7, D226, D227 preserved |
 
+| [0044](./0044-billing-refunds-and-permanent-founding-allocation.md) | Accepted | Upgrade refund scope and permanent Founding allocation | D117, D126, D232 |
+
 ## Authoring an ADR
 
 1. Copy `0000-template.md` to `NNNN-kebab-title.md` using the next

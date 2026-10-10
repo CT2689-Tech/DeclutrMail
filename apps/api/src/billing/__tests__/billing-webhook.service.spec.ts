@@ -1,3 +1,4 @@
+import { ordinaryRefundPolicy, legacyUpgradePolicy } from './fixtures.js';
 import {
   automationRules,
   billingCustomers,
@@ -116,7 +117,12 @@ describe('BillingWebhookService.process', () => {
 
   beforeEach(async () => {
     db = await freshDb();
-    service = new BillingWebhookService(db, testCatalog(), new AutopilotReadService(db));
+    service = new BillingWebhookService(
+      db,
+      testCatalog(),
+      new AutopilotReadService(db),
+      ordinaryRefundPolicy,
+    );
     workspaceId = await seedWorkspace(db);
   });
 
@@ -697,7 +703,12 @@ describe('BillingWebhookService.process', () => {
   });
 
   it('D126 — grants founding_member to the first N and stops at the cap (race-safe count)', async () => {
-    service = new BillingWebhookService(db, testCatalog(2), new AutopilotReadService(db));
+    service = new BillingWebhookService(
+      db,
+      testCatalog(2),
+      new AutopilotReadService(db),
+      ordinaryRefundPolicy,
+    );
     const ws2 = await seedWorkspace(db, 'WS 2');
     const ws3 = await seedWorkspace(db, 'WS 3');
 
@@ -734,6 +745,27 @@ describe('BillingWebhookService.process', () => {
     await service.process('paddle', paddle.mapWebhookEvent(f1), f1);
     const after = await db.select().from(subscriptions);
     expect(after.filter((s) => s.foundingMember)).toHaveLength(2);
+  });
+
+  it('does not permanently allocate a Founding seat for Paddle trialing, but allocates after activation', async () => {
+    const trial = paddleSubscriptionActivated({
+      workspaceId,
+      priceId: TEST_PRICE_IDS.paddle.pro_annual_founding,
+      eventId: 'evt_founding_trial',
+    });
+    (trial.data as Record<string, unknown>).status = 'trialing';
+    await service.process('paddle', paddle.mapWebhookEvent(trial), trial);
+    const [trialRow] = await db.select().from(subscriptions);
+    expect(trialRow!.foundingMember).toBe(false);
+    const activated = paddleSubscriptionActivated({
+      workspaceId,
+      priceId: TEST_PRICE_IDS.paddle.pro_annual_founding,
+      eventId: 'evt_founding_activated',
+    });
+    activated.occurred_at = '2026-06-11T10:01:00.000000Z';
+    await service.process('paddle', paddle.mapWebhookEvent(activated), activated);
+    const [paidRow] = await db.select().from(subscriptions);
+    expect(paidRow!.foundingMember).toBe(true);
   });
 
   // 2026-08-25. This assertion is INVERTED from what it was, and the old
@@ -1399,6 +1431,10 @@ describe('BillingWebhookService.process', () => {
       { id: 'razorpay' } as unknown as RazorpayAdapter,
       // cancelAtPeriodEnd never touches reconciliation.
       {} as unknown as BillingReconciliationService,
+      legacyUpgradePolicy({
+        id: 'paddle',
+        cancelSubscription: async () => {},
+      } as unknown as PaddleAdapter),
     );
     await billing.cancelAtPeriodEnd({ workspaceId }, { reason: 'too_expensive' });
 
@@ -1441,6 +1477,11 @@ describe('BillingWebhookService.process', () => {
       } as unknown as PaddleAdapter,
       { id: 'razorpay' } as unknown as RazorpayAdapter,
       {} as unknown as BillingReconciliationService,
+      legacyUpgradePolicy({
+        id: 'paddle',
+        cancelSubscription: async () => {},
+        clearScheduledCancellation: async () => {},
+      } as unknown as PaddleAdapter),
     );
     await billing.cancelAtPeriodEnd({ workspaceId }, {});
 
@@ -1519,6 +1560,10 @@ describe('BillingWebhookService.process', () => {
       { id: 'razorpay' } as unknown as RazorpayAdapter,
       // cancelAtPeriodEnd never touches reconciliation.
       {} as unknown as BillingReconciliationService,
+      legacyUpgradePolicy({
+        id: 'paddle',
+        cancelSubscription: async () => {},
+      } as unknown as PaddleAdapter),
     );
     await billing.cancelAtPeriodEnd({ workspaceId }, { reason: 'too_expensive' });
 

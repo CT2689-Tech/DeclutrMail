@@ -6,15 +6,20 @@ import { E2E_ENV } from '../helpers/env';
 
 // Only fixed synthetic rows in the isolated database. No provider calls.
 const fixture = BILLING_SEED;
+const expiredRecoveryTitle =
+  'expired account-recovery link opens returning sign-in with its full destination';
 // Logout revokes its server session, so never inherit the suite’s shared session.
 test.use({ storageState: { cookies: [], origins: [] } });
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page }, testInfo) => {
   const sql = dbConnect();
   try {
     await applyJourneySeed(sql);
   } finally {
     await sql.end();
   }
+  // This anonymous journey starts on a blank page. Signing in and immediately
+  // removing its cookies races the previous page's 401 redirect with the link under test.
+  if (testInfo.title === expiredRecoveryTitle) return;
   await page.goto(
     `${E2E_ENV.apiUrl}/api/auth/dev/login?${new URLSearchParams({ email: fixture.email })}`,
   );
@@ -89,9 +94,7 @@ test('failed first scan exposes account controls while mailbox routes stay gated
   }
 });
 
-test('expired account-recovery link opens returning sign-in with its full destination', async ({
-  page,
-}) => {
+test(expiredRecoveryTitle, async ({ page }) => {
   await page.context().clearCookies();
   await page.goto('/settings?cancelDeletion=1#account');
   await expect(page).toHaveURL(

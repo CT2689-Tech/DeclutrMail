@@ -581,7 +581,21 @@ export function BillingScreen({
 
   // ONE notice slot. Highest priority first; the rest wait behind "+N".
   // A pending money action always leads — it is never the collapsed one.
+  const reviewPending = subscriptionQuery.data?.billingReviewPending === true;
   const notices: NoticeEntry[] = [];
+  if (reviewPending)
+    notices.push({
+      key: 'billing-review',
+      node: (
+        <p role="status" style={{ margin: 0, color: color.fgMuted }}>
+          Billing verification pending. Current access is shown below.{' '}
+          <a className={linkStyles.link} href="mailto:support@declutrmail.com">
+            Contact support
+          </a>{' '}
+          before changing plans.
+        </p>
+      ),
+    });
   if (pending !== null) {
     notices.push({
       key: 'payment-processing',
@@ -716,6 +730,7 @@ export function BillingScreen({
         cleanupResetsAt={cleanupResetsAt}
         billingDark={billingDark}
         pauseConfirming={pauseConfirming}
+        reviewPending={reviewPending}
         onCancel={() => setCancelOpen(true)}
         onResumeCancellation={() =>
           resumeCancellation.mutate(undefined, {
@@ -778,6 +793,7 @@ export function BillingScreen({
         disabled={
           billingDark ||
           pending !== null ||
+          reviewPending ||
           plan.backing.state === 'past_due' ||
           plan.backing.state === 'cancel_scheduled' ||
           plan.scheduledChange != null ||
@@ -916,6 +932,9 @@ function resumeCancellationErrorMessage(error: unknown): string {
   // and the generic line would be wrong for two of them (`apiErrorCode`
   // doc, client.ts).
   const code = apiErrorCode(error);
+  if (code === 'PLAN_CHANGE_PENDING') {
+    return 'Billing verification is pending. Contact support@declutrmail.com before restoring renewal.';
+  }
   if (code === 'NO_SCHEDULED_CANCELLATION') {
     return 'This subscription is already renewing — refresh the page to see the current state.';
   }
@@ -1298,6 +1317,7 @@ function CurrentPlanCard({
   cleanupResetsAt,
   billingDark,
   pauseConfirming,
+  reviewPending,
   onCancel,
   onResumeCancellation,
   isResumingCancellation,
@@ -1314,6 +1334,7 @@ function CurrentPlanCard({
    *  the pause may falsify — a "Next renewal" date, or a Cancel button
    *  for a subscription whose own fate is still unresolved. */
   pauseConfirming: boolean;
+  reviewPending: boolean;
   onCancel: () => void;
   /** D118 — revoke a scheduled cancel and go back on renewal. */
   onResumeCancellation: () => void;
@@ -1354,7 +1375,8 @@ function CurrentPlanCard({
   const renewal =
     (backing.state === 'active' || backing.state === 'past_due') &&
     plan.scheduledChange === null &&
-    !pauseConfirming
+    !pauseConfirming &&
+    !reviewPending
       ? formatBillingDate(backing.sub.currentPeriodEnd)
       : null;
 
@@ -1463,9 +1485,11 @@ function CurrentPlanCard({
       !pauseConfirming &&
       (backing.state === 'active' || backing.state === 'past_due') ? (
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          <a className={linkStyles.link} href="#change-plan">
-            Manage plan
-          </a>
+          {!reviewPending ? (
+            <a className={linkStyles.link} href="#change-plan">
+              Manage plan
+            </a>
+          ) : null}
           {/* QA-billing-20260901-06: this opens the preview; the modal's
               own destructive confirm keeps "Cancel subscription" so the
               two clicks read as two different things — matching the
@@ -1489,6 +1513,7 @@ function CurrentPlanCard({
           would offer an undo whose only possible answer is a 409. The
           status note above names the reason instead. */}
       {!billingDark &&
+      !reviewPending &&
       backing.state === 'cancel_scheduled' &&
       backing.sub.cancelSource !== 'refund' &&
       backing.sub.cancelSource !== 'chargeback' ? (
