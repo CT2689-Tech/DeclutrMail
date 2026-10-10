@@ -10,6 +10,8 @@ import {
   assertSandboxRehearsalEnvironment,
   rehearsalCase,
   isRehearsalOperator,
+  REHEARSAL_LISTEN_PORT,
+  listenRehearsalServer,
 } from './helpers/sandbox-rehearsal-boundary.js';
 import { buildRehearsalClient } from './helpers/sandbox-rehearsal-client.js';
 import { BillingCatalog } from '../src/billing/billing-catalog.js';
@@ -651,10 +653,15 @@ try {
     fixtures[name] = { workspaceId: w!.id, userId: u!.id, stage: 'initialized' };
   }
   // Bundled and checked before any provider write below.
-  await new Promise<void>((r) => server.listen(4045, '127.0.0.1', r));
-  const unauthorized = await fetch('http://127.0.0.1:4045/state?case=monthly');
+  await listenRehearsalServer(server);
+  const localUrl = `http://127.0.0.1:${REHEARSAL_LISTEN_PORT}`;
+  evidence.phase = 'unauthenticated_probe';
+  await record();
+  const unauthorized = await fetch(localUrl + '/state?case=monthly');
   if (unauthorized.status !== 403) throw new Error('Unauthenticated state was not refused');
-  const invalidSignature = await fetch('http://127.0.0.1:4045/paddle-webhook', {
+  evidence.phase = 'signature_probe';
+  await record();
+  const invalidSignature = await fetch(localUrl + '/paddle-webhook', {
     method: 'POST',
     body: '{}',
   });

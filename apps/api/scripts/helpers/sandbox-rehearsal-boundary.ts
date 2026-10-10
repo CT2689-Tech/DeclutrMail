@@ -1,4 +1,23 @@
 import { timingSafeEqual } from 'node:crypto';
+import type { Server } from 'node:http';
+// 4045 is forbidden by WHATWG fetch (lockd); startup probes must use an allowed port.
+export const REHEARSAL_LISTEN_PORT = 4049;
+/** Reject startup failures so the caller's provider-resource cleanup always runs. */
+export async function listenRehearsalServer(server: Server): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error) => {
+      server.removeListener('listening', onListening);
+      reject(error);
+    };
+    const onListening = () => {
+      server.removeListener('error', onError);
+      resolve();
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(REHEARSAL_LISTEN_PORT, '127.0.0.1');
+  });
+}
 /** Money-path fixture boundary: never accepts live credentials or an external DB. */
 export function assertSandboxRehearsalEnvironment(env: NodeJS.ProcessEnv): void {
   if (

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { createServer } from 'node:http';
 import {
   assertSandboxRehearsalEnvironment,
   rehearsalCase,
   isRehearsalOperator,
+  REHEARSAL_LISTEN_PORT,
+  listenRehearsalServer,
 } from '../../../scripts/helpers/sandbox-rehearsal-boundary.js';
 const env = {
   GITHUB_ACTIONS: 'true',
@@ -16,6 +19,45 @@ const env = {
   REHEARSAL_PUBLIC_URL: 'https://synthetic-fixture.trycloudflare.com',
 };
 describe('sandbox financial rehearsal boundary', () => {
+  it('reaches a denied HTTP response using the configured runtime port', async () => {
+    const server = createServer((_req, res) => {
+      res.writeHead(403);
+      res.end('private_operator_required');
+    });
+    await listenRehearsalServer(server);
+    try {
+      const response = await fetch(`http://127.0.0.1:${REHEARSAL_LISTEN_PORT}/state?case=monthly`);
+      expect(response.status).toBe(403);
+      expect(await response.text()).toBe('private_operator_required');
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+  it('rejects an occupied port into cleanup instead of crashing the process', async () => {
+    const blocker = createServer();
+    await listenRehearsalServer(blocker);
+    const fixture = createServer();
+    let cleanupReached = false;
+    try {
+      await expect(
+        (async () => {
+          try {
+            await listenRehearsalServer(fixture);
+          } finally {
+            cleanupReached = true;
+          }
+        })(),
+      ).rejects.toMatchObject({ code: 'EADDRINUSE' });
+      expect(cleanupReached).toBe(true);
+      expect(fixture.listening).toBe(false);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        blocker.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
   it('accepts only the isolated sandbox context', () =>
     expect(() => assertSandboxRehearsalEnvironment(env)).not.toThrow());
   it.each([
