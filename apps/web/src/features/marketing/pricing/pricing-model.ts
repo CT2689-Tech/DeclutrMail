@@ -195,7 +195,7 @@ export const CAPABILITY_LABELS: Readonly<Record<Capability, string>> = {
   senders: 'Senders overview',
   'sender-detail': 'Sender detail',
   activity: 'Activity history',
-  'cleanup-actions': 'Cleanup actions — Keep · Archive · Unsubscribe · Later · Delete',
+  'cleanup-actions': 'Cleanup actions — Archive · Unsubscribe · Later · Delete',
   triage: 'Triage sessions',
   // ONE feature name, deliberately shared by two capabilities.
   //
@@ -270,6 +270,9 @@ export function cardBullets(tier: TierDefinition): readonly string[] {
     bullets.push(`${tier.undoWindowDays}-day Activity Undo for Archive, Later, and Delete`);
   }
 
+  if (tier.id === SELECTOR_TIERS['sender-filter']) {
+    bullets.push('All-matching cleanup — act on every sender matching your filters');
+  }
   return out;
 }
 

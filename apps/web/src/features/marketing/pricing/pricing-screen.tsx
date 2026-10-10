@@ -21,6 +21,14 @@ import { useConsentedPageView } from '../use-consented-page-view';
 
 // The shared safety summary, one fact per line. Split, never reworded:
 // the sentence text stays the shared constant's.
+import {
+  CLEANUP_COUNT_NOTE,
+  CLEANUP_RESET_NOTE,
+  CHECKOUT_TOTAL_NOTE,
+  PROVIDER_SWITCH_NOTE,
+  RAZORPAY_LIMITATIONS_NOTE,
+} from '@/features/billing/billing-copy';
+
 const SAFETY_FACTS = ACTION_SAFETY_SUMMARY.split(/(?<=\.)\s+/);
 
 // The refund line is the FAQ's own first sentence, so /pricing and /faq
@@ -111,8 +119,21 @@ export function PricingScreen() {
               hero paragraph and the FAQ — no new claims. */}
           <li>
             Free includes every manual cleanup action, capped monthly. Reaching the cap pauses
-            Archive, Unsubscribe, Later, and Delete until the next month or an upgrade; Keep always
+            Archive, Unsubscribe, Later, and Delete until your next reset or an upgrade; Keep always
             keeps working.
+          </li>
+          <li>{CLEANUP_COUNT_NOTE}</li>
+          <li>{CLEANUP_RESET_NOTE}</li>
+          <li>
+            {CHECKOUT_TOTAL_NOTE} Choose USD/Paddle or INR/Razorpay where both are available; these
+            are independently set prices.
+          </li>
+          <li>
+            {RAZORPAY_LIMITATIONS_NOTE} {PROVIDER_SWITCH_NOTE}
+          </li>
+          <li>
+            After a downgrade, existing connected inboxes keep working; you cannot add another while
+            above your plan’s inbox limit.
           </li>
           {SAFETY_FACTS.map((fact) => (
             <li key={fact}>{fact}</li>

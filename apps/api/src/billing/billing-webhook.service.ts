@@ -866,7 +866,8 @@ export class BillingWebhookService {
   ): Promise<WebhookProcessOutcome> {
     // Founder rules (2026-07-20, implemented 0051): a CHARGEBACK
     // revokes entitlement immediately and sticks; a voluntary REFUND
-    // holds to period end, then drops. Both are LOCAL verdicts —
+    // holds only while settlement is pending (bounded by the refund deadline),
+    // then ends access at settlement. Both are LOCAL verdicts —
     // `cancel_source` marks them so the next subscription.* payload
     // cannot re-grant what the provenance says is ending.
     const outcome = await this.db.transaction(async (tx) => {

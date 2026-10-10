@@ -1,3 +1,10 @@
+import {
+  CLEANUP_COUNT_NOTE,
+  CLEANUP_RESET_NOTE,
+  BILLING_MANAGEMENT_NOTE,
+  PROVIDER_SWITCH_NOTE,
+  RAZORPAY_LIMITATIONS_NOTE,
+} from '@/features/billing/billing-copy';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
@@ -122,12 +129,27 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
   {
     id: 'plans',
     question: 'What changes between Free, Plus, and Pro?',
-    answer: `Free supports ${TIER_MANIFEST.free.inboxLimit} inbox with Senders, Triage, Later, bulk actions, and Activity, limited to ${TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions a month. Plus removes the monthly limit and adds the Screener, Autopilot rules that keep working on their own, and Quiet hours. Pro adds more connected inboxes and the two attention surfaces, Brief and Follow-ups. Use the pricing page for current plan details.`,
+    answer: `Free supports ${TIER_MANIFEST.free.inboxLimit} inbox with Senders, Triage, Later, bulk actions, and Activity, limited to ${TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions a month. Plus removes the monthly limit and adds the Screener, Autopilot rules that keep working on their own, and Quiet hours. Pro supports ${TIER_MANIFEST.pro.inboxLimit} connected inboxes, all-matching cleanup across filtered senders, Daily Brief, and Follow-ups. Use the pricing page for current plan details.`,
     link: {
       href: '/pricing',
       label: 'Compare current plans',
       description: 'Prices, limits, and feature rows.',
     },
+  },
+  {
+    id: 'cleanup-counting',
+    question: 'What counts as a cleanup action, and when does Free reset?',
+    answer: `${CLEANUP_COUNT_NOTE} ${CLEANUP_RESET_NOTE}`,
+  },
+  {
+    id: 'billing-management',
+    question: 'How do I cancel, update my payment method, or get an invoice?',
+    answer: `${BILLING_MANAGEMENT_NOTE} ${RAZORPAY_LIMITATIONS_NOTE}`,
+  },
+  {
+    id: 'billing-currency',
+    question: 'Can I choose or switch billing currency?',
+    answer: `Checkout lets you choose USD/Paddle or INR/Razorpay when both are available for your selected plan. INR prices are independently set, not converted from USD. ${PROVIDER_SWITCH_NOTE}`,
   },
   {
     id: 'disconnect-delete',

@@ -43,8 +43,7 @@ export function BillingCurrencyProvider({
  *
  * Callers pass it to `quotedPlanPrice` / `currencyForPricePoint`, which
  * clamp per PRICE POINT: preferring Razorpay does not mean a given plan
- * is purchasable on it (India is deferred; every `razorpayPlanId` is
- * null today), and quoting INR for a point that checkout will charge in
+ * is purchasable on it; provisioning is specific to each price point. Quoting INR for a point that checkout will charge in
  * USD is the defect this indirection exists to prevent.
  *
  * Defaults to Paddle outside a provider — Storybook, tests, and any

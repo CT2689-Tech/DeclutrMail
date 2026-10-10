@@ -8,7 +8,6 @@ import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
 
 import {
   canUseActionSelector,
-  multiSenderPlanName,
   canBulkArchive,
   canBulkDelete,
   canBulkLater,
@@ -88,7 +87,7 @@ export function SelectionBar({
         fontSize: text.sm,
       }}
     >
-      Multi-sender actions require {multiSenderPlanName()}.
+      This selection is not included in your plan.
       <Link
         href="/billing"
         style={{
@@ -163,7 +162,7 @@ export function SelectionBar({
         aria-label={unitTitle}
         title={
           !entitled
-            ? `${label} — ${multiSenderPlanName()} required for multi-sender actions`
+            ? `${label} — this selection is not included in your plan`
             : shortcut
               ? `${unitTitle} (${shortcut})`
               : unitTitle
