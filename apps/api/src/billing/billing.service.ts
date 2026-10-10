@@ -54,6 +54,8 @@ import { BillingReconciliationService } from './billing-reconciliation.service.j
 import { GRANTING_STATUSES, lockSubscription } from './billing-webhook.service.js';
 import { PaddleAdapter } from './paddle.adapter.js';
 import { RazorpayAdapter } from './razorpay.adapter.js';
+import { hasUnresolvedUpgrade } from './upgrade-intents.js';
+import { BillingUpgradeRefundService } from './billing-upgrade-refund.service.js';
 
 /** 0051 — pending-checkout display/lock horizon. */
 const PENDING_CHECKOUT_TTL_MS = 30 * 60 * 1000;
@@ -82,6 +84,7 @@ export class BillingService {
     private readonly paddle: PaddleAdapter,
     private readonly razorpay: RazorpayAdapter,
     private readonly reconciliation: BillingReconciliationService,
+    private readonly upgrades: BillingUpgradeRefundService,
   ) {}
 
   private adapterFor(provider: 'paddle' | 'razorpay'): BillingProvider {
@@ -403,7 +406,15 @@ export class BillingService {
     // inserted anywhere but the end of the enum.
     const grant = await highestLiveGrantForWorkspace(this.db, workspaceId);
 
+    const billingReviewPending = (
+      await Promise.all(
+        rows
+          .filter((r) => r.provider === 'paddle')
+          .map((r) => hasUnresolvedUpgrade(this.db, r.providerSubscriptionId)),
+      )
+    ).some(Boolean);
     return {
+      ...(billingReviewPending ? { billingReviewPending: true } : {}),
       tier: ws.tier,
       foundingMember: ws.foundingMember,
       pendingCheckout,
@@ -557,6 +568,7 @@ export class BillingService {
         id: subscriptions.id,
         provider: subscriptions.provider,
         providerSubscriptionId: subscriptions.providerSubscriptionId,
+        updatedAt: subscriptions.updatedAt,
         cancelAtPeriodEnd: subscriptions.cancelAtPeriodEnd,
         cancelSource: subscriptions.cancelSource,
       })
@@ -586,13 +598,55 @@ export class BillingService {
       throw new AppException({ code: 'CANCELLATION_NOT_REVOCABLE' });
     }
 
+    const [cancelBoundary] = await this.db
+      .select({ seq: sql<number>`COALESCE(max(${subscriptionEvents.arrivalSeq}), 0)::int` })
+      .from(subscriptionEvents)
+      .where(
+        and(
+          eq(subscriptionEvents.provider, sub.provider),
+          eq(subscriptionEvents.eventType, 'local.cancellation_requested'),
+          sql`${subscriptionEvents.payload}->>'provider_subscription_id' = ${sub.providerSubscriptionId}`,
+        ),
+      );
+
     // Provider call IS the confirmation — only a successful revoke lets
     // the local row claim the renewal is back on.
-    await this.adapterFor(sub.provider).clearScheduledCancellation(sub.providerSubscriptionId);
+    if (sub.provider === 'paddle')
+      await this.upgrades.mutation(sub.providerSubscriptionId, sub.updatedAt, 'uncancel', () =>
+        this.paddle.clearScheduledCancellation(sub.providerSubscriptionId),
+      );
+    else await this.adapterFor(sub.provider).clearScheduledCancellation(sub.providerSubscriptionId);
 
     const now = new Date();
     await this.db.transaction(async (tx) => {
       await lockSubscription(tx, sub.provider, sub.providerSubscriptionId);
+      if (sub.provider === 'paddle')
+        await this.upgrades.assertNoPending(sub.providerSubscriptionId, tx);
+      const [newStop] = await tx
+        .select({ id: subscriptionEvents.id })
+        .from(subscriptionEvents)
+        .where(
+          and(
+            eq(subscriptionEvents.provider, sub.provider),
+            eq(subscriptionEvents.eventType, 'local.cancellation_requested'),
+            sql`${subscriptionEvents.payload}->>'provider_subscription_id' = ${sub.providerSubscriptionId}`,
+            sql`${subscriptionEvents.arrivalSeq} > ${cancelBoundary!.seq}`,
+          ),
+        )
+        .limit(1);
+      if (newStop) throw new AppException({ code: 'PLAN_CHANGE_PENDING' });
+      const [current] = await tx
+        .select({ cancelSource: subscriptions.cancelSource, status: subscriptions.status })
+        .from(subscriptions)
+        .where(eq(subscriptions.id, sub.id));
+      if (
+        !current ||
+        current.cancelSource === 'refund' ||
+        current.cancelSource === 'chargeback' ||
+        !['active', 'past_due'].includes(current.status)
+      ) {
+        throw new AppException({ code: 'CANCELLATION_NOT_REVOCABLE' });
+      }
       // `cancel_at_period_end` ONLY — the exact inverse of what
       // `cancelAtPeriodEnd()` writes. Deliberately NOT `cancel_source`:
       // that column is never set by a user cancel (its enum is
@@ -648,6 +702,7 @@ export class BillingService {
         id: subscriptions.id,
         provider: subscriptions.provider,
         providerSubscriptionId: subscriptions.providerSubscriptionId,
+        updatedAt: subscriptions.updatedAt,
         status: subscriptions.status,
         cancelAtPeriodEnd: subscriptions.cancelAtPeriodEnd,
       })
@@ -674,10 +729,15 @@ export class BillingService {
     }
 
     const resumeAt = new Date(Date.now() + PAUSE_DAYS * 24 * 60 * 60 * 1000);
-    await this.adapterFor(sub.provider).pauseSubscription(
-      sub.providerSubscriptionId,
-      resumeAt.toISOString(),
-    );
+    if (sub.provider === 'paddle')
+      await this.upgrades.mutation(sub.providerSubscriptionId, sub.updatedAt, 'pause', () =>
+        this.paddle.pauseSubscription(sub.providerSubscriptionId, resumeAt.toISOString()),
+      );
+    else
+      await this.adapterFor(sub.provider).pauseSubscription(
+        sub.providerSubscriptionId,
+        resumeAt.toISOString(),
+      );
 
     // NOTHING about the pause is written locally — not `status`, and not
     // `pause_until` either. An earlier revision wrote `pause_until` here
@@ -698,6 +758,8 @@ export class BillingService {
     const now = new Date();
     await this.db.transaction(async (tx) => {
       await lockSubscription(tx, sub.provider, sub.providerSubscriptionId);
+      if (sub.provider === 'paddle')
+        await this.upgrades.assertNoPending(sub.providerSubscriptionId, tx);
       await tx
         .insert(subscriptionEvents)
         .values({
@@ -760,6 +822,7 @@ export class BillingService {
         scheduledChangeAt: subscriptions.scheduledChangeAt,
         scheduledChangeState: subscriptions.scheduledChangeState,
         scheduledChangeRequestedAt: subscriptions.scheduledChangeRequestedAt,
+        updatedAt: subscriptions.updatedAt,
       })
       .from(subscriptions)
       .where(
@@ -773,6 +836,7 @@ export class BillingService {
     if (!sub) {
       throw new AppException({ code: 'NO_ACTIVE_SUBSCRIPTION' });
     }
+    if (sub.provider === 'paddle') await this.upgrades.assertNoPending(sub.providerSubscriptionId);
     if (sub.status === 'paused') {
       throw new AppException({ code: 'SUBSCRIPTION_PAUSED' });
     }
@@ -875,6 +939,8 @@ export class BillingService {
       const now = new Date();
       await this.db.transaction(async (tx) => {
         await lockSubscription(tx, sub.provider, sub.providerSubscriptionId);
+        if (sub.provider === 'paddle')
+          await this.upgrades.assertNoPending(sub.providerSubscriptionId, tx);
         // State guard: a webhook may have applied/cleared the schedule
         // between the pre-transaction read and this claim. Without it,
         // this partial write would trip the all-or-nothing CHECK — and
@@ -891,6 +957,7 @@ export class BillingService {
             and(
               eq(subscriptions.id, sub.id),
               sql`${subscriptions.scheduledChangeState} IS NOT NULL`,
+              eq(subscriptions.updatedAt, sub.updatedAt),
             ),
           )
           .returning({ id: subscriptions.id });
@@ -927,6 +994,8 @@ export class BillingService {
             : providerConfirmedAt;
           await this.db.transaction(async (tx) => {
             await lockSubscription(tx, sub.provider, sub.providerSubscriptionId);
+            if (sub.provider === 'paddle')
+              await this.upgrades.assertNoPending(sub.providerSubscriptionId, tx);
             const cleared = await tx
               .update(subscriptions)
               .set({
@@ -1033,6 +1102,8 @@ export class BillingService {
       if (sub.scheduledChangeState !== null) {
         await this.db.transaction(async (tx) => {
           await lockSubscription(tx, sub.provider, sub.providerSubscriptionId);
+          if (sub.provider === 'paddle')
+            await this.upgrades.assertNoPending(sub.providerSubscriptionId, tx);
           if (!sub.scheduledChangeRequestedAt)
             throw new AppException({ code: 'PLAN_CHANGE_PENDING' });
           const [pending] = await tx
@@ -1054,6 +1125,8 @@ export class BillingService {
         const now = new Date();
         await this.db.transaction(async (tx) => {
           await lockSubscription(tx, sub.provider, sub.providerSubscriptionId);
+          if (sub.provider === 'paddle')
+            await this.upgrades.assertNoPending(sub.providerSubscriptionId, tx);
           const claimed = await tx
             .update(subscriptions)
             .set({
@@ -1066,7 +1139,11 @@ export class BillingService {
               updatedAt: now,
             })
             .where(
-              and(eq(subscriptions.id, sub.id), sql`${subscriptions.scheduledChangeState} IS NULL`),
+              and(
+                eq(subscriptions.id, sub.id),
+                eq(subscriptions.updatedAt, sub.updatedAt),
+                sql`${subscriptions.scheduledChangeState} IS NULL`,
+              ),
             )
             .returning({ id: subscriptions.id });
           if (claimed.length === 0) {
@@ -1153,9 +1230,10 @@ export class BillingService {
 
     // Provider call IS the immediate upgrade — Paddle applies it
     // synchronously and the webhook merely confirms.
-    await this.adapterFor(sub.provider).changePlan(sub.providerSubscriptionId, priceId, {
-      kind: 'immediate_prorated',
-    });
+    await this.upgrades.upgrade(
+      { ...sub, workspaceId: principal.workspaceId },
+      { priceId, tier: dto.tierId, cycle: dto.cycle },
+    );
 
     this.logger.log(
       `billing.plan_change_requested workspace=${principal.workspaceId} provider=${sub.provider} from=${sub.tier}/${sub.billingCycle} to=${dto.tierId}/${dto.cycle}`,
@@ -1192,6 +1270,7 @@ export class BillingService {
       .select({
         provider: subscriptions.provider,
         providerSubscriptionId: subscriptions.providerSubscriptionId,
+        updatedAt: subscriptions.updatedAt,
         cancelSource: subscriptions.cancelSource,
       })
       .from(subscriptions)
@@ -1241,7 +1320,11 @@ export class BillingService {
       throw new AppException({ code: 'SUBSCRIPTION_EXISTS' });
     }
 
-    await this.adapterFor(sub.provider).resumeSubscription(sub.providerSubscriptionId);
+    if (sub.provider === 'paddle')
+      await this.upgrades.mutation(sub.providerSubscriptionId, sub.updatedAt, 'resume', () =>
+        this.paddle.resumeSubscription(sub.providerSubscriptionId),
+      );
+    else await this.adapterFor(sub.provider).resumeSubscription(sub.providerSubscriptionId);
 
     this.logger.log(
       `billing.resume_requested workspace=${principal.workspaceId} provider=${sub.provider}`,

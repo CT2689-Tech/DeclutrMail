@@ -132,6 +132,8 @@ export type CheckoutSession = z.infer<typeof CheckoutSessionSchema>;
  * cancellation).
  */
 export const BillingSubscriptionSchema = z.object({
+  /** Durable provider verification/support barrier; optional during rolling deploys. */
+  billingReviewPending: z.boolean().optional(),
   tier: z.enum(['free', 'plus', 'pro', 'team', 'enterprise']),
   foundingMember: z.boolean(),
   subscription: z

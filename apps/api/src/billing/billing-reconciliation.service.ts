@@ -39,7 +39,7 @@ import { createHash } from 'node:crypto';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, asc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
-import { pendingCheckouts, subscriptions, users } from '@declutrmail/db';
+import { pendingCheckouts, subscriptions, subscriptionEvents, users } from '@declutrmail/db';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
@@ -48,11 +48,13 @@ import {
   type BillingProvider,
   type NormalizedBillingEvent,
   type NormalizedSubscription,
+  type ProviderCancellationFacts,
 } from './billing-provider.interface.js';
 import { BillingCatalog } from './billing-catalog.js';
 import { BillingWebhookService, GRANTING_STATUSES } from './billing-webhook.service.js';
 import { PaddleAdapter } from './paddle.adapter.js';
 import { RazorpayAdapter } from './razorpay.adapter.js';
+import { upgradeRecords } from './upgrade-intents.js';
 
 /** Outcome of an on-demand pending-checkout reconciliation. */
 export type PendingReconcileOutcome =
@@ -286,7 +288,7 @@ export class BillingReconciliationService {
    */
   private warnIfCapped(
     rowCount: number,
-    pass: 'verdict' | 'refund_watch',
+    pass: 'verdict' | 'refund_watch' | 'upgrade_refund',
     slice: { buckets: number; total: number },
   ): void {
     if (rowCount < VERDICT_PASS_MAX_ROWS) return;
@@ -613,6 +615,7 @@ export class BillingReconciliationService {
    * without an outbound call inside the webhook transaction.
    */
   async enforceLocalVerdicts(runIndex: number): Promise<VerdictPassResult> {
+    await this.enforceUpgradeRefunds(runIndex);
     const eligible = or(
       and(
         inArray(subscriptions.cancelSource, ['refund', 'chargeback']),
@@ -732,6 +735,8 @@ export class BillingReconciliationService {
         // Both reads landed — the provider is genuinely reachable, so the
         // consecutive-failure streak is broken.
         consecutiveErrors[row.provider] = 0;
+        if (row.provider === 'paddle')
+          await this.projectUpgradeRefunds(row.providerSubscriptionId, facts);
 
         // Approval webhooks can free the local slot before this sweep runs.
         // Keep that row terminal and the repurchase separate, but still stop
@@ -948,6 +953,68 @@ export class BillingReconciliationService {
     );
   }
 
+  private async projectUpgradeRefunds(
+    subscriptionId: string,
+    facts: ProviderCancellationFacts,
+  ): Promise<void> {
+    if ((await upgradeRecords(this.db, subscriptionId)).length > 0)
+      await this.webhookService.recoverUpgradeOperation(subscriptionId);
+    for (const reference of facts.upgradeRefunds ?? []) {
+      const enabled = process.env.BILLING_UPGRADE_REFUND_RESTORE_ENABLED === 'true';
+      const base = {
+        providerEventId: `recon:upgrade-refund:${reference.adjustmentId}:${reference.status}:${enabled ? 'restore' : 'hold'}`,
+        eventType: 'reconciliation.upgrade_refund',
+        providerSubscriptionId: subscriptionId,
+        refundReference: {
+          adjustmentId: reference.adjustmentId,
+          transactionId: reference.transactionId,
+        },
+      };
+      const event: NormalizedBillingEvent =
+        reference.status === 'approved'
+          ? { ...base, kind: 'refund_settled' }
+          : reference.status === 'rejected'
+            ? { ...base, kind: 'cancellation_revoked', reason: 'refund_rejected' }
+            : { ...base, kind: 'cancellation_scheduled', reason: 'refund' };
+      await this.webhookService.process('paddle', event, { occurred_at: new Date().toISOString() });
+    }
+  }
+
+  /** Recovery for lost upgrade-adjustment webhooks. Only subscriptions with
+   * durable new-policy intent/review evidence are enrolled; no historic backfill. */
+  private async enforceUpgradeRefunds(runIndex: number): Promise<void> {
+    const eligible = and(
+      eq(subscriptions.provider, 'paddle'),
+      sql`EXISTS (SELECT 1 FROM ${subscriptionEvents} WHERE ${subscriptionEvents.provider}='paddle' AND ${subscriptionEvents.eventType} IN ('local.upgrade_requested','local.upgrade_refund_held') AND ${subscriptionEvents.payload}->>'provider_subscription_id'=${subscriptions.providerSubscriptionId})`,
+    )!;
+    const slice = await this.bucketPredicate(eligible, runIndex);
+    const rows = await this.db
+      .select({ id: subscriptions.providerSubscriptionId })
+      .from(subscriptions)
+      .where(slice.predicate ? and(eligible, slice.predicate) : eligible)
+      .orderBy(RANDOM_ROW_ORDER)
+      .limit(VERDICT_PASS_MAX_ROWS);
+    this.warnIfCapped(rows.length, 'upgrade_refund', slice);
+    let failures = 0;
+    for (const row of rows) {
+      if (failures >= DRIFT_SWEEP_TRIP_AFTER) break;
+      try {
+        const facts = await this.paddle.providerCancellationFacts(row.id);
+        if (!facts) {
+          failures += 1;
+          continue;
+        }
+        await this.projectUpgradeRefunds(row.id, facts);
+        failures = 0;
+      } catch {
+        failures += 1;
+        this.logger.warn(
+          `billing.reconcile.upgrade_refund_unavailable sub=${row.id} — no financial outcome asserted`,
+        );
+      }
+    }
+  }
+
   /**
    * Keep watching a row we locally canceled on a settled refund, until
    * the PROVIDER agrees it is terminal (D253).
@@ -1111,6 +1178,18 @@ export class BillingReconciliationService {
       if (checked === 'granted') projected = true;
       else if (checked === 'provider_error') providerError = true;
       else if (checked === 'unreadable') unreadable = true;
+      if (
+        row.provider === 'paddle' &&
+        (await upgradeRecords(this.db, row.providerSubscriptionId)).length > 0
+      ) {
+        try {
+          const facts = await this.paddle.providerCancellationFacts(row.providerSubscriptionId);
+          if (facts) await this.projectUpgradeRefunds(row.providerSubscriptionId, facts);
+          else providerError = true;
+        } catch {
+          providerError = true;
+        }
+      }
     }
     if (hint?.tier && hint.cycle) {
       // The hint gates EVERY outcome, not just the unchanged branch: a

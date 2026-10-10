@@ -50,6 +50,7 @@ export function CancelModal({
   onConfirm,
   isCanceling,
   cancelError,
+  billingReviewPending = false,
   onPause,
   isPausing,
   pauseError,
@@ -67,6 +68,8 @@ export function CancelModal({
   onConfirm: (reason: CancelReason | undefined) => void;
   isCanceling: boolean;
   cancelError: string | null;
+  /** Cancellation remains available while other billing changes require support. */
+  billingReviewPending?: boolean;
   /** D118 — "Pause for 30 days" instead of cancelling. */
   onPause: () => void;
   isPausing: boolean;
@@ -89,7 +92,11 @@ export function CancelModal({
   const end = formatBillingDate(sub.currentPeriodEnd);
   // Mirrors `BillingService.pauseForThirtyDays`'s guards exactly, so the
   // offer never renders on a subscription the API would refuse.
-  const canPause = sub.provider === 'paddle' && sub.status === 'active' && !sub.cancelAtPeriodEnd;
+  const canPause =
+    !billingReviewPending &&
+    sub.provider === 'paddle' &&
+    sub.status === 'active' &&
+    !sub.cancelAtPeriodEnd;
 
   // Each fact its own element — they are read (and pinned) one by one.
   const periodEnd = backsEntitlement ? (

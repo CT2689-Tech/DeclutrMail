@@ -251,3 +251,37 @@ export function razorpaySubscriptionEvent(args: {
     created_at: 1781430100,
   };
 }
+import type { UpgradeRefundPolicy } from '../upgrade-refund.types.js';
+import type { BillingProvider } from '../billing-provider.interface.js';
+import type { BillingUpgradeRefundService } from '../billing-upgrade-refund.service.js';
+
+/** Ordinary refund fixtures exercise the pre-existing projector; exact
+ * upgrade-charge classification has separate real-policy integration tests. */
+export const ordinaryRefundPolicy: UpgradeRefundPolicy = {
+  observeCompletedTransaction: async () => undefined,
+  confirmProjectedRestoration: async () => false,
+  resolve: async () => ({ kind: 'ordinary' }),
+};
+
+/** Thin BillingService tests isolate its orchestration from the durable
+ * upgrade policy. Policy capture/barriers are exercised in its own suite. */
+export function legacyUpgradePolicy(
+  adapter: Pick<BillingProvider, 'changePlan'>,
+): BillingUpgradeRefundService {
+  return {
+    assertNoPending: async () => undefined,
+    mutation: async (
+      _id: string,
+      _revision: Date,
+      _operation: string,
+      action: () => Promise<unknown>,
+    ) => {
+      await action();
+    },
+    upgrade: async (source: { providerSubscriptionId: string }, target: { priceId: string }) => {
+      await adapter.changePlan(source.providerSubscriptionId, target.priceId, {
+        kind: 'immediate_prorated',
+      });
+    },
+  } as unknown as BillingUpgradeRefundService;
+}

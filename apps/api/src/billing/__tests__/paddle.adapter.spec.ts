@@ -521,9 +521,33 @@ describe('PaddleAdapter checkout + cancel', () => {
   // test here.
   describe('providerCancellationFacts', () => {
     const adjustmentsBody = (rows: unknown[]) =>
-      new Response(JSON.stringify({ data: rows }), { status: 200 });
+      new Response(JSON.stringify({ data: rows, meta: { pagination: { has_more: false } } }), {
+        status: 200,
+      });
     const facts = (rows: unknown[]) => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(adjustmentsBody(rows)));
+      const identified = rows.map((row, i) => ({
+        ...(row as Record<string, unknown>),
+        id: `adj_fixture_${i}`,
+        transaction_id: `txn_fixture_${i}`,
+      }));
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string) =>
+          url.includes('/transactions/')
+            ? new Response(
+                JSON.stringify({
+                  data: {
+                    id: url.split('/').pop(),
+                    subscription_id: 'sub_x',
+                    origin: 'subscription_recurring',
+                    status: 'completed',
+                    details: { totals: { grand_total: '900' } },
+                  },
+                }),
+              )
+            : adjustmentsBody(identified),
+        ),
+      );
       return makeAdapter({ PADDLE_API_KEY: 'k' }).providerCancellationFacts('sub_x');
     };
     const FULL = [{ type: 'full' }];
@@ -710,6 +734,44 @@ describe('PaddleAdapter checkout + cancel', () => {
       const nextUrl = (after: string) =>
         `https://sandbox-api.paddle.com/adjustments?subscription_id=sub_x&per_page=50&after=${after}`;
 
+      it.each([undefined, {}, { has_more: 'false' }])(
+        'refuses an incomplete absence proof %j',
+        async (pagination) => {
+          vi.stubGlobal(
+            'fetch',
+            vi.fn().mockResolvedValue(page([], pagination as Record<string, unknown>)),
+          );
+          expect(
+            await makeAdapter({ PADDLE_API_KEY: 'k' }).providerCancellationFacts('sub_x'),
+          ).toBeNull();
+        },
+      );
+      it('keeps the original subscription filter on a hostile or incomplete cursor', async () => {
+        const calls: string[] = [];
+        vi.stubGlobal(
+          'fetch',
+          vi.fn(async (input) => {
+            const url = new URL(String(input));
+            calls.push(String(input));
+            expect(url.host).toBe('sandbox-api.paddle.com');
+            expect(url.searchParams.get('subscription_id')).toBe('sub_x');
+            expect(url.searchParams.get('per_page')).toBe('50');
+            expect(url.searchParams.has('action')).toBe(false);
+            expect(url.searchParams.has('status')).toBe(false);
+            return calls.length === 1
+              ? page([], {
+                  has_more: true,
+                  next: 'https://wrong.example/adjustments?subscription_id=sub_other&after=cursor&action=refund&status=approved',
+                })
+              : page([], { has_more: false });
+          }),
+        );
+        expect(
+          await makeAdapter({ PADDLE_API_KEY: 'k' }).providerCancellationFacts('sub_x'),
+        ).toEqual({ settled: null, refuted: { refund: false, chargeback: false } });
+        expect(calls).toHaveLength(2);
+      });
+
       it('walks past page one — a chargeback on page two is still settled', async () => {
         const calls: string[] = [];
         vi.stubGlobal(
@@ -783,18 +845,42 @@ describe('PaddleAdapter checkout + cancel', () => {
         warnSpy.mockRestore();
       });
 
-      it('a single page is one call — no speculative second read', async () => {
-        const fetchSpy = vi
-          .fn()
-          .mockResolvedValue(
-            adjustmentsBody([{ action: 'refund', status: 'approved', items: FULL }]),
-          );
-        vi.stubGlobal('fetch', fetchSpy);
-
+      it('reads one adjustment page and the exact transaction, without speculative paging', async () => {
+        const calls: string[] = [];
+        vi.stubGlobal(
+          'fetch',
+          vi.fn(async (url: string) => {
+            calls.push(url);
+            return url.includes('/transactions/')
+              ? new Response(
+                  JSON.stringify({
+                    data: {
+                      id: 'txn_ordinary',
+                      subscription_id: 'sub_x',
+                      origin: 'subscription_recurring',
+                      status: 'completed',
+                      details: { totals: { grand_total: '900' } },
+                    },
+                  }),
+                )
+              : adjustmentsBody([
+                  {
+                    id: 'adj_ordinary',
+                    transaction_id: 'txn_ordinary',
+                    action: 'refund',
+                    status: 'approved',
+                    items: FULL,
+                  },
+                ]);
+          }),
+        );
         expect(
           await makeAdapter({ PADDLE_API_KEY: 'k' }).providerCancellationFacts('sub_x'),
         ).toEqual({ settled: 'refund', refuted: { refund: false, chargeback: false } });
-        expect(fetchSpy).toHaveBeenCalledTimes(1);
+        expect(calls).toEqual([
+          'https://sandbox-api.paddle.com/adjustments?subscription_id=sub_x&per_page=50',
+          'https://sandbox-api.paddle.com/transactions/txn_ordinary',
+        ]);
       });
     });
   });
@@ -1079,6 +1165,294 @@ describe('PaddleAdapter checkout + cancel', () => {
     await expect(adapter.resumeSubscription('sub_expired_pause')).rejects.toMatchObject({
       code: 'RESUME_PERIOD_ENDED',
     });
+  });
+});
+
+describe('PaddleAdapter exact upgrade-charge evidence', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const start = '2026-10-10T11:59:58.000Z',
+    end = '2026-10-10T11:59:59.000Z';
+  const intent = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    sub = 'sub_exact';
+  it.each([
+    { type: 'full', items: [{ type: 'partial' }], full: true },
+    { type: 'partial', items: [{ type: 'full' }], full: false },
+    { type: 'partial', items: [{ type: 'tax' }], full: false },
+    { items: [], full: null },
+  ])('requires explicit full adjustment coverage: %j', async ({ full, ...coverage }) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'adj_exact',
+              transaction_id: 'txn_exact',
+              subscription_id: sub,
+              action: 'refund',
+              status: 'approved',
+              ...coverage,
+            },
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    const result = await makeAdapter({
+      PADDLE_API_KEY: 'sandbox-fixture',
+      PADDLE_ENV: 'sandbox',
+    }).readRefundAdjustment({ adjustmentId: 'adj_exact', transactionId: 'txn_exact' }, sub);
+    expect(result).toEqual({ status: 'approved', full });
+  });
+  function rawTransaction(id = 'txn_exact', status = 'completed') {
+    const signature = createHmac('sha256', SECRET)
+      .update(`paddle:upgrade:${intent}:${WORKSPACE}:${sub}:pri_target`)
+      .digest('hex');
+    return {
+      id,
+      subscription_id: sub,
+      origin: 'subscription_update',
+      status,
+      created_at: '2026-10-10T11:59:58.500Z',
+      custom_data: {
+        workspace_id: WORKSPACE,
+        sig: createHmac('sha256', SECRET).update(`paddle:workspace:${WORKSPACE}`).digest('hex'),
+        upgrade_intent_id: intent,
+        upgrade_price_id: 'pri_target',
+        upgrade_sig: signature,
+      },
+      details: {
+        totals: { grand_total: '1000' },
+        line_items: [
+          {
+            price_id: 'pri_target',
+            quantity: 1,
+            totals: { total: '1900' },
+            proration: {
+              rate: '0.9',
+              billing_period: {
+                starts_at: '2026-10-10T11:59:58.500Z',
+                ends_at: '2026-11-09T12:00:00.000Z',
+              },
+            },
+          },
+          {
+            price_id: 'pri_base',
+            quantity: -1,
+            totals: { total: '-900' },
+            proration: {
+              rate: '0.9',
+              billing_period: {
+                starts_at: '2026-10-10T11:59:58.500Z',
+                ends_at: '2026-11-09T12:00:00.000Z',
+              },
+            },
+          },
+        ],
+      },
+    };
+  }
+  function install(
+    rows: Array<{ id: string; status?: string }>,
+    pagination = { has_more: false, next: '' },
+  ) {
+    const fetchMock = vi.fn().mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === '/transactions')
+        return new Response(JSON.stringify({ data: rows, meta: { pagination } }), { status: 200 });
+      const id = url.pathname.split('/').at(-1)!;
+      return new Response(
+        JSON.stringify({ data: rawTransaction(id, rows.find((r) => r.id === id)?.status) }),
+        { status: 200 },
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+  it('verifies both signatures and exposes only explicit prorated debit/credit metadata', async () => {
+    install([{ id: 'txn_exact' }]);
+    const value = await makeAdapter({
+      PADDLE_API_KEY: 'sandbox-fixture',
+      PADDLE_ENV: 'sandbox',
+    }).readRefundTransaction('txn_exact');
+    expect(value).toMatchObject({
+      upgradeIntentId: intent,
+      upgradePriceId: 'pri_target',
+      positiveCharge: true,
+      lines: [
+        { priceId: 'pri_target', quantity: 1, total: '1900' },
+        { priceId: 'pri_base', quantity: -1, total: '-900' },
+      ],
+    });
+    expect(value).not.toHaveProperty('custom_data');
+    expect(value).not.toHaveProperty('workspace_id');
+  });
+  it('does not accept a tampered intent even with the original workspace signature', async () => {
+    const t = rawTransaction();
+    t.custom_data.upgrade_intent_id = 'tampered';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: t }), { status: 200 })),
+    );
+    expect(
+      await makeAdapter({
+        PADDLE_API_KEY: 'sandbox-fixture',
+        PADDLE_ENV: 'sandbox',
+      }).readRefundTransaction(t.id),
+    ).toMatchObject({ upgradeIntentId: null, upgradePriceId: null });
+  });
+  it('worker without HMAC cannot turn an upgrade refund into a whole-plan cancellation', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async (input) => {
+        const url = new URL(String(input));
+        return new Response(
+          JSON.stringify(
+            url.pathname === '/adjustments'
+              ? {
+                  data: [
+                    {
+                      id: 'adj_exact',
+                      transaction_id: 'txn_exact',
+                      action: 'refund',
+                      type: 'full',
+                      status: 'approved',
+                      subscription_id: sub,
+                    },
+                  ],
+                  meta: { pagination: { has_more: false, next: '' } },
+                }
+              : { data: rawTransaction() },
+          ),
+        );
+      }),
+    );
+    const worker = makeAdapter({
+      PADDLE_API_KEY: 'sandbox-fixture',
+      PADDLE_ENV: 'sandbox',
+      PADDLE_WEBHOOK_SECRET: '',
+    });
+    expect(await worker.readRefundTransaction('txn_exact')).toMatchObject({
+      origin: 'subscription_update',
+      upgradeIntentId: null,
+    });
+    expect(await worker.providerCancellationFacts(sub)).toMatchObject({
+      settled: null,
+      upgradeRefunds: [
+        { adjustmentId: 'adj_exact', transactionId: 'txn_exact', status: 'approved' },
+      ],
+    });
+  });
+  it('discovers one exact transaction inside frozen filters without a status filter', async () => {
+    const fetchMock = install([{ id: 'txn_exact' }]);
+    const found = await makeAdapter({
+      PADDLE_API_KEY: 'sandbox-fixture',
+      PADDLE_ENV: 'sandbox',
+    }).discoverUpgradeTransaction(sub, intent, start, end);
+    expect(found?.id).toBe('txn_exact');
+    const url = new URL(String(fetchMock.mock.calls[0]![0]));
+    expect(url.host).toBe('sandbox-api.paddle.com');
+    expect(url.searchParams.get('subscription_id')).toBe(sub);
+    expect(url.searchParams.get('created_at[GTE]')).toBe(start);
+    expect(url.searchParams.get('created_at[LTE]')).toBe(end);
+    expect(url.searchParams.has('status')).toBe(false);
+  });
+  it('rejects a second inherited-token candidate even when it is not completed', async () => {
+    install([{ id: 'txn_exact' }, { id: 'txn_other', status: 'billed' }]);
+    expect(
+      await makeAdapter({
+        PADDLE_API_KEY: 'sandbox-fixture',
+        PADDLE_ENV: 'sandbox',
+      }).discoverUpgradeTransaction(sub, intent, start, end),
+    ).toBeNull();
+  });
+  it('reports unknown when pagination is missing or exceeds the bounded scan', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ data: [] }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const adapter = makeAdapter({ PADDLE_API_KEY: 'sandbox-fixture', PADDLE_ENV: 'sandbox' });
+    expect(await adapter.discoverUpgradeTransaction(sub, intent, start, end)).toBeNull();
+    fetchMock.mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: [],
+            meta: {
+              pagination: {
+                has_more: true,
+                next: 'https://sandbox-api.paddle.com/transactions?after=cursor',
+              },
+            },
+          }),
+          { status: 200 },
+        ),
+    );
+    expect(await adapter.discoverUpgradeTransaction(sub, intent, start, end)).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+  it('retains frozen filters and never sends the API key to a cursor-supplied host', async () => {
+    let page = 0;
+    const mock = vi.fn().mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      expect(url.host).toBe('sandbox-api.paddle.com');
+      if (url.pathname !== '/transactions')
+        return new Response(JSON.stringify({ data: rawTransaction() }), { status: 200 });
+      expect(url.searchParams.get('subscription_id')).toBe(sub);
+      expect(url.searchParams.get('created_at[LTE]')).toBe(end);
+      expect(url.searchParams.has('status')).toBe(false);
+      return new Response(
+        JSON.stringify(
+          page++ === 0
+            ? {
+                data: [],
+                meta: {
+                  pagination: {
+                    has_more: true,
+                    next: 'https://wrong.example/transactions?after=cursor&status=completed',
+                  },
+                },
+              }
+            : { data: [{ id: 'txn_exact' }], meta: { pagination: { has_more: false } } },
+        ),
+        { status: 200 },
+      );
+    });
+    vi.stubGlobal('fetch', mock);
+    expect(
+      (
+        await makeAdapter({
+          PADDLE_API_KEY: 'sandbox-fixture',
+          PADDLE_ENV: 'sandbox',
+        }).discoverUpgradeTransaction(sub, intent, start, end)
+      )?.id,
+    ).toBe('txn_exact');
+  });
+  it('requires explicit no immediate transaction and a zero update summary before preview is safe', async () => {
+    const mock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: { next_billed_at: end, immediate_transaction: null, update_summary: null },
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal('fetch', mock);
+    const adapter = makeAdapter({ PADDLE_API_KEY: 'sandbox-fixture', PADDLE_ENV: 'sandbox' });
+    expect(await adapter.restoreUpgradeStage(sub, { priceId: 'pri_base' }, true)).toEqual({
+      noBill: true,
+      nextBilledAt: end,
+    });
+    expect(JSON.parse(String(mock.mock.calls[0]![1].body))).toEqual({
+      items: [{ price_id: 'pri_base', quantity: 1 }],
+      proration_billing_mode: 'do_not_bill',
+    });
+    mock.mockResolvedValue(
+      new Response(JSON.stringify({ data: { next_billed_at: end } }), { status: 200 }),
+    );
+    expect((await adapter.restoreUpgradeStage(sub, { priceId: 'pri_base' }, true)).noBill).toBe(
+      false,
+    );
   });
 });
 

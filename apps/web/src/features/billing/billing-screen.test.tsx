@@ -1959,6 +1959,25 @@ describe('BillingScreen — checkout funnel events', () => {
 });
 
 describe('BillingScreen — paid subscriber', () => {
+  it('keeps refund review visible across reload, suppresses renewal and allows cancellation', async () => {
+    mockTier = 'pro';
+    stubSubscription(() => jsonOk({ data: { ...PRO_SUB, billingReviewPending: true } }));
+    const mounted = renderScreen();
+    const card = await screen.findByTestId('current-plan-card');
+    expect(await screen.findByText(/Billing verification pending/)).toBeInTheDocument();
+    expect(card).not.toHaveTextContent('Next renewal');
+    expect(within(card).getByRole('button', { name: 'Review cancellation' })).toBeEnabled();
+    expect(within(card).queryByText('Manage plan')).toBeNull();
+    const picker = screen.getByTestId('plan-picker');
+    expect(within(picker).queryAllByRole('button', { name: /Upgrade|Switch/ })).toHaveLength(0);
+    fireEvent.click(within(card).getByRole('button', { name: 'Review cancellation' }));
+    const cancellation = await screen.findByTestId('cancel-modal');
+    expect(within(cancellation).getByRole('button', { name: 'Cancel subscription' })).toBeEnabled();
+    expect(within(cancellation).queryByRole('button', { name: 'Pause for 30 days' })).toBeNull();
+    mounted.unmount();
+    renderScreen();
+    expect(await screen.findByText(/Billing verification pending/)).toBeInTheDocument();
+  });
   it('plan card: tier, price, renewal, cancel affordance — and NO provider name', async () => {
     mockTier = 'pro';
     mockCleanupRemaining = null;

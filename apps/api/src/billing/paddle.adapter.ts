@@ -46,6 +46,11 @@ import type {
   SubscriptionSearchResult,
 } from './billing-provider.interface.js';
 import { providerErrorBody } from './provider-error-body.js';
+import type {
+  PaddleRefundTransaction,
+  PaddleUpgradeState,
+  RefundReference,
+} from './upgrade-refund.types.js';
 
 /** Default tolerated clock skew between Paddle's `ts` and now (seconds). */
 const DEFAULT_MAX_SKEW_SEC = 5;
@@ -107,8 +112,11 @@ interface PaddleSubscription {
   id: string;
   status: string;
   customer_id?: string | null;
-  items?: Array<{ price?: { id?: string } }>;
-  current_billing_period?: { ends_at?: string | null } | null;
+  items?: Array<{ price?: { id?: string }; quantity?: number }>;
+  current_billing_period?: { starts_at?: string | null; ends_at?: string | null } | null;
+  next_billed_at?: string | null;
+  updated_at?: string;
+  discount?: { id?: string; ends_at?: string | null } | null;
   scheduled_change?: { action?: string; effective_at?: string } | null;
   paused_at?: string | null;
   custom_data?: { workspace_id?: string; sig?: string } | null;
@@ -136,7 +144,18 @@ interface PaddleTransaction {
   billed_at?: string | null;
   created_at?: string | null;
   currency_code?: string | null;
-  details?: { totals?: { grand_total?: string | null } | null } | null;
+  details?: {
+    totals?: { grand_total?: string | null } | null;
+    line_items?: Array<{
+      price_id?: unknown;
+      quantity?: unknown;
+      totals?: { total?: unknown };
+      proration?: {
+        rate?: unknown;
+        billing_period?: { starts_at?: unknown; ends_at?: unknown };
+      } | null;
+    }>;
+  } | null;
   /** What minted this transaction. Read only to filter the
    *  `subscription_payment_method_change` verification artifact below —
    *  QA-billing-20260901-07. */
@@ -188,11 +207,37 @@ const UNDONE_STATUSES = new Set(['rejected', 'reversed']);
 
 /** The adjustment fields that decide whether a plan ends (API v2). */
 interface PaddleAdjustment {
+  id?: string;
+  transaction_id?: string;
   type?: string;
   action?: string;
   status?: string;
   subscription_id?: string | null;
   items?: Array<{ type?: string }>;
+}
+
+function refundReference(
+  a: PaddleAdjustment,
+): { refundReference: RefundReference } | Record<string, never> {
+  return a.id && a.transaction_id
+    ? { refundReference: { adjustmentId: a.id, transactionId: a.transaction_id } }
+    : {};
+}
+
+function upgradeSignature(
+  id: string,
+  workspaceId: string,
+  subId: string,
+  priceId: string,
+  secret: string,
+): string {
+  return createHmac('sha256', secret)
+    .update(`paddle:upgrade:${id}:${workspaceId}:${subId}:${priceId}`)
+    .digest('hex');
+}
+
+function validInstant(value: unknown): value is string {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value));
 }
 
 /**
@@ -490,6 +535,16 @@ export class PaddleAdapter implements BillingProvider {
             items: [{ price_id: providerPriceId, quantity: 1 }],
             proration_billing_mode:
               timing.kind === 'immediate_prorated' ? 'prorated_immediately' : 'do_not_bill',
+            ...(timing.kind === 'immediate_prorated' && timing.upgradeIntent
+              ? {
+                  custom_data: this.signedUpgradeData(
+                    timing.upgradeIntent.id,
+                    timing.upgradeIntent.workspaceId,
+                    providerSubscriptionId,
+                    providerPriceId,
+                  ),
+                }
+              : {}),
           }),
           signal: AbortSignal.timeout(API_TIMEOUT_MS),
         },
@@ -717,6 +772,286 @@ export class PaddleAdapter implements BillingProvider {
     return res.json();
   }
 
+  private signedUpgradeData(id: string, workspaceId: string, subId: string, priceId: string) {
+    const secret = this.env.PADDLE_WEBHOOK_SECRET;
+    if (!secret) throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    return {
+      workspace_id: workspaceId,
+      sig: attributionSignature(workspaceId, secret),
+      upgrade_intent_id: id,
+      upgrade_price_id: priceId,
+      upgrade_sig: upgradeSignature(id, workspaceId, subId, priceId, secret),
+    };
+  }
+
+  async readUpgradeState(id: string): Promise<PaddleUpgradeState | null> {
+    const body = await this.authedGet(
+      `/subscriptions/${encodeURIComponent(id)}`,
+      `upgrade_state sub=${id}`,
+    );
+    const s = (body as { data?: PaddleSubscription } | null)?.data;
+    const start = s?.current_billing_period?.starts_at;
+    const end = s?.current_billing_period?.ends_at;
+    const price = s?.items?.[0]?.price?.id;
+    if (
+      !s ||
+      s.id !== id ||
+      s.items?.length !== 1 ||
+      s.items[0]?.quantity !== 1 ||
+      !price ||
+      !validInstant(start) ||
+      !validInstant(end) ||
+      !validInstant(s.updated_at) ||
+      !Object.hasOwn(s, 'discount') ||
+      (s.next_billed_at !== null && !validInstant(s.next_billed_at))
+    )
+      return null;
+    if (
+      s.discount &&
+      (typeof s.discount.id !== 'string' ||
+        (s.discount.ends_at !== null && !validInstant(s.discount.ends_at)))
+    )
+      return null;
+    if (
+      s.scheduled_change &&
+      (typeof s.scheduled_change.action !== 'string' ||
+        !validInstant(s.scheduled_change.effective_at))
+    )
+      return null;
+    const normalized = toNormalizedSubscription(s, this.env.PADDLE_WEBHOOK_SECRET);
+    if (!normalized) return null;
+    return {
+      id,
+      status: s.status,
+      priceId: price,
+      periodStart: start,
+      periodEnd: end,
+      nextBilledAt: s.next_billed_at!,
+      updatedAt: s.updated_at,
+      scheduledAction: s.scheduled_change?.action ?? null,
+      scheduledAt: s.scheduled_change?.effective_at ?? null,
+      discountId: s.discount?.id ?? null,
+      discountEndsAt: s.discount?.ends_at ?? null,
+      normalized,
+    };
+  }
+
+  async readRefundTransaction(id: string): Promise<PaddleRefundTransaction | null> {
+    const body = await this.authedGet(
+      `/transactions/${encodeURIComponent(id)}`,
+      `refund_transaction txn=${id}`,
+    );
+    const t = (body as { data?: PaddleTransaction } | null)?.data;
+    if (
+      !t ||
+      t.id !== id ||
+      typeof t.subscription_id !== 'string' ||
+      typeof t.origin !== 'string' ||
+      typeof t.status !== 'string'
+    )
+      return null;
+    const custom = t.custom_data as
+      | {
+          workspace_id?: string;
+          sig?: string;
+          upgrade_intent_id?: string;
+          upgrade_price_id?: string;
+          upgrade_sig?: string;
+        }
+      | null
+      | undefined;
+    const workspace = verifiedWorkspaceId(custom, this.env.PADDLE_WEBHOOK_SECRET);
+    const intent = custom?.upgrade_intent_id;
+    const price = custom?.upgrade_price_id;
+    const signature = custom?.upgrade_sig;
+    const expected =
+      workspace && intent && price && this.env.PADDLE_WEBHOOK_SECRET
+        ? upgradeSignature(
+            intent,
+            workspace,
+            t.subscription_id,
+            price,
+            this.env.PADDLE_WEBHOOK_SECRET,
+          )
+        : null;
+    const verified =
+      typeof signature === 'string' &&
+      expected !== null &&
+      signature.length === expected.length &&
+      timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+    const amount = t.details?.totals?.grand_total;
+    const rawLines = t.details?.line_items;
+    const lines =
+      Array.isArray(rawLines) &&
+      rawLines.every(
+        (l) =>
+          typeof l.price_id === 'string' &&
+          typeof l.quantity === 'number' &&
+          Number.isInteger(l.quantity) &&
+          typeof l.totals?.total === 'string' &&
+          /^-?\d+$/.test(l.totals.total) &&
+          typeof l.proration?.rate === 'string' &&
+          validInstant(l.proration.billing_period?.starts_at) &&
+          validInstant(l.proration.billing_period?.ends_at),
+      )
+        ? rawLines.map((l) => ({
+            priceId: l.price_id as string,
+            quantity: l.quantity as number,
+            total: l.totals!.total as string,
+            rate: l.proration!.rate as string,
+            periodStart: l.proration!.billing_period!.starts_at as string,
+            periodEnd: l.proration!.billing_period!.ends_at as string,
+          }))
+        : null;
+    return {
+      id,
+      subscriptionId: t.subscription_id,
+      origin: t.origin,
+      status: t.status,
+      upgradeIntentId: verified ? intent! : null,
+      upgradePriceId: verified ? price! : null,
+      positiveCharge: typeof amount === 'string' && /^\d+$/.test(amount) && BigInt(amount) > 0n,
+      createdAt: validInstant(t.created_at) ? t.created_at : null,
+      lines,
+    };
+  }
+
+  /** Complete bounded discovery for the ORIGINAL charged-operation window.
+   * No status filter: a second unpaid candidate also makes attribution ambiguous.
+   * Never discover a transaction opportunistically from a later refund.
+   */
+  async discoverUpgradeTransaction(
+    subscriptionId: string,
+    intentId: string,
+    start: string,
+    end: string,
+  ): Promise<PaddleRefundTransaction | null> {
+    const query = new URLSearchParams({
+      subscription_id: subscriptionId,
+      origin: 'subscription_update',
+      per_page: '30',
+      'created_at[GTE]': start,
+      'created_at[LTE]': end,
+    });
+    let path = `/transactions?${query}`;
+    const candidates: PaddleRefundTransaction[] = [];
+    const seen = new Set<string>();
+    for (let page = 0; page < 3; page++) {
+      const body = (await this.authedGet(path, `upgrade_transactions sub=${subscriptionId}`)) as {
+        data?: PaddleTransaction[];
+        meta?: { pagination?: { has_more?: boolean; next?: string } };
+      } | null;
+      if (
+        !body ||
+        !Array.isArray(body.data) ||
+        typeof body.meta?.pagination?.has_more !== 'boolean'
+      )
+        return null;
+      for (const row of body.data) {
+        if (!row.id || seen.has(row.id)) return null;
+        seen.add(row.id);
+        const transaction = await this.readRefundTransaction(row.id);
+        if (
+          !transaction ||
+          transaction.subscriptionId !== subscriptionId ||
+          transaction.origin !== 'subscription_update' ||
+          !transaction.createdAt ||
+          Date.parse(transaction.createdAt) < Date.parse(start) ||
+          Date.parse(transaction.createdAt) > Date.parse(end)
+        )
+          return null;
+        if (transaction.upgradeIntentId === intentId) candidates.push(transaction);
+      }
+      if (!body.meta.pagination.has_more) return candidates.length === 1 ? candidates[0]! : null;
+      const next = body.meta.pagination.next;
+      if (!next || !URL.canParse(next)) return null;
+      const cursor = new URL(next);
+      if (cursor.pathname !== '/transactions') return null;
+      const after = cursor.searchParams.get('after');
+      if (!after) return null;
+      const nextQuery = new URLSearchParams(query);
+      nextQuery.set('after', after);
+      path = `/transactions?${nextQuery}`;
+    }
+    return null;
+  }
+
+  async readRefundAdjustment(
+    reference: RefundReference,
+    subscriptionId: string,
+  ): Promise<{ status: string; full: boolean | null } | null> {
+    const body = await this.authedGet(
+      `/adjustments/${encodeURIComponent(reference.adjustmentId)}`,
+      `refund_adjustment adj=${reference.adjustmentId}`,
+    );
+    const a = (body as { data?: PaddleAdjustment } | null)?.data;
+    if (
+      !a ||
+      a.id !== reference.adjustmentId ||
+      a.transaction_id !== reference.transactionId ||
+      a.subscription_id !== subscriptionId ||
+      a.action !== 'refund' ||
+      typeof a.status !== 'string'
+    )
+      return null;
+    // Upgrade reversal requires affirmative whole-transaction coverage.
+    // The legacy item fallback is deliberately retained only for ordinary
+    // subscription refunds, where unknown coverage conservatively revokes.
+    return {
+      status: a.status,
+      full: a.type === 'full' ? true : a.type === 'partial' ? false : null,
+    };
+  }
+
+  /** Every stage explicitly does not bill. Caller retains a durable barrier
+   * until fresh evidence confirms BOTH prior price and original renewal. */
+  async restoreUpgradeStage(
+    id: string,
+    change: { priceId: string } | { nextBilledAt: string },
+    preview: boolean,
+  ): Promise<{ noBill: boolean; nextBilledAt: string | null }> {
+    const apiKey = this.env.PADDLE_API_KEY;
+    if (!apiKey) throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    const res = await fetch(
+      `${this.baseUrl}/subscriptions/${encodeURIComponent(id)}${preview ? '/preview' : ''}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'Paddle-Version': '1',
+        },
+        body: JSON.stringify({
+          ...('priceId' in change
+            ? { items: [{ price_id: change.priceId, quantity: 1 }] }
+            : { next_billed_at: change.nextBilledAt }),
+          proration_billing_mode: 'do_not_bill',
+        }),
+        signal: AbortSignal.timeout(API_TIMEOUT_MS),
+      },
+    );
+    if (!res.ok) throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    const body = (await res.json()) as {
+      data?: {
+        next_billed_at?: unknown;
+        update_summary?: { result?: { amount?: unknown } } | null;
+        immediate_transaction?: unknown;
+      };
+    };
+    const d = body.data;
+    const noBill =
+      !!d &&
+      Object.hasOwn(d, 'immediate_transaction') &&
+      d.immediate_transaction === null &&
+      (d.update_summary === null ||
+        (typeof d.update_summary?.result?.amount === 'string' &&
+          /^0+$/.test(d.update_summary.result.amount)));
+    return {
+      noBill: preview ? noBill : true,
+      nextBilledAt: validInstant(d?.next_billed_at) ? d.next_billed_at : null,
+    };
+  }
+
   /** Deletion safety reads raw provider status, not local entitlement status. */
   async deletionBillingState(id: string): Promise<'stopped' | 'billable' | 'unknown'> {
     const body = await this.authedGet(`/subscriptions/${encodeURIComponent(id)}`, `sub=${id}`);
@@ -808,7 +1143,8 @@ export class PaddleAdapter implements BillingProvider {
       // `next` is populated on the LAST page too, so `has_more` is the
       // only honest terminator — walking while `next` exists would run
       // every healthy read to the cap and report it unread.
-      if (pagination?.has_more !== true) break;
+      if (typeof pagination?.has_more !== 'boolean') return null;
+      if (!pagination.has_more) break;
       if (typeof pagination.next !== 'string' || !URL.canParse(pagination.next)) {
         this.logger.warn(
           `paddle.cancellation_facts.next_unreadable sub=${providerSubscriptionId} pages=${page + 1} — has_more with no usable next URL; reported UNREAD`,
@@ -818,7 +1154,15 @@ export class PaddleAdapter implements BillingProvider {
       // Paddle's cursor, our host: keep only path + query so a
       // provider-supplied origin can never redirect an API-key read.
       const next = new URL(pagination.next);
-      path = `${next.pathname}${next.search}`;
+      if (next.pathname !== '/adjustments') return null;
+      const after = next.searchParams.get('after');
+      if (!after) return null;
+      const nextQuery = new URLSearchParams({
+        subscription_id: providerSubscriptionId,
+        per_page: '50',
+        after,
+      });
+      path = `/adjustments?${nextQuery}`;
     }
 
     // A chargeback IS the settled event — the funds are already gone and
@@ -836,8 +1180,57 @@ export class PaddleAdapter implements BillingProvider {
     const settledChargeback = rows.some(
       (a) => a.action === 'chargeback' && !UNDONE_STATUSES.has(a.status ?? ''),
     );
-    // Refunds need Paddle's approval, and only a full one is an exit.
-    const settledRefund = rows.some(
+    // Both webhook handling and reconciliation classify the EXACT charge.
+    // A full upgrade refund cannot become a whole-plan exit on the next pass.
+    const ordinary: PaddleAdjustment[] = [];
+    const upgradeRefunds: NonNullable<ProviderCancellationFacts['upgradeRefunds']> = [];
+    const transactions = new Map<string, Promise<PaddleRefundTransaction | null>>();
+    for (const a of rows.filter((a) => a.action === 'refund' && endsSubscription(a))) {
+      if (!a.id || !a.transaction_id || typeof a.status !== 'string') {
+        if (settledChargeback)
+          return { settled: 'chargeback', refuted: { refund: false, chargeback: false } };
+        return null;
+      }
+      let transaction: PaddleRefundTransaction | null;
+      try {
+        let read = transactions.get(a.transaction_id);
+        if (!read) {
+          if (transactions.size >= 25) {
+            this.logger.warn(
+              `paddle.cancellation_facts.transaction_cap sub=${providerSubscriptionId} — reported UNREAD`,
+            );
+            return settledChargeback
+              ? { settled: 'chargeback', refuted: { refund: false, chargeback: false } }
+              : null;
+          }
+          read = this.readRefundTransaction(a.transaction_id);
+          transactions.set(a.transaction_id, read);
+        }
+        transaction = await read;
+      } catch {
+        if (settledChargeback)
+          return { settled: 'chargeback', refuted: { refund: false, chargeback: false } };
+        return null;
+      }
+      if (!transaction || transaction.subscriptionId !== providerSubscriptionId)
+        return settledChargeback
+          ? { settled: 'chargeback', refuted: { refund: false, chargeback: false } }
+          : null;
+      if (transaction.status !== 'completed' || !transaction.positiveCharge) continue;
+      if (transaction.origin === 'subscription_update')
+        upgradeRefunds.push({
+          adjustmentId: a.id,
+          transactionId: a.transaction_id,
+          status: a.status,
+        });
+      else if (['web', 'api', 'subscription_recurring'].includes(transaction.origin))
+        ordinary.push(a);
+      else if (transaction.origin !== 'subscription_payment_method_change')
+        return settledChargeback
+          ? { settled: 'chargeback', refuted: { refund: false, chargeback: false } }
+          : null;
+    }
+    const settledRefund = ordinary.some(
       (a) => a.action === 'refund' && a.status === 'approved' && endsSubscription(a),
     );
 
@@ -864,7 +1257,7 @@ export class PaddleAdapter implements BillingProvider {
     return {
       settled: settledChargeback ? 'chargeback' : settledRefund ? 'refund' : null,
       refuted: {
-        refund: rows.some(
+        refund: ordinary.some(
           (a) =>
             a.action === 'refund' && UNDONE_STATUSES.has(a.status ?? '') && endsSubscription(a),
         ),
@@ -872,6 +1265,7 @@ export class PaddleAdapter implements BillingProvider {
           (a) => a.action === 'chargeback' && UNDONE_STATUSES.has(a.status ?? ''),
         ),
       },
+      ...(upgradeRefunds.length ? { upgradeRefunds } : {}),
     };
   }
 
@@ -1041,6 +1435,7 @@ export class PaddleAdapter implements BillingProvider {
             eventType,
             providerSubscriptionId: data.subscription_id,
             reason: action,
+            ...(action === 'refund' ? refundReference(data) : {}),
           };
         }
         return { kind: 'ignored', providerEventId: eventId, eventType };
@@ -1059,6 +1454,7 @@ export class PaddleAdapter implements BillingProvider {
             providerEventId: eventId,
             eventType,
             providerSubscriptionId: data.subscription_id,
+            ...refundReference(data),
           };
         }
         if (data.status === 'rejected') {
@@ -1068,6 +1464,7 @@ export class PaddleAdapter implements BillingProvider {
             eventType,
             providerSubscriptionId: data.subscription_id,
             reason: 'refund_rejected',
+            ...refundReference(data),
           };
         }
         return { kind: 'ignored', providerEventId: eventId, eventType };

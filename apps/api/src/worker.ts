@@ -223,6 +223,10 @@ import { BillingReconciliationService } from './billing/billing-reconciliation.s
 import { billingVerdictDeps } from './billing/billing-verdict.deps.js';
 import { BillingWebhookService } from './billing/billing-webhook.service.js';
 import { PaddleAdapter } from './billing/paddle.adapter.js';
+import {
+  BillingUpgradeRefundService,
+  assertWorkerRefundRestoreDisabled,
+} from './billing/billing-upgrade-refund.service.js';
 import { RazorpayAdapter } from './billing/razorpay.adapter.js';
 import { captureLlmProviderRejection } from './observability/llm-provider-rejection.js';
 import { getInitializedSentry, initSentry } from './observability/sentry.js';
@@ -367,6 +371,7 @@ async function bootstrap(): Promise<void> {
   // so a half-booted worker never reports healthy.
   startHealthServer();
   bootStep('health_server_started');
+  assertWorkerRefundRestoreDisabled(process.env);
 
   // Env audit BEFORE any `requireEnv()` call. Emits a single
   // `worker.boot.env_check` log line with the full list of missing
@@ -2512,11 +2517,17 @@ async function bootstrap(): Promise<void> {
   // Shared by the webhook processor (per-workspace, in-tx) and the
   // sweep's global self-heal below.
   const autopilotReads = new AutopilotReadService(db);
+  const billingPaddleAdapter = new PaddleAdapter();
   const billingReconciliationService = new BillingReconciliationService(
     db,
     billingCatalog,
-    new BillingWebhookService(db, billingCatalog, autopilotReads),
-    new PaddleAdapter(),
+    new BillingWebhookService(
+      db,
+      billingCatalog,
+      autopilotReads,
+      new BillingUpgradeRefundService(db, billingCatalog, billingPaddleAdapter),
+    ),
+    billingPaddleAdapter,
     new RazorpayAdapter(),
   );
   async function sweepBillingReconciliation(): Promise<void> {
