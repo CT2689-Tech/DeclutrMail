@@ -111,3 +111,16 @@ Latest completed focused checks: 91 API sync tests, 89 initial-worker/policy tes
 The full journey suite passed 20 tests with one disabled PostHog opt-in case skipped;
 the scheduled recovery Axe scan reported zero violations. Build/budgets and remote
 checks are pending.
+
+## Ready for remote checks
+
+Independent final review is clear; all reported recovery/fence/purge findings are
+fixed. Local production build passed in the isolated copy. Served bundle budgets
+passed all 51 routes (34 public, 17 authenticated) and one declared redirect; the
+prerender check verified 45 public HTML routes. Source and runtime configuration
+were preserved; only persistent compilation caching was disabled in that local
+build copy. Required CI runs the normal production build.
+
+PR #927 is open for the normal checks and merge queue. Ready, queued, merged,
+deployed and production-verified remain separate states; deployment is not claimed
+at this point.
