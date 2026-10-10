@@ -14,7 +14,7 @@ const tools = [
   ['screener', '/screener', 'Screener'],
   ['autopilot', '/autopilot', 'Autopilot'],
   ['quiet', '/quiet', 'Quiet hours'],
-  ['brief', '/brief', 'Daily Brief'],
+  ['brief', '/brief', 'Daily brief'],
   ['followups', '/followups', 'Follow-ups'],
 ] as const;
 
@@ -26,7 +26,7 @@ export function PlanCoverage({ tier }: { tier: TierId }) {
       aria-label="Your plan includes"
       style={{ borderTop: `1px solid ${color.border}`, paddingTop: 16, display: 'grid', gap: 12 }}
     >
-      <h2 style={{ fontSize: 18, margin: 0 }}>Your plan includes</h2>
+      <h2 style={{ ...tokens.typography.sectionTitle, margin: 0 }}>Your plan includes</h2>
       <div>
         {connectedInboxes ?? 0} of {plan.inboxLimit} connected inboxes ·{' '}
         <Link className={linkStyles.link} href="/settings">

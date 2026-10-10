@@ -21,7 +21,6 @@ import { VERB_LESSONS } from '@/features/tour/verb-lessons';
 import { ActionToolbar, resolveShortcut, verbDisabledReason } from './action-toolbar';
 import { canUnsubscribe, type TriageDecisionRow } from './data';
 import { TRIAGE_QUEUE } from './fixtures';
-import { RECOMMEND_FLOOR } from '@declutrmail/shared/copy';
 
 function rowById(id: string): TriageDecisionRow {
   const r = TRIAGE_QUEUE.find((row) => row.id === id);
@@ -199,11 +198,7 @@ describe('ActionToolbar — disabled verbs state their reason (W2, D209/D211)', 
     const row = rowById('t-shipping');
     const html = renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />);
     expect(html).toContain('role="note"');
-    // Visible where there is no hover to reveal the tooltip: phones and
-    // tablets, and any touch-only pointer.
-    expect(html).toMatch(
-      /@media \(max-width:900px\),\(hover:none\)\{\.dm-toolbar-reason\{display:block\}\}/,
-    );
+    expect(html).not.toContain('.dm-toolbar-reason{display:none}');
     // Title attr, tooltip bubble, and the visible note.
     expect(html.split('No unsubscribe channel found').length).toBeGreaterThanOrEqual(3);
   });
@@ -228,68 +223,16 @@ describe('ActionToolbar — disabled verbs state their reason (W2, D209/D211)', 
   });
 });
 
-describe('ActionToolbar — D31 recommended-verb highlight threshold', () => {
-  it('highlights the recommended verb when confidence > 0.85', () => {
-    // Groupon: verdict=archive, confidence=0.94 — Archive should be
-    // emphasised (dark tone, white kbd chip).
-    const row = rowById('t-groupon');
-    const html = renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />);
-    // The recommended-verb highlight wraps the Kbd in white text on a
-    // translucent overlay — the inline `color:var(--dm-fg-inverse)` is the
-    // load-bearing signal.
-    expect(html).toContain('background:var(--dm-line-inverse);color:var(--dm-fg-inverse)');
-  });
-
-  it('does NOT highlight when confidence is far below threshold (0.66)', () => {
-    // Nextdoor: verdict=archive, confidence=0.66 — well below threshold,
-    // toolbar renders flat.
-    const row = rowById('t-nextdoor');
-    const html = renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />);
-    // No white-text overlay means no highlighted verb chip.
-    expect(html).not.toContain('background:var(--dm-line-inverse);color:var(--dm-fg-inverse)');
-  });
-
-  // D31's "highlight only when confidence > 0.85" is applied per
-  // VERDICT now (`RECOMMEND_FLOOR`). The strict-greater-than semantics
-  // are unchanged — only the value the comparison reads moved, because
-  // a flat 0.85 was unreachable for Archive and left the engine's
-  // first-sorted verdict permanently flat.
-  describe('boundary — strict > the verdict floor (D31)', () => {
-    // Groupon: verdict=archive, unprotected, so the recommended verb is
-    // dispatchable. Read the floor rather than restating it — a future
-    // re-anchor moves the test with the product.
-    const FLOOR = RECOMMEND_FLOOR.archive as number;
-    const HIGHLIGHT = 'background:var(--dm-line-inverse);color:var(--dm-fg-inverse)';
-
-    function highlighted(c: number): boolean {
-      const row: TriageDecisionRow = { ...rowById('t-groupon'), confidence: c };
-      return renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />).includes(
-        HIGHLIGHT,
-      );
-    }
-
-    it('below the floor → recommended verb is NOT emphasised', () => {
-      expect(highlighted(FLOOR - 0.01)).toBe(false);
-    });
-
-    it('exactly ON the floor → NOT emphasised (strict >)', () => {
-      expect(highlighted(FLOOR)).toBe(false);
-    });
-
-    it('above the floor → recommended verb IS emphasised', () => {
-      expect(highlighted(FLOOR + 0.01)).toBe(true);
-    });
-
-    // The regression the founder reported (screenshot 2026-08-20). 0.74
-    // is the ceiling `packages/shared/src/triage-engine/cascade.ts` can reach for Archive when the
-    // user has never manually archived the sender — i.e. what almost
-    // every real Archive row scores. Under the old flat 0.85 gate this
-    // rendered flat, so the queue's first card was permanently the one
-    // with no highlight, no band and no Recommended hint.
-    it('0.74 — a real Archive score — IS emphasised', () => {
-      expect(highlighted(0.74)).toBe(true);
-    });
-  });
+describe('ActionToolbar — suggestions do not compete with action emphasis', () => {
+  it.each([0.1, 0.66, 0.74, 0.99])(
+    'keeps all action buttons neutral at confidence %s',
+    (confidence) => {
+      const row = { ...rowById('t-groupon'), confidence };
+      const html = renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />);
+      expect(html).not.toContain('background:var(--dm-line-inverse);color:var(--dm-fg-inverse)');
+      expect(html).toContain('data-action="delete"');
+    },
+  );
 });
 
 describe('ActionToolbar — onAction callback wiring (the test the task asks for)', () => {

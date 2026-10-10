@@ -5,7 +5,7 @@ export default function Loading() {
     <RouteLoading
       gap={24}
       kicker="Catch up / Your daily edition"
-      title="Daily Brief"
+      title="Daily brief"
       label="Loading today’s Brief"
       rows={5}
       rowHeight={72}

@@ -222,7 +222,10 @@ export function SenderSearch({
   };
 
   return (
-    <div ref={ref} style={{ position: 'relative', width: 240, maxWidth: '100%' }}>
+    <div
+      ref={ref}
+      style={{ position: 'relative', flex: '1 1 180px', minWidth: 140, maxWidth: '100%' }}
+    >
       <style>{SEARCH_CSS}</style>
       <span
         aria-hidden="true"
@@ -251,7 +254,7 @@ export function SenderSearch({
         </svg>
       </span>
       <input
-        className="dm-search-well"
+        className="dm-search-well dm-field"
         value={text}
         onChange={(e) => {
           commit(e.target.value);
@@ -282,15 +285,10 @@ export function SenderSearch({
         aria-activedescendant={showList ? `dm-sender-opt-${active}` : undefined}
         style={{
           height: 40,
+          ...tokens.field,
           width: '100%',
-          boxSizing: 'border-box',
-          padding: '0 16px 0 38px',
-          background: color.card,
-          color: color.fg,
-          border: `1px solid ${color.lineSoft}`,
-          borderRadius: radius.md,
-          fontFamily: font.sans,
-          fontSize: typeScale.base,
+          paddingLeft: 36,
+          paddingRight: 36,
         }}
       />
 

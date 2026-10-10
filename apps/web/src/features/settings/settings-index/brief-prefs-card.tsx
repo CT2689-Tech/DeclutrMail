@@ -29,7 +29,7 @@ export type BriefPrefsCardState =
   | { kind: 'ready'; prefs: BriefPrefs };
 
 /**
- * Settings → Notifications (D64) — the Daily Brief's delivery hour,
+ * Settings → Notifications (D64) — the Daily brief's delivery hour,
  * rendered as one row inside the Notifications group.
  *
  * The Brief covers the previous local day and generates EVERY day
@@ -73,7 +73,7 @@ export function BriefPrefsCard({
   return (
     <>
       <SettingsRow
-        label="Daily Brief ready at"
+        label="Daily brief ready at"
         // The zone is the one thing that changes what the user picks.
         detail={timezone ?? 'Timezone not detected yet.'}
       >
@@ -84,7 +84,7 @@ export function BriefPrefsCard({
           value={state.prefs.hour}
           disabled={pending}
           onChange={(e) => onChange(Number(e.target.value))}
-          aria-label="Daily Brief delivery hour"
+          aria-label="Daily brief delivery hour"
         >
           {HOURS.map((hour) => (
             <option key={hour} value={hour}>

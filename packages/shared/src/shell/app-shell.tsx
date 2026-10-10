@@ -1,7 +1,16 @@
 'use client';
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { breakpoint, color, font, motion, radius, shadow, text } from '../tokens/tokens';
+import {
+  breakpoint,
+  color,
+  font,
+  motion,
+  radius,
+  shadow,
+  text,
+  typography,
+} from '../tokens/tokens';
 import { useFocusTrap } from '../hooks/use-focus-trap';
 import { useLabels, type LabelKey } from '../hooks/use-labels';
 import { UNDO_TRAY_INSET_VAR } from '../components/undo-tray/undo-tray';
@@ -12,7 +21,6 @@ import {
   SectionNavigation,
   NavIcon,
   Sidebar,
-  SIDEBAR_WIDTH,
   type NavCount,
 } from './sidebar';
 
@@ -22,8 +30,8 @@ import {
  * `dm-sidebar-desktop` / `dm-topbar-hamburger` / `dm-tabbar`) so the
  * layout is correct at first paint — a JS breakpoint hook would flash
  * the desktop shell on mobile before hydration. At 760px and below the sidebar
- * becomes a horizontal row carrying the same five workspace groups.
- * Section navigation and the hamburger drawer expose every feature route.
+ * becomes a bottom bar carrying the same five workspace groups.
+ * Contextual navigation exposes feature routes; the drawer holds account utilities.
  * Routing-agnostic — the host supplies `active`/`onNavigate`.
  */
 export function AppShell({
@@ -35,6 +43,7 @@ export function AppShell({
   routeKey,
   topbarRight,
   accountInitial,
+  accountLabel,
   children,
 }: {
   active: string;
@@ -58,6 +67,8 @@ export function AppShell({
    */
   topbarRight?: ReactNode;
   accountInitial?: string | undefined;
+  /** Signed-in mailbox address for the mobile account row. */
+  accountLabel?: string | undefined;
   children: ReactNode;
 }) {
   const labels = useLabels();
@@ -157,7 +168,6 @@ export function AppShell({
           counts={counts ?? {}}
           locks={locks ?? {}}
           collapsed
-          accountInitial={accountInitial}
         />
       </div>
 
@@ -176,21 +186,31 @@ export function AppShell({
             role="dialog"
             aria-modal="true"
             aria-label="Navigation menu"
-            style={{ position: 'fixed', top: 0, bottom: 0, left: 0, zIndex: 81 }}
+            style={{
+              position: 'fixed',
+              top: 0,
+              bottom: 0,
+              left: 0,
+              zIndex: 81,
+              width: 'min(340px, 100vw)',
+              background: color.card,
+              color: color.fg,
+              padding: 16,
+              boxSizing: 'border-box',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 24,
+              overflowY: 'auto',
+              boxShadow: shadow.pop,
+            }}
           >
             <button
               type="button"
               onClick={() => setDrawerOpen(false)}
               aria-label="Close navigation menu"
               style={{
-                // Sits on the scrim, clear of the sidebar, rather than on
-                // top of it: the sidebar's top row is the brand lockup,
-                // and a button pinned inside `right: 12` lands on the
-                // tail of the wordmark (ADR-0036).
-                position: 'absolute',
-                top: 12,
-                left: SIDEBAR_WIDTH + 12,
-                zIndex: 1,
+                alignSelf: 'flex-end',
+                flexShrink: 0,
                 width: 44,
                 height: 44,
                 border: 'none',
@@ -205,14 +225,76 @@ export function AppShell({
             >
               ×
             </button>
-            <Sidebar
-              active={active}
-              onNavigate={navigate}
-              onNavigateIntent={onNavigateIntent}
-              counts={counts ?? {}}
-              locks={locks ?? {}}
-              accountInitial={accountInitial}
-            />
+            <div style={{ display: 'grid', gap: 8 }}>
+              <span
+                style={{
+                  ...typography.kicker,
+                  color: color.fgMuted,
+                }}
+              >
+                Your account
+              </span>
+              <button
+                type="button"
+                onClick={() => navigate('settings#mailboxes')}
+                style={{ ...utilityStyle, background: color.fill, gap: 12 }}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{
+                    display: 'grid',
+                    placeItems: 'center',
+                    width: 36,
+                    height: 36,
+                    flexShrink: 0,
+                    borderRadius: radius.pill,
+                    background: color.primarySoft,
+                    color: color.primary,
+                    fontWeight: 600,
+                  }}
+                >
+                  {accountLabel?.slice(0, 1).toUpperCase() ?? accountInitial ?? (
+                    <NavIcon d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8M4 22v-2a8 8 0 0 1 16 0v2" />
+                  )}
+                </span>
+                <span style={{ display: 'grid', gap: 4, minWidth: 0 }}>
+                  <span style={{ overflowWrap: 'anywhere', fontWeight: 500 }}>
+                    {accountLabel ?? 'Gmail accounts'}
+                  </span>
+                  <span style={{ fontSize: text.sm, color: color.fgMuted }}>
+                    Manage Gmail accounts
+                  </span>
+                </span>
+              </button>
+            </div>
+            <nav aria-label="Account and help" style={{ display: 'grid', gap: 8 }}>
+              {[
+                {
+                  id: 'settings',
+                  label: 'Settings',
+                  icon: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2',
+                },
+                { id: 'billing', label: 'Billing', icon: 'M3 5h18v14H3zM3 9h18M7 15h3' },
+                {
+                  id: 'settings/help',
+                  label: 'Help & glossary',
+                  icon: 'M9 9a3 3 0 0 1 6 0c0 2-3 2-3 4M12 17h.01M22 12a10 10 0 1 0-20 0 10 10 0 0 0 20 0Z',
+                },
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => navigate(item.id)}
+                  onFocus={() => onNavigateIntent?.(item.id)}
+                  onMouseEnter={() => onNavigateIntent?.(item.id)}
+                  aria-current={active === item.id ? 'page' : undefined}
+                  style={utilityStyle}
+                >
+                  <NavIcon d={item.icon} />
+                  {item.label}
+                </button>
+              ))}
+            </nav>
           </div>
         </>
       )}
@@ -226,42 +308,6 @@ export function AppShell({
           overflow: 'hidden',
         }}
       >
-        {/* Mobile workspace groups — above the top bar in DOM and visual order,
-            matching the prototype. In flow, never over the content. */}
-        <nav
-          className="dm-tabbar"
-          aria-label="Primary"
-          style={{
-            flexShrink: 0,
-            alignItems: 'stretch',
-            order: -1,
-            gap: 2,
-            padding: '10px 8px',
-            background: 'var(--dm-nav-bg)',
-          }}
-        >
-          {WORKSPACE_NAV.map((item) => {
-            const { id } = item;
-            const on = workspaceSection(active)?.id === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => onNavigate(id)}
-                onTouchStart={() => {
-                  if (!on) onNavigateIntent?.(id);
-                }}
-                aria-current={on ? 'page' : undefined}
-                aria-label={item.label}
-                style={tabStyle(on)}
-              >
-                <NavIcon d={item.icon} size={20} />
-                <span className="dm-tabbar-label">{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-
         {/* Top bar — hamburger (mobile only), then help + the host's
             controls on the right. Deliberately quiet: no fill, and a
             hairline only while content is scrolled beneath it. */}
@@ -373,12 +419,47 @@ export function AppShell({
             // cannot scroll past it, because this container is already at
             // its end. See UNDO_TRAY_INSET_VAR; resolves to 0px whenever no
             // tray is mounted. The tray measures from the VIEWPORT bottom,
-            // with no bottom navigation inset in the editorial shell.
+            // minus the bottom navigation already reserved in normal flow.
             paddingBottom: `max(0px, calc(var(${UNDO_TRAY_INSET_VAR}, 0px) - var(--dm-tabbar-inset, 0px)))`,
           }}
         >
           {children}
         </div>
+        {/* Mobile primary navigation stays in flow at the bottom. */}
+        <nav
+          className="dm-tabbar"
+          aria-label="Primary"
+          style={{
+            flexShrink: 0,
+            alignItems: 'stretch',
+            order: 1,
+            gap: 2,
+            background: 'var(--dm-nav-bg)',
+          }}
+        >
+          {WORKSPACE_NAV.map((item) => {
+            const { id } = item;
+            const on = workspaceSection(active)?.id === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => onNavigate(id)}
+                onTouchStart={() => {
+                  if (!on) onNavigateIntent?.(id);
+                }}
+                aria-current={on ? 'page' : undefined}
+                aria-label={item.label}
+                style={tabStyle(on)}
+              >
+                <NavIcon d={item.icon} size={20} />
+                <span className="dm-tabbar-label">
+                  {item.id === 'autopilot' ? 'Auto' : item.label}
+                </span>
+              </button>
+            );
+          })}
+        </nav>
       </main>
     </div>
   );
@@ -387,13 +468,13 @@ export function AppShell({
 function tabStyle(on: boolean) {
   return {
     flex: 1,
-    minWidth: 44,
+    minWidth: 0,
     height: 52,
     display: 'flex',
     flexDirection: 'column' as const,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
+    gap: 4,
     padding: 0,
     border: 'none',
     borderRadius: 10,
@@ -401,9 +482,26 @@ function tabStyle(on: boolean) {
     boxShadow: on ? 'inset 0 -3px var(--dm-nav-marker)' : undefined,
     color: on ? 'var(--dm-nav-fg)' : 'var(--dm-nav-muted)',
     fontFamily: font.sans,
-    fontSize: text.xs,
+    fontSize: text['2xs'],
+    whiteSpace: 'nowrap' as const,
     fontWeight: on ? 600 : 500,
     cursor: 'pointer',
     transition: `color ${motion.fast} ${motion.ease}`,
   };
 }
+
+const utilityStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 12,
+  minHeight: 48,
+  padding: '12px 16px',
+  border: 0,
+  borderRadius: radius.md,
+  background: 'transparent',
+  color: color.fg,
+  fontFamily: font.sans,
+  fontSize: text.md,
+  textAlign: 'left',
+  cursor: 'pointer',
+} as const;

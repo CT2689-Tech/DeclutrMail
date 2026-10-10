@@ -112,7 +112,7 @@ export function CheatsheetPanel({ onClose }: { onClose: () => void }) {
         >
           <h2
             id="dm-cheatsheet-title"
-            style={{ fontSize: text.xl, fontWeight: 650, letterSpacing: '-0.02em', margin: 0 }}
+            style={{ fontSize: text.xl, fontWeight: 600, letterSpacing: '-0.02em', margin: 0 }}
           >
             Keyboard shortcuts
           </h2>

@@ -52,8 +52,8 @@ function protectedWhy(row: TriageDecisionRow): string {
  * (D45). "% read" claims the human; "% marked read" claims the label.
  */
 function readPhrase(readRate: number, last90dMessages: number): string {
-  if (readRate === 0 && last90dMessages >= 8) return 'None marked read in 90d';
-  return `${Math.round(readRate * 100)}% marked read in 90d`;
+  if (readRate === 0 && last90dMessages >= 8) return 'None marked read in 90 days';
+  return `${Math.round(readRate * 100)}% marked read in 90 days`;
 }
 
 /**
@@ -68,13 +68,13 @@ export function whyLine(row: TriageDecisionRow): string {
   if (row.last90dMessages === 0) {
     // Quiet within the rolling window — say so plainly. Received total
     // carries the "they DID mail you" context without faking cadence.
-    return `Quiet 90d · ${row.totalAllTime.toLocaleString('en-US')} received`;
+    return `No email in 90 days · ${row.totalAllTime.toLocaleString('en-US')} received`;
   }
   if (row.readRate === null) {
     // No denominator, so no rate. Reachable independently of the quiet
     // branch above (the BE derives them from different windows), and a
     // fabricated "0% read" here would read as "never opened".
-    return `${row.last90dMessages} in last 90d`;
+    return `${row.last90dMessages} in the last 90 days`;
   }
   const phrase = readPhrase(row.readRate, row.last90dMessages);
   if (row.readRate >= 0.7) return `${phrase} · keep close`;
@@ -99,7 +99,7 @@ export function focusFacts(row: TriageDecisionRow): {
     return {
       count: row.totalAllTime,
       unit: `${row.totalAllTime === 1 ? 'email' : 'emails'} received`,
-      why: 'Quiet 90d',
+      why: 'No email in 90 days',
     };
   }
   if (row.readRate === null) return { ...windowed, why: null };

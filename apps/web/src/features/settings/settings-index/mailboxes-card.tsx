@@ -196,7 +196,7 @@ export function MailboxesCard({
                     minWidth: 0,
                   }}
                 >
-                  {isSelected && <StatusTag tone="primary">Active</StatusTag>}
+                  {isSelected && <StatusTag tone="primary">Selected</StatusTag>}
                   {m.status === 'disconnected' ? (
                     <StatusTag tone={indexedDataState === 'deletion_delayed' ? 'danger' : 'muted'}>
                       {mailboxDataStatusLabel(indexedDataState)}
@@ -228,7 +228,7 @@ export function MailboxesCard({
                     // "Ready" here, worse than no tag at all.
                     <StatusTag tone="danger">Not syncing</StatusTag>
                   ) : m.readiness === 'ready' ? (
-                    <StatusTag tone="muted">Ready</StatusTag>
+                    <StatusTag tone="muted">Scan complete</StatusTag>
                   ) : (
                     // readiness === null: no sync row exists yet (D116), so
                     // the first scan has not been recorded. Never fold this

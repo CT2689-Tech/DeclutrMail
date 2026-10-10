@@ -404,6 +404,7 @@ describe('ActivityScreen — edge states', () => {
     expect(await screen.findByText('Sender One')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('checkbox', { name: /select activity row/i }));
     expect(screen.getByRole('region', { name: 'Bulk actions' })).toBeInTheDocument();
+    await userEvent.click(screen.getByText('Help with Activity'));
     expect(screen.getByRole('button', { name: 'Export support bundle' })).toBeEnabled();
     expect(requests).toBe(1);
 
@@ -518,6 +519,14 @@ describe('ActivityScreen — what the numbers and rows admit to (QA-activity-202
     renderScreen();
     expect(await screen.findByRole('heading', { name: /no activity yet/i })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /show all activity/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Separate weekly overview' })).toBeNull();
+    const support = screen.getByText('Help with Activity').closest('details');
+    expect(support).not.toHaveAttribute('open');
+    expect(
+      screen.getByRole('button', { name: 'Export support bundle', hidden: true }),
+    ).not.toBeVisible();
+    await userEvent.click(screen.getByText('Help with Activity'));
+    expect(screen.getByRole('button', { name: 'Export support bundle' })).toBeVisible();
   });
 
   it('names the window, and keeps the way out, when only the window is narrow', async () => {
@@ -644,9 +653,8 @@ describe('ActivityScreen — timeline (D57)', () => {
     const weekly = screen.getByRole('region', { name: 'Separate weekly overview' });
     expect(may25.compareDocumentPosition(weekly) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(
-      weekly.compareDocumentPosition(
-        screen.getByRole('button', { name: 'Export support bundle' }),
-      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+      weekly.compareDocumentPosition(screen.getByText('Help with Activity')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(within(may25).getByText('5:30 AM')).toBeInTheDocument();
   });
@@ -742,7 +750,10 @@ describe('ActivityScreen — Filter popover', () => {
     document.body.append(container);
     const trigger = within(container).getByRole('button', { name: /^Filter/ });
     expect(trigger).toBeDisabled();
-    const exportTrigger = within(container).getByRole('button', { name: 'Export support bundle' });
+    const exportTrigger = within(container).getByRole('button', {
+      name: 'Export support bundle',
+      hidden: true,
+    });
     expect(exportTrigger).toBeDisabled();
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
     let root: ReturnType<typeof hydrateRoot> | undefined;
@@ -1094,7 +1105,8 @@ describe('ActivityScreen — populated', () => {
     ]);
     renderScreen();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Export support bundle' }));
+    await userEvent.click(await screen.findByText('Help with Activity'));
+    await userEvent.click(screen.getByRole('button', { name: 'Export support bundle' }));
     const dialog = await screen.findByRole('dialog', { name: 'Export Activity support bundle' });
     expect(within(dialog).getByText('active+mailbox@example.com')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Manual' })).toHaveAttribute(
@@ -1105,7 +1117,7 @@ describe('ActivityScreen — populated', () => {
       'aria-pressed',
       'true',
     );
-    expect(within(dialog).getByRole('button', { name: 'Deleted' })).toHaveAttribute(
+    expect(within(dialog).getByRole('button', { name: 'Moved to Gmail Trash' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -1146,7 +1158,8 @@ describe('ActivityScreen — populated', () => {
     ]);
     renderScreen();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Export support bundle' }));
+    await userEvent.click(await screen.findByText('Help with Activity'));
+    await userEvent.click(screen.getByRole('button', { name: 'Export support bundle' }));
     const dialog = await screen.findByRole('dialog', { name: 'Export Activity support bundle' });
     expect(within(dialog).getByText(/review outcome: failed/i)).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Autopilot' }));
@@ -1232,7 +1245,13 @@ describe('ActivityScreen — populated', () => {
           (el) =>
             `${el.firstChild?.textContent}${el.querySelector('[data-summary-count]')?.textContent}`,
         ),
-    ).toEqual(['Archived12', 'Moved to Trash0', 'Unsubscribe requests4', 'Later1', 'Kept3']);
+    ).toEqual([
+      'Archived12',
+      'Moved to Gmail Trash0',
+      'Unsubscribe requests4',
+      'Moved to Later1',
+      'Kept3',
+    ]);
   });
 
   it('pairs impact totals with explicit periods and keeps action counts behind a disclosure', async () => {
@@ -1271,7 +1290,8 @@ describe('ActivityScreen — populated', () => {
     expect(within(archived).getByText('from 48 senders')).toBeInTheDocument();
     expect(within(archived).getByText('from 240 senders')).toBeInTheDocument();
     expect(within(archived).queryByText('60 actions')).toBeNull();
-    expect(within(archived).getByText('In the last 30 days')).toBeInTheDocument();
+    expect(within(summary).getByText('Last 30 days')).toBeInTheDocument();
+    expect(within(summary).queryByText('In the last 30 days')).toBeNull();
     const details = summary.querySelector('details')!;
     expect(details).not.toHaveAttribute('open');
     expect(within(details).getByText('Archived: 60 actions')).not.toBeVisible();
@@ -1279,7 +1299,7 @@ describe('ActivityScreen — populated', () => {
     expect(details).toHaveAttribute('open');
     expect(within(details).getByText('Archived: 60 actions')).toBeVisible();
     expect(within(archived).getByText('All time: 41,850 emails')).toBeInTheDocument();
-    const deleted = within(summary).getByRole('button', { name: /Moved to Trash/ });
+    const deleted = within(summary).getByRole('button', { name: /Moved to Gmail Trash/ });
     expect(within(deleted).getByText('email')).toBeInTheDocument();
     expect(within(deleted).getByText('from 1 sender')).toBeInTheDocument();
     expect(within(deleted).getByText('from 3 senders')).toBeInTheDocument();
@@ -1432,7 +1452,7 @@ describe('ActivityScreen — populated', () => {
     ]);
     renderScreen();
     const summary = await screen.findByRole('region', { name: 'Activity summary' });
-    const deleted = within(summary).getByRole('button', { name: /Moved to Trash/ });
+    const deleted = within(summary).getByRole('button', { name: /Moved to Gmail Trash/ });
     expect(deleted).toHaveAttribute('aria-pressed', 'true');
     await userEvent.click(within(summary).getByRole('button', { name: /Archived/ }));
     expect(replaceMock).toHaveBeenLastCalledWith('/activity?verb=delete%2Carchive');
@@ -2728,7 +2748,15 @@ describe('ActivityScreen — B8 verb filter', () => {
       within(chips)
         .getAllByRole('button')
         .map((el) => el.textContent),
-    ).toEqual(['All', 'Archived', 'Deleted', 'Unsubscribes', 'Later', 'Kept', 'Follow-ups']);
+    ).toEqual([
+      'All',
+      'Archived',
+      'Moved to Gmail Trash',
+      'Unsubscribe requests',
+      'Moved to Later',
+      'Kept',
+      'Follow-ups',
+    ]);
     expect(within(chips).getByRole('button', { name: 'All' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -3394,7 +3422,7 @@ describe('ActivityScreen — sender-first rows and coloured numbers', () => {
     expect(undo.style.color).toBe('var(--dm-primary)');
     // The link says where it goes; its name still names the sender.
     const gmail = screen.getByRole('link', { name: 'Open Sender One in Gmail' });
-    expect(gmail.textContent).toBe('Gmail↗');
+    expect(gmail).toHaveTextContent('Open in Gmail ↗');
   });
 
   it('leads each row with the sender name, the domain under it', async () => {
@@ -3490,7 +3518,7 @@ describe('ActivityScreen — sender-first rows and coloured numbers', () => {
       second.container.querySelector<HTMLElement>(`[data-summary-count="${key}"]`)?.style.color;
     expect(tone('archived')).toBe('var(--dm-fg)');
     expect(tone('deleted')).toBe('var(--dm-danger-text)');
-    expect(tone('unsubscribed')).toBe('var(--dm-primary)');
+    expect(tone('unsubscribed')).toBe('var(--dm-amber)');
     expect(tone('later')).toBe('var(--dm-primary)');
     expect(tone('kept')).toBe('var(--dm-fg-muted)');
   });

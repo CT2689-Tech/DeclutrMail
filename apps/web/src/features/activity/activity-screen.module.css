@@ -1,0 +1,20 @@
+.summaryTiles {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+}
+.summaryTiles > button {
+  min-width: 0;
+}
+@media (max-width: 760px) {
+  .summaryTiles {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    padding-bottom: 8px;
+  }
+  .summaryTiles > button {
+    flex: 0 0 160px;
+    scroll-snap-align: start;
+  }
+}

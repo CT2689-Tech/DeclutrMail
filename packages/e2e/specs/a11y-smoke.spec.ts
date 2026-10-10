@@ -55,11 +55,11 @@ async function expectCriticalControlsHaveNames(page: Page, isMobile: boolean): P
   const tabBar = page.getByRole('navigation', { name: 'Primary' });
   const sidebar = page.getByRole('navigation', { name: 'Product navigation' });
   if (isMobile) {
-    await expect(tabBar.getByRole('button', { name: 'Overview', exact: true })).toBeVisible();
+    await expect(tabBar.getByRole('button', { name: 'Home', exact: true })).toBeVisible();
     await expect(sidebar).toHaveCount(0);
   } else {
     await expect(tabBar).toHaveCount(0);
-    await expect(sidebar.getByRole('button', { name: 'Overview', exact: true })).toBeVisible();
+    await expect(sidebar.getByRole('button', { name: 'Home', exact: true })).toBeVisible();
   }
 
   // The hamburger is present ONLY at phone widths. It needs the same
@@ -75,7 +75,7 @@ async function expectCriticalControlsHaveNames(page: Page, isMobile: boolean): P
   } else {
     await expect(
       drawerOpener,
-      'hamburger must not render above the 900px breakpoint — the desktop sidebar is already visible',
+      'hamburger must not render above the 760px breakpoint — the desktop sidebar is already visible',
     ).toHaveCount(0);
   }
   await expect(

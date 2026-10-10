@@ -20,13 +20,13 @@ const labels = [
   'Triage',
   'Screener',
   'Autopilot',
-  'Quiet',
-  'Brief',
+  'Quiet hours',
+  'Daily brief',
   'Follow-ups',
   'Later',
   'Activity',
 ];
-const groups = ['Overview', 'Clean up', 'Automations', 'Catch up', 'Activity'];
+const groups = ['Home', 'Clean up', 'Automations', 'Catch up', 'Activity'];
 const render = (props: Partial<Parameters<typeof Sidebar>[0]> = {}) =>
   renderToStaticMarkup(<Sidebar active="senders" onNavigate={() => {}} collapsed {...props} />);
 
@@ -40,7 +40,7 @@ describe('Sidebar — approved workspace rail', () => {
       expect(next).toBeGreaterThan(position);
       position = next;
     }
-    expect(html).toContain('aria-label="DeclutrMail overview"');
+    expect(html).toContain('aria-label="DeclutrMail Home"');
     expect(html).toContain('aria-label="Workspace settings"');
     expect(html).not.toContain('Expand sidebar');
     expect(html).not.toContain('Collapse sidebar');
@@ -67,7 +67,7 @@ describe('Sidebar — approved workspace rail', () => {
       'aria-label="Clean up" aria-description="Senders: 0 · 7 new senders waiting in Screener"',
     );
     expect(html).toContain('data-testid="nav-dot-senders"');
-    expect(html).toContain('aria-label="Catch up" aria-description="Brief: Pro feature"');
+    expect(html).toContain('aria-label="Catch up" aria-description="Daily brief: Pro feature"');
     expect(html).not.toContain('data-testid="nav-dot-brief"');
     expect(render({ counts: { senders: 0, triage: '0' } })).not.toContain('nav-dot-senders');
   });
@@ -88,8 +88,8 @@ describe('Sidebar — approved workspace rail', () => {
 describe('SectionNavigation', () => {
   it.each([
     ['screener', 'Clean up views', ['Senders', 'Triage', 'Screener']],
-    ['quiet', 'Automations views', ['Autopilot', 'Quiet']],
-    ['snoozed', 'Catch up views', ['Brief', 'Follow-ups', 'Later']],
+    ['quiet', 'Automations views', ['Autopilot', 'Quiet hours']],
+    ['snoozed', 'Catch up views', ['Daily brief', 'Follow-ups', 'Later']],
   ])('exposes the complete contextual group for %s', (active, name, expectedLabels) => {
     const html = renderToStaticMarkup(
       <SectionNavigation active={active as string} onNavigate={() => {}} />,

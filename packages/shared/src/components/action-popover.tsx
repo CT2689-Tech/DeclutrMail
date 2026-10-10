@@ -78,6 +78,8 @@ export interface ActionPopoverProps {
    * `canUnsubscribe` / `canLater` flags via this map.
    */
   capabilities?: Partial<Record<VerbId, boolean>>;
+  /** Visible explanations work for touch, keyboard and screen-reader users. */
+  disabledReasons?: Partial<Record<VerbId, string>>;
 
   /**
    * Optional dimmed-already-selected verb (rendered with reduced
@@ -129,6 +131,7 @@ export interface ActionPopoverProps {
 export function ActionPopover({
   verbs = VERB_REGISTRY.map((v) => v.id),
   capabilities = {},
+  disabledReasons = {},
   dimmedVerb,
   onPick,
   onClose,
@@ -269,7 +272,14 @@ export function ActionPopover({
           const capable = capabilities[verbId] !== false;
           const dimmed = dimmedVerb === verbId;
           return (
-            <Row key={verbId} verb={verb} disabled={!capable} dimmed={dimmed} onPick={onPick} />
+            <Row
+              key={verbId}
+              verb={verb}
+              disabled={!capable}
+              reason={disabledReasons[verbId]}
+              dimmed={dimmed}
+              onPick={onPick}
+            />
           );
         })}
       </div>
@@ -280,11 +290,13 @@ export function ActionPopover({
 function Row({
   verb,
   disabled,
+  reason,
   dimmed,
   onPick,
 }: {
   verb: VerbSpec;
   disabled: boolean;
+  reason?: string | undefined;
   dimmed: boolean;
   onPick: (id: VerbId) => void;
 }) {
@@ -303,16 +315,18 @@ function Row({
       <button
         type="button"
         role="menuitem"
-        disabled={disabled}
-        onClick={() => onPick(verb.id)}
+        aria-disabled={disabled || undefined}
+        onClick={() => {
+          if (!disabled) onPick(verb.id);
+        }}
         style={{
           display: 'grid',
           gridTemplateColumns: '20px 1fr auto',
           gap: 10,
           alignItems: 'center',
           width: '100%',
-          height: 40,
-          padding: '0 12px',
+          minHeight: 44,
+          padding: '10px 12px',
           background: 'transparent',
           border: 'none',
           borderRadius: radius.md,
@@ -321,7 +335,6 @@ function Row({
           fontWeight: 500,
           color: disabled || dimmed ? color.fgMuted : TONE_TO_FG[verb.tone],
           cursor: disabled ? 'not-allowed' : 'pointer',
-          opacity: disabled ? 0.5 : 1,
           textAlign: 'left',
           transition: `background ${motion.fast} ${motion.ease}`,
         }}
@@ -339,7 +352,22 @@ function Row({
         }}
       >
         <VerbDot verb={verb} />
-        <span>{verb.label}</span>
+        <span>
+          {verb.label}
+          {disabled && reason && (
+            <span
+              style={{
+                display: 'block',
+                marginTop: 4,
+                fontSize: 12,
+                lineHeight: 1.45,
+                fontWeight: 400,
+              }}
+            >
+              {reason}
+            </span>
+          )}
+        </span>
         <Kbd shortcut={verb.shortcut} />
       </button>
     </>
@@ -380,7 +408,11 @@ function VerbDot({ verb }: { verb: { id: string; tone: string } }) {
 /** Right-aligned key hint — the shared key chip, hidden from AT. */
 function Kbd({ shortcut }: { shortcut: string }) {
   return (
-    <span aria-hidden="true" style={{ justifySelf: 'end', display: 'inline-flex' }}>
+    <span
+      aria-hidden="true"
+      className="dm-key-hint"
+      style={{ justifySelf: 'end', display: 'inline-flex' }}
+    >
       <KeyChip style={{ color: color.fgMuted }}>{shortcut}</KeyChip>
     </span>
   );

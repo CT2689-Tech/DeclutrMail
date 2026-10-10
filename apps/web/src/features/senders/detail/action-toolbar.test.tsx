@@ -16,20 +16,20 @@ const sender: typeof makeSender = (overrides = {}) =>
     ...overrides,
   });
 
-describe('ActionToolbar — D245 fact-derived primary', () => {
+describe('ActionToolbar — neutral actions', () => {
   it('does not describe unchecked unsubscribe availability as a missing link', () => {
     render(<ActionToolbar sender={sender({ unsubscribeMethod: null })} onAction={vi.fn()} />);
     const unsubscribe = screen.getByRole('button', { name: 'Unsubscribe' });
-    expect(unsubscribe).toBeDisabled();
-    expect(unsubscribe.title).toMatch(/hasn’t been checked/);
+    expect(unsubscribe).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('note')).toHaveTextContent(/not checked|hasn’t been checked/i);
     expect(screen.getByRole('button', { name: 'Keep' }).title).not.toMatch(/offer no/);
   });
 
-  it('shows why one-click Unsubscribe is highlighted without requiring a hover', () => {
+  it('does not show a competing recommendation from unsubscribe capability', () => {
     render(
       <ActionToolbar sender={sender({ unsubscribeMethod: 'one_click' })} onAction={vi.fn()} />,
     );
-    expect(screen.getByText('One-click unsubscribe available')).toBeVisible();
+    expect(screen.queryByText('One-click unsubscribe available')).not.toBeInTheDocument();
   });
   function actionButtonTag(html: string, label: string): string {
     const marker = `aria-label="${label} (${label[0]})"`;
@@ -40,9 +40,9 @@ describe('ActionToolbar — D245 fact-derived primary', () => {
   }
 
   it.each([
-    ['Keep', sender(), tokens.color.primary],
-    ['Unsubscribe', sender({ unsubscribeMethod: 'one_click' }), tokens.color.amber],
-    ['Archive', sender({ lastDays: 250 }), tokens.color.fg],
+    ['Keep', sender(), tokens.color.fill],
+    ['Unsubscribe', sender({ unsubscribeMethod: 'one_click' }), tokens.color.fill],
+    ['Archive', sender({ lastDays: 250 }), tokens.color.fill],
     [
       'Keep',
       sender({
@@ -53,9 +53,9 @@ describe('ActionToolbar — D245 fact-derived primary', () => {
           protectionSetAt: '2026-06-01T00:00:00.000Z',
         },
       }),
-      tokens.color.primary,
+      tokens.color.fill,
     ],
-  ] as const)('highlights %s from observed facts', (label, row, background) => {
+  ] as const)('keeps %s neutral for different observed facts', (label, row, background) => {
     const html = renderToStaticMarkup(<ActionToolbar sender={row} onAction={() => {}} shortcuts />);
     expect(actionButtonTag(html, label)).toContain(`background:${background}`);
   });
@@ -116,8 +116,8 @@ describe('ActionToolbar — D245 fact-derived primary', () => {
   });
 });
 
-describe('ActionToolbar — one filled verb, four quiet ones', () => {
-  it('fills only the fact-derived primary', () => {
+describe('ActionToolbar — consistent neutral verbs', () => {
+  it('uses the same neutral background for every action', () => {
     const html = renderToStaticMarkup(
       <ActionToolbar sender={sender()} onAction={() => {}} shortcuts />,
     );
@@ -125,8 +125,7 @@ describe('ActionToolbar — one filled verb, four quiet ones', () => {
     // fill capsule (the key hints inside are not buttons).
     const buttons = html.match(/<button[^>]*>/g) ?? [];
     expect(buttons).toHaveLength(5);
-    expect(buttons.filter((b) => b.includes(`background:${tokens.color.fill}`))).toHaveLength(4);
-    expect(buttons.filter((b) => b.includes(`background:${tokens.color.primary}`))).toHaveLength(1);
+    expect(buttons.filter((b) => b.includes(`background:${tokens.color.fill}`))).toHaveLength(5);
     expect(html).not.toContain('Nothing moves until you confirm');
   });
 });

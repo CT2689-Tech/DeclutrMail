@@ -71,7 +71,8 @@ import {
   useActivityWeeklyReview,
   useRevertActivity,
 } from './api/use-activity';
-import { WeeklyReviewStrip } from './weekly-review-strip';
+import { WeeklyReviewStrip, WEEKLY_OUTCOMES } from './weekly-review-strip';
+import styles from './activity-screen.module.css';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb } from '@/lib/sentry';
 import {
@@ -386,6 +387,12 @@ export function ActivityScreen() {
   const showingStaleRows = query.isPlaceholderData;
   const hasAnyActivity = rows.length > 0 || hasAnyCount(stats) || hasAnyCount(allTimeStats);
 
+  const hasWeeklyOverview =
+    weeklyQuery.isError ||
+    Boolean(
+      weeklyQuery.data &&
+      (hasAnyActivity || WEEKLY_OUTCOMES.some(({ key }) => weeklyQuery.data![key] > 0)),
+    );
   const weeklyStrip = (
     <WeeklyReviewStrip
       review={weeklyQuery.data ?? null}
@@ -541,7 +548,7 @@ export function ActivityScreen() {
           </ActivityInteractionBlocked.Provider>
         </>
       )}
-      {!invalidActiveFilters && (
+      {!invalidActiveFilters && hasWeeklyOverview && (
         <section
           aria-label="Separate weekly overview"
           style={{ borderTop: `1px solid ${color.line}`, paddingTop: 20 }}
@@ -552,19 +559,11 @@ export function ActivityScreen() {
           {weeklyStrip}
         </section>
       )}
-      <div
-        style={{
-          borderTop: `1px solid ${color.line}`,
-          paddingTop: 16,
-          display: 'flex',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 12,
-        }}
-      >
-        <span style={{ color: color.fgMuted, fontSize: text.sm }}>
-          Need help investigating an outcome?
-        </span>{' '}
+      <details style={{ borderTop: `1px solid ${color.line}`, paddingTop: 16 }}>
+        <summary className="dm-disclosure">Help with Activity</summary>
+        <p style={{ color: color.fgMuted, fontSize: text.sm }}>
+          Export a support bundle when you need help investigating an outcome.
+        </p>
         <ExportSupportBundleButton
           filters={filters}
           mailboxEmail={activeMailboxEmail}
@@ -572,7 +571,7 @@ export function ActivityScreen() {
           disabled={invalidActiveFilters}
           touch={isMobile}
         />
-      </div>
+      </details>
     </div>
   );
 }
@@ -834,7 +833,7 @@ const SUMMARY_VERBS: ReadonlyArray<{
   {
     key: 'deleted',
     verb: 'delete',
-    label: 'Moved to Trash',
+    label: 'Moved to Gmail Trash',
     tone: color.dangerText,
   },
   // D9 — this bucket counts unsubscribe REQUESTS (the `unsubscribe`
@@ -849,9 +848,9 @@ const SUMMARY_VERBS: ReadonlyArray<{
     key: 'unsubscribed',
     verb: 'unsubscribe',
     label: 'Unsubscribe requests',
-    tone: color.primary,
+    tone: color.amber,
   },
-  { key: 'later', verb: 'later', label: 'Later', tone: color.primary },
+  { key: 'later', verb: 'later', label: 'Moved to Later', tone: color.primary },
   { key: 'kept', verb: 'keep', label: 'Kept', tone: color.fgMuted },
 ];
 
@@ -925,11 +924,6 @@ function SummaryRow({
   // alone — a panel of zeros would say nothing it doesn't.
   if (!stats || (!hasAnyCount(stats) && !hasAnyCount(allTimeStats))) return null;
   const showAllTime = !isWindowAllTime && allTimeStats !== null;
-  const periodLabel = isWindowAllTime
-    ? 'All time'
-    : windowLabel.startsWith('Last ')
-      ? `In the ${windowLabel.toLowerCase()}`
-      : windowLabel;
   const showActionDetails = SUMMARY_VERBS.some(
     ({ key }) => summaryMetric(stats, key).unit !== 'actions',
   );
@@ -983,13 +977,7 @@ function SummaryRow({
             </Link>
           )}
         </div>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(min(140px, 100%), 1fr))',
-            gap: 2,
-          }}
-        >
+        <div className={styles.summaryTiles}>
           {SUMMARY_VERBS.map(({ key, verb, label, tone }) => {
             const isActive = verbs.includes(verb);
             const metric = summaryMetric(stats, key);
@@ -1040,12 +1028,7 @@ function SummaryRow({
                   <span
                     data-summary-count={key}
                     style={{
-                      ...numeralStyle,
-                      fontFamily: font.display,
-                      fontSize: text['3xl'],
-                      fontWeight: 500,
-                      letterSpacing: '-0.02em',
-                      lineHeight: 1.05,
+                      ...tokens.typography.stat,
                       color: metric.count === 0 ? color.fgMuted : tone,
                     }}
                   >
@@ -1059,7 +1042,6 @@ function SummaryRow({
                   {senders !== undefined &&
                     `from ${formatCount(senders)} ${senders === 1 ? 'sender' : 'senders'}`}
                 </span>
-                <span style={{ fontSize: text.xs, color: color.fgSoft }}>{periodLabel}</span>
                 {showAllTime && allTimeMetric && (
                   <span
                     style={{
@@ -1092,7 +1074,7 @@ function SummaryRow({
       <p style={{ margin: 0, fontSize: text.xs, color: color.fgMuted }}>{caption}</p>
       {showActionDetails && (
         <details style={{ fontSize: text.xs, color: color.fgMuted }}>
-          <summary style={{ cursor: 'pointer' }}>View action counts</summary>
+          <summary className="dm-disclosure">View action counts</summary>
           <p style={{ margin: '8px 0' }}>
             {windowLabel}. One cleanup action can handle many emails.
           </p>
@@ -1111,7 +1093,7 @@ function SummaryRow({
 
 /** A chip's dot — the colour the verb's rows carry on their rail. */
 function verbChipDot(verb: ActivityVerbFilterWire): string {
-  return verb === 'unsubscribe' ? color.primary : activityActionDot(verb).color;
+  return activityActionDot(verb).color;
 }
 
 /**
@@ -1127,18 +1109,7 @@ function ActionChips({
   onVerbs: (next: readonly ActivityVerbFilterWire[]) => void;
 }) {
   return (
-    <div
-      role="group"
-      aria-label="Action"
-      style={{
-        display: 'flex',
-        gap: 6,
-        overflowX: 'auto',
-        margin: '0 calc(-1 * clamp(16px, 4vw, 24px))',
-        padding: '2px clamp(16px, 4vw, 24px)',
-        scrollbarWidth: 'none',
-      }}
-    >
+    <div role="group" aria-label="Action" className="dm-filter-tabs">
       <ActionChip label="All" isActive={verbs.length === 0} onClick={() => onVerbs([])} />
       {VERB_CHIPS.map((chip) => (
         <ActionChip
@@ -2467,7 +2438,6 @@ function RecoveryCell({
 function OpenInGmailLink({
   row,
   href,
-  touch = false,
 }: {
   row: ActivityRowWire;
   /** Built by the caller; null when there is no sender or no mailbox to link into. */
@@ -2485,31 +2455,9 @@ function OpenInGmailLink({
           rel="noopener noreferrer"
           aria-label={name}
           aria-describedby={describedBy}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = color.fillHover;
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = color.fill;
-          }}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 3,
-            height: touch ? 36 : 26,
-            padding: '0 10px',
-            fontFamily: font.sans,
-            fontSize: text.xs,
-            fontWeight: 600,
-            color: color.fgSoft,
-            background: color.fill,
-            borderRadius: radius.pill,
-            textDecoration: 'none',
-            whiteSpace: 'nowrap',
-            transition: `background ${motion.fast} ${motion.ease}`,
-          }}
+          className="dm-external-link"
         >
-          Gmail
-          <span aria-hidden="true">↗</span>
+          Open in Gmail <span aria-hidden="true">↗</span>
         </a>
       )}
     </Tooltip>

@@ -81,8 +81,7 @@ export function AutopilotObservePreview() {
         <h1
           style={{
             margin: 0,
-            fontSize: text['2xl'],
-            fontWeight: 650,
+            ...tokens.typography.pageTitle,
             letterSpacing: '-0.02em',
             color: color.fg,
           }}

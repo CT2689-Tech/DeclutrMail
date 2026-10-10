@@ -98,7 +98,7 @@ describe('QuietHoursCard — form contract', () => {
     expect(screen.getByLabelText('Quiet window start')).toHaveValue('22:00');
     expect(screen.getByLabelText('Quiet window end')).toHaveValue('06:00');
     expect(screen.getByLabelText('Quiet window timezone')).toHaveValue('Asia/Kolkata');
-    expect(screen.getByRole('switch', { name: 'Quiet hours' })).toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Enable quiet hours' })).toBeChecked();
     expect(screen.getByText('Saved')).toBeInTheDocument();
   });
 
@@ -111,7 +111,7 @@ describe('QuietHoursCard — form contract', () => {
     renderCard();
     const save = screen.getByRole('button', { name: 'Save quiet hours' });
     expect(save).toBeDisabled();
-    await userEvent.click(screen.getByRole('switch', { name: 'Quiet hours' }));
+    await userEvent.click(screen.getByRole('switch', { name: 'Enable quiet hours' }));
     expect(save).toBeEnabled();
   });
 
@@ -122,6 +122,21 @@ describe('QuietHoursCard — form contract', () => {
     });
     await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
     expect(props.onSave).toHaveBeenCalledWith({ ...CONFIG, startLocal: '20:30' });
+  });
+
+  it('shows a readable timezone while saving its original IANA identifier', async () => {
+    const config = { ...CONFIG, timezone: 'America/Los_Angeles', endLocal: '07:00' };
+    const props = renderCard({ state: { kind: 'ready', config, activeNow: false } });
+    expect(screen.getByRole('combobox', { name: 'Quiet window timezone' })).toHaveValue(
+      'America/Los_Angeles',
+    );
+    expect(
+      screen.getByText('Pacific Time (Los Angeles)', { selector: 'span' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Ends at 7:00 AM the next day.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('switch', { name: 'Enable quiet hours' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+    expect(props.onSave).toHaveBeenCalledWith({ ...config, enabled: false });
   });
 
   it('rejects a zero-length window (start === end) client-side', async () => {
@@ -136,7 +151,7 @@ describe('QuietHoursCard — form contract', () => {
 
   it('shows the cross-midnight hint when start > end', () => {
     renderCard();
-    expect(screen.getByText(/06:00 the next day/)).toBeInTheDocument();
+    expect(screen.getByText(/6:00 AM the next day/)).toBeInTheDocument();
   });
 
   it('hides the cross-midnight hint for a same-day window', () => {
@@ -152,14 +167,14 @@ describe('QuietHoursCard — form contract', () => {
 
   it('disables the whole form while saving', () => {
     renderCard({ saving: true });
-    expect(screen.getByRole('switch', { name: 'Quiet hours' })).toBeDisabled();
+    expect(screen.getByRole('switch', { name: 'Enable quiet hours' })).toBeDisabled();
     expect(screen.getByLabelText('Quiet window start')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
   });
 
   it('unconfigured mailbox gets the disabled-by-default draft', () => {
     renderCard({ state: { kind: 'ready', config: null, activeNow: false } });
-    expect(screen.getByRole('switch', { name: 'Quiet hours' })).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Enable quiet hours' })).not.toBeChecked();
     expect(screen.getByLabelText('Quiet window start')).toHaveValue('22:00');
     expect(screen.getByLabelText('Quiet window end')).toHaveValue('07:00');
   });
@@ -177,7 +192,7 @@ describe('QuietHoursCard — form contract', () => {
   it('reports each edit, so the screen can end a finished save', async () => {
     const onEdit = vi.fn();
     renderCard({ onEdit });
-    await userEvent.click(screen.getByRole('switch', { name: 'Quiet hours' }));
+    await userEvent.click(screen.getByRole('switch', { name: 'Enable quiet hours' }));
     fireEvent.change(screen.getByLabelText('Quiet window start'), {
       target: { value: '20:30' },
     });

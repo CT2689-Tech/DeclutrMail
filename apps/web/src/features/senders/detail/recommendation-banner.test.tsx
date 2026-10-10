@@ -21,7 +21,7 @@ describe('RecommendationBanner — D245 optional suggestion', () => {
 
     const details = screen.getByRole('group', { name: 'Optional suggestion: Archive' });
     expect(details).not.toHaveAttribute('open');
-    expect(details.querySelector('summary')).toHaveTextContent(/Suggestion · Archive/);
+    expect(details.querySelector('summary')).toHaveTextContent(/Suggested: Archive/);
     expect(screen.queryByText(/confidence/i)).not.toBeInTheDocument();
     expect(screen.getByRole('list', { name: 'Details used', hidden: true })).toBeInTheDocument();
     expect(screen.getByText('12 messages received in the last 30 days')).toBeInTheDocument();
@@ -47,24 +47,10 @@ describe('RecommendationBanner — D245 optional suggestion', () => {
     expect(screen.queryByText('Suggested action')).not.toBeInTheDocument();
   });
 
-  /**
-   * QA-sender-detail-20260902-07: the toolbar's fact-derived primary verb
-   * and this banner's engine suggestion are two independently-sourced
-   * signals that can disagree with no explanation of which is which.
-   */
-  it('names the toolbar highlight when it disagrees with the suggestion', () => {
-    render(<RecommendationBanner recommendation={SUGGESTION} toolbarHighlight="later" />);
-    expect(screen.getByText(/highlighted button is Later/i)).toBeInTheDocument();
-  });
-
-  it('says nothing extra when the toolbar highlight agrees with the suggestion', () => {
-    render(<RecommendationBanner recommendation={SUGGESTION} toolbarHighlight="archive" />);
-    expect(screen.queryByText(/highlighted button is/i)).not.toBeInTheDocument();
-  });
-
-  it('says nothing extra when no toolbar highlight is given', () => {
+  it('shows one labelled suggestion without toolbar implementation wording', () => {
     render(<RecommendationBanner recommendation={SUGGESTION} />);
     expect(screen.queryByText(/highlighted button is/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Suggested:/)).toHaveTextContent('Archive');
   });
 
   /**

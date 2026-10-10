@@ -8,6 +8,7 @@
 import { PrivacyDataRoute } from '@/features/settings/privacy-data/privacy-data-screen';
 import {
   PrivacyDataContent,
+  PrivacyDataFooter,
   PRIVACY_DATA_EXPORT_COPY,
 } from '@/features/settings/privacy-data/privacy-data-content';
 
@@ -20,6 +21,7 @@ export default function SettingsPrivacyPage() {
   return (
     <PrivacyDataRoute
       privacyContent={<PrivacyDataContent />}
+      footerContent={<PrivacyDataFooter />}
       exportCopy={PRIVACY_DATA_EXPORT_COPY}
     />
   );

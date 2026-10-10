@@ -1,4 +1,4 @@
-import { Card, tokens } from '@declutrmail/shared';
+import { ANALYTICS_PRIVACY_CLAIM, Card, tokens } from '@declutrmail/shared';
 import { CookiePreferenceControls } from './cookie-preference-controls';
 
 const { color, font } = tokens;
@@ -26,7 +26,9 @@ export function CookiePreferences() {
           Essential cookies for sign-in and billing are always on — the service does not work
           without them. This setting covers optional analytics only.
         </p>
-        <CookiePreferenceControls />
+        <CookiePreferenceControls
+          analyticsDetail={`Also allow PostHog analytics so we can see which features matter. ${ANALYTICS_PRIVACY_CLAIM}`}
+        />
         <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: color.fgMuted }}>
           Changes apply immediately and are saved on this device. Switching to Essential only stops
           PostHog and clears its ID.

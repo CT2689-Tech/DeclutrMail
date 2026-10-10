@@ -14,8 +14,8 @@ import { color, font, motion, radius, shadow, space, text } from '../../tokens/t
 
 /**
  * A two-or-three way choice that changes the sheet's count ("Inbox only /
- * Inbox + archived"). Render it only when the options give DIFFERENT
- * counts — a chooser whose options agree is noise.
+ * Inbox + archived"). Counts are a preview snapshot; callers explain when
+ * distinct scopes currently match instead of silently changing the chosen reach.
  */
 export function SheetSegmented<T extends string>({
   label,
@@ -60,7 +60,7 @@ export function SheetSegmented<T extends string>({
               disabled={opt.disabled}
               onClick={() => onChange(opt.value)}
               style={{
-                minHeight: 38,
+                minHeight: 44,
                 padding: `0 ${space[3]}px`,
                 border: 'none',
                 borderRadius: radius.pill,
@@ -72,7 +72,7 @@ export function SheetSegmented<T extends string>({
                 fontWeight: selected ? 600 : 500,
                 cursor: opt.disabled ? 'not-allowed' : 'pointer',
                 opacity: opt.disabled ? 0.45 : 1,
-                whiteSpace: 'nowrap',
+                whiteSpace: 'normal',
                 transition: `background ${motion.fast} ${motion.ease}, color ${motion.fast} ${motion.ease}`,
               }}
             >
@@ -199,7 +199,7 @@ const sheetTextActionStyle = {
   cursor: 'pointer',
   fontFamily: font.sans,
   fontSize: text.sm,
-  fontWeight: 550,
+  fontWeight: 500,
   color: color.fg,
   textDecoration: 'none',
 } as const;
@@ -226,7 +226,7 @@ export function SheetTextAction({
         target="_blank"
         rel="noopener noreferrer"
         title={title}
-        style={sheetTextActionStyle}
+        className="dm-external-link"
       >
         {children}
       </a>

@@ -40,11 +40,11 @@ export const SOURCE_CHIPS: ReadonlyArray<{ value: ActivitySourceFilterWire; labe
 
 export const VERB_CHIPS: ReadonlyArray<{ value: ActivityVerbFilterWire; label: string }> = [
   { value: 'archive', label: 'Archived' },
-  { value: 'delete', label: 'Deleted' },
+  { value: 'delete', label: 'Moved to Gmail Trash' },
   // D9 — filters the `unsubscribe` intent rows; label matches the summary
   // ("Unsubscribes", not the success-claiming "Unsubscribed").
-  { value: 'unsubscribe', label: 'Unsubscribes' },
-  { value: 'later', label: 'Later' },
+  { value: 'unsubscribe', label: 'Unsubscribe requests' },
+  { value: 'later', label: 'Moved to Later' },
   { value: 'keep', label: 'Kept' },
   { value: 'followup-dismiss', label: 'Follow-ups' },
 ];
@@ -256,7 +256,7 @@ function DateInput({
         onChange={(e) => onChange(e.target.value)}
         style={{
           ...numeralStyle,
-          fontSize: text.sm,
+          fontSize: tokens.field.fontSize,
           padding: '2px 0',
           border: 'none',
           background: 'transparent',
@@ -344,7 +344,7 @@ export function SenderSearchInput({
         }}
         aria-label="Search sender"
         style={{
-          fontSize: text.base,
+          fontSize: tokens.field.fontSize,
           fontFamily: font.sans,
           padding: '2px 0',
           border: 'none',

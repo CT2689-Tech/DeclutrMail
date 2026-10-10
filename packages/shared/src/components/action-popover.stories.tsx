@@ -75,6 +75,10 @@ export const PartialCapabilities: Story = {
     <Container>
       <ActionPopover
         ariaLabel="Actions for Acme Deals"
+        disabledReasons={{
+          unsubscribe: 'This sender has no unsubscribe link.',
+          later: 'Connect a mailbox to use Later.',
+        }}
         capabilities={{
           keep: true,
           archive: true,

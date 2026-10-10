@@ -94,35 +94,53 @@ describe('AppShell — fixed workspace rail', () => {
         <div>Page content</div>
       </AppShell>,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'DeclutrMail overview' }));
+    fireEvent.click(screen.getByRole('button', { name: 'DeclutrMail Home' }));
     fireEvent.click(screen.getByRole('button', { name: 'Workspace settings' }));
     expect(onNavigate.mock.calls).toEqual([['home'], ['settings']]);
   });
-  it('keeps all ten features in the hamburger drawer and closes after navigation', () => {
+  it('offers account utilities without duplicating the primary routes and closes after navigation', () => {
     const onNavigate = vi.fn();
     render(
-      <AppShell active="senders" onNavigate={onNavigate}>
+      <AppShell
+        active="senders"
+        onNavigate={onNavigate}
+        accountLabel="review@example.com"
+        accountInitial="R"
+      >
         <div>Page content</div>
       </AppShell>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }));
     const drawer = screen.getByRole('dialog', { name: 'Navigation menu' });
-    for (const label of [
-      'Home',
-      'Senders',
-      'Triage',
-      'Screener',
-      'Autopilot',
-      'Quiet',
-      'Brief',
-      'Follow-ups',
-      'Later',
-      'Activity',
-    ]) {
+    for (const label of ['Settings', 'Billing', 'Help & glossary']) {
       expect(within(drawer).getByRole('button', { name: label })).toBeInTheDocument();
     }
-    fireEvent.click(within(drawer).getByRole('button', { name: 'Later' }));
-    expect(onNavigate).toHaveBeenCalledWith('snoozed');
+    expect(
+      within(drawer).getByRole('button', { name: /review@example.com Manage Gmail accounts/ }),
+    ).toBeInTheDocument();
+    expect(within(drawer).queryByRole('button', { name: 'Senders' })).toBeNull();
+    expect(within(drawer).queryByRole('button', { name: 'Triage' })).toBeNull();
+    const close = within(drawer).getByRole('button', { name: 'Close navigation menu' });
+    expect(close.style.left).toBe('');
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Billing' }));
+    expect(onNavigate).toHaveBeenCalledWith('billing');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it.each([
+    ['Settings', 'settings'],
+    ['Help & glossary', 'settings/help'],
+    ['Gmail accounts Manage Gmail accounts', 'settings#mailboxes'],
+  ])('routes the utility %s to %s', (name, route) => {
+    const onNavigate = vi.fn();
+    render(
+      <AppShell active="home" onNavigate={onNavigate}>
+        <div>Page content</div>
+      </AppShell>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name }));
+    expect(onNavigate).toHaveBeenCalledWith(route);
     expect(screen.queryByRole('dialog')).toBeNull();
   });
   it('prefetches inactive group entry points on rail intent and mobile touch', () => {
@@ -172,7 +190,7 @@ describe('AppShell — mobile workspace navigation', () => {
     ['quiet', 'Automations'],
     ['followups', 'Catch up'],
     ['snoozed', 'Catch up'],
-    ['home', 'Overview'],
+    ['home', 'Home'],
     ['activity', 'Activity'],
   ])('marks the group for %s', (active, label) => {
     const onNavigate = vi.fn();
@@ -187,7 +205,7 @@ describe('AppShell — mobile workspace navigation', () => {
       'page',
     );
     expect(within(tabBar()).queryByRole('button', { name: 'More' })).toBeNull();
-    fireEvent.click(within(tabBar()).getByRole('button', { name: 'Overview' }));
+    fireEvent.click(within(tabBar()).getByRole('button', { name: 'Home' }));
     expect(onNavigate).toHaveBeenCalledWith('home');
   });
 });

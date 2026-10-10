@@ -40,7 +40,6 @@ import {
 } from './billing-model';
 import { launchCheckout } from './checkout';
 import { PlanConsequences } from './plan-coverage';
-import { GroupTitle } from '@/features/settings/settings-list';
 
 const ChangePlanPanel = dynamic(
   () => import('./change-plan-panel').then((module) => module.ChangePlanPanel),
@@ -560,9 +559,16 @@ export function PlanPicker({
           flexWrap: 'wrap',
         }}
       >
-        <GroupTitle as="div">Plans</GroupTitle>
+        <h2 style={{ ...tokens.typography.sectionTitle, margin: 0 }}>Plans</h2>
         <CycleToggle cycle={cycle} onChange={setCycle} monthsFree={monthsFree} />
       </div>
+
+      {currentTier !== 'free' && grantingSub === null ? (
+        <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted, lineHeight: 1.5 }}>
+          Choosing “Subscribe” starts a new paid subscription, even when you already have access to
+          a higher plan. Review its price and included features before checkout.
+        </p>
+      ) : null}
 
       {initialIntent?.promo === 'foundingPro' && grantingSub !== null ? (
         <p
@@ -680,9 +686,7 @@ export function PlanPicker({
         style={{ width: '100%' }}
         onToggle={(event) => setComparisonOpen(event.currentTarget.open)}
       >
-        <summary className={linkStyles.link} style={{ cursor: 'pointer' }}>
-          Compare included features
-        </summary>
+        <summary className="dm-disclosure">Compare included features</summary>
         <div
           role="region"
           aria-label="Plan feature comparison"
@@ -883,7 +887,7 @@ function PlanCard({
       aria-current={isCurrentPlan ? 'true' : undefined}
       style={{
         flex: '1 1 180px',
-        padding: 22,
+        padding: 24,
         background: color.card,
         // Keep selection visible while using the same thin editorial boundaries.
         border: `1px solid ${isSelected ? color.primary : color.border}`,
@@ -898,20 +902,18 @@ function PlanCard({
       <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span
           style={{
-            fontSize: text.lg,
-            fontWeight: 650,
-            letterSpacing: '-0.01em',
+            ...tokens.typography.sectionTitle,
             color: color.fg,
           }}
         >
           {tier.name}
         </span>
-        {isCurrentPlan ? <Pill tone="primary">Current</Pill> : null}
+        {isCurrentPlan ? <Pill tone="primary">Current plan</Pill> : null}
       </span>
       <span
         style={{
           fontSize: text.xl,
-          fontWeight: 650,
+          fontWeight: 600,
           letterSpacing: '-0.02em',
           color: color.fg,
           fontVariantNumeric: 'tabular-nums',

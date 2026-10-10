@@ -16,9 +16,8 @@ export default function BriefError({
 }) {
   return (
     <RouteErrorScreen
-      title="Daily Brief"
+      title="Daily brief"
       kicker="Catch up / Your daily edition"
-      maxWidth={1120}
       error={error}
       reset={reset}
       boundary="brief"

@@ -18,25 +18,25 @@ interface NavItem {
 export type NavCount = string | number | { text: string | number; label: string };
 
 // Every real destination remains available in section navigation and the
-// complete mobile menu. The desktop rail uses the approved five groups.
+// expanded navigation. The desktop rail uses the approved five groups.
 export const NAV: readonly NavItem[] = [
   { id: 'home', icon: 'M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10' },
   {
     id: 'senders',
-    icon: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+    icon: 'M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2M16 3a4 4 0 0 1 0 8m5 10v-2a4 4 0 0 0-3-3.87M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z',
   },
   { id: 'triage', icon: 'M3 6h18M6 12h12M9 18h6' },
   { id: 'screener', icon: 'M9 12l2 2 4-4M21 12c0 5-4 9-9 9s-9-4-9-9 4-9 9-9c1 0 2 0 3 .5' },
   { id: 'autopilot', icon: 'M12 2L2 7l10 5 10-5zM2 17l10 5 10-5M2 12l10 5 10-5' },
   { id: 'quiet', icon: 'M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2' },
   { id: 'brief', icon: 'M4 4h12l4 4v12a2 2 0 0 1-2 2H4zM14 4v4h6' },
-  { id: 'followups', icon: 'M3 12h6l3-9 6 18 3-9h3' },
+  { id: 'followups', icon: 'M4 4h16v12H9l-5 4V4Zm4 4h8M8 12h5' },
   { id: 'snoozed', icon: 'M12 6v6l4 2M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z' },
   { id: 'activity', icon: 'M3 12h4l3-9 4 18 3-9h4' },
 ];
 
 export const WORKSPACE_NAV = [
-  { id: 'home', label: 'Overview', icon: 'm3 10 9-7 9 7v10H3V10Zm6 10v-7h6v7', members: ['home'] },
+  { id: 'home', label: 'Home', icon: 'm3 10 9-7 9 7v10H3V10Zm6 10v-7h6v7', members: ['home'] },
   {
     id: 'senders',
     label: 'Clean up',
@@ -96,16 +96,14 @@ export function Sidebar({
   counts = {},
   locks = {},
   collapsed = false,
-  accountInitial,
 }: {
   active: string;
   onNavigate: (id: string) => void;
   onNavigateIntent?: ((id: string) => void) | undefined;
   counts?: Partial<Record<string, NavCount>>;
   locks?: Partial<Record<string, string>>;
-  /** Compact five-section rail; false renders the complete mobile menu. */
+  /** Compact five-section rail; false renders a labelled feature list. */
   collapsed?: boolean;
-  accountInitial?: string | undefined;
 }) {
   const labels = useLabels();
   const [hint, setHint] = useState<{ label: string; top: number; left: number } | null>(null);
@@ -137,6 +135,7 @@ export function Sidebar({
         overflowX: 'hidden',
         overflowY: 'auto',
         background: 'var(--dm-nav-bg)',
+        borderRight: '1px solid var(--dm-nav-active)',
         padding: '22px 12px',
         display: 'flex',
         flexDirection: 'column',
@@ -147,7 +146,7 @@ export function Sidebar({
       <button
         type="button"
         className="dm-rail-brand"
-        aria-label="DeclutrMail overview"
+        aria-label="DeclutrMail Home"
         onClick={() => onNavigate('home')}
         style={{
           width: collapsed ? 44 : '100%',
@@ -319,7 +318,7 @@ export function Sidebar({
           alignSelf: 'center',
           minHeight: 44,
           marginTop: 'auto',
-          background: '#ffffff10',
+          background: 'var(--dm-nav-active)',
           border: 0,
           borderRadius: 10,
           color: 'var(--dm-nav-fg)',
@@ -327,9 +326,7 @@ export function Sidebar({
           cursor: 'pointer',
         }}
       >
-        {accountInitial ?? (
-          <NavIcon d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2" />
-        )}
+        <NavIcon d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2" />
         {!collapsed && <span>Settings</span>}
       </button>
       {hint && collapsed && (

@@ -159,11 +159,7 @@ export function WeeklyReviewStrip({
               <span
                 data-outcome-count={key}
                 style={{
-                  fontSize: text['2xl'],
-                  fontWeight: 650,
-                  letterSpacing: '-0.02em',
-                  lineHeight: 1.15,
-                  fontVariantNumeric: 'tabular-nums',
+                  ...tokens.typography.stat,
                   color: isFailed ? color.dangerText : count === 0 ? color.fgMuted : color.fg,
                 }}
               >

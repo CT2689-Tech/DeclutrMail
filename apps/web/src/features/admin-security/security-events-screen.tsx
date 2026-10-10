@@ -246,6 +246,7 @@ function FilterBar(props: FilterBarProps): ReactElement {
       <label style={labelStyle}>
         <span style={labelTextStyle}>Severity</span>
         <select
+          className="dm-field"
           value={props.severity}
           onChange={(e) => props.onSeverity(e.target.value as SecurityEventSeverity | '')}
           style={inputStyle}
@@ -260,6 +261,7 @@ function FilterBar(props: FilterBarProps): ReactElement {
       <label style={labelStyle}>
         <span style={labelTextStyle}>Event type</span>
         <input
+          className="dm-field"
           type="text"
           value={props.eventType}
           onChange={(e) => props.onEventType(e.target.value)}
@@ -271,6 +273,7 @@ function FilterBar(props: FilterBarProps): ReactElement {
       <label style={labelStyle}>
         <span style={labelTextStyle}>From</span>
         <input
+          className="dm-field"
           type="datetime-local"
           value={props.from}
           onChange={(e) => props.onFrom(e.target.value)}
@@ -281,6 +284,7 @@ function FilterBar(props: FilterBarProps): ReactElement {
       <label style={labelStyle}>
         <span style={labelTextStyle}>To</span>
         <input
+          className="dm-field"
           type="datetime-local"
           value={props.to}
           onChange={(e) => props.onTo(e.target.value)}
@@ -393,21 +397,12 @@ const labelStyle: CSSProperties = {
 };
 
 const labelTextStyle: CSSProperties = {
-  fontSize: '12px',
+  ...tokens.typography.kicker,
   color: color.fgMuted,
-  textTransform: 'uppercase',
-  letterSpacing: '0.04em',
 };
 
 const inputStyle: CSSProperties = {
-  padding: '6px 10px',
-  border: `1px solid ${color.border}`,
-  borderRadius: '6px',
-  background: color.card,
-  fontFamily: font.sans,
-  fontSize: '14px',
-  color: color.fg,
-  boxSizing: 'border-box',
+  ...tokens.field,
   maxWidth: '100%',
 };
 

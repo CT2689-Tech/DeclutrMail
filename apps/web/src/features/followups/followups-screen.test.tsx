@@ -338,8 +338,8 @@ describe('FollowupsScreen — populated list', () => {
 
     await screen.findByText('Big Boss');
     // Both priority group headings render, each carrying its count once.
-    expect(screen.getByRole('heading', { name: /over a week · 1/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /1.3 days · 1/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /over a week 1/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /1.3 days 1/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /review first 1 over a week/i })).toHaveAttribute(
       'href',
       '#followups-overdue',
@@ -510,7 +510,7 @@ describe('FollowupsScreen — D88 dismiss', () => {
     // …then the 500 triggers a fresh server read — the row returns, nothing
     // pretends to have worked.
     await waitFor(() => expect(screen.getByText('Big Boss')).toBeInTheDocument());
-    expect(screen.getByRole('heading', { name: /over a week · 1/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /over a week 1/i })).toBeInTheDocument();
   });
 });
 

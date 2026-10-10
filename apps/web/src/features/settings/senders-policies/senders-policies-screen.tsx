@@ -110,7 +110,6 @@ export function SendersPoliciesScreen() {
       }}
     >
       <style>{POLICY_ROW_CSS}</style>
-      <style>{`@media (max-width: 480px) { .dm-settings-page { padding-left: 16px !important; padding-right: 16px !important; } }`}</style>
       <EditorialKicker>Your workspace / Sender policies</EditorialKicker>
       <PageHeader title="Protected senders" backToSettings>
         <span
@@ -492,7 +491,7 @@ function PoliciesErrorState({ onRetry }: { onRetry: () => void }) {
         boxSizing: 'border-box',
         maxWidth: 720,
         margin: '0 auto',
-        padding: '20px clamp(12px, 4vw, 24px) 28px',
+        padding: '20px clamp(16px, 4vw, 24px) 28px',
         fontFamily: font.sans,
       }}
     >

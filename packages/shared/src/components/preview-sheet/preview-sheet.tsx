@@ -2,7 +2,7 @@
 
 import { useEffect, useId, type ReactNode } from 'react';
 import { useFocusTrap } from '../../hooks/use-focus-trap';
-import { color, font, motion, radius, shadow, space, text } from '../../tokens/tokens';
+import { color, font, motion, radius, shadow, space, text, typography } from '../../tokens/tokens';
 import { Button, type ButtonTone } from '../button';
 
 /**
@@ -143,10 +143,7 @@ export function PreviewSheet({
             id={titleId}
             style={{
               margin: 0,
-              fontSize: text['2xl'],
-              lineHeight: 1.2,
-              fontWeight: 650,
-              letterSpacing: '-0.022em',
+              ...typography.dialogTitle,
               textWrap: 'balance',
             }}
           >
@@ -199,7 +196,7 @@ export function PreviewSheet({
                   padding: `0 ${space[3]}px`,
                   borderRadius: radius.pill,
                   fontSize: text.sm,
-                  fontWeight: 550,
+                  fontWeight: 500,
                   color: color.fgSoft,
                 }}
               >
@@ -249,31 +246,20 @@ export function PreviewSheet({
             style={{
               marginTop: review ? 0 : space[6],
               width: '100%',
-              display: 'flex',
-              flexDirection: review ? 'row-reverse' : 'column',
-              justifyContent: review ? 'flex-start' : undefined,
-              gap: space[2],
             }}
           >
             <span data-dm-sheet-primary="" style={{ display: 'contents' }}>
               <Button
                 tone={primary.tone ?? 'primary'}
-                size={review ? 'lg' : 'xl'}
+                size="lg"
                 onClick={primary.onClick}
                 disabled={primary.disabled === true || busy}
-                style={{ width: review ? undefined : '100%' }}
               >
                 {primary.busyLabel ?? primary.label}
               </Button>
             </span>
             <span data-dm-sheet-cancel="" style={{ display: 'contents' }}>
-              <Button
-                tone="ghost"
-                size="lg"
-                onClick={onClose}
-                disabled={busy}
-                style={{ width: review ? undefined : '100%' }}
-              >
+              <Button tone="ghost" size="lg" onClick={onClose} disabled={busy}>
                 {cancelLabel}
               </Button>
             </span>

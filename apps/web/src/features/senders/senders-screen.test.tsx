@@ -3566,36 +3566,51 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       await screen.findByText('Kept 1 sender · 1 failed, try again');
     });
 
-    it('says so when a second bulk Keep lands while the first is still going out', async () => {
-      let release!: () => void;
-      const held = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      let patches = 0;
-      installFetchStub([
-        TWO_SENDER_LIST,
-        {
-          method: 'PATCH',
-          path: /^\/api\/senders\/[^/]+\/policy$/,
-          respond: async (_req, url) => {
-            patches += 1;
-            await held;
-            return jsonOk({ data: { senderId: url.pathname.split('/')[3], policyType: 'keep' } });
+    it.each(['success', 'failure'] as const)(
+      'replaces pending Keep feedback when it settles with %s',
+      async (outcome) => {
+        let release!: () => void;
+        const held = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        let patches = 0;
+        installFetchStub([
+          TWO_SENDER_LIST,
+          {
+            method: 'PATCH',
+            path: /^\/api\/senders\/[^/]+\/policy$/,
+            respond: async (_req, url) => {
+              patches += 1;
+              await held;
+              return outcome === 'failure'
+                ? jsonServerError('policy_down')
+                : jsonOk({ data: { senderId: url.pathname.split('/')[3], policyType: 'keep' } });
+            },
           },
-        },
-      ]);
-      renderScreenWithToasts();
-      await selectBothAndPress('k');
-      await waitFor(() => expect(patches).toBe(2));
-      // The toast store outlives a test — count, don't just find.
-      const before = screen.queryAllByText(/Still confirming your last action/).length;
-      await selectBothAndPress('k');
-      await waitFor(() =>
-        expect(screen.queryAllByText(/Still confirming your last action/)).toHaveLength(before + 1),
-      );
-      expect(patches).toBe(2);
-      release();
-    });
+        ]);
+        renderScreenWithToasts();
+        await selectBothAndPress('k');
+        await waitFor(() => expect(patches).toBe(2));
+        expect((await screen.findAllByText('Keeping 2 senders…')).length).toBeGreaterThan(0);
+        expect(screen.getByRole('checkbox', { name: /select sender a/i })).toHaveAttribute(
+          'aria-disabled',
+          'true',
+        );
+        expect(screen.getByRole('checkbox', { name: /select sender b/i })).toHaveAttribute(
+          'aria-disabled',
+          'true',
+        );
+        expect(screen.getAllByText('Keeping…').length).toBeGreaterThanOrEqual(2);
+        fireEvent.keyDown(document.body, { key: 'k' });
+        expect(patches).toBe(2);
+        release();
+        const result =
+          outcome === 'success' ? 'Kept 2 senders' : "Couldn't keep 2 senders — try again";
+        expect((await screen.findAllByText(result)).length).toBeGreaterThan(0);
+        expect(screen.queryAllByText('Keeping 2 senders…')).toHaveLength(0);
+        expect(screen.queryAllByText('Keeping…')).toHaveLength(0);
+      },
+    );
 
     it('never says "Kept" when every keep failed', async () => {
       installFetchStub([
@@ -5198,9 +5213,7 @@ describe('SendersScreen — one list, detail pane, pagination & load more (D202)
     expect(
       screen.queryByRole('button', { name: /^(grid|table|compact|comfortable)$/i }),
     ).toBeNull();
-    expect(
-      screen.getByRole('heading', { level: 1, name: 'Senders / Make room.' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Senders' })).toBeInTheDocument();
   });
 
   const ROW_B = {

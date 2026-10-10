@@ -178,7 +178,7 @@ export function TriageEmptyState({
         <h2
           style={{
             fontSize: text['2xl'],
-            fontWeight: 650,
+            fontWeight: 600,
             letterSpacing: '-0.02em',
             margin: 0,
           }}

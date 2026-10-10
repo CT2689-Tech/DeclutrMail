@@ -190,15 +190,22 @@ export function DecidePreview({
   const headline = zero
     ? `Nothing to move from ${name} right now`
     : verb === 'keep'
-      ? `Keep ${name}. No email moves.`
+      ? `Keep ${name}?`
       : verb === 'unsubscribe'
-        ? `Unsubscribe from ${name}. ${
-            primary.unsubscribeChannel.kind === 'not-applicable' ||
-            primary.unsubscribeChannel.kind === 'varies'
-              ? primary.futureMail.summary
-              : primary.unsubscribeChannel.summary
-          }`
-        : `${liveCount === null ? 'Email' : emailsLabel(liveCount)} from ${name}. ${destination ?? ''}`.trim();
+        ? `Unsubscribe from ${name}?`
+        : verb === 'later'
+          ? `Move ${liveCount === null ? 'email' : emailsLabel(liveCount)} to Later?`
+          : `${VERB_LABEL[verb]} ${liveCount === null ? 'email' : emailsLabel(liveCount)}?`;
+  const explanation = zero
+    ? null
+    : verb === 'unsubscribe'
+      ? primary.unsubscribeChannel.kind === 'not-applicable' ||
+        primary.unsubscribeChannel.kind === 'varies'
+        ? primary.futureMail.summary
+        : primary.unsubscribeChannel.summary
+      : verb === 'keep'
+        ? 'No email moves.'
+        : `From ${name}. ${destination ?? ''}`;
 
   // ── One muted line: how to undo it ──────────────────────────────────
   // Keep records an app-only decision when there is no email to move.
@@ -230,7 +237,9 @@ export function DecidePreview({
   const restingLabel = overriding
     ? `${VERB_LABEL[verb]} anyway`
     : moves && liveCount !== null && liveCount > 0
-      ? `${VERB_LABEL[verb]} ${liveCount.toLocaleString('en-US')}`
+      ? verb === 'later'
+        ? `Move ${emailsLabel(liveCount)} to Later`
+        : `${VERB_LABEL[verb]} ${emailsLabel(liveCount)}`
       : VERB_LABEL[verb];
   const confirmLabel = confirming ? 'Confirming…' : restingLabel;
 
@@ -348,7 +357,8 @@ export function DecidePreview({
           <MailboxActionContextView mailboxEmail={activeMailboxEmail} />
         </div>
       )}
-      <p style={{ margin: 0, fontSize: text.md, fontWeight: 600, color: color.fg }}>{headline}</p>
+      <h3 style={{ ...tokens.typography.dialogTitle, margin: 0, color: color.fg }}>{headline}</h3>
+      {explanation && <p style={{ ...mutedLine, textWrap: 'balance' }}>{explanation}</p>}
 
       {/* Why confirm is disabled while the live count is not a number (D211). */}
       {moves && effectiveCount === 'loading' && <p style={mutedLine}>Counting the inbox…</p>}
@@ -437,9 +447,9 @@ export function DecidePreview({
       )}
 
       {facts.length > 0 && (
-        <details style={{ marginTop: space[2] }}>
+        <details className="dm-disclosure" style={{ marginTop: space[2] }}>
           <summary
-            style={{ cursor: 'pointer', fontSize: text.sm, fontWeight: 550, color: color.fgSoft }}
+            style={{ cursor: 'pointer', fontSize: text.sm, fontWeight: 500, color: color.fgSoft }}
           >
             Details
           </summary>
@@ -449,15 +459,10 @@ export function DecidePreview({
         </details>
       )}
 
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: space[2],
-          marginTop: space[3],
-        }}
-      >
+      <div className="dm-confirm-footer" style={{ marginTop: space[3] }}>
+        <Button size="md" tone="ghost" onClick={onCancel} disabled={confirming}>
+          Cancel
+        </Button>
         <Button
           size="md"
           tone={verb === 'delete' ? 'danger' : verb === 'unsubscribe' ? 'warn' : 'primary'}
@@ -469,9 +474,6 @@ export function DecidePreview({
           ariaLabel={`${restingLabel} for ${name}`}
         >
           {confirmLabel}
-        </Button>
-        <Button size="md" tone="ghost" onClick={onCancel} disabled={confirming}>
-          Cancel
         </Button>
       </div>
     </div>

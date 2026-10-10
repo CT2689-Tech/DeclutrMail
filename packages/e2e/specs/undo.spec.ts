@@ -100,7 +100,7 @@ test('Archive one sender via preview, then restore it through the undo tray', as
   await expect(card).toBeVisible({ timeout: 30_000 });
   await card.scrollIntoViewIfNeeded();
   await card.getByRole('button', { name: 'More actions' }).click();
-  await card.getByRole('menuitem', { name: /Archive/ }).click();
+  await card.getByRole('menuitem', { name: 'Archive', exact: true }).click();
 
   // ---- D226 mandatory preview sheet — real count, then confirm.
   // The sheet is named by its title, which states the live count and
@@ -114,8 +114,11 @@ test('Archive one sender via preview, then restore it through the undo tray', as
   // Details disclosure — present in the DOM, one click away.
   await expect(modal).toContainText(senderDomain);
   await expect(modal).toContainText(/rechecked when it runs/);
-  // The confirm button is the verb + the same live count.
-  const confirm = modal.getByRole('button', { name: `Archive ${count}` });
+  // The confirm button names the verb, live count and email unit.
+  const confirm = modal.getByRole('button', {
+    name: `Archive ${count} email${inboxCount === 1 ? '' : 's'}`,
+    exact: true,
+  });
   await expect(confirm).toBeEnabled();
   await confirm.click();
 

@@ -24,11 +24,11 @@ export default meta;
 const noop = () => {};
 
 export const Off: Story<typeof Switch> = {
-  args: { checked: false, onChange: noop, ariaLabel: 'Daily Brief email' },
+  args: { checked: false, onChange: noop, ariaLabel: 'Daily brief email' },
 };
 export const On: Story<typeof Switch> = {
-  args: { checked: true, onChange: noop, ariaLabel: 'Daily Brief email' },
+  args: { checked: true, onChange: noop, ariaLabel: 'Daily brief email' },
 };
 export const Disabled: Story<typeof Switch> = {
-  args: { checked: true, onChange: noop, ariaLabel: 'Daily Brief email', disabled: true },
+  args: { checked: true, onChange: noop, ariaLabel: 'Daily brief email', disabled: true },
 };

@@ -536,11 +536,7 @@ const SCREEN_READER_ONLY = {
 } as const;
 
 const titleStyle = {
-  fontFamily: font.display,
-  fontSize: 'clamp(30px, 4vw, 42px)',
-  fontWeight: 400,
-  letterSpacing: '-0.025em',
-  lineHeight: 1.12,
+  ...tokens.typography.pageTitle,
   color: color.fg,
   margin: 0,
 } as const;
