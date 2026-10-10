@@ -8,18 +8,14 @@ export const editorialColumnStyle: CSSProperties = {
   width: '100%',
   minWidth: 0,
   boxSizing: 'border-box',
-  maxWidth: 1120,
+  maxWidth: 1480,
   margin: '0 auto',
   fontFamily: tokens.font.sans,
 };
 
 export const editorialTitleStyle: CSSProperties = {
   margin: 0,
-  fontFamily: tokens.font.display,
-  fontSize: 'clamp(30px, 3.1vw, 42px)',
-  fontWeight: 400,
-  lineHeight: 1.12,
-  letterSpacing: '-0.035em',
+  ...tokens.typography.pageTitle,
   color: tokens.color.fg,
   overflowWrap: 'anywhere',
 };

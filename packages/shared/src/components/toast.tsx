@@ -63,7 +63,9 @@ export function ToastHost() {
     <div
       style={{
         position: 'fixed',
-        bottom: 20,
+        bottom: 'calc(20px + var(--dm-tabbar-inset, 0px))',
+        maxWidth: 'calc(100vw - 32px)',
+        width: 'max-content',
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 200,
