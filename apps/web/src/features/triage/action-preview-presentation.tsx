@@ -233,7 +233,9 @@ export function buildPreviewFacts({
     compactLine,
     primaryLabel:
       counts && liveCount !== null && liveCount > 0 && verb !== 'Unsubscribe'
-        ? `${verb} ${n(liveCount)}`
+        ? verb === 'Later'
+          ? `Move ${emails(liveCount)} to Later`
+          : `${verb} ${emails(liveCount)}`
         : verb,
     disclosures,
     // The server charges a second unit for a backlog verb riding an

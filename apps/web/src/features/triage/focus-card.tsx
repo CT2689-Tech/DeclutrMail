@@ -176,6 +176,7 @@ export function TriageFocusCard({
           </div>
         </div>
         <details
+          className="dm-disclosure"
           key={row.id}
           data-dm-sender-identity
           style={{ width: '100%', marginTop: isNarrow ? space[1] : space[2] }}
@@ -221,7 +222,7 @@ export function TriageFocusCard({
           style={{
             marginTop: isNarrow ? space[4] : space[8],
             fontFamily: font.display,
-            fontSize: isNarrow ? 'clamp(36px, 8vw, 42px)' : 'clamp(52px, 6vw, 70px)',
+            fontSize: 'var(--dm-type-hero-stat)',
             fontWeight: 400,
             lineHeight: 1,
             letterSpacing: '-0.03em',
@@ -282,7 +283,7 @@ export function TriageFocusCard({
             transition: `background ${motion.fast} ${motion.ease}`,
           }}
         >
-          {whyOpen ? 'Hide why' : 'Why?'}
+          Why?
           <svg
             width="12"
             height="12"

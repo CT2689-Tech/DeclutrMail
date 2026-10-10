@@ -662,7 +662,7 @@ describe('ConfirmActionModal — arrival volume vs INBOX-now counts', () => {
 
   // The arrival figure rides the LIST ROW, not the preview — one field,
   // one window (ADR-0037). `monthlyVolume` is what the senders card
-  // renders as "N in last 90d", so the modal and the card that opened it
+  // renders as "N in the last 90 days", so the modal and the card that opened it
   // cannot show different numbers.
   function renderDelete(counts: typeof emptyInbox, monthlyVolume: number | null) {
     return render(
@@ -712,7 +712,7 @@ describe('ConfirmActionModal — arrival volume vs INBOX-now counts', () => {
 
   it('names the window on the arrival figure and never renders a bare /mo', () => {
     const { container } = renderDelete(emptyInbox, 71);
-    expect(container.textContent).toMatch(/71\s*in last 90d/);
+    expect(container.textContent).toMatch(/71\s*in the last 90 days/);
     // "/mo" is the retired unit (ADR-0037). A number with no window is
     // how the card's 396 and the modal's 134 coexisted for one sender.
     expect(container.textContent).not.toMatch(/\/mo/);
@@ -721,7 +721,7 @@ describe('ConfirmActionModal — arrival volume vs INBOX-now counts', () => {
   it('carries the received total so the arrival figure has a denominator', () => {
     const { container } = renderDelete(emptyInbox, 71);
     // Same two facts, same words, as the senders card that opened this
-    // modal: "N in last 90d · N received" (sender-card.tsx).
+    // modal: "N in the last 90 days · N received" (sender-card.tsx).
     expect(container.textContent).toMatch(/144\s*received/);
   });
 
@@ -734,8 +734,8 @@ describe('ConfirmActionModal — arrival volume vs INBOX-now counts', () => {
 
   it('renders an unknown arrival volume as "—", never a factual 0', () => {
     const { container } = renderDelete(emptyInbox, null);
-    expect(container.textContent).toMatch(/—\s*in last 90d/);
-    expect(container.textContent).not.toMatch(/0\s*in last 90d/);
+    expect(container.textContent).toMatch(/—\s*in the last 90 days/);
+    expect(container.textContent).not.toMatch(/0\s*in the last 90 days/);
   });
 
   it('keeps the chips and points at a wider window when only THIS window is empty', () => {
@@ -1755,7 +1755,7 @@ describe('ConfirmActionModal — unsubscribe capability breakdown (D248)', () =>
 
 /**
  * Founder report 2026-08-25. A Later preview on `ealerts.bankofamerica.com`
- * read "0 emails currently match" under a strip reading "200 in last 90d ·
+ * read "0 emails currently match" under a strip reading "200 in the last 90 days ·
  * 6,668 received", and the only way to find out where the mail actually
  * was, was to open Gmail.
  *
@@ -2676,7 +2676,7 @@ describe('ConfirmActionModal — explicit period and scope choices', () => {
       target: { value: '30' },
     });
     expect(screen.getByRole('heading', { name: 'Delete 3 emails?' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Delete 3' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Delete 3 emails' })).toBeEnabled();
   });
 });
 

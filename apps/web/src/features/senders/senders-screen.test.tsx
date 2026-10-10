@@ -3566,7 +3566,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       await screen.findByText('Kept 1 sender · 1 failed, try again');
     });
 
-    it('says so when a second bulk Keep lands while the first is still going out', async () => {
+    it('shows pending Keep immediately and prevents duplicate dispatch until it settles', async () => {
       let release!: () => void;
       const held = new Promise<void>((resolve) => {
         release = resolve;
@@ -3587,14 +3587,20 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       renderScreenWithToasts();
       await selectBothAndPress('k');
       await waitFor(() => expect(patches).toBe(2));
-      // The toast store outlives a test — count, don't just find.
-      const before = screen.queryAllByText(/Still confirming your last action/).length;
-      await selectBothAndPress('k');
-      await waitFor(() =>
-        expect(screen.queryAllByText(/Still confirming your last action/)).toHaveLength(before + 1),
+      expect((await screen.findAllByText('Keeping 2 senders…')).length).toBeGreaterThan(0);
+      expect(screen.getByRole('checkbox', { name: /select sender a/i })).toHaveAttribute(
+        'aria-disabled',
+        'true',
       );
+      expect(screen.getByRole('checkbox', { name: /select sender b/i })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
+      expect(screen.getAllByText('Keeping…').length).toBeGreaterThanOrEqual(2);
+      fireEvent.keyDown(document.body, { key: 'k' });
       expect(patches).toBe(2);
       release();
+      expect((await screen.findAllByText('Kept 2 senders')).length).toBeGreaterThan(0);
     });
 
     it('never says "Kept" when every keep failed', async () => {
@@ -5198,9 +5204,7 @@ describe('SendersScreen — one list, detail pane, pagination & load more (D202)
     expect(
       screen.queryByRole('button', { name: /^(grid|table|compact|comfortable)$/i }),
     ).toBeNull();
-    expect(
-      screen.getByRole('heading', { level: 1, name: 'Senders / Make room.' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Senders' })).toBeInTheDocument();
   });
 
   const ROW_B = {

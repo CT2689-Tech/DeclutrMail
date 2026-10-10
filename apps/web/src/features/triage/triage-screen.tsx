@@ -2,7 +2,11 @@
 
 import { useActionPreviewAnalytics } from '@/lib/use-action-preview-analytics';
 
-import { editorialTitleStyle, EditorialKicker } from '@/features/editorial/page';
+import {
+  editorialColumnStyle,
+  editorialTitleStyle,
+  EditorialKicker,
+} from '@/features/editorial/page';
 
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { useSenderInFlightLock } from '@/features/undo/in-flight';
@@ -1626,14 +1630,8 @@ export function TriageScreen({
   return (
     <div
       style={{
-        boxSizing: 'border-box',
-        width: '100%',
-        // Content column + gutters: a 640 card in focus mode (the five verbs fit
-        // one row), an 880 list.
-        maxWidth: (mode === 'focus' ? 640 : 880) + 2 * (isNarrow ? 16 : 24),
-        margin: '0 auto',
-        // Bottom room clears the fixed undo pill.
-        padding: isNarrow ? '24px 16px 96px' : '28px 24px 96px',
+        ...editorialColumnStyle,
+        paddingBottom: 96,
         display: 'flex',
         flexDirection: 'column',
         gap: 20,
@@ -1655,7 +1653,7 @@ export function TriageScreen({
           <div>
             <h1 style={editorialTitleStyle}>Triage</h1>
             <p style={{ margin: '6px 0 0', fontSize: text.sm, color: color.fgMuted }}>
-              Today’s review queue · One decision per sender
+              Today’s review queue · one decision per sender
             </p>
           </div>
           {state.kind === 'ready' && hasQueue && (
@@ -1718,74 +1716,85 @@ export function TriageScreen({
         />
       )}
 
-      {state.kind === 'loading' && <TriageLoadingState variant={mode} />}
-      {state.kind === 'error' && <TriageErrorState error={state.error} onRetry={state.retry} />}
-      {/* "See Plus" routes to the real pricing page (D19) — a hard
+      <div
+        style={{
+          width: '100%',
+          maxWidth: mode === 'focus' ? 640 : 880,
+          margin: '0 auto',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 20,
+        }}
+      >
+        {state.kind === 'loading' && <TriageLoadingState variant={mode} />}
+        {state.kind === 'error' && <TriageErrorState error={state.error} onRetry={state.retry} />}
+        {/* "See Plus" routes to the real pricing page (D19) — a hard
           navigation since /pricing lives in the (marketing) route
           group; the modal checkout flow lands with the billing FE
           (U13). */}
-      {resting && (state.kind === 'empty' || state.kind === 'ready') && (
-        <section aria-label="Nothing to decide">
-          <TriageEmptyState
-            stats={state.stats}
-            onOpenUpgrade={openPricing}
-            readiness={mailboxReadiness}
-            syncNeedsReconnect={mailboxNeedsReconnect}
-            footnote={journey === 'daily' ? <TodayHandledLine /> : undefined}
-          />
-        </section>
-      )}
-      {state.kind === 'ready' && hasQueue && !showDecisionLayout && (
-        <div role="status" aria-label="Loading your review layout">
-          <TriageLoadingState variant="list" />
-        </div>
-      )}
-      {showDecisionLayout &&
-        state.kind === 'ready' &&
-        hasQueue &&
-        mode === 'focus' &&
-        focusItem != null && (
-          <TriageFocusStack
-            item={focusItem}
-            canSkip={focusItems.length > 1}
-            onSkip={onSkip}
+        {resting && (state.kind === 'empty' || state.kind === 'ready') && (
+          <section aria-label="Nothing to decide">
+            <TriageEmptyState
+              stats={state.stats}
+              onOpenUpgrade={openPricing}
+              readiness={mailboxReadiness}
+              syncNeedsReconnect={mailboxNeedsReconnect}
+              footnote={journey === 'daily' ? <TodayHandledLine /> : undefined}
+            />
+          </section>
+        )}
+        {state.kind === 'ready' && hasQueue && !showDecisionLayout && (
+          <div role="status" aria-label="Loading your review layout">
+            <TriageLoadingState variant="list" />
+          </div>
+        )}
+        {showDecisionLayout &&
+          state.kind === 'ready' &&
+          hasQueue &&
+          mode === 'focus' &&
+          focusItem != null && (
+            <TriageFocusStack
+              item={focusItem}
+              canSkip={focusItems.length > 1}
+              onSkip={onSkip}
+              onAction={onRowActionWithInlineConfirm}
+              busyRowIds={busyRowIds}
+              unknownVerbs={unknownVerbs}
+              previewInboxCount={previewInboxCount}
+              previewDetail={previewDetail}
+              previewQuotaRemaining={cleanupRemaining}
+              onBatchVerb={onBatchVerb}
+              batchBusyDomain={batchBusyDomain}
+            />
+          )}
+        {showDecisionLayout && state.kind === 'ready' && hasQueue && mode === 'list' && (
+          <TriageQueue
+            rows={state.rows}
             onAction={onRowActionWithInlineConfirm}
             busyRowIds={busyRowIds}
             unknownVerbs={unknownVerbs}
             previewInboxCount={previewInboxCount}
             previewDetail={previewDetail}
             previewQuotaRemaining={cleanupRemaining}
+            allowBatching={journey === 'daily'}
+            offerUnprotect={offerUnprotect}
             onBatchVerb={onBatchVerb}
             batchBusyDomain={batchBusyDomain}
+            leading={
+              verdictBatch == null ? undefined : (
+                <DomainBatchCard
+                  batch={verdictBatch.batch}
+                  headline={`senders suggested for ${verdictBatch.verdict === 'archive' ? 'Archive' : 'Later'}`}
+                  verbs={[verdictBatch.verdict === 'archive' ? 'Archive' : 'Later']}
+                  busy={batchBusyDomain === verdictBatch.batch.domain}
+                  onVerb={(verb) => onBatchVerb(verb, verdictBatch.batch)}
+                  onDismiss={() => dismissBatchDomain(verdictBatch.batch.domain)}
+                />
+              )
+            }
           />
         )}
-      {showDecisionLayout && state.kind === 'ready' && hasQueue && mode === 'list' && (
-        <TriageQueue
-          rows={state.rows}
-          onAction={onRowActionWithInlineConfirm}
-          busyRowIds={busyRowIds}
-          unknownVerbs={unknownVerbs}
-          previewInboxCount={previewInboxCount}
-          previewDetail={previewDetail}
-          previewQuotaRemaining={cleanupRemaining}
-          allowBatching={journey === 'daily'}
-          offerUnprotect={offerUnprotect}
-          onBatchVerb={onBatchVerb}
-          batchBusyDomain={batchBusyDomain}
-          leading={
-            verdictBatch == null ? undefined : (
-              <DomainBatchCard
-                batch={verdictBatch.batch}
-                headline={`senders suggested for ${verdictBatch.verdict === 'archive' ? 'Archive' : 'Later'}`}
-                verbs={[verdictBatch.verdict === 'archive' ? 'Archive' : 'Later']}
-                busy={batchBusyDomain === verdictBatch.batch.domain}
-                onVerb={(verb) => onBatchVerb(verb, verdictBatch.batch)}
-                onDismiss={() => dismissBatchDomain(verdictBatch.batch.domain)}
-              />
-            )
-          }
-        />
-      )}
+      </div>
 
       {/* Sheet — only mounted when the pending action's surface is sheet. */}
       <ActionSheet

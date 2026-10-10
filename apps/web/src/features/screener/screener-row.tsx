@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Avatar, Kbd, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
+import { Avatar, Button, Kbd, Pill, Tooltip, tokens, useIsAtMost } from '@declutrmail/shared';
 import type { PillTone } from '@declutrmail/shared';
 import { unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
 import { confidenceBand, scoredAgeLabel } from '@declutrmail/shared/copy';
@@ -19,7 +19,7 @@ import { DecidePreview, type DecidePreviewCount } from './decide-preview';
 import { VERB_KEY_HINT, VERB_LABEL, VERB_ORDER, verdictLabel } from './verbs';
 import './screener-row.css';
 
-const { color, font, motion, radius, shadow, text } = tokens;
+const { color, motion, radius, text } = tokens;
 
 /** Pill tone per engine verdict — matches the Triage row semantics. */
 const VERDICT_TONE: Record<'keep' | 'archive' | 'unsubscribe' | 'later', PillTone> = {
@@ -188,11 +188,6 @@ export function ScreenerRow({
             >
               {row.senderDomain}
             </span>
-            {compactHeader && (
-              <span style={{ fontSize: text.xs, color: color.fgMuted }}>
-                First seen {firstSeenAge ?? '…'}
-              </span>
-            )}
           </div>
           {/* Sample subject — the latest message (D71). */}
           <span
@@ -236,9 +231,16 @@ export function ScreenerRow({
           style={{
             display: 'inline-flex',
             minWidth: 0,
-            ...(compactHeader ? { gridColumn: 2, gridRow: 2 } : {}),
+            ...(compactHeader
+              ? { gridColumn: 2, gridRow: 2, alignItems: 'center', gap: 8, flexWrap: 'wrap' }
+              : {}),
           }}
         >
+          {compactHeader && (
+            <span style={{ fontSize: text.xs, color: color.fgMuted }}>
+              First seen {firstSeenAge ?? '…'}
+            </span>
+          )}
           {row.recommendation != null ? (
             <Pill tone={VERDICT_TONE[row.recommendation.verdict]}>
               {verdictLabel(row.recommendation.verdict)}
@@ -287,6 +289,7 @@ export function ScreenerRow({
           {/* K/A/U/L/D toolbar. */}
           <div
             role="toolbar"
+            className="dm-action-toolbar"
             aria-label={`Decide ${row.senderName}`}
             style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}
           >
@@ -301,53 +304,57 @@ export function ScreenerRow({
                   ? unsubscribeUnavailableReason(row.unsubscribeMethod)
                   : null;
               const noUnsubscribeChannel = unsubscribeBlockedReason !== null;
-              return (
-                <button
-                  key={verb}
-                  type="button"
-                  className="dm-screener-verb"
-                  disabled={busy || noUnsubscribeChannel}
+              const button = (describedBy?: string) => (
+                <Button
+                  tone="default"
+                  size="md"
+                  disabled={busy}
+                  inert={!busy && noUnsubscribeChannel}
                   onClick={() => onVerbClick(verb)}
-                  aria-pressed={active}
-                  title={unsubscribeBlockedReason ?? undefined}
+                  ariaPressed={active}
+                  {...(describedBy ? { ariaDescribedBy: describedBy } : {})}
                   style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    height: 36,
-                    padding: '0 8px 0 14px',
-                    borderRadius: radius.pill,
-                    fontFamily: font.sans,
-                    fontSize: text.base,
-                    fontWeight: 600,
-                    cursor: busy || noUnsubscribeChannel ? 'not-allowed' : 'pointer',
-                    opacity: noUnsubscribeChannel ? 0.45 : 1,
-                    border: 'none',
-                    // Pressed = tinted fill + a ring in the verb's colour.
-                    boxShadow: active
-                      ? `inset 0 0 0 1.5px ${verb === 'delete' ? color.danger : color.primary}`
-                      : shadow.card,
-                    background: active
-                      ? verb === 'delete'
-                        ? color.dangerBg
-                        : color.primarySoft
-                      : color.card,
-                    color: active
-                      ? verb === 'delete'
-                        ? color.dangerText
-                        : color.primary
-                      : verb === 'delete'
-                        ? color.dangerText
-                        : color.fg,
+                    ...(active
+                      ? {
+                          boxShadow: `inset 0 0 0 1.5px ${verb === 'delete' ? color.danger : color.primary}`,
+                        }
+                      : {}),
+                    ...(verb === 'delete' ? { color: color.dangerText } : {}),
                   }}
+                  iconRight={
+                    <span aria-hidden="true" className="dm-key-hint">
+                      <Kbd>{VERB_KEY_HINT[verb]}</Kbd>
+                    </span>
+                  }
                 >
                   {VERB_LABEL[verb]}
-                  <span aria-hidden="true">
-                    <Kbd>{VERB_KEY_HINT[verb]}</Kbd>
-                  </span>
-                </button>
+                </Button>
+              );
+              return (
+                <span key={verb} data-action={verb}>
+                  {unsubscribeBlockedReason ? (
+                    <Tooltip content={unsubscribeBlockedReason}>
+                      {({ describedBy }) => button(describedBy)}
+                    </Tooltip>
+                  ) : (
+                    button()
+                  )}
+                </span>
               );
             })}
+            {!canScreenerUnsubscribe(row) && (
+              <span
+                role="note"
+                style={{
+                  flexBasis: '100%',
+                  gridColumn: '1 / -1',
+                  fontSize: text.sm,
+                  color: color.fgMuted,
+                }}
+              >
+                {unsubscribeUnavailableReason(row.unsubscribeMethod)}
+              </span>
+            )}
           </div>
 
           {/* Detail grid — first seen, count so far, engine reasoning. */}

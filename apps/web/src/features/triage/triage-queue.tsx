@@ -35,6 +35,7 @@ export function inlinePreviewFor(
   pendingAction: PendingAction | null,
   preview: {
     inboxCount: PreviewCount;
+    onCancel?: (() => void) | undefined;
     detail: ActionPreviewDetail | undefined;
     quotaRemaining: number | null | undefined;
   },
@@ -43,6 +44,7 @@ export function inlinePreviewFor(
     return null;
   return {
     verb: pendingAction.verb,
+    onCancel: preview.onCancel,
     // The remembered-inline path has no backlog toggle, so it must
     // retain the safe no-secondary default.
     archiveHistoric: false,
@@ -129,6 +131,7 @@ export function TriageQueue({
   const expandedRowId = useTriageStore((s) => s.expandedRowId);
   const toggleExpandedRow = useTriageStore((s) => s.toggleExpandedRow);
   const pendingAction = useTriageStore((s) => s.pendingAction);
+  const clearPending = useTriageStore((s) => s.clearPending);
   const dismissedBatchDomains = useTriageStore((s) => s.dismissedBatchDomains);
   const dismissBatchDomain = useTriageStore((s) => s.dismissBatchDomain);
 
@@ -164,6 +167,7 @@ export function TriageQueue({
         const expanded = expandedRowId === row.id;
         const inlinePreview = inlinePreviewFor(row.id, pendingAction, {
           inboxCount: previewInboxCount,
+          onCancel: clearPending,
           detail: previewDetail,
           quotaRemaining: previewQuotaRemaining,
         });

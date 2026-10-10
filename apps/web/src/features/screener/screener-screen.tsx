@@ -836,12 +836,13 @@ export function ScreenerScreen({
       )}
       {state.kind === 'ready' && state.rows.length > 0 && (
         <>
-          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          <div className="dm-screener-filters">
             <label
               style={{
                 display: 'flex',
-                alignItems: 'center',
-                gap: 7,
+                flexDirection: 'column',
+                alignItems: 'stretch',
+                gap: 8,
                 color: color.fgMuted,
                 fontSize: text.sm,
               }}
@@ -851,15 +852,8 @@ export function ScreenerScreen({
                 aria-label="Filter loaded senders"
                 value={queueFilter}
                 onChange={(event) => setQueueFilter(event.target.value as typeof queueFilter)}
-                style={{
-                  minHeight: 38,
-                  padding: '6px 10px',
-                  border: `1px solid ${color.line}`,
-                  borderRadius: 7,
-                  color: color.fg,
-                  background: color.card,
-                  font: 'inherit',
-                }}
+                className="dm-field"
+                style={{ ...tokens.field, minWidth: 0, width: '100%' }}
               >
                 <option value="all">All loaded</option>
                 <option value="multiple">More than one email</option>
@@ -870,8 +864,9 @@ export function ScreenerScreen({
             <label
               style={{
                 display: 'flex',
-                alignItems: 'center',
-                gap: 7,
+                flexDirection: 'column',
+                alignItems: 'stretch',
+                gap: 8,
                 color: color.fgMuted,
                 fontSize: text.sm,
               }}
@@ -881,22 +876,15 @@ export function ScreenerScreen({
                 aria-label="Sort loaded senders"
                 value={queueSort}
                 onChange={(event) => setQueueSort(event.target.value as typeof queueSort)}
-                style={{
-                  minHeight: 38,
-                  padding: '6px 10px',
-                  border: `1px solid ${color.line}`,
-                  borderRadius: 7,
-                  color: color.fg,
-                  background: color.card,
-                  font: 'inherit',
-                }}
+                className="dm-field"
+                style={{ ...tokens.field, minWidth: 0, width: '100%' }}
               >
                 <option value="queued">Recently queued</option>
                 <option value="most_mail">Most email received</option>
                 <option value="first_seen">First seen longest ago</option>
               </select>
             </label>
-            <span style={{ color: color.fgMuted, fontSize: text.sm }}>
+            <span style={{ gridColumn: '1 / -1', color: color.fgMuted, fontSize: text.sm }}>
               Showing {visibleRows.length} of {state.rows.length} loaded senders
               {totalPending != null && totalPending > state.rows.length
                 ? ` · ${totalPending.toLocaleString('en-US')} total awaiting review`

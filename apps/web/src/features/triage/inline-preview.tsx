@@ -35,6 +35,7 @@ export interface InlinePreview {
   quotaRemaining?: number | null | undefined;
   inboxCount: PreviewCount;
   wakeAt?: string | null;
+  onCancel?: (() => void) | undefined;
 }
 
 /**
@@ -130,9 +131,22 @@ export function InlinePreviewBlock({
       }}
     >
       {accountContext != null && <div style={{ marginBottom: space[3] }}>{accountContext}</div>}
-      <p style={{ margin: 0, fontSize: text.md, fontWeight: 600, color: color.fg }}>
-        {facts.nothingToMove ? facts.title : facts.compactLine}
-      </p>
+      <h3 style={{ ...tokens.typography.dialogTitle, margin: 0, color: color.fg }}>
+        {facts.title}
+      </h3>
+      {facts.subtitle && (
+        <p
+          style={{
+            margin: `${space[2]}px 0 0`,
+            fontSize: text.md,
+            lineHeight: 1.5,
+            color: color.fgSoft,
+            textWrap: 'balance',
+          }}
+        >
+          {facts.subtitle}
+        </p>
+      )}
       {/* Why confirm is disabled while the live count is not a number —
           the same two lines the sheet's status shows. A disabled button
           with no reason reads as a broken one. */}
@@ -154,9 +168,9 @@ export function InlinePreviewBlock({
         </p>
       )}
       {hasDetails && (
-        <details style={{ marginTop: space[2] }}>
+        <details className="dm-disclosure" style={{ marginTop: space[2] }}>
           <summary
-            style={{ cursor: 'pointer', fontSize: text.sm, fontWeight: 550, color: color.fgSoft }}
+            style={{ cursor: 'pointer', fontSize: text.sm, fontWeight: 500, color: color.fgSoft }}
           >
             Details
           </summary>
@@ -198,7 +212,12 @@ export function InlinePreviewBlock({
           confirming meant an UNDOCUMENTED second click on the same verb —
           users read the preview and believed the action fired. Fails
           closed exactly like the sheet does (`confirmDisabled`). */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: space[3] }}>
+      <div className="dm-confirm-footer" style={{ marginTop: space[3] }}>
+        {preview.onCancel && (
+          <Button tone="ghost" onClick={preview.onCancel} disabled={busy}>
+            Cancel
+          </Button>
+        )}
         <Button
           tone={
             preview.verb === 'Delete'
@@ -213,7 +232,7 @@ export function InlinePreviewBlock({
         >
           {row.protectionReason != null ? `${preview.verb} anyway` : facts.primaryLabel}
         </Button>
-        <span style={{ fontSize: text.xs, color: color.fgMuted }}>
+        <span className="dm-key-hint" style={{ fontSize: text.xs, color: color.fgMuted }}>
           {/* A zero count is the third case: the screen refuses that
               dispatch, so no key fires it either. */}
           {nothingToActOn ? (

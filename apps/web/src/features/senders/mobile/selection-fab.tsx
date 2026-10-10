@@ -41,7 +41,7 @@ export function SelectionFab({
         style={{
           position: 'fixed',
           right: 16,
-          bottom: 'calc(16px + env(safe-area-inset-bottom))',
+          bottom: 'calc(16px + var(--dm-tabbar-inset, 0px))',
           zIndex: 130,
           display: 'inline-flex',
           alignItems: 'center',

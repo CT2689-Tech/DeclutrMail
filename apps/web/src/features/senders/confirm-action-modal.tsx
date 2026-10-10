@@ -50,7 +50,7 @@ import {
   type Sender,
 } from './data';
 
-const { color, font, radius, space, text } = tokens;
+const { color, radius, space, text } = tokens;
 
 /**
  * Composite secondary verb (spec v1.2 Decision 15). Picked from the
@@ -560,7 +560,7 @@ export function ConfirmActionModal({
   // The reach CHIPS stay Delete-only (ADR-0028: only Delete may act
   // past the inbox), but the QUESTION they happened to answer is one
   // every preview provokes. A Later preview reading "0 emails
-  // currently match" under a strip reading "200 in last 90d · 6,668
+  // currently match" under a strip reading "200 in the last 90 days · 6,668
   // received" is three true numbers that reconcile to nothing a reader
   // can see, and the founder went to Gmail to discover the mail was
   // under a label.
@@ -927,7 +927,9 @@ export function ConfirmActionModal({
     if (hasSecondaryAction)
       return `Unsubscribe + ${secondaryVerb === 'delete' ? 'Delete' : 'Archive'}`;
     if (primaryActsOnInbox && liveCount !== null && liveCount > 0) {
-      return `${verbWord} ${fmt(liveCount)}`;
+      return isLaterVerb
+        ? `Move ${emailsLabel(liveCount)} to Later`
+        : `${verbWord} ${emailsLabel(liveCount)}`;
     }
     return verbWord;
   })();
@@ -1031,6 +1033,14 @@ export function ConfirmActionModal({
       />,
     );
   }
+  if (reachAvailable && inboxReachCount != null && inboxReachCount === allMailReachCount) {
+    controls.push(
+      <p key="equal-reach" style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
+        Both scopes currently match the same emails. Inbox + archived also includes archived matches
+        when this action runs.
+      </p>,
+    );
+  }
   if (showWindowSelect) {
     controls.push(
       <label key="window" style={wellStyle}>
@@ -1042,7 +1052,8 @@ export function ConfirmActionModal({
             const value = event.currentTarget.value;
             setOlderThanDays(value === 'all' ? null : Number(value));
           }}
-          style={wellInputStyle}
+          className="dm-field"
+          style={{ ...tokens.field, width: '100%', minWidth: 0 }}
         >
           {windowOptions.map((o) => (
             <option key={o.value} value={o.value}>
@@ -1066,7 +1077,8 @@ export function ConfirmActionModal({
             const next = new Date(event.currentTarget.value);
             setWakeAt(Number.isNaN(next.getTime()) ? null : next.toISOString());
           }}
-          style={wellInputStyle}
+          className="dm-field"
+          style={{ ...tokens.field, width: '100%', minWidth: 0 }}
         />
       </label>,
     );
@@ -1143,7 +1155,7 @@ export function ConfirmActionModal({
   // The count itself is the title; the undo is the note.
   const facts: SheetFactItem[] = [];
   // The senders card's own arrival facts, from the same row and in the
-  // same words — "N in last 90d · N received" (ADR-0037). INBOX-now is
+  // same words — "N in the last 90 days · N received" (ADR-0037). INBOX-now is
   // deliberately NOT repeated: the title is that number, live. Unknown
   // volume renders "—", never a factual 0 (finding 5.15).
   if (single) {
@@ -1151,7 +1163,7 @@ export function ConfirmActionModal({
       { label: 'Domain', value: compositePreview?.sender?.domain ?? leadSender.domain },
       {
         label: 'Sender',
-        value: `${leadSender.monthlyVolume == null ? '—' : fmt(leadSender.monthlyVolume)} in last 90d · ${fmt(leadSender.totalReceived)} received`,
+        value: `${leadSender.monthlyVolume == null ? '—' : fmt(leadSender.monthlyVolume)} in the last 90 days · ${fmt(leadSender.totalReceived)} received`,
       },
     );
     const days = compositePreview?.sender?.lastSeenDays ?? leadSender.lastDays;
@@ -1419,7 +1431,13 @@ export function ConfirmActionModal({
           )
         }
         title={title}
-        subtitle={subtitle === null ? undefined : <span id="dm-confirm-lead">{subtitle}</span>}
+        subtitle={
+          subtitle === null ? undefined : (
+            <span id="dm-confirm-lead" style={{ textWrap: 'balance' }}>
+              {subtitle}
+            </span>
+          )
+        }
         note={note === '' ? undefined : note}
         details={details}
         primary={
@@ -1481,21 +1499,8 @@ const wellStyle: CSSProperties = {
   borderRadius: radius.lg,
   background: color.fill,
   fontSize: text.md,
-  fontWeight: 550,
+  fontWeight: 500,
   textAlign: 'left',
-};
-
-const wellInputStyle: CSSProperties = {
-  border: 'none',
-  background: 'transparent',
-  color: color.fg,
-  fontFamily: font.sans,
-  fontSize: text.md,
-  fontVariantNumeric: 'tabular-nums',
-  minHeight: 40,
-  minWidth: 0,
-  textAlign: 'right',
-  cursor: 'pointer',
 };
 
 const factNumberStyle: CSSProperties = {

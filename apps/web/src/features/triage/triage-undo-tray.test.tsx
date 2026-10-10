@@ -465,7 +465,9 @@ describe('TriageUndoTray (D35)', () => {
     const { container } = await renderTrayWithDecisions();
 
     const tray = container.querySelector<HTMLElement>('[data-dm-undo-tray]');
-    expect(tray?.style.bottom).toBe(`${floatingSurfaceLayout.undoTrayBottom}px`);
+    expect(tray?.style.bottom).toBe(
+      `calc(${floatingSurfaceLayout.undoTrayBottom}px + var(--dm-tabbar-inset, 0px))`,
+    );
     expect(floatingSurfaceLayout.undoTrayBottom).toBeGreaterThan(
       floatingSurfaceLayout.selectionBarBottom + floatingSurfaceLayout.selectionBarHeight,
     );

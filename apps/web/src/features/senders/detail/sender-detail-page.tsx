@@ -13,6 +13,7 @@ import {
   ErrorState as RecoverableErrorState,
   Pill,
   Spark,
+  ScreenIntro,
   tokens,
   toast,
 } from '@declutrmail/shared';
@@ -25,7 +26,6 @@ import {
   type Sender,
 } from '../data';
 import { ConfirmActionModal, type ConfirmOptions } from '../confirm-action-modal';
-import { derivePrimaryVerbId } from '../action-row';
 import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 import type { ActionReceipt } from '../action-receipt';
 import { RecommendationBanner } from './recommendation-banner';
@@ -755,6 +755,8 @@ function ReadyState({
       if (verb === 'Keep') {
         if (setPolicy.isPending) return;
         setPendingAction(null);
+        setSettled({ phase: 'working', verb: 'keep' });
+        toast(`Keeping ${sender.name}…`, 'info');
         setPolicy.mutate(
           { senderId: sender.id, patch: { policyType: 'keep' } },
           {
@@ -763,11 +765,13 @@ function ReadyState({
               // supersedes a pending "Unsub queued" pill (latest
               // decision wins on `policy_type`).
               setDetail((d) => ({ ...d, policyType: 'keep' }));
+              setSettled({ phase: 'done', verb: 'keep', affectedCount: null });
               trackActionConfirmed('keep');
               toast(`Kept ${sender.name}`, 'success');
             },
             onError: (err) => {
               captureFeatureException(err, { surface: 'senders', reason: 'policy_keep' });
+              setSettled({ phase: 'failed', verb: 'keep' });
               toast(`Couldn't keep ${sender.name}`, 'warn');
             },
           },
@@ -1357,6 +1361,18 @@ function ReadyState({
   return (
     <DetailFrame layout={layout} scrollable>
       <div className={styles.detailContent}>
+        {layout === 'page' && (
+          <>
+            <a href="/senders" className="dm-external-link">
+              ← Back to Senders
+            </a>
+            <ScreenIntro
+              id="sender-detail"
+              title="How sender details work"
+              body="Review the sender’s current mail, recent history and suggestions before choosing an action. Archive, Later and Delete preview the matching emails before you confirm. Protect keeps a sender out of bulk and automatic actions."
+            />
+          </>
+        )}
         {/* D230 manual path — the "finish in Gmail" step for a mailto
           sender. Transient right after this tab's confirm; persistent
           (from the wire row) whenever the standing unsub policy exists
@@ -1460,10 +1476,11 @@ function ReadyState({
                 // user, and no "all"/"every" — the link is a `from:` search
                 // (GmailOpenLinkService.buildFromSearchLink), and Gmail's
                 // default search excludes Spam and Trash.
+                className="dm-external-link"
                 aria-label="Open a Gmail search for email from this sender"
                 title="Open a Gmail search for email from this sender"
               >
-                Open in Gmail
+                Open in Gmail ↗
               </a>
             )}
           </div>
@@ -1527,12 +1544,7 @@ function ReadyState({
               {actionToolbar}
             </>
           )}
-          {recommendation != null && (
-            <RecommendationBanner
-              recommendation={recommendation}
-              toolbarHighlight={derivePrimaryVerbId(sender)}
-            />
-          )}
+          {recommendation != null && <RecommendationBanner recommendation={recommendation} />}
         </div>
 
         {/* Evidence remains visible in both the inspector and full page. */}
@@ -1569,8 +1581,20 @@ function ReadyState({
               <DetailSection name="monthly trend" status={sections?.timeseries}>
                 {volumes.length > 0 ? (
                   <>
-                    <Spark values={volumes} width={72} height={20} />
-                    <details style={{ fontSize: text.sm }}>
+                    <Spark values={volumes} width={120} height={28} />
+                    <span
+                      style={{
+                        display: 'block',
+                        fontSize: text.xs,
+                        fontWeight: 400,
+                        color: color.fgMuted,
+                        whiteSpace: 'normal',
+                      }}
+                    >
+                      {Math.min(...volumes).toLocaleString('en-US')}–
+                      {Math.max(...volumes).toLocaleString('en-US')} emails per month
+                    </span>
+                    <details className="dm-disclosure" style={{ fontSize: text.sm }}>
                       <summary style={{ cursor: 'pointer', padding: '12px 0', minHeight: 44 }}>
                         Monthly values
                       </summary>
@@ -1585,7 +1609,7 @@ function ReadyState({
                               gap: '2px 12px',
                             }}
                           >
-                            <dt>{point.yearMonth}</dt>
+                            <dt>{formatYearMonth(point.yearMonth)}</dt>
                             <dd style={{ margin: 0, overflowWrap: 'anywhere' }}>
                               {point.volume.toLocaleString('en-US')} emails
                             </dd>
@@ -1733,9 +1757,7 @@ function Stat({ label, children }: { label: string; children: ReactNode }) {
           color: color.fg,
           fontVariantNumeric: 'tabular-nums',
           minHeight: 24,
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
+          whiteSpace: 'normal',
         }}
       >
         {children}
@@ -1969,4 +1991,14 @@ function UnsubStatusPill({
       <Pill>{copy.label}</Pill>
     </span>
   );
+}
+
+function formatYearMonth(value: string): string {
+  const [year, month] = value.split('-').map(Number);
+  if (!year || !month || month < 1 || month > 12) return value;
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(year, month - 1, 1)));
 }

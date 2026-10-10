@@ -261,7 +261,9 @@ describe('ActionSheet — live-preview confirm gate', () => {
         />,
       );
 
-      const confirm = screen.getByRole('button', { name: new RegExp(`^${verb}`) });
+      const confirm = screen.getByRole('button', {
+        name: new RegExp(verb === 'Later' ? '^(Later|Move .+ to Later)' : `^${verb}`),
+      });
       expect(confirm).toBeDisabled();
       fireEvent.click(confirm);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
@@ -279,7 +281,9 @@ describe('ActionSheet — live-preview confirm gate', () => {
         />,
       );
 
-      const readyConfirm = screen.getByRole('button', { name: new RegExp(`^${verb}`) });
+      const readyConfirm = screen.getByRole('button', {
+        name: new RegExp(verb === 'Later' ? '^(Later|Move .+ to Later)' : `^${verb}`),
+      });
       expect(readyConfirm).toBeEnabled();
       fireEvent.click(readyConfirm);
       fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
@@ -591,7 +595,9 @@ describe('ActionSheet — zero-count no-op gate', () => {
         />,
       );
 
-      const confirm = screen.getByRole('button', { name: new RegExp(`^${verb}`) });
+      const confirm = screen.getByRole('button', {
+        name: new RegExp(verb === 'Later' ? '^(Later|Move .+ to Later)' : `^${verb}`),
+      });
       expect(confirm).toBeDisabled();
       fireEvent.click(confirm);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
@@ -616,7 +622,9 @@ describe('ActionSheet — zero-count no-op gate', () => {
           onConfirm={onConfirm}
         />,
       );
-      const readyConfirm = screen.getByRole('button', { name: new RegExp(`^${verb}`) });
+      const readyConfirm = screen.getByRole('button', {
+        name: new RegExp(verb === 'Later' ? '^(Later|Move .+ to Later)' : `^${verb}`),
+      });
       expect(readyConfirm).toBeEnabled();
       fireEvent.click(readyConfirm);
       expect(onConfirm).toHaveBeenCalledTimes(1);
@@ -670,7 +678,7 @@ describe('ActionSheet — Later return-time picker', () => {
     const input = screen.getByLabelText('Later return time');
     expect(input).toBeInTheDocument();
     expect(input).toHaveValue('');
-    expect(screen.getByRole('button', { name: /^Later/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^(Later|Move .+ to Later)/ })).toBeDisabled();
     expect(screen.getByText(/Pick a future return time/i)).toBeInTheDocument();
   });
 
@@ -696,7 +704,7 @@ describe('ActionSheet — Later return-time picker', () => {
       },
     });
 
-    const confirm = screen.getByRole('button', { name: /^Later/ });
+    const confirm = screen.getByRole('button', { name: /^(Later|Move .+ to Later)/ });
     expect(confirm).toBeEnabled();
     fireEvent.click(confirm);
     expect(onConfirm).toHaveBeenCalledTimes(1);
@@ -718,7 +726,7 @@ describe('ActionSheet — Later return-time picker', () => {
     );
 
     // Opens with the default, as Later always does.
-    expect(screen.getByRole('button', { name: /^Later/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^(Later|Move .+ to Later)/ })).toBeEnabled();
 
     // The user clears it: `new Date('')` is NaN, so the handler stores null.
     fireEvent.change(screen.getByLabelText('Later return time'), { target: { value: '' } });
@@ -726,7 +734,7 @@ describe('ActionSheet — Later return-time picker', () => {
     const input = screen.getByLabelText('Later return time');
     expect(input).toBeInTheDocument();
     expect(input).toHaveValue('');
-    expect(screen.getByRole('button', { name: /^Later/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^(Later|Move .+ to Later)/ })).toBeDisabled();
 
     // …and the same input takes a new time, so the state is escapable.
     const future = new Date(Date.now() + 172_800_000);
@@ -736,7 +744,7 @@ describe('ActionSheet — Later return-time picker', () => {
         value: `${future.getFullYear()}-${pad(future.getMonth() + 1)}-${pad(future.getDate())}T${pad(future.getHours())}:${pad(future.getMinutes())}`,
       },
     });
-    expect(screen.getByRole('button', { name: /^Later/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^(Later|Move .+ to Later)/ })).toBeEnabled();
   });
 
   it('refuses a return time in the past', () => {
@@ -753,7 +761,7 @@ describe('ActionSheet — Later return-time picker', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: /^Later/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^(Later|Move .+ to Later)/ })).toBeDisabled();
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(onConfirm).not.toHaveBeenCalled();
   });

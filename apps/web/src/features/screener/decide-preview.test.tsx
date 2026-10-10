@@ -45,7 +45,7 @@ describe('DecidePreview — live-preview confirm gate', () => {
     );
     // The accessible name contains the visible label, so "click Archive
     // 1,400" finds it (WCAG 2.5.3).
-    const confirm = screen.getByRole('button', { name: /^Archive 1,400 for/ });
+    const confirm = screen.getByRole('button', { name: /^Archive 1,400 emails for/ });
     expect(confirm).toHaveTextContent('Archive 1,400');
   });
 
@@ -108,9 +108,7 @@ describe('DecidePreview — live-preview confirm gate', () => {
     const confirm = screen.getByRole('button', { name: /^Archive/i });
     expect(confirm).toBeEnabled();
     // One bold line: the count and where it goes. Its scope sits in Details.
-    expect(
-      screen.getByText(new RegExp(`^2 emails from ${esc(row.senderName)}\\.`)),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Archive 2 emails?' })).toBeInTheDocument();
     expect(screen.getByText(/Inbox now, rechecked when it runs/i)).toBeInTheDocument();
     const account = screen.getByRole('note', { name: 'Gmail account: active@gmail.com' });
     expect(account.closest('details')).toBeNull();
@@ -200,7 +198,7 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
     // follows the chip — it must not keep claiming the inbox alone.
     expect(
       screen.getByText(
-        new RegExp(`^9 emails from ${esc(row.senderName)}\\. Inbox and archived email both move`),
+        new RegExp(`^From ${esc(row.senderName)}\\. Inbox and archived email both move`),
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/^2 emails from/)).toBeNull();
@@ -519,7 +517,7 @@ describe('DecidePreview — zero-match header (QA-delete-20260903-01)', () => {
         onCancel={() => {}}
       />,
     );
-    expect(screen.getByText(`Keep ${row.senderName}. No email moves.`)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: `Keep ${row.senderName}?` })).toBeInTheDocument();
     expect(screen.queryByText(/Nothing to move/)).toBeNull();
   });
 
@@ -534,8 +532,6 @@ describe('DecidePreview — zero-match header (QA-delete-20260903-01)', () => {
         onCancel={() => {}}
       />,
     );
-    expect(
-      screen.getByText(new RegExp(`^1 email from ${esc(row.senderName)}\\.`)),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Delete 1 email?' })).toBeInTheDocument();
   });
 });

@@ -5,7 +5,7 @@ import { Button, Kbd, Tooltip, tokens } from '@declutrmail/shared';
 import { unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
 import { lessonForVerb } from '@/features/tour/verb-lessons';
 import { canArchive, canLater, canUnsubscribe, type TriageDecisionRow } from './data';
-import { VERB_ORDER, VERB_SHORTCUT, recommendedVerb, type ActionVerb } from './types';
+import { VERB_ORDER, VERB_SHORTCUT, type ActionVerb } from './types';
 
 const { color, font, text } = tokens;
 
@@ -40,10 +40,8 @@ export function resolveShortcut(event: {
  * Protected rows still allow explicit actions; protection controls
  * their recommendation and automatic/bulk eligibility.
  *
- * D31 — the engine's verdict is highlighted ONLY when `confidence`
- * clears that VERDICT's floor (`RECOMMEND_FLOOR` in `types.ts`).
- * Below it the toolbar renders flat — the founder explicitly does not
- * want a "soft" recommendation to pull the eye.
+ * Suggestions have their own labelled evidence disclosure. Every
+ * toolbar action uses the same neutral treatment.
  *
  * Keyboard: K/A/U/L/D bind globally while a row is focused. The
  * effect cleans up on unmount so navigating away from the screen
@@ -73,8 +71,8 @@ export function ActionToolbar({
    */
   disabled?: boolean;
   /**
-   * `'bar'` is the touch layout: 44px targets, the suggested verb on its
-   * own full-width line, no key hints (there is no keyboard to press).
+   * `'bar'` is the touch layout: 44px targets, Delete on its own
+   * full-width final line, without key hints.
    */
   layout?: 'row' | 'bar';
   /** `lg` is the focus card's row of 44px capsules; list rows stay `md`. */
@@ -83,15 +81,8 @@ export function ActionToolbar({
   align?: 'center' | 'start';
 }) {
   const bar = layout === 'bar';
-  // Same verdict-aware gate the row's verdict pill reads
-  // (`types.ts`). It was a flat `> 0.85` duplicated in both files,
-  // which made Archive — whose reachable band tops out at 0.74 without
-  // manual-archive history — permanently unhighlightable here too.
-  const recommended = recommendedVerb(row.verdict, row.confidence);
-
-  // The no-channel reason. Pointer devices read it in the verb's tooltip;
-  // touch has no hover, so at ≤900px or `(hover: none)` it ALSO renders
-  // as one muted line under the verbs (CSS only — no hydration flip).
+  // The capability reason is available on focus and visible below the
+  // toolbar, including touch devices that do not have hover.
   const unsubNoChannelReason = verbDisabledReason('Unsubscribe', row);
 
   useEffect(() => {
@@ -119,6 +110,7 @@ export function ActionToolbar({
   return (
     <div
       role="toolbar"
+      className="dm-action-toolbar"
       aria-label={`Decide on ${row.senderName}`}
       style={{
         // Bar: a two-column grid — five labelled 44px targets do not fit
@@ -141,11 +133,7 @@ export function ActionToolbar({
         // state already announces via the row's SR status line.
         const reason = verbDisabledReason(verb, row);
         const gated = verbDisabled(verb, row);
-        const isHighlighted = recommended === verb && !disabled && !gated;
-        // The suggestion is the only filled button; every other verb is
-        // a quiet neutral capsule so the eye lands on one thing. Delete
-        // keeps danger lettering — a colour, not a fill.
-        const tone = isHighlighted ? (verb === 'Unsubscribe' ? 'warn' : 'primary') : 'default';
+        const tone = 'default';
         // D38 — what this verb does to the sender's mail, on hover AND
         // on focus. A GATED verb's tooltip is its reason instead: it
         // stays focusable (`inert`, not native `disabled`) so hover,
@@ -161,26 +149,17 @@ export function ActionToolbar({
             onClick={() => onAction(verb)}
             style={{
               ...(bar ? { width: '100%' } : null),
-              ...(!isHighlighted && verb === 'Delete' ? { color: color.dangerText } : null),
+              ...(verb === 'Delete' ? { color: color.dangerText } : null),
             }}
             {...(reason != null ? { title: reason } : {})}
             {...(describedBy != null ? { ariaDescribedBy: describedBy } : {})}
             {...(bar
               ? {}
               : {
-                  iconRight: isHighlighted ? (
-                    <Kbd
-                      style={{
-                        background: color.lineInverse,
-                        border: 'none',
-                        color: color.fgInverse,
-                      }}
-                    >
-                      {VERB_SHORTCUT[verb]}
-                    </Kbd>
-                  ) : (
-                    // A card-coloured key on the neutral capsule.
-                    <Kbd style={{ background: color.card }}>{VERB_SHORTCUT[verb]}</Kbd>
+                  iconRight: (
+                    <span className="dm-key-hint">
+                      <Kbd style={{ background: color.card }}>{VERB_SHORTCUT[verb]}</Kbd>
+                    </span>
                   ),
                 })}
             ariaLabel={`${verb} (${VERB_SHORTCUT[verb]})`}
@@ -194,8 +173,8 @@ export function ActionToolbar({
           ? ({
               display: 'flex',
               flexDirection: 'column',
-              // The suggestion leads, on its own full-width line.
-              ...(isHighlighted ? { gridColumn: '1 / -1', order: -1 } : null),
+              // Delete is a deliberate full-width final action.
+              ...(verb === 'Delete' ? { gridColumn: '1 / -1' } : null),
             } as const)
           : undefined;
         const content =
@@ -210,20 +189,19 @@ export function ActionToolbar({
           );
         if (content == null) {
           return (
-            <span key={verb} style={slotStyle}>
+            <span key={verb} data-action={verb.toLowerCase()} style={slotStyle}>
               {button()}
             </span>
           );
         }
         return (
-          <span key={verb} style={slotStyle}>
+          <span key={verb} data-action={verb.toLowerCase()} style={slotStyle}>
             <Tooltip content={content}>{({ describedBy }) => button(describedBy)}</Tooltip>
           </span>
         );
       })}
       {unsubNoChannelReason != null && (
         <>
-          <style>{REASON_LINE_CSS}</style>
           <span
             role="note"
             className="dm-toolbar-reason"
@@ -243,9 +221,6 @@ export function ActionToolbar({
     </div>
   );
 }
-
-const REASON_LINE_CSS =
-  '.dm-toolbar-reason{display:none}@media (max-width:900px),(hover:none){.dm-toolbar-reason{display:block}}';
 
 /** Capability gate per verb — Keep is always enabled. */
 function verbDisabled(verb: ActionVerb, row: TriageDecisionRow): boolean {

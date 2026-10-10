@@ -33,17 +33,21 @@ export type SenderRowActivity =
   | { phase: 'done'; verb: RowActivityVerb; affectedCount: number | null }
   | { phase: 'failed'; verb: RowActivityVerb }
   | { phase: 'unconfirmed'; verb: RowActivityVerb }
-  | { phase: 'mixed'; verb: RowActivityVerb };
+  | { phase: 'mixed'; verb: RowActivityVerb }
+  | { phase: 'working' | 'failed'; verb: 'keep' }
+  | { phase: 'done'; verb: 'keep'; affectedCount: null };
 
 export type RowActivityById = ReadonlyMap<string, SenderRowActivity>;
 
-const WORKING: Record<RowActivityVerb, string> = {
+const WORKING: Record<RowActivityVerb | 'keep', string> = {
+  keep: 'Keeping…',
   archive: 'Archiving…',
   later: 'Moving to Later…',
   delete: 'Deleting…',
 };
 
-const DONE: Record<RowActivityVerb, string> = {
+const DONE: Record<RowActivityVerb | 'keep', string> = {
+  keep: 'Kept',
   archive: 'Archived',
   later: 'Moved to Later',
   delete: 'Deleted',

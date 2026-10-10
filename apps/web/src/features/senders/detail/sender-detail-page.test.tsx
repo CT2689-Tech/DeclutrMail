@@ -492,9 +492,7 @@ describe('SenderDetailRoute', () => {
     );
     expect(stats.getByText('You wrote').nextElementSibling).toHaveTextContent('3×');
     expect(screen.getByLabelText('Now')).toHaveTextContent('Currently in your inbox');
-    expect(screen.getByText('Monthly values').closest('details')).toHaveTextContent(
-      TIMESERIES[0]!.yearMonth,
-    );
+    expect(screen.getByText('Monthly values').closest('details')).toHaveTextContent('Jan 2025');
   });
 
   it('shows "—" for a read rate the wire does not know, never 0%', async () => {

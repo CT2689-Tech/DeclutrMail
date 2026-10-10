@@ -12,7 +12,7 @@
 //   W3 — stat consistency: the "last seen" stat card must never
 //   contradict the collapsed row's quiet-90d copy. `lastSeenLabel`
 //   derives the display from the same rolling-window aggregate that
-//   drives "Quiet 90d", so the pair can no longer disagree.
+//   drives "No email in 90 days", so the pair can no longer disagree.
 //
 // Client renders via @testing-library/react (the useIsAtMost hook
 // reads window.matchMedia in an effect); the viewport is simulated by
@@ -266,7 +266,7 @@ describe('TriageRow — narrow-viewport identity (W1)', () => {
 describe('lastSeenLabel — the W3 consistency guard', () => {
   it('renders "90d+" when the 90d window is empty but lastDays disagrees', () => {
     // The live bug shape: quiet 90d with a collapsed lastDays of 0
-    // ("LAST SEEN today" beside "Quiet 90d · 555 received").
+    // ("LAST SEEN today" beside "No email in 90 days · 555 received").
     expect(
       lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(0) }, NOW_FIXED, LOCAL_TZ),
     ).toBe('90d+');
@@ -346,10 +346,10 @@ describe('lastSeenLabel — zone-explicit calendar days (DECLUTRMAIL-WEB-2C)', (
 });
 
 describe('TriageRow expanded — quiet-90d rows never read "LAST SEEN today" (W3)', () => {
-  it('shows "90d+" beside the "Quiet 90d" why-line for the audit-shape row', () => {
+  it('shows "90d+" beside the "No email in 90 days" why-line for the audit-shape row', () => {
     const row = rowById('t-shipping'); // last90dMessages 0, lastDays 0, 555 received
     renderRow(row, { expanded: true });
-    expect(screen.getByText('Quiet 90d · 555 received')).toBeInTheDocument();
+    expect(screen.getByText('No email in 90 days · 555 received')).toBeInTheDocument();
     expect(screen.getByText('90d+')).toBeInTheDocument();
     expect(screen.queryByText('today')).not.toBeInTheDocument();
   });
@@ -440,7 +440,7 @@ describe('TriageRow — the volume tile discloses its 90-day derivation (QA-arch
     const row = rowById('t-oldnavy'); // monthlyVolume: 48
     renderRow(row, { expanded: true });
 
-    expect(screen.getByText('Per month, 90d avg')).toBeInTheDocument();
+    expect(screen.getByText('Monthly average, last 90 days')).toBeInTheDocument();
     expect(screen.getByText('48')).toBeInTheDocument();
   });
 });
@@ -450,7 +450,7 @@ describe('TriageRow — the stat grid reflows instead of orphaning a window word
     const row = rowById('t-oldnavy');
     renderRow(row, { expanded: true });
 
-    const grid = screen.getByText('Marked read, 90d').parentElement!.parentElement!;
+    const grid = screen.getByText('Marked read, last 90 days').parentElement!.parentElement!;
     expect(grid.style.gridTemplateColumns).toContain('auto-fit');
   });
 
@@ -473,7 +473,7 @@ describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
     expect(row.readRate).toBeNull();
     renderRow(row, { expanded: true });
 
-    const stats = screen.getByText('Marked read, 90d').parentElement!;
+    const stats = screen.getByText('Marked read, last 90 days').parentElement!;
     expect(stats.textContent).toContain('—');
     expect(stats.textContent).not.toContain('0%');
   });
@@ -487,7 +487,7 @@ describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
     expect(row.readRate).toBe(0);
     renderRow(row, { expanded: true });
 
-    const stats = screen.getByText('Marked read, 90d').parentElement!;
+    const stats = screen.getByText('Marked read, last 90 days').parentElement!;
     expect(stats.textContent).toContain('0%');
   });
 
@@ -501,7 +501,7 @@ describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
     const row = rowById('t-oldnavy'); // readRate 0 over 144 messages
     const { container } = renderRow(row);
     expect(container.textContent).not.toContain('Never opened');
-    expect(container.textContent).toContain('None marked read in 90d');
+    expect(container.textContent).toContain('None marked read in 90 days');
     // "opened" is unobservable: Gmail exposes only the absence of UNREAD,
     // which a filter or a third-party sweeper can strip with no human
     // ever seeing the message (D45). The first pass at this fix corrected
@@ -529,7 +529,7 @@ describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
       // the absence of the UNREAD label, so "% read" claims a human that
       // a filter or a sweeper could have been. Assert the full phrase.
       if (text.includes('% marked read')) {
-        expect(text).toContain('% marked read in 90d');
+        expect(text).toContain('% marked read in 90 days');
       }
       expect(text).not.toMatch(/\d% read in 90d/);
       unmount();
@@ -613,7 +613,7 @@ describe('TriageRow — inline preview Protected acknowledgement (D245/D42)', ()
   it('says nothing about protection on an unprotected row', () => {
     const { container } = renderInline(rowById('t-groupon'));
     expect(container.textContent).not.toMatch(/stays Protected/);
-    expect(inlineConfirm(/^Archive 2$/)).toBeInTheDocument();
+    expect(inlineConfirm(/^Archive 2 emails$/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Unprotect$/i })).toBeNull();
   });
 });
@@ -789,7 +789,7 @@ describe('TriageRow — the inline preview only advertises live shortcuts', () =
   it('EXPANDED with a resolved count: confirm is enabled', () => {
     // Two-sided: a disabled state only ever observed disabled proves nothing.
     renderPreview(true);
-    expect(inlineConfirm(/^Archive 2$/)).toBeEnabled();
+    expect(inlineConfirm(/^Archive 2 emails$/)).toBeEnabled();
   });
 
   it('COLLAPSED: offers Esc only — the verb key fires nothing on a closed row', () => {
@@ -850,7 +850,11 @@ describe('TriageRow — inline zero-count no-op gate', () => {
           client,
         ),
       );
-      expect(inlineConfirm(new RegExp(`^${verb} 1$`))).toBeEnabled();
+      expect(
+        inlineConfirm(
+          new RegExp(verb === 'Later' ? '^Move 1 email to Later$' : `^${verb} 1 email$`),
+        ),
+      ).toBeEnabled();
       expect(screen.queryByText(/Nothing in your inbox/i)).toBeNull();
     },
   );

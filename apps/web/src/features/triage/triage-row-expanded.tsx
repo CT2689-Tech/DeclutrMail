@@ -120,13 +120,16 @@ export function TriageRowExpanded({
             `round(last90dMessages / 3)` (data.ts), a 90-day-derived
             average, not a measured monthly count — a bare "per month"
             reads as one (QA-archive-20260828-01, Codex review). */}
-        <Stat label="Per month, 90d avg" value={row.monthlyVolume.toLocaleString('en-US')} />
+        <Stat
+          label="Monthly average, last 90 days"
+          value={row.monthlyVolume.toLocaleString('en-US')}
+        />
         {/* Names the window: this cell sits beside lifetime figures, so
             a bare rate reads as lifetime. "marked read", not "read
             rate" — matches the why-line's deliberate wording
             (QA-triage-20260827-07). */}
         <Stat
-          label="Marked read, 90d"
+          label="Marked read, last 90 days"
           value={readPct === null ? '—' : `${readPct}%`}
           muted={readPct === null}
         />

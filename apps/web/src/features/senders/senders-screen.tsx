@@ -1,5 +1,7 @@
 'use client';
 
+import { EditorialKicker } from '@/features/editorial/page';
+
 import { reconcileAction } from '@/lib/api/reconcile-action';
 
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
@@ -1489,7 +1491,6 @@ function SendersScreenContent({
           unsubscribeMethod: s.unsubscribeMethod,
         }));
         const isBulk = senderRefs.length > 1;
-
         // The "Also act on past emails" chip from the D226 preview
         // (ConfirmOptions.secondary). The unsub intent has no composite
         // primary on the BE, so the historic action enqueues as its own
@@ -1810,6 +1811,15 @@ function SendersScreenContent({
         setSelected(new Set());
         const senderRefs = senders.map((s) => ({ id: s.id, name: s.name }));
         const isBulk = senderRefs.length > 1;
+        setSettled((prev) => {
+          const next = new Map(prev);
+          for (const sender of senderRefs) next.set(sender.id, { phase: 'working', verb: 'keep' });
+          return next;
+        });
+        toast(
+          isBulk ? `Keeping ${senderRefs.length} senders…` : `Keeping ${senderRefs[0]!.name}…`,
+          'info',
+        );
         // `mutateAsync`, not N × `mutate(…, { onSuccess })`: per-call
         // callbacks live on the hook's ONE observer, so each `mutate`
         // replaced the previous call's and only the last sender's ever
@@ -1821,6 +1831,18 @@ function SendersScreenContent({
           ),
         )
           .then((results) => {
+            setSettled((prev) => {
+              const next = new Map(prev);
+              results.forEach((result, index) =>
+                next.set(
+                  senderRefs[index]!.id,
+                  result.status === 'fulfilled'
+                    ? { phase: 'done', verb: 'keep', affectedCount: null }
+                    : { phase: 'failed', verb: 'keep' },
+                ),
+              );
+              return next;
+            });
             const failures = results.filter(
               (r): r is PromiseRejectedResult => r.status === 'rejected',
             );
@@ -2686,10 +2708,8 @@ function SendersScreenContent({
       <div className={workspaceStyles.workspace} data-split={canSplit || undefined}>
         <header className={workspaceStyles.heading}>
           <div>
-            <div className={workspaceStyles.eyebrow}>Your inbox, by sender</div>
-            <h1 className={workspaceStyles.title}>
-              Senders<span className={workspaceStyles.headingAccent}> / Make room.</span>
-            </h1>
+            <EditorialKicker>Your inbox, by sender</EditorialKicker>
+            <h1 className={workspaceStyles.title}>Senders</h1>
             <p className={workspaceStyles.subtitle}>
               See the pattern. Decide what deserves a place.
             </p>
@@ -2746,11 +2766,7 @@ function SendersScreenContent({
                 <div data-testid="senders-hero" aria-busy={countsMayBeStale}>
                   <span
                     style={{
-                      fontFamily: font.display,
-                      fontWeight: 400,
-                      fontSize: text['3xl'],
-                      lineHeight: 1,
-                      letterSpacing: '-0.03em',
+                      ...tokens.typography.stat,
                       color: color.fg,
                       fontVariantNumeric: 'tabular-nums',
                       // The count may be one response behind mid-refetch.
@@ -2795,12 +2811,6 @@ function SendersScreenContent({
               needsReconnect={mailboxNeedsReconnect}
             />
 
-            <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
-              Active mailbox ·{' '}
-              {isDefaultCompose(compose) && !hasQuery
-                ? 'Active senders'
-                : 'Matching your search and filters'}
-            </p>
             <ActiveFilterChips state={compose} onChange={setCompose} onClear={clearCompose} />
           </section>
           <ScreenIntro

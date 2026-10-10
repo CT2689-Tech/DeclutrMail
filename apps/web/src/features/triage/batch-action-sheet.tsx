@@ -246,7 +246,12 @@ export function BatchActionSheet({
   );
 
   const verbWord = verb === 'Archive' ? 'Archive' : 'Later';
-  const primaryLabel = total !== null && total > 0 ? `${verbWord} ${fmt(total)}` : verbWord;
+  const primaryLabel =
+    total !== null && total > 0
+      ? verb === 'Later'
+        ? `Move ${emailsLabel(total)} to Later`
+        : `${verbWord} ${emailsLabel(total)}`
+      : verbWord;
 
   return (
     // Stacking context above the phone selection FAB, as the previous

@@ -157,7 +157,7 @@ afterEach(() => {
 
 // The inline (D34) confirm: the bare verb while the live count loads, verb +
 // count once it resolves. The toolbar's own button is "Archive (A)".
-const INLINE_ARCHIVE_CONFIRM = /^Archive( [\d,]+)?$/;
+const INLINE_ARCHIVE_CONFIRM = /^Archive( [\d,]+ emails?)?$/;
 
 describe('focus mode — resting states', () => {
   it('loading: one card-sized skeleton, and neither a count nor a mode toggle', () => {
@@ -225,7 +225,7 @@ describe('focus mode — the card', () => {
     ).toHaveTextContent('0 decided·Reviewing 1 of 2');
   });
 
-  it('fills the suggested verb only, and keeps all five with their key hints', () => {
+  it('keeps every action neutral and includes all five key hints', () => {
     renderScreen(ready([LINKEDIN, GROUPON]));
     const toolbar = screen.getByRole('toolbar', { name: `Decide on ${LINKEDIN.senderName}` });
     const names = within(toolbar)
@@ -242,7 +242,7 @@ describe('focus mode — the card', () => {
       .getAllByRole('button')
       // Unfilled verbs are quiet capsules: transparent or the neutral fill.
       .filter((b) => !['transparent', tokens.color.fill].includes(b.style.background));
-    expect(filled.map((b) => b.getAttribute('aria-label'))).toEqual(['Unsubscribe (U)']);
+    expect(filled.map((b) => b.getAttribute('aria-label'))).toEqual([]);
   });
 
   it('keeps the reasoning behind "Why?" — one tap, wired to the same store slot as a list expand', () => {
