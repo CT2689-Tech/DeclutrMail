@@ -21,3 +21,11 @@ India seller/GST readiness and reusable checkout revocation remain unresolved de
 ## Verification
 
 The permanent Founding ledger core passes 261 billing tests, full repository typecheck and lint (six existing warnings), 31 Privacy/support tests and implementation-log validation. Deletion integration, final independent review and release remain pending. Upgrade-refund and notice implementation are separate follow-ups; no provider financial write or email send has occurred.
+
+## Permanent Founding implementation evidence
+
+The approved allocation policy is implemented in the existing append-only subscription event ledger. One statement counts durable references plus surviving legacy rows without double-counting; allocations share the original global advisory lock. Trial snapshots cannot allocate new seats. Legacy records commit in a separate preservation transaction before deletion inspection and workspace locking, and workspace-identity drift fails closed. Privacy copy names the retained metadata and excludes email, workspace and Gmail data.
+
+Core billing suites passed 261 tests; final guard/ledger suites passed 17 tests, API typecheck and changed-file lint. Full repository typecheck/lint and 31 Privacy/support tests passed earlier. Independent final architecture/privacy review passed 17 tests, typecheck, lint and diff checks and found no blocker. Two real isolated Postgres races (postgres-js and node-postgres) proved concurrent legacy webhook/deletion completes without deadlock, the marker is committed and visible on a separate connection before cascade, and the seat count stays used. A negative control omitting legacy preservation failed the deletion regression; source was restored. An initial test incorrectly attempted an independent read through PGlite's single connection inside a transaction and timed out; the fixture was corrected, with committed visibility verified separately in real Postgres.
+
+Historical allocations already erased by prior deletions cannot be reconstructed from the surviving database. No migration, provider write, real account deletion or email send is included. Deletion #918 is a required landing dependency.
