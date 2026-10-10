@@ -36,7 +36,7 @@ const meta: StoryMeta<typeof BriefPrefsCard> = {
     docs: {
       description: {
         component:
-          "Settings → Notifications (D64). The Daily Brief's local delivery hour. The Brief covers the previous day and generates every day — D66's weekday-only schedule was retired because it meant Saturday's Brief never ran, leaving Friday's mail summarized by nothing. Slots are hourly rather than D64's \"any 30-min slot\": generation is an hourly cron, so a half-hour choice would silently round up. Persisted under users.preferences.briefPrefs; the BriefSnapshotWorker reads the same key at generation time.",
+          "Settings → Notifications (D64). The Daily brief's local delivery hour. The Brief covers the previous day and generates every day — D66's weekday-only schedule was retired because it meant Saturday's Brief never ran, leaving Friday's mail summarized by nothing. Slots are hourly rather than D64's \"any 30-min slot\": generation is an hourly cron, so a half-hour choice would silently round up. Persisted under users.preferences.briefPrefs; the BriefSnapshotWorker reads the same key at generation time.",
       },
     },
   },

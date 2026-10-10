@@ -396,7 +396,7 @@ type PlanRowState =
   | { kind: 'ready'; planName: string; foundingMember: boolean };
 
 /**
- * Plan & billing drill-in — the only way to /billing once it leaves the
+ * Billing drill-in — the only way to /billing once it leaves the
  * sidebar, so the link renders in EVERY state; a failed read adds a
  * retry row under it instead of replacing it.
  */
@@ -405,7 +405,7 @@ function PlanRow({ state }: { state: PlanRowState }) {
     <>
       <DrillRow
         href="/billing"
-        label="Plan & billing"
+        label="Billing"
         value={
           state.kind === 'loading' ? (
             <span role="status">Loading plan…</span>

@@ -414,3 +414,17 @@ malformed counts remain unavailable rather than becoming zero. The encrypted
 non-payment projection permits these counters without exporting raw reason
 strings. No capacity, schedule, provider policy or runtime billing change is made.
 See `docs/execution/sentry-loss-counters-2026-10-06.md` for bounded verification.
+
+
+## Signed-in UI consistency and usability — 2026-10-10
+
+Relates to D198, D199, D200, D210, D211, D226 and D227. A coordinated
+follow-up consolidates typography, fields, page geometry and action feedback
+across signed-in screens, simplifies mobile navigation, and makes preview
+placement and account/billing labels explicit. Scope is based on the supplied
+visual and design-system audits; proposed remedies are checked against real
+semantics rather than treated as authority. No provider, billing-state, OAuth,
+privacy, migration or worker behavior is changed. The complete finding mapping,
+verification evidence and limits are in
+`docs/execution/signed-in-ui-audit-2026-10-10.md`. Merge and serving-state
+verification are separate from this implementation record.

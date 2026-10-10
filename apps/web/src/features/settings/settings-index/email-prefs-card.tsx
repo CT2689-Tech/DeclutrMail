@@ -44,7 +44,7 @@ export type EmailPrefsCardState =
  * Dumb component (same contract as ActionSheetPrefsCard): the
  * container owns the PATCH; this renders state + emits
  * `onToggle(wire, next)`. `children` are extra rows the container
- * appends to the same group (the Daily Brief hour).
+ * appends to the same group (the Daily brief hour).
  */
 export function EmailPrefsCard({
   state,

@@ -190,7 +190,7 @@ export const field = {
   background: color.card,
   color: color.fg,
   fontFamily: font.sans,
-  fontSize: 14,
+  fontSize: 'var(--dm-field-font-size, 14px)',
   lineHeight: 1.4,
 } as const;
 

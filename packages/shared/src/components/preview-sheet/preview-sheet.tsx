@@ -196,7 +196,7 @@ export function PreviewSheet({
                   padding: `0 ${space[3]}px`,
                   borderRadius: radius.pill,
                   fontSize: text.sm,
-                  fontWeight: 550,
+                  fontWeight: 500,
                   color: color.fgSoft,
                 }}
               >

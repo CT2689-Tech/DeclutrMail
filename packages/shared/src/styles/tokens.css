@@ -28,6 +28,7 @@
   --dm-type-section-title: 28px;
   --dm-type-stat: 32px;
   --dm-type-hero-stat: clamp(32px, 4vw, 44px);
+  --dm-field-font-size: 14px;
   --dm-radius-md: 10px;
   --dm-radius-lg: 14px;
   --dm-radius-xl: 20px;
@@ -795,7 +796,7 @@ button {
   border-radius: var(--dm-radius-md);
   background: var(--dm-card);
   color: var(--dm-fg);
-  font: 14px/1.4 var(--dm-font-sans);
+  font: var(--dm-field-font-size)/1.4 var(--dm-font-sans);
 }
 .dm-field:focus-visible,
 .dm-button-link:focus-visible,
@@ -981,5 +982,15 @@ summary.dm-disclosure:focus-visible {
   .dm-filter-tabs > button {
     flex-shrink: 0;
     white-space: nowrap;
+  }
+}
+
+@media (max-width: 760px) {
+  :root {
+    --dm-field-font-size: 16px;
+  }
+  .dm-action-toolbar > span {
+    display: flex;
+    min-width: 0;
   }
 }
