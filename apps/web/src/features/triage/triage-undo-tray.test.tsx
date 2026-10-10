@@ -231,6 +231,26 @@ describe('TriageUndoTray (D35)', () => {
     expect(document.documentElement.style.getPropertyValue('--dm-undo-tray-inset')).toBe('');
   });
 
+  it('republishes its occupied space when a viewport breakpoint moves the tray', async () => {
+    const { container, unmount } = await renderTrayWithDecisions();
+    const tray = container.querySelector<HTMLElement>('[data-dm-undo-tray]');
+    expect(tray).not.toBeNull();
+    let top = 600;
+    vi.spyOn(tray!, 'getBoundingClientRect').mockImplementation(() => ({ top }) as DOMRect);
+    fireEvent(window, new Event('resize'));
+    const before = parseInt(
+      document.documentElement.style.getPropertyValue('--dm-undo-tray-inset'),
+      10,
+    );
+    top -= 64;
+    fireEvent(window, new Event('resize'));
+    expect(
+      parseInt(document.documentElement.style.getPropertyValue('--dm-undo-tray-inset'), 10),
+    ).toBe(before + 64);
+    unmount();
+    expect(document.documentElement.style.getPropertyValue('--dm-undo-tray-inset')).toBe('');
+  });
+
   it('Z reverts the NEWEST entry (undo last) and polls to completion', async () => {
     const { posts } = await renderTrayWithDecisions();
 

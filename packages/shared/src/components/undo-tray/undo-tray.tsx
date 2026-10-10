@@ -45,18 +45,25 @@ const TRAY_BOTTOM_GAP = 16;
  */
 function useTrayInset(): (node: HTMLElement | null) => void {
   const observerRef = useRef<ResizeObserver | null>(null);
+  const publishRef = useRef<(() => void) | null>(null);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // A breakpoint can move the tray without changing its measured size.
+    const publish = () => publishRef.current?.();
+    window.addEventListener('resize', publish);
+    window.visualViewport?.addEventListener('resize', publish);
+    return () => {
+      window.removeEventListener('resize', publish);
+      window.visualViewport?.removeEventListener('resize', publish);
       observerRef.current?.disconnect();
       document.documentElement.style.removeProperty(UNDO_TRAY_INSET_VAR);
-    },
-    [],
-  );
+    };
+  }, []);
 
   return useCallback((node: HTMLElement | null) => {
     observerRef.current?.disconnect();
     if (!node) {
+      publishRef.current = null;
       document.documentElement.style.removeProperty(UNDO_TRAY_INSET_VAR);
       return;
     }
@@ -70,6 +77,7 @@ function useTrayInset(): (node: HTMLElement | null) => void {
         `${Math.ceil(window.innerHeight - node.getBoundingClientRect().top) + TRAY_BOTTOM_GAP}px`,
       );
     };
+    publishRef.current = publish;
     publish();
     // Entry count (and so the height) changes without a remount.
     // Guarded because jsdom has no ResizeObserver; the initial publish

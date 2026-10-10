@@ -160,7 +160,8 @@ function SnoozedScreenContents({ initialNow }: { initialNow: number | undefined 
   // Below `sm` (D60 mobile treatment) the 4-track row grid overflows a
   // phone viewport — resolve the breakpoint once and thread it to the
   // rows so each restacks to a single column.
-  const isMobile = useIsAtMost('shell');
+  // The four-column row needs more room than the navigation rail does.
+  const isMobile = useIsAtMost('sm');
 
   return (
     <div
