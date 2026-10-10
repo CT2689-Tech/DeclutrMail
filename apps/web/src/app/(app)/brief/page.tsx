@@ -30,7 +30,7 @@ import { ServerApiError, serverGetEnvelope } from '@/lib/api/server';
 import { ServerQueryHydration } from '@/lib/server-query-hydration';
 
 export const metadata = {
-  title: 'Daily Brief — DeclutrMail',
+  title: 'Daily brief — DeclutrMail',
 };
 
 export default async function BriefPage() {

@@ -16,7 +16,7 @@ export default function BillingError({
   return (
     <RouteErrorScreen
       title="Billing"
-      kicker="Your workspace / Plan &amp; billing"
+      kicker="Your workspace / Billing"
       error={error}
       reset={reset}
       boundary="billing"

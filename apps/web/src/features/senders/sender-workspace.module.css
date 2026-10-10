@@ -29,9 +29,10 @@
   gap: 16px;
 }
 .eyebrow {
+  line-height: 1.5;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.13em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--dm-fg-muted);
 }
@@ -219,8 +220,10 @@
 }
 .paneBarLabel {
   display: block;
+  font-weight: 600;
+  line-height: 1.5;
   font-size: 11px;
-  letter-spacing: 0.13em;
+  letter-spacing: 0.1em;
   color: var(--dm-fg-muted);
   margin-bottom: 4px;
   text-transform: uppercase;
