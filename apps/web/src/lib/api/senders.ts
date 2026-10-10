@@ -117,6 +117,8 @@ export interface SenderListRow {
    * rather than a fabricated 0.
    */
   inboxCount?: number | null;
+  /** Live Archive count; absent during API deploy skew means unknown. */
+  archivedCount?: number | null;
   /**
    * The UNREAD subset of `inboxCount` — for a Protected sender, what
    * the protection is shielding from bulk and automatic cleanup (D245).

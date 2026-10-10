@@ -289,6 +289,22 @@ interface InboxStats {
   unreadInboxCount: number;
 }
 
+/** Shared live Archive scope for list rows and sender details. */
+function buildArchivedCountSubquery() {
+  const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
+  const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
+  const archivedCountSql = sql<number | string>`(
+      SELECT COUNT(*)::int
+      FROM ${mailMessages}
+      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
+        AND ${mailMessages.senderKey} = ${outerSenderKey}
+        AND ${mailMessages.isOutbound} = false
+        AND NOT ('INBOX' = ANY(${mailMessages.labelIds}))
+        AND NOT (${mailMessages.labelIds} && ARRAY['TRASH', 'SPAM', 'DRAFT', 'CHAT']::text[])
+    )`;
+  return archivedCountSql;
+}
+
 function buildRollingWindowSubqueries(mailboxAccountId: string) {
   const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
   const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
@@ -644,6 +660,7 @@ export class SendersReadService {
         unsubscribeMethod: senders.unsubscribeMethod,
         rollingStats: rollingStatsSql,
         inboxStats: inboxStatsSql,
+        archivedCount: buildArchivedCountSubquery(),
         lastDecision: lastDecisionSql,
         sparkline: sparklineSql,
         // Standing-policy flags — left-joined so a sender with no
@@ -740,6 +757,7 @@ export class SendersReadService {
         // Messages currently in INBOX — what Archive/Later/inbox-Delete
         // can actually reach (see the subquery note above).
         inboxCount: ensureSafeIntegerNumber(row.inboxStats.inboxCount, 'senders.inboxCount'),
+        archivedCount: ensureSafeIntegerNumber(row.archivedCount, 'senders.archivedCount'),
         // The unread subset of the same set — what a Protected sender's
         // protection is shielding from bulk and automatic cleanup.
         unreadInboxCount: ensureSafeIntegerNumber(
@@ -1468,27 +1486,11 @@ export class SendersReadService {
     // rather than bare `${senders.column}` interpolations, and for the
     // trend-bucket / last-reviewed subquery rationale.
     const now = args.now ?? new Date();
-    const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
-    const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
     // Same ROLLING-WINDOW stats the list path uses — `monthlyVolume` /
     // `readRate` / `volumeTrend` are one product-wide fact, so they are
     // computed from one definition.
     const { inboxStats: inboxStatsSql, rollingStats: rollingStatsSql } =
       buildRollingWindowSubqueries(mailboxAccountId);
-    // Detail-only current Archive count. Lifetime `totalReceived` cannot be
-    // used here: it includes mail now in Trash/Spam and is reconciled on a
-    // different cadence. Keep this predicate aligned with the archived
-    // messages scope and the Inbox + archived action preview.
-    const archivedCountSql = sql<number | string>`(
-      SELECT COUNT(*)::int
-      FROM ${mailMessages}
-      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
-        AND ${mailMessages.senderKey} = ${outerSenderKey}
-        AND ${mailMessages.isOutbound} = false
-        AND NOT ('INBOX' = ANY(${mailMessages.labelIds}))
-        AND NOT (${mailMessages.labelIds} && ARRAY['TRASH', 'SPAM', 'DRAFT', 'CHAT']::text[])
-    )`;
-
     const lastDecisionSql = buildLatestDecisionSubquery(true);
 
     const [row] = await this.db
@@ -1517,7 +1519,7 @@ export class SendersReadService {
         >`CASE WHEN ${senders.unsubscribeMethod} = 'mailto' THEN ${senders.unsubscribeUrl} ELSE NULL END`,
         rollingStats: rollingStatsSql,
         inboxStats: inboxStatsSql,
-        archivedCount: archivedCountSql,
+        archivedCount: buildArchivedCountSubquery(),
         lastDecision: lastDecisionSql,
         // Policy fields nullable — a sender without an explicit
         // policy row is "engine default" (D42).

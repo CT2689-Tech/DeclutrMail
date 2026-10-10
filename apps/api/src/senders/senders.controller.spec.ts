@@ -48,6 +48,7 @@ function makeSenderRow(overrides: Partial<SenderFacts> = {}): SenderFacts {
     lastSeenAt: '2026-05-01T00:00:00.000Z',
     totalReceived: 42,
     inboxCount: 42,
+    archivedCount: 0,
     unreadInboxCount: 18,
     wroteToCount: 0,
     monthlyVolume: 10,

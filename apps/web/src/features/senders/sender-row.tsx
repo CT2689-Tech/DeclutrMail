@@ -10,7 +10,7 @@
  * hover / focus, whenever any row is selected, and always on touch
  * (see `sender-list.tsx`), so the list shares the title's left edge.
  *
- * The row keeps sender identity and received volume, with current inbox
+ * The row keeps sender identity and live mail volume, with current inbox
  * scope and marked-read evidence when known. Deeper history and trends
  * remain in the detail pane.
  *
@@ -113,12 +113,12 @@ const SHIELD = (
   </svg>
 );
 
-/** Lifetime received stays distinct from the row's current inbox scope. */
+/** Counts always name their scope; older APIs retain the historical fallback. */
 function CountCell({
   value,
   unit,
   compact = false,
-  scope = 'all time',
+  scope = 'received · all time',
 }: {
   value: number;
   unit: string;
@@ -158,7 +158,7 @@ function CountCell({
         </span>
         <span style={{ fontSize: text.xs, color: color.fgMuted }}>{unit}</span>
       </span>
-      <span style={{ fontSize: 11, color: color.fgMuted }}>received · {scope}</span>
+      <span style={{ fontSize: 11, color: color.fgMuted }}>{scope}</span>
     </div>
   );
 }
@@ -194,9 +194,12 @@ export function SenderRow({
       ? unsubscribeStatusCopy(s.unsubStatus, s.unsubscribeMethod)
       : null;
 
-  const evidence = (s.inboxCount != null || s.readRate != null) && (
+  const currentCount =
+    s.inboxCount != null && s.archivedCount != null ? s.inboxCount + s.archivedCount : null;
+  const evidence = (s.inboxCount != null || s.archivedCount != null || s.readRate != null) && (
     <div className={styles.rowEvidence}>
       {s.inboxCount != null && <span>{s.inboxCount.toLocaleString('en-US')} in inbox</span>}
+      {s.archivedCount != null && <span>{s.archivedCount.toLocaleString('en-US')} archived</span>}
       {s.readRate != null && <span>{formatReadRatePct(s.readRate)}% marked read · 90d</span>}
     </div>
   );
@@ -330,8 +333,9 @@ export function SenderRow({
       </div>
 
       <CountCell
-        value={s.totalReceived}
-        unit={s.totalReceived === 1 ? 'email' : 'emails'}
+        value={currentCount ?? s.totalReceived}
+        scope={currentCount == null ? 'received · all time' : 'current mail'}
+        unit={(currentCount ?? s.totalReceived) === 1 ? 'email' : 'emails'}
         compact={compact}
       />
 
@@ -494,7 +498,7 @@ export function DomainGroupRow({
             )}
           </span>
         </span>
-        <CountCell value={totalReceived} unit="emails" scope="retained" />
+        <CountCell value={totalReceived} unit="emails" scope="received · retained" />
       </button>
     </div>
   );

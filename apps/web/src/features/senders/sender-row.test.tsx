@@ -75,6 +75,35 @@ describe('<SenderRow /> — what the row says', () => {
     expect(screen.getByText('20% marked read · 90d')).toBeInTheDocument();
   });
 
+  it('refreshes current mail after cleanup while the received history stays unchanged', () => {
+    const props = { selected: false, onToggleSelect: noop, onOpen: noop, onAction: noop };
+    const { rerender } = render(
+      <SenderRow
+        {...props}
+        s={makeSender({ totalReceived: 3558, inboxCount: 100, archivedCount: 3458 })}
+      />,
+    );
+    expect(screen.getByText('3,558')).toBeInTheDocument();
+    rerender(
+      <SenderRow
+        {...props}
+        s={makeSender({ totalReceived: 3558, inboxCount: 0, archivedCount: 850 })}
+      />,
+    );
+    expect(screen.getByText('850')).toBeInTheDocument();
+    expect(screen.getByText('current mail')).toBeInTheDocument();
+    expect(screen.getByText('0 in inbox')).toBeInTheDocument();
+    expect(screen.getByText('850 archived')).toBeInTheDocument();
+    expect(screen.queryByText('3,558')).not.toBeInTheDocument();
+    rerender(
+      <SenderRow
+        {...props}
+        s={makeSender({ totalReceived: 3558, inboxCount: 100, archivedCount: 3458 })}
+      />,
+    );
+    expect(screen.getByText('3,558')).toBeInTheDocument();
+  });
+
   it('does not turn unknown inbox or read-state evidence into zero', () => {
     renderRow({ inboxCount: null, readRate: null });
     expect(screen.queryByText(/in inbox|marked read/)).not.toBeInTheDocument();
