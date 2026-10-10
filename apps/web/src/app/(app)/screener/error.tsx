@@ -17,7 +17,6 @@ export default function ScreenerError({
     <RouteErrorScreen
       title="Screener"
       kicker="Clean up / New senders"
-      maxWidth={1120}
       error={error}
       reset={reset}
       boundary="screener"

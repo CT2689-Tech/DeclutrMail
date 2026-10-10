@@ -21,7 +21,6 @@ export default function TriageError({
       gap={20}
       title="Triage"
       kicker="Clean up / A considered decision"
-      maxWidth={mode === 'list' ? 928 : 688}
       triageMode={mode === 'list' ? 'list' : 'focus'}
       error={error}
       reset={reset}

@@ -15,7 +15,6 @@ export default function HomeError({
     <RouteErrorScreen
       title="Home"
       kicker="Your personal space / Home"
-      maxWidth={1310}
       error={error}
       reset={reset}
       boundary="home"
