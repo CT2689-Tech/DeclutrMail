@@ -215,7 +215,7 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   await expect(card).toBeVisible({ timeout: 60_000 });
   await card.scrollIntoViewIfNeeded();
   await card.getByRole('button', { name: 'More actions' }).click();
-  await card.getByRole('menuitem', { name: /Archive/ }).click();
+  await card.getByRole('menuitem', { name: 'Archive', exact: true }).click();
 
   // The preview sheet is named by its title — the verb and the live
   // count as a question ("Archive 3 emails?", ADR-0042), or "Nothing …"
