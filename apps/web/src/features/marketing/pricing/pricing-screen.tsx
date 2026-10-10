@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 import { ACTION_SAFETY_SUMMARY, OAUTH_SCOPE_DISCLOSURE } from '@declutrmail/shared';
 import { TIER_MANIFEST, type TierDefinition } from '@declutrmail/shared/entitlements';
+import { INR_NEW_PURCHASES_PAUSED } from '@declutrmail/shared/contracts/billing-availability';
 
 import { useRegionProvider } from '@/features/billing/billing-currency';
 import {
@@ -84,6 +85,13 @@ export function PricingScreen() {
         </p>
       </header>
 
+      {INR_NEW_PURCHASES_PAUSED && (
+        <p className="dm-pricing-oauth">
+          New INR purchases are temporarily paused; INR prices are shown for reference. Existing INR
+          subscriptions can still be managed from Billing.
+        </p>
+      )}
+
       <div className="dm-pricing-toggle-wrap">
         <IntervalToggle interval={interval} onChange={setInterval} />
       </div>
@@ -124,10 +132,7 @@ export function PricingScreen() {
           </li>
           <li>{CLEANUP_COUNT_NOTE}</li>
           <li>{CLEANUP_RESET_NOTE}</li>
-          <li>
-            {CHECKOUT_TOTAL_NOTE} Choose USD/Paddle or INR/Razorpay where both are available; these
-            are independently set prices.
-          </li>
+          <li>{CHECKOUT_TOTAL_NOTE} USD and INR are independently set prices.</li>
           <li>
             {RAZORPAY_LIMITATIONS_NOTE} {PROVIDER_SWITCH_NOTE}
           </li>

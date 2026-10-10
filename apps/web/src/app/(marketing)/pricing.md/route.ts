@@ -125,7 +125,8 @@ export function GET() {
 
 USD prices use the Paddle catalog. INR prices appear only for price points
 provisioned in the Razorpay catalog; they are independently set, not currency
-conversions. Available payment options and currency are confirmed at checkout.
+conversions. New INR purchases are temporarily paused; INR prices are shown for
+reference. Existing INR subscriptions can still be managed from Billing.
 
 ## Plans
 

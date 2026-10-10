@@ -520,6 +520,30 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     );
   });
 
+  it('pauses new INR checkout without reserving payment or silently switching provider', async () => {
+    stubSubscription(() => jsonOk({ data: FREE_BODY }));
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <BillingScreen
+          initialIntent={{ plan: 'pro', cycle: 'monthly' }}
+          initialProvider="razorpay"
+        />
+      </QueryWrapper>,
+    );
+    const panel = await screen.findByTestId('checkout-panel');
+    expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeChecked();
+    const paused = within(panel).getByRole('button', { name: 'INR checkout paused' });
+    expect(paused).toBeDisabled();
+    expect(within(panel).getByText(/New INR purchases are temporarily paused/)).toBeInTheDocument();
+    expect(within(panel).queryByText(/billed monthly, starting today/)).not.toBeInTheDocument();
+    fireEvent.click(paused);
+    expect(launchCheckout).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
+    fireEvent.click(within(panel).getByLabelText(/Card · PayPal · Apple Pay/));
+    expect(within(panel).getByRole('button', { name: 'Continue to checkout' })).toBeEnabled();
+    expect(launchCheckout).not.toHaveBeenCalled();
+  });
+
   it('a deep-linked intent opens the confirm step with the exact plan and cycle', async () => {
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
     renderScreen({ plan: 'pro', cycle: 'monthly' });
@@ -1900,41 +1924,64 @@ describe('BillingScreen — checkout funnel events', () => {
     expect(tracked('checkout_overlay_completed')).toHaveLength(0);
   });
 
-  it('pre-claim POST failure emits checkout_failed and never session_created', async () => {
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/billing/subscription',
-        respond: () => jsonOk({ data: FREE_BODY }),
-      },
-      { method: 'POST', path: '/api/billing/checkout', respond: billingDisabled503 },
-    ]);
-    renderScreen();
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
-    expect(
-      await screen.findByText(
-        'Billing isn’t switched on yet — checkout opens here once it goes live.',
-      ),
-    ).toBeInTheDocument();
-
-    expect(tracked('checkout_started')).toHaveLength(1);
-    expect(tracked('checkout_session_created')).toHaveLength(0);
-    expect(tracked('checkout_failed')).toEqual([
-      [
-        'checkout_failed',
+  it.each([
+    {
+      code: 'BILLING_DISABLED',
+      reason: null,
+      message: 'Billing isn’t switched on yet — checkout opens here once it goes live.',
+    },
+    {
+      code: 'BILLING_NOT_PROVISIONED',
+      reason: 'inr_checkout_paused',
+      message:
+        'New INR purchases are temporarily paused. Contact support@declutrmail.com for help.',
+    },
+  ])(
+    'pre-claim $code failure releases the reservation and never creates a session',
+    async ({ code, reason, message }) => {
+      installFetchStub([
         {
-          tier: 'plus',
-          cycle: 'annual',
-          provider: 'paddle',
-          founding_pro: false,
-          code: 'BILLING_DISABLED',
+          method: 'GET',
+          path: '/api/billing/subscription',
+          respond: () => jsonOk({ data: FREE_BODY }),
         },
-      ],
-    ]);
-    expect(launchCheckout).not.toHaveBeenCalled();
-  });
+        {
+          method: 'POST',
+          path: '/api/billing/checkout',
+          respond: () =>
+            new Response(
+              JSON.stringify({
+                error: { code, message, ...(reason ? { details: { reason } } : {}) },
+              }),
+              { status: 503, headers: { 'content-type': 'application/json' } },
+            ),
+        },
+      ]);
+      renderScreen();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
+      expect(await screen.findByText(message)).toBeInTheDocument();
+      expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
+      expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+
+      expect(tracked('checkout_started')).toHaveLength(1);
+      expect(tracked('checkout_session_created')).toHaveLength(0);
+      expect(tracked('checkout_failed')).toEqual([
+        [
+          'checkout_failed',
+          {
+            tier: 'plus',
+            cycle: 'annual',
+            provider: 'paddle',
+            founding_pro: false,
+            code,
+          },
+        ],
+      ]);
+      expect(launchCheckout).not.toHaveBeenCalled();
+    },
+  );
 
   it('blocked overlay after a session exists emits checkout_overlay_blocked', async () => {
     installFetchStub([

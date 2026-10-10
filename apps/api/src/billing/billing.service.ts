@@ -56,6 +56,10 @@ import { PaddleAdapter } from './paddle.adapter.js';
 import { RazorpayAdapter } from './razorpay.adapter.js';
 import { hasUnresolvedUpgrade } from './upgrade-intents.js';
 import { BillingUpgradeRefundService } from './billing-upgrade-refund.service.js';
+import {
+  INR_NEW_PURCHASES_PAUSED,
+  INR_CHECKOUT_PAUSED_MESSAGE,
+} from '@declutrmail/shared/contracts';
 
 /** 0051 — pending-checkout display/lock horizon. */
 const PENDING_CHECKOUT_TTL_MS = 30 * 60 * 1000;
@@ -155,6 +159,15 @@ export class BillingService {
             : 'SUBSCRIPTION_EXISTS',
       });
     }
+
+    // Refuse before region updates, claims, provider artifacts or notification side effects.
+    if (dto.provider === 'razorpay' && INR_NEW_PURCHASES_PAUSED)
+      throw new AppException({
+        // Existing clients already release a local reservation for this pre-claim refusal.
+        code: 'BILLING_NOT_PROVISIONED',
+        message: INR_CHECKOUT_PAUSED_MESSAGE,
+        details: { reason: 'inr_checkout_paused' },
+      });
 
     const founding = dto.promo === 'foundingPro';
     if (founding) {

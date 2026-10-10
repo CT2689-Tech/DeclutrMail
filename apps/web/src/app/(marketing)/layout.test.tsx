@@ -147,9 +147,6 @@ describe('(marketing) layout JSON-LD — D132 SEO batch', () => {
           if (!price) return [];
           const name = price.usdCents === 0 ? tier.name : `${tier.name} — ${cycle}`;
           const offers = [{ name, price: price.usdCents / 100, priceCurrency: 'USD' }];
-          if (price.razorpayPlanId !== null) {
-            offers.push({ name, price: price.inrPaise / 100, priceCurrency: 'INR' });
-          }
           return offers;
         }),
       );
@@ -157,9 +154,8 @@ describe('(marketing) layout JSON-LD — D132 SEO batch', () => {
     expect(
       app.offers.map(({ name, price, priceCurrency }) => ({ name, price, priceCurrency })),
     ).toEqual(expected);
-    // Razorpay is live, so INR offers must actually be present — an
-    // all-USD graph would mean the clamp silently reverted.
-    expect(app.offers.some((offer) => offer.priceCurrency === 'INR')).toBe(true);
+    // Approved pause: reference INR prices must not advertise a buyable Offer.
+    expect(app.offers.some((offer) => offer.priceCurrency === 'INR')).toBe(false);
     expect(app.offers.every((offer) => offer['@type'] === 'Offer')).toBe(true);
     // The Founding Pro promo is a limited-redemption price — it must
     // not be baked into structured data that cannot expire with it.

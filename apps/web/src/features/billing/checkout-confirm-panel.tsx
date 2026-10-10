@@ -7,6 +7,7 @@ import {
   RAZORPAY_LIMITATIONS_NOTE,
 } from './billing-copy';
 import type { BillingCycle, BillingProviderId } from '@declutrmail/shared/contracts';
+import { INR_NEW_PURCHASES_PAUSED } from '@declutrmail/shared/contracts/billing-availability';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { currencyForPricePoint, formatMoney } from '@/features/marketing/pricing/pricing-model';
 import { GroupTitle } from '@/features/settings/settings-list';
@@ -69,8 +70,10 @@ export function ConfirmPanel({
   // visitor read "Claim Founding Pro — ₹10,999/yr" off the standard
   // point's provisioning, tick the box, and land on a $129 charge.
   const promoCurrency = tier.promo ? currencyForPricePoint(tier.promo.annual, provider) : currency;
-  const impact =
-    pricePoint !== null
+  const checkoutPaused = provider === 'razorpay' && INR_NEW_PURCHASES_PAUSED;
+  const impact = checkoutPaused
+    ? `${pricePoint ? `Reference price: ${formatMoney(pricePoint, currency)}/${cycle === 'annual' ? 'yr' : 'mo'}. ` : ''}New INR purchases are temporarily paused. Existing INR subscriptions can still be managed from Billing. Contact support@declutrmail.com for help.`
+    : pricePoint !== null
       ? `${formatMoney(pricePoint, currency)} billed ${cycle === 'annual' ? 'annually' : 'monthly'}, starting today. Renews automatically — cancel anytime.`
       : `Pricing for the ${cycle} cycle isn't available right now — try the other billing cycle.`;
 
@@ -88,7 +91,7 @@ export function ConfirmPanel({
       }}
     >
       <GroupTitle as="div">Preview · before anything changes</GroupTitle>
-      {razorpayOffered ? (
+      {razorpayOffered || provider === 'razorpay' ? (
         <fieldset style={{ border: 'none', margin: 0, padding: 0 }}>
           {/* D117 — the provider is the user's explicit regional choice. */}
           <legend style={{ fontSize: text.sm, color: color.fgMuted, padding: 0, marginBottom: 6 }}>
@@ -104,10 +107,15 @@ export function ConfirmPanel({
             />
             <ProviderRadio
               value="razorpay"
+              disabled={!razorpayOffered}
               checked={provider === 'razorpay'}
               onChange={onProviderChange}
               title="UPI · cards · netbanking (India)"
-              detail="INR pricing — secure checkout by Razorpay"
+              detail={
+                INR_NEW_PURCHASES_PAUSED
+                  ? 'New INR purchases temporarily paused'
+                  : 'INR pricing — secure checkout by Razorpay'
+              }
             />
           </div>
         </fieldset>
@@ -179,8 +187,16 @@ export function ConfirmPanel({
       )}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <Button tone="primary" onClick={onConfirm} disabled={isPending || pricePoint === null}>
-          {isPending ? 'Opening checkout…' : 'Continue to checkout'}
+        <Button
+          tone="primary"
+          onClick={onConfirm}
+          disabled={isPending || pricePoint === null || checkoutPaused}
+        >
+          {checkoutPaused
+            ? 'INR checkout paused'
+            : isPending
+              ? 'Opening checkout…'
+              : 'Continue to checkout'}
         </Button>
         <Button tone="default" onClick={onDismiss} disabled={isPending}>
           Keep current plan
@@ -196,12 +212,14 @@ function ProviderRadio({
   onChange,
   title,
   detail,
+  disabled = false,
 }: {
   value: BillingProviderId;
   checked: boolean;
   onChange: (provider: BillingProviderId) => void;
   title: string;
   detail: string;
+  disabled?: boolean;
 }) {
   return (
     <label
@@ -224,6 +242,7 @@ function ProviderRadio({
         name="billing-provider"
         value={value}
         checked={checked}
+        disabled={disabled}
         onChange={() => onChange(value)}
       />
       <span>
