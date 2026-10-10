@@ -193,7 +193,7 @@ export function ActionRecoveryDialog({
                       background: color.fill,
                       color: color.fg,
                       fontFamily: font.sans,
-                      fontSize: text.base,
+                      fontSize: tokens.field.fontSize,
                       minHeight: 40,
                       padding: '0 12px',
                     }}

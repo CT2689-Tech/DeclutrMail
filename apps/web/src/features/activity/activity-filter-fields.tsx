@@ -256,7 +256,7 @@ function DateInput({
         onChange={(e) => onChange(e.target.value)}
         style={{
           ...numeralStyle,
-          fontSize: text.sm,
+          fontSize: tokens.field.fontSize,
           padding: '2px 0',
           border: 'none',
           background: 'transparent',

@@ -468,7 +468,7 @@ function BriefMeta({
           value={selectedDayValue}
           onChange={(e) => onSelectRunDate(e.target.value === '' ? null : e.target.value)}
           aria-label="Brief day"
-          style={{ fontSize: text.sm, height: 32 }}
+          style={{ fontSize: tokens.field.fontSize, height: 32 }}
         >
           {days.map((row, i) => (
             <option key={row.id} value={i === 0 ? '' : row.runDateLocal}>

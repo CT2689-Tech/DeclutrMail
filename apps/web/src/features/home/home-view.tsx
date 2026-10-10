@@ -305,7 +305,7 @@ function WorkspaceOverview({
       ? 'Inspect rules and suggestions'
       : workflows.suggestions === 0
         ? 'No suggestions waiting'
-        : `${workflows.suggestions === 50 ? '50+' : workflows.suggestions} suggestions to review`;
+        : `${workflows.suggestions === 50 ? '50+' : workflows.suggestions} ${workflows.suggestions === 1 ? 'suggestion' : 'suggestions'} to review`;
 
   return (
     <section className={styles.workflows} aria-labelledby="workflows-title">

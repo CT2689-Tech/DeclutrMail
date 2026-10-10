@@ -108,6 +108,26 @@ describe('HomeView', () => {
     expect(screen.getByRole('link', { name: /Review 4 today/ })).toHaveAttribute('href', '/triage');
   });
 
+  it.each([1, 2])('uses matching grammar for %i Autopilot suggestions', (suggestions) => {
+    render(
+      <HomeView
+        tier="pro"
+        workflows={{ brief: null, followups: null, suggestions }}
+        state={{
+          kind: 'ready',
+          hero: { label: 'emails cleared', value: 100 },
+          since: null,
+          secondary: [],
+          action,
+        }}
+      />,
+    );
+    const unit = suggestions === 1 ? 'suggestion' : 'suggestions';
+    expect(
+      screen.getByRole('link', { name: `Autopilot ${suggestions} ${unit} to review` }),
+    ).toHaveAttribute('href', '/autopilot');
+  });
+
   it('shows current Inbox counts and both pending tasks', () => {
     render(
       <HomeView
