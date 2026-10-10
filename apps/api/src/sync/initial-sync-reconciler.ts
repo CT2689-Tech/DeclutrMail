@@ -44,9 +44,14 @@
  */
 
 import { mailboxAccounts, providerSyncState } from '@declutrmail/db';
-import { deletionPendingSql } from '@declutrmail/workers';
+import {
+  deletionPendingSql,
+  INITIAL_RECOVERY_LIMIT,
+  INITIAL_RECOVERY_BASE_MS,
+  INITIAL_RECOVERY_ERROR_CODES,
+} from '@declutrmail/workers';
 import { STALE_INITIAL_SYNC_MS } from '@declutrmail/shared/contracts';
-import { and, eq, lt, sql } from 'drizzle-orm';
+import { and, eq, inArray, lt, sql } from 'drizzle-orm';
 
 import type { DrizzleDb } from '../db/db.module.js';
 
@@ -105,7 +110,8 @@ export async function reconcileInitialSyncs(deps: ReconcileDeps): Promise<Reconc
     staleSyncingAfterMs = STALE_SYNCING_AFTER_MS,
   } = deps;
 
-  const staleBefore = new Date(now().getTime() - staleSyncingAfterMs);
+  const tickNow = now();
+  const staleBefore = new Date(tickNow.getTime() - staleSyncingAfterMs);
   // Filter before LIMIT: skipped inactive/paused jobs leave their durable
   // intent intact and would otherwise consume the same batch every tick.
   const eligible = and(eq(mailboxAccounts.status, 'active'), sql`NOT (${deletionPendingSql})`);
@@ -114,8 +120,48 @@ export async function reconcileInitialSyncs(deps: ReconcileDeps): Promise<Reconc
     .select({ mailboxAccountId: providerSyncState.mailboxAccountId })
     .from(providerSyncState)
     .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, providerSyncState.mailboxAccountId))
-    .where(and(eq(providerSyncState.readinessStatus, 'queued'), eligible))
+    .where(
+      and(
+        eq(providerSyncState.readinessStatus, 'queued'),
+        eligible,
+        sql`(${providerSyncState.initialRetryAt} IS NULL OR ${providerSyncState.initialRetryAt} <= ${tickNow.toISOString()}::timestamptz)`,
+      ),
+    )
     .limit(batchSize);
+
+  // Classify before LIMIT and claim before publishing. A queue outage leaves
+  // queued intent; competing sweep/manual/reconnect writes cannot claim it twice.
+  // Legacy failed rows have no deadline; their last heartbeat supplies cooldown.
+  const recoverable = and(
+    eq(providerSyncState.readinessStatus, 'failed'),
+    inArray(providerSyncState.errorCode, [...INITIAL_RECOVERY_ERROR_CODES]),
+    lt(providerSyncState.initialRecoveryAttempts, INITIAL_RECOVERY_LIMIT),
+    sql`COALESCE(${providerSyncState.initialRetryAt}, ${providerSyncState.updatedAt} + ${INITIAL_RECOVERY_BASE_MS} * interval '1 millisecond') <= ${tickNow.toISOString()}::timestamptz`,
+    sql`EXISTS (SELECT 1 FROM ${mailboxAccounts} WHERE ${mailboxAccounts.id} = ${providerSyncState.mailboxAccountId} AND ${eligible})`,
+  );
+  const failedRows = await db
+    .select({ mailboxAccountId: providerSyncState.mailboxAccountId })
+    .from(providerSyncState)
+    .where(recoverable)
+    .limit(batchSize);
+  const recoveredRows: { mailboxAccountId: string }[] = [];
+  for (const { mailboxAccountId } of failedRows) {
+    if (isShuttingDown()) break;
+    const claimed = await db
+      .update(providerSyncState)
+      .set({
+        readinessStatus: 'queued',
+        currentStage: 'queued',
+        errorCode: null,
+        initialRecoveryAttempts: sql`${providerSyncState.initialRecoveryAttempts} + 1`,
+        initialRetryAt: null,
+        initialAttemptId: null,
+        updatedAt: sql`now()`,
+      })
+      .where(and(eq(providerSyncState.mailboxAccountId, mailboxAccountId), recoverable))
+      .returning({ mailboxAccountId: providerSyncState.mailboxAccountId });
+    recoveredRows.push(...claimed);
+  }
 
   // Age-gated: `syncing` is the healthy in-flight state too, so the
   // heartbeat is the discriminator, not the status.
@@ -136,7 +182,7 @@ export async function reconcileInitialSyncs(deps: ReconcileDeps): Promise<Reconc
   let replaced = 0;
   // A mailbox can only appear once — the two statuses are mutually
   // exclusive on a single row — so the lists cannot overlap.
-  const rows = [...queuedRows, ...staleSyncingRows];
+  const rows = [...queuedRows, ...staleSyncingRows, ...recoveredRows];
 
   for (const { mailboxAccountId } of rows) {
     if (isShuttingDown()) {

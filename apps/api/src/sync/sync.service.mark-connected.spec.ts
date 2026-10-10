@@ -121,15 +121,6 @@ describe('SyncService.markConnected', () => {
   it.each([
     ['a first connect (new mailbox, no sync row)', null, false],
     ['an active mailbox with no sync row', null, true],
-    ['a mailbox that was disconnected', {}, false],
-    [
-      'a revoked grant being reconnected',
-      {
-        lastIncrementalErrorCode: 'InvalidGrantError',
-        lastIncrementalErrorAt: new Date('2026-09-22T10:00:00Z'),
-      },
-      true,
-    ],
     [
       'a failed initial sync',
       {
@@ -160,6 +151,25 @@ describe('SyncService.markConnected', () => {
       before?.readinessStatus === 'ready' ? null : (before?.lastHistoryId ?? null),
     );
   });
+
+  it.each([false, true])(
+    'resumes a completed reconnect from its applied cursor (wasActive=%s)',
+    async (wasActive) => {
+      await seed({
+        lastIncrementalErrorCode: 'InvalidGrantError',
+        lastIncrementalErrorAt: new Date('2026-09-22T10:00:00Z'),
+      });
+      await expect(connect({ wasActive })).resolves.toBe('kept_ready');
+      expect(await readState()).toMatchObject({
+        readinessStatus: 'ready',
+        progressPct: 100,
+        lastHistoryId: CURSOR,
+        lastSyncedAt: SYNCED_AT,
+        lastIncrementalErrorAt: null,
+        lastIncrementalErrorCode: null,
+      });
+    },
+  );
 
   it("keeps a running scan's snapshot through a sign-in", async () => {
     await seed({

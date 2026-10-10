@@ -74,6 +74,12 @@ export const providerSyncState = pgTable(
       mode: 'date',
     }),
     errorCode: text('error_code'),
+    /** Fence stage/completion callbacks from a superseded initial-scan attempt. */
+    initialAttemptId: uuid('initial_attempt_id'),
+    /** Durable automatic initial-scan recovery budget; survives queue eviction. */
+    initialRecoveryAttempts: smallint('initial_recovery_attempts').notNull().default(0),
+    /** Earliest automatic recovery time after a classified terminal failure. */
+    initialRetryAt: timestamp('initial_retry_at', { withTimezone: true, mode: 'date' }),
     /**
      * Wall-clock of the most recent IncrementalSyncWorker terminal
      * failure (BullMQ exhausted retries). Distinct from `readiness_status

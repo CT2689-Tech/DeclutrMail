@@ -5,7 +5,7 @@ import { providerSyncState } from '@declutrmail/db';
 import {
   ensureIncrementalSyncJob,
   ensureInitialSyncJob,
-  notNeedingReconnect,
+  INITIAL_RECOVERY_LIMIT,
   type IncrementalSyncJobData,
 } from '@declutrmail/workers';
 import { INVALID_GRANT_ERROR } from '@declutrmail/workers';
@@ -157,7 +157,8 @@ export class SyncService {
         set: {
           currentStage: 'queued',
           readinessStatus: 'queued',
-          progressPct: 0,
+          initialAttemptId: null,
+          progressPct: sql`CASE WHEN ${providerSyncState.readinessStatus} = 'ready' THEN 0 ELSE ${providerSyncState.progressPct} END`,
           errorCode: null,
           // Only a READY row's applied cursor is cleared (see above); any
           // other row holds its initial scan's snapshot, which stays.
@@ -174,13 +175,15 @@ export class SyncService {
           END`,
           ...(options.freshCredentials
             ? {
+                initialRecoveryAttempts: 0,
+                initialRetryAt: null,
                 lastIncrementalErrorAt: sql`CASE
-                  WHEN ${providerSyncState.lastIncrementalErrorCode} = 'InvalidGrantError'
+                  WHEN ${providerSyncState.lastIncrementalErrorCode} IN ('InvalidGrantError', 'AuthExpiredError', 'ProviderPermissionError')
                   THEN NULL
                   ELSE ${providerSyncState.lastIncrementalErrorAt}
                 END`,
                 lastIncrementalErrorCode: sql`CASE
-                  WHEN ${providerSyncState.lastIncrementalErrorCode} = 'InvalidGrantError'
+                  WHEN ${providerSyncState.lastIncrementalErrorCode} IN ('InvalidGrantError', 'AuthExpiredError', 'ProviderPermissionError')
                   THEN NULL
                   ELSE ${providerSyncState.lastIncrementalErrorCode}
                 END`,
@@ -192,48 +195,42 @@ export class SyncService {
   }
 
   /**
-   * Sync intent for a Google sign-in or a connect-mailbox callback. Both
-   * store a fresh OAuth credential in the same transaction and land here.
-   *
-   * A mailbox whose scan already finished KEEPS its state: it was
-   * `active` before this connect, its row is `ready` with an applied
-   * cursor, and no revoked grant is waiting on this reconnect
-   * (`notNeedingReconnect`). Incremental sync picks up whatever changed —
-   * webhook pushes, the drift sweep, and the catch-up the caller enqueues
-   * after commit ({@link scheduleCatchUp}) — and an expired cursor falls
-   * back to a full resync on its own (cursor-too-old recovery).
-   * Re-queuing it instead re-ran the whole scan on every sign-in and
-   * re-scored every sender: 6,022 Haiku calls for one mailbox on
-   * 2026-09-24.
-   *
-   * Everything else gets a full scan, as before: a first connect (no
-   * row), a mailbox that was disconnected, a revoked grant being
-   * reconnected, and an initial sync that is queued, running or failed.
-   *
-   * FOR UPDATE: a ready or queued write landing between this check and
-   * the caller's commit would otherwise decide against a stale row — which
-   * is why this takes the connect's transaction, never the pool.
+   * Fresh credentials are stored by the caller in this same transaction.
+   * Keep any completed mailbox's applied cursor, including a disconnected or
+   * revoked grant: incremental catch-up resumes it after commit. An expired
+   * cursor still takes the existing full-resync path. Partial scans retain their
+   * first snapshot and saved rows. Lock through commit to avoid a stale decision.
    */
   async markConnected(
     executor: DrizzleTransaction,
     mailboxAccountId: string,
-    opts: { wasActive: boolean },
+    _opts: { wasActive: boolean },
   ): Promise<'kept_ready' | 'queued'> {
-    if (opts.wasActive) {
+    {
       const [ready] = await executor
-        .select({ mailboxAccountId: providerSyncState.mailboxAccountId })
+        .select({
+          mailboxAccountId: providerSyncState.mailboxAccountId,
+          errorCode: providerSyncState.lastIncrementalErrorCode,
+        })
         .from(providerSyncState)
         .where(
           and(
             eq(providerSyncState.mailboxAccountId, mailboxAccountId),
             eq(providerSyncState.readinessStatus, 'ready'),
             isNotNull(providerSyncState.lastHistoryId),
-            notNeedingReconnect,
           ),
         )
         .for('update')
         .limit(1);
-      if (ready) return 'kept_ready';
+      if (ready) {
+        if (ready.errorCode && AUTH_RECOVERY_ERROR_CODES.has(ready.errorCode)) {
+          await executor
+            .update(providerSyncState)
+            .set({ lastIncrementalErrorAt: null, lastIncrementalErrorCode: null })
+            .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+        }
+        return 'kept_ready';
+      }
     }
     await this.markQueued(executor, mailboxAccountId, { freshCredentials: true });
     return 'queued';
@@ -319,14 +316,18 @@ export class SyncService {
       .set({
         currentStage: 'queued',
         readinessStatus: 'queued',
-        progressPct: 0,
         errorCode: null,
+        initialRecoveryAttempts: 0,
+        initialRetryAt: null,
+        initialAttemptId: null,
         updatedAt: sql`now()`,
       })
       .where(
         and(
           eq(providerSyncState.mailboxAccountId, mailboxAccountId),
           eq(providerSyncState.readinessStatus, 'failed'),
+          sql`(${providerSyncState.initialRetryAt} IS NULL OR ${providerSyncState.initialRetryAt} <= now())`,
+          sql`COALESCE(${providerSyncState.errorCode}, '') NOT IN ('InvalidGrantError', 'AuthExpiredError', 'ProviderPermissionError')`,
         ),
       )
       .returning({ mailboxAccountId: providerSyncState.mailboxAccountId });
@@ -413,6 +414,8 @@ export class SyncService {
         currentStage: providerSyncState.currentStage,
         progressPct: providerSyncState.progressPct,
         errorCode: providerSyncState.errorCode,
+        initialRetryAt: providerSyncState.initialRetryAt,
+        initialRecoveryAttempts: providerSyncState.initialRecoveryAttempts,
         lastSyncedAt: providerSyncState.lastSyncedAt,
         lastIncrementalErrorAt: providerSyncState.lastIncrementalErrorAt,
         lastIncrementalErrorCode: providerSyncState.lastIncrementalErrorCode,
@@ -441,6 +444,11 @@ export class SyncService {
       // Heartbeat for the onboarding stuck-sync surface. Always present
       // on the row (`NOT NULL` + trigger-maintained).
       updated_at: row.updatedAt.toISOString(),
+      next_retry_at:
+        row.readinessStatus === 'failed' && row.initialRecoveryAttempts < INITIAL_RECOVERY_LIMIT
+          ? (row.initialRetryAt?.toISOString() ?? null)
+          : null,
+      retry_available_at: row.initialRetryAt?.toISOString() ?? null,
     } as const;
 
     // `exactOptionalPropertyTypes`: include `error_code` ONLY when set,

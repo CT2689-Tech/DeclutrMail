@@ -29,6 +29,7 @@ import type { ScanCounts, ScanProgressStore } from './scan-progress.js';
 import type { GmailAccess, GmailMessageListPage, GmailMessageMetadata } from './ports.js';
 import { deriveSenderKey } from './sender-key.js';
 import type { WorkerContext } from './worker-context.js';
+import { RateLimitError } from './worker-errors.js';
 
 /**
  * InitialSyncWorker integration tests (D5, D157, D224, D9, ADR-0004).
@@ -168,6 +169,21 @@ const CTX: WorkerContext = {
   policy: 'perMailboxPolicy',
 };
 
+async function startFailedAttempt(
+  worker: InitialSyncWorker,
+  mailboxAccountId: string,
+  error: Error,
+  ctx: WorkerContext,
+) {
+  const { gmailAccess } = (worker as unknown as { deps: InitialSyncDeps }).deps;
+  const provider = vi.spyOn(gmailAccess, 'getClient').mockRejectedValueOnce(error);
+  try {
+    await expect(worker.processJob({ mailboxAccountId }, ctx)).rejects.toThrow(error.message);
+  } finally {
+    provider.mockRestore();
+  }
+}
+
 describe('InitialSyncWorker', () => {
   let db: InitialSyncDeps['db'];
   let mailboxAccountId: string;
@@ -176,6 +192,233 @@ describe('InitialSyncWorker', () => {
     db = await freshDb();
     mailboxAccountId = await seedMailbox(db);
   });
+
+  async function terminal(worker: InitialSyncWorker, error: Error) {
+    await (
+      worker as unknown as {
+        onTerminalFailure(
+          p: { mailboxAccountId: string },
+          e: Error,
+          c: WorkerContext,
+        ): Promise<void>;
+      }
+    ).onTerminalFailure({ mailboxAccountId }, error, CTX);
+  }
+
+  it('persists a long rate-limit deadline and preserves saved progress after terminal failure', async () => {
+    await db.insert(providerSyncState).values({
+      mailboxAccountId,
+      readinessStatus: 'queued',
+      progressPct: 40,
+      lastHistoryId: 123n,
+      initialRecoveryAttempts: 1,
+    });
+    const error = new RateLimitError('synthetic quota', 7_200_000);
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: {
+        getClient: async () => {
+          throw error;
+        },
+      },
+      outbox: new OutboxPublisher(),
+    });
+    const started = Date.now();
+    await expect(worker.processJob({ mailboxAccountId }, CTX)).rejects.toThrow('synthetic quota');
+    await terminal(worker, error);
+    const [row] = await db.select().from(providerSyncState);
+    expect(row).toMatchObject({
+      readinessStatus: 'failed',
+      progressPct: 40,
+      lastHistoryId: 123n,
+      initialRecoveryAttempts: 1,
+    });
+    expect(row!.initialRetryAt!.getTime()).toBeGreaterThanOrEqual(started + 7_200_000);
+    expect(await db.select().from(outboxEvents)).toHaveLength(0);
+    expect((await db.select().from(syncRuns))[0]!.status).toBe('failed');
+  });
+
+  it('a superseded active scan cannot restore syncing or fail a fresh reconnect', async () => {
+    const ctx = { ...CTX };
+    const old = new FakeGmailClient(makeMessages(2, 1));
+    old.listMessageIds = async () => {
+      // The reconnect commits after this old attempt cached its Gmail client.
+      await db
+        .update(providerSyncState)
+        .set({ readinessStatus: 'queued', initialAttemptId: null })
+        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+      return { ids: [] };
+    };
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(old),
+      outbox: new OutboxPublisher(),
+    });
+    await expect(worker.processJob({ mailboxAccountId }, ctx)).rejects.toThrow('superseded');
+    await (
+      worker as unknown as {
+        onTerminalFailure(
+          p: { mailboxAccountId: string },
+          e: Error,
+          c: WorkerContext,
+        ): Promise<void>;
+      }
+    ).onTerminalFailure({ mailboxAccountId }, new RateLimitError('old cached grant'), ctx);
+    expect((await db.select().from(providerSyncState))[0]).toMatchObject({
+      readinessStatus: 'queued',
+      errorCode: null,
+      initialRetryAt: null,
+    });
+    expect(await db.select().from(outboxEvents)).toHaveLength(0);
+  });
+
+  it('keeps a newer running attempt when an older terminal callback arrives', async () => {
+    const ctx = { ...CTX };
+    const client = new FakeGmailClient([]);
+    client.listMessageIds = async () => {
+      await db
+        .update(providerSyncState)
+        .set({ initialAttemptId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' })
+        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+      throw new RateLimitError('old attempt');
+    };
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(client),
+      outbox: new OutboxPublisher(),
+    });
+    await expect(worker.processJob({ mailboxAccountId }, ctx)).rejects.toThrow('old attempt');
+    await (
+      worker as unknown as {
+        onTerminalFailure(
+          p: { mailboxAccountId: string },
+          e: Error,
+          c: WorkerContext,
+        ): Promise<void>;
+      }
+    ).onTerminalFailure({ mailboxAccountId }, new RateLimitError('old attempt'), ctx);
+    expect((await db.select().from(providerSyncState))[0]).toMatchObject({
+      readinessStatus: 'syncing',
+      initialAttemptId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      errorCode: null,
+    });
+  });
+
+  it('cannot recreate deleted sync state from a late stage or terminal callback', async () => {
+    const ctx = { ...CTX };
+    const client = new FakeGmailClient([]);
+    client.listMessageIds = async () => {
+      await db
+        .insert(mailboxDataDeletionRequests)
+        .values({ mailboxAccountId, status: 'completed', completedAt: new Date() });
+      await db
+        .update(mailboxAccounts)
+        .set({ status: 'disconnected' })
+        .where(eq(mailboxAccounts.id, mailboxAccountId));
+      await db
+        .delete(providerSyncState)
+        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+      return { ids: [] };
+    };
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(client),
+      outbox: new OutboxPublisher(),
+    });
+    await expect(worker.processJob({ mailboxAccountId }, ctx)).rejects.toThrow('superseded');
+    await (
+      worker as unknown as {
+        onTerminalFailure(
+          p: { mailboxAccountId: string },
+          e: Error,
+          c: WorkerContext,
+        ): Promise<void>;
+      }
+    ).onTerminalFailure({ mailboxAccountId }, new RateLimitError('old attempt'), ctx);
+    expect(await db.select().from(providerSyncState)).toHaveLength(0);
+    expect(await db.select().from(outboxEvents)).toHaveLength(0);
+    expect(await db.select().from(syncRuns)).toHaveLength(0);
+  });
+
+  it('records an unclaimed failure without overwriting another running attempt', async () => {
+    await db.insert(providerSyncState).values({
+      mailboxAccountId,
+      readinessStatus: 'syncing',
+      initialAttemptId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    });
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient([])),
+      outbox: new OutboxPublisher(),
+    });
+    await terminal(worker, new RateLimitError('failed before claiming'));
+    expect((await db.select().from(providerSyncState))[0]).toMatchObject({
+      readinessStatus: 'syncing',
+      errorCode: null,
+    });
+    expect(await db.select().from(outboxEvents)).toHaveLength(0);
+    expect((await db.select().from(syncRuns))[0]!.status).toBe('failed');
+  });
+
+  it('does not call Gmail before a persisted recovery deadline, even with a stray job', async () => {
+    await db.insert(providerSyncState).values({
+      mailboxAccountId,
+      readinessStatus: 'failed',
+      initialRetryAt: new Date(Date.now() + 60_000),
+    });
+    const getClient = vi.fn();
+    await new InitialSyncWorker({ db, gmailAccess: { getClient } }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    expect(getClient).not.toHaveBeenCalled();
+    expect((await db.select().from(providerSyncState))[0]!.readinessStatus).toBe('failed');
+  });
+
+  it('keeps Retry-After and sends the manual failure notice after all automatic recoveries are used', async () => {
+    await db
+      .insert(providerSyncState)
+      .values({ mailboxAccountId, readinessStatus: 'queued', initialRecoveryAttempts: 3 });
+    const error = new RateLimitError('synthetic quota', 7_200_000);
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: {
+        getClient: async () => {
+          throw error;
+        },
+      },
+      outbox: new OutboxPublisher(),
+    });
+    const started = Date.now();
+    await expect(worker.processJob({ mailboxAccountId }, CTX)).rejects.toThrow('synthetic quota');
+    await terminal(worker, error);
+    const [row] = await db.select().from(providerSyncState);
+    expect(row).toMatchObject({ readinessStatus: 'failed', initialRecoveryAttempts: 3 });
+    expect(row!.initialRetryAt!.getTime()).toBeGreaterThanOrEqual(started + 7_200_000);
+    expect(await db.select().from(outboxEvents)).toHaveLength(1);
+  });
+
+  it.each(['ready', 'queued'] as const)(
+    'ignores an old terminal callback after a newer %s intent',
+    async (readinessStatus) => {
+      await db
+        .insert(providerSyncState)
+        .values({ mailboxAccountId, readinessStatus, lastHistoryId: 123n });
+      const worker = new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient([])),
+        outbox: new OutboxPublisher(),
+      });
+      await terminal(worker, new RateLimitError('old failure'));
+      expect((await db.select().from(providerSyncState))[0]).toMatchObject({
+        readinessStatus,
+        lastHistoryId: 123n,
+        errorCode: null,
+      });
+      expect(await db.select().from(outboxEvents)).toHaveLength(0);
+      expect((await db.select().from(syncRuns))[0]!.status).toBe('failed');
+    },
+  );
 
   it('drains active metadata requests on cancellation without persisting the interrupted batch', async () => {
     const client = new FakeGmailClient(makeMessages(30, 6));
@@ -2296,7 +2539,8 @@ describe('InitialSyncWorker — mailbox.sync_failed outbox publish (D162/D224)',
       outbox: new OutboxPublisher(),
     });
     const boom = new Error('quota exceeded');
-    boom.name = 'GmailQuotaError';
+    boom.name = 'PermanentError';
+    await startFailedAttempt(worker, mailboxAccountId, boom, CTX);
     await (
       worker as unknown as {
         onTerminalFailure(
@@ -2309,7 +2553,7 @@ describe('InitialSyncWorker — mailbox.sync_failed outbox publish (D162/D224)',
 
     const [state] = await db.select().from(providerSyncState);
     expect(state?.readinessStatus).toBe('failed');
-    expect(state?.errorCode).toBe('GmailQuotaError');
+    expect(state?.errorCode).toBe('PermanentError');
 
     const failedEvents = (await db.select().from(outboxEvents)).filter(
       (e) => e.topic === TOPICS.MAILBOX_SYNC_FAILED,
@@ -2322,7 +2566,7 @@ describe('InitialSyncWorker — mailbox.sync_failed outbox publish (D162/D224)',
       errorCode: string;
     };
     expect(payload.mailboxAccountId).toBe(mailboxAccountId);
-    expect(payload.errorCode).toBe('GmailQuotaError');
+    expect(payload.errorCode).toBe('PermanentError');
     expect(Date.parse(payload.failedAt)).not.toBeNaN();
   });
 
@@ -2331,6 +2575,8 @@ describe('InitialSyncWorker — mailbox.sync_failed outbox publish (D162/D224)',
       db,
       gmailAccess: accessFor(new FakeGmailClient(makeMessages(2, 1))),
     });
+    const boom = new Error('x');
+    await startFailedAttempt(worker, mailboxAccountId, boom, CTX);
     await (
       worker as unknown as {
         onTerminalFailure(
@@ -2339,7 +2585,7 @@ describe('InitialSyncWorker — mailbox.sync_failed outbox publish (D162/D224)',
           c: WorkerContext,
         ): Promise<void>;
       }
-    ).onTerminalFailure({ mailboxAccountId }, new Error('x'), CTX);
+    ).onTerminalFailure({ mailboxAccountId }, boom, CTX);
     const [state] = await db.select().from(providerSyncState);
     expect(state?.readinessStatus).toBe('failed');
     expect(await db.select().from(outboxEvents)).toHaveLength(0);
@@ -2513,6 +2759,8 @@ describe('InitialSyncWorker — sync_runs history (F002)', () => {
     });
     const boom = new Error('quota exceeded');
     boom.name = 'GmailQuotaError';
+    const ctx = { ...CTX, attempt: 5 };
+    await startFailedAttempt(worker, mailboxAccountId, boom, ctx);
     await (
       worker as unknown as {
         onTerminalFailure(
@@ -2521,7 +2769,7 @@ describe('InitialSyncWorker — sync_runs history (F002)', () => {
           c: WorkerContext,
         ): Promise<void>;
       }
-    ).onTerminalFailure({ mailboxAccountId }, boom, { ...CTX, attempt: 5 });
+    ).onTerminalFailure({ mailboxAccountId }, boom, ctx);
 
     const runs = await db.select().from(syncRuns);
     expect(runs).toHaveLength(1);
@@ -2648,6 +2896,7 @@ describe('InitialSyncWorker — sync_runs history (F002)', () => {
 
     const boom = new Error('quota exceeded');
     boom.name = 'GmailQuotaError';
+    await startFailedAttempt(worker, mailboxAccountId, boom, CTX);
     await expect(
       (
         worker as unknown as {

@@ -544,6 +544,13 @@ export {
 export { writeWorkerHeartbeat, workerHeartbeatIsFresh } from './worker-heartbeat.js';
 
 export { workerRuntimeConfig } from './worker-runtime-config.js';
+export { recoverExpiredHistoryCursor } from './initial-sync-resync.js';
+export {
+  INITIAL_RECOVERY_LIMIT,
+  INITIAL_RECOVERY_BASE_MS,
+  INITIAL_RECOVERY_ERROR_CODES,
+  initialRecoveryDelay,
+} from './initial-sync-recovery.js';
 export { measuredMailboxLock } from './measured-mailbox-lock.js';
 
 export {

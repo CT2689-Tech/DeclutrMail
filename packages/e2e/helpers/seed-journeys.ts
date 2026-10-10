@@ -6,6 +6,7 @@ import { BILLING_SEED, applyBillingSeed } from './seed-billing';
 export async function applyJourneySeed(sql: postgres.Sql): Promise<void> {
   await applyBillingSeed(sql);
   const s = BILLING_SEED;
+  await sql`UPDATE provider_sync_state SET initial_recovery_attempts = 0, initial_retry_at = NULL, initial_attempt_id = NULL WHERE mailbox_account_id = ${s.mailboxId}`;
   await sql`UPDATE workspaces SET tier = 'pro' WHERE id = ${s.workspaceId}`;
   await sql`DELETE FROM activity_log WHERE mailbox_account_id = ${s.mailboxId} AND action = 'keep'`;
   await sql`DELETE FROM sender_policies WHERE mailbox_account_id = ${s.mailboxId} AND sender_key IN (${s.archiveSenderKey}, ${s.screenerSenderKey})`;

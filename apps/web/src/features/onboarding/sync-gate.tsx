@@ -260,6 +260,7 @@ export function SyncGate({
         escape={escape}
         mailboxId={mailboxId}
         stuck={stuck}
+        nowMs={now}
         onContinuePartial={onContinuePartial}
       />
     );
@@ -392,12 +393,14 @@ function SyncFailed({
   escape,
   mailboxId,
   stuck,
+  nowMs,
   onContinuePartial,
 }: {
   status: SyncStatus;
   escape?: SyncGateEscape | undefined;
   mailboxId?: string | null | undefined;
   stuck: boolean;
+  nowMs?: number | undefined;
   onContinuePartial?: (() => void) | undefined;
 }) {
   const retry = useRetryInitialSync(mailboxId);
@@ -413,12 +416,18 @@ function SyncFailed({
     progressPct: status.progress_pct,
   });
   const needsReconnect = recovery.action === 'reconnect';
+  const scheduled = !needsReconnect && status.next_retry_at != null;
+  const deadline = needsReconnect ? null : (status.retry_available_at ?? status.next_retry_at);
+  const waiting = deadline != null && (nowMs === undefined || Date.parse(deadline) > nowMs);
+  const minutes = waiting
+    ? Math.max(1, Math.ceil((Date.parse(deadline!) - (nowMs ?? Date.parse(deadline!))) / 60_000))
+    : 0;
   const copy = recoverySurface(recovery);
   const retryLabel =
     recovery.reason === 'rate_limit' && recovery.partlyReady ? 'Finish sync' : 'Try again';
   return (
     <Shell>
-      <h1 style={titleStyle}>{copy.title}</h1>
+      <h1 style={titleStyle}>{scheduled ? 'Your scan will resume' : copy.title}</h1>
       <p
         style={{ color: color.fgMuted, fontSize: text.lg, lineHeight: 1.45, margin: '12px 0 28px' }}
         data-recovery-action={recovery.action}
@@ -426,7 +435,11 @@ function SyncFailed({
         data-partly-ready={recovery.partlyReady ? 'true' : 'false'}
         data-sync-surface={stuck ? 'stuck' : 'failed'}
       >
-        {copy.body}
+        {scheduled
+          ? `Your progress is saved. ${nowMs === undefined ? 'We’ll retry automatically.' : waiting ? `We’ll retry automatically in about ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}.` : 'Your retry is scheduled and will start shortly.'}`
+          : waiting
+            ? `Gmail needs more time. ${nowMs === undefined ? 'Your retry will be available soon.' : `Try again in about ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}.`}`
+            : copy.body}
       </p>
       <div
         style={{
@@ -454,10 +467,16 @@ function SyncFailed({
             tone="primary"
             size="xl"
             onClick={() => canRetry && retry.mutate()}
-            disabled={!canRetry || retry.isPending}
+            disabled={!canRetry || retry.isPending || waiting}
             style={editorialOnboardingActionStyle}
           >
-            {retry.isPending ? 'Starting…' : retryLabel}
+            {retry.isPending
+              ? 'Starting…'
+              : waiting
+                ? scheduled
+                  ? 'Retry scheduled'
+                  : 'Retry later'
+                : retryLabel}
           </Button>
         )}
         {recovery.reason === 'rate_limit' && recovery.partlyReady && onContinuePartial && (

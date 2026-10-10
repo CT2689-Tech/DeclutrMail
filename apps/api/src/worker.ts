@@ -23,7 +23,7 @@ import { Queue, Worker } from 'bullmq';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq, sql } from 'drizzle-orm';
 import postgres from 'postgres';
-import { mailboxAccounts, providerSyncState, schema } from '@declutrmail/db';
+import { mailboxAccounts, schema } from '@declutrmail/db';
 import { reconcileInitialSyncs } from './sync/initial-sync-reconciler.js';
 import {
   AccountDeletionPurgeWorker,
@@ -60,6 +60,7 @@ import {
   enqueueEmailSend,
   ensureIncrementalSyncJob,
   ensureInitialSyncJob,
+  recoverExpiredHistoryCursor,
   enqueueBillingVerdictTick,
   enqueueBriefSnapshotTick,
   enqueueDeadLetterTick,
@@ -1009,22 +1010,12 @@ async function bootstrap(): Promise<void> {
         // resync; the worker captures a fresh base snapshot on entry.
         // Keep `last_synced_at`: clearing it would re-send "Your inbox is
         // ready" for a mailbox that had it long ago.
-        await db
-          .update(providerSyncState)
-          .set({
-            readinessStatus: 'queued',
-            currentStage: 'queued',
-            progressPct: 0,
-            lastHistoryId: null,
-            historyIdUpdatedAt: null,
-            lastIncrementalErrorAt: null,
-            lastIncrementalErrorCode: null,
-            updatedAt: new Date(),
-          })
-          .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
-        const outcome = await ensureInitialSyncJob(reconcilerQueue, mailboxAccountId, {
-          force: true,
-        });
+        const outcome = await recoverExpiredHistoryCursor(
+          db,
+          reconcilerQueue,
+          mailboxAccountId,
+          job.data.startHistoryId,
+        );
         console.log(
           JSON.stringify({
             level: 'info',
