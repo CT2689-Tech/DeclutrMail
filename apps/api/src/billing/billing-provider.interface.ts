@@ -29,7 +29,8 @@ export interface CreateCheckoutInput {
 }
 
 export type PlanChangeTiming =
-  { kind: 'immediate_prorated' } | { kind: 'next_period_no_proration'; effectiveAt: string };
+  | { kind: 'immediate_prorated'; upgradeIntent?: { id: string; workspaceId: string } }
+  | { kind: 'next_period_no_proration'; effectiveAt: string };
 
 export interface PlanChangeResult {
   /** Price reported after applying the mutation; null when the response cannot confirm it. */
@@ -71,6 +72,8 @@ export type NormalizedBillingEvent =
       providerEventId: string;
       eventType: string;
       subscription: NormalizedSubscription;
+      /** Synthetic verified policy restoration, never browser supplied. */
+      upgradeRefundRestoration?: { intentId: string; adjustmentId: string };
     }
   | {
       kind: 'payment';
@@ -96,6 +99,7 @@ export type NormalizedBillingEvent =
       eventType: string;
       providerSubscriptionId: string;
       reason: 'refund' | 'chargeback' | 'provider_scheduled';
+      refundReference?: { adjustmentId: string; transactionId: string };
     }
   | {
       /**
@@ -120,6 +124,7 @@ export type NormalizedBillingEvent =
       eventType: string;
       providerSubscriptionId: string;
       reason: 'chargeback_reverse' | 'refund_rejected';
+      refundReference?: { adjustmentId: string; transactionId: string };
     }
   | {
       /**
@@ -155,6 +160,7 @@ export type NormalizedBillingEvent =
       providerEventId: string;
       eventType: string;
       providerSubscriptionId: string;
+      refundReference?: { adjustmentId: string; transactionId: string };
     }
   | {
       kind: 'ignored';
@@ -253,6 +259,8 @@ export interface ProviderCancellationFacts {
    * refund still pending approval) appears in neither field.
    */
   refuted: { refund: boolean; chargeback: boolean };
+  /** Full adjustments on upgrade-only transactions never end the base plan. */
+  upgradeRefunds?: Array<{ adjustmentId: string; transactionId: string; status: string }>;
 }
 
 /**

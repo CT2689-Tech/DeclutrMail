@@ -1,3 +1,4 @@
+import { ordinaryRefundPolicy, legacyUpgradePolicy } from './fixtures.js';
 import {
   automationRules,
   billingCustomers,
@@ -116,7 +117,12 @@ describe('BillingWebhookService.process', () => {
 
   beforeEach(async () => {
     db = await freshDb();
-    service = new BillingWebhookService(db, testCatalog(), new AutopilotReadService(db));
+    service = new BillingWebhookService(
+      db,
+      testCatalog(),
+      new AutopilotReadService(db),
+      ordinaryRefundPolicy,
+    );
     workspaceId = await seedWorkspace(db);
   });
 
@@ -697,7 +703,12 @@ describe('BillingWebhookService.process', () => {
   });
 
   it('D126 — grants founding_member to the first N and stops at the cap (race-safe count)', async () => {
-    service = new BillingWebhookService(db, testCatalog(2), new AutopilotReadService(db));
+    service = new BillingWebhookService(
+      db,
+      testCatalog(2),
+      new AutopilotReadService(db),
+      ordinaryRefundPolicy,
+    );
     const ws2 = await seedWorkspace(db, 'WS 2');
     const ws3 = await seedWorkspace(db, 'WS 3');
 
@@ -1399,6 +1410,10 @@ describe('BillingWebhookService.process', () => {
       { id: 'razorpay' } as unknown as RazorpayAdapter,
       // cancelAtPeriodEnd never touches reconciliation.
       {} as unknown as BillingReconciliationService,
+      legacyUpgradePolicy({
+        id: 'paddle',
+        cancelSubscription: async () => {},
+      } as unknown as PaddleAdapter),
     );
     await billing.cancelAtPeriodEnd({ workspaceId }, { reason: 'too_expensive' });
 
@@ -1441,6 +1456,11 @@ describe('BillingWebhookService.process', () => {
       } as unknown as PaddleAdapter,
       { id: 'razorpay' } as unknown as RazorpayAdapter,
       {} as unknown as BillingReconciliationService,
+      legacyUpgradePolicy({
+        id: 'paddle',
+        cancelSubscription: async () => {},
+        clearScheduledCancellation: async () => {},
+      } as unknown as PaddleAdapter),
     );
     await billing.cancelAtPeriodEnd({ workspaceId }, {});
 
@@ -1519,6 +1539,10 @@ describe('BillingWebhookService.process', () => {
       { id: 'razorpay' } as unknown as RazorpayAdapter,
       // cancelAtPeriodEnd never touches reconciliation.
       {} as unknown as BillingReconciliationService,
+      legacyUpgradePolicy({
+        id: 'paddle',
+        cancelSubscription: async () => {},
+      } as unknown as PaddleAdapter),
     );
     await billing.cancelAtPeriodEnd({ workspaceId }, { reason: 'too_expensive' });
 

@@ -1,3 +1,4 @@
+import { legacyUpgradePolicy } from './fixtures.js';
 import {
   billingCustomers,
   pendingCheckouts,
@@ -17,6 +18,7 @@ import { BillingService } from '../billing.service.js';
 import type { BillingReconciliationService } from '../billing-reconciliation.service.js';
 import type { PaddleAdapter } from '../paddle.adapter.js';
 import type { RazorpayAdapter } from '../razorpay.adapter.js';
+import { appendUpgradeRecord, hasUnresolvedUpgrade } from '../upgrade-intents.js';
 
 /**
  * BillingService integration tests (D117 checkout routing + D118
@@ -170,6 +172,7 @@ describe('BillingService', () => {
       // here assert the adapter calls, not the projection (covered in
       // billing-reconciliation.service.spec.ts).
       reconciliationStub,
+      legacyUpgradePolicy(paddle),
     );
 
     const [ws] = await db
@@ -443,6 +446,25 @@ describe('BillingService', () => {
     });
   });
 
+  it('reports a durable refund review independently of current paid access', async () => {
+    await db.insert(subscriptions).values({
+      workspaceId: principal.workspaceId,
+      provider: 'paddle',
+      providerSubscriptionId: 'sub_review',
+      tier: 'pro',
+      status: 'active',
+      providerPriceId: 'pri_pro_a',
+      billingCycle: 'annual',
+    });
+    await appendUpgradeRecord(db, 'sub_review', 'local.upgrade_refund_held', 'adj_review', {
+      adjustment_id: 'adj_review',
+    });
+    expect(await service.getSubscription(principal.workspaceId)).toMatchObject({
+      billingReviewPending: true,
+      subscription: { status: 'active', tier: 'pro' },
+    });
+  });
+
   it('getSubscription serves the GRANTING row even when a non-granting row is newer (A6)', async () => {
     // Latest-by-updated_at let a paused row SHADOW the granting one, so
     // the FE read asserted two plans at once (audit A6). The read must
@@ -637,6 +659,41 @@ describe('BillingService', () => {
         provider_subscription_id: 'sub_uncancel',
         occurred_at: expect.any(String),
       });
+    });
+
+    it('preserves a chargeback verdict that arrives during the provider call', async () => {
+      await seedCancellingPro();
+      paddleClearScheduledCancellation.mockImplementation(async () => {
+        await db.update(subscriptions).set({ cancelSource: 'chargeback', cancelAtPeriodEnd: true });
+      });
+      await expect(service.resumeCancellation(principal)).rejects.toMatchObject({
+        code: 'CANCELLATION_NOT_REVOCABLE',
+      });
+      const [sub] = await db.select().from(subscriptions);
+      expect(sub).toMatchObject({ cancelSource: 'chargeback', cancelAtPeriodEnd: true });
+      const audits = await db
+        .select()
+        .from(subscriptionEvents)
+        .where(eq(subscriptionEvents.eventType, 'local.cancellation_revoked'));
+      expect(audits).toHaveLength(0);
+    });
+
+    it('preserves a new user cancellation after its own provider confirmation', async () => {
+      await seedCancellingPro();
+      paddleClearScheduledCancellation.mockImplementation(async () => {
+        await db.update(subscriptions).set({ cancelAtPeriodEnd: false });
+        await service.cancelAtPeriodEnd(principal, {});
+      });
+      await expect(service.resumeCancellation(principal)).rejects.toMatchObject({
+        code: 'PLAN_CHANGE_PENDING',
+      });
+      const [sub] = await db.select().from(subscriptions);
+      expect(sub!.cancelAtPeriodEnd).toBe(true);
+      const audits = await db
+        .select()
+        .from(subscriptionEvents)
+        .where(eq(subscriptionEvents.eventType, 'local.cancellation_revoked'));
+      expect(audits).toHaveLength(0);
     });
 
     it('is NO_SCHEDULED_CANCELLATION when nothing is scheduled — and never calls the provider', async () => {
@@ -889,6 +946,33 @@ describe('BillingService', () => {
       const [sub] = await db.select().from(subscriptions);
       expect(sub?.scheduledChangeState).toBeNull();
       expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
+    });
+    it('stops a deferred mutation when a refund hold arrives during preview', async () => {
+      await seedActivePlus();
+      await db.update(subscriptions).set({
+        tier: 'pro',
+        providerPriceId: 'pri_pro_a',
+        billingCycle: 'annual',
+        currentPeriodEnd: DEFERRED_PERIOD_END,
+      });
+      vi.spyOn(service['upgrades'], 'assertNoPending').mockImplementation(
+        async (id, store = db) => {
+          if (await hasUnresolvedUpgrade(store, id))
+            throw new AppException({ code: 'PLAN_CHANGE_PENDING' });
+        },
+      );
+      paddlePreviewPlanChange.mockImplementation(async () => {
+        await appendUpgradeRecord(db, 'sub_change_me', 'local.upgrade_refund_held', 'adj_race', {
+          adjustment_id: 'adj_race',
+        });
+        return { result: null, nextBilledAt: DEFERRED_PERIOD_END.toISOString() };
+      });
+      await expect(
+        service.changePlan(principal, { tierId: 'plus', cycle: 'monthly' }),
+      ).rejects.toMatchObject({ code: 'PLAN_CHANGE_PENDING' });
+      expect(paddleChangePlan).not.toHaveBeenCalled();
+      const [sub] = await db.select().from(subscriptions);
+      expect(sub!.scheduledChangeState).toBeNull();
     });
 
     it('refuses a downgrade scheduled too close to renewal (PLAN_CHANGE_TOO_LATE)', async () => {

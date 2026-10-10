@@ -1,3 +1,4 @@
+import { ordinaryRefundPolicy } from './fixtures.js';
 import {
   pendingCheckouts,
   subscriptionEvents,
@@ -150,7 +151,7 @@ describe('BillingReconciliationService (D249)', () => {
     return new BillingReconciliationService(
       db,
       catalog,
-      new BillingWebhookService(db, catalog, new AutopilotReadService(db)),
+      new BillingWebhookService(db, catalog, new AutopilotReadService(db), ordinaryRefundPolicy),
       paddle,
       razorpay ?? (fakeAdapter({}) as RazorpayAdapter),
     );
@@ -1185,7 +1186,12 @@ describe('BillingReconciliationService (D249)', () => {
   }
 
   it('webhook-settled refunds still stop the exact old renewal after repurchase', async () => {
-    const webhook = new BillingWebhookService(db, testCatalog(), new AutopilotReadService(db));
+    const webhook = new BillingWebhookService(
+      db,
+      testCatalog(),
+      new AutopilotReadService(db),
+      ordinaryRefundPolicy,
+    );
     const adapter = new (await import('../paddle.adapter.js')).PaddleAdapter({
       PADDLE_WEBHOOK_SECRET: TEST_PADDLE_WEBHOOK_SECRET,
     });

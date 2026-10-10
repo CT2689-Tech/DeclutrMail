@@ -32,6 +32,7 @@ import { BillingService } from './billing.service.js';
 import { BillingWebhookService } from './billing-webhook.service.js';
 import { PaddleAdapter } from './paddle.adapter.js';
 import { RazorpayAdapter } from './razorpay.adapter.js';
+import { BillingUpgradeRefundService } from './billing-upgrade-refund.service.js';
 
 @Module({
   // AutopilotModule exports the AutopilotReadService facade the D251
@@ -47,6 +48,7 @@ import { RazorpayAdapter } from './razorpay.adapter.js';
     BillingService,
     BillingWebhookService,
     BillingReconciliationService,
+    BillingUpgradeRefundService,
     // Explicit factories: these classes take plain (non-injectable)
     // constructor args with defaults — Nest must not try to resolve them.
     { provide: BillingCatalog, useFactory: (): BillingCatalog => new BillingCatalog() },

@@ -1,3 +1,4 @@
+import { ordinaryRefundPolicy } from '../../billing/__tests__/fixtures.js';
 import { createHmac } from 'node:crypto';
 
 import { subscriptionEvents, subscriptions, workspaces } from '@declutrmail/db';
@@ -95,7 +96,12 @@ describe('billing webhook controllers', () => {
 
   beforeEach(async () => {
     db = await freshDb();
-    service = new BillingWebhookService(db, testCatalog(), new AutopilotReadService(db));
+    service = new BillingWebhookService(
+      db,
+      testCatalog(),
+      new AutopilotReadService(db),
+      ordinaryRefundPolicy,
+    );
     record = vi.fn().mockResolvedValue(undefined);
     securityEvents = { record } as unknown as SecurityEventsService;
     const [ws] = await db
