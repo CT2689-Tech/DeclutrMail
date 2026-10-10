@@ -1,6 +1,6 @@
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type { PgTransaction } from 'drizzle-orm/pg-core';
-import type { z } from 'zod';
+import { z } from 'zod';
 
 import { outboxEvents } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
@@ -72,6 +72,8 @@ function assertNoBodyKeys(payload: Record<string, unknown>): void {
 export interface OutboxPublishInput<
   TPayload extends Record<string, unknown> = Record<string, unknown>,
 > {
+  /** Deterministic UUID for an immutable logical transition, when needed. */
+  id?: string;
   topic: string;
   aggregateId: string;
   payload: TPayload;
@@ -157,15 +159,19 @@ export class OutboxPublisher {
     // Gate 2: PII-key denylist (defense-in-depth; runs on the *parsed*
     // payload so a Zod transform that adds a key still gets caught).
     assertNoBodyKeys(validated);
+    const id = input.id === undefined ? undefined : z.uuid().parse(input.id);
 
     const [row] = await tx
       .insert(outboxEvents)
       .values({
+        ...(id === undefined ? {} : { id }),
         topic: input.topic,
         aggregateId: input.aggregateId,
         payload: validated,
       })
+      .onConflictDoNothing()
       .returning({ id: outboxEvents.id });
+    if (!row && id !== undefined) return id;
     if (!row) {
       // Should be unreachable — INSERT ... RETURNING always returns
       // the inserted row absent a tx rollback. Surface explicitly so a

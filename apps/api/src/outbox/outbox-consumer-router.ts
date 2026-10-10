@@ -8,6 +8,7 @@ import {
 } from '@declutrmail/db';
 import {
   ActionLabelAppliedPayloadSchema,
+  BillingLifecycleChangedPayloadSchema,
   ActionsUnsubscribeExecutedPayloadSchema,
   ActionsUnsubscribeIntentRecordedPayloadSchema,
   AutopilotRuleActivatedPayloadSchema,
@@ -20,6 +21,7 @@ import {
 } from '@declutrmail/events';
 import type {
   ActionLabelAppliedPayload,
+  BillingLifecycleChangedPayload,
   ActionsUnsubscribeExecutedPayload,
   ActionsUnsubscribeIntentRecordedPayload,
   MailboxNonMailPurgedPayload,
@@ -51,6 +53,10 @@ import type { DrizzleDb } from '../db/db.module.js';
  * the dispatcher's retries exhaust and the row flips to `failed`.
  */
 export interface OutboxConsumerDeps {
+  onBillingLifecycleChanged?: (
+    payload: BillingLifecycleChangedPayload,
+    eventId: string,
+  ) => Promise<void>;
   /**
    * U14 — BullMQ producer for the `autopilot-apply` queue. Optional:
    * the router compiles + runs without it, and the autopilot cases log
@@ -114,6 +120,14 @@ export interface OutboxConsumerDeps {
 export function buildOutboxConsumer(db: DrizzleDb, deps: OutboxConsumerDeps = {}) {
   return async function consumeOutboxEvent(event: DispatchedEvent): Promise<void> {
     switch (event.topic) {
+      case TOPICS.BILLING_LIFECYCLE_CHANGED: {
+        if (!deps.onBillingLifecycleChanged) throw new Error('Billing notice handler is not wired');
+        await deps.onBillingLifecycleChanged(
+          BillingLifecycleChangedPayloadSchema.parse(event.payload),
+          event.id,
+        );
+        return;
+      }
       case TOPICS.AUTOPILOT_RULE_ACTIVATED: {
         // A rule PATCH left the rule runnable. Nothing else enqueues a
         // sweep on a rule change — `autopilot-apply` is otherwise

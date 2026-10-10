@@ -1,3 +1,8 @@
+import {
+  buildBillingNoticeHandler,
+  buildBillingNoticeResolver,
+  publishGrantExpiryNotices,
+} from './billing/billing-notices.js';
 import 'reflect-metadata';
 
 import {
@@ -2127,6 +2132,10 @@ async function bootstrap(): Promise<void> {
   const emailSendQueue = new Queue<EmailSendJobData>(EMAIL_SEND_QUEUE, { connection });
   const emailSendWorker = new EmailSendWorker({
     db,
+    resolveBillingNotice: buildBillingNoticeResolver(
+      db,
+      process.env.WEB_URL ?? 'https://declutrmail.com',
+    ),
     delivery: new EmailService(new EmailSuppressionService(db)),
   });
   emailSendWorker.setObserver(observer);
@@ -2525,6 +2534,7 @@ async function bootstrap(): Promise<void> {
     if (shuttingDown) return;
     try {
       const result = await runBillingReconciliationSweep(db, autopilotReads);
+      await publishGrantExpiryNotices(db);
       // Provider-truth drift check AFTER the local sweep: the local
       // pass may flip dunning rows; the drift pass then verifies what
       // remains live against the provider (D249).
@@ -2964,6 +2974,7 @@ async function bootstrap(): Promise<void> {
     // `sync_ready_email_unwired` ERROR the router fires when absent.
     consumer: buildOutboxConsumer(db, {
       autopilotApplyQueue,
+      onBillingLifecycleChanged: buildBillingNoticeHandler(db, emailSendQueue),
       onMailboxSyncReady: buildSyncReadyEmailHandler({
         db,
         emailQueue: emailSendQueue,

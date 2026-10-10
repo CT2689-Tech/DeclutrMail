@@ -23,10 +23,8 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/refunds',
 });
 
-// Bumped 2026-07-31: Section 3 now states that paid features end when a
-// refund is issued. The behaviour changed with it — a full refund used
-// to hold entitlement to `current_period_end`, which on an annual plan
-// returned the whole charge AND granted the rest of the year.
+// Full purchase/renewal refunds end subscription access when confirmed.
+// Upgrade-only refunds preserve the previously paid plan (ADR-0044).
 const LAST_UPDATED = PAGE_LAST_UPDATED['/refunds'];
 
 const TOC = [
@@ -72,12 +70,22 @@ export default function RefundPolicyPage() {
           to your original payment method (Sections 4 and 5).
         </p>
         <p>
-          Because the charge is returned in full,{' '}
-          <strong>paid features end when the refund is issued</strong> and your account moves to the
-          Free plan unless a separate complimentary grant applies — this is the one way it differs
-          from cancelling, which keeps your features until the end of the period you paid for
-          (Section 2). Your data is untouched either way, and nothing stops you subscribing again
-          later.
+          For a full refund of your purchase or renewal charge,{' '}
+          <strong>
+            subscription access ends when the payment provider confirms the refund or the
+            refund-review access deadline is reached, whichever comes first
+          </strong>{' '}
+          and your account moves to the Free plan unless a separate complimentary grant applies —
+          this is the one way it differs from cancelling, which keeps your features until the end of
+          the period you paid for (Section 2). Your data is untouched either way, and nothing stops
+          you subscribing again later.
+        </p>
+        <p>
+          A full refund of only a Paddle upgrade charge reverses that upgrade instead of ending the
+          whole subscription. The reversal preserves the remaining access and original renewal terms
+          of your previously paid plan; it does not refund that plan&rsquo;s charge. If we cannot
+          confirm the reversal, Billing asks you to contact support and shows your currently
+          verified access while we review it.
         </p>
         <p>
           One fair-use note, so the guarantee stays sustainable: the money-back guarantee can be
