@@ -258,6 +258,19 @@ export function DeleteAccountModal({
               }}
             >
               {submitError}
+              {submitError.toLowerCase().includes('billing') && (
+                <>
+                  {' '}
+                  <a href="/billing" style={{ color: color.primary }}>
+                    Open Billing
+                  </a>{' '}
+                  or{' '}
+                  <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                    contact support
+                  </a>
+                  .
+                </>
+              )}
             </div>
           )}
         </div>

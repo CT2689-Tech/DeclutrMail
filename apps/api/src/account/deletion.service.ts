@@ -14,6 +14,7 @@ import {
 import { enqueueEmailSend, type EmailSendJobData } from '@declutrmail/workers';
 
 import { AppException } from '../common/app-exception.js';
+import { BillingDeletionGuard } from '../billing/billing-deletion-guard.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { deletionScheduledEmail } from '../notifications/templates/index.js';
 import { SecurityEventsService } from '../security-events/security-events.service.js';
@@ -67,6 +68,7 @@ export class AccountDeletionOrchestrator {
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly undo: UndoService,
     private readonly securityEvents: SecurityEventsService,
+    private readonly billingGuard: BillingDeletionGuard,
     @Optional()
     @Inject(DELETION_EMAIL_QUEUE_TOKEN)
     private readonly emailQueue: Queue<EmailSendJobData> | null = null,
@@ -100,13 +102,15 @@ export class AccountDeletionOrchestrator {
 
   /** GET /api/account/deletion — pending request + fresh projection. */
   async getStatus(userId: string): Promise<AccountDeletionStatus> {
-    const [pending, projection] = await Promise.all([
+    const [pending, projection, billingBlockReason] = await Promise.all([
       this.findInFlight(userId),
       this.computeProjection(userId),
+      this.billingGuard.blockReason(userId),
     ]);
     return {
       request: pending ? toPendingDto(pending) : null,
       projection,
+      billingBlockReason,
     };
   }
 
@@ -134,16 +138,18 @@ export class AccountDeletionOrchestrator {
 
     let inserted: AccountDeletionRequestRow | undefined;
     try {
-      [inserted] = await this.db
-        .insert(accountDeletionRequests)
-        .values({
-          userId: principal.userId,
-          effectiveAt,
-          basis,
-          waiverConfirmed: waived,
-          status: 'pending',
-        })
-        .returning();
+      [inserted] = await this.billingGuard.withVerifiedStopped(principal.userId, (tx) =>
+        tx
+          .insert(accountDeletionRequests)
+          .values({
+            userId: principal.userId,
+            effectiveAt,
+            basis,
+            waiverConfirmed: waived,
+            status: 'pending',
+          })
+          .returning(),
+      );
     } catch (err) {
       // The partial unique index (one in-flight request per user)
       // rejects a duplicate with 23505 — map to the domain 409.
@@ -174,6 +180,7 @@ export class AccountDeletionOrchestrator {
     return {
       request: toPendingDto(inserted),
       projection,
+      billingBlockReason: null,
     };
   }
 

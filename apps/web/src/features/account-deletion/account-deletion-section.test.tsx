@@ -33,6 +33,37 @@ describe('deletionSubmitError', () => {
 });
 
 describe('AccountDeletionSection', () => {
+  it('blocks deletion and provides Billing and support routes when billing is unresolved', async () => {
+    const client = createTestQueryClient();
+    client.setQueryData(
+      accountDeletionQueryOptions(async () => {
+        throw new Error('unexpected');
+      }).queryKey,
+      {
+        request: null,
+        billingBlockReason: 'verification',
+        projection: {
+          flatGraceAt: '2026-10-17T00:00:00Z',
+          latestUndoExpiresAt: null,
+          activeUndoCount: 0,
+          projectedEffectiveAt: '2026-10-17T00:00:00Z',
+          projectedBasis: 'flat-grace',
+        },
+      },
+    );
+    render(
+      <QueryWrapper client={client}>
+        <AccountDeletionSection />
+      </QueryWrapper>,
+    );
+    expect(await screen.findByRole('button', { name: 'Delete account' })).toBeDisabled();
+    expect(screen.getByRole('link', { name: 'Open Billing' })).toHaveAttribute('href', '/billing');
+    expect(screen.getByRole('link', { name: 'contact support' })).toHaveAttribute(
+      'href',
+      'mailto:support@declutrmail.com',
+    );
+  });
+
   it('hydrates safely when the shell populated deletion status after SSR', async () => {
     const client = createTestQueryClient();
     const status = {

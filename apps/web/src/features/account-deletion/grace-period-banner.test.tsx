@@ -47,6 +47,34 @@ describe('GracePeriodBanner', () => {
   beforeEach(() => installFetchStub([]));
   afterEach(() => resetFetchStub());
 
+  it('shows a billing wait and remedy for a blocked legacy immediate request', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/account/deletion',
+        respond: () =>
+          ok({
+            projection: PROJECTION,
+            billingBlockReason: 'verification',
+            request: {
+              id: 'req-blocked',
+              requestedAt: '2026-10-10T00:00:00Z',
+              effectiveAt: '2026-10-10T00:00:00Z',
+              basis: 'waived-immediate',
+              waiverConfirmed: true,
+              status: 'pending',
+            },
+          }),
+      },
+    ]);
+    renderBanner();
+    const banner = await screen.findByTestId('deletion-grace-banner');
+    expect(banner).toHaveTextContent('waiting for billing');
+    expect(banner).not.toHaveTextContent('deletes shortly');
+    expect(screen.getByRole('link', { name: 'Open Billing' })).toHaveAttribute('href', '/billing');
+    expect(screen.getByRole('button', { name: 'Cancel deletion' })).toBeEnabled();
+  });
+
   it('renders nothing when no deletion is pending', async () => {
     installFetchStub([
       { method: 'GET', path: '/api/account/deletion', respond: () => ok(statusWith(null)) },

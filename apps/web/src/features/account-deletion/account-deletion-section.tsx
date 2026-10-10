@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { Button, tokens } from '@declutrmail/shared';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { useUserTimeZone } from '@/features/auth/api/use-me';
@@ -40,6 +41,11 @@ export function AccountDeletionSection() {
   const [modalOpen, setModalOpen] = useState(false);
 
   const submitError = deletionSubmitError(request.error);
+  const billingBlocked =
+    status.data?.billingBlockReason != null ||
+    ['DELETION_BILLING_BLOCKED', 'DELETION_BILLING_UNVERIFIED'].includes(
+      apiErrorCode(request.error) ?? '',
+    );
 
   return (
     <>
@@ -57,6 +63,7 @@ export function AccountDeletionSection() {
         />
       ) : status.data.request ? (
         <PendingState
+          billingBlocked={billingBlocked}
           effectiveAt={status.data.request.effectiveAt}
           basis={status.data.request.basis}
           executing={status.data.request.status === 'executing'}
@@ -71,10 +78,38 @@ export function AccountDeletionSection() {
           label={<h3 style={rowHeadingStyle}>Delete account and data</h3>}
           detail="Your email in Gmail is not deleted."
         >
-          <Button tone="danger" size="sm" onClick={() => setModalOpen(true)}>
+          <Button
+            tone="danger"
+            size="sm"
+            disabled={billingBlocked}
+            onClick={() => setModalOpen(true)}
+          >
             Delete account
           </Button>
         </SettingsRow>
+      )}
+
+      {billingBlocked && (
+        <p role="alert" style={{ color: color.dangerText, fontSize: text.sm }}>
+          Billing must be confirmed stopped before account deletion.{' '}
+          <Link href="/billing" style={{ color: color.primary }}>
+            Open Billing
+          </Link>{' '}
+          to cancel, or{' '}
+          <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+            contact support
+          </a>{' '}
+          about an unresolved payment.
+          <Button
+            size="sm"
+            onClick={async () => {
+              const refreshed = await status.refetch();
+              if (refreshed.isSuccess && refreshed.data.billingBlockReason == null) request.reset();
+            }}
+          >
+            Check again
+          </Button>
+        </p>
       )}
 
       {modalOpen && (
@@ -102,6 +137,7 @@ export function AccountDeletionSection() {
 }
 
 function PendingState({
+  billingBlocked,
   effectiveAt,
   basis,
   executing,
@@ -109,6 +145,7 @@ function PendingState({
   isCancelling,
   cancelFailed,
 }: {
+  billingBlocked: boolean;
   effectiveAt: string;
   basis: 'flat-grace' | 'undo-window' | 'waived-immediate';
   executing: boolean;
@@ -130,11 +167,13 @@ function PendingState({
     >
       <h3 style={rowHeadingStyle}>Delete account and data</h3>
       <p style={{ fontSize: text.md, color: color.dangerText, fontWeight: 600, margin: 0 }}>
-        {executing
-          ? 'Deletion is in progress — your data is being removed.'
-          : basis === 'waived-immediate'
-            ? 'Deletion requested without the undo wait — your data deletes shortly.'
-            : `Deletion scheduled for ${formatDate(effectiveAt, timeZone)}.`}
+        {billingBlocked
+          ? 'Deletion is waiting for billing to be confirmed stopped.'
+          : executing
+            ? 'Deletion is in progress — your data is being removed.'
+            : basis === 'waived-immediate'
+              ? 'Deletion requested without the undo wait — your data deletes shortly.'
+              : `Deletion scheduled for ${formatDate(effectiveAt, timeZone)}.`}
       </p>
       {!executing && basis === 'undo-window' && (
         <p style={{ fontSize: text.sm, color: color.fgSoft, lineHeight: 1.5, margin: 0 }}>
@@ -174,6 +213,12 @@ export function deletionSubmitError(error: unknown): string | null {
   if (!error) return null;
   if (error instanceof ApiError && error.status === 400) {
     return 'The confirmation phrase did not match. Type it exactly to continue.';
+  }
+  if (apiErrorCode(error) === 'DELETION_BILLING_BLOCKED') {
+    return 'Billing must stop before account deletion. Open Billing to cancel, or contact support.';
+  }
+  if (apiErrorCode(error) === 'DELETION_BILLING_UNVERIFIED') {
+    return 'We could not confirm that billing has stopped. Open Billing or contact support before deleting your account.';
   }
   if (apiErrorCode(error) === 'DELETION_ALREADY_PENDING') {
     // The registry's own sentence, as a literal: importing `ERROR_CODES`

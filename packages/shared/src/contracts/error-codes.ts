@@ -406,6 +406,27 @@ export const ERROR_CODES = {
     retryable: false,
     message: 'Account deletion is already scheduled for this account.',
   },
+  DELETION_BILLING_BLOCKED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message:
+      'Billing must stop before account deletion. Open Billing to cancel, or contact support.',
+  },
+  DELETION_BILLING_UNVERIFIED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message:
+      'We could not confirm that billing has stopped. Open Billing or contact support before deleting your account.',
+  },
+  CHECKOUT_DELETION_PENDING: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message:
+      'Account deletion is scheduled for this workspace. Cancel deletion in Settings before restarting billing.',
+  },
   NO_PENDING_DELETION: {
     status: 409,
     severityTier: 'inline_recoverable',

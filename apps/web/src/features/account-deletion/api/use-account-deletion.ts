@@ -40,7 +40,13 @@ export function useRequestAccountDeletion() {
     // Another tab or device already scheduled it: re-read, so the pending
     // row (and its Cancel) replaces the request form this view went stale on.
     onError: (err) => {
-      if (apiErrorCode(err) === 'DELETION_ALREADY_PENDING') {
+      if (
+        [
+          'DELETION_ALREADY_PENDING',
+          'DELETION_BILLING_BLOCKED',
+          'DELETION_BILLING_UNVERIFIED',
+        ].includes(apiErrorCode(err) ?? '')
+      ) {
         void qc.invalidateQueries({ queryKey: ACCOUNT_DELETION_QUERY_KEY });
       }
     },

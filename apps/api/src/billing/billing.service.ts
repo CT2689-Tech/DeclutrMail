@@ -19,8 +19,10 @@
 // captured in subscription_events", anonymous enum for analytics).
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { and, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
 import {
+  accountDeletionRequests,
   billingCustomers,
   pendingCheckouts,
   subscriptionEvents,
@@ -193,30 +195,48 @@ export class BillingService {
     // back = someone else's unexpired claim → refuse BEFORE any
     // provider session exists. The claim precedes the provider call on
     // purpose; a provider failure releases it below.
-    const claimed = await this.db
-      .insert(pendingCheckouts)
-      .values({
-        workspaceId: principal.workspaceId,
-        provider: dto.provider,
-        tier: dto.tierId,
-        billingCycle: dto.cycle,
-        expiresAt: new Date(Date.now() + PENDING_CHECKOUT_TTL_MS),
-      })
-      .onConflictDoUpdate({
-        target: pendingCheckouts.workspaceId,
-        set: {
+    const attemptId = `local_checkout_${randomUUID()}`;
+    const claimed = await this.db.transaction(async (tx) => {
+      await tx
+        .select({ id: workspaces.id })
+        .from(workspaces)
+        .where(eq(workspaces.id, principal.workspaceId))
+        .for('update');
+      await this.assertNoDeletion(principal.workspaceId, tx);
+      const claim = await tx
+        .insert(pendingCheckouts)
+        .values({
+          workspaceId: principal.workspaceId,
           provider: dto.provider,
           tier: dto.tierId,
           billingCycle: dto.cycle,
-          // New claim cycle — the previous attempt's provider artifact
-          // (if any) no longer describes THIS checkout (D249).
-          providerRef: null,
-          createdAt: new Date(),
           expiresAt: new Date(Date.now() + PENDING_CHECKOUT_TTL_MS),
-        },
-        setWhere: sql`${pendingCheckouts.expiresAt} < now()`,
-      })
-      .returning({ workspaceId: pendingCheckouts.workspaceId });
+        })
+        .onConflictDoUpdate({
+          target: pendingCheckouts.workspaceId,
+          set: {
+            provider: dto.provider,
+            tier: dto.tierId,
+            billingCycle: dto.cycle,
+            // New claim cycle — the previous attempt's provider artifact
+            // (if any) no longer describes THIS checkout (D249).
+            providerRef: null,
+            createdAt: new Date(),
+            expiresAt: new Date(Date.now() + PENDING_CHECKOUT_TTL_MS),
+          },
+          setWhere: sql`${pendingCheckouts.expiresAt} < now()`,
+        })
+        .returning({ workspaceId: pendingCheckouts.workspaceId });
+      if (claim.length > 0)
+        await tx.insert(subscriptionEvents).values({
+          provider: dto.provider,
+          providerEventId: attemptId,
+          eventType: 'local.checkout_attempted',
+          payload: { workspaceId: principal.workspaceId },
+          processedAt: new Date(),
+        });
+      return claim;
+    });
     if (claimed.length === 0) {
       throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
     }
@@ -256,6 +276,19 @@ export class BillingService {
     // checkout exactly. Best-effort: a failed stash only means the
     // reconciler falls back to the email-search ladder.
     if (session.provider === 'razorpay') {
+      // This evidence must survive release, replacement and reconciliation of
+      // the transient claim. A failed write stays unknown and blocks deletion.
+      await this.db.insert(subscriptionEvents).values({
+        provider: 'razorpay',
+        providerEventId: `artifact_${attemptId}`,
+        eventType: 'local.checkout_artifact',
+        payload: {
+          workspaceId: principal.workspaceId,
+          attemptId,
+          providerRef: session.subscriptionId,
+        },
+        processedAt: new Date(),
+      });
       try {
         await this.db
           .update(pendingCheckouts)
@@ -282,6 +315,24 @@ export class BillingService {
    * despite the assertion, the webhook grant still lands — the claim
    * gates checkout opening, never payment processing.
    */
+  private async assertNoDeletion(
+    workspaceId: string,
+    db: Pick<DrizzleDb, 'select'> = this.db,
+  ): Promise<void> {
+    const [deletion] = await db
+      .select({ id: accountDeletionRequests.id })
+      .from(accountDeletionRequests)
+      .innerJoin(users, eq(users.id, accountDeletionRequests.userId))
+      .where(
+        and(
+          eq(users.workspaceId, workspaceId),
+          inArray(accountDeletionRequests.status, ['pending', 'executing']),
+        ),
+      )
+      .limit(1);
+    if (deletion) throw new AppException({ code: 'CHECKOUT_DELETION_PENDING' });
+  }
+
   async releasePendingCheckout(workspaceId: string): Promise<void> {
     await this.db.delete(pendingCheckouts).where(eq(pendingCheckouts.workspaceId, workspaceId));
   }
@@ -498,6 +549,7 @@ export class BillingService {
    * is safe here in a way a pause's would not be.
    */
   async resumeCancellation(principal: { workspaceId: string }): Promise<BillingSubscription> {
+    await this.assertNoDeletion(principal.workspaceId);
     const [sub] = await this.db
       .select({
         id: subscriptions.id,
@@ -588,6 +640,7 @@ export class BillingService {
    * seconds of extra access is the safe direction.
    */
   async pauseForThirtyDays(principal: { workspaceId: string }): Promise<BillingSubscription> {
+    await this.assertNoDeletion(principal.workspaceId);
     const [sub] = await this.db
       .select({
         id: subscriptions.id,
@@ -749,6 +802,7 @@ export class BillingService {
     principal: { workspaceId: string },
     dto: PlanChangeRequest,
   ): Promise<PlanChangePreview> {
+    await this.assertNoDeletion(principal.workspaceId);
     const sub = await this.loadChangeableSubscription(principal.workspaceId);
     if (
       sub.scheduledChangeState !== null ||
@@ -791,6 +845,7 @@ export class BillingService {
     principal: { workspaceId: string },
     dto: PlanChangeRequest,
   ): Promise<BillingSubscription> {
+    await this.assertNoDeletion(principal.workspaceId);
     const sub = await this.loadChangeableSubscription(principal.workspaceId);
 
     // Selecting the effective current plan while a downgrade is queued
@@ -1130,6 +1185,7 @@ export class BillingService {
    * Entitlement returns via the provider webhook, never here.
    */
   async resume(principal: { workspaceId: string }): Promise<BillingSubscription> {
+    await this.assertNoDeletion(principal.workspaceId);
     const [sub] = await this.db
       .select({
         provider: subscriptions.provider,

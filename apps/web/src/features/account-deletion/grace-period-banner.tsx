@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { Button, tokens } from '@declutrmail/shared';
 import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { useAccountDeletionStatus, useCancelAccountDeletion } from './api/use-account-deletion';
@@ -55,13 +56,27 @@ export function GracePeriodBanner() {
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
         <span style={{ fontSize: text.md, fontWeight: 600, color: color.dangerText }}>
-          {executing
-            ? 'Account deletion is in progress.'
-            : immediate
-              ? 'Account deletion was requested without the undo wait — your data deletes shortly.'
-              : `Account deletion scheduled for ${formatDate(request.effectiveAt, timeZone)}.`}
+          {data?.billingBlockReason != null
+            ? 'Account deletion is waiting for billing to be confirmed stopped.'
+            : executing
+              ? 'Account deletion is in progress.'
+              : immediate
+                ? 'Account deletion was requested without the undo wait — your data deletes shortly.'
+                : `Account deletion scheduled for ${formatDate(request.effectiveAt, timeZone)}.`}
         </span>
-        {!executing && request.basis === 'undo-window' && (
+        {data?.billingBlockReason != null && (
+          <span style={{ fontSize: text.sm }}>
+            <Link href="/billing" style={{ color: color.primary }}>
+              Open Billing
+            </Link>{' '}
+            or{' '}
+            <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+              contact support
+            </a>
+            .
+          </span>
+        )}
+        {!executing && data?.billingBlockReason == null && request.basis === 'undo-window' && (
           <span style={{ fontSize: text.sm, color: color.fgSoft }}>
             This date is later than the usual 7 days so your open undo windows keep working until
             they expire.

@@ -158,6 +158,7 @@ const STALE_BILLING_READ = new Set([
 ]);
 
 const PRE_CLAIM_REJECTIONS = new Set([
+  'CHECKOUT_DELETION_PENDING',
   'SUBSCRIPTION_EXISTS',
   // Thrown by the SAME guard as SUBSCRIPTION_EXISTS, one branch apart, so it
   // is equally pre-claim. Omitting it would treat a paused-subscription

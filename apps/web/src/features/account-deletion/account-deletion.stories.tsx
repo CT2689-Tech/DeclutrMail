@@ -18,6 +18,7 @@ import type {
   AccountDeletionStatus,
 } from '@declutrmail/shared/contracts';
 import { DeleteAccountModal } from './delete-account-modal';
+import { AccountDeletionSection } from './account-deletion-section';
 import { GracePeriodBanner } from './grace-period-banner';
 import { ACCOUNT_DELETION_QUERY_KEY } from './api/use-account-deletion';
 import { ME_QUERY_KEY } from '@/features/auth/api/me-contract';
@@ -160,6 +161,31 @@ export const BannerExecuting: StoryObj<typeof GracePeriodBanner> = {
         basis: 'waived-immediate',
         waiverConfirmed: true,
         status: 'executing',
+      },
+    }),
+};
+
+/** Billing cannot yet be confirmed stopped: actionable, no false deletion promise. */
+export const BillingBlocked: StoryObj<typeof AccountDeletionSection> = {
+  render: () =>
+    frame(<AccountDeletionSection />, {
+      request: null,
+      projection: FLAT_PROJECTION,
+      billingBlockReason: 'verification',
+    }),
+};
+export const BannerBillingBlocked: StoryObj<typeof GracePeriodBanner> = {
+  render: () =>
+    bannerWith({
+      projection: FLAT_PROJECTION,
+      billingBlockReason: 'subscription',
+      request: {
+        id: 'req-blocked',
+        requestedAt: '2026-06-11T00:00:00Z',
+        effectiveAt: '2026-06-11T00:00:00Z',
+        basis: 'waived-immediate',
+        waiverConfirmed: true,
+        status: 'pending',
       },
     }),
 };
