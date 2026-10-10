@@ -204,6 +204,26 @@ describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', (
     resetFetchStub();
   });
 
+  it('keeps explicit sign-out when cache-clearing reads return a terminal 401', async () => {
+    const assign = vi.fn();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { pathname: '/senders', search: '', hash: '', assign },
+    });
+    installFetchStub([
+      { method: 'GET', path: '/api/a', respond: () => new Response(null, { status: 401 }) },
+      {
+        method: 'POST',
+        path: '/api/auth/refresh',
+        respond: () => new Response(null, { status: 401 }),
+      },
+    ]);
+    const fresh = await import('./client');
+    fresh.redirectAfterLogout();
+    await expect(fresh.apiGet('/api/a')).rejects.toMatchObject({ status: 401 });
+    expect(assign).toHaveBeenCalledExactlyOnceWith('/sign-in?signed_out=1');
+  });
+
   it.each([429, 500, 503])(
     'keeps the session when refresh temporarily returns %s',
     async (status) => {
@@ -259,6 +279,33 @@ describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', (
     expect(refreshes).toBe(2);
   });
 
+  it.each([
+    '/settings?cancelDeletion=1#account',
+    '/senders/sender-123',
+    '/senders?sender=s-123&q=news',
+  ])('preserves %s after an expired session', async (destination) => {
+    const url = new URL(destination, 'http://localhost');
+    const assign = vi.fn();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { pathname: url.pathname, search: url.search, hash: url.hash, assign },
+    });
+    installFetchStub([
+      { method: 'GET', path: '/api/a', respond: () => new Response(null, { status: 401 }) },
+      {
+        method: 'POST',
+        path: '/api/auth/refresh',
+        respond: () => new Response(null, { status: 401 }),
+      },
+    ]);
+    const fresh = await import('./client');
+    await expect(fresh.apiGet('/api/a')).rejects.toMatchObject({ status: 401 });
+    const login = new URL(assign.mock.calls[0]![0] as string, 'http://localhost');
+    expect(login.pathname).toBe('/sign-in');
+    expect(login.searchParams.get('returning')).toBe('1');
+    expect(login.searchParams.get('returnTo')).toBe(destination);
+  });
+
   it('navigates to Google OAuth start exactly once, even when two requests terminal-401 at the same time', async () => {
     installFetchStub([
       {
@@ -300,7 +347,7 @@ describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', (
     expect(results.every((r) => r.status === 'rejected')).toBe(true);
 
     expect(assign).toHaveBeenCalledOnce();
-    expect(String(assign.mock.calls[0]?.[0])).toContain('/api/auth/google/start');
+    expect(String(assign.mock.calls[0]?.[0])).toContain('/sign-in?returning=1');
   });
 
   it('navigates to Google OAuth start when a SUCCESSFUL refresh is immediately followed by another 401 (Codex adversarial review, round 1)', async () => {
@@ -339,7 +386,7 @@ describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', (
     await expect(freshApiGet('/api/a')).rejects.toBeInstanceOf(Error);
 
     expect(assign).toHaveBeenCalledOnce();
-    expect(String(assign.mock.calls[0]?.[0])).toContain('/api/auth/google/start');
+    expect(String(assign.mock.calls[0]?.[0])).toContain('/sign-in?returning=1');
   });
 });
 

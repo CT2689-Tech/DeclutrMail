@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 
 import { TrackedCta } from '../landing/tracked-cta';
 import { PublicNavLinks } from './public-nav-links';
+import { useSessionHint } from './use-session-hint';
 
 export function PublicMobileMenu({
   links,
@@ -14,6 +15,7 @@ export function PublicMobileMenu({
   startUrl: string;
 }) {
   const pathname = usePathname();
+  const signedIn = useSessionHint();
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
@@ -49,24 +51,38 @@ export function PublicMobileMenu({
       {open ? (
         <nav id="dm-public-mobile-nav" aria-label="Mobile navigation">
           <PublicNavLinks links={links} onNavigate={close} />
-          <TrackedCta
-            className="dm-public-menu-sign-in"
-            href={startUrl}
-            cta="connect_gmail"
-            placement="nav_sign_in"
-            onClick={close}
-          >
-            Sign in
-          </TrackedCta>
-          <TrackedCta
-            className="dm-public-menu-start"
-            href={startUrl}
-            cta="connect_gmail"
-            placement="nav"
-            onClick={close}
-          >
-            Start free
-          </TrackedCta>
+          {signedIn ? (
+            <TrackedCta
+              className="dm-public-menu-start"
+              href="/home"
+              cta="open_app"
+              placement="nav"
+              onClick={close}
+            >
+              Open DeclutrMail
+            </TrackedCta>
+          ) : (
+            <>
+              <TrackedCta
+                className="dm-public-menu-sign-in"
+                href="/sign-in?returning=1"
+                cta="connect_gmail"
+                placement="nav_sign_in"
+                onClick={close}
+              >
+                Sign in
+              </TrackedCta>
+              <TrackedCta
+                className="dm-public-menu-start"
+                href={startUrl}
+                cta="connect_gmail"
+                placement="nav"
+                onClick={close}
+              >
+                Start free
+              </TrackedCta>
+            </>
+          )}
         </nav>
       ) : null}
     </div>

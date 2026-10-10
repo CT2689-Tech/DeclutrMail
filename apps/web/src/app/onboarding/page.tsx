@@ -1,5 +1,7 @@
 'use client';
 
+import { parseAppReturnTo } from '@declutrmail/shared/contracts/app-navigation';
+
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, ToastHost, toast, tokens } from '@declutrmail/shared';
@@ -29,7 +31,8 @@ import { AuthProvider, useAuth } from '@/features/auth/auth-provider';
 import { useAnalyticsIdentity } from '@/features/auth/analytics-identity-bridge';
 import { HeardFromPrompt } from '@/features/auth/heard-from-prompt';
 import { useMe } from '@/features/auth/api/use-me';
-import { billingIntentPath, parseBillingIntentPath } from '@/features/billing/billing-intent';
+
+import { OnboardingAccountLinks } from '@/features/onboarding/onboarding-account-links';
 import { useSetActiveMailbox } from '@/features/mailboxes/api/use-set-active-mailbox';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { captureFeatureException } from '@/lib/sentry';
@@ -43,8 +46,8 @@ const { color, font, text } = tokens;
  *   1 Promise (D107)  → 2 Connect (D108) → 3 Sync gate (D109/D224)
  *   → 4 First-review handoff (Free/Plus) or Starting rules (Pro+, D110)
  *   → 5 First triage (D112) → done (D113:
- *   `onboarded_at` write + redirect to /home, the app's landing
- *   screen).
+ *   `onboarded_at` write + redirect to /senders for the first backlog
+ *   review; already-completed visitors return to /home).
  *
  * AUTH BOUNDARY (D134 split, restructured here): steps 1+2 render
  * PRE-AUTH — a fresh visitor sees the promise before any Google
@@ -123,8 +126,9 @@ function OnboardingFlow() {
   // target. Values such as `true`, `01`, or an attacker-supplied path
   // remain ordinary secondary connects and retain the /home exit.
   const isTargetedReconnect = secondaryMailboxId !== null && params.get('reconnect') === '1';
-  const billingIntent = parseBillingIntentPath(params.get('returnTo'));
-  const returnTo = billingIntent ? billingIntentPath(billingIntent) : null;
+  const destination = parseAppReturnTo(params.get('returnTo'));
+  const returnTo =
+    destination?.split(/[?#]/, 1)[0] === '/onboarding' ? null : (destination ?? null);
 
   if (secondaryMailboxId) {
     // Secondary-connect gate is an authed surface — an unauthed hit
@@ -180,6 +184,7 @@ function FreshFlow({ returnTo }: { returnTo: string | null }) {
     return (
       <FlowError
         title="We couldn't load your account."
+        accountControls={false}
         // True: useMe keeps polling while the read is in error.
         detail="We're retrying automatically."
         onRetry={() => void me.refetch()}
@@ -203,6 +208,7 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
   const state = useOnboardingState();
   const complete = useCompleteOnboarding();
   const readyEmail = useSyncReadyEmail();
+  const finishingThisVisit = useRef(false);
 
   const activeMailboxId = me.activeMailboxId;
   const sync = useSyncStatus(activeMailboxId ?? undefined, {
@@ -228,34 +234,35 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
 
   useStepFunnel(stepToFunnelStage(step));
 
-  // Exit: onboarding complete (or an already-onboarded user landed
-  // here) → the app's landing screen.
+  // The completion hook writes through to this state. Use one exit so
+  // that write cannot overwrite the first-backlog destination with Home.
   const isDone = step.kind === 'done';
   useEffect(() => {
     if (isDone) {
-      router.replace(returnTo ?? '/home');
+      router.replace(returnTo ?? (finishingThisVisit.current ? '/senders' : '/home'));
     }
   }, [isDone, returnTo, router]);
 
   /** D113 completion (finish or D106 skip) → funnel `finished` → exit. */
   const finish = useCallback(
     (opts: { skipped: boolean }) => {
-      if (complete.isPending) return;
+      if (complete.isPending || finishingThisVisit.current) return;
+      finishingThisVisit.current = true;
       complete.mutate(
         { skipped: opts.skipped },
         {
           onSuccess: () => {
             void track('onboarding_step_completed', { step: 'finished', duration_ms: 0 });
-            router.replace(returnTo ?? '/home');
           },
           onError: (err) => {
+            finishingThisVisit.current = false;
             captureFeatureException(err, { surface: 'onboarding', reason: 'complete' });
             toast("Couldn't finish onboarding — try again.", 'warn');
           },
         },
       );
     },
-    [complete, returnTo, router],
+    [complete],
   );
 
   const skipCorner = (
@@ -581,8 +588,10 @@ function FlowError({
   detail,
   onRetry,
   escape,
+  accountControls = true,
 }: {
   title: string;
+  accountControls?: boolean;
   detail?: string | undefined;
   onRetry: () => void;
   escape?: SyncGateEscape | undefined;
@@ -625,6 +634,7 @@ function FlowError({
         Try again
       </button>
       {escape && <EscapeButton escape={escape} />}
+      {accountControls && <OnboardingAccountLinks />}
     </main>
   );
 }

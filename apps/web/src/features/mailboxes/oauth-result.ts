@@ -1,12 +1,13 @@
+import { parseAppReturnTo } from '@declutrmail/shared/contracts/app-navigation';
 import type { ToastTone } from '@declutrmail/shared';
+
 import { ERROR_CODES, GMAIL_ACCESS_MISSING_RESULT } from '@declutrmail/shared/contracts';
 
 /**
  * The closed results a Gmail connection returns with, and the one line
  * each shows (D108). Read on Settings, by the app chrome and on
- * /onboarding. Someone who has not finished onboarding reaches Settings
- * only to be sent to /onboarding, so every line that can reach /onboarding
- * has to be true there too: none names a control only one of them has.
+ * /onboarding. Account controls are also reachable before setup finishes,
+ * so these lines remain true on both surfaces.
  *
  * Privacy-safe by construction: values are closed, and no provider error,
  * mailbox id or email address from the URL is ever echoed.
@@ -103,7 +104,7 @@ export const CONNECT_START_RESULT_COPY: Record<ConnectStartResult, OAuthResultCo
 
 /**
  * `?connect_error=` on the plain "connect a Gmail account" return
- * (`google-oauth.controller.ts` → `/triage?connect_error=<code>`).
+ * (`google-oauth.controller.ts` → `/settings?connect_error=<code>#mailboxes`).
  *
  * QA-onboarding-20260828-05: `reconnect_account_mismatch` /
  * `reconnect_target_invalid` were dead entries — no code path on this
@@ -186,12 +187,20 @@ export function oauthResultIn(
 /**
  * Where the onboarding gate sends someone who has not finished onboarding,
  * keeping a closed OAuth result so /onboarding can still say what happened.
- * Anything else in the URL stays behind.
+ * The validated destination survives; one-shot OAuth results are removed from it.
  */
-export function onboardingPathKeepingOAuthResult(search: string): string {
+export function onboardingPathKeepingOAuthResult(search: string, destination?: string): string {
   const result = oauthResultIn(search);
-  if (!result) return '/onboarding';
-  return `/onboarding?${new URLSearchParams({ [result.param]: result.value }).toString()}`;
+  const params = new URLSearchParams(search);
+  const safeDestination = parseAppReturnTo(destination ?? params.get('returnTo'));
+  const target = safeDestination ? new URL(safeDestination, 'https://declutrmail.invalid') : null;
+  for (const key of OAUTH_RESULT_PARAMS) target?.searchParams.delete(key);
+  const returnTo = target ? `${target.pathname}${target.search}${target.hash}` : undefined;
+  const query = new URLSearchParams({
+    ...(result ? { [result.param]: result.value } : {}),
+    ...(returnTo && !returnTo.startsWith('/onboarding') ? { returnTo } : {}),
+  });
+  return query.size ? `/onboarding?${query}` : '/onboarding';
 }
 
 /** The query params a one-shot OAuth result arrives in. */

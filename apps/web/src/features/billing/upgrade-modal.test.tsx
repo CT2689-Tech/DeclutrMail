@@ -10,6 +10,10 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 
 // Parametrizable tier — useTier() reads useAuth() from this module.
 let mockTier = 'free';
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/senders',
+  useSearchParams: () => new URLSearchParams('sender=sender-1&q=news'),
+}));
 vi.mock('@/features/auth/auth-provider', () => ({
   useAuth: () => ({
     me: {
@@ -149,11 +153,14 @@ describe('UpgradeModal', () => {
     // /billing's confirm step via the validated billing intent.
     expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$9\/mo$/ })).toHaveAttribute(
       'href',
-      '/billing?plan=plus&cycle=monthly',
+      '/billing?plan=plus&cycle=monthly&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
     );
     // The pitch names only Plus, so the other plans stay one click away.
     const compare = screen.getByRole('link', { name: /compare plans/i });
-    expect(compare).toHaveAttribute('href', '/pricing');
+    expect(compare).toHaveAttribute(
+      'href',
+      '/billing?from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
+    );
     fireEvent.click(compare);
     expect(useUpgradeGateStore.getState().hit).toBeNull();
   });
@@ -201,7 +208,7 @@ describe('UpgradeModal', () => {
     expect(screen.getByText(/Pro unlocks all-matching cleanup/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /^Upgrade to Pro\s*\$19\/mo$/ })).toHaveAttribute(
       'href',
-      '/billing?plan=pro&cycle=monthly',
+      '/billing?plan=pro&cycle=monthly&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
     );
   });
 
@@ -216,7 +223,7 @@ describe('UpgradeModal', () => {
     expect(screen.getByText('Plus unlocks this feature.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$9\/mo$/ })).toHaveAttribute(
       'href',
-      '/billing?plan=plus&cycle=monthly',
+      '/billing?plan=plus&cycle=monthly&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
     );
   });
 
@@ -232,7 +239,7 @@ describe('UpgradeModal', () => {
     expect(screen.getByText('Pro unlocks this feature.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /^Upgrade to Pro\s*\$19\/mo$/ })).toHaveAttribute(
       'href',
-      '/billing?plan=pro&cycle=monthly',
+      '/billing?plan=pro&cycle=monthly&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
     );
   });
 
@@ -251,7 +258,7 @@ describe('UpgradeModal', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /^Upgrade to Pro\s*\$19\/mo$/ })).toHaveAttribute(
       'href',
-      '/billing?plan=pro&cycle=monthly',
+      '/billing?plan=pro&cycle=monthly&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
     );
   });
 

@@ -1,5 +1,7 @@
 'use client';
 
+import { isUserScopedAppPath } from '@declutrmail/shared/contracts/app-navigation';
+
 import { useEffect, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { AppShell, ToastHost } from '@declutrmail/shared';
@@ -129,21 +131,6 @@ export function AppChromeLayout({ children }: { children: ReactNode }) {
  * user-scoped subroutes are added here explicitly; anything else fails
  * safe to the gate.
  */
-function isUserScopedRoute(pathname: string): boolean {
-  return (
-    pathname === '/settings' ||
-    pathname === '/settings/privacy' ||
-    pathname === '/settings/help' ||
-    pathname === '/billing' ||
-    // D181 audit log. `/api/security-events` is JwtGuard +
-    // AdminAllowlistGuard with NO CurrentMailboxGuard, so its data does
-    // not depend on a mailbox — gating it trapped an operator with zero
-    // connected mailboxes behind the reconnect takeover on a route that
-    // never needed one. Same shape as the 2026-07-09 billing/deletion
-    // trap, smaller blast radius (audit 2026-08-21).
-    pathname === '/admin/security'
-  );
-}
 
 function AppChrome({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -161,7 +148,7 @@ function AppChrome({ children }: { children: ReactNode }) {
   const routeSegment = pathname.split('/')[1] || 'senders';
   const active = routeSegment === 'later' ? 'snoozed' : routeSegment;
   const hasActiveMailbox = me.activeMailboxId != null;
-  const userScopedRoute = isUserScopedRoute(pathname);
+  const userScopedRoute = isUserScopedAppPath(pathname);
 
   // In-app "B is ready" toast when a background sync finishes (D116).
   useMailboxSyncToasts();
@@ -178,10 +165,10 @@ function AppChrome({ children }: { children: ReactNode }) {
   // connect FAILURE leaves `activeMailboxId` null, so it is the
   // `NoActiveMailbox` branch below, not any particular route, that
   // would otherwise swallow it silently.
-  useConnectResultToast();
+  useConnectResultToast({ exempt: userScopedRoute });
 
   // Returning-user strict onboarding gate (D6/D109/D113) — ladder #4.
-  const onboardingGate = useOnboardingGate();
+  const onboardingGate = useOnboardingGate({ exempt: userScopedRoute });
 
   // The app boundary owns this mailbox-wide aggregate, so the nav never
   // races a nested route hydration boundary. It is exact (not a first-page

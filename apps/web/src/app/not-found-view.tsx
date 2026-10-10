@@ -137,8 +137,8 @@ export function NotFoundView({ authed }: { authed: boolean }) {
         >
           {authed ? (
             <>
-              <CtaLink href="/triage" tone="primary">
-                Back to Triage
+              <CtaLink href="/home" tone="primary">
+                Back to Home
               </CtaLink>
               <CtaLink href="/senders" tone="default">
                 Open Senders

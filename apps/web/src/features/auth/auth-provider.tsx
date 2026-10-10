@@ -19,8 +19,8 @@ import { useMe, type Me } from './api/use-me';
  * (user + mailboxes + activeMailboxId) to descendants via `useAuth()`.
  *
  * Unauthenticated handling: when `GET /api/auth/me` returns 401 the
- * provider redirects the browser to `/api/auth/google/start` so the
- * user lands in the OAuth consent flow. The redirect is `window.
+ * API client redirects the browser to returning sign-in with a validated
+ * destination so the user can resume the opened link. The redirect is `window.
  * location.assign` (not `router.push`) because the API base may be
  * cross-origin in production — the absolute redirect avoids a Next
  * router warning.

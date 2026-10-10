@@ -49,10 +49,12 @@ describe('onboardingPathKeepingOAuthResult', () => {
   it('keeps only the closed result, never the mailbox hash or other params', () => {
     expect(
       onboardingPathKeepingOAuthResult('?reconnect_result=success&mailbox=abc&returnTo=/billing'),
-    ).toBe('/onboarding?reconnect_result=success');
+    ).toBe('/onboarding?reconnect_result=success&returnTo=%2Fbilling');
     expect(onboardingPathKeepingOAuthResult('?connect_error=weird')).toBe(
       '/onboarding?connect_error=connect_failed',
     );
-    expect(onboardingPathKeepingOAuthResult('?returnTo=/billing')).toBe('/onboarding');
+    expect(onboardingPathKeepingOAuthResult('?returnTo=/billing')).toBe(
+      '/onboarding?returnTo=%2Fbilling',
+    );
   });
 });

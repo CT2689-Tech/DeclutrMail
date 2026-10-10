@@ -18,7 +18,10 @@ describe('PublicMobileMenu', () => {
     render(<PublicMobileMenu links={links} startUrl="/oauth" />);
     fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
 
-    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/oauth');
+    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute(
+      'href',
+      '/sign-in?returning=1',
+    );
     expect(screen.getByRole('link', { name: 'Start free' })).toHaveAttribute('href', '/oauth');
   });
 

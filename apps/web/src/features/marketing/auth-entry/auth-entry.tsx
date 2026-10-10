@@ -38,17 +38,29 @@ const AUTH_RESULT_LINE: Record<Exclude<SignInResult, 'inbox_limit'>, string> = {
 export function AuthEntry({
   authResult,
   returnTo,
+  returning = false,
+  signedOut = false,
 }: {
   authResult?: SignInResult;
   returnTo?: string;
+  returning?: boolean;
+  signedOut?: boolean;
 }) {
   return (
     <div className="dm-auth-entry">
       <section className="dm-auth-entry-card" aria-labelledby="dm-auth-entry-title">
         <Logo variant="mark" size={40} />
-        <h1 id="dm-auth-entry-title">Know what you are sharing before you connect.</h1>
+        <h1 id="dm-auth-entry-title">
+          {signedOut
+            ? 'You’re signed out.'
+            : returning
+              ? 'Welcome back.'
+              : 'Know what you are sharing before you connect.'}
+        </h1>
         <p className="dm-auth-entry-lede">
-          Gmail remains where you read, reply, search, and compose.
+          {returning || signedOut
+            ? 'Continue with Google to return to your workspace.'
+            : 'Gmail remains where you read, reply, search, and compose.'}
         </p>
 
         {authResult === 'inbox_limit' ? (
@@ -104,15 +116,17 @@ export function AuthEntry({
           </div>
         </details>
 
-        <ol className="dm-auth-entry-next" aria-label="After you connect">
-          <li>
-            <strong>DeclutrMail groups your email by sender.</strong> The first scan runs on its own
-            — we email you when your inbox is ready.
-          </li>
-          <li>
-            <strong>You review senders before email moves.</strong> {PREVIEW_PROMISE}
-          </li>
-        </ol>
+        {!returning && !signedOut && (
+          <ol className="dm-auth-entry-next" aria-label="After you connect">
+            <li>
+              <strong>DeclutrMail groups your email by sender.</strong> The first scan runs on its
+              own — we email you when your inbox is ready.
+            </li>
+            <li>
+              <strong>You review senders before email moves.</strong> {PREVIEW_PROMISE}
+            </li>
+          </ol>
+        )}
 
         <p className="dm-auth-entry-fine">
           No card required for Free. Disconnect from Settings or your Google Account at any time.

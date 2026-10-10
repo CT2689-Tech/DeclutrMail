@@ -12,6 +12,7 @@
     ".": "./src/index.ts",
     "./actions": "./src/actions/index.ts",
     "./contracts": "./src/contracts/index.ts",
+    "./contracts/app-navigation": "./src/contracts/app-navigation.ts",
     "./contracts/signup-attribution-ref": "./src/contracts/signup-attribution-ref.ts",
     "./copy": "./src/copy/index.ts",
     "./copy/preview-eyebrow": "./src/copy/preview-eyebrow.ts",

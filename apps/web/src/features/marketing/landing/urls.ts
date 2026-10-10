@@ -1,4 +1,4 @@
-import { billingIntentPath, parseBillingIntentPath } from '@/features/billing/billing-intent';
+import { parseAppReturnTo } from '@declutrmail/shared/contracts/app-navigation';
 
 /**
  * URL helpers for the public marketing surface (D134).
@@ -44,8 +44,7 @@ export function permissionEntryUrl(returnTo?: string): string {
   return destination ? `/sign-in?${new URLSearchParams({ returnTo: destination })}` : '/sign-in';
 }
 
-/** Preserve only the same validated checkout intent supported by the OAuth callback. */
+/** Preserve the same validated app destination accepted by the OAuth callback. */
 export function safePublicReturnTo(value?: string): string | undefined {
-  const intent = parseBillingIntentPath(value);
-  return intent ? billingIntentPath(intent) : undefined;
+  return parseAppReturnTo(value);
 }

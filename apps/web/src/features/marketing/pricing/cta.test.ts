@@ -51,7 +51,7 @@ describe('navigateToCheckout', () => {
 
     await navigateToFreeApp(push);
 
-    expect(push).toHaveBeenCalledWith('/senders');
+    expect(push).toHaveBeenCalledWith('/home');
   });
 
   it('opens the permissions checkpoint for a signed-out Free visitor', async () => {

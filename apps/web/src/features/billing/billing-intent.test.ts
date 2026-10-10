@@ -26,6 +26,14 @@ describe('billing intent', () => {
     expect(parseBillingIntentPath(path)).toBeNull();
   });
 
+  it('preserves the exact upgrade origin through checkout intent', () => {
+    const intent = { plan: 'pro', cycle: 'monthly', from: '/senders?sender=s-123&q=news' } as const;
+    expect(parseBillingIntentPath(billingIntentPath(intent))).toEqual(intent);
+    expect(
+      parseBillingIntentParams({ plan: 'pro', cycle: 'monthly', from: '/billing' }),
+    ).toBeNull();
+  });
+
   it('rejects array-valued server query parameters', () => {
     expect(parseBillingIntentParams({ plan: ['pro'], cycle: 'annual' })).toBeNull();
   });

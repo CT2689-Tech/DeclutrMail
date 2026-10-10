@@ -21,6 +21,7 @@ import userEvent from '@testing-library/user-event';
 
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { installFetchStub, jsonOk, type FetchStubHandler } from '@/test/fetch-stub';
+import { ONBOARDING_STATE_KEY } from '@/features/onboarding/api/use-onboarding';
 import type { TierId } from '@declutrmail/shared/entitlements';
 
 const replace = vi.fn();
@@ -471,6 +472,77 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
 
     expect(await screen.findByText(/Couldn't load your first review/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Skip setup for now/i })).toBeInTheDocument();
+  });
+
+  it.each([
+    [null, '/senders'],
+    ['/settings?cancelDeletion=1#account', '/settings?cancelDeletion=1#account'],
+    ['/onboarding', '/senders'],
+  ])(
+    'finishes this visit with %s and keeps the query write-through destination',
+    async (returnTo, destination) => {
+      if (returnTo) searchParams = new URLSearchParams({ returnTo });
+      installFetchStub([
+        meAuthed('ready', 'free'),
+        onboardingState(),
+        syncStatus(true),
+        {
+          method: 'POST',
+          path: '/api/onboarding/complete',
+          respond: () =>
+            json({
+              data: {
+                onboardedAt: '2026-10-10T00:00:00Z',
+                skipped: true,
+                goal: null,
+                presetPicks: null,
+                presets: [],
+              },
+            }),
+        },
+      ]);
+      const client = createTestQueryClient();
+      render(
+        <QueryWrapper client={client}>
+          <OnboardingPage />
+        </QueryWrapper>,
+      );
+      await userEvent.click(await screen.findByRole('button', { name: /Skip setup for now/i }));
+      await waitFor(() => expect(replace).toHaveBeenCalledWith(destination));
+      expect(client.getQueryData(ONBOARDING_STATE_KEY)).toMatchObject({
+        onboardedAt: '2026-10-10T00:00:00Z',
+      });
+      expect(replace.mock.calls.every(([path]) => path === destination)).toBe(true);
+    },
+  );
+
+  it.each(['state', 'status'])('offers account recovery when the %s read fails', async (kind) => {
+    installFetchStub([
+      meAuthed('syncing'),
+      kind === 'state'
+        ? {
+            method: 'GET',
+            path: '/api/onboarding/state',
+            respond: () => json({ error: { code: 'INTERNAL', message: 'Synthetic failure' } }, 500),
+          }
+        : onboardingState(),
+      kind === 'status'
+        ? {
+            method: 'GET',
+            path: '/api/v1/sync/status',
+            respond: () => json({ error: { code: 'INTERNAL', message: 'Synthetic failure' } }, 500),
+          }
+        : syncStatus(false),
+    ]);
+    renderPage();
+    expect(await screen.findByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/settings',
+    );
+    expect(screen.getByRole('link', { name: 'Get help' })).toHaveAttribute(
+      'href',
+      '/settings/help',
+    );
   });
 
   it('onboarded user is redirected out to /home', async () => {

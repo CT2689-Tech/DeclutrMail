@@ -2,6 +2,7 @@
 
 import { useEffect, type ReactNode } from 'react';
 import Link from 'next/link';
+import { useUpgradeReturnTo } from '@/features/billing/use-upgrade-return-to';
 
 import { tokens } from '@declutrmail/shared';
 import {
@@ -54,6 +55,7 @@ export function TierGate({
   children: ReactNode;
 }) {
   const { tier } = useTier();
+  const from = useUpgradeReturnTo();
   const granted = hasCapability(tier, capability);
   const requiredTierId = minimumTierForCapability(capability);
 
@@ -79,7 +81,7 @@ export function TierGate({
   // quoted price; the billing screen's toggle flips it in place.
   const upgradeHref =
     requiredTierId === 'plus' || requiredTierId === 'pro'
-      ? billingIntentPath({ plan: requiredTierId, cycle: 'monthly' })
+      ? billingIntentPath({ plan: requiredTierId, cycle: 'monthly', ...(from ? { from } : {}) })
       : '/billing';
 
   return (
@@ -182,7 +184,7 @@ export function TierGate({
       </Link>
 
       <Link
-        href="/pricing"
+        href={`/billing${from ? `?${new URLSearchParams({ from })}` : ''}`}
         className="dm-gate-compare"
         style={{
           display: 'inline-flex',

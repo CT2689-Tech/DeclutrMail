@@ -28,5 +28,12 @@ export default async function SignInPage({
   const returnTo = safePublicReturnTo(
     typeof params.returnTo === 'string' ? params.returnTo : undefined,
   );
-  return <AuthEntry {...(authResult ? { authResult } : {})} {...(returnTo ? { returnTo } : {})} />;
+  return (
+    <AuthEntry
+      returning={params.returning === '1'}
+      signedOut={params.signed_out === '1'}
+      {...(authResult ? { authResult } : {})}
+      {...(returnTo ? { returnTo } : {})}
+    />
+  );
 }
