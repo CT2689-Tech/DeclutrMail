@@ -261,6 +261,11 @@ export default function PrivacyPolicyPage() {
           </li>
         </ul>
         <p>
+          We retain a permanent Founding promotion allocation reference: the payment provider and
+          subscription identifier, without your email address, workspace identifier, or Gmail data.
+          This keeps a used Founding seat from returning after a refund or account deletion.
+        </p>
+        <p>
           Account deletion waits at least <strong>7 days</strong>, during which you can change your
           mind. It also waits for any open undo window, so that &ldquo;undo always works for its
           full window&rdquo; stays true. Undo windows run{' '}
