@@ -9,6 +9,7 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { eq } from 'drizzle-orm';
+import { FOUNDING_REDEEMED, foundingRedemptionCount } from './founding-redemptions.js';
 import { BillingDeletionGuard } from './billing-deletion-guard.js';
 
 let db: Awaited<ReturnType<typeof freshTestDb>>;
@@ -201,5 +202,46 @@ describe('provider-confirmed deletion safety', () => {
       code: 'DELETION_BILLING_UNVERIFIED',
     });
     expect(destructive).not.toHaveBeenCalled();
+  });
+});
+
+describe('Founding allocation preservation before deletion', () => {
+  it('commits legacy paid allocation before the destructive transaction and retains it after cascade', async () => {
+    await subscription();
+    await db
+      .update(subscriptions)
+      .set({ foundingMember: true })
+      .where(eq(subscriptions.workspaceId, workspaceId));
+    await guard.withVerifiedStopped(userId, async (tx) => {
+      // The marker exists before the destructive callback; a real Postgres
+      // rehearsal separately checks committed visibility across connections.
+      const [durable] = await tx
+        .select()
+        .from(subscriptionEvents)
+        .where(eq(subscriptionEvents.eventType, FOUNDING_REDEEMED));
+      expect(durable?.payload).toEqual({ provider_subscription_id: 'sub_old' });
+      await tx.delete(users).where(eq(users.id, userId));
+      await tx.delete(workspaces).where(eq(workspaces.id, workspaceId));
+    });
+    expect(await db.select().from(subscriptions)).toHaveLength(0);
+    expect(await foundingRedemptionCount(db as never)).toBe(1);
+  });
+  it('rejects a changed workspace identity after preserving the original allocation', async () => {
+    const [other] = await db
+      .insert(workspaces)
+      .values({ name: 'Other synthetic workspace' })
+      .returning();
+    const transaction = db.transaction.bind(db);
+    const intercepted = vi.spyOn(db, 'transaction').mockImplementationOnce(async (action) => {
+      const result = await transaction(action);
+      await db.update(users).set({ workspaceId: other!.id }).where(eq(users.id, userId));
+      return result;
+    });
+    const destructive = vi.fn();
+    await expect(guard.withVerifiedStopped(userId, destructive)).rejects.toMatchObject({
+      code: 'DELETION_BILLING_UNVERIFIED',
+    });
+    expect(destructive).not.toHaveBeenCalled();
+    intercepted.mockRestore();
   });
 });

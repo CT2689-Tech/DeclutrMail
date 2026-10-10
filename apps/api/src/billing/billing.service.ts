@@ -49,6 +49,7 @@ import { highestLiveGrantForWorkspace } from '../common/entitlements/entitlement
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type { BillingProvider } from './billing-provider.interface.js';
 import { BillingCatalog } from './billing-catalog.js';
+import { foundingRedemptionCount } from './founding-redemptions.js';
 import { BillingReconciliationService } from './billing-reconciliation.service.js';
 import { GRANTING_STATUSES, lockSubscription } from './billing-webhook.service.js';
 import { PaddleAdapter } from './paddle.adapter.js';
@@ -1410,10 +1411,9 @@ export class BillingService {
   }
 
   async foundingRemaining(): Promise<number> {
-    const rows = await this.db
-      .select({ id: subscriptions.id })
-      .from(subscriptions)
-      .where(eq(subscriptions.foundingMember, true));
-    return Math.max(0, this.catalog.foundingMaxRedemptions - rows.length);
+    return Math.max(
+      0,
+      this.catalog.foundingMaxRedemptions - (await foundingRedemptionCount(this.db)),
+    );
   }
 }

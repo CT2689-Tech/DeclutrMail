@@ -215,6 +215,7 @@ function stateHash(sub: NormalizedSubscription): string {
         sub.currentPeriodEnd,
         sub.cancelAtPeriodEnd,
         sub.pauseUntil,
+        sub.foundingAllocationEligible,
       ]),
     )
     .digest('hex')

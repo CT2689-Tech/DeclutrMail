@@ -278,6 +278,7 @@ function toNormalizedSubscription(
     providerCustomerId: sub.customer_id ?? null,
     providerPriceId: priceId,
     status,
+    foundingAllocationEligible: sub.status === 'active' || sub.status === 'past_due',
     currentPeriodEnd: sub.current_billing_period?.ends_at ?? null,
     cancelAtPeriodEnd: scheduledCancel,
     // D118 — paused subscriptions resume via scheduled_change; Paddle

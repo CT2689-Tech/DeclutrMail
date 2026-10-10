@@ -67,6 +67,8 @@ async function billingSnapshot(db: Reader, workspaceId: string) {
   return { rows, claims, attempts, customers, events };
 }
 
+import { preserveWorkspaceFoundingRedemptions } from './founding-redemptions.js';
+
 /**
  * Billing's read-only deletion facade. Provider HTTP is outside transactions;
  * a workspace row lock then checks that the inspected evidence has not changed.
@@ -97,7 +99,18 @@ export class BillingDeletionGuard {
   }
 
   async withVerifiedStopped<T>(userId: string, action: (tx: DrizzleDb) => Promise<T>): Promise<T> {
+    // Commit legacy allocations before taking the workspace lock. A terminal
+    // webhook can insert the same unique marker before updating the workspace;
+    // inserting under that workspace lock would invert the lock order.
+    const [owner] = await this.db
+      .select({ workspaceId: users.workspaceId })
+      .from(users)
+      .where(eq(users.id, userId));
+    if (!owner) throw new AppException({ code: 'NOT_FOUND' });
+    await this.db.transaction((tx) => preserveWorkspaceFoundingRedemptions(tx, owner.workspaceId));
     const evidence = await this.inspect(userId);
+    if (evidence.workspaceId !== owner.workspaceId)
+      throw new AppException({ code: 'DELETION_BILLING_UNVERIFIED' });
     return this.db.transaction(async (tx) => {
       await tx
         .select({ id: workspaces.id })
