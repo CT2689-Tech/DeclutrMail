@@ -938,6 +938,7 @@ button {
   }
 }
 
+.dm-disclosure > summary,
 summary.dm-disclosure {
   display: flex;
   align-items: center;
@@ -949,9 +950,11 @@ summary.dm-disclosure {
   font: 600 14px/1.4 var(--dm-font-sans);
   list-style: none;
 }
+.dm-disclosure > summary::-webkit-details-marker,
 summary.dm-disclosure::-webkit-details-marker {
   display: none;
 }
+.dm-disclosure > summary::after,
 summary.dm-disclosure::after {
   content: '';
   width: 7px;
@@ -963,6 +966,7 @@ summary.dm-disclosure::after {
   margin-right: 4px;
   flex-shrink: 0;
 }
+details.dm-disclosure[open] > summary::after,
 details[open] > summary.dm-disclosure::after {
   transform: rotate(225deg);
 }
