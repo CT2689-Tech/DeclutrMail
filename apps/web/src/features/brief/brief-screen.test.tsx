@@ -610,6 +610,40 @@ describe('BriefScreen — populated', () => {
     expect(screen.getByRole('heading', { name: /noise 1 · 4 messages/i })).toBeInTheDocument();
   });
 
+  it.each([1, 2])('uses matching message and sender grammar for %i Noise groups', async (count) => {
+    const brief: BriefWire = {
+      ...BASE_BRIEF,
+      briefPayload: {
+        ...BASE_BRIEF.briefPayload,
+        noise: Array.from({ length: count }, (_, index) => ({
+          senderKey: `noise-${index}`,
+          senderName: `Newsletter ${index + 1}`,
+          messageCount: 1,
+          messageIds: [`noise-message-${index}`],
+        })),
+      },
+      noiseSenders: [],
+    };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () => jsonOk({ data: brief }),
+      },
+      historyHandler([brief]),
+    ]);
+    renderScreen();
+
+    const unit = count === 1 ? 'message' : 'messages';
+    const senderUnit = count === 1 ? 'sender' : 'senders';
+    const region = await screen.findByRole('region', {
+      name: `Noise (${count} ${senderUnit}, ${count} ${unit} yesterday)`,
+    });
+    expect(
+      within(region).getByRole('heading', { name: `Noise ${count} · ${count} ${unit} yesterday` }),
+    ).toBeInTheDocument();
+  });
+
   it('dates the Brief by the day it covers, not the day it ran', async () => {
     // Consumer-level on purpose. coveredDateOf can be correct as a pure
     // function while the header still renders runDateLocal — that gap is

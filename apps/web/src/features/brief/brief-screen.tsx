@@ -761,6 +761,8 @@ function NoiseSection({
   actionsBlocked: boolean;
 }) {
   const totalMessages = useMemo(() => groups.reduce((sum, g) => sum + g.messageCount, 0), [groups]);
+  const messageSummary = `${totalMessages} message${totalMessages === 1 ? '' : 's'} ${dayWord}`;
+  const senderSummary = `${groups.length} sender${groups.length === 1 ? '' : 's'}`;
   const targets = useMemo(() => buildNoiseTargets(groups, noiseSenders), [groups, noiseSenders]);
   const archive = useNoiseArchive(targets);
   useEffect(() => {
@@ -782,15 +784,11 @@ function NoiseSection({
       // Carries the same "yesterday" anchor the visible subline does — a
       // screen reader must not get the un-anchored number this whole
       // surface is careful to avoid.
-      aria-label={`Noise (${groups.length} senders, ${totalMessages} messages ${dayWord})`}
+      aria-label={`Noise (${senderSummary}, ${messageSummary})`}
       style={{ display: 'flex', flexDirection: 'column', gap: 8, scrollMarginTop: 24 }}
     >
       <style>{flatRowCss('dm-noise-row', 12)}</style>
-      <SectionHeading
-        label="Noise"
-        count={groups.length}
-        subline={`${totalMessages} messages ${dayWord}`}
-      />
+      <SectionHeading label="Noise" count={groups.length} subline={messageSummary} />
       <p style={{ margin: '0 0 4px', color: color.fgMuted, fontSize: text.sm }}>
         {eligibleCount > DEFAULT_NOISE_SELECTION_LIMIT
           ? 'This is a suggested list and may include important mail. Choose senders one by one, then inspect the live Inbox preview before anything moves.'

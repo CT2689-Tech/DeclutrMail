@@ -344,7 +344,7 @@ export function SenderSearchInput({
         }}
         aria-label="Search sender"
         style={{
-          fontSize: text.base,
+          fontSize: tokens.field.fontSize,
           fontFamily: font.sans,
           padding: '2px 0',
           border: 'none',

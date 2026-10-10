@@ -700,22 +700,16 @@ function SnoozeMenu({
         </Button>
         <input
           type="text"
+          className="dm-field"
+          aria-label="Note (optional)"
           placeholder="Note (optional)"
           value={reason}
           maxLength={200}
           onChange={(e) => setReason(e.target.value)}
           style={{
+            ...tokens.field,
             flex: 1,
             minWidth: 160,
-            fontSize: text.sm,
-            fontFamily: font.sans,
-            height: 36,
-            boxSizing: 'border-box',
-            padding: '0 12px',
-            border: 'none',
-            borderRadius: radius.md,
-            background: color.fill,
-            color: color.fg,
           }}
         />
         <Button
