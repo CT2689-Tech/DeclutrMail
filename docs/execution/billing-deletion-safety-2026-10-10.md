@@ -25,3 +25,7 @@ Support procedure: [billing-deletion-support.md](../runbooks/billing-deletion-su
 CI initially rejected the two new billing deletion error strings because support-directed errors must name `support@declutrmail.com`. Both strings were corrected; the complete local shared suite then passed 63 files / 736 tests. The first CI failure remains part of the record.
 
 The first CI build exceeded the Autopilot route's existing bundle budget by about 100 bytes. The global waiting banner now links once to Settings Account, where the full Billing/support actions remain, and the new error messages are shorter. No budget or assertion was relaxed. The local production build and served bundle check passed all 51 routes; final affected UI suites passed 19 tests, and independent final-hunk review passed the 7 error-code and 5 banner tests. CI still validates the merged candidate separately.
+
+## Combined merge-queue verification
+
+The first queue candidate e8a92eb8 (CI 38075532161) exceeded Autopilot's 268 KB served bundle budget after combining copy PR #919: 268.1 KB. The queue failure is preserved. The required copy dependency was merged locally, the global banner recovery was simplified to an inline native Settings link, and failed scheduling attempts now always refresh canonical deletion status while retaining the POST error. No budget or assertion was weakened. Full production build and all 51 served-route budgets pass; all 19 account-deletion UI tests and web typecheck pass. Independent review found no blockers and independently passed 11 banner/section tests.

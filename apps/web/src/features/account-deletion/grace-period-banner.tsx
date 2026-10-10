@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
 import { Button, tokens } from '@declutrmail/shared';
 import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { useAccountDeletionStatus, useCancelAccountDeletion } from './api/use-account-deletion';
@@ -38,6 +37,7 @@ export function GracePeriodBanner() {
 
   const executing = request.status === 'executing';
   const immediate = request.basis === 'waived-immediate';
+  const billingBlocked = data.billingBlockReason != null;
 
   return (
     <div
@@ -56,22 +56,23 @@ export function GracePeriodBanner() {
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
         <span style={{ fontSize: text.md, fontWeight: 600, color: color.dangerText }}>
-          {data?.billingBlockReason != null
-            ? 'Account deletion is waiting for billing to be confirmed stopped.'
-            : executing
-              ? 'Account deletion is in progress.'
-              : immediate
-                ? 'Account deletion was requested without the undo wait — your data deletes shortly.'
-                : `Account deletion scheduled for ${formatDate(request.effectiveAt, timeZone)}.`}
+          {billingBlocked ? (
+            <>
+              Account deletion is waiting for billing.{' '}
+              <a href="/settings#account" style={{ color: color.primary }}>
+                Review deletion in Settings
+              </a>
+              .
+            </>
+          ) : executing ? (
+            'Account deletion is in progress.'
+          ) : immediate ? (
+            'Account deletion was requested without the undo wait — your data deletes shortly.'
+          ) : (
+            `Account deletion scheduled for ${formatDate(request.effectiveAt, timeZone)}.`
+          )}
         </span>
-        {data?.billingBlockReason != null && (
-          <span style={{ fontSize: text.sm }}>
-            <Link href="/settings#account" style={{ color: color.primary }}>
-              Review deletion in Settings
-            </Link>{' '}
-          </span>
-        )}
-        {!executing && data?.billingBlockReason == null && request.basis === 'undo-window' && (
+        {!executing && !billingBlocked && request.basis === 'undo-window' && (
           <span style={{ fontSize: text.sm, color: color.fgSoft }}>
             This date is later than the usual 7 days so your open undo windows keep working until
             they expire.
