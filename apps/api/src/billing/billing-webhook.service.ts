@@ -1,3 +1,4 @@
+import { publishSubscriptionNotices, subscriptionNoticeSnapshot } from './billing-notices.js';
 // apps/api/src/billing/billing-webhook.service.ts — applies normalized
 // billing webhook events to the database (D117, D118, D126).
 //
@@ -421,6 +422,11 @@ export class BillingWebhookService {
     try {
       outcome = await this.db.transaction(async (tx) => {
         await this.lockSubscription(tx, provider, sub.providerSubscriptionId);
+        const noticeBefore = await subscriptionNoticeSnapshot(
+          tx,
+          provider,
+          sub.providerSubscriptionId,
+        );
 
         // Peers = every processed, STATE-WRITING event for this
         // subscription, excluding this row.
@@ -806,6 +812,7 @@ export class BillingWebhookService {
           });
 
         await this.recomputeWorkspaceTier(tx, workspaceId);
+        await publishSubscriptionNotices(tx, noticeBefore);
 
         // A granting webhook is the cross-device "payment landed" signal
         // — the pending-checkout row it supersedes comes down with it
@@ -876,6 +883,11 @@ export class BillingWebhookService {
       // interleave with an in-flight upsert whose staleness check
       // already ran, and the upsert's `cancel_at_period_end` lands last.
       await this.lockSubscription(tx, provider, event.providerSubscriptionId);
+      const noticeBefore = await subscriptionNoticeSnapshot(
+        tx,
+        provider,
+        event.providerSubscriptionId,
+      );
 
       const [row] = await tx
         .update(subscriptions)
@@ -1009,6 +1021,7 @@ export class BillingWebhookService {
       // idempotent: mid-period it writes the same tier back, which is the
       // behaviour the "tier holds until period end" test pins.
       await this.recomputeWorkspaceTier(tx, row.workspaceId);
+      await publishSubscriptionNotices(tx, noticeBefore);
 
       await tx
         .update(subscriptionEvents)
@@ -1082,6 +1095,11 @@ export class BillingWebhookService {
   ): Promise<WebhookProcessOutcome> {
     return this.db.transaction(async (tx) => {
       await this.lockSubscription(tx, provider, event.providerSubscriptionId);
+      const noticeBefore = await subscriptionNoticeSnapshot(
+        tx,
+        provider,
+        event.providerSubscriptionId,
+      );
 
       const [row] = await tx
         .update(subscriptions)
@@ -1119,6 +1137,7 @@ export class BillingWebhookService {
       // moves `workspaces.tier` off the paid plan. Drop it and a refunded
       // customer keeps Plus until the grace deadline elapses.
       await this.recomputeWorkspaceTier(tx, row.workspaceId);
+      await publishSubscriptionNotices(tx, noticeBefore);
 
       // The line that records a customer becoming able to pay us again.
       this.logger.warn(

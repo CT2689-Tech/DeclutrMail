@@ -492,7 +492,30 @@ export type ActionsUnsubscribeExecutedPayload = z.infer<
  * new topic constant added to TOPICS without a schema entry here is
  * a compile error, not a silent runtime gap.
  */
+/** App-owned access notice. Never carries recipient, body or provider raw data. */
+export const BillingLifecycleChangedPayloadSchema = z
+  .object({
+    workspaceId: UuidSchema,
+    recordId: z.string().min(1),
+    recipientUserId: UuidSchema.optional(),
+    source: z.enum(['subscription', 'grant']),
+    kind: z.enum(['cancellation', 'paused', 'access_deadline', 'grant_expiring', 'grant_expired']),
+    revision: z.string().min(1),
+    expectedAt: z.string().datetime().nullable(),
+    dueAt: z.string().datetime(),
+  })
+  .strict()
+  .refine(
+    (payload) =>
+      payload.source === 'grant'
+        ? ['grant_expiring', 'grant_expired'].includes(payload.kind)
+        : ['cancellation', 'paused', 'access_deadline'].includes(payload.kind),
+    { message: 'Notice kind must match its billing source' },
+  );
+export type BillingLifecycleChangedPayload = z.infer<typeof BillingLifecycleChangedPayloadSchema>;
+
 export const EVENT_SCHEMAS = {
+  [TOPICS.BILLING_LIFECYCLE_CHANGED]: BillingLifecycleChangedPayloadSchema,
   [TOPICS.TRIAGE_SCORE_RUN_COMPLETED]: TriageScoreRunCompletedPayloadSchema,
   [TOPICS.TRIAGE_DECISION_RECOMPUTED]: TriageDecisionRecomputedPayloadSchema,
   [TOPICS.TRIAGE_VERDICT_APPLIED]: TriageVerdictAppliedPayloadSchema,

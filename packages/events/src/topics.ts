@@ -23,6 +23,8 @@
  */
 
 export const TOPICS = {
+  /** Verified billing/app-access transition; identifiers only. */
+  BILLING_LIFECYCLE_CHANGED: 'billing.lifecycle_changed',
   /**
    * Score worker (D20, D21) finished a per-mailbox sweep. Drives the
    * AutopilotApplyWorker — the apply worker subscribes here, loads

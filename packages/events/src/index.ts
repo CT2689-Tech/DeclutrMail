@@ -12,6 +12,7 @@
  */
 
 export {
+  BillingLifecycleChangedPayloadSchema,
   ActionLabelAppliedPayloadSchema,
   ActionsUnsubscribeExecutedPayloadSchema,
   ActionsUnsubscribeIntentRecordedPayloadSchema,
@@ -31,6 +32,7 @@ export {
   TriageVerdictAppliedPayloadSchema,
 } from './events.js';
 export type {
+  BillingLifecycleChangedPayload,
   ActionLabelAppliedPayload,
   ActionsUnsubscribeExecutedPayload,
   ActionsUnsubscribeIntentRecordedPayload,
