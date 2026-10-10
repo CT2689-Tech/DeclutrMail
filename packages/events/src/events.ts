@@ -499,7 +499,7 @@ export const BillingLifecycleChangedPayloadSchema = z
     recordId: z.string().min(1),
     recipientUserId: UuidSchema.optional(),
     source: z.enum(['subscription', 'grant']),
-    kind: z.enum(['cancellation', 'paused', 'access_deadline', 'grant_expiring', 'grant_expired']),
+    kind: z.enum(['access_deadline', 'grant_expiring', 'grant_expired']),
     revision: z.string().min(1),
     expectedAt: z.string().datetime().nullable(),
     dueAt: z.string().datetime(),
@@ -509,7 +509,7 @@ export const BillingLifecycleChangedPayloadSchema = z
     (payload) =>
       payload.source === 'grant'
         ? ['grant_expiring', 'grant_expired'].includes(payload.kind)
-        : ['cancellation', 'paused', 'access_deadline'].includes(payload.kind),
+        : payload.kind === 'access_deadline',
     { message: 'Notice kind must match its billing source' },
   );
 export type BillingLifecycleChangedPayload = z.infer<typeof BillingLifecycleChangedPayloadSchema>;

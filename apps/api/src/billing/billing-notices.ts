@@ -95,20 +95,23 @@ export async function publishSubscriptionNotices(tx: Store, before: Subscription
     before.providerSubscriptionId,
   );
   if (!after) return;
+  // Provider emails own cancellation and pause; do not duplicate either event.
+  if (
+    after.status === 'paused' ||
+    (!before.cancelAtPeriodEnd &&
+      after.cancelAtPeriodEnd &&
+      after.cancelSource !== 'refund' &&
+      after.cancelSource !== 'chargeback')
+  )
+    return;
   let kind: BillingLifecycleChangedPayload['kind'] | null = null;
   let expectedAt: Date | null = null;
-  if (before.status !== 'paused' && after.status === 'paused') {
-    kind = 'paused';
-    expectedAt = after.pauseUntil;
-  } else if (
+  if (
     after.entitlementEndsAt &&
     before.entitlementEndsAt?.getTime() !== after.entitlementEndsAt.getTime()
   ) {
     kind = 'access_deadline';
     expectedAt = after.entitlementEndsAt;
-  } else if (!before.cancelAtPeriodEnd && after.cancelAtPeriodEnd) {
-    kind = 'cancellation';
-    expectedAt = after.currentPeriodEnd;
   } else if (before.status !== 'canceled' && after.status === 'canceled') {
     kind = 'access_deadline';
     expectedAt = after.entitlementEndsAt ?? new Date();
@@ -221,8 +224,6 @@ export function buildBillingNoticeResolver(db: DrizzleDb, appUrl: string) {
           ),
         );
       if (!sub || revision(sub) !== payload.revision) return null;
-      if (payload.kind === 'cancellation' && !sub.cancelAtPeriodEnd) return null;
-      if (payload.kind === 'paused' && sub.status !== 'paused') return null;
       if (payload.kind === 'access_deadline' && !sub.entitlementEndsAt && sub.status !== 'canceled')
         return null;
     } else {

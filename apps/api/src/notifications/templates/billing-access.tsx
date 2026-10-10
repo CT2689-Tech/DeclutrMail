@@ -16,15 +16,11 @@ export async function billingAccessEmail(input: {
       }).format(new Date(input.expectedAt)) + ' UTC'
     : null;
   const message =
-    input.kind === 'cancellation'
-      ? `Your subscription is scheduled to cancel${date ? ` on ${date}` : ''}. Billing shows your paid-through date and any complimentary access.`
-      : input.kind === 'paused'
-        ? `Your subscription is paused${date ? ` until ${date}` : ''}. Any other paid plan or complimentary grant is assessed separately.`
-        : input.kind === 'grant_expiring'
-          ? `Your complimentary access grant expires on ${date}. A paid plan or another complimentary grant may continue your access.`
-          : input.kind === 'grant_expired'
-            ? `Your complimentary access grant expired on ${date}. Other paid plans and complimentary grants continue according to Billing.`
-            : `Your subscription access deadline is ${date ?? 'available in Billing'}. This notice describes app access; your payment provider confirms refunds and recurring billing.`;
+    input.kind === 'grant_expiring'
+      ? `Your complimentary access grant expires on ${date}. A paid plan or another complimentary grant may continue your access.`
+      : input.kind === 'grant_expired'
+        ? `Your complimentary access grant expired on ${date}. Other paid plans and complimentary grants continue according to Billing.`
+        : `Your subscription access deadline is ${date ?? 'available in Billing'}. This notice describes app access; your payment provider confirms refunds and recurring billing.`;
   const access =
     input.currentTier === null
       ? 'Access verification is pending. Open Billing for the latest status.'

@@ -8,6 +8,10 @@ import {
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DrizzleDb } from '../../db/db.module.js';
+import { AutopilotReadService } from '../../autopilot/autopilot.read-service.js';
+import { BillingCatalog } from '../billing-catalog.js';
+import { BillingWebhookService } from '../billing-webhook.service.js';
+import { ordinaryRefundPolicy } from './fixtures.js';
 import {
   buildBillingNoticeResolver,
   publishGrantExpiryNotices,
@@ -22,6 +26,16 @@ async function cancel() {
     await tx
       .update(subscriptions)
       .set({ cancelAtPeriodEnd: true })
+      .where(eq(subscriptions.id, subId));
+    await publishSubscriptionNotices(tx, before);
+  });
+}
+async function accessDeadline() {
+  await db.transaction(async (tx) => {
+    const before = await subscriptionNoticeSnapshot(tx, 'paddle', 'sub_notice');
+    await tx
+      .update(subscriptions)
+      .set({ status: 'past_due', entitlementEndsAt: new Date(now.getTime() + 14 * DAY) })
       .where(eq(subscriptions.id, subId));
     await publishSubscriptionNotices(tx, before);
   });
@@ -71,7 +85,7 @@ afterEach(() => {
 });
 describe('billing app notices', () => {
   it('renders fresh state and resolves the current email immediately before delivery', async () => {
-    await cancel();
+    await accessDeadline();
     const payload: EmailSendJobData = {
       kind: 'billing-lifecycle',
       userId,
@@ -98,7 +112,7 @@ describe('billing app notices', () => {
       }),
     );
     expect(deliver.mock.calls[0]![0].html).not.toContain('Stale HTML');
-    await db.update(subscriptions).set({ cancelAtPeriodEnd: false });
+    await db.update(subscriptions).set({ status: 'active', entitlementEndsAt: null });
     expect(await worker.processJob(payload, { jobId: 'synthetic' } as never)).toMatchObject({
       outcome: 'skipped_recovered',
     });
@@ -109,29 +123,86 @@ describe('billing app notices', () => {
       } as never),
     ).rejects.toThrow('no recipient override');
   });
-  it('deduplicates local cancellation/provider echoes while permitting a new cancellation episode', async () => {
+  it('leaves cancellation and pause emails to the provider, even with a coincident deadline', async () => {
     await cancel();
     await cancel();
+    await db.transaction(async (tx) => {
+      const before = await subscriptionNoticeSnapshot(tx, 'paddle', 'sub_notice');
+      await tx.update(subscriptions).set({ status: 'paused', entitlementEndsAt: new Date() });
+      await publishSubscriptionNotices(tx, before);
+    });
+    expect(await db.select().from(outboxEvents)).toHaveLength(0);
+    for (const kind of ['cancellation', 'paused'])
+      expect(
+        BillingLifecycleChangedPayloadSchema.safeParse({
+          workspaceId: ws,
+          recordId: subId,
+          source: 'subscription',
+          kind,
+          revision: 'a'.repeat(64),
+          expectedAt: now.toISOString(),
+          dueAt: now.toISOString(),
+        }).success,
+      ).toBe(false);
+  });
+  it('deduplicates access deadlines and provider echoes while permitting a new deadline episode', async () => {
+    await accessDeadline();
+    await accessDeadline();
     expect(await db.select().from(outboxEvents)).toHaveLength(1);
     const rendered = await buildBillingNoticeResolver(db, 'https://declutrmail.com')(
       await notice(),
       userId,
     );
-    expect(rendered!.text).toContain('scheduled to cancel');
+    expect(rendered!.text).toContain('subscription access deadline');
     expect(rendered!.text).toContain('Current app access: Plus.');
-    await db.update(subscriptions).set({ cancelAtPeriodEnd: false });
+    await db.update(subscriptions).set({ status: 'active', entitlementEndsAt: null });
     expect(
       await buildBillingNoticeResolver(db, 'https://declutrmail.com')(await notice(), userId),
     ).toBeNull();
     vi.setSystemTime(new Date(now.getTime() + 1000));
-    await cancel();
+    await accessDeadline();
     expect(await db.select().from(outboxEvents)).toHaveLength(2);
   });
+  it.each(['refund', 'chargeback'] as const)(
+    'retains the app-owned %s access deadline from the real projector',
+    async (reason) => {
+      const projector = new BillingWebhookService(
+        db,
+        new BillingCatalog([]),
+        new AutopilotReadService(db),
+        ordinaryRefundPolicy,
+      );
+      const event = {
+        kind: 'cancellation_scheduled' as const,
+        providerEventId: `evt_notice_${reason}`,
+        eventType: 'adjustment.created',
+        providerSubscriptionId: 'sub_notice',
+        reason,
+      };
+      expect(
+        await projector.process('paddle', event, { occurred_at: now.toISOString() }),
+      ).toMatchObject({ kind: 'processed' });
+      const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.id, subId));
+      expect(sub!.cancelAtPeriodEnd).toBe(true);
+      expect(sub!.cancelSource).toBe(reason);
+      const payload = await notice('access_deadline');
+      expect(payload.expectedAt).toBe(sub!.entitlementEndsAt!.toISOString());
+      expect(
+        (await buildBillingNoticeResolver(db, 'https://declutrmail.com')(payload, userId))!.text,
+      ).toContain('subscription access deadline');
+      expect(await projector.process('paddle', event, { occurred_at: now.toISOString() })).toEqual({
+        kind: 'duplicate',
+      });
+      expect(await db.select().from(outboxEvents)).toHaveLength(1);
+    },
+  );
   it('rolls back notice publication with its canonical state write', async () => {
     await expect(
       db.transaction(async (tx) => {
         const before = await subscriptionNoticeSnapshot(tx, 'paddle', 'sub_notice');
-        await tx.update(subscriptions).set({ status: 'paused' });
+        await tx
+          .update(subscriptions)
+          .set({ status: 'past_due', entitlementEndsAt: new Date(now.getTime() + DAY) });
         await publishSubscriptionNotices(tx, before);
         throw new Error('synthetic rollback');
       }),
@@ -140,7 +211,7 @@ describe('billing app notices', () => {
     expect((await db.select().from(subscriptions))[0]!.status).toBe('active');
   });
   it('does not send to a moved or deleted recipient and refuses historical redelivery', async () => {
-    await cancel();
+    await accessDeadline();
     const payload = await notice();
     const resolve = buildBillingNoticeResolver(db, 'https://declutrmail.com');
     expect(
@@ -209,7 +280,7 @@ describe('billing app notices', () => {
   });
   it('remains off until explicitly enrolled and never backfills old expired grants', async () => {
     delete process.env.BILLING_APP_NOTICES_ENABLED;
-    await cancel();
+    await accessDeadline();
     expect(await db.select().from(outboxEvents)).toHaveLength(0);
     process.env.BILLING_APP_NOTICES_ENABLED = 'true';
     await db.insert(entitlementGrants).values({
