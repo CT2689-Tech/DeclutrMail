@@ -41,7 +41,7 @@ import {
 
 // Toast is the user-visible surface the overdue-release cases assert on.
 // Partial mock — every other export from the shared package stays real.
-const h = vi.hoisted(() => ({ toast: vi.fn() }));
+const h = vi.hoisted(() => ({ toast: vi.fn(), dismissToast: vi.fn() }));
 vi.mock('@declutrmail/shared', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return { ...actual, toast: h.toast };
@@ -222,6 +222,8 @@ function renderDetail(id = 'linkedin') {
 describe('SenderDetailRoute', () => {
   beforeEach(() => {
     installFetchStub([]);
+    h.toast.mockReturnValue(h.dismissToast);
+    h.dismissToast.mockClear();
     currentSearch = '';
     authState.current = authState.fixture;
     trackMock.mockClear();
@@ -1405,6 +1407,8 @@ describe('SenderDetailRoute', () => {
       fireEvent.click(keepButton);
 
       await waitFor(() => expect(capturedBody).toEqual({ policyType: 'keep' }));
+      await waitFor(() => expect(h.dismissToast).toHaveBeenCalledOnce());
+      expect(h.toast).toHaveBeenCalledWith('Kept LinkedIn', 'success');
     });
   });
 

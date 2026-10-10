@@ -756,11 +756,12 @@ function ReadyState({
         if (setPolicy.isPending) return;
         setPendingAction(null);
         setSettled({ phase: 'working', verb: 'keep' });
-        toast(`Keeping ${sender.name}…`, 'info');
+        const dismissPendingKeep = toast(`Keeping ${sender.name}…`, 'info');
         setPolicy.mutate(
           { senderId: sender.id, patch: { policyType: 'keep' } },
           {
             onSuccess: () => {
+              dismissPendingKeep();
               // Reconcile the local header state — a standing Keep
               // supersedes a pending "Unsub queued" pill (latest
               // decision wins on `policy_type`).
@@ -770,6 +771,7 @@ function ReadyState({
               toast(`Kept ${sender.name}`, 'success');
             },
             onError: (err) => {
+              dismissPendingKeep();
               captureFeatureException(err, { surface: 'senders', reason: 'policy_keep' });
               setSettled({ phase: 'failed', verb: 'keep' });
               toast(`Couldn't keep ${sender.name}`, 'warn');

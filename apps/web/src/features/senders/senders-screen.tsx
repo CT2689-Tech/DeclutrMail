@@ -1816,7 +1816,7 @@ function SendersScreenContent({
           for (const sender of senderRefs) next.set(sender.id, { phase: 'working', verb: 'keep' });
           return next;
         });
-        toast(
+        const dismissPendingKeep = toast(
           isBulk ? `Keeping ${senderRefs.length} senders…` : `Keeping ${senderRefs[0]!.name}…`,
           'info',
         );
@@ -1831,6 +1831,7 @@ function SendersScreenContent({
           ),
         )
           .then((results) => {
+            dismissPendingKeep();
             setSettled((prev) => {
               const next = new Map(prev);
               results.forEach((result, index) =>
