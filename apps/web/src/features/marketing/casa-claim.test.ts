@@ -30,7 +30,7 @@ import {
 const CLAIM_SITES = [
   'src/app/(marketing)/security/page.tsx',
   'src/app/(marketing)/privacy/page.tsx',
-  'src/features/settings/privacy-data/privacy-data-screen.tsx',
+  'src/features/settings/privacy-data/privacy-data-content.tsx',
   'src/features/marketing/landing/sections.tsx',
 ] as const;
 
