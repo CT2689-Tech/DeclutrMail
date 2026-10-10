@@ -1970,6 +1970,10 @@ describe('BillingScreen — paid subscriber', () => {
     expect(within(card).queryByText('Manage plan')).toBeNull();
     const picker = screen.getByTestId('plan-picker');
     expect(within(picker).queryAllByRole('button', { name: /Upgrade|Switch/ })).toHaveLength(0);
+    fireEvent.click(within(card).getByRole('button', { name: 'Review cancellation' }));
+    const cancellation = await screen.findByTestId('cancel-modal');
+    expect(within(cancellation).getByRole('button', { name: 'Cancel subscription' })).toBeEnabled();
+    expect(within(cancellation).queryByRole('button', { name: 'Pause for 30 days' })).toBeNull();
     mounted.unmount();
     renderScreen();
     expect(await screen.findByText(/Billing verification pending/)).toBeInTheDocument();

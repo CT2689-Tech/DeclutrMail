@@ -846,6 +846,7 @@ export function BillingScreen({
       </p>
       <CancelModal
         open={cancelOpen}
+        billingReviewPending={reviewPending}
         variant={isPhone ? 'sheet' : 'modal'}
         sub={backingSub ?? plan.nonBacking?.sub ?? null}
         backsEntitlement={backingSub !== null}
