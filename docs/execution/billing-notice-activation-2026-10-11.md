@@ -46,3 +46,27 @@ merge queue, exact-main CI, complete activation release and fresh source/traffic
 flag/cutoff and immutable-image readback must all pass before reporting activation.
 The failed checkout-revocation rehearsal and its retained deletion holds remain
 separate, as recorded in #957.
+
+## Activation refused by the real private gate
+
+Activation #958 merged at `07e65bf52845bad256d4b4e7c436eb2cab8239a9` after full
+queue CI #38122695965 and exact-main CI #38123008553 passed. The automatic
+[release 38123008533](https://github.com/CT2689-Tech/DeclutrMail/actions/runs/38123008533)
+failed its private queue check before either service deployed. Its actual task
+returned exit `108`, `probeReason:no_workers`, `runSeconds:12`, status code `10`,
+`NonZeroExitCode` and no memory/timeout hints. This establishes an empty matching
+worker list at that read; it does not establish why the list was empty. The
+always recovery recorded `probeDeleted:true`.
+
+Fresh serving readback at `2026-10-11T08:04:49.167279Z` still found API
+`declutrmail-api-00614-xox` and worker `declutrmail-worker-00162-btj`, each at 100%.
+Direct revision reads confirmed the prior `bc26bdc4` source and `6bd13f58` digest,
+notices OFF, the original cutoff and restoration unset/default OFF. The manifest
+requests the approved activation, but activation is **not production verified**.
+The earlier successful private proof remains a separate observation; it cannot
+erase this failed release.
+
+The coordinated investigation owns the exact-image private replay and bounded
+metadata/liveness diagnosis. It must preserve empty/mixed-actor refusal, owned
+cleanup and the serving gates. No root activation retry, financial write,
+additional synthetic email or acceptance relaxation is justified by this record.
