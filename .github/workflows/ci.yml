@@ -343,7 +343,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     services:
       postgres:
         image: postgres:16
@@ -396,7 +396,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     # The outbox dispatcher's SKIP LOCKED proof needs MULTIPLE real
     # connections — PGlite is single-connection in-process and cannot
     # model two ticks racing for the same rows. Without this service the
