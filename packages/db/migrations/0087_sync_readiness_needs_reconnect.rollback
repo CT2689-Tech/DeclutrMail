@@ -1,0 +1,23 @@
+-- Rollback for 0087_sync_readiness_needs_reconnect.sql
+--
+-- Postgres has no `ALTER TYPE ... DROP VALUE`, so the rollback recreates
+-- the enum without 'needs_reconnect' (the 0018 / 0079 procedure):
+--
+--   1. Switch `provider_sync_state.readiness_status` to text.
+--   2. Drop the type.
+--   3. Recreate it with the four labels it had before 0087.
+--   4. Switch the column back. The cast FAILS while any row still holds
+--      'needs_reconnect'. Roll back the later backfill (0088) first if it
+--      has been applied. Indexed mail is not touched.
+
+ALTER TABLE "provider_sync_state" ALTER COLUMN "readiness_status" DROP DEFAULT;
+--> statement-breakpoint
+ALTER TABLE "provider_sync_state" ALTER COLUMN "readiness_status" TYPE text;
+--> statement-breakpoint
+DROP TYPE "public"."sync_readiness";
+--> statement-breakpoint
+CREATE TYPE "public"."sync_readiness" AS ENUM('queued', 'syncing', 'ready', 'failed');
+--> statement-breakpoint
+ALTER TABLE "provider_sync_state" ALTER COLUMN "readiness_status" TYPE "public"."sync_readiness" USING readiness_status::"public"."sync_readiness";
+--> statement-breakpoint
+ALTER TABLE "provider_sync_state" ALTER COLUMN "readiness_status" SET DEFAULT 'queued';
