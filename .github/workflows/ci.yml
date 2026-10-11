@@ -49,6 +49,37 @@ permissions:
   contents: read
 
 jobs:
+  # Identical-SHA dedupe for a push that the merge queue already validated.
+  # Skipped on every other event, which leaves its output empty and the
+  # suite running. A failed lookup prints false and the suite runs.
+  push-main-dedupe:
+    name: Push main dedupe
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      short_circuit: ${{ steps.decide.outputs.short_circuit }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Short-circuit only an identical successful merge-queue SHA
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+          CI_EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          value=$(node scripts/ci-push-dedupe.mjs)
+          if [ "$value" != true ] && [ "$value" != false ]; then
+            echo "::error::dedupe returned '$value'"
+            exit 1
+          fi
+          echo "short_circuit=$value" >> "$GITHUB_OUTPUT"
+
   # Which expensive shards actually need to run for this diff.
   #
   # A docs- or scripts-only PR was booting Postgres, installing the whole
@@ -60,16 +91,21 @@ jobs:
   #     manifests, tsconfig, .nvmrc, packages/config, and THIS file). A
   #     dependency bump or a change to CI itself must re-run everything —
   #     the whole point of a filter is lost if it can hide a broken lockfile.
-  #   * Filters gate `pull_request` ONLY. A push to main always runs the
-  #     full suite (see each `if:`), so the protected branch is never
-  #     validated by a subset. Skipping on a PR is an optimisation;
-  #     skipping on main would be a coverage hole.
+  #   * Filters gate `pull_request` ONLY. A push to main runs the full
+  #     suite unless `push-main-dedupe` finds a successful `merge_group`
+  #     run for this identical SHA. That queue run is the validation;
+  #     this push does not substitute a subset or a nearby commit.
+  #     Needs Chintan's policy OK. A squash merge has a different SHA,
+  #     so the short-circuit does not fire for it. A lookup error, a
+  #     different SHA, or no match runs the full suite.
   #
   # Typecheck / Lint / Format stay ungated on purpose: ~2 min combined, and
   # they are the checks that cover scripts/ and *.md — exactly the files a
   # path filter would otherwise exempt from all review.
   changes:
     name: Detect changed paths
+    needs: push-main-dedupe
+    if: ${{ always() && needs.push-main-dedupe.outputs.short_circuit != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # In the MERGE QUEUE, every shard runs — no path filtering.
@@ -204,6 +240,8 @@ jobs:
 
   typecheck:
     name: Typecheck
+    needs: push-main-dedupe
+    if: ${{ always() && needs.push-main-dedupe.outputs.short_circuit != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -255,6 +293,8 @@ jobs:
 
   lint:
     name: Lint
+    needs: push-main-dedupe
+    if: ${{ always() && needs.push-main-dedupe.outputs.short_circuit != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -312,7 +352,7 @@ jobs:
       - name: Performance probes and release contract
         run: node --test scripts/check-sender-release-contract.test.mjs scripts/probe-db-latency.test.mjs scripts/summarize-performance.test.mjs
       - name: CI and release coordination contracts
-        run: node --test scripts/check-ci-required.test.mjs scripts/check-merge-queue-ready.test.mjs scripts/select-deployment.test.mjs scripts/select-lighthouse-url.test.mjs scripts/vitest-weighted-shard.test.mjs
+        run: node --test scripts/check-ci-required.test.mjs scripts/ci-push-dedupe.test.mjs scripts/await-ci-decision.test.mjs scripts/check-merge-queue-ready.test.mjs scripts/select-deployment.test.mjs scripts/select-lighthouse-url.test.mjs scripts/vitest-weighted-shard.test.mjs
       - name: Bundle budget contracts (served-HTML measure, fails closed)
         run: node --test scripts/check-web-bundle-budget.test.mjs
       # Re-renders every brand raster from the geometry in ADR-0036 and
@@ -325,6 +365,8 @@ jobs:
 
   format:
     name: Format check
+    needs: push-main-dedupe
+    if: ${{ always() && needs.push-main-dedupe.outputs.short_circuit != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -339,8 +381,8 @@ jobs:
 
   test-api:
     name: Tests — API
-    needs: changes
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.api == 'true' }}
+    needs: [push-main-dedupe, changes]
+    if: ${{ always() && needs.push-main-dedupe.outputs.short_circuit != 'true' && needs.changes.result == 'success' && (github.event_name != 'pull_request' || needs.changes.outputs.api == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -392,8 +434,8 @@ jobs:
 
   test-workers:
     name: Tests — Workers
-    needs: changes
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.workers == 'true' }}
+    needs: [push-main-dedupe, changes]
+    if: ${{ always() && needs.push-main-dedupe.outputs.short_circuit != 'true' && needs.changes.result == 'success' && (github.event_name != 'pull_request' || needs.changes.outputs.workers == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -455,8 +497,8 @@ jobs:
 
   test-db:
     name: Tests — Database
-    needs: changes
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.db == 'true' }}
+    needs: [push-main-dedupe, changes]
+    if: ${{ always() && needs.push-main-dedupe.outputs.short_circuit != 'true' && needs.changes.result == 'success' && (github.event_name != 'pull_request' || needs.changes.outputs.db == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -471,8 +513,8 @@ jobs:
 
   test-web:
     name: Tests — Web
-    needs: changes
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.web == 'true' }}
+    needs: [push-main-dedupe, changes]
+    if: ${{ always() && needs.push-main-dedupe.outputs.short_circuit != 'true' && needs.changes.result == 'success' && (github.event_name != 'pull_request' || needs.changes.outputs.web == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # 302 files, dominated by per-file environment setup rather than a few
@@ -494,8 +536,8 @@ jobs:
 
   build-web:
     name: Build — Web + bundle budget
-    needs: changes
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.web == 'true' }}
+    needs: [push-main-dedupe, changes]
+    if: ${{ always() && needs.push-main-dedupe.outputs.short_circuit != 'true' && needs.changes.result == 'success' && (github.event_name != 'pull_request' || needs.changes.outputs.web == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -593,8 +635,8 @@ jobs:
   # breaks Next's contract passes there and fails only here.
   web-types:
     name: Build — Web route types
-    needs: [changes, build-web]
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.web == 'true' }}
+    needs: [push-main-dedupe, changes, build-web]
+    if: ${{ always() && needs.push-main-dedupe.outputs.short_circuit != 'true' && needs.build-web.result == 'success' && (github.event_name != 'pull_request' || needs.changes.outputs.web == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -642,8 +684,8 @@ jobs:
   # thresholds; the select step fails if the legs and the config disagree.
   lighthouse:
     name: Lighthouse — marketing page ${{ matrix.page }} (D160 ≥90)
-    needs: [changes, build-web]
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.web == 'true' }}
+    needs: [push-main-dedupe, changes, build-web]
+    if: ${{ always() && needs.push-main-dedupe.outputs.short_circuit != 'true' && needs.build-web.result == 'success' && (github.event_name != 'pull_request' || needs.changes.outputs.web == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -701,8 +743,8 @@ jobs:
 
   test-units:
     name: Tests — Shared units
-    needs: changes
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.units == 'true' }}
+    needs: [push-main-dedupe, changes]
+    if: ${{ always() && needs.push-main-dedupe.outputs.short_circuit != 'true' && needs.changes.result == 'success' && (github.event_name != 'pull_request' || needs.changes.outputs.units == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -736,14 +778,18 @@ jobs:
   test:
     name: Test
     if: ${{ always() }}
-    needs: [changes, impl-log, test-api, test-workers, test-db, test-web, test-units]
+    needs:
+      [push-main-dedupe, changes, impl-log, test-api, test-workers, test-db, test-web, test-units]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
+      - uses: actions/checkout@v7
       - name: Require every selected test shard
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
           EVENT_NAME: ${{ github.event_name }}
+          CI_EVENT: ${{ github.event_name }}
+          CI_SHORT_CIRCUIT: ${{ needs.push-main-dedupe.outputs.short_circuit }}
           IMPL_LOG_RESULT: ${{ needs.impl-log.result }}
           API_RESULT: ${{ needs.test-api.result }}
           WORKERS_RESULT: ${{ needs.test-workers.result }}
@@ -754,7 +800,9 @@ jobs:
           set -euo pipefail
 
           # Path detection failing must never read as "nothing to test".
-          if [ "$CHANGES_RESULT" != success ]; then
+          # A push whose identical SHA already passed in the merge queue
+          # skips path detection; every other skip or failure still fails.
+          if ! node scripts/check-ci-required.mjs --changes; then
             echo "::error::path detection did not succeed ($CHANGES_RESULT) —" \
                  "shard selection is unknown, so this cannot pass"
             exit 1
@@ -809,6 +857,7 @@ jobs:
     if: ${{ always() }}
     needs:
       [
+        push-main-dedupe,
         changes,
         typecheck,
         lint,
@@ -832,12 +881,13 @@ jobs:
         env:
           CI_NEEDS: ${{ toJSON(needs) }}
           CI_EVENT: ${{ github.event_name }}
+          CI_SHORT_CIRCUIT: ${{ needs.push-main-dedupe.outputs.short_circuit }}
         run: node scripts/check-ci-required.mjs
 
   accessibility:
     name: Authenticated accessibility smoke (${{ matrix.lane }})
-    needs: changes
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.a11y == 'true' }}
+    needs: [push-main-dedupe, changes]
+    if: ${{ always() && needs.push-main-dedupe.outputs.short_circuit != 'true' && needs.changes.result == 'success' && (github.event_name != 'pull_request' || needs.changes.outputs.a11y == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     # Each lane gets its own Postgres, Redis, API and built web app. Keep

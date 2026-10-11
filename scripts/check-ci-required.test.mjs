@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { checkRequired } from './check-ci-required.mjs';
+import { changesResultOk, checkRequired } from './check-ci-required.mjs';
 
 function fixture() {
   const jobs = [
@@ -40,7 +40,11 @@ test('every release job is a workflow dependency and runs even after failure', (
     .split(',')
     .map((x) => x.trim())
     .filter(Boolean);
-  assert.deepEqual(dependencies.sort(), Object.keys(fixture()).sort());
+  assert.ok(dependencies.includes('push-main-dedupe'));
+  assert.deepEqual(
+    dependencies.filter((job) => job !== 'push-main-dedupe').sort(),
+    Object.keys(fixture()).sort(),
+  );
   assert.match(aggregate, /run: node scripts\/check-ci-required.mjs/);
 });
 
@@ -90,6 +94,23 @@ test('push and manual runs require full suites and permit only the intentional l
     assert.ok(checkRequired(needs, event).length);
   }
   assert.ok(checkRequired(fixture(), 'unknown').length);
+});
+
+test('identical push short-circuit accepts skipped suites and still rejects failures', () => {
+  const needs = fixture();
+  for (const job of Object.keys(needs)) needs[job].result = 'skipped';
+  assert.deepEqual(checkRequired(needs, 'push', true), []);
+  assert.equal(changesResultOk('skipped', 'push', true), true);
+  assert.equal(changesResultOk('failure', 'push', true), false);
+  assert.equal(changesResultOk('skipped', 'push', false), false);
+  assert.equal(changesResultOk('skipped', 'pull_request', true), false);
+  needs.typecheck.result = 'failure';
+  assert.ok(checkRequired(needs, 'push', true).length);
+  needs.typecheck.result = 'cancelled';
+  assert.ok(checkRequired(needs, 'push', true).length);
+  needs.typecheck.result = 'skipped';
+  assert.ok(checkRequired(needs, 'pull_request', true).length);
+  assert.ok(checkRequired(needs, 'merge_group', true).length);
 });
 
 test('isolated browser matrix preserves every suite and its coverage assertion', () => {
@@ -197,7 +218,7 @@ test('build-web skips Next type validation only because web-types runs it on tha
   const build = workflow.split('- name: Build the web app\n')[1].split('\n      - ')[0];
   assert.match(build, /NEXT_SKIP_BUILD_TYPECHECK: '1'/);
   const job = workflow.split('\n  web-types:\n')[1].split('\n  lighthouse:\n')[0];
-  assert.match(job, /needs: \[changes, build-web\]/);
+  assert.match(job, /needs: \[push-main-dedupe, changes, build-web\]/);
   const download = job.split('- name: Download the built web app\n')[1].split('\n      - ')[0];
   assert.match(download, /name: web-build\n\s+path: apps\/web\/\.next/);
   assert.doesNotMatch(download, /continue-on-error/);
