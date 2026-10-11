@@ -64,6 +64,7 @@ afterEach(() => {
   window.localStorage.removeItem('dm-cookie-consent');
   document.cookie = 'dm_cookie_consent=; Max-Age=0; Path=/';
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe.each(PAGES)('$name — D146', ({ Page, heading, page }) => {
@@ -117,6 +118,12 @@ describe('/refunds content — D121 canonical refund terms', () => {
     expect(text).toContain('Paddle');
     expect(text).toContain('Razorpay');
     expect(text).toMatch(/original payment method/);
+  });
+
+  it('keeps the flags-off spelling in the refund-versus-cancel sentence', () => {
+    vi.stubEnv('PRICING_V2', '');
+    const { container } = render(<RefundPolicyPage />);
+    expect(container.textContent).toContain('differs from cancelling');
   });
 });
 

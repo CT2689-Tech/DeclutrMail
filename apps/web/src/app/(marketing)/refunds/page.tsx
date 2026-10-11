@@ -79,7 +79,7 @@ export default function RefundPolicyPage() {
             refund-review access deadline is reached, whichever comes first
           </strong>{' '}
           and your account moves to the Free plan unless a separate complimentary grant applies —
-          this is the one way it differs from canceling, which keeps your features until the end of
+          this is the one way it differs from cancelling, which keeps your features until the end of
           the period you paid for (Section 2). Your data is untouched either way, and nothing stops
           you subscribing again later.
         </p>
