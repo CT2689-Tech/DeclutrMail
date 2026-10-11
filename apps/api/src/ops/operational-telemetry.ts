@@ -23,6 +23,7 @@ export const OPERATIONAL_QUEUES = [
   'initial-sync',
   'incremental-sync',
   'email-send',
+  'billing-email-send',
   'snooze-wake',
 ] as const;
 export const OPERATIONAL_SCHEDULERS = [

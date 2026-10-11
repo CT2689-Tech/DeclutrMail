@@ -589,6 +589,26 @@ describe('EmailSendWorker', () => {
     }
   });
 
+  it('records the isolated queue when its delivery is refused', async () => {
+    const db = await freshDb();
+    const userId = await seedUser(db, 'billing-queue@example.test');
+    const parked: string[] = [];
+    const worker = new EmailSendWorker({
+      db: db as never,
+      queueName: 'billing-email-send',
+      delivery: deliveryReturning({ ok: false, reason: 'disabled', detail: 'synthetic refusal' }),
+    });
+    worker.setDeadLetterRecorder({
+      record: async (entry) => {
+        parked.push(entry.queue);
+      },
+    });
+    expect((await worker.processJob(jobData(userId), CTX)).outcome).toBe(
+      'skipped_delivery_disabled',
+    );
+    expect(parked).toEqual(['billing-email-send']);
+  });
+
   // The refusal this whole arc started from needs the same durability —
   // leaving it unparked would be the identical bug one branch over.
   it('parks a durable row AND reports the observer when a commercial send is refused for no address', async () => {

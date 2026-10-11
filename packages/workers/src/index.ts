@@ -473,6 +473,10 @@ export type {
 export {
   EMAIL_SEND_JOB,
   EMAIL_SEND_QUEUE,
+  BILLING_EMAIL_SEND_QUEUE,
+  BILLING_QUEUE_COMPATIBLE_WORKER_NAME,
+  createBillingEmailSendConsumer,
+  readBillingQueueCompatibility,
   emailSendJobOptions,
   enqueueEmailSend,
   lapseReengagementEmailJobId,

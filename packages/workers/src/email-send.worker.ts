@@ -248,6 +248,7 @@ export interface EmailDeliveryPort {
 }
 
 export interface EmailSendWorkerDeps {
+  queueName?: string;
   db: PostgresJsDatabase<typeof schema>;
   delivery: EmailDeliveryPort;
   resolveBillingNotice?: (
@@ -331,7 +332,7 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
       await this.parkWithoutFailing({
         // Literal rather than importing EMAIL_SEND_QUEUE: the queue module
         // imports this module's types, so the reverse import is a cycle.
-        queue: 'email-send',
+        queue: this.deps.queueName ?? 'email-send',
         jobId: ctx.jobId,
         payload,
         error: refusal,
@@ -500,7 +501,7 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
         await this.parkWithoutFailing({
           // Literal rather than importing EMAIL_SEND_QUEUE: the queue module
           // imports this module's types, so the reverse import is a cycle.
-          queue: 'email-send',
+          queue: this.deps.queueName ?? 'email-send',
           jobId: ctx.jobId,
           payload,
           error: notDelivered.message,

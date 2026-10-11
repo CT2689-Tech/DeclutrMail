@@ -1,5 +1,6 @@
 import {
   buildBillingNoticeHandler,
+  billingNoticeStart,
   buildBillingNoticeResolver,
   publishGrantExpiryNotices,
 } from './billing/billing-notices.js';
@@ -61,6 +62,9 @@ import {
   DomainIconWorker,
   DrizzleDeadLetterRecorder,
   EMAIL_SEND_QUEUE,
+  BILLING_EMAIL_SEND_QUEUE,
+  BILLING_QUEUE_COMPATIBLE_WORKER_NAME,
+  createBillingEmailSendConsumer,
   EmailSendWorker,
   enqueueEmailSend,
   ensureIncrementalSyncJob,
@@ -2130,20 +2134,21 @@ async function bootstrap(): Promise<void> {
   });
 
   const emailSendQueue = new Queue<EmailSendJobData>(EMAIL_SEND_QUEUE, { connection });
-  const emailSendWorker = new EmailSendWorker({
+  const emailSendDependencies = {
     db,
     resolveBillingNotice: buildBillingNoticeResolver(
       db,
       process.env.WEB_URL ?? 'https://declutrmail.com',
     ),
     delivery: new EmailService(new EmailSuppressionService(db)),
-  });
+  };
+  const emailSendWorker = new EmailSendWorker(emailSendDependencies);
   emailSendWorker.setObserver(observer);
   emailSendWorker.setDeadLetterRecorder(deadLetterRecorder);
   const emailSendBullWorker = new Worker<EmailSendJobData, EmailSendResult>(
     EMAIL_SEND_QUEUE,
     (job) => emailSendWorker.run(job),
-    { connection, concurrency: 5, ...userFacingTuning },
+    { connection, concurrency: 5, ...userFacingTuning, name: BILLING_QUEUE_COMPATIBLE_WORKER_NAME },
   );
   emailSendBullWorker.on('error', (err) => {
     console.error(
@@ -2151,6 +2156,33 @@ async function bootstrap(): Promise<void> {
         level: 'error',
         kind: 'bullmq.error',
         queue: EMAIL_SEND_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  // Legacy email consumers cannot claim this namespace. OFF means no polling,
+  // so a queued billing notice preserves its finite delivery retry budget.
+  const billingEmailSendQueue = new Queue<EmailSendJobData>(BILLING_EMAIL_SEND_QUEUE, {
+    connection,
+  });
+  const billingEmailSendWorker = new EmailSendWorker({
+    ...emailSendDependencies,
+    queueName: BILLING_EMAIL_SEND_QUEUE,
+  });
+  billingEmailSendWorker.setObserver(observer);
+  billingEmailSendWorker.setDeadLetterRecorder(deadLetterRecorder);
+  const billingEmailSendBullWorker = createBillingEmailSendConsumer(
+    billingNoticeStart() !== null,
+    (job) => billingEmailSendWorker.run(job),
+    { connection, concurrency: 1, ...userFacingTuning },
+  );
+  billingEmailSendBullWorker?.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: BILLING_EMAIL_SEND_QUEUE,
         message: err.message,
       }),
     );
@@ -2906,6 +2938,14 @@ async function bootstrap(): Promise<void> {
     }),
   );
   console.log(
+    JSON.stringify({
+      level: 'info',
+      kind: 'worker.listening',
+      queue: BILLING_EMAIL_SEND_QUEUE,
+      deliveryEnabled: billingEmailSendBullWorker !== null,
+    }),
+  );
+  console.log(
     JSON.stringify({ level: 'info', kind: 'worker.listening', queue: AUTOPILOT_APPLY_QUEUE }),
   );
   console.log(
@@ -2974,7 +3014,7 @@ async function bootstrap(): Promise<void> {
     // `sync_ready_email_unwired` ERROR the router fires when absent.
     consumer: buildOutboxConsumer(db, {
       autopilotApplyQueue,
-      onBillingLifecycleChanged: buildBillingNoticeHandler(db, emailSendQueue),
+      onBillingLifecycleChanged: buildBillingNoticeHandler(db, billingEmailSendQueue),
       onMailboxSyncReady: buildSyncReadyEmailHandler({
         db,
         emailQueue: emailSendQueue,
@@ -3107,6 +3147,8 @@ async function bootstrap(): Promise<void> {
       await supportRequestBullWorker.close();
       await emailSendBullWorker.close();
       await emailSendQueue.close();
+      await billingEmailSendBullWorker?.close();
+      await billingEmailSendQueue.close();
       await weeklyValueReceiptBullWorker.close();
       await weeklyValueReceiptQueue.close();
       await lapseReengagementBullWorker.close();

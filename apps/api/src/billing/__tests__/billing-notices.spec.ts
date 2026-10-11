@@ -1,6 +1,10 @@
 import { entitlementGrants, outboxEvents, subscriptions, users, workspaces } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
-import { EmailSendWorker, type EmailSendJobData } from '@declutrmail/workers';
+import {
+  BILLING_EMAIL_SEND_QUEUE,
+  EmailSendWorker,
+  type EmailSendJobData,
+} from '@declutrmail/workers';
 import {
   BillingLifecycleChangedPayloadSchema,
   type BillingLifecycleChangedPayload,
@@ -14,6 +18,7 @@ import { BillingWebhookService } from '../billing-webhook.service.js';
 import { ordinaryRefundPolicy } from './fixtures.js';
 import {
   buildBillingNoticeResolver,
+  buildBillingNoticeHandler,
   publishGrantExpiryNotices,
   publishSubscriptionNotices,
   subscriptionNoticeSnapshot,
@@ -84,6 +89,60 @@ afterEach(() => {
   delete process.env.BILLING_APP_NOTICES_START_AT;
 });
 describe('billing app notices', () => {
+  it('routes into the isolated queue while sending is off and rejects a legacy queue', async () => {
+    await accessDeadline();
+    const payload = await notice();
+    process.env.BILLING_APP_NOTICES_ENABLED = 'false';
+    const add = vi.fn();
+    const queue = { name: BILLING_EMAIL_SEND_QUEUE, getJob: vi.fn().mockResolvedValue(null), add };
+    await buildBillingNoticeHandler(db, queue as never)(payload, 'synthetic-event');
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(add).toHaveBeenCalledWith(
+      'email-send',
+      expect.objectContaining({
+        kind: 'billing-lifecycle',
+        userId,
+        billingContext: payload,
+        idempotencyKey: 'email__billing__synthetic-event',
+      }),
+      expect.any(Object),
+    );
+    expect(() => buildBillingNoticeHandler(db, { ...queue, name: 'email-send' } as never)).toThrow(
+      'Billing notices require the isolated billing email queue',
+    );
+  });
+  it('retains a published email for retry while its consumer is disabled or unenrolled', async () => {
+    await accessDeadline();
+    const payload: EmailSendJobData = {
+      kind: 'billing-lifecycle',
+      userId,
+      billingContext: await notice(),
+      idempotencyKey: 'email__billing__rollout',
+      subject: 'Pending fresh-state rendering',
+      text: 'Pending fresh-state rendering',
+    };
+    const deliver = vi.fn().mockResolvedValue({ ok: true, providerId: 'synthetic' });
+    const worker = new EmailSendWorker({
+      db: db as never,
+      delivery: { deliver },
+      resolveBillingNotice: buildBillingNoticeResolver(db, 'https://declutrmail.com'),
+    });
+    process.env.BILLING_APP_NOTICES_ENABLED = 'false';
+    await expect(worker.processJob(payload, { jobId: 'synthetic' } as never)).rejects.toThrow(
+      'Billing notice consumer disabled; event retained for retry',
+    );
+    process.env.BILLING_APP_NOTICES_ENABLED = 'true';
+    delete process.env.BILLING_APP_NOTICES_START_AT;
+    await expect(worker.processJob(payload, { jobId: 'synthetic' } as never)).rejects.toThrow(
+      'Billing notice consumer disabled; event retained for retry',
+    );
+    expect(deliver).not.toHaveBeenCalled();
+    process.env.BILLING_APP_NOTICES_START_AT = new Date(now.getTime() - DAY).toISOString();
+    expect(await worker.processJob(payload, { jobId: 'synthetic' } as never)).toMatchObject({
+      outcome: 'sent',
+    });
+    expect(deliver).toHaveBeenCalledTimes(1);
+  });
   it('renders fresh state and resolves the current email immediately before delivery', async () => {
     await accessDeadline();
     const payload: EmailSendJobData = {
