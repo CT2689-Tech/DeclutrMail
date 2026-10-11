@@ -33,6 +33,8 @@ export type AuthedOnboardingStep =
   | { kind: 'first-triage' };
 
 export interface DeriveAuthedStepInput {
+  /** Billing recovery can revisit scanning without repeating a completed review. */
+  resumeScan?: boolean;
   /** `GET /api/onboarding/state` result projection. */
   state: {
     data:
@@ -57,7 +59,7 @@ export function deriveAuthedStep(input: DeriveAuthedStepInput): AuthedOnboarding
   if (state.isLoading || !state.data) {
     return { kind: 'loading' };
   }
-  if (state.data.onboardedAt !== null) {
+  if (state.data.onboardedAt !== null && !input.resumeScan) {
     return { kind: 'done' };
   }
   if (!input.hasActiveMailbox) {
@@ -69,6 +71,7 @@ export function deriveAuthedStep(input: DeriveAuthedStepInput): AuthedOnboarding
   if (!input.syncReady) {
     return { kind: 'sync-gate' };
   }
+  if (state.data.onboardedAt !== null) return { kind: 'done' };
   if (state.data.goal === null || state.data.presetPicks === null) {
     return { kind: 'preset-pick' };
   }

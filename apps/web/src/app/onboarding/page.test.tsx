@@ -658,6 +658,18 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     ).toBeInTheDocument();
   });
 
+  it('returns a reconnected Billing mailbox through review completion with its exact intent', async () => {
+    const destination = '/billing?plan=pro&cycle=annual&promo=foundingPro&from=%2Fbrief';
+    searchParams = new URLSearchParams({ mailbox: 'mb2', reconnect: '1', returnTo: destination });
+    installFetchStub([secondaryMe(), syncStatus(true)]);
+    renderPage();
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith(
+        `/onboarding?resumeScan=1&${new URLSearchParams({ returnTo: destination })}`,
+      ),
+    );
+  });
+
   it('keeps the normal secondary-connect ready exit on /home', async () => {
     searchParams = new URLSearchParams({ mailbox: 'mb2' });
     installFetchStub([secondaryMe(), syncStatus(true)]);

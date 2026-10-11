@@ -466,6 +466,26 @@ describe('GoogleOAuthController.connectMailboxStart — targeted mailbox recover
     );
   });
 
+  it.each([
+    '/billing?plan=pro&cycle=annual&promo=foundingPro&from=%2Fbrief',
+    'https://evil.test/billing',
+    '/settings',
+  ])('binds only validated Billing return intent: %s', async (destination) => {
+    await controller.connectMailboxStart(
+      principal,
+      res as unknown as Response,
+      undefined,
+      undefined,
+      destination,
+    );
+    const state = decodeSignedState(jwt, res.cookie.mock.calls[0]?.[1] as string) as {
+      billingReturnTo?: string;
+    };
+    expect(state.billingReturnTo).toBe(
+      destination.startsWith('/billing') ? destination : undefined,
+    );
+  });
+
   it('binds a syntactically valid owned active target into OAuth state', async () => {
     mailboxes.findOwned.mockResolvedValueOnce(activeReconnectTarget());
 
@@ -634,7 +654,11 @@ describe('GoogleOAuthController.callback — connect-mode routes to the sync gat
     );
   });
 
-  function reqWithState(reconnectMailboxId?: string, reactivateMailboxId?: string): Request {
+  function reqWithState(
+    reconnectMailboxId?: string,
+    reactivateMailboxId?: string,
+    billingReturnTo?: string,
+  ): Request {
     return {
       cookies: {
         oauth_state: signedState(jwt, {
@@ -645,6 +669,7 @@ describe('GoogleOAuthController.callback — connect-mode routes to the sync gat
           sessionId: CONNECT_SESSION_ID,
           ...(reconnectMailboxId ? { reconnectMailboxId } : {}),
           ...(reactivateMailboxId ? { reactivateMailboxId } : {}),
+          ...(billingReturnTo ? { billingReturnTo } : {}),
         }),
       },
       headers: {},
@@ -658,6 +683,36 @@ describe('GoogleOAuthController.callback — connect-mode routes to the sync gat
     const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
     return `${webBase}/settings?reconnect_result=${result}#mailbox-${mailboxId}`;
   }
+
+  it('carries signed Billing recovery through the owned mailbox scan gate', async () => {
+    const destination = '/billing?plan=pro&cycle=annual&promo=foundingPro&from=%2Fbrief';
+    await controller.callback(
+      reqWithState(undefined, undefined, destination),
+      res as unknown as Response,
+      'auth-code',
+      NONCE,
+    );
+    const url = new URL(res.redirect.mock.calls[0]![1] as string);
+    expect(url.pathname).toBe('/onboarding');
+    expect(url.searchParams.get('mailbox')).toBe('mailbox-new');
+    expect(url.searchParams.get('returnTo')).toBe(destination);
+  });
+  it('preserves a signed Billing target on cancelled reconnect without changing the mailbox', async () => {
+    mailboxes.findOwned.mockResolvedValue(activeReconnectTarget());
+    const destination = '/billing?plan=pro&cycle=annual';
+    await controller.callback(
+      reqWithState(RECONNECT_MAILBOX_ID, undefined, destination),
+      res as unknown as Response,
+      undefined,
+      NONCE,
+      'access_denied',
+    );
+    const url = new URL(res.redirect.mock.calls[0]![1] as string);
+    expect(url.pathname).toBe('/onboarding');
+    expect(url.searchParams.get('returnTo')).toBe(destination);
+    expect(url.searchParams.get('reconnect_result')).toBe('cancelled');
+    expect(orchestrator.addMailbox).not.toHaveBeenCalled();
+  });
 
   it('keeps a normal add-mailbox success on its existing onboarding URL', async () => {
     await controller.callback(reqWithState(), res as unknown as Response, 'auth-code', NONCE);

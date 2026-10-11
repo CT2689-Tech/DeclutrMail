@@ -224,6 +224,7 @@ export function SyncGate({
   nowMs,
   onContinuePartial,
   readyEmail = false,
+  billingReturnTo,
 }: {
   status: SyncStatus;
   escape?: SyncGateEscape | undefined;
@@ -250,6 +251,7 @@ export function SyncGate({
   onContinuePartial?: (() => void) | undefined;
   /** True only when the sync-complete email is switched on for this user. */
   readyEmail?: boolean | undefined;
+  billingReturnTo?: string | undefined;
 }) {
   const clock = useNow(30_000);
   const now = nowMs ?? clock ?? undefined;
@@ -260,6 +262,7 @@ export function SyncGate({
         status={status}
         escape={escape}
         mailboxId={mailboxId}
+        billingReturnTo={billingReturnTo}
         stuck={stuck}
         nowMs={now}
         onContinuePartial={onContinuePartial}
@@ -397,6 +400,7 @@ function SyncProgress({
 
 function SyncFailed({
   status,
+  billingReturnTo,
   escape,
   mailboxId,
   stuck,
@@ -407,6 +411,7 @@ function SyncFailed({
   escape?: SyncGateEscape | undefined;
   mailboxId?: string | null | undefined;
   stuck: boolean;
+  billingReturnTo?: string | undefined;
   nowMs?: number | undefined;
   onContinuePartial?: (() => void) | undefined;
 }) {
@@ -463,7 +468,12 @@ function SyncFailed({
           <Button
             tone="primary"
             size="xl"
-            onClick={() => canRetry && startMailboxConnect(mailboxId ?? undefined)}
+            onClick={() =>
+              canRetry &&
+              (billingReturnTo
+                ? startMailboxConnect(mailboxId ?? undefined, billingReturnTo)
+                : startMailboxConnect(mailboxId ?? undefined))
+            }
             disabled={!canRetry}
             style={editorialOnboardingActionStyle}
           >

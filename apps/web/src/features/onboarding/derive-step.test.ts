@@ -106,3 +106,28 @@ describe('deriveAuthedStep', () => {
     expect(step.kind).toBe('preset-pick');
   });
 });
+
+it.each([
+  [false, false, 'connect'],
+  [true, false, 'sync-gate'],
+  [true, null, 'loading'],
+  [true, true, 'done'],
+] as const)(
+  'completed billing scan recovery resumes without redoing the review: active=%s ready=%s',
+  (hasActiveMailbox, syncReady, kind) => {
+    expect(
+      deriveAuthedStep({
+        resumeScan: true,
+        hasActiveMailbox,
+        syncReady,
+        state: {
+          data: { onboardedAt: '2026-10-10T00:00:00Z', goal: null, presetPicks: null },
+          isLoading: false,
+          isError: false,
+          error: null,
+          retry: () => {},
+        },
+      }),
+    ).toEqual({ kind });
+  },
+);

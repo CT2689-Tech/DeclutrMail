@@ -53,6 +53,7 @@ function meFixture(tier: Me['tier'], cleanupRemaining: number | null): Me {
 }
 
 const FREE_BODY: BillingSubscription = {
+  checkoutSetupComplete: true,
   complimentary: null,
   tier: 'free',
   foundingMember: false,
@@ -803,4 +804,15 @@ export const ComplimentaryResumePending: Story<typeof BillingScreen> = {
 
 export const ComplimentaryPaidAccessEnded: Story<typeof BillingScreen> = {
   render: () => <ComplimentaryConfirmationFixture ended />,
+};
+
+export const SetupRequired: Story<typeof BillingScreen> = {
+  render: () =>
+    frame(makeClient(meFixture('free', 3), { ...FREE_BODY, checkoutSetupComplete: false }), {
+      initialIntent: { plan: 'pro', cycle: 'annual' },
+    }),
+};
+export const SetupReadUnavailable: Story<typeof BillingScreen> = {
+  render: () =>
+    frame(makeClient(meFixture('free', 3), { ...FREE_BODY, checkoutSetupComplete: undefined })),
 };

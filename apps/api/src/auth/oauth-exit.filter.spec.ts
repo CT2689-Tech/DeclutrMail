@@ -176,6 +176,37 @@ describe('OAuth exit filters', () => {
       );
     });
 
+    it.each([
+      [new UnauthorizedException(), 'session_retry'],
+      [new HttpException('slow down', HttpStatus.TOO_MANY_REQUESTS), 'rate_limited'],
+      [new Error('private runtime detail'), 'failed'],
+    ] as const)('preserves signed Billing context on connect failure: %s', (exception, result) => {
+      const destination = '/billing?plan=pro&cycle=annual&from=%2Fbrief';
+      const res = run(
+        new OAuthCallbackExitFilter(jwt),
+        exception,
+        fakeRequest({ cookies: stateCookie({ mode: 'connect', billingReturnTo: destination }) }),
+      );
+      expect(res.redirect).toHaveBeenCalledWith(
+        302,
+        `${WEB}/onboarding?${new URLSearchParams({ resumeScan: '1', returnTo: destination, connect_start_result: result })}`,
+      );
+    });
+    it.each(['/settings', [' /billing'], 'https://outside.test/billing', '/billing?plan=pro'])(
+      'drops invalid signed connect Billing context %s',
+      (billingReturnTo) => {
+        const res = run(
+          new OAuthCallbackExitFilter(jwt),
+          new UnauthorizedException(),
+          fakeRequest({ cookies: stateCookie({ mode: 'connect', billingReturnTo }) }),
+        );
+        expect(res.redirect).toHaveBeenCalledWith(
+          302,
+          `${WEB}/settings?connect_start_result=session_retry#mailboxes`,
+        );
+      },
+    );
+
     it('drops a forged returnTo even from a signed state', () => {
       const res = run(
         new OAuthCallbackExitFilter(jwt),

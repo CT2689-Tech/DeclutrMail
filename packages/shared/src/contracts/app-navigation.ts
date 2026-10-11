@@ -87,3 +87,9 @@ export function parseUpgradeReturnTo(value: unknown): string | undefined {
     return undefined;
   return parseAppReturnTo(value);
 }
+
+/** A closed Billing recovery destination; ordinary mailbox connects retain their fixed exits. */
+export function parseBillingReturnTo(value: unknown): string | undefined {
+  const destination = parseAppReturnTo(value);
+  return destination?.split(/[?#]/, 1)[0] === '/billing' ? destination : undefined;
+}

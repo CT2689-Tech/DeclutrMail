@@ -420,6 +420,12 @@ export const ERROR_CODES = {
     message:
       'Billing status could not be verified. Open Billing or contact support@declutrmail.com.',
   },
+  CHECKOUT_SETUP_REQUIRED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    message: 'Finish your Gmail scan and first review before starting checkout.',
+    retryable: false,
+  },
   CHECKOUT_DELETION_PENDING: {
     status: 409,
     severityTier: 'inline_recoverable',

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { isUserScopedAppPath, parseAppReturnTo, parseUpgradeReturnTo } from './app-navigation';
+import {
+  isUserScopedAppPath,
+  parseAppReturnTo,
+  parseBillingReturnTo,
+  parseUpgradeReturnTo,
+} from './app-navigation';
 
 describe('app destinations surviving login', () => {
   it.each([
@@ -41,4 +46,19 @@ describe('app destinations surviving login', () => {
       expect(isUserScopedAppPath(path)).toBe(true);
     expect(isUserScopedAppPath('/settings/senders')).toBe(false);
   });
+});
+
+it.each([
+  '/settings',
+  'https://evil.test/billing',
+  '/billing-evil',
+  '/billing?from=https%3A%2F%2Fevil.test',
+])('rejects non-Billing or unsafe recovery destinations: %s', (value) => {
+  const result = parseBillingReturnTo(value);
+  // The existing destination parser rejects unsafe nested origins.
+  expect(result).toBeUndefined();
+});
+it('retains the selected plan, cycle, promotion and validated app origin', () => {
+  const value = '/billing?plan=pro&cycle=annual&promo=foundingPro&from=%2Fbrief';
+  expect(parseBillingReturnTo(value)).toBe(value);
 });

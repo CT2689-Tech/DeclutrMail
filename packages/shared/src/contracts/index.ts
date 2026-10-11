@@ -4,7 +4,12 @@
 // pulling in the component tree.
 
 export type { KmsProvider } from './kms-provider';
-export { isUserScopedAppPath, parseAppReturnTo, parseUpgradeReturnTo } from './app-navigation';
+export {
+  isUserScopedAppPath,
+  parseAppReturnTo,
+  parseUpgradeReturnTo,
+  parseBillingReturnTo,
+} from './app-navigation';
 
 export { ProductFeedbackRequestSchema } from './product-feedback';
 export type {

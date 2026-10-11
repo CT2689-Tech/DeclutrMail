@@ -1,5 +1,6 @@
 import { Catch, HttpStatus } from '@nestjs/common';
 import type { Response } from 'express';
+import { parseBillingReturnTo } from '@declutrmail/shared/contracts';
 
 import { AllExceptionsFilter } from '../common/all-exceptions.filter.js';
 
@@ -25,7 +26,15 @@ export class ConnectMailboxStartFilter extends AllExceptionsFilter {
     const result = connectMailboxStartResult(status) ?? 'failed';
     const webBase = (process.env.WEB_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
 
-    res.redirect(HttpStatus.FOUND, `${webBase}/settings?connect_start_result=${result}#mailboxes`);
+    const destination = parseBillingReturnTo(res.req?.query?.billingReturnTo);
+    const query = new URLSearchParams({
+      ...(destination ? { resumeScan: '1', returnTo: destination } : {}),
+      connect_start_result: result,
+    });
+    res.redirect(
+      HttpStatus.FOUND,
+      destination ? `${webBase}/onboarding?${query}` : `${webBase}/settings?${query}#mailboxes`,
+    );
   }
 }
 

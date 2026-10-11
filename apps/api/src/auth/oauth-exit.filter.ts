@@ -1,14 +1,20 @@
 import { Catch, HttpStatus, Inject, Injectable } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
-import { parseAppReturnTo, type SignInResult } from '@declutrmail/shared/contracts';
+import {
+  parseAppReturnTo,
+  parseBillingReturnTo,
+  type SignInResult,
+} from '@declutrmail/shared/contracts';
 
 import { AllExceptionsFilter } from '../common/all-exceptions.filter.js';
 import { JwtService } from './jwt.service.js';
 import { STATE_COOKIE, STATE_COOKIE_PATH, stateCookieName } from './oauth-browser.js';
 
 /** Where a failed OAuth browser request lands. */
-type OAuthExit = { mode: 'login'; returnTo: string | undefined } | { mode: 'connect' };
+type OAuthExit =
+  | { mode: 'login'; returnTo: string | undefined }
+  | { mode: 'connect'; billingReturnTo?: string | undefined };
 
 /**
  * The Google OAuth routes are full-page browser navigations (D108). A
@@ -41,8 +47,16 @@ abstract class OAuthExitFilter extends AllExceptionsFilter {
           : status === HttpStatus.UNAUTHORIZED
             ? 'session_retry'
             : 'failed';
-      const query = new URLSearchParams({ connect_start_result: result });
-      res.redirect(HttpStatus.FOUND, `${webBase}/settings?${query.toString()}#mailboxes`);
+      const query = new URLSearchParams({
+        ...(exit.billingReturnTo ? { resumeScan: '1', returnTo: exit.billingReturnTo } : {}),
+        connect_start_result: result,
+      });
+      res.redirect(
+        HttpStatus.FOUND,
+        exit.billingReturnTo
+          ? `${webBase}/onboarding?${query}`
+          : `${webBase}/settings?${query}#mailboxes`,
+      );
       return;
     }
 
@@ -96,14 +110,15 @@ export class OAuthCallbackExitFilter extends OAuthExitFilter {
     const flowRaw = flowCookieName ? cookies?.[flowCookieName] : undefined;
     const raw = typeof flowRaw === 'string' ? flowRaw : cookies?.[STATE_COOKIE];
     const payload = typeof raw === 'string' ? this.jwt.openOAuthState(raw) : null;
-    let state: { mode?: unknown; returnTo?: unknown } | null = null;
+    let state: { mode?: unknown; returnTo?: unknown; billingReturnTo?: unknown } | null = null;
     try {
       const parsed: unknown = payload ? JSON.parse(payload) : null;
       if (typeof parsed === 'object' && parsed !== null) state = parsed;
     } catch {
       state = null;
     }
-    if (state?.mode === 'connect') return { mode: 'connect' };
+    if (state?.mode === 'connect')
+      return { mode: 'connect', billingReturnTo: parseBillingReturnTo(state.billingReturnTo) };
     return { mode: 'login', returnTo: parseAppReturnTo(state?.returnTo) };
   }
 }

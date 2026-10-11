@@ -25,7 +25,7 @@
  * `callback_url` — a `short_url` redirect is a ONE-WAY trip (it is
  * built for sharing a pay-link over SMS/WhatsApp), so the user pays and
  * is then stranded on api.razorpay.com with no route back into the app.
- * `shortUrl` survives ONLY as the fallback when Checkout.js cannot load.
+ * A loader failure stays in the app and retries the same held session.
  *
  * CSP (D175): Checkout.js is injected by this module — i.e. BY
  * ALREADY-TRUSTED BUNDLE CODE — so `strict-dynamic` propagates trust to
@@ -46,7 +46,7 @@
  * CDN scripts.
  */
 
-import { CheckoutEventNames, type Paddle } from '@paddle/paddle-js';
+import type { Paddle } from '@paddle/paddle-js';
 import type * as PaddleJs from '@paddle/paddle-js';
 import type {
   CheckoutSession,
@@ -55,6 +55,8 @@ import type {
 } from '@declutrmail/shared/contracts';
 
 type PaddleModule = typeof PaddleJs;
+import { CheckoutLaunchError, withCheckoutLoadDeadline } from './checkout-error';
+export { CheckoutLaunchError } from './checkout-error';
 
 /** Overlay lifecycle callbacks — both providers render in-page. */
 export interface CheckoutEvents {
@@ -72,6 +74,7 @@ export function __setPaddleLoaderForTests(loader: () => Promise<PaddleModule>): 
   paddleLoader = loader;
   // Test isolation: a fresh loader means a fresh Paddle world.
   paddleInstance = null;
+  paddleInitialization = null;
   activeEvents = {};
 }
 
@@ -107,12 +110,22 @@ function defaultRazorpayLoader(): Promise<RazorpayConstructor> {
     const script = document.createElement('script');
     script.src = RAZORPAY_SCRIPT_SRC;
     script.async = true;
+    const finish = (ctor?: RazorpayConstructor) => {
+      clearTimeout(timer);
+      script.onload = null;
+      script.onerror = null;
+      if (ctor) resolve(ctor);
+      else {
+        script.remove();
+        reject(new CheckoutLaunchError(true));
+      }
+    };
+    const timer = setTimeout(() => finish(), CHECKOUT_LOAD_TIMEOUT_MS);
     script.onload = () => {
       const ctor = (window as { Razorpay?: RazorpayConstructor }).Razorpay;
-      if (ctor) resolve(ctor);
-      else reject(new Error('Razorpay Checkout.js loaded but exposed no constructor.'));
+      finish(ctor);
     };
-    script.onerror = () => reject(new Error('Razorpay Checkout.js failed to load.'));
+    script.onerror = () => finish();
     document.head.appendChild(script);
   });
 }
@@ -120,8 +133,8 @@ function defaultRazorpayLoader(): Promise<RazorpayConstructor> {
 let razorpayLoader: () => Promise<RazorpayConstructor> = defaultRazorpayLoader;
 let razorpayScriptPromise: Promise<RazorpayConstructor> | null = null;
 
-export function __setRazorpayLoaderForTests(loader: () => Promise<RazorpayConstructor>): void {
-  razorpayLoader = loader;
+export function __setRazorpayLoaderForTests(loader?: () => Promise<RazorpayConstructor>): void {
+  razorpayLoader = loader ?? defaultRazorpayLoader;
   razorpayScriptPromise = null;
 }
 
@@ -148,8 +161,10 @@ function loadRazorpay(): Promise<RazorpayConstructor> {
 async function openRazorpayOverlay(
   session: RazorpayCheckoutSession,
   events: CheckoutEvents,
+  mayOpen: () => boolean,
 ): Promise<void> {
-  const Razorpay = await loadRazorpay();
+  const Razorpay = await withCheckoutLoadDeadline(loadRazorpay());
+  if (!mayOpen()) throw new CheckoutLaunchError(false);
   let settled = false;
   const instance = new Razorpay({
     key: session.keyId,
@@ -183,28 +198,37 @@ async function openRazorpayOverlay(
  * dispatches to `activeEvents`, which each launch takes over.
  */
 let paddleInstance: Paddle | null = null;
+let paddleInitialization: Promise<Paddle> | null = null;
 let activeEvents: CheckoutEvents = {};
 
 async function openPaddleOverlay(
   session: PaddleCheckoutSession,
   events: CheckoutEvents,
+  mayOpen: () => boolean,
 ): Promise<void> {
-  activeEvents = events;
   if (!paddleInstance) {
-    const { initializePaddle } = await paddleLoader();
-    const paddle: Paddle | undefined = await initializePaddle({
-      environment: session.environment,
-      token: session.clientToken,
-      eventCallback: (event) => {
-        if (event.name === CheckoutEventNames.CHECKOUT_COMPLETED) activeEvents.onCompleted?.();
-        if (event.name === CheckoutEventNames.CHECKOUT_CLOSED) activeEvents.onClosed?.();
-      },
+    // A timed-out import/init may still finish. Retrying awaits the same
+    // initialization; an abandoned launch never opens when it resolves late.
+    paddleInitialization ??= (async () => {
+      const { initializePaddle } = await paddleLoader();
+      const paddle = await initializePaddle({
+        environment: session.environment,
+        token: session.clientToken,
+        eventCallback: (event) => {
+          if (event.name === 'checkout.completed') activeEvents.onCompleted?.();
+          if (event.name === 'checkout.closed') activeEvents.onClosed?.();
+        },
+      });
+      if (!paddle) throw new CheckoutLaunchError(true);
+      return paddle;
+    })().catch((err: unknown) => {
+      paddleInitialization = null;
+      throw err;
     });
-    if (!paddle) {
-      throw new Error('Paddle.js failed to initialize.');
-    }
-    paddleInstance = paddle;
+    paddleInstance = await withCheckoutLoadDeadline(paddleInitialization);
   }
+  if (!mayOpen()) throw new CheckoutLaunchError(false);
+  activeEvents = events;
   paddleInstance.Checkout.open({
     items: [{ priceId: session.priceId, quantity: 1 }],
     // Verbatim pass-through — webhook workspace attribution (D117).
@@ -216,20 +240,15 @@ async function openPaddleOverlay(
 export async function launchCheckout(
   session: CheckoutSession,
   events: CheckoutEvents = {},
+  mayOpen: () => boolean = () => true,
 ): Promise<void> {
-  if (session.provider === 'paddle') {
-    await openPaddleOverlay(session, events);
-    return;
-  }
   try {
-    await openRazorpayOverlay(session, events);
-  } catch {
-    // Checkout.js unavailable (CDN blocked, offline, extension). The
-    // hosted page is a WORSE experience — Razorpay's Subscriptions API
-    // has no callback_url, so the user pays and lands stranded on
-    // api.razorpay.com — but it still completes the purchase, and the
-    // webhook grants the tier either way. Strictly better than a dead
-    // "Confirm" button.
-    window.location.assign(session.shortUrl);
+    if (session.provider === 'paddle') await openPaddleOverlay(session, events, mayOpen);
+    else await openRazorpayOverlay(session, events, mayOpen);
+  } catch (err) {
+    if (err instanceof CheckoutLaunchError) throw err;
+    // Constructor/open failure has an unknown provider outcome. Keep the
+    // reservation and reconciliation controls, without an automatic retry.
+    throw new CheckoutLaunchError(false);
   }
 }

@@ -10990,3 +10990,12 @@ knew both numbers the whole time.
 
 `show_sync_live_counters` and `show_sync_eta` are retired with this. In
 source checked 2026-09-26 no code read either key.
+
+
+### 2026-10-10 founder-approved journey amendment — D109 / D117
+
+New paid checkout is offered after a completed initial scan and first review: the initiating owner has `onboardedAt`, with an owned active ready mailbox and no active/failed mailbox data erase. The server checks this before the atomic payment claim; a sparse/older eligibility read withholds new checkout. Existing paid subscription management stays accessible when Gmail readiness is unavailable. Setup handoffs retain selected plan, cycle and accepted originating page.
+
+A checkout SDK load failure stays in Billing and offers a retry of the already-created in-memory provider session while its original reservation remains valid. Retry creates no second checkout; async money locks cover loading and opening, with account, unmount, reservation and expiry fencing. Opening removes retry. Unknown open outcomes and reloads use existing provider reconciliation; reloads do not persist provider sessions. INR new purchases remain paused pending the separate billing-readiness decision. Paddle.js and webhook-authoritative entitlements remain unchanged.
+
+The Billing scan recovery link uses the closed `resumeScan=1` flag to revisit connect/scan after a completed review, then returns without repeating that review. Full Gmail connect/reconnect carries only a validated `/billing` intent in signed, session-bound OAuth state; ordinary connects retain their existing destinations. A freshly connected mailbox passes the scoped scan gate, then the ordinary review derivation, before returning to Billing. Cancelled and failed signed recoveries retain the choice. Failure to load the optional retry widget leaves the canonical payment-status notice and reconciliation controls available.

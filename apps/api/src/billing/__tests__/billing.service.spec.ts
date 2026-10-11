@@ -2,6 +2,9 @@ import { legacyUpgradePolicy } from './fixtures.js';
 import {
   accountDeletionRequests,
   billingCustomers,
+  mailboxAccounts,
+  mailboxDataDeletionRequests,
+  providerSyncState,
   pendingCheckouts,
   subscriptionEvents,
   subscriptions,
@@ -186,9 +189,87 @@ describe('BillingService', () => {
       .returning({ id: workspaces.id });
     const [user] = await db
       .insert(users)
-      .values({ workspaceId: ws!.id, email: 'buyer@example.com' })
+      .values({ workspaceId: ws!.id, email: 'buyer@example.com', onboardedAt: new Date() })
       .returning({ id: users.id });
     principal = { userId: user!.id, workspaceId: ws!.id };
+    const [mailbox] = await db
+      .insert(mailboxAccounts)
+      .values({
+        workspaceId: ws!.id,
+        userId: user!.id,
+        provider: 'gmail',
+        providerAccountId: 'buyer@example.com',
+      })
+      .returning();
+    await db
+      .insert(providerSyncState)
+      .values({ mailboxAccountId: mailbox!.id, readinessStatus: 'ready' });
+  });
+
+  it.each(['unfinished_review', 'failed', 'queued', 'syncing', 'disconnected', 'no_mailbox'])(
+    'refuses a new checkout before any provider or billing write: %s',
+    async (state) => {
+      if (state === 'unfinished_review')
+        await db.update(users).set({ onboardedAt: null }).where(eq(users.id, principal.userId));
+      else if (state === 'no_mailbox') await db.delete(mailboxAccounts);
+      else if (state === 'disconnected')
+        await db.update(mailboxAccounts).set({ status: 'disconnected' });
+      else
+        await db
+          .update(providerSyncState)
+          .set({ readinessStatus: state as 'failed' | 'queued' | 'syncing' });
+      await expect(
+        service.createCheckout(principal, { tierId: 'plus', cycle: 'monthly', provider: 'paddle' }),
+      ).rejects.toMatchObject({ code: 'CHECKOUT_SETUP_REQUIRED' });
+      expect(paddleCheckout).not.toHaveBeenCalled();
+      expect(await db.select().from(pendingCheckouts)).toHaveLength(0);
+      expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
+      expect((await db.select().from(users))[0]!.billingRegion).toBeNull();
+      expect((await service.getSubscription(principal.workspaceId)).checkoutSetupComplete).toBe(
+        false,
+      );
+    },
+  );
+
+  it.each(['pending', 'executing', 'failed'] as const)(
+    'refuses checkout while the ready mailbox has a %s data erase',
+    async (status) => {
+      const [mailbox] = await db.select().from(mailboxAccounts);
+      await db
+        .insert(mailboxDataDeletionRequests)
+        .values({ mailboxAccountId: mailbox!.id, status });
+      expect((await service.getSubscription(principal.workspaceId)).checkoutSetupComplete).toBe(
+        false,
+      );
+      await expect(
+        service.createCheckout(principal, { tierId: 'plus', cycle: 'monthly', provider: 'paddle' }),
+      ).rejects.toMatchObject({ code: 'CHECKOUT_SETUP_REQUIRED' });
+      expect(paddleCheckout).not.toHaveBeenCalled();
+      expect(await db.select().from(pendingCheckouts)).toHaveLength(0);
+    },
+  );
+
+  it('allows purchase when another owned active mailbox is ready', async () => {
+    await db.update(providerSyncState).set({ readinessStatus: 'failed' });
+    const [mailbox] = await db
+      .insert(mailboxAccounts)
+      .values({
+        workspaceId: principal.workspaceId,
+        userId: principal.userId,
+        provider: 'gmail',
+        providerAccountId: 'other@example.com',
+      })
+      .returning();
+    await db
+      .insert(providerSyncState)
+      .values({ mailboxAccountId: mailbox!.id, readinessStatus: 'ready' });
+    expect((await service.getSubscription(principal.workspaceId)).checkoutSetupComplete).toBe(true);
+    await service.createCheckout(principal, {
+      tierId: 'plus',
+      cycle: 'monthly',
+      provider: 'paddle',
+    });
+    expect(paddleCheckout).toHaveBeenCalledTimes(1);
   });
 
   it('rejects checkout during pending deletion before contacting the provider', async () => {
@@ -500,6 +581,7 @@ describe('BillingService', () => {
 
   it('getSubscription returns free/null for never-subscribed workspaces', async () => {
     expect(await service.getSubscription(principal.workspaceId)).toEqual({
+      checkoutSetupComplete: true,
       tier: 'free',
       foundingMember: false,
       subscription: null,

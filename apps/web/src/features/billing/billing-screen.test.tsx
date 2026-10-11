@@ -1,3 +1,4 @@
+import type * as CheckoutModule from './checkout';
 /**
  * Tests for `BillingScreen` (D117/D119/D120/D121).
  *
@@ -23,6 +24,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 let mockTier = 'free';
+let mockWorkspaceId = 'w';
 let mockCleanupRemaining: number | null = 3;
 // QA-billing-20260901-04 — the real anniversary reset date, distinct
 // from a calendar-month one so the fixture actually exercises the fix
@@ -31,7 +33,7 @@ const mockCleanupResetsAt: string | null = '2026-09-17T00:00:00.000Z';
 vi.mock('@/features/auth/auth-provider', () => ({
   useAuth: () => ({
     me: {
-      user: { id: 'u', email: 'me@example.com', workspaceId: 'w' },
+      user: { id: 'u', email: 'me@example.com', workspaceId: mockWorkspaceId },
       activeMailboxId: 'mb-1',
       mailboxes: [
         {
@@ -52,7 +54,8 @@ vi.mock('@/features/auth/auth-provider', () => ({
 // Provider launch is a side-effect seam (Paddle overlay / Razorpay
 // navigation) — stub it; the checkout CONTRACT is asserted on the wire
 // and the overlay lifecycle is driven through the captured events arg.
-vi.mock('@/features/billing/checkout', () => ({
+vi.mock('@/features/billing/checkout', async (importOriginal) => ({
+  ...(await importOriginal<typeof CheckoutModule>()),
   launchCheckout: vi.fn(() => Promise.resolve()),
 }));
 
@@ -71,7 +74,7 @@ import {
 } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
-import { launchCheckout, type CheckoutEvents } from './checkout';
+import { CheckoutLaunchError, launchCheckout, type CheckoutEvents } from './checkout';
 import type { BillingIntent } from './billing-intent';
 import { annualMonthsFree, quotedPlanPrice, REFUND_SETTLING_POLL_MS } from './billing-model';
 import { BillingScreen } from './billing-screen';
@@ -80,6 +83,7 @@ import { pendingCheckoutKey, writePendingCheckout } from './pending-checkout';
 import { billingKeys } from './api/query-keys';
 
 const FREE_BODY: BillingSubscription = {
+  checkoutSetupComplete: true,
   complimentary: null,
   tier: 'free',
   foundingMember: false,
@@ -137,6 +141,7 @@ const PAUSED_BODY: BillingSubscription = {
  * went uncovered until a founder hit it by hand.
  */
 const REFUND_SETTLING_BODY: BillingSubscription = {
+  checkoutSetupComplete: true,
   complimentary: null,
   tier: 'free',
   foundingMember: false,
@@ -218,6 +223,7 @@ function capturedCheckoutEvents(): CheckoutEvents {
 
 beforeEach(() => {
   mockTier = 'free';
+  mockWorkspaceId = 'w';
   mockCleanupRemaining = 3;
   vi.mocked(launchCheckout).mockClear();
   vi.mocked(track).mockClear();
@@ -3827,6 +3833,7 @@ describe('BillingScreen — paid subscriber', () => {
     stubSubscription(() =>
       jsonOk({
         data: {
+          checkoutSetupComplete: true,
           tier: 'free',
           foundingMember: false,
           pendingCheckout: null,
@@ -3859,6 +3866,7 @@ describe('BillingScreen — paid subscriber', () => {
     stubSubscription(() =>
       jsonOk({
         data: {
+          checkoutSetupComplete: true,
           tier: 'free',
           foundingMember: false,
           pendingCheckout: null,
@@ -3899,6 +3907,7 @@ describe('BillingScreen — paid subscriber', () => {
     stubSubscription(() =>
       jsonOk({
         data: {
+          checkoutSetupComplete: true,
           tier: 'free',
           foundingMember: false,
           pendingCheckout: null,
@@ -4248,6 +4257,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     stubSubscription(() =>
       jsonOk({
         data: {
+          checkoutSetupComplete: true,
           tier: 'pro',
           foundingMember: false,
           pendingCheckout: null,
@@ -4297,6 +4307,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     stubSubscription(() =>
       jsonOk({
         data: {
+          checkoutSetupComplete: true,
           tier: 'pro',
           foundingMember: false,
           subscription: null,
@@ -4328,6 +4339,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     stubSubscription(() =>
       jsonOk({
         data: {
+          checkoutSetupComplete: true,
           tier: 'pro',
           foundingMember: false,
           subscription: null,
@@ -4357,6 +4369,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     stubSubscription(() =>
       jsonOk({
         data: {
+          checkoutSetupComplete: true,
           tier: 'plus',
           foundingMember: false,
           subscription: null,
@@ -4378,6 +4391,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     stubSubscription(() =>
       jsonOk({
         data: {
+          checkoutSetupComplete: true,
           tier: 'pro',
           foundingMember: false,
           pendingCheckout: null,
@@ -4417,6 +4431,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     stubSubscription(() =>
       jsonOk({
         data: {
+          checkoutSetupComplete: true,
           tier: 'free',
           foundingMember: false,
           pendingCheckout: null,
@@ -4578,4 +4593,247 @@ describe('D119 billing-artifact render gates (screen-level)', () => {
     expect(within(card).getByRole('button', { name: 'Update payment method' })).toBeDisabled();
     expect(within(card).getByText(/finishes confirming/i)).toBeInTheDocument();
   });
+});
+
+describe('Billing setup and checkout loader recovery', () => {
+  it.each([false, undefined])(
+    'keeps new checkout gated when setup is %s, preserving the selected plan',
+    async (ready) => {
+      stubSubscription(() => jsonOk({ data: { ...FREE_BODY, checkoutSetupComplete: ready } }));
+      renderScreen({ plan: 'pro', cycle: 'annual' });
+      const resume = await screen.findByRole('link', { name: 'Resume setup' });
+      const destination = new URL(
+        resume.getAttribute('href')!,
+        'http://localhost',
+      ).searchParams.get('returnTo');
+      expect(destination).toBe('/billing?plan=pro&cycle=annual');
+      expect(
+        screen.queryByRole('button', { name: 'Continue to checkout' }),
+      ).not.toBeInTheDocument();
+      expect(launchCheckout).not.toHaveBeenCalled();
+    },
+  );
+  it('retains the accepted originating page through setup even without a selected plan', async () => {
+    stubSubscription(() => jsonOk({ data: { ...FREE_BODY, checkoutSetupComplete: false } }));
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <BillingScreen returnTo="/brief" />
+      </QueryWrapper>,
+    );
+    const resume = await screen.findByRole('link', { name: 'Resume setup' });
+    expect(
+      new URL(resume.getAttribute('href')!, 'http://localhost').searchParams.get('returnTo'),
+    ).toBe('/billing?from=%2Fbrief');
+  });
+  it('keeps existing subscription management accessible when Gmail setup is unavailable', async () => {
+    mockTier = 'pro';
+    stubSubscription(() =>
+      jsonOk({
+        data: { ...FREE_BODY, tier: 'pro', subscription: SUB, checkoutSetupComplete: false },
+      }),
+    );
+    renderScreen();
+    await screen.findByTestId('current-plan-card');
+    expect(screen.getByRole('button', { name: 'Review cancellation' })).toBeEnabled();
+    expect(screen.queryByRole('link', { name: 'Resume setup' })).not.toBeInTheDocument();
+  });
+  it('a refused stale checkout refreshes setup and releases only its pre-claim local attempt', async () => {
+    let ready = true;
+    let reads = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => {
+          reads++;
+          return jsonOk({ data: { ...FREE_BODY, checkoutSetupComplete: ready } });
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: () => {
+          ready = false;
+          return new Response(
+            JSON.stringify({
+              error: {
+                code: 'CHECKOUT_SETUP_REQUIRED',
+                message: ERROR_CODES.CHECKOUT_SETUP_REQUIRED.message,
+              },
+            }),
+            { status: 409, headers: { 'content-type': 'application/json' } },
+          );
+        },
+      },
+    ]);
+    renderScreen({ plan: 'pro', cycle: 'monthly' });
+    const panel = await screen.findByTestId('checkout-panel');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    await screen.findByRole('link', { name: 'Resume setup' });
+    expect(reads).toBeGreaterThan(1);
+    expect(launchCheckout).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
+  });
+  it('retrying the window reuses the held provider session and attempt without creating another checkout', async () => {
+    let posts = 0;
+    const session = {
+      provider: 'paddle',
+      kind: 'overlay',
+      priceId: 'pri_test',
+      clientToken: 'synthetic_token',
+      environment: 'sandbox',
+      customData: { workspace_id: 'w', sig: 'synthetic' },
+    };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: () => {
+          posts++;
+          return jsonOk({ data: session });
+        },
+      },
+    ]);
+    vi.mocked(launchCheckout)
+      .mockRejectedValueOnce(new CheckoutLaunchError(true))
+      .mockResolvedValue(undefined);
+    renderScreen({ plan: 'pro', cycle: 'monthly' });
+    const panel = await screen.findByTestId('checkout-panel');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    const retry = await screen.findByRole('button', { name: 'Retry checkout window' });
+    const stored = window.localStorage.getItem(pendingCheckoutKey('w'));
+    fireEvent.click(retry);
+    await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(launchCheckout).mock.calls[1]?.[0]).toBe(
+      vi.mocked(launchCheckout).mock.calls[0]?.[0],
+    );
+    expect(posts).toBe(1);
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBe(stored);
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'Retry checkout window' }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.getByTestId('current-plan-card')).toHaveTextContent('Free');
+    expect(screen.queryByText(/Payment received/)).not.toBeInTheDocument();
+  });
+});
+
+it.each(['reject', 'closed', 'completed'] as const)(
+  'ignores an old owner’s initial checkout lifecycle after switching owner: %s',
+  async (kind) => {
+    let reject!: (reason: unknown) => void;
+    let resolve!: () => void;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: () =>
+          jsonOk({
+            data: {
+              provider: 'paddle',
+              kind: 'overlay',
+              priceId: 'pri_test',
+              clientToken: 'synthetic',
+              environment: 'sandbox',
+              customData: { workspace_id: 'w', sig: 'synthetic' },
+            },
+          }),
+      },
+    ]);
+    vi.mocked(launchCheckout).mockImplementationOnce(
+      () =>
+        new Promise<void>((r, j) => {
+          resolve = r;
+          reject = j;
+        }),
+    );
+    const rendered = renderScreen({ plan: 'pro', cycle: 'monthly' });
+    const panel = await screen.findByTestId('checkout-panel');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
+    const events = vi.mocked(launchCheckout).mock.calls[0]![1]!;
+    const beforeOpen = vi.mocked(launchCheckout).mock.calls[0]![2]!;
+    mockWorkspaceId = 'new-owner';
+    rendered.rerender(
+      <QueryWrapper client={createTestQueryClient()}>
+        <BillingScreen initialIntent={{ plan: 'pro', cycle: 'monthly' }} />
+      </QueryWrapper>,
+    );
+    await screen.findByTestId('plan-picker');
+    expect(beforeOpen()).toBe(false);
+    await act(async () => {
+      if (kind === 'reject') reject(new CheckoutLaunchError(true));
+      else {
+        resolve();
+        if (kind === 'closed') events.onClosed?.();
+        else events.onCompleted?.();
+      }
+    });
+    expect(window.localStorage.getItem(pendingCheckoutKey('new-owner'))).toBeNull();
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry checkout window' })).not.toBeInTheDocument();
+  },
+);
+
+it('does not create checkout after the originating owner changes during its Web Lock claim', async () => {
+  const previous = Object.getOwnPropertyDescriptor(navigator, 'locks');
+  let release!: () => Promise<unknown>;
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: {
+      request: (_name: string, _options: unknown, callback: (lock: unknown) => Promise<unknown>) =>
+        new Promise((resolve) => {
+          release = async () => resolve(await callback({}));
+        }),
+    },
+  });
+  let posts = 0;
+  installFetchStub([
+    {
+      method: 'GET',
+      path: '/api/billing/subscription',
+      respond: () => jsonOk({ data: FREE_BODY }),
+    },
+    {
+      method: 'POST',
+      path: '/api/billing/checkout',
+      respond: () => {
+        posts++;
+        return jsonOk({ data: {} });
+      },
+    },
+  ]);
+  try {
+    const rendered = renderScreen({ plan: 'pro', cycle: 'monthly' });
+    const panel = await screen.findByTestId('checkout-panel');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    await waitFor(() => expect(release).toBeTypeOf('function'));
+    mockWorkspaceId = 'new-owner';
+    rendered.rerender(
+      <QueryWrapper client={createTestQueryClient()}>
+        <BillingScreen initialIntent={{ plan: 'pro', cycle: 'monthly' }} />
+      </QueryWrapper>,
+    );
+    await screen.findByTestId('plan-picker');
+    await act(async () => {
+      await release();
+    });
+    expect(posts).toBe(0);
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
+    expect(window.localStorage.getItem(pendingCheckoutKey('new-owner'))).toBeNull();
+  } finally {
+    if (previous) Object.defineProperty(navigator, 'locks', previous);
+    else Reflect.deleteProperty(navigator, 'locks');
+  }
 });

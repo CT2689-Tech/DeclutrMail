@@ -730,3 +730,18 @@ describe('SyncGate — failure copy names only what its error proves', () => {
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 });
+
+it('keeps the Billing intent when the failed scan needs Gmail reconnect', () => {
+  const destination = '/billing?plan=pro&cycle=annual';
+  render(
+    withClient(
+      <SyncGate
+        status={{ ...FAILED, error_code: 'AuthExpiredError' }}
+        mailboxId="mb-1"
+        billingReturnTo={destination}
+      />,
+    ),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Reconnect Gmail' }));
+  expect(startMailboxConnect).toHaveBeenCalledWith('mb-1', destination);
+});

@@ -21,11 +21,14 @@
 import { publishSubscriptionNotices, subscriptionNoticeSnapshot } from './billing-notices.js';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, inArray, isNotNull, sql } from 'drizzle-orm';
 import {
   accountDeletionRequests,
   billingCustomers,
+  mailboxAccounts,
+  mailboxDataDeletionRequests,
   pendingCheckouts,
+  providerSyncState,
   subscriptionEvents,
   subscriptions,
   users,
@@ -190,17 +193,11 @@ export class BillingService {
     const [user] = await this.db
       .select({ email: users.email })
       .from(users)
-      .where(eq(users.id, principal.userId))
+      .where(and(eq(users.id, principal.userId), eq(users.workspaceId, principal.workspaceId)))
       .limit(1);
     if (!user) {
       throw new AppException({ code: 'UNAUTHORIZED' });
     }
-
-    // Record the provider's implied billing region (D117).
-    await this.db
-      .update(users)
-      .set({ billingRegion: dto.provider === 'razorpay' ? 'india' : 'international' })
-      .where(eq(users.id, principal.userId));
 
     // ATOMIC cross-device claim (Codex stop-review 2026-07-29). The
     // SELECT-then-throw above closes the subscription-exists case but
@@ -221,6 +218,14 @@ export class BillingService {
         .where(eq(workspaces.id, principal.workspaceId))
         .for('update');
       await this.assertNoDeletion(principal.workspaceId, tx);
+      if (!(await this.checkoutSetupComplete(principal.workspaceId, principal.userId, tx))) {
+        throw new AppException({ code: 'CHECKOUT_SETUP_REQUIRED' });
+      }
+      // A setup refusal performs no billing-region or reservation write.
+      await tx
+        .update(users)
+        .set({ billingRegion: dto.provider === 'razorpay' ? 'india' : 'international' })
+        .where(eq(users.id, principal.userId));
       const claim = await tx
         .insert(pendingCheckouts)
         .values({
@@ -428,6 +433,7 @@ export class BillingService {
       )
     ).some(Boolean);
     return {
+      checkoutSetupComplete: await this.checkoutSetupComplete(workspaceId),
       ...(billingReviewPending ? { billingReviewPending: true } : {}),
       tier: ws.tier,
       foundingMember: ws.foundingMember,
@@ -466,6 +472,39 @@ export class BillingService {
             }
           : null,
     };
+  }
+
+  /** Read only; account/subscription management does not require Gmail readiness. */
+  private async checkoutSetupComplete(
+    workspaceId: string,
+    userId?: string,
+    executor: Pick<DrizzleDb, 'select'> = this.db,
+  ): Promise<boolean> {
+    const result = await executor
+      .select({ id: users.id })
+      .from(users)
+      .innerJoin(
+        mailboxAccounts,
+        and(
+          eq(mailboxAccounts.userId, users.id),
+          eq(mailboxAccounts.workspaceId, users.workspaceId),
+        ),
+      )
+      .innerJoin(providerSyncState, eq(providerSyncState.mailboxAccountId, mailboxAccounts.id))
+      .where(
+        and(
+          eq(users.workspaceId, workspaceId),
+          userId ? eq(users.id, userId) : undefined,
+          isNotNull(users.onboardedAt),
+          eq(mailboxAccounts.status, 'active'),
+          eq(providerSyncState.readinessStatus, 'ready'),
+          sql`not exists (select 1 from ${mailboxDataDeletionRequests}
+          where ${mailboxDataDeletionRequests.mailboxAccountId} = ${mailboxAccounts.id}
+          and ${mailboxDataDeletionRequests.status} in ('pending', 'executing', 'failed'))`,
+        ),
+      )
+      .limit(1);
+    return result.length > 0;
   }
 
   async cancelAtPeriodEnd(
