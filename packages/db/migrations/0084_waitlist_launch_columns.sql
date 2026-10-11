@@ -13,7 +13,4 @@ ALTER TABLE "waitlist" ADD COLUMN "would_pay" boolean;
 --> statement-breakpoint
 ALTER TABLE "waitlist" ADD COLUMN "contact_opt_in" boolean DEFAULT false NOT NULL;
 --> statement-breakpoint
--- waitlist_email_uniq already forbids a second row for the same email,
--- so this composite index cannot fail on duplicate email values.
--- atlas:nolint data_depend
 CREATE UNIQUE INDEX "waitlist_email_tier_provider_uniq" ON "waitlist" USING btree ("email", (coalesce("tier", '')), (coalesce("provider", '')));
