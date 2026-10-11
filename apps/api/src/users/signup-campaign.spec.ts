@@ -1,4 +1,4 @@
-import { users, workspaces } from '@declutrmail/db';
+import { users } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
