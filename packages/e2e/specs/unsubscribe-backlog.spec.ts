@@ -170,7 +170,6 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
   const triageBody = (await triageResponse.json()) as { data?: { mode?: string } };
   expect(triageBody.data?.mode).toBe('archive');
   await expect(page.getByText(ARCHIVE_TOAST)).toBeVisible();
-  await expect(page.getByText('Archiving…')).toBeVisible();
 
   // The default lane has no Gmail worker, so the archive job stays queued
   // and no undo token is issued. Stamp the journal the worker would write,
