@@ -8,6 +8,7 @@ import { GMAIL_DATA_PROCESSORS } from '../../contracts/gmail-data-inventory';
 import {
   cleanupActionsPerMonthFor,
   planName,
+  POLICY,
   priceLine,
   refundLine,
   renderPricingMarkdown,
@@ -116,8 +117,20 @@ function pricingCatalogReady(): boolean {
   return tokens.freeName !== '' && tokens.plusName !== '' && tokens.plusPrice !== '';
 }
 
-/** The money-back line under a comparison CTA. Hidden when the formatter is still empty. */
+/**
+ * Days the public `/refunds` page states (D121). The comparison CTA
+ * stays blank until this equals `POLICY.refundWindowDays`.
+ */
+export const REFUNDS_PAGE_WINDOW_DAYS = 30;
+
+/**
+ * Money-back line under a comparison CTA, linked to `/refunds`.
+ * Empty until that page and `POLICY.refundWindowDays` state the same
+ * window, and while `{refundDays}` is still blank. No flag and no env var.
+ */
 export function refundSentence(): string {
+  if (ws3Tokens().refundDays === '') return '';
+  if (REFUNDS_PAGE_WINDOW_DAYS !== POLICY.refundWindowDays) return '';
   return refundLine();
 }
 

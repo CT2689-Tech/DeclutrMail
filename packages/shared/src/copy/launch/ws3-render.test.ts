@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { cleanupActionsPerMonthFor, planName } from '../../entitlements';
+import { cleanupActionsPerMonthFor, planName, POLICY } from '../../entitlements';
 import {
   BRAND_VERIFICATION_APPROVED_ON,
   CASA_LOV_SUBMITTED_ON,
@@ -20,6 +20,8 @@ import {
   llmsPricingLine,
   priceFaqAnswer,
   privacyFaqAnswer,
+  REFUNDS_PAGE_WINDOW_DAYS,
+  refundSentence,
   ws3Tokens,
 } from './ws3-render';
 import { WS3_COPY } from './ws3';
@@ -62,6 +64,8 @@ describe('WS3 token fill', () => {
     expect(fillComplete('{refundDays}-day money-back on any purchase, once per customer.')).toBe(
       '',
     );
+    expect(REFUNDS_PAGE_WINDOW_DAYS).not.toBe(POLICY.refundWindowDays);
+    expect(refundSentence()).toBe('');
     const answer = priceFaqAnswer();
     const summary = declutrPriceSummary();
     const detail = declutrPriceDetail();

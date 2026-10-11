@@ -53,7 +53,7 @@ export function renderLlmsTxt(): string {
   let body = LLMS_SOURCE.replaceAll('LLMS_SECURITY_FACTS', llmsSecurityFacts());
   const autopilot = llmsAutopilotLine();
   if (autopilot) body = body.replace(PREVIOUS_AUTOPILOT, autopilot);
-  const pricingLine = llmsPricingLine();
+  const pricingLine = llmsPricingLine().replace(/^Pricing:\s*/, '');
   if (pricingLine)
     body = body.replace(
       PREVIOUS_PRICING,

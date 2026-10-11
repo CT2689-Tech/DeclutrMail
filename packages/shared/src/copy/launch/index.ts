@@ -33,6 +33,7 @@ export {
   passListed,
   priceFaqAnswer,
   privacyFaqAnswer,
+  REFUNDS_PAGE_WINDOW_DAYS,
   refundSentence,
   securityContactEmail,
   showOpenBetaLink,

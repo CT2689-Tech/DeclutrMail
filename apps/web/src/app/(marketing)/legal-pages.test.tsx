@@ -28,6 +28,7 @@ import {
   PRIVACY_STORAGE_ITEMS,
   PRIVACY_NEVER_ITEMS,
 } from '@declutrmail/shared';
+import { REFUNDS_PAGE_WINDOW_DAYS } from '@declutrmail/shared/copy/launch';
 import { storeConsent } from '@/lib/cookie-consent';
 
 import PrivacyPolicyPage from './privacy/page';
@@ -94,6 +95,7 @@ describe('/refunds content — D121 canonical refund terms', () => {
     const { container } = render(<RefundPolicyPage />);
     const text = container.textContent ?? '';
     expect(text).toContain('30-day money-back guarantee');
+    expect(text).toContain(`${REFUNDS_PAGE_WINDOW_DAYS}-day money-back guarantee`);
     expect(text).toContain('within 30 days');
     expect(text).toMatch(/every paid plan/i);
     // The interim 14-day pro-rata default must be fully gone.

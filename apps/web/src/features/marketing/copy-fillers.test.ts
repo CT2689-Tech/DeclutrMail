@@ -90,6 +90,7 @@ describe('empty WS1 fillers', () => {
     expect(llms).not.toMatch(/\baudited\b/i);
     expect(llms).not.toMatch(/Autopilot rules on\s+handle/);
     expect(llms).not.toMatch(/Pricing:\s*,/);
+    expect(llms).not.toMatch(/Pricing:\s*Pricing:/);
     if (renderPricingMarkdown().trim() === '') {
       expect(llms).not.toMatch(/^## Pricing\s*$/m);
       expect(full).not.toMatch(/^## Pricing\s*$/m);
