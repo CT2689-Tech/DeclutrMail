@@ -538,7 +538,7 @@ describe('ActionsService', () => {
     queue.staleJobIds.add(hashedQueueId);
     queue.staleJobIds.add(legacyQueueId);
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    let warningLogs: unknown[][] = [];
+    let warningLogs: unknown[][];
 
     // Second attempt — MUST retry the same row, not return cached failure.
     let second: Awaited<ReturnType<ActionsService['enqueueRevert']>>;
@@ -596,7 +596,7 @@ describe('ActionsService', () => {
     });
     queue.getJobErrors.set(hashedQueueId, hostileQueueError);
     const hostileWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    let hostileWarningLogs: unknown[][] = [];
+    let hostileWarningLogs: unknown[][];
     let third: Awaited<ReturnType<ActionsService['enqueueRevert']>>;
     try {
       third = await svc.enqueueRevert({

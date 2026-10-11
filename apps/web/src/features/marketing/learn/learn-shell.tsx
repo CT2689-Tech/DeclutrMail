@@ -20,6 +20,7 @@ export function ReadingLayout({
   toc,
   tocNarrow = 'list',
   centred = false,
+  variant,
   breadcrumb,
   children,
 }: {
@@ -30,11 +31,17 @@ export function ReadingLayout({
   toc?: readonly OnThisPageItem[];
   tocNarrow?: 'list' | 'hidden';
   centred?: boolean;
+  variant?: 'faq';
   breadcrumb?: { href: string; label: string };
   children: ReactNode;
 }) {
   const hasToc = Boolean(toc && toc.length >= RAIL_MIN_SECTIONS);
-  const className = ['dm-read', hasToc ? 'dm-read--rail' : '', centred ? 'dm-read--centred' : '']
+  const className = [
+    'dm-read',
+    hasToc ? 'dm-read--rail' : '',
+    centred ? 'dm-read--centred' : '',
+    variant === 'faq' ? 'dm-read--faq' : '',
+  ]
     .filter(Boolean)
     .join(' ');
   return (

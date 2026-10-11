@@ -20,7 +20,6 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import {
   CASA_VERIFICATION_APPROVED_MONTH,
-  CASA_VERIFICATION_APPROVED_ON,
   PRIVACY_BADGE_HEADLINE,
   PRIVACY_STORAGE_ITEMS,
   PRIVACY_NEVER_ITEMS,
@@ -28,6 +27,14 @@ import {
   PRIVACY_NEVER_LABEL,
 } from '@declutrmail/shared';
 import { MAX_UNDO_WINDOW_DAYS, MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import {
+  fillWs3,
+  gatedText,
+  glanceLines,
+  securityContactEmail,
+  SHOW_INJECTION_LINE,
+  WS3_COPY,
+} from '@declutrmail/shared/copy/launch';
 
 import '@/features/marketing/product-story/product-story.css';
 import { DocPage, DocSection } from '@/features/marketing/product-story';
@@ -44,14 +51,19 @@ export const metadata: Metadata = marketingPageMetadata({
 const LAST_UPDATED = PAGE_LAST_UPDATED['/security'];
 
 const TOC = [
+  { id: 'at-a-glance', label: 'At a glance' },
   { id: 'the-boundary', label: 'What we store' },
   { id: 'oauth-scopes', label: 'OAuth scopes, and why' },
   { id: 'encryption', label: 'Encryption' },
-  { id: 'verification', label: 'Independent assessment' },
+  { id: 'verification', label: 'Verification' },
+  { id: 'ai-processing', label: 'AI processing' },
   { id: 'no-prediction', label: 'No ML category prediction' },
   { id: 'deletion', label: 'Leaving cleanly' },
   { id: 'report', label: 'Report a vulnerability' },
 ] as const;
+
+const AI_MORE = WS3_COPY['ws3.security.ai.more'];
+const AI_MORE_LABEL = 'Privacy Policy, AI processing';
 
 export default function SecurityPage() {
   return (
@@ -75,6 +87,14 @@ export default function SecurityPage() {
       ]}
     >
       <PageViewTracker page="security" />
+      <section className="dm-doc-glance" id="at-a-glance" aria-labelledby="security-glance-title">
+        <h2 id="security-glance-title">{WS3_COPY['ws3.security.glance.title']}</h2>
+        <ul>
+          {glanceLines().map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      </section>
       <DocSection id="the-boundary" title="What we store, and what we never store">
         <p>
           DeclutrMail&rsquo;s promise is literal: <strong>{PRIVACY_BADGE_HEADLINE}</strong>{' '}
@@ -92,11 +112,7 @@ export default function SecurityPage() {
             <li key={item}>{item}</li>
           ))}
         </ul>
-        <p className="dm-story-callout">
-          Because full email contents and attachments are never in our systems, they cannot leak
-          from DeclutrMail. Subject lines and Gmail preview snippets can still contain sensitive
-          information, so we list and protect them explicitly.
-        </p>
+        <p className="dm-story-callout">{WS3_COPY['ws3.security.boundary.callout']}</p>
       </DocSection>
 
       <DocSection id="oauth-scopes" title="OAuth scopes, and why">
@@ -127,16 +143,29 @@ export default function SecurityPage() {
         </p>
       </DocSection>
 
-      <DocSection id="verification" title="Independent assessment (CASA Tier 2)">
+      <DocSection id="verification" title={WS3_COPY['ws3.security.verification.title']}>
+        <p>{fillWs3(WS3_COPY['ws3.security.verification.oauth'])}</p>
+        <p>{fillWs3(WS3_COPY['ws3.security.verification.casa'])}</p>
+        <p>{fillWs3(WS3_COPY['ws3.security.verification.brand'])}</p>
+        <p>{fillWs3(WS3_COPY['ws3.security.verification.closing'])}</p>
+      </DocSection>
+
+      <DocSection id="ai-processing" title={WS3_COPY['ws3.security.ai.title']}>
+        <p>{fillWs3(WS3_COPY['ws3.security.ai.intro'])}</p>
+        {gatedText('ws3.security.ai.explanations') ? (
+          <p>{gatedText('ws3.security.ai.explanations')}</p>
+        ) : null}
+        {gatedText('ws3.security.ai.brief') ? <p>{gatedText('ws3.security.ai.brief')}</p> : null}
+        {gatedText('ws3.security.ai.control') ? (
+          <p>{gatedText('ws3.security.ai.control')}</p>
+        ) : null}
+        <p>{fillWs3(WS3_COPY['ws3.security.ai.training'])}</p>
+        <p>{fillWs3(WS3_COPY['ws3.security.ai.limitedUse'])}</p>
+        {SHOW_INJECTION_LINE ? <p>{fillWs3(WS3_COPY['ws3.security.ai.injection'])}</p> : null}
         <p>
-          Apps using restricted Gmail scopes are subject to Google&rsquo;s independent CASA (Cloud
-          Application Security Assessment) process. Google{' '}
-          <strong>
-            approved DeclutrMail&rsquo;s OAuth verification on {CASA_VERIFICATION_APPROVED_ON}
-          </strong>{' '}
-          for the single restricted scope we request, <code>gmail.modify</code>. Verification is
-          recertified annually, and any new scope or change to our consent screen requires a fresh
-          review.
+          {AI_MORE.split(AI_MORE_LABEL)[0]}
+          <Link href="/privacy#ai-processing">{AI_MORE_LABEL}</Link>
+          {AI_MORE.split(AI_MORE_LABEL)[1]}
         </p>
       </DocSection>
 
@@ -166,12 +195,20 @@ export default function SecurityPage() {
 
       <DocSection id="report" title="Report a vulnerability">
         <p>
-          If you believe you have found a security vulnerability in DeclutrMail, email{' '}
-          <a href="mailto:privacy@declutrmail.com">privacy@declutrmail.com</a> with the details. We
-          read every report and will respond, and we ask that you give us reasonable time to fix an
-          issue before disclosing it publicly.
+          {fillWs3(WS3_COPY['ws3.security.report']).split(securityContactEmail())[0]}
+          <a href={`mailto:${securityContactEmail()}`}>{securityContactEmail()}</a>
+          {fillWs3(WS3_COPY['ws3.security.report']).split(securityContactEmail())[1]}
         </p>
       </DocSection>
+      <nav className="dm-doc-section" aria-label="Related">
+        <p>
+          <Link href="/methodology">{WS3_COPY['ws3.security.crossLinks'][0]}</Link>
+          {' · '}
+          <Link href="/security">{WS3_COPY['ws3.security.crossLinks'][1]}</Link>
+          {' · '}
+          <Link href="/privacy">{WS3_COPY['ws3.security.crossLinks'][2]}</Link>
+        </p>
+      </nav>
     </DocPage>
   );
 }

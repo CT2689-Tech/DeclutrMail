@@ -12,6 +12,27 @@ const refuse = (code) => {
   throw new Refusal(code);
 };
 
+export function classifyManagementRefusal(body) {
+  const text = [body, body?.error, body?.message, body?.detail]
+    .filter((value) => typeof value === 'string')
+    .map((value) => value.slice(0, 1000).toLowerCase())
+    .join(' ');
+  if (/\bname\b/.test(text) && /length|too long|invalid|characters|maximum/.test(text))
+    return 'database_name_invalid';
+  if (/\bregion\b/.test(text) && /invalid|not supported|not available/.test(text))
+    return 'region_invalid';
+  if (
+    /\bfree\b/.test(text) &&
+    /not allowed|not available|not supported|cannot|can't|disabled|paid account|credit card|payment method/.test(
+      text,
+    )
+  )
+    return 'free_plan_unavailable';
+  if (/database|plan|account/.test(text) && /only.{0,60}paid|paid.{0,60}required/.test(text))
+    return 'paid_plan_required';
+  return 'unclassified_request_rejection';
+}
+
 function inventory(value) {
   if (!Array.isArray(value) || value.length > 100) refuse('inventory_invalid');
   const ids = value.map((row) => row?.database_id);
@@ -148,7 +169,18 @@ export async function rehearse({
     } catch {
       refuse('management_unavailable');
     }
-    if (!response.ok) refuse(`management_http_${response.status}`);
+    if (!response.ok) {
+      // Keep raw error text in memory; only fixed diagnostic categories leave CI.
+      let body;
+      try {
+        body = await response.json();
+      } catch {
+        /* Non-JSON errors stay unclassified. */
+      }
+      const error = new Refusal(`management_http_${response.status}`);
+      error.providerCategory = classifyManagementRefusal(body);
+      throw error;
+    }
     try {
       return await response.json();
     } catch {
@@ -217,6 +249,8 @@ export async function rehearse({
       });
       report.creationOutcome = 'acknowledged';
     } catch (error) {
+      if (error instanceof Refusal && error.providerCategory)
+        report.creationRefusalCategory = error.providerCategory;
       // Documented invalid/unauthorized/forbidden responses reject the request.
       // A timeout, 5xx or incomplete success response may hide accepted creation.
       if (error instanceof Refusal && /^management_http_(400|401|403)$/.test(error.message))

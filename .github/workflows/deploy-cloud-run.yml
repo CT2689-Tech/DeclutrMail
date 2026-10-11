@@ -314,12 +314,10 @@ jobs:
           IMAGE: ${{ steps.build.outputs.image }}
         run: |
           set -euo pipefail
-          # Brief preferences require the compatibility release even when
-          # billing notices are disabled. The candidate's private probe verifies
-          # both actor protocols; old/mixed workers fail before new writes.
-          # The existing runtime can read its bound Redis secret; the deploy
-          # identity deliberately cannot. Keep values inside a private job.
-          # Success requires a terminal proof and verified owned-job cleanup.
+          # OFF releases may proceed. This step does not list broker clients
+          # and does not certify adoption. Notices, lease enrollment, and a
+          # held revision refuse the release. Activation stays with the
+          # adoption runbook; a sealed witness is not minted here.
           node scripts/check-billing-queue-runtime.mjs
 
       # WORKER DEPLOYS BEFORE API (swapped 2026-09-03, architecture-guardian

@@ -10,6 +10,9 @@
 // writes the per-browser stored choice.
 
 import type { Metadata } from 'next';
+
+import { WS3_COPY } from '@declutrmail/shared/copy/launch';
+
 import { CookiePreferences } from '@/features/consent/cookie-preferences';
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
@@ -47,6 +50,11 @@ export default function CookiePreferencesPage() {
           <strong>Essential cookies</strong> keep you signed in and make billing work; they are
           required for the service to function and are always on. Your consent preference itself is
           also stored on this device so we do not ask again.
+        </p>
+        <p>
+          <strong>{WS3_COPY['ws3.cookies.dmAttr.name']}</strong> —{' '}
+          {WS3_COPY['ws3.cookies.dmAttr.category']}, {WS3_COPY['ws3.cookies.dmAttr.duration']}.{' '}
+          {WS3_COPY['ws3.cookies.dmAttr.purpose']}
         </p>
         <p>
           <strong>Optional analytics</strong> (PostHog) runs only after you choose Accept all, and

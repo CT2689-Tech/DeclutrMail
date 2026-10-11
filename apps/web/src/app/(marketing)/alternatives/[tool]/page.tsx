@@ -30,7 +30,7 @@ export async function generateMetadata({ params }: AlternativesPageProps): Promi
     // Titled for the query, without "best". The page deliberately does
     // not rank its entries, so promising a winner in the title would
     // contradict the badge under it.
-    title: `${page.subject.name} alternatives, compared honestly`,
+    title: `${page.subject.name} alternatives — DeclutrMail`,
     description: `Source-backed alternatives to ${page.subject.name}: what each tool is for, when to stay with ${page.subject.name}, and where DeclutrMail fits. No rankings, no affiliates.`,
     path: `/alternatives/${page.slug}`,
   });

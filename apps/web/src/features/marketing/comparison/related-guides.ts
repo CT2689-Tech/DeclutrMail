@@ -62,6 +62,21 @@ export const COMPARISON_RELATED_GUIDES: Record<ComparisonSlug, readonly RelatedL
     answer('what-is-metadata-only-email-analysis'),
     howTo('clean-gmail-by-sender'),
   ],
+  mailstrom: [
+    howTo('bulk-delete-emails-from-one-sender'),
+    howTo('clean-gmail-by-sender'),
+    howTo('gmail-storage-full'),
+  ],
+  inboxpurge: [
+    howTo('unsubscribe-from-emails-gmail'),
+    howTo('bulk-delete-emails-from-one-sender'),
+    howTo('clean-gmail-by-sender'),
+  ],
+  mailmop: [
+    howTo('clean-gmail-by-sender'),
+    answer('what-is-metadata-only-email-analysis'),
+    howTo('bulk-delete-emails-from-one-sender'),
+  ],
 };
 
 /** Native Gmail guides linked from the /compare index, after the tool lists. */

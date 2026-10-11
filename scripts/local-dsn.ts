@@ -1,6 +1,6 @@
 /** Refuse any DSN that is not a loopback Postgres. Ops scripts never target production. */
 export function assertLocalOpsDsn(dsn: string, command: string): void {
-  let host = '';
+  let host: string;
   try {
     host = new URL(dsn).hostname;
   } catch {

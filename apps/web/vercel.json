@@ -1,4 +1,18 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "ignoreCommand": "node ../../scripts/vercel-ignore-build.mjs"
+  "ignoreCommand": "node ../../scripts/vercel-ignore-build.mjs",
+  "redirects": [
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": "declutr-mail.vercel.app" }],
+      "destination": "https://declutrmail.com/",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "declutr-mail.vercel.app" }],
+      "destination": "https://declutrmail.com/:path*",
+      "permanent": true
+    }
+  ]
 }

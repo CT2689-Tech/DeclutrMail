@@ -32,6 +32,9 @@ const CLAIM_SITES = [
   'src/app/(marketing)/privacy/page.tsx',
   'src/features/settings/privacy-data/privacy-data-content.tsx',
   'src/features/marketing/landing/sections.tsx',
+  'src/features/marketing/trust/trust-row.tsx',
+  'src/features/marketing/auth-entry/auth-entry.tsx',
+  'src/features/marketing/llms/llms-document.ts',
 ] as const;
 
 const read = (relative: string) => readFileSync(path.resolve(process.cwd(), relative), 'utf8');
@@ -55,9 +58,8 @@ describe('CASA verification claim', () => {
     // not certify or audit the product, and no surface may say it did.
     for (const site of CLAIM_SITES) {
       const source = read(site);
-      for (const overstatement of ['CASA certified', 'CASA-certified', 'CASA audited']) {
-        expect(source, `${site} must not claim "${overstatement}"`).not.toContain(overstatement);
-      }
+      expect(source, `${site} must not claim certified`).not.toMatch(/\bcertified\b/i);
+      expect(source, `${site} must not claim audited`).not.toMatch(/\baudited\b/i);
     }
   });
 

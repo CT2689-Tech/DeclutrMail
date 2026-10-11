@@ -1,5 +1,4 @@
 import { execFileSync } from 'node:child_process';
-import { appendFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 const FAILURE = 'Billing queue compatibility or cleanup unverified; no producer deployment';
@@ -152,15 +151,6 @@ function executionName(row, job) {
 function terminal(status) {
   return Number.isFinite(Date.parse(status?.completionTime ?? '')) && !status?.runningCount;
 }
-function successful(status) {
-  return (
-    terminal(status) &&
-    status.succeededCount === 1 &&
-    !status.failedCount &&
-    status.conditions?.some((c) => c.type === 'Completed' && c.status === 'True')
-  );
-}
-
 /** Mirrors `PROBE_EXIT_CODES` in apps/api/src/billing/verify-billing-queue.ts. */
 export const PROBE_EXIT_REASONS = {
   1: 'unclassified',
@@ -173,7 +163,37 @@ export const PROBE_EXIT_REASONS = {
   107: 'client_list_unavailable',
   108: 'no_workers',
   109: 'incompatible_workers',
+  110: 'adoption_unverified',
+  111: 'settlement_unverified',
 };
+
+/** Ordinary OFF releases do not certify adoption and do not list broker clients.
+ * Activation, lease enrollment, a held revision, or a caller-supplied
+ * compatibility boolean refuses the release.
+ */
+export function evaluateReleaseGate(env) {
+  const notices = env.BILLING_APP_NOTICES_ENABLED;
+  const lease = env.EMAIL_RUNTIME_LEASE_ENABLED;
+  const held = env.WORKER_ADMISSION_HELD;
+  const base = {
+    adoptionCertified: false,
+    activationEnabled: false,
+    clientListConsulted: false,
+    probeExecuted: false,
+    imageDigestVerified: false,
+  };
+  if (env.CLIENT_LIST_COMPATIBLE === 'true' || env.BILLING_QUEUE_COMPATIBLE === 'true')
+    return { ...base, release: 'refused', reason: 'client_list_not_proof' };
+  if (notices === 'true') return { ...base, release: 'refused', reason: 'activation_refused' };
+  if (lease === 'true') return { ...base, release: 'refused', reason: 'adoption_not_certified' };
+  if (held === 'true') return { ...base, release: 'refused', reason: 'held_revision' };
+  if (notices !== 'false') return { ...base, release: 'refused', reason: 'notices_unverified' };
+  if (lease !== undefined && lease !== 'false')
+    return { ...base, release: 'refused', reason: 'lease_configuration_invalid' };
+  if (held !== undefined && held !== 'false')
+    return { ...base, release: 'refused', reason: 'admission_configuration_invalid' };
+  return { ...base, release: 'allowed-off', reason: 'activation_not_requested' };
+}
 /** Control-plane metadata only: never emit raw conditions, messages or task fields. */
 export function projectBillingProbeTask(rows) {
   if (
@@ -260,8 +280,8 @@ export async function cleanupBillingQueueProbe(
     return false;
   }
   let recovered = false;
-  let removed = false;
-  let absent = false;
+  let removed;
+  let absent;
   try {
     const found = executionName(jobRead(job, common, run), job);
     if (found) {
@@ -302,115 +322,15 @@ export async function cleanupBillingQueueProbe(
   return recovered && removed && absent;
 }
 
-/** No secret values leave the existing runtime identity; no IAM change. */
-export async function checkBillingQueueRuntime(
-  env = process.env,
-  run = gcloud,
-  sleep,
-  onOwnedAttempt = () => {},
-  onTaskEvidence = (value) => console.error(JSON.stringify({ billingProbeTask: value })),
-) {
-  const { job, common } = scope(env);
-  if (jobExists(job, common, run)) throw new Error(FAILURE);
-  const artifact = parsed(
-    run([
-      'artifacts',
-      'docker',
-      'images',
-      'describe',
-      env.IMAGE,
-      `--project=${env.PROJECT}`,
-      '--format=json(image_summary.digest)',
-    ]),
-  );
-  const digest = artifact.image_summary?.digest;
-  if (!/^sha256:[a-f0-9]{64}$/.test(digest ?? '')) throw new Error(FAILURE);
-  const image = env.IMAGE.replace(/:[a-f0-9]{40}$/, `@${digest}`);
-  // The caller can recover only after absence was positively established.
-  onOwnedAttempt();
-  let execution;
-  let verified = false;
-  try {
-    parsed(
-      run([
-        'run',
-        'jobs',
-        'create',
-        job,
-        ...common,
-        `--image=${image}`,
-        `--service-account=${env.RUNTIME_SA}`,
-        '--tasks=1',
-        '--parallelism=1',
-        '--max-retries=0',
-        '--task-timeout=60s',
-        '--cpu=1',
-        '--memory=512Mi',
-        '--command=node',
-        // gcloud's list parser rejects duplicate values. Keep each Node
-        // import option distinct rather than repeating the bare --import.
-        '--args=--import=@sentry/node/import,--import=@swc-node/register/esm-register,src/billing/verify-billing-queue.ts',
-        '--set-env-vars=BILLING_NOTICE_PROBE=true',
-        '--set-secrets=BILLING_NOTICE_REDIS_URL=redis-url-prod:latest',
-        '--format=json(metadata.name)',
-      ]),
-    );
-    const executed = run([
-      'run',
-      'jobs',
-      'execute',
-      job,
-      ...common,
-      '--wait',
-      '--format=json(metadata.name)',
-    ]);
-    execution = executionName(jobRead(job, common, run), job);
-    if (!execution) throw new Error(FAILURE);
-    const state = parsed(
-      run([
-        'run',
-        'jobs',
-        'executions',
-        'describe',
-        execution,
-        ...common,
-        '--format=json(status,spec.template.spec.containers[0].image,spec.template.spec.serviceAccountName)',
-      ]),
-    );
-    verified =
-      executed.ok &&
-      successful(state.status) &&
-      state.spec?.template?.spec?.containers?.[0]?.image === image &&
-      state.spec?.template?.spec?.serviceAccountName === env.RUNTIME_SA;
-    if (!verified) {
-      let evidence;
-      try {
-        evidence = projectBillingProbeTask(
-          parsed(
-            run([
-              'run',
-              'jobs',
-              'executions',
-              'tasks',
-              'list',
-              `--execution=${execution}`,
-              ...common,
-              '--limit=2',
-              '--format=json(status)',
-            ]),
-          ),
-        );
-      } catch {
-        evidence = { available: false, reason: 'task_metadata_unavailable' };
-      }
-      onTaskEvidence(evidence);
-    }
-  } catch {
-    // Preserve refusal while recovering the exact owned probe below.
-  }
-  const cleaned = await cleanupBillingQueueProbe(env, run, sleep);
-  if (!verified || !cleaned) throw new Error(FAILURE);
-  return { billingQueueCompatible: true, probeJob: job, execution, probeDeleted: true };
+/** No secret values leave the existing runtime identity; no IAM change.
+ * Broker-client probes are not a success path. Extra arguments are ignored
+ * so a caller cannot pass a command runner and have it consulted.
+ */
+export async function checkBillingQueueRuntime(env = process.env) {
+  scope(env);
+  const decision = evaluateReleaseGate(env);
+  if (decision.release !== 'allowed-off') throw new Error(FAILURE);
+  return decision;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -420,12 +340,15 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       if (process.env.BILLING_NOTICE_PROBE_OWNED !== 'true') throw new Error(FAILURE);
       result = { probeDeleted: await cleanupBillingQueueProbe() };
     } else {
-      result = await checkBillingQueueRuntime(process.env, gcloud, undefined, () => {
-        if (!process.env.GITHUB_OUTPUT) throw new Error(FAILURE);
-        appendFileSync(process.env.GITHUB_OUTPUT, 'owned_probe=true\n');
-      });
+      result = await checkBillingQueueRuntime(process.env);
     }
-    if (result.probeDeleted !== true) throw new Error(FAILURE);
+    const allowed =
+      result.probeDeleted === true ||
+      (result.release === 'allowed-off' &&
+        result.adoptionCertified === false &&
+        result.activationEnabled === false &&
+        result.clientListConsulted === false);
+    if (!allowed) throw new Error(FAILURE);
     console.log(JSON.stringify(result));
   } catch {
     console.error(FAILURE);

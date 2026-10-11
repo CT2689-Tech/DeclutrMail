@@ -797,7 +797,7 @@ describe('SenderIndexSweepWorker', () => {
       const fail = vi
         .spyOn(protection, 'applyAutomaticProtection')
         .mockRejectedValue(new Error('protection broke'));
-      let lines: Array<Record<string, unknown>> = [];
+      let lines: Array<Record<string, unknown>>;
       try {
         lines = await captureLines('error', () =>
           expect(run()).rejects.toThrow(/failed for all 1 eligible/),

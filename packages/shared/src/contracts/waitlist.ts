@@ -58,6 +58,20 @@ export const WaitlistV1JoinRequestSchema = z
 
 export type WaitlistV1JoinRequest = z.infer<typeof WaitlistV1JoinRequestSchema>;
 
+export const WAITLIST_PROVIDER_CLASSES = [
+  'gmail',
+  'google_workspace',
+  'microsoft',
+  'yahoo_aol',
+  'icloud',
+  'other',
+  'unknown',
+] as const;
+
+export type WaitlistProviderClass = (typeof WAITLIST_PROVIDER_CLASSES)[number];
+
 export interface WaitlistV1JoinResult {
   status: 'joined' | 'already_joined';
+  /** Server classifier. Present for provider signups. Never the address. */
+  providerClass?: WaitlistProviderClass;
 }

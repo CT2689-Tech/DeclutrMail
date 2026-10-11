@@ -3,6 +3,7 @@ import path from 'node:path';
 import { withSentryConfig } from '@sentry/nextjs/config';
 
 import { legacyDomainRedirects, wwwApexRedirects } from './src/lib/legacy-domain-redirects';
+import { noindexHeaderRules } from './src/lib/noindex-headers';
 
 const nextConfig: NextConfig = {
   // Keep nested worktrees inside their own monorepo, rather than inferring
@@ -78,6 +79,8 @@ const nextConfig: NextConfig = {
     { source: '/dashboard', destination: '/home', permanent: true },
     { source: '/app', destination: '/home', permanent: true },
   ],
+
+  headers: async () => noindexHeaderRules(),
 
   /**
    * Inject the release tag into the PUBLIC env at build time so the

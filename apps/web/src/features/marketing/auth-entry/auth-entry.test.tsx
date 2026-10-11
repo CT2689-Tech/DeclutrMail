@@ -50,7 +50,9 @@ describe('AuthEntry step copy (QA-sign-in-07)', () => {
 describe('AuthEntry storage list', () => {
   it('keeps the trust line and every stored Gmail detail at the decision point', () => {
     render(<AuthEntry />);
-    expect(screen.getByText(/We never fetch or store full email contents\./)).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/We never fetch or store full email contents\./).length,
+    ).toBeGreaterThan(0);
     for (const item of PRIVACY_STORAGE_ITEMS) {
       expect(screen.getByText(item)).toBeInTheDocument();
     }

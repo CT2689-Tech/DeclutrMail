@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import {
   checkBillingQueueRuntime,
   cleanupBillingQueueProbe,
+  evaluateReleaseGate,
   projectBillingProbeFailure,
   projectBillingProbeTask,
   PROBE_EXIT_REASONS,
@@ -24,6 +25,16 @@ const env = {
   RUNTIME_SA: 'declutrmail-api@declutrmail-ai-prod.iam.gserviceaccount.com',
   GITHUB_RUN_ID: '12345678901',
   GITHUB_RUN_ATTEMPT: '1',
+  BILLING_APP_NOTICES_ENABLED: 'false',
+};
+const allowedOff = {
+  release: 'allowed-off',
+  reason: 'activation_not_requested',
+  adoptionCertified: false,
+  activationEnabled: false,
+  clientListConsulted: false,
+  probeExecuted: false,
+  imageDigestVerified: false,
 };
 const job = 'billing-queue-12345678901-1',
   execution = `${job}-abcde`;
@@ -55,7 +66,12 @@ function fixture(mode = {}) {
         return { ok: !mode.running && !mode.taskFailed, output: '{}' };
       }
       if (args[2] === 'describe')
-        return json({ status: { latestCreatedExecution: ran ? { name: execution } : undefined } });
+        return json({
+          status: {
+            latestCreatedExecution:
+              ran || mode.running || mode.withExecution ? { name: execution } : undefined,
+          },
+        });
       if (args[2] === 'delete') {
         exists = false;
         return { ok: true };
@@ -115,71 +131,30 @@ function fixture(mode = {}) {
   };
 }
 
-test('requires immutable image, successful owned execution and absence readbacks', async () => {
+test('allows an OFF release without listing broker clients or certifying adoption', async () => {
   const f = fixture();
-  assert.deepEqual(await checkBillingQueueRuntime(env, f.run), {
-    billingQueueCompatible: true,
-    probeJob: job,
-    execution,
-    probeDeleted: true,
-  });
-  const created = f.calls.find((c) => c[2] === 'create');
-  for (const arg of [
-    `--image=${image}`,
-    '--tasks=1',
-    '--max-retries=0',
-    '--task-timeout=60s',
-    '--set-secrets=BILLING_NOTICE_REDIS_URL=redis-url-prod:latest',
-  ])
-    assert.ok(created.includes(arg));
-  assert.equal(created.filter((a) => a.startsWith('--set-secrets=')).length, 1);
-  const nodeArgs = created
-    .find((a) => a.startsWith('--args='))
-    .slice('--args='.length)
-    .split(',');
-  assert.equal(new Set(nodeArgs).size, nodeArgs.length, 'gcloud rejects repeated argument values');
-  assert.deepEqual(nodeArgs.slice(0, 2), [
-    '--import=@sentry/node/import',
-    '--import=@swc-node/register/esm-register',
-  ]);
-  assert.ok(created.some((a) => a.includes('src/billing/verify-billing-queue.ts')));
-  assert.ok(!f.calls.some((c) => c[0] === 'secrets'));
-  assert.ok(f.calls.some((c) => c[2] === 'executions' && c[3] === 'delete'));
-  assert.equal(f.calls.at(-1)[2], 'list');
+  assert.deepEqual(await checkBillingQueueRuntime(env), allowedOff);
+  assert.equal(f.calls.length, 0);
+  assert.deepEqual(evaluateReleaseGate(env), allowedOff);
 });
-test('rejects wrong execution source and still cleans its exact resources', async () => {
-  const f = fixture({ wrongImage: true });
-  await assert.rejects(checkBillingQueueRuntime(env, f.run), /unverified/);
-  assert.ok(f.calls.some((c) => c[2] === 'delete'));
-});
-test('projects failed owned task metadata before deletion and still refuses deployment', async () => {
-  const f = fixture({ taskFailed: true });
-  const evidence = [];
-  await assert.rejects(
-    checkBillingQueueRuntime(env, f.run, undefined, undefined, (value) => evidence.push(value)),
-    /unverified/,
-  );
-  assert.equal(evidence.length, 1);
-  assert.equal(evidence[0].exitCode, 137);
-  assert.equal(evidence[0].probeReason, null);
-  assert.equal(evidence[0].runSeconds, 1);
-  assert.deepEqual(evidence[0].hints, ['memoryLimit']);
-  assert.ok(!JSON.stringify(evidence).includes('SYNTHETIC_PRIVATE_TASK'));
-  const taskRead = f.calls.findIndex((c) => c[3] === 'tasks');
-  const deletion = f.calls.findIndex((c) => c[3] === 'delete');
-  assert.ok(taskRead >= 0 && taskRead < deletion);
-  assert.ok(f.calls[taskRead].includes(`--execution=${execution}`));
-  assert.ok(f.calls[taskRead].includes('--limit=2'));
-  assert.equal(f.calls.at(-1)[2], 'list');
-});
-test('an unavailable task read cannot prevent cleanup or clear the failed execution', async () => {
-  const f = fixture({ taskFailed: true, taskReadDenied: true });
-  const evidence = [];
-  await assert.rejects(
-    checkBillingQueueRuntime(env, f.run, undefined, undefined, (value) => evidence.push(value)),
-  );
-  assert.deepEqual(evidence, [{ available: false, reason: 'task_metadata_unavailable' }]);
-  assert.ok(f.calls.some((c) => c[2] === 'delete'));
+test('refuses activation, lease enrollment, a held revision, and client-list success', async () => {
+  const f = fixture();
+  for (const [key, value, reason] of [
+    ['BILLING_APP_NOTICES_ENABLED', 'true', 'activation_refused'],
+    ['EMAIL_RUNTIME_LEASE_ENABLED', 'true', 'adoption_not_certified'],
+    ['WORKER_ADMISSION_HELD', 'true', 'held_revision'],
+    ['CLIENT_LIST_COMPATIBLE', 'true', 'client_list_not_proof'],
+    ['BILLING_QUEUE_COMPATIBLE', 'true', 'client_list_not_proof'],
+    ['BILLING_APP_NOTICES_ENABLED', undefined, 'notices_unverified'],
+  ]) {
+    const candidate = { ...env, [key]: value };
+    if (value === undefined) delete candidate[key];
+    assert.equal(evaluateReleaseGate(candidate).reason, reason);
+    await assert.rejects(checkBillingQueueRuntime(candidate), /unverified/);
+  }
+  assert.equal(f.calls.length, 0);
+  await assert.rejects(checkBillingQueueRuntime({ ...env, GITHUB_RUN_ID: 'bad;value' }));
+  assert.equal(f.calls.length, 0);
 });
 test('task projection rejects incomplete reads and never forwards raw fields or reasons', () => {
   for (const rows of [
@@ -222,62 +197,42 @@ test('task projection rejects incomplete reads and never forwards raw fields or 
   assert.ok(!JSON.stringify(projected).includes('SYNTHETIC_PRIVATE_TASK'));
 });
 test('uncertain execution is cancelled, observed terminal and removed before job deletion', async () => {
-  const f = fixture({ running: true });
-  await assert.rejects(checkBillingQueueRuntime(env, f.run), /unverified/);
+  const f = fixture({ preexisting: true, running: true });
+  assert.equal(await cleanupBillingQueueProbe(env, f.run, async () => {}), true);
   const cancel = f.calls.findIndex((c) => c[3] === 'cancel');
   const executionDelete = f.calls.findIndex((c) => c[3] === 'delete');
   const jobDelete = f.calls.findIndex((c) => c[2] === 'delete');
   assert.ok(cancel >= 0 && cancel < executionDelete && executionDelete < jobDelete);
+  assert.ok(!f.calls.some((c) => c[2] === 'execute' || c[2] === 'create'));
 });
-test('uncertain creation recovers the handle without claiming verification', async () => {
-  const f = fixture({ createUncertain: true });
-  await assert.rejects(checkBillingQueueRuntime(env, f.run), /unverified/);
-  assert.ok(f.calls.some((c) => c[2] === 'delete'));
-  assert.ok(!f.calls.some((c) => c[2] === 'execute'));
+test('cleanup uncertainty fails closed and does not report the probe absent', async () => {
+  assert.equal(
+    await cleanupBillingQueueProbe(env, fixture({ preexisting: true, listDenied: true }).run),
+    false,
+  );
+  await assert.rejects(() =>
+    cleanupBillingQueueProbe(
+      env,
+      fixture({ preexisting: true, withExecution: true, cleanupReadDenied: true }).run,
+    ),
+  );
+  assert.equal(
+    await cleanupBillingQueueProbe(
+      env,
+      fixture({ preexisting: true, withExecution: true, executionDeleteFailed: true }).run,
+    ),
+    false,
+  );
 });
-for (const mode of [
-  { listDenied: true },
-  { cleanupReadDenied: true },
-  { executionDeleteFailed: true },
-])
-  test(`read/cleanup uncertainty fails closed ${JSON.stringify(mode)}`, async () => {
-    const f = fixture(mode);
-    await assert.rejects(checkBillingQueueRuntime(env, f.run));
-  });
-test('preexisting job and invalid scopes cannot create or delete anything', async () => {
-  const f = fixture({ preexisting: true });
-  await assert.rejects(checkBillingQueueRuntime(env, f.run));
-  assert.equal(f.calls.length, 1);
-  const other = fixture();
-  await assert.rejects(checkBillingQueueRuntime({ ...env, GITHUB_RUN_ID: 'bad;value' }, other.run));
-  assert.equal(other.calls.length, 0);
-});
-test('actual always-recovery contract cannot adopt a preexisting or unreadable job', async () => {
+test('the OFF gate does not own a probe, and recovery still cannot adopt an unreadable job', () => {
   const workflow = readFileSync('.github/workflows/deploy-cloud-run.yml', 'utf8');
   assert.match(
     workflow,
     /if: always\(\) && steps\.billing_queue_check\.outputs\.owned_probe == 'true'/,
   );
-  for (const mode of [{ preexisting: true }, { listDenied: true }]) {
-    const f = fixture(mode);
-    let owned = false;
-    await assert.rejects(
-      checkBillingQueueRuntime(env, f.run, undefined, () => {
-        owned = true;
-      }),
-    );
-    if (owned) await cleanupBillingQueueProbe(env, f.run);
-    assert.equal(owned, false);
-    assert.ok(!f.calls.some((c) => c.includes('delete')));
-  }
-  const f = fixture({ createUncertain: true });
-  let owned = false;
-  await assert.rejects(
-    checkBillingQueueRuntime(env, f.run, undefined, () => {
-      owned = true;
-    }),
-  );
-  assert.equal(owned, true); // Recovery is allowed only after the proven absence.
+  assert.equal(workflow.includes('owned_probe=true'), false);
+  const denied = fixture({ listDenied: true });
+  assert.equal(denied.calls.length, 0);
 });
 test('real subprocess errors expose fixed categories without forwarding private child stderr', () => {
   const dir = mkdtempSync(join(tmpdir(), 'billing-queue-private-'));
@@ -288,18 +243,30 @@ test('real subprocess errors expose fixed categories without forwarding private 
       '#!/bin/sh\necho PERMISSION_DENIED run.jobs.list SYNTHETIC_PRIVATE_PROVIDER_ERROR >&2\nexit 1\n',
     );
     chmodSync(stub, 0o700);
-    const result = spawnSync(
+    const off = spawnSync(process.execPath, [resolve('scripts/check-billing-queue-runtime.mjs')], {
+      encoding: 'utf8',
+      env: { ...process.env, ...env, PATH: `${dir}:${process.env.PATH}` },
+    });
+    assert.equal(off.status, 0);
+    assert.equal(JSON.parse(off.stdout).release, 'allowed-off');
+    assert.ok(!`${off.stdout}${off.stderr}`.includes('SYNTHETIC_PRIVATE'));
+    const cleanup = spawnSync(
       process.execPath,
-      [resolve('scripts/check-billing-queue-runtime.mjs')],
+      [resolve('scripts/check-billing-queue-runtime.mjs'), '--cleanup'],
       {
         encoding: 'utf8',
-        env: { ...process.env, ...env, PATH: `${dir}:${process.env.PATH}` },
+        env: {
+          ...process.env,
+          ...env,
+          BILLING_NOTICE_PROBE_OWNED: 'true',
+          PATH: `${dir}:${process.env.PATH}`,
+        },
       },
     );
-    assert.equal(result.status, 1);
-    assert.ok(!`${result.stdout}${result.stderr}`.includes('SYNTHETIC_PRIVATE'));
-    assert.match(result.stderr, /compatibility or cleanup unverified/);
-    assert.deepEqual(JSON.parse(result.stderr.split('\n')[0]), {
+    assert.equal(cleanup.status, 1);
+    assert.ok(!`${cleanup.stdout}${cleanup.stderr}`.includes('SYNTHETIC_PRIVATE'));
+    assert.match(cleanup.stderr, /compatibility or cleanup unverified/);
+    assert.deepEqual(JSON.parse(cleanup.stderr.split('\n')[0]), {
       billingProbeDiagnostic: {
         operation: 'jobs_list',
         category: 'permission_denied',

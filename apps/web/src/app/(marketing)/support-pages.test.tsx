@@ -195,9 +195,8 @@ describe('/security content — verified claims only', () => {
     const { container } = render(<SecurityPage />);
     const text = (container.textContent ?? '').replace(/\s+/g, ' ');
 
-    expect(text).toContain(
-      'full email contents and attachments are never in our systems, they cannot leak from DeclutrMail',
-    );
+    expect(text).toContain('no message body in our systems to leak');
+    expect(text).not.toMatch(/cannot leak/i);
     expect(text).toContain(
       'Subject lines and Gmail preview snippets can still contain sensitive information',
     );
@@ -220,9 +219,9 @@ describe('/security content — verified claims only', () => {
     // certificate, because the artifact is an approval email.
     const { container } = render(<SecurityPage />);
     expect(container.textContent).toMatch(/CASA/);
-    expect(container.textContent).toMatch(/21 April 2026/);
+    expect(container.textContent).toMatch(/April 21, 2026/);
     expect(container.textContent).toMatch(/gmail\.modify/);
-    expect(container.textContent).toMatch(/recertified annually/i);
+    expect(container.textContent).toMatch(/recertified every year/i);
     expect(container.textContent).not.toMatch(/verification letter|certificate|has passed/i);
   });
 

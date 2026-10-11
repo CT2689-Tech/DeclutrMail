@@ -10,7 +10,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
-import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import { cleanupActionsPerMonthFor, MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 import { installFetchStub } from '@/test/fetch-stub';
 import LandingPage, { metadata } from './page';
@@ -48,13 +48,13 @@ describe('landing page — D134', () => {
 
   it('states the D228 trust copy once, plus the collapsed scope disclosures', async () => {
     const { container } = await renderLanding();
-    // The locked headline used to appear seven times on this page. It now
-    // is VISIBLE once, in the Privacy section lede. The only other copies sit
-    // inside the collapsed OAuth scope disclosures (which quote it
-    // verbatim) — one beside each CTA that starts Google OAuth.
+    // Visible twice on purpose: the hero trust row and the Privacy section
+    // lede. The row also keeps a narrow line in the DOM for small screens;
+    // CSS hides it above 880px, so it is not a third copy. Further copies
+    // stay inside collapsed scope disclosures.
     const visible = container.cloneNode(true) as HTMLElement;
-    visible.querySelectorAll('details').forEach((d) => d.remove());
-    expect((visible.textContent ?? '').split(PRIVACY_BADGE_HEADLINE).length - 1).toBe(1);
+    visible.querySelectorAll('details, .dm-trust-row-narrow').forEach((node) => node.remove());
+    expect((visible.textContent ?? '').split(PRIVACY_BADGE_HEADLINE).length - 1).toBe(2);
     expect(container.querySelectorAll('details.dm-mkt-scope')).toHaveLength(2);
     expect(container.querySelector('.dm-mkt-privacy-data')).toBeInTheDocument();
     // What actually needs guarding is that the generated list reaches the
@@ -154,7 +154,7 @@ describe('landing page — D134', () => {
     expect(within(hero).getByRole('link', { name: 'Start free' }).getAttribute('href')).toBe(
       '/sign-in',
     );
-    expect(within(hero).getByRole('link', { name: /Explore the demo/ })).toHaveAttribute(
+    expect(within(hero).getByRole('link', { name: 'Try the demo' })).toHaveAttribute(
       'href',
       '/inbox-simulator?workspace=senders',
     );
@@ -215,8 +215,12 @@ describe('landing page — D134', () => {
 describe('Hero disclaimer — states the Free-tier cap (QA-sign-in-05)', () => {
   it('mentions the monthly cleanup-action cap alongside the undo window', () => {
     render(<Hero />);
-    const disclaimer = screen.getByText(/No credit card/i);
-    expect(disclaimer.textContent).toMatch(/50 cleanup actions a month/i);
+    const disclaimer = screen.getByText(/No card required/i);
+    const allowance = cleanupActionsPerMonthFor('free');
+    expect(allowance).not.toBeNull();
+    expect(disclaimer.textContent).toContain(
+      `${allowance!.toLocaleString('en-US')} emails cleared a month`,
+    );
   });
 });
 

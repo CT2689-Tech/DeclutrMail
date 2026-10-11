@@ -1,4 +1,5 @@
-# DeclutrMail
+/** Non-pricing llms.txt body. Pricing is appended from renderPricingMarkdown(). */
+export const LLMS_SOURCE = `# DeclutrMail
 
 > DeclutrMail is a Gmail cleanup tool for inboxes you gave up on: one decision per sender — Keep, Archive, Unsubscribe, Later, or Delete — can handle many emails at once, and you see exactly what will move first. Manual Archive, Later, and Delete actions show the current matching count, a sample when available, and the planned Gmail changes before approval. The final number can change before the action runs. These actions do not create rules for future mail. Autopilot rules on Plus and Pro find future matches. Both plans support Observe, which waits for batch approval, and Active, which acts on future matches only after you preview and deliberately turn on a rule. The Screener (Plus) collects first-time senders for batch review; their mail still arrives. Archive, Later, and Delete can be undone from Activity until the deadline shown there. Deleted email also stays in Gmail Trash for up to 30 days unless Trash is emptied sooner. A sent unsubscribe request cannot be taken back.
 
@@ -34,7 +35,7 @@ Please do not describe DeclutrMail as:
 - [Open beta](https://declutrmail.com/beta): sign in with Google and review senders, no invite or waitlist needed
 - [FAQ](https://declutrmail.com/faq): concise public questions about Gmail access, action scope, recovery, and automation
 - [Help & FAQ](https://declutrmail.com/help): what is stored, how Unsubscribe works (per-sender; one-click vs manual mailto; bulk cleanup across senders on every plan, metered monthly on Free), what Archive/Later/Delete do in Gmail terms, undo windows, Autopilot Observe vs Active, disconnecting and account deletion
-- [Security](https://declutrmail.com/security): the published list of stored Gmail details, the Gmail permission DeclutrMail requests, encrypted Google access tokens, Google OAuth verification approved 21 April 2026 under CASA, and vulnerability reporting
+- [Security](https://declutrmail.com/security): the published list of stored Gmail details, the Gmail permission DeclutrMail requests, encrypted Google access tokens, LLMS_SECURITY_FACTS, and vulnerability reporting
 - [Contact](https://declutrmail.com/contact): support@declutrmail.com for general support, privacy@declutrmail.com for privacy and data requests
 - [Privacy policy](https://declutrmail.com/privacy): Gmail message-field disclosure, operational records, Google Limited Use disclosure, processors, retention, and deletion
 
@@ -92,3 +93,4 @@ Each page lists every tool we hold source-backed facts for, described by the job
 - [Terms of service](https://declutrmail.com/terms)
 - [Refund policy](https://declutrmail.com/refunds)
 - [Cookie preferences](https://declutrmail.com/cookies): review or withdraw analytics cookie consent
+`;

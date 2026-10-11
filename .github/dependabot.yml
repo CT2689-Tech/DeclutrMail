@@ -1,28 +1,24 @@
 # Dependabot configuration (D178).
 #
-# npm updates are grouped by what has to be fixed together. A single
-# `all` group (30+ updates, majors included) failed lint, typecheck, build
-# and tests on every run (#895, #922 and #931), because one breaking bump
-# reddened every safe one beside it. Each group below can now fail or
-# land on its own:
-#   framework    next / react / @next/* move in lockstep
-#   nestjs       @nestjs/* move in lockstep
-#   lint-format  lint/format tooling, whose majors need a config migration
-#   dev-minor    every other devDependency patch/minor bump
-# A dependency joins the FIRST group it matches, so the named groups sit
-# above the dev catch-all. Anything else (production patch/minor outside
-# the named groups, majors outside them) opens its own PR, capped by
-# `open-pull-requests-limit`. Ignore rules below still keep coordinated
-# majors (Nest, Next, Drizzle, @types/node) out entirely.
+# Each ecosystem opens one version-update pull request per weekly run.
+# The group matches every dependency and includes major, minor, and patch.
+# npm used to split framework / nestjs / lint-format / dev-minor because one
+# combined group failed CI when a breaking bump landed beside safe ones
+# (#895, #922, #931). That split is what opened a separate PR for every
+# production package on 2026-10-11. Version updates are one group again.
 #
-# `applies-to` is exclusive, so security updates cannot share the version
-# groups. They stay in their own group rather than opening one PR each.
+# `applies-to` cannot put security updates in a version-update group.
+# Each ecosystem keeps one `security` group so an advisory does not open
+# one pull request per package. Security pull requests are not on the
+# weekly schedule and do not count toward `open-pull-requests-limit`.
+# Ignore rules below still keep coordinated majors (Nest, Next, Drizzle,
+# @types/node) out of the npm group entirely.
 #
 # Schedule: Monday 06:00 UTC — early enough for a same-day morning
 # review across most timezones; clear of the weekend code-freeze.
 #
-# Launch quiet period: no automatic rebases, and at most 3 open PRs
-# per ecosystem. restore after 2026-11-03
+# Launch quiet period: no automatic rebases. restore after 2026-11-03.
+# Each ecosystem still opens one version-update pull request (limit 1).
 #
 # Why no Snyk here:
 #   Snyk free tier requires an account + a SNYK_TOKEN secret + a
@@ -47,7 +43,7 @@ updates:
       time: '06:00'
       timezone: Etc/UTC
     rebase-strategy: disabled
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 1
     versioning-strategy: increase-if-necessary
     commit-message:
       # Matches commitlint type-enum (CLAUDE.md §6). `chore` keeps the
@@ -55,46 +51,11 @@ updates:
       prefix: chore
       include: scope
     groups:
-      framework:
-        patterns:
-          - 'next'
-          - '@next/*'
-          - 'react'
-          - 'react-dom'
-          - '@types/react'
-          - '@types/react-dom'
-        update-types:
-          - major
-          - minor
-          - patch
-      nestjs:
-        patterns:
-          - '@nestjs/*'
-        update-types:
-          - major
-          - minor
-          - patch
-      lint-format:
-        patterns:
-          - 'eslint'
-          - 'eslint-*'
-          - '@eslint/*'
-          - 'typescript-eslint'
-          - '@typescript-eslint/*'
-          - 'globals'
-          - 'prettier'
-          - 'prettier-*'
-          - 'lint-staged'
-          - '@commitlint/*'
-        update-types:
-          - major
-          - minor
-          - patch
-      dev-minor:
-        dependency-type: development
+      all:
         patterns:
           - '*'
         update-types:
+          - major
           - minor
           - patch
       # Security updates always grouped, regardless of bump kind.
@@ -141,12 +102,20 @@ updates:
       time: '06:00'
       timezone: Etc/UTC
     rebase-strategy: disabled
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 1
     commit-message:
       prefix: chore
       include: scope
     groups:
       all:
+        patterns:
+          - '*'
+        update-types:
+          - major
+          - minor
+          - patch
+      security:
+        applies-to: security-updates
         patterns:
           - '*'
         update-types:
@@ -163,12 +132,20 @@ updates:
       time: '06:00'
       timezone: Etc/UTC
     rebase-strategy: disabled
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 1
     commit-message:
       prefix: chore
       include: scope
     groups:
       all:
+        patterns:
+          - '*'
+        update-types:
+          - major
+          - minor
+          - patch
+      security:
+        applies-to: security-updates
         patterns:
           - '*'
         update-types:
