@@ -31,7 +31,11 @@ import {
 } from '@declutrmail/shared/actions';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
-import { MeterPreviewSlot } from '@/features/shell/meter-preview-slot';
+import {
+  MeterPreviewSlot,
+  hideLegacyQuotaLine,
+  meterPreviewCopy,
+} from '@/features/shell/meter-preview-slot';
 import { mailLocationValue } from '@/features/triage/action-preview-detail';
 import { afterLead } from '@/lib/copy/after-lead';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
@@ -296,6 +300,7 @@ export function ConfirmActionModal({
   // Per-sender breakdown expand state (D52 — "Per-sender breakdown"
   // expandable list for verification on bulk flows).
   const [showAllSenders, setShowAllSenders] = useState(false);
+  const cleanupSummary = useCleanupSummary();
 
   useEffect(() => {
     if (!request) return;
@@ -661,7 +666,10 @@ export function ConfirmActionModal({
   // preview above is truthful as-is; all this changes is the copy, which
   // has to say the selection was larger.
   const quotaCappedFrom = request?.quotaCappedFrom ?? null;
-  const quotaShort = quotaRemaining !== null && unitsNeeded > quotaRemaining;
+  // The email meter does not block confirm on a sender-unit shortfall.
+  // Over-allowance is a sentence; the click still runs.
+  const emailMeter = cleanupSummary.data?.metered === true;
+  const quotaShort = !emailMeter && quotaRemaining !== null && unitsNeeded > quotaRemaining;
 
   // `nothingToActOn` already carries its own verb test — repeating a
   // narrower one here would silently re-exclude Later.
@@ -769,7 +777,6 @@ export function ConfirmActionModal({
   ]);
 
   const auth = useOptionalAuth();
-  const cleanupSummary = useCleanupSummary();
 
   if (!request) return null;
 
@@ -1151,6 +1158,10 @@ export function ConfirmActionModal({
           : quotaRemaining !== null
             ? `Uses ${unitsNeeded} of your ${quotaRemaining} cleanup action${quotaRemaining === 1 ? '' : 's'} left this month.`
             : null;
+  const visibleQuotaLine = hideLegacyQuotaLine(quotaLine, cleanupSummary.data);
+  const freeUnsubscribe = isUnsubVerb && !hasSecondaryAction;
+  const meterRequested = freeUnsubscribe ? null : liveCount;
+  const meterCopy = meterPreviewCopy(meterRequested, cleanupSummary.data, freeUnsubscribe);
 
   // ── Details ──────────────────────────────────────────────────────────
   // Short label/value facts (`SheetFactList`). Each value says the same
@@ -1465,13 +1476,13 @@ export function ConfirmActionModal({
         }
         status={status ?? undefined}
         footer={
-          quotaLine === null ? undefined : (
+          visibleQuotaLine === null && meterCopy === null ? undefined : (
             <>
-              <span>{quotaLine}</span>
+              {visibleQuotaLine !== null && <span>{visibleQuotaLine}</span>}
               <MeterPreviewSlot
-                requested={isUnsubVerb && !hasSecondaryAction ? null : liveCount}
+                requested={meterRequested}
                 summary={cleanupSummary.data ?? null}
-                freeUnsubscribe={isUnsubVerb && !hasSecondaryAction}
+                freeUnsubscribe={freeUnsubscribe}
               />
             </>
           )

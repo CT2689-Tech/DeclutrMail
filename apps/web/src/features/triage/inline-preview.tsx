@@ -2,7 +2,7 @@
 
 import { Button, SheetFactList, tokens } from '@declutrmail/shared';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
-import { MeterPreviewSlot } from '@/features/shell/meter-preview-slot';
+import { MeterPreviewSlot, hideLegacyQuotaLine } from '@/features/shell/meter-preview-slot';
 import type { ReactNode } from 'react';
 
 import {
@@ -119,7 +119,11 @@ export function InlinePreviewBlock({
     inboxCount: preview.inboxCount,
     wakeAt: preview.wakeAt ?? null,
   });
-  const costLine = cleanupCostLine(facts.unitsNeeded, preview.quotaRemaining);
+  const costLine = hideLegacyQuotaLine(
+    cleanupCostLine(facts.unitsNeeded, preview.quotaRemaining),
+    cleanupSummary.data,
+  );
+  const freeUnsubscribe = preview.verb === 'Unsubscribe' && !preview.archiveHistoric;
   const hasDetails = facts.disclosures.length > 0 || preview.detailSlot != null;
   return (
     <div
@@ -171,11 +175,9 @@ export function InlinePreviewBlock({
         </p>
       )}
       <MeterPreviewSlot
-        requested={
-          preview.verb === 'Unsubscribe' && !preview.archiveHistoric ? null : facts.liveCount
-        }
+        requested={freeUnsubscribe ? null : facts.liveCount}
         summary={cleanupSummary.data ?? null}
-        freeUnsubscribe={preview.verb === 'Unsubscribe' && !preview.archiveHistoric}
+        freeUnsubscribe={freeUnsubscribe}
       />
       {hasDetails && (
         <details className="dm-disclosure" style={{ marginTop: space[2] }}>

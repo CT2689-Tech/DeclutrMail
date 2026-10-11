@@ -5,6 +5,8 @@ import { Button, EmptyState, tokens } from '@declutrmail/shared';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import type { TriageSessionStats } from './data';
 import type { MeMailbox } from '@/features/auth/api/use-me';
+import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
+import { meterChipSentence } from '@/features/home/home-deck-copy';
 
 const { color, font, radius, text } = tokens;
 const FREE_CLEANUP_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth;
@@ -57,6 +59,7 @@ export function TriageEmptyState({
   /** One muted line under the completion numerals (the D214 "today" fact). */
   footnote?: ReactNode;
 }) {
+  const cleanupSummary = useCleanupSummary();
   // D212 resting state (2026-07-02 audit W5) — the queue is empty and
   // the user decided NOTHING today: a fresh morning visit, or a new
   // mailbox before the engine scores anything. The completion panel
@@ -125,6 +128,9 @@ export function TriageEmptyState({
 
   const showPlusNudge =
     stats.tier === 'free' && stats.freeRemaining != null && stats.freeRemaining <= 5;
+  const meterLine = cleanupSummary.data
+    ? meterChipSentence(cleanupSummary.data, { timeZone: 'UTC' })
+    : null;
   const showProNudge = stats.tier === 'plus';
   // What you actually did today, as one quiet line. D9 — "unsubscribes"
   // counts DECISIONS, which execute async (one-click may fail, mailto is
@@ -236,9 +242,10 @@ export function TriageEmptyState({
           }}
         >
           <span style={{ fontSize: text.sm, color: color.fgSoft }}>
-            {stats.freeRemaining === 0
-              ? `You've used all ${FREE_CLEANUP_LIMIT} free cleanup actions this month.`
-              : `${stats.freeRemaining} of your ${FREE_CLEANUP_LIMIT} free cleanup actions left this month.`}
+            {meterLine?.text ??
+              (stats.freeRemaining === 0
+                ? `You've used all ${FREE_CLEANUP_LIMIT} free cleanup actions this month.`
+                : `${stats.freeRemaining} of your ${FREE_CLEANUP_LIMIT} free cleanup actions left this month.`)}
           </span>
           <Button tone="primary" size="md" onClick={onOpenUpgrade ?? (() => {})}>
             See Plus

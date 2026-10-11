@@ -2,7 +2,11 @@
 
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
-import { MeterPreviewSlot } from '@/features/shell/meter-preview-slot';
+import {
+  MeterPreviewSlot,
+  hideLegacyQuotaLine,
+  meterPreviewCopy,
+} from '@/features/shell/meter-preview-slot';
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { Avatar, Button, PreviewSheet, SheetSegmented, tokens } from '@declutrmail/shared';
@@ -238,7 +242,13 @@ export function ActionSheet({
       ? 'Switch to Inbox + archived to reach the archived email.'
       : null;
 
-  const costLine = cleanupCostLine(facts.unitsNeeded, quotaRemaining);
+  const costLine = hideLegacyQuotaLine(
+    cleanupCostLine(facts.unitsNeeded, quotaRemaining),
+    cleanupSummary.data,
+  );
+  const freeUnsubscribe = verb === 'Unsubscribe' && !effectiveArchiveHistoric;
+  const meterRequested = freeUnsubscribe ? null : facts.liveCount;
+  const meterCopy = meterPreviewCopy(meterRequested, cleanupSummary.data, freeUnsubscribe);
   const detailBlock = (
     <ActionPreviewDetailBlock
       detail={
@@ -313,15 +323,13 @@ export function ActionSheet({
         status={status ?? undefined}
         details={detailBlock}
         footer={
-          costLine === null && verb === 'Delete' ? undefined : (
+          costLine === null && meterCopy === null && verb === 'Delete' ? undefined : (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
               {costLine !== null && <span>{costLine}</span>}
               <MeterPreviewSlot
-                requested={
-                  verb === 'Unsubscribe' && !effectiveArchiveHistoric ? null : facts.liveCount
-                }
+                requested={meterRequested}
                 summary={cleanupSummary.data ?? null}
-                freeUnsubscribe={verb === 'Unsubscribe' && !effectiveArchiveHistoric}
+                freeUnsubscribe={freeUnsubscribe}
               />
               {/*
                * D34 — remember-preference. Persists per verb in the triage
@@ -414,7 +422,9 @@ export function ActionSheet({
                       : ' emails'
                   } already in the inbox`
                 }
-                hint="Uses a second cleanup action on Free."
+                hint={
+                  cleanupSummary.data?.metered ? undefined : 'Uses a second cleanup action on Free.'
+                }
               />
             )}
 
