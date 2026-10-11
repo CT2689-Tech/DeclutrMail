@@ -6,8 +6,9 @@ response, and the AI consent gate. WS2b is a later branch.
 
 Rebased onto main after #977 and #979. The WS1a stub cherry-pick was
 dropped; main already has the real pricing foundation. Consent columns
-are migration `0092`. `0086` is product events. `0087`–`0091` are
-reserved for in-flight PRs.
+are migration `0089`. `0086` is product events. `0087` and `0088`
+are on main. This branch merges before #980, which renumbers after
+`0089`.
 
 ## Consent
 
@@ -20,7 +21,7 @@ flag has to be flipped for that. There is no backfill.
 
 ## Migration
 
-`0092_ai_consent_columns.sql` is additive. It adds nullable consent
+`0089_ai_consent_columns.sql` is additive. It adds nullable consent
 columns on `users`. It was not applied to a live database. Rollback
 drops those columns.
 

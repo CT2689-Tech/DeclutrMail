@@ -3266,7 +3266,7 @@ describe('InitialSyncWorker — sync_runs history (F002)', () => {
  * Migrations stop at 0086, so `sync_readiness` does not contain
  * `needs_reconnect`. A first-scan claim must still write `syncing`, and
  * a reconnect-class terminal write must land on `failed`.
- * `0092` is applied too: the current Drizzle `users` insert writes the
+ * `0089` is applied too: the current Drizzle `users` insert writes the
  * consent columns, and that migration does not add `needs_reconnect`.
  */
 async function dbThrough0086(): Promise<{
@@ -3279,7 +3279,7 @@ async function dbThrough0086(): Promise<{
     .filter(
       (f) =>
         f.endsWith('.sql') &&
-        (f <= '0086_product_events.sql' || f === '0092_ai_consent_columns.sql'),
+        (f <= '0086_product_events.sql' || f === '0089_ai_consent_columns.sql'),
     )
     .sort();
   for (const file of files) {
