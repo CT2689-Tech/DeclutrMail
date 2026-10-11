@@ -18,19 +18,30 @@ As reported on 2026-10-11, the repository `declutrmail` (us-central1, package `a
 
 ### Protection
 
-`scripts/pin-production-images.mjs` runs after every successful image build in the deploy workflow, including when later deployment steps fail. For each release source (`SOURCES`: the API service and the worker) it:
+`scripts/pin-production-images.mjs` protects images with `serving-` tags. Two writers run it, each in its own namespace, and neither moves the other's tags:
 
-- moves `serving-<role>` to the primary serving image (highest traffic share);
-- moves `serving-<role>-route-1`…`-4` to any other live or tagged traffic destination (more than four fails closed);
-- moves `serving-<role>-rollback-1`…`-5` to the five newest distinct images deployed before the primary revision. Images that once served traffic (they have a `retain-` tag) come first, so a candidate that failed its smoke never displaces a known-good image; unserved ones only fill remaining slots.
+| Writer                                                                                                | Namespace           | Serialized by                 |
+| ----------------------------------------------------------------------------------------------------- | ------------------- | ----------------------------- |
+| deploy workflow, after every image build (`--namespace=deploy`)                                       | `serving-`          | `deploy-cloud-run-production` |
+| **Artifact Registry cleanup policy** workflow: hourly schedule, `rollback`, `dry-run`/`report`/`live` | `serving-observed-` | `artifact-registry-pins`      |
 
-It also keeps `serving-pinned-billing-probe` on the image `.github/workflows/billing-queue-access-diagnosis.yml` runs by tag (`PINNED`; a test fails if the workflow's image and `PINNED` drift). If that source tag is missing and the image was never pinned, the script protects everything else, then fails by name.
+A stale run therefore cannot undo a newer one: a deploy's tags stay put while a slow reconciler run writes its own. After writing, the script re-reads every source and fails ("serving state changed during the pin; run it again") if traffic moved meanwhile, so it never reports success for an image set that is no longer current.
 
-Unused slots point at the primary image, so the set of `serving-` tags is fixed (ten per role) and none can keep an old build forever. A slot is moved only once its current image is unwanted or also held by another `serving-` tag, so an interrupted run, after a new deploy or a traffic rollback, never leaves a still-wanted image without one. The exception is a pure swap between slots with no other holder, where the gap lasts one write. Tests interrupt the run at every write to check this. Tags are created or moved with `gcloud artifacts tags create`/`update`, which the deploy service account's `roles/artifactregistry.writer` allows (`artifactregistry.tags.create`, `artifactregistry.tags.update`). Nothing is ever deleted, so `artifactregistry.tags.delete` is not needed. The script still adds the per-revision `retain-` tag as an immutable record.
+For each release source (`SOURCES`) it moves, within its namespace:
 
-When the worker moves to the `declutrmail-worker-pool` Cloud Run worker pool, change its `SOURCES` entry to `{ role: 'worker', kind: 'workerPool', name: 'declutrmail-worker-pool', region: 'us-west1' }`. gcloud reads worker pools through the same v1 Run API: it uses `status.instanceSplits` instead of `status.traffic`, and `gcloud run worker-pools revisions list --worker-pool=…` instead of `gcloud run revisions list --service=…`. This path is covered by fixture tests only until the first pool release runs it.
+- `<ns><role>` to the primary serving image (highest traffic share);
+- `<ns><role>-route-1`…`-4` to any other live or tagged traffic destination (more than four fails closed);
+- `<ns><role>-rollback-1`…`-5` to the five newest distinct images deployed before the primary revision. Images that served traffic (they have a `retain-` tag) come first; unserved ones only fill remaining slots. A candidate staged at 0% behind a `verify-` tag is protected as a route while it is smoked, but gets no `retain-` tag, so a candidate that fails its smoke never displaces a known-good rollback.
 
-The workflow's schedule re-pins every three hours. A rollback made outside the deploy workflow (a console or `gcloud run services update-traffic` change) is therefore protected within three hours; run the **Artifact Registry cleanup policy** workflow in `report` mode, or `node scripts/pin-production-images.mjs`, to protect it immediately.
+`SOURCES` are the API service (us-central1), the legacy worker service (us-west1, kept as the worker pool's rollback path) and the `declutrmail-worker-pool` worker pool (us-west1). The pool is optional only until it exists: only gcloud's exact "Cannot find worker pool" error skips it, and any other error fails closed. A test reads `deploy-cloud-run.yml` and fails if it deploys a Cloud Run resource that is not a required source, so the pool must become required in the change that deploys it (open PR #972 changes the same file; whichever merges second reconciles them).
+
+It also protects every image referenced by a Cloud Run job in any region (`<ns>job-1`…`-4`), such as a billing-probe job a cancelled run left behind, and keeps `<ns>pinned-billing-probe` on the image `.github/workflows/billing-queue-access-diagnosis.yml` runs by tag (`PINNED`; a test fails if the workflow's image and `PINNED` drift). A job image it cannot resolve, more than four job images, or a missing pinned source makes the script protect everything else, then fail by name.
+
+Unused slots point at the primary image, so the set of `serving-` tags is exact and none can keep an old build forever. Any other `serving-` tag is reported; the reconciler run fails on it, and the cleanup script refuses to report or install until an admin deletes it. A slot moves only once its current image is unwanted or also held by another `serving-` tag. When slots swap images, one image is first parked on `<ns>spare`, so no still-wanted image is ever without a tag; tests interrupt the run at every write to check this. Tags are created or moved with `gcloud artifacts tags create`/`update`, which the deploy service account's `roles/artifactregistry.writer` allows (`artifactregistry.tags.create`, `artifactregistry.tags.update`). Nothing is ever deleted, so `artifactregistry.tags.delete` is not needed. The script still adds the per-revision `retain-` tag as an immutable record.
+
+Worker pools are read through the same v1 Run API, with `status.instanceSplits` instead of `status.traffic` and `gcloud run worker-pools revisions list --worker-pool=…`. That path is covered by fixture tests only until the first pool release runs it.
+
+**Rollbacks.** Roll production back with the workflow's `mode=rollback` (`rollback_role`, `rollback_revision`). It tags the target image on `serving-observed-spare` first, moves 100% of traffic only once that tag reads back, then re-pins; if the target cannot be protected, traffic is not moved. A rollback made directly in Cloud Run (console or `gcloud run services update-traffic`) is protected only at the next hourly re-pin. In that window, an image older than 14 days that is outside the newest 20 versions and the five rollback slots can be deleted while it serves, so use `mode=rollback`.
 
 ### Policy
 
@@ -52,10 +63,16 @@ At several deploys a day the newest 20 cover only a short window, so the 14-day 
 Run the **Artifact Registry cleanup policy** workflow (`.github/workflows/artifact-cleanup-policy.yml`) from `main`:
 
 1. **Dry run:** `mode=dry-run`. It moves the serving tags, prints the repository size, the installed policy, and every version the new policy would delete now. It then installs the policy with `--dry-run`, which stops the current live policy from deleting anything, and reads the configuration back. It refuses to install if a protected image would be deleted or is missing from the listing.
-2. **Review:** after about a day (Artifact Registry evaluates policies in a daily background job), run `mode=report`. Compare the printed list with the "Artifact Registry's own dry-run verdict" step (`--mode=verdict`), which reads the provider's audit log, marks any listed image that holds a `serving-` tag, and fails if there is one. That step prints `UNVERIFIED` unless DATA_WRITE Data Access audit logs are enabled for `artifactregistry.googleapis.com` and the deploy account can read them (`roles/logging.privateLogViewer`). Without it, the local preview is the only evidence; it implements the documented rules, not the provider's code.
-3. **Go live:** `mode=live` with `confirm_live=delete-unprotected-api-images`. This installs with `--no-dry-run`, and deletion happens within about a day. Re-read the repository size afterwards, and report realized savings only from the resulting usage or billing. The sum of image sizes overstates savings because layers are shared.
+2. **Review:** after about a day (Artifact Registry evaluates policies in a daily background job), run `mode=report`. Compare the printed list with the "Artifact Registry's own dry-run verdict" step (`--mode=verdict`). It reads the provider's audit log entries written after the repository's last update (the installed configuration), marks any listed image that holds a `serving-` tag, and fails if there is one. It fails as `UNVERIFIED` if there is no such entry: DATA_WRITE Data Access audit logs must be enabled for `artifactregistry.googleapis.com`, and the deploy account must be able to read them (`roles/logging.privateLogViewer`).
+3. **Go live:** `mode=live` with `confirm_live=delete-unprotected-api-images`. The job waits for a reviewer on the `artifact-registry-live` GitHub environment and refuses if that environment has no required reviewer. Before installing it requires a receipt:
+   - this exact policy is installed in dry-run mode;
+   - a provider verdict exists for that installation;
+   - the verdict names no image that holds a `serving-` tag;
+   - the verdict names nothing the local preview keeps.
 
-**IAM prerequisite.** Installing a policy (dry run or live) needs `artifactregistry.repositories.update`. Neither `roles/artifactregistry.writer` nor `roles/artifactregistry.repoAdmin` includes it, so until it is granted, steps 1 and 3 fail at the install step after printing the report. `mode=report` works today. The narrowest grant is a custom role bound on this repository only:
+   Anything else, `UNVERIFIED` included, stops before `--no-dry-run`. Deletion then happens within about a day. Re-read the repository size afterwards, and report realized savings only from the resulting usage or billing. The sum of image sizes overstates savings because layers are shared.
+
+**IAM prerequisite.** Installing a policy (dry run or live) needs `artifactregistry.repositories.update`. Neither `roles/artifactregistry.writer` nor `roles/artifactregistry.repoAdmin` includes it, so until it is granted, steps 1 and 3 fail at the install step after printing the report. `mode=report` and `mode=rollback` need only the writer role. The narrowest grant is a custom role bound on this repository only:
 
 ```sh
 gcloud iam roles create artifactCleanupPolicyEditor --project=declutrmail-ai-prod \
@@ -67,7 +84,7 @@ gcloud artifacts repositories add-iam-policy-binding declutrmail --location=us-c
   --role=projects/declutrmail-ai-prod/roles/artifactCleanupPolicyEditor
 ```
 
-Alternatively, run the same script locally with an account that holds `roles/artifactregistry.admin`: `node scripts/artifact-cleanup-policy.mjs --mode=dry-run`, or `CLEANUP_CONFIRM=delete-unprotected-api-images node scripts/artifact-cleanup-policy.mjs --mode=live`.
+Alternatively, run the same script locally with an account that holds `roles/artifactregistry.admin`: `node scripts/artifact-cleanup-policy.mjs --mode=dry-run`, or `CLEANUP_CONFIRM=delete-unprotected-api-images node scripts/artifact-cleanup-policy.mjs --mode=live`. A local live run still requires the receipt, but skips the GitHub environment approval.
 
 ## Reliability boundaries
 

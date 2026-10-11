@@ -13,6 +13,6 @@ gcloud artifacts repositories add-iam-policy-binding declutrmail --location=us-c
   --role=projects/declutrmail-ai-prod/roles/artifactCleanupPolicyEditor
 ```
 
-or skip the grant and run `node scripts/artifact-cleanup-policy.mjs --mode=dry-run` locally as an Artifact Registry admin. Optional: to see the provider's own dry-run verdict, enable DATA_WRITE Data Access audit logs for `artifactregistry.googleapis.com` and grant the deploy SA `roles/logging.privateLogViewer`.
+or skip the grant and run `node scripts/artifact-cleanup-policy.mjs --mode=dry-run` locally as an Artifact Registry admin. Required before `live`, which refuses without a provider verdict: enable DATA_WRITE Data Access audit logs for `artifactregistry.googleapis.com`, and grant the deploy SA `roles/logging.privateLogViewer`.
 **Verifies by:** The **Artifact Registry cleanup policy** workflow with `mode=dry-run` ends with "Installed in dry-run mode", and the readback passes.
 **Status:** Open
