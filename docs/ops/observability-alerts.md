@@ -22,7 +22,7 @@ admin email channel. Do not create parallel notification channels.
 3. Apply reviewed policies using `--apply --worker --runtime`. The worker uptime
    check additionally refuses installation if its endpoint is not currently healthy.
    Runtime rules require the telemetry deployment first; `--runtime` explicitly
-   opts in to runtime rules. Activation refuses missing/stale/failed-only samples for any expected source; at least one successful observation within 20 minutes is required for mailbox/scheduler/database/reconnect and each of the four expected queues.
+   opts in to runtime rules. Activation refuses missing/stale/failed-only samples for any expected source; at least one successful observation within 20 minutes is required for mailbox/scheduler/database/reconnect/recovery and each of the four expected queues.
 4. Query every new metric/PromQL expression in the project and inspect all returned
    series and label cardinality. The tests validate local contracts, not Cloud
    Monitoring acceptance. Inspect existing policies/channels after application.
@@ -63,6 +63,26 @@ Queue/mailbox/DB/scheduler values are five-minute samples stored as log
 must not be summed into users or jobs; mailbox reasons can overlap. Sync durations
 are worker attempts, including retries, not signup funnel conversion. Outcome `resolved` includes skipped/no-op runs and must never be labelled completed sync or used as a sync success rate. Scheduler
 success age is absent when no success exists; the missing-success rule covers it.
+
+## Launch capacity alerts
+
+These rules are created only with `--runtime`. Do not apply them until the
+worker has emitted `kind=ops.collection source=recovery success=1`. If
+activation refuses coverage, wait for that sample and retry. Do not apply
+from a laptop against a guess.
+
+```
+node scripts/setup-infra-alerts.mjs declutrmail-ai-prod --runtime --apply
+```
+
+| Signal            | Initial trigger                                                                     | Response                                                                                               |
+| ----------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Initial-sync wait | Sampled initial-sync waiting age over 10 minutes for 10 minutes                     | Inspect the initial-sync worker, Redis, and recovery attempts. Creation age is not elapsed queue wait. |
+| Recovery budget   | Active mailbox with failed readiness and initial recovery attempts at the limit     | Inspect that mailbox before a manual retry. Disconnected mailboxes are excluded.                       |
+| Dead letters      | More than 5 new `worker.dead_lettered` lines in one hour for one worker             | Inspect the named worker. Restarted `dead_letter.parked` lines are not this count.                     |
+| Worker exit       | A worker memory-limit or container-exit line in 10 minutes                          | Separate from the 90% memory alert. The API service is not included.                                   |
+| Gmail 429         | More than 30 `RateLimitError` events in 10 minutes across allowlisted Gmail workers | Initial guardrail, not a measured quota baseline. Domain icon lookups are excluded.                    |
+| OAuth callbacks   | 3 `login.failure` events in 1 hour, or more than 20% of `oauth.start` over 24 hours | Consent cancelled, reconnect cancelled, and the inbox limit are excluded.                              |
 
 ## Stuck mailboxes
 

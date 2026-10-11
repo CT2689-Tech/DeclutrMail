@@ -68,4 +68,69 @@ describe('SecurityEventsService (D181)', () => {
       service.record({ eventType: 'rate_limit.breach', severity: 'warning' }),
     ).resolves.toBeUndefined();
   });
+
+  it('logs oauth failures only after insert, with a closed reason and no identity', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      const values = vi.fn().mockResolvedValue(undefined);
+      const service = new SecurityEventsService(makeDb(() => ({ values })));
+      await service.record({
+        eventType: 'login.failure',
+        severity: 'warning',
+        userId: 'user-1',
+        sourceIp: '203.0.113.7',
+        userAgent: 'curl/8',
+        payload: { reason: 'missing_state_cookie', email: 'person@example.test' },
+      });
+      const line = JSON.parse(String(log.mock.calls.at(-1)?.[0]));
+      expect(line).toEqual({
+        level: 'warning',
+        kind: 'security_event',
+        eventType: 'login.failure',
+        reason: 'missing_state_cookie',
+      });
+      expect(JSON.stringify(line)).not.toMatch(/person@example|203\.0\.113\.7|user-1|curl/);
+
+      log.mockClear();
+      await service.record({
+        eventType: 'login.failure',
+        severity: 'warning',
+        payload: { reason: 'person@example.test' },
+      });
+      expect(JSON.parse(String(log.mock.calls[0]?.[0])).reason).toBe('other');
+
+      log.mockClear();
+      await service.record({ eventType: 'rate_limit.breach', severity: 'warning' });
+      expect(log).not.toHaveBeenCalled();
+
+      log.mockClear();
+      await service.record({
+        eventType: 'signup.denied',
+        severity: 'warning',
+        payload: { reason: 'beta_gate_denied', email: 'person@example.test' },
+      });
+      expect(log).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('does not emit a security_event line when the insert fails', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      const service = new SecurityEventsService(
+        makeDb(() => ({
+          values: () => Promise.reject(new Error('db down')),
+        })),
+      );
+      await service.record({
+        eventType: 'login.failure',
+        severity: 'warning',
+        payload: { reason: 'missing_state_cookie' },
+      });
+      expect(log).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
+  });
 });

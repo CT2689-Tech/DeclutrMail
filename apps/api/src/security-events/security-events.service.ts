@@ -7,6 +7,53 @@ import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 /** D181 severity — the closed set the `security_events` CHECK enforces. */
 export type SecurityEventSeverity = 'info' | 'warning' | 'critical';
 
+/** Structured Cloud Logging subjects. Other audit types stay in Postgres only. */
+const SECURITY_LOG_EVENTS = new Set(['oauth.start', 'login.failure']);
+
+/**
+ * Closed callback reasons safe to put on a log line. Anything else,
+ * including free text and addresses, becomes `other`.
+ */
+const SECURITY_LOG_REASONS = new Set([
+  'missing_state_cookie',
+  'invalid_state_cookie',
+  'invalid_state',
+  'missing_code',
+  'token_exchange_failed',
+  'reconnect_failed',
+  'reconnect_target_invalid',
+  'reconnect_account_mismatch',
+  'reconnect_cancelled',
+  'reconnect_gmail_scope_missing',
+  'consent_cancelled',
+  'consent_failed',
+  'orchestrator_failed',
+  'sign_in_failed',
+  'connect_session_invalid',
+  'gmail_scope_missing',
+  'INBOX_LIMIT_REACHED',
+]);
+
+function securityLogLevel(severity: SecurityEventSeverity): 'info' | 'warning' | 'error' {
+  switch (severity) {
+    case 'info':
+      return 'info';
+    case 'warning':
+      return 'warning';
+    case 'critical':
+      return 'error';
+    default: {
+      const unreachable: never = severity;
+      return unreachable;
+    }
+  }
+}
+
+function securityLogReason(payload: Record<string, unknown> | null | undefined): string {
+  const reason = payload?.reason;
+  return typeof reason === 'string' && SECURITY_LOG_REASONS.has(reason) ? reason : 'other';
+}
+
 /**
  * Input to {@link SecurityEventsService.record}. `eventType` is a
  * machine-readable kind (e.g. `rate_limit.breach`, `login.failure`).
@@ -61,6 +108,25 @@ export class SecurityEventsService {
           err instanceof Error ? err.message : String(err)
         }`,
       );
+      return;
+    }
+    this.emitSecurityLog(input);
+  }
+
+  /** Count-only log after a durable insert. No address, account, or request identity. */
+  private emitSecurityLog(input: RecordSecurityEventInput): void {
+    if (!SECURITY_LOG_EVENTS.has(input.eventType)) return;
+    try {
+      console.log(
+        JSON.stringify({
+          level: securityLogLevel(input.severity),
+          kind: 'security_event',
+          eventType: input.eventType,
+          reason: securityLogReason(input.payload),
+        }),
+      );
+    } catch {
+      /* A log sink failure must not break the request that already persisted the audit row. */
     }
   }
 }

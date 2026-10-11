@@ -103,6 +103,12 @@ export const RUNTIME_LOG_METRICS = [
     'sync',
     'outcome',
   ]),
+  distribution(
+    'ops_initial_recovery_exhausted',
+    'ops.initial_recovery_exhausted',
+    'exhausted',
+    '1',
+  ),
   {
     name: 'ops_scheduler_no_success',
     description: 'Scheduler observations with no recorded successful run; missing is not zero age.',
@@ -147,8 +153,92 @@ export const RUNTIME_LOG_METRICS = [
   },
 ];
 
+export const OAUTH_FAILURE_REASONS = [
+  'missing_state_cookie',
+  'invalid_state_cookie',
+  'invalid_state',
+  'missing_code',
+  'token_exchange_failed',
+  'reconnect_failed',
+  'reconnect_target_invalid',
+  'reconnect_account_mismatch',
+  'reconnect_gmail_scope_missing',
+  'consent_failed',
+  'orchestrator_failed',
+  'sign_in_failed',
+  'connect_session_invalid',
+  'gmail_scope_missing',
+];
+/** Logged, but designed non-outages. Kept out of the failure metric. */
+export const OAUTH_IGNORED_REASONS = [
+  'consent_cancelled',
+  'reconnect_cancelled',
+  'INBOX_LIMIT_REACHED',
+];
+export const GMAIL_QUOTA_WORKERS = [
+  'InitialSyncWorker',
+  'IncrementalSyncWorker',
+  'LabelActionWorker',
+  'UnsubExecutionWorker',
+  'AutopilotApplyWorker',
+  'AutopilotActionWorker',
+  'WatchRenewalWorker',
+];
+const API = 'resource.type="cloud_run_revision" AND resource.labels.service_name="declutrmail-api"';
+const SECURITY = `${API} AND jsonPayload.kind="security_event"`;
+function counter(name, description, filter, labels = []) {
+  return {
+    name,
+    description,
+    filter,
+    metricDescriptor: {
+      metricKind: 'DELTA',
+      valueType: 'INT64',
+      unit: '1',
+      labels: labels.map((key) => ({ key, valueType: 'STRING' })),
+    },
+    ...(labels.length
+      ? {
+          labelExtractors: Object.fromEntries(
+            labels.map((key) => [key, `EXTRACT(jsonPayload.${key})`]),
+          ),
+        }
+      : {}),
+  };
+}
+export const LAUNCH_LOG_METRICS = [
+  counter(
+    'oauth_callback_failure',
+    'OAuth callback failures after a durable security_events insert. Designed cancellations and the inbox limit are excluded. Not a measured baseline.',
+    `${SECURITY} AND jsonPayload.eventType="login.failure" AND (${OAUTH_FAILURE_REASONS.map((reason) => `jsonPayload.reason="${reason}"`).join(' OR ')})`,
+  ),
+  counter(
+    'oauth_callback_start',
+    'OAuth consent starts after a durable security_events insert.',
+    `${SECURITY} AND jsonPayload.eventType="oauth.start"`,
+  ),
+  counter(
+    'worker_dead_lettered',
+    'New worker.dead_lettered terminals. Does not count repeated dead_letter.parked backlog lines.',
+    `${WORKER} AND jsonPayload.kind="worker.dead_lettered"`,
+    ['worker'],
+  ),
+  counter(
+    'worker_oom_or_exit',
+    'Worker container memory-limit or exit lines. API revisions are excluded.',
+    `${WORKER} AND (textPayload:"Memory limit of" OR jsonPayload.message:"Memory limit of" OR textPayload:"Container called exit" OR jsonPayload.message:"Container called exit")`,
+  ),
+  counter(
+    'gmail_rate_limit_events',
+    'RateLimitError on allowlisted Gmail workers. Initial guardrail, not a measured Gmail quota baseline. Domain icon lookups are excluded.',
+    `${WORKER} AND jsonPayload.error="RateLimitError" AND (jsonPayload.kind="worker.failed" OR jsonPayload.kind="worker.retried" OR jsonPayload.kind="worker.dead_lettered") AND (${GMAIL_QUOTA_WORKERS.map((worker) => `jsonPayload.worker="${worker}"`).join(' OR ')})`,
+  ),
+];
+
 export const EXPECTED_RUNTIME_COLLECTIONS = [
-  ...['mailbox', 'scheduler', 'database', 'reconnect', 'actions'].map((source) => ({ source })),
+  ...['mailbox', 'scheduler', 'database', 'reconnect', 'actions', 'recovery'].map((source) => ({
+    source,
+  })),
   ...['initial-sync', 'incremental-sync', 'email-send', 'snooze-wake'].map((queue) => ({
     source: 'queue',
     queue,
