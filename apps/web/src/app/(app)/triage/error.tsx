@@ -20,7 +20,7 @@ export default function TriageError({
     <RouteErrorScreen
       gap={20}
       title="Triage"
-      kicker="Clean up / A considered decision"
+      kicker="Cleanup"
       triageMode={mode === 'list' ? 'list' : 'focus'}
       error={error}
       reset={reset}

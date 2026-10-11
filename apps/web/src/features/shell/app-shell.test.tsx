@@ -55,7 +55,7 @@ describe('AppShell interactions', () => {
       </AppShell>,
     );
 
-    const triage = within(screen.getByRole('navigation', { name: 'Clean up views' })).getByRole(
+    const triage = within(screen.getByRole('navigation', { name: 'Cleanup views' })).getByRole(
       'button',
       { name: 'Triage' },
     );
@@ -66,7 +66,7 @@ describe('AppShell interactions', () => {
     expect(onNavigateIntent.mock.calls).toEqual([['triage'], ['triage'], ['triage']]);
     expect(onNavigate).not.toHaveBeenCalled();
 
-    fireEvent.mouseEnter(within(sidebar()).getByRole('button', { name: 'Clean up' }));
+    fireEvent.mouseEnter(within(sidebar()).getByRole('button', { name: 'Cleanup' }));
     expect(onNavigateIntent).toHaveBeenCalledTimes(3);
   });
 });
@@ -112,7 +112,7 @@ describe('AppShell — fixed workspace rail', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }));
     const drawer = screen.getByRole('dialog', { name: 'Navigation menu' });
-    for (const label of ['Settings', 'Billing', 'Help & glossary']) {
+    for (const label of ['Settings', 'Plan & billing', 'Help & glossary']) {
       expect(within(drawer).getByRole('button', { name: label })).toBeInTheDocument();
     }
     expect(
@@ -122,7 +122,7 @@ describe('AppShell — fixed workspace rail', () => {
     expect(within(drawer).queryByRole('button', { name: 'Triage' })).toBeNull();
     const close = within(drawer).getByRole('button', { name: 'Close navigation menu' });
     expect(close.style.left).toBe('');
-    fireEvent.click(within(drawer).getByRole('button', { name: 'Billing' }));
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Plan & billing' }));
     expect(onNavigate).toHaveBeenCalledWith('billing');
     expect(screen.queryByRole('dialog')).toBeNull();
   });
@@ -151,7 +151,7 @@ describe('AppShell — fixed workspace rail', () => {
         <div>Page content</div>
       </AppShell>,
     );
-    const cleanup = within(sidebar()).getByRole('button', { name: 'Clean up' });
+    const cleanup = within(sidebar()).getByRole('button', { name: 'Cleanup' });
     fireEvent.mouseEnter(cleanup);
     fireEvent.focus(cleanup);
     fireEvent.touchStart(cleanup);
@@ -173,7 +173,7 @@ describe('AppShell — fixed workspace rail', () => {
         <div>Page content</div>
       </AppShell>,
     );
-    const child = within(screen.getByRole('navigation', { name: 'Clean up views' })).getByRole(
+    const child = within(screen.getByRole('navigation', { name: 'Cleanup views' })).getByRole(
       'button',
       { name: /Screener/ },
     );
@@ -186,7 +186,7 @@ describe('AppShell — fixed workspace rail', () => {
 
 describe('AppShell — mobile workspace navigation', () => {
   it.each([
-    ['triage', 'Clean up'],
+    ['triage', 'Cleanup'],
     ['quiet', 'Automations'],
     ['followups', 'Catch up'],
     ['snoozed', 'Catch up'],

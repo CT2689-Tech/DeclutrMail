@@ -110,7 +110,7 @@ export function SendersPoliciesScreen() {
       }}
     >
       <style>{POLICY_ROW_CSS}</style>
-      <EditorialKicker>Your workspace / Sender policies</EditorialKicker>
+      <EditorialKicker>Settings</EditorialKicker>
       <PageHeader title="Protected senders" backToSettings>
         <span
           style={{ fontSize: text.sm, color: color.fgMuted, fontVariantNumeric: 'tabular-nums' }}

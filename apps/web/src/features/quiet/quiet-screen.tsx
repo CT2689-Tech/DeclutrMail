@@ -58,7 +58,7 @@ export function QuietRoute() {
         gap: 24,
       }}
     >
-      <EditorialKicker>Automations / On your schedule</EditorialKicker>
+      <EditorialKicker>Automations</EditorialKicker>
       <h1 style={editorialTitleStyle}>Quiet hours</h1>
       <EditorialDescription>
         Autopilot holds its actions during quiet hours. Gmail delivery continues.

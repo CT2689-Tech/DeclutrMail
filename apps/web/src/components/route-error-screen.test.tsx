@@ -17,24 +17,24 @@ import TriageError from '@/app/(app)/triage/error';
 
 describe('RouteErrorScreen', () => {
   it.each([
-    { View: LaterError, title: 'Later', kicker: 'Catch up / Coming back to you', gap: 32 },
-    { View: SettingsError, title: 'Settings', kicker: 'Your workspace / Preferences', gap: 32 },
+    { View: LaterError, title: 'Later', kicker: 'Catch up', gap: 32 },
+    { View: SettingsError, title: 'Settings', kicker: 'Settings', gap: 32 },
     {
       View: PrivacyError,
       title: 'Privacy & data',
-      kicker: 'Your workspace / Privacy & data',
+      kicker: 'Settings',
       gap: 32,
     },
     {
       View: ProtectedError,
       title: 'Protected senders',
-      kicker: 'Your workspace / Sender policies',
+      kicker: 'Settings',
       gap: 12,
     },
     {
       View: HelpError,
       title: 'Help & glossary',
-      kicker: 'Your workspace / A useful reference',
+      kicker: 'Settings',
       gap: 24,
     },
   ])(

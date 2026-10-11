@@ -318,7 +318,7 @@ function BriefBody({
 
   return (
     <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 24 }}>
-      <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
+      <EditorialKicker>Catch up</EditorialKicker>
       <div
         style={{
           display: 'flex',
@@ -1382,7 +1382,7 @@ function LoadingState() {
       aria-live="polite"
       style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 24 }}
     >
-      <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
+      <EditorialKicker>Catch up</EditorialKicker>
       <h1 style={H1_STYLE}>Daily brief</h1>
       {[0, 1, 2, 3, 4].map((i) => (
         <div
@@ -1399,7 +1399,7 @@ function LoadingState() {
 function BriefErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   return (
     <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 24 }}>
-      <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
+      <EditorialKicker>Catch up</EditorialKicker>
       <h1 style={H1_STYLE}>Daily brief</h1>
       <RetryableErrorState
         headingLevel={2}
@@ -1429,7 +1429,7 @@ function NotYetState({
 }) {
   return (
     <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 24 }}>
-      <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
+      <EditorialKicker>Catch up</EditorialKicker>
       <h1 style={H1_STYLE}>Daily brief</h1>
       <EmptyState
         headingLevel={2}

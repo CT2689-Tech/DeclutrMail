@@ -773,14 +773,14 @@ export function BillingScreen({
         gap: 20,
       }}
     >
-      <EditorialKicker>Your workspace / Billing</EditorialKicker>
-      <h1 style={editorialTitleStyle}>Billing</h1>
+      <EditorialKicker>Plan & billing</EditorialKicker>
+      <h1 style={editorialTitleStyle}>Plan & billing</h1>
       <p style={{ margin: 0, color: color.fgSoft }}>
         Applies to this workspace and its connected inboxes.
       </p>
       <ScreenIntro
         id="billing"
-        title="Billing"
+        title="Plan & billing"
         body="Upgrades start today; downgrades and cancellations take effect after the period you've paid for."
       />
 

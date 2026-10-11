@@ -68,7 +68,7 @@ export default async function BriefPage() {
     >
       <TierGate
         capability="brief"
-        title="Daily brief"
+        title="Daily Brief"
         pitch="A daily summary of yesterday's email, in-app, at an hour you choose."
       >
         <BriefScreen />

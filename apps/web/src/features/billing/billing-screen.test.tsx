@@ -1298,7 +1298,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     const notice = await screen.findByTestId('payment-processing-notice');
-    expect(screen.getByRole('heading', { name: 'Billing', level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Plan & billing', level: 1 })).toBeInTheDocument();
     expect(within(notice).getByText('What we know')).toBeInTheDocument();
     expect(within(notice).getByText('What happens next')).toBeInTheDocument();
     expect(within(notice).getByRole('link', { name: 'Contact billing support' })).toHaveAttribute(

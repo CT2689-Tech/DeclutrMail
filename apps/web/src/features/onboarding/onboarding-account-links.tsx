@@ -17,7 +17,7 @@ export function OnboardingAccountLinks() {
         Settings
       </Link>
       <Link href="/billing" style={{ color: tokens.color.fgMuted }}>
-        Billing
+        Plan & billing
       </Link>
       <Link href="/settings/help" style={{ color: tokens.color.fgMuted }}>
         Get help

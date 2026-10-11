@@ -62,6 +62,18 @@ export { Spark } from './components/spark';
 export { Avatar } from './components/avatar';
 export { Button } from './components/button';
 export type { ButtonTone, ButtonSize } from './components/button';
+export {
+  BannerSlot,
+  BANNER_SLOT_ORDER,
+  CaughtUp,
+  ComingWithPro,
+  FeatureExplainer,
+  FirstLandingSlot,
+  resolveBanner,
+  resolveFirstLanding,
+  TrustLine,
+} from './components/launch';
+export type { BannerCandidate, BannerSlotId, LandingCandidate } from './components/launch';
 export { EmptyState } from './components/empty-state';
 export type {
   EmptyStateProps,

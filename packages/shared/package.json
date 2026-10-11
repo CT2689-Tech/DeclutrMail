@@ -33,6 +33,7 @@
     "./copy/launch": "./src/copy/launch/index.ts",
     "./copy/legal-entity": "./src/copy/legal-entity.ts",
     "./copy/screen-decisions": "./src/copy/screen-decisions.ts",
+    "./copy/ui-glossary": "./src/copy/ui-glossary.ts",
     "./observability": "./src/observability/index.ts",
     "./senders": "./src/senders/index.ts",
     "./senders/organizational-domain": "./src/senders/organizational-domain.ts",

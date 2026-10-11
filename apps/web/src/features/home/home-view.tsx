@@ -48,7 +48,7 @@ export function HomeView({
       />
       <header className={styles.header}>
         <div>
-          <EditorialKicker>Your workspace / Home</EditorialKicker>
+          <EditorialKicker>Home</EditorialKicker>
           <h1>
             A little room
             <br />
@@ -334,7 +334,7 @@ function WorkspaceOverview({
           <h3>Catch up</h3>
           <WorkflowLink
             href="/brief"
-            title="Daily brief"
+            title="Daily Brief"
             detail={briefStatus}
             locked={access('brief')}
           />

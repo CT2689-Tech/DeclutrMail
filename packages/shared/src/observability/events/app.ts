@@ -52,6 +52,10 @@ export const APP_EVENT_NAMES = [
   'brief_hour_changed',
   'data_export_requested',
   'support_request_submitted',
+  'caught_up_viewed',
+  'empty_state_cta_clicked',
+  'sync_gate_state_viewed',
+  'home_next_step_clicked',
 ] as const;
 
 export type AppEventName = (typeof APP_EVENT_NAMES)[number];
@@ -390,5 +394,30 @@ export interface AppEventPayloads {
     format: 'json' | 'csv' | 'senders-csv' | 'decisions-csv';
     /** Success means complete blob handed to the browser, not proof of a saved file. */
     outcome: 'success' | 'failed';
+  };
+
+  caught_up_viewed: {
+    surface: 'senders' | 'triage' | 'home' | 'screener';
+  };
+
+  empty_state_cta_clicked: {
+    surface: 'senders' | 'triage' | 'home' | 'screener' | 'activity';
+    state: 'caught_up' | 'empty' | 'resting';
+  };
+
+  sync_gate_state_viewed: {
+    state:
+      | 'progress'
+      | 'ready'
+      | 'insufficient_scopes'
+      | 'invalid_grant'
+      | 'reconnect_required'
+      | 'rate_limit'
+      | 'stuck'
+      | 'unknown';
+  };
+
+  home_next_step_clicked: {
+    kind: 'unsubscribe_archive' | 'largest_senders' | 'later_due' | 'triage';
   };
 }

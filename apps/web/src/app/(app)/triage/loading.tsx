@@ -13,7 +13,7 @@ export default function Loading() {
       variant="triage"
       triageMode={mode === 'list' ? 'list' : 'focus'}
       gap={20}
-      kicker="Clean up / A considered decision"
+      kicker="Cleanup"
       title="Triage"
       label="Loading triage queue"
       rows={1}

@@ -114,7 +114,7 @@ export function PrivacyDataView({
         gap: 32,
       }}
     >
-      <EditorialKicker>Your workspace / Privacy & data</EditorialKicker>
+      <EditorialKicker>Settings</EditorialKicker>
       <PageHeader title="Privacy & data" backToSettings />
       <EditorialDescription>
         Review access and stored data for all connected inboxes, export your records, or manage

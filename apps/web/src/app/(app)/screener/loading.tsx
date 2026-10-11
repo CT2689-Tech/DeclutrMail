@@ -4,7 +4,7 @@ export default function Loading() {
   return (
     <RouteLoading
       gap={24}
-      kicker="Clean up / New senders"
+      kicker="Cleanup"
       title="Screener"
       label="Loading the Screener queue"
       rows={3}

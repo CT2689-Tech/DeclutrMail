@@ -172,7 +172,7 @@ function SnoozedScreenContents({ initialNow }: { initialNow: number | undefined 
         gap: 32,
       }}
     >
-      <EditorialKicker>Catch up / Coming back to you</EditorialKicker>
+      <EditorialKicker>Catch up</EditorialKicker>
       <h1 style={editorialTitleStyle}>Later</h1>
       <EditorialDescription>Return times for the active inbox · {timeZone}</EditorialDescription>
       <ScreenIntro

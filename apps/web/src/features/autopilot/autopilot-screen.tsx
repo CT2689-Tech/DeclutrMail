@@ -852,7 +852,7 @@ export function AutopilotScreen({
         gap: 32,
       }}
     >
-      <EditorialKicker>Automations / Your rules</EditorialKicker>
+      <EditorialKicker>Automations</EditorialKicker>
       {/* Header — one line: title + the master pause (D105). */}
       <div
         style={{

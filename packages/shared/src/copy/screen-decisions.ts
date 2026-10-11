@@ -2,9 +2,11 @@
  * Launch decision constants. WS2 owns this file after the WS1a stub
  * commit. Each value is the default Chintan can flip in one line.
  */
+import deck from './launch/deck/ws2.json';
 
 export const NAV_GROUP_LABEL = 'Cleanup'; // DECISION: Chintan
 export const CONNECTION_TERM = 'Gmail account'; // DECISION: Chintan
+export const CONNECTION_TERM_PLURAL = 'Gmail accounts'; // DECISION: Chintan
 export const BRIEF_NAME = 'Daily Brief'; // DECISION: Chintan
 export const BILLING_NAME = 'Plan & billing'; // DECISION: Chintan
 export const KICKER_STYLE = 'group_only'; // DECISION: Chintan
@@ -29,3 +31,17 @@ export const FIRST_LANDING_SLOT_ORDER = [
 export const SHOW_SCREENER_NEW_SENDER_COUNT_FREE = true; // DECISION: Chintan
 export const SHOW_SWEEPER_VENDOR_NAME = true; // DECISION: Chintan
 export const PROVIDER_WAITLIST_CONTACT = 'opt_in'; // DECISION: Chintan
+
+/** Consent card + stored version. A mismatch re-asks and treats AI as off. */
+export const AI_CONSENT_VERSION = '2026-10'; // DECISION: Chintan
+export const BRIEF_AI_CONSENT_VERSION = AI_CONSENT_VERSION;
+/** One Settings toggle. Alternate true splits explanations and Brief. */
+export const AI_SETTINGS_SPLIT = false; // DECISION: Chintan
+/** Recommended training sentence, not the anthropic_terms alternate. */
+export const AI_TRAINING_LINE = 'recommended' as const; // DECISION: Chintan
+/** Recommended plain-explain rewrite. Alternate is the old template. */
+export const PLAIN_EXPLAIN_COPY = 'recommended' as const; // DECISION: Chintan
+export const AI_PROMPT_INTERVAL_DAYS = 30; // DECISION: Chintan
+export const AI_PROMPT_MAX_DISMISSALS = 2; // DECISION: Chintan
+export const EXPLAIN_AI_DISCLOSURE = deck.aiConsent.explain.sends;
+export const BRIEF_AI_DISCLOSURE = deck.aiConsent.brief.sends;

@@ -1640,7 +1640,7 @@ export function TriageScreen({
         fontFamily: font.sans,
       }}
     >
-      {journey === 'daily' && <EditorialKicker>Clean up / A considered decision</EditorialKicker>}
+      {journey === 'daily' && <EditorialKicker>Cleanup</EditorialKicker>}
       {journey === 'daily' && (
         <div
           style={{

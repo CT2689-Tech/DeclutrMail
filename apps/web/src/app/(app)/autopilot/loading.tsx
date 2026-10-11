@@ -4,7 +4,7 @@ export default function Loading() {
   return (
     <RouteLoading
       gap={32}
-      kicker="Automations / Your rules"
+      kicker="Automations"
       title="Autopilot"
       label="Loading Autopilot rules"
       rows={3}

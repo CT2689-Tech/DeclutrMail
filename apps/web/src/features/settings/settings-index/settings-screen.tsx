@@ -275,7 +275,7 @@ export function SettingsScreen({
       >
         {reconnectAnnouncement?.liveRole === 'alert' ? reconnectAnnouncement.message : ''}
       </div>
-      <EditorialKicker>Your workspace / Preferences</EditorialKicker>
+      <EditorialKicker>Settings</EditorialKicker>
       <PageHeader title="Settings" />
       <EditorialContents
         items={[

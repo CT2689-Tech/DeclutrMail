@@ -2719,7 +2719,7 @@ function SendersScreenContent({
       <div className={workspaceStyles.workspace} data-split={canSplit || undefined}>
         <header className={workspaceStyles.heading}>
           <div>
-            <EditorialKicker>Your inbox, by sender</EditorialKicker>
+            <EditorialKicker>Cleanup</EditorialKicker>
             <h1 className={workspaceStyles.title}>Senders</h1>
             <p className={workspaceStyles.subtitle}>
               See the pattern. Decide what deserves a place.

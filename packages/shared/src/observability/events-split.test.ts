@@ -87,10 +87,22 @@ const OWNERS = {
   ops: 'ops: WS4',
 } as const;
 
+/** Names appended after the split. Drops and renames still fail. */
+const APPENDED_AFTER_SPLIT = [
+  'caught_up_viewed',
+  'empty_state_cta_clicked',
+  'sync_gate_state_viewed',
+  'home_next_step_clicked',
+] as const;
+
 describe('event registry domain split', () => {
-  it('keeps the same event-name union as the pre-split registry', () => {
-    expect([...EVENT_NAMES].sort()).toEqual([...EVENT_NAMES_BEFORE_SPLIT].sort());
-    expect(new Set(EVENT_NAMES).size).toBe(EVENT_NAMES_BEFORE_SPLIT.length);
+  it('keeps every pre-split name and only the named additions', () => {
+    expect([...EVENT_NAMES].sort()).toEqual(
+      [...EVENT_NAMES_BEFORE_SPLIT, ...APPENDED_AFTER_SPLIT].sort(),
+    );
+    expect(new Set(EVENT_NAMES).size).toBe(
+      EVENT_NAMES_BEFORE_SPLIT.length + APPENDED_AFTER_SPLIT.length,
+    );
   });
 
   it('keeps display_mode off the event-name list', () => {

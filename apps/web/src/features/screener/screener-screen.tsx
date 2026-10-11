@@ -780,7 +780,7 @@ export function ScreenerScreen({
         gap: 24,
       }}
     >
-      <EditorialKicker>Clean up / First decisions</EditorialKicker>
+      <EditorialKicker>Cleanup</EditorialKicker>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
         <h1 style={editorialTitleStyle}>Screener</h1>
         {/* Only the count query knows the true total — the queue loads a

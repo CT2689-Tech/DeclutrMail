@@ -13,14 +13,14 @@ import Settings from './settings/loading';
 import Triage from './triage/loading';
 
 const routes = [
-  { View: Activity, title: 'Activity', kicker: 'Your history / Every outcome in view', gap: 20 },
-  { View: Autopilot, title: 'Autopilot', kicker: 'Automations / Your rules', gap: 32 },
-  { View: Brief, title: 'Daily brief', kicker: 'Catch up / Your daily edition', gap: 24 },
-  { View: Followups, title: 'Follow-ups', kicker: 'Catch up / Conversations', gap: 32 },
-  { View: Later, title: 'Later', kicker: 'Catch up / Coming back to you', gap: 32 },
-  { View: Quiet, title: 'Quiet hours', kicker: 'Automations / On your schedule', gap: 24 },
-  { View: Screener, title: 'Screener', kicker: 'Clean up / New senders', gap: 24 },
-  { View: Settings, title: 'Settings', kicker: 'Your workspace / Preferences', gap: 32 },
+  { View: Activity, title: 'Activity', kicker: 'Activity', gap: 20 },
+  { View: Autopilot, title: 'Autopilot', kicker: 'Automations', gap: 32 },
+  { View: Brief, title: 'Daily Brief', kicker: 'Catch up', gap: 24 },
+  { View: Followups, title: 'Follow-ups', kicker: 'Catch up', gap: 32 },
+  { View: Later, title: 'Later', kicker: 'Catch up', gap: 32 },
+  { View: Quiet, title: 'Quiet hours', kicker: 'Automations', gap: 24 },
+  { View: Screener, title: 'Screener', kicker: 'Cleanup', gap: 24 },
+  { View: Settings, title: 'Settings', kicker: 'Settings', gap: 32 },
 ];
 
 describe('Route loading continuity', () => {
@@ -63,6 +63,6 @@ describe('Route loading continuity', () => {
     expect(heading.parentElement).toHaveStyle({ maxWidth: '1480px', gap: '20px' });
     expect(heading.parentElement?.className).toContain('triage');
     expect(screen.getByRole('status')).toHaveStyle({ maxWidth: '640px' });
-    expect(screen.getByText('Clean up / A considered decision')).toBeInTheDocument();
+    expect(screen.getByText('Cleanup')).toBeInTheDocument();
   });
 });

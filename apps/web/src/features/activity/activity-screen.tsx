@@ -423,7 +423,7 @@ export function ActivityScreen() {
 
   return (
     <div style={screenColumnStyle}>
-      <EditorialKicker>Your history / Every outcome in view</EditorialKicker>
+      <EditorialKicker>Activity</EditorialKicker>
       <ScreenIntro id="activity" title="Activity" body={activityUndoRecoveryHelp} />
 
       <header style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
