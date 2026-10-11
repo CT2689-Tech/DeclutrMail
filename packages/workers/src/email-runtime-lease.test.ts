@@ -29,19 +29,12 @@ import {
   EMAIL_RUNTIME_LEASE_PROTOCOL,
   type EmailRuntimeAdoptionWitness,
 } from './email-runtime-lease.js';
+import { sealedWitness } from './email-runtime-adoption.fixture.js';
 
 const SOURCE = 'a'.repeat(40);
 const REVISION = 'declutrmail-worker-00164-synthetic';
-function witness(): EmailRuntimeAdoptionWitness {
-  return {
-    inventoryComplete: true,
-    retirementComplete: true,
-    requestDrainComplete: true,
-    leaseEnforcementComplete: true,
-    billingConsumerRequired: false,
-    validUntil: Date.now() + 60_000,
-    revisions: [{ revision: REVISION, source: SOURCE }],
-  };
+function witness(billingConsumerRequired = false): EmailRuntimeAdoptionWitness {
+  return sealedWitness({ source: SOURCE, workerRevision: REVISION, billingConsumerRequired });
 }
 
 it('pre-send admission refuses a late malformed compatible-protocol actor without an attempt', async () => {
@@ -248,16 +241,16 @@ it('a beacon or preference-compatible source without adoption cannot clear the g
       { prefix },
     );
     await lease.register();
-    for (const field of [
-      'inventoryComplete',
-      'retirementComplete',
-      'requestDrainComplete',
-      'leaseEnforcementComplete',
-    ] as const) {
-      await expect(
-        readEmailRuntimeLeases(admission, { ...witness(), [field]: false }, prefix),
-      ).rejects.toMatchObject({ reason: 'runtime_adoption_unverified' });
-    }
+    await expect(readEmailRuntimeLeases(admission, witness(), prefix)).rejects.toMatchObject({
+      reason: 'no_workers',
+    });
+    await expect(
+      readEmailRuntimeLeases(admission, { inventoryComplete: true } as never, prefix),
+    ).rejects.toMatchObject({ reason: 'runtime_adoption_unverified', detail: 'caller_witness' });
+    const tampered = witness();
+    await expect(
+      readEmailRuntimeLeases(admission, { ...tampered, evidenceDigest: '0'.repeat(64) }, prefix),
+    ).rejects.toMatchObject({ reason: 'runtime_adoption_unverified', detail: 'witness_seal' });
     await lease.release();
   });
 });
@@ -860,9 +853,9 @@ it('an API actor or flag-OFF worker cannot satisfy required billing consumer rea
       await off.register();
       await startEmailRuntimeConsumer(generic, off, async () => {});
       await off.publish();
-      await expect(
-        readEmailRuntimeLeases(admission, { ...witness(), billingConsumerRequired: true }, prefix),
-      ).rejects.toMatchObject({ reason: 'no_workers' });
+      await expect(readEmailRuntimeLeases(admission, witness(true), prefix)).rejects.toMatchObject({
+        reason: 'no_workers',
+      });
     } finally {
       await generic.close();
       await off.release();
@@ -882,9 +875,9 @@ it('an API actor or flag-OFF worker cannot satisfy required billing consumer rea
       await on.register();
       await startEmailRuntimeConsumer(billing, on, async () => {});
       await on.publish();
-      await expect(
-        readEmailRuntimeLeases(admission, { ...witness(), billingConsumerRequired: true }, prefix),
-      ).resolves.toEqual({ workers: 1 });
+      await expect(readEmailRuntimeLeases(admission, witness(true), prefix)).resolves.toEqual({
+        workers: 1,
+      });
     } finally {
       await billing.close();
       await on.release();

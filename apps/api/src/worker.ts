@@ -78,6 +78,7 @@ import {
   startEmailRuntimeConsumer,
   finishEmailRuntimeStartup,
   createEmailRuntimeConnection,
+  classifyEmailRuntimeHosting,
   enqueueEmailSend,
   ensureIncrementalSyncJob,
   ensureInitialSyncJob,
@@ -2160,20 +2161,27 @@ async function bootstrap(): Promise<void> {
   let emailRuntimeFailed = false;
   const emailPollingReady: Promise<void>[] = [];
   const runtimeLeaseEnabled = process.env.EMAIL_RUNTIME_LEASE_ENABLED === 'true';
-  const runtimeConnection = runtimeLeaseEnabled
+  const runtimeHosting = runtimeLeaseEnabled ? classifyEmailRuntimeHosting(process.env) : undefined;
+  if (runtimeHosting && runtimeHosting.kind !== 'cloud-run-service') {
+    // Pool revisions are not service revisions. Do not fall back to
+    // CLOUD_RUN_REVISION; that would enroll without pool drain proof.
+    throw new Error('Email runtime hosting unsupported');
+  }
+  const runtimeConnection = runtimeHosting
     ? createEmailRuntimeConnection(requireEnv('REDIS_URL'))
     : undefined;
   if (runtimeConnection) await runtimeConnection.connect();
-  const emailRuntimeLease = runtimeConnection
-    ? new EmailRuntimeLease(
-        runtimeConnection,
-        {
-          revision: requireEnv('K_REVISION'),
-          source: requireEnv('SENTRY_RELEASE'),
-        },
-        { billingConsumer: billingNoticeStart() !== null },
-      )
-    : undefined;
+  const emailRuntimeLease =
+    runtimeConnection && runtimeHosting?.kind === 'cloud-run-service'
+      ? new EmailRuntimeLease(
+          runtimeConnection,
+          {
+            revision: runtimeHosting.revision,
+            source: requireEnv('SENTRY_RELEASE'),
+          },
+          { billingConsumer: billingNoticeStart() !== null },
+        )
+      : undefined;
   const emailDelivery = new EmailService(new EmailSuppressionService(db));
   const emailRuntimeGuard = emailRuntimeLease
     ? new EmailRuntimeGuard(emailRuntimeLease, emailDelivery)

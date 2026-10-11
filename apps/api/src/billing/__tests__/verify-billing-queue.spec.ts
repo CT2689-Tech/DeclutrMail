@@ -1,66 +1,57 @@
-import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { ActorError } = vi.hoisted(() => ({
-  ActorError: class extends Error {
-    constructor(
-      message: string,
-      readonly reason: string,
-    ) {
-      super(message);
-    }
-  },
-}));
-type Read = (queue: unknown) => Promise<unknown>;
-type WithQueue = (read: Read) => Promise<unknown>;
 const f = vi.hoisted(() => ({
-  connection: { on: vi.fn(), disconnect: vi.fn(), status: 'ready' },
-  queue: { on: vi.fn(), close: vi.fn(async () => undefined) },
-  construct: vi.fn(),
+  connection: {
+    on: vi.fn(),
+    disconnect: vi.fn(),
+    ping: vi.fn(async () => 'PONG'),
+    status: 'ready',
+  },
   connect: vi.fn(),
-  read: vi.fn(async (_queue: unknown): Promise<unknown> => ({ workers: 1 })),
+  read: vi.fn(async () => {
+    throw Object.assign(new Error('Email runtime compatibility unverified'), {
+      reason: 'runtime_adoption_unverified',
+    });
+  }),
   sample: vi.fn(),
 }));
 vi.mock('@declutrmail/workers', () => ({
   createRedisConnection: f.connect,
-  EMAIL_SEND_QUEUE: 'email-send',
-  QueueActorCompatibilityError: ActorError,
+  readEmailRuntimeLeases: f.read,
   sampleEmailQueueCompatibility: f.sample,
 }));
 vi.mock('bullmq', () => ({
-  Queue: vi.fn(function (name, options) {
-    f.construct(name, options);
-    return f.queue;
+  Queue: vi.fn(function Queue() {
+    throw new Error('CLIENT LIST queue must not be constructed');
   }),
 }));
 import {
-  PROBE_DEADLINE_MS,
   PROBE_EXIT_CODES,
-  PROBE_SAMPLING,
   probeFailureReason,
   verifyBillingQueue,
 } from '../verify-billing-queue.js';
 
-/** Default sampler: two samples, each through the probe's own fresh handle. */
-async function twoSamples(withQueue: WithQueue) {
-  await withQueue(f.read);
-  return withQueue(f.read);
-}
-
 describe('standalone billing queue probe', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    f.construct.mockImplementation(() => undefined);
-    f.connection.status = 'ready';
+    f.connection.ping.mockResolvedValue('PONG');
     f.connect.mockReturnValue(f.connection);
-    f.read.mockResolvedValue({ workers: 1 });
-    f.sample.mockImplementation(twoSamples);
+    f.read.mockRejectedValue(
+      Object.assign(new Error('Email runtime compatibility unverified'), {
+        reason: 'runtime_adoption_unverified',
+      }),
+    );
     vi.stubEnv('BILLING_NOTICE_PROBE', 'true');
     vi.stubEnv('BILLING_NOTICE_REDIS_URL', 'redis://127.0.0.1:1');
+    vi.stubEnv('EMAIL_RUNTIME_ADOPTION_WITNESS', '');
+    vi.stubEnv('CLIENT_LIST_COMPATIBLE', '');
   });
   afterEach(() => {
     vi.unstubAllEnvs();
-    vi.useRealTimers();
   });
+
   it('requires explicit probe enrollment and bound runtime configuration', async () => {
     vi.stubEnv('BILLING_NOTICE_PROBE', 'false');
     await expect(verifyBillingQueue()).rejects.toThrow('configuration unavailable');
@@ -69,151 +60,77 @@ describe('standalone billing queue probe', () => {
     await expect(verifyBillingQueue()).rejects.toThrow('configuration unavailable');
     expect(f.connect).not.toHaveBeenCalled();
   });
-  it('samples over a bounded window through a fresh, closed connection per sample', async () => {
-    await expect(verifyBillingQueue()).resolves.toEqual({ workers: 1 });
-    expect(f.sample).toHaveBeenCalledWith(expect.any(Function), {
-      samples: 5,
-      intervalMs: 3_000,
-      breadth: 8,
-    });
-    expect(f.connect).toHaveBeenCalledTimes(2);
-    expect(f.construct).toHaveBeenCalledWith('email-send', {
-      connection: f.connection,
-      skipMetasUpdate: true,
-    });
-    expect(f.read).toHaveBeenCalledWith(f.queue);
-    expect(f.connection.disconnect).toHaveBeenCalledTimes(2);
-    expect(f.queue.close).toHaveBeenCalledTimes(2);
-  });
-  it('keeps the sampling window inside the deadline and the deadline inside the task', () => {
-    const waits = (PROBE_SAMPLING.samples - 1) * PROBE_SAMPLING.intervalMs;
-    // Each sample's fresh TLS connect and read needs room beside the waits.
-    expect(PROBE_DEADLINE_MS - waits).toBeGreaterThanOrEqual(PROBE_SAMPLING.samples * 4_000);
-    // Leaves room for container startup (run 447 refused 12 s after start)
-    // inside the task's 60 s timeout.
-    expect(PROBE_DEADLINE_MS + 20_000).toBeLessThanOrEqual(60_000);
-    expect(PROBE_SAMPLING.samples).toBeGreaterThan(1);
-  });
-  it('refuses unknown actor evidence and still closes both handles', async () => {
-    f.read.mockRejectedValueOnce(new Error('unknown actor'));
-    await expect(verifyBillingQueue()).rejects.toThrow('unknown actor');
+
+  it('does not consult CLIENT LIST and fails closed without a sealed witness', async () => {
+    const error = await verifyBillingQueue().catch((caught: unknown) => caught);
+    expect(probeFailureReason(error)).toBe('adoption_unverified');
+    expect(f.sample).not.toHaveBeenCalled();
+    expect(f.read).toHaveBeenCalledWith(f.connection, undefined);
+    expect(f.connection.ping).toHaveBeenCalledOnce();
     expect(f.connection.disconnect).toHaveBeenCalledOnce();
-    expect(f.queue.close).toHaveBeenCalledOnce();
+    const source = readFileSync(resolve(import.meta.dirname, '../verify-billing-queue.ts'), 'utf8');
+    expect(source).not.toContain('sampleEmailQueueCompatibility');
+    expect(source).not.toContain('getWorkers');
+    expect(source).not.toContain('CLIENT LIST');
   });
-  it('requires preference compatibility even while billing notices are off', async () => {
-    vi.stubEnv('BILLING_APP_NOTICES_ENABLED', 'false');
-    f.sample.mockRejectedValueOnce(new Error('old preference actor'));
-    await expect(verifyBillingQueue()).rejects.toThrow('old preference actor');
+
+  it('rejects an environment-supplied witness or client-list success before connecting', async () => {
+    vi.stubEnv('EMAIL_RUNTIME_ADOPTION_WITNESS', '{"inventoryComplete":true}');
+    await expect(verifyBillingQueue()).rejects.toMatchObject({ reason: 'adoption_unverified' });
+    vi.stubEnv('EMAIL_RUNTIME_ADOPTION_WITNESS', '');
+    vi.stubEnv('CLIENT_LIST_COMPATIBLE', 'true');
+    await expect(verifyBillingQueue()).rejects.toMatchObject({ reason: 'adoption_unverified' });
+    expect(f.connect).not.toHaveBeenCalled();
   });
-  it('closes its connection if queue construction fails', async () => {
-    f.construct.mockImplementationOnce(() => {
-      throw new Error('queue unavailable');
-    });
-    await expect(verifyBillingQueue()).rejects.toThrow('queue unavailable');
-    expect(f.connection.disconnect).toHaveBeenCalledOnce();
-    expect(f.queue.close).not.toHaveBeenCalled();
-  });
-  it('bounds stalled reads and disconnects before leaving the private task', async () => {
-    vi.useFakeTimers();
-    f.read.mockImplementationOnce(() => new Promise(() => {}));
-    const result = expect(verifyBillingQueue()).rejects.toThrow('probe deadline');
-    await vi.advanceTimersByTimeAsync(PROBE_DEADLINE_MS);
-    await result;
-    expect(f.connection.disconnect).toHaveBeenCalledOnce();
-    expect(f.queue.close).toHaveBeenCalledOnce();
-  });
-  it('names a deadline between samples as a slow broker and opens nothing after it', async () => {
-    vi.useFakeTimers();
-    f.connection.status = 'end';
-    let resume!: () => void;
-    let late: Promise<unknown> | undefined;
-    f.sample.mockImplementationOnce(async (withQueue: WithQueue) => {
-      await withQueue(f.read);
-      await new Promise<void>((resolve) => (resume = resolve));
-      late = withQueue(f.read).catch((e: unknown) => e);
-      return late;
-    });
-    const pending = verifyBillingQueue().catch((e: unknown) => e);
-    await vi.advanceTimersByTimeAsync(PROBE_DEADLINE_MS);
-    expect(probeFailureReason(await pending)).toBe('broker_read_stalled');
-    resume();
-    await vi.waitFor(() => expect(late).toBeDefined());
-    await late;
-    expect(f.connect).toHaveBeenCalledOnce();
-  });
-  it("does not blame a later deadline on an earlier sample's recovered error", async () => {
-    vi.useFakeTimers();
-    f.connection.status = 'connecting';
-    const reset = Object.assign(new Error('PRIVATE'), { code: 'ECONNRESET' });
-    f.sample.mockImplementationOnce(async (withQueue: WithQueue) => {
-      await withQueue(async (queue) => {
-        const [, onError] = f.connection.on.mock.calls.at(-1) as [string, (e: unknown) => void];
-        onError(reset);
-        return f.read(queue);
-      });
-      return withQueue(() => new Promise(() => {}));
-    });
-    const pending = verifyBillingQueue().catch((e: unknown) => e);
-    await vi.advanceTimersByTimeAsync(PROBE_DEADLINE_MS);
-    expect(probeFailureReason(await pending)).toBe('redis_not_ready');
-    expect(f.connect).toHaveBeenCalledTimes(2);
-  });
+
   it('names configuration refusal without connecting', async () => {
     vi.stubEnv('BILLING_NOTICE_REDIS_URL', '');
-    const error = await verifyBillingQueue().catch((e: unknown) => e);
+    const error = await verifyBillingQueue().catch((caught: unknown) => caught);
     expect(probeFailureReason(error)).toBe('configuration_unavailable');
   });
-  it('passes broker actor refusals through as their fixed reason', async () => {
-    f.sample.mockRejectedValueOnce(new ActorError('PRIVATE', 'incompatible_workers'));
-    const error = await verifyBillingQueue().catch((e: unknown) => e);
-    expect(probeFailureReason(error)).toBe('incompatible_workers');
+
+  it('classifies broker and lease refusals without reading their messages', () => {
     expect(probeFailureReason(new Error('PRIVATE'))).toBe('unclassified');
+    expect(
+      probeFailureReason(
+        Object.assign(new Error('PRIVATE provider response'), { name: 'ReplyError' }),
+      ),
+    ).toBe('redis_reply_error');
+    expect(probeFailureReason(Object.assign(new Error('PRIVATE'), { code: 'ECONNRESET' }))).toBe(
+      'redis_network_error',
+    );
+    expect(
+      probeFailureReason(
+        Object.assign(new Error('PRIVATE'), { code: 'ERR_TLS_CERT_ALTNAME_INVALID' }),
+      ),
+    ).toBe('redis_tls_error');
+    expect(probeFailureReason(Object.assign(new Error('PRIVATE'), { reason: 'no_workers' }))).toBe(
+      'no_workers',
+    );
+    expect(
+      probeFailureReason(Object.assign(new Error('PRIVATE'), { reason: 'incompatible_workers' })),
+    ).toBe('incompatible_workers');
+    expect(
+      probeFailureReason(
+        Object.assign(new Error('PRIVATE'), { reason: 'runtime_settlement_unverified' }),
+      ),
+    ).toBe('settlement_unverified');
   });
-  it('classifies an immediately rejected broker read without exposing its message', async () => {
-    const error = Object.assign(new Error('PRIVATE provider response'), { name: 'ReplyError' });
-    f.read.mockRejectedValueOnce(error);
-    const refusal = await verifyBillingQueue().catch((e: unknown) => e);
-    expect(probeFailureReason(refusal)).toBe('redis_reply_error');
+
+  it('classifies a refused ping and still disconnects', async () => {
+    f.connection.ping.mockRejectedValueOnce(
+      Object.assign(new Error('WRONGPASS PRIVATE'), { name: 'ReplyError' }),
+    );
+    const error = await verifyBillingQueue().catch((caught: unknown) => caught);
+    expect(probeFailureReason(error)).toBe('redis_reply_error');
+    expect(f.read).not.toHaveBeenCalled();
     expect(f.connection.disconnect).toHaveBeenCalledOnce();
-    expect(f.queue.close).toHaveBeenCalledOnce();
   });
-  describe('deadline reasons', () => {
-    async function deadlineReason(status: string, errors: unknown[] = []) {
-      vi.useFakeTimers();
-      f.connection.status = status;
-      f.read.mockImplementationOnce(() => new Promise(() => {}));
-      const pending = verifyBillingQueue().catch((e: unknown) => e);
-      const listeners = f.connection.on.mock.calls.filter((call: unknown[]) => call[0] === 'error');
-      const onError = listeners[listeners.length - 1]?.[1] as (error: unknown) => void;
-      for (const error of errors) onError(error);
-      await vi.advanceTimersByTimeAsync(PROBE_DEADLINE_MS);
-      return probeFailureReason(await pending);
-    }
-    it('separates a stalled broker read from a connection not ready at the deadline', async () => {
-      expect(await deadlineReason('ready')).toBe('broker_read_stalled');
-      expect(await deadlineReason('connecting')).toBe('redis_not_ready');
-    });
-    it('classifies connection errors by fixed name and code only', async () => {
-      const coded = (code: string) => Object.assign(new Error('PRIVATE'), { code });
-      expect(await deadlineReason('reconnecting', [coded('ECONNREFUSED')])).toBe(
-        'redis_network_error',
-      );
-      expect(await deadlineReason('reconnecting', [coded('ENOTFOUND')])).toBe(
-        'redis_network_error',
-      );
-      expect(await deadlineReason('reconnecting', [coded('ERR_TLS_CERT_ALTNAME_INVALID')])).toBe(
-        'redis_tls_error',
-      );
-      const reply = Object.assign(new Error('WRONGPASS PRIVATE'), { name: 'ReplyError' });
-      expect(await deadlineReason('reconnecting', [reply])).toBe('redis_reply_error');
-      expect(await deadlineReason('reconnecting', [coded('ECONNRESET'), coded('PRIVATE')])).toBe(
-        'redis_network_error',
-      );
-    });
-  });
+
   it('keeps every exit code distinct, nonzero and inside the task range', () => {
     const codes = Object.values(PROBE_EXIT_CODES);
     expect(new Set(codes).size).toBe(codes.length);
     for (const code of codes) expect(code > 0 && code < 126).toBe(true);
+    expect(PROBE_EXIT_CODES.adoption_unverified).toBe(110);
   });
 });

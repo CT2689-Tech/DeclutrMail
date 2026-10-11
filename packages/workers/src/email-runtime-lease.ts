@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Redis } from 'ioredis';
+import { verifySealedAdoptionWitness } from './email-runtime-adoption.js';
+import type { EmailRuntimeAdoptionWitness } from './email-runtime-adoption.js';
 
 export const EMAIL_RUNTIME_DELIVERY_FIELD = 'emailRuntimeDeliveryV1';
 export const EMAIL_RUNTIME_LEASE_PROTOCOL = 'email-outbox-lease-v1';
@@ -7,7 +9,7 @@ export const EMAIL_RUNTIME_REGISTRY_PREFIX = 'declutrmail:email-runtime:v1';
 const MAX_ACTORS = 100;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const SOURCE = /^[a-f0-9]{40}$/;
-const REVISION = /^declutrmail-worker-[a-z0-9-]{1,80}$/;
+export const EMAIL_RUNTIME_WORKER_REVISION = /^declutrmail-worker-[a-z0-9-]{1,80}$/;
 
 export type EmailRuntimeRefusal =
   | 'runtime_adoption_unverified'
@@ -17,24 +19,15 @@ export type EmailRuntimeRefusal =
   | 'lease_lost'
   | 'runtime_settlement_unverified';
 export class EmailRuntimeLeaseError extends Error {
-  constructor(readonly reason: EmailRuntimeRefusal) {
+  constructor(
+    readonly reason: EmailRuntimeRefusal,
+    readonly detail?: string,
+  ) {
     super('Email runtime compatibility unverified');
   }
 }
 
-/** Produced only by the deployment's independently verified managed-fleet guard.
- * Prefs compatibility is not lease enforcement. No production witness is minted
- * by this module, a worker, a heartbeat, a caller flag or a CLIENT LIST read.
- */
-export interface EmailRuntimeAdoptionWitness {
-  inventoryComplete: boolean;
-  retirementComplete: boolean;
-  requestDrainComplete: boolean;
-  leaseEnforcementComplete: boolean;
-  billingConsumerRequired: boolean;
-  validUntil: number;
-  revisions: { revision: string; source: string }[];
-}
+export type { EmailRuntimeAdoptionWitness };
 
 interface Actor {
   protocol: string;
@@ -130,7 +123,7 @@ export class EmailRuntimeLease {
     readonly identity: { source: string; revision: string },
     options: { prefix?: string; ttlMs?: number; billingConsumer?: boolean } = {},
   ) {
-    if (!SOURCE.test(identity.source) || !REVISION.test(identity.revision))
+    if (!SOURCE.test(identity.source) || !EMAIL_RUNTIME_WORKER_REVISION.test(identity.revision))
       throw new EmailRuntimeLeaseError('runtime_registry_malformed');
     this.key = registryKey(options.prefix ?? EMAIL_RUNTIME_REGISTRY_PREFIX);
     this.ttl = options.ttlMs ?? 60_000;
@@ -296,31 +289,29 @@ function actor(value: string): Actor {
   }
 }
 
-/** Global broker-key read, accepted only with a complete independently minted
- * adoption witness. Registry absence never excludes an unregistered legacy actor.
+/** Global broker-key read. The witness seal is recomputed from evidence;
+ * caller booleans and CLIENT LIST are not admission proof. Registry absence
+ * never excludes an unregistered legacy actor.
  */
+export async function invalidateEmailRuntimeAdoption(
+  connection: Redis,
+  witness: EmailRuntimeAdoptionWitness,
+  prefix = EMAIL_RUNTIME_REGISTRY_PREFIX,
+): Promise<void> {
+  const sealed = verifySealedAdoptionWitness(witness, Date.now());
+  registryKey(prefix);
+  await connection.hset(`${prefix}:invalidated`, sealed.evidenceDigest, '1');
+}
+
 export async function readEmailRuntimeLeases(
   connection: Redis,
   witness: EmailRuntimeAdoptionWitness | undefined,
   prefix = EMAIL_RUNTIME_REGISTRY_PREFIX,
 ): Promise<{ workers: number }> {
-  if (
-    !witness ||
-    witness.inventoryComplete !== true ||
-    witness.retirementComplete !== true ||
-    witness.requestDrainComplete !== true ||
-    witness.leaseEnforcementComplete !== true ||
-    typeof witness.billingConsumerRequired !== 'boolean' ||
-    !Number.isSafeInteger(witness.validUntil) ||
-    !Array.isArray(witness.revisions) ||
-    witness.revisions.length === 0 ||
-    witness.revisions.length > MAX_ACTORS ||
-    witness.revisions.some(
-      (r) => !r || typeof r !== 'object' || !REVISION.test(r.revision) || !SOURCE.test(r.source),
-    ) ||
-    new Set(witness.revisions.map((r) => r.revision)).size !== witness.revisions.length
-  )
-    throw new EmailRuntimeLeaseError('runtime_adoption_unverified');
+  const sealed = verifySealedAdoptionWitness(witness, Date.now());
+  const invalidated = await connection.hget(`${prefix}:invalidated`, sealed.evidenceDigest);
+  if (invalidated)
+    throw new EmailRuntimeLeaseError('runtime_adoption_unverified', 'rollback_invalidated');
   const result: unknown = await connection.eval(READ, 1, registryKey(prefix), MAX_ACTORS);
   if (
     !Array.isArray(result) ||
@@ -331,8 +322,7 @@ export async function readEmailRuntimeLeases(
   )
     throw new EmailRuntimeLeaseError('runtime_registry_malformed');
   const [now, rows] = result as [number, unknown[]];
-  if (now >= witness.validUntil || witness.validUntil > now + 600_000)
-    throw new EmailRuntimeLeaseError('runtime_adoption_unverified');
+  verifySealedAdoptionWitness(sealed, now);
   let workers = 0;
   let billingWorkers = 0;
   for (let i = 0; i < rows.length; i += 2) {
@@ -346,7 +336,7 @@ export async function readEmailRuntimeLeases(
     if (a.expiresAt > now + 120_000) throw new EmailRuntimeLeaseError('runtime_registry_malformed');
     if (
       a.protocol !== EMAIL_RUNTIME_LEASE_PROTOCOL ||
-      !witness.revisions.some((r) => r.revision === a.revision && r.source === a.source)
+      !sealed.revisions.some((r) => r.revision === a.revision && r.source === a.source)
     )
       throw new EmailRuntimeLeaseError('incompatible_workers');
     // A crashed/expired actor may own unsettled external I/O. Never erase or
@@ -356,7 +346,7 @@ export async function readEmailRuntimeLeases(
     workers++;
     if (a.billingConsumer) billingWorkers++;
   }
-  if (!workers || (witness.billingConsumerRequired && !billingWorkers))
+  if (!workers || (sealed.billingConsumerRequired && !billingWorkers))
     throw new EmailRuntimeLeaseError('no_workers');
   return { workers };
 }
