@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Logo } from '../components/logo';
 import { WS2_COPY } from '../copy/launch/ws2';
-import { BRIEF_NAME } from '../copy/screen-decisions';
+import { BRIEF_NAME, CATCH_UP_LATER_FIRST } from '../copy/screen-decisions';
 import { font, motion, radius, text } from '../tokens/tokens';
 import { NAV_GROUP, useLabels, type LabelKey } from '../hooks/use-labels';
 
@@ -37,6 +37,10 @@ export const NAV: readonly NavItem[] = [
   { id: 'activity', icon: 'M3 12h4l3-9 4 18 3-9h4' },
 ];
 
+const CATCH_UP_MEMBERS = (CATCH_UP_LATER_FIRST
+  ? ['snoozed', 'brief', 'followups']
+  : ['brief', 'followups', 'snoozed']) as const satisfies readonly LabelKey[];
+
 export const WORKSPACE_NAV = [
   { id: 'home', label: 'Home', icon: 'm3 10 9-7 9 7v10H3V10Zm6 10v-7h6v7', members: ['home'] },
   {
@@ -55,7 +59,7 @@ export const WORKSPACE_NAV = [
     id: 'brief',
     label: 'Catch up',
     icon: 'M3 4h7l2 2 2-2h7v15h-7l-2 2-2-2H3V4Zm9 2v15',
-    members: ['brief', 'followups', 'snoozed'],
+    members: CATCH_UP_MEMBERS,
   },
   { id: 'activity', label: 'Activity', icon: 'M3 12h4l3-8 4 16 3-8h4', members: ['activity'] },
 ] as const satisfies readonly {
@@ -205,8 +209,9 @@ export function Sidebar({
             const number = typeof value === 'object' ? value.text : value;
             return number != null && number !== 0 && number !== '0';
           });
+          const destination = members[0];
           const signalNavigationIntent = () => {
-            if (!on) onNavigateIntent?.(item.id);
+            if (!on) onNavigateIntent?.(destination);
           };
           return (
             <button
@@ -215,7 +220,7 @@ export function Sidebar({
               className="dm-nav-row"
               onClick={() => {
                 setHint(null);
-                onNavigate(item.id);
+                onNavigate(destination);
               }}
               onFocus={(event) => {
                 signalNavigationIntent();

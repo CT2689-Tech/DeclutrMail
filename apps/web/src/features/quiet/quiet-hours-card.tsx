@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Pill, Skeleton, tokens } from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { SelectWell } from '@/features/settings/settings-list';
 import { Switch } from '@/features/settings/switch';
 import {
@@ -278,7 +279,7 @@ function QuietHoursForm({
             onChange={(next) => set({ enabled: next })}
           />
         </Row>
-        <Row label="Start" divider>
+        <Row label={WS2_COPY.names.quietFields[0]} divider>
           <input
             className="dm-field"
             type="time"
@@ -289,7 +290,7 @@ function QuietHoursForm({
             style={inputStyle}
           />
         </Row>
-        <Row label="End" divider>
+        <Row label={WS2_COPY.names.quietFields[1]} divider>
           <input
             className="dm-field"
             type="time"
@@ -300,7 +301,7 @@ function QuietHoursForm({
             style={inputStyle}
           />
         </Row>
-        <Row label="Timezone" divider className="dm-quiet-timezone-row">
+        <Row label={WS2_COPY.names.quietFields[2]} divider className="dm-quiet-timezone-row">
           <div className="dm-quiet-timezone-control">
             <SelectWell
               value={draft.timezone}

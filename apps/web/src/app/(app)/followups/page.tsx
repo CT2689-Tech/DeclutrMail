@@ -1,8 +1,9 @@
 import { headers } from 'next/headers';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { hasCapability } from '@declutrmail/shared/entitlements';
 
-import { TierGate } from '@/features/billing/tier-gate';
 import { FollowupsScreen } from '@/features/followups/followups-screen';
+import { ProLockedGate } from '@/features/launch/pro-locked-gate';
 import { followupsQueryOptions } from '@/features/followups/api/query-options';
 import { getServerMe } from '@/features/auth/api/server-me';
 import type { FollowupRow } from '@/lib/api/followups';
@@ -40,13 +41,14 @@ export default async function FollowupsPage() {
           : []
       }
     >
-      <TierGate
+      <ProLockedGate
         capability="followups"
-        title="Follow-ups"
-        pitch="Threads where you sent the last message and haven't heard back, sorted oldest first."
+        source="followups"
+        title={WS2_COPY.pro.followups.title}
+        pitch={WS2_COPY.pro.followups.pitch}
       >
         <FollowupsScreen />
-      </TierGate>
+      </ProLockedGate>
     </ServerQueryHydration>
   );
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { CATCH_UP_LATER_FIRST } from '../copy/screen-decisions';
 import { NAV, Sidebar, SectionNavigation, WORKSPACE_NAV, workspaceSection } from './sidebar';
 
 const routes = [
@@ -48,7 +49,17 @@ describe('Sidebar — approved workspace rail', () => {
 
   it('assigns every real feature to exactly one group without dropping routes', () => {
     expect(NAV.map((item) => item.id)).toEqual(routes);
-    expect(WORKSPACE_NAV.flatMap((item) => [...item.members])).toEqual(routes);
+    const grouped = [...routes];
+    if (CATCH_UP_LATER_FIRST) {
+      const briefAt = grouped.indexOf('brief');
+      grouped.splice(briefAt, 3, 'snoozed', 'brief', 'followups');
+    }
+    expect(WORKSPACE_NAV.flatMap((item) => [...item.members])).toEqual(grouped);
+    expect(WORKSPACE_NAV.find((item) => item.id === 'senders')?.members[0]).toBe('senders');
+    expect(WORKSPACE_NAV.find((item) => item.id === 'autopilot')?.members[0]).toBe('autopilot');
+    expect(WORKSPACE_NAV.find((item) => item.id === 'brief')?.members[0]).toBe(
+      CATCH_UP_LATER_FIRST ? 'snoozed' : 'brief',
+    );
     for (const route of routes) {
       const html = render({ active: route });
       expect(html.match(/aria-current="page"/g)).toHaveLength(1);
@@ -91,7 +102,13 @@ describe('SectionNavigation', () => {
   it.each([
     ['screener', 'Cleanup views', ['Senders', 'Triage', 'Screener']],
     ['quiet', 'Automations views', ['Autopilot', 'Quiet hours']],
-    ['snoozed', 'Catch up views', ['Daily Brief', 'Follow-ups', 'Later']],
+    [
+      'snoozed',
+      'Catch up views',
+      CATCH_UP_LATER_FIRST
+        ? ['Later', 'Daily Brief', 'Follow-ups']
+        : ['Daily Brief', 'Follow-ups', 'Later'],
+    ],
   ])('exposes the complete contextual group for %s', (active, name, expectedLabels) => {
     const html = renderToStaticMarkup(
       <SectionNavigation active={active as string} onNavigate={() => {}} />,

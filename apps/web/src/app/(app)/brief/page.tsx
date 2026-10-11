@@ -19,10 +19,12 @@
 // D65 was still unbuilt.
 
 import { headers } from 'next/headers';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { BRIEF_NAME } from '@declutrmail/shared/copy/screen-decisions';
 import { hasCapability } from '@declutrmail/shared/entitlements';
 
-import { TierGate } from '@/features/billing/tier-gate';
 import { BriefScreen } from '@/features/brief/brief-screen';
+import { ProLockedGate } from '@/features/launch/pro-locked-gate';
 import { briefTodayQueryOptions } from '@/features/brief/api/query-options';
 import { getServerMe } from '@/features/auth/api/server-me';
 import type { BriefWire } from '@/lib/api/brief';
@@ -66,13 +68,14 @@ export default async function BriefPage() {
           : []
       }
     >
-      <TierGate
+      <ProLockedGate
         capability="brief"
-        title="Daily Brief"
-        pitch="A daily summary of yesterday's email, in-app, at an hour you choose."
+        source="brief"
+        title={WS2_COPY.pro.brief.title.replaceAll('{BRIEF_NAME}', BRIEF_NAME)}
+        pitch={WS2_COPY.pro.brief.pitch.replaceAll('{BRIEF_NAME}', BRIEF_NAME)}
       >
         <BriefScreen />
-      </TierGate>
+      </ProLockedGate>
     </ServerQueryHydration>
   );
 }
