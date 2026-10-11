@@ -1,0 +1,46 @@
+name: Diagnose billing queue access
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+# Serialize with service releases; this workflow never deploys a service.
+concurrency:
+  group: deploy-cloud-run-production
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      PROJECT: declutrmail-ai-prod
+      WORKER_REGION: us-west1
+      RUNTIME_SA: declutrmail-api@declutrmail-ai-prod.iam.gserviceaccount.com
+      # Reviewed standalone probe already built by release #38111577109.
+      IMAGE: us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api:2faa44067bfd806d99783441c1bef7d154b4b66f
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Verify diagnostic and ownership contracts
+        run: node --test scripts/check-billing-queue-runtime.test.mjs
+      - name: Authenticate using existing Workload Identity
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Inspect the owned private probe without enabling producers
+        id: billing_queue_check
+        run: node scripts/check-billing-queue-runtime.mjs
+      - name: Recover only the owned probe
+        if: always() && steps.billing_queue_check.outputs.owned_probe == 'true'
+        env:
+          BILLING_NOTICE_PROBE_OWNED: ${{ steps.billing_queue_check.outputs.owned_probe }}
+        run: node scripts/check-billing-queue-runtime.mjs --cleanup

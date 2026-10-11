@@ -209,12 +209,26 @@ ran; the main route remains available. The browser audit page separately require
 passkey verification. No IAM grant, credential export or billing policy change
 has occurred.
 
-The next correction emits only a fixed operation/category and allowlisted
+The next correction holds both manifest notice flags OFF while preserving the
+original enrollment instant. Current production notices are already OFF. This
+restores ordinary service releases without adopting unverified broker access as
+activation proof. The main-only `billing-queue-access-diagnosis.yml` uses existing
+WIF, the reviewed built probe image, the same ownership/cleanup gates and the
+shared production release lock. It never deploys a service or enables a producer.
+The normal infra snapshot workflow is unchanged.
+
+The helper emits only a fixed operation/category and allowlisted
 permission names when a gcloud command fails. Its captured provider text and
 arguments remain private. This preserves compatibility, source/identity checks,
 ownership, cleanup and the producer gate; it does not claim to fix the underlying
-runtime access issue. Root owns this helper/test/record. The temporary snapshot
+runtime access issue. Root owns the two workflows, helper/test/record and
+integration. The temporary snapshot
 workflow replacement is confined to its diagnostic branch and is not included.
 Independent final review found no blocker; all 36 helper/deployment tests,
 touched lint, formatting and diff validation passed. No TypeScript runtime or
-provider behavior changed in this diagnostic correction.
+provider behavior changed in this correction. Re-enabling notices still requires
+successful real broker/cleanup evidence and both enabled-serving checks.
+The expanded hold/main-only diagnostic also passed independent review and all
+32 actual serving-script controls across ON and OFF modes. The initial #938 queue
+candidate was dequeued for this confirmed release-blocking defect; it is not a
+production failure or serving proof.

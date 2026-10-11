@@ -102,9 +102,9 @@ env:
   REPO: declutrmail
   # Match the verified HTTP API rollout; the worker keeps its existing driver.
   API_DB_DRIVER: node-postgres
-  # Approved app-access/grant notices after the verified compatibility release.
-  # First enrollment is fixed; retain it across routine releases and rollbacks.
-  BILLING_APP_NOTICES_ENABLED: 'true'
+  # Approved notices stay off while the production probe remains unverified.
+  # Preserve first enrollment across this hold, routine releases and rollback.
+  BILLING_APP_NOTICES_ENABLED: 'false'
   BILLING_APP_NOTICES_START_AT: '2026-10-11T03:15:41.000Z'
   # Runtime SA used by BOTH Cloud Run services. Declared as an env so a
   # future rename touches one place.
