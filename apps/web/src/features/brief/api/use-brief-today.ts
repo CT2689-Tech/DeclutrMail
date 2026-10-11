@@ -2,9 +2,9 @@
  * `useBriefToday` — TanStack Query hook for `GET /api/briefs/today`.
  *
  * Returns the frozen 8am snapshot for the current mailbox (D69). No
- * snapshot yet is 204, which the client maps to `{ data: null }`. The
- * screen treats that as "not yet" rather than an error. A leftover 404
- * is still accepted the same way.
+ * snapshot yet is 404. The fetcher also accepts 204 and a null body,
+ * and turns each of those into `{ data: null }`. The screen treats
+ * that as "not yet" rather than an error.
  *
  * No polling. D69 is "static for the day" — refetch on focus is
  * sufficient (default behaviour); the worker takes up to an hour to

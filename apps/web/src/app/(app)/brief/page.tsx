@@ -55,8 +55,8 @@ export default async function BriefPage() {
                       signal,
                     );
                   } catch (error) {
-                    // No edition yet is 204 (`{ data: null }`). A leftover 404
-                    // is the same absence, so hydration does not repeat the read.
+                    // No edition yet is 404. A 204 (`{ data: null }`) is the
+                    // same absence, so hydration does not repeat the read.
                     if (error instanceof ServerApiError && error.status === 404) {
                       return { data: null };
                     }

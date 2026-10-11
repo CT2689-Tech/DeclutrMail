@@ -20,10 +20,8 @@ import {
   Param,
   Post,
   Query,
-  Res,
   UseGuards,
 } from '@nestjs/common';
-import type { Response } from 'express';
 import { type Envelope, ok } from '@declutrmail/shared/contracts';
 
 import { CsrfGuard } from '../auth/csrf.guard.js';
@@ -47,8 +45,11 @@ export class BriefController {
 
   /**
    * GET /api/briefs/today — today's Brief for the caller's mailbox.
-   * No snapshot yet is the ordinary empty state: 204 with an empty
-   * body, not a 404. Mark-opened still 404s for an unknown id.
+   * No snapshot yet stays 404. The web treats that 404, and a 204 or
+   * null body, as "Brief lands soon". Changing the status here would
+   * break the web that is already in production, because Cloud Run and
+   * Vercel do not ship in the same moment. Mark-opened still 404s for
+   * an unknown id.
    *
    * The day boundary comes from persisted `users.timezone`, exactly
    * like snapshot generation. A browser query param cannot select a
@@ -60,15 +61,13 @@ export class BriefController {
   async today(
     @CurrentUser() principal: { userId: string },
     @CurrentMailbox() mailbox: { id: string },
-    @Res({ passthrough: true }) res: Response,
-  ): Promise<Envelope<Brief> | undefined> {
+  ): Promise<Envelope<Brief>> {
     const accountId = mailbox.id;
     const user = await this.users.findById(principal.userId);
     const today = resolvePersistedBriefTodayLocal(new Date(), user?.timezone);
     const brief = await this.reads.getForDate(accountId, today, principal.userId);
     if (!brief) {
-      res.status(HttpStatus.NO_CONTENT);
-      return;
+      throw notFound('Brief not found for today.');
     }
     return ok(brief);
   }

@@ -202,7 +202,7 @@ export function BriefScreen() {
 
   const brief = query.data ?? savedEdition;
   if (!brief) {
-    // 204 (and a leftover 404) mean there is no Brief today.
+    // 404, 204, and a null body all mean there is no Brief today.
     return (
       <>
         <BriefAiConsent />

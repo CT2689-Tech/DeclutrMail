@@ -108,6 +108,25 @@ describe('HomeView', () => {
     expect(screen.getByRole('link', { name: /Review 4 today/ })).toHaveAttribute('href', '/triage');
   });
 
+  it('shows the empty Daily Brief signal when today has no edition', () => {
+    render(
+      <HomeView
+        tier="pro"
+        workflows={{ brief: null, followups: null, suggestions: null }}
+        state={{
+          kind: 'ready',
+          hero: { label: 'emails cleared', value: 100 },
+          since: null,
+          secondary: [],
+          action,
+        }}
+      />,
+    );
+    expect(
+      screen.getByRole('link', { name: /Daily Brief Open the latest edition/ }),
+    ).toHaveAttribute('href', '/brief');
+  });
+
   it.each([1, 2])('uses matching grammar for %i Autopilot suggestions', (suggestions) => {
     render(
       <HomeView

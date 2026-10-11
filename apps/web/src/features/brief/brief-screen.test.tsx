@@ -449,7 +449,39 @@ describe('BriefScreen — edge states', () => {
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
   });
 
-  it.each([500, 404])(
+  it('shows no edition after a 404 refresh instead of a failed query', async () => {
+    let fail = false;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () =>
+          fail
+            ? new Response('{}', { status: 404, headers: { 'content-type': 'application/json' } })
+            : jsonOk({ data: BASE_BRIEF }),
+      },
+      { method: 'GET', path: '/api/briefs/recent', respond: () => jsonOk({ data: [] }) },
+    ]);
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <BriefScreen />
+      </QueryWrapper>,
+    );
+    await screen.findByText('Q4 plan review');
+    fail = true;
+    await act(async () => {
+      await client.refetchQueries({ queryKey: briefKeys.today() });
+    });
+    expect(
+      await screen.findByRole('heading', { name: /your brief is not available yet/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: /couldn.t load your brief/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it.each([500])(
     'keeps a loaded edition and Noise selection after a %i refresh',
     async (status) => {
       let fail = false;
