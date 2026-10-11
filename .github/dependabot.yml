@@ -1,13 +1,22 @@
 # Dependabot configuration (D178).
 #
-# Each ecosystem opens one grouped version-update PR covering every
-# dependency, majors included. A previous split (production vs
-# development, majors left ungrouped) produced six PRs on one Monday.
-# Ignore rules below still keep coordinated majors (Nest, Next, Drizzle,
-# @types/node) out of that PR.
+# npm updates are grouped by what has to be fixed together. A single
+# `all` group (30+ updates, majors included) failed lint, typecheck, build
+# and tests on every run (#895, #922 and #931), because one breaking bump
+# reddened every safe one beside it. Each group below can now fail or
+# land on its own:
+#   framework    next / react / @next/* move in lockstep
+#   nestjs       @nestjs/* move in lockstep
+#   lint-format  lint/format tooling, whose majors need a config migration
+#   dev-minor    every other devDependency patch/minor bump
+# A dependency joins the FIRST group it matches, so the named groups sit
+# above the dev catch-all. Anything else (production patch/minor outside
+# the named groups, majors outside them) opens its own PR, capped by
+# `open-pull-requests-limit`. Ignore rules below still keep coordinated
+# majors (Nest, Next, Drizzle, @types/node) out entirely.
 #
 # `applies-to` is exclusive, so security updates cannot share the version
-# group. They stay in their own group rather than opening one PR each.
+# groups. They stay in their own group rather than opening one PR each.
 #
 # Schedule: Monday 06:00 UTC — early enough for a same-day morning
 # review across most timezones; clear of the weekend code-freeze.
@@ -42,11 +51,46 @@ updates:
       prefix: chore
       include: scope
     groups:
-      all:
+      framework:
+        patterns:
+          - 'next'
+          - '@next/*'
+          - 'react'
+          - 'react-dom'
+          - '@types/react'
+          - '@types/react-dom'
+        update-types:
+          - major
+          - minor
+          - patch
+      nestjs:
+        patterns:
+          - '@nestjs/*'
+        update-types:
+          - major
+          - minor
+          - patch
+      lint-format:
+        patterns:
+          - 'eslint'
+          - 'eslint-*'
+          - '@eslint/*'
+          - 'typescript-eslint'
+          - '@typescript-eslint/*'
+          - 'globals'
+          - 'prettier'
+          - 'prettier-*'
+          - 'lint-staged'
+          - '@commitlint/*'
+        update-types:
+          - major
+          - minor
+          - patch
+      dev-minor:
+        dependency-type: development
         patterns:
           - '*'
         update-types:
-          - major
           - minor
           - patch
       # Security updates always grouped, regardless of bump kind.
