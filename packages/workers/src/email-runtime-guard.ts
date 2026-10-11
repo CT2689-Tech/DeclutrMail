@@ -4,6 +4,7 @@ import { DelayedError, UnrecoverableError, type Job, type Worker } from 'bullmq'
 import type { EmailDeliveryPort, EmailSendJobData, EmailSendResult } from './email-send.worker.js';
 import {
   EMAIL_RUNTIME_DELIVERY_FIELD,
+  EMAIL_RUNTIME_ACTOR_VALIDATION_LUA,
   EMAIL_RUNTIME_LEASE_PROTOCOL,
   type EmailRuntimeLease,
 } from './email-runtime-lease.js';
@@ -14,15 +15,11 @@ import type { WorkerContext } from './worker-context.js';
 // retention/deletion and dedup semantics. Unknown attempts remain in the retained
 // failed state; accepted completed outcomes keep the existing 7-day retention.
 const SEND_FIELD = EMAIL_RUNTIME_DELIVERY_FIELD;
-const BEGIN = `
+const BEGIN = `${EMAIL_RUNTIME_ACTOR_VALIDATION_LUA}
 local t=redis.call('TIME');local now=tonumber(t[1])*1000+math.floor(tonumber(t[2])/1000)
 if redis.call('GET',KEYS[3])~=ARGV[2] then return {'lost'} end
 local own=redis.call('HGET',KEYS[1],ARGV[1]);if not own then return {'lost'} end
-if redis.call('HLEN',KEYS[1])>100 then return {'lost'} end
-for _,value in ipairs(redis.call('HVALS',KEYS[1])) do
- local ok,a=pcall(cjson.decode,value)
- if not ok or type(a)~='table' or type(a.expiresAt)~='number' or a.expiresAt<=now or a.protocol~=ARGV[3] then return {'lost'} end
-end
+if not validEmailRuntimeActors(KEYS[1],ARGV[3],now) then return {'lost'} end
 local ok,a=pcall(cjson.decode,own)
 if not ok or a.revision~=ARGV[4] or a.source~=ARGV[5] then return {'lost'} end
 local prior=redis.call('HGET',KEYS[2],ARGV[6]);if prior then return {'prior',prior} end
