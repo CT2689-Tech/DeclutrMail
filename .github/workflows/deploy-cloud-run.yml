@@ -101,11 +101,10 @@ env:
   REPO: declutrmail
   # Match the verified HTTP API rollout; the worker keeps its existing driver.
   API_DB_DRIVER: node-postgres
-  # Flags-off compatibility release first; producer activation is a separate PR.
-  # Replace the inert cutoff with a fresh verified instant at first activation,
-  # then retain it across routine releases to prevent historical backfill.
-  BILLING_APP_NOTICES_ENABLED: 'false'
-  BILLING_APP_NOTICES_START_AT: '2026-10-11T02:30:00.000Z'
+  # Approved app-access/grant notices after the verified compatibility release.
+  # First enrollment is fixed; retain it across routine releases and rollbacks.
+  BILLING_APP_NOTICES_ENABLED: 'true'
+  BILLING_APP_NOTICES_START_AT: '2026-10-11T03:15:41.000Z'
   # Runtime SA used by BOTH Cloud Run services. Declared as an env so a
   # future rename touches one place.
   RUNTIME_SA: declutrmail-api@declutrmail-ai-prod.iam.gserviceaccount.com

@@ -36,7 +36,7 @@ while delivery is OFF, preserving waiting jobs without consuming retries. Generi
 email actors cannot claim this queue. Durable refusal records and bounded queue
 telemetry identify the actual new queue.
 
-The deploy manifest explicitly keeps notices OFF on both services. Its inert
+The compatibility deploy manifest explicitly kept notices OFF on both services. Its inert
 staging cutoff is `2026-10-11T02:30:00.000Z`; replace it with a fresh enrollment
 instant after compatibility serving verification, in the first activation PR.
 Thereafter routine releases must retain that instant. Subscription notices require
@@ -94,3 +94,49 @@ review found no remaining material blocker for this flags-off compatibility
 release. Its read-only broker queue avoids metadata writes. Activation remains a
 separate PR after serving verification and the broker compatibility check. Exact
 release and serving state must be read back after normal required CI/merge.
+
+## First activation candidate
+
+Compatibility PR #934 merged at `2db0106a984824b3b56ff39ee71742064f21bafa`.
+Normal queue CI #38106731265 and exact-main CI #38107055222 passed. Release
+#38107055207 completed and independently checked the resolved serving worker/API
+revisions against that release, notices OFF, the inert cutoff and automatic refund
+restoration OFF. This is flag-value proof; snapshot environment names alone are not.
+
+Fresh WIF snapshot #38107731484 at `2026-10-11T03:14:33Z` confirms API
+`declutrmail-api-00602-rob` and worker `declutrmail-worker-00158-x9m`, each 100%
+ready on `sha256:2952038307668efbae729d07a6ff03ea37476e2f90c69b67c1a6d263892aafe6`.
+The release's immutable image digest maps to the exact merged source above. Local
+gcloud reads still failed authentication and remain separate from this WIF proof.
+
+The separate activation candidate sets notices ON and replaces the inert instant
+once with `2026-10-11T03:15:41.000Z`, after compatibility verification. This timestamp
+must remain stable during routine releases and rollback. Root owns the manifest
+and integration; no other open PR touches it at preparation time. The approved
+policy needs no additional human approval. Provider financial cutover remains
+separate, and automatic upgrade-refund restoration stays OFF.
+
+The real broker preflight is required before the enabled worker deploys: the worker
+can publish grant notices during bootstrap. It refuses empty, unknown, unnamed or
+mixed legacy actors before the first possible producer. The subsequent resolved
+worker source/flag check gates API producers specifically. Broker credentials stay
+within the reviewed CI image/WIF route. The OFF foundation intentionally did not
+perform this broker read; real capability proof is still required during the
+activation release before any enabled service deploys.
+
+Aggregate-only production read at `2026-10-11T02:50:23Z` found four active open-ended
+grants, zero future-dated expiries and one historical expired grant. Historical and
+open-ended expiries remain excluded; this is a timestamped observation, not a
+guarantee against later legitimate grant changes. No grant, plan, account, queue or
+provider record was changed to create a delivery event.
+
+Activation readiness is conditional on independent review and all normal required
+checks/queue validation. Production activation requires successful broker and both
+serving checks plus fresh source/traffic/digest readback. The one synthetic email
+delivery proves template/transport; no real business-notice trigger was manufactured.
+
+Independent final review found no material finding in the activation diff and
+passed all 16 controls with the new cutoff, 23 deployment tests and diff validation.
+Root also passed the controls/tests, formatting and diff checks. No application
+TypeScript changed in this activation candidate. Runtime broker and enabled serving
+proof remain required by the release; this review does not claim activation.
