@@ -432,6 +432,43 @@ describe('OutboxDispatcherWorker with a shared lease', () => {
     expect(rows.every((row) => row.attempts === 0 || row.status === 'dispatched')).toBe(true);
   });
 
+  // Negative control: starting renewal before `onReady` lets the takeover
+  // tick below claim the row while runtime enrollment (#974) is still open.
+  it('a takeover during runtime enrollment claims nothing until enrollment finishes', async () => {
+    const db = await seed(1);
+    const order: string[] = [];
+    const { lease } = fakeLease(true);
+    lease.start = (onAcquired) => {
+      order.push('lease-start');
+      onAcquired();
+    };
+    let finishEnrollment!: () => void;
+    const enrollment = new Promise<void>((resolve) => {
+      finishEnrollment = resolve;
+    });
+    const worker = new OutboxDispatcherWorker({
+      db,
+      consumer: async () => {
+        order.push('consume');
+      },
+      pollIntervalMs: 60_000,
+      lease,
+    });
+    const started = worker.start(async () => {
+      order.push('enroll');
+      await enrollment;
+      order.push('enrolled');
+    });
+    await sleep(50);
+    expect(order).toEqual(['enroll']);
+    finishEnrollment();
+    await started;
+    await sleep(20);
+    expect(order.slice(0, 3)).toEqual(['enroll', 'enrolled', 'lease-start']);
+    expect(order.filter((step) => step === 'consume')).toHaveLength(1);
+    await worker.stop();
+  });
+
   it('stop() releases at once with no orphans, and only after an orphan settles otherwise', async () => {
     const db = await seed(1);
     const idle = fakeLease(true);

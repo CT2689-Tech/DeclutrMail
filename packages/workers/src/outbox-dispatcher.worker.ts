@@ -850,12 +850,6 @@ export class OutboxDispatcherWorker {
       throw new Error('OutboxDispatcherWorker already started');
     }
     this.shuttingDown = false;
-    // Renewal runs before the first claim: a boot drain whose consumer times
-    // out must not outlive the lease. A standby that takes over drains now,
-    // not at the next poll.
-    this.deps.lease?.start(() => {
-      void this.tick().catch((err) => this.logTickError(err));
-    });
 
     if (this.listen) {
       // The LISTEN handler does NOT await the tick — wake-ups are
@@ -871,6 +865,14 @@ export class OutboxDispatcherWorker {
     // Runtime enrollment is performed at this boundary by the composition root.
     await onReady?.();
     if (this.shuttingDown) return;
+
+    // Renewal runs before the first claim: a boot drain whose consumer times
+    // out must not outlive the lease. It starts after `onReady` so a takeover
+    // tick cannot claim while runtime enrollment is still open. A standby
+    // that takes over drains now, not at the next poll.
+    this.deps.lease?.start(() => {
+      void this.tick().catch((err) => this.logTickError(err));
+    });
 
     // Drain any backlog before returning so a boot-time enqueue does
     // not wait `pollIntervalMs` for its first delivery.
