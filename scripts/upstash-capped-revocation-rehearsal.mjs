@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import { writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { nativeClient, rehearse } from './upstash-free-revocation-rehearsal.mjs';
+import { cliExitCode, nativeClient, rehearse } from './upstash-free-revocation-rehearsal.mjs';
 
 // Preparation only: dispatch requires separately recorded founder spending approval.
 // The free entrypoint never reads this confirmation or opts into this paid mode.
@@ -20,7 +20,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     });
     await writeFile(output, JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
     console.log(JSON.stringify(report));
-    if (!report.cleanupVerified || !report.baselineIdsPresent || report.result === 'refused')
-      process.exitCode = 1;
+    process.exitCode = cliExitCode(report);
   }
 }

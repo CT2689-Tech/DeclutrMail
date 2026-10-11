@@ -32,11 +32,12 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: node --test scripts/upstash-free-revocation-rehearsal.test.mjs
-  rehearse:
+  upstash-capped-revocation-rehearse:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.paid_test_confirmation == 'APPROVED_ONE_TEST_USD20_CAP'
     needs: contracts
     runs-on: ubuntu-latest
     timeout-minutes: 8
+    environment: Sandbox
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6

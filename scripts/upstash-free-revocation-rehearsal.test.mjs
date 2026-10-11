@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   assertOwned,
   classifyManagementRefusal,
+  cliExitCode,
   nativeClient,
   normalizeHost,
   PAID_TEST_CONFIRMATION,
@@ -290,14 +291,19 @@ test('paid workflow is manual, main-only, confirmed, and shares provider seriali
     paid,
     /if: github.event_name == 'workflow_dispatch' && github.ref == 'refs\/heads\/main' && inputs.paid_test_confirmation == 'APPROVED_ONE_TEST_USD20_CAP'/,
   );
-  for (const workflow of [paid, free]) {
+  for (const [workflow, job] of [
+    [free, '  upstash-free-revocation-rehearse:'],
+    [paid, '  upstash-capped-revocation-rehearse:'],
+  ]) {
     assert.match(
       workflow,
       /group: upstash-revocation-provider-\$\{\{ github.event_name \}\}-\$\{\{ github.ref \}\}/,
     );
     assert.match(workflow, /cancel-in-progress: false/);
-    assert.equal(workflow.split('  rehearse:')[0].includes('secrets.'), false);
+    assert.equal(workflow.split(job)[0].includes('secrets.'), false);
+    assert.match(workflow.split(job)[1], /environment: Sandbox/);
     assert.doesNotMatch(workflow, /pull_request_target|schedule:|workflow_run:|checkout[^\n]*ref:/);
+    assert.doesNotMatch(workflow, /^\s*push:/m);
   }
   assert.doesNotMatch(
     free,
@@ -526,5 +532,158 @@ test('workflow only exposes management credentials on protected main manual disp
   assert.equal(workflow.includes('inputs:'), false);
   assert.equal(workflow.includes('GCP_'), false);
   assert.equal(workflow.includes('id-token: write'), false);
-  assert.equal(workflow.split('  rehearse:')[0].includes('secrets.'), false);
+  assert.equal(
+    workflow.split('  upstash-free-revocation-rehearse:')[0].includes('secrets.'),
+    false,
+  );
+});
+
+test('CLI exits 0 only for an expected zero-cost plan refusal with nothing created', async () => {
+  const source = readFileSync(
+    new URL('./upstash-free-revocation-rehearsal.mjs', import.meta.url),
+    'utf8',
+  );
+  assert.match(source, /process\.exitCode = cliExitCode\(report\)/);
+  const capped = readFileSync(
+    new URL('./upstash-capped-revocation-rehearsal.mjs', import.meta.url),
+    'utf8',
+  );
+  assert.match(capped, /process\.exitCode = cliExitCode\(report\)/);
+  const expectedBodies = [
+    { error: 'Cannot create a free database without a payment method' },
+    { error: 'Only paid databases are allowed in this account' },
+  ];
+  for (const rejectionBody of expectedBodies) {
+    const report = await harness({ freeRejected: true, rejectionBody }).run();
+    assert.equal(report.result, 'refused');
+    assert.equal(report.fixtureCreated, false);
+    assert.equal(report.cleanupVerified, true);
+    assert.equal(report.baselineIdsPresent, true);
+    assert.ok(
+      report.creationRefusalCategory === 'free_plan_unavailable' ||
+        report.creationRefusalCategory === 'paid_plan_required',
+    );
+    assert.equal(cliExitCode(report), 0);
+  }
+  const realFailures = [
+    await harness({ freeRejected: true }).run(),
+    await harness({
+      freeRejected: true,
+      rejectionBody: { message: 'Database name exceeds maximum length' },
+    }).run(),
+    await harness({
+      freeRejected: true,
+      rejectionBody: { detail: 'Region is not supported' },
+    }).run(),
+    await harness({ deleteFailure: true }).run(),
+    await rehearse({
+      env: {},
+      fetchImpl() {
+        throw new Error('must not be called');
+      },
+    }),
+  ];
+  for (const report of realFailures) assert.equal(cliExitCode(report), 1);
+  assert.equal(cliExitCode(await harness().run()), 0);
+  assert.equal(cliExitCode(await harness({ oldSessionsContinue: true }).run()), 0);
+  const expected = await harness({ freeRejected: true, rejectionBody: expectedBodies[0] }).run();
+  assert.equal(cliExitCode({ ...expected, fixtureCreated: true }), 1);
+  assert.equal(cliExitCode({ ...expected, cleanupVerified: false }), 1);
+  assert.equal(cliExitCode({ ...expected, baselineIdsPresent: false }), 1);
+});
+
+test('baseline inventory keeps only database ids and drops passwords and tokens immediately', async () => {
+  const baselineRow = {
+    database_id: baselineId,
+    database_name: 'existing-production',
+    password: marker,
+    rest_token: marker,
+    endpoint: fixtureHost,
+  };
+  const cleanupRow = {
+    database_id: baselineId,
+    database_name: 'existing-production',
+    password: marker,
+    rest_token: marker,
+  };
+  let createSeen = false;
+  let idsOnlyBeforeCreate = false;
+  const report = await rehearse({
+    env,
+    nonce,
+    now: () => 1791747000000,
+    sleep: async () => {},
+    clientFactory() {
+      throw new Error('redis must not be opened');
+    },
+    async fetchImpl(input, config) {
+      assert.equal(config.redirect, 'error');
+      const url = String(input);
+      if (url.endsWith('/databases') && config.method === 'GET') {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return [createSeen ? cleanupRow : baselineRow];
+          },
+        };
+      }
+      if (config.method === 'POST' && url.endsWith('/database')) {
+        createSeen = true;
+        idsOnlyBeforeCreate =
+          Object.keys(baselineRow).join() === 'database_id' &&
+          !JSON.stringify(baselineRow).includes(marker);
+        return {
+          ok: false,
+          status: 400,
+          async json() {
+            return { error: 'Cannot create a free database without a payment method' };
+          },
+        };
+      }
+      throw new Error(`unexpected ${config.method} ${url}`);
+    },
+  });
+  assert.equal(idsOnlyBeforeCreate, true);
+  assert.equal(report.creationRefusalCategory, 'free_plan_unavailable');
+  assert.equal(report.fixtureCreated, false);
+  assert.equal(report.cleanupVerified, true);
+  assert.equal(report.baselineIdsPresent, true);
+  assert.equal(cliExitCode(report), 0);
+  assert.deepEqual(Object.keys(cleanupRow).sort(), ['database_id', 'database_name']);
+  assert.equal(JSON.stringify(cleanupRow).includes(marker), false);
+});
+
+test('Upstash rehearsal job names do not collide and are not required checks', () => {
+  const required = readFileSync(new URL('./required-checks.json', import.meta.url), 'utf8');
+  const jobs = [
+    [
+      '../.github/workflows/upstash-free-revocation-rehearsal.yml',
+      'upstash-free-revocation-rehearse',
+    ],
+    [
+      '../.github/workflows/upstash-capped-revocation-rehearsal.yml',
+      'upstash-capped-revocation-rehearse',
+    ],
+  ];
+  for (const [path, job] of jobs) {
+    const workflow = readFileSync(new URL(path, import.meta.url), 'utf8');
+    assert.match(workflow, new RegExp(`^ {2}${job}:`, 'm'));
+    assert.doesNotMatch(workflow, /^ {2}rehearse:/m);
+    const live = workflow.split(`  ${job}:`)[1];
+    assert.match(live, /environment: Sandbox/);
+    assert.equal(workflow.split(`  ${job}:`)[0].includes('environment:'), false);
+    assert.equal(required.includes(job), false);
+  }
+  assert.equal(required.includes('rehearse'), false);
+});
+
+test('Upstash revocation workflows have no push trigger', () => {
+  for (const path of [
+    '../.github/workflows/upstash-free-revocation-rehearsal.yml',
+    '../.github/workflows/upstash-capped-revocation-rehearsal.yml',
+  ]) {
+    const workflow = readFileSync(new URL(path, import.meta.url), 'utf8');
+    assert.doesNotMatch(workflow, /^\s*push:/m);
+  }
 });

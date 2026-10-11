@@ -40,6 +40,13 @@ function inventory(value) {
   // Existing provider IDs may use other UUID versions; they are never mutation targets.
   if (ids.some((id) => typeof id !== 'string') || new Set(ids).size !== ids.length)
     refuse('inventory_invalid');
+  // List responses can carry passwords and tokens. Keep the id and name used
+  // for ownership checks; drop every other field before the rows are retained.
+  for (const row of value) {
+    for (const key of Object.keys(row)) {
+      if (key !== 'database_id' && key !== 'database_name') delete row[key];
+    }
+  }
   return value;
 }
 
@@ -265,12 +272,20 @@ export async function rehearse({
     }
   }
   try {
-    baselineRows = inventory(await api('GET', '/databases'));
-    ownership.baseline = new Set(baselineRows.map((row) => row.database_id));
+    const listed = inventory(await api('GET', '/databases'));
+    const nameTaken = listed.some((row) => row.database_name === name);
+    // Keep only ids. The name check above is the last use of any other field.
+    baselineRows = [];
+    for (const row of listed) {
+      baselineRows.push(row.database_id);
+      for (const key of Object.keys(row)) {
+        if (key !== 'database_id') delete row[key];
+      }
+    }
+    ownership.baseline = new Set(baselineRows);
     // Upstash documents additional database-count charges beyond ten resources.
     if (baselineRows.length >= 10) refuse('zero_cost_database_count_unproven');
-    if (baselineRows.some((row) => row.database_name === name))
-      refuse('fixture_name_already_exists');
+    if (nameTaken) refuse('fixture_name_already_exists');
     createAttempted = true;
     report.creationOutcome = 'unconfirmed';
     let created;
@@ -423,6 +438,21 @@ export async function rehearse({
   return report;
 }
 
+// An expected $0 plan refusal is a completed check when nothing was created and
+// cleanup still proves the baseline. Every other refusal stays a failure.
+export function cliExitCode(report) {
+  const expectedZeroCostRefusal =
+    report.fixtureCreated === false &&
+    report.cleanupVerified === true &&
+    report.baselineIdsPresent === true &&
+    (report.creationRefusalCategory === 'free_plan_unavailable' ||
+      report.creationRefusalCategory === 'paid_plan_required');
+  if (expectedZeroCostRefusal) return 0;
+  if (!report.cleanupVerified || !report.baselineIdsPresent || report.result === 'refused')
+    return 1;
+  return 0;
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const output = process.argv[2];
   if (!output || process.argv.length !== 3) {
@@ -436,7 +466,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     });
     await writeFile(output, JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
     console.log(JSON.stringify(report));
-    if (!report.cleanupVerified || !report.baselineIdsPresent || report.result === 'refused')
-      process.exitCode = 1;
+    process.exitCode = cliExitCode(report);
   }
 }
