@@ -417,6 +417,22 @@ describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', (
   });
 });
 
+describe('apiGet — empty success', () => {
+  beforeEach(() => installFetchStub([]));
+  afterEach(() => resetFetchStub());
+
+  it('maps 204 to a null data envelope', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () => new Response(null, { status: 204 }),
+      },
+    ]);
+    await expect(apiGet('/api/briefs/today')).resolves.toEqual({ data: null });
+  });
+});
+
 describe('apiErrorDisplayId', () => {
   it('reads the envelope displayId off an ApiError', () => {
     const err = new ApiError(

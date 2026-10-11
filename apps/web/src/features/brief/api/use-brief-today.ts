@@ -1,12 +1,10 @@
 /**
  * `useBriefToday` — TanStack Query hook for `GET /api/briefs/today`.
  *
- * Returns the frozen 8am snapshot for the current mailbox (D69). The
- * BE returns 404 when the snapshot worker hasn't fired yet — the
- * screen routes that into a "Brief lands soon" empty branch rather
- * than the generic error state. Server hydration can seed `{ data: null }`
- * for the same absence, avoiding a duplicate browser request. Client 404s
- * remain `ApiError`s; the screen accepts both forms.
+ * Returns the frozen 8am snapshot for the current mailbox (D69). No
+ * snapshot yet is 204, which the client maps to `{ data: null }`. The
+ * screen treats that as "not yet" rather than an error. A leftover 404
+ * is still accepted the same way.
  *
  * No polling. D69 is "static for the day" — refetch on focus is
  * sufficient (default behaviour); the worker takes up to an hour to

@@ -72,6 +72,10 @@ export async function serverGetEnvelope<T, Meta = unknown>(
     body = text;
   }
 
+  if (response.ok && response.status === 204) {
+    return { data: null } as Envelope<T, Meta>;
+  }
+
   if (!response.ok) {
     throw new ServerApiError(
       response.status,

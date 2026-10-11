@@ -232,6 +232,10 @@ async function apiRequest<T>(
     }
   }
 
+  if (res.ok && res.status === 204) {
+    return { data: null } as Envelope<T, unknown>;
+  }
+
   if (!res.ok) {
     // 401 → attempt refresh once. If the refresh succeeds the caller's
     // request is replayed. Only an explicitly rejected refresh proves

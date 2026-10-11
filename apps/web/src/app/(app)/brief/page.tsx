@@ -55,8 +55,8 @@ export default async function BriefPage() {
                       signal,
                     );
                   } catch (error) {
-                    // The browser already treats today's 404 as no edition yet.
-                    // Seed that absence so hydration doesn't repeat the same read.
+                    // No edition yet is 204 (`{ data: null }`). A leftover 404
+                    // is the same absence, so hydration does not repeat the read.
                     if (error instanceof ServerApiError && error.status === 404) {
                       return { data: null };
                     }

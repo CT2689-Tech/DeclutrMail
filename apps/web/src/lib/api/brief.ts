@@ -139,7 +139,7 @@ export interface BriefMarkOpenedResultWire {
 }
 
 /**
- * GET /api/briefs/today — the snapshot for today (D69 frozen). 404 if
+ * GET /api/briefs/today — the snapshot for today (D69 frozen). 204 if
  * the snapshot worker hasn't fired yet (the FE renders
  * an empty / "Brief lands soon" state in that case; the snapshot worker
  * ticks every hour per D69 so a refetch on focus picks it up).

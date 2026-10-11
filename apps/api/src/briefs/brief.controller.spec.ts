@@ -19,11 +19,7 @@ describe('BriefController.today', () => {
       { findById } as unknown as UsersService,
     );
 
-    await (controller.today as unknown as (...args: unknown[]) => Promise<unknown>)(
-      { userId: 'user-1' },
-      { id: 'mailbox-1' },
-      'America/Los_Angeles',
-    );
+    await controller.today({ userId: 'user-1' }, { id: 'mailbox-1' }, { status: vi.fn() } as never);
 
     expect(findById).toHaveBeenCalledWith('user-1');
     expect(getForDate).toHaveBeenCalledWith('mailbox-1', '2026-07-08', 'user-1');
@@ -38,9 +34,25 @@ describe('BriefController.today', () => {
       { findById: vi.fn().mockResolvedValue({ timezone: null }) } as unknown as UsersService,
     );
 
-    await controller.today({ userId: 'user-1' }, { id: 'mailbox-1' });
+    const res = { status: vi.fn() };
+    await controller.today({ userId: 'user-1' }, { id: 'mailbox-1' }, res as never);
 
     expect(getForDate).toHaveBeenCalledWith('mailbox-1', '2026-07-07', 'user-1');
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('returns 204 when today has no Brief', async () => {
+    const getForDate = vi.fn().mockResolvedValue(null);
+    const controller = new BriefController(
+      { getForDate } as unknown as BriefReadService,
+      { findById: vi.fn().mockResolvedValue({ timezone: 'UTC' }) } as unknown as UsersService,
+    );
+    const res = { status: vi.fn() };
+
+    await expect(
+      controller.today({ userId: 'user-1' }, { id: 'mailbox-1' }, res as never),
+    ).resolves.toBeUndefined();
+    expect(res.status).toHaveBeenCalledWith(204);
   });
 });
 
