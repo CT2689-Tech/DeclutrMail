@@ -185,6 +185,7 @@ jobs:
               - 'scripts/check-web-bundle-budget.mjs'
               - 'scripts/web-bundle-budget.json'
               - 'scripts/check-prerendered-routes.mjs'
+              - 'scripts/select-lighthouse-url.mjs'
             units:
               - *infra
               - 'packages/shared/**'
@@ -309,7 +310,7 @@ jobs:
       - name: Performance probes and release contract
         run: node --test scripts/check-sender-release-contract.test.mjs scripts/probe-db-latency.test.mjs scripts/summarize-performance.test.mjs
       - name: CI and release coordination contracts
-        run: node --test scripts/check-ci-required.test.mjs scripts/check-merge-queue-ready.test.mjs scripts/select-deployment.test.mjs
+        run: node --test scripts/check-ci-required.test.mjs scripts/check-merge-queue-ready.test.mjs scripts/select-deployment.test.mjs scripts/select-lighthouse-url.test.mjs
       - name: Bundle budget contracts (served-HTML measure, fails closed)
         run: node --test scripts/check-web-bundle-budget.test.mjs
       # Re-renders every brand raster from the geometry in ADR-0036 and
@@ -518,6 +519,19 @@ jobs:
         run: pnpm --filter @declutrmail/web build
         env:
           NEXT_TELEMETRY_DISABLED: '1'
+      # The `lighthouse` job serves exactly this build. Compiler cache
+      # excluded: it is ~95% of `.next` and `next start` never reads it.
+      - name: Upload the built web app
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-build
+          path: |
+            apps/web/.next/
+            !apps/web/.next/cache/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
       # Main's measured sizes, uploaded by the push-to-main run below, for
       # the non-blocking >2 kB growth warning. Advisory only: when nothing
       # is found the budget step reports "not compared", never "no growth".
@@ -559,17 +573,59 @@ jobs:
       # whole public site, and nothing else fails when it happens.
       - name: Assert the public site is still prerendered
         run: node scripts/check-prerendered-routes.mjs
-      # D160's remaining unbuilt gate. Runs against the BUILT app via
-      # `next start` — a `next dev` score measures nothing production has.
-      - name: Lighthouse — marketing pages (D160 ≥90)
-        run: pnpm check:lighthouse
+
+  # D160's remaining unbuilt gate, against build-web's own build via
+  # `next start` — a `next dev` score measures nothing production has.
+  # One leg per URL in lighthouserc.cjs, each with its full three runs and
+  # thresholds; the select step fails if the legs and the config disagree.
+  lighthouse:
+    name: Lighthouse — marketing page ${{ matrix.page }} (D160 ≥90)
+    needs: [changes, build-web]
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.web == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        page: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Select this leg's page
+        id: page
         env:
+          PAGE: ${{ matrix.page }}
+          PAGES: ${{ strategy.job-total }}
+        run: node scripts/select-lighthouse-url.mjs >> "$GITHUB_OUTPUT"
+      - name: Download the built web app
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: web-build
+          path: apps/web/.next
+      - name: Build the web app (artifact missing)
+        if: ${{ steps.download.outcome != 'success' }}
+        run: |
+          echo "::warning title=Lighthouse fallback build::web-build artifact unavailable; building this commit here"
+          pnpm --filter @declutrmail/web build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+      - name: Lighthouse — ${{ steps.page.outputs.url }}
+        run: pnpm check:lighthouse --collect.url="$URL"
+        env:
+          URL: ${{ steps.page.outputs.url }}
           NEXT_TELEMETRY_DISABLED: '1'
       - name: Upload Lighthouse reports
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: lighthouse-reports
+          name: lighthouse-reports-${{ matrix.page }}
           path: apps/web/.lighthouseci/
           retention-days: 7
           # `.lighthouseci` is a DOTFILE directory, and upload-artifact
@@ -700,6 +756,7 @@ jobs:
         test-web,
         test-units,
         build-web,
+        lighthouse,
         accessibility,
       ]
     runs-on: ubuntu-latest

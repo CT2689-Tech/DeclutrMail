@@ -20,6 +20,7 @@ function fixture() {
     'test-web',
     'test-units',
     'build-web',
+    'lighthouse',
     'accessibility',
   ];
   const needs = Object.fromEntries(jobs.map((job) => [job, { result: 'success' }]));
@@ -62,6 +63,7 @@ test('docs-only PR may skip explicitly excluded suites but queue must run them',
     'test-web',
     'test-units',
     'build-web',
+    'lighthouse',
     'accessibility',
   ])
     needs[job].result = 'skipped';
