@@ -4,28 +4,8 @@ import Link from 'next/link';
 import { AppShell } from '@declutrmail/shared';
 
 import { HomeView } from './home-view';
+import { HOME_PREVIEW_STATES, type HomePreviewState } from './home-preview-state';
 import styles from './home-view.module.css';
-
-export const HOME_PREVIEW_STATES = [
-  'full',
-  'no-size',
-  'caught-up',
-  'empty',
-  'syncing',
-  'queued',
-  'failed',
-  'reconnect',
-  'loading',
-  'error',
-] as const;
-
-export type HomePreviewState = (typeof HOME_PREVIEW_STATES)[number];
-
-export function parseHomePreviewState(value: string | undefined): HomePreviewState {
-  return (HOME_PREVIEW_STATES as readonly string[]).includes(value ?? '')
-    ? (value as HomePreviewState)
-    : 'full';
-}
 
 const action = { label: 'Review senders', href: '/senders' };
 

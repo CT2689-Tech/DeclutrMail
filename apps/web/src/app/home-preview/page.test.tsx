@@ -11,7 +11,6 @@ const h = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({ notFound: h.notFound }));
 vi.mock('@/features/home/home-preview', () => ({
   HomePreview: h.preview,
-  parseHomePreviewState: (value: string | undefined) => value ?? 'full',
 }));
 vi.mock('@/features/theme/theme-script', () => ({ ThemeScript: () => null }));
 

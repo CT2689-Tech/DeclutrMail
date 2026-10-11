@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
-import { HomePreview, parseHomePreviewState } from '@/features/home/home-preview';
+import { HomePreview } from '@/features/home/home-preview';
 import { homePreviewEnabled } from '@/features/home/home-preview-access';
+import { parseHomePreviewState } from '@/features/home/home-preview-state';
 import { ThemeScript } from '@/features/theme/theme-script';
 
 export const metadata: Metadata = {
