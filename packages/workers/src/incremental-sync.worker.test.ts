@@ -14,6 +14,7 @@ import {
 import { freshTestDb, freshTestPglite } from '@declutrmail/db/testing';
 import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
+import type { Queue } from 'bullmq';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -32,6 +33,8 @@ import type {
 import { deriveSenderKey } from './sender-key.js';
 import type { WorkerContext } from './worker-context.js';
 import { PASSTHROUGH_MAILBOX_LOCK } from './label-action.worker.js';
+import { recoverExpiredHistoryCursor } from './initial-sync-resync.js';
+import type { InitialSyncJobData } from './queue.js';
 
 /**
  * IncrementalSyncWorker integration tests (D8, D229 follow-up).
@@ -1850,6 +1853,83 @@ describe('IncrementalSyncWorker', () => {
       .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
     // Cursor stays at the seed value (1000n) — no advance attempted.
     expect(state!.lastHistoryId).toBe(1000n);
+  });
+
+  it.each(['stored', 'restarted'] as const)(
+    'recovers the actual expired %s cursor when the queued payload is stale',
+    async (path) => {
+      const lastSyncedAt = new Date('2026-10-01T00:00:00Z');
+      await db
+        .update(providerSyncState)
+        .set({ lastHistoryId: path === 'stored' ? 2000n : 1000n, lastSyncedAt })
+        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+      const client = new FakeGmailClient(
+        [
+          { forCursor: '1000', page: { records: [], historyId: '1500' } },
+          { forCursor: '2000', page: null },
+        ],
+        new Map(),
+      );
+      const listHistory = vi.spyOn(client, 'listHistory');
+      const worker = new IncrementalSyncWorker({
+        db,
+        gmailAccess: accessFor(client),
+        lock: {
+          run: async (_, fn) => {
+            if (path === 'restarted')
+              await db
+                .update(providerSyncState)
+                .set({ lastHistoryId: 2000n })
+                .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+            return fn();
+          },
+        },
+      });
+      const result = await worker.processJob(
+        { mailboxAccountId, startHistoryId: '1000', endHistoryId: '2500' },
+        CTX,
+      );
+      expect(listHistory.mock.calls.map(([cursor]) => cursor)).toEqual(
+        path === 'stored' ? ['2000'] : ['1000', '2000'],
+      );
+      expect(result).toMatchObject({ cursorTooOld: true, expiredHistoryId: '2000' });
+      if (!result.cursorTooOld) throw new Error('Expected expired history');
+      const add = vi.fn(async () => ({}));
+      const queue = { getJob: async () => null, add } as unknown as Queue<InitialSyncJobData>;
+      expect(
+        await recoverExpiredHistoryCursor(db, queue, mailboxAccountId, result.expiredHistoryId),
+      ).toBe('added');
+      const [state] = await db.select().from(providerSyncState);
+      expect(state).toMatchObject({
+        readinessStatus: 'queued',
+        lastHistoryId: null,
+        lastSyncedAt,
+      });
+      expect(add).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('an expired completion cannot reset a cursor advanced after the Gmail request', async () => {
+    await db.update(providerSyncState).set({ lastHistoryId: 2000n });
+    const client = new FakeGmailClient([{ forCursor: '2000', page: null }], new Map());
+    const result = await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '2500' }, CTX);
+    expect(result).toMatchObject({ cursorTooOld: true, expiredHistoryId: '2000' });
+    if (!result.cursorTooOld) throw new Error('Expected expired history');
+    await db.update(providerSyncState).set({ lastHistoryId: 3000n });
+    const add = vi.fn();
+    const queue = { getJob: async () => null, add } as unknown as Queue<InitialSyncJobData>;
+    expect(
+      await recoverExpiredHistoryCursor(db, queue, mailboxAccountId, result.expiredHistoryId),
+    ).toBe('noop');
+    expect((await db.select().from(providerSyncState))[0]).toMatchObject({
+      readinessStatus: 'ready',
+      lastHistoryId: 3000n,
+    });
+    expect(add).not.toHaveBeenCalled();
   });
 
   it('rejects payload missing mailboxAccountId / startHistoryId (ValidationError)', async () => {

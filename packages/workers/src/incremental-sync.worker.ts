@@ -210,7 +210,7 @@ export interface IncrementalSyncDeps {
  * Result the worker returns on success. Metric-only (per
  * `BaseDeclutrWorker.processJob` contract) — never message content.
  */
-export interface IncrementalSyncResult {
+interface IncrementalSyncMetrics {
   /** Total history records processed across all pages. */
   recordsProcessed: number;
   /** New `mail_messages` rows inserted. */
@@ -237,13 +237,6 @@ export interface IncrementalSyncResult {
   timeseriesCorrected?: number;
   /** Timeseries months whose messages are all gone, zeroed this run. */
   timeseriesZeroed?: number;
-  /**
-   * Cursor-too-old recovery signal — `true` when Gmail's history list
-   * returned 404 (`startHistoryId` older than D5's 7-day retention
-   * window). The composition root re-enqueues an initial sync to
-   * recover; the worker does NOT advance the cursor in this case.
-   */
-  cursorTooOld: boolean;
   /**
    * The new historyId persisted to `provider_sync_state.last_history_id`
    * after every page processed successfully. `null` only when
@@ -280,6 +273,16 @@ export interface IncrementalSyncResult {
    */
   unreadableSkipped?: number;
 }
+
+export type IncrementalSyncResult = IncrementalSyncMetrics &
+  (
+    | {
+        cursorTooOld: true;
+        /** The cursor Gmail rejected, including a newer stored or restarted cursor. */
+        expiredHistoryId: string;
+      }
+    | { cursorTooOld: false }
+  );
 
 /**
  * IncrementalSyncWorker (D8 + D229 follow-up).
@@ -516,7 +519,7 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     if (firstPass === null) {
       // Cursor too old (Gmail 404). Don't advance — composition root
       // re-enqueues full sync.
-      return { ...cursorTooOldResult };
+      return { ...cursorTooOldResult, expiredHistoryId: startCursor };
     }
     let events: GmailHistoryRecord[] = firstPass.events;
     let lastPageHistoryId: string | null = firstPass.lastPageHistoryId;
@@ -995,7 +998,7 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
           added,
           deleted,
           labelChanges,
-          cursorTooOld: false,
+          cursorTooOld: false as const,
           advancedToHistoryId: lastPageHistoryId,
           // Only when non-zero: a skip below the systemic floor still advances
           // the cursor, so the message is gone from the index for good. The run
@@ -1005,7 +1008,7 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       });
       if (retryCursor !== null) {
         const refetched = await pageHistoryFrom(retryCursor);
-        if (refetched === null) return { ...cursorTooOldResult };
+        if (refetched === null) return { ...cursorTooOldResult, expiredHistoryId: retryCursor };
         snapshotCursor = retryCursor;
         events = refetched.events;
         lastPageHistoryId = refetched.lastPageHistoryId;

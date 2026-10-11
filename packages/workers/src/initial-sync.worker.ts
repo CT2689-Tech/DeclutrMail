@@ -24,7 +24,7 @@ import {
   MailboxSyncReadyPayloadSchema,
   TOPICS,
 } from '@declutrmail/events';
-import { and, desc, eq, gt, inArray, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { boundedMap } from './bounded-map.js';
@@ -458,26 +458,27 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     );
 
     initialSyncLog('fetchAndStoreMetadata_begin', mailboxAccountId);
-    const {
-      messagesSynced,
+    const { gmailApiCalls: fetchCalls, unreadable } = await this.fetchAndStoreMetadata(
+      mailboxAccountId,
+      client,
+      ctx.signal,
+      async (counts) => {
+        await this.updateProgress(
+          mailboxAccountId,
+          counts.processed,
+          counts.total,
+          snapshotHistoryId,
+          attemptId,
+        );
+        // An empty mailbox has nothing to count against.
+        if (counts.total > 0) {
+          await this.reportScanProgress(mailboxAccountId, ctx.attempt, counts, 'count');
+        }
+      },
+    );
+    initialSyncLog('fetchAndStoreMetadata_done', mailboxAccountId, {
       gmailApiCalls: fetchCalls,
       unreadable,
-    } = await this.fetchAndStoreMetadata(mailboxAccountId, client, ctx.signal, async (counts) => {
-      await this.updateProgress(
-        mailboxAccountId,
-        counts.processed,
-        counts.total,
-        snapshotHistoryId,
-        attemptId,
-      );
-      // An empty mailbox has nothing to count against.
-      if (counts.total > 0) {
-        await this.reportScanProgress(mailboxAccountId, ctx.attempt, counts, 'count');
-      }
-    });
-    initialSyncLog('fetchAndStoreMetadata_done', mailboxAccountId, {
-      messagesSynced,
-      gmailApiCalls: fetchCalls,
     });
     const gmailApiCalls = fetchCalls + 1; // +1 for getProfile.
     lap('fetching_metadata');
@@ -521,6 +522,14 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
 
     // Stage 4 — finalizing.
     await this.upsertSyncState(mailboxAccountId, 'finalizing', 97, 'syncing', attemptId);
+    // Completion describes the persisted mirror, after the rebuild purges
+    // legacy non-mail. Gmail's list also includes drafts, chats, invalid
+    // senders and messages that vanished before metadata could be fetched.
+    const [stored] = await this.deps.db
+      .select({ messagesSynced: count() })
+      .from(mailMessages)
+      .where(eq(mailMessages.mailboxAccountId, mailboxAccountId));
+    const messagesSynced = stored!.messagesSynced;
     lap('finalizing');
 
     // Stage 5 — ready. Persist the historyId snapshot so PR-D's
@@ -783,7 +792,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     client: GmailMetadataClient,
     signal: AbortSignal | undefined,
     onProgress: (counts: ScanCounts) => Promise<void>,
-  ): Promise<{ messagesSynced: number; gmailApiCalls: number; unreadable: number }> {
+  ): Promise<{ gmailApiCalls: number; unreadable: number }> {
     let gmailApiCalls = 0;
 
     // 1. List every Gmail id. Keep both an ordered array (for the
@@ -998,7 +1007,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       );
     }
 
-    return { messagesSynced: total - unreadable, gmailApiCalls, unreadable };
+    return { gmailApiCalls, unreadable };
   }
 
   /**

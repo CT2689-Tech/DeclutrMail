@@ -1019,7 +1019,7 @@ async function bootstrap(): Promise<void> {
           db,
           reconcilerQueue,
           mailboxAccountId,
-          job.data.startHistoryId,
+          result.expiredHistoryId,
         );
         console.log(
           JSON.stringify({

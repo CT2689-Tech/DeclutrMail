@@ -968,7 +968,7 @@ describe('InitialSyncWorker', () => {
     };
     const client = new FakeGmailClient([...makeMessages(4, 2), draft]);
 
-    await new InitialSyncWorker({
+    const result = await new InitialSyncWorker({
       db,
       gmailAccess: accessFor(client),
       outbox: new OutboxPublisher(),
@@ -978,6 +978,13 @@ describe('InitialSyncWorker', () => {
     expect(stored.map((r) => r.id)).not.toContain('legacy-draft');
     const emails = await db.select({ email: senders.email }).from(senders);
     expect(emails.map((r) => r.email)).not.toContain('owner@declutrmail.ai');
+    expect(result.messagesSynced).toBe(stored.length);
+    const [run] = await db.select().from(syncRuns);
+    expect(run!.messagesSynced).toBe(stored.length);
+    const ready = (await db.select().from(outboxEvents)).find(
+      (event) => event.topic === TOPICS.MAILBOX_SYNC_READY,
+    );
+    expect(ready!.payload).toMatchObject({ messageCount: stored.length });
   });
 
   it('a failed purge is reported and the sync still completes', async () => {
@@ -1046,13 +1053,20 @@ describe('InitialSyncWorker', () => {
       item('chat-sent', ['CHAT', 'SENT'], owner, 'friend@example.com', 6),
     ]);
 
-    await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
-      { mailboxAccountId },
-      CTX,
-    );
+    const result = await new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(client),
+      outbox: new OutboxPublisher(),
+    }).processJob({ mailboxAccountId }, CTX);
 
     const stored = await db.select({ id: mailMessages.providerMessageId }).from(mailMessages);
     expect(stored.map((r) => r.id)).toEqual(['mail-1']);
+    expect(result.messagesSynced).toBe(1);
+    expect((await db.select().from(syncRuns))[0]!.messagesSynced).toBe(1);
+    const ready = (await db.select().from(outboxEvents)).find(
+      (event) => event.topic === TOPICS.MAILBOX_SYNC_READY,
+    );
+    expect(ready!.payload).toMatchObject({ messageCount: 1 });
     // Only the friend: no row for the owner (draft, own chat line) or for
     // the chat-only buddy. The earlier chat line moves neither the count
     // nor first-seen, and the SENT chat line is not "you wrote to them".
@@ -1074,6 +1088,34 @@ describe('InitialSyncWorker', () => {
       })
       .from(schema.senderTimeseries);
     expect(months).toEqual([{ senderKey: deriveSenderKey('friend@example.com'), volume: 1 }]);
+  });
+
+  it('resumed completion counts stored mail, excluding invalid senders and vanished metadata', async () => {
+    const messages = makeMessages(6, 2);
+    await new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(messages.slice(0, 3))),
+    }).processJob({ mailboxAccountId }, CTX);
+    await resetToQueued(db, mailboxAccountId);
+    messages[3]!.from = '';
+    const client = new FakeGmailClient(messages, '999999', new Set(['msg-5']));
+    const getMetadata = client.getMessageMetadata.bind(client);
+    client.getMessageMetadata = async (id) => (id === 'msg-4' ? null : getMetadata(id));
+    const result = await new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(client),
+      outbox: new OutboxPublisher(),
+    }).processJob({ mailboxAccountId }, CTX);
+    const stored = await db.select().from(mailMessages);
+    expect(stored).toHaveLength(3);
+    expect(result).toMatchObject({ messagesSynced: 3, unreadable: 1 });
+    expect(client.getCalls).toBe(2); // Saved rows are skipped; vanished metadata is scripted.
+    const runs = await db.select().from(syncRuns);
+    expect(runs.map((run) => run.messagesSynced)).toEqual([3, 3]);
+    const ready = (await db.select().from(outboxEvents)).find(
+      (event) => event.topic === TOPICS.MAILBOX_SYNC_READY,
+    );
+    expect(ready!.payload).toMatchObject({ messageCount: 3, firstReady: false });
   });
 
   it('D6 sync gate — writes D224 stage sequence + monotonic progress + final ready', async () => {
