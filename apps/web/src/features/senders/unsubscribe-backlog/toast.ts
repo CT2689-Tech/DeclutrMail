@@ -26,6 +26,21 @@ function unsubFailedLine(
   return isPluralCopy(forms) ? pluralCopy(forms, n, { n, reason: reasonText(reason) }) : '';
 }
 
+/**
+ * A skip is not "something went wrong". The deck names two real
+ * reasons. It has no sentence that says the senders were skipped, so
+ * an unnamed skip returns '' and the caller shows no toast.
+ */
+function skippedOnlyLine(senders: UnsubscribeBacklogResult['senders']): string {
+  const skipped = senders.filter((sender) => sender.unsubStatus === 'skipped');
+  if (skipped.length === 0 || skipped.length !== senders.length) return '';
+  const code = skipped[0]?.reasonCode;
+  if (!skipped.every((sender) => sender.reasonCode === code)) return '';
+  if (code === 'no_link') return WS5_COPY['f1.reason.noLink'];
+  if (code === 'sender_error') return WS5_COPY['f1.reason.senderError'];
+  return '';
+}
+
 function movedLine(verb: 'archive' | 'delete', n: number): string {
   const forms =
     verb === 'delete' ? WS5_COPY['f1.toast.both.delete'] : WS5_COPY['f1.toast.both.archive'];
@@ -93,12 +108,12 @@ export function unsubscribeBacklogToast(result: UnsubscribeBacklogResult): strin
   if (manual.length > 0) return WS5_COPY['f1.toast.mailto'];
 
   // Zero one-click requests is a failure or a skip. Never claim a
-  // request that was not made.
+  // request that was not made, and never call a skip a failure.
   if (requested.length === 0) {
     if (failed.length > 0 && isPluralCopy(WS5_COPY['f1.toast.bulkFailed'])) {
       return pluralCopy(WS5_COPY['f1.toast.bulkFailed'], failed.length, { k: failed.length });
     }
-    return WS5_COPY['f1.reason.generic'];
+    return skippedOnlyLine(result.senders);
   }
 
   const unsub = WS5_COPY['report.celebrate.unsub'];

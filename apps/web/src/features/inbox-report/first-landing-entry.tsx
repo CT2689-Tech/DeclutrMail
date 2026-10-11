@@ -66,7 +66,8 @@ export function InboxReportFirstLanding(props: {
               const sent = res.senders.some(
                 (sender) => sender.unsubStatus === 'requested' || sender.unsubStatus === 'manual',
               );
-              toast(unsubscribeBacklogToast(res), sent ? 'info' : 'warn');
+              const line = unsubscribeBacklogToast(res);
+              if (line !== '') toast(line, sent ? 'info' : 'warn');
             },
             onError: (err) => {
               if (err instanceof ApiError && err.status === 402) return;

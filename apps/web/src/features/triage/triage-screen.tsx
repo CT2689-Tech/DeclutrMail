@@ -1132,7 +1132,8 @@ export function TriageScreen({
               invalidateAfterDecision(qc);
               if (currentMailboxRef.current === actionMailboxId) incrementSessionDecided();
               setExpandedRow(null);
-              toast(unsubscribeBacklogToast(res), sent ? 'info' : 'warn');
+              const line = unsubscribeBacklogToast(res);
+              if (line !== '') toast(line, sent ? 'info' : 'warn');
               const outcome = res.senders[0];
               if (outcome?.unsubStatus === 'requested' && outcome.executionActionId) {
                 setUnsubWatch({

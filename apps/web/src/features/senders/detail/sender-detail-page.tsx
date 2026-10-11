@@ -952,7 +952,8 @@ function ReadyState({
               if (sent) trackActionConfirmed('unsubscribe');
               void qc.invalidateQueries({ queryKey: sendersKeys.all });
               void qc.invalidateQueries({ queryKey: activityKeys.all });
-              toast(unsubscribeBacklogToast(res), sent ? 'info' : 'warn');
+              const line = unsubscribeBacklogToast(res);
+              if (line !== '') toast(line, sent ? 'info' : 'warn');
               const outcome = res.senders[0];
               if (outcome?.unsubStatus === 'requested' && outcome.executionActionId) {
                 setActiveUnsub({

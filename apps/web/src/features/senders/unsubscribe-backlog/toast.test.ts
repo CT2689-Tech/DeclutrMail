@@ -237,8 +237,27 @@ describe('unsubscribeBacklogToast', () => {
         ],
       }),
     );
-    expect(skipped).toBe(WS5_COPY['f1.reason.generic']);
-    expect(skipped).not.toMatch(/requested/i);
+    expect(skipped).toBe('');
+    expect(skipped).not.toBe(WS5_COPY['f1.reason.generic']);
+
+    const noLink = unsubscribeBacklogToast(
+      result({
+        mode: 'unsub_only',
+        senders: [
+          {
+            senderId: 'a',
+            method: 'none',
+            mailtoUrl: null,
+            executionActionId: null,
+            lifecycleStatus: null,
+            unsubStatus: 'skipped',
+            reasonCode: 'no_link',
+          },
+        ],
+      }),
+    );
+    expect(noLink).toBe(WS5_COPY['f1.reason.noLink']);
+    expect(noLink).not.toMatch(/requested|wrong/i);
   });
 
   it('names the archive or delete when every bulk unsubscribe failed', () => {

@@ -4427,8 +4427,11 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       },
     ]);
     await confirmBulkUnsubscribe();
-    const toast = await screen.findByText('something went wrong');
-    expect(toast.textContent).not.toMatch(/requested/i);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // The deck has no sentence for a skipped unsubscribe. Do not claim
+    // a failure or a request.
+    expect(screen.queryByText('something went wrong')).toBeNull();
+    expect(screen.queryByText('Unsubscribe requested from 1 sender')).toBeNull();
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       await act(async () => {
@@ -4463,10 +4466,11 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       },
     ]);
     await confirmBulkUnsubscribe();
-    // No requested sender: say the skip, and do not invent a request.
-    // Earlier toasts in this file stay mounted, so read this toast only.
-    const toast = await screen.findByText('something went wrong');
-    expect(toast.textContent).not.toMatch(/requested/i);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // No requested sender, and no deck sentence for a skip. Earlier
+    // toasts in this file stay mounted, so match the exact claims.
+    expect(screen.queryByText('something went wrong')).toBeNull();
+    expect(screen.queryByText('Unsubscribe requested from 1 sender')).toBeNull();
     expect(screen.queryByText('No unsubscribe requests sent')).toBeNull();
     expect(screen.queryByText(/Not sent: 2 Protected senders/)).toBeNull();
     expect(screen.queryByText('✓')).toBeNull();

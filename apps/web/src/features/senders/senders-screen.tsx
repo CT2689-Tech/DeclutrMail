@@ -1537,7 +1537,8 @@ function SendersScreenContent({
               if (sent) trackActionConfirmed('unsubscribe');
               void qc.invalidateQueries({ queryKey: sendersKeys.all });
               void qc.invalidateQueries({ queryKey: activityKeys.all });
-              toast(unsubscribeBacklogToast(res), sent ? 'info' : 'warn');
+              const line = unsubscribeBacklogToast(res);
+              if (line !== '') toast(line, sent ? 'info' : 'warn');
               const nameById = new Map(senderRefs.map((sref) => [sref.id, sref] as const));
               if (!isBulk) {
                 const sref = senderRefs[0]!;

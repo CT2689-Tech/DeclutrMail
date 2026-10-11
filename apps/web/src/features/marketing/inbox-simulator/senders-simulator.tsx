@@ -413,7 +413,7 @@ export function SendersSimulator() {
       })),
     };
     const line = unsubscribeBacklogToast(result);
-    toast(line);
+    if (line !== '') toast(line);
     const summary = unsubscribeBacklogActivityLine(result);
     const note =
       mode === 'delete'
