@@ -536,6 +536,8 @@ export interface ListSendersParams {
   hasInboxMail?: boolean | undefined;
   /** Exclude senders whose inbound mail is entirely outside Inbox + archived. */
   currentMailOnly?: boolean | undefined;
+  /** Less than half of the last 90 days is marked read. */
+  mostlyUnread?: boolean | undefined;
 }
 
 /**
@@ -643,6 +645,7 @@ export function sendersListRequestQuery(
     unsub_ignored: params.unsubIgnored === true ? 'true' : undefined,
     has_inbox_mail: params.hasInboxMail === true ? 'true' : undefined,
     current_mail_only: params.currentMailOnly === true ? 'true' : undefined,
+    mostly_unread: params.mostlyUnread === true ? 'true' : undefined,
   };
 }
 

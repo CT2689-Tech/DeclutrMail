@@ -291,6 +291,31 @@ interface InboxStats {
 }
 
 /** Shared live Archive scope for list rows and sender details. */
+/**
+ * Less than half of inbound mail in the engine window is marked read,
+ * excluding sweeper marks from the numerator. Same facts as `readRate`.
+ */
+function mostlyUnread90Predicate(mailboxAccountId: string) {
+  const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
+  const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
+  const engine = sql`${mailMessages.internalDate} >= now() - (${WINDOWS.ENGINE_WINDOW_DAYS} || ' days')::interval`;
+  const scope = sql`${mailMessages.mailboxAccountId} = ${outerMailboxId}
+    AND ${mailMessages.senderKey} = ${outerSenderKey}
+    AND ${engine}
+    AND ${mailMessages.isOutbound} = false`;
+  const readCount = sql`(
+    SELECT COUNT(*)::int FROM ${mailMessages}
+    WHERE ${scope}
+      AND ${mailMessages.isUnread} = false
+      AND ${readStateNotSweeperMarked(mailboxAccountId, getTableName(mailMessages))}
+  )`;
+  const volume = sql`(
+    SELECT COUNT(*)::int FROM ${mailMessages}
+    WHERE ${scope}
+  )`;
+  return sql`${volume} > 0 AND ${readCount} * 2 < ${volume}`;
+}
+
 function buildArchivedCountSubquery() {
   const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
   const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
@@ -522,6 +547,12 @@ export class SendersReadService {
      */
     unsubIgnored?: boolean | null;
     /**
+     * Less than half of the last 90 days of inbound mail is marked read.
+     * Same engine window and sweeper exclusion as the displayed read rate
+     * (ADR-0037). Senders with no mail in that window are left out.
+     */
+    mostlyUnread?: boolean | null;
+    /**
      * Anchor for "current month" used by the volume-trend bucket.
      * Injectable for tests; defaults to `new Date()` in production so
      * controllers don't have to thread the clock through.
@@ -629,6 +660,9 @@ export class SendersReadService {
       conditions.push(
         sql`${senderPolicies.policyType} = 'unsubscribe' AND ${senders.lastSeenAt} > ${senderPolicies.updatedAt}`,
       );
+    }
+    if (args.mostlyUnread === true) {
+      conditions.push(mostlyUnread90Predicate(args.mailboxAccountId));
     }
     if (typeof args.quietForDays === 'number' && args.quietForDays > 0) {
       conditions.push(
@@ -920,6 +954,8 @@ export class SendersReadService {
     wroteTo?: TriStateFilter;
     /** D51 — "unsub'd, still emailing" (see `listSenders` doc). */
     unsubIgnored?: boolean | null;
+    /** ADR-0037 — less than half marked read in the last 90 days. */
+    mostlyUnread?: boolean | null;
   }): Promise<SenderListQueryMeta> {
     const { mailboxAccountId, category, isProtected } = args;
 
@@ -958,6 +994,9 @@ export class SendersReadService {
       totalMatchingConditions.push(
         sql`${senderPolicies.policyType} = 'unsubscribe' AND ${senders.lastSeenAt} > ${senderPolicies.updatedAt}`,
       );
+    }
+    if (args.mostlyUnread === true) {
+      totalMatchingConditions.push(mostlyUnread90Predicate(args.mailboxAccountId));
     }
     if (typeof args.quietForDays === 'number' && args.quietForDays > 0) {
       totalMatchingConditions.push(

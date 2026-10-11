@@ -13,6 +13,7 @@ import {
   Button,
   EmptyState,
   ErrorState as RecoverableErrorState,
+  FirstLandingSlot,
   ScreenIntro,
   tokens,
   toast,
@@ -130,6 +131,8 @@ import {
 } from './row-activity';
 import { SendersLoadingState } from './senders-loading-state';
 import { shouldShowFirstCleanupNudge } from './first-cleanup-nudge-policy';
+import { InboxReportFirstLanding } from '@/features/inbox-report/first-landing-entry';
+import { LaunchFilterRow } from './launch-filter-row';
 // This optional recommendation appears only after the mailbox summary and
 // stored sender list arrive. Its read/render code need not load at app entry.
 const UnavailableBacklogNudge = () => null;
@@ -544,7 +547,8 @@ function describeNarrowedFilters(compose: ComposeState): string {
     compose.windowDays !== null ||
     compose.domain !== null ||
     compose.unsubIgnored ||
-    compose.hasInboxMail === true;
+    compose.hasInboxMail === true ||
+    compose.mostlyUnread === true;
   if (compose.activity && !compose.activityNegate && !hasOtherFilters) return compose.activity;
   // QA-senders-20260901-09: 'matching' collided with the template's own
   // "senders match" a few words later ("No matching senders match ...").
@@ -728,6 +732,7 @@ function SendersScreenContent({
   // readiness value it didn't enumerate.
   const mailboxSyncFailed = activeMailbox?.readiness === 'failed';
   const mailboxNeedsReconnect = activeMailbox?.needsReconnect === true;
+  const [reportShown, setReportShown] = useState(false);
   const showFirstCleanupNudge = shouldShowFirstCleanupNudge({
     mailboxReady: activeMailbox?.readiness === 'ready',
     hasCompletedCleanup,
@@ -2840,6 +2845,7 @@ function SendersScreenContent({
               needsReconnect={mailboxNeedsReconnect}
             />
 
+            <LaunchFilterRow mailboxId={me.activeMailboxId} onApply={setCompose} />
             <ActiveFilterChips state={compose} onChange={setCompose} onClear={clearCompose} />
           </section>
           <ScreenIntro
@@ -2860,7 +2866,20 @@ function SendersScreenContent({
             </div>
           )}
 
-          {showFirstCleanupNudge && senders[0] !== undefined && <FirstBacklogNudge />}
+          {me.activeMailboxId && (
+            <InboxReportFirstLanding mailboxId={me.activeMailboxId} onResolved={setReportShown} />
+          )}
+          <FirstLandingSlot
+            candidates={[
+              { id: 'inbox_report', ready: reportShown, node: null },
+              { id: 'first_backlog_header', ready: false, node: null },
+              {
+                id: 'first_cleanup_nudge',
+                ready: showFirstCleanupNudge && senders[0] !== undefined,
+                node: <FirstBacklogNudge />,
+              },
+            ]}
+          />
 
           {/* D248 — multi-sender unsubscribe result. Its own surface: three
             terminal outcomes, no Undo (a delivered request is one-way). */}

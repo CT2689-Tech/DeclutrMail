@@ -1,6 +1,9 @@
 'use client';
 
 import { TierGate } from '@/features/billing/tier-gate';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { screenerGateCount } from './gate-copy';
 import { useScreenerCount, useScreenerQueue } from './api/use-screener';
 import { composeScreenerState } from './compose-state';
 import { ScreenerScreen } from './screener-screen';
@@ -17,8 +20,8 @@ import { useHydrated } from '@/lib/use-hydrated';
  */
 export const SCREENER_GATE_COPY = {
   title: 'Screener',
-  pitch: 'Give each undecided sender a first review; their email keeps arriving until you choose.',
-  footnote: 'You can still move any sender to Later from Triage.',
+  pitch: WS2_COPY.locked.screener.pitch,
+  footnote: WS2_COPY.locked.screener.footnote,
 } as const;
 
 /**
@@ -26,13 +29,22 @@ export const SCREENER_GATE_COPY = {
  * plan name, price, checkout link and money-back note all derive from
  * the manifest there, and the queue's reads never mount under-tier.
  */
-export function ScreenerRoute() {
+export function ScreenerRoute({ newSenderCount = null }: { newSenderCount?: number | null }) {
+  const countLine = screenerGateCount(newSenderCount);
   return (
     <TierGate
       capability="screener"
       title={SCREENER_GATE_COPY.title}
-      pitch={SCREENER_GATE_COPY.pitch}
-      footnote={SCREENER_GATE_COPY.footnote}
+      pitch={
+        countLine == null ? (
+          SCREENER_GATE_COPY.pitch
+        ) : (
+          <>
+            {SCREENER_GATE_COPY.pitch} {countLine}
+          </>
+        )
+      }
+      footnote={SCREENER_GATE_COPY.footnote.replaceAll('{freeName}', TIER_MANIFEST.free.name)}
     >
       <ScreenerQueueRoute />
     </TierGate>

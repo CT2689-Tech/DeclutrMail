@@ -172,6 +172,7 @@ export class SendersController {
     @Query('unsub_ignored') rawUnsubIgnored: string | undefined,
     @Query('current_mail_only') rawCurrentMailOnly?: string,
     @Query('has_inbox_mail') rawHasInboxMail?: string,
+    @Query('mostly_unread') rawMostlyUnread?: string,
   ): Promise<SenderListEnvelope> {
     const accountId = mailbox.id;
     const category = parseCategory(rawCategory);
@@ -191,6 +192,7 @@ export class SendersController {
     const unsubIgnored = rawUnsubIgnored === 'true' ? true : null;
     const currentMailOnly = parseTriState(rawCurrentMailOnly) === true;
     const hasInboxMail = parseTriState(rawHasInboxMail) === true;
+    const mostlyUnread = rawMostlyUnread === 'true' ? true : null;
 
     const cursorRaw = decodeCursor(rawCursor);
     if (rawCursor && cursorRaw === null) {
@@ -238,6 +240,7 @@ export class SendersController {
         quietForDays,
         domain,
         unsubIgnored,
+        mostlyUnread,
       }),
     );
     const queryRead = isFirstPage
@@ -255,6 +258,7 @@ export class SendersController {
             quietForDays,
             domain,
             unsubIgnored,
+            mostlyUnread,
           }),
         )
       : Promise.resolve(null);

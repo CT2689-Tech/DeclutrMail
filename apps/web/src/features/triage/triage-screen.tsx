@@ -13,7 +13,16 @@ import { useSenderInFlightLock } from '@/features/undo/in-flight';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button, ErrorState, ScreenIntro, tokens, toast, useIsAtMost } from '@declutrmail/shared';
+import {
+  Button,
+  ErrorState,
+  FeatureExplainer,
+  ScreenIntro,
+  tokens,
+  toast,
+  useIsAtMost,
+} from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { useLocalState } from '@declutrmail/shared/hooks/use-local-state';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
@@ -51,6 +60,8 @@ import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { trackActionConfirmed } from '@/lib/action-analytics';
 import { track } from '@/lib/posthog';
+import { useNow } from '@/lib/use-now';
+import { triageDaySubtitle } from './day-subtitle';
 import { captureFeatureException } from '@/lib/sentry';
 // Cross-feature component import per ADR-0007's second-consumer rule —
 // the senders feature owns unsubscribe; D220's allowlist gates a
@@ -221,9 +232,12 @@ export function TriageScreen({
   state,
   journey = 'daily',
   offerUnprotect = false,
+  onboardedAt = null,
 }: {
   state: TriageScreenState;
   journey?: 'daily' | 'first_relief';
+  /** When the user finished onboarding. Day one is the first 24 hours. */
+  onboardedAt?: string | null;
   /**
    * Show a direct Unprotect control on Protected rows (D245). Set by
    * the onboarding protection review, whose subject IS the protection —
@@ -245,6 +259,9 @@ export function TriageScreen({
   const mailboxReadiness = activeMailbox?.readiness;
   const mailboxNeedsReconnect = activeMailbox?.needsReconnect === true;
   const pendingAction = useTriageStore((s) => s.pendingAction);
+  const nowMs = useNow();
+  const daySubtitle =
+    nowMs == null ? 'Today’s senders · one choice each' : triageDaySubtitle(onboardedAt, nowMs);
   // ADR-0028 — the Delete preview's reach. Form state, local on purpose.
   // Stored WITH the pending action it was chosen for, so a wider
   // destructive scope can never be read for a different sender or verb —
@@ -1662,8 +1679,9 @@ export function TriageScreen({
         >
           <div>
             <h1 style={editorialTitleStyle}>Triage</h1>
+            <FeatureExplainer id="triage-explainer">{WS2_COPY.explain.triage}</FeatureExplainer>
             <p style={{ margin: '6px 0 0', fontSize: text.sm, color: color.fgMuted }}>
-              Today’s review queue · one decision per sender
+              {daySubtitle}
             </p>
           </div>
           {state.kind === 'ready' && hasQueue && (

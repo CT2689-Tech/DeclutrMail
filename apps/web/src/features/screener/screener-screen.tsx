@@ -8,7 +8,15 @@ import {
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { Button, ErrorState, ScreenIntro, tokens, toast } from '@declutrmail/shared';
+import {
+  Button,
+  ErrorState,
+  FeatureExplainer,
+  ScreenIntro,
+  tokens,
+  toast,
+} from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { DEFAULT_DELETE_WINDOW_DAYS, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 
 // Cross-feature query-key imports are the invalidation contract (D200)
@@ -797,10 +805,7 @@ export function ScreenerScreen({
         )}
       </div>
 
-      <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm, lineHeight: 1.6 }}>
-        These senders are waiting for your first decision. Some may have been in your inbox for a
-        while; their email keeps arriving in Gmail until you decide.
-      </p>
+      <FeatureExplainer id="screener-explainer">{WS2_COPY.explain.screener}</FeatureExplainer>
       <ScreenIntro
         id="screener"
         title="How the Screener works"

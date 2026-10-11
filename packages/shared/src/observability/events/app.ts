@@ -175,6 +175,8 @@ export interface AppEventPayloads {
     /** Number of axes active AFTER this change (multi-axis support). */
     active_axes: number;
     mailbox_id: string;
+    /** Saved launch filter, when the change came from one. */
+    filter_id?: 'mostly_unread_90' | 'has_unsubscribe';
   };
 
   bulk_select_in_filter: {

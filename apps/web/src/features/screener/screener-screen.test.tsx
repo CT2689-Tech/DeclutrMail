@@ -330,7 +330,7 @@ describe('ScreenerRow — expanded body (D73) + preview (D226)', () => {
 describe('Screener paywall copy — D194 marketing-copy rule', () => {
   it('never uses a D194-forbidden framing', () => {
     const text = Object.values(SCREENER_GATE_COPY).join(' ');
-    expect(text).toMatch(/keeps arriving until you choose/);
+    expect(text).toMatch(/keeps arriving in Gmail until you decide/);
     expect(text).not.toMatch(/won't surprise you/i);
     expect(text).not.toMatch(/block/i);
     expect(text).not.toMatch(/intercept/i);
