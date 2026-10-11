@@ -175,6 +175,31 @@ describe('launch funnel sql', () => {
     expect(source).toContain(`${FREE_LIMIT}::int AS free_allowance`);
   });
 
+  it('leaves paid at 0 when purchase_confirmed has no user id', async () => {
+    const db = await freshTestDb();
+    const ada = await seedUser(db, 'ada@example.com');
+    const now = new Date();
+    await db.insert(productEvents).values({
+      userId: null,
+      event: 'purchase_confirmed',
+      props: { plan: 'plus' },
+      occurredAt: now,
+    });
+    const missing = oneRow(await db.execute(funnelSql(FREE_LIMIT, [])));
+    expect(Number(missing.paid)).toBe(0);
+    expect(Number(missing.plus_purchases)).toBe(0);
+
+    await db.insert(productEvents).values({
+      userId: ada.userId,
+      event: 'purchase_confirmed',
+      props: { plan: 'plus' },
+      occurredAt: now,
+    });
+    const counted = oneRow(await db.execute(funnelSql(FREE_LIMIT, [])));
+    expect(Number(counted.paid)).toBe(1);
+    expect(Number(counted.plus_purchases)).toBe(1);
+  });
+
   it('refuses a non-local database', () => {
     expect(() =>
       assertLocalFunnelDsn('postgresql://postgres@127.0.0.1:5432/declutrmail'),
