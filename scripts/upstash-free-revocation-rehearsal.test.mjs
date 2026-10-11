@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   assertOwned,
+  classifyManagementRefusal,
   nativeClient,
   normalizeHost,
   rehearse,
@@ -83,7 +84,7 @@ function harness(options = {}) {
       assert.equal(body.eviction, false);
       assert.deepEqual(body.read_regions, []);
       assert.equal(body.database_name, `dm-billing-revocation-test-${nonce}`);
-      if (options.freeRejected) return json({ error: marker }, 400);
+      if (options.freeRejected) return json(options.rejectionBody ?? { error: marker }, 400);
       fixture = {
         database_id: options.foreignId ? baselineId : fixtureId,
         database_name: body.database_name,
@@ -149,6 +150,31 @@ test('free refusal stops before connections/reset and preserves negative evidenc
   assert.equal(report.baselineIdsPresent, true);
   assert.equal(h.requests.filter((row) => row.method !== 'GET').length, 1);
   assert.equal(JSON.stringify(report).includes(marker), false);
+});
+
+test('creation error diagnosis returns only fixed categories, never provider text', async () => {
+  const cases = [
+    [
+      { error: `Cannot create a free database with a credit card: ${marker}` },
+      'free_plan_unavailable',
+    ],
+    [{ message: `Database name exceeds maximum length: ${marker}` }, 'database_name_invalid'],
+    [{ detail: `Region is not supported: ${marker}` }, 'region_invalid'],
+    [
+      { error: `Cannot create free database: name exceeds maximum length ${marker}` },
+      'database_name_invalid',
+    ],
+    [{ error: `Only paid databases are allowed in this account ${marker}` }, 'paid_plan_required'],
+    [{ error: marker }, 'unclassified_request_rejection'],
+  ];
+  for (const [body, category] of cases) {
+    assert.equal(classifyManagementRefusal(body), category);
+    const report = await harness({ freeRejected: true, rejectionBody: body }).run();
+    assert.equal(report.creationRefusalCategory, category);
+    assert.equal(report.fixtureCreated, false);
+    assert.equal(report.cleanupVerified, true);
+    assert.equal(JSON.stringify(report).includes(marker), false);
+  }
 });
 
 test('already authenticated sessions continuing after reset are evidence against the fence', async () => {

@@ -60,6 +60,24 @@ Required CI and the normal merge queue remain prerequisites to main-only dispatc
 Actual provider results will be recorded after dispatch. No provider call has run
 at preparation.
 
+## First provider attempt and bounded diagnosis
+
+PR #991 merged through the normal queue at source
+`993e113ccd111344e6090837a963ad3e671b1e06`; queue CI #38166716051 passed. Reviewed
+runner/workflow/test blobs were verified on protected main before dispatch.
+[Run #38167044955](https://github.com/CT2689-Tech/DeclutrMail/actions/runs/38167044955)
+failed on the explicit free creation request with HTTP 400. Its reviewed sanitized
+report records `creationOutcome=rejected`, no fixture, no reset, no observations,
+verified cleanup and all baseline IDs still present. This does not prove a paid-only
+account: the initial report omitted the specific rejection cause.
+
+The follow-up retains the same free-only request and ownership/cleanup boundaries.
+It classifies provider error text in memory into fixed name/region/plan/unclassified
+categories; raw provider text, credentials and endpoints never enter the report.
+Name/region errors take precedence over a generic free-plan phrase. A second provider
+attempt waits for independent review, required CI and normal merge of this diagnostic
+change. There is no unchanged retry or paid fallback.
+
 Primary provider contracts:
 
 - [Explicit free plan creation](https://upstash.com/docs/devops/developer-api/redis/create_database_global)
