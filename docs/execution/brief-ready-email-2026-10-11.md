@@ -67,3 +67,17 @@ notices are Off. Empty/old/mixed actors block deployment before producer writes.
 After new category writes, rollback retains the compatibility floor. Required CI
 and normal merge queue govern feature merge; release and broker proof remain
 separate evidence to read back before reporting production verification.
+
+Dependency integration: compatibility #939 merged as 4ab15e64. This branch is now
+based on that main commit and includes the Home/entry foundation #937. Export
+conflicts were resolved by retaining both mailbox visit snapshots and acknowledged
+Brief deliveries, including both fixtures and SQL imports. The rebase is required
+for the feature dependency; no fresh-main-only update was requested. Production
+compatibility rollout/drained actor proof remains a prerequisite for activation.
+
+Integrated candidate verification: 79 API tests (export/Brief/preferences/
+unsubscribe/users), 52 Settings tests, all eight typechecks and 51 unchanged
+production route budgets pass. Independent export/dependency integration review
+is clear. Earlier no-test runs used nonexistent Settings paths; the actual
+settings-index/settings-screen suite was then located and passed without source
+or assertion changes.
