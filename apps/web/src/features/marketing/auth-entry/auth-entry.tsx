@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import {
   ACTION_PREVIEW_CLAIM,
+  CASA_VERIFICATION_APPROVED_ON,
   Logo,
   OAUTH_SCOPE_DISCLOSURE,
   PRIVACY_NEVER_ITEMS,
@@ -10,9 +11,12 @@ import {
   PRIVACY_STORAGE_LABEL,
 } from '@declutrmail/shared';
 import type { SignInResult } from '@declutrmail/shared/contracts';
+import { WS3_COPY } from '@declutrmail/shared/copy/launch';
 
 import { TrackedCta } from '../landing/tracked-cta';
 import { oauthSignInUrl, oauthStartUrl } from '../landing/urls';
+import { TrustRow } from '../trust/trust-row';
+import { NotOnGmail } from '../waitlist/not-on-gmail';
 
 // The preview promise, first sentence only — the rest of the shared claim
 // (the final count can change) belongs to the preview itself.
@@ -60,13 +64,13 @@ export function AuthEntry({
           {signedOut
             ? 'You’re signed out.'
             : returning
-              ? 'Welcome back.'
-              : 'Know what you are sharing before you connect.'}
+              ? WS3_COPY['ws3.signin.welcomeBack.h1']
+              : WS3_COPY['ws3.signin.h1']}
         </h1>
         <p className="dm-auth-entry-lede">
           {returning || signedOut
-            ? 'Continue with Google to return to your workspace.'
-            : 'Gmail remains where you read, reply, search, and compose.'}
+            ? WS3_COPY['ws3.signin.welcomeBack.sub']
+            : WS3_COPY['ws3.signin.sub']}
         </p>
 
         {authResult === 'inbox_limit' ? (
@@ -94,8 +98,15 @@ export function AuthEntry({
           describedBy={authResult ? AUTH_RESULT_ALERT_ID : undefined}
         >
           <GoogleMark />
-          Continue with Google
+          {WS3_COPY['ws3.signin.button']}
         </TrackedCta>
+
+        {!identityOnly ? (
+          <section className="dm-auth-entry-permission" aria-labelledby="dm-auth-permission-title">
+            <h2 id="dm-auth-permission-title">{WS3_COPY['ws3.signin.permission.title']}</h2>
+            <p>{WS3_COPY['ws3.signin.permission.body']}</p>
+          </section>
+        ) : null}
 
         <p className="dm-auth-entry-scope">
           {identityOnly
@@ -138,15 +149,18 @@ export function AuthEntry({
           </ol>
         )}
 
+        <TrustRow key={CASA_VERIFICATION_APPROVED_ON} />
+
         <p className="dm-auth-entry-fine">
           No card required for Free. Disconnect from Settings or your Google Account at any time.
         </p>
+        <NotOnGmail source="sign_in" />
       </section>
 
       <p className="dm-auth-entry-alt">
         Not ready to connect?{' '}
-        <TrackedCta href="/inbox-simulator" cta="try_demo" placement="final">
-          Try the demo
+        <TrackedCta href="/inbox-simulator?workspace=senders" cta="try_demo" placement="final">
+          {WS3_COPY['ws3.home.cta.demo']}
         </TrackedCta>
       </p>
     </div>

@@ -1,5 +1,7 @@
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { fillWs3, heroKicker, WS3_COPY } from '@declutrmail/shared/copy/launch';
 
+import { NotOnGmail } from '../waitlist/not-on-gmail';
+import { TrustRow } from '../trust/trust-row';
 import { HeroWorkspace } from './hero-workspace';
 import { ScopeDisclosure } from './scope-disclosure';
 import { permissionEntryUrl } from './urls';
@@ -17,14 +19,11 @@ export function Hero() {
   return (
     <section className="dm-mkt-hero dm-mkt-shell" aria-labelledby="dm-home-hero-title">
       <div className="dm-mkt-hero-copy">
-        <p className="dm-mkt-hero-kicker">A CLEARER WAY THROUGH GMAIL</p>
+        <p className="dm-mkt-hero-kicker">{heroKicker()}</p>
         <h1 id="dm-home-hero-title" className="dm-mkt-h1">
           Clear Gmail clutter. <em>See what moves first.</em>
         </h1>
-        <p className="dm-mkt-hero-sub">
-          Review years of mail by sender. See the matching count and planned Gmail change before you
-          confirm a move. Gmail stays where you read and reply.
-        </p>
+        <p className="dm-mkt-hero-sub">{WS3_COPY['ws3.home.sub']}</p>
         <div className="dm-mkt-hero-ctas">
           <TrackedCta
             href={permissionEntryUrl()}
@@ -40,12 +39,13 @@ export function Hero() {
             placement="hero"
             className="dm-mkt-cta-link"
           >
-            Explore the demo
+            {WS3_COPY['ws3.home.cta.demo']}
           </TrackedCta>
         </div>
+        <p className="dm-mkt-hero-note">{fillWs3(WS3_COPY['ws3.home.note'])}</p>
+        <TrustRow />
         <p className="dm-mkt-hero-note">
-          Free to begin · {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions a month · No
-          credit card.
+          {WS3_COPY['ws3.home.gmailOnly']} <NotOnGmail source="landing" />
         </p>
         {/* "Start free" opens the permission checkpoint; the
             pre-consent disclosure sits beside it (copy contract in

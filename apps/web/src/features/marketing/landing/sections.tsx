@@ -1,6 +1,7 @@
+import { fillWs3, WS3_COPY } from '@declutrmail/shared/copy/launch';
 import {
-  CASA_VERIFICATION_APPROVED_MONTH,
   CASA_VERIFICATION_APPROVED_ON,
+  formatVerificationDate,
   PRIVACY_BADGE_HEADLINE,
   PRIVACY_NEVER_ITEMS,
   PRIVACY_NEVER_LABEL,
@@ -135,7 +136,7 @@ export function HowItWorks() {
  *
  * The verification line may not exceed what /security#verification states:
  * Google APPROVED an OAuth verification for one restricted scope. It is not
- * a certification of the product, so never "certified" / "audited". The
+ * a certification of the product, so do not upgrade “approved” into either claim. The
  * date comes from shared copy because verification recertifies annually.
  */
 export function PrivacyDesk() {
@@ -149,9 +150,13 @@ export function PrivacyDesk() {
           <a href="/privacy">Privacy policy</a>
           <a
             href="/security#verification"
-            title={`Google approved DeclutrMail's OAuth verification on ${CASA_VERIFICATION_APPROVED_ON} for the single restricted scope we request, gmail.modify.`}
+            title={fillWs3(WS3_COPY['ws3.home.verificationLink'], {
+              OAUTH_DATE: formatVerificationDate(CASA_VERIFICATION_APPROVED_ON),
+            })}
           >
-            Google OAuth verification approved, {CASA_VERIFICATION_APPROVED_MONTH} (CASA Tier 2)
+            {fillWs3(WS3_COPY['ws3.home.verificationLink'], {
+              OAUTH_DATE: formatVerificationDate(CASA_VERIFICATION_APPROVED_ON),
+            })}
           </a>
         </div>
       </div>

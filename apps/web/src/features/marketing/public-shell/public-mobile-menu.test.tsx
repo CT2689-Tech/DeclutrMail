@@ -22,7 +22,9 @@ describe('PublicMobileMenu', () => {
       'href',
       '/sign-in?returning=1',
     );
-    expect(screen.getByRole('link', { name: 'Start free' })).toHaveAttribute('href', '/oauth');
+    const starts = screen.getAllByRole('link', { name: 'Start free' });
+    expect(starts).toHaveLength(2);
+    for (const link of starts) expect(link).toHaveAttribute('href', '/oauth');
   });
 
   it('closes on Escape and restores focus to the menu button', () => {

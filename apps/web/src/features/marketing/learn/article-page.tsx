@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { SenderWalkthrough } from '@/features/marketing/landing/sender-walkthrough';
+import { TrustRow } from '@/features/marketing/trust/trust-row';
 import { demoForTopic } from './journey-links';
 import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
@@ -133,6 +134,8 @@ export function ArticlePage({ article }: { article: LearnArticle }) {
           <p id="quick-answer">{article.quickAnswer}</p>
         </section>
       ) : null}
+
+      {article.slug === 'is-it-safe-to-connect-gmail-app' ? <TrustRow /> : null}
 
       {article.example ? <SyntheticPanel example={article.example} /> : null}
 

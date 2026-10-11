@@ -2,6 +2,8 @@ import { PublicAuthActions } from './public-auth-actions';
 import Link from 'next/link';
 
 import { Logo } from '@declutrmail/shared';
+import { hasLegalEntity } from '@declutrmail/shared/copy/legal-entity';
+import { fillWs3, showOpenBetaLink, WS3_COPY } from '@declutrmail/shared/copy/launch';
 import { ThemeToggle } from '@/features/theme/theme-toggle';
 import { isFeatureEnabled } from '@/lib/flags';
 
@@ -15,9 +17,10 @@ import { PublicNavLinks } from './public-nav-links';
 const PRODUCT_LINKS = [
   { href: '/how-it-works', label: 'How it works' },
   { href: '/pricing', label: 'Pricing' },
-  { href: '/inbox-simulator', label: 'Demo' },
+  { href: '/inbox-simulator?workspace=senders', label: 'Demo' },
   { href: '/compare', label: 'Compare' },
   { href: '/methodology', label: 'Privacy & control' },
+  { href: '/security', label: 'Security' },
 ] as const;
 
 const COMPARE_LINKS = [
@@ -46,9 +49,9 @@ const FOOTER_GROUPS = [
     label: 'Product',
     links: [
       { href: '/how-it-works', label: 'How it works' },
-      { href: '/inbox-simulator', label: 'Inbox simulator' },
+      { href: '/inbox-simulator?workspace=senders', label: 'Demo' },
       { href: '/pricing', label: 'Pricing' },
-      { href: '/beta', label: 'Open beta' },
+      ...(showOpenBetaLink() ? [{ href: '/beta', label: 'Open beta' }] : []),
     ],
   },
   {
@@ -108,7 +111,11 @@ export function PublicHeader() {
           {isFeatureEnabled('darkMode') ? (
             <ThemeToggle className="dm-public-theme-toggle" showLabel />
           ) : null}
-          <PublicMobileMenu links={PRODUCT_LINKS} startUrl={permissionEntryUrl()} />
+          <PublicMobileMenu
+            links={PRODUCT_LINKS}
+            startUrl={permissionEntryUrl()}
+            showTheme={isFeatureEnabled('darkMode')}
+          />
         </div>
       </header>
     </>
@@ -123,7 +130,8 @@ export function PublicFooter() {
           <Link href="/" className="dm-public-brand">
             <Logo size={27} />
           </Link>
-          <p>Gmail stays your inbox. DeclutrMail helps you control it one sender at a time.</p>
+          <p>{WS3_COPY['ws3.home.footerTagline']}</p>
+          {hasLegalEntity() ? <p>{fillWs3(WS3_COPY['ws3.footer.legal'])}</p> : null}
         </div>
 
         <div className="dm-public-footer-groups">
@@ -141,7 +149,7 @@ export function PublicFooter() {
       </div>
       <div className="dm-public-footer-fine">
         <span>© {new Date().getFullYear()} DeclutrMail</span>
-        <span>Works with Gmail. Not affiliated with or endorsed by Google.</span>
+        <span>{WS3_COPY['ws3.home.notAffiliated']}</span>
       </div>
     </footer>
   );
