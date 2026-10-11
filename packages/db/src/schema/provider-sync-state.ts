@@ -44,7 +44,16 @@ import { mailboxAccounts } from './mailbox-accounts';
  * No body data; no privacy concerns.
  */
 
-export const syncReadiness = pgEnum('sync_readiness', ['queued', 'syncing', 'ready', 'failed']);
+export const syncReadiness = pgEnum('sync_readiness', [
+  'queued',
+  'syncing',
+  'ready',
+  'failed',
+  // Terminal: the Gmail grant must be reconnected. Not `failed` — that
+  // state is still retried. Indexed mail stays. Cleared by a successful
+  // reconnect (`SyncService.markConnected`).
+  'needs_reconnect',
+]);
 
 export const syncStage = pgEnum('sync_stage', [
   'queued',

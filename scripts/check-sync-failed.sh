@@ -37,6 +37,11 @@
 # (matched on mailbox AND stuck-since instant) print as warnings; only an
 # unacknowledged row fails the run — see scripts/filter-known-stuck.sh.
 #
+# A reconnect grant is not that failure. `needs_reconnect` rows, and
+# `failed` rows whose error_code is in INITIAL_SYNC_RECONNECT_ERROR_CODES,
+# are an informational count (scripts/classify-failed-syncs.sh). They do
+# not fail the run. The user already has the in-app reconnect prompt.
+#
 # Privacy (D7 / D228): reads ONLY `provider_sync_state`. Surfaces
 # `mailbox_account_id`, `error_code`, `updated_at`, `stuck_seconds`.
 # NEVER reads `mail_messages` / `senders` / `triage_decisions`.
@@ -58,16 +63,19 @@ if ! command -v psql >/dev/null 2>&1; then
   exit 2
 fi
 
-QUERY=$(cat <<EOF
-SELECT
-  mailbox_account_id,
-  to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS stuck_since,
-  error_code,
-  EXTRACT(EPOCH FROM (NOW() - updated_at))::int AS stuck_seconds
-FROM provider_sync_state
-WHERE readiness_status = 'failed'
-  AND updated_at < NOW() - INTERVAL '${STUCK_FAILED_HOURS} hours'
-ORDER BY updated_at ASC;
+# `needs_reconnect` is added by migration 0086. Quoting the label before
+# that migration is applied is a parse error, which would turn every run
+# red for a missing enum rather than for a stuck sync. Probe first.
+ENUM_CHECK=$(cat <<'EOF'
+SELECT EXISTS (
+  SELECT 1
+  FROM pg_enum e
+  JOIN pg_type t ON t.oid = e.enumtypid
+  JOIN pg_namespace n ON n.oid = t.typnamespace
+  WHERE n.nspname = 'public'
+    AND t.typname = 'sync_readiness'
+    AND e.enumlabel = 'needs_reconnect'
+);
 EOF
 )
 
@@ -86,6 +94,45 @@ esac
 # a guard").
 PSQL_ERR="$(mktemp)"
 set +e
+HAS_NEEDS_RECONNECT=$(psql "$DSN" \
+  -At --quiet \
+  -c "$ENUM_CHECK" 2>"$PSQL_ERR")
+RC=$?
+set -e
+
+if [ "$RC" -ne 0 ]; then
+  echo "::error::psql failed (exit $RC) — watchdog could NOT check whether needs_reconnect exists; this is a config/connection problem, not a clean-bill-of-health signal" >&2
+  sed 's/^/  psql: /' "$PSQL_ERR" >&2 || true
+  rm -f "$PSQL_ERR"
+  exit 2
+fi
+: >"$PSQL_ERR"
+
+case "$HAS_NEEDS_RECONNECT" in
+  t|true|TRUE) STATUS_FILTER="readiness_status IN ('failed', 'needs_reconnect')" ;;
+  f|false|FALSE) STATUS_FILTER="readiness_status = 'failed'" ;;
+  *)
+    echo "::error::psql enum probe returned '${HAS_NEEDS_RECONNECT}', not a boolean — watchdog could NOT tell needs_reconnect rows from failed ones" >&2
+    rm -f "$PSQL_ERR"
+    exit 2
+    ;;
+esac
+
+QUERY=$(cat <<EOF
+SELECT
+  mailbox_account_id,
+  to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS stuck_since,
+  COALESCE(error_code, ''),
+  EXTRACT(EPOCH FROM (NOW() - updated_at))::int AS stuck_seconds,
+  readiness_status
+FROM provider_sync_state
+WHERE ${STATUS_FILTER}
+  AND updated_at < NOW() - INTERVAL '${STUCK_FAILED_HOURS} hours'
+ORDER BY updated_at ASC;
+EOF
+)
+
+set +e
 OUT=$(psql "$DSN" \
   -At -F $'\t' --quiet \
   -c "$QUERY" 2>"$PSQL_ERR")
@@ -100,12 +147,12 @@ if [ "$RC" -ne 0 ]; then
 fi
 rm -f "$PSQL_ERR"
 
-# Every run goes through the known-stuck filter, rows or not, so a broken
-# scripts/known-stuck-mailboxes.tsv fails the run the day it lands rather
-# than the day the next mailbox gets stuck. Red means a failed sync that
-# nobody has acknowledged yet; acknowledged ones stay listed as warnings.
+# Every run goes through classification, rows or not, so a broken
+# reconnect list or a broken scripts/known-stuck-mailboxes.tsv fails the
+# run the day it lands. Reconnect grants are a count. Red means a failed
+# sync that nobody has acknowledged yet; acknowledged ones stay warnings.
 set +e
-if [ -n "$OUT" ]; then printf '%s\n' "$OUT"; fi | "$(dirname "$0")/filter-known-stuck.sh"
+if [ -n "$OUT" ]; then printf '%s\n' "$OUT"; fi | "$(dirname "$0")/classify-failed-syncs.sh"
 RC=$?
 set -e
 
@@ -114,7 +161,7 @@ case "$RC" in
     if [ -z "$OUT" ]; then
       echo "OK — no unretried failed syncs found (threshold ${STUCK_FAILED_HOURS}h)."
     else
-      echo "OK — no NEW unretried failed sync (threshold ${STUCK_FAILED_HOURS}h); every one above is acknowledged in scripts/known-stuck-mailboxes.tsv."
+      echo "OK — no NEW unretried failed sync (threshold ${STUCK_FAILED_HOURS}h). Reconnect grants are the count above; other rows are acknowledged in scripts/known-stuck-mailboxes.tsv."
     fi
     exit 0
     ;;

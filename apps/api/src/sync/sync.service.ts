@@ -32,6 +32,18 @@ type DrizzleExecutor = DrizzleDb | DrizzleTransaction;
 type DrizzleTransaction = Parameters<Parameters<DrizzleDb['transaction']>[0]>[0];
 
 /**
+ * `needs_reconnect` is terminal for workers and the sync watchdog. The
+ * wire contract stays `failed` plus the stored error code, which is what
+ * every surface already uses to show Reconnect instead of Try again.
+ */
+function presentedReadiness(
+  status: (typeof providerSyncState.$inferSelect)['readinessStatus'],
+): SyncReadiness {
+  if (status === 'needs_reconnect') return 'failed';
+  return status;
+}
+
+/**
  * Result of {@link SyncService.planHistorySyncWithExecutor}.
  *
  *   - `ready`:    row exists with a NON-NULL applied cursor and incoming is newer
@@ -429,7 +441,7 @@ export class SyncService {
     if (!row) return null;
 
     const base = {
-      readiness_status: row.readinessStatus,
+      readiness_status: presentedReadiness(row.readinessStatus),
       current_stage: row.currentStage,
       progress_pct: row.progressPct,
       is_ready_for_triage: row.readinessStatus === 'ready',
@@ -472,7 +484,7 @@ export class SyncService {
       })
       .from(providerSyncState)
       .where(inArray(providerSyncState.mailboxAccountId, mailboxAccountIds));
-    return new Map(rows.map((r) => [r.mailboxAccountId, r.readinessStatus]));
+    return new Map(rows.map((r) => [r.mailboxAccountId, presentedReadiness(r.readinessStatus)]));
   }
 
   /**
@@ -528,13 +540,14 @@ export class SyncService {
         return [
           r.mailboxAccountId,
           {
-            readiness: r.readiness,
+            readiness: presentedReadiness(r.readiness),
             // Same rule as the web's `syncStatusNeedsReconnect`: an initial
             // scan that ended on a refused grant OR a fresh token Gmail still
             // rejected sends the user to reconnect on every surface. Display
             // only — no sweep reads this map.
             needsReconnect:
               incrementalAuthError ||
+              r.readiness === 'needs_reconnect' ||
               (r.errorCode !== null && AUTH_RECOVERY_ERROR_CODES.has(r.errorCode)),
           },
         ];

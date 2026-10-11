@@ -21,7 +21,7 @@ import { eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyAutomaticProtection } from './automatic-protection.js';
-import { InitialSyncWorker } from './initial-sync.worker.js';
+import { InitialSyncWorker, isNeedsReconnectEnumMissing } from './initial-sync.worker.js';
 import * as nonMailPurge from './non-mail-purge.js';
 import { OutboxPublisher } from './outbox-publisher.js';
 import type { InitialSyncDeps } from './initial-sync.worker.js';
@@ -29,7 +29,7 @@ import type { ScanCounts, ScanProgressStore } from './scan-progress.js';
 import type { GmailAccess, GmailMessageListPage, GmailMessageMetadata } from './ports.js';
 import { deriveSenderKey } from './sender-key.js';
 import type { WorkerContext } from './worker-context.js';
-import { RateLimitError } from './worker-errors.js';
+import { AuthExpiredError, InvalidGrantError, RateLimitError } from './worker-errors.js';
 
 /**
  * InitialSyncWorker integration tests (D5, D157, D224, D9, ADR-0004).
@@ -184,6 +184,25 @@ async function startFailedAttempt(
   }
 }
 
+describe('isNeedsReconnectEnumMissing', () => {
+  it('matches the driver error behind Drizzle’s wrapper, not the wrapper itself', () => {
+    const cause = Object.assign(
+      new Error('invalid input value for enum sync_readiness: "needs_reconnect"'),
+      { code: '22P02' },
+    );
+    const wrapped = Object.assign(new Error('Failed query: update "provider_sync_state"'), {
+      cause,
+    });
+    expect(isNeedsReconnectEnumMissing(wrapped)).toBe(true);
+    expect(isNeedsReconnectEnumMissing(new Error('connection reset'))).toBe(false);
+    expect(
+      isNeedsReconnectEnumMissing(
+        new Error('invalid input value for enum sync_readiness: "not_a_status"'),
+      ),
+    ).toBe(false);
+  });
+});
+
 describe('InitialSyncWorker', () => {
   let db: InitialSyncDeps['db'];
   let mailboxAccountId: string;
@@ -204,6 +223,147 @@ describe('InitialSyncWorker', () => {
       }
     ).onTerminalFailure({ mailboxAccountId }, error, CTX);
   }
+
+  it.each([
+    ['InvalidGrantError', () => new InvalidGrantError('grant revoked')],
+    ['AuthExpiredError', () => new AuthExpiredError('token rejected')],
+  ])(
+    'marks %s needs_reconnect, keeps saved mail, and does not email or schedule a retry',
+    async (_name, makeError) => {
+      await db.insert(providerSyncState).values({
+        mailboxAccountId,
+        readinessStatus: 'queued',
+        progressPct: 40,
+        lastHistoryId: 123n,
+      });
+      await db.insert(mailMessages).values({
+        mailboxAccountId,
+        providerMessageId: `kept-${_name}`,
+        providerThreadId: 'thread-1',
+        senderKey: deriveSenderKey('kept@example.com'),
+        internalDate: new Date('2026-10-01T00:00:00Z'),
+        isUnread: false,
+      });
+      const error = makeError();
+      const worker = new InitialSyncWorker({
+        db,
+        gmailAccess: {
+          getClient: async () => {
+            throw error;
+          },
+        },
+        outbox: new OutboxPublisher(),
+      });
+      await expect(worker.processJob({ mailboxAccountId }, CTX)).rejects.toThrow(error.message);
+      await terminal(worker, error);
+      const [row] = await db.select().from(providerSyncState);
+      expect(row).toMatchObject({
+        readinessStatus: 'needs_reconnect',
+        errorCode: error.name,
+        progressPct: 40,
+        lastHistoryId: 123n,
+        initialRetryAt: null,
+      });
+      expect(await db.select().from(outboxEvents)).toHaveLength(0);
+      expect(await db.select().from(mailMessages)).toHaveLength(1);
+      const getClient = vi.fn();
+      await new InitialSyncWorker({ db, gmailAccess: { getClient } }).processJob(
+        { mailboxAccountId },
+        CTX,
+      );
+      expect(getClient).not.toHaveBeenCalled();
+      expect((await db.select().from(providerSyncState))[0]!.readinessStatus).toBe(
+        'needs_reconnect',
+      );
+    },
+  );
+
+  function rejectNeedsReconnectWrite(makeError: () => Error): void {
+    const original = db.transaction.bind(db);
+    db.transaction = (async (callback, config) =>
+      original(async (tx) => {
+        const originalUpdate = tx.update.bind(tx);
+        tx.update = ((table: Parameters<typeof tx.update>[0]) => {
+          const query = originalUpdate(table);
+          const originalSet = query.set.bind(query);
+          query.set = ((values: { readinessStatus?: string }) => {
+            if (values?.readinessStatus === 'needs_reconnect') throw makeError();
+            return originalSet(values);
+          }) as typeof query.set;
+          return query;
+        }) as typeof tx.update;
+        return callback(tx);
+      }, config)) as typeof db.transaction;
+  }
+
+  it('falls back to failed when needs_reconnect is not in the enum yet', async () => {
+    await db.insert(providerSyncState).values({
+      mailboxAccountId,
+      readinessStatus: 'queued',
+      progressPct: 40,
+      lastHistoryId: 123n,
+    });
+    await db.insert(mailMessages).values({
+      mailboxAccountId,
+      providerMessageId: 'kept-enum-missing',
+      providerThreadId: 'thread-1',
+      senderKey: deriveSenderKey('kept@example.com'),
+      internalDate: new Date('2026-10-01T00:00:00Z'),
+      isUnread: false,
+    });
+    const cause = Object.assign(
+      new Error('invalid input value for enum sync_readiness: "needs_reconnect"'),
+      { code: '22P02' },
+    );
+    rejectNeedsReconnectWrite(() =>
+      Object.assign(new Error('Failed query: update "provider_sync_state"'), { cause }),
+    );
+    const error = new InvalidGrantError('grant revoked');
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: {
+        getClient: async () => {
+          throw error;
+        },
+      },
+      outbox: new OutboxPublisher(),
+    });
+    await expect(worker.processJob({ mailboxAccountId }, CTX)).rejects.toThrow(error.message);
+    await terminal(worker, error);
+    const [row] = await db.select().from(providerSyncState);
+    expect(row).toMatchObject({
+      readinessStatus: 'failed',
+      errorCode: 'InvalidGrantError',
+      progressPct: 40,
+      lastHistoryId: 123n,
+      initialRetryAt: null,
+    });
+    expect(await db.select().from(outboxEvents)).toHaveLength(0);
+    expect(await db.select().from(mailMessages)).toHaveLength(1);
+  });
+
+  it('leaves a non-enum write failure thrown, with the row still syncing', async () => {
+    await db.insert(providerSyncState).values({
+      mailboxAccountId,
+      readinessStatus: 'queued',
+    });
+    rejectNeedsReconnectWrite(() =>
+      Object.assign(new Error('connection reset'), { code: '08006' }),
+    );
+    const error = new InvalidGrantError('grant revoked');
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: {
+        getClient: async () => {
+          throw error;
+        },
+      },
+      outbox: new OutboxPublisher(),
+    });
+    await expect(worker.processJob({ mailboxAccountId }, CTX)).rejects.toThrow(error.message);
+    await expect(terminal(worker, error)).rejects.toThrow('connection reset');
+    expect((await db.select().from(providerSyncState))[0]!.readinessStatus).toBe('syncing');
+  });
 
   it('persists a long rate-limit deadline and preserves saved progress after terminal failure', async () => {
     await db.insert(providerSyncState).values({
@@ -2632,6 +2792,105 @@ describe('InitialSyncWorker — mailbox.sync_failed outbox publish (D162/D224)',
     expect(payload.mailboxAccountId).toBe(mailboxAccountId);
     expect(payload.errorCode).toBe('PermanentError');
     expect(Date.parse(payload.failedAt)).not.toBeNaN();
+  });
+
+  it('emits first_sync_failed_terminal only for a scan that has never finished', async () => {
+    const events: Array<{ name: string; userId: string; props: { error_class: string } }> = [];
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(2, 1))),
+      outbox: new OutboxPublisher(),
+      onProductEvent: (event) => {
+        events.push(event as (typeof events)[number]);
+      },
+    });
+    const boom = new Error('quota exceeded');
+    boom.name = 'PermanentError';
+    await startFailedAttempt(worker, mailboxAccountId, boom, CTX);
+    await (
+      worker as unknown as {
+        onTerminalFailure(
+          p: { mailboxAccountId: string },
+          e: Error,
+          c: WorkerContext,
+        ): Promise<void>;
+      }
+    ).onTerminalFailure({ mailboxAccountId }, boom, CTX);
+
+    const [account] = await db
+      .select({ userId: mailboxAccounts.userId })
+      .from(mailboxAccounts)
+      .where(eq(mailboxAccounts.id, mailboxAccountId));
+    expect(events).toEqual([
+      {
+        name: 'first_sync_failed_terminal',
+        userId: account!.userId,
+        props: { error_class: 'PermanentError' },
+      },
+    ]);
+  });
+
+  it('does not emit first_sync_failed_terminal after a scan has already finished', async () => {
+    await db.insert(providerSyncState).values({
+      mailboxAccountId,
+      readinessStatus: 'queued',
+      lastSyncedAt: new Date('2026-10-01T00:00:00Z'),
+    });
+    const events: string[] = [];
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(2, 1))),
+      outbox: new OutboxPublisher(),
+      onProductEvent: (event) => {
+        events.push(event.name);
+      },
+    });
+    const boom = new Error('quota exceeded');
+    boom.name = 'PermanentError';
+    await startFailedAttempt(worker, mailboxAccountId, boom, CTX);
+    await (
+      worker as unknown as {
+        onTerminalFailure(
+          p: { mailboxAccountId: string },
+          e: Error,
+          c: WorkerContext,
+        ): Promise<void>;
+      }
+    ).onTerminalFailure({ mailboxAccountId }, boom, CTX);
+    expect(events).toEqual([]);
+    expect(
+      (await db.select().from(outboxEvents)).filter((e) => e.topic === TOPICS.MAILBOX_SYNC_FAILED),
+    ).toHaveLength(1);
+  });
+
+  it('a reconnect grant emits neither the sync-failed email nor the terminal funnel event', async () => {
+    const events: string[] = [];
+    const error = new InvalidGrantError('grant revoked');
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: {
+        getClient: async () => {
+          throw error;
+        },
+      },
+      outbox: new OutboxPublisher(),
+      onProductEvent: (event) => {
+        events.push(event.name);
+      },
+    });
+    await expect(worker.processJob({ mailboxAccountId }, CTX)).rejects.toThrow(error.message);
+    await (
+      worker as unknown as {
+        onTerminalFailure(
+          p: { mailboxAccountId: string },
+          e: Error,
+          c: WorkerContext,
+        ): Promise<void>;
+      }
+    ).onTerminalFailure({ mailboxAccountId }, error, CTX);
+    expect(events).toEqual([]);
+    expect(await db.select().from(outboxEvents)).toHaveLength(0);
+    expect((await db.select().from(providerSyncState))[0]!.readinessStatus).toBe('needs_reconnect');
   });
 
   it('no outbox wired: the failed state STILL commits (the write is the load-bearing half)', async () => {

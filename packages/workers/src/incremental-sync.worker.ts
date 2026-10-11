@@ -430,6 +430,32 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       };
     }
 
+    // An initial scan that already ended on a reconnect grant must not
+    // be picked up by a webhook or a leftover incremental job.
+    const [syncRow] = await this.deps.db
+      .select({ readinessStatus: providerSyncState.readinessStatus })
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
+      .limit(1);
+    if (syncRow?.readinessStatus === 'needs_reconnect') {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'incremental_sync.skipped_needs_reconnect',
+          mailboxAccountId,
+        }),
+      );
+      return {
+        recordsProcessed: 0,
+        added: 0,
+        deleted: 0,
+        labelChanges: 0,
+        cursorTooOld: false,
+        advancedToHistoryId: null,
+        needsReconnect: true,
+      };
+    }
+
     // Second worker-entry guard, same chokepoint as the eligibility
     // check above. A revoked grant is permanent until reconnect; without
     // this, every subsequent Gmail Pub/Sub push for a mailbox that keeps

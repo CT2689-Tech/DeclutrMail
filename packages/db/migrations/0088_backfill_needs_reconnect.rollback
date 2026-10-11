@@ -1,0 +1,6 @@
+-- Puts every needs_reconnect row back on `failed` so 0087's rollback can
+-- drop the enum value. Does not delete mail. initial_retry_at stays null
+-- because a reconnect grant was never scheduled for retry.
+UPDATE "provider_sync_state"
+SET "readiness_status" = 'failed'
+WHERE "readiness_status" = 'needs_reconnect';
