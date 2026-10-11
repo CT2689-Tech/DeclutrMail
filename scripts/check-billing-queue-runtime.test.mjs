@@ -111,6 +111,15 @@ test('requires immutable image, successful owned execution and absence readbacks
   ])
     assert.ok(created.includes(arg));
   assert.equal(created.filter((a) => a.startsWith('--set-secrets=')).length, 1);
+  const nodeArgs = created
+    .find((a) => a.startsWith('--args='))
+    .slice('--args='.length)
+    .split(',');
+  assert.equal(new Set(nodeArgs).size, nodeArgs.length, 'gcloud rejects repeated argument values');
+  assert.deepEqual(nodeArgs.slice(0, 2), [
+    '--import=@sentry/node/import',
+    '--import=@swc-node/register/esm-register',
+  ]);
   assert.ok(created.some((a) => a.includes('src/billing/verify-billing-queue.ts')));
   assert.ok(!f.calls.some((c) => c[0] === 'secrets'));
   assert.ok(f.calls.some((c) => c[2] === 'executions' && c[3] === 'delete'));
