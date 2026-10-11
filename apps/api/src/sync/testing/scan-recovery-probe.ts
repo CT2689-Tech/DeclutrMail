@@ -2,9 +2,17 @@
 import assert from 'node:assert/strict';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { eq, sql } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { Queue, QueueEvents, Worker } from 'bullmq';
-import { mailboxAccounts, mailMessages, providerSyncState, schema } from '@declutrmail/db';
+import {
+  mailboxAccounts,
+  mailMessages,
+  outboxEvents,
+  providerSyncState,
+  schema,
+  syncRuns,
+} from '@declutrmail/db';
+import { TOPICS } from '@declutrmail/events';
 import {
   InitialSyncWorker,
   IncrementalSyncWorker,
@@ -17,6 +25,8 @@ import {
   type GmailMetadataClient,
   type InitialSyncJobData,
   type IncrementalSyncJobData,
+  type InitialSyncResult,
+  type IncrementalSyncResult,
 } from '@declutrmail/workers';
 import { SyncService } from '../sync.service.js';
 import { reconcileInitialSyncs } from '../initial-sync-reconciler.js';
@@ -43,10 +53,11 @@ const count = mode === 'fail' ? 10 : 11;
 const metadata = (messageId: string) => ({
   id: messageId,
   threadId: messageId,
-  labelIds: ['INBOX'],
+  labelIds:
+    messageId === 'scan-draft' ? ['DRAFT'] : messageId === 'scan-chat' ? ['CHAT'] : ['INBOX'],
   snippet: 'Synthetic recovery fixture',
   internalDate: String(Date.UTC(2026, 9, 1)),
-  from: 'Recovery sender <recovery@synthetic.test>',
+  from: messageId === 'scan-invalid' ? '' : 'Recovery sender <recovery@synthetic.test>',
   subject: 'Synthetic scan',
   to: null,
   cc: null,
@@ -59,11 +70,16 @@ const gmail: GmailMetadataClient = {
   },
   async listMessageIds() {
     lists++;
-    return { ids: Array.from({ length: count }, (_, i) => `scan-probe-${i}`) };
+    return {
+      ids: [
+        ...Array.from({ length: count }, (_, i) => `scan-probe-${i}`),
+        ...(mode === 'expired' ? ['scan-draft', 'scan-chat', 'scan-invalid', 'scan-vanished'] : []),
+      ],
+    };
   },
   async getMessageMetadata(messageId) {
     gets++;
-    return metadata(messageId);
+    return messageId === 'scan-vanished' ? null : metadata(messageId);
   },
   async listLabels() {
     if (mode === 'fail') throw new TransientError('Synthetic provider outage after saved metadata');
@@ -71,7 +87,7 @@ const gmail: GmailMetadataClient = {
   },
   async listHistory(startHistoryId) {
     histories++;
-    assert.equal(startHistoryId, '1000');
+    assert.equal(startHistoryId, mode === 'expired' ? '2000' : '1000');
     return mode === 'expired'
       ? null
       : {
@@ -89,6 +105,29 @@ const gmail: GmailMetadataClient = {
 };
 const state = async () =>
   (await db.select().from(providerSyncState).where(eq(providerSyncState.mailboxAccountId, id)))[0]!;
+async function assertCompletion(result: InitialSyncResult) {
+  const [stored] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(mailMessages)
+    .where(eq(mailMessages.mailboxAccountId, id));
+  const [run] = await db
+    .select()
+    .from(syncRuns)
+    .where(eq(syncRuns.mailboxAccountId, id))
+    .orderBy(desc(syncRuns.finishedAt))
+    .limit(1);
+  const [ready] = await db
+    .select()
+    .from(outboxEvents)
+    .where(
+      sql`${outboxEvents.topic} = ${TOPICS.MAILBOX_SYNC_READY} AND ${outboxEvents.payload}->>'mailboxAccountId' = ${id}`,
+    )
+    .orderBy(desc(outboxEvents.createdAt))
+    .limit(1);
+  assert.equal(result.messagesSynced, stored!.count);
+  assert.equal(run!.messagesSynced, stored!.count);
+  assert.equal((ready!.payload as { messageCount: number }).messageCount, stored!.count);
+}
 try {
   const [account] = await db.select().from(mailboxAccounts).where(eq(mailboxAccounts.id, id));
   assert.equal(account?.providerAccountId, 'chintan.e2e.billing@synthetic.test');
@@ -148,7 +187,7 @@ try {
     });
     const job = await initial.getJob(id);
     assert.ok(job);
-    await job.waitUntilFinished(events, 30_000);
+    await assertCompletion(await job.waitUntilFinished(events, 30_000));
     assert.equal(gets, 1); // Ten saved messages are skipped; only the new message is fetched.
     assert.equal((await state()).lastHistoryId, 1000n);
     assert.equal((await state()).readinessStatus, 'ready');
@@ -171,12 +210,21 @@ try {
       gmailAccess: { getClient: async () => gmail },
       lock: { run: async (_, fn) => fn() },
     });
-    consumer = new Worker(INCREMENTAL_SYNC_QUEUE, (job) => worker.run(job), { connection });
     await service.scheduleCatchUp(id);
     const jobs = await incremental.getJobs(['waiting', 'active', 'completed']);
     const job = jobs.find((j) => j.data.mailboxAccountId === id);
     assert.ok(job);
-    const result = await job.waitUntilFinished(incrementalEvents, 30_000);
+    if (mode === 'expired') {
+      // The queued payload stays at 1000 while another sync advances the
+      // applied cursor. Gmail rejects that actual cursor, 2000.
+      assert.equal(job.data.startHistoryId, '1000');
+      await db
+        .update(providerSyncState)
+        .set({ lastHistoryId: 2000n })
+        .where(eq(providerSyncState.mailboxAccountId, id));
+    }
+    consumer = new Worker(INCREMENTAL_SYNC_QUEUE, (job) => worker.run(job), { connection });
+    const result: IncrementalSyncResult = await job.waitUntilFinished(incrementalEvents, 30_000);
     assert.equal(lists, 0); // Reconnect never starts InitialSync.
     assert.ok(histories > 0);
     if (mode === 'reconnect') {
@@ -185,6 +233,8 @@ try {
       assert.equal(gets, 1);
     } else {
       assert.equal(result.cursorTooOld, true);
+      if (!result.cursorTooOld) throw new Error('Expected expired history');
+      assert.equal(result.expiredHistoryId, '2000');
       await consumer.close();
       const initialWorker = new InitialSyncWorker({
         db,
@@ -192,10 +242,10 @@ try {
         outbox: new OutboxPublisher(),
       });
       consumer = new Worker(INITIAL_SYNC_QUEUE, (job) => initialWorker.run(job), { connection });
-      await recoverExpiredHistoryCursor(db, initial, id, '1000');
+      await recoverExpiredHistoryCursor(db, initial, id, result.expiredHistoryId);
       const resync = await initial.getJob(id);
       assert.ok(resync);
-      await resync.waitUntilFinished(events, 30_000);
+      await assertCompletion(await resync.waitUntilFinished(events, 30_000));
       assert.equal((await state()).lastHistoryId, 3000n);
       assert.equal((await state()).readinessStatus, 'ready');
     }
