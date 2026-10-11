@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import type { JSX } from 'react';
 
 import type { InboxReportDto } from '@declutrmail/shared/inbox-report';
-import { isInboxReportEnabled } from '@declutrmail/shared/inbox-report';
+import { inboxReportEnabled } from './enabled';
 
 import { apiGet } from '@/lib/api/client';
 
@@ -22,7 +22,7 @@ export function InboxReportFirstLanding(props: {
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    if (!isInboxReportEnabled()) {
+    if (!inboxReportEnabled()) {
       onResolved(false);
       return;
     }

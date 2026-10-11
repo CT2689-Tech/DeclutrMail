@@ -377,16 +377,23 @@ describe('focus mode — deciding runs the EXISTING lifecycle (D226)', () => {
     addFetchHandlers([
       {
         method: 'POST',
-        path: '/api/actions/unsubscribe-intent',
+        path: '/api/actions/unsubscribe-backlog',
         respond: () =>
           jsonOk({
             data: {
-              senderId: LINKEDIN.senderId,
-              recordedAt: new Date().toISOString(),
-              activityLogId: '77777777-7777-4777-8777-777777777777',
-              method: 'mailto',
-              executionActionId: null,
-              mailtoUrl: 'mailto:unsubscribe@linkedin.example?subject=Remove%20me',
+              mode: 'archive',
+              backlog: null,
+              senders: [
+                {
+                  senderId: LINKEDIN.senderId,
+                  method: 'mailto',
+                  mailtoUrl: 'mailto:unsubscribe@linkedin.example?subject=Remove%20me',
+                  executionActionId: null,
+                  lifecycleStatus: null,
+                  unsubStatus: 'manual',
+                  reasonCode: null,
+                },
+              ],
             },
           }),
       },

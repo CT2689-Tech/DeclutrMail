@@ -145,6 +145,13 @@ describe('isInboxReportEnabled', () => {
   it('defaults on outside production and off in production', () => {
     expect(isInboxReportEnabled({ NODE_ENV: 'test' })).toBe(true);
     expect(isInboxReportEnabled({ NODE_ENV: 'production' })).toBe(false);
+    expect(
+      isInboxReportEnabled({
+        NODE_ENV: 'production',
+        NEXT_PUBLIC_TELEMETRY_ENVIRONMENT: 'preview',
+      }),
+    ).toBe(true);
+    expect(isInboxReportEnabled({ NODE_ENV: 'production', VERCEL_ENV: 'production' })).toBe(false);
     expect(isInboxReportEnabled({ NODE_ENV: 'production', INBOX_REPORT_ENABLED: 'true' })).toBe(
       true,
     );

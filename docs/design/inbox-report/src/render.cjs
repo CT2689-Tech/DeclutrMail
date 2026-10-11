@@ -1,3 +1,4 @@
+/* eslint-disable no-undef -- page.evaluate callbacks run in the browser */
 // node render.cjs  — renders every mock HTML to ../<name>.png and prints layout checks.
 const { chromium } = require('/workspace/tools/pw/node_modules/playwright-core');
 const path = require('path'),

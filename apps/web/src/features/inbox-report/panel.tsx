@@ -42,6 +42,7 @@ export function InboxReportPanel({
   onReopen,
   onFixConfirmed,
   celebration = null,
+  senderNames,
 }: {
   report: InboxReportDto;
   mailboxEmail?: string;
@@ -51,6 +52,10 @@ export function InboxReportPanel({
   onReopen: () => void;
   onFixConfirmed?: (mode: 'archive' | 'delete' | 'unsub_only') => void;
   celebration?: { archived: number; senders: number } | null;
+  /** Sample or loaded names. The report DTO only carries sender ids. */
+  senderNames?: Readonly<
+    Record<string, { name: string; unsubscribeMethod?: 'one_click' | 'mailto' | 'none' | null }>
+  >;
 }) {
   const [fixOpen, setFixOpen] = useState(false);
   const calm = report.variant === 'fallback';
@@ -211,12 +216,22 @@ export function InboxReportPanel({
           request={
             {
               verb: 'Unsubscribe',
-              senders: report.fix.senderKeys.map((id) => ({ id, name: '' })),
+              senders: report.fix.senderKeys.map((id) => {
+                const known = senderNames?.[id];
+                return {
+                  id,
+                  name: known?.name ?? '',
+                  ...(known?.unsubscribeMethod
+                    ? { unsubscribeMethod: known.unsubscribeMethod }
+                    : {}),
+                };
+              }),
             } as ActionRequest
           }
           preferredInboxCount={report.fix.inboxEmailCount}
           onCancel={() => setFixOpen(false)}
           onConfirm={(opts) => {
+            setFixOpen(false);
             const mode = opts.secondary?.type ?? 'unsub_only';
             onFixConfirmed?.(mode);
           }}

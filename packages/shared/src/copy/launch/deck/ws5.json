@@ -29,7 +29,7 @@
   "f1.title.bulk.archive": "Unsubscribe from {k} senders and archive {n} emails?",
   "f1.title.bulk.delete": "Unsubscribe from {k} senders and delete {n} emails?",
   "f1.preview.future": "Future emails: we’ll send {Sender} a one-click unsubscribe request.",
-  "f1.preview.future.mailto": "Future emails: we’ll open a Gmail draft for you to send to {Sender}.",
+  "f1.preview.future.mailto": "Future emails: we’ll open a prefilled email in Gmail for you to send to {Sender}.",
   "f1.preview.future.none": "Future emails: {Sender} has no unsubscribe link, so we can’t send a request.",
   "f1.preview.backlog.archive": {
     "one": "1 email you already have: moved out of Inbox (Archive)",
@@ -51,7 +51,7 @@
   "f1.honesty.archive": "The unsubscribe request can’t be recalled once delivered. The archive can be undone from Activity for 30 days.",
   "f1.honesty.delete": "The unsubscribe request can’t be recalled once delivered. The delete can be undone from Activity for 30 days.",
   "f1.honesty.unsubOnly": "Once the request is delivered, it can’t be recalled.",
-  "f1.footer": "Stopping future email is up to the sender.",
+  "f1.footer": "Whether their email stops is up to the sender.",
   "f1.deleteNote": "Gmail keeps Trash for up to 30 days unless you empty it.",
   "f1.button.unsubOnly": "Unsubscribe",
   "f1.button.archive": "Unsubscribe + Archive",
@@ -74,7 +74,7 @@
     "one": "Deleted 1 email · Unsubscribe failed: {reason}",
     "other": "Deleted {n} emails · Unsubscribe failed: {reason}"
   },
-  "f1.toast.mailto": "Your draft is in Gmail. Send it from there.",
+  "f1.toast.mailto": "The email is ready in Gmail. Press Send there to finish.",
   "f1.reason.noLink": "no unsubscribe link",
   "f1.reason.senderError": "the sender’s system didn’t respond",
   "f1.reason.generic": "something went wrong",

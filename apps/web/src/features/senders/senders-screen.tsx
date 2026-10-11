@@ -1524,7 +1524,13 @@ function SendersScreenContent({
             senderIds: senderRefs.map((sref) => sref.id),
             olderThanDays: opts?.secondary?.olderThanDays ?? opts?.olderThanDays ?? null,
             ...(mode === 'delete' && opts?.reach === 'all_mail' ? { reach: opts.reach } : {}),
-            ...(opts?.override === true ? { override: true } : {}),
+            // The dialog only reports the backlog mode. A Protected
+            // single sender still needs the acknowledgement on this one
+            // request, or the send is refused when it runs.
+            ...(opts?.override === true ||
+            (senderRefs.length === 1 && isStandingProtected(senders[0]!))
+              ? { override: true }
+              : {}),
           },
           {
             onSuccess: (res) => {

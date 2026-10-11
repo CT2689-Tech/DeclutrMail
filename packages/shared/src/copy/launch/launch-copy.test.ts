@@ -29,4 +29,16 @@ describe('launch copy deck snapshots', () => {
       'Nothing was deleted permanently. Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash.',
     );
   });
+
+  it('keeps the drop2-r7 unsubscribe lines', () => {
+    expect(WS5_COPY['f1.footer']).toBe('Whether their email stops is up to the sender.');
+    expect(WS5_COPY['f1.preview.future.mailto']).toBe(
+      'Future emails: we’ll open a prefilled email in Gmail for you to send to {Sender}.',
+    );
+    expect(WS5_COPY['f1.toast.mailto']).toBe(
+      'The email is ready in Gmail. Press Send there to finish.',
+    );
+    expect(WS5_COPY['f1.preview.future.mailto']).not.toMatch(/draft/i);
+    expect(WS5_COPY['f1.toast.mailto']).not.toMatch(/draft/i);
+  });
 });

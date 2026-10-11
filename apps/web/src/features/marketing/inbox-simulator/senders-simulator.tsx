@@ -1,10 +1,19 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ToastHost, toast } from '@declutrmail/shared';
 import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
-import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { fillCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
+import { InboxReportPanel } from '@/features/inbox-report/panel';
+import { inboxReportEnabled } from '@/features/inbox-report/enabled';
+import type { ActionRequest } from '@/features/senders/data';
+import { UnsubscribeBacklogDialog } from '@/features/senders/unsubscribe-backlog/unsubscribe-backlog-dialog';
+import { unsubscribeBacklogToast } from '@/features/senders/unsubscribe-backlog/toast';
+import type { UnsubscribeBacklogResult } from '@/lib/api/actions';
+
+import { sampleInboxReport } from './sample-report';
 import './senders-simulator.css';
 
 type Verb = 'Keep' | 'Archive' | 'Unsubscribe' | 'Later' | 'Delete';
@@ -225,6 +234,10 @@ export function SendersSimulator() {
   const [wakeAt, setWakeAt] = useState('');
   const [activity, setActivity] = useState<readonly DemoActivity[]>([]);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [reportDismissed, setReportDismissed] = useState(false);
+  const [celebration, setCelebration] = useState<{ archived: number; senders: number } | null>(
+    null,
+  );
   const closeButton = useRef<HTMLButtonElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
   const activitySequence = useRef(0);
@@ -254,6 +267,24 @@ export function SendersSimulator() {
     [filter, query, senders, sort],
   );
   const selectedSender = visible.find((sender) => sender.id === selectedId) ?? visible[0] ?? null;
+  const showReport = inboxReportEnabled();
+  const report = useMemo(
+    () =>
+      sampleInboxReport(
+        senders.map((sender) => ({
+          id: sender.id,
+          received90d: sender.received90d,
+          totalReceived: sender.totalReceived,
+          markedReadPct: sender.markedRead,
+          wroteTo: sender.wroteTo,
+          protected: sender.protected,
+          unsubscribe: sender.unsubscribe,
+          inboxCount: count(sender, 'inbox', null),
+          ...(sender.kept ? { kept: true } : {}),
+        })),
+      ),
+    [senders],
+  );
   const pendingSenders = pending ? senders.filter((sender) => pending.ids.includes(sender.id)) : [];
   const isUnsubscribe = pending?.verb === 'Unsubscribe';
   const mailVerb = pending?.verb === 'Unsubscribe' ? backlog : pending?.verb.toLowerCase();
@@ -348,8 +379,76 @@ export function SendersSimulator() {
     // The modal owns focus for its lifetime; changing scope must not reset it.
   }, [pending]);
 
+  const applyUnsubscribe = (
+    targets: readonly SampleSender[],
+    mode: 'archive' | 'delete' | 'unsub_only',
+  ) => {
+    if (targets.length === 0) return;
+    const ids = new Set(targets.map((sender) => sender.id));
+    const n = targets.reduce((sum, sender) => sum + count(sender, 'inbox', null), 0);
+    setSenders((current) =>
+      current.map((sender) => {
+        if (!ids.has(sender.id)) return sender;
+        const moved =
+          mode === 'archive' || mode === 'delete'
+            ? moveMail(sender, mode, 'inbox_only', null)
+            : sender;
+        return { ...moved, unsubRequested: true };
+      }),
+    );
+    const result: UnsubscribeBacklogResult = {
+      mode,
+      backlog: mode === 'unsub_only' ? null : { actionId: 'sample', requestedCount: n, verb: mode },
+      senders: targets.map((sender) => ({
+        senderId: sender.id,
+        method: sender.unsubscribe === 'none' ? 'none' : sender.unsubscribe,
+        mailtoUrl: null,
+        executionActionId: null,
+        lifecycleStatus: null,
+        unsubStatus: 'requested',
+        reasonCode: null,
+      })),
+    };
+    const line = unsubscribeBacklogToast(result);
+    toast(line);
+    const honesty =
+      mode === 'delete'
+        ? WS5_COPY['f1.honesty.delete']
+        : mode === 'archive'
+          ? WS5_COPY['f1.honesty.archive']
+          : null;
+    const summary =
+      mode === 'archive'
+        ? `${fillCopy(WS5_COPY['f1.activity.row'], { n })}${honesty ? ` ${honesty}` : ''}`
+        : honesty
+          ? `${line} ${honesty}`
+          : line;
+    setActivity((current) => [
+      {
+        id: ++activitySequence.current,
+        senderNames: targets.length === 1 ? targets[0]!.name : `${targets.length} senders`,
+        verb: 'Unsubscribe',
+        affected: n,
+        summary,
+        before: targets,
+        undoable: n > 0 && mode !== 'unsub_only',
+        undone: false,
+        superseded: false,
+      },
+      ...current.map((item) =>
+        item.undoable && item.before.some((old) => ids.has(old.id))
+          ? { ...item, undoable: false, superseded: true }
+          : item,
+      ),
+    ]);
+    if (mode === 'archive') setCelebration({ archived: n, senders: targets.length });
+    setSelected([]);
+    setActivityOpen(true);
+    setPending(null);
+  };
+
   const confirm = () => {
-    if (!pending || !canConfirm) return;
+    if (!pending || !canConfirm || isUnsubscribe) return;
     const before = pendingSenders;
     const effectiveMailVerb = mailVerb;
     const next = senders.map((sender) => {
@@ -362,7 +461,7 @@ export function SendersSimulator() {
       ) {
         changed = moveMail(changed, effectiveMailVerb, activeReach, olderThanDays);
       }
-      return isUnsubscribe ? { ...changed, unsubRequested: true } : changed;
+      return changed;
     });
     const destination =
       effectiveMailVerb === 'delete'
@@ -370,9 +469,7 @@ export function SendersSimulator() {
         : effectiveMailVerb === 'later'
           ? 'Later'
           : 'Gmail All Mail';
-    const summary = isUnsubscribe
-      ? `Unsubscribe requested; not yet confirmed by the sender.${previewCount > 0 ? ` ${fmt(previewCount)} sample emails moved to ${destination}.` : canMove ? ' No sample email matched the selected past-email scope.' : ' Existing email left alone.'}`
-      : `${fmt(previewCount)} sample emails moved to ${destination}.${pending.verb === 'Later' ? ` Return time: ${wakeAt.replace('T', ' ')} local.` : ''}`;
+    const summary = `${fmt(previewCount)} sample emails moved to ${destination}.${pending.verb === 'Later' ? ` Return time: ${wakeAt.replace('T', ' ')} local.` : ''}`;
     setSenders(next);
     setActivity((current) => [
       {
@@ -412,11 +509,35 @@ export function SendersSimulator() {
     );
   };
 
+  const senderNames = Object.fromEntries(
+    senders.map((sender) => [
+      sender.id,
+      { name: sender.name, unsubscribeMethod: sender.unsubscribe },
+    ]),
+  );
+
   return (
     <div className="dm-senders-demo">
       <div className="dm-senders-demo-note">
         Sample mailbox · made-up senders and counts · no Gmail connection
       </div>
+      {showReport ? (
+        <InboxReportPanel
+          report={report}
+          mailboxEmail="you@example.com"
+          dismissed={reportDismissed}
+          senderNames={senderNames}
+          celebration={celebration}
+          onDismiss={() => setReportDismissed(true)}
+          onReopen={() => setReportDismissed(false)}
+          onFixConfirmed={(mode) => {
+            applyUnsubscribe(
+              senders.filter((sender) => report.fix.senderKeys.includes(sender.id)),
+              mode,
+            );
+          }}
+        />
+      ) : null}
       <div className="dm-senders-demo-tools">
         <label className="dm-senders-demo-search">
           <input
@@ -658,7 +779,44 @@ export function SendersSimulator() {
           )
         ) : null}
       </section>
-      {pending ? (
+      {pending && isUnsubscribe ? (
+        <UnsubscribeBacklogDialog
+          request={
+            {
+              verb: 'Unsubscribe',
+              senders: pendingSenders.map((sender) => ({
+                id: sender.id,
+                name: sender.name,
+                unsubscribeMethod: sender.unsubscribe,
+              })),
+            } as ActionRequest
+          }
+          preferredInboxCount={pendingSenders.reduce(
+            (sum, sender) => sum + count(sender, 'inbox', null),
+            0,
+          )}
+          {...(pendingSenders.length > 1
+            ? {
+                bulkPreview: {
+                  loading: false,
+                  data: {
+                    senders: pendingSenders.map((sender) => ({
+                      senderId: sender.id,
+                      name: sender.name,
+                      protected: false,
+                      counts: { all: count(sender, 'inbox', null) },
+                    })),
+                  },
+                },
+              }
+            : {})}
+          onCancel={closePreview}
+          onConfirm={(opts) => {
+            applyUnsubscribe(pendingSenders, opts.secondary?.type ?? 'unsub_only');
+          }}
+        />
+      ) : null}
+      {pending && !isUnsubscribe ? (
         <div className="dm-senders-demo-modal-layer">
           <button
             type="button"
@@ -684,18 +842,14 @@ export function SendersSimulator() {
               </button>
             </div>
             <h2 id="dm-senders-demo-dialog-title">
-              {isUnsubscribe
-                ? `Unsubscribe${canMove && previewCount > 0 ? ` and ${mailVerb} ${fmt(previewCount)} emails` : ''} from ${pendingNames}?`
-                : `${pending.verb} ${fmt(previewCount)} emails from ${pendingNames}?`}
+              {`${pending.verb} ${fmt(previewCount)} emails from ${pendingNames}?`}
             </h2>
             <p>
-              {isUnsubscribe
-                ? 'This requests that future email stop. A sent unsubscribe cannot be recalled.'
-                : pending.verb === 'Archive'
-                  ? 'These emails leave Inbox and stay in Gmail All Mail.'
-                  : pending.verb === 'Delete'
-                    ? 'These emails move to Gmail Trash. Gmail controls permanent deletion and recovery.'
-                    : 'These emails move to Later and return at the chosen time in the product.'}
+              {pending.verb === 'Archive'
+                ? 'These emails leave Inbox and stay in Gmail All Mail.'
+                : pending.verb === 'Delete'
+                  ? 'These emails move to Gmail Trash. Gmail controls permanent deletion and recovery.'
+                  : 'These emails move to Later and return at the chosen time in the product.'}
             </p>
             {pending.skipped > 0 ? (
               <p className="dm-senders-demo-warning">
@@ -708,60 +862,6 @@ export function SendersSimulator() {
                 This sender is Protected. A single-sender action requires your explicit choice; bulk
                 actions skip them.
               </p>
-            ) : null}
-            {isUnsubscribe ? (
-              <fieldset>
-                <legend>{WS5_COPY['f1.segment.unsubOnly']}</legend>
-                {(
-                  [
-                    ['none', WS5_COPY['f1.segment.unsubOnly'], false],
-                    [
-                      'archive',
-                      isPluralCopy(WS5_COPY['f1.segment.archive'])
-                        ? pluralCopy(WS5_COPY['f1.segment.archive'], previewCount, {
-                            n: previewCount,
-                          })
-                        : '',
-                      previewCount === 0,
-                    ],
-                    [
-                      'delete',
-                      isPluralCopy(WS5_COPY['f1.segment.delete'])
-                        ? pluralCopy(WS5_COPY['f1.segment.delete'], previewCount, {
-                            n: previewCount,
-                          })
-                        : '',
-                      previewCount === 0,
-                    ],
-                  ] as const
-                ).map(([value, label, disabled]) => (
-                  <label key={value}>
-                    <input
-                      type="radio"
-                      name="demo-backlog"
-                      checked={backlog === value}
-                      disabled={disabled}
-                      aria-label={
-                        value === 'archive' && isPluralCopy(WS5_COPY['f1.segment.archive.aria'])
-                          ? pluralCopy(WS5_COPY['f1.segment.archive.aria'], previewCount, {
-                              n: previewCount,
-                            })
-                          : value === 'delete' && isPluralCopy(WS5_COPY['f1.segment.delete.aria'])
-                            ? pluralCopy(WS5_COPY['f1.segment.delete.aria'], previewCount, {
-                                n: previewCount,
-                              })
-                            : label
-                      }
-                      onChange={() => {
-                        setBacklog(value);
-                        setReach('inbox_only');
-                        setOlderThanDays(null);
-                      }}
-                    />
-                    {label}
-                  </label>
-                ))}
-              </fieldset>
             ) : null}
             {canWiden ? (
               <fieldset>
@@ -826,11 +926,7 @@ export function SendersSimulator() {
                   {olderThanDays !== null ? ` · older than ${olderThanDays} days` : ''}
                 </span>
               </div>
-            ) : (
-              <div className="dm-senders-demo-preview-count">
-                <strong>{WS5_COPY['f1.preview.backlog.unsubOnly']}</strong>
-              </div>
-            )}
+            ) : null}
             {pendingSenders.length === 1 && canMove && olderThanDays === null ? (
               <div className="dm-senders-demo-subjects">
                 <strong>Sample subject context</strong>
@@ -851,9 +947,7 @@ export function SendersSimulator() {
               </p>
             ) : null}
             <p className="dm-senders-demo-footnote">
-              {pending.verb === 'Unsubscribe'
-                ? 'Undo can restore supported mail movement, but cannot recall an unsubscribe request.'
-                : `Supported mail-moving actions have ${MIN_UNDO_WINDOW_DAYS} days of Activity Undo.`}{' '}
+              {`Supported mail-moving actions have ${MIN_UNDO_WINDOW_DAYS} days of Activity Undo.`}{' '}
               This demo changes sample data in this browser only.
             </p>
             <div className="dm-senders-demo-dialog-actions">
@@ -861,21 +955,13 @@ export function SendersSimulator() {
                 Cancel
               </button>
               <button type="button" disabled={!canConfirm} onClick={confirm}>
-                {isUnsubscribe
-                  ? backlog === 'none'
-                    ? WS5_COPY['f1.button.unsubOnly']
-                    : backlog === 'delete'
-                      ? WS5_COPY['f1.button.delete']
-                      : WS5_COPY['f1.button.archive']
-                  : `${pending.verb} ${fmt(previewCount)}`}
-                {pendingSenders.length === 1 && pendingSenders[0]!.protected && backlog === 'none'
-                  ? ' anyway'
-                  : ''}
+                {`${pending.verb} ${fmt(previewCount)}`}
               </button>
             </div>
           </div>
         </div>
       ) : null}
+      <ToastHost />
     </div>
   );
 }

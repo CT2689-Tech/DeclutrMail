@@ -117,9 +117,9 @@ function renderScreen(client: QueryClient) {
 }
 
 /**
- * The live count, as the preview states it: "Archive 47 emails?" (title)
- * or "Also archive the 47 emails already in the inbox" (Unsubscribe's
- * backlog toggle). Pins the digit AND that it counts email.
+ * The live count, as the preview states it: "Archive 47 emails?" or
+ * "Unsubscribe from {name} and archive 47 emails?". Pins the digit AND
+ * that it counts email.
  */
 function liveCount(n: string) {
   return screen.getAllByText(new RegExp(`\\b${n} emails?\\b`))[0];
@@ -879,38 +879,31 @@ describe('TriageScreen — D226 mutation wiring', () => {
     );
   });
 
-  it('Unsubscribe records the intent AND archives the backlog via the real pipeline', async () => {
+  it('Unsubscribe archives the backlog in one unsubscribe-backlog request', async () => {
     const calls: string[] = [];
     let unsubscribeBody: unknown = null;
     addFetchHandlers([
       {
         method: 'POST',
-        path: '/api/actions/unsubscribe-intent',
+        path: '/api/actions/unsubscribe-backlog',
         respond: async (req) => {
-          calls.push('unsub-intent');
+          calls.push('unsubscribe-backlog');
           unsubscribeBody = await req.json();
           return jsonOk({
             data: {
-              senderId: LINKEDIN.senderId,
-              recordedAt: new Date().toISOString(),
-              activityLogId: '77777777-7777-4777-8777-777777777777',
-            },
-          });
-        },
-      },
-      {
-        method: 'POST',
-        path: '/api/actions',
-        respond: () => {
-          calls.push('composite-archive');
-          return jsonOk({
-            data: {
-              actionId: ACTION_ID,
-              compositeId: ACTION_ID,
-              secondaryId: null,
-              status: 'queued',
-              primaryCount: 12,
-              secondaryCount: null,
+              mode: 'archive',
+              backlog: { actionId: ACTION_ID, requestedCount: 47, verb: 'archive' },
+              senders: [
+                {
+                  senderId: LINKEDIN.senderId,
+                  method: 'one_click',
+                  mailtoUrl: null,
+                  executionActionId: null,
+                  lifecycleStatus: null,
+                  unsubStatus: 'requested',
+                  reasonCode: null,
+                },
+              ],
             },
           });
         },
@@ -923,8 +916,8 @@ describe('TriageScreen — D226 mutation wiring', () => {
             data: {
               actionId: ACTION_ID,
               status: 'done',
-              requestedCount: 12,
-              affectedCount: 12,
+              requestedCount: 47,
+              affectedCount: 47,
               undoToken: '88888888-8888-4888-8888-888888888888',
               errorCode: null,
             },
@@ -938,16 +931,12 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    // Backlog is a separate Gmail mutation, so opt in explicitly.
-    fireEvent.click(screen.getByRole('checkbox', { name: /Also archive the/i }));
     await confirmOpenSheet('Unsubscribe');
 
-    // Intent first, then the archive enqueue (the toggle's promise is
-    // kept via the real pipeline, not a tracer).
-    await waitFor(() => expect(calls).toEqual(['unsub-intent', 'composite-archive']));
-    expect(unsubscribeBody).toEqual({
-      senderId: LINKEDIN.senderId,
-      includesBacklogAction: true,
+    await waitFor(() => expect(calls).toEqual(['unsubscribe-backlog']));
+    expect(unsubscribeBody).toMatchObject({
+      mode: 'archive',
+      senderIds: [LINKEDIN.senderId],
     });
   });
 
@@ -1181,27 +1170,14 @@ describe('TriageScreen — D226 mutation wiring', () => {
       headers: { 'content-type': 'application/json' },
     });
   }
-  function unsubThenBacklog(backlog: () => Response) {
+  function unsubBacklogFailure(failure: () => Response) {
     addFetchHandlers([
-      {
-        method: 'POST',
-        path: '/api/actions/unsubscribe-intent',
-        respond: () =>
-          jsonOk({
-            data: {
-              senderId: LINKEDIN.senderId,
-              recordedAt: new Date().toISOString(),
-              activityLogId: '77777777-7777-4777-8777-777777777777',
-            },
-          }),
-      },
-      { method: 'POST', path: '/api/actions', respond: backlog },
+      { method: 'POST', path: '/api/actions/unsubscribe-backlog', respond: failure },
     ]);
   }
 
-  it('Unsubscribe partial failure: intent recorded (queue invalidated) but backlog archive warns', async () => {
-    // The backlog-archive enqueue fails AFTER the intent succeeded.
-    unsubThenBacklog(() => apiFailure(400, 'VALIDATION_FAILED'));
+  it('a refused unsubscribe-backlog request says nothing was sent and does not refresh the queue', async () => {
+    unsubBacklogFailure(() => apiFailure(400, 'VALIDATION_FAILED'));
 
     const client = createTestQueryClient();
     const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
@@ -1210,43 +1186,37 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    fireEvent.click(screen.getByRole('checkbox', { name: /Also archive the/i }));
     await confirmOpenSheet('Unsubscribe');
 
-    // The partial-failure copy is explicit: the unsubscribe DID queue,
-    // only the backlog archive did not.
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        expect.stringMatching(/Unsubscribe requested.*wasn't archived — Archive it/),
+        `Couldn't start Unsubscribe for ${LINKEDIN.senderName} — no request was sent.`,
         'warn',
       ),
     );
-    expect(h.toast).toHaveBeenCalledWith(expect.stringContaining(LINKEDIN.senderName), 'warn');
-    // The intent succeeded, so the queue WAS invalidated — the sender
-    // leaves the queue via the refetch even though the archive failed.
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
-    // No archive latch lingers (the enqueue never returned an actionId).
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
     await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
   });
 
-  // The queue did not confirm the backlog's add: it may still run, so it
-  // is not "wasn't archived".
-  it('Unsubscribe then an unconfirmed backlog start: sends the user to Activity', async () => {
-    unsubThenBacklog(() => apiFailure(503, 'ENQUEUE_FAILED'));
+  // A 5xx does not prove the request never started.
+  it('an unconfirmed unsubscribe-backlog start sends the user to Activity and holds the row', async () => {
+    unsubBacklogFailure(() => apiFailure(503, 'ENQUEUE_FAILED'));
     renderScreen(createTestQueryClient());
 
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    fireEvent.click(screen.getByRole('checkbox', { name: /Also archive the/i }));
     await confirmOpenSheet('Unsubscribe');
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `Unsubscribe requested, but can't tell if Archive started for older email from ${LINKEDIN.senderName} — check Activity before retrying.`,
+        `Can't tell if Unsubscribe for ${LINKEDIN.senderName} started — check Activity before retrying.`,
         'warn',
       ),
     );
+    const row = () => screen.getAllByText(LINKEDIN.senderName)[0]!.closest('[aria-busy]');
+    await waitFor(() => expect(row()).toHaveAttribute('aria-busy', 'true'));
+    expect(within(row() as HTMLElement).getByText('Unsubscribe: unknown')).toBeInTheDocument();
   });
 
   // A 5xx does not prove the job never started: the row must not re-arm
@@ -1479,25 +1449,47 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     resetFetchStub();
   });
 
-  /** Open the U sheet on LINKEDIN with the safe no-backlog default, then confirm. */
+  /** Open the U sheet, choose Unsubscribe only after the count arrives, then confirm. */
   async function confirmUnsubWithoutBacklog() {
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    const dialog = await screen.findByRole('dialog');
+    const archive = await within(dialog).findByRole('radio', { name: '+ Archive 47' });
+    await waitFor(() => expect(archive).toBeEnabled());
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Unsubscribe only' }));
     await confirmOpenSheet('Unsubscribe', false);
   }
 
-  function intentHandler(data: Record<string, unknown>) {
+  function intentHandler(data: {
+    method: 'one_click' | 'mailto' | 'none';
+    executionActionId: string | null;
+    mailtoUrl: string | null;
+  }) {
+    const unsubStatus =
+      data.method === 'mailto' && data.mailtoUrl
+        ? 'manual'
+        : data.executionActionId
+          ? 'requested'
+          : 'skipped';
     return {
       method: 'POST' as const,
-      path: '/api/actions/unsubscribe-intent',
+      path: '/api/actions/unsubscribe-backlog',
       respond: () =>
         jsonOk({
           data: {
-            senderId: LINKEDIN.senderId,
-            recordedAt: new Date().toISOString(),
-            activityLogId: '77777777-7777-4777-8777-777777777777',
-            ...data,
+            mode: 'unsub_only',
+            backlog: null,
+            senders: [
+              {
+                senderId: LINKEDIN.senderId,
+                method: data.method,
+                mailtoUrl: data.mailtoUrl,
+                executionActionId: data.executionActionId,
+                lifecycleStatus: null,
+                unsubStatus,
+                reasonCode: data.method === 'none' ? 'no_link' : null,
+              },
+            ],
           },
         }),
     };
@@ -1527,8 +1519,13 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     renderScreen(client);
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    expect(screen.getByText(/A sent unsubscribe can’t be recalled/)).toBeDefined();
+    await screen.findByRole('dialog');
+    expect(
+      await screen.findByText(
+        'The unsubscribe request can’t be recalled once delivered. The archive can be undone from Activity for 30 days.',
+      ),
+    ).toBeDefined();
+    expect(screen.queryByText(/A sent unsubscribe can’t be recalled/)).toBeNull();
   });
 
   it('one_click → done: execution polled and endpoint acceptance is stated precisely', async () => {
@@ -1597,7 +1594,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
   function intentRefusal(status: number, code: string) {
     return {
       method: 'POST' as const,
-      path: '/api/actions/unsubscribe-intent',
+      path: '/api/actions/unsubscribe-backlog',
       respond: () =>
         new Response(JSON.stringify({ error: { code, message: code } }), {
           status,
@@ -1720,7 +1717,11 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] }),
     );
     expect(screen.queryByTestId('unsub-mailto-callout')).toBeNull();
-    expect(h.toast).not.toHaveBeenCalled();
+    expect(h.toast).toHaveBeenCalledWith('Unsubscribe requested from 1 sender', 'warn');
+    expect(h.toast).not.toHaveBeenCalledWith(
+      expect.stringMatching(/\bunsubscribed\b/i),
+      expect.anything(),
+    );
   });
 });
 
@@ -2043,17 +2044,24 @@ describe('TriageScreen — Protected rows act with an explicit override (D245/D4
     addFetchHandlers([
       {
         method: 'POST',
-        path: '/api/actions/unsubscribe-intent',
+        path: '/api/actions/unsubscribe-backlog',
         respond: async (req) => {
           intents.push(await req.json());
           return jsonOk({
             data: {
-              senderId: row.senderId,
-              recordedAt: new Date().toISOString(),
-              activityLogId: '77777777-7777-4777-8777-777777777777',
-              method: 'none',
-              executionActionId: null,
-              mailtoUrl: null,
+              mode: 'archive',
+              backlog: null,
+              senders: [
+                {
+                  senderId: row.senderId,
+                  method: 'one_click',
+                  mailtoUrl: null,
+                  executionActionId: null,
+                  lifecycleStatus: null,
+                  unsubStatus: 'requested',
+                  reasonCode: null,
+                },
+              ],
             },
           });
         },
@@ -2063,6 +2071,9 @@ describe('TriageScreen — Protected rows act with an explicit override (D245/D4
     renderWith([row]);
     expandRow(row.senderName);
     fireEvent.keyDown(window, { key: 'u' });
+    const dialog = await screen.findByRole('dialog');
+    const archive = await within(dialog).findByRole('radio', { name: '+ Archive 47' });
+    await waitFor(() => expect(archive).toBeEnabled());
     await confirmOpenSheet('Unsubscribe', false);
     await waitFor(() => expect(intents).toHaveLength(1));
     return intents[0];
@@ -2070,11 +2081,17 @@ describe('TriageScreen — Protected rows act with an explicit override (D245/D4
 
   it('sends override:true when unsubscribing a PROTECTED row (D245)', async () => {
     const protectedLinkedin = { ...LINKEDIN, protectionReason: 'manual' as const };
-    expect(await unsubscribeAndCaptureBody(protectedLinkedin)).toMatchObject({ override: true });
+    expect(await unsubscribeAndCaptureBody(protectedLinkedin)).toMatchObject({
+      mode: 'archive',
+      senderIds: [protectedLinkedin.senderId],
+      override: true,
+    });
   });
 
   it('does NOT send override when unsubscribing an unprotected row', async () => {
-    expect(await unsubscribeAndCaptureBody(LINKEDIN)).not.toHaveProperty('override');
+    const body = await unsubscribeAndCaptureBody(LINKEDIN);
+    expect(body).toMatchObject({ mode: 'archive', senderIds: [LINKEDIN.senderId] });
+    expect(body).not.toHaveProperty('override');
   });
 });
 

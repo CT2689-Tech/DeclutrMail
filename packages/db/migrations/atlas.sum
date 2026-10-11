@@ -87,3 +87,4 @@ h1:au8ShFJHmTZl3FFMWNVzLVsZyWAxoXVfc0FALzYVJqQ=
 0087_sync_readiness_needs_reconnect.sql h1:eOJVO3YWDbUUMnyKmTiDpWz3Dm6G6ld+kZ8AOM0e52U=
 0088_backfill_needs_reconnect.sql h1:90Akfcbj6seVTT2924LO2xpJKe5vh0kt6evtMHbDMfY=
 0089_ai_consent_columns.sql h1:MbbbJFXLhogFZjq0QOhtn2x/s5iQXKV9Da+0k/4uV0s=
+0093_inbox_report_cache.sql h1:Hiz1tfcyUYSA4caIveEx49lrC3AthAgJBmXLQLjxd2k=

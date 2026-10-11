@@ -1,7 +1,13 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { fillCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
 import { SendersSimulator } from './senders-simulator';
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 function preview(): HTMLElement {
   return screen.getByRole('dialog');
@@ -57,7 +63,7 @@ describe('SendersSimulator', () => {
       'Unsubscribe requested',
     );
     expect(screen.getByRole('region', { name: 'Sample activity' })).toHaveTextContent(
-      'Existing email left alone.',
+      'Unsubscribe requested from 1 sender',
     );
   });
 
@@ -77,5 +83,109 @@ describe('SendersSimulator', () => {
     const activity = screen.getByRole('region', { name: 'Sample activity' });
     expect(activity).toHaveTextContent('A later sample decision changed this sender');
     expect(within(activity).getAllByRole('button', { name: 'Undo mail movement' })).toHaveLength(1);
+  });
+});
+
+describe('SendersSimulator — WS5 sample surfaces', () => {
+  function hideReport() {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('NEXT_PUBLIC_INBOX_REPORT_ENABLED', 'false');
+    vi.stubEnv('INBOX_REPORT_ENABLED', 'false');
+    vi.stubEnv('NEXT_PUBLIC_TELEMETRY_ENVIRONMENT', 'production');
+    vi.stubEnv('VERCEL_ENV', 'production');
+  }
+
+  it('shows the Inbox Report from sample data when the same gate as the app is on', () => {
+    render(<SendersSimulator />);
+    expect(screen.getByText(/mostly leave unread/)).toBeInTheDocument();
+    expect(screen.getByText(WS5_COPY['report.trust'])).toBeInTheDocument();
+    expect(
+      screen.getByText('1 of these senders includes an unsubscribe link.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Unsubscribe + archive 1 sender' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Review them first' })).toBeInTheDocument();
+  });
+
+  it('hides the report in production and shows it on a preview deploy', () => {
+    hideReport();
+    const hidden = render(<SendersSimulator />);
+    expect(screen.queryByText(/mostly leave unread/)).not.toBeInTheDocument();
+    hidden.unmount();
+
+    vi.stubEnv('NEXT_PUBLIC_INBOX_REPORT_ENABLED', '');
+    vi.stubEnv('INBOX_REPORT_ENABLED', '');
+    vi.stubEnv('NEXT_PUBLIC_TELEMETRY_ENVIRONMENT', 'preview');
+    render(<SendersSimulator />);
+    expect(screen.getByText(/mostly leave unread/)).toBeInTheDocument();
+  });
+
+  it('reuses the unsubscribe dialog and toasts without a network call or the old copy', () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const openSpy = vi.spyOn(XMLHttpRequest.prototype, 'open');
+    render(<SendersSimulator />);
+
+    const inspector = screen.getByRole('complementary', { name: 'Sender details' });
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Unsubscribe' }));
+    const dialog = preview();
+    expect(within(dialog).getAllByText('Unsubscribe only')).toHaveLength(1);
+    expect(dialog).toHaveTextContent('Unsubscribe from Northstar Weekly and archive 111 emails?');
+    expect(dialog).toHaveTextContent(
+      fillCopy(WS5_COPY['f1.preview.future'], { Sender: 'Northstar Weekly' }),
+    );
+    expect(dialog).toHaveTextContent(
+      pluralCopy(WS5_COPY['f1.preview.backlog.archive'], 111, { n: 111 }),
+    );
+    expect(dialog).toHaveTextContent(WS5_COPY['f1.honesty.archive']);
+    expect(dialog).toHaveTextContent(WS5_COPY['f1.meterFree']);
+    expect(dialog).toHaveTextContent(WS5_COPY['f1.footer']);
+    expect(dialog).not.toHaveTextContent('This requests that future email stop');
+    expect(dialog).not.toHaveTextContent('Undo can restore supported mail movement');
+    expect(dialog).not.toHaveTextContent(/Gmail draft/i);
+    expect(dialog).not.toHaveTextContent(/Unsubscribe and archive \d+ emails from /);
+
+    fireEvent.click(
+      within(dialog).getByRole('radio', { name: /Unsubscribe and delete 111 emails/ }),
+    );
+    expect(dialog).toHaveTextContent(WS5_COPY['f1.deleteNote']);
+    expect(dialog).toHaveTextContent(
+      pluralCopy(WS5_COPY['f1.preview.backlog.delete'], 111, { n: 111 }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole('radio', { name: /Unsubscribe and archive 111 emails/ }),
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Unsubscribe + Archive' }));
+    expect(
+      screen
+        .getAllByRole('status')
+        .some((node) => node.textContent?.includes('Unsubscribe requested · Archived 111 emails')),
+    ).toBe(true);
+    const activity = screen.getByRole('region', { name: 'Sample activity' });
+    expect(activity).toHaveTextContent('undone from Activity for 30 days');
+    expect(
+      within(activity).getByRole('button', { name: 'Undo mail movement' }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Market Finds/ }));
+    fireEvent.click(
+      within(screen.getByRole('complementary', { name: 'Sender details' })).getByRole('button', {
+        name: 'Unsubscribe',
+      }),
+    );
+    fireEvent.click(
+      within(preview()).getByRole('radio', { name: /Unsubscribe and delete 191 emails/ }),
+    );
+    fireEvent.click(within(preview()).getByRole('button', { name: 'Unsubscribe + Delete' }));
+    expect(
+      screen
+        .getAllByRole('status')
+        .some((node) => node.textContent?.includes('Unsubscribe requested · Deleted 191 emails')),
+    ).toBe(true);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(openSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+    openSpy.mockRestore();
   });
 });

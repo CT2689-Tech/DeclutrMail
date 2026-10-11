@@ -221,7 +221,9 @@ export function UnsubscribeBacklogDialog({
   };
 
   const countKnown = inboxCount !== null;
-  const confirmDisabled = submitting || !countKnown || (loading && mode !== 'unsub_only');
+  // A missing backlog count must not block the future-only request.
+  // Archive and Delete stay disabled until that count is known.
+  const confirmDisabled = submitting || (mode !== 'unsub_only' && (!countKnown || loading));
 
   return (
     <div
