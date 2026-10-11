@@ -74,23 +74,38 @@ therefore has no mapped probe reason. Unexpected/startup errors retain exit 1.
 Deploy #38123008533 (`07e65bf`) refused with `exitCode:108`,
 `probeReason:"no_workers"`, `runSeconds:12`, 23 minutes after #446 (`bc26bdc`)
 had found compatible workers. The always-on worker revision was
-`declutrmail-worker-00162-btj` (min 1 instance). A refusal 12 s after container start
-means one `CLIENT LIST` returned no matching name.
+`declutrmail-worker-00162-btj` (min 1 instance). A refusal 12 s after container
+start means one `CLIENT LIST` returned no matching name.
 
-Each listing is one instant on the probe's own broker connection. BullMQ
-6.3.8 names only the worker's dedicated blocking connection
-(`bull:<base64 queue>:w:<name>`, applied by ioredis on every connect), writes
-no worker heartbeat keys, and resets that connection whenever a blocking
-`BZPOPMIN` overruns its watchdog (timeout + 1 s; the user-facing `drainDelay`
-is 60 s). While it reconnects, the worker is absent from every listing.
-Upstash documents `CLIENT LIST` as one line per connection "to the server";
-whether a listing covers every server behind its endpoint is not documented,
-so a listing scoped to one server is unverified, not excluded.
+Two mechanisms can each produce that read against a live worker:
 
-Locally, killing the worker's named connection and running the main-branch
-probe reproduced `108 no_workers` against a live worker. The probe now reads
-5 samples, 3 s apart, each through a fresh connection, inside a 35 s deadline
-(run 447 suggests ~10 s of container startup; the task timeout is 60 s). Absence is
-the only refusal retried. Any other refusal in any sample is final, and
-sampling continues after a compatible read, so an older actor visible in only
-some listings still refuses. `no_workers` now means no sample saw a worker.
+- Partial listings. In the paired-connection discriminator recorded in
+  `billing-notice-activation-2026-10-11.md` (#962, `2026-10-11T08:18:52Z`), one
+  connection to the bound broker listed 28 clients including a compatible
+  generic email actor, and the other listed 22 clients and none; the native
+  Redis control listed both from both readers. Which clients a listing returns
+  depends on the reading connection.
+- Reconnects. BullMQ 6.3.8 names only the worker's dedicated blocking
+  connection (`bull:<base64 queue>:w:<name>`, set by ioredis on every connect)
+  and writes no worker heartbeat keys. It resets that connection whenever a
+  blocking `BZPOPMIN` overruns its watchdog (timeout + 1 s; user-facing
+  `drainDelay` is 60 s). While it reconnects the worker is in no listing.
+  Locally, killing that connection made the main-branch probe exit
+  `108 no_workers` against a live worker.
+
+Which of the two caused run 447 is unverified.
+
+The probe now reads 5 samples, 3 s apart, each through a fresh connection,
+inside a 35 s deadline (run 447 suggests ~10 s of container startup; the task
+timeout is 60 s). Absence is the only refusal retried. Any other refusal in any
+sample is final, and sampling continues after a compatible read, so an older
+actor that appears in any sample still refuses. `no_workers` now means no
+sample saw a worker.
+
+This removes false-empty refusals. It does not make the inventory complete: a
+pass means compatible actors were seen and no incompatible actor appeared in
+the sampled listings, not that every consumer was listed. An older actor that
+no sampled connection lists, or one reconnecting in every sample, stays
+invisible, as it was to the single listing before. Per #962, notice activation
+stays off until a repair proves the complete consumer set; this probe is not
+that proof.
