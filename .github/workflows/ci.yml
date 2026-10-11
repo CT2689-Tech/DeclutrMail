@@ -696,6 +696,8 @@ jobs:
           # reports to disk". Without this the gate passes but leaves no
           # evidence of the numbers it passed on.
           include-hidden-files: true
+          # The reports are the gate's evidence: a leg that wrote none fails.
+          if-no-files-found: error
 
   test-units:
     name: Tests — Shared units

@@ -44,6 +44,49 @@ test('a URL no assertion block matches fails closed', () => {
   assert.throws(() => selectLighthouseUrl({ ci: { collect: { url: [] } } }, 1, 0), /no ci/);
 });
 
+test('a URL whose matching blocks assert nothing fails closed', () => {
+  const empty = structuredClone(config);
+  for (const block of empty.ci.assert.assertMatrix) block.assertions = {};
+  assert.throws(() => selectLighthouseUrl(empty, 1, urls.length), /only empty assertion blocks/);
+  const missing = structuredClone(config);
+  for (const block of missing.ci.assert.assertMatrix) delete block.assertions;
+  assert.throws(() => selectLighthouseUrl(missing, 1, urls.length), /only empty assertion blocks/);
+  const emptyBeside = structuredClone(config);
+  emptyBeside.ci.assert.assertMatrix.push({ matchingUrlPattern: '.*', assertions: {} });
+  assert.equal(selectLighthouseUrl(emptyBeside, 1, urls.length), urls[0]);
+});
+
+test('every URL keeps the D160 performance floor as an error', () => {
+  const perf = 'categories:performance';
+  for (const weaken of [
+    (a) => delete a[perf],
+    (a) => (a[perf] = ['warn', { minScore: 0.9 }]),
+    (a) => (a[perf] = ['error', { minScore: 0.89 }]),
+    (a) => (a[perf] = ['error', {}]),
+    (a) => (a[perf] = 'error'),
+    (a) => (a[perf] = 'off'),
+  ]) {
+    const weak = structuredClone(config);
+    weaken(weak.ci.assert.assertMatrix[1].assertions);
+    assert.throws(() => selectLighthouseUrl(weak, 1, urls.length), /D160/, String(weaken));
+  }
+  const overridden = structuredClone(config);
+  overridden.ci.assert.assertMatrix.push({
+    matchingUrlPattern: '/pricing$',
+    assertions: { [perf]: 'off' },
+  });
+  assert.throws(() => selectLighthouseUrl(overridden, 1, urls.length), /D160/);
+});
+
+test('missing Lighthouse reports fail the leg instead of uploading nothing', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const job = workflow.split('\n  lighthouse:\n')[1].split('\n  test-units:')[0];
+  const upload = job.split('- name: Upload Lighthouse reports\n')[1].split('\n      - ')[0];
+  assert.match(upload, /path: apps\/web\/\.lighthouseci\//);
+  assert.match(upload, /include-hidden-files: true/);
+  assert.match(upload, /if-no-files-found: error/);
+});
+
 test('the CLI prints a GITHUB_OUTPUT line and exits non-zero on a bad leg', () => {
   const ok = spawnSync(process.execPath, [script], {
     env: { ...process.env, PAGE: '2', PAGES: String(urls.length) },
