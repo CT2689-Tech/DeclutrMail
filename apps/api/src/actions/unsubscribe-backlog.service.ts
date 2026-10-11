@@ -62,7 +62,7 @@ export class UnsubscribeBacklogService {
     const skippedProtected = rows.filter((row) => !actionable.some((kept) => kept.id === row.id));
 
     let backlog: UnsubscribeBacklogResult['backlog'] = null;
-    let skippedByEnqueue = new Set<string>();
+    let skippedByEnqueue = new Map<string, 'protected' | 'not_found'>();
     const runBacklog = input.mode === 'archive' || input.mode === 'delete';
     if (runBacklog && actionable.length > 0) {
       const emailCount = await this.emailCount(
@@ -77,19 +77,22 @@ export class UnsubscribeBacklogService {
         }
         const enqueued = await this.enqueueBacklog(input, actionable, reach, olderThanDays);
         backlog = enqueued.backlog;
-        skippedByEnqueue = new Set(
-          enqueued.skipped.filter((row) => row.reason !== 'in_progress').map((row) => row.senderId),
-        );
+        skippedByEnqueue = new Map();
+        for (const row of enqueued.skipped) {
+          const reason = moveSkipReason(row.reason);
+          if (reason) skippedByEnqueue.set(row.senderId, reason);
+        }
       }
     }
 
     const sendersOut: UnsubscribeBacklogSenderResult[] = [];
     for (const row of skippedProtected) {
-      sendersOut.push(skipped(row.id));
+      sendersOut.push(skipped(row.id, 'protected'));
     }
     for (const row of actionable) {
-      if (skippedByEnqueue.has(row.id)) {
-        sendersOut.push(skipped(row.id));
+      const refused = skippedByEnqueue.get(row.id);
+      if (refused) {
+        sendersOut.push(skipped(row.id, refused));
         continue;
       }
       sendersOut.push(await this.recordOne(input, row.id, backlog?.actionId ?? null));
@@ -241,7 +244,34 @@ function reasonFromRecordError(err: unknown): UnsubscribeBacklogReasonCode {
   return 'generic';
 }
 
-function skipped(senderId: string): UnsubscribeBacklogSenderResult {
+/**
+ * A skip is not an error. Protected is the unsubscribe-only filter.
+ * The move's own refusal is Protected or no longer found. An in-progress
+ * move is not a skip: that sender still records an unsubscribe.
+ */
+function moveSkipReason(reason: BulkSkipReason): 'protected' | 'not_found' | null {
+  switch (reason) {
+    case 'in_progress':
+      return null;
+    case 'protected':
+      return 'protected';
+    case 'not_found':
+      return 'not_found';
+    case 'mailto':
+    case 'no_channel':
+    case 'unknown':
+      return 'not_found';
+    default: {
+      const unreachable: never = reason;
+      return unreachable;
+    }
+  }
+}
+
+function skipped(
+  senderId: string,
+  reasonCode: 'protected' | 'not_found',
+): UnsubscribeBacklogSenderResult {
   return {
     senderId,
     method: null,
@@ -249,7 +279,7 @@ function skipped(senderId: string): UnsubscribeBacklogSenderResult {
     executionActionId: null,
     lifecycleStatus: null,
     unsubStatus: 'skipped',
-    reasonCode: null,
+    reasonCode,
   };
 }
 

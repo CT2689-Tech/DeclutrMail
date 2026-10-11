@@ -3,6 +3,7 @@ import {
   mailMessages,
   mailboxAccounts,
   schema,
+  senderPolicies,
   senders,
   undoJournal,
   users,
@@ -322,6 +323,69 @@ describe('UnsubscribeBacklogService', () => {
     expect(result.senders[0]?.reasonCode).toBe('no_link');
     expect(result.backlog).not.toBeNull();
     expect(unsubQueue.count).toBe(0);
+  });
+
+  it('names a Protected sender as skipped, not as an error', async () => {
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey: SENDER_KEY,
+      isProtected: true,
+      protectionReason: 'user_defined',
+    });
+    await seedInbox(db, mailboxId, 2);
+    const result = await svc.confirm({
+      mailboxAccountId: mailboxId,
+      idempotencyKey: 'prot-only-1',
+      mode: 'archive',
+      senderIds: [senderId],
+    });
+    expect(result.backlog).toBeNull();
+    expect(result.senders[0]).toMatchObject({
+      senderId,
+      unsubStatus: 'skipped',
+      reasonCode: 'protected',
+    });
+    expect(unsubQueue.count).toBe(0);
+    expect(labelQueue.count).toBe(0);
+  });
+
+  it('names a sender the move no longer finds', async () => {
+    const otherKey = 'd'.repeat(64);
+    const [other] = await db
+      .insert(senders)
+      .values({
+        mailboxAccountId: mailboxId,
+        senderKey: otherKey,
+        email: 'gone@shop.example',
+        domain: 'shop.example',
+        gmailCategory: 'promotions',
+        firstSeenAt: new Date('2026-01-01'),
+        lastSeenAt: new Date('2026-05-01'),
+        unsubscribeMethod: 'one_click',
+        unsubscribeUrl: 'https://unsub.shop.example/gone',
+      })
+      .returning({ id: senders.id });
+    await seedInbox(db, mailboxId, 1);
+    vi.spyOn(actions, 'enqueueBulkComposite').mockResolvedValue({
+      batchId: '11111111-1111-4111-8111-111111111111',
+      status: 'queued',
+      senderCount: 1,
+      requestedTotal: 1,
+      wakeAt: null,
+      skipped: [{ senderId: other!.id, reason: 'not_found' }],
+    });
+
+    const result = await svc.confirm({
+      mailboxAccountId: mailboxId,
+      idempotencyKey: 'missing-move-1',
+      mode: 'archive',
+      senderIds: [senderId, other!.id],
+    });
+
+    expect(result.senders.find((row) => row.senderId === other!.id)).toMatchObject({
+      unsubStatus: 'skipped',
+      reasonCode: 'not_found',
+    });
   });
 
   it('undo reverses the backlog only', async () => {

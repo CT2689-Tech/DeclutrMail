@@ -78,7 +78,13 @@ export const unsubscribeBacklogRequestSchema = z
 export type UnsubscribeBacklogRequest = z.infer<typeof unsubscribeBacklogRequestSchema>;
 
 export type UnsubscribeBacklogReasonCode =
-  'no_link' | 'sender_error' | 'generic' | 'send_disabled' | 'in_flight' | 'not_found';
+  | 'no_link'
+  | 'sender_error'
+  | 'generic'
+  | 'send_disabled'
+  | 'in_flight'
+  | 'not_found'
+  | 'protected';
 
 export interface UnsubscribeBacklogSenderResult {
   senderId: string;

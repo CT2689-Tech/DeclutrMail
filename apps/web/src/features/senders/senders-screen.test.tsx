@@ -4400,7 +4400,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     ]);
     await confirmBulkUnsubscribe();
     const toast = await screen.findByText(
-      'Unsubscribe requested from 1 senders · Archived 30 emails',
+      'Unsubscribe requested from 1 senders · Archived 30 emails · 1 Protected sender left as it is',
     );
     expect(toast.textContent?.toLowerCase()).not.toMatch(/failed|not sent|unsubscribed/);
     expect(screen.queryByText(/Not sent: 1 Protected sender/)).toBeNull();
@@ -4427,9 +4427,15 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       },
     ]);
     await confirmBulkUnsubscribe();
+    expect(
+      await screen.findByText('No unsubscribe sent. Those 2 senders were left as they are.'),
+    ).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    // The deck has no sentence for a skipped unsubscribe. Do not claim
-    // a failure or a request.
+    expect(
+      screen.queryByText(
+        'No unsubscribe sent: 2 senders are Protected, so they were left as they are.',
+      ),
+    ).toBeNull();
     expect(screen.queryByText('something went wrong')).toBeNull();
     expect(screen.queryByText('Unsubscribe requested from 1 sender')).toBeNull();
     vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -4466,9 +4472,10 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       },
     ]);
     await confirmBulkUnsubscribe();
+    expect(
+      await screen.findByText('No unsubscribe sent. Those 2 senders were left as they are.'),
+    ).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    // No requested sender, and no deck sentence for a skip. Earlier
-    // toasts in this file stay mounted, so match the exact claims.
     expect(screen.queryByText('something went wrong')).toBeNull();
     expect(screen.queryByText('Unsubscribe requested from 1 sender')).toBeNull();
     expect(screen.queryByText('No unsubscribe requests sent')).toBeNull();

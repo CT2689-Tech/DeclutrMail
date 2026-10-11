@@ -42,17 +42,37 @@ describe('launch copy deck snapshots', () => {
     expect(WS5_COPY['f1.toast.mailto']).not.toMatch(/draft/i);
   });
 
-  it('keeps the drop2-r11 move and mailto lines', () => {
+  it('keeps the drop2-r13 move, mailto, and skip lines', () => {
     expect(WS5_COPY['f1.toast.bulk.delete']).toEqual({
       one: 'Unsubscribe requested from {m} senders · Deleted 1 email',
       other: 'Unsubscribe requested from {m} senders · Deleted {n} emails',
     });
-    expect(WS5_COPY['f1.activity.row.delete']).toBe('Unsubscribe requested · Deleted {n} emails');
-    expect(WS5_COPY['f1.toast.mailto.withMove.archive']).toBe(
-      'Archived {n} emails. To finish unsubscribing, press Send on the email that’s ready in Gmail.',
-    );
-    expect(WS5_COPY['f1.toast.mailto.withMove.delete']).toBe(
-      'Deleted {n} emails. To finish unsubscribing, press Send on the email that’s ready in Gmail.',
-    );
+    expect(WS5_COPY['f1.activity.row.delete']).toEqual({
+      one: 'Unsubscribe requested · Deleted 1 email',
+      other: 'Unsubscribe requested · Deleted {n} emails',
+    });
+    expect(WS5_COPY['f1.toast.mailto.withMove.archive']).toEqual({
+      one: 'Archived 1 email. To finish unsubscribing, press Send on the email that’s ready in Gmail.',
+      other:
+        'Archived {n} emails. To finish unsubscribing, press Send on the email that’s ready in Gmail.',
+    });
+    expect(WS5_COPY['f1.toast.mailto.withMove.delete']).toEqual({
+      one: 'Deleted 1 email. To finish unsubscribing, press Send on the email that’s ready in Gmail.',
+      other:
+        'Deleted {n} emails. To finish unsubscribing, press Send on the email that’s ready in Gmail.',
+    });
+    expect(WS5_COPY['f1.reason.skipped']).toBe('the sender is Protected, so nothing was sent');
+    expect(WS5_COPY['f1.toast.unsub.skipped']).toEqual({
+      one: 'No unsubscribe sent: 1 sender is Protected, so it was left as it is.',
+      other: 'No unsubscribe sent: {n} senders are Protected, so they were left as they are.',
+    });
+    expect(WS5_COPY['f1.toast.unsub.skipped.plain']).toEqual({
+      one: 'No unsubscribe sent. That sender was left as it is.',
+      other: 'No unsubscribe sent. Those {n} senders were left as they are.',
+    });
+    expect(WS5_COPY['f1.toast.bulkSkipped']).toEqual({
+      one: '1 Protected sender left as it is',
+      other: '{k} Protected senders left as they are',
+    });
   });
 });

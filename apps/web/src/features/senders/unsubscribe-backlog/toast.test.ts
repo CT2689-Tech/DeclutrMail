@@ -168,7 +168,7 @@ describe('unsubscribeBacklogToast', () => {
         ],
       }),
     );
-    expect(line).toBe(fillCopy(WS5_COPY['f1.toast.mailto.withMove.archive'], { n: 4 }));
+    expect(line).toBe(pluralCopy(WS5_COPY['f1.toast.mailto.withMove.archive'], 4, { n: 4 }));
     expect(line).not.toMatch(/requested/i);
     expect(line).not.toMatch(/draft/i);
     const deleted = unsubscribeBacklogToast(
@@ -197,7 +197,7 @@ describe('unsubscribeBacklogToast', () => {
         ],
       }),
     );
-    expect(deleted).toBe(fillCopy(WS5_COPY['f1.toast.mailto.withMove.delete'], { n: 8 }));
+    expect(deleted).toBe(pluralCopy(WS5_COPY['f1.toast.mailto.withMove.delete'], 8, { n: 8 }));
     expect(deleted).not.toMatch(/requested/i);
   });
 
@@ -237,8 +237,9 @@ describe('unsubscribeBacklogToast', () => {
         ],
       }),
     );
-    expect(skipped).toBe('');
+    expect(skipped).toBe(pluralCopy(WS5_COPY['f1.toast.unsub.skipped.plain'], 1, { n: 1 }));
     expect(skipped).not.toBe(WS5_COPY['f1.reason.generic']);
+    expect(skipped).not.toContain('Unsubscribe failed:');
 
     const noLink = unsubscribeBacklogToast(
       result({
@@ -302,6 +303,138 @@ describe('unsubscribeBacklogToast', () => {
     expect(deleted).not.toMatch(/requested/i);
   });
 
+  function skippedSender(
+    senderId: string,
+    reasonCode: UnsubscribeBacklogResult['senders'][number]['reasonCode'],
+  ) {
+    return {
+      senderId,
+      method: null,
+      mailtoUrl: null,
+      executionActionId: null,
+      lifecycleStatus: null,
+      unsubStatus: 'skipped' as const,
+      reasonCode,
+    };
+  }
+
+  it('uses the Protected skip sentence when every sender is Protected', () => {
+    expect(
+      unsubscribeBacklogToast(
+        result({
+          mode: 'unsub_only',
+          senders: [skippedSender('a', 'protected')],
+        }),
+      ),
+    ).toBe(pluralCopy(WS5_COPY['f1.toast.unsub.skipped'], 1, { n: 1 }));
+    expect(
+      unsubscribeBacklogToast(
+        result({
+          mode: 'archive',
+          senders: [skippedSender('a', 'protected'), skippedSender('b', 'protected')],
+        }),
+      ),
+    ).toBe(pluralCopy(WS5_COPY['f1.toast.unsub.skipped'], 2, { n: 2 }));
+  });
+
+  it('uses the plain skip sentence when the reason is not Protected', () => {
+    expect(
+      unsubscribeBacklogToast(
+        result({
+          mode: 'unsub_only',
+          senders: [skippedSender('a', 'not_found'), skippedSender('b', 'not_found')],
+        }),
+      ),
+    ).toBe(pluralCopy(WS5_COPY['f1.toast.unsub.skipped.plain'], 2, { n: 2 }));
+  });
+
+  it('appends the Protected skip clause after a mixed result', () => {
+    const line = unsubscribeBacklogToast(
+      result({
+        mode: 'archive',
+        backlog: { actionId: 'b', requestedCount: 30, verb: 'archive' },
+        senders: [
+          {
+            senderId: 'a',
+            method: 'one_click',
+            mailtoUrl: null,
+            executionActionId: null,
+            lifecycleStatus: null,
+            unsubStatus: 'requested',
+            reasonCode: null,
+          },
+          skippedSender('b', 'protected'),
+        ],
+      }),
+    );
+    expect(line).toBe(
+      `${fillCopy(WS5_COPY['f1.toast.bulk'], { m: 1, n: 30 })} · ${pluralCopy(WS5_COPY['f1.toast.bulkSkipped'], 1, { k: 1 })}`,
+    );
+  });
+
+  it('never wraps the skipped reason in Unsubscribe failed', () => {
+    const skippedReason = WS5_COPY['f1.reason.skipped'];
+    const lines = [
+      unsubscribeBacklogToast(
+        result({
+          mode: 'unsub_only',
+          senders: [skippedSender('a', 'protected')],
+        }),
+      ),
+      unsubscribeBacklogToast(
+        result({
+          mode: 'unsub_only',
+          senders: [skippedSender('a', null)],
+        }),
+      ),
+      unsubscribeBacklogToast(
+        result({
+          mode: 'delete',
+          backlog: { actionId: 'b', requestedCount: 2, verb: 'delete' },
+          senders: [
+            {
+              senderId: 'a',
+              method: 'one_click',
+              mailtoUrl: null,
+              executionActionId: null,
+              lifecycleStatus: null,
+              unsubStatus: 'failed',
+              reasonCode: 'generic',
+            },
+          ],
+        }),
+      ),
+      unsubscribeBacklogToast(
+        result({
+          mode: 'archive',
+          backlog: { actionId: 'b', requestedCount: 4, verb: 'archive' },
+          senders: [
+            {
+              senderId: 'a',
+              method: 'one_click',
+              mailtoUrl: null,
+              executionActionId: null,
+              lifecycleStatus: null,
+              unsubStatus: 'failed',
+              reasonCode: 'protected',
+            },
+            skippedSender('b', 'protected'),
+          ],
+        }),
+      ),
+    ];
+    for (const line of lines) {
+      expect(line).not.toBe('');
+      if (line.includes('Unsubscribe failed:')) {
+        expect(line).not.toContain(skippedReason);
+      }
+    }
+    const failed = lines[2]!;
+    expect(failed).toContain('Unsubscribe failed:');
+    expect(failed).toContain(WS5_COPY['f1.reason.generic']);
+    expect(failed).not.toContain(skippedReason);
+  });
+
   it('uses the failed-unsubscribe deck line', () => {
     expect(
       unsubscribeBacklogToast(
@@ -339,7 +472,7 @@ describe('unsubscribeBacklogActivityLine', () => {
           backlog: { actionId: 'b', requestedCount: 191, verb: 'delete' },
         }),
       ),
-    ).toBe(fillCopy(WS5_COPY['f1.activity.row.delete'], { n: 191 }));
+    ).toBe(pluralCopy(WS5_COPY['f1.activity.row.delete'], 191, { n: 191 }));
   });
 
   it('does not say requested when a mailto sender is in the row', () => {
@@ -360,7 +493,7 @@ describe('unsubscribeBacklogActivityLine', () => {
         ],
       }),
     );
-    expect(line).toBe(fillCopy(WS5_COPY['f1.toast.mailto.withMove.archive'], { n: 4 }));
+    expect(line).toBe(pluralCopy(WS5_COPY['f1.toast.mailto.withMove.archive'], 4, { n: 4 }));
     expect(line).not.toMatch(/requested/i);
   });
 });

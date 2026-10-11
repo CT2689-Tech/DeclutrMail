@@ -75,22 +75,44 @@
     "other": "Deleted {n} emails · Unsubscribe failed: {reason}"
   },
   "f1.toast.mailto": "The email is ready in Gmail. Press Send there to finish.",
+  "f1.toast.mailto.withMove.archive": {
+    "one": "Archived 1 email. To finish unsubscribing, press Send on the email that’s ready in Gmail.",
+    "other": "Archived {n} emails. To finish unsubscribing, press Send on the email that’s ready in Gmail."
+  },
+  "f1.toast.mailto.withMove.delete": {
+    "one": "Deleted 1 email. To finish unsubscribing, press Send on the email that’s ready in Gmail.",
+    "other": "Deleted {n} emails. To finish unsubscribing, press Send on the email that’s ready in Gmail."
+  },
   "f1.reason.noLink": "no unsubscribe link",
   "f1.reason.senderError": "the sender’s system didn’t respond",
   "f1.reason.generic": "something went wrong",
+  "f1.reason.skipped": "the sender is Protected, so nothing was sent",
+  "f1.toast.unsub.skipped": {
+    "one": "No unsubscribe sent: 1 sender is Protected, so it was left as it is.",
+    "other": "No unsubscribe sent: {n} senders are Protected, so they were left as they are."
+  },
+  "f1.toast.unsub.skipped.plain": {
+    "one": "No unsubscribe sent. That sender was left as it is.",
+    "other": "No unsubscribe sent. Those {n} senders were left as they are."
+  },
+  "f1.toast.bulkSkipped": {
+    "one": "1 Protected sender left as it is",
+    "other": "{k} Protected senders left as they are"
+  },
   "f1.toast.bulk": "Unsubscribe requested from {m} senders · Archived {n} emails",
   "f1.toast.bulk.delete": {
     "one": "Unsubscribe requested from {m} senders · Deleted 1 email",
     "other": "Unsubscribe requested from {m} senders · Deleted {n} emails"
   },
-  "f1.toast.mailto.withMove.archive": "Archived {n} emails. To finish unsubscribing, press Send on the email that’s ready in Gmail.",
-  "f1.toast.mailto.withMove.delete": "Deleted {n} emails. To finish unsubscribing, press Send on the email that’s ready in Gmail.",
   "f1.toast.bulkFailed": {
     "one": "1 unsubscribe failed",
     "other": "{k} unsubscribes failed"
   },
   "f1.activity.row": "Unsubscribe requested · Archived {n} emails",
-  "f1.activity.row.delete": "Unsubscribe requested · Deleted {n} emails",
+  "f1.activity.row.delete": {
+    "one": "Unsubscribe requested · Deleted 1 email",
+    "other": "Unsubscribe requested · Deleted {n} emails"
+  },
   "report.eyebrow": "Your Inbox Report",
   "report.basis": "Based on {total} emails in {mailboxEmail}",
   "report.window.90d": "Last 90 days",

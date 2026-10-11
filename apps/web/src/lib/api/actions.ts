@@ -517,7 +517,14 @@ export interface UnsubscribeBacklogSenderResult {
   lifecycleStatus: UnsubscribeLifecycleStatus | null;
   unsubStatus: 'requested' | 'manual' | 'failed' | 'skipped';
   reasonCode:
-    'no_link' | 'sender_error' | 'generic' | 'send_disabled' | 'in_flight' | 'not_found' | null;
+    | 'no_link'
+    | 'sender_error'
+    | 'generic'
+    | 'send_disabled'
+    | 'in_flight'
+    | 'not_found'
+    | 'protected'
+    | null;
 }
 
 export interface UnsubscribeBacklogResult {
