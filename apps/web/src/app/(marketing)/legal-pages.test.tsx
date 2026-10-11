@@ -28,7 +28,9 @@ import {
   PRIVACY_STORAGE_ITEMS,
   PRIVACY_NEVER_ITEMS,
 } from '@declutrmail/shared';
-import { fillWs3, REFUNDS_PAGE_WINDOW_DAYS, WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { MONEY_BACK_NOTE } from '@/features/billing/billing-model';
+import { fillWs3, REFUNDS_PAGE_WINDOW_DAYS, WS1_COPY, WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory, POLICY, refundLine } from '@declutrmail/shared/entitlements';
 import { storeConsent } from '@/lib/cookie-consent';
 
 import PrivacyPolicyPage from './privacy/page';
@@ -124,6 +126,26 @@ describe('/refunds content — D121 canonical refund terms', () => {
     vi.stubEnv('PRICING_V2', '');
     const { container } = render(<RefundPolicyPage />);
     expect(container.textContent).toContain('differs from cancelling');
+  });
+});
+
+describe('/refunds content — launch window', () => {
+  it('fills every window sentence from POLICY.refundWindowDays', () => {
+    vi.stubEnv('PRICING_V2', 'true');
+    const { container } = render(<RefundPolicyPage />);
+    const text = (container.textContent ?? '').replace(/\s+/g, ' ');
+    const days = POLICY.refundWindowDays;
+    const windowLabel = fillStory(WS1_COPY['refunds.toc.window']);
+    const summary = fillStory(WS1_COPY['refunds.summary']);
+    const windowBody = fillStory(WS1_COPY['refunds.window']);
+    expect(windowLabel).toBe(`${days}-day money-back guarantee`);
+    expect(summary).toContain(`within ${days} days`);
+    expect(windowBody).toContain(`within ${days} days`);
+    expect(refundLine()).toBe(`${days}-day money-back on any purchase, once per customer.`);
+    expect(text).toContain(windowLabel);
+    expect(text).toContain(summary);
+    expect(text).toContain(windowBody);
+    expect(text).not.toContain(MONEY_BACK_NOTE);
   });
 });
 

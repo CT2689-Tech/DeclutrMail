@@ -94,6 +94,15 @@ write was made.
   environment has no Paddle or Razorpay key, and the price id is
   `FILL_ME`. `scripts/billing-pass-sandbox-rehearsal.ts` prints the
   checklist and does not call Paddle.
+- The launch refund window is 14 days. `POLICY.refundWindowDays` is 14.
+  Flags-on `/refunds` renders `RefundsV2`. Every window sentence is a
+  deck template (`refunds.toc.window`, `refunds.summary`,
+  `refunds.window`, and the other `{refundDays}` lines) filled by
+  `fillStory` with that constant. `refundLine()` uses the same constant
+  on pricing, billing, flags-on `llms.txt`, and `/pricing.md`. Flags-off
+  `/refunds` still publishes the D121 30-day page (`MONEY_BACK_NOTE`)
+  so a flags-off view matches main. That 30-day page is not the launch
+  policy.
 
 ## Impact when the flags flip
 
@@ -156,6 +165,15 @@ must apply before the new API serves checkouts.
 - After a Pass overlay completes, billing toasts the deck resume line and
   calls `returnAfterUpgrade`. It does not reopen a Senders or Triage
   confirm. That confirm is WS2.
+
+## Parked until told
+
+- Do not rebase onto #978 until that merge is confirmed. When it is:
+  keep #978's deck-generated `llms.txt` body, and add only the
+  `/pricing/changelog` line behind the existing `PRICING_V2`. Allow
+  `CASA Tier 2 letter of validation submitted April 15, 2026`. Keep
+  forbidding `certified` and `audited`.
+- Do not renumber migrations for #985 until that merge is confirmed.
 
 ## Cross-WS
 
