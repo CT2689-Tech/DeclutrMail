@@ -4354,11 +4354,9 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       await screen.findByRole('region', { name: 'Email unsubscribe drafts' }),
     ).toHaveTextContent('1 email unsubscribe draft still needs you');
     const manualToast =
-      'Unsubscribe requested from 1 senders · Archived 30 emails · 1 unsubscribe failed';
-    expect(screen.getAllByText(manualToast).map((el) => el.textContent)).toEqual([
-      manualToast,
-      manualToast,
-    ]);
+      'Archived 30 emails. To finish unsubscribing, press Send on the email that’s ready in Gmail. · 1 unsubscribe failed';
+    expect(await screen.findByText(manualToast)).toHaveTextContent(manualToast);
+    expect(manualToast).not.toMatch(/requested/i);
     expect(screen.queryByText(/2 unsubscribes failed/)).toBeNull();
     expect(screen.queryByText(/send from Gmail instead/i)).toBeNull();
   });
