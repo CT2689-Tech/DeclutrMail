@@ -30,6 +30,8 @@ import {
   type UnsubscribeChannel,
 } from '@declutrmail/shared/actions';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
+import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
+import { MeterPreviewSlot } from '@/features/shell/meter-preview-slot';
 import { mailLocationValue } from '@/features/triage/action-preview-detail';
 import { afterLead } from '@/lib/copy/after-lead';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
@@ -767,6 +769,7 @@ export function ConfirmActionModal({
   ]);
 
   const auth = useOptionalAuth();
+  const cleanupSummary = useCleanupSummary();
 
   if (!request) return null;
 
@@ -1461,7 +1464,18 @@ export function ConfirmActionModal({
               }
         }
         status={status ?? undefined}
-        footer={quotaLine === null ? undefined : <span>{quotaLine}</span>}
+        footer={
+          quotaLine === null ? undefined : (
+            <>
+              <span>{quotaLine}</span>
+              <MeterPreviewSlot
+                requested={isUnsubVerb && !hasSecondaryAction ? null : liveCount}
+                summary={cleanupSummary.data ?? null}
+                freeUnsubscribe={isUnsubVerb && !hasSecondaryAction}
+              />
+            </>
+          )
+        }
       >
         {selectionSummary || controls.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: space[3] }}>

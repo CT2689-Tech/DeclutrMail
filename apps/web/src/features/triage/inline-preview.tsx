@@ -1,6 +1,8 @@
 'use client';
 
 import { Button, SheetFactList, tokens } from '@declutrmail/shared';
+import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
+import { MeterPreviewSlot } from '@/features/shell/meter-preview-slot';
 import type { ReactNode } from 'react';
 
 import {
@@ -101,6 +103,7 @@ export function InlinePreviewBlock({
   /** Routes through the same onAction path as the verb, so the screen's same-verb confirm logic is unchanged. */
   onConfirm: () => void;
 }) {
+  const cleanupSummary = useCleanupSummary();
   const { blocked, nothingToActOn } = inlinePreviewGates(preview);
   // Confirm ONLY. Switching to a different verb stays live, as it does in
   // the sheet where `confirmDisabled` gates the button and nothing else —
@@ -167,6 +170,13 @@ export function InlinePreviewBlock({
           {costLine}
         </p>
       )}
+      <MeterPreviewSlot
+        requested={
+          preview.verb === 'Unsubscribe' && !preview.archiveHistoric ? null : facts.liveCount
+        }
+        summary={cleanupSummary.data ?? null}
+        freeUnsubscribe={preview.verb === 'Unsubscribe' && !preview.archiveHistoric}
+      />
       {hasDetails && (
         <details className="dm-disclosure" style={{ marginTop: space[2] }}>
           <summary

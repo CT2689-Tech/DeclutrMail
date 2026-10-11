@@ -1,4 +1,5 @@
-.slot:has([data-testid='quota-chip']) .fallback {
+.slot:has([data-testid='quota-chip']) .fallback,
+.slot:has([data-testid='meter-preview-line']) .fallback {
   display: none;
 }
 

@@ -1,6 +1,8 @@
 'use client';
 
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
+import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
+import { MeterPreviewSlot } from '@/features/shell/meter-preview-slot';
 
 import { useEffect, type CSSProperties, type ReactNode } from 'react';
 import {
@@ -124,6 +126,8 @@ export function BatchActionSheet({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onConfirm, confirmDisabled]);
+
+  const cleanupSummary = useCleanupSummary();
 
   if (!open || !batch) return null;
 
@@ -284,9 +288,12 @@ export function BatchActionSheet({
         status={status ?? undefined}
         footer={
           quotaLine === null ? undefined : (
-            <span style={quotaShort ? { color: color.amber, fontWeight: 600 } : undefined}>
-              {quotaLine}
-            </span>
+            <>
+              <span style={quotaShort ? { color: color.amber, fontWeight: 600 } : undefined}>
+                {quotaLine}
+              </span>
+              <MeterPreviewSlot requested={total} summary={cleanupSummary.data ?? null} />
+            </>
           )
         }
       />

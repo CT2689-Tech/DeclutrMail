@@ -1,6 +1,8 @@
 'use client';
 
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
+import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
+import { MeterPreviewSlot } from '@/features/shell/meter-preview-slot';
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { Avatar, Button, PreviewSheet, SheetSegmented, tokens } from '@declutrmail/shared';
@@ -200,6 +202,8 @@ export function ActionSheet({
     confirmDisabled,
   ]);
 
+  const cleanupSummary = useCleanupSummary();
+
   if (!open || !row) return null;
 
   const facts = buildPreviewFacts({
@@ -312,6 +316,13 @@ export function ActionSheet({
           costLine === null && verb === 'Delete' ? undefined : (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
               {costLine !== null && <span>{costLine}</span>}
+              <MeterPreviewSlot
+                requested={
+                  verb === 'Unsubscribe' && !effectiveArchiveHistoric ? null : facts.liveCount
+                }
+                summary={cleanupSummary.data ?? null}
+                freeUnsubscribe={verb === 'Unsubscribe' && !effectiveArchiveHistoric}
+              />
               {/*
                * D34 — remember-preference. Persists per verb in the triage
                * store. The sheet still renders for THIS action — the
