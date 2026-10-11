@@ -79,15 +79,20 @@ test('web build inputs are the app, its transitive workspace deps and root build
       'pnpm-workspace.yaml',
       'tsconfig.base.json',
       '.nvmrc',
+      '.npmrc',
+      '.pnpmfile.cjs',
+      'eslint.config.mjs',
       'patches/next.patch',
       'scripts/vercel-ignore-build.mjs',
+      'apps/api/package.json',
+      'packages/db/package.json',
+      'packages/new-package/package.json',
     ])
       assert.equal(isWebBuildPath(path, dirs), true, path);
     for (const path of [
       'docs/ops.md',
       'README.md',
       'apps/api/src/a.ts',
-      'apps/api/package.json',
       'packages/db/src/a.ts',
       'packages/web-like/a.ts',
       '.github/workflows/ci.yml',
@@ -104,35 +109,22 @@ test('web build inputs are the app, its transitive workspace deps and root build
   }
 });
 
-test('environment rules: dependabot skips, production/main/unknown/forced always build', () => {
-  // No repository at all: these decisions must not depend on git.
+test('environment rules: production/main/unknown/forced build; dependabot gets no bypass', () => {
+  // No repository at all: nothing here may skip.
   const cwd = mkdtempSync(join(tmpdir(), 'vercel-ignore-env-'));
   const sha = 'a'.repeat(40);
   const check = (env) => ignoreBuild({ cwd, env }).code;
+  const dependabot = { VERCEL_GIT_COMMIT_REF: 'dependabot/npm_and_yarn/next-16' };
   try {
-    assert.equal(
-      check(previewEnv(sha, '', { VERCEL_GIT_COMMIT_REF: 'dependabot/npm_and_yarn/x' })),
-      0,
-    );
-    assert.equal(check(previewEnv(sha, '', { VERCEL_GIT_COMMIT_REF: 'main' })), 1);
-    assert.equal(check(previewEnv(sha, '', { VERCEL_ENV: 'production' })), 1);
-    assert.equal(
-      check(
-        previewEnv(sha, '', { VERCEL_ENV: 'production', VERCEL_GIT_COMMIT_REF: 'dependabot/x' }),
-      ),
-      1,
-      'a production dependabot deploy still builds',
-    );
+    assert.equal(check(previewEnv(sha, 'b'.repeat(40), { VERCEL_GIT_COMMIT_REF: 'main' })), 1);
+    assert.equal(check(previewEnv(sha, 'b'.repeat(40), { VERCEL_ENV: 'production' })), 1);
     for (const VERCEL_ENV of [undefined, '', 'development', 'staging'])
       assert.equal(check(previewEnv(sha, '', { VERCEL_ENV })), 1, String(VERCEL_ENV));
-    assert.equal(
-      check(
-        previewEnv(sha, '', { VERCEL_GIT_COMMIT_REF: 'dependabot/x', VERCEL_FORCE_BUILD: '1' }),
-      ),
-      1,
-    );
     assert.equal(check(previewEnv('', '')), 1, 'unknown commit');
-    assert.equal(check(previewEnv(sha, '')), 1, 'no repository means unsure');
+    assert.equal(check(previewEnv(sha, 'b'.repeat(40))), 1, 'no repository means unsure');
+    assert.equal(check(previewEnv(sha, 'b'.repeat(40), dependabot)), 1, 'dependabot, no git');
+    assert.equal(check(previewEnv('latest', 'b'.repeat(40), dependabot)), 1, 'dependabot, bad SHA');
+    assert.equal(check(previewEnv(sha, '', dependabot)), 1, 'dependabot, no baseline');
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -164,15 +156,40 @@ test('previous deployment diff: unrelated changes skip, web/shared/root changes 
       ['packages/shared/src/a.ts', 'direct shared package'],
       ['packages/tokens/src/a.ts', 'transitive shared package'],
       ['pnpm-lock.yaml', 'lockfile'],
+      ['pnpm-workspace.yaml', 'workspace config'],
       ['tsconfig.base.json', 'base tsconfig'],
+      ['apps/api/package.json', 'unrelated manifest without its lock importer'],
+      ['packages/db/package.json', 'unrelated package manifest'],
+      ['.pnpmfile.cjs', 'new pnpm install hook'],
+      ['.npmrc', 'npm config'],
     ]) {
-      f.write(path, `changed ${label}`);
+      f.write(
+        path,
+        path.endsWith('package.json')
+          ? JSON.stringify({ name: `@x/${label.length}`, version: '1.0.1' })
+          : `changed ${label}`,
+      );
       const changed = f.commit();
       const result = check(changed, current);
       assert.equal(result.code, 1, label);
       assert.ok(result.reason.startsWith(`${path} changed since `), result.reason);
       current = changed;
     }
+
+    const dependabot = { VERCEL_GIT_COMMIT_REF: 'dependabot/github_actions/checkout-7' };
+    f.write('.github/workflows/ci.yml', 'actions bump');
+    const actionsBump = f.commit();
+    assert.equal(
+      check(actionsBump, current, dependabot).code,
+      0,
+      'dependabot, proven non-web diff',
+    );
+    f.write('pnpm-lock.yaml', 'dependabot lock bump');
+    const lockBump = f.commit();
+    assert.equal(check(lockBump, actionsBump, dependabot).code, 1, 'dependabot lockfile');
+    f.write('apps/web/src/page.tsx', 'dependabot web change');
+    current = f.commit();
+    assert.equal(check(current, lockBump, dependabot).code, 1, 'dependabot web change');
 
     const webBaseline = current;
     f.write('apps/web/src/page.tsx', 'unbuilt web change');
@@ -195,21 +212,21 @@ test('previous deployment diff: unrelated changes skip, web/shared/root changes 
   }
 });
 
-test('missing or unreachable previous SHA falls back to HEAD^; no parent builds', () => {
+test('a missing, invalid or unreachable previous SHA builds; HEAD^ is never a baseline', () => {
   const f = workspaceFixture();
   const check = (current, previous) =>
-    ignoreBuild({ cwd: f.cwd, env: previewEnv(current, previous) }).code;
+    ignoreBuild({ cwd: f.cwd, env: previewEnv(current, previous) });
   try {
-    assert.equal(check(f.first, ''), 1, 'root commit has no parent to compare');
-    f.write('docs/note.md', 'docs change');
-    let current = f.commit();
-    assert.equal(check(current, ''), 0, 'docs-only HEAD^ diff');
-    assert.equal(check(current, 'not-a-sha'), 0);
-    assert.equal(check(current, 'b'.repeat(40)), 0, 'unreachable previous uses HEAD^');
-    f.write('packages/shared/src/a.ts', 'shared change');
-    current = f.commit();
-    assert.equal(check(current, ''), 1, 'shared change in HEAD^ diff');
-    assert.equal(check(current, 'b'.repeat(40)), 1);
+    f.write('apps/web/src/page.tsx', 'web change in the first of two pushed commits');
+    f.commit();
+    f.write('docs/note.md', 'docs-only HEAD commit');
+    const current = f.commit();
+    for (const previous of ['', 'not-a-sha', 'b'.repeat(40)]) {
+      const result = check(current, previous);
+      assert.equal(result.code, 1, `previous=${previous || 'unset'}`);
+      assert.match(result.reason, /previous/);
+    }
+    assert.equal(check(f.first, '').code, 1, 'first commit');
   } finally {
     f.cleanup();
   }
@@ -220,24 +237,36 @@ test('shallow clones fetch the missing base, and build when it cannot be fetched
   const clone = mkdtempSync(join(tmpdir(), 'vercel-ignore-shallow-'));
   const git = (...args) =>
     execFileSync('git', args, { cwd: clone, encoding: 'utf8', stdio: 'pipe' }).trim();
-  try {
-    const deployed = f.first;
-    f.write('apps/web/src/page.tsx', 'web change');
-    f.commit();
-    f.write('docs/note.md', 'docs change');
-    const current = f.commit();
-    execFileSync('git', ['clone', '-q', '--depth=1', `file://${f.cwd}`, clone]);
-    const check = (previous) =>
-      ignoreBuild({ cwd: clone, env: previewEnv(current, previous) }).code;
-    assert.throws(() => git('cat-file', '-e', `${deployed}^{commit}`), 'base starts missing');
-    assert.equal(check(deployed), 1, 'fetched base reveals the unbuilt web change');
-    git('cat-file', '-e', `${deployed}^{commit}`);
-
+  const fresh = () => {
     rmSync(clone, { recursive: true, force: true });
     execFileSync('git', ['clone', '-q', '--depth=1', `file://${f.cwd}`, clone]);
+  };
+  const check = (current, previous) =>
+    ignoreBuild({ cwd: clone, env: previewEnv(current, previous) }).code;
+  try {
+    const deployed = f.first;
+    f.write('docs/note.md', 'docs change');
+    f.write('apps/api/src/a.ts', 'api change');
+    f.commit();
+    f.write('docs/note.md', 'docs change again');
+    const docsOnly = f.commit();
+    fresh();
+    assert.throws(() => git('cat-file', '-e', `${deployed}^{commit}`), 'base starts missing');
+    assert.equal(check(docsOnly, deployed), 0, 'fetched base proves a non-web diff');
+    git('cat-file', '-e', `${deployed}^{commit}`);
+
+    f.write('apps/web/src/page.tsx', 'web change');
+    f.commit();
+    f.write('docs/note.md', 'docs after web');
+    const afterWeb = f.commit();
+    fresh();
+    assert.equal(check(afterWeb, docsOnly), 1, 'fetched base reveals the unbuilt web change');
+
+    f.write('docs/note.md', 'docs only, base unreachable');
+    const unreachable = f.commit();
+    fresh();
     git('remote', 'remove', 'origin');
-    assert.equal(check(deployed), 1, 'no base and no parent available must build');
-    assert.equal(check(''), 1);
+    assert.equal(check(unreachable, afterWeb), 1, 'base cannot be fetched');
   } finally {
     f.cleanup();
     rmSync(clone, { recursive: true, force: true });
@@ -386,56 +415,54 @@ test('native previews are reused, obsolete refs skipped and failed previews neve
   }
 });
 
-test('a queue preview cancelled by the Ignored Build Step counts once Vercel reports success', async () => {
-  const cancelled = (f) => ({ ...f.preview, uid: 'dpl_ignored', state: 'CANCELED' });
+test("a cancelled queue preview counts only with Vercel's ignore status for that deployment", async () => {
+  const base = queueFixture();
+  const id = 'dpl_ignored123';
+  const target = 'https://vercel.com/chintanathakkar-gmailcoms-projects/declutr-mail/ignored123';
+  const cancelled = { ...base.preview, uid: id, state: 'CANCELED' };
   const ignored = {
     context: 'Vercel',
     state: 'success',
     description: 'Canceled by Ignored Build Step',
+    creator: { login: 'vercel[bot]' },
+    target_url: target,
   };
-  const base = queueFixture();
-  const f = queueFixture({
-    deployments: [cancelled(base)],
-    statuses: [
-      ignored,
-      { context: 'Vercel', state: 'pending' },
-      { context: 'CI', state: 'failure' },
-    ],
-  });
-  assert.deepEqual(await ensureQueuePreview(f.env, f.fetcher), {
-    state: 'ignored',
-    id: 'dpl_ignored',
-  });
+  const run = (statuses, deployment = cancelled) => {
+    const f = queueFixture({ deployments: [deployment], statuses });
+    return { f, result: ensureQueuePreview(f.env, f.fetcher) };
+  };
+  const ok = run([ignored, { ...ignored, state: 'pending' }, { context: 'CI', state: 'failure' }]);
+  assert.deepEqual(await ok.result, { state: 'ignored', id });
   assert.equal(
-    f.calls.some((c) => c.method === 'POST'),
+    ok.f.calls.some((c) => c.method === 'POST'),
     false,
   );
-  for (const statuses of [
-    [],
-    [{ context: 'Vercel', state: 'pending' }, ignored],
-    [{ context: 'Vercel', state: 'failure' }],
-    [{ context: 'Vercel – other', state: 'success' }],
+
+  for (const [label, statuses, deployment] of [
+    ['no status', []],
+    ['pending is latest', [{ ...ignored, state: 'pending' }, ignored]],
+    ['failure', [{ ...ignored, state: 'failure' }]],
+    ['generic success description', [{ ...ignored, description: 'Deployment has completed' }]],
+    ['wrong creator', [{ ...ignored, creator: { login: 'someone' } }]],
+    ['no creator', [{ ...ignored, creator: undefined }]],
+    ['other deployment', [{ ...ignored, target_url: `${target}x` }]],
+    [
+      'other project',
+      [{ ...ignored, target_url: target.replace('declutr-mail', 'declutr-front-zen') }],
+    ],
+    ['other context', [{ ...ignored, context: 'Vercel – declutr-front-zen' }]],
+    ['deployment without id', [ignored], { ...cancelled, uid: undefined, id: undefined }],
+    ['errored deployment', [ignored], { ...cancelled, state: 'ERROR' }],
   ]) {
-    const g = queueFixture({ deployments: [cancelled(base)], statuses });
-    await assert.rejects(ensureQueuePreview(g.env, g.fetcher), /diagnose it before retrying/);
+    const { f, result } = run(statuses, deployment);
+    await assert.rejects(result, /diagnose it before retrying/, label);
     assert.equal(
-      g.calls.some((c) => c.method === 'POST'),
+      f.calls.some((c) => c.method === 'POST'),
       false,
+      label,
     );
   }
-  const errored = queueFixture({
-    deployments: [{ ...base.preview, state: 'ERROR' }],
-    statuses: [ignored],
-  });
-  await assert.rejects(
-    ensureQueuePreview(errored.env, errored.fetcher),
-    /diagnose it before retrying/,
-  );
-  const unreadable = queueFixture({ deployments: [cancelled(base)], statuses: {} });
-  await assert.rejects(
-    ensureQueuePreview(unreadable.env, unreadable.fetcher),
-    /statuses are unavailable/,
-  );
+  await assert.rejects(run({}).result, /statuses are unavailable/);
 });
 
 test('bad inputs, provider failures and incorrect created identity fail closed', async () => {

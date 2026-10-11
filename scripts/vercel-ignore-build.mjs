@@ -8,19 +8,11 @@ import { pathToFileURL } from 'node:url';
 
 const APP_DIR = 'apps/web';
 const WORKSPACE_DIRS = ['apps', 'packages'];
-// Root files that change the install or compilation of every workspace app.
-const ROOT_BUILD_FILES = new Set([
-  'package.json',
-  'pnpm-lock.yaml',
-  'pnpm-workspace.yaml',
-  '.npmrc',
-  '.nvmrc',
-  'tsconfig.base.json',
-  'tsconfig.json',
-  'turbo.json',
-  'scripts/vercel-ignore-build.mjs',
-]);
+// Every workspace manifest, the lockfile and pnpm configuration/hooks feed
+// the frozen workspace install. Any other root-level file fails closed too,
+// so new install configuration (e.g. .pnpmfile.cjs) can never be skipped.
 const ROOT_BUILD_DIRS = ['patches/'];
+const ALWAYS_BUILD_FILES = new Set(['scripts/vercel-ignore-build.mjs']);
 const SHA = /^[a-f0-9]{40}$/i;
 
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
@@ -62,7 +54,9 @@ export function webBuildDirs(root) {
 
 export function isWebBuildPath(path, dirs) {
   return (
-    ROOT_BUILD_FILES.has(path) ||
+    ALWAYS_BUILD_FILES.has(path) ||
+    (!path.includes('/') && !path.endsWith('.md')) ||
+    path.endsWith('/package.json') ||
     ROOT_BUILD_DIRS.some((dir) => path.startsWith(dir)) ||
     dirs.some((dir) => path.startsWith(dir))
   );
@@ -75,7 +69,6 @@ export function ignoreBuild({ env = process.env, cwd = process.cwd() } = {}) {
   if (env.VERCEL_FORCE_BUILD === '1') return build('explicit force build');
   if (env.VERCEL_ENV === 'production' || ref === 'main') return build('production or main');
   if (env.VERCEL_ENV !== 'preview') return build('unknown environment');
-  if (ref.startsWith('dependabot/')) return skip('dependabot branch preview');
 
   const current = env.VERCEL_GIT_COMMIT_SHA ?? '';
   if (!SHA.test(current)) return build('current commit unknown');
@@ -111,15 +104,12 @@ export function ignoreBuild({ env = process.env, cwd = process.cwd() } = {}) {
 
   try {
     if (git('rev-parse', 'HEAD') !== current) return build('checkout does not match commit');
-    // HEAD^ misses earlier unbuilt commits; accepted for cost (docs/ops/cost-efficiency.md).
-    let base;
-    if (SHA.test(previous) && fetchThen(previous, '--depth=1', 'origin', previous)) {
-      base = previous;
-    } else if (fetchThen(`${current}^`, '--depth=2', 'origin', current)) {
-      base = git('rev-parse', `${current}^`);
-    } else {
-      return build('no previous deployment or parent commit available');
-    }
+    // Only the last successful deployment proves what was already built.
+    // HEAD^ would hide earlier unbuilt commits, so no fallback exists.
+    if (!SHA.test(previous)) return build('no previous successful deployment');
+    if (!fetchThen(previous, '--depth=1', 'origin', previous))
+      return build('previous deployment commit unavailable');
+    const base = previous;
     const root = git('rev-parse', '--show-toplevel');
     const dirs = webBuildDirs(root);
     // Tree diff, renames split so a move OUT of a build dir still counts.
