@@ -3,9 +3,56 @@ import { gcpToken, gcpRequest } from './infra-observability.mjs';
 
 import {
   RUNTIME_LOG_METRICS,
+  LAUNCH_LOG_METRICS,
   EXPECTED_RUNTIME_COLLECTIONS,
   collectionKey,
 } from './infra-runtime-metrics.mjs';
+
+export const OAUTH_FAILURES_PER_HOUR = 3;
+export const OAUTH_FAILURE_RATIO = 0.2;
+/** 24h ratio ignores samples smaller than this. One failed start must not page. */
+export const OAUTH_RATIO_MIN_STARTS = 10;
+export const DEAD_LETTER_GROWTH_PER_HOUR = 5;
+export const GMAIL_RATE_LIMIT_PER_10_MIN = 30;
+export const INITIAL_SYNC_WAIT_SECONDS = 600;
+
+export function oauthCallbackShouldPage({ failuresLastHour, failuresLastDay, startsLastDay }) {
+  if (failuresLastHour >= OAUTH_FAILURES_PER_HOUR) return true;
+  if (
+    startsLastDay >= OAUTH_RATIO_MIN_STARTS &&
+    failuresLastDay / startsLastDay > OAUTH_FAILURE_RATIO
+  )
+    return true;
+  return false;
+}
+export function deadLetterShouldPage(count) {
+  return count > DEAD_LETTER_GROWTH_PER_HOUR;
+}
+export function gmailRateLimitShouldPage(count) {
+  return count > GMAIL_RATE_LIMIT_PER_10_MIN;
+}
+function callbackFailureQuery() {
+  const failure =
+    'logging_googleapis_com:user_oauth_callback_failure{monitored_resource="cloud_run_revision",service_name="declutrmail-api"}';
+  const start =
+    'logging_googleapis_com:user_oauth_callback_start{monitored_resource="cloud_run_revision",service_name="declutrmail-api"}';
+  return `(sum(increase(${failure}[1h])) >= ${OAUTH_FAILURES_PER_HOUR}) or ((sum(increase(${failure}[24h])) / sum(increase(${start}[24h])) > ${OAUTH_FAILURE_RATIO}) and (sum(increase(${start}[24h])) >= ${OAUTH_RATIO_MIN_STARTS}))`;
+}
+function counted(title, filter, value, alignmentPeriod, groupByFields = []) {
+  const policy = thresholdPolicy(
+    title,
+    filter,
+    value,
+    '60s',
+    'ALIGN_SUM',
+    'REDUCE_SUM',
+    groupByFields,
+  );
+  const aggregation = policy.conditions[0].conditionThreshold.aggregations[0];
+  if (groupByFields.length === 0) delete aggregation.groupByFields;
+  aggregation.alignmentPeriod = alignmentPeriod;
+  return policy;
+}
 
 const API = 'resource.type="cloud_run_revision" AND resource.labels.service_name="declutrmail-api"';
 const RUNBOOK =
@@ -136,7 +183,7 @@ export function infrastructurePolicies({ runtime = false } = {}) {
       `metric.type="logging.googleapis.com/user/${name}" AND resource.type="cloud_run_revision" AND resource.labels.service_name="declutrmail-worker"`;
     const wait = thresholdPolicy(
       'DeclutrMail internal queue waiting age',
-      logFilter('ops_queue_wait_age'),
+      `${logFilter('ops_queue_wait_age')} AND metric.labels.queue!="initial-sync"`,
       300,
       '600s',
       'ALIGN_PERCENTILE_99',
@@ -146,7 +193,7 @@ export function infrastructurePolicies({ runtime = false } = {}) {
     // Sampling every five minutes requires aligned windows at least that long.
     wait.conditions[0].conditionThreshold.aggregations[0].alignmentPeriod = '300s';
     wait.documentation = documentation(
-      'A sampled head-of-line waiting/paused BullMQ job is older than 5 minutes since creation for 10 minutes. Inspect the named queue, worker failures, Redis connectivity and concurrency. Jobs currently delayed or prioritized are excluded from age; a waiting job can include prior delays/retries. This is not elapsed queue wait or a per-job latency percentile.',
+      'A sampled head-of-line waiting/paused BullMQ job is older than 5 minutes since creation for 10 minutes. Initial-sync is excluded and pages at 10 minutes instead. Inspect the named queue, worker failures, Redis connectivity and concurrency. Jobs currently delayed or prioritized are excluded from age; a waiting job can include prior delays/retries. This is not elapsed queue wait or a per-job latency percentile.',
     );
     const db = thresholdPolicy(
       'DeclutrMail database connection pressure',
@@ -208,7 +255,7 @@ export function infrastructurePolicies({ runtime = false } = {}) {
     policies.push(wait, db, failed, scheduler, {
       displayName: 'DeclutrMail runtime observations missing or failing',
       documentation: documentation(
-        'At least one expected mailbox/scheduler/database/reconnect source or one of the four expected queue observations has no successful sample for 20 minutes, or collection failures persist. Inspect worker revision, permissions and collection error logs. One incident covers all missing sources; inspect the source/queue freshness dashboard and ops.collection logs for detail. Counts must remain unknown until collection recovers; the independent worker uptime check detects broader process failure.',
+        'At least one expected mailbox/scheduler/database/reconnect/recovery source or one of the four expected queue observations has no successful sample for 20 minutes, or collection failures persist. Inspect worker revision, permissions and collection error logs. One incident covers all missing sources; inspect the source/queue freshness dashboard and ops.collection logs for detail. Counts must remain unknown until collection recovers; the independent worker uptime check detects broader process failure.',
       ),
       conditions: [
         {
@@ -225,6 +272,75 @@ export function infrastructurePolicies({ runtime = false } = {}) {
         },
       ],
     });
+    const initialSync = thresholdPolicy(
+      'DeclutrMail initial-sync queue wait over 10 minutes',
+      `${logFilter('ops_queue_wait_age')} AND metric.labels.queue="initial-sync"`,
+      INITIAL_SYNC_WAIT_SECONDS,
+      '600s',
+      'ALIGN_PERCENTILE_99',
+      'REDUCE_MAX',
+      ['metric.label.queue'],
+    );
+    initialSync.conditions[0].conditionThreshold.aggregations[0].alignmentPeriod = '300s';
+    initialSync.documentation = documentation(
+      'Sampled initial-sync head-of-line waiting age is over 10 minutes for 10 minutes. This is the first page for that queue: the 5-minute internal-queue alert excludes initial-sync. Inspect the initial-sync worker, Redis, and recovery attempts. This is creation age of the oldest waiting or paused job, not elapsed queue wait.',
+    );
+    const recovery = thresholdPolicy(
+      'DeclutrMail initial recovery budget exhausted',
+      logFilter('ops_initial_recovery_exhausted'),
+      0,
+      '600s',
+      'ALIGN_PERCENTILE_99',
+    );
+    recovery.conditions[0].conditionThreshold.aggregations[0].alignmentPeriod = '300s';
+    recovery.documentation = documentation(
+      'At least one active mailbox has readiness failed and initial_recovery_attempts at the automatic limit. Inspect that mailbox before retrying by hand. Disconnected mailboxes are not counted. Missing samples are unknown.',
+    );
+    const deadLetters = counted(
+      'DeclutrMail worker dead-letter growth',
+      'metric.type="logging.googleapis.com/user/worker_dead_lettered" AND resource.type="cloud_run_revision" AND resource.labels.service_name="declutrmail-worker"',
+      DEAD_LETTER_GROWTH_PER_HOUR,
+      '3600s',
+      ['metric.label.worker'],
+    );
+    deadLetters.documentation = documentation(
+      'More than 5 new worker.dead_lettered terminals in one hour for one worker. This does not count repeated dead_letter.parked lines from a restart. Inspect the named worker before replaying jobs.',
+    );
+    const oom = counted(
+      'DeclutrMail worker OOM or container exit',
+      'metric.type="logging.googleapis.com/user/worker_oom_or_exit" AND resource.type="cloud_run_revision" AND resource.labels.service_name="declutrmail-worker"',
+      0,
+      '600s',
+    );
+    oom.documentation = documentation(
+      'The worker container logged a memory limit or a non-zero container exit in a 10-minute window. A normal exit(0) does not page. This is separate from the 90% memory utilization alert and does not include the API service.',
+    );
+    const gmail = counted(
+      'DeclutrMail Gmail rate limit above guardrail',
+      'metric.type="logging.googleapis.com/user/gmail_rate_limit_events" AND resource.type="cloud_run_revision" AND resource.labels.service_name="declutrmail-worker"',
+      GMAIL_RATE_LIMIT_PER_10_MIN,
+      '600s',
+    );
+    gmail.documentation = documentation(
+      'More than 30 RateLimitError throws in 10 minutes across allowlisted Gmail workers, counted once on worker.failed. The paired retried or dead-letter line is not counted again. This is an initial guardrail, not a measured Gmail quota baseline. Domain icon lookups are excluded.',
+    );
+    const callbackFailures = {
+      displayName: 'DeclutrMail OAuth callback failures',
+      documentation: documentation(
+        'OAuth callback failures reached 3 in 1 hour, or more than 20% of starts over 24 hours when there were at least 10 starts. One failure out of one start does not page on the ratio. Three failures in one hour still page. Consent cancelled, reconnect cancelled, and the inbox limit are excluded. Inspect security_event reason values. This ratio is an initial guardrail, not a measured baseline.',
+      ),
+      conditions: [
+        {
+          displayName: 'OAuth callback failure count or ratio',
+          conditionPrometheusQueryLanguage: {
+            query: callbackFailureQuery(),
+            duration: '60s',
+            evaluationInterval: '60s',
+          },
+        },
+      ],
+    };
+    policies.push(initialSync, recovery, deadLetters, oom, gmail, callbackFailures);
   }
   return policies;
 }
@@ -289,7 +405,7 @@ export async function setupAlerts(
     console.log(
       JSON.stringify(
         {
-          logMetrics: runtime ? RUNTIME_LOG_METRICS : [],
+          logMetrics: runtime ? [...RUNTIME_LOG_METRICS, ...LAUNCH_LOG_METRICS] : [],
           policies: plan,
           workerRequested: worker,
           note: 'Plan only. Worker check ID and endpoint must be verified before applying.',
@@ -345,7 +461,7 @@ export async function setupAlerts(
   }
   if (runtime) {
     const logging = `https://logging.googleapis.com/v2/projects/${project}/metrics`;
-    for (const metric of RUNTIME_LOG_METRICS) {
+    for (const metric of [...RUNTIME_LOG_METRICS, ...LAUNCH_LOG_METRICS]) {
       const url = `${logging}/${metric.name}`;
       // PUT is the Logging API create-or-update operation for a named metric.
       await gcpRequest(url, token, 'PUT', metric);

@@ -8,6 +8,7 @@ import {
   users,
   workspaces,
 } from '@declutrmail/db';
+import { INITIAL_RECOVERY_LIMIT } from '@declutrmail/workers';
 import { sql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import {
@@ -273,6 +274,53 @@ describe('operational telemetry', () => {
     );
     const backlog = emit.mock.calls.find(([row]) => row.kind === 'ops.queue_health')![0];
     expect(backlog).not.toHaveProperty('oldestWaitingAgeSeconds');
+    await db.execute(sql`SELECT 1`);
+  });
+
+  it('counts only active mailboxes whose initial recovery budget is exhausted', async () => {
+    const db = await freshTestDb();
+    const [workspace] = await db.insert(workspaces).values({ name: 'recovery' }).returning();
+    const [user] = await db
+      .insert(users)
+      .values({ workspaceId: workspace!.id, email: 'recovery@example.test' })
+      .returning();
+    async function seed(
+      providerAccountId: string,
+      status: 'active' | 'disconnected',
+      attempts: number,
+      readiness: 'failed' | 'ready',
+    ) {
+      const [mailbox] = await db
+        .insert(mailboxAccounts)
+        .values({
+          workspaceId: workspace!.id,
+          userId: user!.id,
+          provider: 'gmail',
+          providerAccountId,
+          status,
+        })
+        .returning();
+      await db.insert(providerSyncState).values({
+        mailboxAccountId: mailbox!.id,
+        readinessStatus: readiness,
+        initialRecoveryAttempts: attempts,
+      });
+      return mailbox!.id;
+    }
+    const counted = await seed('counted', 'active', INITIAL_RECOVERY_LIMIT, 'failed');
+    await seed('under', 'active', INITIAL_RECOVERY_LIMIT - 1, 'failed');
+    await seed('disconnected', 'disconnected', INITIAL_RECOVERY_LIMIT, 'failed');
+    await seed('ready', 'active', INITIAL_RECOVERY_LIMIT, 'ready');
+    const emit = vi.fn();
+    await collectOperationalTelemetry(db as never, [queue()], emit);
+    const row = emit.mock.calls
+      .map(([entry]) => entry)
+      .find((entry) => entry.kind === 'ops.initial_recovery_exhausted');
+    expect(row).toEqual(expect.objectContaining({ exhausted: 1 }));
+    expect(JSON.stringify(row)).not.toContain(counted);
+    expect(emit).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'ops.collection', source: 'recovery', success: 1 }),
+    );
     await db.execute(sql`SELECT 1`);
   });
 });

@@ -309,6 +309,9 @@ export function createRedisProducerConnection(
  */
 const USER_FACING_DRAIN_DELAY_MAX_SEC = 60;
 
+/** Unset-env idle re-poll for user-facing queues. // revisit Nov 10 */
+const LAUNCH_USER_FACING_DRAIN_DELAY_SEC = 10; // revisit Nov 10
+
 /** Parse a positive number from env; fall back on unset/garbage. */
 function envNumber(raw: string | undefined, fallback: number): number {
   const value = Number(raw);
@@ -329,10 +332,9 @@ function envNumber(raw: string | undefined, fallback: number): number {
  * blocking pop — `drainDelay` is only the idle re-poll safety net.
  * `stalledInterval` only affects crash-recovery latency (re-queue of a
  * job whose worker died mid-run), never healthy-path latency. So the
- * pre-launch prod env sets a slow re-poll (60s user-facing / 300s cron)
- * for a ~6× idle-command cut at no felt latency — see the DEV-PHASE
- * override in deploy-cloud-run.yml (revert toward the D193 tighter
- * values when real traffic warrants snappier crash recovery).
+ * Launch sets user-facing 10s/60s and cron 60s/300s (D193). The 60s
+ * ceiling still rejects a fat-fingered raise. Idle Redis commands rise
+ * versus the 2026-07-15 slowdown. // revisit Nov 10
  *
  * Two profiles:
  *   - `user-facing` (initial-sync, incremental-sync, score,
@@ -354,7 +356,7 @@ export function workerTuningOptions(
   }
   return {
     drainDelay: Math.min(
-      envNumber(env.WORKER_DRAIN_DELAY_SEC, USER_FACING_DRAIN_DELAY_MAX_SEC),
+      envNumber(env.WORKER_DRAIN_DELAY_SEC, LAUNCH_USER_FACING_DRAIN_DELAY_SEC),
       USER_FACING_DRAIN_DELAY_MAX_SEC,
     ),
     stalledInterval: envNumber(env.WORKER_STALLED_INTERVAL_MS, 60_000),

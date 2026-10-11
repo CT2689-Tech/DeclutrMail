@@ -22,7 +22,7 @@ admin email channel. Do not create parallel notification channels.
 3. Apply reviewed policies using `--apply --worker --runtime`. The worker uptime
    check additionally refuses installation if its endpoint is not currently healthy.
    Runtime rules require the telemetry deployment first; `--runtime` explicitly
-   opts in to runtime rules. Activation refuses missing/stale/failed-only samples for any expected source; at least one successful observation within 20 minutes is required for mailbox/scheduler/database/reconnect and each of the four expected queues.
+   opts in to runtime rules. Activation refuses missing/stale/failed-only samples for any expected source; at least one successful observation within 20 minutes is required for mailbox/scheduler/database/reconnect/recovery and each of the four expected queues.
 4. Query every new metric/PromQL expression in the project and inspect all returned
    series and label cardinality. The tests validate local contracts, not Cloud
    Monitoring acceptance. Inspect existing policies/channels after application.
@@ -32,18 +32,18 @@ admin email channel. Do not create parallel notification channels.
 
 ## Signals and first response
 
-| Signal            | Initial trigger                                                                                          | Response                                                                                                                                                                                                                                 |
-| ----------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| API 5xx           | >5%, >=3 errors and >=20 requests over 5m, sustained 5m                                                  | Compare deployment timing and response classes; inspect DB/Redis failures. Includes health traffic; low-volume outages are covered by uptime.                                                                                            |
-| API latency       | Worst revision/status p95 >2,000ms for 10m                                                               | Inspect DB pool wait, external calls and recent deployment. Native route aggregation and sparse traffic limit interpretation.                                                                                                            |
-| Memory            | Worst revision p95 >90% for 10m                                                                          | Inspect OOM/restarts, heap growth, concurrency and actual allocation. Do not shrink memory based on idle CPU.                                                                                                                            |
-| Gmail Pub/Sub     | Oldest unacked >300s for 5m                                                                              | Inspect push delivery/API errors. Do not purge, acknowledge or reset subscriptions to clear an alarm.                                                                                                                                    |
-| Internal queue    | Sampled waiting job age since creation >300s for 10m                                                     | Inspect named queue, worker errors, concurrency and Redis. Currently delayed/prioritized jobs are excluded from age; waiting jobs include prior delays/retries. This is not exact elapsed queue wait. Do not replay failed jobs blindly. |
-| DB connections    | Sampled connections/max_connections >80% for 10m                                                         | Inspect pool configuration, connection leaks and idle transactions. Platform/reserved slots reduce practical headroom.                                                                                                                   |
-| Scheduler         | Last success older than 2 ticks + grace: watch 13h, snooze 40m, deletion 20m, billing 30m; sustained 10m | Inspect cron ledger and queue consumers. These limits derive from configured 6h/15m/5m/10m cadence, not traffic. No recorded success for 15m is a separate condition.                                                                    |
-| Runtime collector | Source or expected queue absent 20m or repeated failures 10m                                             | Inspect telemetry errors and deployed revision. One successful queue cannot erase another queue's failure.                                                                                                                               |
-| Daily collector   | No snapshot for 25h, continuously absent another 5h                                                      | Inspect existing GitHub daily workflow and metric publisher. Do not duplicate vendor collection or repeat product smoke.                                                                                                                 |
-| Worker heartbeat  | More than one uptime region fails for 2m                                                                 | Inspect worker process/DB and deployment. Endpoint itself requires heartbeat newer than 3m; this does not prove queue throughput.                                                                                                        |
+| Signal            | Initial trigger                                                                                          | Response                                                                                                                                                                                                                                   |
+| ----------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| API 5xx           | >5%, >=3 errors and >=20 requests over 5m, sustained 5m                                                  | Compare deployment timing and response classes; inspect DB/Redis failures. Includes health traffic; low-volume outages are covered by uptime.                                                                                              |
+| API latency       | Worst revision/status p95 >2,000ms for 10m                                                               | Inspect DB pool wait, external calls and recent deployment. Native route aggregation and sparse traffic limit interpretation.                                                                                                              |
+| Memory            | Worst revision p95 >90% for 10m                                                                          | Inspect OOM/restarts, heap growth, concurrency and actual allocation. Do not shrink memory based on idle CPU.                                                                                                                              |
+| Gmail Pub/Sub     | Oldest unacked >300s for 5m                                                                              | Inspect push delivery/API errors. Do not purge, acknowledge or reset subscriptions to clear an alarm.                                                                                                                                      |
+| Internal queue    | Sampled waiting job age since creation >300s for 10m, except initial-sync                                | Initial-sync is excluded here and pages at 10 minutes. Inspect named queue, worker errors, concurrency and Redis. Delayed/prioritized jobs are excluded from age. This is not exact elapsed queue wait. Do not replay failed jobs blindly. |
+| DB connections    | Sampled connections/max_connections >80% for 10m                                                         | Inspect pool configuration, connection leaks and idle transactions. Platform/reserved slots reduce practical headroom.                                                                                                                     |
+| Scheduler         | Last success older than 2 ticks + grace: watch 13h, snooze 40m, deletion 20m, billing 30m; sustained 10m | Inspect cron ledger and queue consumers. These limits derive from configured 6h/15m/5m/10m cadence, not traffic. No recorded success for 15m is a separate condition.                                                                      |
+| Runtime collector | Source or expected queue absent 20m or repeated failures 10m                                             | Inspect telemetry errors and deployed revision. One successful queue cannot erase another queue's failure.                                                                                                                                 |
+| Daily collector   | No snapshot for 25h, continuously absent another 5h                                                      | Inspect existing GitHub daily workflow and metric publisher. Do not duplicate vendor collection or repeat product smoke.                                                                                                                   |
+| Worker heartbeat  | More than one uptime region fails for 2m                                                                 | Inspect worker process/DB and deployment. Endpoint itself requires heartbeat newer than 3m; this does not prove queue throughput.                                                                                                          |
 
 Reconnect incident charts use a rolling 24-hour creation window. Outbox dispatched
 means consumer-handled, not email delivered; subsequent successful sync is an
@@ -63,6 +63,26 @@ Queue/mailbox/DB/scheduler values are five-minute samples stored as log
 must not be summed into users or jobs; mailbox reasons can overlap. Sync durations
 are worker attempts, including retries, not signup funnel conversion. Outcome `resolved` includes skipped/no-op runs and must never be labelled completed sync or used as a sync success rate. Scheduler
 success age is absent when no success exists; the missing-success rule covers it.
+
+## Launch capacity alerts
+
+These rules are created only with `--runtime`. Do not apply them until the
+worker has emitted `kind=ops.collection source=recovery success=1`. If
+activation refuses coverage, wait for that sample and retry. Do not apply
+from a laptop against a guess.
+
+```
+node scripts/setup-infra-alerts.mjs declutrmail-ai-prod --runtime --apply
+```
+
+| Signal            | Initial trigger                                                                        | Response                                                                                                                                                     |
+| ----------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Initial-sync wait | Sampled initial-sync waiting age over 10 minutes for 10 minutes                        | First page for that queue. The 5-minute internal-queue alert excludes initial-sync. Creation age is not elapsed queue wait.                                  |
+| Recovery budget   | Active mailbox with failed readiness and initial recovery attempts at the limit        | Inspect that mailbox before a manual retry. Disconnected mailboxes are excluded.                                                                             |
+| Dead letters      | More than 5 new `worker.dead_lettered` lines in one hour for one worker                | Inspect the named worker. Restarted `dead_letter.parked` lines are not this count.                                                                           |
+| Worker exit       | A worker memory-limit line, or a container exit other than exit(0), in 10 minutes      | Separate from the 90% memory alert. A normal rollout exit(0) does not page. The API service is not included.                                                 |
+| Gmail 429         | More than 30 `worker.failed` `RateLimitError` lines in 10 minutes                      | Counted once per throw, including Later wakes. Initial guardrail, not a measured quota baseline. Domain icon lookups are excluded.                           |
+| OAuth callbacks   | 3 failures in 1 hour, or more than 20% of starts over 24 hours with at least 10 starts | One failure out of one start does not page. Three failures in one hour still page. Cancelled consent, cancelled reconnect, and the inbox limit are excluded. |
 
 ## Stuck mailboxes
 

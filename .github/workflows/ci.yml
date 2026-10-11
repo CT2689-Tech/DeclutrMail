@@ -288,7 +288,7 @@ jobs:
       - name: User-journey log trace
         run: node --test scripts/journey-logs.test.mjs
       - name: Stuck-mailbox alert and sync watchdog contracts
-        run: node --test scripts/stuck-mailbox-alert.test.mjs scripts/check-known-stuck.test.mjs
+        run: node --test scripts/stuck-mailbox-alert.test.mjs scripts/check-known-stuck.test.mjs scripts/check-sync-failed.test.mjs
       - name: No personal email addresses in tracked files (D7)
         run: node --test scripts/personal-email-guard.test.mjs
       # The .claude/hooks guards only ran on edits made through Claude Code,

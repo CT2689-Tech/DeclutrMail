@@ -89,6 +89,55 @@ describe('SyncService.markConnected', () => {
     return row;
   }
 
+  it('clears needs_reconnect on connect and queues a normal scan without dropping saved progress', async () => {
+    await seed({
+      readinessStatus: 'needs_reconnect',
+      currentStage: 'failed',
+      errorCode: 'InvalidGrantError',
+      progressPct: 40,
+      lastHistoryId: 99n,
+      lastSyncedAt: null,
+    });
+
+    await expect(connect({ wasActive: true })).resolves.toBe('queued');
+
+    expect(await readState()).toMatchObject({
+      readinessStatus: 'queued',
+      currentStage: 'queued',
+      errorCode: null,
+      progressPct: 40,
+      lastHistoryId: 99n,
+    });
+    const status = await service.getStatus(mailboxId);
+    expect(status).toMatchObject({
+      readiness_status: 'queued',
+      is_ready_for_triage: false,
+    });
+    expect(status).not.toHaveProperty('error_code');
+  });
+
+  it('presents needs_reconnect as a failed scan that still needs reconnect', async () => {
+    await seed({
+      readinessStatus: 'needs_reconnect',
+      currentStage: 'failed',
+      errorCode: 'InvalidGrantError',
+      progressPct: 40,
+      lastHistoryId: 99n,
+      lastSyncedAt: null,
+    });
+
+    const status = await service.getStatus(mailboxId);
+    expect(status).toMatchObject({
+      readiness_status: 'failed',
+      error_code: 'InvalidGrantError',
+      is_ready_for_triage: false,
+      next_retry_at: null,
+    });
+    expect(await service.getMailboxHealth([mailboxId])).toEqual(
+      new Map([[mailboxId, { readiness: 'failed', needsReconnect: true }]]),
+    );
+  });
+
   it('keeps a synced, healthy mailbox exactly as it is', async () => {
     await seed();
     const before = await readState();

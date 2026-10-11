@@ -308,7 +308,8 @@ test('Sentry loss counters separate accepted, enforcement, invalid and closed SD
         assert.equal(request.origin, 'https://sentry.io');
         assert.deepEqual(request.searchParams.getAll('groupBy'), ['outcome', 'reason']);
         assert.equal(request.searchParams.get('category'), 'error');
-        assert.equal(request.searchParams.get('statsPeriod'), '1d');
+        assert.equal(request.searchParams.get('statsPeriod'), '24h');
+        assert.equal(request.searchParams.get('interval'), '1h');
         assert.equal(options.method ?? 'GET', 'GET');
         return {
           groups: [
@@ -356,6 +357,28 @@ test('Sentry loss counters separate accepted, enforcement, invalid and closed SD
     row.causes.map((c) => c.value),
     [6, 10, 31],
   );
+});
+
+test('Sentry drop cause names the outcome and reason', async () => {
+  const marker = 'PRIVATE_UNKNOWN_REASON_NEVER_EXPORT';
+  const row = await sentryRow([
+    outcome('accepted', 27),
+    {
+      by: { outcome: 'rate_limited', reason: 'error_usage_exceeded' },
+      totals: { 'sum(quantity)': 3 },
+    },
+    {
+      by: { outcome: 'abuse', reason: marker },
+      totals: { 'sum(quantity)': 1 },
+    },
+  ]);
+  assert.equal(row.status, 'BREACH');
+  assert.equal(row.causes[0].value, 4);
+  assert.equal(
+    row.causes[0].text,
+    'quota/rate limited (errors being dropped): 4 in last 24h (rate_limited/error_usage_exceeded 3, abuse 1)',
+  );
+  assert.equal(JSON.stringify(row).includes(marker), false);
 });
 
 test('Sentry loss counters retain absent and unfamiliar SDK reasons as unclassified numeric loss', async () => {
@@ -759,12 +782,20 @@ test('a missing Supabase usage figure keeps the size as its own cause', () => {
   const run = cli(list, {
     PATH: `${dir}:${process.env.PATH}`,
     SUPABASE_SESSION_DSN: 'postgres://fake',
+    SUPABASE_DB_SIZE_WARN_MB: '400',
   });
   assert.equal(run.status, 1, run.stdout + run.stderr);
   assert.match(
     run.stdout,
     /Supabase \(DB size\) \(BREACH\): DB size 1024\.0 MB \(warn 400 MB\) — not acknowledged/,
   );
+  // 1024 MB is under the Pro default (warn 3200, breach at 6400).
+  const defaults = cli(list, {
+    PATH: `${dir}:${process.env.PATH}`,
+    SUPABASE_SESSION_DSN: 'postgres://fake',
+  });
+  assert.equal(defaults.status, 0, defaults.stdout + defaults.stderr);
+  assert.match(defaults.stdout, /DB size 1024\.0 MB \(warn 3200 MB\)/);
 });
 
 test('a line naming two causes holds neither even when only one fails', async () => {
