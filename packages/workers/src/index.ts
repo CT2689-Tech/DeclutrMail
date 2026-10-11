@@ -463,6 +463,20 @@ export {
   enqueueDeletionSweepTick,
 } from './deletion.queue.js';
 export { EmailSendWorker } from './email-send.worker.js';
+export {
+  createEmailRuntimeConnection,
+  EmailRuntimeLease,
+  EmailRuntimeLeaseError,
+  readEmailRuntimeLeases,
+  EMAIL_RUNTIME_LEASE_PROTOCOL,
+  EMAIL_RUNTIME_REGISTRY_PREFIX,
+  type EmailRuntimeAdoptionWitness,
+} from './email-runtime-lease.js';
+export {
+  EmailRuntimeGuard,
+  startEmailRuntimeConsumer,
+  finishEmailRuntimeStartup,
+} from './email-runtime-guard.js';
 export type {
   EmailDeliveryOutcome,
   EmailDeliveryPort,

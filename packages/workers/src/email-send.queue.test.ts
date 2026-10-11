@@ -45,6 +45,12 @@ type JobState =
   | 'unknown';
 
 class FakeQueue {
+  getBackend() {
+    return { client: Promise.resolve({ hexists: async () => 0 }) };
+  }
+  toKey(id: string) {
+    return `bull:email-send:${id}`;
+  }
   private job: { id: string; state: JobState; returnvalue: unknown } | null = null;
   addCalls = 0;
   removeCalls = 0;

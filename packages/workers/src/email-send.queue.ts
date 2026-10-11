@@ -1,3 +1,4 @@
+import { EMAIL_RUNTIME_DELIVERY_FIELD } from './email-runtime-lease.js';
 import { Worker, type Job, type JobsOptions, type Queue, type WorkerOptions } from 'bullmq';
 import { hasPostalAddress } from '@declutrmail/shared/copy';
 
@@ -258,6 +259,11 @@ export async function enqueueEmailSend(
     if (!reapable) {
       return 'noop';
     }
+    // A late acknowledgement can complete as a skip after an earlier accepted
+    // send. Durable acceptance/unknown evidence outranks that return value.
+    const client = await queue.getBackend().client;
+    if (await client.hexists(queue.toKey(existing.id!), EMAIL_RUNTIME_DELIVERY_FIELD))
+      return 'noop';
     // `remove()` REJECTS if a worker locked the job between `getState()`
     // and here. Treat that lost race as a no-op rather than adding under
     // a half-removed hash — the attempt that won the race runs, and a
