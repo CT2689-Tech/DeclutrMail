@@ -63,6 +63,14 @@ test.beforeAll(async () => {
        now() - interval '1 day', true, ARRAY['INBOX'])
     ON CONFLICT (mailbox_account_id, provider_message_id) DO NOTHING
   `;
+  // The shared billing sender has no unsubscribe channel. This journey
+  // needs one so Archive and Delete can confirm. Restored in afterAll.
+  await sql`
+    UPDATE senders
+    SET unsubscribe_method = 'one_click',
+        unsubscribe_url = 'https://freshfinds.example/unsub'
+    WHERE id = ${BILLING_SEED.archiveSenderId}
+  `;
 });
 
 test.afterAll(async () => {
@@ -96,6 +104,11 @@ test.afterAll(async () => {
         AND provider_message_id IN ('e2e-mailto-m1', 'e2e-nolink-m1')
     `;
     await sql`
+      UPDATE senders
+      SET unsubscribe_method = NULL, unsubscribe_url = NULL
+      WHERE id = ${BILLING_SEED.archiveSenderId}
+    `;
+    await sql`
       DELETE FROM senders
       WHERE mailbox_account_id = ${mailboxId}
         AND id IN (${MAILTO_SENDER.id}, ${NO_LINK_SENDER.id})
@@ -122,7 +135,7 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
   await rowHeader.click();
   await page
     .getByRole('toolbar', { name: `Decide on ${senderName}` })
-    .getByRole('button', { name: 'Unsubscribe', exact: true })
+    .getByRole('button', { name: 'Unsubscribe (U)' })
     .click();
 
   const triageSheet = page.getByRole('dialog');
@@ -274,23 +287,23 @@ test('an email-only sender opens the mailto handoff and does not claim a draft',
 });
 
 test('a sender with no unsubscribe link reports the failure', async ({ page }) => {
+  const posts: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().includes('/api/actions/unsubscribe-backlog')) {
+      posts.push(request.url());
+    }
+  });
   await page.goto('/senders');
   await expectScreenMounted(page);
   const card = page.getByTestId(`sender-row-${NO_LINK_SENDER.id}`);
   await expect(card).toBeVisible({ timeout: 30_000 });
   await card.getByRole('button', { name: 'More actions' }).click();
-  await card.getByRole('menuitem', { name: 'Unsubscribe', exact: true }).click();
-  const sheet = page.getByRole('dialog');
-  await expect(sheet.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeEnabled();
-  const post = page.waitForResponse(
-    (response) =>
-      response.url().includes('/api/actions/unsubscribe-backlog') &&
-      response.request().method() === 'POST',
-  );
-  await sheet.getByRole('button', { name: 'Unsubscribe + Archive' }).click();
-  const response = await post;
-  expect(response.ok()).toBe(true);
-  await expect(page.getByText(/Unsubscribe failed: no unsubscribe link/)).toBeVisible();
+  const item = card.getByRole('menuitem', { name: /Unsubscribe/ });
+  await expect(item).toBeVisible();
+  await expect(item).toContainText('No unsubscribe channel found');
+  await expect(item).toHaveAttribute('aria-disabled', 'true');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(posts).toEqual([]);
 });
 
 test('a spent monthly allowance refuses the mail move before any unsubscribe', async ({ page }) => {

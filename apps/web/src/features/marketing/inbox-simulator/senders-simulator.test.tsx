@@ -82,7 +82,7 @@ describe('SendersSimulator', () => {
     fireEvent.click(within(preview()).getByRole('button', { name: /^Delete \d+/ }));
     const activity = screen.getByRole('region', { name: 'Sample activity' });
     expect(activity).toHaveTextContent('A later sample decision changed this sender');
-    expect(within(activity).getAllByRole('button', { name: 'Undo', exact: true })).toHaveLength(1);
+    expect(within(activity).getAllByRole('button', { name: 'Undo' })).toHaveLength(1);
   });
 });
 
@@ -153,7 +153,7 @@ describe('SendersSimulator — WS5 sample surfaces', () => {
     const activity = screen.getByRole('region', { name: 'Sample activity' });
     expect(activity).toHaveTextContent(fillCopy(WS5_COPY['f1.activity.row'], { n: 111 }));
     expect(activity).toHaveTextContent('undone from Activity for 30 days');
-    expect(within(activity).getByRole('button', { name: 'Undo', exact: true })).toBeInTheDocument();
+    expect(within(activity).getByRole('button', { name: 'Undo' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Market Finds/ }));
     fireEvent.click(
