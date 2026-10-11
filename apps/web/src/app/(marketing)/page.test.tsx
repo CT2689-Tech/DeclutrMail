@@ -49,9 +49,11 @@ describe('landing page — D134', () => {
   it('states the D228 trust copy once, plus the collapsed scope disclosures', async () => {
     const { container } = await renderLanding();
     // Visible twice on purpose: the hero trust row and the Privacy section
-    // lede. Further copies stay inside collapsed scope disclosures.
+    // lede. The row also keeps a narrow line in the DOM for small screens;
+    // CSS hides it above 880px, so it is not a third copy. Further copies
+    // stay inside collapsed scope disclosures.
     const visible = container.cloneNode(true) as HTMLElement;
-    visible.querySelectorAll('details').forEach((d) => d.remove());
+    visible.querySelectorAll('details, .dm-trust-row-narrow').forEach((node) => node.remove());
     expect((visible.textContent ?? '').split(PRIVACY_BADGE_HEADLINE).length - 1).toBe(2);
     expect(container.querySelectorAll('details.dm-mkt-scope')).toHaveLength(2);
     expect(container.querySelector('.dm-mkt-privacy-data')).toBeInTheDocument();
