@@ -6,7 +6,7 @@ import { recordSignInProvider } from './record-connect-funnel.js';
 
 describe('signInProviderKind', () => {
   it('treats a non-empty hd as Workspace and never returns the domain', () => {
-    const kind = signInProviderKind({ email: 'me@gmail.com', hostedDomain: 'corp.example' });
+    const kind = signInProviderKind({ email: 'owner@gmail.com', hostedDomain: 'corp.example' });
     expect(kind).toBe('workspace');
     expect(JSON.stringify(kind)).not.toContain('corp.example');
     expect(signInProviderKind({ email: 'me@corp.example', hostedDomain: '  corp.example  ' })).toBe(
@@ -15,8 +15,10 @@ describe('signInProviderKind', () => {
   });
 
   it('classifies consumer Gmail only when hd is absent', () => {
-    expect(signInProviderKind({ email: 'Me@Gmail.com' })).toBe('gmail');
-    expect(signInProviderKind({ email: 'me@googlemail.com', hostedDomain: '   ' })).toBe('gmail');
+    expect(signInProviderKind({ email: 'Owner@Gmail.com' })).toBe('gmail');
+    expect(signInProviderKind({ email: 'owner@googlemail.com', hostedDomain: '   ' })).toBe(
+      'gmail',
+    );
   });
 
   it('omits an address that is neither hosted nor consumer Gmail', () => {
