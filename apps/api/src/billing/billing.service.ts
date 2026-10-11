@@ -19,7 +19,7 @@
 // captured in subscription_events", anonymous enum for analytics).
 
 import { publishSubscriptionNotices, subscriptionNoticeSnapshot } from './billing-notices.js';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq, getTableColumns, inArray, isNotNull, sql } from 'drizzle-orm';
 import {
@@ -50,6 +50,9 @@ import type {
 
 import { AppException } from '../common/app-exception.js';
 import { highestLiveGrantForWorkspace } from '../common/entitlements/entitlement-grants.js';
+import type { ProductEventsPort } from '@declutrmail/shared/analytics/product-events';
+
+import { PRODUCT_EVENTS, recordProductEvent } from '../analytics/product-events.port.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type { BillingProvider } from './billing-provider.interface.js';
 import { BillingCatalog } from './billing-catalog.js';
@@ -85,6 +88,7 @@ const MAX_INVOICE_SUBSCRIPTIONS = 10;
 @Injectable()
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
+  private readonly productEvents: ProductEventsPort | undefined;
 
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
@@ -93,7 +97,10 @@ export class BillingService {
     private readonly razorpay: RazorpayAdapter,
     private readonly reconciliation: BillingReconciliationService,
     private readonly upgrades: BillingUpgradeRefundService,
-  ) {}
+    @Optional() @Inject(PRODUCT_EVENTS) productEvents?: ProductEventsPort,
+  ) {
+    this.productEvents = productEvents;
+  }
 
   private adapterFor(provider: 'paddle' | 'razorpay'): BillingProvider {
     return provider === 'paddle' ? this.paddle : this.razorpay;
@@ -326,6 +333,12 @@ export class BillingService {
 
     this.logger.log(
       `billing.checkout_created workspace=${principal.workspaceId} provider=${dto.provider} tier=${dto.tierId} cycle=${dto.cycle} founding=${founding}`,
+    );
+    recordProductEvent(
+      this.productEvents,
+      'checkout_created',
+      { plan: dto.tierId },
+      principal.userId,
     );
     return session;
   }

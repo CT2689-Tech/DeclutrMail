@@ -1,0 +1,11 @@
+-- Rollback for 0084_waitlist_launch_columns.sql
+
+DROP INDEX "waitlist_email_tier_provider_uniq";
+--> statement-breakpoint
+ALTER TABLE "waitlist" DROP COLUMN "contact_opt_in";
+--> statement-breakpoint
+ALTER TABLE "waitlist" DROP COLUMN "would_pay";
+--> statement-breakpoint
+ALTER TABLE "waitlist" DROP COLUMN "provider";
+--> statement-breakpoint
+ALTER TABLE "waitlist" DROP COLUMN "tier";

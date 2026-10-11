@@ -7,6 +7,20 @@
 
 export { COUNTS_AS_CLEANUP, SELECTOR_CAPS, SELECTOR_TIERS, TIER_MANIFEST } from './pricing.config';
 export {
+  buildOffersJsonLd,
+  freeAllowanceLine,
+  isPricingV2,
+  meterNoun,
+  planName,
+  priceLine,
+  pricePromiseLines,
+  promoBanner,
+  quotaExceededMessage,
+  refundLine,
+  renderPricingMarkdown,
+} from './copy';
+export type { QuotaExceededMessageInput } from './copy';
+export {
   cleanupActionsPerMonthFor,
   hasCapability,
   inboxLimitFor,

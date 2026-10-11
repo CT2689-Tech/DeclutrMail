@@ -39,3 +39,25 @@ export type WaitlistJoinRequest = z.infer<typeof WaitlistJoinRequestSchema>;
 export interface WaitlistJoinResult {
   status: 'accepted';
 }
+
+/**
+ * POST /api/v1/waitlist — Pro and provider capture.
+ * Idempotent. The two statuses are for the client; the UI shows one message.
+ * `email` may be omitted when the caller is authenticated.
+ */
+export const WaitlistV1JoinRequestSchema = z
+  .object({
+    kind: z.enum(['pro', 'provider']),
+    email: z.email().max(320).optional(),
+    provider: z.enum(['outlook', 'm365', 'yahoo_aol', 'icloud', 'other']).optional(),
+    wouldPay: z.boolean().optional(),
+    contactOptIn: z.boolean().optional(),
+    source: z.string().trim().min(1).max(120),
+  })
+  .strict();
+
+export type WaitlistV1JoinRequest = z.infer<typeof WaitlistV1JoinRequestSchema>;
+
+export interface WaitlistV1JoinResult {
+  status: 'joined' | 'already_joined';
+}

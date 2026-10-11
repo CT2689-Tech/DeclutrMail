@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { and, count, eq, gte, inArray, ne, sql } from 'drizzle-orm';
 
 import {
@@ -22,6 +22,9 @@ import {
 } from '@declutrmail/shared/entitlements';
 import { ERROR_CODES } from '@declutrmail/shared/contracts';
 
+import type { ProductEventsPort } from '@declutrmail/shared/analytics/product-events';
+
+import { PRODUCT_EVENTS, recordProductEvent } from '../../analytics/product-events.port.js';
 import { DRIZZLE, type DrizzleDb } from '../../db/db.module.js';
 import { AppException } from '../app-exception.js';
 import { cleanupPeriodFor } from './cleanup-period.js';
@@ -116,7 +119,18 @@ export interface CleanupSummary {
  */
 @Injectable()
 export class EntitlementsService {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
+  private readonly productEvents: ProductEventsPort;
+
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleDb,
+    @Optional() @Inject(PRODUCT_EVENTS) productEvents?: ProductEventsPort,
+  ) {
+    this.productEvents = productEvents ?? {
+      record() {
+        // No-op when the analytics module is not in the test graph.
+      },
+    };
+  }
 
   /** The workspace's billing tier; defaults to 'free' if the row is gone. */
   async tierForWorkspace(workspaceId: string): Promise<TierId> {
@@ -330,6 +344,9 @@ export class EntitlementsService {
     if (used + unitsNeeded > limit) {
       const remaining = Math.max(0, limit - used);
       const upgradePlan = unlimitedCleanupPlanName();
+      recordProductEvent(this.productEvents, 'free_cap_hit', {
+        requested_bucket: requestedBucket(unitsNeeded),
+      });
       throw new AppException({
         code: 'FREE_CAP_REACHED',
         message:
@@ -535,6 +552,15 @@ function capabilityUpgradeMessage(capability: Capability): string {
  * (mailbox-resolved tier) and `CapabilityGuard` (principal-resolved
  * tier).
  */
+/** Coarse size of a refused cleanup, so the funnel event does not carry the raw count. */
+export function requestedBucket(units: number): string {
+  if (!Number.isFinite(units) || units <= 1) return '1';
+  if (units <= 10) return '2-10';
+  if (units <= 100) return '11-100';
+  if (units <= 1000) return '101-1000';
+  return '1001+';
+}
+
 export function assertTierCapability(tier: TierId, capability: Capability): void {
   if (hasCapability(tier, capability)) return;
   throw new AppException({

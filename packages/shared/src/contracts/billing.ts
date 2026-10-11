@@ -476,3 +476,15 @@ export const FoundingAvailabilitySchema = z.object({
   remaining: z.number().int().nonnegative(),
 });
 export type FoundingAvailability = z.infer<typeof FoundingAvailabilitySchema>;
+
+/**
+ * Emails-cleared meter position. `resetAt` is an ISO UTC timestamp.
+ * `metered` is false for unlimited tiers, and the chip renders nothing.
+ */
+export interface CleanupSummaryDto {
+  metered: boolean;
+  limit: number;
+  used: number;
+  remaining: number;
+  resetAt: string;
+}

@@ -23,4 +23,10 @@ export {
   isSentryServerExceptionType,
   type SentryScrubProfile,
 } from './sentry-scrubber.js';
-export type { EventName, EventPayloads, EventProps, OnboardingFunnelStep, Verb } from './events.js';
+export type {
+  EventName,
+  EventPayloads,
+  EventProps,
+  OnboardingFunnelStep,
+  Verb,
+} from './events/index.js';

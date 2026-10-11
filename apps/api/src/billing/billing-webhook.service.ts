@@ -46,7 +46,7 @@ import { publishSubscriptionNotices, subscriptionNoticeSnapshot } from './billin
 // point that reduces it to allowlisted billing metadata before the
 // `subscription_events` insert.
 
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import {
   pendingCheckouts,
@@ -64,6 +64,9 @@ import {
   applyGrantFloor,
   liveGrantTierForWorkspace,
 } from '../common/entitlements/entitlement-grants.js';
+import type { ProductEventsPort } from '@declutrmail/shared/analytics/product-events';
+
+import { PRODUCT_EVENTS, recordProductEvent } from '../analytics/product-events.port.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
   NormalizedBillingEvent,
@@ -275,6 +278,7 @@ export function projectWebhookPayload(
 @Injectable()
 export class BillingWebhookService {
   private readonly logger = new Logger(BillingWebhookService.name);
+  private readonly productEvents: ProductEventsPort | undefined;
 
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
@@ -282,7 +286,10 @@ export class BillingWebhookService {
     /** D251 — the exported Autopilot facade the tier write demotes through. */
     private readonly autopilot: AutopilotReadService,
     @Inject(BillingUpgradeRefundService) private readonly upgradeRefunds: UpgradeRefundPolicy,
-  ) {}
+    @Optional() @Inject(PRODUCT_EVENTS) productEvents?: ProductEventsPort,
+  ) {
+    this.productEvents = productEvents;
+  }
 
   async recoverUpgradeOperation(subscriptionId: string): Promise<void> {
     await this.upgradeRefunds.observeCompletedTransaction(subscriptionId);
@@ -1448,6 +1455,9 @@ export class BillingWebhookService {
     this.logger.log(
       `billing_event kind=payment_${event.outcome} tier=${tier} provider=${provider} sub=${event.providerSubscriptionId ?? 'none'}`,
     );
+    if (event.outcome === 'succeeded') {
+      recordProductEvent(this.productEvents, 'purchase_confirmed', { plan: tier });
+    }
     return { kind: 'processed', effect: `payment:${event.outcome}` };
   }
 

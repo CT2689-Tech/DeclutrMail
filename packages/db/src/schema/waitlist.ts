@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { boolean, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
 import { citext } from './_custom-types';
 import { workspaceTier } from './workspaces';
@@ -34,6 +34,15 @@ export const waitlist = pgTable(
     tierInterest: workspaceTier('tier_interest'),
     /** Free-form attribution (`pricing`, `reddit`, utm_source value, …). */
     source: text('source'),
+    /**
+     * Launch waitlist kind (`pro`) or null for a provider-capture row.
+     * Distinct from `tier_interest`, which is the marketing-form enum.
+     */
+    tier: text('tier'),
+    /** User-picked provider, or the classifier result when they didn't pick one. */
+    provider: text('provider'),
+    wouldPay: boolean('would_pay'),
+    contactOptIn: boolean('contact_opt_in').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),
@@ -41,6 +50,15 @@ export const waitlist = pgTable(
   (table) => ({
     /** Case-insensitive dedup + the submit-time "already signed up" lookup. */
     emailUniq: uniqueIndex('waitlist_email_uniq').on(table.email),
+    /**
+     * One row per address, launch tier, and provider. The older
+     * unique(email) still applies; dropping it is a flagged constraint change.
+     */
+    emailTierProviderUniq: uniqueIndex('waitlist_email_tier_provider_uniq').on(
+      table.email,
+      sql`coalesce(${table.tier}, '')`,
+      sql`coalesce(${table.provider}, '')`,
+    ),
   }),
 );
 
