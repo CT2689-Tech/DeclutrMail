@@ -27,6 +27,8 @@ async function freshDb(): Promise<DrizzleDb> {
 interface FakeQueue {
   add: ReturnType<typeof vi.fn>;
   getJob: ReturnType<typeof vi.fn>;
+  getBackend: () => { client: Promise<{ hexists: () => Promise<number> }> };
+  toKey: (id: string) => string;
 }
 
 /**
@@ -43,6 +45,10 @@ function fakeQueue(
 ): FakeQueue {
   return {
     add: vi.fn().mockResolvedValue(undefined),
+    // No prior delivery marker in this trigger fixture. Real marker/retention
+    // behavior is exercised with BullMQ and Redis in email-runtime-lease.test.
+    getBackend: () => ({ client: Promise.resolve({ hexists: async () => 0 }) }),
+    toKey: (id) => `bull:email-send:${id}`,
     getJob: vi
       .fn()
       .mockImplementation((jobId: string) =>

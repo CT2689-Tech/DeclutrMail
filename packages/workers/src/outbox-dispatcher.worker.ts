@@ -137,6 +137,8 @@ export interface OutboxObserver {
 /** Configuration knobs for the dispatcher. */
 export interface OutboxDispatcherDeps {
   db: WorkerDb;
+  /** Admission before claiming rows, so refusal preserves every retry budget. */
+  assertAdmission?: () => Promise<void>;
   /** Routes one claimed event to its downstream handler. */
   consumer: OutboxConsumer;
   /**
@@ -831,7 +833,7 @@ export class OutboxDispatcherWorker {
    *
    * Safe to call once per dispatcher instance. Re-entrant calls reject.
    */
-  async start(): Promise<void> {
+  async start(onReady?: () => Promise<void>): Promise<void> {
     if (this.pollHandle || this.unsubscribeListen) {
       throw new Error('OutboxDispatcherWorker already started');
     }
@@ -847,10 +849,16 @@ export class OutboxDispatcherWorker {
       });
     }
 
+    // The actual LISTEN connection is ready, but no initial claim has started.
+    // Runtime enrollment is performed at this boundary by the composition root.
+    await onReady?.();
+    if (this.shuttingDown) return;
+
     // Drain any backlog before returning so a boot-time enqueue does
     // not wait `pollIntervalMs` for its first delivery.
     await this.tick().catch((err) => this.logTickError(err));
 
+    if (this.shuttingDown) return;
     this.pollHandle = setInterval(() => {
       void this.tick().catch((err) => this.logTickError(err));
     }, this.pollIntervalMs);
@@ -892,6 +900,14 @@ export class OutboxDispatcherWorker {
       this.unsubscribeListen = null;
       await unsub();
     }
+  }
+
+  /** Called after stop() when runtime ownership is being relinquished. A tick
+   * timeout never proves its underlying consumer/Redis promise has settled. */
+  async drainOrphans(): Promise<void> {
+    if (!this.shuttingDown) throw new Error('Outbox dispatcher must stop before drain');
+    while (this.orphanedEvents.size)
+      await Promise.allSettled([...this.orphanedEvents.values()].map((o) => o.promise));
   }
 
   /**
@@ -1139,6 +1155,7 @@ export class OutboxDispatcherWorker {
     const failures: ConsumerFailure[] = [];
 
     try {
+      await this.deps.assertAdmission?.();
       await this.deps.db.transaction(async (tx) => {
         // Exclude every currently-orphaned (topic, aggregateId) unit
         // from the claim itself, rather than claiming it and skipping
