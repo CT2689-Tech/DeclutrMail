@@ -35,13 +35,18 @@ describe('parseEmailPrefs', () => {
     });
   });
 
-  it('falls back to defaults for malformed values and unknown keys', () => {
+  it('falls back to defaults for malformed known values', () => {
     expect(parseEmailPrefs({ emailPrefs: 'garbage' })).toEqual(DEFAULT_EMAIL_PREFS);
     expect(parseEmailPrefs({ emailPrefs: { reminders: 'yes' } })).toEqual(DEFAULT_EMAIL_PREFS);
-    expect(parseEmailPrefs({ emailPrefs: { reminders: false, marketing: true } })).toEqual(
-      DEFAULT_EMAIL_PREFS,
-    );
   });
+});
+
+it('ignores future keys without resurrecting known opt-outs', () => {
+  expect(
+    parseEmailPrefs({
+      emailPrefs: { reminders: false, syncComplete: false, briefReady: true, marketing: true },
+    }),
+  ).toEqual({ reminders: false, syncComplete: false, weeklyReceipt: false });
 });
 
 describe('EmailPrefsPatchSchema', () => {

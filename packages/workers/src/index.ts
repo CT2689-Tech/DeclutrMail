@@ -475,6 +475,8 @@ export {
   EMAIL_SEND_QUEUE,
   BILLING_EMAIL_SEND_QUEUE,
   BILLING_QUEUE_COMPATIBLE_WORKER_NAME,
+  EMAIL_PREFS_COMPATIBLE_WORKER_NAME,
+  readEmailPrefsQueueCompatibility,
   createBillingEmailSendConsumer,
   readBillingQueueCompatibility,
   emailSendJobOptions,
