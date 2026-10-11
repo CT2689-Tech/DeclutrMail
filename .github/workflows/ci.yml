@@ -475,6 +475,12 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.web == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # 302 files, dominated by per-file environment setup rather than a few
+    # heavy specs, so Vitest's own hash split balances them.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -483,7 +489,8 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @declutrmail/web test
+      # See the note on the API shard above — no `--` before the flag.
+      - run: pnpm --filter @declutrmail/web test --shard=${{ matrix.shard }}/${{ strategy.job-total }}
 
   build-web:
     name: Build — Web + bundle budget
