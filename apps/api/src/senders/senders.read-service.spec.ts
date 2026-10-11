@@ -15,7 +15,11 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
-import { grantedAiConsentInsert, PLAIN_STALE_CLAIM } from '@declutrmail/shared/ai-consent';
+import {
+  grantedAiConsentInsert,
+  PLAIN_STALE_CLAIM,
+  plainVolumeExplanation,
+} from '@declutrmail/shared/ai-consent';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -1855,6 +1859,36 @@ describe('SendersReadService', () => {
           scoredAt: producedAt.toISOString(),
           stale: false,
         });
+      });
+
+      it('replaces stored model prose on the next read after explanations are revoked', async () => {
+        const model = 'You read every message from this sender.';
+        const a = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'revoked-prose@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        await db.insert(triageDecisions).values({
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          verdict: 'keep',
+          confidence: '0.88',
+          reasoning: model,
+          generatedBy: 'llm_haiku',
+          producedAt: new Date('2026-05-20T10:00:00Z'),
+          expiresAt: new Date('2026-05-27T10:00:00Z'),
+        });
+        await db
+          .update(users)
+          .set({ aiExplanationsRevokedAt: new Date('2026-10-11T12:00:00Z') })
+          .where(eq(users.email, 'a@declutrmail.ai'));
+
+        const detail = await svc.getSenderDetail(mailboxId, a.id);
+        expect(detail!.recommendation?.generatedBy).toBe('template');
+        expect(detail!.recommendation?.reasoning).not.toBe(model);
+        expect(detail!.recommendation?.reasoning).toBe(
+          plainVolumeExplanation({ name: 'This sender', last90Count: 0, readRate: null }),
+        );
       });
 
       it('does not pair an old measured rate claim with a currently unknown read rate', async () => {

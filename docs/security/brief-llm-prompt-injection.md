@@ -19,9 +19,27 @@ consent (`2026-10`) for that scope and the scope is not revoked.
 
 Missing consent, a lookup error, or a kill switch skips the call. The
 user sees the rule-based explanation or the template Brief. Stored
-`llm_haiku` prose is not reused and is not shown: the read path
-replaces it with the plain volume text and stamps `generatedBy:
-template`.
+`llm_haiku` prose is not shown on the next read. Each read checks the
+current consent row and the kill switch; it does not wait for a worker.
+
+| Read                                                     | When consent is not current       | Replacement                                                                                                                           |
+| -------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Triage queue                                             | `showStoredExplanations` is false | Plain volume sentence, `generatedBy: template`                                                                                        |
+| Sender Detail recommendation                             | same                              | same                                                                                                                                  |
+| Screener queue recommendation                            | same                              | same                                                                                                                                  |
+| Daily Brief `GET /api/briefs/today` and the history list | `showStoredBrief` is false        | `renderBriefTemplateNarrative` (empty string when the day has mail, the quiet-day sentence when it does not), `generatedBy: template` |
+
+Not current means missing, revoked, declined, or a version other than
+`2026-10`. `EXPLAIN_LLM_ENABLED=false` hides stored explanation prose.
+`BRIEF_LLM_ENABLED=false` hides a stored Brief narrative. The frozen
+row is left as written. There is no backfill: a Brief stored as
+`template` before the user consents stays the template.
+
+`POST /api/triage/explain` queues work and returns ids only. It queues
+nothing unless `explanationsAllowed` is true. The account export lists
+Brief delivery dates, not narratives, and does not include suggestion
+reasoning. The Brief-ready email sends counts and a link, not the
+narrative.
 
 ## Kill switches
 

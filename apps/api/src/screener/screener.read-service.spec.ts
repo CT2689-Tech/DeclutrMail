@@ -10,9 +10,10 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
+import { grantedAiConsentInsert, plainVolumeExplanation } from '@declutrmail/shared/ai-consent';
 import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ScreenerReadService } from './screener.read-service.js';
 
@@ -541,22 +542,44 @@ describe('ScreenerReadService — the badge counts only what the queue can rende
   });
 });
 
+const MODEL_REASON = 'Two messages so far; too early to judge.';
+
 describe('ScreenerReadService — whose sentence the reason is (D24)', () => {
-  /**
-   * Explanations are bought on demand (founder decision 2026-09-25): a
-   * Screener sender's reason is usually the template until someone opens
-   * the row. The page asks for the LLM sentence only when the reason still
-   * needs one, which only the provenance can tell it.
-   */
-  it('reports whether a recommendation reason is the template or LLM prose', async () => {
-    const db = await freshDb();
-    const mailboxId = await seedMailbox(db, 'provenance');
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  async function queueWithModelReason(db: Db, mailboxId: string) {
     await seedQueuedSender(db, mailboxId, SENDER_A, 'alpha@new.example');
     await seedQueuedSender(db, mailboxId, SENDER_B, 'beta@fresh.example');
     await db
       .update(triageDecisions)
-      .set({ generatedBy: 'llm_haiku', reasoning: 'Two messages so far; too early to judge.' })
+      .set({ generatedBy: 'llm_haiku', reasoning: MODEL_REASON })
       .where(eq(triageDecisions.senderKey, SENDER_B));
+    // Outside the 90-day window on any clock this suite will run, so the
+    // plain fallback is the no-recent line rather than a volume that
+    // depends on today's date.
+    await db
+      .update(mailMessages)
+      .set({ internalDate: new Date('2020-01-01T00:00:00Z') })
+      .where(eq(mailMessages.mailboxAccountId, mailboxId));
+  }
+
+  /**
+   * Explanations are bought on demand (founder decision 2026-09-25): a
+   * Screener sender's reason is usually the template until someone opens
+   * the row. Provenance stays `llm_haiku` only while consent is current,
+   * which is what tells the page it already has the sentence.
+   */
+  it('reports LLM provenance only while explanations consent is current', async () => {
+    const db = await freshDb();
+    const mailboxId = await seedMailbox(db, 'provenance');
+    const [mailbox] = await db
+      .select({ userId: mailboxAccounts.userId })
+      .from(mailboxAccounts)
+      .where(eq(mailboxAccounts.id, mailboxId));
+    await db.update(users).set(grantedAiConsentInsert()).where(eq(users.id, mailbox!.userId));
+    await queueWithModelReason(db, mailboxId);
 
     const rows = await new ScreenerReadService(db as never).listQueue({
       mailboxAccountId: mailboxId,
@@ -566,5 +589,57 @@ describe('ScreenerReadService — whose sentence the reason is (D24)', () => {
 
     expect(byKey.get(SENDER_A)?.recommendation?.generatedBy).toBe('template');
     expect(byKey.get(SENDER_B)?.recommendation?.generatedBy).toBe('llm_haiku');
+    expect(byKey.get(SENDER_B)?.recommendation?.reasoning).toBe(MODEL_REASON);
+  });
+
+  it.each([
+    ['missing', {}],
+    ['revoked', { aiExplanationsRevokedAt: new Date('2026-10-02T00:00:00Z') }],
+    ['wrong-version', { aiConsentVersion: '2026-09' }],
+  ] as const)('serves the plain line when explanations consent is %s', async (_label, patch) => {
+    const db = await freshDb();
+    const mailboxId = await seedMailbox(db, `screener-${_label}`);
+    if (Object.keys(patch).length > 0) {
+      const [mailbox] = await db
+        .select({ userId: mailboxAccounts.userId })
+        .from(mailboxAccounts)
+        .where(eq(mailboxAccounts.id, mailboxId));
+      await db
+        .update(users)
+        .set({ ...grantedAiConsentInsert(), ...patch })
+        .where(eq(users.id, mailbox!.userId));
+    }
+    await queueWithModelReason(db, mailboxId);
+
+    const rows = await new ScreenerReadService(db as never).listQueue({
+      mailboxAccountId: mailboxId,
+      limit: 50,
+    });
+    const beta = rows.find((row) => row.senderKey === SENDER_B);
+    expect(beta?.recommendation?.generatedBy).toBe('template');
+    expect(beta?.recommendation?.reasoning).toBe(
+      plainVolumeExplanation({ name: 'beta', last90Count: 0, readRate: null }),
+    );
+    expect(beta?.recommendation?.reasoning).not.toBe(MODEL_REASON);
+  });
+
+  it('serves the plain line when EXPLAIN_LLM_ENABLED is false', async () => {
+    vi.stubEnv('EXPLAIN_LLM_ENABLED', 'false');
+    const db = await freshDb();
+    const mailboxId = await seedMailbox(db, 'screener-killed');
+    const [mailbox] = await db
+      .select({ userId: mailboxAccounts.userId })
+      .from(mailboxAccounts)
+      .where(eq(mailboxAccounts.id, mailboxId));
+    await db.update(users).set(grantedAiConsentInsert()).where(eq(users.id, mailbox!.userId));
+    await queueWithModelReason(db, mailboxId);
+
+    const rows = await new ScreenerReadService(db as never).listQueue({
+      mailboxAccountId: mailboxId,
+      limit: 50,
+    });
+    const beta = rows.find((row) => row.senderKey === SENDER_B);
+    expect(beta?.recommendation?.generatedBy).toBe('template');
+    expect(beta?.recommendation?.reasoning).not.toBe(MODEL_REASON);
   });
 });

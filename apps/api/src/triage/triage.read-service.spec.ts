@@ -11,7 +11,11 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
-import { grantedAiConsentInsert, PLAIN_STALE_CLAIM } from '@declutrmail/shared/ai-consent';
+import {
+  grantedAiConsentInsert,
+  PLAIN_STALE_CLAIM,
+  plainVolumeExplanation,
+} from '@declutrmail/shared/ai-consent';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -1024,5 +1028,34 @@ describe('TriageReadService.listQueue — whose sentence the reason is (D24)', (
 
     expect(byKey.get(SENDER_A)?.generatedBy).toBe('template');
     expect(byKey.get(SENDER_B)?.generatedBy).toBe('llm_haiku');
+  });
+
+  it('replaces stored model prose on the next read after explanations are revoked', async () => {
+    const db = await freshDb();
+    const mailboxId = await seedMailbox(db, 'revoked-prose');
+    await seedSenderWithDecision(db, mailboxId, SENDER_A, 'revoked@declutrmail.ai');
+    const model = 'Rarely opened; archiving keeps it findable.';
+    await db
+      .update(triageDecisions)
+      .set({ generatedBy: 'llm_haiku', reasoning: model })
+      .where(eq(triageDecisions.senderKey, SENDER_A));
+    await db
+      .update(users)
+      .set({ aiExplanationsRevokedAt: new Date('2026-10-11T12:00:00Z') })
+      .where(eq(users.email, 'revoked-prose@declutrmail.ai'));
+
+    const [row] = await new TriageReadService(db as never).listQueue({
+      mailboxAccountId: mailboxId,
+      limit: 10,
+    });
+    expect(row?.generatedBy).toBe('template');
+    expect(row?.reasoning).not.toBe(model);
+    expect(row?.reasoning).toBe(
+      plainVolumeExplanation({
+        name: 'revoked@declutrmail.ai',
+        last90Count: 0,
+        readRate: null,
+      }),
+    );
   });
 });
