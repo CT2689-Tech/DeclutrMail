@@ -130,7 +130,11 @@ export const REFUNDS_PAGE_WINDOW_DAYS = 30;
  */
 export function refundSentence(): string {
   if (ws3Tokens().refundDays === '') return '';
-  if (REFUNDS_PAGE_WINDOW_DAYS !== POLICY.refundWindowDays) return '';
+  // Widened: a literal `30 !== 14` is a type error, and the two
+  // constants have to be comparable again once they are the same number.
+  const publishedDays: number = REFUNDS_PAGE_WINDOW_DAYS;
+  const policyDays: number = POLICY.refundWindowDays;
+  if (publishedDays !== policyDays) return '';
   return refundLine();
 }
 
