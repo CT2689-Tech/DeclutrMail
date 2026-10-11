@@ -9,7 +9,7 @@ export const PAGE_LAST_UPDATED = {
   '/privacy': '2026-10-10',
   '/cookies': '2026-09-18',
   '/help': '2026-10-10',
-  '/security': '2026-08-07',
+  '/security': '2026-10-11',
   '/refunds': '2026-10-10',
   '/terms': '2026-10-10',
   '/contact': '2026-07-07',

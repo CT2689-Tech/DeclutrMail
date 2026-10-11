@@ -28,6 +28,7 @@ import {
   PRIVACY_STORAGE_ITEMS,
   PRIVACY_NEVER_ITEMS,
 } from '@declutrmail/shared';
+import { REFUNDS_PAGE_WINDOW_DAYS } from '@declutrmail/shared/copy/launch';
 import { storeConsent } from '@/lib/cookie-consent';
 
 import PrivacyPolicyPage from './privacy/page';
@@ -94,6 +95,7 @@ describe('/refunds content — D121 canonical refund terms', () => {
     const { container } = render(<RefundPolicyPage />);
     const text = container.textContent ?? '';
     expect(text).toContain('30-day money-back guarantee');
+    expect(text).toContain(`${REFUNDS_PAGE_WINDOW_DAYS}-day money-back guarantee`);
     expect(text).toContain('within 30 days');
     expect(text).toMatch(/every paid plan/i);
     // The interim 14-day pro-rata default must be fully gone.
@@ -156,7 +158,8 @@ describe('/privacy content — D7 + D228 posture', () => {
     const { container } = render(<PrivacyPolicyPage />);
     const text = (container.textContent ?? '').replace(/\s+/g, ' ');
 
-    expect(text).toContain('full email contents or attachments, they cannot leak from DeclutrMail');
+    expect(text).toContain('no message body in our systems to leak');
+    expect(text).not.toMatch(/cannot leak/i);
     expect(text).toContain(
       'Subject lines and Gmail preview snippets can still contain sensitive information',
     );

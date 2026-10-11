@@ -205,7 +205,7 @@ describe('PricingScreen (D19)', () => {
     expect(screen.getByText(/Gmail Trash for up to 30 days/)).toBeInTheDocument();
     expect(screen.getByText(/unsubscribe request cannot be taken back/)).toBeInTheDocument();
     expect(screen.getByText(/30-day money-back guarantee/)).toBeInTheDocument();
-    expect(screen.getByText(/gmail\.modify/)).toBeInTheDocument();
+    expect(screen.getAllByText(/gmail\.modify/).length).toBeGreaterThan(0);
     expect(screen.getByRole('link', { name: 'Review Gmail permissions' })).toHaveAttribute(
       'href',
       '/sign-in',

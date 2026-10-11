@@ -21,7 +21,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
-import { TIER_MANIFEST } from '@declutrmail/shared';
+import { buildOffersJsonLd } from '@declutrmail/shared/entitlements';
 
 import { siteUrl } from '@/features/marketing/landing/urls';
 
@@ -107,6 +107,9 @@ describe('(marketing) layout JSON-LD — D132 SEO batch', () => {
       name: 'DeclutrMail',
       url: 'https://declutrmail.com',
       logo: 'https://declutrmail.com/icons/icon-512.png',
+      disambiguatingDescription:
+        'DeclutrMail is a Gmail cleanup app. It is not affiliated with Decluttr (decluttr.com) or DeclutterMyMail.',
+      alternateName: ['Declutr Mail'],
     });
     expect(website).toMatchObject({
       name: 'DeclutrMail',
@@ -126,41 +129,14 @@ describe('(marketing) layout JSON-LD — D132 SEO batch', () => {
     expect(org).not.toHaveProperty('sameAs');
   });
 
-  it('derives one Offer per purchasable price point PER BUYABLE CURRENCY — and never the promo', () => {
+  it('uses the WS1 offers builder and omits sameAs while the profile list is empty', () => {
     const { container } = renderLayout();
-    const app = readJsonLd(container)['@graph'].find(
-      (node) => node['@type'] === 'SoftwareApplication',
-    ) as {
-      offers: Array<{ '@type': string; name: string; price: number; priceCurrency: string }>;
+    const graph = readJsonLd(container)['@graph'];
+    const org = graph.find((node) => node['@type'] === 'Organization');
+    const app = graph.find((node) => node['@type'] === 'SoftwareApplication') as {
+      offers: object[];
     };
-
-    // A point sells in USD always, and in INR only once Razorpay carries
-    // it. Enumerating both beats resolving by request IP: the page quotes
-    // the visitor's rail, so a single-currency graph would contradict the
-    // rendered price for half the world — but varying the graph by IP
-    // would make it change between crawls.
-    const expected = Object.values(TIER_MANIFEST)
-      .filter((tier) => tier.purchasable)
-      .flatMap((tier) =>
-        (['monthly', 'annual'] as const).flatMap((cycle) => {
-          const price = tier.prices[cycle];
-          if (!price) return [];
-          const name = price.usdCents === 0 ? tier.name : `${tier.name} — ${cycle}`;
-          const offers = [{ name, price: price.usdCents / 100, priceCurrency: 'USD' }];
-          return offers;
-        }),
-      );
-
-    expect(
-      app.offers.map(({ name, price, priceCurrency }) => ({ name, price, priceCurrency })),
-    ).toEqual(expected);
-    // Approved pause: reference INR prices must not advertise a buyable Offer.
-    expect(app.offers.some((offer) => offer.priceCurrency === 'INR')).toBe(false);
-    expect(app.offers.every((offer) => offer['@type'] === 'Offer')).toBe(true);
-    // The Founding Pro promo is a limited-redemption price — it must
-    // not be baked into structured data that cannot expire with it.
-    const promoPrice = TIER_MANIFEST.pro.promo!.annual.usdCents / 100;
-    expect(app.offers.some((offer) => offer.price === promoPrice)).toBe(false);
-    expect(app.offers.some((offer) => /founding/i.test(offer.name))).toBe(false);
+    expect(app.offers).toEqual(buildOffersJsonLd());
+    expect(org).not.toHaveProperty('sameAs');
   });
 });

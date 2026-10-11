@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { declutrPriceDetail, declutrPriceSummary } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import {
@@ -22,7 +22,14 @@ const EXPECTED_SLUGS = [
   'gmail-filters',
   'gmail',
   'meta-muse',
+  'mailstrom',
+  'inboxpurge',
+  'mailmop',
 ];
+
+const ORIGINAL_SLUGS = EXPECTED_SLUGS.filter(
+  (slug) => slug !== 'mailstrom' && slug !== 'inboxpurge' && slug !== 'mailmop',
+);
 
 describe('comparison data', () => {
   it('keeps vendor-specific caveats that change the purchase or privacy decision', () => {
@@ -34,7 +41,7 @@ describe('comparison data', () => {
     expect(sanebox).not.toMatch(/7-day trial|1\/2\/4|2\/6\/all/);
     expect(sanebox).toContain('AI summaries and reply drafts');
     expect(JSON.stringify(comparisonBySlug('unroll-me'))).toContain(
-      'additional restrictions for Gmail API data',
+      'additional Gmail API restrictions',
     );
     expect(JSON.stringify(comparisonBySlug('gmail'))).toContain('goes to Spam');
     expect(JSON.stringify(comparisonBySlug('meta-muse'))).toContain('enabled initially');
@@ -52,7 +59,8 @@ describe('comparison data', () => {
     for (const comparison of COMPARISONS) {
       expect(comparison.chooseCompetitor.points.length).toBeGreaterThanOrEqual(3);
       expect(comparison.chooseDeclutrMail.points.length).toBeGreaterThanOrEqual(3);
-      expect(comparison.verdict).toContain(comparison.name);
+      const named = comparison.slug === 'gmail' ? 'Gmail' : comparison.name;
+      expect(comparison.verdict).toContain(named);
       expect(comparison.verdict).toContain('DeclutrMail');
     }
   });
@@ -71,10 +79,15 @@ describe('comparison data', () => {
       // Meta publishes Muse's product facts across its newsroom and help center.
       'about.fb.com',
       'www.meta.com',
+      'mailstrom.co',
+      'www.inboxpurge.com',
+      'www.mailmop.com',
+      'github.com',
     ]);
 
     for (const comparison of COMPARISONS) {
-      expect(comparison.sources.length).toBeGreaterThanOrEqual(3);
+      const minimum = ORIGINAL_SLUGS.includes(comparison.slug) ? 3 : 2;
+      expect(comparison.sources.length).toBeGreaterThanOrEqual(minimum);
       for (const source of comparison.sources) {
         const url = new URL(source.url);
         expect(url.protocol).toBe('https:');
@@ -102,15 +115,18 @@ describe('comparison data', () => {
     expect(copy).toContain('does not automatically become a future-mail rule');
     expect(copy).toContain('Unsubscribe is not a reversible DeclutrMail action');
     expect(copy).not.toMatch(/every decision keeps running|all actions are undoable/i);
-    for (const point of [
-      TIER_MANIFEST.plus.prices.monthly,
-      TIER_MANIFEST.plus.prices.annual,
-      TIER_MANIFEST.pro.prices.monthly,
-      TIER_MANIFEST.pro.prices.annual,
-      TIER_MANIFEST.pro.promo?.annual,
-    ]) {
-      expect(point).toBeTruthy();
-      expect(copy).toContain(`$${(point?.usdCents ?? 0) / 100}`);
+    expect(copy).not.toMatch(/founding offer/i);
+    const summary = declutrPriceSummary();
+    const detail = declutrPriceDetail();
+    if (summary === '') {
+      for (const comparison of COMPARISONS) {
+        const price = comparison.rows.find((row) => row.label === 'Public starting point');
+        expect(price?.declutrMail.summary).toBe('');
+        expect(price?.declutrMail.detail ?? '').toBe('');
+      }
+    } else {
+      expect(copy).toContain(summary);
+      expect(copy).toContain(detail);
     }
   });
 
@@ -167,7 +183,7 @@ describe('comparison data', () => {
 
     const funding = unrollMe.rows.find((row) => row.label === 'How the product is funded');
     // The vendor says this about itself; we quote rather than characterize.
-    expect(funding?.competitor.detail).toContain('market research business, NielsenIQ');
+    expect(funding?.competitor.detail).toContain('owned by NielsenIQ');
 
     const history = unrollMe.rows.find((row) => row.label === 'Disclosure history');
     // "Alleged" is the FTC's own framing of a settled complaint. Stating it

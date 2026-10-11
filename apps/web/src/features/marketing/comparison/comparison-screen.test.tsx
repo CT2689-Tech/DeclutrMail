@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fillWs3, WS3_COPY, ws3Tokens } from '@declutrmail/shared/copy/launch';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { track } = vi.hoisted(() => ({ track: vi.fn(async () => undefined) }));
@@ -81,6 +82,20 @@ describe('ComparisonIndexScreen', () => {
       cta: 'see_pricing',
       placement: 'final',
     });
+  });
+});
+
+describe('comparison refund line', () => {
+  it('shows no money-back sentence on /vs and /compare while refundDays is blank', () => {
+    expect(ws3Tokens().refundDays).toBe('');
+    const index = render(<ComparisonIndexScreen />);
+    expect(index.container.textContent ?? '').not.toMatch(/-day money-back/);
+    index.unmount();
+    for (const comparison of COMPARISONS) {
+      const view = render(<ComparisonDetailScreen comparison={comparison} />);
+      expect(view.container.textContent ?? '', comparison.slug).not.toMatch(/-day money-back/);
+      view.unmount();
+    }
   });
 });
 
@@ -181,7 +196,9 @@ describe('AlternativesScreen cross-links', () => {
     const heading = screen.getByRole('heading', { level: 1 });
     expect(heading.childNodes).toHaveLength(1);
     expect(heading).toHaveTextContent('Trimbox alternatives for Gmail cleanup');
-    expect(document.querySelector('.dm-compare-lede')).toHaveTextContent(/^Looking past Trimbox\?/);
+    expect(document.querySelector('.dm-compare-lede')).toHaveTextContent(
+      fillWs3(WS3_COPY['ws3.vs.alternatives.verdict'], { Competitor: 'Trimbox' }),
+    );
     expect(screen.getByRole('link', { name: 'Read the full Trimbox comparison' })).toHaveAttribute(
       'href',
       '/vs/trimbox',

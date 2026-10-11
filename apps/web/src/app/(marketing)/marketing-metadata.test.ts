@@ -250,14 +250,14 @@ describe('marketing metadata guards', () => {
 
     const gmail = await metadataForPath('/vs/gmail');
     expect(titleText(gmail)).toBe(
-      "DeclutrMail vs Gmail's built-in cleanup — honest 2026 comparison",
+      "DeclutrMail vs Gmail's built-in cleanup — compared, October 2026",
     );
     expect(gmail.description).toBe(
       "A source-backed comparison of DeclutrMail and Gmail's cleanup tools (Manage subscriptions, bulk search, unsubscribe): preview, recovery and control by sender.",
     );
 
     const muse = await metadataForPath('/vs/meta-muse');
-    expect(titleText(muse)).toBe('DeclutrMail vs Meta Muse — honest 2026 comparison');
+    expect(titleText(muse)).toBe('DeclutrMail vs Meta Muse — compared, October 2026');
     expect(muse.description).toBe(
       'Source-backed: DeclutrMail, a narrow Gmail cleanup tool that never fetches full message contents, vs Meta Muse, a general AI agent that can read and send mail.',
     );
@@ -270,7 +270,7 @@ describe('marketing metadata guards', () => {
       ['/alternatives/trimbox', 'Trimbox'],
     ] as const) {
       const metadata = await metadataForPath(path);
-      expect(titleText(metadata)).toBe(`${name} alternatives, compared honestly`);
+      expect(titleText(metadata)).toBe(`${name} alternatives — DeclutrMail`);
       expect(metadata.description).toBe(
         `Source-backed alternatives to ${name}: what each tool is for, when to stay with ${name}, and where DeclutrMail fits. No rankings, no affiliates.`,
       );

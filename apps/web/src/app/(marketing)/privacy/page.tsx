@@ -13,7 +13,6 @@
 import type { Metadata } from 'next';
 import {
   ACTION_SAFETY_SUMMARY,
-  AI_PROCESSING_DISCLOSURE,
   ANALYTICS_PRIVACY_CLAIM,
   CASA_VERIFICATION_APPROVED_ON,
   PRIVACY_BADGE_HEADLINE,
@@ -23,6 +22,7 @@ import {
   PRIVACY_NEVER_LABEL,
 } from '@declutrmail/shared';
 import { MAX_UNDO_WINDOW_DAYS, MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import { gatedText, WS3_COPY } from '@declutrmail/shared/copy/launch';
 
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
@@ -46,6 +46,7 @@ const TOC = [
   { id: 'how-we-use-data', label: 'How we use your data' },
   { id: 'cookies', label: 'Cookies and analytics' },
   { id: 'retention-deletion', label: 'Data retention and deletion' },
+  { id: 'ai-processing', label: 'AI processing' },
   { id: 'subprocessors', label: 'Subprocessors' },
   { id: 'your-rights', label: 'Your rights (GDPR and DPDP)' },
   { id: 'security', label: 'Security' },
@@ -285,6 +286,21 @@ export default function PrivacyPolicyPage() {
         </p>
       </LegalSection>
 
+      <LegalSection id="ai-processing" title={gatedText('ws3.privacy.ai.title') || 'AI processing'}>
+        {gatedText('ws3.privacy.ai.who') ? <p>{gatedText('ws3.privacy.ai.who')}</p> : null}
+        {gatedText('ws3.privacy.ai.explanations') ? (
+          <p>{gatedText('ws3.privacy.ai.explanations')}</p>
+        ) : null}
+        {gatedText('ws3.privacy.ai.brief') ? <p>{gatedText('ws3.privacy.ai.brief')}</p> : null}
+        {gatedText('ws3.privacy.ai.retention') ? (
+          <p>{gatedText('ws3.privacy.ai.retention')}</p>
+        ) : null}
+        {gatedText('ws3.privacy.ai.training') ? (
+          <p>{gatedText('ws3.privacy.ai.training')}</p>
+        ) : null}
+        {gatedText('ws3.privacy.ai.humans') ? <p>{gatedText('ws3.privacy.ai.humans')}</p> : null}
+      </LegalSection>
+
       <LegalSection id="subprocessors" title="8. Subprocessors">
         <p>
           We use a small set of infrastructure providers to run DeclutrMail. Each processes data
@@ -324,10 +340,7 @@ export default function PrivacyPolicyPage() {
             </tr>
             <tr>
               <td>Anthropic</td>
-              <td>
-                Suggestion explanations and Pro Brief summaries. A Pro Brief can include the subject
-                line and Gmail preview snippet, but never full email contents.
-              </td>
+              <td>{gatedText('ws3.privacy.subprocessors.anthropic')}</td>
             </tr>
             <tr>
               <td>Brandfetch</td>
@@ -357,7 +370,7 @@ export default function PrivacyPolicyPage() {
             </tr>
           </tbody>
         </table>
-        <p>{AI_PROCESSING_DISCLOSURE}</p>
+        <p>{gatedText('ws3.privacy.aiDisclosureConst')}</p>
         <p>We will update this list before adding a new subprocessor that handles personal data.</p>
       </LegalSection>
 
@@ -389,9 +402,7 @@ export default function PrivacyPolicyPage() {
         <p>
           All data is encrypted in transit (TLS) and at rest. OAuth tokens are additionally
           envelope-encrypted with a managed key service. Access to production systems is limited and
-          logged. Because we never store full email contents or attachments, they cannot leak from
-          DeclutrMail. Subject lines and Gmail preview snippets can still contain sensitive
-          information, so we list and protect them explicitly in Section 2.
+          logged. {WS3_COPY['ws3.security.boundary.callout']}
         </p>
       </LegalSection>
 

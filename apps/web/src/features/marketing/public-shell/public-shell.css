@@ -1,19 +1,35 @@
 .dm-public-skip {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.dm-public-skip:focus,
+.dm-public-skip:focus-visible {
   position: fixed;
   top: 8px;
   left: 12px;
   z-index: 200;
-  transform: translateY(-160%);
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  clip-path: none;
+  white-space: normal;
   padding: 8px 12px;
   border-radius: 7px;
   background: var(--dm-fg);
   color: var(--dm-fg-inverse);
   font: 600 13px/1 var(--dm-font-sans);
   text-decoration: none;
-}
-
-.dm-public-skip:focus {
-  transform: translateY(0);
 }
 
 /* Sticky, and quiet until the page moves: transparent over the hero,
@@ -147,9 +163,15 @@
   transform: scale(0.98);
 }
 
-.dm-public-menu {
+.dm-public-menu-cluster {
   display: none;
   margin-left: auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.dm-public-menu {
+  display: none;
   position: relative;
 }
 
@@ -173,24 +195,26 @@
   color: var(--dm-fg-inverse);
 }
 
-/* A full-height sheet under the header bar; the page behind it stops
-   scrolling while it is open. The header's backdrop-filter makes the
-   HEADER this fixed element's containing block, so it is placed from the
-   header's bottom edge and sized to the rest of the viewport. */
+/* A full-height sheet under the header. On small screens the header
+   drops backdrop-filter, so a fixed child is positioned against the
+   viewport: top: 100% used to start the sheet one viewport below the
+   fold. Anchor it to the measured header height instead. */
 .dm-public-menu nav {
   position: fixed;
-  top: 100%;
+  top: var(--dm-public-header-offset, 76px);
   right: 0;
+  bottom: 0;
   left: 0;
-  height: calc(100dvh - 68px);
+  z-index: 50;
+  height: auto;
   display: flex;
   flex-direction: column;
-  padding: 20px 20px calc(28px + env(safe-area-inset-bottom));
+  padding: 8px 20px calc(28px + env(safe-area-inset-bottom));
   overflow-y: auto;
   background: var(--dm-bg);
 }
 
-body:has(.dm-public-menu[data-open='true']) {
+body.dm-public-menu-open {
   overflow: hidden;
 }
 
@@ -299,18 +323,39 @@ body:has(.dm-public-menu[data-open='true']) {
 }
 
 @media (max-width: 880px) {
+  .dm-public-header {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
   .dm-public-nav,
-  .dm-public-actions {
+  .dm-public-actions,
+  .dm-public-theme-toggle {
     display: none;
   }
 
+  .dm-public-menu-cluster,
   .dm-public-menu {
-    display: block;
-    margin-left: 0;
+    display: flex;
+    flex-shrink: 0;
   }
 
-  .dm-public-theme-toggle {
-    margin-left: auto;
+  .dm-public-mobile-cta,
+  .dm-public-menu-button {
+    white-space: nowrap;
+  }
+
+  .dm-public-mobile-cta {
+    min-height: 40px;
+    padding-inline: 12px;
+  }
+
+  .dm-public-menu-button {
+    padding-inline: 12px;
+  }
+
+  .dm-public-footer-groups nav[aria-label='Compare'] a:nth-child(n + 8) {
+    display: none;
   }
 
   .dm-public-footer-inner {
@@ -395,8 +440,9 @@ body:has(.dm-public-menu[data-open='true']) {
   padding-block: 3px;
   color: var(--dm-fg-soft);
 }
-.dm-public-menu nav {
-  height: calc(100dvh - 76px);
+.dm-public-menu-theme {
+  align-self: flex-start;
+  margin: 16px 0 8px;
 }
 .dm-public-header :is(a, button):focus-visible {
   outline: 2px solid var(--dm-primary);

@@ -92,7 +92,10 @@ describe('PublicHeader auth entry', () => {
     for (const label of ['How it works', 'Pricing', 'Demo', 'Compare', 'Privacy & control']) {
       expect(mobile.getByRole('link', { name: label })).toBeInTheDocument();
     }
-    expect(screen.getByRole('button', { name: /Switch to (dark|light) mode/ })).toBeInTheDocument();
+    expect(container.querySelector('.dm-public-theme-toggle')).toBeTruthy();
+    expect(
+      screen.getAllByRole('button', { name: /Switch to (dark|light) mode/ }).length,
+    ).toBeGreaterThan(0);
   });
 
   it('hydrates the public theme control without a server/client mismatch', async () => {
@@ -134,7 +137,7 @@ describe('PublicFooter directory', () => {
 
     expect(
       within(footer.getByRole('navigation', { name: 'Compare' })).getAllByRole('link'),
-    ).toHaveLength(14);
+    ).toHaveLength(17);
     expect(
       within(footer.getByRole('navigation', { name: 'Guides' })).getAllByRole('link'),
     ).toHaveLength(7);

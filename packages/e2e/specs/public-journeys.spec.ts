@@ -57,7 +57,7 @@ test('guide visitor evaluates privacy and pricing, tries cleanup and undo, then 
   const annual = page.getByRole('button', { name: 'Annual — 2 months free', exact: true });
   await annual.click();
   await expect(annual).toHaveAttribute('aria-pressed', 'true');
-  await follow(page, '/inbox-simulator');
+  await follow(page, '/inbox-simulator?workspace=senders');
   await page.getByRole('checkbox', { name: 'Select all visible senders' }).check();
   await page.locator('.dm-senders-demo-selection').getByRole('button', { name: 'Archive' }).click();
   const preview = page.getByRole('dialog');

@@ -75,7 +75,7 @@ const LEGACY_PATH_MAP: Record<string, string> = {
   // the Leave Me Alone comparison in its own footer nav.
   '/compare/declutrmail-vs-unroll-me-vs-leave-me-alone': '/vs/unroll-me',
   // Mailstrom still has no V2 page — the index is the honest target.
-  '/compare/mailstrom-vs-declutrmail': '/compare',
+  '/compare/mailstrom-vs-declutrmail': '/vs/mailstrom',
 
   // --- Guides: V2 has no `/guides` section; content split how-to/answers
   '/guides': '/help',
@@ -96,8 +96,7 @@ const LEGACY_PATH_MAP: Record<string, string> = {
   // --- Misc V1-only sections ------------------------------------------
   '/topics': '/blog',
   '/tools/email-cleanup-calculator': '/inbox-simulator',
-  // V2 serves `/llms.txt` only; the other two AI-context files are gone.
-  '/llms-full.txt': '/llms.txt',
+  // `/llms-full.txt` is a live V2 route. `/ai.txt` is not.
   '/ai.txt': '/llms.txt',
 
   // --- V1 app routes: never indexed (robots-disallowed), but bookmarked

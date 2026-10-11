@@ -1,7 +1,7 @@
 /**
  * llms.txt reconciliation (D132 SEO batch, AEO/GEO).
  *
- * `public/llms.txt` is a hand-curated guide for LLM crawlers, but it must
+ * `/llms.txt` is a generated guide for LLM crawlers, but it must
  * not drift out of sync with the actual public surface — `/cookies` was
  * missing and `/beta` was in neither llms.txt nor the sitemap. This pins
  * llms.txt to the SAME `MARKETING_PATHS` array the sitemap is built from,
@@ -9,18 +9,16 @@
  * and the next omission fails here.
  */
 
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { describe, expect, it } from 'vitest';
+
+import { renderPricingMarkdown } from '@declutrmail/shared/entitlements';
+import { WS3_COPY } from '@declutrmail/shared/copy/launch';
+
+import { renderLlmsFullTxt, renderLlmsTxt } from '@/features/marketing/llms/llms-document';
 
 import { MARKETING_PATHS } from './sitemap';
 
-const LLMS_TXT = readFileSync(
-  path.join(path.dirname(fileURLToPath(import.meta.url)), '../../public/llms.txt'),
-  'utf8',
-);
+const LLMS_TXT = renderLlmsTxt();
 
 describe('llms.txt — marketing surface reconciliation', () => {
   it.each(MARKETING_PATHS)('references the public marketing route %s', (route) => {
@@ -37,7 +35,23 @@ describe('llms.txt — marketing surface reconciliation', () => {
     // now its own inaccuracy. The guard stays pointed the same way: name
     // the dated approval, never imply a certificate or letter, because the
     // artifact is an approval email and nothing else.
-    expect(LLMS_TXT).toContain('OAuth verification approved 21 April 2026');
-    expect(LLMS_TXT).not.toMatch(/CASA Tier 2 (verification|certificate|letter)/i);
+    expect(LLMS_TXT).toContain(
+      'Google OAuth verification for gmail.modify approved April 21, 2026',
+    );
+    expect(LLMS_TXT).toContain('brand verification approved August 18, 2026');
+    expect(LLMS_TXT).toContain('CASA Tier 2 letter of validation submitted April 15, 2026');
+    expect(LLMS_TXT).not.toMatch(/under CASA/);
+    expect(LLMS_TXT).not.toMatch(/\bcertified\b/i);
+    expect(LLMS_TXT).not.toMatch(/\baudited\b/i);
+    expect(LLMS_TXT.startsWith(WS3_COPY['ws3.llms.disambiguation'])).toBe(true);
+    const pricing = renderPricingMarkdown().trim();
+    if (pricing) {
+      expect(LLMS_TXT).toContain('## Pricing');
+      expect(LLMS_TXT).toContain(pricing);
+    } else {
+      expect(LLMS_TXT).not.toMatch(/^## Pricing\s*$/m);
+    }
+    expect(renderLlmsFullTxt()).toContain(LLMS_TXT.trim());
+    expect(renderLlmsFullTxt()).toContain('## Mailstrom vs DeclutrMail');
   });
 });
