@@ -21,8 +21,9 @@ those decisions. WS4b is out of scope. PR #972 stays paused.
   The 14 October staging walk of qa1–qa5 is manual and separate.
 - Dependabot rebase is disabled and each ecosystem is capped at 3 open PRs
   until 3 November 2026. The existing update groups stay.
-- Push-to-main CI can skip only when a successful `merge_group` run exists
-  for the identical SHA. That commit needs Chintan's policy OK.
+- Push-to-main CI dedupe is not in this PR. The commit is on
+  `codex/ws4a-ci-dedupe` and waits for Chintan's policy OK. No pull
+  request was opened for it.
 
 ## Decisions assumed
 
@@ -51,9 +52,6 @@ those decisions. WS4b is out of scope. PR #972 stays paused.
   worker `exit(0)` does not page.
 - `--runtime --apply` refuses until a fresh `source=recovery` success
   exists. Apply after the Q1 deploy, not before.
-- Squash merges produce a different SHA from the merge-queue run, so the
-  identical-SHA short-circuit will not fire until the queued commit is the
-  commit that lands. A different SHA is not treated as a match.
 
 ## Manual steps
 
@@ -69,7 +67,6 @@ size ships on the next `deploy-cloud-run` of this commit.
    `node scripts/setup-infra-alerts.mjs declutrmail-ai-prod --runtime --apply`
 4. On 14 October, walk qa1–qa5 in staging using
    `docs/runbooks/first-sync-load-rehearsal.md`. Do not use production users.
-5. Chintan decides whether the identical-SHA CI short-circuit is accepted.
 
 ## Checks
 
