@@ -105,14 +105,12 @@ export const mailMessages = pgTable(
      * from `building_sender_index` — their `From` is the user themself,
      * not a third-party sender.
      *
-     * Deliberately UNINDEXED. `building_sender_index` selects with
-     * `WHERE mailbox_account_id = ? AND is_outbound = false` — the
-     * predicate matches the inbound MAJORITY (~70–90% of rows), so a
-     * partial index would pay a write-amplification tax per INSERT for
-     * essentially no read win. The existing `(mailbox_account_id, …)`
-     * indexes prefix-match the mailbox filter; the planner heap-filters
-     * `is_outbound` from there. Reviewed + intentional (D150 pattern is
-     * for SELECTIVE predicates, e.g. `is_unread = true`).
+     * A mailbox-wide `is_outbound = false` scan is still not its own
+     * index: that predicate matches the inbound majority. The 0090
+     * partial index is narrower — `(mailbox, sender_key, size_bytes)`
+     * where outbound is false — so the per-sender size SUM can be
+     * index-only. `building_sender_index` keeps using the mailbox
+     * prefix indexes and heap-filters outbound.
      */
     isOutbound: boolean('is_outbound').notNull().default(false),
     /**
@@ -150,8 +148,8 @@ export const mailMessages = pgTable(
      * ADR-0021 stay NULL until an optional backfill worker fills them
      * (FOUNDER-FOLLOWUPS 2026-06-06). The Sender Detail Recent Messages
      * row renders an em-dash on NULL rather than a misleading "0B".
-     * Deliberately UNINDEXED — display-only data; no read path filters
-     * or sorts on size.
+     * The per-sender SUM is backed by
+     * `mail_messages_account_sender_inbound_size_idx` (migration 0090).
      */
     sizeBytes: integer('size_bytes'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
@@ -242,6 +240,15 @@ export const mailMessages = pgTable(
     nonMailIdx: index('mail_messages_non_mail_idx')
       .on(table.mailboxAccountId, table.internalDate)
       .where(sql`${table.labelIds} && ARRAY['DRAFT','CHAT']::text[]`),
+    /**
+     * Migration 0090 — the correlated SUM behind Senders' size column,
+     * size sort, and size cursor. Inbound only, Trash included, so the
+     * predicate is `is_outbound = false` and the key can answer the sum
+     * without a heap visit for size_bytes.
+     */
+    inboundSizeIdx: index('mail_messages_account_sender_inbound_size_idx')
+      .on(table.mailboxAccountId, table.senderKey, table.sizeBytes)
+      .where(sql`${table.isOutbound} = false`),
     /** Migration 0081: live cleanup scope, including archived inbound mail.
      * Must match Senders' hasCurrentMail predicate, including label order.
      */

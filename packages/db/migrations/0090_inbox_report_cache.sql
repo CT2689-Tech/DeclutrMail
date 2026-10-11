@@ -11,3 +11,5 @@ CREATE TABLE "inbox_report_cache" (
 ALTER TABLE "inbox_report_cache" ADD CONSTRAINT "inbox_report_cache_mailbox_account_id_mailbox_accounts_id_fk" FOREIGN KEY ("mailbox_account_id") REFERENCES "public"."mailbox_accounts"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
 ALTER TABLE "inbox_report_cache" ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+CREATE INDEX "mail_messages_account_sender_inbound_size_idx" ON "mail_messages" USING btree ("mailbox_account_id","sender_key","size_bytes") WHERE "is_outbound" = false;

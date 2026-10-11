@@ -1,5 +1,7 @@
 -- Rollback for 0090_inbox_report_cache.sql
 
+DROP INDEX "mail_messages_account_sender_inbound_size_idx";
+--> statement-breakpoint
 ALTER TABLE "inbox_report_cache" DROP CONSTRAINT "inbox_report_cache_mailbox_account_id_mailbox_accounts_id_fk";
 --> statement-breakpoint
 DROP TABLE "inbox_report_cache";
