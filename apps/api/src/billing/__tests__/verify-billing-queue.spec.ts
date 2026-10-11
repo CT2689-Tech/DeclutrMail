@@ -5,12 +5,14 @@ const f = vi.hoisted(() => ({
   queue: { on: vi.fn(), close: vi.fn(async () => undefined) },
   construct: vi.fn(),
   connect: vi.fn(),
+  readPrefs: vi.fn(async () => ({ workers: 1 })),
   read: vi.fn(async () => ({ workers: 1 })),
 }));
 vi.mock('@declutrmail/workers', () => ({
   createRedisConnection: f.connect,
   EMAIL_SEND_QUEUE: 'email-send',
   readBillingQueueCompatibility: f.read,
+  readEmailPrefsQueueCompatibility: f.readPrefs,
 }));
 vi.mock('bullmq', () => ({
   Queue: vi.fn(function (name, options) {
@@ -26,6 +28,7 @@ describe('standalone billing queue probe', () => {
     f.construct.mockImplementation(() => undefined);
     f.connect.mockReturnValue(f.connection);
     f.read.mockResolvedValue({ workers: 1 });
+    f.readPrefs.mockResolvedValue({ workers: 1 });
     vi.stubEnv('BILLING_NOTICE_PROBE', 'true');
     vi.stubEnv('BILLING_NOTICE_REDIS_URL', 'redis://127.0.0.1:1');
   });
@@ -48,6 +51,7 @@ describe('standalone billing queue probe', () => {
       skipMetasUpdate: true,
     });
     expect(f.read).toHaveBeenCalledWith(f.queue);
+    expect(f.readPrefs).toHaveBeenCalledWith(f.queue);
     expect(f.connection.disconnect).toHaveBeenCalledOnce();
     expect(f.queue.close).toHaveBeenCalledOnce();
   });
@@ -56,6 +60,12 @@ describe('standalone billing queue probe', () => {
     await expect(verifyBillingQueue()).rejects.toThrow('unknown actor');
     expect(f.connection.disconnect).toHaveBeenCalledOnce();
     expect(f.queue.close).toHaveBeenCalledOnce();
+  });
+  it('requires preference compatibility even while billing notices are off', async () => {
+    vi.stubEnv('BILLING_APP_NOTICES_ENABLED', 'false');
+    f.readPrefs.mockRejectedValueOnce(new Error('old preference actor'));
+    await expect(verifyBillingQueue()).rejects.toThrow('old preference actor');
+    expect(f.connection.disconnect).toHaveBeenCalledOnce();
   });
   it('closes its connection if queue construction fails', async () => {
     f.construct.mockImplementationOnce(() => {

@@ -70,18 +70,37 @@ describe('AuthEntry step 1 — the real OAuth disclosure (final-review finding)'
 });
 
 describe('returning sign-in', () => {
-  it('keeps the requested destination and permission disclosure with returning copy', () => {
+  it('keeps the requested destination and identity-only disclosure with returning copy', () => {
     render(<AuthEntry returning returnTo="/settings?cancelDeletion=1" />);
     expect(screen.getByRole('heading', { name: /Welcome back/ })).toBeInTheDocument();
     const href = screen.getByRole('link', { name: /Continue with Google/ }).getAttribute('href')!;
     expect(new URL(href, 'https://app.test').searchParams.get('returnTo')).toBe(
       '/settings?cancelDeletion=1',
     );
-    expect(screen.getByText(/words it more broadly/)).toBeInTheDocument();
+    expect(new URL(href, 'https://app.test').searchParams.get('intent')).toBe('sign-in');
+    expect(screen.getByText(/Google confirms your identity/)).toBeInTheDocument();
+    expect(screen.queryByText(/words it more broadly/)).not.toBeInTheDocument();
     expect(screen.queryByRole('list', { name: 'After you connect' })).not.toBeInTheDocument();
   });
   it('clearly confirms that logout ended the session', () => {
     render(<AuthEntry signedOut />);
     expect(screen.getByRole('heading', { name: /signed out/ })).toBeInTheDocument();
+  });
+  it('asks an unknown returning account to review Gmail permissions before connecting', () => {
+    render(
+      <AuthEntry
+        returning
+        authResult="connect_required"
+        returnTo="/billing?plan=pro&cycle=annual"
+      />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(/not connected/);
+    expect(screen.getByText(/words it more broadly/)).toBeInTheDocument();
+    const url = new URL(
+      screen.getByRole('link', { name: /Continue with Google/ }).getAttribute('href')!,
+      'https://app.test',
+    );
+    expect(url.searchParams.has('intent')).toBe(false);
+    expect(url.searchParams.get('returnTo')).toBe('/billing?plan=pro&cycle=annual');
   });
 });

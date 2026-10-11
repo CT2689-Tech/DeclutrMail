@@ -342,7 +342,10 @@ export default function PrivacyPolicyPage() {
             </tr>
             <tr>
               <td>Resend</td>
-              <td>Transactional email delivery</td>
+              <td>
+                Service email delivery. If you enable Daily Brief ready emails, Resend receives
+                section counts and a link, without Gmail subjects, previews or sender identities.
+              </td>
             </tr>
             <tr>
               <td>Paddle</td>

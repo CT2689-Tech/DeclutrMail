@@ -18,10 +18,12 @@ export async function unsubscribeUrl(input: {
   /** Emails ship `'all'` — see `UnsubscribeScope`. */
   scope: UnsubscribeScope;
   apiUrl: string;
+  issuedAt?: number;
 }): Promise<string> {
   const token = await signUnsubscribeToken({
     userId: input.userId,
     scope: input.scope,
+    ...(input.issuedAt === undefined ? {} : { issuedAt: input.issuedAt }),
   });
   return `${input.apiUrl.replace(/\/$/, '')}/api/email/unsubscribe?t=${encodeURIComponent(token)}`;
 }

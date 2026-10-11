@@ -1,0 +1,29 @@
+name: Read failed billing probe audit
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  read:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Verify privacy and probe contracts
+        run: node --test scripts/check-billing-queue-runtime.test.mjs
+      - name: Authenticate using existing Workload Identity
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Project audit status for the fixed failed probe
+        run: node scripts/read-billing-probe-audit.mjs

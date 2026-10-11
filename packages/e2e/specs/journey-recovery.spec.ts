@@ -126,7 +126,7 @@ test(expiredRecoveryTitle, async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Welcome back.', exact: true })).toBeVisible();
   await expect(
     page.getByRole('link', { name: 'Continue with Google', exact: true }),
-  ).toHaveAttribute('href', /returnTo=%2Fsettings%3FcancelDeletion%3D1%23account$/);
+  ).toHaveAttribute('href', /returnTo=%2Fsettings%3FcancelDeletion%3D1%23account&intent=sign-in$/);
   await expect(page.getByRole('list', { name: 'After you connect' })).toHaveCount(0);
 });
 

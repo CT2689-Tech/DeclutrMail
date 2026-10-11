@@ -12,7 +12,7 @@ import {
 import type { SignInResult } from '@declutrmail/shared/contracts';
 
 import { TrackedCta } from '../landing/tracked-cta';
-import { oauthStartUrl } from '../landing/urls';
+import { oauthSignInUrl, oauthStartUrl } from '../landing/urls';
 
 // The preview promise, first sentence only — the rest of the shared claim
 // (the final count can change) belongs to the preview itself.
@@ -25,6 +25,8 @@ const AUTH_RESULT_ALERT_ID = 'dm-auth-entry-result';
 // One line each: what happened, then what to do. The button below them
 // restarts Google's consent.
 const AUTH_RESULT_LINE: Record<Exclude<SignInResult, 'inbox_limit'>, string> = {
+  connect_required:
+    'This Google account is not connected to DeclutrMail. Connect Gmail to finish setup.',
   gmail_access_missing: 'DeclutrMail needs Gmail access. Continue with Google and allow it.',
   failed: 'Sign-in didn’t finish. Try again.',
   rate_limited: 'Too many sign-in attempts. Wait a minute, then try again.',
@@ -46,6 +48,10 @@ export function AuthEntry({
   returning?: boolean;
   signedOut?: boolean;
 }) {
+  const identityOnly =
+    (returning || signedOut || authResult === 'inbox_limit') &&
+    authResult !== 'connect_required' &&
+    authResult !== 'gmail_access_missing';
   return (
     <div className="dm-auth-entry">
       <section className="dm-auth-entry-card" aria-labelledby="dm-auth-entry-title">
@@ -82,8 +88,8 @@ export function AuthEntry({
 
         <TrackedCta
           className="dm-auth-entry-google"
-          href={oauthStartUrl(returnTo)}
-          cta="connect_gmail"
+          href={identityOnly ? oauthSignInUrl(returnTo) : oauthStartUrl(returnTo)}
+          cta={identityOnly ? 'sign_in' : 'connect_gmail'}
           placement="hero"
           describedBy={authResult ? AUTH_RESULT_ALERT_ID : undefined}
         >
@@ -91,7 +97,11 @@ export function AuthEntry({
           Continue with Google
         </TrackedCta>
 
-        <p className="dm-auth-entry-scope">{OAUTH_SCOPE_DISCLOSURE}</p>
+        <p className="dm-auth-entry-scope">
+          {identityOnly
+            ? 'Google confirms your identity. Signing in does not change your Gmail connection.'
+            : OAUTH_SCOPE_DISCLOSURE}
+        </p>
 
         <details className="dm-auth-entry-storage">
           <summary>See what DeclutrMail stores</summary>

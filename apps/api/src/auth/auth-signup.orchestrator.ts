@@ -81,6 +81,37 @@ export class AuthSignupOrchestrator {
     private readonly csrf: CsrfService,
   ) {}
 
+  /** Resolve a returning identity without reconnecting or changing scan state. */
+  async signIn(input: {
+    email: string;
+    ipAddress: string | null;
+    userAgent: string | null;
+  }): Promise<{
+    tokens: IssuedTokens;
+    csrfToken: string;
+    user: { id: string; workspaceId: string; email: string };
+    onboardingComplete: boolean;
+  } | null> {
+    const email = canonicalizeGmailProviderAccountId(input.email);
+    const identity =
+      (await this.users.findByEmail(email)) ?? (await this.mailboxes.findByProviderEmail(email));
+    if (!identity) return null;
+    const user = await this.users.findById(identity.userId);
+    if (!user) return null;
+    const { tokens } = await this.sessions.issue({
+      userId: identity.userId,
+      workspaceId: identity.workspaceId,
+      ipAddress: input.ipAddress,
+      userAgent: input.userAgent,
+    });
+    return {
+      tokens,
+      csrfToken: this.csrf.issue(),
+      user: { id: identity.userId, workspaceId: identity.workspaceId, email },
+      onboardingComplete: user.onboardedAt != null,
+    };
+  }
+
   async connect(input: {
     email: string;
     refreshToken: string;

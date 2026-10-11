@@ -9,6 +9,11 @@ import {
   cleanupBillingQueueProbe,
   projectBillingProbeFailure,
 } from './check-billing-queue-runtime.mjs';
+import {
+  FAILED_PROBE,
+  projectBillingProbeAudit,
+  readBillingProbeAudit,
+} from './read-billing-probe-audit.mjs';
 
 const env = {
   IMAGE: `us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api:${'a'.repeat(40)}`,
@@ -248,4 +253,128 @@ test('unknown diagnostic operations and fields cannot print private command name
     }),
     { operation: 'unknown', category: 'command_failed', permissions: [] },
   );
+});
+
+test('CLI command prefix cannot impersonate a missing permission', () => {
+  assert.deepEqual(
+    projectBillingProbeFailure(['run', 'jobs', 'create'], {
+      stderr: 'ERROR: (gcloud.run.jobs.create) PRIVATE',
+    }),
+    { operation: 'jobs_create', category: 'command_failed', permissions: [] },
+  );
+});
+function auditRow() {
+  return {
+    timestamp: '2026-10-11T05:32:28Z',
+    protoPayload: {
+      serviceName: 'run.googleapis.com',
+      methodName: 'google.cloud.run.v1.Jobs.CreateJob',
+      resourceName: `namespaces/declutrmail-ai-prod/jobs/${FAILED_PROBE}`,
+      authenticationInfo: { principalEmail: 'PRIVATE' },
+      request: { private: 'PRIVATE' },
+      status: { code: 7, message: 'PRIVATE' },
+      authorizationInfo: [
+        { permission: 'run.jobs.create', granted: false, resource: 'PRIVATE' },
+        { permission: 'PRIVATE', granted: false },
+      ],
+      response: {
+        status: {
+          conditions: [{ type: 'Ready', status: 'False', message: 'secret permission PRIVATE' }],
+        },
+      },
+    },
+  };
+}
+test('audit exposes fixed status metadata while excluding identity, body and raw errors', () => {
+  const proof = projectBillingProbeAudit([auditRow()]);
+  assert.deepEqual(proof, {
+    available: true,
+    matchingEntries: 1,
+    entries: [
+      {
+        method: 'create_job',
+        code: 7,
+        authorization: [{ permission: 'run.jobs.create', granted: false }],
+        ready: false,
+        hints: { secret: true, permission: true, image: false, quota: false, constraint: false },
+      },
+    ],
+  });
+  assert.doesNotMatch(JSON.stringify(proof), /PRIVATE|principal|request|resourceName/);
+});
+test('audit ignores neighbors, unrelated methods/services and events outside the fixed minute', () => {
+  const rows = [auditRow(), auditRow(), auditRow(), auditRow()];
+  rows[0].protoPayload.resourceName += '-other';
+  rows[1].protoPayload.methodName = 'PRIVATE';
+  rows[2].protoPayload.serviceName = 'PRIVATE';
+  rows[3].timestamp = '2026-10-11T05:31:59Z';
+  assert.deepEqual(projectBillingProbeAudit(rows), {
+    available: true,
+    matchingEntries: 0,
+    entries: [],
+  });
+  assert.throws(() => projectBillingProbeAudit(Array(11).fill(auditRow())));
+});
+test('audit command is bounded and captured; unavailable reads are never absence proof', () => {
+  const result = readBillingProbeAudit((command, args, options) => {
+    assert.equal(command, 'gcloud');
+    assert.deepEqual(args.slice(0, 2), ['logging', 'read']);
+    assert.match(args[2], new RegExp(FAILED_PROBE));
+    assert.match(args[2], /05:32:00Z/);
+    assert.match(args[2], /05:33:00Z/);
+    assert.match(args[2], /log_id\("cloudaudit.googleapis.com\/activity"\)/);
+    assert.ok(args.includes('--project=declutrmail-ai-prod'));
+    assert.ok(args.includes('--limit=10'));
+    assert.doesNotMatch(args.at(-1), /status.message|authenticationInfo|request.template/);
+    assert.match(args.at(-1), /authorizationInfo\[\]\.permission/);
+    assert.match(args.at(-1), /authorizationInfo\[\]\.granted/);
+    assert.deepEqual(options.stdio, ['ignore', 'pipe', 'pipe']);
+    assert.equal(options.timeout, 30_000);
+    return JSON.stringify([auditRow()]);
+  });
+  assert.equal(result.matchingEntries, 1);
+  assert.deepEqual(
+    readBillingProbeAudit(() => {
+      throw new Error('PRIVATE');
+    }),
+    {
+      available: false,
+      reason: 'logging_command_failed',
+      category: 'command_failed',
+      matchingEntries: 0,
+      entries: [],
+    },
+  );
+  assert.equal(readBillingProbeAudit(() => 'PRIVATE').reason, 'projection_unavailable');
+  assert.equal(
+    readBillingProbeAudit(() => {
+      throw { stderr: 'PERMISSION_DENIED PRIVATE' };
+    }).category,
+    'permission_denied',
+  );
+});
+test('real audit subprocess does not forward provider stderr, and workflow remains main-only', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'billing-audit-private-'));
+  try {
+    const executable = join(dir, 'gcloud');
+    writeFileSync(executable, '#!/bin/sh\necho SYNTHETIC_PRIVATE_PROVIDER_ERROR >&2\nexit 1\n');
+    chmodSync(executable, 0o700);
+    const child = spawnSync(process.execPath, [resolve('scripts/read-billing-probe-audit.mjs')], {
+      env: { ...process.env, PATH: `${dir}:${process.env.PATH}` },
+      encoding: 'utf8',
+    });
+    assert.equal(child.status, 1);
+    assert.doesNotMatch(child.stdout + child.stderr, /SYNTHETIC_PRIVATE/);
+    assert.equal(JSON.parse(child.stdout).billingProbeAudit.available, false);
+    const workflow = readFileSync('.github/workflows/billing-queue-probe-audit.yml', 'utf8');
+    assert.match(workflow, /if: github.ref == 'refs\/heads\/main'/);
+    assert.match(workflow, /node --test scripts\/check-billing-queue-runtime.test.mjs/);
+    assert.match(workflow, /node scripts\/read-billing-probe-audit.mjs/);
+    assert.doesNotMatch(
+      workflow,
+      /PADDLE|RAZORPAY|RESEND|SUPABASE|schedule:|jobs create|add-iam-policy-binding/,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

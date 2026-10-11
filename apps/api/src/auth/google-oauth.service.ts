@@ -83,6 +83,42 @@ export class GoogleOAuthService {
     });
   }
 
+  /** Returning identity login never requests a Gmail grant or offline access. */
+  getSignInUrl(state: string): string {
+    return this.oauthClient().generateAuthUrl({
+      access_type: 'online',
+      prompt: 'select_account',
+      scope: ['openid', 'email'],
+      state,
+    });
+  }
+
+  async exchangeSignInCode(code: string): Promise<{ email: string }> {
+    const client = this.oauthClient();
+    const { tokens } = await client.getToken(code);
+    if (!tokens.id_token) throw new BadRequestException('Google returned no identity token.');
+    const audience = process.env.GOOGLE_CLIENT_ID;
+    if (!audience) throw new InternalServerErrorException('Google OAuth client is not configured.');
+    const ticket = await client.verifyIdToken({
+      idToken: tokens.id_token,
+      audience,
+    });
+    const payload = ticket.getPayload();
+    const email = payload?.email?.trim().toLowerCase();
+    // Legacy identities are keyed by provider email. Google is authoritative
+    // for Gmail and hosted Workspace addresses, but a once-verified third-party
+    // address may have changed owners. Never use that alone for account access.
+    if (
+      !email ||
+      payload?.email_verified !== true ||
+      (!email.endsWith('@gmail.com') && !email.endsWith('@googlemail.com') && !payload.hd)
+    ) {
+      throw new BadRequestException('Google did not verify a hosted email identity.');
+    }
+    // Deliberately discard every provider token; sign-in only issues our session.
+    return { email };
+  }
+
   /**
    * Exchange the authorization code for tokens, confirm Gmail was
    * granted, verify the id_token, and return `{ email, refreshToken }`

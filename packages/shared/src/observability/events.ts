@@ -412,7 +412,7 @@ export interface EventPayloads {
   // — Marketing landing funnel (D134) —
   landing_cta_clicked: {
     /** Which CTA — `connect_gmail` starts OAuth; `open_app` is the authed shortcut. */
-    cta: 'connect_gmail' | 'open_app' | 'see_pricing' | 'try_demo';
+    cta: 'connect_gmail' | 'sign_in' | 'open_app' | 'see_pricing' | 'try_demo';
     /**
      * Positional section on the current public page; page_viewed carries the
      * route family. `nav_sign_in` is the header's secondary returning-user

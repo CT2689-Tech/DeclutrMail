@@ -1,8 +1,14 @@
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import { users, workspaces } from '@declutrmail/db';
-import type { SignupAttributionRef, SignupHeardFromPatch } from '@declutrmail/shared/contracts';
+import {
+  EMAIL_OPT_OUT_REVISION_PATTERN,
+  INITIAL_EMAIL_OPT_OUT_REVISION,
+  type SignupAttributionRef,
+  type SignupHeardFromPatch,
+} from '@declutrmail/shared/contracts';
 
 import { liveGrantTierForEmail } from '../common/entitlements/entitlement-grants.js';
 import {
@@ -170,6 +176,21 @@ export class UsersService {
       WHEN jsonb_typeof(${users.preferences}) = 'object' THEN ${users.preferences}
       ELSE '{}'::jsonb
     END`;
+    // Capture the current all-unsubscribe revision under this same UPDATE's
+    // row lock. Concurrent unsubscribe/on writes are ordered by the database,
+    // never by a stale read. Explicit opt-in repairs malformed revisions.
+    const revision = sql`CASE
+      WHEN NOT (${root} ? 'emailAllOptOutRevision') THEN ${INITIAL_EMAIL_OPT_OUT_REVISION}::text
+      WHEN jsonb_typeof(${root} -> 'emailAllOptOutRevision') = 'string'
+        AND ((${root} ->> 'emailAllOptOutRevision') = ${INITIAL_EMAIL_OPT_OUT_REVISION}
+          OR (${root} ->> 'emailAllOptOutRevision') ~ ${EMAIL_OPT_OUT_REVISION_PATTERN})
+        THEN ${root} ->> 'emailAllOptOutRevision'
+      ELSE ${randomUUID()}::text
+    END`;
+    const consentPatch =
+      patch.briefReady === true
+        ? sql`jsonb_build_object('emailAllOptOutRevision', ${revision}, 'emailBriefOptInRevision', ${revision})`
+        : sql`'{}'::jsonb`;
     const [row] = await this.db
       .update(users)
       .set({
@@ -185,7 +206,7 @@ export class UsersService {
               THEN ${root} -> 'emailPrefs'
             ELSE '{}'::jsonb
           END || ${JSON.stringify(patch)}::jsonb
-        )`,
+        ) || ${consentPatch}`,
       })
       .where(eq(users.id, userId))
       .returning({ preferences: users.preferences });

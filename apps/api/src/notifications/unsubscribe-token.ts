@@ -60,10 +60,12 @@ function secret(): Uint8Array {
 export async function signUnsubscribeToken(input: {
   userId: string;
   scope: UnsubscribeScope;
+  /** Stable event timestamp for fresh rendering across provider retries. */
+  issuedAt?: number;
 }): Promise<string> {
   return new SignJWT({ userId: input.userId, scope: input.scope })
     .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
+    .setIssuedAt(input.issuedAt)
     .sign(secret());
 }
 

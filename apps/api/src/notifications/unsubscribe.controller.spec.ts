@@ -67,7 +67,12 @@ describe('UnsubscribeController', () => {
     expect(res.status).toBe('ok');
     expect(await readPrefs(db, userId)).toEqual({
       emailAllOptOutRevision: expect.any(String),
-      emailPrefs: { reminders: false, syncComplete: false, weeklyReceipt: false },
+      emailPrefs: {
+        reminders: false,
+        syncComplete: false,
+        weeklyReceipt: false,
+        briefReady: false,
+      },
     });
   });
 
@@ -133,7 +138,12 @@ describe('UnsubscribeController', () => {
 
     expect(await readPrefs(db, userId)).toEqual({
       emailAllOptOutRevision: expect.any(String),
-      emailPrefs: { reminders: false, syncComplete: false, weeklyReceipt: false },
+      emailPrefs: {
+        reminders: false,
+        syncComplete: false,
+        weeklyReceipt: false,
+        briefReady: false,
+      },
     });
   });
 
@@ -158,6 +168,7 @@ describe('UnsubscribeController', () => {
         futureCategory: true,
         syncComplete: false,
         weeklyReceipt: false,
+        briefReady: false,
       },
     });
   });
@@ -176,7 +187,12 @@ describe('UnsubscribeController', () => {
     expect(res.status).toBe('ok');
     expect(await readPrefs(db, userId)).toEqual({
       emailAllOptOutRevision: expect.any(String),
-      emailPrefs: { reminders: false, syncComplete: false, weeklyReceipt: false },
+      emailPrefs: {
+        reminders: false,
+        syncComplete: false,
+        weeklyReceipt: false,
+        briefReady: false,
+      },
     });
   });
 
@@ -193,7 +209,12 @@ describe('UnsubscribeController', () => {
 
     expect(await readPrefs(db, userId)).toEqual({
       emailAllOptOutRevision: expect.any(String),
-      emailPrefs: { reminders: false, syncComplete: false, weeklyReceipt: false },
+      emailPrefs: {
+        reminders: false,
+        syncComplete: false,
+        weeklyReceipt: false,
+        briefReady: false,
+      },
     });
   });
 
@@ -214,7 +235,12 @@ describe('UnsubscribeController', () => {
     expect(prefs).toEqual({
       emailAllOptOutRevision: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f-]{27}$/),
       emailBriefOptInRevision: originalRevision,
-      emailPrefs: { reminders: false, syncComplete: false, weeklyReceipt: false, briefReady: true },
+      emailPrefs: {
+        reminders: false,
+        syncComplete: false,
+        weeklyReceipt: false,
+        briefReady: false,
+      },
     });
     expect(prefs.emailAllOptOutRevision).not.toBe(originalRevision);
     await controller.unsubscribe(token);

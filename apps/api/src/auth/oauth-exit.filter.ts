@@ -13,7 +13,7 @@ import { STATE_COOKIE, STATE_COOKIE_PATH, stateCookieName } from './oauth-browse
 
 /** Where a failed OAuth browser request lands. */
 type OAuthExit =
-  | { mode: 'login'; returnTo: string | undefined }
+  | { mode: 'login'; returnTo: string | undefined; returning?: boolean }
   | { mode: 'connect'; billingReturnTo?: string | undefined };
 
 /**
@@ -64,6 +64,7 @@ abstract class OAuthExitFilter extends AllExceptionsFilter {
       status === HttpStatus.TOO_MANY_REQUESTS ? 'rate_limited' : 'failed';
     const query = new URLSearchParams({
       auth_result: result,
+      ...(exit.returning ? { returning: '1' } : {}),
       ...(exit.returnTo ? { returnTo: exit.returnTo } : {}),
     });
     res.redirect(HttpStatus.FOUND, `${webBase}/sign-in?${query.toString()}`);
@@ -74,7 +75,11 @@ abstract class OAuthExitFilter extends AllExceptionsFilter {
 @Catch()
 export class LoginStartExitFilter extends OAuthExitFilter {
   protected exitFor(req: Request): OAuthExit {
-    return { mode: 'login', returnTo: parseAppReturnTo(req.query?.returnTo) };
+    return {
+      mode: 'login',
+      returnTo: parseAppReturnTo(req.query?.returnTo),
+      returning: req.query?.intent === 'sign-in',
+    };
   }
 }
 
@@ -110,7 +115,12 @@ export class OAuthCallbackExitFilter extends OAuthExitFilter {
     const flowRaw = flowCookieName ? cookies?.[flowCookieName] : undefined;
     const raw = typeof flowRaw === 'string' ? flowRaw : cookies?.[STATE_COOKIE];
     const payload = typeof raw === 'string' ? this.jwt.openOAuthState(raw) : null;
-    let state: { mode?: unknown; returnTo?: unknown; billingReturnTo?: unknown } | null = null;
+    let state: {
+      mode?: unknown;
+      returnTo?: unknown;
+      billingReturnTo?: unknown;
+      intent?: unknown;
+    } | null = null;
     try {
       const parsed: unknown = payload ? JSON.parse(payload) : null;
       if (typeof parsed === 'object' && parsed !== null) state = parsed;
@@ -119,6 +129,10 @@ export class OAuthCallbackExitFilter extends OAuthExitFilter {
     }
     if (state?.mode === 'connect')
       return { mode: 'connect', billingReturnTo: parseBillingReturnTo(state.billingReturnTo) };
-    return { mode: 'login', returnTo: parseAppReturnTo(state?.returnTo) };
+    return {
+      mode: 'login',
+      returnTo: parseAppReturnTo(state?.returnTo),
+      returning: state?.intent === 'sign-in',
+    };
   }
 }
