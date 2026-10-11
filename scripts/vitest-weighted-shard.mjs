@@ -53,18 +53,29 @@ export function weightedSequencer(BaseSequencer, weightsFile) {
   };
 }
 
-/** Per-file durations (ms) from Vitest JSON reports, rounded to 100 ms. */
+/**
+ * Per-file durations (ms) from Vitest JSON reports, rounded to 100 ms. A
+ * file in several reports (several runs) gets the mean of its durations:
+ * one run's numbers swing with whatever shared the CPU.
+ */
 export function weightsFromReports(root, reports) {
-  const weights = {};
+  const samples = new Map();
   for (const report of reports) {
     for (const result of report.testResults ?? []) {
       const file = path.relative(root, result.name).split(path.sep).join('/');
       const ms = result.endTime - result.startTime;
-      if (Number.isFinite(ms)) weights[file] = Math.max(100, Math.round(ms / 100) * 100);
+      if (Number.isFinite(ms)) samples.set(file, [...(samples.get(file) ?? []), ms]);
     }
   }
-  if (Object.keys(weights).length === 0) throw new Error('the reports name no test files');
-  return Object.fromEntries(Object.entries(weights).sort(([a], [b]) => (a < b ? -1 : 1)));
+  if (samples.size === 0) throw new Error('the reports name no test files');
+  return Object.fromEntries(
+    [...samples]
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([file, runs]) => {
+        const mean = runs.reduce((sum, ms) => sum + ms, 0) / runs.length;
+        return [file, Math.max(100, Math.round(mean / 100) * 100)];
+      }),
+  );
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

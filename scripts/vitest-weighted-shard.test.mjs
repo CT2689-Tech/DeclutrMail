@@ -100,6 +100,18 @@ test('--update rewrites weights from Vitest JSON reports and rejects empty ones'
   });
   assert.throws(() => weightsFromReports(root, [{ testResults: [] }]), /no test files/);
 
+  const rerun = {
+    testResults: [
+      { name: `${root}/src/a.spec.ts`, startTime: 0, endTime: 20_345 },
+      { name: `${root}/src/c.spec.ts`, startTime: 0, endTime: 900 },
+    ],
+  };
+  assert.deepEqual(
+    weightsFromReports(root, [report, rerun]),
+    { 'src/a.spec.ts': 16_300, 'src/b.spec.ts': 300, 'src/c.spec.ts': 900 },
+    'a file in two runs is averaged, not overwritten by the last report',
+  );
+
   const dir = mkdtempSync(path.join(tmpdir(), 'weighted-shard-cli-'));
   try {
     const reportFile = path.join(dir, 'report.json');

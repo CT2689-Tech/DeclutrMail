@@ -67,11 +67,13 @@ reports.
 Lighthouse runs in its own `lighthouse` job, one leg per URL in
 `apps/web/lighthouserc.cjs`, against build-web's uploaded build. Every leg keeps
 three measurements per page and the same thresholds, and the job fails if its
-legs and the config's URL list disagree. API and worker tests run in three
-shards each and web tests in two. API shards split by the per-file durations in
-`apps/api/vitest.shard-weights.json`; refresh them with
-`scripts/vitest-weighted-shard.mjs --update` when one shard becomes the tail.
-There are no test retries anywhere.
+legs and the config's URL list disagree, if a URL has no assertions or lacks
+D160's performance floor, or if a leg writes no reports. API and worker tests
+run in three shards each and web tests in two. API shards split by the per-file
+durations in `apps/api/vitest.shard-weights.json`; refresh them with
+`scripts/vitest-weighted-shard.mjs --update`, passing reports from at least two
+runs (durations are averaged), when one shard becomes the tail. There are no
+test retries anywhere.
 
 Only Next.js Webpack compiler intermediates are cached. Marketing and synthetic
 browser builds use separate cache namespaces; current-source production builds
