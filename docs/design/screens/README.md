@@ -1,4 +1,8 @@
-# Bundle H screen mocks (Oct 10)
+# Bundle H screen mocks (Oct 10, updated Oct 11)
+
+## Changelog
+- **drop2-r3 (Oct 11):** applied launch copy deck `/workspace/content/launch-copy-deck/json/` (README says drop2-r3; the JSON `_meta.revision` reads **drop2-r4**, errata adding `ws5.f2.homeTile.*` and confirming the trust line keeps "labels" unexplained; strings snapshotted from that JSON into `../inbox-report-mocks/src/deck_strings.py`). Removed "(Gmail’s version of folders)" everywhere (WS5 bans "folders"); Home storage fact is now the tile "≈ 7.7 GB" / "of email in your Gmail"; the vendor, 5 MB and years facts render as the deck's sentences (with "about"); glyph caption "about 9 in 10"; report close aria "Close Inbox Report"; Brief disclosure → `ws2.pro.brief.disclosure`; footnote → `ws5.report.basis` + `sizesNote`; new AI consent (`ws2.aiConsent.*`) and Settings → AI mocks (8 PNGs).
+- **v2 (Oct 10):** Content v2 copy, A1–A5, commit-ready bundle.
 
 Read-only design mocks for Product's Bundle H. I made no repo changes, opened no PRs and sent no messages. Every PNG carries the "Mockup · sample data" badge. All numbers are sample data. Copy comes from Content's **v2** files (Oct 10, late plain-language pass): `/workspace/content/screen-copy-oct10.md` (RECOMMENDED column; §P wins over older rows; Additions A1–A5) and `inbox-report-copy-oct10.md` (§P wins). Every mock was re-rendered against v2 on Oct 10; see "Copy status" below.
 
@@ -12,7 +16,7 @@ Each file is named `home-{state}-{desktop|mobile}-{light|dark}.png`.
 
 - **home-full-\***:
   - header: H1 "Home", the allowance chip tagged "EXAMPLE", and "Free plan · Compare plans"
-  - the report card, kicker "Your Inbox Report · Updated 6:10 AM". Facts: "About 7.7 GB / of email" and "47,764 / emails (about 4.4 GB) are filed under Unroll.me labels (Gmail’s version of folders) in your Gmail." (report v2 §2 + §P first-use explainer). On desktop the two facts now stack in one column (the longer v2 strings made a 6-line column side by side)
+  - the report card, kicker "Your Inbox Report · Updated 6:10 AM". Facts (deck drop2-r3/r4): the tile "≈ 7.7 GB" / "of email in your Gmail" (`ws5.f2.homeTile.*`) and the sentence "47,764 emails (about 4.4 GB) are filed under Unroll.me labels in your Gmail." (`ws5.report.thirdParty`, no folders explainer). On desktop the two facts stack in one column
   - mobile: the `unsub_archive` card title carries the A5 info button (icon only, 44px target, aria "What “mostly leave unread” means") instead of a body line
   - **Suggested next steps**: the `unsub_archive` card as primary, with `largest` and `later_due` as secondary cards (Content §7.2)
   - "Progress since you joined · Aug 11" with "See your activity"
@@ -22,11 +26,18 @@ Each file is named `home-{state}-{desktop|mobile}-{light|dark}.png`.
 
 Desktop uses the 72px repo nav rail, and Home has no kicker (Content §1.5). Mobile has the header, the drawer button and the bottom tab bar: Home · Cleanup · Auto · Catch up · Activity.
 
+### AI consent and Settings → AI (8, new Oct 11, deck `ws2.aiConsent.*`)
+- **pattern-ai-consent-home-{desktop,mobile}-{light,dark}.png**: the consent card on Home, variant `.all` (suggestion explanations only, the launch case since Pro is waitlist-only). Title, intro, "Suggestion explanations" + `explain.sends`, the four guarantee lines (`never`, `noFetch`, `who`, `training`), `decline.all`, **Allow** (primary) / Not now, and "You can change this any time in Settings → AI." + "How we use AI".
+  - Desktop: an inline two-column card above the report on Home (what is sent on the right).
+  - 390 mobile: a bottom sheet over Home (`role="dialog"`, `aria-modal`). The body scrolls under a fade; Allow / Not now are pinned at the bottom in the thumb zone. Allow sits at 734–778, above y=780 even though the sheet covers the tab bar.
+- **pattern-ai-consent-home-withbrief-{desktop,mobile}-light.png**: variant `.withBrief` (Pro): title/intro/decline `.withBrief` plus the "Daily Brief" section with `brief.sends`. On mobile the decline and change lines sit under the fade (reachable by scrolling).
+- **pattern-ai-settings-{desktop,mobile}-light.png**: Settings with the AI row: `settings.label.all`, `settings.help.all`, "How we use AI", and a switch (`role="switch"`, labelled and described by the row) showing `settings.state.on` "On". The section heading "AI" is not a deck key (from "Settings → AI" in `aiConsent.change`).
+
 ### Patterns (18)
 - **pattern-pro-locked-desktop-light.png, pattern-pro-locked-mobile-light.png**: the "Coming with Pro" screen on /brief (Content §4.1).
   - Header: the "Coming with Pro" pill above the H1 "Daily Brief", with the pitch "A daily summary of yesterday’s email in DeclutrMail, ready at an hour you choose."
   - Card: "Pro isn’t available yet.", primary **Join the Pro waitlist** and secondary link **Go to Later** (Content A2 RECOMMENDED; replaces "Not now"; plain link to /later, records nothing).
-  - `BRIEF_PROCESSING_NOTE` appears verbatim, next to a faded, static skeleton preview.
+  - The Brief disclosure (`ws2.pro.brief.disclosure`, deck drop2-r3; replaces `BRIEF_PROCESSING_NOTE`) appears verbatim, next to a faded, static skeleton preview.
   - **No /billing link, no price, no checkout** (plan §2.3). The button posts to the waitlist endpoint (`data-action="waitlist:pro"` in the HTML).
 - **pattern-pro-nav-badge-desktop-light.png**: the expanded 220px sidebar.
   - Groups: Home / Cleanup / Automations / Catch up / Activity.
@@ -51,7 +62,7 @@ They now use the Bundle H page chrome:
 - the unified sans kicker "Your Inbox Report" instead of the mono plum kicker with a dot
 - "A closer look." as a sans 17/600 card title
 
-Report strings follow report copy v2 (trust line, "About 1.5 GB" in the 5 MB fact, Free chip "640 of 1,000 free emails left · resets Nov 1", celebration storage note). Desktop stays at 1280x800, the original report-mock size; Home is 1440x900.
+Report strings follow the deck (drop2-r3/r4): trust line, facts as sentences `ws5.report.yearsDeep` ("Your email goes back to 2012. 64% of it is more than 3 years old.") and `largeMail` ("About 1.5 GB of your email is in 118 messages over 5 MB."), footnote `basis` · `sizesNote`, close aria "Close Inbox Report"; and report copy v2 for the rest ( Free chip "640 of 1,000 free emails left · resets Nov 1", celebration storage note). Desktop stays at 1280x800, the original report-mock size; Home is 1440x900.
 
 The report generator links `../../screen-mocks/src/screens.css` directly, so both sets of mocks share one source for the chrome.
 
@@ -81,7 +92,7 @@ The report generator links `../../screen-mocks/src/screens.css` directly, so bot
   - Card titles: sans 17/600. State titles: sans 20/600.
 - **Radii:** 8 / 10 / 14 / 20 / 28 / pill. Cards use 20; inner cards and the active tab-bar pill use 14.
 - **Spacing:** 4–64 scale.
-- **Envelope row ("about 9 in 10 emails"):** 9 solid envelopes in `--dm-primary` (plum #59415f light, #d1b8d6 dark) stand for the share from senders you mostly leave unread, the emphasized part. 1 faded outline (32% opacity) stands for the rest. It is used on Home full, the report panels and the share cards.
+- **Envelope row (caption "about 9 in 10", `ws5.report.glyph`):** 9 solid envelopes in `--dm-primary` (plum #59415f light, #d1b8d6 dark) stand for the share from senders you mostly leave unread, the emphasized part. 1 faded outline (32% opacity) stands for the rest. It is used on Home full, the report panels and the share cards.
 - **Fonts:** Geist, Fraunces and Geist Mono. Mono is used only for the mockup badge. The rust accent is not used anywhere in these mocks, including report/ (the share cards are separate).
 
 ## Verification
@@ -91,7 +102,7 @@ On mobile, every primary action sits above the bottom tab bar (tab bar top = 780
 
 | Mock | Primary action y (px) | Change vs. last batch |
 |---|---|---|
-| home-full | 628–672 ("Unsubscribe + archive 158 senders") | was 576–620; +52 from the longer v2 vendor fact (4 lines at 390). 108px clear of the tab bar |
+| home-full | 610–654 ("Unsubscribe + archive 158 senders") | Oct 11: was 628–672; the storage tile is shorter. 126px clear of the tab bar |
 | home-calm | 340–384 ("See your senders") | was 306–350; v2 trust line is one line longer |
 | home-empty | 383–427 ("See your senders") | was 349–393; same reason |
 | home-scan-failed | 384–428 ("Try again") | was 350–394; same reason |
@@ -99,14 +110,18 @@ On mobile, every primary action sits above the bottom tab bar (tab bar top = 780
 | caught-up Later (new) | 377–421 ("See your senders") | new |
 | caught-up Follow-ups (new) | no CTA (by design, A1) | new |
 | pro-locked | 293–337 ("Join the Pro waitlist") | unchanged |
-| unread-info sheet (new) | sheet covers the tab bar; Close at the bottom of the sheet | new |
-| report mobile-senders-report | 579–623 ("Unsubscribe + archive 122 senders") | was 558–602; v2 Senders subtitle wraps to 2 lines |
+| unread-info sheet | sheet covers the tab bar; Close at the bottom of the sheet | unchanged |
+| AI consent sheet, all + withBrief (new Oct 11) | 734–778 ("Allow", pinned sheet footer; sheet covers the tab bar) | new |
+| Settings → AI (new Oct 11) | no primary action (a switch) | new |
+| report mobile-senders-report | 620–664 ("Unsubscribe + archive 122 senders") | Oct 11: was 579–623; the deck's two fact sentences + basis footnote are longer |
 | report mobile-report-calm-fallback | 397–441 ("Show those 12 senders") | was 376–420; subtitle |
 | report mobile-report-celebration | 446–490 ("Undo" / "Make a share card") | unchanged (no subtitle on this one, as before) |
 
-Desktop (no tab bar): home-full CTA 596–640 of 900; report desktop CTA 435–479 of 800.
+Desktop (no tab bar): home-full CTA 557–601 of 900; AI consent Allow 304–348 (withBrief 372–416) of 900; report desktop CTA 456–500 of 800.
 
 The nav-badge drawer and the dismissed strip have no primary action.
+
+**Banned-words check (Oct 11, drop2-r3).** Same script, now over 54 HTML files, plus raw greps for "folders", "Gmail’s version", "briefConsent" and unfilled `{TOKEN}`s, and visible-text checks for "hidden", "allowance", "free up", "time saved", "never/rarely/barely open". Result: **0 hits** for all of them. The only matches are the two expected ones below (and "Not now" now also inside the deck's `aiConsent.decline` and `aiConsent.notNow`). "≈" appears only on tiles/chips: the Home tile "≈ 7.7 GB" (13 files) and the 4 share cards; "about" appears only in sentences.
 
 **Banned-words check (Oct 10, v2).** A script ran every pattern in screen-copy §P.5 (the YAML `banned` list) over the visible text, `aria-label`, `title` and `alt` of all 46 rendered HTML files (screen-mocks/src and inbox-report-mocks/src, share cards included), plus a raw-HTML grep for "[CONTENT]", "Clean up", "Next best", "See Pro", "billing?plan", "never open", "rarely", "barely" and "declutrmail.ai". Result: **0 hits** for all of those. Two expected matches remain:
 - "Today’s senders · one choice each" (Triage subtitle) matches the `Today` nav-name pattern. It's Content's exact §P.4 string, and the rule's context is nav/screen names, so it stays.
@@ -128,8 +143,8 @@ The nav-badge drawer and the dismissed strip have no primary action.
 12. **The caught-up pattern** is shown on Triage (desktop) and Screener (mobile) in the base files, and on Later and Follow-ups in the new A1 variants.
 13. **The report mocks use the Bundle H chrome** (see report/ above). The page eyebrow "Your inbox, by sender" and the rust "/ Make room." tagline were dropped; Content §1.5 replaces that eyebrow with the group kicker "Cleanup", shown in the top bar. The report panel's calm fallback uses the report-copy strings ("Your inbox is in good shape." / "Show those 12 senders"); Home calm uses screen-copy §7.3. That is intentional, since they are two different files.
 14. **"Unroll.me" is named in-app** (wireframe figure). Naming the vendor is Chintan's call.
-15. **"labels" first-use explainer.** Report v2 §P adds "(Gmail’s version of folders)" the first time "label" appears in the report. On Home full that is the vendor fact, so it's appended there. On screens without the vendor fact (Home calm/empty/scan-failed, all report/ screens) the first "labels" is inside the §3 trust line, which Content wrote without the parenthetical; I left the trust line word for word. **Open for Content:** add the explainer inside the trust line, or confirm it's only needed with the vendor fact.
-16. **Home fact label "of email".** The old "total email, all time" came from the IA wireframe, not Content. It's now the share-card line "of email" with "About 7.7 GB" (v2: "about" in sentences). Confirm with Content.
+15. **"labels" first-use explainer: RESOLVED Oct 11.** Deck drop2-r3/r4 keeps the trust line word for word with no explainer and WS5 bans "folders", so "(Gmail’s version of folders)" is gone everywhere. (Old note: report v2 §P added "(Gmail’s version of folders)" the first time "label" appears in the report. On Home full that is the vendor fact, so it's appended there. On screens without the vendor fact (Home calm/empty/scan-failed, all report/ screens) the first "labels" is inside the §3 trust line, which Content wrote without the parenthetical; I left the trust line word for word. Superseded.)
+16. **Home fact label: RESOLVED Oct 11.** Now the deck tile `ws5.f2.homeTile.*`: "≈ 7.7 GB" / "of email in your Gmail". (Old note: The old "total email, all time" came from the IA wireframe, not Content. It's now the share-card line "of email" with "About 7.7 GB" (v2: "about" in sentences). Superseded.)
 17. **Fact numbers no longer wrap** (`white-space:nowrap` on `.fact .n` and `.chip`). The report desktop grid moved from 320/1.2fr/1fr to 320/1.1fr/1.1fr so "About 1.5 GB" fits on one line, and the mobile celebration chip is 12px so the longer v2 chip stays on one line.
 
 ## Copy status (v2)
@@ -155,7 +170,10 @@ The nav-badge drawer and the dismissed strip have no primary action.
   - sync-gate states 1–6, overlays, `syncGate.*` progress/ready strings, `explain.inboxReport`
   - §P.2 explainers for Screener, Triage, Autopilot, Quiet hours, Later, Activity, Protected (no intro panels mocked)
   - report v2: upgrade line (§7), share sheet strings and share CTA line, sweeper line, Delete/Archive explainers, Free-cost line
-- **Missing from Content:** nothing that these mocks need. Open: the trust-line "labels" explainer (deviation 15) and the Home fact label (deviation 16).
+- **Deck drop2-r3/r4 placed:** `ws2.aiConsent.*` title/intro/decline (`.all`, `.withBrief`), explain.*, brief.*, never, noFetch, who, training, change, link, allow, notNow, settings.label.all, settings.help.all, settings.state.on; `ws2.pro.brief.disclosure`; `ws5.f2.homeTile.*`; `ws5.report.thirdParty`, `largeMail`, `yearsDeep`, `basis`, `sizesNote`, `glyph`, `close.aria`, `trust`, `trust.link`; `ws1.meter.chip` + `.aria`.
+- **Deck drop2-r3/r4 not placed (no matching state mocked):** `ws2.aiConsent` toasts, `existingUsers.*`, `upgrade.*`, `reask`, `killSwitch`, `error`, `settings.label/help.withBrief`, `settings.state.off/paused/review`; `ws2.aiPrompt.*`; `ws5.report.thirdParty.detail` (expanded vendor detail not mocked), `largeMail.top10`, `recent`, `people`, `trash`, `upgrade.*`, `fix.cost`; share sheet/intent strings.
+- **Not in the deck JSON:** several on-screen strings come from Content's v2 screen/report files (e.g. "Updated 6:10 AM", "Today’s senders · one choice each", the A1 caught-up strings, the A5 info sheet, the Home suggested-step bodies). They were left as v2 wrote them.
+- **Missing from Content:** the section heading "AI" on Settings (I used the word from "Settings → AI").
 - **Illustrative numbers:** quota, progress totals, scan counts and update time.
 
 ## Deferred to after launch

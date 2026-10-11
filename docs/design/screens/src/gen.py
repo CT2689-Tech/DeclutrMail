@@ -6,7 +6,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 _R = next(d for d in ('inbox-report-mocks', 'inbox-report') if os.path.isdir(os.path.join(HERE, '..', '..', d, 'src')))
 sys.path.insert(0, os.path.join(HERE, '..', '..', _R, 'src'))
 import gen as R  # icons, envelope glyphs, fonts from the report mocks
-P, ic, glyphs, FONTS = R.P, R.ic, R.glyphs, R.FONTS
+P, ic, glyphs, FONTS, t, DECK_REVISION = R.P, R.ic, R.glyphs, R.FONTS, R.t, R.DECK_REVISION
 
 # Repo nav icons (packages/shared/src/shell/sidebar.tsx)
 NI = {
@@ -40,10 +40,9 @@ def doc(title, body, w, h, theme):
 def badge(pos): return f'<div class="mock-badge" style="{pos}">Mockup · sample data</div>'
 
 # inbox-report-copy v2 §3 (RECOMMENDED), word for word
-TRUST = ('<div class="trust">' + ic('lock') + '<span>This report uses only the sender, date, size, labels and read/unread status of your email, plus who you’ve emailed. '
-         'We never fetch or store full email contents. <span style="color:var(--dm-primary);font-weight:500;white-space:nowrap">What we store and share →</span></span></div>')
+TRUST = R.TRUST  # ws5.report.trust + .link, word for word (no explainer)
 # inbox-report-copy v2 §6.1/7.1 Free chip
-CHIP = '<span class="chip"><span class="tag">example</span>640 of 1,000 free emails left · resets Nov 1</span>'
+CHIP = R.CHIP  # ws1.meter.chip
 PLANLINE = f'<div class="planline">{CHIP}<span>Free plan · <span class="link" style="font-size:13px">Compare plans</span></span></div>'
 
 # ── shells ────────────────────────────────────────────────
@@ -76,12 +75,13 @@ def m_shell(active, content, tabs=None, overlay='', badgepos='right:10px;bottom:
 HEAD_REST = 'of the email you got in the last 90 days came from <span class="num">195</span> senders you mostly leave unread.'
 SUPPORT = 'Each had less than 10% of its email marked read in Gmail in that time.'
 # report v2 §4: "about" in sentences (≈ only on the share card / compact chips); label = share-card line "of email"
-F1 = ('About 7.7 GB', 'of email')
-# report v2 §2 card ("about" in sentences) + §P: "labels" explained on first use in the report
-F2 = ('47,764', 'emails (about 4.4 GB) are filed under Unroll.me labels (Gmail’s version of folders) in your Gmail.')
+# deck drop2-r4: Home storage fact is a tile (ws5.f2.homeTile.*): '≈' on tiles/chips only
+F1 = (t('ws5.f2.homeTile.value', size='7.7 GB'), t('ws5.f2.homeTile.label'))
+# ws5.report.thirdParty is a sentence, so it renders as one ('about' inside); no labels explainer (WS5 bans the f-word)
+F2 = t('ws5.report.thirdParty', n=47764, count='47,764', size='4.4 GB', Vendor='Unroll.me')
 def facts(cols=''): return (f'<div class="facts" style="{cols}"><div class="fact"><div class="n">{F1[0]}</div><div class="l">{F1[1]}</div></div>'
-                     f'<div class="fact"><div class="n">{F2[0]}</div><div class="l">{F2[1]}</div></div></div>')
-FOOT = '<div style="font-size:12px;color:var(--dm-fg-muted)">Sizes are Gmail’s estimates.</div>'
+                     f'<p class="fact-s">{F2}</p></div>')
+FOOT = f'<div style="font-size:12px;color:var(--dm-fg-muted)">{t("ws5.report.sizesNote")}</div>'
 RKICK = '<span class="kicker">Your Inbox Report · Updated 6:10 AM</span>'
 SHARE = f'<span class="tlink" style="font-size:13px;min-height:32px;gap:6px">{ic("share","style=\"width:15px;height:15px\"")}Make a share card</span>'
 
@@ -223,7 +223,7 @@ PRO_BADGE = 'Coming with Pro'
 PRO_PITCH = 'A daily summary of yesterday’s email in DeclutrMail, ready at an hour you choose.'
 PRO_STATUS = 'Pro isn’t available yet.'
 PRO_CTA = 'Join the Pro waitlist'
-BRIEF_PROCESSING_NOTE = 'Daily Brief may send the sender, subject line, and Gmail preview snippet to Anthropic to compose a summary. Full email contents and attachments are never sent.'
+BRIEF_PROCESSING_NOTE = t('ws2.pro.brief.disclosure', BRIEF_NAME='Daily Brief')  # deck drop2-r4 (replaces the old constant text)
 PLUS_SUB = '<span class="sr-only">, Plus feature</span><span class="pill-sm" aria-hidden="true">Plus</span>'
 PRO_SUB = '<span class="sr-only">, coming with Pro</span><span class="pill-sm" aria-hidden="true">Pro</span>'
 CATCH_TABS_D = [('Later','',False),('Daily Brief',PRO_SUB,True),('Follow-ups',PRO_SUB,False)]
@@ -346,6 +346,71 @@ def unread_info(theme):
     body = phead_m() + report_full_m() + nextbest_m()
     return doc('Home · unread info · mobile', m_shell('home', body, overlay=sheet, badgepos='left:20px;top:60px'), 390, 844, theme)
 
+# ── AI consent (deck ws2.aiConsent.*, drop2-r4) ───────────
+BN = 'Daily Brief'
+def ac(key, v=None):
+    k = f'ws2.aiConsent.{key}' + (f'.{v}' if v else '')
+    return t(k, BRIEF_NAME=BN)
+def consent_details(variant):
+    sec = lambda h, b: (f'<div style="margin-top:12px"><div style="font-size:13px;font-weight:600;color:var(--dm-fg)">{h}</div>'
+                        f'<p style="margin:4px 0 0;font-size:13px;line-height:1.5;color:var(--dm-fg-soft)">{b}</p></div>')
+    out = sec(ac('explain.heading'), ac('explain.sends'))
+    if variant == 'withBrief': out += sec(ac('brief.heading'), ac('brief.sends'))
+    bullets = ''.join(f'<li style="display:flex;gap:8px;align-items:flex-start;margin-top:8px">{ic("lock","style=\"width:14px;height:14px;flex:none;margin-top:3px\"")}<span>{ac(k)}</span></li>'
+                      for k in ('never','noFetch','who','training'))
+    return out + f'<ul style="list-style:none;margin:14px 0 0;padding:12px 0 0;border-top:1px solid var(--dm-line);font-size:13px;line-height:1.45;color:var(--dm-fg-soft)">{bullets}</ul>'
+def consent_card_d(variant):
+    v = 'withBrief' if variant == 'withBrief' else 'all'
+    return (f'<section class="card2" role="region" aria-labelledby="ai-title" style="padding:24px 32px;display:grid;grid-template-columns:1fr 1.15fr;gap:36px;margin-bottom:16px">'
+            f'<div style="display:flex;flex-direction:column"><h2 id="ai-title" class="h2s" style="font-size:20px">{ac("title", v)}</h2>'
+            f'<p class="body" style="margin:8px 0 0">{ac("intro", v)}</p>'
+            f'<p class="body" style="margin:12px 0 0">{ac("decline", v)}</p>'
+            f'<div style="display:flex;align-items:center;gap:16px;margin-top:18px"><button class="btn btn-primary" data-primary data-action="ai-consent:allow">{ac("allow")}</button>'
+            f'<span class="tlink" data-action="ai-consent:not-now">{ac("notNow")}</span></div>'
+            f'<p style="margin:14px 0 0;font-size:12px;color:var(--dm-fg-muted)">{ac("change")} <span class="link" style="font-size:12px">{ac("link")}</span></p></div>'
+            f'<div class="card14" style="padding:4px 20px 16px">{consent_details(v)}</div></section>')
+def consent_home(dev, theme, variant='all'):
+    if dev == 'desktop':
+        body = phead_d() + consent_card_d(variant) + report_full_d()
+        return doc(f'Home · AI consent · {variant}', d_shell('home', '', body), 1440, 900, theme)
+    v = 'withBrief' if variant == 'withBrief' else 'all'
+    # 390: the card is a bottom sheet over Home; body scrolls, Allow / Not now stay pinned at the bottom (thumb zone)
+    sheet = (f'<div class="scrim"></div><div role="dialog" aria-modal="true" aria-labelledby="ai-title" '
+             f'style="position:absolute;left:0;right:0;bottom:0;top:56px;z-index:30;background:var(--dm-card);border-radius:20px 20px 0 0;display:flex;flex-direction:column;box-shadow:0 -8px 30px #0003">'
+             f'<div style="width:36px;height:4px;border-radius:2px;background:var(--dm-line);margin:10px auto 0;flex:none"></div>'
+             f'<div style="flex:1;overflow:hidden;padding:12px 20px 0;position:relative">'
+             f'<h2 id="ai-title" class="h2s" style="font-size:20px">{ac("title", v)}</h2>'
+             f'<p class="body" style="margin:8px 0 0;font-size:14px">{ac("intro", v)}</p>{consent_details(v)}'
+             f'<p class="body" style="margin:12px 0 0;font-size:13px">{ac("decline", v)}</p>'
+             f'<p style="margin:10px 0 0;font-size:12px;color:var(--dm-fg-muted)">{ac("change")} <span class="link" style="font-size:12px">{ac("link")}</span></p>'
+             f'<div style="position:absolute;left:0;right:0;bottom:0;height:40px;background:linear-gradient(transparent,var(--dm-card))"></div></div>'
+             f'<div style="flex:none;padding:10px 20px 22px;border-top:1px solid var(--dm-line)">'
+             f'<button class="btn btn-primary" data-primary data-action="ai-consent:allow" style="width:100%">{ac("allow")}</button>'
+             f'<div style="display:flex;justify-content:center"><span class="tlink" data-action="ai-consent:not-now">{ac("notNow")}</span></div></div></div>')
+    body = (phead_m() + report_full_m() + nextbest_m()).replace(' data-primary', '')  # background is inert under the sheet
+    return doc(f'Home · AI consent · {variant} · mobile', m_shell('home', body, overlay=sheet, badgepos='left:20px;top:12px'), 390, 844, theme)
+
+# Settings → AI toggle row
+def toggle(on=True):
+    return (f'<span role="switch" aria-checked="{"true" if on else "false"}" aria-labelledby="ai-lbl" aria-describedby="ai-help" '
+            f'style="flex:none;display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--dm-fg-muted)">{ac("settings.state.on" if on else "settings.state.off")}'
+            f'<span style="width:44px;height:26px;border-radius:13px;background:{"var(--dm-primary)" if on else "var(--dm-fill)"};position:relative;display:inline-block">'
+            f'<span style="position:absolute;top:3px;{"right" if on else "left"}:3px;width:20px;height:20px;border-radius:50%;background:var(--dm-card)"></span></span></span>')
+def ai_row(variant='all', mobile=False):
+    v = 'withBrief' if variant == 'withBrief' else 'all'
+    pad = '16px' if mobile else '20px 24px'
+    return (f'<section aria-labelledby="ai-sec" style="margin-top:{18 if mobile else 24}px"><h2 id="ai-sec" class="kicker" style="margin:0 0 8px">AI</h2>'
+            f'<div class="card14" style="padding:{pad}"><div style="display:flex;gap:16px;align-items:flex-start">'
+            f'<div style="flex:1;min-width:0"><div id="ai-lbl" style="font-size:15px;font-weight:600;color:var(--dm-fg)">{ac("settings.label", v)}</div>'
+            f'<p id="ai-help" style="margin:4px 0 0;font-size:13px;line-height:1.5;color:var(--dm-fg-soft)">{ac("settings.help", v)}</p>'
+            f'<span class="link" style="display:inline-block;margin-top:8px;font-size:13px">{ac("link")}</span></div>{toggle(True)}</div></div></section>')
+def settings_ai(dev, theme='light'):
+    if dev == 'desktop':
+        body = f'<div class="phead" style="margin-bottom:4px"><div><h1 class="h1">Settings</h1></div></div><div style="max-width:760px">{ai_row()}</div>'
+        return doc('Settings · AI · desktop', d_shell('', '', body), 1440, 900, theme)
+    body = f'<div style="margin:2px 0 4px"><h1 class="h1">Settings</h1></div>{ai_row(mobile=True)}'
+    return doc('Settings · AI · mobile', m_shell('', body), 390, 844, theme)
+
 FILES = {}
 for st in ['full','calm','empty','scan-failed']:
     for dv in ['desktop','mobile']:
@@ -361,6 +426,12 @@ for dv in ['desktop','mobile']:
 
 for th in ['light','dark']:
     FILES[f'pattern-unread-info-mobile-{th}.html'] = (lambda th=th: unread_info(th))
+
+for dv in ['desktop','mobile']:
+    for th in ['light','dark']:
+        FILES[f'pattern-ai-consent-home-{dv}-{th}.html'] = (lambda dv=dv,th=th: consent_home(dv,th,'all'))
+    FILES[f'pattern-ai-consent-home-withbrief-{dv}-light.html'] = (lambda dv=dv: consent_home(dv,'light','withBrief'))
+    FILES[f'pattern-ai-settings-{dv}-light.html'] = (lambda dv=dv: settings_ai(dv))
 
 if __name__ == '__main__':
     only = set(sys.argv[1:])

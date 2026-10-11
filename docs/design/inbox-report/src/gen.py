@@ -2,6 +2,15 @@
 """Generates the Inbox Report mock HTML files (sample data only)."""
 import math, os
 OUT = os.path.dirname(os.path.abspath(__file__))
+import sys; sys.path.insert(0, OUT)
+from deck_strings import D, DECK_REVISION  # launch copy deck snapshot (word for word)
+def t(key, n=None, **tok):
+    v = D[key]
+    if isinstance(v, dict): v = v['one'] if n == 1 else v['other']
+    if n is not None: tok.setdefault('n', f'{n:,}')
+    for k, x in tok.items(): v = v.replace('{' + k + '}', str(x))
+    assert '{' not in v, (key, v)
+    return v
 FONTS = ('<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
  '<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,400'
  '&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">')
@@ -40,8 +49,9 @@ def glyphs(w=18, gap=5, cap=True, capstyle=''):
     # 9 solid (emphasized, --dm-primary: plum in light, light plum in dark) = mail from senders you mostly leave unread;
     # 1 faded = the rest. Rounded to nearest 10%.
     g = ''.join(env(True, w) for _ in range(9)) + env(False, w)
-    c = f'<span class="glyph-cap" style="{capstyle}">about 9 in 10 emails</span>' if cap else ''
-    return f'<div class="glyphs" role="img" aria-label="About 9 in 10 emails" style="gap:{gap}px">{g}{c}</div>'
+    cap_t = t('ws5.report.glyph', n=9)
+    c = f'<span class="glyph-cap" style="{capstyle}" aria-hidden="true">{cap_t}</span>' if cap else ''
+    return f'<div class="glyphs" role="img" aria-label="{cap_t}" style="gap:{gap}px">{g}{c}</div>'
 
 # Bundle H chrome (shared, single source): sibling screen-mocks (workspace) or screens (docs/design bundle)
 SCREENS_CSS = '../../%s/src/screens.css' % next(d for d in ('screen-mocks', 'screens') if os.path.isdir(os.path.join(OUT, '..', '..', d, 'src')))
@@ -53,8 +63,8 @@ def doc(title, body, w, h, theme='light', extra_css='', screens=False):
             f'<style>html,body{{width:{w}px;height:{h}px}}{extra_css}</style></head><body>{body}</body></html>')
 
 # Content inbox-report-copy v2 §3 (RECOMMENDED), word for word
-TRUST = ('<div class="trust">' + ic('lock') + '<span>This report uses only the sender, date, size, labels and read/unread status of your email, plus who you’ve emailed. '
-         'We never fetch or store full email contents. <span style="color:var(--dm-primary);font-weight:500;white-space:nowrap">What we store and share →</span></span></div>')
+TRUST = ('<div class="trust">' + ic('lock') + f'<span>{t("ws5.report.trust")} '
+         f'<span style="color:var(--dm-primary);font-weight:500;white-space:nowrap">{t("ws5.report.trust.link")}<span aria-hidden="true"> →</span></span></span></div>')
 
 def badge(pos): return f'<div class="mock-badge" style="{pos}">Mockup · sample data</div>'
 
@@ -129,12 +139,14 @@ def m_list(rs, total_label):
             f'{rows(rs, 4, True)}</div>')
 
 KICK = '<span class="kicker">Your Inbox Report</span>'
-XBTN = f'<div class="rp-x" aria-label="Dismiss report">{ic("x")}</div>'
+XBTN = f'<div class="rp-x" role="button" aria-label="{t("ws5.report.close.aria")}">{ic("x")}</div>'
 HEAD_REST = 'of the email you got in the last 90 days came from <span class="num">195</span> senders you mostly leave unread.'
 SUPPORT = 'Each had less than 10% of its email marked read in Gmail in that time.'
-FACTS = ('<div class="facts"><div class="fact"><div class="n">85,207</div><div class="l">emails, going back to 2012</div></div>'
-         '<div class="fact"><div class="n">About 1.5 GB</div><div class="l">of your email is in 118 messages over 5&nbsp;MB.</div></div></div>')
-FOOTNOTE = '<div style="font-size:12px;color:var(--dm-fg-muted)">Sizes are Gmail’s estimates.</div>'
+# deck: these two are sentences (ws5.report.yearsDeep, ws5.report.largeMail), so they render as sentences, not tiles ("about", never "≈")
+FACTS = ('<div class="facts facts-s">'
+         f'<p class="fact-s">{t("ws5.report.yearsDeep", year=2012, pct=64)}</p>'
+         f'<p class="fact-s">{t("ws5.report.largeMail", n=118, size="1.5 GB", count=118)}</p></div>')
+FOOTNOTE = f'<div style="font-size:12px;color:var(--dm-fg-muted)">{t("ws5.report.basis", total="85,207", mailboxEmail="a@example.com")} · {t("ws5.report.sizesNote")}</div>'
 FIX_H = '<span class="num">122</span> of these senders include an unsubscribe link.'
 CTA = 'Unsubscribe + archive 122 senders'
 
@@ -194,7 +206,8 @@ def burst(size=56):
 CEL_H = 'Archived <span class="num">2,708</span> emails from <span class="num">122</span> senders.'
 QUIET = '<div class="quiet">Unsubscribe requested from 118 senders · 4 need you to send an email</div>'
 UNDO_NOTE = '<div style="font-size:12px;color:var(--dm-fg-muted);line-height:1.4">Undo restores the archived email for 30 days. Unsubscribe requests can’t be recalled.</div>'
-CHIP = '<span class="chip"><span class="tag">example</span>640 of 1,000 free emails left · resets Nov 1</span>'
+CHIP = (f'<span class="chip" aria-label="{t("ws1.meter.chip.aria", remaining=640, allowance="1,000", resetDate="Nov 1")}"><span class="tag" aria-hidden="true">example</span>'
+        f'<span aria-hidden="true">{t("ws1.meter.chip", remaining=640, allowance="1,000", resetDate="Nov 1")}</span></span>')
 # mobile: longer v2 chip text ("free emails") needs 12px/8px padding to stay on one line at 390
 CHIP_M = CHIP.replace('class="chip"', 'class="chip" style="font-size:12px;padding:0 8px;gap:5px"')
 # report v2 §4 celebration storage note (shown because the report showed insight #3, the 5 MB fact)
