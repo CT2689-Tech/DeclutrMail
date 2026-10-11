@@ -68,6 +68,55 @@ describe('GoogleOAuthService.exchangeCode — the Gmail grant (D108)', () => {
     verifyIdToken.mockResolvedValue({ getPayload: () => ({ email: 'user@example.com' }) });
   });
 
+  it.each(['gmail.com', 'googlemail.com'])(
+    'signs in with verified %s identity alone, without inspecting scopes or keeping tokens',
+    async (domain) => {
+      getToken.mockResolvedValue({ tokens: { id_token: 'identity', access_token: 'discard-me' } });
+      verifyIdToken.mockResolvedValue({
+        getPayload: () => ({ email: `Me@${domain}`, email_verified: true }),
+      });
+      await expect(new GoogleOAuthService().exchangeSignInCode('code')).resolves.toEqual({
+        email: `me@${domain}`,
+      });
+      expect(verifyIdToken).toHaveBeenCalledWith({ idToken: 'identity', audience: 'client-id' });
+      expect(getTokenInfo).not.toHaveBeenCalled();
+    },
+  );
+
+  it('accepts Google-hosted Workspace identity', async () => {
+    getToken.mockResolvedValue({ tokens: { id_token: 'identity' } });
+    verifyIdToken.mockResolvedValue({
+      getPayload: () => ({ email: 'me@example.com', email_verified: true, hd: 'example.com' }),
+    });
+    await expect(new GoogleOAuthService().exchangeSignInCode('code')).resolves.toEqual({
+      email: 'me@example.com',
+    });
+  });
+
+  it.each([
+    undefined,
+    { email: 'me@gmail.com' },
+    { email: 'me@gmail.com', email_verified: false },
+    { email: 'me@example.com', email_verified: true },
+    { email: '', email_verified: true, hd: 'example.com' },
+  ])('refuses an absent, unverified, or non-authoritative identity: %j', async (payload) => {
+    getToken.mockResolvedValue({ tokens: { id_token: 'identity' } });
+    verifyIdToken.mockResolvedValue({ getPayload: () => payload });
+    await expect(new GoogleOAuthService().exchangeSignInCode('code')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('requires a valid identity token even when provider refresh tokens exist', async () => {
+    getToken.mockResolvedValue({ tokens: { refresh_token: 'unused' } });
+    await expect(new GoogleOAuthService().exchangeSignInCode('code')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    getToken.mockResolvedValue({ tokens: { id_token: 'identity' } });
+    verifyIdToken.mockRejectedValue(new Error('bad signature / audience / expiry'));
+    await expect(new GoogleOAuthService().exchangeSignInCode('code')).rejects.toThrow();
+  });
+
   afterEach(() => {
     warn.mockRestore();
     for (const key of ENV_KEYS) {

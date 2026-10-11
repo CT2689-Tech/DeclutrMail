@@ -103,6 +103,62 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
     userAgent: null,
   };
 
+  function expectIdentityOnly() {
+    for (const effect of [
+      users.insertWorkspaceAndUser,
+      users.patchPreferences,
+      mailboxes.upsertConnect,
+      sync.markConnected,
+      sync.schedule,
+      sync.scheduleCatchUp,
+      gmailWatch.watchMailbox,
+      tokenCrypto.encrypt,
+      db.transaction,
+    ]) {
+      expect(effect).not.toHaveBeenCalled();
+    }
+  }
+
+  it('signs in a returning primary without any mailbox, token, scan, or watch change', async () => {
+    users.findByEmail.mockResolvedValue({ userId: 'u1', workspaceId: 'w1' });
+    const result = await orchestrator.signIn({ ...INPUT, email: '  Me@GMAIL.COM  ' });
+    expect(result?.user).toEqual({ id: 'u1', workspaceId: 'w1', email: 'me@gmail.com' });
+    expect(result?.onboardingComplete).toBe(true);
+    expect(sessions.issue).toHaveBeenCalledWith({
+      userId: 'u1',
+      workspaceId: 'w1',
+      ipAddress: null,
+      userAgent: null,
+    });
+    expect(mailboxes.findByProviderEmail).not.toHaveBeenCalled();
+    expectIdentityOnly();
+  });
+
+  it('signs in a disconnected secondary into its existing owner workspace without reactivation', async () => {
+    users.findByEmail.mockResolvedValue(null);
+    mailboxes.findByProviderEmail.mockResolvedValue({
+      userId: 'u1',
+      workspaceId: 'w1',
+      status: 'disconnected',
+    });
+    users.findById.mockResolvedValue({ onboardedAt: null });
+    const result = await orchestrator.signIn(INPUT);
+    expect(result?.user).toMatchObject({ id: 'u1', workspaceId: 'w1' });
+    expect(result?.onboardingComplete).toBe(false);
+    expectIdentityOnly();
+  });
+
+  it('does not bootstrap an unknown identity or issue a session for a removed owner', async () => {
+    users.findByEmail.mockResolvedValue(null);
+    mailboxes.findByProviderEmail.mockResolvedValue(null);
+    expect(await orchestrator.signIn(INPUT)).toBeNull();
+    mailboxes.findByProviderEmail.mockResolvedValue({ userId: 'u1', workspaceId: 'w1' });
+    users.findById.mockResolvedValue(null);
+    expect(await orchestrator.signIn(INPUT)).toBeNull();
+    expect(sessions.issue).not.toHaveBeenCalled();
+    expectIdentityOnly();
+  });
+
   it('reuses the workspace when a user already owns the email (returning primary)', async () => {
     users.findByEmail.mockResolvedValue({ userId: 'u1', workspaceId: 'w1' });
 

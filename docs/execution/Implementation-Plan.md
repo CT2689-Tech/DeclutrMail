@@ -10990,3 +10990,18 @@ knew both numbers the whole time.
 
 `show_sync_live_counters` and `show_sync_eta` are retired with this. In
 source checked 2026-09-26 no code read either key.
+
+### [AMENDMENT 2026-10-10 on D108/D109 — returning identity sign-in]
+
+Founder-approved journey follow-up: returning/expired-session sign-in requests
+only Google OpenID/email identity, online, with account choice. Gmail connect,
+add, reconnect and reactivate retain their existing explicit Gmail grant.
+The signed per-flow state carries the reduced-permission intent; callbacks
+cannot switch it. Verify the ID token for this app and accept only verified
+Google-hosted Gmail/Google Mail or Workspace email identities against existing
+primary/secondary ownership. Unknown identities return to the full connection
+disclosure without bootstrap. Issue only an app session and CSRF cookie: no
+provider-token persistence, mailbox activation, scan/watch scheduling or active
+mailbox change. Unfinished setup resumes with the requested route, while
+Settings and Billing remain accessible for account recovery. Preserve unexpected
+5xx logging/capture and the reduced-permission retry intent.

@@ -36,6 +36,12 @@ export function oauthStartUrl(returnTo?: string): string {
   return `${path}?${new URLSearchParams({ returnTo }).toString()}`;
 }
 
+/** Returning sign-in uses only Google's identity permissions. */
+export function oauthSignInUrl(returnTo?: string): string {
+  const url = oauthStartUrl(returnTo);
+  return `${url}${url.includes('?') ? '&' : '?'}intent=sign-in`;
+}
+
 /** New connections review permissions before the final Google consent hop. */
 export function permissionEntryUrl(returnTo?: string): string {
   const destination = publicBillingDestination(returnTo);
