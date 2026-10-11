@@ -350,6 +350,10 @@ test('launch alerts page only past the stated thresholds and stay off the offlin
   assert.equal(initialRule.duration, '600s');
   assert.equal(initialRule.aggregations[0].alignmentPeriod, '300s');
   assert.ok(initialRule.filter.includes('metric.labels.queue="initial-sync"'));
+  const genericWait = find('DeclutrMail internal queue waiting age').conditions[0]
+    .conditionThreshold;
+  assert.equal(genericWait.thresholdValue, 300);
+  assert.ok(genericWait.filter.includes('metric.labels.queue!="initial-sync"'));
   const recovery = find('DeclutrMail initial recovery budget exhausted').conditions[0]
     .conditionThreshold;
   assert.equal(recovery.thresholdValue, 0);
@@ -382,7 +386,8 @@ test('launch alerts page only past the stated thresholds and stay off the offlin
   assert.equal(oauth.duration, '60s');
   assert.match(oauth.query, />= 3/);
   assert.match(oauth.query, /> 0\.2/);
-  assert.match(oauth.query, /\[24h\]\)\) > 0/);
+  assert.match(oauth.query, /\[24h\]\)\) >= 10/);
+  assert.doesNotMatch(oauth.query, /\[24h\]\)\) > 0\)/);
   assert.equal(
     oauthCallbackShouldPage({ failuresLastHour: 2, failuresLastDay: 2, startsLastDay: 0 }),
     false,
@@ -397,6 +402,18 @@ test('launch alerts page only past the stated thresholds and stay off the offlin
   );
   assert.equal(
     oauthCallbackShouldPage({ failuresLastHour: 1, failuresLastDay: 1, startsLastDay: 1 }),
+    false,
+  );
+  assert.equal(
+    oauthCallbackShouldPage({ failuresLastHour: 1, failuresLastDay: 9, startsLastDay: 9 }),
+    false,
+  );
+  assert.equal(
+    oauthCallbackShouldPage({ failuresLastHour: 1, failuresLastDay: 2, startsLastDay: 10 }),
+    false,
+  );
+  assert.equal(
+    oauthCallbackShouldPage({ failuresLastHour: 1, failuresLastDay: 3, startsLastDay: 10 }),
     true,
   );
   assert.equal(
@@ -450,6 +467,10 @@ test('launch log metrics keep OAuth on the API and Gmail quota on allowlisted wo
   assert.ok(failure.filter.includes('jsonPayload.reason="MAILBOX_OWNED_BY_OTHER_WORKSPACE"'));
   for (const worker of GMAIL_QUOTA_WORKERS)
     assert.ok(gmail.filter.includes(`jsonPayload.worker="${worker}"`));
+  const snooze = readFileSync('packages/workers/src/snooze-wake.worker.ts', 'utf8');
+  assert.ok(snooze.includes('gmailMutation.getClient'));
+  assert.ok(snooze.includes("'RateLimitError'"));
+  assert.ok(GMAIL_QUOTA_WORKERS.includes('SnoozeWakeWorker'));
   const runbook = readFileSync('docs/ops/observability-alerts.md', 'utf8');
   assert.match(
     runbook,

@@ -185,6 +185,7 @@ export const GMAIL_QUOTA_WORKERS = [
   'AutopilotApplyWorker',
   'AutopilotActionWorker',
   'WatchRenewalWorker',
+  'SnoozeWakeWorker',
 ];
 const API = 'resource.type="cloud_run_revision" AND resource.labels.service_name="declutrmail-api"';
 const SECURITY = `${API} AND jsonPayload.kind="security_event"`;

@@ -43,10 +43,17 @@ those decisions. WS4b is out of scope. PR #972 stays paused.
   `login.failure`, with a closed reason or `other`. No address, account, or
   request identity is logged. `signup.denied` is not logged.
 - Dead-letter growth counts `worker.dead_lettered`, not `dead_letter.parked`.
-- Gmail quota matches `RateLimitError` on `worker.failed` only. Each
+- Gmail quota matches `RateLimitError` on `worker.failed` only,
+  including `SnoozeWakeWorker` because Later wakes call Gmail. Each
   throw also emits `worker.retried` or `worker.dead_lettered`, so
   counting those lines would page at 16 throws. The 30-in-10-minutes
   figure is an initial guardrail, not a measured baseline.
+- The 24-hour OAuth ratio pages only when there were at least 10 starts.
+  One failure out of one start does not page. Three failures in one hour
+  still page.
+- Initial-sync queue wait pages at 10 minutes. The generic 5-minute
+  queue-wait alert excludes `initial-sync`, so the 10-minute row is the
+  first page for that queue.
 - Mailbox-connect failures log `connect_failed` or
   `MAILBOX_OWNED_BY_OTHER_WORKSPACE`. Both are allowlisted. A normal
   worker `exit(0)` does not page.

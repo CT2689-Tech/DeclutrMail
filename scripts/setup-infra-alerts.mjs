@@ -10,13 +10,19 @@ import {
 
 export const OAUTH_FAILURES_PER_HOUR = 3;
 export const OAUTH_FAILURE_RATIO = 0.2;
+/** 24h ratio ignores samples smaller than this. One failed start must not page. */
+export const OAUTH_RATIO_MIN_STARTS = 10;
 export const DEAD_LETTER_GROWTH_PER_HOUR = 5;
 export const GMAIL_RATE_LIMIT_PER_10_MIN = 30;
 export const INITIAL_SYNC_WAIT_SECONDS = 600;
 
 export function oauthCallbackShouldPage({ failuresLastHour, failuresLastDay, startsLastDay }) {
   if (failuresLastHour >= OAUTH_FAILURES_PER_HOUR) return true;
-  if (startsLastDay > 0 && failuresLastDay / startsLastDay > OAUTH_FAILURE_RATIO) return true;
+  if (
+    startsLastDay >= OAUTH_RATIO_MIN_STARTS &&
+    failuresLastDay / startsLastDay > OAUTH_FAILURE_RATIO
+  )
+    return true;
   return false;
 }
 export function deadLetterShouldPage(count) {
@@ -30,7 +36,7 @@ function callbackFailureQuery() {
     'logging_googleapis_com:user_oauth_callback_failure{monitored_resource="cloud_run_revision",service_name="declutrmail-api"}';
   const start =
     'logging_googleapis_com:user_oauth_callback_start{monitored_resource="cloud_run_revision",service_name="declutrmail-api"}';
-  return `(sum(increase(${failure}[1h])) >= ${OAUTH_FAILURES_PER_HOUR}) or ((sum(increase(${failure}[24h])) / sum(increase(${start}[24h])) > ${OAUTH_FAILURE_RATIO}) and (sum(increase(${start}[24h])) > 0))`;
+  return `(sum(increase(${failure}[1h])) >= ${OAUTH_FAILURES_PER_HOUR}) or ((sum(increase(${failure}[24h])) / sum(increase(${start}[24h])) > ${OAUTH_FAILURE_RATIO}) and (sum(increase(${start}[24h])) >= ${OAUTH_RATIO_MIN_STARTS}))`;
 }
 function counted(title, filter, value, alignmentPeriod, groupByFields = []) {
   const policy = thresholdPolicy(
@@ -177,7 +183,7 @@ export function infrastructurePolicies({ runtime = false } = {}) {
       `metric.type="logging.googleapis.com/user/${name}" AND resource.type="cloud_run_revision" AND resource.labels.service_name="declutrmail-worker"`;
     const wait = thresholdPolicy(
       'DeclutrMail internal queue waiting age',
-      logFilter('ops_queue_wait_age'),
+      `${logFilter('ops_queue_wait_age')} AND metric.labels.queue!="initial-sync"`,
       300,
       '600s',
       'ALIGN_PERCENTILE_99',
@@ -187,7 +193,7 @@ export function infrastructurePolicies({ runtime = false } = {}) {
     // Sampling every five minutes requires aligned windows at least that long.
     wait.conditions[0].conditionThreshold.aggregations[0].alignmentPeriod = '300s';
     wait.documentation = documentation(
-      'A sampled head-of-line waiting/paused BullMQ job is older than 5 minutes since creation for 10 minutes. Inspect the named queue, worker failures, Redis connectivity and concurrency. Jobs currently delayed or prioritized are excluded from age; a waiting job can include prior delays/retries. This is not elapsed queue wait or a per-job latency percentile.',
+      'A sampled head-of-line waiting/paused BullMQ job is older than 5 minutes since creation for 10 minutes. Initial-sync is excluded and pages at 10 minutes instead. Inspect the named queue, worker failures, Redis connectivity and concurrency. Jobs currently delayed or prioritized are excluded from age; a waiting job can include prior delays/retries. This is not elapsed queue wait or a per-job latency percentile.',
     );
     const db = thresholdPolicy(
       'DeclutrMail database connection pressure',
@@ -277,7 +283,7 @@ export function infrastructurePolicies({ runtime = false } = {}) {
     );
     initialSync.conditions[0].conditionThreshold.aggregations[0].alignmentPeriod = '300s';
     initialSync.documentation = documentation(
-      'Sampled initial-sync head-of-line waiting age is over 10 minutes for 10 minutes. Inspect the initial-sync worker, Redis, and recovery attempts. This is creation age of the oldest waiting or paused job, not elapsed queue wait.',
+      'Sampled initial-sync head-of-line waiting age is over 10 minutes for 10 minutes. This is the first page for that queue: the 5-minute internal-queue alert excludes initial-sync. Inspect the initial-sync worker, Redis, and recovery attempts. This is creation age of the oldest waiting or paused job, not elapsed queue wait.',
     );
     const recovery = thresholdPolicy(
       'DeclutrMail initial recovery budget exhausted',
@@ -321,7 +327,7 @@ export function infrastructurePolicies({ runtime = false } = {}) {
     const callbackFailures = {
       displayName: 'DeclutrMail OAuth callback failures',
       documentation: documentation(
-        'OAuth callback failures reached 3 in 1 hour, or more than 20% of starts over 24 hours. Consent cancelled, reconnect cancelled, and the inbox limit are excluded. Inspect security_event reason values. This ratio is an initial guardrail, not a measured baseline.',
+        'OAuth callback failures reached 3 in 1 hour, or more than 20% of starts over 24 hours when there were at least 10 starts. One failure out of one start does not page on the ratio. Three failures in one hour still page. Consent cancelled, reconnect cancelled, and the inbox limit are excluded. Inspect security_event reason values. This ratio is an initial guardrail, not a measured baseline.',
       ),
       conditions: [
         {
