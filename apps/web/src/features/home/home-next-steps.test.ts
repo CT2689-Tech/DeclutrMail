@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getFixSet } from '@/features/inbox-report';
+import type { getFixSet } from '@/features/inbox-report';
 
 import {
   homeCandidatesFromReport,
