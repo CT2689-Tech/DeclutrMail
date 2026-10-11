@@ -43,7 +43,7 @@ jobs:
             psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$migration"
           done
       - name: Boundary verification
-        run: pnpm --filter @declutrmail/api test src/billing/__tests__/sandbox-rehearsal-boundary.spec.ts src/billing/__tests__/sandbox-checkout-revocation.spec.ts src/billing/__tests__/sandbox-checkout-proof.spec.ts src/billing/__tests__/sandbox-checkout-cleanup.spec.ts
+        run: pnpm --filter @declutrmail/api test src/billing/__tests__/sandbox-rehearsal-boundary.spec.ts src/billing/__tests__/sandbox-rehearsal-failure.spec.ts src/billing/__tests__/sandbox-checkout-revocation.spec.ts src/billing/__tests__/sandbox-checkout-proof.spec.ts src/billing/__tests__/sandbox-checkout-cleanup.spec.ts
       - name: Start isolated synthetic UI and signed webhook receiver
         env:
           BILLING_REHEARSAL: sandbox
@@ -66,7 +66,7 @@ jobs:
           done
           if [ -z "$fixture_url" ]; then exit 1; fi
           export REHEARSAL_PUBLIC_URL="$fixture_url"
-          pnpm --filter @declutrmail/api exec node --import @swc-node/register/esm-register scripts/billing-checkout-revocation-rehearsal.ts
+          cd apps/api && node --import @swc-node/register/esm-register scripts/billing-checkout-revocation-rehearsal.ts
       - name: Retain only sanitized proof and cleanup outcomes
         if: always()
         uses: actions/upload-artifact@v7
