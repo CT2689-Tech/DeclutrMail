@@ -1,5 +1,13 @@
 const URL_RE = /\b(?:https?:\/\/|www\.)[^\s)]+/gi;
 
+const TRAILING_PUNCTUATION = '.,;:!?';
+
+function stripTrailingPunctuation(value: string): string {
+  let end = value.length;
+  while (end > 0 && TRAILING_PUNCTUATION.includes(value[end - 1] ?? '')) end -= 1;
+  return end === value.length ? value : value.slice(0, end);
+}
+
 /**
  * Instructions aimed at the reader. A mention of a reply in a subject
  * ("needs a reply about Q4") is not one of these.
@@ -22,7 +30,7 @@ export function validateLlmOutput(
   if (INSTRUCTION_RE.test(trimmed)) return { ok: false, reason: 'instruction' };
   const urls = trimmed.match(URL_RE) ?? [];
   for (const url of urls) {
-    const cleaned = url.replace(/[.,;:!?]+$/g, '');
+    const cleaned = stripTrailingPunctuation(url);
     if (!allowedCorpus.includes(cleaned)) return { ok: false, reason: 'url' };
   }
   return { ok: true };

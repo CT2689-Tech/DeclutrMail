@@ -45,7 +45,7 @@ export function parseUiGlossary(yaml: string): UiGlossary {
   };
 
   for (const raw of yaml.split('\n')) {
-    const line = raw.replace(/\s+$/, '');
+    const line = raw.trimEnd();
     if (line.length === 0 || line.startsWith('#')) continue;
     if (line === 'allowed_names:') {
       flushBan();
