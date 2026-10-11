@@ -276,7 +276,7 @@ jobs:
       - name: Sandbox-only Paddle inspection contracts
         run: node --test scripts/paddle-sandbox-inspection.test.mjs
       - name: Build selection and artifact retention contracts
-        run: node --test scripts/vercel-ignore-build.test.mjs scripts/pin-production-images.test.mjs scripts/deploy-api-safely.test.mjs
+        run: node --test scripts/vercel-ignore-build.test.mjs scripts/pin-production-images.test.mjs scripts/deploy-api-safely.test.mjs scripts/check-billing-queue-runtime.test.mjs
       - name: PR-body D-citation matcher
         run: node --test scripts/check-pr-body-d-ref.test.mjs
       - name: ct-gates verdicts (a run that reviewed nothing never passes)

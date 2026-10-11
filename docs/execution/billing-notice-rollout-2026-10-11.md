@@ -4,7 +4,7 @@ The founder approved provider receipts/invoices and cancellation/pause emails pl
 DeclutrMail app-access deadlines and complimentary-grant expiry notices. This
 compatibility release depends on merged #925 and its existing strict event kinds, deduplication,
 current recipient/suppression/access verification and 24-hour stale-message cutoff.
-Root owns the production deploy workflow and this record; no other open PR touches
+Root owns the CI/deploy workflows and this record; no other open PR touches
 the workflow at preparation time. No notice producer is enabled by this first
 phase. No payment, refund-restoration, checkout model,
 grant duration or allocation policy is changed here.
@@ -54,8 +54,9 @@ raw runtime environment values and secret references are not logged.
 
 Generic email actors gain a broker-visible `billing-queue-v1` compatibility marker.
 Before any enabled worker/producer deployment, the built reviewed image performs a
-read-only broker inspection using existing WIF/Secret Manager credentials inside
-CI. Every current generic email consumer must have that marker; empty, unavailable,
+read-only broker inspection. The first activation attempted the CI Secret Manager
+route; the runtime-secret access correction below replaces it with the existing
+runtime identity. Every current generic email consumer must have that marker; empty, unavailable,
 unnamed or mixed older actors fail closed before producer deployment. No client
 addresses, credentials, jobs or email payloads are logged. This is a compatibility
 check, not an inference from elapsed time or HTTP traffic alone. Ordinary shutdown
@@ -119,8 +120,9 @@ separate, and automatic upgrade-refund restoration stays OFF.
 The real broker preflight is required before the enabled worker deploys: the worker
 can publish grant notices during bootstrap. It refuses empty, unknown, unnamed or
 mixed legacy actors before the first possible producer. The subsequent resolved
-worker source/flag check gates API producers specifically. Broker credentials stay
-within the reviewed CI image/WIF route. The OFF foundation intentionally did not
+worker source/flag check gates API producers specifically. The first candidate
+attempted the reviewed CI image/WIF route; its failure and replacement are recorded
+below. The OFF foundation intentionally did not
 perform this broker read; real capability proof is still required during the
 activation release before any enabled service deploys.
 
@@ -140,3 +142,50 @@ passed all 16 controls with the new cutoff, 23 deployment tests and diff validat
 Root also passed the controls/tests, formatting and diff checks. No application
 TypeScript changed in this activation candidate. Runtime broker and enabled serving
 proof remain required by the release; this review does not claim activation.
+
+## Runtime-secret access correction
+
+Activation #935 merged at `4f2c25b1a50c2f5627f1e17b3e404ce008e574f5` after full
+queue CI #38108184071 and exact-main CI #38108624643 passed. Release #38108624686
+failed on `secretmanager.versions.access` in the broker preflight. Both service
+deployment steps were skipped; the OFF compatibility revisions remain serving.
+The failure is retained as a failed release, not a successful activation.
+
+The deploy identity intentionally cannot read the Redis secret. This correction
+uses the documented private diagnostic-job pattern under the existing runtime
+service account, binding only `redis-url-prod` inside that job. No secret value is
+exported to CI or the desktop, and no IAM permission is added. The job uses an
+immutable image, explicit standalone probe entrypoint, one task, zero retries and
+a 60-second limit. It does not import API/worker bootstrap or bind database,
+payment, email or Gmail credentials. The read keeps `skipMetasUpdate=true`.
+
+The preflight requires one completed successful execution with the expected
+immutable image and runtime identity. It then deletes the exact owned execution
+and job and requires successful metadata lists to prove absence before allowing
+enabled service deployment. Uncertain/active executions are cancelled and their
+terminal state checked; cleanup uncertainty refuses rollout. The helper emits an
+ownership marker only after positive absence and immutable-image resolution,
+before its create attempt. A separate always step retries cleanup of this
+run/attempt's exact probe only when that marker exists; it cannot adopt or delete
+a preexisting job after preflight refuses it. External runner termination may
+still require operator recovery; it is
+never counted as proof of cleanup. Runtime job permissions/broker compatibility
+and real cleanup still require the next reviewed release's evidence.
+
+Review identified and corrected three helper issues before release: Node's default
+subprocess stderr forwarding is suppressed with explicit captured pipes, and
+resource absence uses successful metadata lists instead of classifying a failed
+`describe` as absence. Recovery now requires the owned-attempt marker. Ten
+orchestration tests include a real subprocess privacy control and the actual
+workflow's preexisting/unreadable ownership paths; five standalone probe tests
+cover configuration, metadata-write exclusion,
+failure cleanup and the read deadline. All 17 notice/probe tests, API typecheck,
+touched lint, 16 serving-script controls and 23 existing deployment tests pass.
+The real standalone Node/SWC command accepted a compatible actor and refused a
+legacy actor against owned loopback Redis. No email provider or application
+database was used; all test actors/connections and that Redis server were stopped.
+Independent final review found no remaining material blocker and confirmed the
+installed gcloud metadata projections. The expanded CI helper command passed
+all 41 tests; both CI and manual releases now run the new regression tests.
+Root owns this corrective preflight and integration; enrollment remains fixed at
+`2026-10-11T03:15:41.000Z`, and automatic refund restoration remains OFF.
