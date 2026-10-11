@@ -50,8 +50,12 @@ function notShippingTexts(): string[] {
   return out;
 }
 
+function compact(value: string): string {
+  return value.replace(/\s+/g, '');
+}
+
 describe('AiConsentCard', () => {
-  it('renders the short title, link, and actions, and none of the NOT SHIPPING keys', () => {
+  it('renders the short title, one body line, link, and actions, and none of the NOT SHIPPING keys', () => {
     const banned = notShippingTexts();
     expect(banned.length).toBeGreaterThan(0);
     expect(banned).toContain(WS2_COPY.aiConsent.noFetch);
@@ -60,11 +64,18 @@ describe('AiConsentCard', () => {
     expect(banned).toContain(WS2_COPY.aiConsent.reask);
     expect(banned).toContain(fillBrief(WS2_COPY.aiConsent.upgrade.decline));
     expect(banned).toContain(WS2_COPY.aiPrompt.frequency);
+    expect(WS2_COPY.aiConsent._notShipping).not.toContain('intro');
+    expect(WS2_COPY.aiConsent._notShipping).not.toContain('upgrade.body');
 
     const titles: Record<CardKind, string> = {
       all: WS2_COPY.aiConsent.title.all,
       withBrief: fillBrief(WS2_COPY.aiConsent.title.withBrief),
       upgrade: fillBrief(WS2_COPY.aiConsent.upgrade.title),
+    };
+    const bodies: Record<CardKind, string> = {
+      all: WS2_COPY.aiConsent.intro.all,
+      withBrief: fillBrief(WS2_COPY.aiConsent.intro.withBrief),
+      upgrade: fillBrief(WS2_COPY.aiConsent.upgrade.body),
     };
 
     for (const kind of ['all', 'withBrief', 'upgrade'] as const) {
@@ -83,7 +94,16 @@ describe('AiConsentCard', () => {
       expect(link).toHaveAttribute('href', '/privacy#ai-processing');
       expect(link).toHaveClass('dm-external-link');
       const text = region.textContent ?? '';
+      const expected = [
+        titles[kind],
+        bodies[kind],
+        WS2_COPY.aiConsent.link,
+        WS2_COPY.aiConsent.allow,
+        WS2_COPY.aiConsent.notNow,
+      ].join('');
+      expect(compact(text)).toBe(compact(expected));
       for (const phrase of banned) {
+        if (expected.includes(phrase)) continue;
         expect(text).not.toContain(phrase);
       }
       unmount();

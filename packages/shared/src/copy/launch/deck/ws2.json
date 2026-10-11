@@ -232,7 +232,8 @@
     "failedEyebrow": "Gmail account needs attention",
     "queued": {
       "title": "Your scan is waiting to start.",
-      "body": "It starts on its own and keeps anything already scanned. You don’t need to keep this page open."
+      "body": "It starts on its own and keeps anything already scanned. You don’t need to keep this page open.",
+      "cta": "(no button)"
     },
     "nextLargest": {
       "title": {
@@ -243,12 +244,26 @@
       "cta": "See largest senders"
     },
     "nextLaterDue": {
-      "title": {
+      "count": {
         "one": "1 sender comes back from Later today",
         "other": "{n} senders come back from Later today"
       },
-      "body": "Their email returns to your inbox at the time you picked.",
+      "body": "Email you moved to Later comes back to your inbox at the time you picked.",
       "cta": "Open Later"
+    },
+    "syncing": {
+      "title": "Scanning your Gmail…",
+      "body": "You can close this tab and come back later.",
+      "stage": [
+        "fetching_metadata: Collecting sender details.",
+        "building_sender_index: Grouping email by sender.",
+        "computing_recommendations: Preparing suggestions.",
+        "finalizing: Finishing up."
+      ],
+      "cta": "(no button)"
+    },
+    "nextLater": {
+      "title": "Later"
     }
   },
   "pro": {
@@ -302,7 +317,6 @@
   },
   "aiConsent": {
     "_notShipping": [
-      "intro",
       "explain",
       "brief.sends",
       "never",
@@ -318,11 +332,11 @@
     ],
     "title": {
       "all": "Use AI to explain suggestions?",
-      "withBrief": "Use AI for suggestion explanations and your {BRIEF_NAME}?"
+      "withBrief": "Use AI to explain and summarize?"
     },
     "intro": {
-      "all": "DeclutrMail can use Anthropic, an AI company, to write a short explanation for each suggestion. Here’s exactly what it would send.",
-      "withBrief": "DeclutrMail can use Anthropic, an AI company, to write a short explanation for each suggestion and to write your {BRIEF_NAME}. Here’s exactly what each one would send."
+      "all": "Let Anthropic’s AI explain each suggestion. We never fetch or store full email contents.",
+      "withBrief": "Let Anthropic’s AI explain each suggestion and write your {BRIEF_NAME}. We never fetch or store full email contents."
     },
     "explain": {
       "heading": "Suggestion explanations",
@@ -346,38 +360,39 @@
     "notNow": "Not now",
     "allowed": {
       "toast": {
-        "all": "AI explanations are on. New explanations will use it.",
-        "withBrief": "AI is on for explanations and your {BRIEF_NAME}. Your next {BRIEF_NAME} will use it."
+        "all": "AI explanations are on.",
+        "withBrief": "AI is on for explanations and your {BRIEF_NAME}."
       }
     },
     "revoked": {
       "toast": {
-        "all": "AI explanations are off. Explanations are now written from our rules.",
-        "withBrief": "AI is off. Explanations are written from our rules, and your next {BRIEF_NAME} uses the basic version."
+        "all": "AI explanations are off.",
+        "withBrief": "AI is off for explanations and your {BRIEF_NAME}."
       }
     },
     "missing": {
       "banner": "Your {BRIEF_NAME} is the basic version. AI writing is off."
     },
     "upgrade": {
-      "title": "Use AI for your {BRIEF_NAME} too?",
+      "title": "Use AI for your {BRIEF_NAME}?",
+      "body": "Let Anthropic’s AI write your {BRIEF_NAME}. We never fetch or store full email contents.",
       "decline": "If you choose Not now, your {BRIEF_NAME} is written without AI. AI explanations stay on."
     },
-    "reask": "We’ve changed what DeclutrMail sends to Anthropic. Review it and choose again.",
+    "reask": "Updated",
     "settings": {
       "label": {
         "all": "Use AI to explain suggestions",
-        "withBrief": "Use AI for suggestion explanations and my {BRIEF_NAME}"
+        "withBrief": "Use AI for explanations and my {BRIEF_NAME}"
       },
       "help": {
-        "all": "Sends Anthropic each sender’s name and domain, the suggested choice and why, how much they email you, how much is marked read, and their Gmail category. Never subject lines, snippets or full emails. Off means explanations are written from our rules.",
-        "withBrief": "For explanations, sends Anthropic each sender’s name and domain, the suggested choice and why, how much they email you, how much is marked read, and their Gmail category. For your {BRIEF_NAME}, sends the sender, subject line and preview snippet of each email it covers. Never full emails. Off means explanations from our rules and a basic {BRIEF_NAME}."
+        "all": "Anthropic’s AI writes each explanation. We never fetch or store full email contents.",
+        "withBrief": "Anthropic’s AI writes your explanations and {BRIEF_NAME}. We never fetch or store full email contents."
       },
       "state": {
         "on": "On",
         "off": "Off",
-        "paused": "Paused by DeclutrMail. Explanations are written from our rules for now.",
-        "review": "Needs your review. Off until you choose again."
+        "paused": "Paused by DeclutrMail for now.",
+        "review": "Off until you choose again."
       }
     },
     "killSwitch": "AI writing is paused for now. Your {BRIEF_NAME} uses the basic version.",
@@ -425,15 +440,64 @@
   },
   "aiPrompt": {
     "_notShipping": ["frequency"],
-    "text": "Want each explanation written in a sentence or two by AI? See what it would send first.",
-    "review": "See what’s sent",
+    "text": "Want AI to explain each suggestion?",
+    "review": "Learn more",
     "dismiss": "No thanks",
     "dismissAria": "Dismiss the AI explanations suggestion",
     "frequency": "At most once every 30 days, and never again after it’s been dismissed twice or the user has chosen on the card."
   },
   "liveFix": {
+    "scanNow": "Scan now",
+    "scanNowBusy": "Scanning…",
+    "scanNowTooltip": "Updated {age} · Scan now",
+    "scanNowError": "Couldn’t check for new email. Try again.",
+    "shellLocation": "(no prefix)",
+    "kicker": {
+      "cleanup": "Cleanup"
+    },
+    "brief": {
+      "title": "{BRIEF_NAME}",
+      "empty": "There’s nothing to review in this {BRIEF_NAME}.",
+      "feedback": "How was this {BRIEF_NAME}?",
+      "readyAt": "{BRIEF_NAME} ready at"
+    },
+    "home": {
+      "sinceLast": {
+        "title": {
+          "one": "1 new email scanned",
+          "other": "{n} new emails scanned"
+        },
+        "none": "No new email since your last visit.",
+        "senders": {
+          "one": "1 new sender",
+          "other": "{n} new senders"
+        },
+        "eyebrow": "Since your last visit"
+      },
+      "queueNote": "From today’s Triage list. Nothing changes until you confirm a preview."
+    },
     "billing": {
-      "scope": "Your plan covers every Gmail account you connect."
+      "scope": "Your plan covers every Gmail account you connect.",
+      "limit": {
+        "unlimited": "No monthly limit.",
+        "free": "{n} sender changes a month. Each change to a sender counts once, however many emails it moves. Keep and Unarchive don’t count."
+      },
+      "sameFeatures": "Your features and number of Gmail accounts stay the same.",
+      "accounts": {
+        "one": "{n} of 1 Gmail account",
+        "other": "{n} of {k} Gmail accounts"
+      },
+      "planIncludes": {
+        "one": "{name} covers 1 Gmail account.",
+        "other": "{name} covers up to {k} Gmail accounts."
+      },
+      "planBlurbs": [
+        "free: {ws1.pricing.free.tagline} = For getting started and light upkeep",
+        "plus: {ws1.pricing.plus.tagline} = For staying on top of new email all year"
+      ]
+    },
+    "mailbox": {
+      "updated": "Updated {age}"
     }
   }
 }

@@ -30,7 +30,10 @@ describe('AiInlinePrompt', () => {
       </QueryClientProvider>,
     );
 
+    expect(screen.getByText(WS2_COPY.aiPrompt.text)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: WS2_COPY.aiPrompt.review })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: WS2_COPY.aiPrompt.dismissAria })).toBeInTheDocument();
+    expect(screen.queryByText(WS2_COPY.aiPrompt.frequency)).not.toBeInTheDocument();
   });
 
   it('insets the opened consent card by the page margin', () => {

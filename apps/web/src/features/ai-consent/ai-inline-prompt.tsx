@@ -28,7 +28,7 @@ export function AiInlineConsentInset({ children }: { children: ReactNode }) {
 }
 
 /**
- * Dismissible nudge on Triage and Senders. "See what's sent" opens the
+ * Dismissible nudge on Triage and Senders. "Learn more" opens the
  * card. Choosing on the card, or two dismissals, ends the nudge.
  */
 export function AiInlinePrompt() {

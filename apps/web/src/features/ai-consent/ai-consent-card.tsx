@@ -20,23 +20,27 @@ function fillBrief(template: string): string {
   return template.replaceAll('{BRIEF_NAME}', BRIEF_NAME);
 }
 
+/** True when this deck path, or a parent of it, is marked NOT SHIPPING. */
+function notShipping(path: string): boolean {
+  return copy._notShipping.some(
+    (item) => item === path || path.startsWith(`${item}.`) || item.startsWith(`${path}.`),
+  );
+}
+
 /**
- * Short body, when Content has put one on the deck. Hidden when the key
- * is absent, blank, or listed as NOT SHIPPING. No fixed height.
+ * One sentence: intro for the explanations card, upgrade.body for Brief.
+ * Hidden when that key is blank or marked NOT SHIPPING. No fixed height.
  */
 function bodyLine(card: CardKind): string | null {
-  if (copy._notShipping.some((path) => path === 'body' || path.startsWith('body.'))) return null;
-  const body = (copy as { body?: string | { all?: string; withBrief?: string; upgrade?: string } })
-    .body;
-  if (body == null) return null;
+  const path =
+    card === 'upgrade' ? 'upgrade.body' : card === 'withBrief' ? 'intro.withBrief' : 'intro.all';
+  if (notShipping(path)) return null;
   const raw =
-    typeof body === 'string'
-      ? body
-      : card === 'upgrade'
-        ? (body.upgrade ?? '')
-        : card === 'withBrief'
-          ? (body.withBrief ?? body.all ?? '')
-          : (body.all ?? '');
+    card === 'upgrade'
+      ? copy.upgrade.body
+      : card === 'withBrief'
+        ? copy.intro.withBrief
+        : copy.intro.all;
   const text = raw.trim();
   return text.length > 0 ? fillBrief(text) : null;
 }
