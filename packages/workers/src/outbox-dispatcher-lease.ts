@@ -6,12 +6,20 @@ import type { Redis } from 'ioredis';
  *
  * The dispatcher's orphan guard is process-local, so two live dispatcher
  * processes could each re-invoke a concurrency unit the other abandoned.
- * Cloud Run does not promise that a rollout stops the old instance before
- * starting the new one — services overlap revisions, and the worker-pool
- * instance-split docs say reallocation "is not instantaneous" — so only the
- * process holding this lease claims outbox rows.
+ * Only the process holding this lease claims outbox rows.
  *
- * Safety rests on local validity never outliving Redis validity: the
+ * Defense in depth, not the guarantee. Releases never run two worker
+ * processes: `scripts/worker-executor.mjs` stops every executor and proves
+ * zero running instances before starting one. The lease covers whatever
+ * bypasses that (a manual start or scale-up) for the outbox alone; interval
+ * schedulers and cron consumers in `worker.ts` take no lease.
+ *
+ * It is not a fence. No token travels with a claimed row or a consumer
+ * call, so nothing downstream rejects a stale holder. A holder that loses
+ * Redis for longer than the TTL while its own call is still running cannot
+ * stop a successor from acquiring and dispatching beside that call.
+ *
+ * Within that limit, local validity never outlives Redis validity: the
  * deadline is measured from BEFORE the command was sent, minus a margin,
  * so the key always expires in Redis no earlier than this process stops
  * treating itself as the holder. Any failure, timeout or foreign holder
