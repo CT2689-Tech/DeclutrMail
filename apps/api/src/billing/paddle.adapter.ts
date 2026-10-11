@@ -164,6 +164,28 @@ interface PaddleTransaction {
   origin?: string | null;
 }
 
+/** ADR-0046: fixture-only preparation; never returned by production checkout. */
+export interface SandboxCheckoutIdentity {
+  workspaceId: string;
+  attemptId: string;
+  priceId: string;
+}
+export interface SandboxCheckoutFacts {
+  transactionId: string;
+  status: string;
+  subscriptionId: string | null;
+  hold: 'unpaid' | 'paid' | 'stopped' | 'unknown';
+  checkoutUrl?: string;
+}
+
+function sandboxAttemptSignature(identity: SandboxCheckoutIdentity, secret: string): string {
+  return createHmac('sha256', secret)
+    .update(
+      `paddle:sandbox-checkout:${identity.workspaceId}:${identity.attemptId}:${identity.priceId}`,
+    )
+    .digest('hex');
+}
+
 /**
  * QA-billing-20260901-07 — Paddle mints a $0, `ready`-status transaction
  * with this origin every time a customer updates their card through the
@@ -380,6 +402,180 @@ export class PaddleAdapter implements BillingProvider {
         sig: attributionSignature(input.workspaceId, webhookSecret),
       },
     };
+  }
+
+  private sandboxCheckoutBoundary(identity: SandboxCheckoutIdentity): void {
+    if (
+      this.env.BILLING_CHECKOUT_REVOCATION_REHEARSAL !== 'sandbox' ||
+      this.env.PADDLE_ENV !== 'sandbox' ||
+      !/^pdl_sdbx_apikey_[a-z\d]{26}_[a-zA-Z\d]{22}_[a-zA-Z\d]{3}$/.test(
+        this.env.PADDLE_API_KEY ?? '',
+      ) ||
+      !this.env.PADDLE_WEBHOOK_SECRET ||
+      !/^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/.test(identity.workspaceId) ||
+      !/^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/.test(identity.attemptId) ||
+      !/^pri_[a-z\d]{26}$/.test(identity.priceId)
+    )
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+  }
+
+  private async sandboxCheckoutRequest(path: string, method = 'GET', body?: unknown) {
+    // Callers first enforce the sandbox boundary. Never emit raw responses,
+    // network errors, custom data or credentials in diagnostics.
+    try {
+      const response = await fetch(`https://sandbox-api.paddle.com${path}`, {
+        method,
+        headers: {
+          Authorization: `Bearer ${this.env.PADDLE_API_KEY}`,
+          'Content-Type': 'application/json',
+          'Paddle-Version': '1',
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        signal: AbortSignal.timeout(API_TIMEOUT_MS),
+      });
+      if (!response.ok) throw new Error('unconfirmed');
+      return (await response.json()) as {
+        data: Record<string, unknown> | Array<Record<string, unknown>>;
+        meta?: { pagination?: { has_more?: unknown; next?: unknown } };
+      };
+    } catch {
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+  }
+
+  private sandboxCheckoutFacts(
+    identity: SandboxCheckoutIdentity,
+    data: Record<string, unknown>,
+  ): SandboxCheckoutFacts {
+    const custom = data.custom_data as Record<string, unknown> | null;
+    const items = data.items as Array<{ price?: { id?: unknown }; quantity?: unknown }>;
+    const expected = sandboxAttemptSignature(identity, this.env.PADDLE_WEBHOOK_SECRET!);
+    if (
+      typeof data.id !== 'string' ||
+      !/^txn_[a-z\d]{26}$/.test(data.id) ||
+      typeof data.status !== 'string' ||
+      data.origin !== 'api' ||
+      data.collection_mode !== 'automatic' ||
+      custom?.checkout_attempt_id !== identity.attemptId ||
+      verifiedWorkspaceId(
+        custom as { workspace_id?: string; sig?: string },
+        this.env.PADDLE_WEBHOOK_SECRET,
+      ) !== identity.workspaceId ||
+      typeof custom.checkout_attempt_sig !== 'string' ||
+      custom.checkout_attempt_sig.length !== expected.length ||
+      !timingSafeEqual(Buffer.from(custom.checkout_attempt_sig), Buffer.from(expected)) ||
+      !Array.isArray(items) ||
+      items.length !== 1 ||
+      items[0]?.price?.id !== identity.priceId ||
+      items[0]?.quantity !== 1 ||
+      !(data.subscription_id === null || typeof data.subscription_id === 'string')
+    )
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    const subscriptionId = data.subscription_id as string | null;
+    const checkout = data.checkout as { url?: unknown } | null;
+    return {
+      transactionId: data.id,
+      status: data.status,
+      subscriptionId,
+      ...(typeof checkout?.url === 'string' ? { checkoutUrl: checkout.url } : {}),
+      hold:
+        subscriptionId || ['paid', 'completed'].includes(data.status)
+          ? 'paid'
+          : data.status === 'canceled'
+            ? 'stopped'
+            : ['draft', 'ready'].includes(data.status)
+              ? 'unpaid'
+              : 'unknown',
+    };
+  }
+
+  /** One create only. The fixture records its signed attempt BEFORE this call. */
+  async prepareSandboxCheckout(
+    identity: SandboxCheckoutIdentity,
+    paymentPageUrl?: string,
+  ): Promise<SandboxCheckoutFacts> {
+    this.sandboxCheckoutBoundary(identity);
+    if (
+      paymentPageUrl !== undefined &&
+      !/^https:\/\/[a-z0-9-]+\.trycloudflare\.com\/pay\?case=(cancel|unopened|pay|race|crash|legacy|modified)$/.test(
+        paymentPageUrl,
+      )
+    )
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    const response = await this.sandboxCheckoutRequest('/transactions', 'POST', {
+      collection_mode: 'automatic',
+      ...(paymentPageUrl === undefined ? {} : { checkout: { url: paymentPageUrl } }),
+      items: [{ price_id: identity.priceId, quantity: 1 }],
+      custom_data: {
+        workspace_id: identity.workspaceId,
+        sig: attributionSignature(identity.workspaceId, this.env.PADDLE_WEBHOOK_SECRET!),
+        checkout_attempt_id: identity.attemptId,
+        checkout_attempt_sig: sandboxAttemptSignature(identity, this.env.PADDLE_WEBHOOK_SECRET!),
+      },
+    });
+    if (Array.isArray(response.data)) throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    return this.sandboxCheckoutFacts(identity, response.data);
+  }
+
+  async readSandboxCheckout(identity: SandboxCheckoutIdentity, transactionId: string) {
+    this.sandboxCheckoutBoundary(identity);
+    if (!/^txn_[a-z\d]{26}$/.test(transactionId))
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    const response = await this.sandboxCheckoutRequest(`/transactions/${transactionId}`);
+    if (Array.isArray(response.data) || response.data.id !== transactionId)
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    return this.sandboxCheckoutFacts(identity, response.data);
+  }
+
+  /** Never cancels paid/subscription-linked artifacts; a racing payment keeps its hold. */
+  async revokeSandboxCheckout(identity: SandboxCheckoutIdentity, transactionId: string) {
+    const before = await this.readSandboxCheckout(identity, transactionId);
+    if (before.hold !== 'unpaid') return before;
+    try {
+      await this.sandboxCheckoutRequest(`/transactions/${transactionId}`, 'PATCH', {
+        status: 'canceled',
+      });
+    } catch {
+      // A rejected/uncertain write may mean payment won. Fresh read only; no retry.
+    }
+    return this.readSandboxCheckout(identity, transactionId);
+  }
+
+  /** Recover only an exact signed attempt from a complete, bounded provider scan. */
+  async recoverSandboxCheckout(identity: SandboxCheckoutIdentity, createdAfter: string) {
+    this.sandboxCheckoutBoundary(identity);
+    const created = Date.parse(createdAfter);
+    if (!Number.isFinite(created) || created > Date.now() || Date.now() - created > 3_600_000)
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    let after = '';
+    const matches: SandboxCheckoutFacts[] = [];
+    for (let page = 0; page < 10; page++) {
+      const query = new URLSearchParams({
+        per_page: '30',
+        order_by: 'id[ASC]',
+        'created_at[GTE]': createdAfter,
+      });
+      if (after) query.set('after', after);
+      const response = await this.sandboxCheckoutRequest(`/transactions?${query}`);
+      if (!Array.isArray(response.data) || typeof response.meta?.pagination?.has_more !== 'boolean')
+        throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+      for (const data of response.data) {
+        const custom = data.custom_data as Record<string, unknown> | null;
+        if (custom?.checkout_attempt_id === identity.attemptId)
+          matches.push(this.sandboxCheckoutFacts(identity, data));
+      }
+      if (!response.meta.pagination.has_more) {
+        // Zero is still uncertainty after a timed-out create; eventual consistency
+        // and an in-flight request cannot be disproved by an empty scan.
+        if (matches.length !== 1) throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+        return matches[0]!;
+      }
+      const last = response.data.at(-1)?.id;
+      if (typeof last !== 'string' || !/^txn_[a-z\d]{26}$/.test(last) || last === after)
+        throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+      after = last;
+    }
+    throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
   }
 
   /** POST /subscriptions/{id}/cancel — at next billing period (D118). */

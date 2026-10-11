@@ -32,6 +32,8 @@ Status values: Proposed | Accepted | Superseded by ADR-NNNN.
 
 | [0044](./0044-billing-refunds-and-permanent-founding-allocation.md) | Accepted | Upgrade refund scope and permanent Founding allocation | D117, D126, D232 |
 
+| [0046](./0046-sandbox-revocable-checkout-preparation.md) | Accepted for sandbox preparation only | Provider-revocable checkout preparation | D117, D118, D249 |
+
 ## Authoring an ADR
 
 1. Copy `0000-template.md` to `NNNN-kebab-title.md` using the next
