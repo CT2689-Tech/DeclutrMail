@@ -17,7 +17,7 @@
 # Schedule: Monday 06:00 UTC — early enough for a same-day morning
 # review across most timezones; clear of the weekend code-freeze.
 #
-# Launch quiet period: no automatic rebases until 2026-11-03.
+# Launch quiet period: no automatic rebases. restore after 2026-11-03.
 # Each ecosystem still opens one version-update pull request (limit 1).
 #
 # Why no Snyk here:
