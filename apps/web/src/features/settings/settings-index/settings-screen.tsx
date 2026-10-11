@@ -58,6 +58,7 @@ import { BriefPrefsCard, type BriefPrefsCardState } from './brief-prefs-card';
 import { EmailPrefsCard, type EmailPrefsCardState } from './email-prefs-card';
 import { MailboxesCard } from './mailboxes-card';
 import { VerbTourCard } from './verb-tour-card';
+import { AiSettingsSection } from '@/features/ai-consent/ai-settings-section';
 
 const { color, font, text, radius, motion } = tokens;
 
@@ -283,6 +284,7 @@ export function SettingsScreen({
           { href: '#mailboxes', label: 'Gmail accounts' },
           { href: '#actions', label: SETTINGS_PREVIEWS_TITLE },
           { href: '#notifications', label: 'Notifications' },
+          ...(settings.data?.aiConsent ? [{ href: '#ai', label: 'AI' }] : []),
           { href: '#more', label: 'Policies and help' },
           { href: '#account', label: 'Account' },
         ]}
@@ -337,6 +339,10 @@ export function SettingsScreen({
           />
         )}
       </EmailPrefsCard>
+
+      {settings.data?.aiConsent && (
+        <AiSettingsSection view={settings.data.aiConsent} briefCapable={briefUnlocked} />
+      )}
 
       {/* Autopilot and Quiet hours live in the sidebar; these are the
           destinations that have no other way in. */}

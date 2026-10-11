@@ -56,6 +56,9 @@ export const APP_EVENT_NAMES = [
   'empty_state_cta_clicked',
   'sync_gate_state_viewed',
   'home_next_step_clicked',
+  'brief_ai_consent_shown',
+  'brief_ai_consent_decided',
+  'brief_ai_consent_revoked',
 ] as const;
 
 export type AppEventName = (typeof APP_EVENT_NAMES)[number];
@@ -422,4 +425,7 @@ export interface AppEventPayloads {
   home_next_step_clicked: {
     kind: 'unsubscribe_archive' | 'largest_senders' | 'later_due' | 'triage';
   };
+  brief_ai_consent_shown: Record<string, never>;
+  brief_ai_consent_decided: { decision: 'allow' | 'not_now' };
+  brief_ai_consent_revoked: Record<string, never>;
 }

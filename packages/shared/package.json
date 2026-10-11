@@ -29,6 +29,7 @@
     "./hooks/use-local-state": "./src/hooks/use-local-state.ts",
     "./hooks/use-long-press": "./src/hooks/use-long-press.ts",
     "./ids": "./src/ids/branded.ts",
+    "./ai-consent": "./src/ai-consent/index.ts",
     "./analytics/product-events": "./src/analytics/product-events.ts",
     "./copy/launch": "./src/copy/launch/index.ts",
     "./copy/legal-entity": "./src/copy/legal-entity.ts",

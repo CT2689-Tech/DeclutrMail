@@ -11,6 +11,7 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
+import { grantedAiConsentInsert, PLAIN_STALE_CLAIM } from '@declutrmail/shared/ai-consent';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -50,7 +51,11 @@ async function seedMailbox(db: Db, tag: string): Promise<string> {
     .returning({ id: workspaces.id });
   const [user] = await db
     .insert(users)
-    .values({ workspaceId: ws!.id, email: `${tag}@declutrmail.ai` })
+    .values({
+      workspaceId: ws!.id,
+      email: `${tag}@declutrmail.ai`,
+      ...grantedAiConsentInsert(),
+    })
     .returning({ id: users.id });
   const [mailbox] = await db
     .insert(mailboxAccounts)
@@ -794,9 +799,7 @@ describe('TriageReadService.listQueue — stored prose cannot invent an unknown 
     });
 
     expect(row?.readRate).toBeNull();
-    expect(row?.reasoning).toBe(
-      'No mail arrived from this sender in the last 90 days, so marked-read activity is not measurable yet.',
-    );
+    expect(row?.reasoning).toBe(PLAIN_STALE_CLAIM);
     expect(row?.reasoning).not.toContain('0%');
   });
 

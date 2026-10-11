@@ -28,6 +28,11 @@ function makeController(preferences: Record<string, unknown> = {}) {
       detail: null,
       alreadySet: false,
     }),
+    applyAiConsent: vi.fn().mockResolvedValue({
+      explanations: 'allowed',
+      brief: 'unset',
+      reask: false,
+    }),
   };
   const controller = new MeSettingsController(users as unknown as UsersService);
   return { controller, users };
@@ -73,6 +78,7 @@ describe('MeSettingsController — GET /api/me/settings', () => {
       actionSheetPrefs: { archive: false, unsubscribe: false, later: false },
       briefPrefs: { hour: 8 },
       senderViews: [],
+      aiConsent: { explanations: 'unset', brief: 'unset', reask: false },
     });
   });
 
@@ -98,6 +104,7 @@ describe('MeSettingsController — GET /api/me/settings', () => {
       actionSheetPrefs: { archive: true, unsubscribe: false, later: true },
       briefPrefs: { hour: 17 },
       senderViews: [VIEW],
+      aiConsent: { explanations: 'unset', brief: 'unset', reask: false },
     });
   });
 
@@ -113,7 +120,27 @@ describe('MeSettingsController — GET /api/me/settings', () => {
       actionSheetPrefs: { archive: false, unsubscribe: false, later: false },
       briefPrefs: { hour: 8 },
       senderViews: [],
+      aiConsent: { explanations: 'unset', brief: 'unset', reask: false },
     });
+  });
+});
+
+describe('MeSettingsController — POST /api/me/ai-consent', () => {
+  it('records an Allow decision and echoes the view', async () => {
+    const { controller, users } = makeController({});
+    const result = await controller.decideAiConsent(USER, { action: 'allow', card: 'all' });
+    expect(result.data).toEqual({
+      aiConsent: { explanations: 'allowed', brief: 'unset', reask: false },
+    });
+    expect(users.applyAiConsent).toHaveBeenCalledWith('u1', { action: 'allow', card: 'all' });
+  });
+
+  it('rejects an unknown decision', async () => {
+    const { controller, users } = makeController({});
+    await expect(controller.decideAiConsent(USER, { action: 'allow' })).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(users.applyAiConsent).not.toHaveBeenCalled();
   });
 });
 

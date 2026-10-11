@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { AiConsentViewSchema } from '../ai-consent/schema';
 import { ActionSheetPrefsSchema } from './action-sheet-prefs';
 import { BriefPrefsSchema } from './brief-prefs';
 import { EmailPrefsSchema } from './email-prefs';
@@ -20,6 +21,11 @@ export const MeSettingsSchema = z.object({
   briefPrefs: BriefPrefsSchema,
   /** D51 saved sender filter views — see ./sender-views.ts. */
   senderViews: SenderViewsSchema,
+  /**
+   * Optional so a web deploy ahead of the API still parses Settings.
+   * Absent means the client hides the AI controls.
+   */
+  aiConsent: AiConsentViewSchema.optional(),
 });
 
 export type MeSettings = z.infer<typeof MeSettingsSchema>;

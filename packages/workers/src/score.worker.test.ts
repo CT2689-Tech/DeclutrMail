@@ -15,6 +15,7 @@ import {
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { TOPICS } from '@declutrmail/events';
+import { explainLlmEnabled, grantedAiConsentInsert } from '@declutrmail/shared/ai-consent';
 import { describe, expect, it, vi } from 'vitest';
 
 import { OutboxPublisher } from './outbox-publisher.js';
@@ -47,7 +48,7 @@ async function seedMailbox(db: ScoreWorkerDeps['db']): Promise<{ mailboxAccountI
     .returning({ id: workspaces.id });
   const [user] = await db
     .insert(users)
-    .values({ workspaceId: ws!.id, email: 'owner@example.com' })
+    .values({ workspaceId: ws!.id, email: 'owner@example.com', ...grantedAiConsentInsert() })
     .returning({ id: users.id });
   const [mb] = await db
     .insert(mailboxAccounts)
@@ -832,6 +833,143 @@ describe('ScoreWorker — LLM port', () => {
     expect(row?.reasoning).toBe('LLM prose #1');
     expect(row?.generatedBy).toBe('llm_haiku');
     expect(Number(row?.producedAt)).toBe(T0 + 60_000);
+  });
+
+  it('does not call explain or reuse stored LLM prose once consent is cleared', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'revoked@test.test', {
+      gmailCategory: 'primary',
+    });
+    let calls = 0;
+    const worker = new ScoreWorker({
+      db,
+      llm: {
+        explain: async () => {
+          calls += 1;
+          return 'Stored AI sentence that must not survive.';
+        },
+      },
+      now: () => new Date('2026-05-23T00:00:00Z'),
+    });
+    const producedAtMs = Date.parse('2026-05-22T00:00:00Z');
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'sync_complete', producedAtMs },
+      FAKE_CTX,
+    );
+    expect(calls).toBe(1);
+
+    const [owner] = await db
+      .select({ userId: mailboxAccounts.userId })
+      .from(mailboxAccounts)
+      .where(eq(mailboxAccounts.id, mailboxAccountId));
+    await db
+      .update(users)
+      .set({
+        aiConsentVersion: null,
+        aiExplanationsConsentAt: null,
+        aiConsentScopes: null,
+        briefAiConsentAt: null,
+        briefAiConsentVersion: null,
+      })
+      .where(eq(users.id, owner!.userId));
+
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'cron_sweep', producedAtMs: producedAtMs + 60_000 },
+      FAKE_CTX,
+    );
+    expect(calls).toBe(1);
+    const [row] = await db
+      .select({ reasoning: triageDecisions.reasoning, generatedBy: triageDecisions.generatedBy })
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    expect(row?.generatedBy).toBe('template');
+    expect(row?.reasoning).not.toBe('Stored AI sentence that must not survive.');
+  });
+
+  it('never calls explain when consent was never granted', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'never@test.test', {
+      gmailCategory: 'primary',
+    });
+    const [owner] = await db
+      .select({ userId: mailboxAccounts.userId })
+      .from(mailboxAccounts)
+      .where(eq(mailboxAccounts.id, mailboxAccountId));
+    await db
+      .update(users)
+      .set({
+        aiConsentVersion: null,
+        aiExplanationsConsentAt: null,
+        aiConsentScopes: null,
+        briefAiConsentAt: null,
+        briefAiConsentVersion: null,
+      })
+      .where(eq(users.id, owner!.userId));
+    let calls = 0;
+    const worker = new ScoreWorker({
+      db,
+      llm: {
+        explain: async () => {
+          calls += 1;
+          return 'must not be called';
+        },
+      },
+      now: () => new Date('2026-05-23T00:00:00Z'),
+    });
+    await worker.processJob(
+      {
+        mailboxAccountId,
+        senderKey,
+        trigger: 'sync_complete',
+        producedAtMs: Date.parse('2026-05-22T00:00:00Z'),
+      },
+      FAKE_CTX,
+    );
+    expect(calls).toBe(0);
+    const [row] = await db
+      .select({ generatedBy: triageDecisions.generatedBy })
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    expect(row?.generatedBy).toBe('template');
+  });
+
+  it('EXPLAIN_LLM_ENABLED=false skips explain even when consent is granted', async () => {
+    const previous = process.env.EXPLAIN_LLM_ENABLED;
+    process.env.EXPLAIN_LLM_ENABLED = 'false';
+    expect(explainLlmEnabled()).toBe(false);
+    try {
+      const db = await freshDb();
+      const { mailboxAccountId } = await seedMailbox(db);
+      const senderKey = await seedSender(db, mailboxAccountId, 'paused@test.test', {
+        gmailCategory: 'primary',
+      });
+      let calls = 0;
+      const worker = new ScoreWorker({
+        db,
+        llm: {
+          explain: async () => {
+            calls += 1;
+            return 'must not be called';
+          },
+        },
+        now: () => new Date('2026-05-23T00:00:00Z'),
+      });
+      await worker.processJob(
+        {
+          mailboxAccountId,
+          senderKey,
+          trigger: 'sync_complete',
+          producedAtMs: Date.parse('2026-05-22T00:00:00Z'),
+        },
+        FAKE_CTX,
+      );
+      expect(calls).toBe(0);
+    } finally {
+      if (previous === undefined) delete process.env.EXPLAIN_LLM_ENABLED;
+      else process.env.EXPLAIN_LLM_ENABLED = previous;
+    }
   });
 
   it('reports llmCalls and llmReused on worker.succeeded — the allowlist drops silently', async () => {

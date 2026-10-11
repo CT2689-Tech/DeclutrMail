@@ -93,6 +93,9 @@ const APPENDED_AFTER_SPLIT = [
   'empty_state_cta_clicked',
   'sync_gate_state_viewed',
   'home_next_step_clicked',
+  'brief_ai_consent_shown',
+  'brief_ai_consent_decided',
+  'brief_ai_consent_revoked',
 ] as const;
 
 describe('event registry domain split', () => {

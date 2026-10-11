@@ -6,6 +6,7 @@ import type { Redis } from 'ioredis';
 
 import {
   activityLog,
+  loadAiConsentForMailbox,
   mailMessages,
   readStateNotSweeperMarked,
   screenerQuarantine,
@@ -15,6 +16,7 @@ import {
   triageNotDecidedRecently,
   triageQueueOrder,
 } from '@declutrmail/db';
+import { explanationsConsentActive, explainLlmEnabled } from '@declutrmail/shared/ai-consent';
 import type { schema, TriageVerdict } from '@declutrmail/db';
 import { TOPICS, TriageScoreRunCompletedPayloadSchema } from '@declutrmail/events';
 
@@ -419,7 +421,13 @@ interface ExplainTarget {
 
 /** Why an explanation was not bought — logged, and counted in `explainSkipped`. */
 type ExplainSkip =
-  'no_llm' | 'no_decision' | 'no_sender' | 'rescored' | 'already_explained' | 'verdict_moved';
+  | 'no_llm'
+  | 'no_consent'
+  | 'no_decision'
+  | 'no_sender'
+  | 'rescored'
+  | 'already_explained'
+  | 'verdict_moved';
 
 type ExplainOutcome =
   | { kind: 'skipped'; reason: ExplainSkip }
@@ -566,6 +574,8 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
   private readonly explainTimeoutMs: number;
   /** How many senders a `sync_complete` sweep explains. */
   private readonly firstView: { queueRows: number; volumeRows: number };
+  /** One consent read per job. A lookup failure stays not-allowed. */
+  private explanationConsent: { mailboxAccountId: string; allowed: boolean } | null = null;
 
   constructor(private readonly deps: ScoreWorkerDeps) {
     super();
@@ -628,6 +638,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
   }
 
   override async processJob(payload: ScoreJobData, _ctx: WorkerContext): Promise<ScoreJobResult> {
+    this.explanationConsent = null;
     if (!payload?.mailboxAccountId) {
       throw new ValidationError('score job is missing mailboxAccountId');
     }
@@ -1123,6 +1134,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     };
     const port = this.deps.llm;
     if (!port) return skip('no_llm');
+    if (!(await this.explanationsAllowed(mailboxAccountId))) return skip('no_consent');
     const existing = batch.existingDecisions.get(target.senderKey);
     if (!existing) return skip('no_decision');
     if (existing.producedAt.getTime() !== target.producedAt.getTime()) return skip('rescored');
@@ -1195,6 +1207,32 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
    * upsert `triage_decisions`. Returns `null` when no `senders` row
    * exists yet (the sync stage hasn't materialized it).
    */
+  /** Fail closed: a missing row, a kill switch, or a lookup error buys no sentence. */
+  private async explanationsAllowed(mailboxAccountId: string): Promise<boolean> {
+    if (!explainLlmEnabled()) return false;
+    if (this.explanationConsent?.mailboxAccountId === mailboxAccountId) {
+      return this.explanationConsent.allowed;
+    }
+    let allowed = false;
+    try {
+      const row = await loadAiConsentForMailbox(this.deps.db, mailboxAccountId);
+      allowed = explanationsConsentActive(row);
+    } catch (err) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'ai_consent.lookup_failed',
+          worker: this.workerName,
+          mailboxAccountId,
+          error: err instanceof Error ? err.name : 'Error',
+        }),
+      );
+      allowed = false;
+    }
+    this.explanationConsent = { mailboxAccountId, allowed };
+    return allowed;
+  }
+
   private async scoreOne(
     mailboxAccountId: string,
     senderKey: string,
@@ -1226,7 +1264,8 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     let reused = false;
     let called = false;
     let blocked = false;
-    if (this.deps.llm) {
+    const allowLlm = this.deps.llm ? await this.explanationsAllowed(mailboxAccountId) : false;
+    if (this.deps.llm && allowLlm) {
       const port = this.deps.llm;
       // Reuse before re-billing (2026-07-10): a re-score sweep calls
       // explain() for EVERY sender, including ones whose verdict did
@@ -1426,6 +1465,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
           domain: signals.domain,
           verdict: result.verdict,
           confidence: result.confidence,
+          aiConsent: 'granted',
           // The PHRASE, never the id. Handing the model
           // `high_read_rate` is how "the high_read_rate engine rule"
           // ended up in user-facing copy.

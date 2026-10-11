@@ -34,6 +34,8 @@ import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-pro
 import { InlineFeedback } from '@/features/feedback/inline-feedback';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 
+import { BriefAiConsent } from '@/features/ai-consent/brief-ai-consent';
+
 import { shiftLocalDate, useBriefHistory } from './api/use-brief-history';
 import { useBriefToday } from './api/use-brief-today';
 import { useMarkBriefOpened } from './api/use-mark-brief-opened';
@@ -177,14 +179,17 @@ export function BriefScreen() {
     // "Brief lands soon" message instead of the generic retry CTA.
     if (notYet) {
       return (
-        <NotYetState
-          historyLoading={history.isFetching}
-          historyFailed={history.isError}
-          onRefresh={() => {
-            handleBriefRefresh(query.refetch);
-            void history.refetch();
-          }}
-        />
+        <>
+          <BriefAiConsent />
+          <NotYetState
+            historyLoading={history.isFetching}
+            historyFailed={history.isError}
+            onRefresh={() => {
+              handleBriefRefresh(query.refetch);
+              void history.refetch();
+            }}
+          />
+        </>
       );
     }
     // Non-404 → log to Sentry as a feature exception so the dashboard
@@ -197,18 +202,19 @@ export function BriefScreen() {
 
   const brief = query.data ?? savedEdition;
   if (!brief) {
-    // Defensive: success + no data shouldn't happen (envelope contract
-    // guarantees data on 2xx), but render the not-yet branch rather
-    // than crashing if it does.
+    // 204 (and a leftover 404) mean there is no Brief today.
     return (
-      <NotYetState
-        historyLoading={history.isFetching}
-        historyFailed={history.isError}
-        onRefresh={() => {
-          handleBriefRefresh(query.refetch);
-          void history.refetch();
-        }}
-      />
+      <>
+        <BriefAiConsent />
+        <NotYetState
+          historyLoading={history.isFetching}
+          historyFailed={history.isError}
+          onRefresh={() => {
+            handleBriefRefresh(query.refetch);
+            void history.refetch();
+          }}
+        />
+      </>
     );
   }
 
@@ -221,25 +227,28 @@ export function BriefScreen() {
       : (acceptedHistory?.find((row) => row.runDateLocal === selectedRunDate) ?? brief);
 
   return (
-    <BriefBody
-      brief={selected}
-      mailboxEmail={activeMailboxEmail}
-      // Only today's Brief is a "first view" worth recording. Marking a
-      // three-week-old snapshot opened because someone browsed back to
-      // it would make D61's opened_at mean something else entirely.
-      isToday={selected.id === brief.id && !todayMissing}
-      refreshFailed={refreshFailed || (history.isError && todayMissing)}
-      notYet={todayMissing}
-      historyRefreshFailed={todayMissing && history.isError}
-      refreshing={query.isFetching}
-      onRefresh={() => {
-        handleBriefRefresh(query.refetch);
-        if (todayMissing) void history.refetch();
-      }}
-      days={acceptedHistory ?? []}
-      selectedRunDate={selectedRunDate}
-      onSelectRunDate={setSelectedRunDate}
-    />
+    <>
+      <BriefAiConsent />
+      <BriefBody
+        brief={selected}
+        mailboxEmail={activeMailboxEmail}
+        // Only today's Brief is a "first view" worth recording. Marking a
+        // three-week-old snapshot opened because someone browsed back to
+        // it would make D61's opened_at mean something else entirely.
+        isToday={selected.id === brief.id && !todayMissing}
+        refreshFailed={refreshFailed || (history.isError && todayMissing)}
+        notYet={todayMissing}
+        historyRefreshFailed={todayMissing && history.isError}
+        refreshing={query.isFetching}
+        onRefresh={() => {
+          handleBriefRefresh(query.refetch);
+          if (todayMissing) void history.refetch();
+        }}
+        days={acceptedHistory ?? []}
+        selectedRunDate={selectedRunDate}
+        onSelectRunDate={setSelectedRunDate}
+      />
+    </>
   );
 }
 

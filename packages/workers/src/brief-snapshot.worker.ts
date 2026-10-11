@@ -4,6 +4,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import {
   type BriefPayload as PersistedBriefPayload,
   briefRuns,
+  loadAiConsentForMailbox,
   mailMessages,
   mailboxAccounts,
   nonMailRowWhere,
@@ -13,6 +14,7 @@ import {
   users,
   workspaces,
 } from '@declutrmail/db';
+import { briefConsentActive, briefLlmEnabled } from '@declutrmail/shared/ai-consent';
 import { type StoredUnsubscribeMethod, unsubscribeCapabilityOf } from '@declutrmail/shared/actions';
 import { parseBriefPrefs, hasBriefEmailConsent } from '@declutrmail/shared/contracts';
 import { hasCapability, TIER_IDS } from '@declutrmail/shared/entitlements';
@@ -782,6 +784,26 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
    *      own (the worker shipped this path first; the LLM is layered
    *      on top).
    */
+  /** Fail closed: no Brief consent, a kill switch, or a lookup error stays on the template. */
+  private async briefAllowed(mailboxAccountId: string): Promise<boolean> {
+    if (!briefLlmEnabled()) return false;
+    try {
+      const row = await loadAiConsentForMailbox(this.deps.db, mailboxAccountId);
+      return briefConsentActive(row);
+    } catch (err) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'ai_consent.lookup_failed',
+          worker: this.workerName,
+          mailboxAccountId,
+          error: err instanceof Error ? err.name : 'Error',
+        }),
+      );
+      return false;
+    }
+  }
+
   private async composeNarrative(input: {
     mailboxAccountId: string;
     reply: readonly BriefItem[];
@@ -789,6 +811,7 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     noise: readonly BriefSenderGroup[];
     snippetBySenderKey: ReadonlyMap<string, string>;
   }): Promise<{ narrative: string; generatedBy: 'llm_haiku' | 'template' }> {
+    const allowBrief = this.deps.llm ? await this.briefAllowed(input.mailboxAccountId) : false;
     if (this.deps.llm?.isBlocked?.()) {
       // The provider refused the account; only the first refusal reached
       // it and logged. Say per mailbox why this Brief has no note.
@@ -800,9 +823,9 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
           mailboxAccountId: input.mailboxAccountId,
         }),
       );
-    } else if (this.deps.llm) {
+    } else if (this.deps.llm && allowBrief) {
       const port = this.deps.llm;
-      const narrativeInput = buildNarrativeInput(input);
+      const narrativeInput = { ...buildNarrativeInput(input), aiConsent: 'granted' as const };
       try {
         const raced = await runWithTimeout(
           () => port.generateNarrative(narrativeInput),

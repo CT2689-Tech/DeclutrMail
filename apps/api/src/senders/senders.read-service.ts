@@ -69,7 +69,10 @@ import {
   WINDOWS,
 } from '@declutrmail/shared/senders';
 
-import { currentTriageReasoning } from '../common/triage-reasoning.js';
+import { plainVolumeExplanation } from '@declutrmail/shared/ai-consent';
+
+import { showStoredExplanations } from '../common/show-stored-explanations.js';
+import { projectReasoning } from '../common/triage-reasoning.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
   ActivityFilter,
@@ -1708,6 +1711,23 @@ export class SendersReadService {
       'senders.baselineMsgs',
     );
     const readRate = computeReadRate(last90dMsgs, last90dReadCount);
+    const showStoredAi = await showStoredExplanations(this.db, mailboxAccountId);
+    const storedReasoning = row.lastDecision?.reasoning ?? null;
+    const storedGeneratedBy = row.lastDecision?.generatedBy ?? null;
+    const projected =
+      storedReasoning && storedGeneratedBy
+        ? projectReasoning({
+            stored: storedReasoning,
+            generatedBy: storedGeneratedBy,
+            readRate,
+            showStoredAi,
+            plain: plainVolumeExplanation({
+              name: row.displayName,
+              last90Count: last90dMsgs,
+              readRate,
+            }),
+          })
+        : null;
 
     return {
       id: row.id,
@@ -1759,9 +1779,9 @@ export class SendersReadService {
       recommendation: buildRecommendation(
         row.lastDecision?.producedAt ?? null,
         row.lastDecision?.verdict ?? null,
-        row.lastDecision?.generatedBy ?? null,
+        projected?.generatedBy ?? row.lastDecision?.generatedBy ?? null,
         row.lastDecision?.confidence ?? null,
-        row.lastDecision?.reasoning ?? null,
+        projected?.reasoning ?? row.lastDecision?.reasoning ?? null,
         row.lastDecision?.expiresAt ?? null,
         readRate,
         now,
@@ -2164,7 +2184,7 @@ function buildRecommendation(
   return {
     verdict,
     confidence: confidenceNum,
-    reasoning: currentTriageReasoning({ stored: reasoning, generatedBy, readRate }),
+    reasoning,
     generatedBy,
     scoredAt: (at instanceof Date ? at : new Date(at)).toISOString(),
     // A row with no expiry cannot be proven stale, so it isn't called

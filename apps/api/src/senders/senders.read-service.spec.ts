@@ -15,6 +15,7 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
+import { grantedAiConsentInsert, PLAIN_STALE_CLAIM } from '@declutrmail/shared/ai-consent';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -48,7 +49,11 @@ async function seedMailbox(db: Db, label: string): Promise<string> {
     });
   const [user] = await db
     .insert(users)
-    .values({ workspaceId: ws!.id, email: `${label}@declutrmail.ai` })
+    .values({
+      workspaceId: ws!.id,
+      email: `${label}@declutrmail.ai`,
+      ...grantedAiConsentInsert(),
+    })
     .returning({ id: users.id });
   const [mailbox] = await db
     .insert(mailboxAccounts)
@@ -214,7 +219,18 @@ describe('SendersReadService', () => {
     const select = vi.spyOn(db, 'select');
     const detail = await svc.getSenderDetail(mailboxId, sender.id);
     expect(detail?.protectionFlags.protectionEvidenceCurrent).toBe(true);
-    expect(select).toHaveBeenCalledTimes(1);
+    // Detail is one sender query plus the consent lookup. The extra select
+    // is the user's consent row, not an outbound-mail probe.
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(
+      select.mock.calls.filter(
+        (args) =>
+          args[0] !== undefined &&
+          typeof args[0] === 'object' &&
+          args[0] !== null &&
+          'aiConsentVersion' in args[0],
+      ),
+    ).toHaveLength(1);
     select.mockClear();
     await svc.listSenders({ mailboxAccountId: mailboxId, category: null, cursor: null, limit: 10 });
     expect(select).toHaveBeenCalledTimes(1);
@@ -654,8 +670,10 @@ describe('SendersReadService', () => {
       expect(archivedDetail!.unreadInboxCount).toBe(0);
       // The actual list/detail SQL should scan the positive Inbox set
       // once for both exact counts, instead of revisiting its unread subset.
-      expect(queries).toHaveLength(3);
-      for (const query of queries)
+      // Detail also reads the consent row; that query is not an inbox scan.
+      const inboxScans = queries.filter((query) => query.includes("AND 'INBOX' = ANY("));
+      expect(inboxScans).toHaveLength(3);
+      for (const query of inboxScans)
         expect([...query.matchAll(/AND 'INBOX' = ANY\(/g)].length).toBe(1);
 
       // Cleanup changes labels immediately, before the received counter's recount.
@@ -1857,9 +1875,7 @@ describe('SendersReadService', () => {
         const detail = await svc.getSenderDetail(mailboxId, a.id);
 
         expect(detail?.readRate).toBeNull();
-        expect(detail?.recommendation?.reasoning).toBe(
-          'No mail arrived from this sender in the last 90 days, so marked-read activity is not measurable yet.',
-        );
+        expect(detail?.recommendation?.reasoning).toBe(PLAIN_STALE_CLAIM);
       });
 
       /**

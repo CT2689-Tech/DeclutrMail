@@ -76,6 +76,11 @@ export interface ReasoningInput {
   ruleLabel: string;
   facts: CascadeResult['facts'];
   gmailCategory: 'primary' | 'promotions' | 'social' | 'updates' | 'forums' | 'unknown';
+  /**
+   * The worker sets this only after it has read current-version
+   * explanations consent. Adapters must not call the provider without it.
+   */
+  aiConsent?: 'granted';
 }
 
 /**
