@@ -20,6 +20,7 @@ import {
   TIER_IDS,
   TIER_MANIFEST,
   hasCapability,
+  inboxLimitReachedMessage,
   type TierId,
 } from '@declutrmail/shared/entitlements';
 
@@ -603,6 +604,27 @@ describe('EntitlementsService — inbox limit (D19/D81)', () => {
     const err = await svc.assertCanConnectMailbox(workspaceId).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(AppException);
     expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
+  });
+
+  it('plus: a second inbox is allowed and the third names the Pro waitlist when PRICING_V2 is on', async () => {
+    process.env.PRICING_V2 = 'true';
+    try {
+      const { workspaceId, userId } = await seedWorkspace(db, 'plus');
+      await expect(svc.assertCanConnectMailbox(workspaceId)).resolves.toBeUndefined();
+      await db.insert(mailboxAccounts).values({
+        workspaceId,
+        userId,
+        provider: 'gmail',
+        providerAccountId: 'second@x',
+      });
+      const err = await svc.assertCanConnectMailbox(workspaceId).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(AppException);
+      expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
+      expect((err as AppException).message).toBe(inboxLimitReachedMessage('plus'));
+      expect((err as AppException).details).toEqual({ limit: 2, connected: 2, tier: 'plus' });
+    } finally {
+      delete process.env.PRICING_V2;
+    }
   });
 
   it('locks the workspace tier and checks capacity on the caller transaction', async () => {

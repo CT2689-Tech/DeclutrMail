@@ -20,7 +20,12 @@
 // and the checkout endpoint 503s (BILLING_NOT_PROVISIONED) — never a
 // guessed SKU.
 
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import {
+  LEGACY_PRICE_IDS,
+  PLUS_ANNUAL_2026_10,
+  TIER_MANIFEST,
+  usablePriceId,
+} from '@declutrmail/shared/entitlements';
 import type {
   BillingCycle,
   BillingProviderId,
@@ -61,6 +66,15 @@ function parseOverrides(raw: string | undefined): Overrides {
 
 /** Build the runtime catalog: manifest price points + env id overlay. */
 export function buildCatalog(env: NodeJS.ProcessEnv = process.env): CatalogEntry[] {
+  if (env.PRICING_V2 === 'true') return buildV2Catalog(env);
+  return buildCurrentCatalog(env);
+}
+
+/**
+ * Today's catalog. `PRICING_V2` off must keep this shape, including
+ * Pro and Founding, so existing subscribers and tests stay put.
+ */
+function buildCurrentCatalog(env: NodeJS.ProcessEnv): CatalogEntry[] {
   const overrides = parseOverrides(env.BILLING_CATALOG_JSON);
   const entries: CatalogEntry[] = [];
 
@@ -98,6 +112,52 @@ export function buildCatalog(env: NodeJS.ProcessEnv = process.env): CatalogEntry
   return entries;
 }
 
+/**
+ * Launch catalog. Plus annual is the 2026-10 price. Plus monthly and
+ * the previous annual stay resolvable and unlisted. Pro is not sold.
+ */
+function buildV2Catalog(env: NodeJS.ProcessEnv): CatalogEntry[] {
+  const overrides = parseOverrides(env.BILLING_CATALOG_JSON);
+  const monthly = TIER_MANIFEST.plus.prices.monthly;
+  const entries: CatalogEntry[] = [];
+  if (monthly) {
+    entries.push({
+      planCode: 'plus_monthly',
+      tierId: 'plus',
+      cycle: 'monthly',
+      founding: false,
+      usdCents: monthly.usdCents,
+      paddlePriceId: overrides.paddle?.plus_monthly ?? monthly.paddlePriceId,
+      razorpayPlanId: overrides.razorpay?.plus_monthly ?? monthly.razorpayPlanId,
+    });
+  }
+  entries.push({
+    planCode: 'plus_annual',
+    tierId: 'plus',
+    cycle: 'annual',
+    founding: false,
+    usdCents: PLUS_ANNUAL_2026_10.usdCents,
+    paddlePriceId: overrides.paddle?.plus_annual ?? PLUS_ANNUAL_2026_10.paddlePriceId,
+    razorpayPlanId: null,
+  });
+  return entries;
+}
+
+function legacyEntry(provider: BillingProviderId, providerPriceId: string): CatalogEntry | null {
+  const legacy = LEGACY_PRICE_IDS[providerPriceId];
+  if (!legacy) return null;
+  const tierId: PurchasableTier = legacy.plan.startsWith('plus') ? 'plus' : 'pro';
+  return {
+    planCode: legacy.plan as PlanCode,
+    tierId,
+    cycle: legacy.cycle,
+    founding: legacy.founding,
+    usdCents: legacy.usdCents,
+    paddlePriceId: provider === 'paddle' ? providerPriceId : null,
+    razorpayPlanId: provider === 'razorpay' ? providerPriceId : null,
+  };
+}
+
 /** The catalog read API the billing services consume. */
 export class BillingCatalog {
   constructor(
@@ -117,7 +177,8 @@ export class BillingCatalog {
       (e) => e.tierId === tierId && e.cycle === cycle && e.founding === founding,
     );
     if (!entry) return null;
-    return provider === 'paddle' ? entry.paddlePriceId : entry.razorpayPlanId;
+    const id = provider === 'paddle' ? entry.paddlePriceId : entry.razorpayPlanId;
+    return usablePriceId(id);
   }
 
   /** Reverse: webhook's provider price id → catalog entry or null. */
@@ -127,7 +188,7 @@ export class BillingCatalog {
         provider === 'paddle'
           ? e.paddlePriceId === providerPriceId
           : e.razorpayPlanId === providerPriceId,
-      ) ?? null
+      ) ?? legacyEntry(provider, providerPriceId)
     );
   }
 }

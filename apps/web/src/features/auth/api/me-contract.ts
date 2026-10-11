@@ -53,6 +53,10 @@ export interface Me {
   cleanupRemaining: number | null;
   /** Server-computed next reset instant; the browser never derives it. */
   cleanupResetsAt?: string | null;
+  /** Server inbox ceiling. Absent on an older API; fall back to the manifest. */
+  inboxLimit?: number;
+  /** Server `PRICING_V2`. Absent means the flag is off. */
+  pricingV2?: boolean;
   /**
    * First-touch tracked `ref` vs skippable self-report. Optional during a
    * rolling API/web deploy — absent means do not show the prompt.

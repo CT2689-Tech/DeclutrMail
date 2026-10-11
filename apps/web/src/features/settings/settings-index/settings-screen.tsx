@@ -236,7 +236,7 @@ export function SettingsScreen({
   // billing is dark, which is the CURRENT production posture. Reading
   // the tier from there hid this card from every entitled workspace and
   // rendered clean in tests, whose fixture always answers that call 200.
-  const { tier: entitledTier } = useTier();
+  const { tier: entitledTier, inboxLimit } = useTier();
   const briefUnlocked = hasCapability(entitledTier, 'brief');
 
   function connectMailbox(reconnectMailboxId?: string) {
@@ -295,7 +295,7 @@ export function SettingsScreen({
       <MailboxesCard
         mailboxes={me.mailboxes}
         activeMailboxId={me.activeMailboxId}
-        inboxLimit={TIER_MANIFEST[entitledTier].inboxLimit}
+        inboxLimit={inboxLimit}
         healthById={healthById}
         highlightMailboxId={highlightMailboxId}
         onConnect={connectMailbox}

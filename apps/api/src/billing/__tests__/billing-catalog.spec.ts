@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import {
+  LEGACY_PRICE_IDS,
+  PLUS_ANNUAL_2026_10,
+  TIER_MANIFEST,
+} from '@declutrmail/shared/entitlements';
 
 import { BillingCatalog, buildCatalog } from '../billing-catalog.js';
 
@@ -46,6 +50,34 @@ describe('buildCatalog', () => {
 
   it('throws loudly on malformed override JSON (never silently strands the catalog)', () => {
     expect(() => buildCatalog({ BILLING_CATALOG_JSON: '{nope' } as NodeJS.ProcessEnv)).toThrow();
+  });
+
+  it('keeps the flag-off catalog identical to an env without PRICING_V2', () => {
+    expect(buildCatalog({ PRICING_V2: 'false' } as NodeJS.ProcessEnv)).toEqual(
+      buildCatalog({} as NodeJS.ProcessEnv),
+    );
+  });
+
+  it('PRICING_V2 lists Plus only and still resolves every legacy price id', () => {
+    const entries = buildCatalog({ PRICING_V2: 'true' } as NodeJS.ProcessEnv);
+    expect(entries.map((entry) => entry.planCode)).toEqual(['plus_monthly', 'plus_annual']);
+    expect(entries.find((entry) => entry.planCode === 'plus_annual')).toMatchObject({
+      usdCents: PLUS_ANNUAL_2026_10.usdCents,
+      razorpayPlanId: null,
+      founding: false,
+    });
+    const catalog = new BillingCatalog(entries);
+    expect(catalog.resolvePriceId('paddle', 'plus', 'annual')).toBeNull();
+    expect(catalog.resolvePriceId('paddle', 'pro', 'monthly')).toBeNull();
+    for (const [id, legacy] of Object.entries(LEGACY_PRICE_IDS)) {
+      const provider = id.startsWith('pri_') ? 'paddle' : 'razorpay';
+      expect(catalog.resolveByPriceId(provider, id)).toMatchObject({
+        planCode: legacy.plan,
+        founding: legacy.founding,
+        usdCents: legacy.usdCents,
+      });
+    }
+    expect(catalog.resolveByPriceId('paddle', 'pri_unknown')).toBeNull();
   });
 });
 

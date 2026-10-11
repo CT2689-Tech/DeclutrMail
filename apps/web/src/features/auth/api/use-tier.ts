@@ -20,6 +20,8 @@ export interface TierEntitlements {
   cleanupResetsAt: string | null;
   /** Connected-Gmail-account ceiling for the tier (D19 manifest). */
   inboxLimit: number;
+  /** Launch pricing flag, from `/api/auth/me`. */
+  pricingV2: boolean;
   /** Mailboxes currently connected (status='active'). */
   connectedInboxes: number;
   /**
@@ -45,13 +47,15 @@ export function useTier(): TierEntitlements {
   // skew window `/api/auth/me` may predate the tier fields. Fall back
   // instead of crashing the shell on TIER_MANIFEST[undefined].
   const tier = me.tier ?? 'free';
-  const inboxLimit = inboxLimitFor(tier);
+  const inboxLimit = me.inboxLimit ?? inboxLimitFor(tier);
+  const pricingV2 = me.pricingV2 === true;
   const connectedInboxes = me.mailboxes.filter((m) => m.status === 'active').length;
   return {
     tier,
     cleanupRemaining: me.cleanupRemaining ?? null,
     cleanupResetsAt: me.cleanupResetsAt ?? null,
     inboxLimit,
+    pricingV2,
     connectedInboxes,
     atInboxLimit: connectedInboxes >= inboxLimit,
   };

@@ -13,7 +13,7 @@ import {
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { DrizzleDb } from '../../db/db.module.js';
 import { AppException } from '../../common/app-exception.js';
@@ -1840,5 +1840,52 @@ describe('BillingService', () => {
         code: 'BILLING_PROVIDER_ERROR',
       });
     });
+  });
+});
+
+describe('BillingService PRICING_V2', () => {
+  const previous = process.env.PRICING_V2;
+
+  afterEach(() => {
+    if (previous === undefined) delete process.env.PRICING_V2;
+    else process.env.PRICING_V2 = previous;
+  });
+
+  function service(): BillingService {
+    return new BillingService(
+      {} as never,
+      new BillingCatalog([]),
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+  }
+
+  it('rejects Pro and Founding checkout before a provider call', async () => {
+    process.env.PRICING_V2 = 'true';
+    const checkout = service();
+    await expect(
+      checkout.createCheckout(
+        { userId: 'user-1', workspaceId: 'workspace-1' },
+        { tierId: 'pro', cycle: 'annual', provider: 'paddle' },
+      ),
+    ).rejects.toMatchObject({ code: 'PLAN_NOT_PURCHASABLE' });
+    await expect(
+      checkout.createCheckout(
+        { userId: 'user-1', workspaceId: 'workspace-1' },
+        { tierId: 'pro', cycle: 'annual', provider: 'paddle', promo: 'foundingPro' },
+      ),
+    ).rejects.toMatchObject({ code: 'PLAN_NOT_PURCHASABLE' });
+  });
+
+  it('rejects Razorpay checkout while the rail is off', async () => {
+    process.env.PRICING_V2 = 'true';
+    await expect(
+      service().createCheckout(
+        { userId: 'user-1', workspaceId: 'workspace-1' },
+        { tierId: 'plus', cycle: 'annual', provider: 'razorpay' },
+      ),
+    ).rejects.toMatchObject({ code: 'BILLING_NOT_PROVISIONED' });
   });
 });

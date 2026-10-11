@@ -404,10 +404,12 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // is change-LOCKED once bought (`FOUNDING_PLAN_LOCKED`). The label still
     // advertises $129 because that is what the promo costs; the CHARGE line
     // quotes the standard point the picker is actually standing on.
-    expect(within(panel).getByRole('checkbox')).not.toBeChecked();
-    expect(within(panel).getByText(/Claim Founding Pro — \$129\/yr/)).toBeInTheDocument();
+    expect(within(panel).queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(within(panel).queryByText(/Claim Founding Pro/)).not.toBeInTheDocument();
     expect(within(panel).getByText(/\$190 billed annually, starting today/)).toBeInTheDocument();
-    expect(within(panel).getByText('30-day money-back guarantee')).toBeInTheDocument();
+    expect(
+      within(panel).getByText('14-day money-back on any purchase, once per customer.'),
+    ).toBeInTheDocument();
 
     // Click 2 — confirm into the provider surface.
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
@@ -431,7 +433,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
   // starts unchecked would pass just as well if the claim were broken outright,
   // so the opt-in has to be exercised: tick it, and the promo must reach the
   // request body and re-quote the promotional price.
-  it('ticking Claim Founding Pro opts in — promo reaches the body and re-quotes', async () => {
+  it('a Pro checkout does not offer Founding Pro', async () => {
     let checkoutBody: unknown = null;
     installFetchStub([
       {
@@ -462,11 +464,8 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
     const panel = await screen.findByTestId('checkout-panel');
     expect(within(panel).getByText(/\$190 billed annually, starting today/)).toBeInTheDocument();
-
-    fireEvent.click(within(panel).getByRole('checkbox'));
-    expect(within(panel).getByRole('checkbox')).toBeChecked();
-    // The charge line follows the claim onto the promotional point.
-    expect(within(panel).getByText(/\$129 billed annually, starting today/)).toBeInTheDocument();
+    expect(within(panel).queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(within(panel).queryByText(/Claim Founding Pro/)).not.toBeInTheDocument();
 
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
     await waitFor(() =>
@@ -474,7 +473,6 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
         tierId: 'pro',
         cycle: 'annual',
         provider: 'paddle',
-        promo: 'foundingPro',
       }),
     );
   });
@@ -568,8 +566,8 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
       'aria-pressed',
       'true',
     );
-    expect(within(panel).getByRole('checkbox')).toBeChecked();
-    expect(within(panel).getByText(/Claim Founding Pro — \$129\/yr/)).toBeInTheDocument();
+    expect(within(panel).queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(within(panel).queryByText(/Claim Founding Pro/)).not.toBeInTheDocument();
   });
 
   it('Keep current plan collapses the confirm step without a request', async () => {
@@ -2059,16 +2057,14 @@ describe('BillingScreen — paid subscriber', () => {
     expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
   });
 
-  it('explains why an existing paid subscriber cannot claim a Founding Pro pricing link', async () => {
+  it('does not offer Founding Pro from a pricing deep link', async () => {
     mockTier = 'pro';
     stubSubscription(() => jsonOk({ data: PRO_SUB }));
     renderScreen({ plan: 'pro', cycle: 'annual', promo: 'foundingPro' });
 
-    expect(
-      await screen.findByText(
-        /Your active paid subscription cannot be converted to the promotional price/,
-      ),
-    ).toBeInTheDocument();
+    await screen.findByTestId('current-plan-card');
+    expect(screen.queryByText(/Founding Pro/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/promotional price/)).not.toBeInTheDocument();
     expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
   });
 
@@ -2083,7 +2079,7 @@ describe('BillingScreen — paid subscriber', () => {
     expect(await screen.findByTestId('change-plan-panel')).toBeInTheDocument();
   });
 
-  it('founding member: banner with the locked manifest price', async () => {
+  it('founding member: no sales banner', async () => {
     mockTier = 'pro';
     stubSubscription(() =>
       jsonOk({
@@ -2098,9 +2094,9 @@ describe('BillingScreen — paid subscriber', () => {
     );
     renderScreen();
 
-    const banner = await screen.findByTestId('founding-banner');
-    expect(within(banner).getByText('Founding Pro member')).toBeInTheDocument();
-    expect(within(banner).getByText(/price locked at \$129\/yr/)).toBeInTheDocument();
+    await screen.findByTestId('current-plan-card');
+    expect(screen.queryByTestId('founding-banner')).not.toBeInTheDocument();
+    expect(screen.queryByText(/price locked at/)).not.toBeInTheDocument();
   });
 
   it('one notice slot: the money notice leads, the rest wait behind "+N"', async () => {
@@ -2128,12 +2124,9 @@ describe('BillingScreen — paid subscriber', () => {
     );
     renderScreen();
 
-    // The scheduled change outranks the founding banner.
     expect(await screen.findByTestId('scheduled-plan-change-notice')).toBeInTheDocument();
     expect(screen.queryByTestId('founding-banner')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId('notice-slot-toggle'));
-    expect(screen.getByTestId('founding-banner')).toBeInTheDocument();
+    expect(screen.queryByTestId('notice-slot-toggle')).not.toBeInTheDocument();
   });
 
   it('cancel flow: preview copy (D120/D121) → confirm posts reason → card updates', async () => {
@@ -2680,7 +2673,7 @@ describe('BillingScreen — paid subscriber', () => {
     expect(panel).toHaveTextContent('Next billing date: Jul 30, 2027.');
     // Money moves today, so the guarantee is reassurance and belongs here
     // — unlike the $0 downgrade branch, where it contradicts.
-    expect(panel).toHaveTextContent('30-day money-back guarantee');
+    expect(panel).toHaveTextContent('14-day money-back on any purchase, once per customer.');
   });
 
   it('blocks an upgrade while its quote fails, then retries before allowing confirmation', async () => {
@@ -3082,7 +3075,7 @@ describe('BillingScreen — paid subscriber', () => {
     // …and therefore NOT the money-back line, which read as a flat
     // contradiction of the sentence right above it (founder, 2026-07-30).
     // It belongs on the branch where money moves today.
-    expect(panel).not.toHaveTextContent('30-day money-back guarantee');
+    expect(panel).not.toHaveTextContent('14-day money-back on any purchase, once per customer.');
     await waitFor(() =>
       expect(within(panel).getByRole('button', { name: 'Schedule downgrade' })).toBeEnabled(),
     );

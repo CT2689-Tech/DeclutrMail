@@ -143,7 +143,7 @@ describe('checkout provider gate (D117)', () => {
     // annual is where the picker already stands. Asserted rather than
     // clicked: this used to click the box to UNCHECK it, which silently
     // encoded the old default-on and inverted the moment it changed.
-    expect(within(panel).getByRole('checkbox')).not.toBeChecked();
+    expect(within(panel).queryByRole('checkbox')).not.toBeInTheDocument();
     expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeInTheDocument();
 
     fireEvent.click(within(panel).getByLabelText(/UPI · cards · netbanking/));
@@ -158,16 +158,10 @@ describe('checkout provider gate (D117)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
     const panel = await screen.findByTestId('checkout-panel');
 
-    // Standard annual (the default) → Razorpay is offered; pick it.
-    expect(within(panel).getByRole('checkbox')).not.toBeChecked();
+    expect(within(panel).queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(within(panel).queryByText(/Claim Founding Pro/)).not.toBeInTheDocument();
     fireEvent.click(within(panel).getByLabelText(/UPI · cards · netbanking/));
-
-    // Claim Founding Pro — a DIFFERENT price point, with no Razorpay
-    // id. Preserve an explicit USD choice; never silently route INR to USD.
-    fireEvent.click(within(panel).getByRole('checkbox'));
     expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeChecked();
-    expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeDisabled();
-    expect(within(panel).getByRole('button', { name: 'INR checkout paused' })).toBeDisabled();
     expect(checkoutBody).toBeNull();
     fireEvent.click(within(panel).getByLabelText(/Card · PayPal · Apple Pay/));
 
@@ -178,7 +172,6 @@ describe('checkout provider gate (D117)', () => {
         tierId: 'pro',
         cycle: 'annual',
         provider: 'paddle',
-        promo: 'foundingPro',
       }),
     );
   });
@@ -193,7 +186,7 @@ describe('checkout currency (D117/D226)', () => {
     // Founding Pro is unprovisioned on Razorpay in this fixture. The claim
     // defaults OFF, so the picker already stands on the standard annual
     // point that IS provisioned.
-    expect(within(panel).getByRole('checkbox')).not.toBeChecked();
+    expect(within(panel).queryByRole('checkbox')).not.toBeInTheDocument();
     expect(panel).toHaveTextContent(/\$190 billed annually/);
 
     fireEvent.click(within(panel).getByLabelText(/UPI · cards · netbanking/));
@@ -209,7 +202,7 @@ describe('checkout currency (D117/D226)', () => {
     renderScreen();
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
     const panel = await screen.findByTestId('checkout-panel');
-    expect(within(panel).getByRole('checkbox')).not.toBeChecked();
+    expect(within(panel).queryByRole('checkbox')).not.toBeInTheDocument();
 
     fireEvent.click(within(panel).getByLabelText(/UPI · cards · netbanking/));
     expect(panel).toHaveTextContent(/₹15,999/);
@@ -221,7 +214,7 @@ describe('checkout currency (D117/D226)', () => {
     renderScreen({ initialProvider: 'razorpay' });
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
     const panel = await screen.findByTestId('checkout-panel');
-    expect(within(panel).getByRole('checkbox')).not.toBeChecked();
+    expect(within(panel).queryByRole('checkbox')).not.toBeInTheDocument();
 
     expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeChecked();
     expect(panel).toHaveTextContent(/Reference price: ₹15,999\/yr/);
@@ -237,12 +230,9 @@ describe('checkout currency (D117/D226)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
     const panel = await screen.findByTestId('checkout-panel');
 
-    expect(within(panel).getByRole('checkbox')).not.toBeChecked();
+    expect(within(panel).queryByRole('checkbox')).not.toBeInTheDocument();
     expect(panel).toHaveTextContent(/Reference price: ₹15,999\/yr/);
-
-    const claim = within(panel).getByText(/Claim Founding Pro/);
-    expect(claim).toHaveTextContent('$129/yr');
-    expect(claim).not.toHaveTextContent('₹10,999');
+    expect(within(panel).queryByText(/Claim Founding Pro/)).not.toBeInTheDocument();
   });
 });
 
@@ -303,11 +293,11 @@ describe('Founding Pro availability gate', () => {
     renderScreen();
 
     const proCard = await screen.findByTestId('plan-option-pro');
-    expect(await within(proCard).findByText(/Founding Pro:/)).toBeInTheDocument();
+    expect(within(proCard).queryByText(/Founding Pro:/)).not.toBeInTheDocument();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
     const panel = await screen.findByTestId('checkout-panel');
-    expect(within(panel).getByRole('checkbox')).toBeInTheDocument();
+    expect(within(panel).queryByRole('checkbox')).not.toBeInTheDocument();
   });
 
   it('hides the founding price and the checkbox once the 250 slots are gone', async () => {

@@ -148,7 +148,9 @@ describe('UpgradeModal', () => {
     ).toBeInTheDocument();
     // Manifest-derived price (D19) of the plan the CTA buys: Plus $9/mo.
     expect(screen.getByText(/Plus removes the monthly cap/)).toBeInTheDocument();
-    expect(screen.getAllByText(/30-day money-back guarantee/)).toHaveLength(1);
+    expect(
+      screen.getAllByText(/14-day money-back on any purchase, once per customer/),
+    ).toHaveLength(1);
     // ONE checkout path (D117): the CTA deep-links the nudged plan into
     // /billing's confirm step via the validated billing intent.
     expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$9\/mo$/ })).toHaveAttribute(

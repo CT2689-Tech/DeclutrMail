@@ -13,7 +13,7 @@ import {
 import type { Request, Response } from 'express';
 
 import { ok, type Envelope, type SyncReadiness } from '@declutrmail/shared/contracts';
-import type { TierId } from '@declutrmail/shared/entitlements';
+import { inboxLimitFor, isPricingV2, type TierId } from '@declutrmail/shared/entitlements';
 
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { RateLimit } from '../common/rate-limit/index.js';
@@ -65,6 +65,13 @@ export interface MeEnvelope {
    * browser never derives it (A3). `null` = unlimited tier.
    */
   cleanupResetsAt: string | null;
+  /**
+   * Server-computed inbox ceiling. Optional on older responses; the
+   * client falls back to the flag-off manifest when it is absent.
+   */
+  inboxLimit: number;
+  /** Server env `PRICING_V2`. The browser does not read the env itself. */
+  pricingV2: boolean;
   /**
    * First-touch tracked `ref` vs skippable self-report. Never sum them.
    * `promptNeeded` is true until they answer or skip.
@@ -165,6 +172,8 @@ export class AuthController {
       tier: quota.tier,
       cleanupRemaining: quota.remaining,
       cleanupResetsAt: quota.resetsAt?.toISOString() ?? null,
+      inboxLimit: inboxLimitFor(quota.tier),
+      pricingV2: isPricingV2(),
       signupAttribution: {
         ref: user.signupAttributionRef,
         heardFrom: user.signupAttributionHeardFrom,

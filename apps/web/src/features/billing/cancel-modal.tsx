@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Button, PreviewSheet, tokens } from '@declutrmail/shared';
 import type { CancelRequest } from '@declutrmail/shared/contracts';
 import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 
 import { PlanConsequences } from './plan-coverage';
 import { formatBillingDate, type SubscriptionRecord } from './billing-model';
@@ -139,16 +140,9 @@ export function CancelModal({
             a refund.
           </span>
           {sub.foundingMember ? (
-            // QA-billing-20260901-09: the founding price lock is otherwise
-            // discoverable only after re-subscribing fails with
-            // FOUNDING_PRO_SOLD_OUT once the 250 slots are gone — name the
-            // cost before the click that can make it permanent.
             <>
               {' '}
-              <span>
-                You&rsquo;re a Founding Pro member — this locked price doesn&rsquo;t come back once
-                canceled and the 250 slots fill up.
-              </span>
+              <span>{WS1_COPY['cancel.founding']}</span>
             </>
           ) : null}
         </>

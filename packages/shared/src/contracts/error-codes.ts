@@ -168,6 +168,12 @@ export const ERROR_CODES = {
     retryable: false,
     message: 'This plan cannot be purchased yet. Please try again later.',
   },
+  PLAN_NOT_PURCHASABLE: {
+    status: 402,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Pro is coming, with room for more. It isn\u2019t available to buy yet.',
+  },
   // A verified webhook we could not yet resolve to a workspace or a
   // catalog entry. NEVER 200: a 2xx tells the provider the event is
   // delivered and retries stop, which strands a real payment with no

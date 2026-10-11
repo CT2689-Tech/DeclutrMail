@@ -33,7 +33,6 @@ import { TIER_MANIFEST, TIER_RANK, type TierId } from '@declutrmail/shared/entit
 import { useAuth } from '@/features/auth/auth-provider';
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { useTier } from '@/features/auth/api/use-tier';
-import { currencyForProvider, formatMoney } from '@/features/marketing/pricing/pricing-model';
 import { ApiError, apiDelete } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 
@@ -152,6 +151,8 @@ function processingPhaseAt(pending: PendingCheckout, now: number): ProcessingPha
 export function BillingScreen({
   initialIntent = null,
   initialProvider = 'paddle',
+  pricingV2 = false,
+  country = null,
   invoiceHistory,
   returnTo,
 }: {
@@ -159,6 +160,9 @@ export function BillingScreen({
   returnTo?: string | undefined;
   /** Geo-derived default rail (D117); the radio still overrides it. */
   initialProvider?: BillingProviderId;
+  /** Server-read launch flag. Absent means off, so an older shell still renders. */
+  pricingV2?: boolean;
+  country?: string | null;
   /** Optional server-streamed invoice section; stories retain the local fallback. */
   invoiceHistory?: ReactNode;
 }) {
@@ -755,9 +759,6 @@ export function BillingScreen({
     });
   }
   if (billingDark) notices.push({ key: 'billing-dark', node: <BillingDisabledNotice /> });
-  if (plan.foundingMember && backingSub) {
-    notices.push({ key: 'founding', node: <FoundingBanner provider={backingSub.provider} /> });
-  }
 
   return (
     <div
@@ -881,6 +882,8 @@ export function BillingScreen({
         }
         initialIntent={initialIntent}
         initialProvider={initialProvider}
+        pricingV2={pricingV2}
+        country={country}
         onRequestCancel={() => setCancelOpen(true)}
         onPaymentCompleted={(target, cycle, attemptId) =>
           // Own-id transition over this checkout's reservation: the
@@ -2163,38 +2166,6 @@ function NonBackingSubscriptionNotice({
           </Button>
         ) : null}
       </div>
-    </div>
-  );
-}
-
-/**
- * Founding Pro banner (D119 / D126). Price straight off the manifest,
- * in the currency the member's own rail locked — a Razorpay founding
- * member's price is locked at ₹10,999/yr, not $129/yr.
- */
-function FoundingBanner({ provider }: { provider: BillingProviderId }) {
-  const promo = TIER_MANIFEST.pro.promo;
-  if (!promo) return null;
-  return (
-    <div
-      data-testid="founding-banner"
-      style={{
-        display: 'flex',
-        alignItems: 'baseline',
-        gap: 8,
-        padding: '14px 16px',
-        background: color.primarySoft,
-        borderRadius: radius.lg,
-        fontSize: text.md,
-        color: color.fg,
-      }}
-    >
-      <span aria-hidden>🏛️</span>
-      <span>
-        <strong style={{ fontWeight: 600 }}>{promo.name} member</strong> — price locked at{' '}
-        {formatMoney(promo.annual, currencyForProvider(provider))}/yr while your subscription stays
-        active.
-      </span>
     </div>
   );
 }

@@ -19,6 +19,7 @@
 
 import type { ReactNode } from 'react';
 import { TIER_MANIFEST, tokens } from '@declutrmail/shared';
+import { buildOffersJsonLd, isPricingV2 } from '@declutrmail/shared/entitlements';
 import { INR_NEW_PURCHASES_PAUSED } from '@declutrmail/shared/contracts/billing-availability';
 
 import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
@@ -54,6 +55,7 @@ const { color, font } = tokens;
  * with the 250th redemption.
  */
 function tierOffers() {
+  if (isPricingV2()) return buildOffersJsonLd();
   return Object.values(TIER_MANIFEST)
     .filter((tier) => tier.purchasable)
     .flatMap((tier) =>

@@ -6,7 +6,12 @@
  * discipline as the /pricing model, which this reuses).
  */
 
-import { TIER_MANIFEST, TIER_RANK, type TierId } from '@declutrmail/shared/entitlements';
+import {
+  refundLine,
+  TIER_MANIFEST,
+  TIER_RANK,
+  type TierId,
+} from '@declutrmail/shared/entitlements';
 import type { BillingCycle, BillingSubscription } from '@declutrmail/shared/contracts';
 
 import {
@@ -147,7 +152,7 @@ export function formatProviderAmount(amount: string, currencyCode: string): stri
  * (founder-confirmed 2026-07-08; the published /refunds policy and the
  * cancel flow both surface it for Plus and Pro alike).
  */
-export const MONEY_BACK_NOTE = '30-day money-back guarantee';
+export const MONEY_BACK_NOTE = refundLine();
 
 // ── D119/A6 — the single derived billing story ───────────────────────
 //

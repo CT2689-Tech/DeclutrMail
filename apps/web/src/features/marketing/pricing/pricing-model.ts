@@ -15,6 +15,7 @@
 
 import {
   CAPABILITIES,
+  RAILS,
   SELECTOR_TIERS,
   TIER_IDS,
   TIER_MANIFEST,
@@ -94,9 +95,14 @@ export function currencyForProvider(provider: 'paddle' | 'razorpay'): Currency {
  * point is purchasable on Razorpay.
  */
 export function currencyForPricePoint(
-  point: { razorpayPlanId: string | null },
+  point: { razorpayPlanId: string | null; inrPaise?: number; inr?: { paise: number } },
   provider: 'paddle' | 'razorpay',
+  geo?: { pricingV2?: boolean; country?: string | null },
 ): Currency {
+  if (geo?.pricingV2 === true && !RAILS.razorpay.enabled) {
+    const paise = point.inr?.paise ?? point.inrPaise ?? 0;
+    return geo.country?.toUpperCase() === 'IN' && paise > 0 ? 'INR' : 'USD';
+  }
   return provider === 'razorpay' && point.razorpayPlanId !== null ? 'INR' : 'USD';
 }
 
@@ -133,12 +139,13 @@ export function priceLineFor(
   tier: TierDefinition,
   interval: BillingInterval,
   provider: 'paddle' | 'razorpay' = 'paddle',
+  geo?: { pricingV2?: boolean; country?: string | null },
 ): PriceLine | null {
   const point = tier.prices[interval] ?? tier.prices.monthly ?? tier.prices.annual;
   if (!point) return null;
   // Clamped per point — an unprovisioned Razorpay point renders USD,
   // matching what checkout will actually charge.
-  const currency = currencyForPricePoint(point, provider);
+  const currency = currencyForPricePoint(point, provider, geo);
   const isAnnual = point === tier.prices.annual && tier.prices.annual !== null;
   const zero = currency === 'INR' ? point.inrPaise === 0 : point.usdCents === 0;
   if (zero) {

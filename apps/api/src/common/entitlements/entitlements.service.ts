@@ -15,8 +15,11 @@ import {
   cleanupActionsPerMonthFor,
   hasCapability,
   inboxLimitFor,
+  inboxLimitReachedMessage,
+  isPricingV2,
   minimumTierForCapability,
   satisfiesActionTier,
+  tierIsPurchasable,
   type Capability,
   type TierId,
 } from '@declutrmail/shared/entitlements';
@@ -469,14 +472,17 @@ export class EntitlementsService {
     if (connected >= limit) {
       // Derive the upgrade target from the config: the first tier whose
       // inbox limit exceeds the current one (none ⇒ no upgrade pitch).
-      const upgradeTier = TIER_IDS.find((id) => inboxLimitFor(id) > limit);
-      const upgrade = upgradeTier
-        ? ` Upgrade to ${TIER_MANIFEST[upgradeTier].name} to connect up to ${inboxLimitFor(upgradeTier)} Gmail accounts.`
-        : '';
+      const upgradeTier = TIER_IDS.find((id) => inboxLimitFor(id) > limit && tierIsPurchasable(id));
+      const upgrade = isPricingV2()
+        ? ''
+        : upgradeTier
+          ? ` Upgrade to ${TIER_MANIFEST[upgradeTier].name} to connect up to ${inboxLimitFor(upgradeTier)} Gmail accounts.`
+          : '';
       throw new AppException({
         code: 'INBOX_LIMIT_REACHED',
-        message:
-          limit === 1
+        message: isPricingV2()
+          ? inboxLimitReachedMessage(tier)
+          : limit === 1
             ? `Your plan includes 1 connected inbox.${upgrade}`
             : `Your plan includes ${limit} connected inboxes and all are in use.${upgrade}`,
         details: { limit, connected, tier },

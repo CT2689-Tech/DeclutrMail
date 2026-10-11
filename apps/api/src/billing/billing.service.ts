@@ -51,6 +51,7 @@ import type {
 import { AppException } from '../common/app-exception.js';
 import { highestLiveGrantForWorkspace } from '../common/entitlements/entitlement-grants.js';
 import type { ProductEventsPort } from '@declutrmail/shared/analytics/product-events';
+import { isPricingV2, proNotPurchasableMessage, RAILS } from '@declutrmail/shared/entitlements';
 
 import { PRODUCT_EVENTS, recordProductEvent } from '../analytics/product-events.port.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
@@ -110,6 +111,15 @@ export class BillingService {
     principal: { userId: string; workspaceId: string },
     dto: CheckoutRequest,
   ): Promise<CheckoutSession> {
+    if (isPricingV2() && (dto.tierId === 'pro' || dto.promo === 'foundingPro')) {
+      throw new AppException({
+        code: 'PLAN_NOT_PURCHASABLE',
+        message: proNotPurchasableMessage(),
+      });
+    }
+    if (isPricingV2() && dto.provider === 'razorpay' && !RAILS.razorpay.enabled) {
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    }
     // One subscription per workspace at a time — plan CHANGES are a
     // provider-side update flow (D120), not a second checkout.
     //
