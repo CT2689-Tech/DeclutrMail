@@ -53,6 +53,19 @@ isolated browser journeys against that build. These catch failures that would
 otherwise cost another complete PR and queue cycle. Batch the resulting fixes
 into one push, and push again only for an actual defect or integration conflict.
 
+Before pushing any change under `apps/web` or `packages/shared`, run:
+
+```bash
+pnpm --filter @declutrmail/web build && pnpm check:bundle
+```
+
+Each route's cap in `scripts/web-bundle-budget.json` is its measured size plus
+max(5%, 5 kB). If a route goes over and the growth is intended, run
+`pnpm check:bundle --rebaseline` after the same build and commit the regenerated
+table with the change. Never edit the table by hand; its contract test rejects
+caps that do not match the formula. CI also warns, without failing, when a route
+grows more than 2 kB against main's last measured sizes.
+
 CI runs browser verification in three independent lanes: accessibility and
 component paint, hydration and billing, and product/public journeys. Each lane
 has disposable Postgres/Redis services and its own API and production web build.

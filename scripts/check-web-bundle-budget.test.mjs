@@ -6,9 +6,23 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { AUTHED_DEFAULT_KB, DEFAULT_KB, chunkRefs } from './check-web-bundle-budget.mjs';
+import {
+  GROWTH_WARN_KB,
+  TABLE_PATH,
+  budgetFor,
+  buildTable,
+  chunkRefs,
+  growthOver,
+  parseArgs,
+  serializeTable,
+} from './check-web-bundle-budget.mjs';
 
 const SCRIPT = fileURLToPath(new URL('./check-web-bundle-budget.mjs', import.meta.url));
+
+// Fixture group defaults, so the committed table can be rebaselined
+// without touching these tests.
+const DEFAULT_KB = 151;
+const AUTHED_DEFAULT_KB = 264;
 
 /** Random bytes do not compress, so a file's gzipped size is its size. */
 const kib = (n) => randomBytes(Math.round(n * 1024));
@@ -54,7 +68,10 @@ const SITE = {
 };
 
 /** A fixture build plus the site its stand-in server answers with. */
-function fixture(t, { pages = {}, chunks = {}, site = {}, prerendered = {}, hang = false } = {}) {
+function fixture(
+  t,
+  { pages = {}, chunks = {}, site = {}, prerendered = {}, hang = false, routes = {} } = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), 'bundle-budget-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const listed = { ...PAGES, ...pages };
@@ -79,6 +96,10 @@ function fixture(t, { pages = {}, chunks = {}, site = {}, prerendered = {}, hang
   writeFileSync(join(dir, 'prerender-manifest.json'), JSON.stringify({ routes: prerendered }));
   writeFileSync(join(dir, 'site.json'), JSON.stringify({ hang, pages: { ...SITE, ...site } }));
   writeFileSync(join(dir, 'server.mjs'), SERVER);
+  writeFileSync(
+    join(dir, 'table.json'),
+    JSON.stringify({ defaults: { public: DEFAULT_KB, authed: AUTHED_DEFAULT_KB }, routes }),
+  );
   return dir;
 }
 
@@ -86,11 +107,12 @@ const envFor = (dir, env = {}) => ({
   PATH: process.env.PATH,
   BUNDLE_BUDGET_NEXT_DIR: dir,
   BUNDLE_BUDGET_SERVER: join(dir, 'server.mjs'),
+  BUNDLE_BUDGET_TABLE: join(dir, 'table.json'),
   ...env,
 });
 
-function run(dir, env = {}) {
-  const result = spawnSync(process.execPath, [SCRIPT], {
+function run(dir, env = {}, args = []) {
+  const result = spawnSync(process.execPath, [SCRIPT, ...args], {
     env: envFor(dir, env),
     encoding: 'utf8',
     timeout: 60_000,
@@ -323,4 +345,181 @@ test('chunk paths are read decoded, the way they sit on disk, without noModule',
     [...chunkRefs(html)],
     ['static/chunks/app/blog/[slug]/page-a.js', 'static/chunks/app/@modal/x.js'],
   );
+});
+
+test('the headroom floor is max(5%, 5 kB), rounded up to a whole kB', () => {
+  assert.equal(budgetFor(50), 55, '5 kB wins below 100 kB');
+  assert.equal(budgetFor(100), 105, 'they meet at 100 kB');
+  assert.equal(budgetFor(150.7), 159, '5% wins above 100 kB: 150.7 + 7.535');
+  assert.equal(budgetFor(270), 284, '/billing-sized: 270 + 13.5');
+  assert.equal(budgetFor(140), 147, 'no floating-point overshoot past an exact whole kB');
+  for (let tenths = 0; tenths <= 4000; tenths += 1) {
+    const kb = tenths / 10;
+    const floor = kb + Math.max(kb * 0.05, 5);
+    const budget = budgetFor(kb);
+    assert.ok(budget >= floor - 1e-9, `${kb} kB got ${budget}, below its ${floor} floor`);
+    assert.ok(budget < floor + 1, `${kb} kB got ${budget}, more than 1 kB past its floor`);
+  }
+});
+
+test('the committed table is exactly what --rebaseline generates from its own measurements', () => {
+  const text = readFileSync(TABLE_PATH, 'utf8');
+  const committed = JSON.parse(text);
+  const entries = Object.entries(committed.routes);
+  assert.ok(
+    entries.some(([route]) => route.startsWith('/(marketing)/')),
+    'no public routes',
+  );
+  assert.ok(
+    entries.some(([route]) => route.startsWith('/(app)/')),
+    'no authed routes',
+  );
+  for (const [route, { measuredKb, budgetKb }] of entries) {
+    assert.equal(budgetKb, budgetFor(measuredKb), `${route} was edited off the headroom floor`);
+  }
+  const measured = Object.fromEntries(entries.map(([route, entry]) => [route, entry.measuredKb]));
+  assert.equal(serializeTable(buildTable(measured)), text, 'hand-edited or not regenerated');
+});
+
+test('--rebaseline writes every route at its floor, byte-identically, and the check then holds it', (t) => {
+  const own = 'app/(marketing)/zz-public/page-1.js';
+  const dir = fixture(t);
+  const first = run(dir, {}, ['--rebaseline']);
+  assert.equal(first.code, 0, first.out);
+  assert.match(first.out, /rebaselined 2 route\(s\)/);
+  const written = readFileSync(join(dir, 'table.json'), 'utf8');
+  const table = JSON.parse(written);
+  assert.deepEqual(Object.keys(table.routes), [
+    '/(app)/zz-app/page',
+    '/(marketing)/zz-public/page',
+  ]);
+  for (const { measuredKb, budgetKb } of Object.values(table.routes)) {
+    assert.equal(budgetKb, budgetFor(measuredKb));
+  }
+  assert.equal(table.defaults.public, table.routes['/(marketing)/zz-public/page'].budgetKb);
+
+  assert.equal(run(dir, {}, ['--rebaseline']).code, 0);
+  assert.equal(readFileSync(join(dir, 'table.json'), 'utf8'), written, 'not deterministic');
+
+  const { measuredKb, budgetKb } = table.routes['/(marketing)/zz-public/page'];
+  const spare = budgetKb - measuredKb;
+  writeFileSync(join(dir, 'static/chunks', own), kib(1 + spare - 0.5));
+  const within = run(dir);
+  assert.equal(within.code, 0, within.out);
+
+  writeFileSync(join(dir, 'static/chunks', own), kib(1 + spare + 0.5));
+  const over = run(dir);
+  assert.equal(over.code, 1, over.out);
+  assert.match(over.out, /OVER .*\/\(marketing\)\/zz-public\/page/);
+  assert.ok(over.out.includes('pnpm check:bundle --rebaseline'), over.out);
+});
+
+test('a listed route is held to its own cap, not its group default', (t) => {
+  const { code, out } = run(
+    fixture(t, { routes: { '/(app)/zz-app/page': { measuredKb: 1, budgetKb: 2 } } }),
+  );
+  assert.equal(code, 1, out);
+  assert.match(out, /OVER .* \/ +2 kB {2}\/\(app\)\/zz-app\/page/);
+  assert.match(out, /\/\(marketing\)\/zz-public\/page {2}\(not in the table: public default\)/);
+});
+
+test('--rebaseline writes nothing when a route cannot be measured', (t) => {
+  const dir = fixture(t, { site: { '/zz-app': { status: 307, location: '/sign-in' } } });
+  const before = readFileSync(join(dir, 'table.json'), 'utf8');
+  const { code, out } = run(dir, {}, ['--rebaseline']);
+  assert.equal(code, 1, out);
+  assert.equal(readFileSync(join(dir, 'table.json'), 'utf8'), before);
+});
+
+test('fails closed when the budget table is missing', (t) => {
+  const dir = fixture(t);
+  const { code, out } = run(dir, { BUNDLE_BUDGET_TABLE: join(dir, 'nope.json') });
+  assert.equal(code, 1, out);
+  assert.ok(out.includes('cannot read the budget table'), out);
+});
+
+test('an unknown flag fails instead of quietly running the check', () => {
+  assert.throws(() => parseArgs(['--rebasline']), /unknown or incomplete argument --rebasline/);
+  assert.throws(() => parseArgs(['--baseline']), /incomplete/);
+  assert.deepEqual(parseArgs(['--', '--rebaseline']), {
+    rebaseline: true,
+    sizesOut: null,
+    baseline: null,
+  });
+});
+
+test('growth is compared in tenths: 2.0 kB is not a warning, 2.1 kB is', () => {
+  const rows = [
+    { route: '/a', kb: 152.04 },
+    { route: '/b', kb: 152.14 },
+    { route: '/new', kb: 300 },
+  ];
+  assert.equal(GROWTH_WARN_KB, 2);
+  assert.deepEqual(growthOver(rows, { '/a': 150, '/b': 150 }), [
+    { route: '/b', fromKb: 150, toKb: 152.1, grewTenths: 21 },
+  ]);
+});
+
+/** Measures the fixture once and returns its sizes, as main's CI would upload them. */
+function sizesOf(dir) {
+  const file = join(dir, 'sizes.json');
+  const { code, out } = run(dir, {}, ['--sizes-out', file]);
+  assert.equal(code, 0, out);
+  return JSON.parse(readFileSync(file, 'utf8'));
+}
+
+test('a route that grew more than 2 kB vs main is warned about, without failing the run', (t) => {
+  const dir = fixture(t);
+  const sizes = sizesOf(dir);
+  const app = sizes.routes['/(app)/zz-app/page'];
+  const pub = sizes.routes['/(marketing)/zz-public/page'];
+  const baseline = join(dir, 'main.json');
+  writeFileSync(
+    baseline,
+    JSON.stringify({
+      commit: 'abcdef1234',
+      routes: {
+        '/(app)/zz-app/page': Math.round((app - 2.5) * 10) / 10,
+        '/(marketing)/zz-public/page': Math.round((pub - 2) * 10) / 10,
+      },
+    }),
+  );
+  const summary = join(dir, 'summary.md');
+  const { code, out } = run(dir, { GITHUB_STEP_SUMMARY: summary }, ['--baseline', baseline]);
+
+  assert.equal(code, 0, out);
+  assert.match(
+    out,
+    /::warning title=Bundle growth::\/\(app\)\/zz-app\/page grew 2\.5 kB vs main @ abcdef1/,
+  );
+  assert.ok(!out.includes('zz-public/page grew'), 'exactly 2 kB must not warn');
+  const report = readFileSync(summary, 'utf8');
+  assert.match(report, /1 of 2 route\(s\) grew more than 2 kB vs main @ abcdef1/);
+  assert.match(report, /\| `\/\(app\)\/zz-app\/page` \| .* \| \+2\.5 kB \|/);
+});
+
+test('the growth warning still reports when the run is over budget', (t) => {
+  const own = 'app/(app)/zz-app/page-1.js';
+  const dir = fixture(t);
+  const baseline = join(dir, 'main.json');
+  writeFileSync(baseline, JSON.stringify(sizesOf(dir)));
+  writeFileSync(join(dir, 'static/chunks', own), kib(AUTHED_DEFAULT_KB + 5));
+  const { code, out } = run(dir, {}, ['--baseline', baseline]);
+  assert.equal(code, 1, out);
+  assert.match(out, /::warning title=Bundle growth::\/\(app\)\/zz-app\/page grew/);
+});
+
+test('an unreadable main baseline reads as "not compared", never as "no growth"', (t) => {
+  const dir = fixture(t);
+  const summary = join(dir, 'summary.md');
+  const { code, out } = run(dir, { GITHUB_STEP_SUMMARY: summary }, [
+    '--baseline',
+    join(dir, 'missing.json'),
+  ]);
+
+  assert.equal(code, 0, out);
+  assert.match(out, /::notice title=Bundle growth not compared::.*ENOENT/);
+  const report = readFileSync(summary, 'utf8');
+  assert.match(report, /Not compared: main's measured sizes could not be read/);
+  assert.ok(!/No route grew/.test(report), report);
 });
