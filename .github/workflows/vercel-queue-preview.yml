@@ -19,6 +19,8 @@ on:
 
 permissions:
   contents: read
+  # Reads the Vercel status an Ignored Build Step posts on a cancelled preview.
+  statuses: read
 
 concurrency:
   group: vercel-queue-preview-${{ github.event.workflow_run.head_sha || inputs.queue_sha }}

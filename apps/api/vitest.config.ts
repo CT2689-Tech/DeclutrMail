@@ -1,4 +1,8 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
+import { BaseSequencer } from 'vitest/node';
+
+import { weightedSequencer } from '../../scripts/vitest-weighted-shard.mjs';
 
 /**
  * apps/api vitest config — `testTimeout`/`hookTimeout` raised because
@@ -12,5 +16,12 @@ export default defineConfig({
     include: ['src/**/*.spec.ts', 'src/**/*.spec.tsx'],
     testTimeout: 30_000,
     hookTimeout: 30_000,
+    // CI's `--shard` legs split by recorded file duration, not path hash.
+    sequence: {
+      sequencer: weightedSequencer(
+        BaseSequencer,
+        fileURLToPath(new URL('./vitest.shard-weights.json', import.meta.url)),
+      ),
+    },
   },
 });

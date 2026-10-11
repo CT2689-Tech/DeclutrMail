@@ -53,17 +53,46 @@ isolated browser journeys against that build. These catch failures that would
 otherwise cost another complete PR and queue cycle. Batch the resulting fixes
 into one push, and push again only for an actual defect or integration conflict.
 
-CI runs browser verification in three independent lanes: accessibility and
-component paint, hydration and billing, and product/public journeys. Each lane
-has disposable Postgres/Redis services and its own API and production web build.
-Tests stay serial inside each lane; all lanes must pass `CI required`, with
-coverage assertions rejecting missing, empty or skipped reports. Test retries,
-Lighthouse thresholds and its three measurements per page are unchanged.
+CI runs browser verification in four independent lanes: WCAG accessibility,
+component paint plus 320px responsive layout, hydration and billing, and
+product/public journeys. Each lane has disposable Postgres/Redis services and
+its own API and production web build, which compiles in the background while
+the lane installs Chromium and migrates its database. Lane builds and build-web
+skip Next's lint and type pass: the `lint` job runs the same ESLint config, and
+`web-types` type-checks the route types build-web generated, which the
+`typecheck` job cannot see. Tests stay serial inside each lane; all lanes must
+pass `CI required`, with coverage assertions rejecting missing, empty or skipped
+reports.
+
+Lighthouse runs in its own `lighthouse` job, one leg per URL in
+`apps/web/lighthouserc.cjs`, against build-web's uploaded build. Every leg keeps
+three measurements per page and the same thresholds, and the job fails if its
+legs and the config's URL list disagree, if a URL has no assertions or lacks
+D160's performance floor, or if a leg writes no reports. API and worker tests
+run in three shards each and web tests in two. API shards split by the per-file
+durations in `apps/api/vitest.shard-weights.json`; refresh them with
+`scripts/vitest-weighted-shard.mjs --update`, passing reports from at least two
+runs (durations are averaged), when one shard becomes the tail. There are no
+test retries anywhere.
 
 Only Next.js Webpack compiler intermediates are cached. Marketing and synthetic
 browser builds use separate cache namespaces; current-source production builds
 always execute. Rendered output, request data, sessions and test results are
 never restored. See [Next.js CI build caching](https://nextjs.org/docs/app/guides/ci-build-caching).
+
+Before pushing any change under `apps/web` or `packages/shared`, run:
+
+```bash
+pnpm --filter @declutrmail/web build && pnpm check:bundle
+```
+
+Each route's cap in `scripts/web-bundle-budget.json` is its measured size plus
+max(5%, 5 kB). If a route goes over and the growth is intended, or a new route
+fails because it has no cap yet, run `pnpm check:bundle --rebaseline` after the
+same build and commit the regenerated table with the change. Never edit the
+table by hand; its contract test rejects caps that do not match the formula. CI
+also warns, without failing, when a route grows more than 2 kB against main's
+last measured sizes.
 
 Measure a full run by its critical path, not the sum of parallel job durations.
 Before this split, seven successful full runs on October 10, 2026 had a median

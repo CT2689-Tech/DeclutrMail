@@ -104,7 +104,9 @@ env:
   API_DB_DRIVER: node-postgres
   # Approved access/grant notices use the verified private queue preflight.
   # Preserve first enrollment across routine releases and rollback.
-  BILLING_APP_NOTICES_ENABLED: 'true'
+  # Tested broker connections returned partial actor lists. Keep activation
+  # off until the release gate can prove the complete consumer capability set.
+  BILLING_APP_NOTICES_ENABLED: 'false'
   BILLING_APP_NOTICES_START_AT: '2026-10-11T03:15:41.000Z'
   # Runtime SA used by BOTH Cloud Run services. Declared as an env so a
   # future rename touches one place.

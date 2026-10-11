@@ -8,6 +8,17 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { and, eq } from 'drizzle-orm';
 import { schema, subscriptionEvents, subscriptions, users, workspaces } from '@declutrmail/db';
 import {
+  describeRehearsalFailure,
+  formatRehearsalExit,
+  formatRehearsalFailure,
+  installRehearsalFailureHandlers,
+  noteRehearsalActionFailure,
+  rehearsalOutcome,
+  runOnce,
+  type RehearsalActionFailure,
+  type RehearsalFailure,
+} from './helpers/rehearsal-failure.js';
+import {
   assertSandboxRehearsalEnvironment,
   isRehearsalOperator,
   listenRehearsalServer,
@@ -74,11 +85,13 @@ function fixture(name: CaseName): Fixture {
 const ownedSubscriptions = new Set<string>();
 const ownedTransactions = new Map<string, SandboxCheckoutIdentity>();
 const cleanup: Record<string, boolean | string> = {};
+const actionFailures: RehearsalActionFailure[] = [];
 const evidence: Record<string, unknown> = {
   sandboxOnly: true,
   fixtureOnly: true,
   startedAt,
   cleanup,
+  actionFailures,
   productionCheckoutUnchanged: true,
   productionDeletionHoldsUnchanged: true,
   razorpay: 'not_rehearsed_no_test_credentials_confirmed',
@@ -370,6 +383,21 @@ async function checkoutPayload(name: CaseName) {
   if (!f.bound) throw new Error('Bound artifact required');
   return { kind: 'transaction', transactionId: f.bound, clientToken };
 }
+const actionPaths = [
+  '/paddle-webhook',
+  '/state',
+  '/observation',
+  '/abort',
+  '/prepare',
+  '/open',
+  '/hosted-open',
+  '/replay-open',
+  '/replay',
+  '/recover',
+  '/revoke',
+  '/race-revoke',
+  '/finish',
+] as const;
 const server = createServer((req, res) => {
   if (stopping) {
     json(res, 503, { error: 'fixture_stopping' });
@@ -662,7 +690,11 @@ const server = createServer((req, res) => {
       } finally {
         busy = false;
       }
-    } catch {
+    } catch (error) {
+      noteRehearsalActionFailure(actionFailures, req.url, error, {
+        paths: actionPaths,
+        cases,
+      });
       if (!res.headersSent) json(res, 503, { error: 'action_unconfirmed_hold_retained' });
     }
   })();
@@ -852,14 +884,28 @@ async function shutdown() {
   server.closeAllConnections();
   await pg.end();
 }
+const cleanupOnce = runOnce(shutdown);
+function recordFailure(failure: RehearsalFailure) {
+  if (evidence.error) return;
+  evidence.error = failure;
+  evidence.errorPhase = evidence.phase ?? 'unknown';
+}
+installRehearsalFailureHandlers({
+  onFailure: recordFailure,
+  phase: () => evidence.phase,
+  shutdown: cleanupOnce,
+});
 try {
+  evidence.phase = 'bundle';
   clientJs = await buildCheckoutRevocationClient();
+  evidence.phase = 'catalog';
   const price = await api(`/prices/${priceId}`);
   if (price.data.id !== priceId || price.data.status !== 'active')
     throw new Error('Catalog mismatch');
   evidence.catalogRead = true;
   await api('/notification-settings');
   evidence.destinationsRead = true;
+  evidence.phase = 'fixtures';
   for (const name of cases) {
     const [w] = await db
       .insert(workspaces)
@@ -884,6 +930,7 @@ try {
     });
   }
   await record();
+  evidence.phase = 'create_token';
   tokenAttempted = true;
   const token = await api('/client-tokens', 'POST', {
     name: resourceName,
@@ -899,6 +946,7 @@ try {
   clientToken = token.data.token;
   console.log(`::add-mask::${clientToken}`);
   await record();
+  evidence.phase = 'create_destination';
   destinationAttempted = true;
   const destination = await api('/notification-settings', 'POST', {
     description: resourceName,
@@ -948,6 +996,7 @@ try {
     new BillingUpgradeRefundService(db, catalog, paddle),
   );
   guard = new BillingDeletionGuard(db, paddle, new RazorpayAdapter({}));
+  evidence.phase = 'gate_probes';
   await listenRehearsalServer(server);
   if ((await fetch('http://127.0.0.1:4049/state?case=cancel')).status !== 403)
     throw new Error('Operator gate unconfirmed');
@@ -972,10 +1021,28 @@ try {
   const deadline = Date.now() + 45 * 60_000;
   while (!finished && !stopping && Date.now() < deadline)
     await Promise.race([stop, new Promise<void>((r) => setTimeout(r, 1000))]);
-} catch {
-  evidence.error = 'sandbox_rehearsal_unconfirmed';
+} catch (error) {
+  const failure = describeRehearsalFailure(error, 'main');
+  console.error(formatRehearsalFailure(failure, evidence.phase));
+  recordFailure(failure);
   process.exitCode = 1;
 } finally {
-  await shutdown();
+  try {
+    await cleanupOnce();
+  } catch (error) {
+    const failure = describeRehearsalFailure(error, 'shutdown');
+    console.error(formatRehearsalFailure(failure, evidence.phase));
+    recordFailure(failure);
+    process.exitCode = 1;
+    await record().catch(() => undefined);
+    server.closeAllConnections();
+    await pg.end({ timeout: 5 }).catch(() => undefined);
+  }
   if (!finished) process.exitCode = 1;
+  console.error(
+    formatRehearsalExit(
+      rehearsalOutcome({ finished, aborted: evidence.aborted, error: evidence.error, cleanup }),
+      evidence.phase,
+    ),
+  );
 }

@@ -7,6 +7,17 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { and, eq } from 'drizzle-orm';
 import { schema, subscriptions, users, workspaces } from '@declutrmail/db';
 import {
+  describeRehearsalFailure,
+  formatRehearsalExit,
+  formatRehearsalFailure,
+  installRehearsalFailureHandlers,
+  noteRehearsalActionFailure,
+  rehearsalOutcome,
+  runOnce,
+  type RehearsalActionFailure,
+  type RehearsalFailure,
+} from './helpers/rehearsal-failure.js';
+import {
   assertSandboxRehearsalEnvironment,
   rehearsalCase,
   isRehearsalOperator,
@@ -59,11 +70,13 @@ const cleanup: {
 let tokenAttempted = false,
   destinationAttempted = false,
   actionBusy = false;
+const actionFailures: RehearsalActionFailure[] = [];
 const evidence: Record<string, unknown> = {
   sandboxOnly: true,
   startedAt: new Date().toISOString(),
   fixtureOnly: true,
   cleanup,
+  actionFailures,
 };
 let endpointSecret = '',
   clientToken = '',
@@ -314,6 +327,15 @@ async function readState(name: CaseName) {
 }
 let clientJs = '';
 const activeHandlers = new Set<Promise<void>>();
+const actionPaths = [
+  '/paddle-webhook',
+  '/state',
+  '/abort',
+  '/finish',
+  '/checkout',
+  '/upgrade',
+  '/refund',
+] as const;
 const server = createServer((req, res) => {
   if (stopping) {
     json(res, 503, { error: 'fixture_stopping' });
@@ -485,12 +507,17 @@ const server = createServer((req, res) => {
     } finally {
       actionBusy = false;
     }
-  })().catch(() =>
-    json(res, 503, {
-      error: 'fixture_operation_unconfirmed',
-      support: 'Read the sanitized workflow evidence; do not retry a charged action.',
-    }),
-  );
+  })().catch((error: unknown) => {
+    noteRehearsalActionFailure(actionFailures, req.url, error, {
+      paths: actionPaths,
+      cases: ['monthly', 'cycle'],
+    });
+    if (!res.headersSent)
+      json(res, 503, {
+        error: 'fixture_operation_unconfirmed',
+        support: 'Read the sanitized workflow evidence; do not retry a charged action.',
+      });
+  });
   activeHandlers.add(handler);
   void handler.finally(() => activeHandlers.delete(handler));
 });
@@ -588,6 +615,17 @@ async function shutdown() {
   server.closeAllConnections();
   await pg.end();
 }
+const cleanupOnce = runOnce(shutdown);
+function recordFailure(failure: RehearsalFailure) {
+  if (evidence.error) return;
+  evidence.error = failure;
+  evidence.errorPhase = evidence.phase ?? 'unknown';
+}
+installRehearsalFailureHandlers({
+  onFailure: recordFailure,
+  phase: () => evidence.phase,
+  shutdown: cleanupOnce,
+});
 try {
   evidence.phase = 'bundle';
   clientJs = await buildRehearsalClient();
@@ -734,10 +772,28 @@ try {
     if (!server.listening) break;
   }
   evidence.completed = finished;
-} catch {
-  evidence.error = 'sandbox_rehearsal_unconfirmed';
+} catch (error) {
+  const failure = describeRehearsalFailure(error, 'main');
+  console.error(formatRehearsalFailure(failure, evidence.phase));
+  recordFailure(failure);
   process.exitCode = 1;
 } finally {
-  await shutdown();
+  try {
+    await cleanupOnce();
+  } catch (error) {
+    const failure = describeRehearsalFailure(error, 'shutdown');
+    console.error(formatRehearsalFailure(failure, evidence.phase));
+    recordFailure(failure);
+    process.exitCode = 1;
+    await record().catch(() => undefined);
+    server.closeAllConnections();
+    await pg.end({ timeout: 5 }).catch(() => undefined);
+  }
   if (!finished) process.exitCode = 1;
+  console.error(
+    formatRehearsalExit(
+      rehearsalOutcome({ finished, aborted: evidence.aborted, error: evidence.error, cleanup }),
+      evidence.phase,
+    ),
+  );
 }
