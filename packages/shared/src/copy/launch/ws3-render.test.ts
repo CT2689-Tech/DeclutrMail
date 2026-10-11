@@ -38,7 +38,7 @@ describe('WS3 token fill', () => {
     const casa = fillWs3(WS3_COPY['ws3.security.verification.casa']);
     const brand = fillWs3(WS3_COPY['ws3.security.verification.brand']);
     expect(oauth).toBe(
-      'Google OAuth verification approved April 21, 2026. It covers the single restricted scope we request, gmail.modify.',
+      'Google OAuth verification approved April 21, 2026. It covers the single restricted permission we request, gmail.modify.',
     );
     expect(casa).toContain('letter of validation was submitted to Google on April 15, 2026');
     expect(casa).not.toMatch(/\bapproved\b/i);

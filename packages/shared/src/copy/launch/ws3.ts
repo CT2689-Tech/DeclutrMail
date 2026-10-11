@@ -1,5 +1,10 @@
-/** WS3 copy. Values are the launch deck section, keyed by deck id. */
+/** WS3 copy. Values equal deck/ws3.json (drop2-r12). */
 export const WS3_COPY = {
+  _meta: {
+    revision: 'drop2-r12',
+    issued: '2026-10-11T15:35:00-07:00',
+    section: 'ws3',
+  },
   'ws3.home.title': 'Clean up Gmail, one sender at a time — DeclutrMail',
   'ws3.home.description':
     'Clear Gmail clutter by sender. Preview which emails will move before you confirm. Start free, with 30-day undo on Archive, Later, and Delete.',
@@ -22,7 +27,7 @@ export const WS3_COPY = {
     'Google OAuth verification approved {OAUTH_DATE}, and CASA Tier 2 assessed by TAC Security · We never fetch or store full email contents.',
   'ws3.trust.aria': 'Security details: Google verification and independent assessment',
   'ws3.trust.long':
-    'Google OAuth verification approved {OAUTH_DATE}, and CASA Tier 2 assessed by TAC Security. The approval covers gmail.modify, and TAC Security’s letter of validation was submitted to Google on {CASA_LOV_DATE}. We never fetch or store full email contents.',
+    'Google OAuth verification approved {OAUTH_DATE}, and CASA Tier 2 assessed by TAC Security. The approval covers the one restricted permission we request, gmail.modify, and TAC Security’s letter of validation was submitted to Google on {CASA_LOV_DATE}. We never fetch or store full email contents.',
   'ws3.signin.h1': 'Know what you are sharing before you connect.',
   'ws3.signin.sub': 'Gmail remains where you read, reply, search, and compose.',
   'ws3.signin.button': 'Continue with Google',
@@ -285,13 +290,13 @@ export const WS3_COPY = {
   'ws3.security.crossLinks': ['Privacy & control', 'Security', 'Privacy Policy'],
   'ws3.security.verification.title': 'Google verification and independent assessment',
   'ws3.security.verification.oauth':
-    'Google OAuth verification approved {OAUTH_DATE}. It covers the single restricted scope we request, gmail.modify.',
+    'Google OAuth verification approved {OAUTH_DATE}. It covers the single restricted permission we request, gmail.modify.',
   'ws3.security.verification.casa':
-    'CASA Tier 2 assessed by TAC Security. Its letter of validation was submitted to Google on {CASA_LOV_DATE}. Apps that use restricted Gmail scopes must complete Google’s Cloud Application Security Assessment through an authorized lab.',
+    'CASA Tier 2 assessed by TAC Security. Its letter of validation was submitted to Google on {CASA_LOV_DATE}. Apps that use restricted Gmail permissions must complete Google’s Cloud Application Security Assessment through an authorized lab.',
   'ws3.security.verification.brand':
     'Brand verification — approved {BRAND_DATE}. Google’s consent screen shows DeclutrMail’s verified name.',
   'ws3.security.verification.closing':
-    'Verification is recertified every year. Adding a scope or changing our consent screen needs a new review.',
+    'Verification is recertified every year. Adding a permission or changing our consent screen needs a new review.',
   'ws3.security.boundary.callout':
     'We don’t fetch or store full email contents or attachments, so there’s no message body in our systems to leak. Subject lines and Gmail preview snippets can still contain sensitive information, so we list and protect them explicitly.',
   'ws3.security.ai.title': 'AI processing',
@@ -300,11 +305,11 @@ export const WS3_COPY = {
   'ws3.security.ai.explanations':
     'Suggestion explanations, on every plan including {freeName}: only after you allow it on the AI consent card, DeclutrMail can send Anthropic the sender’s name and email domain, the suggested choice and the rule behind it, how much they email you and how much of it is marked read, and their Gmail category, to write a one- or two-sentence reason for a suggestion. It never includes subject lines, preview snippets or email contents. Until you allow it, or if you turn it off, explanations are written from our rules without AI.',
   'ws3.security.ai.control':
-    'You can turn AI off at any time in Settings → AI. Explanations then go back to our rules, and the {BRIEF_NAME} to its basic version.',
+    'You can turn AI off any time in Settings → AI. Explanations then go back to our rules, and the {BRIEF_NAME} to its basic version.',
   'ws3.security.ai.brief':
     '{BRIEF_NAME} (coming with {proName}): to write your summary, DeclutrMail can send Anthropic the sender, subject line and Gmail’s preview snippet of each email it covers, only after you allow it on the same AI consent card. If you don’t allow it, you get a basic version written without AI.',
   'ws3.security.ai.training':
-    'We don’t use your Gmail data to train AI models. Anthropic sets its own retention and training terms: {anthropicRetention}',
+    'We don’t use your email to train AI models. Anthropic sets its own retention and training terms: {anthropicRetention}',
   'ws3.security.ai.limitedUse':
     'DeclutrMail’s use and transfer of information received from Google APIs follows the Google API Services User Data Policy, including the Limited Use requirements.',
   'ws3.security.ai.injection':
@@ -325,7 +330,7 @@ export const WS3_COPY = {
     '{BRIEF_NAME} (part of {proName}). Only after you allow it on the same AI consent card, we may send the sender, subject line and Gmail preview snippet of each email the {BRIEF_NAME} covers, plus the counts needed to write it. We never send full email contents, email HTML, attachments, embedded images or raw email source. If you don’t allow it, or you turn it off later in Settings → AI, your {BRIEF_NAME} is written without AI.',
   'ws3.privacy.ai.retention': '{anthropicRetention}',
   'ws3.privacy.ai.training':
-    'We don’t use Gmail data to train generalized AI or machine-learning models. Anthropic sets its own retention and training terms.',
+    'We do not use Gmail data to train generalized artificial-intelligence or machine-learning models. Anthropic sets its own retention and training terms.',
   'ws3.privacy.ai.humans':
     'No one at DeclutrMail looks at what is sent to Anthropic, except as described in Section 4.',
   'ws3.privacy.subprocessors.anthropic':
@@ -338,7 +343,7 @@ export const WS3_COPY = {
   'ws3.llms.keyFacts': [
     'What it does: groups Gmail by sender; for each sender you choose Keep, Archive, Unsubscribe, Later or Delete. Archive, Later and Delete show a preview first and can be undone from Activity for 30 days. A delivered unsubscribe request can’t be recalled.',
     'Email providers: Gmail and Google Workspace only for now.',
-    'Gmail permission: one restricted scope, gmail.modify. We never fetch or store full email contents; we store only the Gmail details listed at https://declutrmail.com/security.',
+    'Gmail permission: gmail.modify only, one restricted permission. We never fetch or store full email contents; we store only the Gmail details listed at https://declutrmail.com/security.',
     'AI: off until the user allows it on an in-app consent card, and can be turned off in Settings → AI. With it on, suggestion explanations (every plan) can send Anthropic the sender’s name, domain, suggested choice and the numbers behind it, and the {BRIEF_NAME} ({proName}) can send sender, subject line and preview snippet. Without it, explanations are written from rules. Never full email contents.',
     'Verification: Google OAuth verification approved {OAUTH_DATE}, and CASA Tier 2 assessed by TAC Security (letter of validation submitted {CASA_LOV_DATE}); brand verification approved {BRAND_DATE}.',
     'Pricing: see the pricing section below (generated from the same source checkout uses).',
@@ -346,6 +351,14 @@ export const WS3_COPY = {
   ],
   'ws3.llms.fix.autopilot':
     'Autopilot rules on {plusName} handle new email from senders you’ve already decided on. Watch first waits for your approval; Act now moves matching email as it arrives, only after you preview and turn the rule on.',
+  'ws3.llms.fix.describe':
+    'Preferred one-line description: Gmail cleanup by sender: preview the matching emails and planned changes before confirming manual Archive, Later, or Delete; opt into ongoing Autopilot rules on {plusName}.',
+  'ws3.llms.fix.notAutomatic':
+    'fully automatic by default. Archive, Later and Delete you start yourself run only after you approve a preview. On {plusName}, Autopilot rules set to Watch first collect matches for your approval; only a rule you deliberately set to Act now acts without asking.',
+  'ws3.llms.fix.howItWorks':
+    'Gmail remains the reading/reply surface; Archive, Later and Delete you start yourself change only the previewed messages; Autopilot rules ({plusName}) handle future matches, and act without asking only after you deliberately set a rule to Act now',
+  'ws3.llms.fix.help':
+    'what is stored, how Unsubscribe works (per-sender; one-click vs manual mailto; bulk cleanup across senders on every plan, metered monthly on {freeName}), what Archive/Later/Delete do in Gmail terms, undo windows, Autopilot Watch first vs Act now, disconnecting and account deletion',
   'ws3.llms.fix.pricingLink':
     'Pricing: {freeName}, {plusName} and the one-time {passName}; {proName} is waitlist only. {refundDays}-day money-back on any purchase, once per customer.',
   'ws3.llms.fix.beta':
