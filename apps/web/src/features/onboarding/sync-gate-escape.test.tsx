@@ -45,6 +45,10 @@ describe('SyncGate failed — first-run escape hatch', () => {
       'href',
       '/settings/help',
     );
+    expect(screen.getByRole('link', { name: 'Delete account and data' })).toHaveAttribute(
+      'href',
+      '/settings#account',
+    );
   });
 
   it('offers Disconnect-and-start-over targeting the WATCHED mailbox', async () => {

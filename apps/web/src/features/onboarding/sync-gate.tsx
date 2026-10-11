@@ -1,12 +1,14 @@
 'use client';
 
+import { useEffect } from 'react';
+
 import { ScanPreview } from './scan-preview';
 import { OnboardingAccountLinks } from './onboarding-account-links';
 
 import { editorialOnboardingActionStyle } from '@/features/editorial/page';
 import { OnboardingPhase } from './onboarding-phase';
 
-import { Button, tokens } from '@declutrmail/shared';
+import { Button, tokens, TrustLine } from '@declutrmail/shared';
 import {
   initialSyncRecovery,
   isStaleInitialSync,
@@ -15,11 +17,13 @@ import {
   type SyncStatus,
   type SyncStage,
 } from '@declutrmail/shared/contracts';
+import type { EventProps } from '@declutrmail/shared/observability';
 
 import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync';
 import { useLogout } from '@/features/auth/api/use-logout';
 import { useDisconnectMailbox } from '@/features/mailboxes/api/use-disconnect-mailbox';
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
+import { track } from '@/lib/posthog';
 import { useNow } from '@/lib/use-now';
 import { useScanTimeLeft } from './scan-time-left';
 
@@ -43,9 +47,8 @@ const { color, font, text, radius, motion } = tokens;
  * (queued / syncing / ready / failed) without a network.
  *
  * Privacy (D7 / D228): the gate shows a stage sentence, a percentage and
- * message counts — no message content. The trust badge is NOT here:
- * a waiting screen is not a decision point — it renders on the promise
- * step, directly above the button that starts Google consent.
+ * message counts — no message content. The trust line under the bar
+ * repeats the locked headline and links to what we store.
  */
 
 /**
@@ -157,8 +160,8 @@ function recoverySurface(recovery: InitialSyncRecovery): { title: string; body: 
     case 'unknown':
       return {
         title: 'We hit a snag reading your inbox',
-        // The address, not "contact support": on a first run the onboarding
-        // guard bounces every in-app route back here, so Help is unreachable.
+        // The address stays. Help is also a real route (#921); the support
+        // link under this state and the stuck state points at it.
         body: 'Something interrupted the scan. Your Gmail is untouched — try again, or email support@declutrmail.com if it keeps happening.',
       };
     default: {
@@ -217,6 +220,23 @@ function leaveSentence(readyEmail: boolean): string {
     : 'You can close this tab and come back later.';
 }
 
+/** The gate state the view event records. Recovery reasons win over progress. */
+export function syncGateViewState(
+  status: SyncStatus,
+  nowMs: number | undefined,
+): EventProps<'sync_gate_state_viewed'>['state'] {
+  const stuck = nowMs !== undefined && isStaleInitialSync(status, nowMs);
+  if (status.readiness_status === 'failed' || stuck) {
+    return initialSyncRecovery({
+      errorCode: status.error_code,
+      stuck,
+      progressPct: status.progress_pct,
+    }).reason;
+  }
+  if (status.readiness_status === 'ready') return 'ready';
+  return 'progress';
+}
+
 export function SyncGate({
   status,
   escape,
@@ -256,6 +276,10 @@ export function SyncGate({
   const clock = useNow(30_000);
   const now = nowMs ?? clock ?? undefined;
   const stuck = now !== undefined && isStaleInitialSync(status, now);
+  const viewState = syncGateViewState(status, now);
+  useEffect(() => {
+    void track('sync_gate_state_viewed', { state: viewState });
+  }, [viewState]);
   if (status.readiness_status === 'failed' || stuck) {
     return (
       <SyncFailed
@@ -349,6 +373,10 @@ function SyncProgress({
             transition: `width ${motion.base} ${motion.ease}`,
           }}
         />
+      </div>
+
+      <div style={{ marginTop: 16, maxWidth: 460 }}>
+        <TrustLine />
       </div>
 
       {/* The real current_stage, as one sentence. Ready says it in the title.

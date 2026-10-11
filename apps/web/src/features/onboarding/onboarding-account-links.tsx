@@ -22,6 +22,9 @@ export function OnboardingAccountLinks() {
       <Link href="/settings/help" style={{ color: tokens.color.fgMuted }}>
         Get help
       </Link>
+      <Link href="/settings#account" style={{ color: tokens.color.fgMuted }}>
+        Delete account and data
+      </Link>
     </nav>
   );
 }

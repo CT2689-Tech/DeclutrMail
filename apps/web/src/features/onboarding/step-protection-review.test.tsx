@@ -257,7 +257,7 @@ describe('StepProtectionReview — the review', () => {
     };
 
     renderReview({ onComplete });
-    fireEvent.click(screen.getByRole('button', { name: /Finish for today/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Finish review/i }));
 
     expect(analytics.track).toHaveBeenCalledWith('first_relief_session_completed', {
       goal: 'protect_important',
@@ -427,7 +427,7 @@ describe('StepProtectionReview — states the flow audit found unpinned (2026-08
     expect(screen.getByRole('button', { name: /Finishing…/i })).toBeDisabled();
   });
 
-  it('disables "Finish for today" mid-completion on the review layout too', () => {
+  it('disables "Finish review" mid-completion on the review layout too', () => {
     onboarding.firstTriage.data = {
       rows: PENDING_ROWS,
       meta: { pinned: 2, decided: 0, protection: { strong: 4, weak: 2, manual: 0 } },
@@ -435,7 +435,7 @@ describe('StepProtectionReview — states the flow audit found unpinned (2026-08
 
     renderReview({ completing: true });
 
-    expect(screen.getByRole('button', { name: /Finish for today/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Finish review/i })).toBeDisabled();
   });
 
   it('does not claim the shielded ordering when any loaded row is unmeasured', () => {

@@ -3,6 +3,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, ErrorState, tokens } from '@declutrmail/shared';
+import { FINISH_LABEL } from '@declutrmail/shared/copy/screen-decisions';
 import type { OnboardingProtectionSplit } from '@declutrmail/shared/contracts';
 
 import {
@@ -264,7 +265,7 @@ export function StepProtectionReview({
               and there is no way back into this step. Say that it ends
               the review rather than that it navigates. */}
           <Button tone="ghost" onClick={() => finish('stopped')} disabled={completing}>
-            Finish for today
+            {FINISH_LABEL}
           </Button>
           {corner}
         </div>
