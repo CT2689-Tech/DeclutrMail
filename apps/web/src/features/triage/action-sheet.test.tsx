@@ -311,15 +311,15 @@ describe('ActionSheet — live-preview confirm gate', () => {
     expect(onConfirm).toHaveBeenCalledTimes(2);
     expect(onConfirm).toHaveBeenLastCalledWith({
       archiveHistoric: false,
+      backlogMode: 'unsub_only',
       rememberPreference: false,
       wakeAt: null,
     });
 
-    fireEvent.click(screen.getByRole('checkbox', { name: /Also archive the/i }));
-    expect(confirm).toBeDisabled();
-    fireEvent.click(confirm);
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
-    expect(onConfirm).toHaveBeenCalledTimes(2);
+    const archiveWhileUnknown = screen.getByRole('radio', { name: /\+ Archive/ });
+    expect(archiveWhileUnknown).toBeDisabled();
+    fireEvent.click(archiveWhileUnknown);
+    expect(confirm).toBeEnabled();
 
     rerender(
       <ActionSheet
@@ -332,14 +332,20 @@ describe('ActionSheet — live-preview confirm gate', () => {
       />,
     );
 
-    expect(confirm).toBeEnabled();
-    fireEvent.click(confirm);
+    const archiveConfirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
+    expect(archiveConfirm).toBeEnabled();
+    fireEvent.click(archiveConfirm);
     expect(onConfirm).toHaveBeenLastCalledWith({
       archiveHistoric: true,
+      backlogMode: 'archive',
       rememberPreference: false,
       wakeAt: null,
     });
-    expect(screen.getByText(/uses a second cleanup action/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'The unsubscribe request can’t be recalled once delivered. The archive can be undone from Activity for 30 days.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('labels a resolved count as current and warns that execution re-checks Gmail', () => {
@@ -362,7 +368,7 @@ describe('ActionSheet — live-preview confirm gate', () => {
 });
 
 describe('ActionSheet — toggle a11y and checked parity (2026-08-12)', () => {
-  // Unsubscribe is the one verb that renders BOTH toggles.
+  // Unsubscribe renders a three-way backlog choice plus the remember toggle.
   function renderUnsubSheet() {
     return render(
       <ActionSheet
@@ -376,13 +382,14 @@ describe('ActionSheet — toggle a11y and checked parity (2026-08-12)', () => {
     );
   }
 
-  it('exposes both toggles as checkboxes whose aria-checked tracks state', () => {
+  it('exposes the backlog choice as radios and remember as a checkbox', () => {
     renderUnsubSheet();
 
-    const backlog = screen.getByRole('checkbox', { name: /Also archive the/i });
-    expect(backlog).toHaveAttribute('aria-checked', 'false');
-    fireEvent.click(backlog);
-    expect(backlog).toHaveAttribute('aria-checked', 'true');
+    const archive = screen.getByRole('radio', { name: '+ Archive 2' });
+    expect(archive).toBeChecked();
+    fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
+    expect(archive).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Unsubscribe only' })).toBeChecked();
 
     const remember = screen.getByRole('checkbox', {
       name: 'Don’t ask again for Unsubscribe',
@@ -392,23 +399,14 @@ describe('ActionSheet — toggle a11y and checked parity (2026-08-12)', () => {
     expect(remember).toHaveAttribute('aria-checked', 'true');
   });
 
-  it('a checked remember toggle fills like the checked backlog toggle', () => {
-    // The remember toggle used to stay visually mute when checked while
-    // the backlog toggle above it filled — a checked choice that reads
-    // as unselected. Pin the parity on the checked treatment.
+  it('a checked remember toggle fills', () => {
     renderUnsubSheet();
-    const backlog = screen.getByRole('checkbox', { name: /Also archive the/i });
     const remember = screen.getByRole('checkbox', {
       name: 'Don’t ask again for Unsubscribe',
     });
-    fireEvent.click(backlog);
     fireEvent.click(remember);
-    // The checked treatment is the glyph; the footer row itself is quiet
-    // (no well) by design, so parity is pinned on the glyph both share.
     const glyph = (el: HTMLElement) => el.querySelector<HTMLElement>('span[aria-hidden="true"]')!;
     expect(glyph(remember).style.background).not.toBe('transparent');
-    expect(glyph(remember).style.background).toBe(glyph(backlog).style.background);
-    expect(glyph(remember).style.boxShadow).toBe(glyph(backlog).style.boxShadow);
   });
 });
 

@@ -34,6 +34,7 @@ import {
   useBulkActionPreview,
   useCompositePreview,
   useEnqueueBulkAction,
+  useConfirmUnsubscribeBacklog,
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
 } from '@/lib/api/use-action';
@@ -59,6 +60,7 @@ import { useUnconfirmedHolds } from '@/features/undo/unconfirmed-holds';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { trackActionConfirmed } from '@/lib/action-analytics';
+import { unsubscribeBacklogToast } from '@/features/senders/unsubscribe-backlog/toast';
 import { track } from '@/lib/posthog';
 import { useNow } from '@/lib/use-now';
 import { triageDaySubtitle } from './day-subtitle';
@@ -324,6 +326,7 @@ export function TriageScreen({
   const keepIntent = useKeepIntent();
   const undoKeep = useUndoSenderKeep();
   const unsubIntent = useRecordUnsubscribeIntent();
+  const confirmBacklog = useConfirmUnsubscribeBacklog();
   const enqueueComposite = useEnqueueComposite();
 
   // D34 — mirror the persisted skip-sheet prefs into the triage store
@@ -1050,7 +1053,8 @@ export function TriageScreen({
         enqueueBulk.isPending ||
         enqueueComposite.isPending ||
         keepIntent.isPending ||
-        unsubIntent.isPending
+        unsubIntent.isPending ||
+        confirmBacklog.isPending
       ) {
         toast('Still confirming your last decision — give it a moment.', 'info');
         return false;
@@ -1104,113 +1108,73 @@ export function TriageScreen({
       // backlog" toggle rides the REAL archive pipeline.
       if (verb === 'Unsubscribe') {
         setIntentRowId(row.id);
-        unsubIntent.mutate(
+        const mode = details?.backlogMode
+          ? details.backlogMode
+          : details?.archiveHistoric
+            ? 'archive'
+            : 'unsub_only';
+        confirmBacklog.mutate(
           {
             mailboxId: actionMailboxId,
-            senderId: row.senderId,
-            includesBacklogAction: Boolean(details?.archiveHistoric),
-            // The preview named the protection and its confirm says
-            // "anyway" (D245); without this the send is re-checked.
+            mode,
+            senderIds: [row.senderId],
             ...(row.protectionReason !== null ? { override: true } : {}),
           },
           {
             onSuccess: (res) => {
-              // One decision → one event: the optional backlog archive
-              // below is a follow-on of THIS decision, never a second
-              // `triage_action_taken`. The unsub itself moves no
-              // messages, so 0.
               void track('triage_action_taken', {
                 verb: 'unsubscribe',
                 sender_id: row.senderId,
                 matched_recommendation: row.verdict === 'unsubscribe',
-                requested_messages: 0,
+                requested_messages: res.backlog?.requestedCount ?? 0,
                 source,
               });
-              trackActionConfirmed('unsubscribe', journey);
+              const sent = res.senders.some(
+                (sender) => sender.unsubStatus === 'requested' || sender.unsubStatus === 'manual',
+              );
+              if (sent) trackActionConfirmed('unsubscribe', journey);
               invalidateAfterDecision(qc);
               if (currentMailboxRef.current === actionMailboxId) incrementSessionDecided();
               setExpandedRow(null);
-              if (res.method === 'one_click' && res.executionActionId) {
+              toast(unsubscribeBacklogToast(res), sent ? 'info' : 'warn');
+              const outcome = res.senders[0];
+              if (outcome?.unsubStatus === 'requested' && outcome.executionActionId) {
                 setUnsubWatch({
                   mailboxId: actionMailboxId,
-                  actionId: res.executionActionId,
+                  actionId: outcome.executionActionId,
                   senderName: row.senderName,
                 });
-              } else if (res.method === 'mailto' && res.mailtoUrl) {
+              } else if (outcome?.unsubStatus === 'manual' && outcome.mailtoUrl) {
                 setMailtoFollowup({
                   mailboxId: actionMailboxId,
                   senderId: row.senderId,
                   senderName: row.senderName,
-                  mailtoUrl: res.mailtoUrl,
+                  mailtoUrl: outcome.mailtoUrl,
                 });
               }
-              if (details?.archiveHistoric) {
-                enqueueComposite.mutate(
-                  {
-                    mailboxId: actionMailboxId,
-                    senderId: row.senderId,
-                    primary: { type: 'archive', olderThanDays: null },
-                    // Triage rides the SHARED composite endpoint, which
-                    // answers a protected sender with 409 PROTECTED_SENDER
-                    // unless `override` is set. Triage rows are explicit
-                    // single-sender intent (D245 excludes bulk/automatic,
-                    // not this), and the protection is named in the row
-                    // badge before the user confirms.
-                    ...(row.protectionReason !== null ? { override: true } : {}),
-                  },
-                  {
-                    onSuccess: (res) =>
-                      setActiveAction({
-                        mailboxId: actionMailboxId,
-                        actionId: res.actionId,
-                        rowId: row.id,
-                        senderName: row.senderName,
-                        verb: 'Archive',
-                        // The unsub decision already counted (above) —
-                        // burn-down AND noise payoff.
-                        followOn: true,
-                      }),
-                    onError: (err) => {
-                      // 402 FREE_CAP_REACHED — the upgrade prompt
-                      // (hook-level handler) explains why the backlog
-                      // didn't archive; skip Sentry + generic toast.
-                      if (err instanceof ApiError && err.status === 402) return;
-                      captureFeatureException(err, {
-                        surface: 'triage',
-                        reason: 'enqueue_archive_after_unsub',
-                      });
-                      if (enqueueMayHaveStarted(err)) {
-                        holdUnconfirmed([row.id], 'Archive');
-                        invalidateAfterDecision(qc);
-                      }
-                      toast(
-                        backlogAfterUnsubFailureCopy({
-                          verb: 'Archive',
-                          senderName: row.senderName,
-                          error: err,
-                        }),
-                        'warn',
-                      );
-                    },
-                  },
-                );
+              if (res.backlog) {
+                setActiveAction({
+                  mailboxId: actionMailboxId,
+                  actionId: res.backlog.actionId,
+                  rowId: row.id,
+                  senderName: row.senderName,
+                  verb: res.backlog.verb === 'delete' ? 'Delete' : 'Archive',
+                  followOn: true,
+                });
               }
             },
             onError: (err) => {
-              // Designed refusal — no Sentry, and say plainly nothing was sent.
+              if (err instanceof ApiError && err.status === 402) return;
               if (isUnsubSendDisabled(err)) {
                 toast(UNSUB_SEND_DISABLED_MESSAGE, 'warn');
                 return;
               }
-              // Designed too: one request to this sender is still on its way.
               if (isUnsubscribeInFlight(err)) {
                 toast(unsubscribeInFlightCopy(row.senderName), 'info');
                 invalidateAfterDecision(qc);
                 return;
               }
               captureFeatureException(err, { surface: 'triage', reason: 'record_unsub' });
-              // A 5xx cannot prove nothing started: a second click would send
-              // a second one-way request (D58).
               if (enqueueMayHaveStarted(err)) {
                 holdUnconfirmed([row.id], 'Unsubscribe');
                 invalidateAfterDecision(qc);
@@ -1335,6 +1299,7 @@ export function TriageScreen({
       keepIntent,
       undoKeep,
       unsubIntent,
+      confirmBacklog,
       qc,
       clearPending,
       setExpandedRow,
@@ -1458,7 +1423,8 @@ export function TriageScreen({
         enqueueBulk.isPending ||
         enqueueComposite.isPending ||
         keepIntent.isPending ||
-        unsubIntent.isPending
+        unsubIntent.isPending ||
+        confirmBacklog.isPending
       ) {
         toast('Still confirming your last decision — give it a moment.', 'info');
         return;

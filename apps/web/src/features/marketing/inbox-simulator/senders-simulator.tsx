@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
+import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
 import './senders-simulator.css';
 
@@ -306,7 +307,11 @@ export function SendersSimulator() {
       verb,
       skipped: candidates.length - actionables.length,
     });
-    setBacklog('none');
+    setBacklog(
+      verb === 'Unsubscribe' && totalCount(actionables, 'inbox_only', null) > 0
+        ? 'archive'
+        : 'none',
+    );
     setReach('inbox_only');
     setOlderThanDays(verb === 'Delete' ? 180 : null);
     setWakeAt(verb === 'Later' ? localDateTime(defaultLaterWakeAtIso()) : '');
@@ -706,19 +711,47 @@ export function SendersSimulator() {
             ) : null}
             {isUnsubscribe ? (
               <fieldset>
-                <legend>Also act on past emails</legend>
+                <legend>{WS5_COPY['f1.segment.unsubOnly']}</legend>
                 {(
                   [
-                    ['none', 'Leave alone'],
-                    ['archive', 'Archive them'],
-                    ['delete', 'Delete them'],
+                    ['none', WS5_COPY['f1.segment.unsubOnly'], false],
+                    [
+                      'archive',
+                      isPluralCopy(WS5_COPY['f1.segment.archive'])
+                        ? pluralCopy(WS5_COPY['f1.segment.archive'], previewCount, {
+                            n: previewCount,
+                          })
+                        : '',
+                      previewCount === 0,
+                    ],
+                    [
+                      'delete',
+                      isPluralCopy(WS5_COPY['f1.segment.delete'])
+                        ? pluralCopy(WS5_COPY['f1.segment.delete'], previewCount, {
+                            n: previewCount,
+                          })
+                        : '',
+                      previewCount === 0,
+                    ],
                   ] as const
-                ).map(([value, label]) => (
+                ).map(([value, label, disabled]) => (
                   <label key={value}>
                     <input
                       type="radio"
                       name="demo-backlog"
                       checked={backlog === value}
+                      disabled={disabled}
+                      aria-label={
+                        value === 'archive' && isPluralCopy(WS5_COPY['f1.segment.archive.aria'])
+                          ? pluralCopy(WS5_COPY['f1.segment.archive.aria'], previewCount, {
+                              n: previewCount,
+                            })
+                          : value === 'delete' && isPluralCopy(WS5_COPY['f1.segment.delete.aria'])
+                            ? pluralCopy(WS5_COPY['f1.segment.delete.aria'], previewCount, {
+                                n: previewCount,
+                              })
+                            : label
+                      }
                       onChange={() => {
                         setBacklog(value);
                         setReach('inbox_only');
@@ -795,8 +828,7 @@ export function SendersSimulator() {
               </div>
             ) : (
               <div className="dm-senders-demo-preview-count">
-                <strong>Existing email stays where it is</strong>
-                <span>Unsubscribe affects future mail only.</span>
+                <strong>{WS5_COPY['f1.preview.backlog.unsubOnly']}</strong>
               </div>
             )}
             {pendingSenders.length === 1 && canMove && olderThanDays === null ? (
@@ -831,8 +863,10 @@ export function SendersSimulator() {
               <button type="button" disabled={!canConfirm} onClick={confirm}>
                 {isUnsubscribe
                   ? backlog === 'none'
-                    ? 'Request unsubscribe'
-                    : `Unsubscribe + ${backlog === 'delete' ? 'Delete' : 'Archive'}`
+                    ? WS5_COPY['f1.button.unsubOnly']
+                    : backlog === 'delete'
+                      ? WS5_COPY['f1.button.delete']
+                      : WS5_COPY['f1.button.archive']
                   : `${pending.verb} ${fmt(previewCount)}`}
                 {pendingSenders.length === 1 && pendingSenders[0]!.protected && backlog === 'none'
                   ? ' anyway'

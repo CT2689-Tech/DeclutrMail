@@ -46,16 +46,18 @@ describe('SendersSimulator', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
     fireEvent.click(within(preview()).getByRole('button', { name: 'Archive 111' }));
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
-    fireEvent.click(within(preview()).getByRole('radio', { name: 'Archive them' }));
-    expect(preview()).toHaveTextContent('0 emails currently match');
-    const confirm = within(preview()).getByRole('button', { name: 'Unsubscribe + Archive' });
+    expect(
+      within(preview()).getByRole('radio', { name: /Unsubscribe and archive 0/ }),
+    ).toBeDisabled();
+    expect(preview()).toHaveTextContent('Email you already have stays where it is.');
+    const confirm = within(preview()).getByRole('button', { name: 'Unsubscribe' });
     expect(confirm).toBeEnabled();
     fireEvent.click(confirm);
     expect(screen.getByRole('complementary', { name: 'Sender details' })).toHaveTextContent(
       'Unsubscribe requested',
     );
     expect(screen.getByRole('region', { name: 'Sample activity' })).toHaveTextContent(
-      'No sample email matched the selected past-email scope',
+      'Existing email left alone.',
     );
   });
 

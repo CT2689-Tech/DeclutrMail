@@ -62,6 +62,44 @@ export const unsubscribeIntentRequestSchema = z
   .strict();
 export type UnsubscribeIntentRequest = z.infer<typeof unsubscribeIntentRequestSchema>;
 
+/**
+ * Combined unsubscribe + backlog. The server archives or deletes FIRST,
+ * then records unsubscribe intents. A 402 on the backlog sends nothing.
+ */
+export const unsubscribeBacklogRequestSchema = z
+  .object({
+    mode: z.enum(['unsub_only', 'archive', 'delete']),
+    senderIds: z.array(z.string().uuid()).min(1).max(1000),
+    olderThanDays: z.number().int().min(1).max(3650).nullable().optional(),
+    reach: z.enum(['inbox_only', 'all_mail']).optional(),
+    override: z.boolean().default(false),
+  })
+  .strict();
+export type UnsubscribeBacklogRequest = z.infer<typeof unsubscribeBacklogRequestSchema>;
+
+export type UnsubscribeBacklogReasonCode = 'no_link' | 'sender_error' | 'generic';
+
+export interface UnsubscribeBacklogSenderResult {
+  senderId: string;
+  method: 'one_click' | 'mailto' | 'none' | null;
+  mailtoUrl: string | null;
+  executionActionId: string | null;
+  lifecycleStatus: UnsubscribeLifecycleStatus | null;
+  /** requested = a send was queued or a mailto draft is the user's step. */
+  unsubStatus: 'requested' | 'manual' | 'failed' | 'skipped';
+  reasonCode: UnsubscribeBacklogReasonCode | null;
+}
+
+export interface UnsubscribeBacklogResult {
+  mode: 'unsub_only' | 'archive' | 'delete';
+  backlog: {
+    actionId: string;
+    requestedCount: number;
+    verb: 'archive' | 'delete';
+  } | null;
+  senders: UnsubscribeBacklogSenderResult[];
+}
+
 /** Explicit progress update for the manual mailto unsubscribe path. */
 export const unsubscribeManualStatusRequestSchema = UnsubscribeManualStatusRequestSchema;
 export type { UnsubscribeManualStatusRequest };

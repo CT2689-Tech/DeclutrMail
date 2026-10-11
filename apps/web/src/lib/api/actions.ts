@@ -507,6 +507,60 @@ export async function recordUnsubscribeIntent(
   return env.data;
 }
 
+export type UnsubscribeBacklogMode = 'unsub_only' | 'archive' | 'delete';
+
+export interface UnsubscribeBacklogSenderResult {
+  senderId: string;
+  method: 'one_click' | 'mailto' | 'none' | null;
+  mailtoUrl: string | null;
+  executionActionId: string | null;
+  lifecycleStatus: UnsubscribeLifecycleStatus | null;
+  unsubStatus: 'requested' | 'manual' | 'failed' | 'skipped';
+  reasonCode: 'no_link' | 'sender_error' | 'generic' | null;
+}
+
+export interface UnsubscribeBacklogResult {
+  mode: UnsubscribeBacklogMode;
+  backlog: {
+    actionId: string;
+    requestedCount: number;
+    verb: 'archive' | 'delete';
+  } | null;
+  senders: UnsubscribeBacklogSenderResult[];
+}
+
+/**
+ * One confirmation: backlog Archive/Delete first, then unsubscribe.
+ * A 402 means nothing was sent.
+ */
+export async function confirmUnsubscribeBacklog(
+  input: {
+    mode: UnsubscribeBacklogMode;
+    senderIds: string[];
+    olderThanDays?: number | null;
+    reach?: ActionReach;
+    override?: boolean;
+  },
+  options: ActionRequestOptions & { idempotencyKey?: string } = {},
+): Promise<UnsubscribeBacklogResult> {
+  const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey();
+  const env = await apiPost<UnsubscribeBacklogResult>(
+    '/api/actions/unsubscribe-backlog',
+    {
+      mode: input.mode,
+      senderIds: input.senderIds,
+      ...(input.olderThanDays !== undefined ? { olderThanDays: input.olderThanDays } : {}),
+      ...(input.reach ? { reach: input.reach } : {}),
+      ...(input.override === true ? { override: true } : {}),
+    },
+    {
+      headers: { 'Idempotency-Key': idempotencyKey },
+      ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
+    },
+  );
+  return env.data;
+}
+
 /** Persist an explicit step in the user-sent mailto unsubscribe flow. */
 export async function recordUnsubscribeManualStatus(
   senderId: string,
