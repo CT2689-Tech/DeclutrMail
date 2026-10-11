@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 const API = 'https://api.upstash.com/v2/redis';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const OBSERVATIONS_MS = [0, 1000, 5000, 15000, 30000, 60000];
+export const PAID_TEST_CONFIRMATION = 'APPROVED_ONE_TEST_USD20_CAP';
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 class Refusal extends Error {}
 const refuse = (code) => {
@@ -61,6 +62,22 @@ export function assertFree(row) {
     refuse('free_fixture_contract_refused');
   if (row.eviction !== false || row.prod_pack_enabled === true)
     refuse('free_fixture_contract_refused');
+}
+
+export function assertCappedPayg(row) {
+  // The provider documents legacy `paid` responses for explicit payg creation.
+  if (
+    !['payg', 'paid'].includes(row.type) ||
+    row.budget !== 20 ||
+    row.auto_upgrade !== false ||
+    row.tls !== true ||
+    row.eviction !== false ||
+    row.prod_pack_enabled !== false ||
+    row.primary_region !== 'us-east-1' ||
+    !Array.isArray(row.read_regions) ||
+    row.read_regions.length !== 0
+  )
+    refuse('capped_payg_fixture_contract_refused');
 }
 
 export function normalizeHost(endpoint) {
@@ -132,12 +149,17 @@ export async function rehearse({
   now = Date.now,
   nonce = randomUUID(),
   sampleTimes = OBSERVATIONS_MS,
+  mode = 'free',
+  paidConfirmation,
 } = {}) {
+  const paid = mode === 'capped-payg';
   const report = {
-    schema: 'upstash-free-revocation-v1',
-    scope: 'one owned free synthetic fixture only',
+    schema: paid ? 'upstash-capped-payg-revocation-v1' : 'upstash-free-revocation-v1',
+    scope: paid
+      ? 'one owned capped payg synthetic fixture only'
+      : 'one owned free synthetic fixture only',
     startedAt: new Date(now()).toISOString(),
-    requestedPlan: 'free',
+    requestedPlan: paid ? 'payg' : 'free',
     authorizedCostUsd: 0,
     productionRetirementCertified: false,
     fixtureCreated: false,
@@ -146,6 +168,20 @@ export async function rehearse({
     baselineIdsPresent: false,
     observations: [],
   };
+  if (mode !== 'free' && !paid)
+    return { ...report, result: 'refused', reason: 'fixture_mode_invalid' };
+  // This is an operator attestation, not independent proof of founder approval.
+  // The separate paid entrypoint/workflow must only run after explicit spending approval.
+  if (paid && paidConfirmation !== PAID_TEST_CONFIRMATION)
+    return { ...report, result: 'refused', reason: 'paid_test_confirmation_missing' };
+  if (paid) {
+    report.authorizedCostUsd = 20;
+    report.operatorConfirmedPaidTest = true;
+    report.requestedMonthlyBudgetUsd = 20;
+    report.budgetVerifiedBeforeCommands = false;
+    if (JSON.stringify(sampleTimes) !== JSON.stringify(OBSERVATIONS_MS))
+      return { ...report, result: 'refused', reason: 'paid_observation_schedule_invalid' };
+  }
   if (!env.UPSTASH_EMAIL || !env.UPSTASH_API_KEY || !UUID.test(nonce))
     return { ...report, result: 'refused', reason: 'credentials_or_nonce_missing' };
   const authorization = `Basic ${Buffer.from(`${env.UPSTASH_EMAIL}:${env.UPSTASH_API_KEY}`).toString('base64')}`;
@@ -156,6 +192,7 @@ export async function rehearse({
   let baselineRows;
   let createAttempted = false;
   const clients = [];
+  const assertPlan = paid ? assertCappedPayg : assertFree;
   async function api(method, path, body) {
     let response;
     try {
@@ -243,7 +280,8 @@ export async function rehearse({
         platform: 'aws',
         primary_region: 'us-east-1',
         read_regions: [],
-        plan: 'free',
+        plan: paid ? 'payg' : 'free',
+        ...(paid ? { budget: 20 } : {}),
         tls: true,
         eviction: false,
       });
@@ -261,9 +299,13 @@ export async function rehearse({
     assertOwned(created, ownership);
     report.fixtureCreated = true;
     report.fixtureId = ownership.id;
-    assertFree(created);
+    assertPlan(created);
     const before = await ownedRead();
-    assertFree(before);
+    assertPlan(before);
+    if (paid) {
+      report.budgetVerifiedBeforeCommands = true;
+      report.observedMonthlyBudgetUsd = before.budget;
+    }
     const oldCredential = credentials(before);
     const first = open(oldCredential);
     const second = open(oldCredential);
@@ -277,13 +319,13 @@ export async function rehearse({
     ];
     if (control.some((outcome) => outcome !== 'acknowledged')) refuse('pre_reset_control_failed');
     // Re-check the owned resource immediately before the only credential mutation.
-    assertFree(await ownedRead());
+    assertPlan(await ownedRead());
     report.resetSubmitted = true;
     await api('POST', `/reset-password/${ownership.id}`);
     const resetAcknowledgedAt = now();
     report.resetAcknowledgedAt = new Date(resetAcknowledgedAt).toISOString();
     const after = await ownedRead();
-    assertFree(after);
+    assertPlan(after);
     const newCredential = credentials(after);
     if (oldCredential.password === newCredential.password) refuse('password_change_unproven');
     report.restTokenChanged = oldCredential.token !== newCredential.token;
