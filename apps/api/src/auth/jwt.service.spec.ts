@@ -67,7 +67,15 @@ describe('JwtService (D155)', () => {
   it('rejects a tampered token', async () => {
     const svc = new JwtService();
     const tokens = await svc.issue({ userId: 'u1', workspaceId: 'w1', sessionId: 's1' });
-    const tampered = tokens.accessToken.slice(0, -2) + 'XX';
+    const parts = tokens.accessToken.split('.');
+    const signature = Buffer.from(parts[2]!, 'base64url');
+    const changedSignature = Buffer.from(signature);
+    // Alter signed bytes; replacing trailing base64url characters can change
+    // only unused padding bits and leave the decoded signature identical.
+    changedSignature[0] = signature[0]! ^ 1;
+    expect(changedSignature).not.toEqual(signature);
+    parts[2] = changedSignature.toString('base64url');
+    const tampered = parts.join('.');
     await expect(svc.verify(tampered, 'access')).rejects.toThrow();
   });
 

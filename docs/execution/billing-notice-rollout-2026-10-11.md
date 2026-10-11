@@ -232,3 +232,14 @@ The expanded hold/main-only diagnostic also passed independent review and all
 32 actual serving-script controls across ON and OFF modes. The initial #938 queue
 candidate was dequeued for this confirmed release-blocking defect; it is not a
 production failure or serving proof.
+
+The updated hold candidate's first CI #38113195202 failed the preexisting
+JWT tampering fixture. Reconstructing its synthetic claims and test secret
+confirmed that replacing the final two base64url characters with `XX` changed
+only the encoding's unused padding bits; decoded signature bytes stayed equal
+and the existing verifier correctly accepted the signature. The test now flips
+one decoded signature byte, asserts that bytes changed, and re-encodes it before
+requiring rejection. Authentication runtime is unchanged; the failed CI remains
+recorded. Root also owns this bounded test repair; no other open PR touches it.
+Independent review approved it; all 10 focused JWT tests, API typecheck, touched
+lint, formatting and diff validation passed.
