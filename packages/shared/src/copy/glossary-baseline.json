@@ -2026,5 +2026,101 @@
     "id": "sync_word",
     "line": 581,
     "text": "DeclutrMail signup, connect, sync, and billing events"
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3-render.ts",
+    "id": "action_word",
+    "line": 160,
+    "text": "Anthropic may turn the selected sender facts into a short explanation. It receives the sender\u2019s name and domain, the suggested action, and the facts behind it. It does not receive subject lines, preview snippets, or full email contents for this explanation. If Anthropic is unavailable, DeclutrMail shows a standard explanation."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "allowance_word",
+    "line": 102,
+    "text": "{freeName} clears {allowance} emails a month. {plusName} is {plusPrice} a year. The {passName} is {passPrice} once for {passDays} days of {plusName}. Full details on our pricing page."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "clean_verb",
+    "line": 110,
+    "text": "Choose Clean Email if you need Outlook, Yahoo, iCloud or IMAP alongside Gmail, or want one suite that also sorts email into folders and runs Auto Clean rules. Choose DeclutrMail to decide Gmail sender by sender, with a preview before email moves and a record you can undo for 30 days."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "clean_verb",
+    "line": 111,
+    "text": "ws3.vs.clean-email.useCase"
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "clean_verb",
+    "line": 112,
+    "text": "ws3.vs.clean-email.faqAnswer"
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "clean_verb",
+    "line": 113,
+    "text": "If those accounts aren\u2019t all Gmail, Clean Email covers more services; DeclutrMail is Gmail only for now. If they\u2019re Gmail, both work: DeclutrMail shows the count and planned changes before email moves, and Archive, Later and Delete can be undone for 30 days."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "allowance_word",
+    "line": 12,
+    "text": "Free to begin \u00b7 {allowance} emails cleared a month \u00b7 No card required"
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "clean_verb",
+    "line": 3,
+    "text": "Clean up Gmail, one sender at a time \u2014 DeclutrMail"
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "workspace_word",
+    "line": 340,
+    "text": "Email providers: Gmail and Google Workspace only for now."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "workspace_word",
+    "line": 49,
+    "text": "DeclutrMail works with Gmail and Google Workspace only for now."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "contact_promise",
+    "line": 77,
+    "text": "Thanks. You\u2019re on the list, and we\u2019ll email you if we add your email service."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "workspace_word",
+    "line": 79,
+    "text": "That looks like a Gmail or Google Workspace address, so DeclutrMail already works with it."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "allowance_word",
+    "line": 97,
+    "text": "{freeName} is $0 and lets you clear {allowance} emails a month; Unsubscribe, Keep, Later, previews and Undo are unlimited. {plusName} is {plusPrice} a year with no monthly limit. The {passName} is {passPrice} once for {passDays} days of {plusName}. {refundDays}-day money-back on any purchase, once per customer."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "price_literal",
+    "line": 97,
+    "text": "{freeName} is $0 and lets you clear {allowance} emails a month; Unsubscribe, Keep, Later, previews and Undo are unlimited. {plusName} is {plusPrice} a year with no monthly limit. The {passName} is {passPrice} once for {passDays} days of {plusName}. {refundDays}-day money-back on any purchase, once per customer."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "allowance_word",
+    "line": 99,
+    "text": "{freeName} is $0 and lets you clear {allowance} emails a month; Unsubscribe, Keep, Later, previews and Undo are unlimited. {plusName} is {plusPrice} a year with no monthly limit. {refundDays}-day money-back on any purchase, once per customer."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "price_literal",
+    "line": 99,
+    "text": "{freeName} is $0 and lets you clear {allowance} emails a month; Unsubscribe, Keep, Later, previews and Undo are unlimited. {plusName} is {plusPrice} a year with no monthly limit. {refundDays}-day money-back on any purchase, once per customer."
   }
 ]
