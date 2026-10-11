@@ -18,11 +18,14 @@ import type { Queue } from 'bullmq';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  EMAIL_PREFS_COMPATIBLE_WORKER_NAME,
   EMAIL_SEND_QUEUE,
   enqueueEmailSend,
   lapseReengagementEmailJobId,
+  QueueActorCompatibilityError,
   readBillingQueueCompatibility,
   readEmailPrefsQueueCompatibility,
+  sampleEmailQueueCompatibility,
   syncReminderEmailJobId,
 } from './email-send.queue.js';
 import type { EmailSendJobData, EmailSendResult } from './email-send.worker.js';
@@ -351,5 +354,65 @@ describe('generic email actor refusal reasons', () => {
     } as unknown as Queue;
     for (const read of [readBillingQueueCompatibility, readEmailPrefsQueueCompatibility])
       await expect(read(queue)).rejects.toMatchObject({ reason: 'client_list_unavailable' });
+  });
+});
+
+describe('sampled generic email actor compatibility', () => {
+  const current = { rawname: `bull:ZW1haWwtc2VuZA==:w:${EMAIL_PREFS_COMPATIBLE_WORKER_NAME}` };
+  const older = { rawname: 'bull:ZW1haWwtc2VuZA==:w:billing-queue-v1' };
+  /** One broker listing per sample, each served through its own fresh handle. */
+  async function sample(listings: Record<string, unknown>[][], samples = listings.length) {
+    let handles = 0;
+    const withQueue = async <T>(read: (queue: Queue) => Promise<T>) => {
+      const rows = listings[handles++] ?? [];
+      return read({ name: EMAIL_SEND_QUEUE, getWorkers: async () => rows } as unknown as Queue);
+    };
+    const outcome: { proof?: { workers: number }; error?: unknown } =
+      await sampleEmailQueueCompatibility(withQueue, { samples, intervalMs: 0 })
+        .then((proof) => ({ proof }))
+        .catch((error: unknown) => ({ error }));
+    return { ...outcome, handles };
+  }
+
+  it('passes when a momentarily absent compatible worker is seen in a later sample', async () => {
+    expect(await sample([[], [], [current], []])).toEqual({ proof: { workers: 1 }, handles: 4 });
+  });
+  it('refuses as no_workers only when no sample ever saw a worker', async () => {
+    const { error, handles } = await sample([[], [], [], []]);
+    expect(error).toBeInstanceOf(QueueActorCompatibilityError);
+    expect(error).toMatchObject({ reason: 'no_workers' });
+    expect(handles).toBe(4);
+  });
+  it('keeps sampling after a pass so an intermittently visible older actor still refuses', async () => {
+    const { error, handles } = await sample([[current], [current], [current, older], [current]]);
+    expect(error).toMatchObject({ reason: 'incompatible_workers' });
+    expect(handles).toBe(3);
+  });
+  it('treats an older actor seen without the current one as final, not absence', async () => {
+    expect((await sample([[older], [current], [current]])).error).toMatchObject({
+      reason: 'incompatible_workers',
+    });
+  });
+  it('refuses at once when the broker refuses CLIENT LIST', async () => {
+    const { error, handles } = await sample([
+      [],
+      [{ name: 'GCP does not support client list' }],
+      [current],
+    ]);
+    expect(error).toMatchObject({ reason: 'client_list_unavailable' });
+    expect(handles).toBe(2);
+  });
+  it('does not retry broker errors as absence', async () => {
+    let handles = 0;
+    const refusal = Object.assign(new Error('PRIVATE'), { name: 'ReplyError' });
+    const error = await sampleEmailQueueCompatibility(
+      async () => {
+        handles++;
+        throw refusal;
+      },
+      { samples: 4, intervalMs: 0 },
+    ).catch((e: unknown) => e);
+    expect(error).toBe(refusal);
+    expect(handles).toBe(1);
   });
 });

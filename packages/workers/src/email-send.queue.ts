@@ -90,6 +90,47 @@ export function readEmailPrefsQueueCompatibility(queue: Queue): Promise<{ worker
   return readQueueActors(queue, EMAIL_PREFS_COMPATIBLE_WORKER_NAME, 'Email prefs');
 }
 
+/**
+ * `CLIENT LIST` is one instant on one broker connection, and a live worker's
+ * named blocking connection is absent while BullMQ re-establishes it, so a
+ * single empty listing does not prove there is no worker. Each sample reads
+ * through a fresh queue handle. Absence is the only refusal retried: any
+ * other refusal in any sample is final, so a stray older actor seen once
+ * still refuses. Passes only if some sample saw every actor compatible.
+ */
+export async function sampleEmailQueueCompatibility(
+  withQueue: <T>(read: (queue: Queue) => Promise<T>) => Promise<T>,
+  { samples, intervalMs }: { samples: number; intervalMs: number },
+): Promise<{ workers: number }> {
+  let workers = 0;
+  for (let sample = 0; sample < samples; sample++) {
+    if (sample > 0) await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    const [billing, prefs] = await withQueue((queue) =>
+      Promise.allSettled([
+        readBillingQueueCompatibility(queue),
+        readEmailPrefsQueueCompatibility(queue),
+      ]),
+    );
+    const final = [billing, prefs].find(
+      (result) =>
+        result.status === 'rejected' &&
+        !(
+          result.reason instanceof QueueActorCompatibilityError &&
+          result.reason.reason === 'no_workers'
+        ),
+    );
+    if (final?.status === 'rejected') throw final.reason;
+    if (billing.status === 'fulfilled' && prefs.status === 'fulfilled')
+      workers = Math.max(workers, prefs.value.workers);
+  }
+  if (workers === 0)
+    throw new QueueActorCompatibilityError(
+      'Email prefs queue compatibility unverified',
+      'no_workers',
+    );
+  return { workers };
+}
+
 /** Disabled consumers do not poll; waiting jobs retain their finite retry budget. */
 export function createBillingEmailSendConsumer(
   enabled: boolean,

@@ -482,6 +482,7 @@ export {
   readEmailPrefsQueueCompatibility,
   createBillingEmailSendConsumer,
   readBillingQueueCompatibility,
+  sampleEmailQueueCompatibility,
   QueueActorCompatibilityError,
   type QueueActorRefusal,
   emailSendJobOptions,

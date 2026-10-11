@@ -10,20 +10,21 @@ const { ActorError } = vi.hoisted(() => ({
     }
   },
 }));
+type Read = (queue: unknown) => Promise<unknown>;
+type WithQueue = (read: Read) => Promise<unknown>;
 const f = vi.hoisted(() => ({
   connection: { on: vi.fn(), disconnect: vi.fn(), status: 'ready' },
   queue: { on: vi.fn(), close: vi.fn(async () => undefined) },
   construct: vi.fn(),
   connect: vi.fn(),
-  readPrefs: vi.fn(async () => ({ workers: 1 })),
-  read: vi.fn(async () => ({ workers: 1 })),
+  read: vi.fn(async (_queue: unknown): Promise<unknown> => ({ workers: 1 })),
+  sample: vi.fn(),
 }));
 vi.mock('@declutrmail/workers', () => ({
   createRedisConnection: f.connect,
   EMAIL_SEND_QUEUE: 'email-send',
   QueueActorCompatibilityError: ActorError,
-  readBillingQueueCompatibility: f.read,
-  readEmailPrefsQueueCompatibility: f.readPrefs,
+  sampleEmailQueueCompatibility: f.sample,
 }));
 vi.mock('bullmq', () => ({
   Queue: vi.fn(function (name, options) {
@@ -32,10 +33,18 @@ vi.mock('bullmq', () => ({
   }),
 }));
 import {
+  PROBE_DEADLINE_MS,
   PROBE_EXIT_CODES,
+  PROBE_SAMPLING,
   probeFailureReason,
   verifyBillingQueue,
 } from '../verify-billing-queue.js';
+
+/** Default sampler: two samples, each through the probe's own fresh handle. */
+async function twoSamples(withQueue: WithQueue) {
+  await withQueue(f.read);
+  return withQueue(f.read);
+}
 
 describe('standalone billing queue probe', () => {
   beforeEach(() => {
@@ -44,7 +53,7 @@ describe('standalone billing queue probe', () => {
     f.connection.status = 'ready';
     f.connect.mockReturnValue(f.connection);
     f.read.mockResolvedValue({ workers: 1 });
-    f.readPrefs.mockResolvedValue({ workers: 1 });
+    f.sample.mockImplementation(twoSamples);
     vi.stubEnv('BILLING_NOTICE_PROBE', 'true');
     vi.stubEnv('BILLING_NOTICE_REDIS_URL', 'redis://127.0.0.1:1');
   });
@@ -60,16 +69,29 @@ describe('standalone billing queue probe', () => {
     await expect(verifyBillingQueue()).rejects.toThrow('configuration unavailable');
     expect(f.connect).not.toHaveBeenCalled();
   });
-  it('reads only generic actor compatibility, disables metadata writes and closes handles', async () => {
+  it('samples over a bounded window through a fresh, closed connection per sample', async () => {
     await expect(verifyBillingQueue()).resolves.toEqual({ workers: 1 });
+    expect(f.sample).toHaveBeenCalledWith(expect.any(Function), {
+      samples: 5,
+      intervalMs: 3_000,
+    });
+    expect(f.connect).toHaveBeenCalledTimes(2);
     expect(f.construct).toHaveBeenCalledWith('email-send', {
       connection: f.connection,
       skipMetasUpdate: true,
     });
     expect(f.read).toHaveBeenCalledWith(f.queue);
-    expect(f.readPrefs).toHaveBeenCalledWith(f.queue);
-    expect(f.connection.disconnect).toHaveBeenCalledOnce();
-    expect(f.queue.close).toHaveBeenCalledOnce();
+    expect(f.connection.disconnect).toHaveBeenCalledTimes(2);
+    expect(f.queue.close).toHaveBeenCalledTimes(2);
+  });
+  it('keeps the sampling window inside the deadline and the deadline inside the task', () => {
+    const waits = (PROBE_SAMPLING.samples - 1) * PROBE_SAMPLING.intervalMs;
+    // Each sample's fresh TLS connect and read needs room beside the waits.
+    expect(PROBE_DEADLINE_MS - waits).toBeGreaterThanOrEqual(PROBE_SAMPLING.samples * 4_000);
+    // Leaves room for container startup (run 447 refused 12 s after start)
+    // inside the task's 60 s timeout.
+    expect(PROBE_DEADLINE_MS + 20_000).toBeLessThanOrEqual(60_000);
+    expect(PROBE_SAMPLING.samples).toBeGreaterThan(1);
   });
   it('refuses unknown actor evidence and still closes both handles', async () => {
     f.read.mockRejectedValueOnce(new Error('unknown actor'));
@@ -79,9 +101,8 @@ describe('standalone billing queue probe', () => {
   });
   it('requires preference compatibility even while billing notices are off', async () => {
     vi.stubEnv('BILLING_APP_NOTICES_ENABLED', 'false');
-    f.readPrefs.mockRejectedValueOnce(new Error('old preference actor'));
+    f.sample.mockRejectedValueOnce(new Error('old preference actor'));
     await expect(verifyBillingQueue()).rejects.toThrow('old preference actor');
-    expect(f.connection.disconnect).toHaveBeenCalledOnce();
   });
   it('closes its connection if queue construction fails', async () => {
     f.construct.mockImplementationOnce(() => {
@@ -95,10 +116,27 @@ describe('standalone billing queue probe', () => {
     vi.useFakeTimers();
     f.read.mockImplementationOnce(() => new Promise(() => {}));
     const result = expect(verifyBillingQueue()).rejects.toThrow('probe deadline');
-    await vi.advanceTimersByTimeAsync(25_000);
+    await vi.advanceTimersByTimeAsync(PROBE_DEADLINE_MS);
     await result;
     expect(f.connection.disconnect).toHaveBeenCalledOnce();
     expect(f.queue.close).toHaveBeenCalledOnce();
+  });
+  it('opens no further broker connection once the deadline has fired', async () => {
+    vi.useFakeTimers();
+    let resume!: () => void;
+    let late: Promise<unknown> | undefined;
+    f.sample.mockImplementationOnce(async (withQueue: WithQueue) => {
+      await new Promise<void>((resolve) => (resume = resolve));
+      late = withQueue(f.read).catch((e: unknown) => e);
+      return late;
+    });
+    const pending = verifyBillingQueue().catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(PROBE_DEADLINE_MS);
+    expect(probeFailureReason(await pending)).toBe('redis_not_ready');
+    resume();
+    await vi.waitFor(() => expect(late).toBeDefined());
+    await late;
+    expect(f.connect).not.toHaveBeenCalled();
   });
   it('names configuration refusal without connecting', async () => {
     vi.stubEnv('BILLING_NOTICE_REDIS_URL', '');
@@ -106,7 +144,7 @@ describe('standalone billing queue probe', () => {
     expect(probeFailureReason(error)).toBe('configuration_unavailable');
   });
   it('passes broker actor refusals through as their fixed reason', async () => {
-    f.readPrefs.mockRejectedValueOnce(new ActorError('PRIVATE', 'incompatible_workers'));
+    f.sample.mockRejectedValueOnce(new ActorError('PRIVATE', 'incompatible_workers'));
     const error = await verifyBillingQueue().catch((e: unknown) => e);
     expect(probeFailureReason(error)).toBe('incompatible_workers');
     expect(probeFailureReason(new Error('PRIVATE'))).toBe('unclassified');
@@ -128,7 +166,7 @@ describe('standalone billing queue probe', () => {
       const listeners = f.connection.on.mock.calls.filter((call: unknown[]) => call[0] === 'error');
       const onError = listeners[listeners.length - 1]?.[1] as (error: unknown) => void;
       for (const error of errors) onError(error);
-      await vi.advanceTimersByTimeAsync(25_000);
+      await vi.advanceTimersByTimeAsync(PROBE_DEADLINE_MS);
       return probeFailureReason(await pending);
     }
     it('separates a stalled broker read from a connection not ready at the deadline', async () => {
