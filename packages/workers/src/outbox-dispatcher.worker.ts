@@ -848,6 +848,12 @@ export class OutboxDispatcherWorker {
       throw new Error('OutboxDispatcherWorker already started');
     }
     this.shuttingDown = false;
+    // Renewal runs before the first claim: a boot drain whose consumer times
+    // out must not outlive the lease. A standby that takes over drains now,
+    // not at the next poll.
+    this.deps.lease?.start(() => {
+      void this.tick().catch((err) => this.logTickError(err));
+    });
 
     if (this.listen) {
       // The LISTEN handler does NOT await the tick — wake-ups are
@@ -869,10 +875,6 @@ export class OutboxDispatcherWorker {
     // Don't keep the process alive solely on the poll timer; the
     // LISTEN connection (or whatever spawned us) is the foreground.
     this.pollHandle.unref();
-    // A standby that takes over drains the backlog now, not at the next poll.
-    this.deps.lease?.start(() => {
-      void this.tick().catch((err) => this.logTickError(err));
-    });
   }
 
   /**

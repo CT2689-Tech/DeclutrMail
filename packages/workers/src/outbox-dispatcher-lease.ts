@@ -88,7 +88,8 @@ export class RedisOutboxDispatcherLease implements OutboxDispatcherLease {
     this.commandTimeoutMs = options.commandTimeoutMs ?? 5_000;
     this.key = options.key ?? OUTBOX_DISPATCHER_LEASE_KEY;
     this.token = options.token ?? randomUUID();
-    this.now = options.now ?? Date.now;
+    // Monotonic: a wall-clock step backward must not stretch local validity.
+    this.now = options.now ?? (() => performance.now());
     this.log = options.log ?? ((line) => console.log(JSON.stringify(line)));
     // A renewal must land, with its timeout, before the local deadline lapses.
     if (this.renewEveryMs + this.commandTimeoutMs >= this.ttlMs - this.safetyMarginMs)

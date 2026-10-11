@@ -328,6 +328,38 @@ describe('OutboxDispatcherWorker with a shared lease', () => {
     expect(await redis.exists(shared)).toBe(0);
   });
 
+  it('renews through a boot drain that runs past the lease TTL', async () => {
+    const db = await seed(1);
+    const options = {
+      key: key(),
+      log: silent,
+      ttlMs: 400,
+      renewEveryMs: 50,
+      safetyMarginMs: 100,
+      commandTimeoutMs: 100,
+    };
+    let releaseConsumer!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseConsumer = resolve;
+    });
+    const worker = new OutboxDispatcherWorker({
+      db,
+      consumer: () => gate,
+      consumerTimeoutMs: 5_000,
+      pollIntervalMs: 60_000,
+      lease: new RedisOutboxDispatcherLease(redis, options),
+    });
+    const started = worker.start();
+    await sleep(700);
+    const rival = new RedisOutboxDispatcherLease(redis, options);
+    expect(await rival.ensureHeld()).toBe(false);
+    releaseConsumer();
+    await started;
+    await worker.stop();
+    expect(await rival.ensureHeld()).toBe(true);
+    await rival.release();
+  });
+
   /** In-memory lease: `held` is flipped by the test, `released` counts releases. */
   function fakeLease(initiallyHeld: boolean) {
     const state = { held: initiallyHeld, released: 0 };

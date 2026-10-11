@@ -28,14 +28,17 @@ rollouts already overlapped, and nothing guarded that either.
 `OutboxDispatcherWorker` now claims rows only while it holds a Redis lease
 (`packages/workers/src/outbox-dispatcher-lease.ts`, key
 `declutrmail:outbox-dispatcher:lease`). The lease has a 30 s TTL, renews every
-10 s, and treats itself as held for 5 s less than Redis does. A stopping
+10 s from before the first claim, and treats itself as held for 5 s less
+than Redis does, on a monotonic clock. Lease commands use a fail-fast Redis
+connection, so a command that timed out is never replayed later. A stopping
 process keeps it until its own abandoned consumer calls settle. A standby
 takes over within one renewal interval of the holder releasing, or within
 the TTL if the holder dies.
 
 The one remaining risk: a holder that loses Redis for longer than the TTL
 while its own abandoned call is still running cannot stop another process
-from acquiring.
+from acquiring. Orphans mostly come from Redis or database timeouts, so this
+risk is correlated with its trigger rather than independent of it.
 
 ## Cutover order (automated in `deploy-cloud-run.yml`)
 
