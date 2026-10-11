@@ -61,28 +61,34 @@ export const OAUTH_SCOPE_DISCLOSURE =
   `Google’s screen asks for one Gmail permission, gmail.modify, and words it more broadly than DeclutrMail uses it: DeclutrMail moves and labels email and never sends email as you. ${PRIVACY_BADGE_HEADLINE}` as const;
 
 /**
- * The date Google approved DeclutrMail's OAuth verification for the single
- * restricted scope, under the CASA assessment.
+ * The date Google approved OAuth verification for `gmail.modify` on GCP
+ * project `declutrmail-ai-prod` (founder record, 2026-10-11).
  *
  * This is the product's only third-party credential, and before this
  * constant existed the date was hand-written on four separate surfaces
  * (`/privacy`, `/security`, Settings → Privacy & Data, and the landing
- * trust strip). Verification is recertified ANNUALLY, so a hand-copied
- * date is a claim that goes stale on a known schedule and updates only
- * where someone remembers to look.
+ * trust strip). A hand-copied date updates only where someone remembers
+ * to look.
  *
- * **The word is `approved`.** Google approved a verification; it did not
- * certify or audit the product. No surface may upgrade that.
+ * **The word is `approved`.** Google approved that scope verification.
+ * It did not certify or audit the product, and this date is not a CASA
+ * approval. No surface may upgrade it.
  */
 export const CASA_VERIFICATION_APPROVED_ON = '21 April 2026' as const;
 
 /** Month-level form, for surfaces too narrow for the full date. */
 export const CASA_VERIFICATION_APPROVED_MONTH = 'April 2026' as const;
 
-/** TAC Security letter of validation, submitted to Google. // CONFIRM before deploy (Chintan) */
+/**
+ * TAC Security CASA Tier 2 letter of validation, submitted to Google on
+ * this date (founder record, 2026-10-11). Submission is the whole claim.
+ */
 export const CASA_LOV_SUBMITTED_ON = '15 April 2026' as const;
 
-/** Google brand verification on the consent screen. // CONFIRM before deploy (Chintan) */
+/**
+ * Google brand verification on the consent screen, approved on this date
+ * (founder record, 2026-10-11).
+ */
 export const BRAND_VERIFICATION_APPROVED_ON = '18 August 2026' as const;
 
 /**

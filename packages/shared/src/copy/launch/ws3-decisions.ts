@@ -16,7 +16,15 @@ export const HERO_KICKER = 'recommended' as 'recommended' | 'd250'; // DECISION:
 
 export const TRUST_ROW_VARIANT = 'full' as 'full' | 'short'; // DECISION: Chintan
 
-/** `privacy` uses privacy@; `security` uses security@ only after that inbox is confirmed. */
+/**
+ * `privacy` publishes privacy@declutrmail.com, the address already used
+ * for vulnerability and privacy mail:
+ * apps/web/src/app/(marketing)/privacy/page.tsx,
+ * apps/web/src/app/(marketing)/contact/page.tsx,
+ * apps/web/src/app/(marketing)/support-pages.test.tsx,
+ * and deck key ws3.security.txtContact.
+ * `security` stays unused until a security@ inbox is confirmed.
+ */
 export const SECURITY_CONTACT = 'privacy' as 'privacy' | 'security'; // DECISION: Chintan
 
 export const HIW_H1 = 'recommended' as 'recommended' | 'current'; // DECISION: Chintan

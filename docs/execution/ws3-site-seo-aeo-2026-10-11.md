@@ -17,18 +17,28 @@ clause. The final comparison CTA hides `refundLine()` while it is empty.
   to `/privacy#ai-processing`.
 - `SHOW_INJECTION_LINE` is false. The prompt-injection sentence is omitted.
 - `LAUNCH_STAGE` is `ga`. The footer does not link “Open beta”. `/beta` stays live.
-- `SECURITY_CONTACT` is `privacy`. security.txt uses `privacy@declutrmail.com`
-  until Chintan confirms `security@declutrmail.com`.
+- `SECURITY_CONTACT` is `privacy`. security.txt uses `privacy@declutrmail.com`,
+  the address already published for privacy and vulnerability mail in
+  `apps/web/src/app/(marketing)/privacy/page.tsx`,
+  `apps/web/src/app/(marketing)/contact/page.tsx`, and
+  `apps/web/src/app/(marketing)/support-pages.test.tsx`. `security@` is unused.
 - `HERO_KICKER`, `HIW_H1`, `TRUST_ROW_VARIANT`, and `VS_FAQ_Q2_STYLE` are the
   recommended deck values. `VS_FAQ_Q1_STYLE` is unused; the “better” question
   does not ship.
 - `ORGANIZATION_SAME_AS` is empty, so Organization JSON-LD omits `sameAs`.
   Offers come only from `buildOffersJsonLd()` (currently `[]`).
-- `LEGAL_ENTITY_NAME` and `LEGAL_ENTITY_ADDRESS` stay `FILL_ME`. The footer and
-  /contact render the legal sentence only when `hasLegalEntity()` is true.
-- `CASA_LOV_SUBMITTED_ON` is `15 April 2026` and `BRAND_VERIFICATION_APPROVED_ON`
-  is `18 August 2026`, each marked `// CONFIRM before deploy (Chintan)`.
-  Rendered dates use US order. The existing British OAuth constant is unchanged.
+- `LEGAL_ENTITY_NAME` and `LEGAL_ENTITY_ADDRESS` stay `FILL_ME`. No legal name
+  or street address is stated in the privacy, terms, or contact pages, and
+  `BUSINESS_POSTAL_ADDRESS` is empty. The footer and /contact render the legal
+  sentence only when `hasLegalEntity()` is true. The shared test
+  `fails until the founder sets the legal name and address` is red until both
+  constants are replaced with the founder's text.
+- Verification facts, from the founder on 2026-10-11, and nothing past them:
+  Google OAuth verification for `gmail.modify` was approved April 21, 2026
+  on GCP project `declutrmail-ai-prod`; brand verification was approved
+  August 18, 2026; the TAC Security CASA Tier 2 letter of validation was
+  submitted April 15, 2026. Rendered dates use US order. The project name
+  stays in the constant comment and is not added to the deck sentences.
 - Hero screenshots were not in `apps/web/public/marketing/`. The current hero
   visual stays.
 - Home mobile: the header drops `backdrop-filter` under 880px, and the open

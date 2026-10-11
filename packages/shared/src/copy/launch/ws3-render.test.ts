@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { cleanupActionsPerMonthFor } from '../../entitlements';
-import { CASA_VERIFICATION_APPROVED_ON, formatVerificationDate } from '../privacy';
+import {
+  BRAND_VERIFICATION_APPROVED_ON,
+  CASA_LOV_SUBMITTED_ON,
+  CASA_VERIFICATION_APPROVED_ON,
+  formatVerificationDate,
+} from '../privacy';
 import { AI_CONSENT_GATE_KEYS, AI_CONSENT_GATE_LIVE } from './ws3-decisions';
 import {
   fillWs3,
@@ -17,7 +22,23 @@ import { WS3_COPY } from './ws3';
 describe('WS3 token fill', () => {
   it('formats the verification date in US order from the British constant', () => {
     expect(formatVerificationDate(CASA_VERIFICATION_APPROVED_ON)).toBe('April 21, 2026');
-    expect(formatVerificationDate('15 April 2026')).toBe('April 15, 2026');
+    expect(formatVerificationDate(CASA_LOV_SUBMITTED_ON)).toBe('April 15, 2026');
+    expect(formatVerificationDate(BRAND_VERIFICATION_APPROVED_ON)).toBe('August 18, 2026');
+  });
+
+  it('states the three confirmed verification facts and nothing past them', () => {
+    const oauth = fillWs3(WS3_COPY['ws3.security.verification.oauth']);
+    const casa = fillWs3(WS3_COPY['ws3.security.verification.casa']);
+    const brand = fillWs3(WS3_COPY['ws3.security.verification.brand']);
+    expect(oauth).toBe(
+      'Google OAuth verification approved April 21, 2026. It covers the single restricted scope we request, gmail.modify.',
+    );
+    expect(casa).toContain('letter of validation was submitted to Google on April 15, 2026');
+    expect(casa).not.toMatch(/\bapproved\b/i);
+    expect(brand).toContain('approved August 18, 2026');
+    const joined = `${oauth} ${casa} ${brand}`;
+    expect(joined).not.toMatch(/\bcertified\b/i);
+    expect(joined).not.toMatch(/\baudited\b/i);
   });
 
   it('fills {allowance} from the free-tier quota, not a typed 1,000', () => {
