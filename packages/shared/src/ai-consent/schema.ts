@@ -15,5 +15,8 @@ export const AiConsentDecisionSchema = z.discriminatedUnion('action', [
     action: z.literal('not_now'),
     card: z.enum(['all', 'withBrief', 'upgrade']),
   }),
-  z.object({ action: z.literal('revoke') }),
+  z.object({
+    action: z.literal('revoke'),
+    scope: z.enum(['explanations', 'brief']).optional(),
+  }),
 ]);

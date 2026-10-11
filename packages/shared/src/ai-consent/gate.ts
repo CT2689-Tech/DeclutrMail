@@ -56,7 +56,7 @@ export interface AiConsentView {
 export type AiConsentDecision =
   | { action: 'allow'; card: AiConsentCard }
   | { action: 'not_now'; card: AiConsentCard }
-  | { action: 'revoke' };
+  | { action: 'revoke'; scope?: 'explanations' | 'brief' };
 
 /** Column write. `now` is the database clock; `keep` leaves the column. */
 export type ConsentMark = 'now' | 'keep' | null;
@@ -144,17 +144,25 @@ export function aiConsentView(
   };
 }
 
-/** Which card to show. Consent is the only gate; a paused view hides the card. */
+/**
+ * Which card to show on Brief. A paused view hides the card.
+ * A Brief decline stays hidden until `reask` (stored version) or the
+ * 30-day cadence in the prompt queue. Settings does not use this to
+ * keep a card on screen.
+ */
 export function consentCard(view: AiConsentView, briefCapable: boolean): AiConsentCard | null {
   if (view.explanations === 'paused') return null;
   if (briefCapable && view.brief === 'paused') return null;
-  if (view.reask || view.explanations === 'review') {
+  if (view.explanations === 'review' || view.explanations === 'unset') {
     return briefCapable ? 'withBrief' : 'all';
   }
-  if (view.explanations === 'unset') return briefCapable ? 'withBrief' : 'all';
-  // Brief declined, revoked, or never chosen. Not now on this card writes
-  // only the Brief columns, so an explanations grant already stored stays.
-  if (view.explanations === 'allowed' && briefCapable && view.brief !== 'allowed') return 'upgrade';
+  if (view.explanations !== 'allowed' && view.reask) {
+    return briefCapable ? 'withBrief' : 'all';
+  }
+  if (!briefCapable || view.explanations !== 'allowed' || view.brief === 'allowed') return null;
+  // First Brief offer, or a version re-ask. A decline or revoke waits
+  // for the 30-day cadence instead of staying on screen.
+  if (view.brief === 'unset' || view.reask || view.brief === 'review') return 'upgrade';
   return null;
 }
 
@@ -185,8 +193,8 @@ export function aiConsentPatch(
       aiConsentVersion: 'keep',
       aiConsentScopes: 'keep',
       briefAiConsentVersion: 'keep',
-      aiExplanationsRevokedAt: 'now',
-      briefAiConsentRevokedAt: 'now',
+      ...(decision.scope !== 'brief' ? { aiExplanationsRevokedAt: 'now' as const } : {}),
+      ...(decision.scope !== 'explanations' ? { briefAiConsentRevokedAt: 'now' as const } : {}),
     };
   }
   if (decision.action === 'not_now' && decision.card === 'upgrade') {
@@ -202,6 +210,19 @@ export function aiConsentPatch(
   }
   if (decision.action === 'not_now') {
     const withBrief = decision.card === 'withBrief';
+    if (!withBrief) {
+      return {
+        aiConsentVersion: version,
+        aiExplanationsConsentAt: null,
+        aiExplanationsRevokedAt: null,
+        aiConsentScopes: 'keep',
+        aiConsentDeclinedAt: 'now',
+        briefAiConsentAt: 'keep',
+        briefAiConsentVersion: 'keep',
+        briefAiConsentRevokedAt: 'keep',
+        briefAiDeclinedAt: 'keep',
+      };
+    }
     return {
       aiConsentVersion: version,
       aiExplanationsConsentAt: null,
@@ -209,9 +230,9 @@ export function aiConsentPatch(
       aiConsentScopes: [],
       aiConsentDeclinedAt: 'now',
       briefAiConsentAt: null,
-      briefAiConsentVersion: withBrief ? version : null,
+      briefAiConsentVersion: version,
       briefAiConsentRevokedAt: null,
-      briefAiDeclinedAt: withBrief ? 'now' : null,
+      briefAiDeclinedAt: 'now',
     };
   }
   if (decision.card === 'upgrade') {
@@ -229,14 +250,27 @@ export function aiConsentPatch(
     };
   }
   const withBrief = decision.card === 'withBrief';
+  if (!withBrief) {
+    return {
+      aiConsentVersion: version,
+      aiExplanationsConsentAt: 'now',
+      aiExplanationsRevokedAt: null,
+      aiConsentScopes: ['explanations', 'brief'],
+      aiConsentDeclinedAt: null,
+      briefAiConsentAt: 'keep',
+      briefAiConsentVersion: 'keep',
+      briefAiConsentRevokedAt: 'keep',
+      briefAiDeclinedAt: 'keep',
+    };
+  }
   return {
     aiConsentVersion: version,
     aiExplanationsConsentAt: 'now',
     aiExplanationsRevokedAt: null,
-    aiConsentScopes: withBrief ? ['explanations', 'brief'] : ['explanations'],
+    aiConsentScopes: ['explanations', 'brief'],
     aiConsentDeclinedAt: null,
-    briefAiConsentAt: withBrief ? 'now' : null,
-    briefAiConsentVersion: withBrief ? version : null,
+    briefAiConsentAt: 'now',
+    briefAiConsentVersion: version,
     briefAiConsentRevokedAt: null,
     briefAiDeclinedAt: null,
   };

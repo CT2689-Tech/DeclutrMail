@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 import { toast, tokens } from '@declutrmail/shared';
-import { consentCard, type AiConsentView } from '@declutrmail/shared/ai-consent';
+import type { AiConsentCard as CardKind, AiConsentView } from '@declutrmail/shared/ai-consent';
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { BRIEF_NAME } from '@declutrmail/shared/copy/screen-decisions';
 
@@ -20,7 +20,11 @@ function fillBrief(template: string): string {
   return template.replaceAll('{BRIEF_NAME}', BRIEF_NAME);
 }
 
-/** Settings → AI. One switch. Turning it on opens the card; turning it off revokes. */
+/**
+ * Settings → AI. Explanations are their own switch. Brief, on plans that
+ * have it, is a second switch that opens the upgrade card only when the
+ * user asks. A declined Brief does not keep that card on screen.
+ */
 export function AiSettingsSection({
   view,
   briefCapable,
@@ -29,59 +33,71 @@ export function AiSettingsSection({
   briefCapable: boolean;
 }) {
   const decide = useDecideAiConsent();
-  const [asking, setAsking] = useState(false);
+  const [asking, setAsking] = useState<CardKind | null>(null);
   const [failed, setFailed] = useState(false);
-  const paused = view.explanations === 'paused' || (briefCapable && view.brief === 'paused');
-  const review = view.reask || view.explanations === 'review';
-  const toggleOn =
-    !paused && view.explanations === 'allowed' && (!briefCapable || view.brief === 'allowed');
-  const serverCard = paused ? null : consentCard(view, briefCapable);
-  const card = serverCard ?? (asking ? (briefCapable ? 'withBrief' : 'all') : null);
-  const label = fillBrief(briefCapable ? copy.settings.label.withBrief : copy.settings.label.all);
-  const detail = paused
+  const explanationsPaused = view.explanations === 'paused';
+  const briefPaused = view.brief === 'paused';
+  const explanationsOn = !explanationsPaused && view.explanations === 'allowed';
+  const briefOn = !briefPaused && view.brief === 'allowed';
+  const explanationsLabel = copy.settings.label.all;
+  const briefLabel = fillBrief(copy.brief.heading);
+  const explanationsDetail = explanationsPaused
     ? copy.settings.state.paused
-    : review
+    : view.explanations === 'review' || (view.reask && !explanationsOn)
       ? copy.settings.state.review
-      : fillBrief(briefCapable ? copy.settings.help.withBrief : copy.settings.help.all);
+      : undefined;
 
-  async function onToggle(): Promise<void> {
+  async function revoke(scope: 'explanations' | 'brief'): Promise<void> {
     setFailed(false);
-    if (paused) return;
-    if (toggleOn) {
-      try {
-        await decide.mutateAsync({ action: 'revoke' });
-        void track('brief_ai_consent_revoked', {});
-        toast(
-          fillBrief(briefCapable ? copy.revoked.toast.withBrief : copy.revoked.toast.all),
-          'info',
-        );
-        setAsking(false);
-      } catch {
-        setFailed(true);
-      }
-      return;
+    try {
+      await decide.mutateAsync({ action: 'revoke', scope });
+      void track('brief_ai_consent_revoked', {});
+      if (scope === 'explanations') toast(copy.revoked.toast.all, 'info');
+      setAsking(null);
+    } catch {
+      setFailed(true);
     }
-    setAsking(true);
   }
 
   return (
     <SettingsGroup id="ai" title="AI" focusable>
-      <SettingsRow label={label} detail={detail}>
+      <SettingsRow label={explanationsLabel} detail={explanationsDetail}>
         <SettingsSwitch
-          ariaLabel={label}
-          on={toggleOn}
-          stateLabel={toggleOn ? copy.settings.state.on : copy.settings.state.off}
-          disabled={paused || decide.isPending}
+          ariaLabel={explanationsLabel}
+          on={explanationsOn}
+          stateLabel={explanationsOn ? copy.settings.state.on : copy.settings.state.off}
+          disabled={explanationsPaused || decide.isPending}
           pending={decide.isPending}
-          onToggle={() => void onToggle()}
+          onToggle={() => {
+            if (explanationsOn) void revoke('explanations');
+            else setAsking('all');
+          }}
         />
       </SettingsRow>
+      {briefCapable && (
+        <SettingsRow
+          label={briefLabel}
+          detail={briefPaused ? fillBrief(copy.killSwitch) : undefined}
+        >
+          <SettingsSwitch
+            ariaLabel={briefLabel}
+            on={briefOn}
+            stateLabel={briefOn ? copy.settings.state.on : copy.settings.state.off}
+            disabled={briefPaused || decide.isPending}
+            pending={decide.isPending}
+            onToggle={() => {
+              if (briefOn) void revoke('brief');
+              else setAsking('upgrade');
+            }}
+          />
+        </SettingsRow>
+      )}
       {failed && (
         <p role="alert" style={{ margin: '8px 16px', color: color.dangerText, fontSize: text.sm }}>
           {copy.error}
         </p>
       )}
-      {card && <AiConsentCard view={view} card={card} onDone={() => setAsking(false)} />}
+      {asking && <AiConsentCard view={view} card={asking} onDone={() => setAsking(null)} />}
     </SettingsGroup>
   );
 }

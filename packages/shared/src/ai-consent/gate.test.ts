@@ -62,7 +62,7 @@ describe('AI consent gate', () => {
     expect(consentCard(aiConsentView(declined), true)).toBe(null);
   });
 
-  it('keeps the upgrade card when Brief is declined or off, and Not now leaves explanations', () => {
+  it('hides the upgrade card after Brief is declined, and Not now leaves explanations', () => {
     const declinedBrief = row({
       ...allowedExplanations,
       briefAiConsentVersion: VERSION,
@@ -71,7 +71,8 @@ describe('AI consent gate', () => {
     const declinedView = aiConsentView(declinedBrief);
     expect(declinedView.brief).toBe('declined');
     expect(declinedView.explanations).toBe('allowed');
-    expect(consentCard(declinedView, true)).toBe('upgrade');
+    expect(declinedView.reask).toBe(false);
+    expect(consentCard(declinedView, true)).toBeNull();
     expect(consentCard(declinedView, false)).toBeNull();
 
     const revokedBrief = row({
@@ -83,7 +84,7 @@ describe('AI consent gate', () => {
     });
     const revokedView = aiConsentView(revokedBrief);
     expect(revokedView.brief).toBe('off');
-    expect(consentCard(revokedView, true)).toBe('upgrade');
+    expect(consentCard(revokedView, true)).toBeNull();
 
     const patch = aiConsentPatch({ action: 'not_now', card: 'upgrade' });
     expect(patch).toMatchObject({
@@ -96,6 +97,18 @@ describe('AI consent gate', () => {
     });
     expect(explanationsConsentActive(declinedBrief)).toBe(true);
     expect(explanationsConsentActive(revokedBrief)).toBe(true);
+  });
+
+  it('shows the upgrade card again when a stored Brief version is no longer current', () => {
+    const staleBrief = row({
+      ...allowedExplanations,
+      briefAiConsentVersion: '2026-09',
+      briefAiDeclinedAt: '2026-10-04T00:00:00.000Z',
+    });
+    const view = aiConsentView(staleBrief);
+    expect(view.explanations).toBe('allowed');
+    expect(view.reask).toBe(true);
+    expect(consentCard(view, true)).toBe('upgrade');
   });
 
   it('re-asks when the stored version is not current', () => {
@@ -115,8 +128,9 @@ describe('AI consent gate', () => {
     expect(aiConsentPatch({ action: 'allow', card: 'all' })).toMatchObject({
       aiConsentVersion: VERSION,
       aiExplanationsConsentAt: 'now',
-      aiConsentScopes: ['explanations'],
-      briefAiConsentAt: null,
+      aiConsentScopes: ['explanations', 'brief'],
+      briefAiConsentAt: 'keep',
+      briefAiDeclinedAt: 'keep',
     });
     expect(aiConsentPatch({ action: 'allow', card: 'withBrief' }).aiConsentScopes).toEqual([
       'explanations',
@@ -125,7 +139,9 @@ describe('AI consent gate', () => {
     expect(aiConsentPatch({ action: 'not_now', card: 'all' })).toMatchObject({
       aiExplanationsConsentAt: null,
       aiConsentDeclinedAt: 'now',
-      aiConsentScopes: [],
+      aiConsentScopes: 'keep',
+      briefAiDeclinedAt: 'keep',
+      briefAiConsentAt: 'keep',
     });
     expect(aiConsentPatch({ action: 'not_now', card: 'upgrade' })).toMatchObject({
       aiExplanationsConsentAt: 'keep',
@@ -136,6 +152,16 @@ describe('AI consent gate', () => {
       aiExplanationsRevokedAt: 'now',
       briefAiConsentRevokedAt: 'now',
       aiConsentScopes: 'keep',
+    });
+    expect(aiConsentPatch({ action: 'revoke', scope: 'explanations' })).toMatchObject({
+      aiExplanationsRevokedAt: 'now',
+      briefAiConsentRevokedAt: 'keep',
+      briefAiDeclinedAt: 'keep',
+      aiConsentScopes: 'keep',
+    });
+    expect(aiConsentPatch({ action: 'revoke', scope: 'brief' })).toMatchObject({
+      aiExplanationsRevokedAt: 'keep',
+      briefAiConsentRevokedAt: 'now',
     });
     expect(aiConsentPatch({ action: 'allow', card: 'upgrade' })).toMatchObject({
       briefAiConsentAt: 'now',
