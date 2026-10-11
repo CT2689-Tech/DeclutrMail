@@ -28,6 +28,7 @@ import type {
   BillingSubscription,
   CancelRequest,
 } from '@declutrmail/shared/contracts';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { TIER_MANIFEST, TIER_RANK, type TierId } from '@declutrmail/shared/entitlements';
 
 import { useAuth } from '@/features/auth/auth-provider';
@@ -775,9 +776,7 @@ export function BillingScreen({
     >
       <EditorialKicker>Plan & billing</EditorialKicker>
       <h1 style={editorialTitleStyle}>Plan & billing</h1>
-      <p style={{ margin: 0, color: color.fgSoft }}>
-        Applies to this workspace and its connected inboxes.
-      </p>
+      <p style={{ margin: 0, color: color.fgSoft }}>{WS2_COPY.liveFix.billing.scope}</p>
       <ScreenIntro
         id="billing"
         title="Plan & billing"

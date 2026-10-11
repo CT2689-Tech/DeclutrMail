@@ -414,5 +414,10 @@
     "dismiss": "No thanks",
     "dismissAria": "Dismiss the AI explanations suggestion",
     "frequency": "At most once every 30 days, and never again after it’s been dismissed twice or the user has chosen on the card."
+  },
+  "liveFix": {
+    "billing": {
+      "scope": "Your plan covers every Gmail account you connect."
+    }
   }
 }
