@@ -21,8 +21,9 @@ jobs:
       PROJECT: declutrmail-ai-prod
       WORKER_REGION: us-west1
       RUNTIME_SA: declutrmail-api@declutrmail-ai-prod.iam.gserviceaccount.com
-      # Reviewed standalone probe already built by release #38111577109.
-      IMAGE: us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api:2faa44067bfd806d99783441c1bef7d154b4b66f
+      # Reviewed dual-protocol probe with fixed failure codes; built and verified
+      # by release #38121718422. Keep this independent of unbuilt main commits.
+      IMAGE: us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api:bc26bdc496bdcc8a4fc9f0325b927587cc2b38b8
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
