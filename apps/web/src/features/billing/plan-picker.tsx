@@ -46,6 +46,7 @@ import { billingKeys } from './api/query-keys';
 import type { BillingIntent } from './billing-intent';
 import { useChangePlan } from './api/use-change-plan';
 import { useCheckout } from './api/use-checkout';
+import { useFoundingRemaining } from './api/use-founding-remaining';
 import {
   formatBillingDate,
   isDeferredDowngrade,
@@ -376,10 +377,21 @@ export function PlanPicker({
   // QA-billing-20260901-09/-05: independent of `selected` — the Pro
   // card's own disclosure needs this before the confirm panel is ever
   // opened, not just once it is.
-  // Founding Pro is retired. The claim and the first-250 hint stay off
-  // on every flag state. Existing members still see the cancel note.
-  const foundingEligible = false;
-  const founding = false;
+  // Founding Pro sales UI stays while PRICING_V2 is off. The flag
+  // retires the claim, the first-250 hint, and the deep-link notice.
+  const foundingPossible = !pricingV2 && cycle === 'annual' && grantingSub === null;
+  const foundingAvailability = useFoundingRemaining(foundingPossible);
+  const foundingSoldOut =
+    foundingPossible &&
+    foundingAvailability.data !== undefined &&
+    foundingAvailability.data.remaining <= 0;
+  const foundingEligible =
+    !pricingV2 &&
+    selected === 'pro' &&
+    cycle === 'annual' &&
+    grantingSub === null &&
+    !foundingSoldOut;
+  const founding = foundingEligible && claimFounding;
   // Offering a provider and BILLING with it must read the same fact, or
   // a `provider` pick outlives the price point that offered it: the
   // Founding Pro checkbox swaps the purchased price point WITHOUT
@@ -631,6 +643,24 @@ export function PlanPicker({
         </p>
       ) : null}
 
+      {!pricingV2 && initialIntent?.promo === 'foundingPro' && grantingSub !== null ? (
+        <p
+          role="status"
+          style={{
+            margin: 0,
+            padding: '12px 14px',
+            border: `1px solid ${color.border}`,
+            borderRadius: radius.md,
+            background: color.card,
+            color: color.fgSoft,
+            fontSize: text.sm,
+          }}
+        >
+          Founding Pro is for new annual Pro subscriptions. Your active paid subscription cannot be
+          converted to the promotional price; your current plan remains unchanged.
+        </p>
+      ) : null}
+
       <div
         style={{
           display: 'flex',
@@ -661,10 +691,18 @@ export function PlanPicker({
                 ? { priceOverride: launchPlusLine(country) }
                 : {})}
               onSelect={() => onSelect(id)}
-              showFoundingHint={false}
+              showFoundingHint={
+                !pricingV2 &&
+                id === 'pro' &&
+                id !== currentTier &&
+                foundingPossible &&
+                !foundingSoldOut
+              }
               foundingMemberNote={
                 id === currentTier && grantingSub?.foundingMember === true
-                  ? WS1_COPY['cancel.founding']
+                  ? pricingV2
+                    ? WS1_COPY['cancel.founding']
+                    : 'Founding Pro — price locked while this subscription stays active. Canceling ends the lock for good.'
                   : null
               }
             />
@@ -693,6 +731,7 @@ export function PlanPicker({
               fromCycle={grantingSub.cycle}
               currentPeriodEnd={grantingSub.currentPeriodEnd}
               provider={grantingSub.provider}
+              pricingV2={pricingV2}
               isPending={changePlan.isPending}
               errorMessage={
                 changePlan.error ? planChangeInlineErrorMessage(changePlan.error) : null

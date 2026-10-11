@@ -10,6 +10,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 
 // Parametrizable tier — useTier() reads useAuth() from this module.
 let mockTier = 'free';
+let mockPricingV2 = false;
 vi.mock('next/navigation', () => ({
   usePathname: () => '/senders',
   useSearchParams: () => new URLSearchParams('sender=sender-1&q=news'),
@@ -29,6 +30,7 @@ vi.mock('@/features/auth/auth-provider', () => ({
         },
       ],
       tier: mockTier,
+      pricingV2: mockPricingV2,
       cleanupRemaining: mockTier === 'free' ? 0 : null,
     },
   }),
@@ -41,6 +43,7 @@ import { UpgradeModalHost } from './upgrade-modal-host';
 
 beforeEach(() => {
   mockTier = 'free';
+  mockPricingV2 = false;
   useUpgradeGateStore.getState().dismiss();
 });
 
@@ -148,9 +151,8 @@ describe('UpgradeModal', () => {
     ).toBeInTheDocument();
     // Manifest-derived price (D19) of the plan the CTA buys: Plus $9/mo.
     expect(screen.getByText(/Plus removes the monthly cap/)).toBeInTheDocument();
-    expect(
-      screen.getAllByText(/14-day money-back on any purchase, once per customer/),
-    ).toHaveLength(1);
+    expect(screen.getAllByText(/30-day money-back guarantee/)).toHaveLength(1);
+    expect(screen.queryByText(/14-day money-back on any purchase/)).not.toBeInTheDocument();
     // ONE checkout path (D117): the CTA deep-links the nudged plan into
     // /billing's confirm step via the validated billing intent.
     expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$9\/mo$/ })).toHaveAttribute(
@@ -165,6 +167,20 @@ describe('UpgradeModal', () => {
     );
     fireEvent.click(compare);
     expect(useUpgradeGateStore.getState().hit).toBeNull();
+  });
+
+  it('PRICING_V2 shows the deck refund line on the same layout', () => {
+    mockPricingV2 = true;
+    useUpgradeGateStore.getState().report({
+      reason: 'free_cap',
+      details: { remaining: 0, limit: 50, used: 50, requiredUnits: 1, resetsAt: null },
+    });
+    render(<UpgradeModal />);
+
+    expect(
+      screen.getAllByText(/14-day money-back on any purchase, once per customer/),
+    ).toHaveLength(1);
+    expect(screen.queryByText(/30-day money-back guarantee/)).not.toBeInTheDocument();
   });
 
   it('emails-cleared 402 offers clear-what-fits then Plus', () => {

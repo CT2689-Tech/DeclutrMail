@@ -945,6 +945,64 @@ describe('METER_V2 off keeps the cleanup-action count', () => {
     const svc = new EntitlementsService(db as never);
     expect(await svc.cleanupUnitsUsed(workspaceId)).toBe(1);
   });
+
+  it('does not return a meter 402 envelope or a meter summary', async () => {
+    vi.stubEnv('METER_V2', 'false');
+    const db = await freshDb();
+    const { workspaceId, mailboxId } = await seedWorkspace(db, 'free');
+    const sender = await seedSender(db, mailboxId);
+    await seedJob(db, mailboxId, {
+      verb: 'archive',
+      key: 'meter-off-envelope',
+      senderId: sender.id,
+      senderKey: sender.key,
+      quotaUnits: 999,
+      affectedCount: 999,
+    });
+    const svc = new EntitlementsService(db as never);
+    const summary = await svc.cleanupSummary(workspaceId);
+    expect(summary).toEqual({
+      tier: 'free',
+      limit: FREE_LIMIT,
+      used: 1,
+      remaining: FREE_LIMIT - 1,
+      resetsAt: expect.any(Date),
+    });
+    expect(summary).not.toHaveProperty('metered');
+    expect(summary).not.toHaveProperty('requested');
+    expect(summary).not.toHaveProperty('suggestedPreset');
+
+    // One more cleanup action still fits the action cap, so the email
+    // stamp does not produce a 402.
+    await expect(svc.assertCleanupCapacity(mailboxId, 1)).resolves.toBeUndefined();
+
+    const [ws] = await db
+      .select({ createdAt: workspaces.createdAt })
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId));
+    const err = await svc
+      .assertCleanupCapacityForWorkspace(
+        { workspaceId, tier: 'free', createdAt: ws!.createdAt },
+        FREE_LIMIT,
+        db,
+        { 30: 80, 90: 400, 180: 1_200, 365: 2_708 },
+      )
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AppException);
+    const hit = err as AppException;
+    expect(hit.code).toBe('FREE_CAP_REACHED');
+    expect(hit.details).not.toHaveProperty('requested');
+    expect(hit.details).not.toHaveProperty('suggestedPreset');
+    expect(hit.details).toEqual({
+      remaining: FREE_LIMIT - 1,
+      limit: FREE_LIMIT,
+      used: 1,
+      requiredUnits: FREE_LIMIT,
+      resetsAt: expect.any(String),
+    });
+    expect(hit.message).toMatch(/cleanup actions/);
+    expect(hit.message).not.toMatch(/free emails/);
+  });
 });
 
 describe('METER_V2 emails-cleared meter', () => {

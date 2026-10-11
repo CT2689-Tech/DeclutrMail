@@ -12,7 +12,7 @@ import { priceLine as formatLaunchPrice, TIER_MANIFEST } from '@declutrmail/shar
 import type { PricePoint } from '@declutrmail/shared/entitlements';
 import { currencyForPricePoint, formatMoney } from '@/features/marketing/pricing/pricing-model';
 import { GroupTitle } from '@/features/settings/settings-list';
-import { MONEY_BACK_NOTE } from './billing-model';
+import { moneyBackNote } from './billing-model';
 
 const { color, radius, text } = tokens;
 type PaidTier = 'plus' | 'pro';
@@ -184,7 +184,9 @@ export function ConfirmPanel({
           .
         </p>
       )}
-      <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
+      <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
+        {moneyBackNote(pricingV2)}
+      </p>
 
       {errorMessage != null && (
         <div

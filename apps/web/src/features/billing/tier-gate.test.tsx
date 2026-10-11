@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
 let mockTier = 'free';
+let mockPricingV2 = false;
 vi.mock('next/navigation', () => ({
   usePathname: () => '/senders',
   useSearchParams: () => new URLSearchParams('sender=sender-1&q=news'),
@@ -27,6 +28,7 @@ vi.mock('@/features/auth/auth-provider', () => ({
         },
       ],
       tier: mockTier,
+      pricingV2: mockPricingV2,
       cleanupRemaining: null,
     },
   }),
@@ -64,16 +66,26 @@ describe('TierGate', () => {
       'href',
       '/billing?plan=pro&cycle=monthly&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
     );
-    // The money-back note appears exactly once.
-    expect(
-      screen.getAllByText(/14-day money-back on any purchase, once per customer/),
-    ).toHaveLength(1);
+    // The money-back note appears exactly once. Flags off keeps the
+    // published 30-day sentence; the deck line must not leak.
+    expect(screen.getAllByText(/30-day money-back guarantee/)).toHaveLength(1);
+    expect(screen.queryByText(/14-day money-back on any purchase/)).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Compare plans' })).toHaveAttribute(
       'href',
       '/billing?from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
     );
     expect(screen.queryByTestId('gated-child')).not.toBeInTheDocument();
     expect(childMounted()).toBe(false);
+  });
+
+  it('PRICING_V2 shows the deck refund line once', () => {
+    mockTier = 'free';
+    mockPricingV2 = true;
+    renderGate();
+    expect(
+      screen.getAllByText(/14-day money-back on any purchase, once per customer/),
+    ).toHaveLength(1);
+    expect(screen.queryByText(/30-day money-back guarantee/)).not.toBeInTheDocument();
   });
 
   it('plus tier: still gated for the Pro-only automation set (D77, narrowed by D251)', () => {

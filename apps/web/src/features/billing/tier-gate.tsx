@@ -16,7 +16,7 @@ import { useTier } from '@/features/auth/api/use-tier';
 import { track } from '@/lib/posthog';
 
 import { billingIntentPath } from './billing-intent';
-import { MONEY_BACK_NOTE, quotedPlanPrice } from './billing-model';
+import { moneyBackNote, quotedPlanPrice } from './billing-model';
 import { useRegionProvider } from './billing-currency';
 
 const { color, font, motion, radius, shadow, text } = tokens;
@@ -54,7 +54,7 @@ export function TierGate({
   footnote?: ReactNode;
   children: ReactNode;
 }) {
-  const { tier } = useTier();
+  const { tier, pricingV2 } = useTier();
   const from = useUpgradeReturnTo();
   const granted = hasCapability(tier, capability);
   const requiredTierId = minimumTierForCapability(capability);
@@ -203,7 +203,7 @@ export function TierGate({
       </Link>
 
       <p style={{ margin: '12px 0 0', fontSize: text.sm, color: color.fgMuted }}>
-        {MONEY_BACK_NOTE}
+        {moneyBackNote(pricingV2)}
       </p>
 
       {footnote ? (

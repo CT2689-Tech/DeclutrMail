@@ -10,6 +10,12 @@ Branch `codex/ws1a-pricing-foundation`. Deck revision `drop2-r6`
 in this change turns them on. Production should set both to the string
 `false` on Vercel and Cloud Run until the launch switch.
 
+With both flags off, checkout, upgrade, tier-gate, change-plan, and
+Autopilot keep `30-day money-back guarantee`. `refundLine()` is used only
+when `PRICING_V2` is on. Founding Pro sales UI (claim, first-250 hint,
+deep-link notice, member banner, and the pre-launch cancel sentence)
+stays while the flag is off and retires when it is on.
+
 ## Missing price IDs
 
 Plus annual 2026-10, the Backlog Pass, and the PH30 discount still use
@@ -34,8 +40,11 @@ are unchanged.
 Both new migrations are additive. Neither was applied to a live database.
 
 - `0084_waitlist_launch_columns.sql` adds nullable waitlist columns and a
-  second unique index. `waitlist_email_uniq` was not dropped. Dropping it
-  is a destructive follow-up and needs Chintan's OK.
+  composite unique on `(email, coalesce(tier,''), coalesce(provider,''))`.
+  That composite has no effect while `waitlist_email_uniq` remains: a
+  second row for the same address still conflicts on unique(email).
+  Dropping that index is destructive and needs Chintan's OK, so this
+  change does not drop it.
 - `0085_action_jobs_quota_units.sql` adds `quota_units integer not null
 default 0`. No backfill. Rollback drops the column.
 

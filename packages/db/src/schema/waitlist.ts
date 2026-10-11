@@ -51,8 +51,11 @@ export const waitlist = pgTable(
     /** Case-insensitive dedup + the submit-time "already signed up" lookup. */
     emailUniq: uniqueIndex('waitlist_email_uniq').on(table.email),
     /**
-     * One row per address, launch tier, and provider. The older
-     * unique(email) still applies; dropping it is a flagged constraint change.
+     * Intended key is (email, tier, provider). This composite unique has
+     * no effect while `waitlist_email_uniq` remains: a second row for the
+     * same address still conflicts on unique(email), so Pro-waitlist and
+     * provider-capture rows for one address 409 until that index is
+     * dropped. Dropping it is destructive and needs Chintan's OK.
      */
     emailTierProviderUniq: uniqueIndex('waitlist_email_tier_provider_uniq').on(
       table.email,

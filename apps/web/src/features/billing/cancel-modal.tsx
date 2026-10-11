@@ -55,6 +55,7 @@ export function CancelModal({
   onPause,
   isPausing,
   pauseError,
+  pricingV2 = false,
 }: {
   open: boolean;
   /** The record this cancel targets — backing or non-backing (A6). */
@@ -75,6 +76,8 @@ export function CancelModal({
   onPause: () => void;
   isPausing: boolean;
   pauseError: string | null;
+  /** Launch flag. Off keeps the pre-launch founding cancel sentence. */
+  pricingV2?: boolean;
   /** Accepted for callers; the sheet is a bottom sheet on phones by
    *  itself now (`PreviewSheet` is CSS-responsive). */
   variant?: 'modal' | 'sheet';
@@ -142,7 +145,11 @@ export function CancelModal({
           {sub.foundingMember ? (
             <>
               {' '}
-              <span>{WS1_COPY['cancel.founding']}</span>
+              <span>
+                {pricingV2
+                  ? WS1_COPY['cancel.founding']
+                  : 'You\u2019re a Founding Pro member — this locked price doesn\u2019t come back once canceled and the 250 slots fill up.'}
+              </span>
             </>
           ) : null}
         </>

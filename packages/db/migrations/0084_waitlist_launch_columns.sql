@@ -1,7 +1,9 @@
 -- Additive launch waitlist columns for Pro and provider capture.
 -- `source` already exists and is not added again.
--- unique(email) stays. A second row for the same address would require
--- dropping that index, which is a destructive constraint change.
+-- unique(email) stays. The composite unique below has no effect until
+-- that index is dropped: a second row for the same address still
+-- conflicts on waitlist_email_uniq. Dropping it is destructive and
+-- needs Chintan's OK, so this migration does not drop it.
 
 ALTER TABLE "waitlist" ADD COLUMN "tier" text;
 --> statement-breakpoint

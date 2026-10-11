@@ -16,7 +16,7 @@ import {
   formatBillingDate,
   formatProviderAmount,
   isDeferredDowngrade,
-  MONEY_BACK_NOTE,
+  moneyBackNote,
   quotedPlanPrice,
 } from './billing-model';
 
@@ -38,6 +38,7 @@ export function ChangePlanPanel({
   provider,
   isPending,
   errorMessage,
+  pricingV2 = false,
   onConfirm,
   onDismiss,
 }: {
@@ -51,6 +52,8 @@ export function ChangePlanPanel({
   provider: BillingProviderId;
   isPending: boolean;
   errorMessage: string | null;
+  /** Server launch flag. Off keeps the 30-day guarantee line. */
+  pricingV2?: boolean;
   onConfirm: () => void;
   onDismiss: () => void;
 }) {
@@ -203,7 +206,9 @@ export function ChangePlanPanel({
               2026-07-30). The guarantee still governs the ORIGINAL charge;
               /refunds is where its terms live. */}
           {isDowngrade ? null : (
-            <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
+            <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
+              {moneyBackNote(pricingV2)}
+            </p>
           )}
         </>
       )}

@@ -20,7 +20,7 @@ import {
 import { track } from '@/lib/posthog';
 
 import { billingIntentPath } from './billing-intent';
-import { MONEY_BACK_NOTE, quotedPlanPrice } from './billing-model';
+import { moneyBackNote, quotedPlanPrice } from './billing-model';
 import { useRegionProvider } from './billing-currency';
 
 const { color, font, radius, shadow, space, text } = tokens;
@@ -51,7 +51,7 @@ export function UpgradeModal() {
   const hit = useUpgradeGateStore((s) => s.hit);
   const dismiss = useUpgradeGateStore((s) => s.dismiss);
   const applyWindowPreset = useUpgradeGateStore((s) => s.applyWindowPreset);
-  const { tier } = useTier();
+  const { tier, pricingV2 } = useTier();
   const from = useUpgradeReturnTo();
 
   useEffect(() => {
@@ -298,7 +298,7 @@ export function UpgradeModal() {
         {/* The money-back note and the plan comparison — once, quiet. */}
         {nudge ? (
           <p style={{ margin: `${space[3]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
-            {MONEY_BACK_NOTE} ·{' '}
+            {moneyBackNote(pricingV2)} ·{' '}
             <Link
               href={`/billing${from ? `?${new URLSearchParams({ from })}` : ''}`}
               onClick={dismiss}

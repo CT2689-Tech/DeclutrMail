@@ -33,6 +33,7 @@ import { TIER_MANIFEST, TIER_RANK, type TierId } from '@declutrmail/shared/entit
 import { useAuth } from '@/features/auth/auth-provider';
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { useTier } from '@/features/auth/api/use-tier';
+import { currencyForProvider, formatMoney } from '@/features/marketing/pricing/pricing-model';
 import { ApiError, apiDelete } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 
@@ -759,6 +760,9 @@ export function BillingScreen({
     });
   }
   if (billingDark) notices.push({ key: 'billing-dark', node: <BillingDisabledNotice /> });
+  if (!pricingV2 && plan.foundingMember && backingSub) {
+    notices.push({ key: 'founding', node: <FoundingBanner provider={backingSub.provider} /> });
+  }
 
   return (
     <div
@@ -958,6 +962,7 @@ export function BillingScreen({
       </p>
       <CancelModal
         open={cancelOpen}
+        pricingV2={pricingV2}
         billingReviewPending={reviewPending}
         variant={isPhone ? 'sheet' : 'modal'}
         sub={backingSub ?? plan.nonBacking?.sub ?? null}
@@ -2166,6 +2171,39 @@ function NonBackingSubscriptionNotice({
           </Button>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Founding Pro banner (D119 / D126). Price straight off the manifest,
+ * in the currency the member's own rail locked — a Razorpay founding
+ * member's price is locked at ₹10,999/yr, not $129/yr.
+ * Shown only while `PRICING_V2` is off.
+ */
+function FoundingBanner({ provider }: { provider: BillingProviderId }) {
+  const promo = TIER_MANIFEST.pro.promo;
+  if (!promo) return null;
+  return (
+    <div
+      data-testid="founding-banner"
+      style={{
+        display: 'flex',
+        alignItems: 'baseline',
+        gap: 8,
+        padding: '14px 16px',
+        background: color.primarySoft,
+        borderRadius: radius.lg,
+        fontSize: text.md,
+        color: color.fg,
+      }}
+    >
+      <span aria-hidden>🏛️</span>
+      <span>
+        <strong style={{ fontWeight: 600 }}>{promo.name} member</strong> — price locked at{' '}
+        {formatMoney(promo.annual, currencyForProvider(provider))}/yr while your subscription stays
+        active.
+      </span>
     </div>
   );
 }
