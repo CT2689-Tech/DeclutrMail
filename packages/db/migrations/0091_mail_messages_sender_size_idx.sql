@@ -8,6 +8,6 @@
 -- rollback before retrying. Do not silently accept an existing invalid
 -- index.
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "mail_messages_account_sender_inbound_size_idx"
+CREATE INDEX CONCURRENTLY "mail_messages_account_sender_inbound_size_idx"
   ON "mail_messages" USING btree ("mailbox_account_id", "sender_key", "size_bytes")
   WHERE "is_outbound" = false;

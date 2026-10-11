@@ -31,8 +31,9 @@ describe('migration 0091 — inbound size index', () => {
 
     expect(forward.startsWith('-- atlas:txmode none')).toBe(true);
     expect(forward).toMatch(
-      /CREATE INDEX CONCURRENTLY IF NOT EXISTS "mail_messages_account_sender_inbound_size_idx"/,
+      /CREATE INDEX CONCURRENTLY "mail_messages_account_sender_inbound_size_idx"/,
     );
+    expect(forward).not.toMatch(/CREATE INDEX CONCURRENTLY IF NOT EXISTS/);
     expect(rollback.startsWith('-- atlas:txmode none')).toBe(true);
     expect(rollback).toMatch(
       /DROP INDEX CONCURRENTLY IF EXISTS "mail_messages_account_sender_inbound_size_idx"/,
