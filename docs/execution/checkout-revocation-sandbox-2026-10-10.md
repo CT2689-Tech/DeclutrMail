@@ -61,7 +61,12 @@ passed for source `2224006177bf35a2f08e0bb483d160726629a192`; WIF #38117060814 a
 `2026-10-11T06:08:14Z` observed API `declutrmail-api-00611-jib` and worker
 `declutrmail-worker-00161-4gg`, each 100%. Release checks retain enrollment
 `2026-10-11T03:15:41.000Z`, notices OFF and refund restoration OFF. The fixed failed
-probe audit #38116441552 was denied logging access; job-creation root cause remains
-unconfirmed. Browser passkey cleared but Console JavaScript failed to load after
-one reload. Local gcloud auth failures remain distinct from the working WIF status
-route. No IAM grant or guessed permissions repair was performed.
+probe audit #38116441552 was denied logging access. A later offline reproduction
+confirmed that the original create command fails in gcloud's argument parser:
+duplicate bare `--import` values are rejected before any Cloud Run request. PR
+#948 supplies distinct `--import=<module>` arguments; actual job creation,
+execution, broker compatibility and cleanup still need fresh runtime proof after
+merge. The denied audit read does not establish a Jobs Create IAM failure.
+Browser passkey cleared but Console JavaScript failed to load after one reload.
+Local gcloud auth failures remain distinct from the working WIF status route.
+No IAM grant or guessed permissions repair was performed.
