@@ -284,7 +284,8 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
     fetchedFrom: ['message.sizeEstimate'],
     storageRefs: ['mail_messages.size_bytes'],
     derived: false,
-    purpose: 'Show the approximate encoded size of a message.',
+    purpose:
+      'Show the approximate encoded size of a message, and total those estimates for Inbox Report storage insights and a read-only size-by-sender view.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
@@ -360,6 +361,27 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     removalTrigger: 'delete-indexed-data',
     exportedIn: ['json', 'senders-csv'],
     transmittedTo: ['DeclutrMail', 'Anthropic'],
+    showInMessageStorageList: false,
+  },
+  {
+    id: 'inbox-report-cache',
+    category: 'derived',
+    label: 'Inbox Report totals and the sender ids offered for a fix',
+    fetchedFrom: [
+      'message-size-estimate',
+      'received-date',
+      'gmail-labels',
+      'read-state',
+      'sender-profile-and-stats',
+    ],
+    storageRefs: ['inbox_report_cache.payload'],
+    derived: true,
+    purpose:
+      'Remember the latest Inbox Report aggregates until the next sync, so the first look does not recompute them.',
+    retention: GMAIL_DATA_RETENTION.derivedMailboxData,
+    removalTrigger: 'delete-indexed-data',
+    exportedIn: [],
+    transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: false,
   },
   {

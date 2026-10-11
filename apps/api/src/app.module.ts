@@ -13,6 +13,7 @@ import { BriefModule } from './briefs/brief.module.js';
 import { DbModule } from './db/db.module.js';
 import { FollowupModule } from './followups/followup.module.js';
 import { HomeModule } from './home/home.module.js';
+import { InboxReportModule } from './inbox-report/inbox-report.module.js';
 import { HealthModule } from './health/health.module.js';
 import { IconsModule } from './icons/icons.module.js';
 import { MailboxAccountsModule } from './mailboxes/mailbox-accounts.module.js';
@@ -72,6 +73,7 @@ const pubsubWebhookEnabled = process.env.PUBSUB_WEBHOOK_ENABLED === 'true';
     EmailClickModule,
     HealthModule,
     HomeModule,
+    InboxReportModule,
     UsersModule,
     MailboxAccountsModule,
     AuthModule,
