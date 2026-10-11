@@ -21,8 +21,9 @@ test('return visit opens Home and does not confirm a next step', async ({ page }
   await expect(page.getByRole('heading', { level: 1, name: 'Home' })).toBeVisible();
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
 
-  await page.goto(`${E2E_ENV.webUrl}/home-preview?state=full`);
-  await expect(page.getByRole('heading', { level: 1, name: 'Home' })).toBeVisible();
+  // /home-preview is closed under `next start` (NODE_ENV=production). The
+  // real Home page carries the same flag: true only when the report card
+  // names the senders and the unsubscribe step is on screen.
   const step = page.getByRole('button', { name: /Unsubscribe \+ archive/ });
   const ready = page.locator('[data-home-fix-expected="true"]');
   if ((await ready.count()) === 1) {
