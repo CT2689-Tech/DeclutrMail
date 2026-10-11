@@ -18,6 +18,10 @@ const posthogMock = vi.hoisted(() => ({
   capture: vi.fn(),
   identify: vi.fn(),
   reset: vi.fn(),
+  opt_out_capturing: vi.fn(),
+  opt_in_capturing: vi.fn(),
+  has_opted_out_capturing: vi.fn(() => false),
+  register: vi.fn(),
 }));
 
 vi.mock('posthog-js', () => ({ default: posthogMock }));
