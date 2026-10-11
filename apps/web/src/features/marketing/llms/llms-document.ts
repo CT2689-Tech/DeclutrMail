@@ -17,6 +17,8 @@ import {
   WS3_COPY,
 } from '@declutrmail/shared/copy/launch';
 
+import { MONEY_BACK_NOTE } from '@/features/billing/billing-model';
+
 import { COMPARISONS } from '../comparison/comparison-data';
 import { comparisonFaqs } from '../comparison/comparison-faqs';
 import { LLMS_SOURCE } from './llms-source';
@@ -26,8 +28,7 @@ const LAUNCH_SLUGS = ['mailstrom', 'inboxpurge', 'mailmop'] as const;
 const PREVIOUS_AUTOPILOT =
   'Autopilot rules on Plus and Pro find future matches. Both plans support Observe, which waits for batch approval, and Active, which acts on future matches only after you preview and deliberately turn on a rule.';
 
-const PREVIOUS_PRICING =
-  '- [Pricing](https://declutrmail.com/pricing): Free, Plus, and Pro plans; paid plans carry a 30-day money-back guarantee — see the refund policy for terms';
+const PREVIOUS_PRICING = `- [Pricing](https://declutrmail.com/pricing): Free, Plus, and Pro plans; paid plans carry a ${MONEY_BACK_NOTE} — see the refund policy for terms`;
 
 const PREVIOUS_DESCRIBE =
   '- Preferred one-line description: Gmail cleanup by sender: preview the matching emails and planned changes before confirming manual Archive, Later, or Delete; opt into ongoing Autopilot rules on Plus or Pro.';
