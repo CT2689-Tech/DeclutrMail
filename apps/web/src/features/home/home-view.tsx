@@ -164,7 +164,7 @@ function PlanLabel({ tier }: { tier: TierId }) {
 function useInboxReportMounted(ref: RefObject<HTMLElement | null>): boolean {
   const [mounted, setMounted] = useState(false);
   useLayoutEffect(() => {
-    setMounted(ref.current?.querySelector('[data-inbox-report]') != null);
+    setMounted(ref.current?.querySelector('[data-inbox-report], a[data-mailbox]') != null);
   });
   return mounted;
 }
@@ -221,7 +221,6 @@ function HomeBody({
         <>
           {report}
           <EmptyCopy state={state} />
-          <TrustLine />
         </>
       );
     case 'sync-failed':
@@ -258,7 +257,6 @@ function HomeBody({
               onOpenFix={onOpenFix}
             />
           )}
-          <TrustLine />
           <Progress state={state} timeZone={timeZone} />
         </>
       );
@@ -309,55 +307,49 @@ function ReportCard({
   mailboxId: string;
   previewReport: HomePreviewReport | null;
 }) {
-  const copy = previewReport ?? homeReportCopy();
+  const deck = homeReportCopy();
+  const copy = previewReport ?? deck;
   const calmTemplate = homeCalmTemplate();
   const calm =
-    copy !== null &&
-    calmTemplate !== null &&
-    mode === 'fallback' &&
-    indexedEmailCount !== null &&
-    indexedEmailCount > 0
-      ? fillDeck(calmTemplate, { total: formatCount(indexedEmailCount) })
-      : null;
+    previewReport !== null
+      ? previewReport.calm
+      : copy !== null &&
+          calmTemplate !== null &&
+          mode === 'fallback' &&
+          indexedEmailCount !== null &&
+          indexedEmailCount > 0
+        ? fillDeck(calmTemplate, { total: formatCount(indexedEmailCount) })
+        : null;
   const tileCopy = homeTileCopy();
-  const tile =
-    copy !== null && tileCopy !== null && reportSizeLabel !== null && reportSizeLabel !== ''
-      ? fillDeck(tileCopy.value, { size: reportSizeLabel })
+  const deckTile =
+    previewReport === null &&
+    copy !== null &&
+    tileCopy !== null &&
+    reportSizeLabel !== null &&
+    reportSizeLabel !== ''
+      ? {
+          value: fillDeck(tileCopy.value, { size: reportSizeLabel }),
+          label: tileCopy.label,
+          note: tileCopy.note,
+        }
       : null;
-  if (previewReport !== null) {
-    return (
-      <section ref={reportRef} className={styles.report} aria-label={previewReport.title}>
-        <InboxReportCard surface="home" mailboxId={mailboxId} />
-        <div data-inbox-report data-preview-report className={styles.previewReport}>
-          <h2>{previewReport.title}</h2>
-          <p>{previewReport.body}</p>
-          <Link
-            href="/senders"
-            data-dm-button=""
-            className={`dm-button-link ${styles.primaryAction}`}
-          >
-            {previewReport.cta}
-          </Link>
-          <p>{previewReport.headline}</p>
-          {previewReport.calm !== null && <p data-testid="home-calm">{previewReport.calm}</p>}
-          {previewReport.tileValue !== null && previewReport.tileLabel !== null && (
-            <div className={styles.storageTile}>
-              <strong>{previewReport.tileValue}</strong>
-              <span>{previewReport.tileLabel}</span>
-              {previewReport.tileNote !== null && <small>{previewReport.tileNote}</small>}
-            </div>
-          )}
-          <p>
-            {previewReport.trust}{' '}
-            <Link href="/settings/privacy#what-we-store" className="dm-external-link">
-              {previewReport.trustLink}
-              <span aria-hidden="true"> →</span>
-            </Link>
-          </p>
-        </div>
-      </section>
-    );
-  }
+  const tile =
+    previewReport !== null && previewReport.tileValue !== null && previewReport.tileLabel !== null
+      ? {
+          value: previewReport.tileValue,
+          label: previewReport.tileLabel,
+          note: previewReport.tileNote,
+        }
+      : deckTile;
+  const trust = previewReport?.trust ?? deck?.trust ?? null;
+  const trustLink = previewReport?.trustLink ?? deck?.trustLink ?? null;
+  const headline = previewReport?.headline ?? null;
+  // The card link owns title, body, and the Open report action. Home keeps
+  // the lead, the size tile, and the trust line outside that link.
+  const [cardOwnsIntro, setCardOwnsIntro] = useState(false);
+  useLayoutEffect(() => {
+    setCardOwnsIntro(reportRef.current?.querySelector('a[data-mailbox]') != null);
+  });
   if (copy === null) {
     return (
       <div ref={reportRef} hidden>
@@ -367,30 +359,65 @@ function ReportCard({
   }
   return (
     <section ref={reportRef} className={styles.report} aria-label={copy.title}>
-      <InboxReportCard surface="home" mailboxId={mailboxId} />
-      <div className={styles.reportFallback}>
-        <h2>{copy.title}</h2>
-        <p>{copy.body}</p>
-        {copy.cta !== '' && (
-          // There is no /inbox-report route. Senders is where the report card opens.
-          <Link
-            href="/senders"
-            data-dm-button=""
-            className={`dm-button-link ${styles.primaryAction}`}
-          >
-            {copy.cta}
-          </Link>
-        )}
+      <div className={`${styles.reportCard} dm-home-report-card`} data-home-report-card="">
+        <InboxReportCard surface="home" mailboxId={mailboxId} />
+      </div>
+      {!cardOwnsIntro && (
+        <div className={styles.reportIntro} data-report-intro="">
+          <h2>{copy.title}</h2>
+          <p>{copy.body}</p>
+          {copy.cta !== '' && (
+            // There is no /inbox-report route. Senders is where the report card opens.
+            <Link
+              href="/senders"
+              data-dm-button=""
+              className={`dm-button-link ${styles.primaryAction}`}
+            >
+              {copy.cta}
+            </Link>
+          )}
+        </div>
+      )}
+      <div
+        className={styles.reportFacts}
+        data-report-facts=""
+        {...(headline !== null ? { 'data-inbox-report': '' } : {})}
+      >
+        {headline !== null && <LeadLine headline={headline} />}
         {calm !== null && <p data-testid="home-calm">{calm}</p>}
-        {tile !== null && tileCopy !== null && (
-          <div className={styles.storageTile}>
-            <strong>{tile}</strong>
-            <span>{tileCopy.label}</span>
-            {tileCopy.note !== null && <small>{tileCopy.note}</small>}
+        {tile !== null && (
+          <div className={styles.storageTile} data-report-tile="">
+            <strong>{tile.value}</strong>
+            <span>{tile.label}</span>
+            {tile.note !== null && <small>{tile.note}</small>}
           </div>
+        )}
+        {trust !== null && (
+          <p className={styles.trust} data-report-trust="">
+            {trust}{' '}
+            {trustLink !== null && (
+              <Link href="/settings/privacy#what-we-store" className="dm-external-link">
+                {trustLink}
+                <span aria-hidden="true"> →</span>
+              </Link>
+            )}
+          </p>
         )}
       </div>
     </section>
+  );
+}
+
+function LeadLine({ headline }: { headline: string }) {
+  const match = /^(\d+%)\s+([\s\S]+)$/.exec(headline);
+  if (match === null) {
+    return <p data-report-lead="">{headline}</p>;
+  }
+  return (
+    <p className={styles.lead} data-report-lead="">
+      <strong className={styles.leadFigure}>{match[1]}</strong>
+      <span>{match[2]}</span>
+    </p>
   );
 }
 

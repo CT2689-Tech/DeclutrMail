@@ -1,5 +1,27 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+
+const cardGate = vi.hoisted(() => ({ link: false }));
+
+vi.mock('@/features/inbox-report', () => ({
+  InboxReportCard: (props: { mailboxId: string }) =>
+    cardGate.link ? (
+      <a href="/senders" data-mailbox={props.mailboxId}>
+        <strong>Your Inbox Report</strong>
+        <span>
+          A quick look at who sends you the most, what you leave unread and what takes up space.
+        </span>
+        <span>Open report</span>
+      </a>
+    ) : null,
+  getFixSet: (report: {
+    fix: { senderKeys: readonly string[]; sendersCount: number; inboxEmailCount: number };
+  }) => ({
+    senderKeys: [...report.fix.senderKeys],
+    sendersCount: report.fix.sendersCount,
+    inboxEmailCount: report.fix.inboxEmailCount,
+  }),
+}));
 
 import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
 import { ApiError } from '@/lib/api/client';
@@ -151,7 +173,10 @@ describe('HomeView', () => {
     );
     expect(screen.getByRole('heading', { name: 'Your Inbox Report' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open report' })).toHaveAttribute('href', '/senders');
+    expect(screen.getByText('91%')).toBeInTheDocument();
     expect(screen.getByText(/195 senders you mostly leave unread/)).toBeInTheDocument();
+    expect(screen.getByText('≈ 7.7 GB')).toBeInTheDocument();
+    expect(screen.getByText(/We never fetch or store full email contents/)).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Unsubscribe + archive 158 senders' }),
     ).toBeInTheDocument();
@@ -161,6 +186,32 @@ describe('HomeView', () => {
     expect(homePreviewReport('caught-up')?.calm).toMatch(/47 emails/);
     expect(homePreviewReport('syncing')).toBeNull();
     expect(homePreviewReport('empty')).toBeNull();
+  });
+
+  it('keeps the lead, size tile, and trust line when the home card link is present', async () => {
+    cardGate.link = true;
+    render(
+      <HomeView
+        state={ready}
+        nextSteps={[later, unsub]}
+        mailboxId="mb-preview"
+        previewReport={homePreviewReport('full')}
+      />,
+    );
+    const lead = await screen.findByText('91%');
+    expect(lead).toBeVisible();
+    expect(screen.getByText(/195 senders you mostly leave unread/)).toBeVisible();
+    expect(screen.getByText('≈ 7.7 GB')).toBeVisible();
+    expect(screen.getByText(/We never fetch or store full email contents/)).toBeVisible();
+    expect(document.querySelector('[data-report-facts]')).not.toHaveAttribute('hidden');
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'Your Inbox Report' })).toBeNull();
+    });
+    const card = document.querySelector('[data-home-report-card] > a');
+    expect(card).not.toBeNull();
+    expect(card?.querySelector('strong')).toHaveTextContent('Your Inbox Report');
+    expect(card?.querySelectorAll('span')).toHaveLength(2);
+    cardGate.link = false;
   });
 
   it('shows the largest card only when the size view is on', () => {

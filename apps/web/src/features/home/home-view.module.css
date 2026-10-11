@@ -504,10 +504,6 @@
   color: var(--dm-primary);
 }
 
-.page:has([data-inbox-report]) .trust {
-  display: none;
-}
-
 .report {
   border: 1px solid var(--dm-border);
   background: var(--dm-card);
@@ -515,16 +511,47 @@
   padding: 22px 32px 20px;
 }
 
-.report:has([data-inbox-report]) .reportFallback {
+/* Slot for InboxReportCard surface="home". The card's anchor is the direct
+   child: strong (title), span (body), span (action). Home stacks that link.
+   Lead, tile, and trust stay in .reportFacts and are not hidden. */
+.reportCard:not(:has(a)) {
   display: none;
 }
 
-.report:has(a[data-mailbox]) [data-preview-report] {
-  display: none;
+.reportCard > a {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 16px;
+  color: inherit;
+  text-decoration: none;
 }
 
-.reportFallback h2,
-.previewReport h2 {
+.reportCard > a strong,
+.reportCard > a :global(.dm-home-report-title) {
+  font-family: var(--dm-font-display);
+  font-size: var(--dm-type-section-title);
+  font-weight: 400;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+
+.reportCard > a > span,
+.reportCard > a :global(.dm-home-report-body) {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--dm-fg-soft);
+}
+
+.reportCard > a > span:last-child,
+.reportCard > a :global(.dm-home-report-cta) {
+  color: var(--dm-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.reportIntro h2 {
   margin: 0 0 8px;
   font-family: var(--dm-font-display);
   font-size: var(--dm-type-section-title);
@@ -532,9 +559,37 @@
   letter-spacing: -0.025em;
 }
 
-.reportFallback p,
-.previewReport p {
+.reportIntro p {
   margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--dm-fg-soft);
+}
+
+.reportFacts {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.8fr);
+  gap: 8px 32px;
+  align-items: start;
+}
+
+.lead {
+  margin: 0;
+}
+
+.leadFigure {
+  display: block;
+  margin-bottom: 8px;
+  font-family: var(--dm-font-display);
+  font-size: clamp(48px, 6vw, 64px);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.reportFacts > p {
+  margin: 0;
   font-size: 14px;
   line-height: 1.5;
   color: var(--dm-fg-soft);
@@ -544,7 +599,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin: 8px 0 16px;
+  margin: 0;
 }
 
 .storageTile strong {
@@ -556,6 +611,13 @@
 
 .trust {
   max-width: 68ch;
+}
+
+.reportFacts .trust {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--dm-line);
 }
 
 .steps {
@@ -754,6 +816,10 @@
 
   .report {
     padding: 16px;
+  }
+
+  .reportFacts {
+    grid-template-columns: 1fr;
   }
 
   .dialogScrim {

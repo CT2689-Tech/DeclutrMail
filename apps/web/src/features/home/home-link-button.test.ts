@@ -68,4 +68,39 @@ describe('Home link buttons', () => {
     style.remove();
     page.remove();
   });
+
+  it('stacks the home report card and does not hide the lead, tile, or trust line', () => {
+    const source = readFileSync(cssPath, 'utf8');
+    expect(source).not.toContain('[data-preview-report]');
+    expect(source).not.toContain('.reportFallback');
+    expect(source).not.toMatch(/\.trust\s*\{[^}]*display:\s*none/);
+    expect(source).toContain('flex-direction: column');
+
+    const { css, locals } = compileLikeCssModules(source);
+    const style = document.createElement('style');
+    style.textContent = css;
+    document.head.appendChild(style);
+    const report = document.createElement('section');
+    report.className = locals.report ?? '';
+    const slot = document.createElement('div');
+    slot.className = locals.reportCard ?? '';
+    const link = document.createElement('a');
+    link.dataset.mailbox = 'mb-1';
+    link.innerHTML =
+      '<strong>Your Inbox Report</strong><span>A quick look</span><span>Open report</span>';
+    slot.appendChild(link);
+    const facts = document.createElement('div');
+    facts.className = locals.reportFacts ?? '';
+    facts.dataset.reportFacts = '';
+    facts.textContent = '91%';
+    report.append(slot, facts);
+    document.body.appendChild(report);
+
+    expect(getComputedStyle(link).display).toBe('flex');
+    expect(getComputedStyle(link).flexDirection).toBe('column');
+    expect(getComputedStyle(facts).display).not.toBe('none');
+
+    style.remove();
+    report.remove();
+  });
 });
