@@ -8,7 +8,7 @@ import './trust-row.css';
 /**
  * One trust line. The date is `CASA_VERIFICATION_APPROVED_ON`, formatted at render.
  * Wide screens keep the chosen deck variant. Narrow screens show the short
- * deck line, clamped to three lines. The link carries `dm-trust-link` so
+ * deck line and let it wrap in full. The link carries `dm-trust-link` so
  * prose rules (`.dm-story a:not([class])`, `.dm-read-body a`) do not restyle it.
  */
 export function TrustRow({ variant = TRUST_ROW_VARIANT }: { variant?: 'full' | 'short' }) {
