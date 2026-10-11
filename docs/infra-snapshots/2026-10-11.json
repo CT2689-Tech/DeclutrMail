@@ -1,6 +1,6 @@
 {
   "snapshot_date": "2026-10-11",
-  "snapshot_ts": "2026-10-11T02:59:12Z",
+  "snapshot_ts": "2026-10-11T03:14:33Z",
   "gcp_project": "declutrmail-ai-prod",
   "cloud_run": {
     "api": {
@@ -8,13 +8,13 @@
       "latest_revision": [
         {
           "metadata": {
-            "creationTimestamp": "2026-10-11T02:56:58.992504Z",
-            "name": "declutrmail-api-00599-mih"
+            "creationTimestamp": "2026-10-11T03:11:58.495976Z",
+            "name": "declutrmail-api-00602-rob"
           },
           "spec": {
             "containers": [
               {
-                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:7f6108ee347b2ef704c94477d0a65b305ced537b5e272ef135cab72b56087d74"
+                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:2952038307668efbae729d07a6ff03ea37476e2f90c69b67c1a6d263892aafe6"
               }
             ]
           },
@@ -143,6 +143,12 @@
                       "name": "PADDLE_ENV"
                     },
                     {
+                      "name": "BILLING_APP_NOTICES_ENABLED"
+                    },
+                    {
+                      "name": "BILLING_APP_NOTICES_START_AT"
+                    },
+                    {
                       "name": "UNSUB_SEND_ENABLED"
                     }
                   ]
@@ -157,7 +163,7 @@
           "traffic": [
             {
               "percent": 100,
-              "revisionName": "declutrmail-api-00599-mih"
+              "revisionName": "declutrmail-api-00602-rob"
             }
           ]
         }
@@ -168,13 +174,13 @@
       "latest_revision": [
         {
           "metadata": {
-            "creationTimestamp": "2026-10-11T02:55:52.803258Z",
-            "name": "declutrmail-worker-00157-n7f"
+            "creationTimestamp": "2026-10-11T03:10:35.648471Z",
+            "name": "declutrmail-worker-00158-x9m"
           },
           "spec": {
             "containers": [
               {
-                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:7f6108ee347b2ef704c94477d0a65b305ced537b5e272ef135cab72b56087d74"
+                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:2952038307668efbae729d07a6ff03ea37476e2f90c69b67c1a6d263892aafe6"
               }
             ]
           },
@@ -306,6 +312,12 @@
                       "name": "PADDLE_ENV"
                     },
                     {
+                      "name": "BILLING_APP_NOTICES_ENABLED"
+                    },
+                    {
+                      "name": "BILLING_APP_NOTICES_START_AT"
+                    },
+                    {
                       "name": "UNSUB_SEND_ENABLED"
                     }
                   ]
@@ -320,7 +332,7 @@
           "traffic": [
             {
               "percent": 100,
-              "revisionName": "declutrmail-worker-00157-n7f"
+              "revisionName": "declutrmail-worker-00158-x9m"
             }
           ]
         }
