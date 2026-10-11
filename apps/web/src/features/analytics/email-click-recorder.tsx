@@ -9,12 +9,22 @@ import { apiPost } from '@/lib/api/client';
 
 const TEMPLATES = new Set<string>(EMAIL_LINK_TEMPLATES);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const MAILBOX_HASH =
+  /^#mailbox-([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
+
+/** Settings links name the inbox in the hash. The resolver keys off `?mailbox=` only. */
+function mailboxIdFromHash(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  return MAILBOX_HASH.exec(window.location.hash)?.[1];
+}
 
 /**
- * Reads `from` / `mailbox` once, posts the click, then strips the params.
- * MailboxLinkBoundary mounts this outside the children the resolver
- * withholds, so `mailbox` is still on the URL. A second copy double-counts.
- * The component renders nothing.
+ * Reads `from` once, posts the click, then strips the tracking params
+ * this recorder owns (`from`, `utm_source`, `utm_campaign`). `mailbox`
+ * stays: MailboxLinkResolver uses it to switch inboxes, and this
+ * component often replaces the URL before that dynamic resolver mounts.
+ * A reconnect link has no `mailbox` query; its id is `#mailbox-<uuid>`.
+ * A second copy double-counts. The component renders nothing.
  */
 export function EmailClickRecorder(): null {
   const params = useSearchParams();
@@ -33,11 +43,13 @@ export function EmailClickRecorder(): null {
     if (!click || posted.current) return;
     posted.current = true;
     const body: { template: string; mailboxId?: string } = { template: click.from };
-    if (click.mailbox !== null && UUID.test(click.mailbox)) body.mailboxId = click.mailbox;
+    const fromQuery =
+      click.mailbox !== null && UUID.test(click.mailbox) ? click.mailbox : undefined;
+    const mailboxId = fromQuery ?? mailboxIdFromHash();
+    if (mailboxId !== undefined) body.mailboxId = mailboxId;
     void apiPost('/api/v1/analytics/email-click', body).catch(() => undefined);
     const next = new URLSearchParams(params.toString());
     next.delete('from');
-    next.delete('mailbox');
     next.delete('utm_source');
     next.delete('utm_campaign');
     const query = next.toString();
