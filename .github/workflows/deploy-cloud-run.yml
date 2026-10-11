@@ -103,8 +103,8 @@ env:
   # taking rather than a reason to avoid it.
   WORKER_REGION: us-west1
   WORKER_POOL: declutrmail-worker-pool
-  # Retired worker service, disabled after each healthy pool deploy and kept
-  # for rollback (docs/runbooks/worker-pool-cutover.md).
+  # Retired worker service, kept stopped (manual scaling, 0 instances) as a
+  # rollback target and never deleted (docs/runbooks/worker-pool-cutover.md).
   LEGACY_WORKER: declutrmail-worker
   REPO: declutrmail
   # Match the verified HTTP API rollout; the worker keeps its existing driver.
@@ -208,7 +208,10 @@ jobs:
     needs: await-ci
     if: needs.await-ci.outputs.deploy == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # Worker steps carry their own timeouts (87 min worst case before the
+    # 30-min reconcile). A job timeout or a second cancel kills reconcile
+    # mid-way; stop-then-start still leaves at most one worker running.
+    timeout-minutes: 120
     permissions:
       contents: read
       # `id-token: write` lets the workflow exchange GH OIDC for GCP
@@ -234,7 +237,7 @@ jobs:
         uses: google-github-actions/setup-gcloud@v3
 
       - name: Verify deployment safety contracts
-        run: node --test scripts/deploy-api-safely.test.mjs scripts/check-billing-queue-runtime.test.mjs
+        run: node --test scripts/deploy-api-safely.test.mjs scripts/check-billing-queue-runtime.test.mjs scripts/worker-executor.test.mjs
 
       - name: Check serving API driver before releasing either service
         run: node scripts/deploy-api-safely.mjs --check-driver="$API_DB_DRIVER" --region="$REGION" --project="$PROJECT"
@@ -298,85 +301,31 @@ jobs:
       # every consumer that could receive it before the producer starts
       # sending it.
       #
-      # Legacy service → worker pool cutover (docs/runbooks/worker-pool-cutover.md).
-      # A worker pool rollout has no stop-before-start guarantee (instance
-      # reassignment "is not instantaneous", Cloud Run docs), and the legacy
-      # service keeps running until the cutover step below, so two worker
-      # processes overlap on every release. `OutboxDispatcherWorker` only
-      # claims rows while it holds the Redis lease
-      # (`packages/workers/src/outbox-dispatcher-lease.ts`). Every process in
-      # the overlap must therefore run lease-aware code: while the legacy
-      # service still serves, roll it to this image BEFORE the pool starts.
-      # Once the service is disabled this step is a no-op.
-      - name: Give the serving legacy worker the outbox lease
+      # Worker transitions are strict stop-then-start (scripts/worker-executor.mjs,
+      # docs/runbooks/worker-pool-cutover.md). Neither the legacy service nor
+      # the worker pool promises stop-before-start, and a pool deploy boots a
+      # validation instance even at zero instances, so two worker processes
+      # would otherwise overlap — each running every interval scheduler and
+      # cron consumer in `worker.ts`. Instead every executor is stopped and
+      # proven to have zero running instances (Admin API desired count, then
+      # Monitoring's instance_count) before exactly one starts. BullMQ jobs
+      # wait in Redis through the gap. Each step records its phase first, and
+      # the reconcile step below runs on success, failure and cancellation.
+      - name: Plan worker transition
+        timeout-minutes: 5
         env:
           IMAGE: ${{ steps.build.outputs.image }}
-          GITHUB_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          if ! gcloud run services describe "$LEGACY_WORKER" --region="$WORKER_REGION" \
-              --project="$PROJECT" --format=json > legacy-worker.json 2> legacy-worker.err; then
-            if grep -qiE 'could not be found|NOT_FOUND' legacy-worker.err; then
-              echo "No legacy worker service; nothing to roll."
-              exit 0
-            fi
-            cat legacy-worker.err >&2
-            exit 1
-          fi
-          if jq -e '.metadata.annotations as $a |
-              $a["run.googleapis.com/scalingMode"] == "manual" and
-              $a["run.googleapis.com/manualInstanceCount"] == "0"' legacy-worker.json > /dev/null; then
-            echo "Legacy worker service is disabled (manual scaling, 0 instances); nothing to roll."
-            exit 0
-          fi
-          # Image and release tag only: the template keeps the env, secrets,
-          # startup probe and 1/1 instance bounds of its last full deploy.
-          gcloud run services update "$LEGACY_WORKER" \
-            --image="$IMAGE" \
-            --update-env-vars="SENTRY_RELEASE=$GITHUB_SHA" \
-            --region="$WORKER_REGION" \
-            --project="$PROJECT" \
-            --quiet
-          # Traffic pinned to an older revision would leave pre-lease code
-          # serving beside the pool; the new revision must take all of it.
-          gcloud run services describe "$LEGACY_WORKER" --region="$WORKER_REGION" \
-            --project="$PROJECT" --format=json | jq -e --arg image "$IMAGE" '
-              .status as $s |
-              [$s.traffic[]? | select((.percent // 0) > 0)] as $serving |
-              .spec.template.spec.containers[0].image == $image and
-              $s.latestReadyRevisionName == $s.latestCreatedRevisionName and
-              ($serving | length) == 1 and $serving[0].percent == 100 and
-              $serving[0].revisionName == $s.latestReadyRevisionName' > /dev/null \
-            || { echo "::error::$LEGACY_WORKER is not serving $IMAGE on 100% of traffic"; exit 1; }
+        # Records the rollback target and exercises the Monitoring and Logging
+        # reads the cleanup depends on before anything changes.
+        run: node scripts/worker-executor.mjs plan
 
-      - name: Record serving worker-pool revision
-        id: pool_before
-        run: |
-          set -euo pipefail
-          # `list` prints nothing for a missing pool and fails on a permission
-          # error, so "no pool yet" is never confused with "could not look".
-          EXISTS=$(gcloud run worker-pools list --region="$WORKER_REGION" --project="$PROJECT" \
-            --filter="metadata.name=$WORKER_POOL" --format="value(metadata.name)")
-          PREVIOUS=""
-          PREVIOUS_INSTANCES=""
-          if [ -n "$EXISTS" ]; then
-            gcloud run worker-pools describe "$WORKER_POOL" \
-              --region="$WORKER_REGION" --project="$PROJECT" --format=json > pool-before.json
-            PREVIOUS=$(jq -er '
-                [.status.instanceSplits[]? | select((.percent // 0) > 0)] |
-                if length == 1 and .[0].percent == 100 then .[0].revisionName
-                else error("Worker pool must assign 100% to one revision before a deploy") end' pool-before.json)
-            # A runbook rollback leaves the pool at 0 instances; a failed
-            # deploy must put that back, not just the revision.
-            PREVIOUS_INSTANCES=$(jq -er '.metadata.annotations["run.googleapis.com/manualInstanceCount"]
-                // error("Worker pool has no manual instance count")' pool-before.json)
-          fi
-          echo "previous=$PREVIOUS" >> "$GITHUB_OUTPUT"
-          echo "previous_instances=$PREVIOUS_INSTANCES" >> "$GITHUB_OUTPUT"
-          echo "Worker-pool revision before deploy: ${PREVIOUS:-none (first deploy)} (${PREVIOUS_INSTANCES:-0} instances)"
+      - name: Stop every worker and prove zero running instances
+        timeout-minutes: 15
+        run: node scripts/worker-executor.mjs stop-all
 
-      - name: Deploy declutrmail-worker-pool (BullMQ + crons)
+      - name: Deploy declutrmail-worker-pool at zero instances (BullMQ + crons)
         id: pool_deploy
+        timeout-minutes: 10
         env:
           IMAGE: ${{ steps.build.outputs.image }}
           GITHUB_SHA: ${{ github.sha }}
@@ -391,7 +340,7 @@ jobs:
           # Supabase and BullMQ marked jobs stalled). There are no
           # `--port`, probe, `--cpu-boost` or ingress flags on
           # `worker-pools deploy`, so the in-process health server on 8080
-          # is unprobed here; the next step verifies boot from the
+          # is unprobed here; the smoke step verifies boot from the
           # revision's own logs instead.
           #
           # DEV-PHASE sizing (2026-07-10, founder cost review): 1 CPU + 1Gi.
@@ -401,10 +350,12 @@ jobs:
           # under 1Gi degrades to a retry, not data loss. REVERT to 2 CPU /
           # 2Gi when real users arrive.
           #
-          # `--instances=1` is fixed manual scaling. Raising it is safe for the
-          # outbox (the Redis lease admits one dispatcher), but every
-          # setInterval cron in `apps/api/src/worker.ts` would run once per
-          # instance — check each before scaling out.
+          # `--instances=0`: the deploy itself never starts a worker (Cloud
+          # Run still boots one validation instance, which `start` waits
+          # out). `worker-executor.mjs start` sets the single manual instance
+          # once zero is proven. Never run more than one: every setInterval
+          # cron in `apps/api/src/worker.ts` runs once per instance, and the
+          # outbox lease is not a fence (docs/runbooks/worker-pool-cutover.md).
           #
           # WORKER_*DRAIN_DELAY/STALLED_INTERVAL — BullMQ idle-poll
           # tuning (2026-06-10 Upstash command-volume audit). DEV-PHASE
@@ -430,7 +381,7 @@ jobs:
             --region="$WORKER_REGION" \
             --project="$PROJECT" \
             --service-account="$RUNTIME_SA" \
-            --instances=1 \
+            --instances=0 \
             --memory=1Gi \
             --cpu=1 \
             --command="node" \
@@ -439,66 +390,27 @@ jobs:
             --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,SENTRY_DSN=sentry-dsn-api:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest,RESEND_API_KEY=resend-api-key-prod:latest,UNSUBSCRIBE_TOKEN_SECRET=unsubscribe-token-secret-prod:latest,PADDLE_API_KEY=paddle-api-key-prod:latest,RAZORPAY_KEY_ID=razorpay-key-id-prod:latest,RAZORPAY_KEY_SECRET=razorpay-key-secret-prod:latest,BRANDFETCH_API_KEY=brandfetch-api-key-prod:latest" \
             --quiet
 
-      - name: Smoke worker-pool revision
-        id: pool_verify
-        run: |
-          set -euo pipefail
-          # Cloud Run: "A successful worker pools deployment doesn't indicate
-          # a deployment health check was performed or that the runtime
-          # container health was validated." Readiness is necessary, not
-          # sufficient; the boot proof is the revision's own log line, which
-          # `worker.ts` writes only after every queue consumer and the outbox
-          # dispatcher are listening.
-          # Status can trail the deploy command briefly, so readiness is polled.
-          ready_deadline=$(( SECONDS + 3 * 60 ))
-          until REVISION=$(gcloud run worker-pools describe "$WORKER_POOL" \
-            --region="$WORKER_REGION" --project="$PROJECT" --format=json | jq -er '
-              .status as $s | .metadata.annotations as $a |
-              ([$s.instanceSplits[]? | select((.percent // 0) > 0)]) as $serving |
-              ([$s.conditions[]? | select(.type == "Ready")][0].status // "") as $ready |
-              if $ready != "True" then error("Worker pool is not Ready")
-              elif $s.observedGeneration != .metadata.generation then error("Worker pool is still reconciling")
-              elif $s.latestReadyRevisionName != $s.latestCreatedRevisionName then error("Latest worker-pool revision is not Ready")
-              elif ($serving | length) != 1 or $serving[0].percent != 100 or $serving[0].revisionName != $s.latestReadyRevisionName
-                then error("Worker pool must assign 100% to its latest revision")
-              elif $a["run.googleapis.com/scalingMode"] != "manual" or $a["run.googleapis.com/manualInstanceCount"] != "1"
-                then error("Worker pool must run exactly one manual instance")
-              else $s.latestReadyRevisionName end'); do
-            if (( SECONDS >= ready_deadline )); then
-              echo "::error::$WORKER_POOL did not reach Ready on its latest revision within 3 minutes"
-              exit 1
-            fi
-            sleep 15
-          done
-          echo "Worker-pool revision $REVISION is Ready with 100% of instances"
-          # Needs logging.logEntries.list on the deploy SA (roles/logging.viewer).
-          FILTER="resource.type=\"cloud_run_worker_pool\" AND resource.labels.worker_pool_name=\"$WORKER_POOL\" AND resource.labels.revision_name=\"$REVISION\" AND (jsonPayload.kind=\"worker.boot_failed\" OR (jsonPayload.kind=\"worker.listening\" AND jsonPayload.queue=\"outbox-dispatcher\"))"
-          deadline=$(( SECONDS + 10 * 60 ))
-          while :; do
-            if ! ENTRIES=$(gcloud logging read "$FILTER" --project="$PROJECT" \
-                --freshness=1h --limit=20 --format=json 2> pool-logs.err); then
-              cat pool-logs.err >&2
-              echo "::error::Cannot read $WORKER_POOL logs; the deploy SA needs roles/logging.viewer (docs/runbooks/worker-pool-cutover.md)."
-              exit 1
-            fi
-            if jq -e 'any(.[]; .jsonPayload.kind == "worker.boot_failed")' <<< "$ENTRIES" > /dev/null; then
-              echo "::error::$REVISION logged worker.boot_failed"
-              jq -c '.[] | select(.jsonPayload.kind == "worker.boot_failed") | .jsonPayload' <<< "$ENTRIES" >&2
-              exit 1
-            fi
-            if jq -e 'any(.[]; .jsonPayload.kind == "worker.listening")' <<< "$ENTRIES" > /dev/null; then
-              echo "$REVISION finished bootstrap (worker.listening queue=outbox-dispatcher)"
-              break
-            fi
-            if (( SECONDS >= deadline )); then
-              echo "::error::$REVISION never logged worker.listening for the outbox dispatcher within 10 minutes"
-              exit 1
-            fi
-            sleep 15
-          done
+      - name: Start one worker-pool instance on the new revision
+        timeout-minutes: 25
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+        # Floats the split back to the latest revision (a pinned rollback
+        # split persists across deploys), checks the image, proves zero again
+        # after the validation boot, then sets one instance and waits for it.
+        run: node scripts/worker-executor.mjs start
+
+      - name: Smoke worker-pool boot
+        timeout-minutes: 12
+        # Cloud Run: "A successful worker pools deployment doesn't indicate a
+        # deployment health check was performed or that the runtime container
+        # health was validated." The proof is the started revision's own
+        # `worker.listening queue=outbox-dispatcher` line, logged after every
+        # consumer and the outbox dispatcher listen. Needs roles/logging.viewer.
+        run: node scripts/worker-executor.mjs smoke
 
       - name: Verify billing notice worker before API producers
         id: pool_notice
+        timeout-minutes: 5
         env:
           IMAGE: ${{ steps.build.outputs.image }}
           GITHUB_SHA: ${{ github.sha }}
@@ -525,67 +437,23 @@ jobs:
                 all(.value == "false" and (has("valueFrom") | not) and (has("valueSource") | not)))'
           echo "Notice worker serving $NOTICE_REVISION; enrollment $BILLING_APP_NOTICES_START_AT"
 
-      # A worker pool has no startup probe to hold instances on the previous
-      # revision, so a revision that never proves it booted is rolled back
-      # here. Before the cutover the legacy service is still serving, so a
-      # first-deploy failure just disables the new pool. A cancelled run is
-      # treated as failed: an unverified revision must not keep serving.
-      - name: Restore previous worker-pool revision after failed verification
-        if: >-
-          (failure() || cancelled()) &&
-          (contains(fromJSON('["failure","cancelled"]'), steps.pool_deploy.outcome) ||
-          contains(fromJSON('["failure","cancelled"]'), steps.pool_verify.outcome) ||
-          contains(fromJSON('["failure","cancelled"]'), steps.pool_notice.outcome))
-        env:
-          PREVIOUS: ${{ steps.pool_before.outputs.previous }}
-          PREVIOUS_INSTANCES: ${{ steps.pool_before.outputs.previous_instances }}
-        run: |
-          set -euo pipefail
-          if [ -n "$PREVIOUS" ]; then
-            # Instance count first, so a pool that was stopped never runs
-            # the failed revision while the split moves back.
-            gcloud run worker-pools update "$WORKER_POOL" --instances="$PREVIOUS_INSTANCES" \
-              --region="$WORKER_REGION" --project="$PROJECT" --quiet
-            gcloud run worker-pools update-instance-split "$WORKER_POOL" \
-              --to-revisions="$PREVIOUS=100" \
-              --region="$WORKER_REGION" --project="$PROJECT" --quiet
-            echo "::warning::Worker pool restored to $PREVIOUS at $PREVIOUS_INSTANCES instance(s)"
-          elif [ -n "$(gcloud run worker-pools list --region="$WORKER_REGION" --project="$PROJECT" \
-              --filter="metadata.name=$WORKER_POOL" --format="value(metadata.name)")" ]; then
-            gcloud run worker-pools update "$WORKER_POOL" --instances=0 \
-              --region="$WORKER_REGION" --project="$PROJECT" --quiet
-            echo "::warning::First worker-pool deploy failed; pool disabled, legacy service untouched"
-          fi
+      - name: Mark worker release verified
+        timeout-minutes: 15
+        # Also the positive control for the zero check: the running instance
+        # must show up in the pool's instance_count series.
+        run: node scripts/worker-executor.mjs mark-verified
 
-      # Cutover: only after the pool's revision has proved it booted. Manual
-      # scaling to 0 stops every instance without a new revision and without
-      # deleting anything; `--scaling=auto` restores the revision's 1/1
-      # bounds (rollback in docs/runbooks/worker-pool-cutover.md). Never
-      # delete the service here: it is the rollback path.
-      - name: Disable legacy worker service after pool is healthy
-        run: |
-          set -euo pipefail
-          disabled='.metadata.annotations as $a |
-            $a["run.googleapis.com/scalingMode"] == "manual" and
-            $a["run.googleapis.com/manualInstanceCount"] == "0"'
-          if ! gcloud run services describe "$LEGACY_WORKER" --region="$WORKER_REGION" \
-              --project="$PROJECT" --format=json > legacy-worker.json 2> legacy-worker.err; then
-            if grep -qiE 'could not be found|NOT_FOUND' legacy-worker.err; then
-              echo "No legacy worker service; nothing to disable."
-              exit 0
-            fi
-            cat legacy-worker.err >&2
-            exit 1
-          fi
-          if jq -e "$disabled" legacy-worker.json > /dev/null; then
-            echo "Legacy worker service already disabled."
-            exit 0
-          fi
-          gcloud run services update "$LEGACY_WORKER" --scaling=0 \
-            --region="$WORKER_REGION" --project="$PROJECT" --quiet
-          gcloud run services describe "$LEGACY_WORKER" --region="$WORKER_REGION" \
-            --project="$PROJECT" --format=json | jq -e "$disabled" > /dev/null
-          echo "Legacy worker service disabled (manual scaling, 0 instances); kept for rollback."
+      # Failure and cancellation take the same path. Anything short of a
+      # verified release is rolled back by the same stop, prove zero, then
+      # start order: the recorded previous executor (the pool at its pinned
+      # revision and count, or the legacy service) is started only after
+      # everything else is proven stopped. A zero that cannot be proven
+      # starts nothing: an outage, which the worker heartbeat alert pages,
+      # rather than two workers. A verified release is only asserted here.
+      - name: Reconcile worker executors after failure or cancellation
+        if: always()
+        timeout-minutes: 30
+        run: node scripts/worker-executor.mjs reconcile
 
       - name: Deploy declutrmail-api (HTTP)
         # Same routing-via-env pattern for every interpolation.

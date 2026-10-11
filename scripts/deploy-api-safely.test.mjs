@@ -140,13 +140,9 @@ test('workflow gates worker boot on its own log, preserves production OAuth iden
     new URL('../.github/workflows/deploy-cloud-run.yml', import.meta.url),
     'utf8',
   );
-  // Worker pools have no startup probe; boot proof is the revision's own
-  // `worker.listening` line for the outbox dispatcher.
-  assert.match(workflow, /resource.labels.revision_name=\\"\$REVISION\\"/);
-  assert.match(
-    workflow,
-    /jsonPayload.kind=\\"worker.listening\\" AND jsonPayload.queue=\\"outbox-dispatcher\\"/,
-  );
+  // Worker pools have no startup probe; boot proof is the started revision's
+  // own log line (filter and fixtures in worker-executor.test.mjs).
+  assert.match(workflow, /run: node scripts\/worker-executor\.mjs smoke/);
   assert.match(workflow, /--liveness-probe="httpGet.path=\/api\/healthz/);
   assert.match(workflow, /node scripts\/deploy-api-safely.mjs/);
   assert.match(
@@ -355,19 +351,21 @@ test('workflow keeps the verified API selector and runs preflight before build a
   assert.doesNotMatch(worker, /API_DB_DRIVER=/);
 });
 
-test('worker cutover keeps every overlapping process lease-aware and never deletes the rollback path', () => {
+test('worker transitions are stop, prove zero, then start, with one cleanup on failure or cancel', () => {
   const workflow = readFileSync(
     new URL('../.github/workflows/deploy-cloud-run.yml', import.meta.url),
     'utf8',
   );
   const order = [
     '- name: Check email queue actors before new preferences',
-    'gcloud run services update "$LEGACY_WORKER" \\\n            --image="$IMAGE"',
+    'run: node scripts/worker-executor.mjs plan',
+    'run: node scripts/worker-executor.mjs stop-all',
     'gcloud run worker-pools deploy declutrmail-worker-pool',
-    '- name: Smoke worker-pool revision',
+    'run: node scripts/worker-executor.mjs start',
+    'run: node scripts/worker-executor.mjs smoke',
     '- name: Verify billing notice worker before API producers',
-    '- name: Restore previous worker-pool revision after failed verification',
-    'gcloud run services update "$LEGACY_WORKER" --scaling=0',
+    'run: node scripts/worker-executor.mjs mark-verified',
+    'run: node scripts/worker-executor.mjs reconcile',
     '- name: Deploy declutrmail-api',
   ].map((marker) => {
     const at = workflow.indexOf(marker);
@@ -378,24 +376,20 @@ test('worker cutover keeps every overlapping process lease-aware and never delet
     order,
     [...order].sort((a, b) => a - b),
   );
-  assert.match(workflow, /--instances=1 \\/);
+  const worker = workflow.slice(
+    workflow.indexOf('- name: Plan worker transition'),
+    workflow.indexOf('- name: Deploy declutrmail-api'),
+  );
+  // The deploy never starts a worker; only the executor changes who runs.
+  assert.match(worker, /--instances=0 \\\n/);
+  assert.doesNotMatch(worker, /--instances=[1-9]|--scaling=|update-instance-split|services update/);
   assert.doesNotMatch(workflow, /services delete|worker-pools delete/);
-
-  const legacyRoll = workflow.slice(
-    workflow.indexOf('- name: Give the serving legacy worker the outbox lease'),
-    workflow.indexOf('- name: Record serving worker-pool revision'),
-  );
-  assert.match(legacyRoll, /is not serving \$IMAGE on 100% of traffic/);
-
-  const restore = workflow.slice(
-    workflow.indexOf('- name: Restore previous worker-pool revision after failed verification'),
-    workflow.indexOf('- name: Disable legacy worker service after pool is healthy'),
-  );
-  assert.match(restore, /\(failure\(\) \|\| cancelled\(\)\)/);
-  for (const step of ['pool_deploy', 'pool_verify', 'pool_notice']) {
-    assert.match(restore, new RegExp(`\\["failure","cancelled"\\]'\\), steps\\.${step}\\.outcome`));
-  }
-  const instances = restore.indexOf('--instances="$PREVIOUS_INSTANCES"');
-  assert.notEqual(instances, -1);
-  assert.ok(instances < restore.indexOf('update-instance-split'));
+  // #974's admission paths stay off on the pool: --set-env-vars replaces all.
+  assert.doesNotMatch(worker, /EMAIL_RUNTIME_LEASE_ENABLED|WORKER_ADMISSION_HELD/);
+  const reconcile = worker.slice(worker.indexOf('- name: Reconcile worker executors'));
+  assert.match(reconcile, /^- name: .*\n {8}if: always\(\)\n {8}timeout-minutes: 30\n/);
+  // Every worker step is bounded so the cleanup gets its turn.
+  for (const step of worker.split('      - name: ').slice(1))
+    assert.match(step, /\n {8}timeout-minutes: \d+\n/, step.split('\n')[0]);
+  assert.match(workflow, /scripts\/worker-executor\.test\.mjs/);
 });
