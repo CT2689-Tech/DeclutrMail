@@ -182,7 +182,7 @@ async function main(): Promise<void> {
       const revoked = await sql`
         UPDATE entitlement_grants
         SET revoked_at = now()
-        WHERE email = ${email} AND revoked_at IS NULL
+        WHERE email = ${email} AND source = 'comp' AND revoked_at IS NULL
         RETURNING tier
       `;
       if (revoked.length === 0) {
@@ -192,9 +192,9 @@ async function main(): Promise<void> {
       console.log(`✓ Revoked the ${revoked[0].tier} comp for ${email} on ${target}.`);
     } else {
       await sql`
-        INSERT INTO entitlement_grants (email, tier, reason, granted_by, expires_at)
-        VALUES (${email}, ${args.tier as string}, ${args.reason as string}, ${args.grantedBy}, ${args.expiresAt})
-        ON CONFLICT (email) DO UPDATE SET
+        INSERT INTO entitlement_grants (email, tier, reason, granted_by, expires_at, source)
+        VALUES (${email}, ${args.tier as string}, ${args.reason as string}, ${args.grantedBy}, ${args.expiresAt}, 'comp')
+        ON CONFLICT (email) WHERE source = 'comp' DO UPDATE SET
           tier = EXCLUDED.tier,
           reason = EXCLUDED.reason,
           granted_by = EXCLUDED.granted_by,
