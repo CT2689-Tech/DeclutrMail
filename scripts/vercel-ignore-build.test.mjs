@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, renameSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { ignoreBuild, isNonWebPath } from './vercel-ignore-build.mjs';
+import { disableSnapshotPreview } from './disable-snapshot-preview.mjs';
 
 test('only known non-web paths qualify; marketing, shared code and install changes build', () => {
   for (const path of [
@@ -105,4 +106,69 @@ test('real git history preserves failed web changes, moves, first builds and man
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+test('snapshot-only deployment policy is idempotent and refuses application or detached refs', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'snapshot-preview-'));
+  const git = (...args) =>
+    execFileSync('git', args, { cwd, encoding: 'utf8', stdio: 'pipe' }).trim();
+  const target = join(cwd, 'apps/web/vercel.json');
+  const original = {
+    $schema: 'https://openapi.vercel.sh/vercel.json',
+    ignoreCommand: 'node ../../scripts/vercel-ignore-build.mjs',
+    git: { deploymentEnabled: { '*': true }, otherSetting: true },
+  };
+  try {
+    git('init', '-q', '-b', 'infra-snapshots');
+    git('config', 'user.email', 'fixture@example.test');
+    git('config', 'user.name', 'Fixture');
+    mkdirSync(dirname(target), { recursive: true });
+    const reset = () => writeFileSync(target, JSON.stringify(original));
+    reset();
+    assert.equal(disableSnapshotPreview(cwd), true);
+    const config = JSON.parse(readFileSync(target, 'utf8'));
+    assert.deepEqual(config, {
+      ...original,
+      git: { otherSetting: true, deploymentEnabled: false },
+    });
+    const saved = readFileSync(target, 'utf8');
+    assert.equal(disableSnapshotPreview(cwd), false);
+    assert.equal(readFileSync(target, 'utf8'), saved);
+    const cli = spawnSync(
+      process.execPath,
+      [fileURLToPath(new URL('./disable-snapshot-preview.mjs', import.meta.url))],
+      { cwd, encoding: 'utf8' },
+    );
+    assert.equal(cli.status, 0, cli.stderr);
+    git('add', '.');
+    git('commit', '-qm', 'fixture');
+    for (const branch of ['main', 'codex/feature', 'gh-readonly-queue/main/pr-1']) {
+      git('checkout', '-q', '-b', branch);
+      reset();
+      const before = readFileSync(target, 'utf8');
+      assert.throws(() => disableSnapshotPreview(cwd), /expected infra-snapshots/);
+      assert.equal(readFileSync(target, 'utf8'), before);
+    }
+    git('checkout', '-q', '--detach');
+    assert.throws(() => disableSnapshotPreview(cwd));
+    assert.equal(readFileSync(target, 'utf8'), JSON.stringify(original));
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('snapshot publication persists preview policy even when report data has no drift', () => {
+  const workflow = readFileSync(
+    new URL('../.github/workflows/infra-snapshot.yml', import.meta.url),
+    'utf8',
+  );
+  const publish = workflow.split('- name: Publish when the snapshot has drifted')[1];
+  assert.match(publish, /working-directory: snapshot-branch/);
+  assert.ok(
+    publish.indexOf('disable-snapshot-preview.mjs') < publish.indexOf('if [ -n "$PRIOR" ]'),
+  );
+  assert.match(publish, /git diff --quiet -- apps\/web\/vercel\.json; then/);
+  assert.match(publish, /git add "\$OUT" apps\/web\/vercel\.json/);
+  assert.match(publish, /git push origin HEAD:infra-snapshots/);
+  assert.doesNotMatch(publish, /git push[^\n]*HEAD:main/);
 });

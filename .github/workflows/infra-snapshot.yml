@@ -103,6 +103,10 @@ jobs:
         working-directory: snapshot-branch
         run: |
           set -euo pipefail
+          # This older report branch contains an app tree, but publishes
+          # only infrastructure evidence. Keep it out of Vercel's queue.
+          # The helper refuses main, PR/queue refs and detached checkouts.
+          node ../scripts/disable-snapshot-preview.mjs
           OUT="docs/infra-snapshots/${DATE}.json"
           mkdir -p docs/infra-snapshots
           # Most recent snapshot OTHER than today's, before we overwrite.
@@ -112,7 +116,8 @@ jobs:
             | head -1 || true)
           cp "${RUNNER_TEMP}/${DATE}.json" "$OUT"
 
-          if [ -n "$PRIOR" ] && diff -q "$PRIOR" "$OUT" >/dev/null 2>&1; then
+          if [ -n "$PRIOR" ] && diff -q "$PRIOR" "$OUT" >/dev/null 2>&1 && \
+             git diff --quiet -- apps/web/vercel.json; then
             echo "No drift since ${PRIOR}."
             echo "### Infra snapshot ${DATE} — no drift since $(basename "$PRIOR" .json)" \
               >> "$GITHUB_STEP_SUMMARY"
@@ -121,7 +126,7 @@ jobs:
 
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add "$OUT"
+          git add "$OUT" apps/web/vercel.json
           if git diff --cached --quiet; then
             echo "No staged change — nothing to publish."
             exit 0

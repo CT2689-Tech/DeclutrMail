@@ -73,6 +73,15 @@ for freshness; the merge queue supplies integration validation.
 
 ## Release behavior
 
+The `infra-snapshots` branch publishes infrastructure reports and retains an
+older application tree. Its automatic Vercel deployments are disabled by the
+snapshot publisher in that branch's `apps/web/vercel.json`, so report updates
+do not consume preview build capacity. A policy change on main alone would not
+reach this long-lived branch. The helper fails before writing on any other
+branch or a detached checkout; application PRs, queue candidates and main keep
+their existing Vercel validation. Snapshot collection and drift evidence remain
+enabled. See [Vercel Git deployment configuration](https://vercel.com/docs/project-configuration/git-configuration).
+
 Full post-merge CI remains enabled. A queue candidate and a squash commit have
 separate identities, and there is no verified artifact-reuse mechanism yet.
 Never skip post-merge validation just because a PR or a nearby commit was green.
