@@ -71,6 +71,8 @@ interface OAuthStateBase {
 
 interface LoginOAuthState extends OAuthStateBase {
   mode: 'login';
+  /** Reduced permission flow is signed, never read from the callback query. */
+  intent?: 'sign-in' | undefined;
   /** Validated local app destination; login mode only. */
   returnTo?: string | undefined;
   /** First-touch marketing channel; login mode only. Set-once on new signup. */
@@ -118,6 +120,7 @@ const oauthStateSchema = z
         issuedAt: z.number().int().positive(),
         expiresAt: z.number().int().positive(),
         mode: z.literal('login'),
+        intent: z.literal('sign-in').optional(),
         returnTo: z.string().max(1024).optional(),
         ref: z.enum(SIGNUP_ATTRIBUTION_REFS).optional(),
       })
@@ -199,6 +202,7 @@ export class GoogleOAuthController {
     @Res() res: Response,
     @Query('returnTo') returnTo?: unknown,
     @Query('ref') ref?: unknown,
+    @Query('intent') intent?: unknown,
   ): Promise<void> {
     const safeReturnTo = parseAppReturnTo(returnTo);
     const cookies = req.cookies as Record<string, unknown> | undefined;
@@ -217,6 +221,7 @@ export class GoogleOAuthController {
     this.beginConsent(res, {
       nonce: randomBytes(32).toString('base64url'),
       mode: 'login',
+      ...(intent === 'sign-in' ? { intent: 'sign-in' as const } : {}),
       ...(safeReturnTo ? { returnTo: safeReturnTo } : {}),
       ...(safeRef ? { ref: safeRef } : {}),
     });
@@ -502,6 +507,11 @@ export class GoogleOAuthController {
       // fail before the originating-session read, while valid callbacks bind
       // the signed authority before consuming Google's code.
       await this.assertConnectSessionActive(cookieState, res, ipAddress, userAgent);
+    }
+
+    if (cookieState.mode === 'login' && cookieState.intent === 'sign-in') {
+      await this.completeSignIn(res, webBase, cookieState, code, ipAddress, userAgent);
+      return;
     }
 
     let email: string;
@@ -830,7 +840,62 @@ export class GoogleOAuthController {
         cookieStrategy: 'per_flow',
       },
     });
-    res.redirect(302, this.oauth.getConsentUrl(state.nonce));
+    res.redirect(
+      302,
+      state.mode === 'login' && state.intent === 'sign-in'
+        ? this.oauth.getSignInUrl(state.nonce)
+        : this.oauth.getConsentUrl(state.nonce),
+    );
+  }
+
+  private async completeSignIn(
+    res: Response,
+    webBase: string,
+    state: LoginOAuthState,
+    code: string,
+    sourceIp: string | null,
+    userAgent: string | null,
+  ): Promise<void> {
+    let result: Awaited<ReturnType<AuthSignupOrchestrator['signIn']>>;
+    try {
+      const { email } = await this.oauth.exchangeSignInCode(code);
+      result = await this.orchestrator.signIn({ email, ipAddress: sourceIp, userAgent });
+    } catch (err) {
+      void this.securityEvents.record({
+        eventType: 'login.failure',
+        severity: 'warning',
+        sourceIp,
+        userAgent,
+        payload: { provider: 'google', mode: 'sign-in', reason: 'sign_in_failed' },
+      });
+      // Unexpected provider/config/session outages keep the shared structured
+      // log and 5xx capture. The exit filter retains signed intent + returnTo.
+      if (!(err instanceof BadRequestException)) throw err;
+      this.redirectSignInResult(res, webBase, state, 'failed');
+      return;
+    }
+    if (!result) {
+      this.redirectSignInResult(res, webBase, state, 'connect_required');
+      return;
+    }
+    setSessionCookies(res, result.tokens, result.csrfToken);
+    void this.securityEvents.record({
+      eventType: 'login.success',
+      severity: 'info',
+      sourceIp,
+      userAgent,
+      userId: result.user.id,
+      workspaceId: result.user.workspaceId,
+      payload: { provider: 'google', mode: 'sign-in', isNewSignup: false },
+    });
+    const returnTo = parseAppReturnTo(state.returnTo);
+    const accountRecovery =
+      returnTo !== undefined && isUserScopedAppPath(new URL(returnTo, webBase).pathname);
+    const target =
+      !result.onboardingComplete && !accountRecovery
+        ? `/onboarding${returnTo ? `?${new URLSearchParams({ returnTo })}` : ''}`
+        : (returnTo ?? '/home');
+    res.redirect(302, `${webBase}${target}`);
   }
 
   /** Authenticate, strictly decode, and enforce the cookie's signed expiry. */
@@ -959,6 +1024,7 @@ export class GoogleOAuthController {
     const returnTo = parseAppReturnTo(state.returnTo);
     const query = new URLSearchParams({
       ...(result ? { auth_result: result } : {}),
+      ...(state.intent === 'sign-in' && result !== 'connect_required' ? { returning: '1' } : {}),
       ...(returnTo ? { returnTo } : {}),
     });
     const search = query.toString();

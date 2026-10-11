@@ -76,6 +76,34 @@ describe('GoogleOAuthService.exchangeCode — through the real google-auth-libra
     expect(request).toHaveBeenCalledTimes(1);
   });
 
+  it('requests identity scopes online while full Gmail connect retains offline consent', () => {
+    const service = new GoogleOAuthService();
+    const signIn = new URL(service.getSignInUrl('nonce'));
+    expect(signIn.searchParams.get('scope')).toBe('openid email');
+    expect(signIn.searchParams.get('access_type')).toBe('online');
+    expect(signIn.searchParams.get('prompt')).toBe('select_account');
+    expect(signIn.searchParams.get('state')).toBe('nonce');
+    const connect = new URL(service.getConsentUrl('nonce'));
+    expect(connect.searchParams.get('scope')).toContain(GMAIL);
+    expect(connect.searchParams.get('access_type')).toBe('offline');
+    expect(connect.searchParams.get('prompt')).toBe('consent');
+  });
+
+  it('uses the real library token parser for identity-only sign-in, with no token-info request', async () => {
+    responses[TOKEN_URL] = {
+      id_token: 'identity-token',
+      access_token: 'discard-me',
+      expires_in: 3599,
+    };
+    vi.mocked(OAuth2Client.prototype.verifyIdToken).mockResolvedValue({
+      getPayload: () => ({ email: 'owner@gmail.com', email_verified: true }),
+    } as never);
+    await expect(new GoogleOAuthService().exchangeSignInCode('code')).resolves.toEqual({
+      email: 'owner@gmail.com',
+    });
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
   it('refuses a grant whose scope list has only the sign-in scopes', async () => {
     responses[TOKEN_URL] = tokenJson(`openid ${EMAIL_SCOPE}`);
 

@@ -86,6 +86,31 @@ describe('OAuth exit filters', () => {
     if (originalWebUrl === undefined) delete process.env.WEB_URL;
     else process.env.WEB_URL = originalWebUrl;
   });
+  it('keeps identity-only intent on a rate-limited start and a session-outage callback', () => {
+    const start = run(
+      new LoginStartExitFilter(),
+      new HttpException('Too many', 429),
+      fakeRequest({ query: { intent: 'sign-in', returnTo: BILLING } }),
+    );
+    const startUrl = new URL(start.redirect.mock.calls[0]![1]);
+    expect(startUrl.searchParams.get('returning')).toBe('1');
+    expect(startUrl.searchParams.get('returnTo')).toBe(BILLING);
+    const nonce = 'returning_identity_nonce_000000000000000000';
+    const cookie = jwt.sealOAuthState(
+      JSON.stringify({ mode: 'login', intent: 'sign-in', nonce, returnTo: BILLING }),
+    );
+    const result = run(
+      new OAuthCallbackExitFilter(jwt),
+      new InternalServerErrorException('private database detail'),
+      fakeRequest({ query: { state: nonce }, cookies: { [stateCookieName(nonce)!]: cookie } }),
+    );
+    const url = new URL(result.redirect.mock.calls[0]![1]);
+    expect(url.searchParams.get('returning')).toBe('1');
+    expect(url.searchParams.get('returnTo')).toBe(BILLING);
+    expect(url.searchParams.get('auth_result')).toBe('failed');
+    expect(url.toString()).not.toContain('private');
+    expect(logError).toHaveBeenCalled();
+  });
 
   function stateCookie(state: Record<string, unknown>): Record<string, string> {
     return { oauth_state: jwt.sealOAuthState(JSON.stringify(state)) };

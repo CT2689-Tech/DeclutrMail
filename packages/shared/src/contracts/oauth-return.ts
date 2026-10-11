@@ -23,6 +23,7 @@ export const GMAIL_ACCESS_MISSING_RESULT = 'gmail_access_missing';
  */
 export const SIGN_IN_RESULTS = [
   'inbox_limit',
+  'connect_required',
   GMAIL_ACCESS_MISSING_RESULT,
   'failed',
   'rate_limited',

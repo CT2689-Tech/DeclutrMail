@@ -2363,3 +2363,184 @@ describe('GoogleOAuthController — browser exit filters (D108)', () => {
     expect(filters).toEqual([filter]);
   });
 });
+
+describe('GoogleOAuthController — returning identity sign-in', () => {
+  let jwt: JwtService;
+  let oauth: {
+    getConsentUrl: ReturnType<typeof vi.fn>;
+    getSignInUrl: ReturnType<typeof vi.fn>;
+    exchangeCode: ReturnType<typeof vi.fn>;
+    exchangeSignInCode: ReturnType<typeof vi.fn>;
+  };
+  let orchestrator: { signIn: ReturnType<typeof vi.fn>; connect: ReturnType<typeof vi.fn> };
+  let controller: GoogleOAuthController;
+  let res: {
+    cookie: ReturnType<typeof vi.fn>;
+    clearCookie: ReturnType<typeof vi.fn>;
+    redirect: ReturnType<typeof vi.fn>;
+  };
+  beforeEach(() => {
+    jwt = makeJwtService();
+    oauth = {
+      getConsentUrl: vi.fn(() => 'https://accounts.google.test/connect'),
+      getSignInUrl: vi.fn(() => 'https://accounts.google.test/sign-in'),
+      exchangeCode: vi.fn(),
+      exchangeSignInCode: vi.fn().mockResolvedValue({ email: 'owner@gmail.com' }),
+    };
+    orchestrator = {
+      signIn: vi.fn().mockResolvedValue({
+        tokens: { accessToken: 'a', refreshToken: 'r' },
+        csrfToken: 'csrf',
+        user: { id: RECONNECT_USER_ID, workspaceId: RECONNECT_WORKSPACE_ID },
+        onboardingComplete: true,
+      }),
+      connect: vi.fn(),
+    };
+    res = { cookie: vi.fn(), clearCookie: vi.fn(), redirect: vi.fn() };
+    controller = new GoogleOAuthController(
+      oauth as unknown as GoogleOAuthService,
+      orchestrator as unknown as AuthSignupOrchestrator,
+      makeSecurityEvents().service,
+      makeMailboxAccounts() as unknown as MailboxAccountsService,
+      jwt,
+      makeSessions().service,
+    );
+  });
+  function callback(returnTo = '/settings', overrides: Record<string, unknown> = {}) {
+    const nonce = 'identity_nonce_00000000000000000000000000000000';
+    const state = signedState(jwt, {
+      nonce,
+      mode: 'login',
+      intent: 'sign-in',
+      returnTo,
+      ...overrides,
+    });
+    return controller.callback(
+      {
+        cookies: { [stateCookieName(nonce)!]: state },
+        headers: {},
+        get: () => undefined,
+      } as unknown as Request,
+      res as unknown as Response,
+      'code',
+      nonce,
+    );
+  }
+  it('signs the reduced-permission intent at start and uses it only after state validation', async () => {
+    await controller.start(
+      signedOutRequest(),
+      res as unknown as Response,
+      '/brief',
+      undefined,
+      'sign-in',
+    );
+    const [name, cookie] = res.cookie.mock.calls[0]!;
+    expect(decodeSignedState(jwt, cookie)).toMatchObject({
+      mode: 'login',
+      intent: 'sign-in',
+      returnTo: '/brief',
+    });
+    expect(oauth.getSignInUrl).toHaveBeenCalledOnce();
+    expect(oauth.getConsentUrl).not.toHaveBeenCalled();
+    const nonce = decodeSignedState(jwt, cookie).nonce as string;
+    await controller.callback(
+      { cookies: { [name]: cookie }, headers: {}, get: () => undefined } as unknown as Request,
+      res as unknown as Response,
+      'code',
+      nonce,
+    );
+    expect(orchestrator.signIn).toHaveBeenCalledWith({
+      email: 'owner@gmail.com',
+      ipAddress: null,
+      userAgent: null,
+    });
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
+    expect(orchestrator.connect).not.toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenLastCalledWith(
+      302,
+      `${process.env.WEB_URL ?? 'http://localhost:3000'}/brief`,
+    );
+    expect(res.cookie).toHaveBeenCalledWith(
+      'dm_csrf',
+      'csrf',
+      expect.objectContaining({ httpOnly: false }),
+    );
+  });
+  it('does not create an account for an unknown identity and preserves the selected plan at the connect disclosure', async () => {
+    orchestrator.signIn.mockResolvedValue(null);
+    await callback('/billing?plan=pro&cycle=annual');
+    const url = new URL(res.redirect.mock.calls[0]![1]);
+    expect(url.pathname).toBe('/sign-in');
+    expect(url.searchParams.get('auth_result')).toBe('connect_required');
+    expect(url.searchParams.get('returnTo')).toBe('/billing?plan=pro&cycle=annual');
+    expect(url.searchParams.has('returning')).toBe(false);
+    expect(res.cookie).not.toHaveBeenCalled();
+    expect(orchestrator.connect).not.toHaveBeenCalled();
+  });
+  it.each(['/settings?cancelDeletion=1', '/billing'])(
+    'keeps account controls accessible for unfinished setup: %s',
+    async (path) => {
+      orchestrator.signIn.mockResolvedValue({
+        tokens: {},
+        csrfToken: 'csrf',
+        user: { id: RECONNECT_USER_ID, workspaceId: RECONNECT_WORKSPACE_ID },
+        onboardingComplete: false,
+      });
+      await callback(path);
+      expect(new URL(res.redirect.mock.calls[0]![1]).pathname).toBe(path.split('?')[0]);
+    },
+  );
+  it('resumes unfinished setup with the original route and returns completed users Home by default', async () => {
+    orchestrator.signIn.mockResolvedValue({
+      tokens: {},
+      csrfToken: 'csrf',
+      user: { id: RECONNECT_USER_ID, workspaceId: RECONNECT_WORKSPACE_ID },
+      onboardingComplete: false,
+    });
+    await callback('/brief');
+    const url = new URL(res.redirect.mock.calls[0]![1]);
+    expect(url.pathname).toBe('/onboarding');
+    expect(url.searchParams.get('returnTo')).toBe('/brief');
+  });
+  it('keeps retries identity-only after a provider or session failure without exposing provider details', async () => {
+    oauth.exchangeSignInCode.mockRejectedValue(
+      new BadRequestException('sensitive provider detail'),
+    );
+    await callback('/activity');
+    const url = new URL(res.redirect.mock.calls[0]![1]);
+    expect(url.searchParams.get('auth_result')).toBe('failed');
+    expect(url.searchParams.get('returning')).toBe('1');
+    expect(url.searchParams.get('returnTo')).toBe('/activity');
+    expect(res.cookie).not.toHaveBeenCalled();
+    expect(orchestrator.signIn).not.toHaveBeenCalled();
+  });
+  it('preserves unexpected session outages for the shared 5xx filter', async () => {
+    const outage = new Error('session database unavailable');
+    orchestrator.signIn.mockRejectedValue(outage);
+    await expect(callback('/billing')).rejects.toBe(outage);
+    expect(res.cookie).not.toHaveBeenCalled();
+    expect(res.redirect).not.toHaveBeenCalled();
+  });
+  it('rejects a tampered reduced-permission intent before exchanging any code', async () => {
+    const nonce = 'identity_nonce_00000000000000000000000000000000';
+    const cookie = tamperSignedState(
+      signedState(jwt, { nonce, mode: 'login' }),
+      'intent',
+      'sign-in',
+    );
+    await expect(
+      controller.callback(
+        {
+          cookies: { [stateCookieName(nonce)!]: cookie },
+          headers: {},
+          get: () => undefined,
+        } as unknown as Request,
+        res as unknown as Response,
+        'code',
+        nonce,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(oauth.exchangeSignInCode).not.toHaveBeenCalled();
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
+  });
+});
