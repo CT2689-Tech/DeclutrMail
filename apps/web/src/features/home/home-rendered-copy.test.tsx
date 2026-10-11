@@ -4,11 +4,7 @@ import { planName } from '@declutrmail/shared/entitlements';
 import { WS1_COPY, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
 import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
-import {
-  STAGE_SENTENCE,
-  SYNC_LEAVE_LINE,
-  SYNC_READING_TITLE,
-} from '@/features/onboarding/sync-stage-copy';
+import { STAGE_SENTENCE } from '@/features/onboarding/sync-stage-copy';
 import { ApiError } from '@/lib/api/client';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 
@@ -111,13 +107,21 @@ describe('rendered Home text', () => {
     deckPhrases(WS2_COPY, phrases);
     deckPhrases(WS5_COPY, phrases);
     deckPhrases(STAGE_SENTENCE, phrases);
-    phrases.push(SYNC_READING_TITLE, SYNC_LEAVE_LINE);
 
     const views = [
       <HomeView key="ready" state={ready} nextSteps={steps} senderSizeView timeZone="UTC" />,
       <HomeView key="flag" state={ready} nextSteps={steps} timeZone="UTC" tier="plus" />,
       <HomeView key="empty" state={{ kind: 'empty', syncing: false, action }} />,
       <HomeView key="syncing" state={{ kind: 'empty', syncing: true, action }} />,
+      <HomeView
+        key="stage"
+        state={{
+          kind: 'empty',
+          syncing: true,
+          action,
+          stageSentence: WS2_COPY.home.syncing.stage.fetching_metadata,
+        }}
+      />,
       <HomeView key="queued" state={{ kind: 'empty', syncing: true, queued: true, action }} />,
       <HomeView key="failed" state={{ kind: 'sync-failed', needsReconnect: false }} />,
       <HomeView key="reconnect" state={{ kind: 'sync-failed', needsReconnect: true }} />,

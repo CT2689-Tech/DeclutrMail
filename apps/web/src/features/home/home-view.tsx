@@ -14,7 +14,6 @@ import { ErrorState, Skeleton, useLabels } from '@declutrmail/shared';
 import type { CleanupSummaryDto } from '@declutrmail/shared/contracts';
 import { planName, type TierId } from '@declutrmail/shared/entitlements';
 import { InboxReportCard } from '@/features/inbox-report';
-import { SYNC_LEAVE_LINE, SYNC_READING_TITLE } from '@/features/onboarding/sync-stage-copy';
 import { QuotaChipSlot } from '@/features/shell/quota-chip-slot';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
@@ -257,13 +256,14 @@ function HomeBody({
 
 function EmptyCopy({ state }: { state: Extract<HomeState, { kind: 'empty' }> }) {
   if (state.syncing) {
-    const title = state.queued ? HOME_DECK.queuedTitle : SYNC_READING_TITLE;
-    const status = state.queued ? HOME_DECK.queuedBody : (state.stageSentence ?? SYNC_LEAVE_LINE);
+    const title = state.queued ? HOME_DECK.queuedTitle : HOME_DECK.syncingTitle;
+    const status = state.queued
+      ? HOME_DECK.queuedBody
+      : (state.stageSentence ?? HOME_DECK.syncingBody);
     return (
       <section className={styles.beginning} aria-label={title}>
         <h2>{title}</h2>
         <p>{status}</p>
-        {!isRetiredReviewCta(state.action.label) && <PrimaryLink action={state.action} />}
         <div className={styles.scanBar} data-testid="home-scan-bar" aria-hidden="true">
           <span />
         </div>

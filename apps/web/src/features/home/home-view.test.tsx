@@ -187,12 +187,10 @@ describe('HomeView', () => {
       '/senders',
     );
     rerender(<HomeView state={{ kind: 'empty', syncing: true, action }} />);
-    expect(screen.getByRole('heading', { name: 'Reading your Gmail…' })).toBeInTheDocument();
-    expect(screen.getByText('You can close this tab and come back later.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Review senders' })).toHaveAttribute(
-      'href',
-      '/senders',
-    );
+    expect(screen.getByRole('heading', { name: HOME_DECK.syncingTitle })).toBeInTheDocument();
+    expect(screen.getByText(HOME_DECK.syncingBody)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Reading your Gmail…' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Review senders' })).toBeNull();
     expect(screen.queryByText('Nothing cleared yet.')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Your Inbox Report' })).toBeNull();
     expect(screen.queryByText('Your scan is waiting to start.')).toBeNull();
@@ -207,13 +205,14 @@ describe('HomeView', () => {
           kind: 'empty',
           syncing: true,
           action,
-          stageSentence: 'Reading sender info.',
+          stageSentence: HOME_DECK.syncingStage.fetching_metadata,
         }}
       />,
     );
-    expect(screen.getByRole('heading', { name: 'Reading your Gmail…' })).toBeInTheDocument();
-    expect(screen.getByText('Reading sender info.')).toBeInTheDocument();
-    expect(screen.queryByText('You can close this tab and come back later.')).toBeNull();
+    expect(screen.getByRole('heading', { name: HOME_DECK.syncingTitle })).toBeInTheDocument();
+    expect(screen.getByText('Collecting sender details.')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Review senders' })).toBeNull();
+    expect(screen.queryByText(HOME_DECK.syncingBody)).toBeNull();
     expect(screen.queryByText('Waiting to start.')).toBeNull();
   });
 
@@ -221,12 +220,10 @@ describe('HomeView', () => {
     render(<HomeView state={{ kind: 'empty', syncing: true, queued: true, action }} />);
     expect(screen.getByRole('heading', { name: HOME_DECK.queuedTitle })).toBeInTheDocument();
     expect(screen.getByText(HOME_DECK.queuedBody)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Review senders' })).toHaveAttribute(
-      'href',
-      '/senders',
-    );
+    expect(screen.queryByRole('link', { name: 'Review senders' })).toBeNull();
     expect(screen.queryByText(/Your progress is saved/)).toBeNull();
     expect(screen.queryByText('Nothing cleared yet.')).toBeNull();
+    expect(screen.queryByRole('heading', { name: HOME_DECK.syncingTitle })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Reading your Gmail…' })).toBeNull();
   });
 

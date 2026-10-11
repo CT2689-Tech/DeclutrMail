@@ -26,6 +26,16 @@
       "title": "Your scan is waiting to start.",
       "body": "It starts on its own and keeps anything already scanned. You don’t need to keep this page open."
     },
+    "syncing": {
+      "title": "Scanning your Gmail…",
+      "body": "You can close this tab and come back later.",
+      "stage": {
+        "fetching_metadata": "Collecting sender details.",
+        "building_sender_index": "Grouping email by sender.",
+        "computing_recommendations": "Preparing suggestions.",
+        "finalizing": "Finishing up."
+      }
+    },
     "next": {
       "largest": {
         "title": {

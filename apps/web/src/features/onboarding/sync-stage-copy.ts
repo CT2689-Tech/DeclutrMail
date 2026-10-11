@@ -1,14 +1,14 @@
 import type { SyncStatus, SyncStage } from '@declutrmail/shared/contracts';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 
-/** Title while a scan is in progress. Home has no `ws2.home.syncing.title`. */
+/** Scan-gate title. Home uses `ws2.home.syncing.title` instead. */
 export const SYNC_READING_TITLE = 'Reading your Gmail\u2026';
 
 /**
- * Reassurance when the ready email is not promised. Home uses this as the
- * syncing status until a status read names a real stage. There is no
- * `ws2.home.syncing.body`.
+ * Scan-gate reassurance when the ready email is not promised. Same words
+ * as `ws2.home.syncing.body`.
  */
-export const SYNC_LEAVE_LINE = 'You can close this tab and come back later.';
+export const SYNC_LEAVE_LINE = WS2_COPY.home.syncing.body;
 
 export const SYNC_LEAVE_EMAIL_LINE =
   'You can close this tab \u2014 we\u2019ll email you when your inbox is ready.';
@@ -19,12 +19,14 @@ export const SYNC_LEAVE_EMAIL_LINE =
  * until it has a sentence — the gate can never show a label for work
  * the worker is not doing.
  */
+const homeStage = WS2_COPY.home.syncing.stage;
+
 export const STAGE_SENTENCE: Record<SyncStage, string> = {
   queued: 'Waiting to start.',
-  fetching_metadata: 'Reading sender info.',
-  building_sender_index: 'Grouping email by sender.',
-  computing_recommendations: 'Preparing recommendations.',
-  finalizing: 'Finishing up.',
+  fetching_metadata: homeStage.fetching_metadata,
+  building_sender_index: homeStage.building_sender_index,
+  computing_recommendations: homeStage.computing_recommendations,
+  finalizing: homeStage.finalizing,
   ready: 'Your inbox is ready.',
   failed: 'The scan stopped.',
 };

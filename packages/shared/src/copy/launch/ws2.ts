@@ -1,4 +1,4 @@
-/** WS2 copy filled for Home v1 (drop2-r8). Other sections land with their owning screens. */
+/** WS2 copy filled for Home v1 (drop2-r9). Other sections land with their owning screens. */
 export const WS2_COPY = {
   names: {
     home: 'Home',
@@ -26,6 +26,16 @@ export const WS2_COPY = {
     queued: {
       title: 'Your scan is waiting to start.',
       body: 'It starts on its own and keeps anything already scanned. You don\u2019t need to keep this page open.',
+    },
+    syncing: {
+      title: 'Scanning your Gmail\u2026',
+      body: 'You can close this tab and come back later.',
+      stage: {
+        fetching_metadata: 'Collecting sender details.',
+        building_sender_index: 'Grouping email by sender.',
+        computing_recommendations: 'Preparing suggestions.',
+        finalizing: 'Finishing up.',
+      },
     },
     next: {
       largest: {
