@@ -16,6 +16,7 @@ import {
 } from '@declutrmail/shared/contracts';
 import type {
   BillingCycle,
+  CheckoutSession,
   BillingProviderId,
   BillingSubscription,
 } from '@declutrmail/shared/contracts';
@@ -43,7 +44,7 @@ import {
   type StripTierId,
   type SubscriptionRecord,
 } from './billing-model';
-import { launchCheckout } from './checkout';
+import { CheckoutLaunchError, withCheckoutLoadDeadline } from './checkout-error';
 import { PlanConsequences } from './plan-coverage';
 
 const ChangePlanPanel = dynamic(
@@ -153,6 +154,7 @@ function razorpayIdFor(target: PaidTier, cycle: BillingCycle, founding: boolean)
  * retries from is the one already in front of them.
  */
 const STALE_BILLING_READ = new Set([
+  'CHECKOUT_SETUP_REQUIRED',
   'SUBSCRIPTION_EXISTS',
   'SUBSCRIPTION_PAUSED_BLOCKS_NEW',
   'SUBSCRIPTION_PAUSED',
@@ -163,6 +165,7 @@ const STALE_BILLING_READ = new Set([
 
 const PRE_CLAIM_REJECTIONS = new Set([
   'CHECKOUT_DELETION_PENDING',
+  'CHECKOUT_SETUP_REQUIRED',
   'SUBSCRIPTION_EXISTS',
   // Thrown by the SAME guard as SUBSCRIPTION_EXISTS, one branch apart, so it
   // is equally pre-claim. Omitting it would treat a paused-subscription
@@ -193,6 +196,9 @@ export function PlanPicker({
   onCheckoutAttempt,
   onCheckoutAbandoned,
   onCheckoutClosed,
+  onCheckoutBlocked,
+  mayOpenCheckout,
+  ownsCheckout,
   onPlanChangeAccepted,
   onPlanChangeUnconfirmed,
   onPlanChangeAttempt,
@@ -240,6 +246,16 @@ export function PlanPicker({
    *  message. */
   onCheckoutAbandoned: (attemptId: string) => void;
   onCheckoutClosed: (attemptId: string) => void;
+  mayOpenCheckout?: (attemptId: string) => boolean;
+  /** Lifecycle callbacks fence owner changes without discarding late valid payment events. */
+  ownsCheckout?: () => boolean;
+  /** Retain the exact server session for a loader-only retry, with the claim held. */
+  onCheckoutBlocked?: (
+    session: CheckoutSession,
+    target: PaidTier,
+    cycle: BillingCycle,
+    attemptId: string,
+  ) => void;
   /** The change-plan endpoint accepted the switch — the screen enters
    *  the pending state until the webhook lands. `attemptId` identifies
    *  the pessimistic lock this attempt wrote (UUID-matched release). */
@@ -410,6 +426,7 @@ export function PlanPicker({
     confirmInFlight.current = true;
     const attemptId = await onCheckoutAttempt(target, cycle);
     confirmInFlight.current = false;
+    if (ownsCheckout && !ownsCheckout()) return;
     if (attemptId === null) {
       closePanel();
       return;
@@ -432,45 +449,60 @@ export function PlanPicker({
       },
       {
         onSuccess: (session) => {
+          if (ownsCheckout && !ownsCheckout()) return;
           // Server claim exists from this response; overlay is next.
           void track('checkout_session_created', funnel);
-          void launchCheckout(session, {
-            // Payment made in the overlay — collapse the confirm panel
-            // and hand the screen the truthful pending state (own-id
-            // transition over this checkout's reservation).
-            onCompleted: () => {
-              void track('checkout_overlay_completed', funnel);
-              closePanel();
-              onPaymentCompleted(target, cycle, attemptId);
-            },
-            // Overlay dismissed without a completed event — NOT proof
-            // of no payment (popup/3DS edges). Surface the reservation
-            // instead of releasing it; the user re-arms via the
-            // explicit no-charge assertion. (Post-completion close is
-            // inert: the id no longer matches the `checkout` lock.)
-            onClosed: () => {
-              void track('checkout_overlay_closed', funnel);
-              closePanel();
-              onCheckoutClosed(attemptId);
-            },
-          }).then(
-            () => undefined,
-            // Provider script failed to load — no overlay opened, but
-            // the SESSION exists server-side and the claim is held: a
-            // Razorpay subscription created with customer_notify is
-            // payable from the provider's own emailed link, so this is
-            // NOT "nothing at risk" (Codex 2026-07-29). Surface the
-            // reservation — the banner explains the locked state and
-            // owns the release path.
-            () => {
-              void track('checkout_overlay_blocked', funnel);
-              checkout.reset();
-              setLaunchError(
-                'The secure checkout window could not be opened. Nothing was charged.',
-              );
-              onCheckoutClosed(attemptId);
-            },
-          );
+          void withCheckoutLoadDeadline(import('./checkout'))
+            .then(({ launchCheckout }) =>
+              launchCheckout(
+                session,
+                {
+                  // Payment made in the overlay — collapse the confirm panel
+                  // and hand the screen the truthful pending state (own-id
+                  // transition over this checkout's reservation).
+                  onCompleted: () => {
+                    if (ownsCheckout && !ownsCheckout()) return;
+                    void track('checkout_overlay_completed', funnel);
+                    closePanel();
+                    onPaymentCompleted(target, cycle, attemptId);
+                  },
+                  // Overlay dismissed without a completed event — NOT proof
+                  // of no payment (popup/3DS edges). Surface the reservation
+                  // instead of releasing it; the user re-arms via the
+                  // explicit no-charge assertion. (Post-completion close is
+                  // inert: the id no longer matches the `checkout` lock.)
+                  onClosed: () => {
+                    if (ownsCheckout && !ownsCheckout()) return;
+                    void track('checkout_overlay_closed', funnel);
+                    closePanel();
+                    onCheckoutClosed(attemptId);
+                  },
+                },
+                () => mayOpenCheckout?.(attemptId) ?? true,
+              ),
+            )
+            .then(
+              () => undefined,
+              // Provider script failed to load — no overlay opened, but
+              // the SESSION exists server-side and the claim is held: a
+              // Razorpay subscription created with customer_notify is
+              // payable from the provider's own emailed link, so this is
+              // NOT "nothing at risk" (Codex 2026-07-29). Surface the
+              // reservation — the banner explains the locked state and
+              // owns the release path.
+              (err: unknown) => {
+                if (ownsCheckout && !ownsCheckout()) return;
+                void track('checkout_overlay_blocked', funnel);
+                checkout.reset();
+                setLaunchError(
+                  'The secure checkout window could not be opened. Your checkout remains reserved.',
+                );
+                if (err instanceof CheckoutLaunchError && err.canRetry) {
+                  onCheckoutBlocked?.(session, target, cycle, attemptId);
+                }
+                onCheckoutClosed(attemptId);
+              },
+            );
         },
         // Two different failures wear this callback (Codex
         // 2026-07-29). A PRE-CLAIM rejection — the server refused
@@ -487,6 +519,7 @@ export function PlanPicker({
         // Those surface the reservation: the banner states the locked
         // reality and owns the release.
         onError: (err) => {
+          if (ownsCheckout && !ownsCheckout()) return;
           const code = apiErrorCode(err);
           void track('checkout_failed', { ...funnel, code: code ?? 'unknown' });
           reconcileIfStale(code);
@@ -514,6 +547,7 @@ export function PlanPicker({
     // action) — stand down.
     const attemptId = await onPlanChangeAttempt(target, cycle);
     confirmInFlight.current = false;
+    if (ownsCheckout && !ownsCheckout()) return;
     if (attemptId === null) {
       closePanel();
       return;
@@ -523,10 +557,12 @@ export function PlanPicker({
       { tierId: target, cycle },
       {
         onSuccess: (next) => {
+          if (ownsCheckout && !ownsCheckout()) return;
           closePanel();
           onPlanChangeAccepted(next, target, cycle, attemptId);
         },
         onError: (error) => {
+          if (ownsCheckout && !ownsCheckout()) return;
           reconcileIfStale(apiErrorCode(error));
           // AMBIGUOUS provider error on an immediate upgrade — the
           // prorated charge may have applied before the response was

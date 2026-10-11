@@ -3,6 +3,7 @@
 import { editorialOnboardingActionStyle } from '@/features/editorial/page';
 
 import type { ReactNode } from 'react';
+import { parseBillingReturnTo } from '@declutrmail/shared/contracts/app-navigation';
 import { Button, tokens } from '@declutrmail/shared';
 import {
   GMAIL_CONNECTION_DATA_INVENTORY,
@@ -38,9 +39,16 @@ const { color, font, text, radius, shadow } = tokens;
  *     to the signed-in account. The signed-out start bounces a live
  *     session to the app, which sent it straight back here (D108).
  */
-export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconnect' }) {
+export function StepConnect({
+  variant = 'fresh',
+  billingReturnTo,
+}: {
+  variant?: 'fresh' | 'reconnect';
+  billingReturnTo?: string | undefined;
+}) {
   const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
-  const startUrl = `${apiBase}/api/auth/google/start`;
+  const destination = parseBillingReturnTo(billingReturnTo);
+  const startUrl = `${apiBase}/api/auth/google/start${destination ? `?${new URLSearchParams({ returnTo: destination })}` : ''}`;
 
   return (
     <StepShell
@@ -103,7 +111,11 @@ export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconn
         tone="primary"
         size="xl"
         onClick={() =>
-          variant === 'reconnect' ? startMailboxConnect() : window.location.assign(startUrl)
+          variant === 'reconnect'
+            ? billingReturnTo
+              ? startMailboxConnect(undefined, billingReturnTo)
+              : startMailboxConnect()
+            : window.location.assign(startUrl)
         }
         style={editorialOnboardingActionStyle}
       >

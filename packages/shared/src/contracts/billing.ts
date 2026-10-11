@@ -132,6 +132,8 @@ export type CheckoutSession = z.infer<typeof CheckoutSessionSchema>;
  * cancellation).
  */
 export const BillingSubscriptionSchema = z.object({
+  /** New checkout needs an onboarded owner and an active, ready mailbox. */
+  checkoutSetupComplete: z.boolean().optional(),
   /** Durable provider verification/support barrier; optional during rolling deploys. */
   billingReviewPending: z.boolean().optional(),
   tier: z.enum(['free', 'plus', 'pro', 'team', 'enterprise']),

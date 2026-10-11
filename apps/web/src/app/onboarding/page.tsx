@@ -1,6 +1,9 @@
 'use client';
 
-import { parseAppReturnTo } from '@declutrmail/shared/contracts/app-navigation';
+import {
+  parseAppReturnTo,
+  parseBillingReturnTo,
+} from '@declutrmail/shared/contracts/app-navigation';
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -138,16 +141,17 @@ function OnboardingFlow() {
         <SecondaryConnectGate
           mailboxId={secondaryMailboxId}
           isTargetedReconnect={isTargetedReconnect}
+          billingReturnTo={parseBillingReturnTo(returnTo)}
         />
       </AuthProvider>
     );
   }
-  return <FreshFlow returnTo={returnTo} />;
+  return <FreshFlow returnTo={returnTo} resumeScan={params.get('resumeScan') === '1'} />;
 }
 
 /* ── Fresh-flow: pre-auth boundary ─────────────────────────────────── */
 
-function FreshFlow({ returnTo }: { returnTo: string | null }) {
+function FreshFlow({ returnTo, resumeScan }: { returnTo: string | null; resumeScan: boolean }) {
   // Soft session probe — same query key AuthProvider uses, so when a
   // session exists the provider below resolves from cache instantly.
   const me = useMe();
@@ -164,7 +168,7 @@ function FreshFlow({ returnTo }: { returnTo: string | null }) {
     return preAuthStep === 'promise' ? (
       <StepPromise onConnect={() => setPreAuthStep('connect')} />
     ) : (
-      <StepConnect variant="fresh" />
+      <StepConnect variant="fresh" billingReturnTo={parseBillingReturnTo(returnTo)} />
     );
   }
 
@@ -194,14 +198,14 @@ function FreshFlow({ returnTo }: { returnTo: string | null }) {
 
   return (
     <AuthProvider>
-      <AuthedFlow returnTo={returnTo} />
+      <AuthedFlow returnTo={returnTo} resumeScan={resumeScan} />
     </AuthProvider>
   );
 }
 
 /* ── Fresh-flow: authed steps 3-5 ──────────────────────────────────── */
 
-function AuthedFlow({ returnTo }: { returnTo: string | null }) {
+function AuthedFlow({ returnTo, resumeScan }: { returnTo: string | null; resumeScan: boolean }) {
   const router = useRouter();
   const { me } = useAuth();
   useAnalyticsIdentity(me.user.id, me.signupAttribution?.ref, me.tier);
@@ -219,6 +223,7 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
   useSyncGateFunnel(sync.data, activeMailboxId);
 
   const step: AuthedOnboardingStep = deriveAuthedStep({
+    resumeScan,
     state: {
       data: state.data,
       isLoading: state.isLoading,
@@ -304,7 +309,7 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
         return <FlowSkeleton label="Opening DeclutrMail…" />;
       case 'connect':
         // Authed but no active mailbox (aborted OAuth / all disconnected).
-        return <StepConnect variant="reconnect" />;
+        return <StepConnect variant="reconnect" billingReturnTo={parseBillingReturnTo(returnTo)} />;
       case 'sync-gate': {
         if (sync.isError) {
           return (
@@ -333,6 +338,7 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
             status={status}
             mailboxId={activeMailboxId}
             readyEmail={readyEmail}
+            billingReturnTo={parseBillingReturnTo(returnTo)}
           />
         );
       }
@@ -397,16 +403,22 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
 function SecondaryConnectGate({
   mailboxId,
   isTargetedReconnect,
+  billingReturnTo,
 }: {
   mailboxId: string;
   isTargetedReconnect: boolean;
+  billingReturnTo?: string | undefined;
 }) {
   const router = useRouter();
   const { me } = useAuth();
   useAnalyticsIdentity(me.user.id, me.signupAttribution?.ref, me.tier);
   const setActive = useSetActiveMailbox();
   const readyEmail = useSyncReadyEmail();
-  const exitPath = isTargetedReconnect ? reconnectSettingsResultPath(mailboxId) : '/home';
+  const recoveryPath = billingReturnTo
+    ? `/onboarding?resumeScan=1&${new URLSearchParams({ returnTo: billingReturnTo })}`
+    : undefined;
+  const exitPath =
+    recoveryPath ?? (isTargetedReconnect ? reconnectSettingsResultPath(mailboxId) : '/home');
 
   // Gate THAT mailbox explicitly so it survives the user switching
   // their active mailbox back to the primary mid-sync.
@@ -424,7 +436,8 @@ function SecondaryConnectGate({
         onReturn: () => {
           // Leaving a scan early is not evidence of a successful reconnect.
           setActive.mutate(other.id, {
-            onSuccess: () => router.replace(isTargetedReconnect ? '/settings' : '/home'),
+            onSuccess: () =>
+              router.replace(recoveryPath ?? (isTargetedReconnect ? '/settings' : '/home')),
             onError: () => toast("Couldn't switch accounts. Please try again.", 'danger'),
           });
         },
@@ -451,9 +464,9 @@ function SecondaryConnectGate({
     if (ready) {
       router.replace(exitPath);
     } else if (trapped) {
-      router.replace('/home');
+      router.replace(recoveryPath ?? '/home');
     }
-  }, [exitPath, ready, router, trapped]);
+  }, [recoveryPath, exitPath, ready, router, trapped]);
 
   if (sync.isError && !trapped) {
     return (
@@ -483,6 +496,7 @@ function SecondaryConnectGate({
       escape={escape}
       mailboxId={mailboxId}
       readyEmail={readyEmail}
+      billingReturnTo={billingReturnTo}
     />
   );
 }

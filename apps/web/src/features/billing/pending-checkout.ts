@@ -77,6 +77,9 @@ const KINDS: readonly string[] = [
   'resume',
 ];
 const CYCLES: readonly string[] = ['monthly', 'annual'];
+// Tab-local fallback only for storage failures, never for an actually removed record.
+const lastKnown = new Map<string, PendingCheckout>();
+const failedWrites = new Set<string>();
 
 /**
  * Read the pending record for THIS workspace. Malformed records are
@@ -91,9 +94,13 @@ export function readPendingCheckout(workspaceId: string): PendingCheckout | null
   try {
     raw = window.localStorage.getItem(pendingCheckoutKey(workspaceId));
   } catch {
-    return null; // storage unavailable (privacy mode) — lock degrades to tab-local
+    return lastKnown.get(workspaceId) ?? null;
   }
-  if (!raw) return null;
+  if (!raw) {
+    if (failedWrites.has(workspaceId)) return lastKnown.get(workspaceId) ?? null;
+    lastKnown.delete(workspaceId);
+    return null;
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -119,6 +126,8 @@ export function readPendingCheckout(workspaceId: string): PendingCheckout | null
     return null;
   }
   if (record.workspaceId !== workspaceId) return null;
+  lastKnown.set(workspaceId, record as PendingCheckout);
+  failedWrites.delete(workspaceId);
   return record as PendingCheckout;
 }
 
@@ -142,9 +151,12 @@ export function writePendingCheckout(
     at: Date.now(),
     ...(attemptId !== undefined ? { attemptId } : {}),
   };
+  lastKnown.set(workspaceId, record);
   try {
     window.localStorage.setItem(pendingCheckoutKey(workspaceId), JSON.stringify(record));
+    failedWrites.delete(workspaceId);
   } catch {
+    failedWrites.add(workspaceId);
     // Storage full/unavailable — the in-memory lock still holds this tab.
   }
   return record;
@@ -152,6 +164,8 @@ export function writePendingCheckout(
 
 /** The webhook grant landed (or the user explicitly released it). */
 export function clearPendingCheckout(workspaceId: string): void {
+  lastKnown.delete(workspaceId);
+  failedWrites.delete(workspaceId);
   try {
     window.localStorage.removeItem(pendingCheckoutKey(workspaceId));
   } catch {
@@ -174,17 +188,16 @@ export function clearPendingCheckout(workspaceId: string): void {
  */
 export async function withMoneyActionMutex<T>(
   workspaceId: string,
-  fn: () => T,
+  fn: () => T | Promise<T>,
 ): Promise<{ acquired: boolean; result?: T }> {
   const locks =
     typeof navigator !== 'undefined' && 'locks' in navigator ? navigator.locks : undefined;
   if (!locks) {
-    return { acquired: true, result: fn() };
+    return { acquired: true, result: await fn() };
   }
   return locks.request(
     `${PENDING_CHECKOUT_KEY}.mutex:${workspaceId}`,
     { ifAvailable: true },
-    (lock) =>
-      Promise.resolve(lock === null ? { acquired: false } : { acquired: true, result: fn() }),
+    async (lock) => (lock === null ? { acquired: false } : { acquired: true, result: await fn() }),
   );
 }

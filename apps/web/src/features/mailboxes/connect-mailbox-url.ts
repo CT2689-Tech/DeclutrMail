@@ -8,17 +8,34 @@ const CONNECT_MAILBOX_START_PATH = '/api/auth/google/connect-mailbox/start';
  * belongs to the signed-in user and binds Google's returned identity to it;
  * email addresses never ride in the browser URL.
  */
-export function connectMailboxStartUrl(reconnectMailboxId?: string): string {
+export function connectMailboxStartUrl(
+  reconnectMailboxId?: string,
+  billingReturnTo?: string,
+): string {
   const apiBase = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/+$/, '');
   const start = `${apiBase}${CONNECT_MAILBOX_START_PATH}`;
-  return reconnectMailboxId === undefined
-    ? start
-    : `${start}?reconnectMailboxId=${encodeURIComponent(reconnectMailboxId)}`;
+  const target =
+    reconnectMailboxId === undefined
+      ? start
+      : `${start}?reconnectMailboxId=${encodeURIComponent(reconnectMailboxId)}`;
+  // Billing callers already parse the intent. This shared URL builder only
+  // carries a bounded Billing-path hint; the API validates the full query
+  // again before signing it. Keep the full app-route parser off every page
+  // that offers an ordinary Gmail reconnect.
+  const destination =
+    typeof billingReturnTo === 'string' &&
+    billingReturnTo.length <= 1024 &&
+    /^\/billing(?:\?|$)/.test(billingReturnTo)
+      ? billingReturnTo
+      : undefined;
+  return destination
+    ? `${target}${target.includes('?') ? '&' : '?'}billingReturnTo=${encodeURIComponent(destination)}`
+    : target;
 }
 
 /** OAuth must be a full-page navigation, not an in-app router transition. */
-export function startMailboxConnect(reconnectMailboxId?: string): void {
-  window.location.assign(connectMailboxStartUrl(reconnectMailboxId));
+export function startMailboxConnect(reconnectMailboxId?: string, billingReturnTo?: string): void {
+  window.location.assign(connectMailboxStartUrl(reconnectMailboxId, billingReturnTo));
 }
 
 /**

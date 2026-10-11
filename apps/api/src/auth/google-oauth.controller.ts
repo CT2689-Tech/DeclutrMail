@@ -24,6 +24,7 @@ import {
   isErrorCode,
   isUserScopedAppPath,
   parseAppReturnTo,
+  parseBillingReturnTo,
   parseSignupAttributionRef,
   SIGNUP_ATTRIBUTION_REFS,
   SIGNUP_REF_COOKIE,
@@ -81,6 +82,7 @@ interface LoginOAuthState extends OAuthStateBase {
 
 interface ConnectOAuthState extends OAuthStateBase {
   mode: 'connect';
+  billingReturnTo?: string | undefined;
   userId: string;
   workspaceId: string;
   /** Stable active_sessions.id captured from the guarded originating request. */
@@ -131,6 +133,7 @@ const oauthStateSchema = z
         issuedAt: z.number().int().positive(),
         expiresAt: z.number().int().positive(),
         mode: z.literal('connect'),
+        billingReturnTo: z.string().max(1024).optional(),
         userId: uuidSchema,
         workspaceId: uuidSchema,
         sessionId: uuidSchema,
@@ -290,6 +293,7 @@ export class GoogleOAuthController {
     @Res() res: Response,
     @Query('reconnectMailboxId') reconnectMailboxId?: unknown,
     @Query('reactivateMailboxId') reactivateMailboxId?: unknown,
+    @Query('billingReturnTo') billingReturnTo?: unknown,
   ): Promise<void> {
     if (reconnectMailboxId !== undefined && reactivateMailboxId !== undefined) {
       throw new BadRequestException('Mailbox recovery targets are mutually exclusive.');
@@ -341,6 +345,9 @@ export class GoogleOAuthController {
       sessionId: user.sessionId,
       ...(validatedReconnectId ? { reconnectMailboxId: validatedReconnectId } : {}),
       ...(validatedReactivateId ? { reactivateMailboxId: validatedReactivateId } : {}),
+      ...(parseBillingReturnTo(billingReturnTo)
+        ? { billingReturnTo: parseBillingReturnTo(billingReturnTo) }
+        : {}),
     });
   }
 
@@ -440,6 +447,7 @@ export class GoogleOAuthController {
         webBase,
         getRecoveryMailboxId(recoveryState),
         cancelled ? 'cancelled' : 'failed',
+        recoveryState.billingReturnTo,
       );
       return;
     }
@@ -463,8 +471,21 @@ export class GoogleOAuthController {
           payload: { provider: 'google', mode: 'connect', reason },
         });
         this.clearStateCookie(res);
-        if (cancelled) res.redirect(302, `${webBase}/settings#mailboxes`);
-        else this.redirectConnectStartResult(res, webBase, 'failed');
+        if (cancelled) {
+          const destination = parseBillingReturnTo(cookieState.billingReturnTo);
+          res.redirect(
+            302,
+            destination
+              ? `${webBase}/onboarding?resumeScan=1&${new URLSearchParams({ returnTo: destination })}`
+              : `${webBase}/settings#mailboxes`,
+          );
+        } else
+          this.redirectConnectStartResult(
+            res,
+            webBase,
+            'failed',
+            cookieState.mode === 'connect' ? cookieState.billingReturnTo : undefined,
+          );
         return;
       }
       void this.securityEvents.record({
@@ -488,7 +509,13 @@ export class GoogleOAuthController {
           sourceIp: ipAddress,
           userAgent,
         });
-        this.redirectReconnectResult(res, webBase, getRecoveryMailboxId(recoveryState), 'failed');
+        this.redirectReconnectResult(
+          res,
+          webBase,
+          getRecoveryMailboxId(recoveryState),
+          'failed',
+          recoveryState.billingReturnTo,
+        );
         return;
       }
       void this.securityEvents.record({
@@ -535,7 +562,13 @@ export class GoogleOAuthController {
           sourceIp: ipAddress,
           userAgent,
         });
-        this.redirectReconnectResult(res, webBase, getRecoveryMailboxId(recoveryState), 'failed');
+        this.redirectReconnectResult(
+          res,
+          webBase,
+          getRecoveryMailboxId(recoveryState),
+          'failed',
+          recoveryState.billingReturnTo,
+        );
         return;
       }
       void this.securityEvents.record({
@@ -571,7 +604,13 @@ export class GoogleOAuthController {
             sourceIp: ipAddress,
             userAgent,
           });
-          this.redirectReconnectResult(res, webBase, recoveryMailboxId, 'failed');
+          this.redirectReconnectResult(
+            res,
+            webBase,
+            recoveryMailboxId,
+            'failed',
+            recoveryState!.billingReturnTo,
+          );
           return;
         }
         if (!reconnectTarget) {
@@ -582,7 +621,13 @@ export class GoogleOAuthController {
             sourceIp: ipAddress,
             userAgent,
           });
-          this.redirectReconnectResult(res, webBase, recoveryMailboxId, 'target_invalid');
+          this.redirectReconnectResult(
+            res,
+            webBase,
+            recoveryMailboxId,
+            'target_invalid',
+            recoveryState!.billingReturnTo,
+          );
           return;
         }
         if (normalizeEmail(email) !== normalizeEmail(reconnectTarget.email)) {
@@ -593,7 +638,13 @@ export class GoogleOAuthController {
             sourceIp: ipAddress,
             userAgent,
           });
-          this.redirectReconnectResult(res, webBase, recoveryMailboxId, 'account_mismatch');
+          this.redirectReconnectResult(
+            res,
+            webBase,
+            recoveryMailboxId,
+            'account_mismatch',
+            recoveryState!.billingReturnTo,
+          );
           return;
         }
         // Use the already-persisted canonical identity so a harmless case or
@@ -637,6 +688,9 @@ export class GoogleOAuthController {
         const query = new URLSearchParams({
           mailbox: mailboxId,
           ...(recoveryState ? { reconnect: '1' } : {}),
+          ...(parseBillingReturnTo(cookieState.billingReturnTo)
+            ? { returnTo: parseBillingReturnTo(cookieState.billingReturnTo)! }
+            : {}),
         });
         res.redirect(302, `${webBase}/onboarding?${query.toString()}`);
       } catch (err) {
@@ -659,7 +713,12 @@ export class GoogleOAuthController {
             userAgent,
             payload: { provider: 'google', mode: 'connect', reason: errorCode },
           });
-          this.redirectConnectStartResult(res, webBase, 'inbox_limit');
+          this.redirectConnectStartResult(
+            res,
+            webBase,
+            'inbox_limit',
+            cookieState.mode === 'connect' ? cookieState.billingReturnTo : undefined,
+          );
           return;
         }
 
@@ -675,7 +734,13 @@ export class GoogleOAuthController {
             sourceIp: ipAddress,
             userAgent,
           });
-          this.redirectReconnectResult(res, webBase, getRecoveryMailboxId(recoveryState), 'failed');
+          this.redirectReconnectResult(
+            res,
+            webBase,
+            getRecoveryMailboxId(recoveryState),
+            'failed',
+            recoveryState.billingReturnTo,
+          );
           return;
         }
         // Neither the verified Gmail identity nor an exception message is
@@ -989,9 +1054,18 @@ export class GoogleOAuthController {
     webBase: string,
     mailboxId: string,
     result: ReconnectResult,
+    billingReturnTo?: string,
   ): void {
     this.clearStateCookie(res);
-    const query = new URLSearchParams({ reconnect_result: result });
+    const destination = parseBillingReturnTo(billingReturnTo);
+    const query = new URLSearchParams({
+      reconnect_result: result,
+      ...(destination ? { mailbox: mailboxId, reconnect: '1', returnTo: destination } : {}),
+    });
+    if (destination) {
+      res.redirect(302, `${webBase}/onboarding?${query}`);
+      return;
+    }
     res.redirect(
       302,
       `${webBase}/settings?${query.toString()}#mailbox-${encodeURIComponent(mailboxId)}`,
@@ -1003,9 +1077,18 @@ export class GoogleOAuthController {
     res: Response,
     webBase: string,
     result: 'inbox_limit' | 'failed' | typeof GMAIL_ACCESS_MISSING_RESULT,
+    billingReturnTo?: string,
   ): void {
     // The callback consumes the state immediately before the mutation.
-    const query = new URLSearchParams({ connect_start_result: result });
+    const destination = parseBillingReturnTo(billingReturnTo);
+    const query = new URLSearchParams({
+      connect_start_result: result,
+      ...(destination ? { resumeScan: '1', returnTo: destination } : {}),
+    });
+    if (destination) {
+      res.redirect(302, `${webBase}/onboarding?${query}`);
+      return;
+    }
     res.redirect(302, `${webBase}/settings?${query.toString()}#mailboxes`);
   }
 
@@ -1057,6 +1140,7 @@ export class GoogleOAuthController {
         webBase,
         getRecoveryMailboxId(state),
         GMAIL_ACCESS_MISSING_RESULT,
+        state.billingReturnTo,
       );
       return;
     }
@@ -1072,7 +1156,12 @@ export class GoogleOAuthController {
         userAgent,
         payload: { provider: 'google', mode: 'connect', reason: 'gmail_scope_missing' },
       });
-      this.redirectConnectStartResult(res, webBase, GMAIL_ACCESS_MISSING_RESULT);
+      this.redirectConnectStartResult(
+        res,
+        webBase,
+        GMAIL_ACCESS_MISSING_RESULT,
+        state.billingReturnTo,
+      );
       return;
     }
 

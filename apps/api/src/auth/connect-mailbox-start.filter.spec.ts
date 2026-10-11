@@ -105,6 +105,32 @@ describe('ConnectMailboxStartFilter', () => {
     },
   );
 
+  it.each([
+    undefined,
+    ['/billing'],
+    '/settings',
+    'https://outside.test/billing',
+    '/billing?plan=pro',
+  ])('drops invalid Billing context %s', (billingReturnTo) => {
+    process.env.WEB_URL = 'https://app.example.test';
+    const req = { method: 'GET', query: { billingReturnTo } };
+    const redirect = vi.fn();
+    const host = {
+      switchToHttp: () => ({
+        getRequest: () => req,
+        getResponse: () => ({ req, redirect, headersSent: false }),
+      }),
+    };
+    new ConnectMailboxStartFilter().catch(
+      new BadRequestException(),
+      host as unknown as Parameters<ConnectMailboxStartFilter['catch']>[1],
+    );
+    expect(redirect).toHaveBeenCalledWith(
+      302,
+      'https://app.example.test/settings?connect_start_result=target_invalid#mailboxes',
+    );
+  });
+
   it('catches a guard failure before the browser-start handler runs', async () => {
     process.env.WEB_URL = 'https://app.example.test';
     const moduleRef = await Test.createTestingModule({
@@ -115,13 +141,16 @@ describe('ConnectMailboxStartFilter', () => {
 
     try {
       await app.listen(0, '127.0.0.1');
-      const response = await fetch(`${await app.getUrl()}/_connect-start-filter-test`, {
-        redirect: 'manual',
-      });
+      const response = await fetch(
+        `${await app.getUrl()}/_connect-start-filter-test?${new URLSearchParams({ billingReturnTo: '/billing?plan=pro&cycle=annual&from=%2Fbrief' })}`,
+        {
+          redirect: 'manual',
+        },
+      );
 
       expect(response.status).toBe(HttpStatus.FOUND);
       expect(response.headers.get('location')).toBe(
-        'https://app.example.test/settings?connect_start_result=target_invalid#mailboxes',
+        `https://app.example.test/onboarding?${new URLSearchParams({ resumeScan: '1', returnTo: '/billing?plan=pro&cycle=annual&from=%2Fbrief', connect_start_result: 'target_invalid' })}`,
       );
     } finally {
       await app.close();

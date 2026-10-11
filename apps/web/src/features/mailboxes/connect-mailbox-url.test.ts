@@ -58,3 +58,16 @@ describe('connectMailboxStartUrl', () => {
     assign.mockRestore();
   });
 });
+
+it('preserves an exact Billing plan and origin through full Gmail reconnect', () => {
+  const destination = '/billing?plan=pro&cycle=annual&promo=foundingPro&from=%2Fbrief';
+  const url = new URL(
+    connectMailboxStartUrl('11111111-1111-4111-8111-111111111111', destination),
+    'http://localhost',
+  );
+  expect(url.searchParams.get('billingReturnTo')).toBe(destination);
+  expect(connectMailboxStartUrl(undefined, 'https://evil.test/billing')).not.toContain(
+    'billingReturnTo',
+  );
+  expect(connectMailboxStartUrl(undefined, '/settings')).not.toContain('billingReturnTo');
+});

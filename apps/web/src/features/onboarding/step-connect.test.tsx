@@ -63,3 +63,26 @@ describe('StepConnect start (D108)', () => {
     }
   });
 });
+
+it('carries the Billing intent when a signed-in user has no active inbox', () => {
+  const destination = '/billing?plan=pro&cycle=annual';
+  render(<StepConnect variant="reconnect" billingReturnTo={destination} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Continue to Google' }));
+  expect(startMailboxConnect).toHaveBeenCalledWith(undefined, destination);
+});
+
+it('keeps validated Billing intent when a session retry needs public Google consent', () => {
+  const assign = vi.fn();
+  const original = window.location;
+  Object.defineProperty(window, 'location', { configurable: true, value: { ...original, assign } });
+  try {
+    const destination = '/billing?plan=pro&cycle=annual&from=%2Fbrief';
+    render(<StepConnect variant="fresh" billingReturnTo={destination} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to Google' }));
+    const target = new URL(assign.mock.calls[0]![0], 'https://app.example.test');
+    expect(target.pathname).toBe('/api/auth/google/start');
+    expect(target.searchParams.get('returnTo')).toBe(destination);
+  } finally {
+    Object.defineProperty(window, 'location', { configurable: true, value: original });
+  }
+});

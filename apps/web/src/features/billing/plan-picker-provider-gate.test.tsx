@@ -81,6 +81,7 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { BillingScreen } from './billing-screen';
 
 const FREE_BODY: BillingSubscription = {
+  checkoutSetupComplete: true,
   complimentary: null,
   tier: 'free',
   foundingMember: false,
