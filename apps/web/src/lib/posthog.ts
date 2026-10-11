@@ -269,7 +269,7 @@ export async function withdrawAnalyticsConsent(): Promise<void> {
   storeConsent('essential');
   const pendingSdk = sdkPromise;
   if (!pendingSdk) return;
-  let sdk: PosthogSdk | null = null;
+  let sdk: PosthogSdk | null;
   try {
     sdk = await pendingSdk;
   } catch {

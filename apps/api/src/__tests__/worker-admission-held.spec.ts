@@ -30,6 +30,10 @@ async function fixture(
       cwd: resolve(import.meta.dirname, '../..'),
       env: {
         PATH: process.env.PATH ?? '',
+        // @swc/core 1.16 materializes its native addon into a user cache
+        // and will not load the production register without HOME. This is
+        // the loader, not a product credential.
+        ...(process.env.HOME ? { HOME: process.env.HOME } : {}),
         NODE_ENV: 'test',
         PORT: String(address.port),
         WORKER_SENTRY_ENABLED: 'false',

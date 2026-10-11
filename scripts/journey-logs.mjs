@@ -192,7 +192,7 @@ function summarizeScan(rows, terminal, initialWorkerRows, quota) {
 
   // Pace from the final attempt only; an earlier attempt may have died mid-burst.
   let fetchMinutes = null;
-  let perMinute = null;
+  let perMinute;
   if (fetchBegin && fetchDone && t(fetchDone) >= t(fetchBegin)) {
     fetchMinutes = (t(fetchDone) - t(fetchBegin)) / 60_000;
     perMinute = fetchMinutes > 0 ? fetchBegin.p.toFetch / fetchMinutes : null;

@@ -280,8 +280,8 @@ export async function cleanupBillingQueueProbe(
     return false;
   }
   let recovered = false;
-  let removed = false;
-  let absent = false;
+  let removed;
+  let absent;
   try {
     const found = executionName(jobRead(job, common, run), job);
     if (found) {

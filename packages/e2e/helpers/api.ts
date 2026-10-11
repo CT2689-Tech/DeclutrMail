@@ -70,7 +70,7 @@ export class ApiClient {
   async getRaw(path: string): Promise<{ status: number; body: unknown }> {
     const ctx = await this.context();
     const res = await ctx.get(path, { timeout: ApiClient.TIMEOUT_MS });
-    let body: unknown = null;
+    let body: unknown;
     try {
       body = await res.json();
     } catch {

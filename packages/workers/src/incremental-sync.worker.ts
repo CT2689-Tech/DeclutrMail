@@ -499,7 +499,7 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     ): Promise<{ events: GmailHistoryRecord[]; lastPageHistoryId: string | null } | null> => {
       const collected: GmailHistoryRecord[] = [];
       let token: string | undefined;
-      let latest: string | null = null;
+      let latest: string | null;
       for (;;) {
         ctx.signal?.throwIfAborted();
         const page = await client.listHistory(cursor, token, ctx.signal);

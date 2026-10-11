@@ -11,7 +11,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const SQL_PATH = join(dirname(fileURLToPath(import.meta.url)), 'sql', 'launch-funnel-report.sql');
 
 export function assertLocalFunnelDsn(dsn: string): void {
-  let host = '';
+  let host: string;
   try {
     host = new URL(dsn).hostname;
   } catch {

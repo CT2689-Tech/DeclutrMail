@@ -187,7 +187,7 @@ export async function deployApi({
       try {
         await update(`--to-revisions=${rollback}`);
         if (trafficAssignment(await describe()) !== rollback)
-          throw new Error('Rollback readback mismatch');
+          throw new Error('Rollback readback mismatch', { cause: error });
         log('Restored previous API traffic assignment');
       } catch {
         failure = new Error(

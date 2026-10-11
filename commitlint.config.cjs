@@ -34,7 +34,7 @@ module.exports = {
       rules: {
         'd-number-reference': (parsed) => {
           const { execSync } = require('node:child_process');
-          let branch = '';
+          let branch;
           try {
             branch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8' }).trim();
           } catch {
