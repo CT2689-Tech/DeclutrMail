@@ -131,6 +131,14 @@ describe('HeardFromPrompt', () => {
     expect(await screen.findByTestId('heard-from-prompt')).toBeInTheDocument();
   });
 
+  it('stays off Settings so it cannot cover the AI controls', async () => {
+    storeConsent('all');
+    pathname.current = '/settings';
+    renderPrompt();
+    await new Promise((r) => setTimeout(r, 40));
+    expect(screen.queryByTestId('heard-from-prompt')).not.toBeInTheDocument();
+  });
+
   it('says a failed save failed instead of silently resetting', async () => {
     storeConsent('all');
     apiPatch.mockRejectedValue(new Error('offline'));

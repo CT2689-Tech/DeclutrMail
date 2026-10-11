@@ -73,6 +73,7 @@ export function HeardFromPrompt() {
   }, []);
 
   if (!consentSettled || dismissed || me.signupAttribution?.promptNeeded !== true) return null;
+  if (pathname === '/settings' || pathname.startsWith('/settings/')) return null;
 
   // `promptTick` is the same-tab dismissal signal. The read below sees
   // the localStorage write only because that event re-rendered us.
