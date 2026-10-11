@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: upstash-free-revocation-${{ github.event_name }}-${{ github.ref }}
+  group: upstash-revocation-provider-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:

@@ -6,6 +6,7 @@ import {
   classifyManagementRefusal,
   nativeClient,
   normalizeHost,
+  PAID_TEST_CONFIRMATION,
   rehearse,
 } from './upstash-free-revocation-rehearsal.mjs';
 
@@ -21,7 +22,9 @@ function harness(options = {}) {
   let time = 1791747000000;
   let fixture;
   let listReads = 0;
+  let ownedReads = 0;
   let reset = false;
+  let commandAttempts = 0;
   const requests = [];
   const clients = [];
   const baseline = Array.from({ length: options.baselineCount ?? 1 }, (_, index) => ({
@@ -42,6 +45,7 @@ function harness(options = {}) {
           state.readyCount++;
         },
         async incr() {
+          commandAttempts++;
           if (options.controlFailure && !reset) throw new Error(marker);
           if (reset && credential.password === `old-${marker}` && !options.oldSessionsContinue) {
             state.remoteClosed = !options.uncertain;
@@ -61,6 +65,7 @@ function harness(options = {}) {
     requests.push({ url: input, method: config.method, body: config.body });
     assert.equal(config.redirect, 'error');
     if (input === `https://${fixtureHost}`) {
+      commandAttempts++;
       const old = config.headers.Authorization === `Bearer old-token-${marker}`;
       return reset && old ? json({ error: marker }, 401) : json({ result: 1 });
     }
@@ -79,7 +84,9 @@ function harness(options = {}) {
     }
     if (config.method === 'POST' && url.pathname.endsWith('/database')) {
       const body = JSON.parse(config.body);
-      assert.equal(body.plan, 'free');
+      const paid = options.mode === 'capped-payg';
+      assert.equal(body.plan, paid ? 'payg' : 'free');
+      assert.equal(body.budget, paid ? 20 : undefined);
       assert.equal(body.tls, true);
       assert.equal(body.eviction, false);
       assert.deepEqual(body.read_regions, []);
@@ -92,11 +99,15 @@ function harness(options = {}) {
         endpoint: options.slug ? fixtureHost.split('.')[0] : fixtureHost,
         port: 6379,
         tls: true,
-        type: options.paidResponse ? 'paid' : 'free',
+        type: options.paidResponse ? 'paid' : paid ? 'payg' : 'free',
         auto_upgrade: false,
         eviction: false,
         password: `old-${marker}`,
         rest_token: `old-token-${marker}`,
+        ...(paid
+          ? { budget: 20, primary_region: 'us-east-1', read_regions: [], prod_pack_enabled: false }
+          : {}),
+        ...options.fixtureOverrides,
       };
       if (options.lostCreate) throw new Error(marker);
       if (options.partialCreate) return json({});
@@ -107,7 +118,12 @@ function harness(options = {}) {
       fixtureId,
       'existing resources are never targeted',
     );
-    if (config.method === 'GET') return fixture ? json(fixture) : json({ error: marker }, 404);
+    if (config.method === 'GET') {
+      ownedReads++;
+      return fixture
+        ? json({ ...fixture, ...options.readOverrides?.[ownedReads] })
+        : json({ error: marker }, 404);
+    }
     if (config.method === 'POST' && url.pathname.includes('/reset-password/')) {
       reset = true;
       fixture.password = `new-${marker}`;
@@ -124,12 +140,16 @@ function harness(options = {}) {
   return {
     requests,
     clients,
+    commandAttempts: () => commandAttempts,
     run: () =>
       rehearse({
         env,
         fetchImpl,
         clientFactory: factory,
         nonce,
+        mode: options.mode,
+        paidConfirmation: options.paidConfirmation,
+        sampleTimes: options.sampleTimes,
         now: () => time,
         sleep: async (ms) => {
           time += ms;
@@ -137,6 +157,153 @@ function harness(options = {}) {
       }),
   };
 }
+
+const paidOptions = { mode: 'capped-payg', paidConfirmation: PAID_TEST_CONFIRMATION };
+
+test('paid execution requires exact operator confirmation before any provider request', async () => {
+  for (const paidConfirmation of [undefined, '', 'true', 'APPROVED_ONE_TEST_USD1_CAP']) {
+    const h = harness({ mode: 'capped-payg', paidConfirmation });
+    const report = await h.run();
+    assert.equal(report.reason, 'paid_test_confirmation_missing');
+    assert.equal(report.authorizedCostUsd, 0);
+    assert.equal(h.requests.length, 0);
+    assert.equal(h.clients.length, 0);
+  }
+  for (const mode of ['paid', 'payg', 'fixed_250mb']) {
+    const h = harness({ mode, paidConfirmation: PAID_TEST_CONFIRMATION });
+    assert.equal((await h.run()).reason, 'fixture_mode_invalid');
+    assert.equal(h.requests.length, 0);
+  }
+  const changedSchedule = harness({ ...paidOptions, sampleTimes: [0, 1] });
+  assert.equal((await changedSchedule.run()).reason, 'paid_observation_schedule_invalid');
+  assert.equal(changedSchedule.requests.length, 0);
+});
+
+test('approved capped mode creates only explicit payg with budget 20 and observes at most 39 commands', async () => {
+  for (const type of ['payg', 'paid']) {
+    const h = harness({ ...paidOptions, fixtureOverrides: { type }, oldSessionsContinue: true });
+    const report = await h.run();
+    assert.equal(report.requestedPlan, 'payg');
+    assert.equal(report.operatorConfirmedPaidTest, true);
+    assert.equal(report.authorizedCostUsd, 20);
+    assert.equal(report.requestedMonthlyBudgetUsd, 20);
+    assert.equal(report.observedMonthlyBudgetUsd, 20);
+    assert.equal(report.budgetVerifiedBeforeCommands, true);
+    assert.equal(report.result, 'old_authenticated_sessions_continue');
+    assert.equal(report.observations.length, 6);
+    assert.equal(report.cleanupVerified, true);
+    assert.equal(report.baselineIdsPresent, true);
+    assert.equal(report.productionRetirementCertified, false);
+    assert.equal(JSON.stringify(report).includes(marker), false);
+    assert.ok(h.commandAttempts() <= 39);
+    assert.equal(h.requests.filter((row) => row.method === 'POST').length, 15);
+    assert.equal(h.requests.filter((row) => row.method === 'DELETE').length, 1);
+    assert.ok(h.clients.every((client) => client.disconnected));
+  }
+});
+
+test('missing or unsafe paid contract cleans up before Redis commands or reset', async () => {
+  const unsafe = [
+    { budget: undefined },
+    { budget: 0 },
+    { budget: 21 },
+    { budget: '20' },
+    { type: 'fixed_250mb' },
+    { type: 'pro' },
+    { type: 'free' },
+    { auto_upgrade: true },
+    { tls: false },
+    { eviction: true },
+    { prod_pack_enabled: true },
+    { prod_pack_enabled: undefined },
+    { primary_region: 'us-west-1' },
+    { read_regions: ['us-west-1'] },
+    { read_regions: undefined },
+  ];
+  for (const fixtureOverrides of unsafe) {
+    const h = harness({ ...paidOptions, fixtureOverrides });
+    const report = await h.run();
+    assert.equal(report.reason, 'capped_payg_fixture_contract_refused');
+    assert.equal(report.budgetVerifiedBeforeCommands, false);
+    assert.equal(report.cleanupVerified, true);
+    assert.equal(report.resetSubmitted, false);
+    assert.equal(h.clients.length, 0);
+    assert.deepEqual(
+      h.requests.filter((row) => row.method !== 'GET').map((row) => row.method),
+      ['POST', 'DELETE'],
+    );
+  }
+});
+
+test('paid budget is rechecked independently before commands, reset and post-reset observations', async () => {
+  for (const phase of [1, 2, 3]) {
+    const h = harness({ ...paidOptions, readOverrides: { [phase]: { budget: 0 } } });
+    const report = await h.run();
+    assert.equal(report.reason, 'capped_payg_fixture_contract_refused');
+    assert.equal(report.cleanupVerified, true);
+    assert.equal(report.resetSubmitted, phase === 3);
+    assert.equal(report.observations.length, 0);
+    if (phase === 1) assert.equal(h.clients.length, 0);
+  }
+});
+
+test('paid mode preserves ownership, count, ambiguous create and cleanup failures', async () => {
+  for (const [options, reason, cleanupVerified] of [
+    [{ foreignId: true }, 'fixture_ownership_unproven', false],
+    [{ baselineCount: 10 }, 'zero_cost_database_count_unproven', true],
+    [{ lostCreate: true }, 'management_unavailable', true],
+    [{ lostCreate: true, invisibleCreate: true }, 'management_unavailable', false],
+    [{ freeRejected: true }, 'management_http_400', true],
+  ]) {
+    const h = harness({ ...paidOptions, ...options });
+    const report = await h.run();
+    assert.equal(report.reason, reason);
+    assert.equal(report.cleanupVerified, cleanupVerified);
+    assert.equal(report.resetSubmitted, false);
+    assert.equal(h.clients.length, 0);
+    assert.equal(report.productionRetirementCertified, false);
+  }
+  const cleanup = await harness({ ...paidOptions, deleteFailure: true }).run();
+  assert.equal(cleanup.cleanupVerified, false);
+  assert.equal(cleanup.cleanupReason, 'management_http_503');
+});
+
+test('paid confirmation never changes the default free request or adds a paid fallback', async () => {
+  const h = harness({ paidConfirmation: PAID_TEST_CONFIRMATION, freeRejected: true });
+  const report = await h.run();
+  assert.equal(report.requestedPlan, 'free');
+  assert.equal(report.authorizedCostUsd, 0);
+  assert.equal(report.resetSubmitted, false);
+  assert.equal(h.requests.filter((row) => row.method === 'POST').length, 1);
+});
+
+test('paid workflow is manual, main-only, confirmed, and shares provider serialization', () => {
+  const paid = readFileSync(
+    new URL('../.github/workflows/upstash-capped-revocation-rehearsal.yml', import.meta.url),
+    'utf8',
+  );
+  const free = readFileSync(
+    new URL('../.github/workflows/upstash-free-revocation-rehearsal.yml', import.meta.url),
+    'utf8',
+  );
+  assert.match(
+    paid,
+    /if: github.event_name == 'workflow_dispatch' && github.ref == 'refs\/heads\/main' && inputs.paid_test_confirmation == 'APPROVED_ONE_TEST_USD20_CAP'/,
+  );
+  for (const workflow of [paid, free]) {
+    assert.match(
+      workflow,
+      /group: upstash-revocation-provider-\$\{\{ github.event_name \}\}-\$\{\{ github.ref \}\}/,
+    );
+    assert.match(workflow, /cancel-in-progress: false/);
+    assert.equal(workflow.split('  rehearse:')[0].includes('secrets.'), false);
+    assert.doesNotMatch(workflow, /pull_request_target|schedule:|workflow_run:|checkout[^\n]*ref:/);
+  }
+  assert.doesNotMatch(
+    free,
+    /UPSTASH_PAID_TEST_CONFIRMATION|upstash-capped-revocation-rehearsal.mjs/,
+  );
+});
 
 test('free refusal stops before connections/reset and preserves negative evidence without secrets', async () => {
   const h = harness({ freeRejected: true });
