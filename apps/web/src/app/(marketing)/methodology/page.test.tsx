@@ -26,7 +26,7 @@ describe('/methodology', () => {
     expect(copy).toContain(
       'does not receive subject lines, preview snippets, or full email contents',
     );
-    expect(copy).toContain('DeclutrMail shows a standard explanation');
+    expect(copy).toContain('DeclutrMail shows an explanation written from its rules');
   });
 
   it('states what a Pro Brief sends without inventing provider terms', () => {

@@ -38,7 +38,7 @@ describe('WS3 token fill', () => {
     const casa = fillWs3(WS3_COPY['ws3.security.verification.casa']);
     const brand = fillWs3(WS3_COPY['ws3.security.verification.brand']);
     expect(oauth).toBe(
-      'Google OAuth verification approved April 21, 2026. It covers the single restricted scope we request, gmail.modify.',
+      'Google OAuth verification approved April 21, 2026. It covers the single restricted permission we request, gmail.modify.',
     );
     expect(casa).toContain('letter of validation was submitted to Google on April 15, 2026');
     expect(casa).not.toMatch(/\bapproved\b/i);
@@ -85,13 +85,16 @@ describe('WS3 token fill', () => {
     expect(autopilot).not.toMatch(/on\s+handle/);
   });
 
-  it('keeps the consent gate off and lists the strings that wait for it', () => {
-    expect(AI_CONSENT_GATE_LIVE).toBe(false);
-    expect(gateOpen()).toBe(false);
+  it('opens the consent gate and uses the deck consent sentences', () => {
+    expect(AI_CONSENT_GATE_LIVE).toBe(true);
+    expect(gateOpen()).toBe(true);
     expect(AI_CONSENT_GATE_KEYS).toHaveLength(16);
-    expect(privacyFaqAnswer()).not.toMatch(/If you allow AI/);
-    expect(glanceLines().some((line) => /Anthropic/.test(line))).toBe(false);
-    expect(llmsKeyFacts()[3]).toMatch(/Pro Brief may send the sender/);
-    expect(llmsKeyFacts()[3]).not.toMatch(/consent card/);
+    expect(privacyFaqAnswer()).toMatch(/If you allow AI/);
+    expect(glanceLines().some((line) => line.includes('If you allow AI'))).toBe(true);
+    const aiFact = llmsKeyFacts()[3];
+    expect(aiFact).toBe(fillWs3(WS3_COPY['ws3.llms.keyFacts'][3]));
+    expect(aiFact).toContain('in-app consent card');
+    expect(aiFact).toContain('Settings → AI');
+    expect(aiFact).not.toContain('Pro Brief');
   });
 });
