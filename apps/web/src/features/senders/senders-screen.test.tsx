@@ -204,16 +204,6 @@ beforeEach(() => {
 });
 
 /**
- * The result strip. The confirm modal now stays up on "Submitting…"
- * until the server answers, and it has a `status` line of its own — so
- * wait for it to close before reading the receipt.
- */
-async function findReceipt(): Promise<HTMLElement> {
-  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-  return screen.findByRole('status');
-}
-
-/**
  * The pressed verb's slot once its job has ended. The top strip is gone:
  * the ROW says what happened, the bottom pill (mounted by the app chrome,
  * not this screen) carries Undo.
