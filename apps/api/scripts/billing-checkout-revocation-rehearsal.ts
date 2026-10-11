@@ -63,7 +63,12 @@ type Fixture = SandboxCheckoutIdentity & {
   crashRecovered?: boolean;
   last?: Record<string, unknown>;
 };
-const fixtures = {} as Record<CaseName, Fixture>;
+const fixtures = new Map<CaseName, Fixture>();
+function fixture(name: CaseName): Fixture {
+  const value = fixtures.get(name);
+  if (!value) throw new Error('Owned fixture required');
+  return value;
+}
 const ownedSubscriptions = new Set<string>();
 const ownedTransactions = new Map<string, SandboxCheckoutIdentity>();
 const cleanup: Record<string, boolean | string> = {};
@@ -140,7 +145,7 @@ async function record() {
         verifiedWebhooks,
         rejectedSignatures,
         fixtures: Object.fromEntries(
-          Object.entries(fixtures).map(([name, f]) => [
+          [...fixtures.entries()].map(([name, f]) => [
             name,
             {
               workspaceId: f.workspaceId,
@@ -196,7 +201,7 @@ async function paidSeen(f: Fixture) {
   return rows.length > 0;
 }
 async function state(name: CaseName) {
-  const f = fixtures[name];
+  const f = fixture(name);
   let provider: SandboxCheckoutFacts | null = null;
   if (f.bound && name !== 'legacy')
     provider = await paddle.readSandboxCheckout(f, f.bound).catch(() => null);
@@ -294,7 +299,7 @@ async function webhook(req: IncomingMessage, res: ServerResponse) {
       : event.kind === 'subscription'
         ? event.subscription.workspaceId
         : null;
-  const f = Object.values(fixtures).find((f) => f.workspaceId === workspaceId);
+  const f = [...fixtures.values()].find((f) => f.workspaceId === workspaceId);
   const subId =
     event.kind === 'subscription'
       ? event.subscription.providerSubscriptionId
@@ -307,7 +312,7 @@ async function webhook(req: IncomingMessage, res: ServerResponse) {
   }
   if (event.kind === 'payment' && event.outcome === 'succeeded' && f) {
     const transactionId = envelope.data?.id;
-    const isLegacy = f === fixtures.legacy;
+    const isLegacy = f === fixture('legacy');
     if (
       !isLegacy &&
       (!f.bound ||
@@ -340,7 +345,7 @@ async function webhook(req: IncomingMessage, res: ServerResponse) {
   json(res, result.kind === 'unresolved' ? 503 : 200, { outcome: result.kind });
 }
 async function checkoutPayload(name: CaseName) {
-  const f = fixtures[name];
+  const f = fixture(name);
   if (name === 'modified') {
     if (!f.bound) throw new Error('Prepared artifact required');
     const exact = await api(`/transactions/${f.bound}`);
@@ -397,7 +402,7 @@ const server = createServer((req, res) => {
         return;
       }
       const selected = name as CaseName,
-        f = fixtures[selected];
+        f = fixture(selected);
       if (req.method === 'GET' && url.pathname === '/state') {
         json(res, 200, await state(selected));
         return;
@@ -598,38 +603,38 @@ const server = createServer((req, res) => {
         if (url.pathname === '/finish') {
           for (const c of cases) await state(c);
           if (
-            fixtures.cancel.last?.proposedHold !== 'attempt_stopped_replay_observed' ||
-            fixtures.unopened.last?.proposedHold !== 'attempt_stopped_replay_observed' ||
-            !fixtures.cancel.hostedReplay ||
-            !fixtures.unopened.hostedReplay ||
-            !fixtures.modified.observations.includes('checkout.loaded') ||
-            fixtures.modified.last?.replacementUnproven !== true ||
-            !fixtures.cancel.orderingVerified ||
-            !fixtures.cancel.originalFrameRefused ||
-            !fixtures.unopened.orderingVerified ||
-            fixtures.pay.last?.proposedHold !== 'paid' ||
-            fixtures.pay.last?.paymentSticky !== true ||
-            fixtures.pay.last?.workspaceTier !== 'plus' ||
-            (fixtures.pay.last?.localSubscription as { status?: unknown; tier?: unknown } | null)
+            fixture('cancel').last?.proposedHold !== 'attempt_stopped_replay_observed' ||
+            fixture('unopened').last?.proposedHold !== 'attempt_stopped_replay_observed' ||
+            !fixture('cancel').hostedReplay ||
+            !fixture('unopened').hostedReplay ||
+            !fixture('modified').observations.includes('checkout.loaded') ||
+            fixture('modified').last?.replacementUnproven !== true ||
+            !fixture('cancel').orderingVerified ||
+            !fixture('cancel').originalFrameRefused ||
+            !fixture('unopened').orderingVerified ||
+            fixture('pay').last?.proposedHold !== 'paid' ||
+            fixture('pay').last?.paymentSticky !== true ||
+            fixture('pay').last?.workspaceTier !== 'plus' ||
+            (fixture('pay').last?.localSubscription as { status?: unknown; tier?: unknown } | null)
               ?.status !== 'active' ||
             !verifiedEvents.some(
               (e) =>
                 e.event.kind === 'payment' &&
-                e.event.workspaceId === fixtures.pay.workspaceId &&
+                e.event.workspaceId === fixture('pay').workspaceId &&
                 e.event.outcome === 'succeeded',
             ) ||
             !verifiedEvents.some(
               (e) =>
                 e.event.kind === 'subscription' &&
-                e.event.subscription.workspaceId === fixtures.pay.workspaceId &&
+                e.event.subscription.workspaceId === fixture('pay').workspaceId &&
                 e.event.subscription.status === 'active',
             ) ||
-            !fixtures.race.raceInitiated ||
-            !['paid', 'stopped'].includes(fixtures.race.revocation?.hold ?? '') ||
-            !fixtures.crash.crashRecovered ||
-            !fixtures.legacy.observations.includes('checkout.loaded') ||
-            !fixtures.race.revocation ||
-            cases.some((c) => fixtures[c].last?.productionGuard !== 'held')
+            !fixture('race').raceInitiated ||
+            !['paid', 'stopped'].includes(fixture('race').revocation?.hold ?? '') ||
+            !fixture('crash').crashRecovered ||
+            !fixture('legacy').observations.includes('checkout.loaded') ||
+            !fixture('race').revocation ||
+            cases.some((c) => fixture(c).last?.productionGuard !== 'held')
           )
             throw new Error('All fixed proofs required');
           for (const e of verifiedEvents)
@@ -707,8 +712,8 @@ async function shutdown() {
   // An empty provider scan cannot disprove an accepted-but-unseen create.
   // Every started server attempt needs an exact signed owned record for cleanup.
   const attempts = cases
-    .filter((name) => fixtures[name])
-    .map((name) => ({ ...fixtures[name], legacy: name === 'legacy' }));
+    .filter((name) => fixtures.has(name))
+    .map((name) => ({ ...fixture(name), legacy: name === 'legacy' }));
   const recovered = await collectSandboxAttemptCleanup(attempts, paddle);
   const attemptsRecovered = recovered.complete;
   for (const { facts, identity } of recovered.records)
@@ -724,7 +729,7 @@ async function shutdown() {
         });
         const f =
           normalized.kind === 'payment'
-            ? Object.values(fixtures).find((f) => f.workspaceId === normalized.workspaceId)
+            ? [...fixtures.values()].find((f) => f.workspaceId === normalized.workspaceId)
             : undefined;
         if (f && typeof t.id === 'string') {
           if (typeof t.subscription_id === 'string') ownedSubscriptions.add(t.subscription_id);
@@ -746,7 +751,7 @@ async function shutdown() {
         });
         if (
           mapped.kind === 'subscription' &&
-          Object.values(fixtures).some((f) => f.workspaceId === mapped.subscription.workspaceId)
+          [...fixtures.values()].some((f) => f.workspaceId === mapped.subscription.workspaceId)
         )
           ownedSubscriptions.add(mapped.subscription.providerSubscriptionId);
       }
@@ -779,7 +784,7 @@ async function shutdown() {
   while (!settled && Date.now() < settlementDeadline) {
     try {
       const all = (await list('/transactions', { 'created_at[GTE]': startedAt })).filter((t) =>
-        Object.values(fixtures).some(
+        [...fixtures.values()].some(
           (f) =>
             verifiedWorkspaceId(
               t.custom_data as { workspace_id?: string; sig?: string } | null,
@@ -858,7 +863,7 @@ try {
         email: `revocation-${process.env.GITHUB_RUN_ID}-${name}@example.test`,
       })
       .returning();
-    fixtures[name] = {
+    fixtures.set(name, {
       workspaceId: w!.id,
       userId: u!.id,
       attemptId: randomUUID(),
@@ -867,7 +872,7 @@ try {
       attempted: false,
       observations: [],
       opened: false,
-    };
+    });
   }
   await record();
   tokenAttempted = true;
