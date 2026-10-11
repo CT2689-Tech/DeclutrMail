@@ -74,6 +74,7 @@ describe('standalone billing queue probe', () => {
     expect(f.sample).toHaveBeenCalledWith(expect.any(Function), {
       samples: 5,
       intervalMs: 3_000,
+      breadth: 8,
     });
     expect(f.connect).toHaveBeenCalledTimes(2);
     expect(f.construct).toHaveBeenCalledWith('email-send', {

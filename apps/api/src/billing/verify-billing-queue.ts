@@ -10,12 +10,16 @@ import {
 type Redis = ReturnType<typeof createRedisConnection>;
 
 /**
- * Fresh broker connection per sample, so neither a worker that is momentarily
- * reconnecting nor this probe's own connection placement decides the verdict.
- * Startup plus the deadline must stay inside the task's 60 s timeout.
+ * Five instants, 3s apart, eight fresh connections each. One connection can
+ * omit the live blocking actor that another connection lists at the same
+ * instant, so a single reader per instant can miss a running consumer for
+ * the whole window. The reads in one instant run together; the gap between
+ * instants is what covers a reconnect. Startup plus the deadline must stay
+ * inside the task's 60 s timeout. The deadline covers the eight parallel
+ * handshakes as well as the gaps between instants.
  */
-export const PROBE_SAMPLING = { samples: 5, intervalMs: 3_000 };
-export const PROBE_DEADLINE_MS = 35_000;
+export const PROBE_SAMPLING = { samples: 5, intervalMs: 3_000, breadth: 8 };
+export const PROBE_DEADLINE_MS = 40_000;
 
 /**
  * Task exit codes. The deploy reads only this number from the Cloud Run task,
