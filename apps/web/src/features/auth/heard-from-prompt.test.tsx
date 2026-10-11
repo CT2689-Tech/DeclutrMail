@@ -12,6 +12,14 @@ vi.mock('@/lib/api/client', () => ({ apiPatch }));
 const me = vi.hoisted(() => ({ current: null as unknown }));
 vi.mock('./auth-provider', () => ({ useAuth: () => ({ me: me.current as Me }) }));
 
+const pathname = vi.hoisted(() => ({ current: '/home' }));
+vi.mock('next/navigation', () => ({ usePathname: () => pathname.current }));
+
+import type { AiConsentView } from '@declutrmail/shared/ai-consent';
+
+import { dismissAiPrompt } from '@/features/ai-consent/ai-prompt-queue';
+import { ME_SETTINGS_QUERY_KEY } from '@/features/settings/api/query-options';
+
 import { HeardFromPrompt } from './heard-from-prompt';
 
 function meWithPrompt(promptNeeded: boolean) {
@@ -21,8 +29,11 @@ function meWithPrompt(promptNeeded: boolean) {
   } as unknown as Me;
 }
 
-function renderPrompt() {
+function renderPrompt(view?: AiConsentView) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  if (view) {
+    client.setQueryData(ME_SETTINGS_QUERY_KEY, { aiConsent: view });
+  }
   return render(
     <QueryClientProvider client={client}>
       <HeardFromPrompt />
@@ -34,6 +45,7 @@ beforeEach(() => {
   apiPatch.mockReset();
   apiPatch.mockResolvedValue({});
   me.current = meWithPrompt(true);
+  pathname.current = '/home';
   localStorage.clear();
   document.cookie = 'dm_cookie_consent=; Max-Age=0; Path=/';
 });
@@ -77,6 +89,46 @@ describe('HeardFromPrompt', () => {
 
     expect(apiPatch).toHaveBeenCalledWith('/api/me/signup-heard-from', { heardFrom: 'hn' });
     await waitFor(() => expect(screen.queryByTestId('heard-from-prompt')).not.toBeInTheDocument());
+  });
+
+  it('stays hidden on Brief while the consent card is the choice', async () => {
+    storeConsent('all');
+    pathname.current = '/brief';
+    me.current = { ...meWithPrompt(true), tier: 'pro' };
+    renderPrompt({ explanations: 'unset', brief: 'unset', reask: false });
+
+    await new Promise((r) => setTimeout(r, 40));
+    expect(screen.queryByTestId('heard-from-prompt')).not.toBeInTheDocument();
+  });
+
+  it('asks on Brief once explanations and Brief are allowed', async () => {
+    storeConsent('all');
+    pathname.current = '/brief';
+    me.current = { ...meWithPrompt(true), tier: 'pro' };
+    renderPrompt({ explanations: 'allowed', brief: 'allowed', reask: false });
+
+    expect(await screen.findByTestId('heard-from-prompt')).toBeInTheDocument();
+  });
+
+  it('asks on Brief after the AI choice was declined', async () => {
+    storeConsent('all');
+    pathname.current = '/brief';
+    me.current = { ...meWithPrompt(true), tier: 'pro' };
+    renderPrompt({ explanations: 'off', brief: 'off', reask: false });
+
+    expect(await screen.findByTestId('heard-from-prompt')).toBeInTheDocument();
+  });
+
+  it('waits out the Triage nudge, then asks after that nudge is dismissed', async () => {
+    storeConsent('all');
+    pathname.current = '/triage';
+    renderPrompt({ explanations: 'unset', brief: 'unset', reask: false });
+    await new Promise((r) => setTimeout(r, 40));
+    expect(screen.queryByTestId('heard-from-prompt')).not.toBeInTheDocument();
+
+    dismissAiPrompt(Date.now());
+
+    expect(await screen.findByTestId('heard-from-prompt')).toBeInTheDocument();
   });
 
   it('says a failed save failed instead of silently resetting', async () => {

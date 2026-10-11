@@ -179,17 +179,14 @@ export function BriefScreen() {
     // "Brief lands soon" message instead of the generic retry CTA.
     if (notYet) {
       return (
-        <>
-          <BriefAiConsent />
-          <NotYetState
-            historyLoading={history.isFetching}
-            historyFailed={history.isError}
-            onRefresh={() => {
-              handleBriefRefresh(query.refetch);
-              void history.refetch();
-            }}
-          />
-        </>
+        <NotYetState
+          historyLoading={history.isFetching}
+          historyFailed={history.isError}
+          onRefresh={() => {
+            handleBriefRefresh(query.refetch);
+            void history.refetch();
+          }}
+        />
       );
     }
     // Non-404 → log to Sentry as a feature exception so the dashboard
@@ -204,17 +201,14 @@ export function BriefScreen() {
   if (!brief) {
     // 404, 204, and a null body all mean there is no Brief today.
     return (
-      <>
-        <BriefAiConsent />
-        <NotYetState
-          historyLoading={history.isFetching}
-          historyFailed={history.isError}
-          onRefresh={() => {
-            handleBriefRefresh(query.refetch);
-            void history.refetch();
-          }}
-        />
-      </>
+      <NotYetState
+        historyLoading={history.isFetching}
+        historyFailed={history.isError}
+        onRefresh={() => {
+          handleBriefRefresh(query.refetch);
+          void history.refetch();
+        }}
+      />
     );
   }
 
@@ -227,28 +221,25 @@ export function BriefScreen() {
       : (acceptedHistory?.find((row) => row.runDateLocal === selectedRunDate) ?? brief);
 
   return (
-    <>
-      <BriefAiConsent />
-      <BriefBody
-        brief={selected}
-        mailboxEmail={activeMailboxEmail}
-        // Only today's Brief is a "first view" worth recording. Marking a
-        // three-week-old snapshot opened because someone browsed back to
-        // it would make D61's opened_at mean something else entirely.
-        isToday={selected.id === brief.id && !todayMissing}
-        refreshFailed={refreshFailed || (history.isError && todayMissing)}
-        notYet={todayMissing}
-        historyRefreshFailed={todayMissing && history.isError}
-        refreshing={query.isFetching}
-        onRefresh={() => {
-          handleBriefRefresh(query.refetch);
-          if (todayMissing) void history.refetch();
-        }}
-        days={acceptedHistory ?? []}
-        selectedRunDate={selectedRunDate}
-        onSelectRunDate={setSelectedRunDate}
-      />
-    </>
+    <BriefBody
+      brief={selected}
+      mailboxEmail={activeMailboxEmail}
+      // Only today's Brief is a "first view" worth recording. Marking a
+      // three-week-old snapshot opened because someone browsed back to
+      // it would make D61's opened_at mean something else entirely.
+      isToday={selected.id === brief.id && !todayMissing}
+      refreshFailed={refreshFailed || (history.isError && todayMissing)}
+      notYet={todayMissing}
+      historyRefreshFailed={todayMissing && history.isError}
+      refreshing={query.isFetching}
+      onRefresh={() => {
+        handleBriefRefresh(query.refetch);
+        if (todayMissing) void history.refetch();
+      }}
+      days={acceptedHistory ?? []}
+      selectedRunDate={selectedRunDate}
+      onSelectRunDate={setSelectedRunDate}
+    />
   );
 }
 
@@ -345,6 +336,7 @@ function BriefBody({
           onSelectRunDate={onSelectRunDate}
         />
       </div>
+      <BriefAiConsent />
       <ScreenIntro
         id="brief"
         title="Daily brief"
@@ -1440,6 +1432,7 @@ function NotYetState({
     <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 24 }}>
       <EditorialKicker>Catch up</EditorialKicker>
       <h1 style={H1_STYLE}>Daily brief</h1>
+      <BriefAiConsent />
       <EmptyState
         headingLevel={2}
         title="Your Brief is not available yet"
