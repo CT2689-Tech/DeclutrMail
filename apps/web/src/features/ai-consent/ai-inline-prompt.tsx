@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 
@@ -17,6 +17,15 @@ import { AiConsentCard } from './ai-consent-card';
 import { aiPromptDue, dismissAiPrompt } from './ai-prompt-queue';
 
 const { color, font, text, radius } = tokens;
+
+/** Same horizontal inset as the editorial page column, so the card is not edge to edge. */
+export function AiInlineConsentInset({ children }: { children: ReactNode }) {
+  return (
+    <div data-testid="ai-inline-consent" style={{ padding: '0 clamp(16px, 3vw, 40px)' }}>
+      {children}
+    </div>
+  );
+}
 
 /**
  * Dismissible nudge on Triage and Senders. "See what's sent" opens the
@@ -37,8 +46,15 @@ export function AiInlinePrompt() {
   if (paused) return null;
 
   if (view.reask || view.explanations === 'review' || open) {
-    const card = consentCard(view, briefCapable) ?? (briefCapable ? 'withBrief' : 'all');
-    return <AiConsentCard view={view} card={card} onDone={() => setOpen(false)} />;
+    const fromGate = consentCard(view, briefCapable);
+    const card =
+      fromGate ?? (view.explanations === 'allowed' ? null : briefCapable ? 'withBrief' : 'all');
+    if (!card) return null;
+    return (
+      <AiInlineConsentInset>
+        <AiConsentCard view={view} card={card} onDone={() => setOpen(false)} />
+      </AiInlineConsentInset>
+    );
   }
 
   if (view.explanations !== 'unset' || !aiPromptDue(Date.now())) return null;

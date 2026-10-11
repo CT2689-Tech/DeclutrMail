@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -13,7 +14,7 @@ vi.mock('@/features/auth/auth-provider', () => ({
   }),
 }));
 
-import { AiInlinePrompt } from './ai-inline-prompt';
+import { AiInlineConsentInset, AiInlinePrompt } from './ai-inline-prompt';
 
 describe('AiInlinePrompt', () => {
   it('names the dismiss control with the deck label', () => {
@@ -30,5 +31,25 @@ describe('AiInlinePrompt', () => {
     );
 
     expect(screen.getByRole('button', { name: WS2_COPY.aiPrompt.dismissAria })).toBeInTheDocument();
+  });
+
+  it('insets the opened consent card by the page margin', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(ME_SETTINGS_QUERY_KEY, {
+      aiConsent: { explanations: 'review', brief: 'unset', reask: true },
+    });
+
+    render(
+      <QueryClientProvider client={client}>
+        <AiInlinePrompt />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByTestId('ai-inline-consent')).toContainElement(
+      screen.getByRole('button', { name: WS2_COPY.aiConsent.allow }),
+    );
+    expect(renderToStaticMarkup(<AiInlineConsentInset>card</AiInlineConsentInset>)).toContain(
+      'padding:0 clamp(16px, 3vw, 40px)',
+    );
   });
 });
