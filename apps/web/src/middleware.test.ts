@@ -341,3 +341,31 @@ describe('signup first-touch cookie (Phase B)', () => {
     expect(response.cookies.get('dm_signup_ref')?.value).toBe('simulator');
   });
 });
+
+describe('canonical app host', () => {
+  it.each(['declutrmail.com', 'www.declutrmail.com'])(
+    'preserves inbox and destination query from %s',
+    (host) => {
+      const result = middleware(
+        new NextRequest(`https://${host}/senders?mailbox=owned&sender=example`),
+      );
+      expect(result.status).toBe(307);
+      expect(result.headers.get('location')).toBe(
+        'https://app.declutrmail.com/senders?mailbox=owned&sender=example',
+      );
+    },
+  );
+  it.each(['localhost:3104', 'preview.vercel.app', 'app.declutrmail.com'])(
+    'keeps %s in its environment',
+    (host) => {
+      expect(
+        middleware(new NextRequest(`https://${host}/senders`)).headers.get('location'),
+      ).toBeNull();
+    },
+  );
+  it('keeps public marketing on the apex', () => {
+    expect(
+      middleware(new NextRequest('https://declutrmail.com/pricing')).headers.get('location'),
+    ).toBeNull();
+  });
+});

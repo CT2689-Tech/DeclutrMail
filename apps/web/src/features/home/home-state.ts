@@ -33,13 +33,19 @@ export interface HomeStat {
 export type HomeState =
   | { kind: 'loading' }
   | { kind: 'error'; error: unknown; retry: () => void }
-  | { kind: 'empty'; syncing: boolean; action: HomeAction; senders?: HomeSenderPreview[] }
+  | {
+      kind: 'empty';
+      syncing: boolean;
+      queued?: boolean;
+      action: HomeAction;
+      senders?: HomeSenderPreview[];
+    }
   /**
    * The active mailbox's first scan failed terminally (`readiness === 'failed'`)
    * and nothing is decided. `needsReconnect` is the server's per-mailbox
    * flag: only then is the connection what failed.
    */
-  | { kind: 'sync-failed'; needsReconnect: boolean }
+  | { kind: 'sync-failed'; needsReconnect: boolean; mailboxId?: string }
   | {
       kind: 'ready';
       pending?: HomeActionInput;

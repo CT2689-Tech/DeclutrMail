@@ -123,7 +123,7 @@ describe('buildSyncReadyEmailHandler', () => {
     // appUrl is normalized.
     expect(completeData.text).toContain('4,321 emails');
     expect(completeData.text).toContain('inbox@gmail.com');
-    expect(completeData.text).toContain('https://app.declutrmail.com/triage');
+    expect(completeData.text).toContain(`https://app.declutrmail.com/senders?mailbox=${mailboxId}`);
     expect(completeOpts.jobId).toBe('email__sync-complete__ev-1');
     expect(completeOpts.delay).toBeUndefined();
 
@@ -141,8 +141,8 @@ describe('buildSyncReadyEmailHandler', () => {
     expect(reminderOpts.delay).toBe(24 * 60 * 60 * 1_000);
 
     // Multipart (D162): the rendered HTML twin rides the job.
-    expect(completeData.html).toContain('https://app.declutrmail.com/triage');
-    expect(reminderData.html).toContain('/triage');
+    expect(completeData.html).toContain(`https://app.declutrmail.com/senders?mailbox=${mailboxId}`);
+    expect(reminderData.html).toContain(`/senders?mailbox=${mailboxId}`);
   });
 
   it('keeps the transactional completion notice while commercial reminders are disabled', async () => {

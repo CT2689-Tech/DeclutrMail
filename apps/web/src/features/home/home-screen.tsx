@@ -9,6 +9,7 @@ import { useHomePending } from './api/use-home-pending';
 import { useHomeSummary } from './api/use-home-summary';
 import { useHomeWorkflows } from './api/use-home-workflows';
 import { composeHomeAction, composeHomeNumbers, type HomeState } from './home-state';
+import { HomeArrivals } from './home-arrivals';
 import { HomeView } from './home-view';
 
 /**
@@ -32,7 +33,7 @@ import { HomeView } from './home-view';
  */
 export function HomeScreen() {
   const { me } = useAuth();
-  const { tier } = useTier();
+  const { tier, cleanupRemaining, cleanupResetsAt } = useTier();
   const hasActiveMailbox = me.activeMailboxId != null;
 
   const summary = useHomeSummary({ enabled: hasActiveMailbox });
@@ -53,10 +54,22 @@ export function HomeScreen() {
       tier={tier}
       workflows={workflows}
       timeZone={me.user.timezone ?? 'UTC'}
+      visitSummary={<HomeArrivals />}
+      quota={
+        cleanupRemaining !== null
+          ? `${cleanupRemaining.toLocaleString('en-US')} cleanup actions left${cleanupResetsAt ? ` · resets ${new Date(cleanupResetsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: me.user.timezone ?? 'UTC' })}` : ''}`
+          : undefined
+      }
     />
   );
 
   function resolve(): HomeState {
+    if (readiness === 'failed')
+      return {
+        kind: 'sync-failed',
+        needsReconnect: activeMailbox?.needsReconnect === true,
+        mailboxId: activeMailbox!.id,
+      };
     if (summary.isError) {
       return { kind: 'error', error: summary.error, retry: () => void summary.refetch() };
     }
@@ -70,10 +83,13 @@ export function HomeScreen() {
     const numbers = composeHomeNumbers(summary.data);
     if (numbers === null) {
       // A failed scan is not a healthy empty mailbox — never "Nothing cleared yet".
-      if (readiness === 'failed') {
-        return { kind: 'sync-failed', needsReconnect: activeMailbox?.needsReconnect === true };
-      }
-      return { kind: 'empty', syncing, action, senders: pending.senders };
+      return {
+        kind: 'empty',
+        syncing,
+        queued: readiness === 'queued',
+        action,
+        senders: pending.senders,
+      };
     }
     return {
       kind: 'ready',

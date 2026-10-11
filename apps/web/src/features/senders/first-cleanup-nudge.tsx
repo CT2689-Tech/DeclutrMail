@@ -26,13 +26,7 @@ const { color, font, radius } = tokens;
  * never write `action_jobs`, so they do not dismiss the nudge
  * (product call — leave unless asked).
  */
-export function shouldShowFirstCleanupNudge(args: {
-  mailboxReady: boolean;
-  hasCompletedCleanup: boolean | undefined;
-  visibleSenderCount: number;
-}): boolean {
-  return args.mailboxReady && args.hasCompletedCleanup === false && args.visibleSenderCount > 0;
-}
+export { shouldShowFirstCleanupNudge } from './first-cleanup-nudge-policy';
 
 /**
  * Post-sync surface for a ready mailbox that has senders but no
@@ -40,7 +34,13 @@ export function shouldShowFirstCleanupNudge(args: {
  * the user can pick the sender themselves. Copy budget: title + one
  * sentence + one action.
  */
-export function FirstCleanupNudge({ href }: { href: string }) {
+export function FirstCleanupNudge({
+  href,
+  candidate,
+}: {
+  href: string;
+  candidate?: { name: string; inboxEmails: number };
+}) {
   return (
     <div
       role="region"
@@ -61,10 +61,12 @@ export function FirstCleanupNudge({ href }: { href: string }) {
     >
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: color.fg, marginBottom: 2 }}>
-          Pick one sender
+          {candidate ? 'Start with your biggest eligible sender' : 'Pick one sender'}
         </div>
         <p style={{ fontSize: 12.5, color: color.fg, lineHeight: 1.5, margin: 0 }}>
-          Open a sender you recognize and finish your first cleanup.
+          {candidate
+            ? `${candidate.name} has ${candidate.inboxEmails.toLocaleString('en-US')} ${candidate.inboxEmails === 1 ? 'email' : 'emails'} in your inbox. Preview before choosing an action.`
+            : 'Open a sender you recognize and finish your first cleanup.'}
         </p>
       </div>
       <Link

@@ -1,4 +1,4 @@
-import { act } from '@testing-library/react';
+import { act, waitFor } from '@testing-library/react';
 import { hydrateRoot, type Root } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
 import {
@@ -99,7 +99,19 @@ describe('Senders shared summary initial hydration', () => {
     async (summaryCompletesBeforeHydration) => {
       vi.stubGlobal(
         'fetch',
-        vi.fn(() => new Promise<Response>(() => undefined)),
+        vi.fn((input: RequestInfo | URL) => {
+          const url = input instanceof Request ? input.url : String(input);
+          if (url.includes('/api/onboarding/backlog'))
+            return Promise.resolve(
+              new Response(
+                JSON.stringify({
+                  data: { senderId: 'sender', name: 'Fixture sender', inboxEmails: 12 },
+                }),
+                { headers: { 'content-type': 'application/json' } },
+              ),
+            );
+          return new Promise<Response>(() => undefined);
+        }),
       );
       useSendersStore.setState({ sort: 'total', direction: 'desc' });
       const options = { defaultOptions: { queries: { retry: false, staleTime: Infinity } } };
@@ -132,7 +144,12 @@ describe('Senders shared summary initial hydration', () => {
         });
         expect(onRecoverableError).not.toHaveBeenCalled();
         if (summaryCompletesBeforeHydration) {
-          expect(container.querySelector('[data-testid="first-cleanup-nudge"]')).not.toBeNull();
+          await waitFor(() =>
+            expect(
+              container.querySelector('[data-testid="first-cleanup-nudge"]'),
+            ).toHaveTextContent('Fixture sender has 12 emails in your inbox'),
+          );
+          expect(onRecoverableError).not.toHaveBeenCalled();
         }
       } finally {
         await act(async () => root?.unmount());

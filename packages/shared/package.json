@@ -13,6 +13,7 @@
     "./actions": "./src/actions/index.ts",
     "./contracts": "./src/contracts/index.ts",
     "./contracts/billing-availability": "./src/contracts/billing-availability.ts",
+    "./contracts/home-visit": "./src/contracts/home-visit.ts",
     "./contracts/app-navigation": "./src/contracts/app-navigation.ts",
     "./contracts/account-navigation": "./src/contracts/account-navigation.ts",
     "./contracts/signup-attribution-ref": "./src/contracts/signup-attribution-ref.ts",

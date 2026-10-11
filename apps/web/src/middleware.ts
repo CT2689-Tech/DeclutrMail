@@ -300,6 +300,20 @@ export function isAuthedAppPath(pathname: string): boolean {
 export function middleware(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
   const authed = isAuthedAppPath(pathname);
+  // Keep app entry on one host. Only our two public hosts redirect;
+  // localhost and deployment previews remain usable in isolation.
+  if (
+    ['declutrmail.com', 'www.declutrmail.com'].includes(request.nextUrl.hostname) &&
+    (authed || ['/sign-in', '/login', '/signup', '/dashboard', '/app'].includes(pathname))
+  ) {
+    const destination = new URL(
+      `${pathname}${request.nextUrl.search}`,
+      'https://app.declutrmail.com',
+    );
+    const redirect = NextResponse.redirect(destination, 307);
+    captureSignupRefCookie(request, redirect);
+    return redirect;
+  }
 
   // 128 bits of webcrypto randomness, base64 — the canonical nonce
   // recipe from the Next.js CSP guide. Authed documents only: the

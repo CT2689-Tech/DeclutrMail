@@ -8,12 +8,35 @@ import { E2E_ENV } from '../helpers/env';
 const fixture = BILLING_SEED;
 const expiredRecoveryTitle =
   'expired account-recovery link opens returning sign-in with its full destination';
+const homeVisitTitle = 'returning Home freezes its per-inbox counts across navigation and reload';
 // Logout revokes its server session, so never inherit the suite’s shared session.
 test.use({ storageState: { cookies: [], origins: [] } });
 test.beforeEach(async ({ page }, testInfo) => {
   const sql = dbConnect();
   try {
     await applyJourneySeed(sql);
+    if (testInfo.title === homeVisitTitle) {
+      // Seed before sign-in: entry tracking must never race a fixture rewrite.
+      const history = JSON.stringify({
+        [fixture.mailboxId]: [
+          {
+            visitId: '10000000-0000-4000-8000-000000000001',
+            since: null,
+            until: new Date(Date.now() - 86_400_000).toISOString(),
+            indexedEmails: null,
+            indexedSenders: null,
+          },
+        ],
+      });
+      // postgres.js encodes a string parameter inferred as jsonb again. Bind
+      // this serialized fixture as text so the stored value is an object.
+      await sql`UPDATE users SET preferences = jsonb_set(preferences, '{mailboxVisits}', ${history}::text::jsonb) WHERE id = ${fixture.userId}`;
+      const [stored] =
+        await sql`SELECT jsonb_typeof(preferences->'mailboxVisits') AS kind FROM users WHERE id = ${fixture.userId}`;
+      expect(stored?.kind).toBe('object');
+      await sql`UPDATE mail_messages SET created_at = now() - interval '1 minute' WHERE mailbox_account_id = ${fixture.mailboxId}`;
+      await sql`UPDATE senders SET first_indexed_at = now() - interval '1 minute' WHERE mailbox_account_id = ${fixture.mailboxId}`;
+    }
   } finally {
     await sql.end();
   }
@@ -117,4 +140,114 @@ test('intentional sign-out keeps its confirmation instead of a stale-session red
   await expect(
     page.getByRole('heading', { name: 'You’re signed out.', exact: true }),
   ).toBeVisible();
+});
+
+test(homeVisitTitle, async ({ page }) => {
+  const sql = dbConnect();
+  try {
+    const summary = page.getByRole('region', { name: 'Since your previous visit' });
+    await expect(summary.getByRole('heading', { name: '3 emails newly indexed' })).toBeVisible();
+    await expect(
+      summary.getByText('2 senders added to this inbox’s index.', { exact: true }),
+    ).toBeVisible();
+    await sql`UPDATE mail_messages SET created_at = now() + interval '1 day' WHERE mailbox_account_id = ${fixture.mailboxId}`;
+    await page.goto('/senders');
+    await page.goto('/home');
+    await page.reload();
+    await expect(summary.getByRole('heading', { name: '3 emails newly indexed' })).toBeVisible();
+  } finally {
+    await sql`UPDATE mail_messages SET created_at = now() WHERE mailbox_account_id = ${fixture.mailboxId}`;
+    await sql`UPDATE users SET preferences = preferences - 'mailboxVisits' WHERE id = ${fixture.userId}`;
+    await sql.end();
+  }
+});
+
+test('emailed owned inbox target switches scope before showing its Senders, while unknown targets recover', async ({
+  page,
+}) => {
+  const sql = dbConnect();
+  const second = 'e2eb1111-0000-4000-8000-000000000099';
+  try {
+    await sql`INSERT INTO mailbox_accounts (id, workspace_id, user_id, provider, provider_account_id, status) VALUES (${second}, ${fixture.workspaceId}, ${fixture.userId}, 'gmail', 'chintan.e2e.second@synthetic.test', 'active')`;
+    await sql`INSERT INTO provider_sync_state (mailbox_account_id, readiness_status, current_stage, progress_pct) VALUES (${second}, 'ready', 'ready', 100)`;
+    await page.goto(`/senders?mailbox=${second}`);
+    await expect(page).toHaveURL(/\/senders$/);
+    await expect(
+      page.getByRole('button', { name: 'chintan.e2e.second@synthetic.test', exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Senders', exact: true })).toBeVisible();
+    await expect(page.getByText(fixture.archiveSenderName, { exact: true })).toHaveCount(0);
+    await page.goto(`/senders?mailbox=${fixture.mailboxId}`);
+    await expect(page.getByRole('button', { name: fixture.email, exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/senders$/);
+    await page.goto('/senders?mailbox=00000000-0000-4000-8000-000000000099');
+    await expect(page.getByText('This inbox link is unavailable', { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Senders', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Continue with my current inbox' }).click();
+    await expect(page).toHaveURL(/\/senders$/);
+    await expect(page.getByRole('button', { name: fixture.email, exact: true })).toBeVisible();
+  } finally {
+    await sql`DELETE FROM mailbox_accounts WHERE id = ${second} AND user_id = ${fixture.userId}`;
+    await sql`UPDATE users SET preferences = preferences - 'mailboxVisits' WHERE id = ${fixture.userId}`;
+    await sql.end();
+  }
+});
+
+test('failed scan preview is read-only and the first backlog nudge excludes Protected senders', async ({
+  page,
+}) => {
+  const sql = dbConnect();
+  try {
+    await sql`UPDATE users SET onboarded_at = NULL WHERE id = ${fixture.userId}`;
+    await sql`UPDATE provider_sync_state SET readiness_status = 'failed', current_stage = 'failed', error_code = 'TransientError' WHERE mailbox_account_id = ${fixture.mailboxId}`;
+    await page.goto('/onboarding');
+    await page.getByRole('button', { name: 'Preview indexed senders', exact: true }).click();
+    await expect(
+      page.getByRole('region', { name: 'Scan preview' }).getByText(/Fresh Finds Weekly/),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByRole('region', { name: 'Scan preview' })
+        .getByRole('button', { name: /Archive|Delete|Unsubscribe/ }),
+    ).toHaveCount(0);
+    await sql`UPDATE users SET onboarded_at = now() WHERE id = ${fixture.userId}`;
+    await sql`UPDATE provider_sync_state SET readiness_status = 'ready', current_stage = 'ready', error_code = NULL WHERE mailbox_account_id = ${fixture.mailboxId}`;
+    await sql`DELETE FROM action_jobs WHERE mailbox_account_id = ${fixture.mailboxId}`;
+    await page.goto('/senders');
+    const nudge = page.getByRole('region', { name: 'Finish first cleanup' });
+    await expect(nudge.getByText(/Fresh Finds Weekly/)).toBeVisible();
+    await expect(nudge.getByText(/2 emails/)).toBeVisible();
+    await expect(nudge.getByText(fixture.screenerSenderName, { exact: false })).toHaveCount(0);
+  } finally {
+    await sql.end();
+  }
+});
+
+test('Home retries the displayed inbox and truthfully reports queued recovery', async ({
+  page,
+}) => {
+  const sql = dbConnect();
+  try {
+    await sql`UPDATE provider_sync_state SET readiness_status='failed', current_stage='failed', error_code='TransientError', initial_recovery_attempts=5, initial_retry_at=NULL, initial_attempt_id=NULL, last_history_id=987654321 WHERE mailbox_account_id=${fixture.mailboxId}`;
+    await page.reload();
+    const recovery = page.getByRole('region', { name: 'Mailbox needs attention' });
+    const response = page.waitForResponse(
+      (res) =>
+        res.url().endsWith('/api/v1/sync/initial/retry') && res.request().method() === 'POST',
+    );
+    await recovery.getByRole('button', { name: 'Scan again', exact: true }).press('Enter');
+    const result = await response;
+    expect(result.ok()).toBe(true);
+    expect(result.request().headers()['x-active-mailbox-id']).toBe(fixture.mailboxId);
+    await expect(page.getByText('Your scan is queued.', { exact: true })).toBeVisible();
+    const [state] =
+      await sql`SELECT readiness_status, last_history_id::text AS cursor FROM provider_sync_state WHERE mailbox_account_id=${fixture.mailboxId}`;
+    expect(state).toMatchObject({ readiness_status: 'queued', cursor: '987654321' });
+    const [count] =
+      await sql`SELECT count(*)::int AS n FROM mail_messages WHERE mailbox_account_id=${fixture.mailboxId}`;
+    expect(count?.n).toBe(3);
+  } finally {
+    await sql`UPDATE provider_sync_state SET last_history_id=NULL WHERE mailbox_account_id=${fixture.mailboxId}`;
+    await sql.end();
+  }
 });

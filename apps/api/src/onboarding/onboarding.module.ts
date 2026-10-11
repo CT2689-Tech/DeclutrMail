@@ -4,6 +4,7 @@ import { AuthModule } from '../auth/auth.module.js';
 import { AutopilotModule } from '../autopilot/autopilot.module.js';
 import { EntitlementsModule } from '../common/entitlements/entitlements.module.js';
 import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
+import { SendersModule } from '../senders/senders.module.js';
 import { TriageModule } from '../triage/triage.module.js';
 import { OnboardingController } from './onboarding.controller.js';
 import { OnboardingService } from './onboarding.service.js';
@@ -22,7 +23,14 @@ import { OnboardingService } from './onboarding.service.js';
  * Eager-loadable at boot — only needs DATABASE_URL (global DbModule).
  */
 @Module({
-  imports: [AuthModule, MailboxAccountsModule, TriageModule, AutopilotModule, EntitlementsModule],
+  imports: [
+    AuthModule,
+    MailboxAccountsModule,
+    TriageModule,
+    AutopilotModule,
+    EntitlementsModule,
+    SendersModule,
+  ],
   controllers: [OnboardingController],
   providers: [OnboardingService],
 })

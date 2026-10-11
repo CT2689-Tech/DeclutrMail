@@ -5,6 +5,7 @@ import { syncCompleteEmail } from './sync-complete.js';
 describe('sync-complete', () => {
   const input = {
     mailboxEmail: 'you@gmail.com',
+    mailboxAccountId: '00000000-0000-4000-8000-000000000002',
     messageCount: 24310,
     appUrl: 'https://app.declutrmail.com',
     unsubscribeUrl: 'https://api.declutrmail.com/api/email/unsubscribe?t=tok',
@@ -15,11 +16,15 @@ describe('sync-complete', () => {
     expect(email.subject).toBe('Your inbox is ready');
     expect(email.text).toContain('24,310 emails');
     expect(email.text).toContain('you@gmail.com');
-    expect(email.text).toContain('https://app.declutrmail.com/triage');
+    expect(email.text).toContain(
+      'https://app.declutrmail.com/senders?mailbox=00000000-0000-4000-8000-000000000002',
+    );
     expect(email.text).toContain('Still in setup?');
     expect(email.text).toContain('because you connected this mailbox');
     expect(email.html).toContain('24,310 emails');
-    expect(email.html).toContain('https://app.declutrmail.com/triage');
+    expect(email.html).toContain(
+      'https://app.declutrmail.com/senders?mailbox=00000000-0000-4000-8000-000000000002',
+    );
   });
 
   it('names the count one way — "emails" in the text, html and preview', async () => {

@@ -46,6 +46,24 @@ export class OnboardingController {
     private readonly entitlements: EntitlementsService,
   ) {}
 
+  @Get('backlog')
+  @UseGuards(JwtGuard, CurrentMailboxGuard)
+  @RateLimit('default')
+  async firstBacklog(
+    @CurrentMailbox() mailbox: { id: string },
+  ): Promise<Envelope<{ senderId: string; name: string; inboxEmails: number } | null>> {
+    return ok(await this.onboarding.firstBacklog(mailbox.id));
+  }
+
+  @Get('scan-preview')
+  @UseGuards(JwtGuard, CurrentMailboxGuard)
+  @RateLimit({ bucket: 'default', limit: 10, windowSec: 60 })
+  async scanPreview(
+    @CurrentMailbox() mailbox: { id: string },
+  ): Promise<Envelope<{ name: string; indexedEmails: number }[]>> {
+    return ok(await this.onboarding.scanPreview(mailbox.id));
+  }
+
   /** GET /api/onboarding/state — flags the step machine derives from. */
   @Get('state')
   @UseGuards(JwtGuard)

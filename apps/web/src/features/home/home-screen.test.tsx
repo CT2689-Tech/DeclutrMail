@@ -70,6 +70,19 @@ function stub({ summary, queueLength = 0, screenerPending = 0 }: Stub = {}) {
   const calls = { summary: [] as string[], triage: 0, screener: 0 };
   installFetchStub([
     {
+      method: 'POST',
+      path: '/api/home/visit',
+      respond: () => jsonOk({ data: { since: null, indexedEmails: null, indexedSenders: null } }),
+    },
+    {
+      method: 'GET',
+      path: '/api/v1/sync/status',
+      respond: () =>
+        jsonOk({
+          data: { readiness_status: 'failed', error_code: 'TransientError', progress_pct: 25 },
+        }),
+    },
+    {
       method: 'GET',
       path: '/api/activity/summary',
       respond: (_req, url) => {
@@ -157,6 +170,19 @@ describe('HomeScreen', () => {
       release = resolve;
     });
     installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/home/visit',
+        respond: () => jsonOk({ data: { since: null, indexedEmails: null, indexedSenders: null } }),
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/sync/status',
+        respond: () =>
+          jsonOk({
+            data: { readiness_status: 'failed', error_code: 'TransientError', progress_pct: 25 },
+          }),
+      },
       { method: 'GET', path: '/api/activity/summary', respond: () => jsonOk({ data: SUMMARY }) },
       {
         method: 'GET',
@@ -223,13 +249,21 @@ describe('HomeScreen', () => {
     expect(await screen.findByText('Reading your Gmail.')).toBeInTheDocument();
   });
 
-  it('new user whose scan failed: says so and links to Gmail accounts', async () => {
+  it('new user whose scan failed: says so and offers a scoped retry', async () => {
     authCell.me = meFor('pro', 'failed');
     stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }) });
     renderHome();
     expect(await screen.findByText('Gmail scan failed.')).toBeInTheDocument();
     expect(screen.queryByText('Nothing cleared yet.')).toBeNull();
-    expect(screen.getByRole('link')).toHaveAttribute('href', '/settings#mailboxes');
+    expect(await screen.findByRole('button', { name: 'Scan again' })).toBeEnabled();
+  });
+
+  it('reports a queued scan without claiming a worker has started', async () => {
+    authCell.me = meFor('pro', 'queued');
+    stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }) });
+    renderHome();
+    expect(await screen.findByText('Your scan is queued.')).toBeInTheDocument();
+    expect(screen.queryByText('Reading your Gmail.')).toBeNull();
   });
 
   it('a syncing mailbox with history still shows its number', async () => {

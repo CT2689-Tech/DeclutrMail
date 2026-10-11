@@ -1064,6 +1064,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         displayName: senders.displayName,
         email: senders.email,
         domain: senders.domain,
+        firstIndexedAt: senders.firstIndexedAt,
       })
       .from(senders)
       .where(eq(senders.mailboxAccountId, mailboxAccountId));
@@ -1148,6 +1149,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         email: who.email,
         domain: who.domain,
         gmailCategory: senderGmailCategory(agg.categoryCounts),
+        firstIndexedAt: who.firstIndexedAt,
         firstSeenAt: agg.firstSeen,
         lastSeenAt: agg.lastSeen,
         unsubscribeMethod,

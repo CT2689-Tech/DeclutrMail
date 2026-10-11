@@ -5,6 +5,7 @@ import { syncReminder24hEmail } from './sync-reminder-24h.js';
 describe('sync-reminder-24h', () => {
   const input = {
     mailboxEmail: 'you@gmail.com',
+    mailboxAccountId: '00000000-0000-4000-8000-000000000002',
     appUrl: 'https://app.declutrmail.com',
     unsubscribeUrl: 'https://api.declutrmail.com/api/email/unsubscribe?t=tok',
   };
@@ -20,7 +21,7 @@ describe('sync-reminder-24h', () => {
     const email = await syncReminder24hEmail(input);
     expect(email.subject).toBe('Your inbox is still ready');
     expect(email.text).toContain('https://app.declutrmail.com/settings');
-    expect(email.html).toContain('/triage');
+    expect(email.html).toContain('/senders?mailbox=00000000-0000-4000-8000-000000000002');
   });
 
   it('carries a visible opt-out in BOTH the html and the text part', async () => {

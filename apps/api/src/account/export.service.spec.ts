@@ -19,6 +19,7 @@ import type { DrizzleDb } from '../db/db.module.js';
 
 const MAILBOX = {
   id: 'mb-1',
+  userId: 'u-1',
   email: 'user@example.com',
   status: 'active' as const,
   connectedAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -81,7 +82,17 @@ function makeService(opts: {
     messageBatch: AnyBatch;
     activityBatch: AnyBatch;
     feedbackBatch: AnyBatch;
+    mailboxVisits: (userId: string, mailboxId: string) => Promise<unknown[]>;
   };
+  svc.mailboxVisits = vi.fn().mockResolvedValue([
+    {
+      visitId: '10000000-0000-4000-8000-000000000001',
+      since: null,
+      until: '2026-10-10T10:00:00.000Z',
+      indexedEmails: null,
+      indexedSenders: null,
+    },
+  ]);
   svc.listMailboxes = vi.fn().mockResolvedValue(opts.mailboxes ?? [MAILBOX]);
   // Batch stubs: return all rows after the cursor, honoring keyset
   // semantics so multi-batch paths terminate.
@@ -117,6 +128,7 @@ describe('DataExportService.streamJson', () => {
     expect(doc.scope.completeAccountExport).toBe(false);
     expect(doc.scope.limitation).toMatch(/not a complete copy/i);
     expect(doc.mailboxes).toHaveLength(1);
+    expect(doc.mailboxes[0].visitSummaries).toHaveLength(1);
     const mb = doc.mailboxes[0];
     expect(mb.email).toBe('user@example.com');
     expect(mb.senders).toHaveLength(1);
@@ -142,6 +154,7 @@ describe('DataExportService.streamJson', () => {
       'productFeedback',
       'senders',
       'status',
+      'visitSummaries',
     ]);
     expect(Object.keys(mb.messages[0]).sort()).toEqual([
       'gmailPreview',

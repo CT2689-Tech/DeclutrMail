@@ -20,6 +20,8 @@ import {
 export interface SyncCompleteEmailInput {
   /** The user's own connected mailbox address, e.g. "you@gmail.com". */
   mailboxEmail: string;
+  /** Owned inbox selected before opening the linked screen. */
+  mailboxAccountId: string;
   /** Messages indexed by the initial sync (metadata only). */
   messageCount: number;
   /** Web app origin, e.g. "https://app.declutrmail.com". */
@@ -40,15 +42,15 @@ export async function syncCompleteEmail(input: SyncCompleteEmailInput): Promise<
   // "emails", matching the HTML body — the text part and preview said
   // "messages" while the body said "emails".
   const emails = formatCount(input.messageCount, 'email', 'emails');
-  const triageUrl = `${input.appUrl}/triage`;
+  const sendersUrl = `${input.appUrl}/senders?${new URLSearchParams({ mailbox: input.mailboxAccountId })}`;
   const preferencesUrl = `${input.appUrl}/settings`;
 
   const text = [
     `DeclutrMail finished scanning ${input.mailboxEmail}.`,
     '',
-    `${emails} scanned — your senders are grouped and ready to triage.`,
+    `${emails} scanned — your senders are grouped and ready to review.`,
     '',
-    `Jump back in: ${triageUrl}`,
+    `Jump back in: ${sendersUrl}`,
     '(Still in setup? That link drops you right back where you left off.)',
     '',
     '— DeclutrMail',
@@ -90,11 +92,11 @@ export async function syncCompleteEmail(input: SyncCompleteEmailInput): Promise<
       {/* No time or outcome promise: nothing measures how long a first
           pass takes or how much it clears. */}
       <Text style={{ ...BODY_TEXT, margin: '0 0 26px' }}>
-        Your senders are grouped and ready to triage.
+        Your senders are grouped and ready to review.
       </Text>
 
-      <Button href={triageUrl} style={CTA_BUTTON}>
-        Open Triage
+      <Button href={sendersUrl} style={CTA_BUTTON}>
+        Open Senders
       </Button>
 
       <Text style={{ color: MUTED, fontSize: '13px', lineHeight: '19px', margin: '18px 0 0' }}>

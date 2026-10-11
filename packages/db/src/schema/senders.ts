@@ -95,6 +95,10 @@ export const senders = pgTable(
     /** Domain part of `email` — drives the D41 Gmail domain search link. */
     domain: text('domain').notNull(),
     gmailCategory: gmailCategory('gmail_category').notNull(),
+    /** First appearance in this mailbox's index; survives full index rebuilds. */
+    firstIndexedAt: timestamp('first_indexed_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
     firstSeenAt: timestamp('first_seen_at', { withTimezone: true, mode: 'date' }).notNull(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true, mode: 'date' }).notNull(),
     /**

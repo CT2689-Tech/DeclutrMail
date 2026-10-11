@@ -117,6 +117,7 @@ export function buildSyncReadyEmailHandler(deps: SyncReadyEmailTriggerDeps): Syn
     });
     const complete = await syncCompleteEmail({
       mailboxEmail: mailbox.mailboxEmail,
+      mailboxAccountId: payload.mailboxAccountId,
       messageCount: payload.messageCount,
       appUrl,
       unsubscribeUrl: unsubscribe,
@@ -134,6 +135,7 @@ export function buildSyncReadyEmailHandler(deps: SyncReadyEmailTriggerDeps): Syn
 
     const reminder = await syncReminder24hEmail({
       mailboxEmail: mailbox.mailboxEmail,
+      mailboxAccountId: payload.mailboxAccountId,
       appUrl,
       unsubscribeUrl: unsubscribe,
     });

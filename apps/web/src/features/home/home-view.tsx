@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 import { Avatar, ErrorState, ScreenIntro, Skeleton } from '@declutrmail/shared';
 import {
   hasCapability,
@@ -10,6 +11,7 @@ import {
 } from '@declutrmail/shared/entitlements';
 import { EditorialKicker } from '@/features/editorial/page';
 import { loadErrorDescription } from '@/lib/load-error-copy';
+import { HomeScanRecovery } from './home-scan-recovery';
 import { SYNC_FAILED_ACTION, type HomeAction, type HomeStat, type HomeState } from './home-state';
 import type { HomeSenderPreview } from './api/use-home-pending';
 import type { HomeWorkflows } from './api/use-home-workflows';
@@ -21,8 +23,12 @@ export function HomeView({
   tier = 'free',
   workflows,
   timeZone = 'UTC',
+  visitSummary,
+  quota,
 }: {
   state: HomeState;
+  visitSummary?: ReactNode;
+  quota?: string | undefined;
   tier?: TierId;
   workflows?: HomeWorkflows | undefined;
   timeZone?: string;
@@ -53,6 +59,8 @@ export function HomeView({
           </p>
         </div>
       </header>
+      {quota && <p className={styles.subtitle}>{quota}</p>}
+      {visitSummary}
       <HomeBody state={state} tier={tier} workflows={workflows} timeZone={timeZone} />
     </div>
   );
@@ -119,16 +127,20 @@ function HomeBody({
               {state.syncing ? 'Getting the picture' : 'A fresh start'}
             </span>
             <h2>
-              {state.syncing
-                ? 'Reading your Gmail.'
-                : state.senders?.length
-                  ? 'Your first review is ready.'
-                  : 'Nothing cleared yet.'}
+              {state.queued
+                ? 'Your scan is queued.'
+                : state.syncing
+                  ? 'Reading your Gmail.'
+                  : state.senders?.length
+                    ? 'Your first review is ready.'
+                    : 'Nothing cleared yet.'}
             </h2>
             <p>
-              {state.syncing
-                ? 'Your first scan is in progress. Available senders are ready to explore as the picture comes together.'
-                : 'Start with the senders in your inbox. See their activity, then decide what deserves a place.'}
+              {state.queued
+                ? 'Your progress is saved. We’ll resume scanning when your turn starts.'
+                : state.syncing
+                  ? 'Your first scan is in progress. Available senders are ready to explore as the picture comes together.'
+                  : 'Start with the senders in your inbox. See their activity, then decide what deserves a place.'}
             </p>
             <PrimaryLink action={state.action} />
             <span className={styles.footnote}>You’ll see a preview before email is moved.</span>
@@ -148,15 +160,18 @@ function HomeBody({
         <section className={styles.beginning} aria-label="Mailbox needs attention">
           <span className={styles.eyebrow}>Mailbox needs attention</span>
           <h2>Gmail scan failed.</h2>
-          {/* `failedScanSettingsStep`'s sentences, inline: a new import of
-              mailbox-health from this route regrouped shared chunks over
-              other routes' bundle budgets. A test pins the two equal. */}
-          <p>
-            {state.needsReconnect
-              ? 'Reconnect it in Settings → Gmail accounts.'
-              : 'Scan again in Settings → Gmail accounts.'}
-          </p>
-          <PrimaryLink action={SYNC_FAILED_ACTION} />
+          {state.mailboxId ? (
+            <HomeScanRecovery mailboxId={state.mailboxId} needsReconnect={state.needsReconnect} />
+          ) : (
+            <>
+              <p>
+                {state.needsReconnect
+                  ? 'Reconnect it in Settings → Gmail accounts.'
+                  : 'Scan again in Settings → Gmail accounts.'}
+              </p>
+              <PrimaryLink action={SYNC_FAILED_ACTION} />
+            </>
+          )}
         </section>
       );
     case 'ready':

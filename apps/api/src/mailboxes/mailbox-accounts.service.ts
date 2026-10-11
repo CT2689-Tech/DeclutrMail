@@ -186,6 +186,28 @@ export class MailboxAccountsService {
   }
 
   /** Find a single mailbox by id + workspace (ownership scope). */
+  async assertVisitEligible(
+    userId: string,
+    mailboxAccountId: string,
+    executor: Pick<DrizzleDb, 'execute'>,
+  ): Promise<void> {
+    const result = await executor.execute(sql`
+      SELECT m.status, EXISTS (
+        SELECT 1 FROM mailbox_data_deletion_requests d
+        WHERE d.mailbox_account_id = m.id AND d.status IN ('pending', 'executing', 'failed')
+      ) AS deleting
+      FROM mailbox_accounts m WHERE m.id = ${mailboxAccountId}::uuid AND m.user_id = ${userId}::uuid
+    `);
+    const rows = Array.isArray(result) ? result : (result as { rows: unknown[] }).rows;
+    const row = rows[0] as { status: string; deleting: boolean } | undefined;
+    if (row?.deleting)
+      throw new ConflictException({
+        code: 'MAILBOX_DATA_DELETION_IN_PROGRESS' satisfies ErrorCode,
+      });
+    if (row?.status !== 'active')
+      throw new ConflictException({ code: 'NO_ACTIVE_MAILBOX' satisfies ErrorCode });
+  }
+
   async findOwned(workspaceId: string, mailboxAccountId: string): Promise<MailboxAccount | null> {
     const [row] = await this.db
       .select()

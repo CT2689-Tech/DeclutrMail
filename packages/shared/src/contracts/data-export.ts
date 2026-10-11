@@ -65,7 +65,7 @@ export const DATA_EXPORT_FORMAT_MANIFEST = {
     // didn't, which is what let the settings screen's blanket "Exports
     // never contain message bodies" sentence go unnoticed next to it.
     description:
-      'mailbox addresses and status, sender profiles and decisions, listed email details (sender, subject, Gmail preview snippet, date, labels, and read state), Activity history, and product feedback.',
+      'mailbox addresses and status, sender profiles and decisions, listed email details (sender, subject, Gmail preview snippet, date, labels, and read state), Activity history, visit summaries, and product feedback.',
     includedInventoryIds: includedInventoryIds('json'),
     completeAccountExport: false,
   },
