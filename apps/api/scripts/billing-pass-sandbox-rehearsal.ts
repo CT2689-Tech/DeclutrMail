@@ -167,6 +167,10 @@ async function webhook(req: IncomingMessage, res: ServerResponse) {
 const server = createServer((req, res) => {
   void (async () => {
     try {
+      if (stopping) {
+        json(res, 503, { error: 'fixture_stopping' });
+        return;
+      }
       const url = new URL(req.url ?? '/', publicUrl);
       if (req.method === 'POST' && url.pathname === '/paddle-webhook') {
         await webhook(req, res);
