@@ -13,14 +13,14 @@ import postgres from 'postgres';
 import { providerSyncState, securityEvents } from '@declutrmail/db';
 import type { IncrementalSyncJobData, InitialSyncJobData } from '@declutrmail/workers';
 
-import type { DrizzleDb } from '../apps/api/src/db/db.module.ts';
-import { SyncService } from '../apps/api/src/sync/sync.service.ts';
-import { assertLocalOpsDsn } from './local-dsn.ts';
+import type { DrizzleDb } from '../apps/api/src/db/db.module.js';
+import { SyncService } from '../apps/api/src/sync/sync.service.js';
+import { assertLocalOpsDsn } from './local-dsn.js';
 import {
   parseRequeueArgs,
   runRequeue,
   type RequeueOutcome,
-} from '../apps/api/src/sync/requeue-scan-core.ts';
+} from '../apps/api/src/sync/requeue-scan-core.js';
 
 export async function main(argv: readonly string[]): Promise<void> {
   const args = parseRequeueArgs(argv);

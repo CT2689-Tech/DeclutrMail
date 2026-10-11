@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 import postgres from 'postgres';
 
-import { assertLocalOpsDsn } from './local-dsn.ts';
+import { assertLocalOpsDsn } from './local-dsn.js';
 
 export function stuckScansSql(): string {
   return readFileSync(

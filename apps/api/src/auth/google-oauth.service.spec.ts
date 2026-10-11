@@ -77,6 +77,7 @@ describe('GoogleOAuthService.exchangeCode — the Gmail grant (D108)', () => {
       });
       await expect(new GoogleOAuthService().exchangeSignInCode('code')).resolves.toEqual({
         email: `me@${domain}`,
+        providerKind: 'gmail',
       });
       expect(verifyIdToken).toHaveBeenCalledWith({ idToken: 'identity', audience: 'client-id' });
       expect(getTokenInfo).not.toHaveBeenCalled();
@@ -90,7 +91,18 @@ describe('GoogleOAuthService.exchangeCode — the Gmail grant (D108)', () => {
     });
     await expect(new GoogleOAuthService().exchangeSignInCode('code')).resolves.toEqual({
       email: 'me@example.com',
+      providerKind: 'workspace',
     });
+  });
+
+  it('classifies a gmail.com address with hd as Workspace and drops the domain', async () => {
+    getToken.mockResolvedValue({ tokens: { id_token: 'identity' } });
+    verifyIdToken.mockResolvedValue({
+      getPayload: () => ({ email: 'me@gmail.com', email_verified: true, hd: 'corp.example' }),
+    });
+    const exchanged = await new GoogleOAuthService().exchangeSignInCode('code');
+    expect(exchanged).toEqual({ email: 'me@gmail.com', providerKind: 'workspace' });
+    expect(JSON.stringify(exchanged)).not.toContain('corp.example');
   });
 
   it.each([

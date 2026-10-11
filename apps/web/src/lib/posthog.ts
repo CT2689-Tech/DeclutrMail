@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  OPS_SUPER_PROPERTIES,
   scrubObject,
   scrubTelemetryPayload,
   type EventName,
@@ -55,9 +56,16 @@ type PosthogSdk = {
   opt_out_capturing: () => void;
   opt_in_capturing: (opts?: { captureEventName?: false }) => void;
   has_opted_out_capturing: () => boolean;
+  register: (properties: Record<string, string>) => void;
 };
 
 let sdkPromise: Promise<PosthogSdk | null> | null = null;
+
+/** Installed-app display mode. Missing matchMedia stays `browser`. */
+function readDisplayMode(): 'standalone' | 'browser' {
+  if (typeof window.matchMedia !== 'function') return 'browser';
+  return window.matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'browser';
+}
 
 async function loadSdk(): Promise<PosthogSdk | null> {
   if (typeof window === 'undefined') return null;
@@ -133,6 +141,8 @@ async function loadSdk(): Promise<PosthogSdk | null> {
           ...analyticsContext(),
         }),
       });
+      const displayMode = OPS_SUPER_PROPERTIES[0];
+      posthog.register({ [displayMode]: readDisplayMode() });
       return posthog;
     })().catch(() => {
       // Analytics must never destabilize product UI. Clear the rejected

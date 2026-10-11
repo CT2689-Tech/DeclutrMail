@@ -40,7 +40,8 @@ import {
   parseDmAttr,
   type SignupCampaign,
 } from '@declutrmail/shared/contracts/signup-attribution-attr';
-import { recordConnectFunnel } from '../analytics/record-connect-funnel.js';
+import { recordConnectFunnel, recordSignInProvider } from '../analytics/record-connect-funnel.js';
+import type { SignInProviderKind } from './sign-in-provider.js';
 import { PRODUCT_EVENTS } from '../analytics/product-events.port.js';
 
 import { InboxLimitGuard } from '../common/entitlements/inbox-limit.guard.js';
@@ -573,8 +574,12 @@ export class GoogleOAuthController {
 
     let email: string;
     let refreshToken: string;
+    let providerKind: SignInProviderKind | null = null;
     try {
-      ({ email, refreshToken } = await this.oauth.exchangeCode(code));
+      const exchanged = await this.oauth.exchangeCode(code);
+      email = exchanged.email;
+      refreshToken = exchanged.refreshToken;
+      providerKind = exchanged.providerKind ?? null;
     } catch (err) {
       if (err instanceof GmailScopeNotGrantedError) {
         this.returnForGmailAccess(res, webBase, cookieState, ipAddress, userAgent);
@@ -714,6 +719,7 @@ export class GoogleOAuthController {
           isNewSignup: false,
           mode: recoveryState ? 'reconnect' : 'connect',
         });
+        recordSignInProvider(this.productEvents, cookieState.userId, providerKind);
         // Route the freshly-connected mailbox through the sync gate
         // (D6 strict-gate-everywhere, D109) instead of dumping the user
         // on an empty /triage. addMailbox set it active, so the gate
@@ -890,6 +896,7 @@ export class GoogleOAuthController {
       isNewSignup: result.isNewSignup,
       mode: 'login',
     });
+    recordSignInProvider(this.productEvents, result.user.id, providerKind);
     // New signups land on the onboarding sync gate (D6, D109) — it
     // polls real sync state and auto-advances once readiness = ready.
     // Returning users with unfinished setup resume onboarding, unless
@@ -963,9 +970,15 @@ export class GoogleOAuthController {
     userAgent: string | null,
   ): Promise<void> {
     let result: Awaited<ReturnType<AuthSignupOrchestrator['signIn']>>;
+    let providerKind: SignInProviderKind | null = null;
     try {
-      const { email } = await this.oauth.exchangeSignInCode(code);
-      result = await this.orchestrator.signIn({ email, ipAddress: sourceIp, userAgent });
+      const exchanged = await this.oauth.exchangeSignInCode(code);
+      providerKind = exchanged.providerKind ?? null;
+      result = await this.orchestrator.signIn({
+        email: exchanged.email,
+        ipAddress: sourceIp,
+        userAgent,
+      });
     } catch (err) {
       void this.securityEvents.record({
         eventType: 'login.failure',
@@ -994,6 +1007,7 @@ export class GoogleOAuthController {
       workspaceId: result.user.workspaceId,
       payload: { provider: 'google', mode: 'sign-in', isNewSignup: false },
     });
+    recordSignInProvider(this.productEvents, result.user.id, providerKind);
     const returnTo = parseAppReturnTo(state.returnTo);
     const accountRecovery =
       returnTo !== undefined && isUserScopedAppPath(new URL(returnTo, webBase).pathname);

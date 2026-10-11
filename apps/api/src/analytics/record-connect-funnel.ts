@@ -16,3 +16,13 @@ export function recordConnectFunnel(
   }
   recordProductEvent(port, 'gmail_connected', { mode: input.mode }, input.userId);
 }
+
+/** `signin_provider` with a closed kind. A missing kind, and any domain, is dropped. */
+export function recordSignInProvider(
+  port: ProductEventsPort | undefined,
+  userId: string,
+  kind: 'gmail' | 'workspace' | null | undefined,
+): void {
+  if (kind !== 'gmail' && kind !== 'workspace') return;
+  recordProductEvent(port, 'signin_provider', { kind }, userId);
+}

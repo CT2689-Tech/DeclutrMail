@@ -8,7 +8,7 @@
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import postgres from 'postgres';
 
-import { assertLocalFunnelDsn, extraUserIdsFromEnv, funnelSql } from './launch-funnel-sql.ts';
+import { assertLocalFunnelDsn, extraUserIdsFromEnv, funnelSql } from './launch-funnel-sql.js';
 
 async function main(): Promise<void> {
   const dsn =

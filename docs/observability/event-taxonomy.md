@@ -46,6 +46,19 @@ Every event payload below is checked against the no-body / no-PII rules:
   That is the opposite direction: the watchdog READS our PostHog usage
   for the billing guardrail. It sends nothing.
 
+## Browser super-properties
+
+`display_mode` is not an event and is not in `OPS_EVENT_NAMES`. After the
+visitor accepts analytics, the browser client registers
+`display_mode: 'standalone' | 'browser'` from
+`matchMedia('(display-mode: standalone)')`. No choice and Essential-only
+never call `register`. The value is not an email address, a URL, or
+mailbox content. Server-side PostHog stays absent.
+
+`signin_provider` is a first-party `product_events` row, not a PostHog
+event. Its only prop is `kind: 'gmail' | 'workspace'`. The Google `hd`
+claim is not stored.
+
 ## Identifier conventions
 
 | Identifier   | Format           | Origin                                                 |

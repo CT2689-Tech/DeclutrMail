@@ -30,3 +30,4 @@ export type {
   OnboardingFunnelStep,
   Verb,
 } from './events/index.js';
+export { OPS_SUPER_PROPERTIES } from './events/ops.js';
