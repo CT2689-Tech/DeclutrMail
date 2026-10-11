@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
+import { ME_SETTINGS_QUERY_KEY } from '@/features/settings/api/query-options';
 
 import { SCREENER_QUEUE, type ScreenerQueueRow } from './data';
 import { ScreenerScreen } from './screener-screen';
@@ -75,8 +76,12 @@ describe('Screener — explaining a reason when a row is opened', () => {
   it('asks for the opened row only — never the whole queue', async () => {
     const rows = templateRows();
     const opened = rows.find((row) => row.recommendation !== null)!;
+    const client = createTestQueryClient();
+    client.setQueryData(ME_SETTINGS_QUERY_KEY, {
+      aiConsent: { explanations: 'allowed', brief: 'unset', reask: false },
+    });
     render(
-      <QueryWrapper client={createTestQueryClient()}>
+      <QueryWrapper client={client}>
         <ScreenerScreen state={{ kind: 'ready', rows }} />
       </QueryWrapper>,
     );
