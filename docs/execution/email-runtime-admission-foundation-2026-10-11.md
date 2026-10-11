@@ -118,9 +118,16 @@ current release probe remains legacy and uncertified until that integration.
 The deployment workflow is owned by “Validate this” and unchanged here.
 Open PR #972 proposes moving the worker to a worker pool and shares the worker
 composition, outbox and index files. It is independent of this OFF foundation;
-the later adoption inventory must include pools if that migration lands, and
-its TTL-based outbox lease does not replace email settlement proof. Integration
-must preserve both admission boundaries and their startup/shutdown ordering.
+the current enabled lease composition requires the service's `K_REVISION` and
+is service-only. Worker pools instead provide `CLOUD_RUN_REVISION` and
+`CLOUD_RUN_WORKER_POOL` ([container contract](https://docs.cloud.google.com/run/docs/container-contract#env-vars)).
+A possible pool-name regex match does not establish compatibility. The lease
+must refuse or remain OFF under a pool until actual pool identity and
+drain/adoption are independently implemented and tested. No runtime fallback or
+source acceptance widening is introduced here. The later adoption inventory
+must include pools if that migration lands, and its TTL-based outbox lease does
+not replace email settlement proof. Integration must preserve both admission
+boundaries and their startup/shutdown ordering.
 
 No production pause, lease cutover, queue migration, credential/ACL/IAM change,
 provider send or live billing operation was performed by this foundation. A
