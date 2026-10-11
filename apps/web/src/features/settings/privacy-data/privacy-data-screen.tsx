@@ -7,7 +7,7 @@ import {
   EditorialDescription,
 } from '@/features/editorial/page';
 
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Button, ScreenIntro, tokens } from '@declutrmail/shared';
 import { MIN_UNDO_WINDOW_DAYS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
@@ -54,8 +54,14 @@ export function PrivacyDataRoute({
   const { me } = useAuth();
   const billing = useBillingSubscription();
   const exporter = useDataExport();
+  // This page does not prefetch billing. The shell can still fill that
+  // cache before the privacy screen hydrates, which swaps "at least 30
+  // days on any plan" for the plan window and fails hydration. Keep the
+  // server sentence until after mount.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
-  const tier = billing.data?.tier ?? null;
+  const tier = mounted ? (billing.data?.tier ?? null) : null;
   const undoDays = tier && tier in TIER_MANIFEST ? TIER_MANIFEST[tier].undoWindowDays : null;
 
   return (
