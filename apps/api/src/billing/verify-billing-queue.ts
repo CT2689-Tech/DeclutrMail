@@ -14,15 +14,15 @@ import {
  */
 export const PROBE_EXIT_CODES = {
   unclassified: 1,
-  configuration_unavailable: 10,
-  redis_not_ready: 11,
-  redis_network_error: 12,
-  redis_tls_error: 13,
-  redis_reply_error: 14,
-  broker_read_stalled: 15,
-  client_list_unavailable: 16,
-  no_workers: 17,
-  incompatible_workers: 18,
+  configuration_unavailable: 101,
+  redis_not_ready: 102,
+  redis_network_error: 103,
+  redis_tls_error: 104,
+  redis_reply_error: 105,
+  broker_read_stalled: 106,
+  client_list_unavailable: 107,
+  no_workers: 108,
+  incompatible_workers: 109,
 } as const;
 export type ProbeFailureReason = keyof typeof PROBE_EXIT_CODES;
 
