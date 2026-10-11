@@ -445,3 +445,67 @@ test('launch log metrics keep OAuth on the API and Gmail quota on allowlisted wo
   );
   assert.match(runbook, /kind=ops\.collection source=recovery success=1/);
 });
+
+function rehearsalReport(args, env = process.env) {
+  const raw = execFileSync(
+    'pnpm',
+    ['exec', 'tsx', 'scripts/rehearse-first-sync-load.ts', ...args],
+    {
+      encoding: 'utf8',
+      env,
+    },
+  );
+  return JSON.parse(raw.trim().split('\n').at(-1));
+}
+
+test('fast first-sync rehearsal prints report fields and refuses production', () => {
+  const report = rehearsalReport(['--mailboxes', '3', '--fast']);
+  for (const key of [
+    'mailboxes',
+    'emails',
+    'queueWaitP50Ms',
+    'queueWaitP90Ms',
+    'completionP50Ms',
+    'completionP90Ms',
+    'peakRssBytes',
+    'failures',
+  ])
+    assert.equal(typeof report[key], 'number', key);
+  assert.equal(rehearsalReport(['--fast']).mailboxes, 20);
+  assert.equal(report.mailboxes, 3);
+  assert.equal(report.emails, 60);
+  assert.equal(report.failures, 0);
+  assert.ok(report.peakRssBytes > 0);
+  assert.equal(report.queueWaitP90Ms >= report.queueWaitP50Ms, true);
+  const failed = rehearsalReport(['--mailboxes', '3', '--fast', '--inject-failures']);
+  assert.ok(failed.failures > 0);
+  assert.throws(() =>
+    rehearsalReport(['--mailboxes', '1', '--fast'], {
+      ...process.env,
+      GOOGLE_CLOUD_PROJECT: 'declutrmail-ai-prod',
+    }),
+  );
+  assert.throws(() => rehearsalReport(['--mailboxes', '1', '--fast', '--production-users']));
+  assert.throws(() =>
+    rehearsalReport(['--mailboxes', '1'], {
+      ...process.env,
+      DATABASE_URL: 'postgres://example.supabase.co/postgres',
+    }),
+  );
+  assert.throws(() =>
+    execFileSync(
+      'pnpm',
+      [
+        'exec',
+        'tsx',
+        '-e',
+        "import { percentile } from './scripts/rehearse-first-sync-load.ts'; percentile([], 50)",
+      ],
+      { encoding: 'utf8' },
+    ),
+  );
+  const runbook = readFileSync('docs/runbooks/first-sync-load-rehearsal.md', 'utf8');
+  assert.match(runbook, /qa1/);
+  assert.match(runbook, /qa5/);
+  assert.match(runbook, /does not call Gmail/);
+});
