@@ -20,7 +20,6 @@ import {
 import { buildActionReceiptResult } from '@declutrmail/shared/actions';
 import {
   daysSince,
-  isStandingProtected,
   senderAddressLine,
   type ActionRequest,
   type ActionVerb,
@@ -941,10 +940,8 @@ function ReadyState({
             senderIds: [sender.id],
             olderThanDays: opts?.secondary?.olderThanDays ?? null,
             ...(mode === 'delete' && opts?.reach === 'all_mail' ? { reach: opts.reach } : {}),
-            // The dialog only reports the backlog mode. This page is
-            // single-sender, so a Protected row still puts the
-            // acknowledgement on the one request.
-            ...(opts?.override === true || isStandingProtected(sender) ? { override: true } : {}),
+            // Override rides only the dialog's explicit "anyway" click.
+            ...(opts?.override === true ? { override: true } : {}),
           },
           {
             onSuccess: (res) => {

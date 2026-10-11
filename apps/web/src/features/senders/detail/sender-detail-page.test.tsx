@@ -1935,7 +1935,7 @@ describe('SenderDetailRoute', () => {
         expect(captureFeatureExceptionMock).not.toHaveBeenCalled();
       });
 
-      it("carries override on a Protected sender's unsubscribe-backlog request (D245)", async () => {
+      it('names Protected and sends override only after anyway (D245)', async () => {
         installHappyPath(MESSAGE, undefined, undefined, {
           ...DETAIL,
           protectionFlags: {
@@ -1975,10 +1975,15 @@ describe('SenderDetailRoute', () => {
         renderDetail();
         fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
         const dialog = await screen.findByRole('dialog');
+        expect(
+          await within(dialog).findByText(/^Protected — you marked it Protected\.$/),
+        ).toBeInTheDocument();
+        expect(within(dialog).queryByRole('button', { name: 'Unsubscribe + Archive' })).toBeNull();
         const confirm = await within(dialog).findByRole('button', {
-          name: 'Unsubscribe + Archive',
+          name: 'Unsubscribe + Archive anyway',
         });
         await waitFor(() => expect(confirm).toBeEnabled());
+        expect(intents).toEqual([]);
         fireEvent.click(confirm);
         await waitFor(() =>
           expect(intents).toEqual([

@@ -5541,10 +5541,10 @@ describe('SendersScreen — server-driven aggregates (#145)', () => {
   });
 });
 
-describe('SendersScreen — a Protected sender puts override on the one unsubscribe-backlog request', () => {
-  // The dialog reports only the backlog mode. The screen adds override
-  // when the single sender is standing-protected, or the send is refused
-  // when it runs (D245). Bulk never gets that acknowledgement.
+describe('SendersScreen — a Protected sender names the reason before override', () => {
+  // D245: the dialog names Protected and its reason. override is sent
+  // only after the explicit "anyway" click, never because the row is
+  // standing-protected. Bulk never gets that acknowledgement.
   const PROTECTED_ROW = {
     ...ROW,
     protectionFlags: {
@@ -5581,7 +5581,10 @@ describe('SendersScreen — a Protected sender puts override on the one unsubscr
     };
   }
 
-  async function runUnsubWithBacklog(handler: ReturnType<typeof oneSenderHandler>) {
+  async function runUnsubWithBacklog(
+    handler: ReturnType<typeof oneSenderHandler>,
+    protectedRow = false,
+  ) {
     const bodies: Record<string, unknown>[] = [];
     installFetchStub([
       handler,
@@ -5641,18 +5644,24 @@ describe('SendersScreen — a Protected sender puts override on the one unsubscr
         name: 'Unsubscribe',
       }),
     );
-    const confirm = await screen.findByRole('button', { name: 'Unsubscribe + Archive' });
+    const confirmName = protectedRow ? 'Unsubscribe + Archive anyway' : 'Unsubscribe + Archive';
+    if (protectedRow) {
+      expect(await screen.findByText(/^Protected — you starred a message\.$/)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Unsubscribe + Archive' })).toBeNull();
+    }
+    const confirm = await screen.findByRole('button', { name: confirmName });
     // Wait for the live preview — confirming before the count arrives
     // would post unsub_only, and a missing override would pass for the
     // wrong mode.
     await waitFor(() => expect(confirm).toBeEnabled());
+    expect(bodies).toHaveLength(0);
     fireEvent.click(confirm);
     await waitFor(() => expect(bodies).toHaveLength(1));
     return bodies[0]!;
   }
 
-  it('carries override:true on the single unsubscribe-backlog request for a Protected sender', async () => {
-    expect(await runUnsubWithBacklog(protectedSenderHandler())).toMatchObject({
+  it('sends override:true only after the anyway click names Protected', async () => {
+    expect(await runUnsubWithBacklog(protectedSenderHandler(), true)).toMatchObject({
       mode: 'archive',
       senderIds: ['a'],
       olderThanDays: null,
@@ -5668,5 +5677,52 @@ describe('SendersScreen — a Protected sender puts override on the one unsubscr
       olderThanDays: null,
     });
     expect(body).not.toHaveProperty('override');
+  });
+});
+
+describe('SendersScreen — a saved view keeps a size sort', () => {
+  afterEach(() => {
+    resetFetchStub();
+    useSendersStore.setState({ sort: 'total', direction: 'desc' });
+  });
+
+  it('writes sort=size when the list is sorted by largest senders', async () => {
+    useSendersStore.setState({ sort: 'total', direction: 'desc' });
+    let saved: { views?: Array<{ name: string; sort: string; direction: string }> } | null = null;
+    installFetchStub([
+      oneSenderHandler(),
+      {
+        method: 'PATCH',
+        path: '/api/me/sender-views',
+        respond: async (req) => {
+          saved = (await req.json()) as NonNullable<typeof saved>;
+          return jsonOk({ data: { senderViews: saved.views } });
+        },
+      },
+    ]);
+
+    renderScreen();
+    await screen.findAllByText(/Sender A/);
+    fireEvent.click(screen.getByRole('button', { name: 'Mail in Inbox' }));
+    fireEvent.click(screen.getByRole('button', { name: /sort/i }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Largest senders' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /sort/i })).toHaveTextContent(/largest senders/i),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^filter/i }));
+    const dialog = await screen.findByRole('dialog', { name: 'Filters' });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'New view name' }), {
+      target: { value: 'Big mail' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(saved).not.toBeNull());
+    expect(saved!.views).toEqual([
+      expect.objectContaining({
+        name: 'Big mail',
+        sort: 'size',
+        direction: 'desc',
+        compose: expect.objectContaining({ hasInboxMail: true }),
+      }),
+    ]);
   });
 });

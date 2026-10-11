@@ -1525,13 +1525,8 @@ function SendersScreenContent({
             senderIds: senderRefs.map((sref) => sref.id),
             olderThanDays: opts?.secondary?.olderThanDays ?? opts?.olderThanDays ?? null,
             ...(mode === 'delete' && opts?.reach === 'all_mail' ? { reach: opts.reach } : {}),
-            // The dialog only reports the backlog mode. A Protected
-            // single sender still needs the acknowledgement on this one
-            // request, or the send is refused when it runs.
-            ...(opts?.override === true ||
-            (senderRefs.length === 1 && isStandingProtected(senders[0]!))
-              ? { override: true }
-              : {}),
+            // Override rides only the dialog's explicit "anyway" click.
+            ...(opts?.override === true ? { override: true } : {}),
           },
           {
             onSuccess: (res) => {
@@ -2482,13 +2477,13 @@ function SendersScreenContent({
   const saveCurrentView = useCallback(
     (name: string) => {
       // The store can only hold a BE-supported sort (unsupported ones
-      // 400 at the list endpoint), but narrow defensively — the saved
-      // contract admits only the four Slice-1 columns.
+      // 400 at the list endpoint). Narrow to the saved-view contract.
       const sort =
         sortCol === 'total' ||
         sortCol === 'last_seen' ||
         sortCol === 'first_seen' ||
-        sortCol === 'name'
+        sortCol === 'name' ||
+        sortCol === 'size'
           ? sortCol
           : 'total';
       const next: SavedSenderView[] = [

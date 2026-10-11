@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { PreviewSheet } from '@declutrmail/shared';
+import { normalizeProtectionReason, protectionReasonClause } from '@declutrmail/shared/copy';
 import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
@@ -63,9 +64,16 @@ export function UnsubscribeBacklogDialog({
   onConfirm: (opts: {
     secondary: { type: 'archive' | 'delete'; olderThanDays: null } | null;
     archiveHistoric: boolean;
+    /** Set only by the explicit "anyway" click on a Protected sender. */
+    override?: boolean;
   }) => void;
 }) {
   const single = request.senders.length === 1;
+  const onlySender = request.senders[0];
+  const protectedSingle = single && onlySender?.protectionFlags?.isProtected === true;
+  const protectedReason = protectedSingle
+    ? normalizeProtectionReason(onlySender?.protectionFlags.protectionReason)
+    : null;
   const bulkRows = bulkPreview?.data?.senders.filter((row) => !row.protected) ?? [];
   const inboxCount = single
     ? (compositePreview?.counts.all ?? preferredInboxCount ?? null)
@@ -198,12 +206,13 @@ export function UnsubscribeBacklogDialog({
       : mode === 'archive'
         ? WS5_COPY['f1.honesty.archive']
         : WS5_COPY['f1.honesty.unsubOnly'];
-  const button =
+  const buttonLabel =
     mode === 'delete'
       ? WS5_COPY['f1.button.delete']
       : mode === 'archive'
         ? WS5_COPY['f1.button.archive']
         : WS5_COPY['f1.button.unsubOnly'];
+  const button = protectedSingle ? `${buttonLabel} anyway` : buttonLabel;
 
   const confirm = () => {
     const secondary = mode === 'unsub_only' ? null : mode;
@@ -217,6 +226,7 @@ export function UnsubscribeBacklogDialog({
         ? { secondary: { type: secondary, olderThanDays: null } }
         : { secondary: null }),
       archiveHistoric: mode === 'archive',
+      ...(protectedSingle ? { override: true } : {}),
     });
   };
 
@@ -251,6 +261,13 @@ export function UnsubscribeBacklogDialog({
           ...(submitting ? { busyLabel: button } : {}),
         }}
       >
+        {protectedSingle ? (
+          <p>
+            {protectedReason !== null
+              ? `Protected — ${protectionReasonClause(protectedReason)}.`
+              : 'Protected.'}
+          </p>
+        ) : null}
         <div role="radiogroup" aria-label={WS5_COPY['f1.segment.unsubOnly']}>
           <Segment
             checked={mode === 'unsub_only'}
@@ -260,19 +277,39 @@ export function UnsubscribeBacklogDialog({
           <Segment
             checked={mode === 'archive'}
             disabled={backlogOff}
-            label={isPluralCopy(archiveLabel) ? pluralCopy(archiveLabel, n, { n }) : ''}
+            label={
+              inboxCount === null
+                ? 'Archive'
+                : isPluralCopy(archiveLabel)
+                  ? pluralCopy(archiveLabel, n, { n })
+                  : ''
+            }
             ariaLabel={
-              isPluralCopy(archiveAria)
-                ? pluralCopy(archiveAria, n, { n })
-                : labelFallback(archiveAria)
+              inboxCount === null
+                ? 'Unsubscribe and archive'
+                : isPluralCopy(archiveAria)
+                  ? pluralCopy(archiveAria, n, { n })
+                  : labelFallback(archiveAria)
             }
             onSelect={() => setMode('archive')}
           />
           <Segment
             checked={mode === 'delete'}
             disabled={backlogOff}
-            label={isPluralCopy(deleteLabel) ? pluralCopy(deleteLabel, n, { n }) : ''}
-            ariaLabel={isPluralCopy(deleteAria) ? pluralCopy(deleteAria, n, { n }) : ''}
+            label={
+              inboxCount === null
+                ? 'Delete'
+                : isPluralCopy(deleteLabel)
+                  ? pluralCopy(deleteLabel, n, { n })
+                  : ''
+            }
+            ariaLabel={
+              inboxCount === null
+                ? 'Unsubscribe and delete'
+                : isPluralCopy(deleteAria)
+                  ? pluralCopy(deleteAria, n, { n })
+                  : ''
+            }
             onSelect={() => setMode('delete')}
           />
         </div>
