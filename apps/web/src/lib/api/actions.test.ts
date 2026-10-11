@@ -559,4 +559,94 @@ describe('confirmUnsubscribeBacklog when the new route is not deployed', () => {
     ).rejects.toMatchObject({ status: 402 });
     expect(unsub).not.toHaveBeenCalled();
   });
+
+  it('does not post a move when unsubscribe-only falls back from a 404', async () => {
+    const calls: string[] = [];
+    installFetchStub([
+      { method: 'POST', path: '/api/actions/unsubscribe-backlog', respond: () => notFound() },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => {
+          calls.push('move');
+          return jsonOk({ data: {} });
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-intent',
+        respond: () => {
+          calls.push('unsub');
+          return jsonOk({
+            data: {
+              senderId: 's1',
+              recordedAt: '2026-10-11T00:00:00.000Z',
+              activityLogId: 'log-1',
+              lifecycleStatus: 'requested',
+              method: 'one_click',
+              executionActionId: 'exec-1',
+              mailtoUrl: null,
+            },
+          });
+        },
+      },
+    ]);
+
+    const result = await confirmUnsubscribeBacklog({ mode: 'unsub_only', senderIds: ['s1'] });
+    expect(calls).toEqual(['unsub']);
+    expect(result.backlog).toBeNull();
+    expect(result.senders).toEqual([
+      expect.objectContaining({ senderId: 's1', unsubStatus: 'requested' }),
+    ]);
+  });
+
+  it('does not call the old move or unsubscribe after the new route succeeds', async () => {
+    const calls: string[] = [];
+    installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-backlog',
+        respond: () => {
+          calls.push('backlog');
+          return jsonOk({
+            data: {
+              mode: 'archive',
+              backlog: { actionId: 'act-1', requestedCount: 3, verb: 'archive' },
+              senders: [
+                {
+                  senderId: 's1',
+                  method: 'one_click',
+                  mailtoUrl: null,
+                  executionActionId: 'exec-1',
+                  lifecycleStatus: 'requested',
+                  unsubStatus: 'requested',
+                  reasonCode: null,
+                },
+              ],
+            },
+          });
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => {
+          calls.push('move');
+          return jsonOk({ data: {} });
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-intent',
+        respond: () => {
+          calls.push('unsub');
+          return jsonOk({ data: {} });
+        },
+      },
+    ]);
+
+    const result = await confirmUnsubscribeBacklog({ mode: 'archive', senderIds: ['s1'] });
+    expect(calls).toEqual(['backlog']);
+    expect(result.backlog?.actionId).toBe('act-1');
+  });
 });
