@@ -9,6 +9,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ScreenIntro, toast, tokens } from '@declutrmail/shared';
+import { SETTINGS_PREVIEWS_TITLE } from '@declutrmail/shared/copy/screen-decisions';
 import { hasCapability, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { DEFAULT_BRIEF_PREFS } from '@declutrmail/shared/contracts';
 import type { ActionSheetPrefs, EmailPrefs } from '@declutrmail/shared/contracts';
@@ -280,7 +281,7 @@ export function SettingsScreen({
       <EditorialContents
         items={[
           { href: '#mailboxes', label: 'Gmail accounts' },
-          { href: '#actions', label: 'Action previews' },
+          { href: '#actions', label: SETTINGS_PREVIEWS_TITLE },
           { href: '#notifications', label: 'Notifications' },
           { href: '#more', label: 'Policies and help' },
           { href: '#account', label: 'Account' },
@@ -289,7 +290,7 @@ export function SettingsScreen({
       <ScreenIntro
         id="settings"
         title="Settings"
-        body="Mailboxes, action previews, notifications, privacy and plan."
+        body="Gmail accounts, previews, emails, privacy and your plan."
       />
 
       <MailboxesCard

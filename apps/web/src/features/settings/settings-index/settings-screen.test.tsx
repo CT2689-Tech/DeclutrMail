@@ -224,7 +224,7 @@ describe('SettingsScreen', () => {
 
     for (const name of [
       'Gmail accounts',
-      'Action previews',
+      'Preview layout',
       'Notifications',
       'Policies and help',
       'Account',

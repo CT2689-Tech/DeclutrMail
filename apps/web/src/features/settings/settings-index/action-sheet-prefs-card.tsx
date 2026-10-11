@@ -2,6 +2,7 @@
 
 import { useId } from 'react';
 import { tokens } from '@declutrmail/shared';
+import { SETTINGS_PREVIEWS_TITLE } from '@declutrmail/shared/copy/screen-decisions';
 import type { ActionSheetPrefs } from '@declutrmail/shared/contracts';
 import { SettingsGroup, SettingsRow, SettingsRowStatus, SettingsSaveError } from '../settings-list';
 
@@ -40,7 +41,7 @@ export function ActionSheetPrefsCard({
   return (
     <SettingsGroup
       id="actions"
-      title="Action previews"
+      title={SETTINGS_PREVIEWS_TITLE}
       footer={
         saveFailed && state.kind === 'ready' ? (
           <SettingsSaveError>Could not save the preference. Try again.</SettingsSaveError>
