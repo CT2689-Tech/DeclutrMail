@@ -11,7 +11,8 @@ import {
 const nonce = '11111111-1111-4111-8111-111111111111';
 const fixtureId = '22222222-2222-4222-8222-222222222222';
 const baselineId = '33333333-3333-4333-8333-333333333333';
-const marker = 'PRIVATE_PROVIDER_SECRET_MARKER';
+const marker = 'private-provider-secret-marker';
+const fixtureHost = `owned-${marker.toLowerCase()}.upstash.io`;
 const env = { UPSTASH_EMAIL: 'private@example.test', UPSTASH_API_KEY: marker };
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status });
 
@@ -58,7 +59,7 @@ function harness(options = {}) {
   async function fetchImpl(input, config) {
     requests.push({ url: input, method: config.method, body: config.body });
     assert.equal(config.redirect, 'error');
-    if (input === 'https://owned-test.upstash.io') {
+    if (input === `https://${fixtureHost}`) {
       const old = config.headers.Authorization === `Bearer old-token-${marker}`;
       return reset && old ? json({ error: marker }, 401) : json({ result: 1 });
     }
@@ -87,7 +88,7 @@ function harness(options = {}) {
         database_id: options.foreignId ? baselineId : fixtureId,
         database_name: body.database_name,
         creation_time: Math.floor(time / 1000),
-        endpoint: options.slug ? 'owned-test' : 'owned-test.upstash.io',
+        endpoint: options.slug ? fixtureHost.split('.')[0] : fixtureHost,
         port: 6379,
         tls: true,
         type: options.paidResponse ? 'paid' : 'free',
@@ -170,8 +171,8 @@ test('already authenticated sessions continuing after reset are evidence against
     h.clients.every((client) => client.disconnected),
     true,
   );
-  assert.equal(JSON.stringify(report).includes(marker), false);
-  assert.equal(JSON.stringify(report).includes('owned-test.upstash.io'), false);
+  // Every provider-controlled credential, hostname and error carries this marker.
+  assert.equal(JSON.stringify(report).toLowerCase().includes(marker.toLowerCase()), false);
 });
 
 test('remote closure is a bounded observation and unknown failures never certify retirement', async () => {
