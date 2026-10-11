@@ -1,8 +1,10 @@
 import Link from 'next/link';
 
-import { demoForTopic } from '../learn/journey-links';
+import { refundSentence, WS3_COPY } from '@declutrmail/shared/copy/launch';
 import { OAUTH_SCOPE_DISCLOSURE } from '@declutrmail/shared';
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+
+import { TrustRow } from '../trust/trust-row';
+import { comparisonFaqJsonLd, comparisonFaqs } from './comparison-faqs';
 
 import { JsonLd } from '../json-ld';
 import { TrackedCta } from '../landing/tracked-cta';
@@ -29,7 +31,7 @@ import { COMPARE_DIY_GUIDES, COMPARISON_RELATED_GUIDES } from './related-guides'
  * leave the prose behind.
  */
 const COMPARISON_COUNT_WORD =
-  ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'][
+  ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven'][
     COMPARISONS.length
   ] ?? String(COMPARISONS.length);
 
@@ -78,20 +80,15 @@ export function MethodNote() {
         Competitor claims come from the company&rsquo;s own product, help, pricing, and privacy
         pages. &ldquo;Not publicly stated&rdquo; means those reviewed pages did not answer the
         question; it is not a claim that the feature does not exist. DeclutrMail facts reflect the
-        current product and tier manifest. There are no affiliate links or paid placements here.
+        current product, with prices {WS3_COPY['ws3.vs.pricingRef']}. There are no affiliate links
+        or paid placements here.
       </p>
     </aside>
   );
 }
 
-export function FinalCta({
-  competitorName,
-  topic = 'senders',
-}: {
-  competitorName?: string;
-  topic?: string;
-}) {
-  const demo = demoForTopic(topic);
+export function FinalCta({ competitorName }: { competitorName?: string; topic?: string }) {
+  const refund = refundSentence();
   return (
     <section className="dm-compare-final" aria-labelledby="comparison-final-title">
       <h2 id="comparison-final-title">
@@ -99,27 +96,33 @@ export function FinalCta({
           ? `Still deciding between ${competitorName} and DeclutrMail?`
           : 'The right cleanup method is the one you will keep using.'}
       </h2>
-      <p>
-        Connect one Gmail inbox, review every sender, and use{' '}
-        {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions a month on Free. Full message
-        bodies and attachments are not fetched.
-      </p>
+      <p>{WS3_COPY['ws3.vs.gmailOnly']}</p>
       <div className="dm-story-actions">
-        <TrackedCta href={demo.href} className="dm-story-link" cta="try_demo" placement="final">
-          {demo.label}
-        </TrackedCta>
         <TrackedCta
           href={permissionEntryUrl()}
           className="dm-story-button dm-story-button-primary"
           cta="connect_gmail"
           placement="final"
         >
-          Start free
+          {WS3_COPY['ws3.vs.cta.primary']}
+        </TrackedCta>
+        <TrackedCta
+          href="/inbox-simulator?workspace=senders"
+          className="dm-story-link"
+          cta="try_demo"
+          placement="final"
+        >
+          {WS3_COPY['ws3.vs.cta.demo']}
         </TrackedCta>
         <TrackedCta href="/pricing" className="dm-story-link" cta="see_pricing" placement="final">
           See every tier
         </TrackedCta>
       </div>
+      {refund ? (
+        <p>
+          <Link href="/refunds">{refund}</Link>
+        </p>
+      ) : null}
       <details className="dm-story-scope">
         <summary>What Google will ask you to allow</summary>
         <p>{OAUTH_SCOPE_DISCLOSURE}</p>
@@ -179,11 +182,8 @@ export function ComparisonIndexScreen() {
       <JsonLd data={INDEX_JSON_LD} />
       <header className="dm-compare-hero dm-compare-narrow">
         <h1>Email cleanup tools solve different problems.</h1>
-        <p className="dm-compare-lede">
-          DeclutrMail is a Gmail cleanup companion that shows the scope of a manual move before it
-          runs. These comparisons show where focused unsubscribers, learned sorters, broad cleanup
-          suites, and Gmail&rsquo;s own filters are genuinely stronger, and where DeclutrMail fits.
-        </p>
+        <p className="dm-compare-lede">{WS3_COPY['ws3.vs.compare.verdict']}</p>
+        <TrustRow />
         <p className="dm-compare-verified">
           {capitalized(COMPARISON_COUNT_WORD)} direct comparisons. No affiliate rankings.{' '}
           {comparisonVerifiedLabel(COMPARISONS_VERIFIED_FLOOR_ISO)}; every page links to the exact
@@ -457,6 +457,7 @@ export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonD
   return (
     <div className="dm-story dm-comparison">
       <JsonLd data={comparisonJsonLd(comparison)} />
+      <JsonLd data={comparisonFaqJsonLd(comparison)} />
       <header className="dm-compare-hero dm-compare-narrow">
         <nav className="dm-compare-breadcrumb" aria-label="Breadcrumb">
           <Link href="/compare">All comparisons</Link>
@@ -464,7 +465,10 @@ export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonD
           <span>{comparison.name}</span>
         </nav>
         <h1>DeclutrMail vs {comparison.name}</h1>
+        <p className="dm-compare-kicker">{WS3_COPY['ws3.vs.verdict.heading']}</p>
         <p className="dm-compare-lede">{comparison.verdict}</p>
+        <TrustRow />
+        <p>{WS3_COPY['ws3.vs.gmailOnly']}</p>
         {alternativesHref ? (
           <p>
             <a href={alternativesHref}>{`See all ${comparison.name} alternatives`}</a>
@@ -574,6 +578,16 @@ export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonD
         </ol>
         <VerificationStamp iso={comparison.verifiedIso} />
         <MethodNote />
+      </section>
+
+      <section className="dm-compare-section dm-compare-narrow" aria-labelledby="compare-faq-title">
+        <h2 id="compare-faq-title">Questions</h2>
+        {comparisonFaqs(comparison).map((faq) => (
+          <details key={faq.q}>
+            <summary>{faq.q}</summary>
+            <p>{faq.a}</p>
+          </details>
+        ))}
       </section>
 
       <FinalCta competitorName={comparison.name} topic={comparison.slug} />

@@ -81,8 +81,9 @@ const V2_ROUTES = new Set<string>([
   '/changelog',
   // Noindexed, but still a live page and the target of /auth/callback.
   '/sign-in',
-  // Served from `public/`, so absent from the sitemap.
+  // Generated routes, absent from the sitemap.
   '/llms.txt',
+  '/llms-full.txt',
   // Authed app routes — redirect targets for V1's old app URLs.
   '/activity',
   '/autopilot',
@@ -112,8 +113,7 @@ describe('legacy-domain redirects (declutrmail.ai → declutrmail.com)', () => {
         '/vs/unroll-me',
       );
       expect(resolveLegacyPath('/blog/is-unroll-me-safe')).toBe('/vs/unroll-me');
-      // Mailstrom still has no page of its own; the hub stays the target.
-      expect(resolveLegacyPath('/compare/mailstrom-vs-declutrmail')).toBe('/compare');
+      expect(resolveLegacyPath('/compare/mailstrom-vs-declutrmail')).toBe('/vs/mailstrom');
     });
 
     it('keeps the six shared paths on their own URL instead of rerouting them', () => {
