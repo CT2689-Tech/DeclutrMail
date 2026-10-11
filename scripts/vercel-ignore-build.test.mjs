@@ -170,7 +170,7 @@ test('previous deployment diff: unrelated changes skip, web/shared/root changes 
       const changed = f.commit();
       const result = check(changed, current);
       assert.equal(result.code, 1, label);
-      assert.match(result.reason, new RegExp(path.replace(/[.]/g, '\\.')));
+      assert.ok(result.reason.startsWith(`${path} changed since `), result.reason);
       current = changed;
     }
 
