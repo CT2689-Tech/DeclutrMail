@@ -33,6 +33,8 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+import { API_OR_WORKER_LOGS } from './worker-pool-monitoring.mjs';
+
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const QUERY_LIMIT = 5000;
 /** Jobs a person's click (or their Autopilot rule) caused — not sync or cron plumbing. */
@@ -694,7 +696,7 @@ function readLogs(filter, project, limit = QUERY_LIMIT) {
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const window =
-    `resource.type="cloud_run_revision" AND timestamp>="${args.since}"` +
+    `${API_OR_WORKER_LOGS} AND timestamp>="${args.since}"` +
     (args.until ? ` AND timestamp<="${args.until}"` : '');
   const truncated = [];
   const read = (label, filter) => {
@@ -730,7 +732,7 @@ function main() {
       const from = new Date(t(begins[0]) - 60_000).toISOString();
       initialWorkerRows = normalize(
         readLogs(
-          `resource.type="cloud_run_revision" AND timestamp>="${from}"` +
+          `${API_OR_WORKER_LOGS} AND timestamp>="${from}"` +
             (args.until ? ` AND timestamp<="${args.until}"` : '') +
             ' AND jsonPayload.worker="InitialSyncWorker"',
           args.project,

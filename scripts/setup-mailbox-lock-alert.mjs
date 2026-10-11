@@ -33,6 +33,11 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { gcpToken } from './infra-observability.mjs';
+import {
+  API_AND_WORKER_RESOURCE_TYPES,
+  API_OR_WORKER_LOGS,
+  WORKER_POOL_RESOURCE,
+} from './worker-pool-monitoring.mjs';
 
 export const METRIC_NAME = 'mailbox_lock_errors';
 export const POLICY_DISPLAY_NAME = 'Mailbox lock: leak or acquisition failure';
@@ -65,7 +70,7 @@ export const NO_PAGE_KINDS = {
     'info-level timing of a slow wait or hold; an acquire that failed also logs acquire_failed, which pages',
 };
 
-const RESOURCE = 'resource.type="cloud_run_revision"';
+const RESOURCE = API_OR_WORKER_LOGS;
 const KINDS = `(${Object.keys(PAGE_KINDS)
   .map((kind) => `jsonPayload.kind="${kind}"`)
   .join(' OR ')})`;
@@ -81,11 +86,18 @@ export function expectedMetric() {
   };
 }
 
-function lockCondition(metricName) {
+/** A threshold filter names exactly one resource type: one condition each for the API and the worker pool. */
+function lockConditions(metricName) {
+  return API_AND_WORKER_RESOURCE_TYPES.map((resourceType) =>
+    lockCondition(metricName, resourceType),
+  );
+}
+
+function lockCondition(metricName, resourceType) {
   return {
-    displayName: `${metricName} > 0 over 5 min`,
+    displayName: `${metricName} > 0 over 5 min (${resourceType})`,
     conditionThreshold: {
-      filter: `metric.type="logging.googleapis.com/user/${metricName}" AND ${RESOURCE}`,
+      filter: `metric.type="logging.googleapis.com/user/${metricName}" AND resource.type="${resourceType}"`,
       comparison: 'COMPARISON_GT',
       thresholdValue: 0,
       duration: '0s',
@@ -120,7 +132,7 @@ export function expectedPolicy(channelName) {
     enabled: true,
     notificationChannels: [channelName],
     documentation: { mimeType: 'text/markdown', content: RUNBOOK },
-    conditions: [lockCondition(METRIC_NAME)],
+    conditions: lockConditions(METRIC_NAME),
   };
 }
 
@@ -242,14 +254,16 @@ function policyDrift(policy, channel) {
       `${name} does not include OPENED in notificationPrompts, so a new incident sends nothing`,
     );
   const conditions = policy.conditions ?? [];
-  const got = conditions.length === 1 ? conditions[0].conditionThreshold : undefined;
-  if (!got) {
+  const wanted = lockConditions(METRIC_NAME);
+  if (
+    conditions.length !== wanted.length ||
+    conditions.some((condition) => !condition.conditionThreshold)
+  ) {
     drift.push(
-      `${name} must have exactly one threshold condition on ${METRIC_NAME}; it has ${conditions.length} condition(s)`,
+      `${name} must have exactly ${wanted.length} threshold conditions on ${METRIC_NAME}, one for each of ${API_AND_WORKER_RESOURCE_TYPES.join(', ')}; it has ${conditions.length} condition(s)`,
     );
     return drift;
   }
-  const want = lockCondition(METRIC_NAME).conditionThreshold;
   const shape = (t) =>
     JSON.stringify({
       filter: normalizeFilter(t.filter),
@@ -264,10 +278,13 @@ function policyDrift(policy, channel) {
         a.groupByFields ?? [],
       ]),
     });
-  if (shape(got) !== shape(want))
-    drift.push(
-      `${name} would not page on the first failure line as designed: its condition is ${JSON.stringify(got)}`,
-    );
+  for (const [i, condition] of conditions.entries()) {
+    const got = condition.conditionThreshold;
+    if (shape(got) !== shape(wanted[i].conditionThreshold))
+      drift.push(
+        `${name} would not page on the first failure line as designed: its condition is ${JSON.stringify(got)}`,
+      );
+  }
   return drift;
 }
 
@@ -350,7 +367,7 @@ export async function starveTest({
   const recent = ok(
     await request('POST', `${LOGGING}/entries:list`, {
       resourceNames: [`projects/${project}`],
-      filter: `${RESOURCE} AND resource.labels.service_name="declutrmail-worker" AND timestamp>="${since}"`,
+      filter: `${WORKER_POOL_RESOURCE} AND timestamp>="${since}"`,
       orderBy: 'timestamp desc',
       pageSize: 1,
     }),
@@ -383,7 +400,7 @@ export async function starveTest({
     combiner: 'OR',
     enabled: true,
     notificationChannels: [],
-    conditions: [lockCondition(metricName)],
+    conditions: lockConditions(metricName),
   };
   const report = { runId, result: 'FAIL' };
   const created = [];

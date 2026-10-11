@@ -6,6 +6,11 @@ import {
   EXPECTED_RUNTIME_COLLECTIONS,
   collectionKey,
 } from './infra-runtime-metrics.mjs';
+import {
+  WORKER_POOL,
+  WORKER_POOL_PROMQL,
+  WORKER_POOL_RESOURCE,
+} from './worker-pool-monitoring.mjs';
 
 const API = 'resource.type="cloud_run_revision" AND resource.labels.service_name="declutrmail-api"';
 const RUNBOOK =
@@ -100,12 +105,23 @@ export function infrastructurePolicies({ runtime = false } = {}) {
   );
   const memory = thresholdPolicy(
     'DeclutrMail Cloud Run memory pressure',
-    'metric.type="run.googleapis.com/container/memory/utilizations" AND resource.type="cloud_run_revision" AND (resource.labels.service_name="declutrmail-api" OR resource.labels.service_name="declutrmail-worker")',
+    `metric.type="run.googleapis.com/container/memory/utilizations" AND ${API}`,
     0.9,
     '600s',
     'ALIGN_PERCENTILE_95',
     'REDUCE_MAX',
     ['resource.label.service_name'],
+  );
+  memory.conditions.push(
+    thresholdPolicy(
+      `${memory.displayName} (worker pool)`,
+      `metric.type="run.googleapis.com/container/memory/utilizations" AND ${WORKER_POOL_RESOURCE}`,
+      0.9,
+      '600s',
+      'ALIGN_PERCENTILE_95',
+      'REDUCE_MAX',
+      ['resource.label.worker_pool_name'],
+    ).conditions[0],
   );
   memory.documentation = documentation(
     'Worst revision p95 memory exceeds 90% for 10 minutes. Inspect OOM/restarts, workload concurrency, allocation and heap growth. Capture evidence before rollback or resizing; idle utilization is not a safe basis for shrinking production memory.',
@@ -133,7 +149,7 @@ export function infrastructurePolicies({ runtime = false } = {}) {
   policies.push(latency, memory, queue, deadLetter);
   if (runtime) {
     const logFilter = (name) =>
-      `metric.type="logging.googleapis.com/user/${name}" AND resource.type="cloud_run_revision" AND resource.labels.service_name="declutrmail-worker"`;
+      `metric.type="logging.googleapis.com/user/${name}" AND ${WORKER_POOL_RESOURCE}`;
     const wait = thresholdPolicy(
       'DeclutrMail internal queue waiting age',
       logFilter('ops_queue_wait_age'),
@@ -215,10 +231,10 @@ export function infrastructurePolicies({ runtime = false } = {}) {
           displayName: 'Runtime telemetry coverage missing',
           conditionPrometheusQueryLanguage: {
             query: `(${EXPECTED_RUNTIME_COLLECTIONS.map(({ source, queue }) => {
-              const selector = `logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="${source}"${queue ? `,queue="${queue}"` : ''}}[20m]`;
+              const selector = `logging_googleapis_com:user_ops_collection_completed{${WORKER_POOL_PROMQL},source="${source}"${queue ? `,queue="${queue}"` : ''}}[20m]`;
               return `sum((sum by (source, queue) (increase(${selector})) <= bool 0) or absent_over_time(${selector}))`;
             }).join(' + ')}) > 0`,
-            labels: { service: 'declutrmail-worker', category: 'telemetry' },
+            labels: { service: WORKER_POOL, category: 'telemetry' },
             duration: '0s',
             evaluationInterval: '60s',
           },
@@ -355,8 +371,7 @@ export async function setupAlerts(
   if (runtime) {
     const now = new Date();
     const params = new URLSearchParams({
-      filter:
-        'metric.type="logging.googleapis.com/user/ops_collection_completed" AND resource.type="cloud_run_revision" AND resource.labels.service_name="declutrmail-worker"',
+      filter: `metric.type="logging.googleapis.com/user/ops_collection_completed" AND ${WORKER_POOL_RESOURCE}`,
       'interval.startTime': new Date(now.getTime() - 20 * 60 * 1000).toISOString(),
       'interval.endTime': now.toISOString(),
     });

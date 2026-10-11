@@ -28,8 +28,11 @@ const ADMIN_CHANNEL = {
   enabled: true,
 };
 const WORKER = {
-  type: 'cloud_run_revision',
-  labels: { service_name: 'declutrmail-worker', revision_name: 'declutrmail-worker-00079' },
+  type: 'cloud_run_worker_pool',
+  labels: {
+    worker_pool_name: 'declutrmail-worker-pool',
+    revision_name: 'declutrmail-worker-pool-00001',
+  },
 };
 const OLD_PREFIX_FILTER =
   'resource.type="cloud_run_revision" AND jsonPayload.kind=~"^mailbox_lock\\."';
@@ -335,7 +338,27 @@ test('the metric counts exactly the page kinds, and never a starve-test line', (
 
 test('the old prefix filter is the one that paged on timing lines', () => {
   // 2026-09-24 to 09-27: 431 slow_operation lines a day opened the page.
-  assert.ok(matches(OLD_PREFIX_FILTER, line('mailbox_lock.slow_operation')));
+  // Then the worker was a Cloud Run service, not a worker pool.
+  const legacyWorker = {
+    type: 'cloud_run_revision',
+    labels: { service_name: 'declutrmail-worker' },
+  };
+  assert.ok(
+    matches(OLD_PREFIX_FILTER, {
+      resource: legacyWorker,
+      jsonPayload: { kind: 'mailbox_lock.slow_operation' },
+    }),
+  );
+});
+
+test('the metric counts a failure line from the API service and from the worker pool', () => {
+  const api = { type: 'cloud_run_revision', labels: { service_name: 'declutrmail-api' } };
+  const failure = { kind: 'mailbox_lock.acquire_failed' };
+  assert.ok(matches(LOG_FILTER, { resource: api, jsonPayload: failure }));
+  assert.ok(matches(LOG_FILTER, line(failure.kind)));
+  assert.ok(
+    !matches(LOG_FILTER, { resource: { type: 'cloud_run_job', labels: {} }, jsonPayload: failure }),
+  );
 });
 
 test('verify reads a correctly wired project clean and writes nothing', async () => {
@@ -375,6 +398,7 @@ test('verify names every way the policy could fail to email, and --apply repairs
         ...prodPolicy.conditions[0],
         conditionThreshold: edit(prodPolicy.conditions[0].conditionThreshold),
       },
+      ...prodPolicy.conditions.slice(1),
     ],
   });
   const cases = [

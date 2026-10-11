@@ -165,12 +165,11 @@ function wiredProject(overrides = {}) {
 const quiet = { log: () => {}, now: NOW };
 const verify = (gcp) => run({ project: PROJECT, request: gcp.request, ...quiet });
 
-/** The expected policy with its one threshold condition edited. */
+/** The expected policy with its first threshold condition edited. */
 function withThreshold(edit) {
-  const base = expectedPolicy(ADMIN_CHANNEL.name);
-  const [condition] = base.conditions;
+  const [condition, ...rest] = expectedPolicy(ADMIN_CHANNEL.name).conditions;
   return {
-    conditions: [{ ...condition, conditionThreshold: edit(condition.conditionThreshold) }],
+    conditions: [{ ...condition, conditionThreshold: edit(condition.conditionThreshold) }, ...rest],
   };
 }
 
@@ -245,7 +244,11 @@ test('a policy that is off, silent, or would not fire on the first refusal fails
           { displayName: 'never', conditionAbsent: { filter: 'x', duration: '60s' } },
         ],
       },
-      /exactly one condition/,
+      /exactly 2 conditions/,
+    ],
+    [
+      { conditions: expectedPolicy(ADMIN_CHANNEL.name).conditions.slice(0, 1) },
+      /cloud_run_worker_pool/,
     ],
   ];
   for (const [policy, named] of cases) {

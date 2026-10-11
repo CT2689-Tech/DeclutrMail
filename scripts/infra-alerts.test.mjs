@@ -38,7 +38,7 @@ test('runtime absence is gated until deployment and does not hide a missing sour
   // scalar; a healthy source yields zero. A filtered comparison without bool
   // would retain zero and silently lose flat-counter failures in sum().
   assert.ok(rule.query.includes(' + sum('));
-  assert.equal(rule.labels.service, 'declutrmail-worker');
+  assert.equal(rule.labels.service, 'declutrmail-worker-pool');
   assert.equal(rule.duration, '0s');
   for (const source of ['mailbox', 'queue', 'scheduler', 'database', 'reconnect']) {
     assert.ok(
@@ -93,7 +93,11 @@ test('runtime metric labels remain bounded and chart definitions reference the s
     'verb',
   ]);
   for (const m of RUNTIME_LOG_METRICS) {
-    assert.ok(m.filter.includes('resource.labels.service_name="declutrmail-worker"'));
+    assert.ok(
+      m.filter.includes(
+        'resource.type="cloud_run_worker_pool" AND resource.labels.worker_pool_name="declutrmail-worker-pool"',
+      ),
+    );
     for (const label of m.metricDescriptor.labels) assert.ok(allowed.has(label.key));
   }
   const names = new Set(RUNTIME_LOG_METRICS.map((m) => m.name));
@@ -222,7 +226,7 @@ test('action panels preserve snapshot means rather than estimating counts from h
     for (const key of [
       'project_id',
       'location',
-      'service_name',
+      'worker_pool_name',
       'configuration_name',
       'revision_name',
     ])
@@ -253,8 +257,8 @@ test('distribution stages retain weighted means, revision maxima, zero and absen
     'metric.label.log': 'stdout',
     'resource.label.project_id': 'test',
     'resource.label.location': 'us-central1',
-    'resource.label.service_name': 'declutrmail-worker',
-    'resource.label.configuration_name': 'declutrmail-worker',
+    'resource.label.worker_pool_name': 'declutrmail-worker-pool',
+    'resource.label.configuration_name': 'declutrmail-worker-pool',
     'resource.label.revision_name': revision,
     count,
     mean,

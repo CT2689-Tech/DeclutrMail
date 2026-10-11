@@ -28,25 +28,32 @@ interface AlertModule {
 }
 
 const WORKER_RESOURCE = {
-  type: 'cloud_run_revision',
-  labels: { service_name: 'declutrmail-worker' },
+  type: 'cloud_run_worker_pool',
+  labels: { worker_pool_name: 'declutrmail-worker-pool' },
 };
 
 /**
  * Evaluates the subset of the Logging query language the filter uses:
- * `path="value"` clauses joined by AND. Anything else throws — if the
- * filter grows syntax this cannot read, the test must fail, not match.
+ * `path="value"` clauses joined by AND, where a clause may be a
+ * parenthesised OR of such clauses. Anything else throws — if the filter
+ * grows syntax this cannot read, the test must fail, not match.
  */
 function matches(filter: string, entry: Record<string, unknown>): boolean {
   return filter.split(' AND ').every((clause) => {
-    const parsed = /^([A-Za-z_.]+)="([^"]*)"$/.exec(clause.trim());
-    if (!parsed) throw new Error(`filter clause this test cannot evaluate: ${clause}`);
-    const [, path, want] = parsed;
-    const got = path!
-      .split('.')
-      .reduce<unknown>((node, key) => (node as Record<string, unknown> | undefined)?.[key], entry);
-    return got === want;
+    const group = /^\((.*)\)$/.exec(clause.trim());
+    if (group) return group[1]!.split(' OR ').some((option) => matchesClause(option, entry));
+    return matchesClause(clause, entry);
   });
+}
+
+function matchesClause(clause: string, entry: Record<string, unknown>): boolean {
+  const parsed = /^([A-Za-z_.]+)="([^"]*)"$/.exec(clause.trim());
+  if (!parsed) throw new Error(`filter clause this test cannot evaluate: ${clause}`);
+  const [, path, want] = parsed;
+  const got = path!
+    .split('.')
+    .reduce<unknown>((node, key) => (node as Record<string, unknown> | undefined)?.[key], entry);
+  return got === want;
 }
 
 const REASONING_INPUT: ReasoningInput = {

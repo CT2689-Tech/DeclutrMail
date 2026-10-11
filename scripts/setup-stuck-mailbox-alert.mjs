@@ -46,11 +46,14 @@
 import { pathToFileURL } from 'node:url';
 
 import { gcpRequest, gcpToken } from './infra-observability.mjs';
+import {
+  WORKER_POOL,
+  WORKER_POOL_RESOURCE,
+  WORKER_POOL_RESOURCE_TYPE,
+} from './worker-pool-monitoring.mjs';
 
 const ALERT_EMAIL = 'admin@declutrmail.ai';
-const WORKER_SERVICE = 'declutrmail-worker';
-const STUCK_LINE =
-  'resource.type="cloud_run_revision" AND jsonPayload.kind="mailbox.stuck_unnoticed"';
+const STUCK_LINE = `${WORKER_POOL_RESOURCE} AND jsonPayload.kind="mailbox.stuck_unnoticed"`;
 const MONITORING = 'https://monitoring.googleapis.com/v3';
 const LOGGING = 'https://logging.googleapis.com/v2';
 
@@ -89,8 +92,7 @@ export const COMPLETED_METRIC = {
   name: 'stuck_mailbox_watchdog_completed',
   description:
     'Stuck-mailbox watchdog sweeps that ran to the end, one per 15-minute tick. Its absence pages.',
-  filter:
-    'resource.type="cloud_run_revision" AND jsonPayload.kind="stuck_mailbox_watchdog.completed"',
+  filter: `${WORKER_POOL_RESOURCE} AND jsonPayload.kind="stuck_mailbox_watchdog.completed"`,
   metricDescriptor: { metricKind: 'DELTA', valueType: 'INT64', unit: '1' },
 };
 
@@ -98,7 +100,7 @@ function perMailboxCondition(metricName) {
   return {
     displayName: 'Mailbox stuck past the 2-hour grace window',
     conditionThreshold: {
-      filter: `metric.type="logging.googleapis.com/user/${metricName}" AND resource.type="cloud_run_revision"`,
+      filter: `metric.type="logging.googleapis.com/user/${metricName}" AND resource.type="${WORKER_POOL_RESOURCE_TYPE}"`,
       comparison: 'COMPARISON_GT',
       thresholdValue: 0,
       // The 2-hour grace window already separated transient from stuck, so
@@ -122,11 +124,11 @@ function perMailboxCondition(metricName) {
   };
 }
 
-function silentCondition(serviceName, duration) {
+function silentCondition(workerPoolName, duration) {
   return {
     displayName: 'No completed stuck-mailbox sweep',
     conditionPrometheusQueryLanguage: {
-      query: `absent_over_time(logging_googleapis_com:user_${COMPLETED_METRIC.name}{monitored_resource="cloud_run_revision",service_name="${serviceName}"}[45m])`,
+      query: `absent_over_time(logging_googleapis_com:user_${COMPLETED_METRIC.name}{monitored_resource="${WORKER_POOL_RESOURCE_TYPE}",worker_pool_name="${workerPoolName}"}[45m])`,
       duration,
       evaluationInterval: '60s',
     },
@@ -138,7 +140,7 @@ const STUCK_DOC = [
   '',
   'Each stuck mailbox has its own alert. This one stays open while the mailbox stays stuck and closes about 30 minutes after it recovers. Acknowledge it once someone owns it; a mailbox that breaks later opens its own alert.',
   '',
-  'Find it: `gcloud logging read \'resource.type="cloud_run_revision" AND jsonPayload.kind="mailbox.stuck_unnoticed" AND jsonPayload.mailboxAccountId="${metric.label.mailbox_account_id}"\' --project=declutrmail-ai-prod --freshness=1h` — the line carries `errorCode` and `stuckSinceHours`.',
+  'Find it: `gcloud logging read \'resource.type="cloud_run_worker_pool" AND jsonPayload.kind="mailbox.stuck_unnoticed" AND jsonPayload.mailboxAccountId="${metric.label.mailbox_account_id}"\' --project=declutrmail-ai-prod --freshness=1h` — the line carries `errorCode` and `stuckSinceHours`.',
   '',
   '- `sync_failed` / `sync_stalled`: the first scan never finished and nothing is retrying it. Check `dead_letter_jobs` and `provider_sync_state` for the mailbox.',
   '- `needs_reconnect`: a revoked Gmail grant. The user has to reconnect; check the reconnect email and banner reached them.',
@@ -152,7 +154,7 @@ const SILENT_DOC = [
   '',
   'The sweep runs in the worker every 15 minutes and ends with `stuck_mailbox_watchdog.completed`. Likely causes: it throws every tick (`stuck_mailbox_watchdog.failed` lines and Sentry), it hangs, the worker is down (see the worker heartbeat alert), or a deploy removed it.',
   '',
-  'Find it: `gcloud logging read \'resource.type="cloud_run_revision" AND jsonPayload.kind:"stuck_mailbox_watchdog."\' --project=declutrmail-ai-prod --freshness=2h`',
+  'Find it: `gcloud logging read \'resource.type="cloud_run_worker_pool" AND jsonPayload.kind:"stuck_mailbox_watchdog."\' --project=declutrmail-ai-prod --freshness=2h`',
 ].join('\n');
 
 export function stuckMailboxPolicy() {
@@ -175,7 +177,7 @@ export function watchdogSilentPolicy() {
     // 45-minute window = three missed ticks. The 20-minute hold outlasts
     // the first tick after the metric is created, so installing the policy
     // cannot page before the first heartbeat lands.
-    conditions: [silentCondition(WORKER_SERVICE, '1200s')],
+    conditions: [silentCondition(WORKER_POOL, '1200s')],
   };
 }
 
@@ -195,8 +197,8 @@ export function starveTestResources(project, runId, resource) {
     silent: {
       ...test,
       displayName: `TEST ONLY — stuck-mailbox watchdog silent starve test ${runId}`,
-      // A service that never existed: the heartbeat was never written.
-      conditions: [silentCondition(`${WORKER_SERVICE}-starve-${runId}`, '0s')],
+      // A worker pool that never existed: the heartbeat was never written.
+      conditions: [silentCondition(`${WORKER_POOL}-starve-${runId}`, '0s')],
     },
     entry: {
       logName: `projects/${project}/logs/stuck-mailbox-starve-test`,
@@ -288,12 +290,7 @@ export async function setupStuckMailboxAlert(project, { apply = false } = {}) {
     console.log(`alert policy "${policy.displayName}"`);
   }
   await upsert(stuckMailboxPolicy());
-  const heartbeat = await latestEntry(
-    project,
-    token,
-    `resource.type="cloud_run_revision" AND resource.labels.service_name="${WORKER_SERVICE}" AND jsonPayload.kind="stuck_mailbox_watchdog.completed"`,
-    20 * 60 * 1000,
-  );
+  const heartbeat = await latestEntry(project, token, COMPLETED_METRIC.filter, 20 * 60 * 1000);
   if (!heartbeat)
     throw new Error(
       '"Stuck-mailbox watchdog silent" NOT installed: the worker wrote no stuck_mailbox_watchdog.completed line in the last 20 minutes. Deploy the worker that writes it, then re-run --apply.',

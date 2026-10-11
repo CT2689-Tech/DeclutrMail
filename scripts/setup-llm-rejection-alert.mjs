@@ -34,11 +34,14 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { gcpToken } from './infra-observability.mjs';
+import { API_AND_WORKER_RESOURCE_TYPES, API_OR_WORKER_LOGS } from './worker-pool-monitoring.mjs';
 
 export const METRIC_NAME = 'llm_provider_rejected';
-/** Deliberately not pinned to one service: any service that calls Anthropic logs this line. */
-export const LOG_FILTER =
-  'resource.type="cloud_run_revision" AND jsonPayload.kind="llm.provider_rejected"';
+/**
+ * Deliberately not pinned to one service: the API (a Cloud Run service) and
+ * the worker (a Cloud Run worker pool) both call Anthropic and log this line.
+ */
+export const LOG_FILTER = `${API_OR_WORKER_LOGS} AND jsonPayload.kind="llm.provider_rejected"`;
 export const POLICY_DISPLAY_NAME = 'LLM provider refused our calls (credit, limit or key)';
 const ADMIN_EMAIL = 'admin@declutrmail.ai';
 const METRIC_TYPE = `logging.googleapis.com/user/${METRIC_NAME}`;
@@ -69,7 +72,7 @@ export function expectedMetric() {
 const RUNBOOK = `Anthropic refused an LLM call. Every refusal except \`other\` pauses LLM calls in that worker for a cool-down (\`DEFAULT_LLM_COOLDOWN_MS\`). While paused, new recommendation reasons are templates and Briefs go out without their note. After each pause calls go out again, and another refusal starts a new pause. While refusals keep arriving, this email repeats every 4 hours.
 
 Find the lines (the \`reason\` is on each, and in this incident's labels):
-\`gcloud logging read 'resource.type="cloud_run_revision" AND jsonPayload.kind="llm.provider_rejected"' --project=declutrmail-ai-prod --freshness=2h\`
+\`gcloud logging read 'jsonPayload.kind="llm.provider_rejected"' --project=declutrmail-ai-prod --freshness=2h\`
 
 What to do, by \`reason\`:
 - \`credit_balance\` — prepaid credits ran out. Buy credits (Console → Billing).
@@ -102,31 +105,31 @@ export function expectedPolicy(channelName) {
         { notificationChannelNames: [channelName], renotifyInterval: '14400s' },
       ],
     },
-    conditions: [
-      {
-        displayName: `${METRIC_NAME} > 0 in the last hour`,
-        conditionThreshold: {
-          filter: `metric.type="${METRIC_TYPE}" AND resource.type="cloud_run_revision"`,
-          comparison: 'COMPARISON_GT',
-          thresholdValue: 0,
-          // The least the API allows: it refuses a zero duration once
-          // evaluationMissingData is set (HTTP 400, prod --apply 2026-09-26).
-          // ALIGN_SUM over the 3600s alignment keeps a single refusal's count
-          // above 0 for the whole window, so a 60s hold still opens the alert
-          // about a minute after the first refusal.
-          duration: '60s',
-          evaluationMissingData: 'EVALUATION_MISSING_DATA_INACTIVE',
-          aggregations: [
-            {
-              alignmentPeriod: '3600s',
-              perSeriesAligner: 'ALIGN_SUM',
-              crossSeriesReducer: 'REDUCE_SUM',
-              groupByFields: ['metric.label.reason'],
-            },
-          ],
-        },
+    // A threshold filter names exactly one resource type, so the API and the
+    // worker pool each get their own condition.
+    conditions: API_AND_WORKER_RESOURCE_TYPES.map((resourceType) => ({
+      displayName: `${METRIC_NAME} > 0 in the last hour (${resourceType})`,
+      conditionThreshold: {
+        filter: `metric.type="${METRIC_TYPE}" AND resource.type="${resourceType}"`,
+        comparison: 'COMPARISON_GT',
+        thresholdValue: 0,
+        // The least the API allows: it refuses a zero duration once
+        // evaluationMissingData is set (HTTP 400, prod --apply 2026-09-26).
+        // ALIGN_SUM over the 3600s alignment keeps a single refusal's count
+        // above 0 for the whole window, so a 60s hold still opens the alert
+        // about a minute after the first refusal.
+        duration: '60s',
+        evaluationMissingData: 'EVALUATION_MISSING_DATA_INACTIVE',
+        aggregations: [
+          {
+            alignmentPeriod: '3600s',
+            perSeriesAligner: 'ALIGN_SUM',
+            crossSeriesReducer: 'REDUCE_SUM',
+            groupByFields: ['metric.label.reason'],
+          },
+        ],
       },
-    ],
+    })),
   };
 }
 
@@ -264,14 +267,23 @@ function policyDrift(policy, channel) {
     );
 
   const conditions = policy.conditions ?? [];
-  const got = conditions.length === 1 ? conditions[0].conditionThreshold : undefined;
-  if (!got) {
+  const wanted = expectedPolicy('').conditions;
+  if (
+    conditions.length !== wanted.length ||
+    conditions.some((condition) => !condition.conditionThreshold)
+  ) {
     drift.push(
-      `${name} must have exactly one condition, a threshold on ${METRIC_NAME}; it has ${conditions.length} condition(s)`,
+      `${name} must have exactly ${wanted.length} conditions, a threshold on ${METRIC_NAME} for each of ${API_AND_WORKER_RESOURCE_TYPES.join(', ')}; it has ${conditions.length} condition(s)`,
     );
     return drift;
   }
-  const want = expectedPolicy('').conditions[0].conditionThreshold;
+  for (const [i, condition] of conditions.entries())
+    drift.push(...conditionDrift(name, condition.conditionThreshold, wanted[i].conditionThreshold));
+  return drift;
+}
+
+function conditionDrift(name, got, want) {
+  const drift = [];
   const differs = [];
   if (normalizeFilter(got.filter) !== normalizeFilter(want.filter))
     differs.push(`filter \`${got.filter}\``);
