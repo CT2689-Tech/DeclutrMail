@@ -9,6 +9,7 @@ import { useHomePending } from './api/use-home-pending';
 import { useHomeSummary } from './api/use-home-summary';
 import { useHomeWorkflows } from './api/use-home-workflows';
 import { composeHomeAction, composeHomeNumbers, type HomeState } from './home-state';
+import { InboxReportCard } from '@/features/inbox-report';
 import { HomeArrivals } from './home-arrivals';
 import { HomeView } from './home-view';
 
@@ -49,18 +50,23 @@ export function HomeScreen() {
   if (!hasActiveMailbox || isMailboxScopeConflict(summary.error)) return <NoActiveMailbox />;
 
   return (
-    <HomeView
-      state={resolve()}
-      tier={tier}
-      workflows={workflows}
-      timeZone={me.user.timezone ?? 'UTC'}
-      visitSummary={<HomeArrivals />}
-      quota={
-        cleanupRemaining !== null
-          ? `${cleanupRemaining.toLocaleString('en-US')} cleanup actions left${cleanupResetsAt ? ` · resets ${new Date(cleanupResetsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: me.user.timezone ?? 'UTC' })}` : ''}`
-          : undefined
-      }
-    />
+    <>
+      {me.activeMailboxId ? (
+        <InboxReportCard surface="home" mailboxId={me.activeMailboxId} />
+      ) : null}
+      <HomeView
+        state={resolve()}
+        tier={tier}
+        workflows={workflows}
+        timeZone={me.user.timezone ?? 'UTC'}
+        visitSummary={<HomeArrivals />}
+        quota={
+          cleanupRemaining !== null
+            ? `${cleanupRemaining.toLocaleString('en-US')} cleanup actions left${cleanupResetsAt ? ` · resets ${new Date(cleanupResetsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: me.user.timezone ?? 'UTC' })}` : ''}`
+            : undefined
+        }
+      />
+    </>
   );
 
   function resolve(): HomeState {

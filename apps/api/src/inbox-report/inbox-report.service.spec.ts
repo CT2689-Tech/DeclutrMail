@@ -11,7 +11,7 @@ import { freshTestDb } from '@declutrmail/db/testing';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { InboxReportService, isInboxReportEnabled } from './inbox-report.service.js';
+import { InboxReportService } from './inbox-report.service.js';
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -138,26 +138,5 @@ describe('InboxReportService', () => {
       service.assertInWorkspace('00000000-0000-0000-0000-000000000000', mailboxId),
     ).rejects.toThrow();
     await expect(service.assertInWorkspace(workspaceId, mailboxId)).resolves.toBeUndefined();
-  });
-});
-
-describe('isInboxReportEnabled', () => {
-  it('defaults on outside production and off in production', () => {
-    expect(isInboxReportEnabled({ NODE_ENV: 'test' })).toBe(true);
-    expect(isInboxReportEnabled({ NODE_ENV: 'production' })).toBe(false);
-    expect(
-      isInboxReportEnabled({
-        NODE_ENV: 'production',
-        NEXT_PUBLIC_TELEMETRY_ENVIRONMENT: 'preview',
-      }),
-    ).toBe(true);
-    expect(isInboxReportEnabled({ NODE_ENV: 'production', VERCEL_ENV: 'production' })).toBe(false);
-    expect(isInboxReportEnabled({ NODE_ENV: 'production', INBOX_REPORT_ENABLED: 'true' })).toBe(
-      true,
-    );
-    expect(isInboxReportEnabled({ NODE_ENV: 'test', INBOX_REPORT_ENABLED: 'false' })).toBe(false);
-    expect(
-      isInboxReportEnabled({ NODE_ENV: 'production', NEXT_PUBLIC_INBOX_REPORT_ENABLED: 'true' }),
-    ).toBe(true);
   });
 });

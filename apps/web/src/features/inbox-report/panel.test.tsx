@@ -102,12 +102,8 @@ describe('InboxReportPanel', () => {
 });
 
 describe('InboxReportCard', () => {
-  it('returns nothing when the report flag is off', () => {
-    vi.stubEnv('NODE_ENV', 'production');
-    vi.stubEnv('NEXT_PUBLIC_INBOX_REPORT_ENABLED', 'false');
-    vi.stubEnv('INBOX_REPORT_ENABLED', 'false');
-    const { container } = render(<InboxReportCard surface="home" mailboxId="mb" />);
-    expect(container).toBeEmptyDOMElement();
-    vi.unstubAllEnvs();
+  it('renders the home card with no report switch', () => {
+    render(<InboxReportCard surface="home" mailboxId="mb" />);
+    expect(screen.getByRole('link', { name: /Open report/ })).toHaveAttribute('href', '/senders');
   });
 });

@@ -43,6 +43,10 @@ export function InboxReportPanel({
   onFixConfirmed,
   celebration = null,
   senderNames,
+  /** In-demo review. The signed-in app keeps the senders link. */
+  onReview,
+  /** Public demo uses `/privacy`. The signed-in app keeps settings. */
+  trustHref = '/settings/privacy',
 }: {
   report: InboxReportDto;
   mailboxEmail?: string;
@@ -51,6 +55,8 @@ export function InboxReportPanel({
   onDismiss: () => void;
   onReopen: () => void;
   onFixConfirmed?: (mode: 'archive' | 'delete' | 'unsub_only') => void;
+  onReview?: () => void;
+  trustHref?: string;
   celebration?: { archived: number; senders: number } | null;
   /** Sample or loaded names. The report DTO only carries sender ids. */
   senderNames?: Readonly<
@@ -142,17 +148,22 @@ export function InboxReportPanel({
                   <button type="button" onClick={() => setFixOpen(true)}>
                     {fixLabel}
                   </button>
-                  <a href={`/senders?fix=${report.fix.senderKeys.join(',')}`}>
-                    {WS5_COPY['report.fix.review']}
-                  </a>
+                  {onReview ? (
+                    <button type="button" onClick={onReview}>
+                      {WS5_COPY['report.fix.review']}
+                    </button>
+                  ) : (
+                    <a href={`/senders?fix=${report.fix.senderKeys.join(',')}`}>
+                      {WS5_COPY['report.fix.review']}
+                    </a>
+                  )}
                   <button type="button" onClick={onDismiss}>
                     {WS5_COPY['report.fix.notNow']}
                   </button>
                 </div>
               ) : null}
               <p>
-                {WS5_COPY['report.trust']}{' '}
-                <a href="/settings/privacy">{WS5_COPY['report.trust.link']}</a>
+                {WS5_COPY['report.trust']} <a href={trustHref}>{WS5_COPY['report.trust.link']}</a>
               </p>
               {showShare ? <button type="button">{WS5_COPY['share.button']}</button> : null}
               {celebration ? (

@@ -82,20 +82,12 @@ describe('SendersSimulator', () => {
     fireEvent.click(within(preview()).getByRole('button', { name: /^Delete \d+/ }));
     const activity = screen.getByRole('region', { name: 'Sample activity' });
     expect(activity).toHaveTextContent('A later sample decision changed this sender');
-    expect(within(activity).getAllByRole('button', { name: 'Undo mail movement' })).toHaveLength(1);
+    expect(within(activity).getAllByRole('button', { name: 'Undo', exact: true })).toHaveLength(1);
   });
 });
 
 describe('SendersSimulator — WS5 sample surfaces', () => {
-  function hideReport() {
-    vi.stubEnv('NODE_ENV', 'production');
-    vi.stubEnv('NEXT_PUBLIC_INBOX_REPORT_ENABLED', 'false');
-    vi.stubEnv('INBOX_REPORT_ENABLED', 'false');
-    vi.stubEnv('NEXT_PUBLIC_TELEMETRY_ENVIRONMENT', 'production');
-    vi.stubEnv('VERCEL_ENV', 'production');
-  }
-
-  it('shows the Inbox Report from sample data when the same gate as the app is on', () => {
+  it('shows the Inbox Report from sample data', () => {
     render(<SendersSimulator />);
     expect(screen.getByText(/mostly leave unread/)).toBeInTheDocument();
     expect(screen.getByText(WS5_COPY['report.trust'])).toBeInTheDocument();
@@ -105,20 +97,17 @@ describe('SendersSimulator — WS5 sample surfaces', () => {
     expect(
       screen.getByRole('button', { name: 'Unsubscribe + archive 1 sender' }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Review them first' })).toBeInTheDocument();
-  });
-
-  it('hides the report in production and shows it on a preview deploy', () => {
-    hideReport();
-    const hidden = render(<SendersSimulator />);
-    expect(screen.queryByText(/mostly leave unread/)).not.toBeInTheDocument();
-    hidden.unmount();
-
-    vi.stubEnv('NEXT_PUBLIC_INBOX_REPORT_ENABLED', '');
-    vi.stubEnv('INBOX_REPORT_ENABLED', '');
-    vi.stubEnv('NEXT_PUBLIC_TELEMETRY_ENVIRONMENT', 'preview');
-    render(<SendersSimulator />);
-    expect(screen.getByText(/mostly leave unread/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Review them first' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'What we store and share' })).toHaveAttribute(
+      'href',
+      '/privacy',
+    );
+    const links = document.querySelectorAll('a[href]');
+    for (const link of links) {
+      expect(link.getAttribute('href') ?? '').not.toMatch(
+        /^\/(senders|settings|home|triage|activity|billing)(\/|$|\?)/,
+      );
+    }
   });
 
   it('reuses the unsubscribe dialog and toasts without a network call or the old copy', () => {
@@ -162,10 +151,9 @@ describe('SendersSimulator — WS5 sample surfaces', () => {
         .some((node) => node.textContent?.includes('Unsubscribe requested · Archived 111 emails')),
     ).toBe(true);
     const activity = screen.getByRole('region', { name: 'Sample activity' });
+    expect(activity).toHaveTextContent(fillCopy(WS5_COPY['f1.activity.row'], { n: 111 }));
     expect(activity).toHaveTextContent('undone from Activity for 30 days');
-    expect(
-      within(activity).getByRole('button', { name: 'Undo mail movement' }),
-    ).toBeInTheDocument();
+    expect(within(activity).getByRole('button', { name: 'Undo', exact: true })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Market Finds/ }));
     fireEvent.click(

@@ -4,10 +4,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ToastHost, toast } from '@declutrmail/shared';
 import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
-import { fillCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
 import { InboxReportPanel } from '@/features/inbox-report/panel';
-import { inboxReportEnabled } from '@/features/inbox-report/enabled';
 import type { ActionRequest } from '@/features/senders/data';
 import { UnsubscribeBacklogDialog } from '@/features/senders/unsubscribe-backlog/unsubscribe-backlog-dialog';
 import { unsubscribeBacklogToast } from '@/features/senders/unsubscribe-backlog/toast';
@@ -162,6 +161,7 @@ interface DemoActivity {
   verb: Verb;
   affected: number;
   summary: string;
+  note: string | null;
   before: readonly SampleSender[];
   undoable: boolean;
   undone: boolean;
@@ -267,7 +267,6 @@ export function SendersSimulator() {
     [filter, query, senders, sort],
   );
   const selectedSender = visible.find((sender) => sender.id === selectedId) ?? visible[0] ?? null;
-  const showReport = inboxReportEnabled();
   const report = useMemo(
     () =>
       sampleInboxReport(
@@ -314,6 +313,7 @@ export function SendersSimulator() {
           verb,
           affected: 0,
           summary: 'Keep decision recorded. No existing email moved.',
+          note: null,
           before,
           undoable: false,
           undone: false,
@@ -411,18 +411,19 @@ export function SendersSimulator() {
     };
     const line = unsubscribeBacklogToast(result);
     toast(line);
-    const honesty =
+    const deleteRow = WS5_COPY['f1.toast.both.delete'];
+    const summary =
+      mode === 'archive'
+        ? fillCopy(WS5_COPY['f1.activity.row'], { n })
+        : mode === 'delete' && isPluralCopy(deleteRow)
+          ? pluralCopy(deleteRow, n, { n })
+          : line;
+    const note =
       mode === 'delete'
         ? WS5_COPY['f1.honesty.delete']
         : mode === 'archive'
           ? WS5_COPY['f1.honesty.archive']
           : null;
-    const summary =
-      mode === 'archive'
-        ? `${fillCopy(WS5_COPY['f1.activity.row'], { n })}${honesty ? ` ${honesty}` : ''}`
-        : honesty
-          ? `${line} ${honesty}`
-          : line;
     setActivity((current) => [
       {
         id: ++activitySequence.current,
@@ -430,6 +431,7 @@ export function SendersSimulator() {
         verb: 'Unsubscribe',
         affected: n,
         summary,
+        note,
         before: targets,
         undoable: n > 0 && mode !== 'unsub_only',
         undone: false,
@@ -478,6 +480,7 @@ export function SendersSimulator() {
         verb: pending.verb,
         affected: previewCount,
         summary,
+        note: null,
         before,
         undoable: previewCount > 0,
         undone: false,
@@ -521,23 +524,28 @@ export function SendersSimulator() {
       <div className="dm-senders-demo-note">
         Sample mailbox · made-up senders and counts · no Gmail connection
       </div>
-      {showReport ? (
-        <InboxReportPanel
-          report={report}
-          mailboxEmail="you@example.com"
-          dismissed={reportDismissed}
-          senderNames={senderNames}
-          celebration={celebration}
-          onDismiss={() => setReportDismissed(true)}
-          onReopen={() => setReportDismissed(false)}
-          onFixConfirmed={(mode) => {
-            applyUnsubscribe(
-              senders.filter((sender) => report.fix.senderKeys.includes(sender.id)),
-              mode,
-            );
-          }}
-        />
-      ) : null}
+      <InboxReportPanel
+        report={report}
+        mailboxEmail="you@example.com"
+        dismissed={reportDismissed}
+        senderNames={senderNames}
+        celebration={celebration}
+        onDismiss={() => setReportDismissed(true)}
+        onReopen={() => setReportDismissed(false)}
+        onReview={() => {
+          const ids = report.fix.senderKeys;
+          const first = ids[0];
+          if (first) setSelectedId(first);
+          setSelected(ids);
+        }}
+        trustHref="/privacy"
+        onFixConfirmed={(mode) => {
+          applyUnsubscribe(
+            senders.filter((sender) => report.fix.senderKeys.includes(sender.id)),
+            mode,
+          );
+        }}
+      />
       <div className="dm-senders-demo-tools">
         <label className="dm-senders-demo-search">
           <input
@@ -761,11 +769,12 @@ export function SendersSimulator() {
                     {entry.senderNames} · {entry.verb}
                   </strong>
                   <p>{entry.summary}</p>
+                  {entry.note ? <p>{entry.note}</p> : null}
                   {entry.undone ? (
                     <span>Mail movement undone. Any unsubscribe request remains sent.</span>
                   ) : entry.undoable ? (
                     <button type="button" onClick={() => undo(entry)}>
-                      Undo mail movement
+                      Undo
                     </button>
                   ) : entry.superseded ? (
                     <span>

@@ -4,7 +4,6 @@ import { and, desc, eq } from 'drizzle-orm';
 import { inboxReportCache, mailboxAccounts, syncRuns } from '@declutrmail/db';
 import {
   INBOX_REPORT_THRESHOLDS,
-  isInboxReportEnabled,
   selectInboxReport,
   type InboxReportDto,
   type ReportFacts,
@@ -15,8 +14,6 @@ import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { mailboxFactsQuery, senderFactsQuery, vendorQuery } from './inbox-report.queries.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-export { isInboxReportEnabled };
 
 function rowsOf<T>(result: unknown): T[] {
   if (Array.isArray(result)) return result as T[];

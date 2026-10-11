@@ -17,6 +17,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { fillCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { installFetchStub, resetFetchStub } from '@/test/fetch-stub';
@@ -560,6 +561,8 @@ describe('ActionSheet — Protected acknowledgement (D245/D42)', () => {
     // Unsubscribe stops future delivery rather than moving the backlog,
     // so what the protection keeps shielding is whatever still arrives.
     expect(notice()).toHaveTextContent(/keep skipping whatever still arrives/i);
+    expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /anyway/i })).toBeNull();
   });
 
   it('says nothing about protection for an unprotected row', () => {
@@ -774,7 +777,7 @@ describe('ActionSheet — Later return-time picker', () => {
 // the preview, so it never had a reason to wait.
 describe('ActionSheet — the cleanup cost is stated whenever it can be spent', () => {
   it.each(['loading', 'unavailable'] as const)(
-    'states the cost on an Unsubscribe whose preview is %s and whose confirm is armed',
+    'does not charge an Unsubscribe whose preview is %s and whose confirm is armed',
     (inboxCount) => {
       render(
         <ActionSheet
@@ -787,13 +790,43 @@ describe('ActionSheet — the cleanup cost is stated whenever it can be spent', 
           onConfirm={() => {}}
         />,
       );
-      // The bypass: this confirm is armed without a resolved preview.
-      expect(screen.getByRole('button', { name: /^Unsubscribe/ })).toBeEnabled();
-      expect(
-        screen.getByText(/Uses 1 of your 34 cleanup actions left this month/),
-      ).toBeInTheDocument();
+      // Future-only unsubscribe is armed without a resolved mail count,
+      // and it does not spend a cleanup unit.
+      expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
+      expect(screen.getByText(WS5_COPY['f1.footer'])).toBeInTheDocument();
+      expect(screen.queryByText(/cleanup action/)).toBeNull();
     },
   );
+
+  it('states one cleanup action when the backlog moves and the email meter is off', () => {
+    render(
+      <ActionSheet
+        open={true}
+        verb="Unsubscribe"
+        row={row}
+        inboxCount={12}
+        quotaRemaining={34}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+    expect(screen.queryByText(WS5_COPY['f1.meterFree'])).toBeNull();
+    expect(screen.getByText(WS5_COPY['f1.footer'])).toBeInTheDocument();
+    expect(
+      screen.getByText(fillCopy(WS5_COPY['f1.preview.future'], { Sender: 'Groupon' }), {
+        exact: false,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Uses 1 of your 34 cleanup actions left this month/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Uses 2 /)).toBeNull();
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 12' }));
+    expect(screen.getByText(WS5_COPY['f1.deleteNote'], { exact: false })).toBeInTheDocument();
+    expect(
+      screen.getByText(/Uses 1 of your 34 cleanup actions left this month/),
+    ).toBeInTheDocument();
+  });
 
   it('still states the cost once the preview resolves', () => {
     render(

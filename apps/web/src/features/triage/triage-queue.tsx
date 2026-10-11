@@ -42,17 +42,23 @@ export function inlinePreviewFor(
 ): InlinePreview | null {
   if (pendingAction == null || pendingAction.rowId !== rowId || pendingAction.surface !== 'inline')
     return null;
+  const count = typeof preview.inboxCount === 'number' ? preview.inboxCount : null;
+  const backlogMode =
+    pendingAction.verb === 'Unsubscribe'
+      ? (pendingAction.backlogMode ?? (count !== null && count > 0 ? 'archive' : 'unsub_only'))
+      : 'unsub_only';
   return {
     verb: pendingAction.verb,
     onCancel: preview.onCancel,
-    // The remembered-inline path has no backlog toggle, so it must
-    // retain the safe no-secondary default.
-    archiveHistoric: false,
+    archiveHistoric: backlogMode === 'archive',
+    backlogMode,
+    onBacklogMode: (mode) => useTriageStore.getState().setPendingBacklogMode(mode),
     inboxCount: preview.inboxCount,
     wakeAt: pendingAction.wakeAt,
     quotaRemaining: preview.quotaRemaining,
     detailSlot:
-      preview.detail !== undefined && actionMovesMail(pendingAction.verb, false) ? (
+      preview.detail !== undefined &&
+      actionMovesMail(pendingAction.verb, backlogMode !== 'unsub_only') ? (
         <ActionPreviewDetailBlock detail={preview.detail} />
       ) : undefined,
   };

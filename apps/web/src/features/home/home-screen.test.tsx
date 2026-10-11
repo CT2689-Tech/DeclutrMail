@@ -239,7 +239,11 @@ describe('HomeScreen', () => {
     renderHome();
     expect(await screen.findByText('Nothing cleared yet.')).toBeInTheDocument();
     expect(screen.queryByTestId('home-hero')).toBeNull();
-    expect(screen.getByRole('link')).toHaveAttribute('href', '/senders');
+    expect(screen.getByRole('link', { name: 'Review senders' })).toHaveAttribute(
+      'href',
+      '/senders',
+    );
+    expect(screen.getByRole('link', { name: /Open report/ })).toHaveAttribute('href', '/senders');
   });
 
   it('new user whose mailbox is still syncing', async () => {

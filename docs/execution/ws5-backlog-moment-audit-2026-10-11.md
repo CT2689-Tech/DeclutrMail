@@ -67,10 +67,9 @@ backfill.
 
 ## Production steps
 
-- `INBOX_REPORT_ENABLED` and `SENDER_SIZE_VIEW` turn on at the launch switch.
-  Both default off in production (`INBOX_REPORT_ENABLED` is on outside
-  production). `NEXT_PUBLIC_*` copies of the same names are what the web build
-  reads.
+- The Inbox Report and Unsubscribe with archive or delete are live on merge.
+- `SENDER_SIZE_VIEW` stays off until the launch switch. It defaults off.
+  `NEXT_PUBLIC_SENDER_SIZE_VIEW` is what the web build reads.
 - `INBOX_REPORT_SHARE_ENABLED` stays off. G3 was cut.
 - The privacy inventory purpose for `message-size-estimate` now also names
   Inbox Report storage insights and the read-only size-by-sender view. Regenerate

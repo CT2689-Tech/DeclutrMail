@@ -3,11 +3,9 @@
 import type { JSX } from 'react';
 
 import { WS5_COPY } from '@declutrmail/shared/copy/launch';
-import { inboxReportEnabled } from './enabled';
 
-/** Home re-entry. Null while the report flag is off. */
+/** Home re-entry for the signed-in Inbox Report. */
 export function InboxReportCard(props: { surface: 'home'; mailboxId: string }): JSX.Element | null {
-  if (!inboxReportEnabled()) return null;
   if (props.surface !== 'home') return null;
   return (
     <a href="/senders" data-mailbox={props.mailboxId}>

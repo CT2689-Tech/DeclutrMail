@@ -3,6 +3,14 @@ import { tokens } from '@declutrmail/shared';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
 import type { ActionReach } from '@declutrmail/shared/contracts';
 import { scoredAgeLabel } from '@declutrmail/shared/copy';
+import {
+  backlogMailLine,
+  futureMailLine,
+  unsubscribeButton,
+  unsubscribeHonesty,
+  unsubscribeTitle,
+  type UnsubscribeBacklogMode,
+} from '@/features/senders/unsubscribe-backlog/preview-copy';
 
 import { useNow } from '@/lib/use-now';
 import type { TriageDecisionRow } from './data';
@@ -28,6 +36,11 @@ export interface PreviewFactsInput {
    * so a separate backlog mutation is never assumed).
    */
   archiveHistoric: boolean;
+  /**
+   * Unsubscribe backlog choice. Archive and Delete both move mail;
+   * `archiveHistoric` alone cannot name Delete.
+   */
+  backlogMode?: UnsubscribeBacklogMode | undefined;
   /** Live inbox count for the sender — see {@link PreviewCount}. */
   inboxCount: PreviewCount;
   /** Exact Later return time carried by the pending action. */
@@ -92,6 +105,7 @@ export function buildPreviewFacts({
   verb,
   row,
   archiveHistoric,
+  backlogMode,
   inboxCount,
   wakeAt = null,
   reach = 'inbox_only',
@@ -111,15 +125,24 @@ export function buildPreviewFacts({
     // these surfaces is opened by a click, never server-rendered.
     timeZone: 'viewer',
     secondaryAction:
-      actionVerb === 'unsubscribe' && archiveHistoric ? { verb: 'archive', liveCount } : null,
+      actionVerb === 'unsubscribe' && (backlogMode === 'delete' || archiveHistoric)
+        ? {
+            verb: backlogMode === 'delete' ? 'delete' : 'archive',
+            liveCount,
+          }
+        : null,
     reach: allMail ? 'all_mail' : 'inbox_only',
   });
   const { primary, secondary } = presentation;
 
   // Archive/Later/Delete act on the sender's current inbox mail via the
   // worker; Unsubscribe only when the backlog toggle is on; Keep never.
+  const unsubMode: UnsubscribeBacklogMode =
+    verb === 'Unsubscribe'
+      ? (backlogMode ?? (archiveHistoric ? 'archive' : 'unsub_only'))
+      : 'unsub_only';
   const movesCurrentInbox = verb === 'Archive' || verb === 'Later' || verb === 'Delete';
-  const counts = movesCurrentInbox || (verb === 'Unsubscribe' && archiveHistoric);
+  const counts = movesCurrentInbox || (verb === 'Unsubscribe' && unsubMode !== 'unsub_only');
   // QA-delete-20260829-08 — a header that promises a move read as active
   // even when the live count is 0. Only the count-based verbs can BE zero
   // this way; Unsubscribe and Keep never claim a mail move.
@@ -210,7 +233,7 @@ export function buildPreviewFacts({
     });
     if (secondary !== null) {
       disclosures.push({
-        label: 'Undo archive',
+        label: unsubMode === 'delete' ? 'Undo delete' : 'Undo archive',
         value: afterLead(secondary.activityUndo.summary, 'Undo '),
       });
     }
@@ -222,7 +245,7 @@ export function buildPreviewFacts({
     });
   }
 
-  return {
+  const facts: PreviewFacts = {
     counts,
     liveCount,
     nothingToMove,
@@ -238,10 +261,21 @@ export function buildPreviewFacts({
           : `${verb} ${emails(liveCount)}`
         : verb,
     disclosures,
-    // The server charges a second unit for a backlog verb riding an
-    // Unsubscribe (`recordUnsubIntent` preflights `includesBacklogAction
-    // ? 2 : 1`, and the paired Archive enqueues as its own action).
-    unitsNeeded: 1 + (verb === 'Unsubscribe' && archiveHistoric ? 1 : 0),
+    // The unsubscribe request is free (`skipCleanupCharge`). A mail move
+    // still spends one cleanup action while the email meter is off.
+    unitsNeeded: verb === 'Unsubscribe' ? (unsubMode === 'unsub_only' ? 0 : 1) : 1,
+  };
+  if (verb !== 'Unsubscribe') return facts;
+  const n = facts.liveCount ?? 0;
+  const future = futureMailLine(row.senderName, row.unsubscribeMethod);
+  const backlog = backlogMailLine(unsubMode, n);
+  return {
+    ...facts,
+    title: unsubscribeTitle(unsubMode, row.senderName, n),
+    subtitle: [future, backlog].filter((line): line is string => line !== null).join(' '),
+    note: unsubscribeHonesty(unsubMode),
+    primaryLabel: unsubscribeButton(unsubMode),
+    unitsNeeded: unsubMode === 'unsub_only' ? 0 : 1,
   };
 }
 

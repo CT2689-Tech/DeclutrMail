@@ -1380,12 +1380,19 @@ export function TriageScreen({
         pendingAction.verb === verb
       ) {
         if (inlinePreviewBlocked) return;
-        // Second click on the same verb confirms.
+        const count = typeof previewInboxCount === 'number' ? previewInboxCount : null;
+        const backlogMode =
+          verb === 'Unsubscribe'
+            ? (pendingAction.backlogMode ??
+              (count !== null && count > 0 ? 'archive' : 'unsub_only'))
+            : undefined;
+        // Second click on the same verb confirms the choice on screen.
         dispatchAction(
           verb,
           row,
           {
-            archiveHistoric: false,
+            archiveHistoric: backlogMode === 'archive',
+            ...(backlogMode ? { backlogMode } : {}),
             rememberPreference: true,
             wakeAt: pendingAction.wakeAt,
           },
@@ -1395,7 +1402,7 @@ export function TriageScreen({
       }
       onRowAction(verb, row);
     },
-    [pendingAction, inlinePreviewBlocked, dispatchAction, onRowAction],
+    [pendingAction, previewInboxCount, inlinePreviewBlocked, dispatchAction, onRowAction],
   );
 
   /**
