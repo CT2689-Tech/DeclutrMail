@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -20,6 +20,7 @@ function fixture() {
     'test-web',
     'test-units',
     'build-web',
+    'web-types',
     'lighthouse',
     'accessibility',
   ];
@@ -63,6 +64,7 @@ test('docs-only PR may skip explicitly excluded suites but queue must run them',
     'test-web',
     'test-units',
     'build-web',
+    'web-types',
     'lighthouse',
     'accessibility',
   ])
@@ -190,6 +192,59 @@ test('build caching restores only compiler intermediates and never bypasses eith
   const wait = stepNamed('Wait for the web build');
   for (const step of [stepNamed('Build the web app'), lane, wait]) {
     assert.doesNotMatch(step, /if:|continue-on-error:/);
+  }
+});
+
+test('build-web skips Next type validation only because web-types runs it on that build', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const build = workflow.split('- name: Build the web app\n')[1].split('\n      - ')[0];
+  assert.match(build, /NEXT_SKIP_BUILD_TYPECHECK: '1'/);
+  const job = workflow.split('\n  web-types:\n')[1].split('\n  lighthouse:\n')[0];
+  assert.match(job, /needs: \[changes, build-web\]/);
+  const download = job.split('- name: Download the built web app\n')[1].split('\n      - ')[0];
+  assert.match(download, /name: web-build\n\s+path: apps\/web\/\.next/);
+  assert.doesNotMatch(download, /continue-on-error/);
+  assert.match(job, /run: pnpm --filter @declutrmail\/web typecheck/);
+  const web = JSON.parse(readFileSync(new URL('../apps/web/package.json', import.meta.url)));
+  assert.equal(web.scripts.typecheck, 'tsc --noEmit');
+  const tsconfig = JSON.parse(readFileSync(new URL('../apps/web/tsconfig.json', import.meta.url)));
+  assert.ok(tsconfig.include.includes('.next/types/**/*.ts'));
+
+  const guard = job
+    .split("- name: Require the build's generated route types\n")[1]
+    .split('run: |\n')[1]
+    .split('\n      - ')[0]
+    .replace(/^ {10}/gm, '');
+  const cwd = mkdtempSync(path.join(tmpdir(), 'web-route-types-'));
+  const run = () =>
+    spawnSync('bash', ['-e', '-u', '-o', 'pipefail', '-c', guard], { cwd, encoding: 'utf8' });
+  const write = (file, text) => {
+    mkdirSync(path.dirname(path.join(cwd, file)), { recursive: true });
+    writeFileSync(path.join(cwd, file), text);
+  };
+  const validator = 'apps/web/.next/types/validator.ts';
+  const validates = (...files) =>
+    files.map((file) => `// Validate ../../src/app/${file}\n`).join('');
+  try {
+    mkdirSync(path.join(cwd, 'apps/web/src/app'), { recursive: true });
+    write(validator, validates('layout.tsx'));
+    assert.notEqual(run().status, 0, 'no route files found');
+    write('apps/web/src/app/layout.tsx', '');
+    write('apps/web/src/app/(marketing)/blog/[slug]/page.tsx', '');
+    rmSync(path.join(cwd, validator));
+    assert.notEqual(run().status, 0, 'no validator');
+    write(validator, '');
+    assert.notEqual(run().status, 0, 'empty validator');
+    write(validator, validates('layout.tsx'));
+    const partial = run();
+    assert.notEqual(partial.status, 0, 'a route the validator does not cover');
+    assert.match(partial.stdout, /does not validate apps\/web\/src\/app\/\(marketing\)\/blog/);
+    write(validator, validates('layout.tsx', '(marketing)/blog/[slug]/page.tsx'));
+    const ok = run();
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.match(ok.stdout, /covers all 2 route file/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
   }
 });
 

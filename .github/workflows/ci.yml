@@ -524,10 +524,14 @@ jobs:
       # build-only break (a server/client boundary violation, a bad
       # metadata export) reached Vercel unchallenged. `next build` is
       # also the only thing that produces the manifest the budget reads.
+      # Its lint and type phases are not skipped, only moved: `lint` runs
+      # the same ESLint config, and `web-types` type-checks this build's
+      # generated route types, both off the Lighthouse path.
       - name: Build the web app
-        run: pnpm --filter @declutrmail/web build
+        run: pnpm --filter @declutrmail/web build --no-lint
         env:
           NEXT_TELEMETRY_DISABLED: '1'
+          NEXT_SKIP_BUILD_TYPECHECK: '1'
       # The `lighthouse` job serves exactly this build. Compiler cache
       # excluded: it is ~95% of `.next` and `next start` never reads it.
       - name: Upload the built web app
@@ -582,6 +586,55 @@ jobs:
       # whole public site, and nothing else fails when it happens.
       - name: Assert the public site is still prerendered
         run: node scripts/check-prerendered-routes.mjs
+
+  # The type phase build-web skips: tsc over the web tsconfig, which
+  # includes the route types that build generated under `.next/types`.
+  # `typecheck` cannot see those files, so a layout or page export that
+  # breaks Next's contract passes there and fails only here.
+  web-types:
+    name: Build — Web route types
+    needs: [changes, build-web]
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.web == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Download the built web app
+        uses: actions/download-artifact@v7
+        with:
+          name: web-build
+          path: apps/web/.next
+      # Without the generated validator tsc checks only what `typecheck` did
+      # and passes, so a missing file or an unvalidated route is a failure.
+      - name: Require the build's generated route types
+        run: |
+          validator=apps/web/.next/types/validator.ts
+          if [ ! -s "$validator" ]; then
+            echo "::error::web-build has no $validator — route types were not generated, so they cannot be checked"
+            exit 1
+          fi
+          checked=0; missing=0
+          while IFS= read -r file; do
+            checked=$((checked + 1))
+            if ! grep -qxF "// Validate ../../${file#apps/web/}" "$validator"; then
+              echo "::error::$validator does not validate $file"
+              missing=1
+            fi
+          done < <(find apps/web/src/app -type f \( -name 'page.ts' -o -name 'page.tsx' -o -name 'layout.ts' -o -name 'layout.tsx' -o -name 'route.ts' \))
+          if [ "$checked" -eq 0 ]; then
+            echo "::error::found no page, layout or route files under apps/web/src/app"
+            exit 1
+          fi
+          [ "$missing" -eq 0 ]
+          echo "validator covers all $checked route file(s)"
+      - name: Type-check the web app with its route types
+        run: pnpm --filter @declutrmail/web typecheck
 
   # D160's remaining unbuilt gate, against build-web's own build via
   # `next start` — a `next dev` score measures nothing production has.
@@ -765,6 +818,7 @@ jobs:
         test-web,
         test-units,
         build-web,
+        web-types,
         lighthouse,
         accessibility,
       ]

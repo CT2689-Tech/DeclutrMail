@@ -57,16 +57,21 @@ CI runs browser verification in four independent lanes: WCAG accessibility,
 component paint plus 320px responsive layout, hydration and billing, and
 product/public journeys. Each lane has disposable Postgres/Redis services and
 its own API and production web build, which compiles in the background while
-the lane installs Chromium and migrates its database. Lane builds skip Next's
-lint and type pass; the lint and typecheck jobs and build-web's full build still
-gate both. Tests stay serial inside each lane; all lanes must pass `CI required`,
-with coverage assertions rejecting missing, empty or skipped reports.
+the lane installs Chromium and migrates its database. Lane builds and build-web
+skip Next's lint and type pass: the `lint` job runs the same ESLint config, and
+`web-types` type-checks the route types build-web generated, which the
+`typecheck` job cannot see. Tests stay serial inside each lane; all lanes must
+pass `CI required`, with coverage assertions rejecting missing, empty or skipped
+reports.
 
 Lighthouse runs in its own `lighthouse` job, one leg per URL in
 `apps/web/lighthouserc.cjs`, against build-web's uploaded build. Every leg keeps
 three measurements per page and the same thresholds, and the job fails if its
 legs and the config's URL list disagree. API and worker tests run in three
-shards each. There are no test retries anywhere.
+shards each and web tests in two. API shards split by the per-file durations in
+`apps/api/vitest.shard-weights.json`; refresh them with
+`scripts/vitest-weighted-shard.mjs --update` when one shard becomes the tail.
+There are no test retries anywhere.
 
 Only Next.js Webpack compiler intermediates are cached. Marketing and synthetic
 browser builds use separate cache namespaces; current-source production builds
