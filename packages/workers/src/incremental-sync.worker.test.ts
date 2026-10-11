@@ -351,6 +351,30 @@ describe('IncrementalSyncWorker', () => {
    * what the last attempt did. Without the guard, EVERY push for a
    * mailbox that keeps receiving mail re-attempts the token refresh.
    */
+  it('no-ops an initial scan parked on needs_reconnect before Gmail access', async () => {
+    await db
+      .update(providerSyncState)
+      .set({ readinessStatus: 'needs_reconnect', errorCode: 'InvalidGrantError' })
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    const getClient = vi.fn(async () => {
+      throw new Error('needs_reconnect must not request a Gmail client');
+    });
+
+    const result = await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: { getClient },
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+
+    expect(result.needsReconnect).toBe(true);
+    expect(getClient).not.toHaveBeenCalled();
+    expect((await db.select().from(providerSyncState))[0]).toMatchObject({
+      readinessStatus: 'needs_reconnect',
+      lastHistoryId: 1000n,
+    });
+    expect(await db.select().from(mailMessages)).toHaveLength(0);
+  });
+
   it('no-ops a mailbox already awaiting reconnect before Gmail access — the webhook-storm regression', async () => {
     await db
       .update(providerSyncState)

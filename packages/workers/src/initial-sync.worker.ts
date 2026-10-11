@@ -29,6 +29,7 @@ import {
   bucketEmailCount,
   sanitizeErrorClass,
 } from '@declutrmail/shared/analytics/sanitize-product-event';
+import { INITIAL_SYNC_RECONNECT_ERROR_CODES } from '@declutrmail/shared/contracts';
 import { and, count, desc, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
@@ -303,6 +304,22 @@ interface SenderAggregate {
  * UUID, counts, byte counts, page counters. No subject lines, no
  * sender emails, no body bytes.
  */
+/** True when Postgres rejected `needs_reconnect` because 0087 is not applied yet. */
+export function isNeedsReconnectEnumMissing(err: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current: unknown = err;
+  while (current && typeof current === 'object' && !seen.has(current)) {
+    seen.add(current);
+    const record = current as { message?: unknown; cause?: unknown };
+    const message = typeof record.message === 'string' ? record.message : '';
+    if (message.includes('needs_reconnect') && message.includes('invalid input value for enum')) {
+      return true;
+    }
+    current = record.cause;
+  }
+  return false;
+}
+
 function initialSyncLog(
   event: string,
   mailboxAccountId: string,
@@ -404,6 +421,20 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       .from(providerSyncState)
       .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
       .limit(1);
+    // A revoked or expired grant is terminal until the user reconnects.
+    // A stray job (reconciler, webhook, leftover BullMQ retry) must not
+    // call Gmail again or move the row back to `syncing`.
+    if (syncRow?.readinessStatus === 'needs_reconnect') {
+      initialSyncLog('skipped_needs_reconnect', mailboxAccountId);
+      return {
+        messagesSynced: 0,
+        unreadable: 0,
+        sendersIndexed: 0,
+        gmailApiCalls: 0,
+        durationMs: Date.now() - startedAt,
+        stageTimings,
+      };
+    }
     if (syncRow?.initialRetryAt && syncRow.initialRetryAt.getTime() > Date.now()) {
       initialSyncLog('skipped_recovery_cooldown', mailboxAccountId);
       return {
@@ -632,12 +663,19 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     const delay = initialRecoveryDelay(error.name, 0, retryAfterMs);
     const providerDelay =
       Number.isFinite(retryAfterMs) && (retryAfterMs ?? 0) > 0 ? retryAfterMs! : 0;
+    // Same set the onboarding gate and `me.needsReconnect` already use.
+    // Not a retryable `failed`: nothing re-queues it, and no sync-failed
+    // email (that copy tells the user to try again).
+    const reconnectGrant = (INITIAL_SYNC_RECONNECT_ERROR_CODES as readonly string[]).includes(
+      error.name,
+    );
     const failureUpdate = {
       currentStage: 'failed' as const,
-      readinessStatus: 'failed' as const,
+      readinessStatus: reconnectGrant ? ('needs_reconnect' as const) : ('failed' as const),
       errorCode: error.name,
-      initialRetryAt:
-        delay === null
+      initialRetryAt: reconnectGrant
+        ? null
+        : delay === null
           ? null
           : sql`CASE WHEN ${providerSyncState.initialRecoveryAttempts} < ${INITIAL_RECOVERY_LIMIT}
               THEN now() + GREATEST(${INITIAL_RECOVERY_BASE_MS} * power(2, ${providerSyncState.initialRecoveryAttempts}), ${providerDelay}) * interval '1 millisecond'
@@ -649,87 +687,127 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       initialRetryAt: providerSyncState.initialRetryAt,
       initialRecoveryAttempts: providerSyncState.initialRecoveryAttempts,
     };
-    const failedUpsert = (tx: OutboxTx) =>
-      tx
-        .update(providerSyncState)
-        .set(failureUpdate)
-        .where(
-          and(
-            eq(providerSyncState.mailboxAccountId, mailboxAccountId),
-            eq(providerSyncState.readinessStatus, 'syncing'),
-            eq(providerSyncState.initialAttemptId, attemptId),
-          ),
-        )
-        .returning(returning);
-
-    // `mailbox.sync_failed` rides the SAME transaction as the failed
-    // upsert (transactional outbox — mirror of markReady's publish).
-    // Without it a terminal failure was silent: no email, no event, the
-    // user discovers the dead gate by sitting on it (first-run-trap
-    // audit 2026-07-28). A missing publisher must never block recording
-    // the failure itself — the state write is the load-bearing half.
     const outbox = this.deps.outbox;
-    if (!outbox) {
-      await failedUpsert(this.deps.db);
+    // Set only for a non-reconnect failure whose sync has never finished.
+    // The emit happens after the write commits, including the enum-missing
+    // fallback, which never reaches it (a reconnect grant sends no event).
+    let emitTerminal = false;
+    let terminalUserId: string | null = null;
+
+    // One write of the terminal row. `needs_reconnect` is preferred for a
+    // reconnect grant; if that label is not in the enum yet, the caller
+    // retries this with `failed` so the row cannot stay `syncing`.
+    const applyTerminal = async (update: typeof failureUpdate): Promise<'recorded' | 'skipped'> => {
+      const failedUpsert = (tx: OutboxTx) =>
+        tx
+          .update(providerSyncState)
+          .set(update)
+          .where(
+            and(
+              eq(providerSyncState.mailboxAccountId, mailboxAccountId),
+              eq(providerSyncState.readinessStatus, 'syncing'),
+              eq(providerSyncState.initialAttemptId, attemptId),
+            ),
+          )
+          .returning(returning);
+
+      // `mailbox.sync_failed` rides the SAME transaction as the failed
+      // upsert (transactional outbox — mirror of markReady's publish).
+      // Without it a terminal failure was silent: no email, no event, the
+      // user discovers the dead gate by sitting on it (first-run-trap
+      // audit 2026-07-28). A missing publisher must never block recording
+      // the failure itself — the state write is the load-bearing half.
+      if (!outbox) {
+        await failedUpsert(this.deps.db);
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            kind: 'sync.sync_failed_publish_skipped',
+            worker: this.workerName,
+            mailboxAccountId,
+            reason: 'InitialSyncDeps.outbox not wired',
+          }),
+        );
+        return 'recorded';
+      }
+
+      const [account] = await this.deps.db
+        .select({
+          workspaceId: mailboxAccounts.workspaceId,
+          userId: mailboxAccounts.userId,
+        })
+        .from(mailboxAccounts)
+        .where(eq(mailboxAccounts.id, mailboxAccountId))
+        .limit(1);
+      if (!account) {
+        // Mailbox deleted mid-flight — record nothing, email no one.
+        return 'skipped';
+      }
+      terminalUserId = account.userId;
+
+      await this.deps.db.transaction(async (tx) => {
+        const claimed = await failedUpsert(tx);
+        if (claimed.length === 0) return;
+        // A reconnect grant keeps the in-app prompt (error_code is still
+        // set). It does not send mail — that copy would have to come from
+        // Content, and the sync-failed email tells the user to try again.
+        // It also does not emit first_sync_failed_terminal.
+        if (reconnectGrant) return;
+        // Keep failure history, but send "needs attention / no automatic retry"
+        // only when user action is actually required.
+        if (
+          claimed[0]!.initialRetryAt &&
+          claimed[0]!.initialRecoveryAttempts < INITIAL_RECOVERY_LIMIT
+        )
+          return;
+        const [prior] = await tx
+          .select({ lastSyncedAt: providerSyncState.lastSyncedAt })
+          .from(providerSyncState)
+          .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
+          .limit(1);
+        emitTerminal = (prior?.lastSyncedAt ?? null) === null;
+        await outbox.publish(tx, {
+          topic: TOPICS.MAILBOX_SYNC_FAILED,
+          aggregateId: mailboxAccountId,
+          payload: {
+            mailboxAccountId,
+            workspaceId: account.workspaceId,
+            failedAt: new Date().toISOString(),
+            errorCode: error.name,
+          },
+          schema: MailboxSyncFailedPayloadSchema,
+        });
+      });
+      return 'recorded';
+    };
+
+    try {
+      if ((await applyTerminal(failureUpdate)) === 'skipped') return;
+    } catch (err) {
+      // Deploy does not wait for Atlas. Writing the new label before
+      // migration 0087 commits throws, and the open transaction rolls
+      // back — the row would stay `syncing` and the reconciler would
+      // retry the revoked grant. `failed` plus this error code is already
+      // off the recovery schedule. Still no email.
+      if (!reconnectGrant || !isNeedsReconnectEnumMissing(err)) throw err;
+      emitTerminal = false;
       console.warn(
         JSON.stringify({
           level: 'warn',
-          kind: 'sync.sync_failed_publish_skipped',
+          kind: 'sync.needs_reconnect_enum_missing',
           worker: this.workerName,
           mailboxAccountId,
-          reason: 'InitialSyncDeps.outbox not wired',
+          errorCode: error.name,
         }),
       );
-      await this.recordFailedRun(mailboxAccountId, error, attempts);
-      return;
-    }
-
-    const [account] = await this.deps.db
-      .select({
-        workspaceId: mailboxAccounts.workspaceId,
-        userId: mailboxAccounts.userId,
-      })
-      .from(mailboxAccounts)
-      .where(eq(mailboxAccounts.id, mailboxAccountId))
-      .limit(1);
-    if (!account) {
-      // Mailbox deleted mid-flight — record nothing, email no one.
-      return;
-    }
-
-    let emitTerminal = false;
-    await this.deps.db.transaction(async (tx) => {
-      const claimed = await failedUpsert(tx);
-      if (claimed.length === 0) return;
-      // Keep failure history, but send "needs attention / no automatic retry"
-      // only when user action is actually required.
-      if (
-        claimed[0]!.initialRetryAt &&
-        claimed[0]!.initialRecoveryAttempts < INITIAL_RECOVERY_LIMIT
-      )
+      if ((await applyTerminal({ ...failureUpdate, readinessStatus: 'failed' })) === 'skipped') {
         return;
-      const [prior] = await tx
-        .select({ lastSyncedAt: providerSyncState.lastSyncedAt })
-        .from(providerSyncState)
-        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
-        .limit(1);
-      emitTerminal = (prior?.lastSyncedAt ?? null) === null;
-      await outbox.publish(tx, {
-        topic: TOPICS.MAILBOX_SYNC_FAILED,
-        aggregateId: mailboxAccountId,
-        payload: {
-          mailboxAccountId,
-          workspaceId: account.workspaceId,
-          failedAt: new Date().toISOString(),
-          errorCode: error.name,
-        },
-        schema: MailboxSyncFailedPayloadSchema,
-      });
-    });
-    if (emitTerminal) {
+      }
+    }
+    if (emitTerminal && terminalUserId !== null) {
       emitSyncProductEvent(this.deps, {
         name: 'first_sync_failed_terminal',
-        userId: account.userId,
+        userId: terminalUserId,
         props: { error_class: sanitizeErrorClass(error.name) },
       });
     }
@@ -1877,7 +1955,12 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
             .onConflictDoUpdate({
               target: providerSyncState.mailboxAccountId,
               set: transition,
-              setWhere: sql`${providerSyncState.readinessStatus} <> 'ready' AND (${providerSyncState.initialRetryAt} IS NULL OR ${providerSyncState.initialRetryAt} <= now())`,
+              // `::text` on the new label: Postgres type-checks every enum
+              // literal in this INSERT … ON CONFLICT, including a first claim
+              // that does not conflict. Before 0087 adds the value that
+              // throws 22P02 and the scan never leaves `queued`. 'ready'
+              // has been in the enum since the column existed.
+              setWhere: sql`${providerSyncState.readinessStatus} <> 'ready' AND ${providerSyncState.readinessStatus}::text <> 'needs_reconnect' AND (${providerSyncState.initialRetryAt} IS NULL OR ${providerSyncState.initialRetryAt} <= now())`,
             })
             .returning({ id: providerSyncState.id });
         })
