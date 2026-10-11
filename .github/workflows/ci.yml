@@ -782,7 +782,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: [accessibility, hydration-billing, journeys]
+        lane: [accessibility, responsive, hydration-billing, journeys]
     services:
       postgres:
         image: postgres:16-alpine
@@ -849,6 +849,26 @@ jobs:
           key: ${{ runner.os }}-next-browser-v1-${{ hashFiles('pnpm-lock.yaml', '.nvmrc', 'apps/web/next.config.ts', 'tsconfig*.json', 'apps/web/tsconfig*.json', 'packages/shared/tsconfig*.json', 'pnpm-workspace.yaml', 'packages/config/**', '.github/workflows/ci.yml') }}-${{ hashFiles('apps/web/src/**', 'apps/web/public/**', 'packages/shared/src/**') }}
           restore-keys: |
             ${{ runner.os }}-next-browser-v1-${{ hashFiles('pnpm-lock.yaml', '.nvmrc', 'apps/web/next.config.ts', 'tsconfig*.json', 'apps/web/tsconfig*.json', 'packages/shared/tsconfig*.json', 'pnpm-workspace.yaml', 'packages/config/**', '.github/workflows/ci.yml') }}-
+      # A long-lived Next dev process accumulates every public/authenticated
+      # route compiler. Its memory-threshold restart severed a valid sender
+      # navigation in run 35972390743. Exercise the shipped rendering instead
+      # of weakening navigation assertions or retrying an interrupted page.
+      # The API remains in development mode for the isolated login harness.
+      #
+      # It cannot reuse build-web's output: NEXT_PUBLIC_API_URL and the
+      # PostHog key above are inlined at build time. It runs in the
+      # background while Chromium, the Postgres client and migrations
+      # install; "Wait for the web build" fails the lane on its exit code.
+      # Lint and type validity are skipped here only — the lint and
+      # typecheck jobs and build-web's full `next build` still gate them.
+      - name: Build the web app for browser verification
+        env:
+          NEXT_SKIP_BUILD_TYPECHECK: '1'
+        run: |
+          (
+            pnpm --filter @declutrmail/web build --no-lint > web-build.log 2>&1
+            echo $? > web-build.rc
+          ) &
       # RETRIED, because the failure it guards against is not ours and
       # not detectable from the result. `--with-deps` runs apt-get, and
       # an Ubuntu mirror that stalls mid-fetch does not fail — it hangs
@@ -880,18 +900,6 @@ jobs:
           done
           echo "::error::playwright install failed after 3 attempts — likely an apt/CDN outage, not this change"
           exit 1
-      # Deliberately BEFORE the stack boots: these specs serve their own
-      # page and stub endpoint, so needing nothing is a property worth
-      # proving, and a paint regression fails in seconds rather than
-      # after a 3-minute stack start. They exist because SSR markup
-      # tests cannot see how an engine paints a FAILED image — which is
-      # how the ADR-0034 avatar shipped every logo as a broken-image
-      # glyph over the monogram it was supposed to leave alone.
-      - name: Run the shared-component paint specs
-        if: matrix.lane == 'accessibility'
-        run: pnpm --filter @declutrmail/e2e run e2e:render
-        env:
-          E2E_JSON_REPORT: ${{ github.workspace }}/e2e-render-report.json
       - name: Install PostgreSQL client
         run: |
           sudo apt-get update -qq
@@ -901,13 +909,32 @@ jobs:
           for migration in packages/db/migrations/*.sql; do
             psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$migration"
           done
-      # A long-lived Next dev process accumulates every public/authenticated
-      # route compiler. Its memory-threshold restart severed a valid sender
-      # navigation in run 35972390743. Exercise the shipped rendering instead
-      # of weakening navigation assertions or retrying an interrupted page.
-      # The API remains in development mode for the isolated login harness.
-      - name: Build the web app for browser verification
-        run: pnpm --filter @declutrmail/web build
+      - name: Wait for the web build
+        run: |
+          for _ in $(seq 1 900); do
+            [ -f web-build.rc ] && break
+            sleep 1
+          done
+          cat web-build.log
+          if [ ! -f web-build.rc ]; then
+            echo "::error::the web build did not finish within 15 minutes"
+            exit 1
+          fi
+          exit "$(cat web-build.rc)"
+      # Deliberately BEFORE the stack boots: these specs serve their own
+      # page and stub endpoint, so needing nothing is a property worth
+      # proving, and a paint regression fails in seconds rather than
+      # after a 3-minute stack start. After the build wait, not beside it,
+      # so a paint check never competes with the compiler for CPU. They
+      # exist because SSR markup
+      # tests cannot see how an engine paints a FAILED image — which is
+      # how the ADR-0034 avatar shipped every logo as a broken-image
+      # glyph over the monogram it was supposed to leave alone.
+      - name: Run the shared-component paint specs
+        if: matrix.lane == 'responsive'
+        run: pnpm --filter @declutrmail/e2e run e2e:render
+        env:
+          E2E_JSON_REPORT: ${{ github.workspace }}/e2e-render-report.json
       # One writer for the identical browser compiler cache. The other
       # lanes only restore; they do not race to upload the same cache.
       - name: Save the isolated browser compiler
@@ -946,18 +973,24 @@ jobs:
           sed -n '1,240p' api-e2e.log
           sed -n '1,240p' web-e2e.log
           exit 1
-      # Runs both WCAG lanes — a11y-smoke (5 authed screens) and
-      # a11y-public (representative public renderers) — plus the 320px
-      # responsive lane covering every authenticated destination. Project
-      # testMatch keeps the suites disjoint while one JSON report proves the
-      # whole release gate ran.
-      # Branch protection requires CI required, which depends on the whole
-      # accessibility matrix. Individual matrix names are diagnostic only.
+      # Runs both WCAG projects — a11y-smoke (5 authed screens) and
+      # a11y-public (representative public renderers) — at desktop and
+      # mobile reduced-motion. The 320px responsive project covering every
+      # authenticated destination runs in its own lane below; `pnpm e2e:a11y`
+      # still runs all three locally. Each lane's JSON report proves its
+      # half ran. Branch protection requires CI required, which depends on
+      # the whole accessibility matrix. Individual matrix names are
+      # diagnostic only.
       - name: Run the accessibility gate (authenticated + public)
         if: matrix.lane == 'accessibility'
-        run: pnpm e2e:a11y
+        run: pnpm --filter @declutrmail/e2e run e2e:a11y:wcag
         env:
           E2E_JSON_REPORT: ${{ github.workspace }}/e2e-a11y-report.json
+      - name: Run the responsive layout gate (320px)
+        if: matrix.lane == 'responsive'
+        run: pnpm --filter @declutrmail/e2e run e2e:responsive
+        env:
+          E2E_JSON_REPORT: ${{ github.workspace }}/e2e-responsive-report.json
       # Server-hydration correctness under a non-en-US locale + zone.
       # Runs HERE because this job already boots the whole stack this
       # spec needs, so the marginal cost is one Playwright invocation.
@@ -1002,8 +1035,11 @@ jobs:
         run: |
           case "$BROWSER_LANE" in
             accessibility)
-              node scripts/assert-e2e-ran.mjs e2e-render-report.json "component paint specs"
               node scripts/assert-e2e-ran.mjs e2e-a11y-report.json "accessibility gate"
+              ;;
+            responsive)
+              node scripts/assert-e2e-ran.mjs e2e-render-report.json "component paint specs"
+              node scripts/assert-e2e-ran.mjs e2e-responsive-report.json "responsive layout gate"
               ;;
             hydration-billing)
               node scripts/assert-e2e-ran.mjs e2e-billing-report.json "billing money path"

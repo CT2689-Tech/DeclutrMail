@@ -94,10 +94,11 @@ test('isolated browser matrix preserves every suite and its coverage assertion',
   const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const browser = workflow.split('  accessibility:')[1];
   assert.match(browser, /fail-fast: false/);
-  assert.match(browser, /lane: \[accessibility, hydration-billing, journeys\]/);
+  assert.match(browser, /lane: \[accessibility, responsive, hydration-billing, journeys\]/);
   for (const [name, lane, command] of [
-    ['Run the shared-component paint specs', 'accessibility', 'e2e:render'],
-    ['Run the accessibility gate (authenticated + public)', 'accessibility', 'pnpm e2e:a11y'],
+    ['Run the shared-component paint specs', 'responsive', 'e2e:render'],
+    ['Run the accessibility gate (authenticated + public)', 'accessibility', 'e2e:a11y:wcag'],
+    ['Run the responsive layout gate (320px)', 'responsive', 'e2e:responsive'],
     ['Run the hydration smoke (non-en-US locale + timezone)', 'hydration-billing', 'e2e:hydration'],
     ['Run the billing money-path spec', 'hydration-billing', 'e2e:billing'],
     ['Verify isolated harness guards', 'journeys', 'test:harness'],
@@ -124,7 +125,8 @@ test('actual browser coverage step rejects each absent, skipped or empty lane re
     .replaceAll('node scripts/assert-e2e-ran.mjs', 'node "$ASSERT_E2E_SCRIPT"');
   const cwd = mkdtempSync(path.join(tmpdir(), 'browser-ci-coverage-'));
   const reports = {
-    accessibility: ['e2e-render-report.json', 'e2e-a11y-report.json'],
+    accessibility: ['e2e-a11y-report.json'],
+    responsive: ['e2e-render-report.json', 'e2e-responsive-report.json'],
     'hydration-billing': ['e2e-billing-report.json', 'e2e-hydration-report.json'],
     journeys: ['e2e-journeys-report.json'],
   };
@@ -178,9 +180,40 @@ test('build caching restores only compiler intermediates and never bypasses eith
   }
   assert.match(workflow, /next-marketing-v1/);
   assert.match(workflow, /next-browser-v1/);
-  for (const name of ['Build the web app', 'Build the web app for browser verification']) {
-    const step = workflow.split(`- name: ${name}\n`)[1]?.split('\n      - ')[0];
-    assert.match(step, /run: pnpm --filter @declutrmail\/web build/);
+  const stepNamed = (name) => workflow.split(`- name: ${name}\n`)[1]?.split('\n      - ')[0];
+  assert.match(stepNamed('Build the web app'), /run: pnpm --filter @declutrmail\/web build/);
+  const lane = stepNamed('Build the web app for browser verification');
+  assert.match(
+    lane,
+    /pnpm --filter @declutrmail\/web build --no-lint > web-build\.log 2>&1\n\s+echo \$\? > web-build\.rc/,
+  );
+  const wait = stepNamed('Wait for the web build');
+  for (const step of [stepNamed('Build the web app'), lane, wait]) {
     assert.doesNotMatch(step, /if:|continue-on-error:/);
+  }
+});
+
+test('a browser lane fails unless its background web build exits 0', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const wait = workflow.split('- name: Wait for the web build\n')[1].split('\n      - ')[0];
+  const shell = wait
+    .split('run: |\n')[1]
+    .replace(/^ {10}/gm, '')
+    .replace('seq 1 900', 'seq 1 2');
+  assert.notEqual(shell, wait);
+  const cwd = mkdtempSync(path.join(tmpdir(), 'browser-ci-build-'));
+  const run = () =>
+    spawnSync('bash', ['-e', '-u', '-o', 'pipefail', '-c', shell], { cwd, encoding: 'utf8' });
+  try {
+    writeFileSync(path.join(cwd, 'web-build.log'), 'build output\n');
+    assert.notEqual(run().status, 0, 'no exit code recorded');
+    writeFileSync(path.join(cwd, 'web-build.rc'), '1\n');
+    assert.notEqual(run().status, 0, 'failed build');
+    writeFileSync(path.join(cwd, 'web-build.rc'), '0\n');
+    const ok = run();
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.match(ok.stdout, /build output/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
   }
 });
