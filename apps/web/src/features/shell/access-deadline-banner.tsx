@@ -26,8 +26,22 @@ function rememberDismissed(key: string): void {
   }
 }
 
-/** App-chrome billing banner. One slot, session-dismissed, server date only. */
+/**
+ * App-chrome billing banner. One slot, session-dismissed, server date only.
+ *
+ * The subscription read stays off until after mount. This banner sits in
+ * the shell, outside each page's hydration boundary, so subscribing during
+ * the first render seeds the shared billing query as pending and the
+ * page then hydrates against that instead of its server snapshot.
+ */
 export function AccessDeadlineBanner() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
+  return <AccessDeadlineBannerLive />;
+}
+
+function AccessDeadlineBannerLive() {
   const { tier } = useTier();
   const billing = useBillingSubscription();
   const paymentMethod = usePaymentMethodSession();
