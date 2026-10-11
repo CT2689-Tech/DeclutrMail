@@ -26,7 +26,6 @@
 import { useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { BottomSheet, tokens, useIsAtMost } from '@declutrmail/shared';
 import { WS5_COPY } from '@declutrmail/shared/copy/launch';
-import { isSenderSizeViewEnabled } from '@declutrmail/shared/inbox-report';
 import { WINDOWS } from '@declutrmail/shared/senders';
 import type {
   ActivityBucket,
@@ -810,6 +809,7 @@ const SORT_OPTIONS: ReadonlyArray<{
   label: string;
   group: string;
 }> = [
+  { sort: 'size', direction: 'desc', label: WS5_COPY['f2.sort'], group: 'Size' },
   // Unqualified on purpose. `senders.total_received` converges nightly
   // to COUNT(mail_messages) for the sender, so it is neither "ever" nor
   // a cumulative "seen" — it is what we currently hold.
@@ -823,16 +823,8 @@ const SORT_OPTIONS: ReadonlyArray<{
   { sort: 'name', direction: 'desc', label: 'Z → A', group: 'Name' },
 ];
 
-function visibleSortOptions(): typeof SORT_OPTIONS {
-  if (!isSenderSizeViewEnabled()) return SORT_OPTIONS;
-  return [
-    { sort: 'size', direction: 'desc', label: WS5_COPY['f2.sort'], group: 'Size' },
-    ...SORT_OPTIONS,
-  ];
-}
-
 function activeSortLabel(sort: SenderListSort, direction: SenderListDirection): string {
-  const match = visibleSortOptions().find((o) => o.sort === sort && o.direction === direction);
+  const match = SORT_OPTIONS.find((o) => o.sort === sort && o.direction === direction);
   return match?.label ?? `${sort} ${direction === 'desc' ? '↓' : '↑'}`;
 }
 
@@ -849,7 +841,7 @@ export function SortMenu({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
   useDismiss(open, ref, () => setOpen(false));
-  const options = visibleSortOptions();
+  const options = SORT_OPTIONS;
   const groups = new Map<string, (typeof options)[number][]>();
   for (const opt of options) groups.set(opt.group, [...(groups.get(opt.group) ?? []), opt]);
   return (

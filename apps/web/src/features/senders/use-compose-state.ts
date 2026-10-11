@@ -12,7 +12,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
-import { isSenderSizeViewEnabled } from '@declutrmail/shared/inbox-report';
 import type { SenderListDirection, SenderListSort } from '@/lib/api/senders';
 import { parseSendersScope } from './api/senders-scope';
 import { DEFAULT_COMPOSE, EMPTY_COMPOSE, type ComposeState } from './filters';
@@ -49,12 +48,12 @@ function useOptionalAppRouter() {
 }
 
 function parseSort(raw: string | null): SenderListSort {
-  if (raw === 'size') return isSenderSizeViewEnabled() ? 'size' : 'total';
   return raw === 'last_seen' ||
     raw === 'first_seen' ||
     raw === 'name' ||
     raw === 'read' ||
-    raw === 'recommended'
+    raw === 'recommended' ||
+    raw === 'size'
     ? raw
     : 'total';
 }

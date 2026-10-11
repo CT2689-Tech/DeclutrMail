@@ -21,7 +21,6 @@
 // column via `varchar(300)`). The policy write touches ONLY the
 // sha256 sender_key + standing-policy flags.
 
-import { isSenderSizeViewEnabled } from '@declutrmail/shared/inbox-report';
 import {
   BadRequestException,
   Body,
@@ -88,7 +87,13 @@ const CATEGORIES = new Set<GmailCategory>([
  * return 400 directly so the wire never sees a 5xx for a known-
  * unimplemented sort.
  */
-const SUPPORTED_SORTS = new Set<SenderListSort>(['total', 'last_seen', 'first_seen', 'name']);
+const SUPPORTED_SORTS = new Set<SenderListSort>([
+  'total',
+  'last_seen',
+  'first_seen',
+  'name',
+  'size',
+]);
 const SORT_DIRECTIONS = new Set<SenderListDirection>(['asc', 'desc']);
 
 /**
@@ -679,12 +684,6 @@ function parseSearch(raw: string | undefined): string | null {
  */
 function parseSort(raw: string | undefined): SenderListSort {
   if (!raw) return 'total';
-  if (raw === 'size') {
-    if (!isSenderSizeViewEnabled()) {
-      throw new BadRequestException('Unsupported sort: size');
-    }
-    return 'size';
-  }
   if (!SUPPORTED_SORTS.has(raw as SenderListSort)) {
     throw new BadRequestException(`Unsupported sort: ${raw}`);
   }

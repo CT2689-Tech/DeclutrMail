@@ -1,4 +1,3 @@
-import { isSenderSizeViewEnabled } from '@declutrmail/shared/inbox-report';
 import type {
   ActivityBucket,
   SenderListDirection,
@@ -72,12 +71,12 @@ function parseWindow(raw: string | null): number | null {
 }
 
 function parseSort(raw: string | null): SenderListSort {
-  if (raw === 'size') return isSenderSizeViewEnabled() ? 'size' : 'total';
   return raw === 'last_seen' ||
     raw === 'first_seen' ||
     raw === 'name' ||
     raw === 'read' ||
-    raw === 'recommended'
+    raw === 'recommended' ||
+    raw === 'size'
     ? raw
     : 'total';
 }

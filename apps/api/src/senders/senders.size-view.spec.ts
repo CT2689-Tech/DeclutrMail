@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import { mailMessages, mailboxAccounts, senders, users, workspaces } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import { SendersReadService } from './senders.read-service.js';
 
@@ -81,7 +81,7 @@ async function seedMessage(
   });
 }
 
-describe('SENDER_SIZE_VIEW', () => {
+describe('sender stored size', () => {
   let db: Db;
   let mailboxId: string;
   let svc: SendersReadService;
@@ -92,39 +92,7 @@ describe('SENDER_SIZE_VIEW', () => {
     svc = new SendersReadService(db as never);
   });
 
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  it('rejects size sort and returns no size while the flag is off', async () => {
-    const big = await seedSender(db, mailboxId, 'big@x.com');
-    await seedMessage(db, {
-      mailboxAccountId: mailboxId,
-      senderKey: big.senderKey,
-      sizeBytes: 2_000_000,
-    });
-    await expect(
-      svc.listSenders({
-        mailboxAccountId: mailboxId,
-        category: null,
-        sort: 'size',
-        cursor: null,
-        limit: 10,
-      }),
-    ).rejects.toThrow(/Unsupported sort: size/);
-    const rows = await svc.listSenders({
-      mailboxAccountId: mailboxId,
-      category: null,
-      cursor: null,
-      limit: 10,
-    });
-    expect(rows[0]?.sizeBytes).toBeNull();
-    const detail = await svc.getSenderDetail(mailboxId, big.id);
-    expect(detail?.sizeBytes).toBeNull();
-  });
-
   it('sums inbound mail including Trash, excludes outbound, and pages largest first', async () => {
-    vi.stubEnv('SENDER_SIZE_VIEW', 'true');
     const big = await seedSender(db, mailboxId, 'big@x.com');
     const small = await seedSender(db, mailboxId, 'small@x.com');
     const unknown = await seedSender(db, mailboxId, 'unknown@x.com');

@@ -152,9 +152,8 @@ export interface SenderListRow {
   totalReceived: number;
   /**
    * Sum of Gmail size estimates for inbound mail from this sender,
-   * including Trash. Null when `SENDER_SIZE_VIEW` is off, or when every
-   * stored estimate for the sender is null. The UI must not invent a size
-   * from null.
+   * including Trash. Null when every stored estimate for the sender is
+   * null. The UI must not invent a size from null.
    */
   sizeBytes?: number | null;
   /**

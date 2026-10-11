@@ -20,15 +20,15 @@ Shipped:
   prefilled and does not confirm, celebration without a size claim, home card
   export. Seen state is `localStorage` (`dm-inbox-report-dismissed:{mailboxId}`)
   because the preferences API only accepts known patches.
-- F2. Read-only "Largest senders" and `≈ {size}` behind `SENDER_SIZE_VIEW`
-  (default off). Sum is inbound `mail_messages.size_bytes`, including Trash,
-  excluding outbound.
+- F2. Read-only "Largest senders" and `≈ {size}` are live. Sum is inbound
+  `mail_messages.size_bytes`, including Trash, excluding outbound. There is
+  no size-view switch.
 
 Cut:
 
-- G3 share card. The plan lists it as the first cut. The share flag stays
-  default off and the report does not render a share control unless
-  `INBOX_REPORT_SHARE_ENABLED` is set. No client card renderer in this PR.
+- G3 share card. The plan lists it as the first cut. This PR does not ship
+  the share control or a share switch. Deck `share.*` strings stay. No
+  client card renderer.
 
 ## Decisions assumed
 
@@ -37,7 +37,10 @@ Cut:
   and Keep policies.
 - Pass is not in the current tier manifest. The upgrade block uses Plus as
   the primary (`report.upgrade.plus.passOff`) until `BILLING_PASS_ENABLED`.
-  Prices come from `TIER_MANIFEST`, not a hardcoded dollar amount.
+  The report panel is a client component, so it reads
+  `NEXT_PUBLIC_BILLING_PASS_ENABLED` (falling back to `BILLING_PASS_ENABLED`).
+  Set both when the pass goes live. Prices come from `TIER_MANIFEST`, not a
+  hardcoded dollar amount.
 - The review link is `/senders?fix={ids}` until WS2 exports `sendersFixSetHref`.
 - Dialog primitives are the current PreviewSheet until WS2a lands. Rebase once
   after #977 merges.
@@ -67,10 +70,11 @@ backfill.
 
 ## Production steps
 
-- The Inbox Report and Unsubscribe with archive or delete are live on merge.
-- `SENDER_SIZE_VIEW` stays off until the launch switch. It defaults off.
-  `NEXT_PUBLIC_SENDER_SIZE_VIEW` is what the web build reads.
-- `INBOX_REPORT_SHARE_ENABLED` stays off. G3 was cut.
+- The Inbox Report, Unsubscribe with archive or delete, and the read-only
+  size view are live on merge. There is no size-view switch and no share
+  switch.
+- Set `NEXT_PUBLIC_BILLING_PASS_ENABLED` alongside `BILLING_PASS_ENABLED`
+  when the pass goes live. The web panel cannot see the server-only flag.
 - The privacy inventory purpose for `message-size-estimate` now also names
   Inbox Report storage insights and the read-only size-by-sender view. Regenerate
   the public storage list from the registry before publishing the privacy page.

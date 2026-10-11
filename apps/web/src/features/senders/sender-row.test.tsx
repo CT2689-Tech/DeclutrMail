@@ -55,9 +55,9 @@ describe('resolvesToSwipeRight — the phone row gesture', () => {
 describe('<SenderRow /> — what the row says', () => {
   // Senders are keyed by ADDRESS, so one brand legitimately owns several
   // rows; the domain alone renders them identical.
-  it('hides the size cell while SENDER_SIZE_VIEW is off', () => {
+  it('shows the stored size', () => {
     renderRow({ sizeBytes: 1_500_000 });
-    expect(screen.queryByTestId('sender-size-cell')).not.toBeInTheDocument();
+    expect(screen.getByTestId('sender-size-cell')).toHaveTextContent('≈ 1.5 MB');
   });
 
   it('shows the full address, not just the domain', () => {

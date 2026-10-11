@@ -5,7 +5,6 @@ import { useState } from 'react';
 import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import {
-  isInboxReportShareEnabled,
   reportFallback,
   reportGlyph,
   reportHeadline,
@@ -80,7 +79,6 @@ export function InboxReportPanel({
       : '';
   const allowance = TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0;
   const plusPrice = money(TIER_MANIFEST.plus.prices.annual?.usdCents);
-  const showShare = !calm && isInboxReportShareEnabled();
 
   return (
     <section
@@ -165,7 +163,6 @@ export function InboxReportPanel({
               <p>
                 {WS5_COPY['report.trust']} <a href={trustHref}>{WS5_COPY['report.trust.link']}</a>
               </p>
-              {showShare ? <button type="button">{WS5_COPY['share.button']}</button> : null}
               {celebration ? (
                 <div data-celebration>
                   <p>

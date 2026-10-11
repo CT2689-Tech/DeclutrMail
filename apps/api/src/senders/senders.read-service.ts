@@ -57,7 +57,6 @@ import {
 } from '@declutrmail/db';
 import type { TriageReasoningSource, TriageVerdict } from '@declutrmail/db';
 import { normalizeUnsubscribeLifecycleStatus } from '@declutrmail/shared/contracts';
-import { isSenderSizeViewEnabled } from '@declutrmail/shared/inbox-report';
 import { normalizeProtectionReason } from '@declutrmail/shared/copy';
 import {
   CONFIDENCE,
@@ -123,6 +122,7 @@ const SUPPORTED_SORTS: ReadonlySet<SenderListSort> = new Set([
   'last_seen',
   'first_seen',
   'name',
+  'size',
 ]);
 
 /**
@@ -584,11 +584,7 @@ export class SendersReadService {
   }): Promise<SenderFacts[]> {
     const { mailboxAccountId, category, isProtected, cursor, limit } = args;
     const sort: SenderListSort = args.sort ?? 'total';
-    const sizeView = isSenderSizeViewEnabled();
-    // `size` is implemented, but only while SENDER_SIZE_VIEW is on.
-    // Flag off must 400 the same way an unknown sort does, so a stale
-    // URL cannot start the aggregate.
-    if (sort === 'size' ? !sizeView : !SUPPORTED_SORTS.has(sort)) {
+    if (!SUPPORTED_SORTS.has(sort)) {
       throw new BadRequestException(`Unsupported sort: ${sort}`);
     }
     const direction: SenderListDirection = args.direction ?? DEFAULT_DIRECTION_BY_SORT[sort];
@@ -718,7 +714,7 @@ export class SendersReadService {
         firstSeenAt: senders.firstSeenAt,
         lastSeenAt: senders.lastSeenAt,
         totalReceived: senders.totalReceived,
-        sizeBytes: sizeView ? senderStoredSizeSql() : sql<number | string | null>`NULL::bigint`,
+        sizeBytes: senderStoredSizeSql(),
         wroteToCount: senders.wroteToCount,
         unsubscribeMethod: senders.unsubscribeMethod,
         rollingStats: rollingStatsSql,
@@ -807,7 +803,7 @@ export class SendersReadService {
         // `mode: 'number'` coerces to a JS number at the boundary. The
         // assertion makes a violation explicit at the wire boundary.
         totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
-        sizeBytes: sizeView ? ensureOptionalSafeInteger(row.sizeBytes, 'senders.sizeBytes') : null,
+        sizeBytes: ensureOptionalSafeInteger(row.sizeBytes, 'senders.sizeBytes'),
         // `wrote_to_count` — mig 0063 integer column, NOT NULL DEFAULT 0.
         // Drives the Sender Detail "you replied N×" copy.
         wroteToCount: ensureSafeIntegerNumber(row.wroteToCount, 'senders.wrote_to_count'),
@@ -1635,7 +1631,6 @@ export class SendersReadService {
     // rather than bare `${senders.column}` interpolations, and for the
     // trend-bucket / last-reviewed subquery rationale.
     const now = args.now ?? new Date();
-    const sizeView = isSenderSizeViewEnabled();
     // Same ROLLING-WINDOW stats the list path uses — `monthlyVolume` /
     // `readRate` / `volumeTrend` are one product-wide fact, so they are
     // computed from one definition.
@@ -1654,7 +1649,7 @@ export class SendersReadService {
         firstSeenAt: senders.firstSeenAt,
         lastSeenAt: senders.lastSeenAt,
         totalReceived: senders.totalReceived,
-        sizeBytes: sizeView ? senderStoredSizeSql() : sql<number | string | null>`NULL::bigint`,
+        sizeBytes: senderStoredSizeSql(),
         wroteToCount: senders.wroteToCount,
         unsubscribeMethod: senders.unsubscribeMethod,
         // The mailto: channel for D230's manual compose deep link —
@@ -1767,7 +1762,7 @@ export class SendersReadService {
       firstSeenAt: row.firstSeenAt.toISOString(),
       lastSeenAt: row.lastSeenAt.toISOString(),
       totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
-      sizeBytes: sizeView ? ensureOptionalSafeInteger(row.sizeBytes, 'senders.sizeBytes') : null,
+      sizeBytes: ensureOptionalSafeInteger(row.sizeBytes, 'senders.sizeBytes'),
       wroteToCount: ensureSafeIntegerNumber(row.wroteToCount, 'senders.wrote_to_count'),
       // Identical semantics to the list path — the same sender reports
       // the same volume / read rate / trend on both. Volume + read rate
