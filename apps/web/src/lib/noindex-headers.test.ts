@@ -47,7 +47,9 @@ describe('canonical host redirect', () => {
     for (const redirect of vercel.redirects) {
       expect(redirect.permanent).toBe(true);
       expect(redirect.has).toEqual([{ type: 'host', value: 'declutr-mail.vercel.app' }]);
-      expect(redirect.destination.startsWith('https://declutrmail.com')).toBe(true);
+      const destination = new URL(redirect.destination.replaceAll(':path*', 'kept-path'));
+      expect(destination.protocol).toBe('https:');
+      expect(destination.hostname).toBe('declutrmail.com');
     }
     expect(vercel.redirects.some((redirect) => redirect.destination.includes(':path*'))).toBe(true);
     expect(JSON.stringify(vercel.redirects)).not.toContain('preview');

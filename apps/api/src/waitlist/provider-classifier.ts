@@ -69,16 +69,27 @@ async function lookupMx(domain: string): Promise<ProviderClass> {
 }
 
 function classFromMx(hosts: readonly string[]): ProviderClass {
-  if (hosts.length === 0) return 'unknown';
-  if (hosts.some((host) => host.endsWith('.google.com') || host.includes('googlemail'))) {
+  const normalized = hosts.map((host) => (host.endsWith('.') ? host.slice(0, -1) : host));
+  if (normalized.length === 0) return 'unknown';
+  if (
+    normalized.some(
+      (host) =>
+        host === 'google.com' ||
+        host.endsWith('.google.com') ||
+        host === 'googlemail.com' ||
+        host.endsWith('.googlemail.com'),
+    )
+  ) {
     return 'google_workspace';
   }
-  if (
-    hosts.some((host) => host.endsWith('.outlook.com') || host.endsWith('protection.outlook.com'))
-  ) {
+  if (normalized.some((host) => host === 'outlook.com' || host.endsWith('.outlook.com'))) {
     return 'microsoft';
   }
-  if (hosts.some((host) => host.includes('yahoodns'))) return 'yahoo_aol';
-  if (hosts.some((host) => host === 'icloud.com' || host.endsWith('.icloud.com'))) return 'icloud';
+  if (normalized.some((host) => host === 'yahoodns.net' || host.endsWith('.yahoodns.net'))) {
+    return 'yahoo_aol';
+  }
+  if (normalized.some((host) => host === 'icloud.com' || host.endsWith('.icloud.com'))) {
+    return 'icloud';
+  }
   return 'other';
 }

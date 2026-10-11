@@ -39,6 +39,9 @@ describe('classifyProvider', () => {
     [['mx.yahoodns.net'], 'yahoo_aol'],
     [['mx.icloud.com'], 'icloud'],
     [['mx.example.net'], 'other'],
+    [['protection.outlook.com.evil.example'], 'other'],
+    [['notgooglemail.example.net'], 'other'],
+    [['notyahoodns.example.net'], 'other'],
   ] as const)('classifies MX %j as %s', async (hosts, expected) => {
     resolveMx.mockResolvedValue(hosts.map((exchange) => ({ exchange, priority: 10 })));
     await expect(classifyProvider('person@custom.example')).resolves.toBe(expected);
