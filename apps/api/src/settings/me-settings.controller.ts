@@ -25,6 +25,7 @@ import { CurrentUser, JwtGuard } from '../auth/jwt.guard.js';
 import type { SessionPrincipal } from '../auth/sessions.service.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { currentAiConsentView, UsersService } from '../users/users.service.js';
+import { AiConsentFollowup } from './ai-consent-followup.js';
 
 /**
  * Settings read + D34 action-sheet prefs write (U23).
@@ -47,7 +48,10 @@ import { currentAiConsentView, UsersService } from '../users/users.service.js';
 @Controller('me')
 @UseGuards(JwtGuard)
 export class MeSettingsController {
-  constructor(private readonly users: UsersService) {}
+  constructor(
+    private readonly users: UsersService,
+    private readonly aiConsentFollowup: AiConsentFollowup,
+  ) {}
 
   @Get('settings')
   @RateLimit('default')
@@ -78,6 +82,19 @@ export class MeSettingsController {
       });
     }
     const aiConsent = await this.users.applyAiConsent(user.userId, parsed.data);
+    // The update above has committed. Enqueue after it, and do not fail
+    // the Allow the user already saved if Redis is down.
+    try {
+      await this.aiConsentFollowup.afterCommittedGrant(user.userId, parsed.data);
+    } catch (err) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'ai_consent.enqueue_failed',
+          error: err instanceof Error ? err.name : 'Error',
+        }),
+      );
+    }
     return ok({ aiConsent });
   }
 

@@ -532,17 +532,6 @@ describe('BriefReadService — stored model narrative without current consent', 
     },
   );
 
-  it('hides the model narrative when BRIEF_LLM_ENABLED is false', async () => {
-    vi.stubEnv('BRIEF_LLM_ENABLED', 'false');
-    const { db, mailbox } = await seedModelBrief('current');
-    const brief = await new BriefReadService(db as never).getForDate(
-      mailbox.mailboxAccountId,
-      '2026-10-11',
-    );
-    expect(brief!.generatedBy).toBe('template');
-    expect(brief!.briefPayload.narrative).toBe('');
-  });
-
   it('leaves a template Brief untouched when the user has not consented', async () => {
     const db = await freshDb();
     const mailbox = await seedMailbox(db, 'template-only@example.com');

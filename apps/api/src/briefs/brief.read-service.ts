@@ -128,8 +128,8 @@ export class BriefReadService {
 
   /**
    * Stored model prose leaves the response the moment consent is
-   * missing, revoked, the wrong version, or the Brief kill switch is
-   * on. The frozen row stays as written; the template is what the
+   * missing, revoked, or the wrong version. The frozen row stays as
+   * written; the template is what the
    * next worker would have stored.
    */
   private async projectStoredNarratives(mailboxAccountId: string, briefs: Brief[]): Promise<void> {

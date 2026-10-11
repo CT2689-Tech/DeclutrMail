@@ -3,10 +3,8 @@ export {
   aiConsentPatch,
   aiConsentView,
   briefConsentActive,
-  briefLlmEnabled,
   consentCard,
   EMPTY_AI_CONSENT,
-  explainLlmEnabled,
   explanationsConsentActive,
   grantedAiConsentInsert,
 } from './gate.js';

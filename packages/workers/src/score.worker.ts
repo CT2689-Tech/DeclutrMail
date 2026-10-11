@@ -16,7 +16,7 @@ import {
   triageNotDecidedRecently,
   triageQueueOrder,
 } from '@declutrmail/db';
-import { explanationsConsentActive, explainLlmEnabled } from '@declutrmail/shared/ai-consent';
+import { explanationsConsentActive } from '@declutrmail/shared/ai-consent';
 import type { schema, TriageVerdict } from '@declutrmail/db';
 import { TOPICS, TriageScoreRunCompletedPayloadSchema } from '@declutrmail/events';
 
@@ -152,6 +152,16 @@ export type ScoreTrigger =
    */
   | 'stale_refresh'
   | 'cron_sweep'
+  /**
+   * The user just allowed explanation consent. One mailbox sweep, same
+   * spend as `sync_complete` (`first_view`): verdicts for every sender,
+   * a sentence only for the rows they see first. The BullMQ id is stable
+   * per mailbox (`consentRescoreJobId`) so a second Allow does not queue
+   * another run. The job re-checks consent before it scores; a revoke
+   * that lands first is a no-op, so stored prose stays. Consent is the
+   * only gate.
+   */
+  | 'consent_grant'
   /**
    * Someone is about to read this sender's reason and it is still the
    * template (founder decision 2026-09-25): write the LLM sentence for the
@@ -405,10 +415,15 @@ function explainPolicy(trigger: Exclude<ScoreTrigger, 'explain'>): ExplainPolicy
     case 'stale_refresh':
       return 'always';
     case 'sync_complete':
+    case 'consent_grant':
       return 'first_view';
     case 'signal_change':
     case 'cron_sweep':
       return 'never';
+    default: {
+      const unreachable: never = trigger;
+      throw new Error(`Unhandled score trigger: ${String(unreachable)}`);
+    }
   }
 }
 
@@ -649,6 +664,31 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     // through to the whole mailbox would re-buy every explanation.
     if (payload.senderKeys && payload.senderKeys.length === 0) {
       throw new ValidationError('score job names an empty senderKeys set');
+    }
+
+    if (
+      payload.trigger === 'consent_grant' &&
+      !(await this.explanationsAllowed(payload.mailboxAccountId))
+    ) {
+      // Allow already committed. A revoke that landed before this job
+      // runs buys nothing and does not rewrite the rows the read path
+      // is already hiding.
+      return {
+        decisionsWritten: 0,
+        llmExplanations: 0,
+        templateExplanations: 0,
+        llmTimeouts: 0,
+        llmCalls: 0,
+        llmReused: 0,
+        llmBlocked: 0,
+        explainCandidates: 0,
+        explainSkipped: 0,
+        explainFailed: 0,
+        explanationsNotRequested: 0,
+        screenerFlagged: 0,
+        sendersFailed: 0,
+        chunksFailed: 0,
+      };
     }
 
     if (payload.trigger === 'explain') {
@@ -1207,9 +1247,8 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
    * upsert `triage_decisions`. Returns `null` when no `senders` row
    * exists yet (the sync stage hasn't materialized it).
    */
-  /** Fail closed: a missing row, a kill switch, or a lookup error buys no sentence. */
+  /** Fail closed: a missing row or a lookup error buys no sentence. */
   private async explanationsAllowed(mailboxAccountId: string): Promise<boolean> {
-    if (!explainLlmEnabled()) return false;
     if (this.explanationConsent?.mailboxAccountId === mailboxAccountId) {
       return this.explanationConsent.allowed;
     }
@@ -1982,6 +2021,18 @@ export function scoreJobId(
   }
   const scope = job.senderKey ?? (job.senderKeys ? 'subset' : '*');
   return `${job.mailboxAccountId}:${scope}:${job.producedAtMs}`;
+}
+
+/**
+ * BullMQ id for the rescore queued when explanation consent is allowed.
+ * Stable per mailbox — a repeated Allow while this job still exists is
+ * a duplicate, not a second sweep. Hyphens only: BullMQ rejects `:`.
+ */
+export function consentRescoreJobId(mailboxAccountId: string): string {
+  if (mailboxAccountId.includes(':')) {
+    throw new Error('consentRescoreJobId: mailboxAccountId must not contain ":"');
+  }
+  return `ai-consent-rescore-${mailboxAccountId}`;
 }
 
 /**

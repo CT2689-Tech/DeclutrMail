@@ -9,13 +9,10 @@ dropped; main already has the real pricing foundation. Consent columns
 are migration `0092`. `0086` is product events. `0087`–`0091` are
 reserved for in-flight PRs.
 
-## Flags
+## Consent
 
-`BRIEF_LLM_ENABLED` and `EXPLAIN_LLM_ENABLED` are env flags, default
-on. Anything other than the string `false` leaves the call path open.
-Set both to `false` on the API and the worker to force the template
-Brief and the rule-based explanation. The kill switch does not clear
-stored consent. It only hides the card and stops new model calls.
+The user's AI consent choice is the only gate for explanations and the
+Brief. There is no env flag that pauses either path.
 
 Existing Pro workspaces that already receive a Brief get the template
 Brief until that user records brief consent at version `2026-10`. No

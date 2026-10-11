@@ -130,21 +130,21 @@ function briefRaw(row: AiConsentStored, version: string): AiConsentBriefState {
 
 export function aiConsentView(
   row: AiConsentStored | null | undefined,
-  options: { version?: string; explainPaused: boolean; briefPaused: boolean },
+  options?: { version?: string },
 ): AiConsentView {
-  const version = options.version ?? AI_CONSENT_VERSION;
+  const version = options?.version ?? AI_CONSENT_VERSION;
   const stored = row ?? EMPTY_AI_CONSENT;
   const reask =
     (stored.aiConsentVersion != null && stored.aiConsentVersion !== version) ||
     (stored.briefAiConsentVersion != null && stored.briefAiConsentVersion !== version);
   return {
-    explanations: options.explainPaused ? 'paused' : explanationsRaw(stored, version),
-    brief: options.briefPaused ? 'paused' : briefRaw(stored, version),
+    explanations: explanationsRaw(stored, version),
+    brief: briefRaw(stored, version),
     reask,
   };
 }
 
-/** Which card to show. A kill switch hides the card without changing the row. */
+/** Which card to show. Consent is the only gate; a paused view hides the card. */
 export function consentCard(view: AiConsentView, briefCapable: boolean): AiConsentCard | null {
   if (view.explanations === 'paused') return null;
   if (briefCapable && view.brief === 'paused') return null;
@@ -154,14 +154,6 @@ export function consentCard(view: AiConsentView, briefCapable: boolean): AiConse
   if (view.explanations === 'unset') return briefCapable ? 'withBrief' : 'all';
   if (view.explanations === 'allowed' && briefCapable && view.brief === 'unset') return 'upgrade';
   return null;
-}
-
-export function explainLlmEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.EXPLAIN_LLM_ENABLED !== 'false';
-}
-
-export function briefLlmEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.BRIEF_LLM_ENABLED !== 'false';
 }
 
 const KEEP: Pick<

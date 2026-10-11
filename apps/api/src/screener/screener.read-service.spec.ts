@@ -622,24 +622,4 @@ describe('ScreenerReadService — whose sentence the reason is (D24)', () => {
     );
     expect(beta?.recommendation?.reasoning).not.toBe(MODEL_REASON);
   });
-
-  it('serves the plain line when EXPLAIN_LLM_ENABLED is false', async () => {
-    vi.stubEnv('EXPLAIN_LLM_ENABLED', 'false');
-    const db = await freshDb();
-    const mailboxId = await seedMailbox(db, 'screener-killed');
-    const [mailbox] = await db
-      .select({ userId: mailboxAccounts.userId })
-      .from(mailboxAccounts)
-      .where(eq(mailboxAccounts.id, mailboxId));
-    await db.update(users).set(grantedAiConsentInsert()).where(eq(users.id, mailbox!.userId));
-    await queueWithModelReason(db, mailboxId);
-
-    const rows = await new ScreenerReadService(db as never).listQueue({
-      mailboxAccountId: mailboxId,
-      limit: 50,
-    });
-    const beta = rows.find((row) => row.senderKey === SENDER_B);
-    expect(beta?.recommendation?.generatedBy).toBe('template');
-    expect(beta?.recommendation?.reasoning).not.toBe(MODEL_REASON);
-  });
 });

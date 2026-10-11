@@ -7,8 +7,6 @@ import {
   aiConsentFromPartial,
   aiConsentPatch,
   aiConsentView,
-  briefLlmEnabled,
-  explainLlmEnabled,
   type AiConsentDecision,
   type AiConsentPatch,
   type AiConsentView,
@@ -379,10 +377,7 @@ function scopesWrite(value: AiConsentPatch['aiConsentScopes']): Record<string, u
 export function currentAiConsentView(
   row: Parameters<typeof aiConsentFromPartial>[0],
 ): AiConsentView {
-  return aiConsentView(aiConsentFromPartial(row), {
-    explainPaused: !explainLlmEnabled(),
-    briefPaused: !briefLlmEnabled(),
-  });
+  return aiConsentView(aiConsentFromPartial(row));
 }
 
 function signupCampaignColumns(campaign: SignupCampaign | undefined): {

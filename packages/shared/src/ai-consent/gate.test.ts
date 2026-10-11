@@ -26,7 +26,7 @@ describe('AI consent gate', () => {
   it('treats a missing row as not allowed', () => {
     expect(explanationsConsentActive(null)).toBe(false);
     expect(briefConsentActive(undefined)).toBe(false);
-    const view = aiConsentView(null, { explainPaused: false, briefPaused: false });
+    const view = aiConsentView(null);
     expect(view.explanations).toBe('unset');
     expect(consentCard(view, false)).toBe('all');
     expect(consentCard(view, true)).toBe('withBrief');
@@ -47,7 +47,7 @@ describe('AI consent gate', () => {
   });
 
   it('shows the upgrade card after explanations were allowed and Brief is on the plan', () => {
-    const view = aiConsentView(allowedExplanations, { explainPaused: false, briefPaused: false });
+    const view = aiConsentView(allowedExplanations);
     expect(view.explanations).toBe('allowed');
     expect(consentCard(view, false)).toBeNull();
     expect(consentCard(view, true)).toBe('upgrade');
@@ -58,34 +58,29 @@ describe('AI consent gate', () => {
       aiConsentVersion: VERSION,
       aiConsentDeclinedAt: '2026-10-02T00:00:00.000Z',
     });
-    expect(
-      consentCard(aiConsentView(declined, { explainPaused: false, briefPaused: false }), false),
-    ).toBe(null);
+    expect(consentCard(aiConsentView(declined), false)).toBe(null);
     const upgradeDeclined = row({
       ...allowedExplanations,
       briefAiConsentVersion: VERSION,
       briefAiDeclinedAt: '2026-10-04T00:00:00.000Z',
     });
-    const view = aiConsentView(upgradeDeclined, { explainPaused: false, briefPaused: false });
+    const view = aiConsentView(upgradeDeclined);
     expect(view.brief).toBe('declined');
     expect(consentCard(view, true)).toBeNull();
     expect(explanationsConsentActive(upgradeDeclined)).toBe(true);
   });
 
-  it('re-asks when the stored version is not current, and a kill switch hides the card', () => {
+  it('re-asks when the stored version is not current', () => {
     const old = row({
       aiConsentVersion: '2026-09',
       aiExplanationsConsentAt: '2026-09-01T00:00:00.000Z',
       aiConsentScopes: ['explanations'],
     });
-    const view = aiConsentView(old, { explainPaused: false, briefPaused: false });
+    const view = aiConsentView(old);
     expect(view.reask).toBe(true);
     expect(view.explanations).toBe('review');
     expect(explanationsConsentActive(old)).toBe(false);
     expect(consentCard(view, true)).toBe('withBrief');
-    const paused = aiConsentView(old, { explainPaused: true, briefPaused: false });
-    expect(paused.explanations).toBe('paused');
-    expect(consentCard(paused, true)).toBeNull();
   });
 
   it('writes Allow, Not now, upgrade, and revoke without granting a scope that was declined', () => {

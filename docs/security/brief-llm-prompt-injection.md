@@ -16,11 +16,17 @@ consent (`2026-10`) for that scope and the scope is not revoked.
    is true. The worker checks again.
 2. Daily Brief. `BriefSnapshotWorker.composeNarrative` calls
    `BriefLlmAnthropicAdapter.generateNarrative`.
+3. Allow on `POST /api/me/ai-consent` enqueues that work after the
+   consent row commits: one score job per active mailbox when
+   explanations were granted, and one Brief job per active mailbox on a
+   brief-capable tier when Brief was granted. Not now, decline, and
+   revoke enqueue nothing. The workers check consent again before any
+   provider call.
 
-Missing consent, a lookup error, or a kill switch skips the call. The
-user sees the rule-based explanation or the template Brief. Stored
-`llm_haiku` prose is not shown on the next read. Each read checks the
-current consent row and the kill switch; it does not wait for a worker.
+Missing consent or a lookup error skips the call. The user sees the
+rule-based explanation or the template Brief. Stored `llm_haiku` prose
+is not shown on the next read. Each read checks the current consent
+row; it does not wait for a worker. Consent is the only gate.
 
 | Read                                                     | When consent is not current       | Replacement                                                                                                                           |
 | -------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
@@ -30,23 +36,16 @@ current consent row and the kill switch; it does not wait for a worker.
 | Daily Brief `GET /api/briefs/today` and the history list | `showStoredBrief` is false        | `renderBriefTemplateNarrative` (empty string when the day has mail, the quiet-day sentence when it does not), `generatedBy: template` |
 
 Not current means missing, revoked, declined, or a version other than
-`2026-10`. `EXPLAIN_LLM_ENABLED=false` hides stored explanation prose.
-`BRIEF_LLM_ENABLED=false` hides a stored Brief narrative. The frozen
-row is left as written. There is no backfill: a Brief stored as
-`template` before the user consents stays the template.
+`2026-10`. The frozen row is left as written. There is no backfill of
+earlier days. Allow on the Brief scope may replace today's template
+snapshot once; a row already marked `llm_haiku` is not generated again.
+A job that finds consent revoked when it runs writes nothing.
 
 `POST /api/triage/explain` queues work and returns ids only. It queues
 nothing unless `explanationsAllowed` is true. The account export lists
 Brief delivery dates, not narratives, and does not include suggestion
 reasoning. The Brief-ready email sends counts and a link, not the
 narrative.
-
-## Kill switches
-
-`EXPLAIN_LLM_ENABLED=false` and `BRIEF_LLM_ENABLED=false`. Anything
-other than the string `false` leaves the path enabled. Set each on the
-API (paused copy) and the worker (enforcement). A kill switch does not
-clear the stored consent row.
 
 ## Untrusted input
 
