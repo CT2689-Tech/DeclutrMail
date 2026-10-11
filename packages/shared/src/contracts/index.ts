@@ -224,6 +224,7 @@ export { WaitlistJoinRequestSchema, WaitlistV1JoinRequestSchema } from './waitli
 export type {
   WaitlistJoinRequest,
   WaitlistJoinResult,
+  WaitlistProviderClass,
   WaitlistV1JoinRequest,
   WaitlistV1JoinResult,
 } from './waitlist';

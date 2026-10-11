@@ -13,6 +13,7 @@ export const GROWTH_EVENT_NAMES = [
   'demo_completed',
   'demo_reset',
   'beta_gate_denied',
+  'provider_waitlist_joined',
 ] as const;
 
 export type GrowthEventName = (typeof GROWTH_EVENT_NAMES)[number];
@@ -61,5 +62,16 @@ export interface GrowthEventPayloads {
   beta_gate_denied: {
     /** What surfaced the denial — only the OAuth-callback redirect today. */
     source: 'oauth_callback';
+  };
+
+  /**
+   * "Not on Gmail?" waitlist. Closed enums only — never the address.
+   * `provider` is the visitor's pick; `provider_class` is the server classifier.
+   */
+  provider_waitlist_joined: {
+    provider: 'outlook' | 'm365' | 'yahoo_aol' | 'icloud' | 'other' | 'unspecified';
+    provider_class:
+      'gmail' | 'google_workspace' | 'microsoft' | 'yahoo_aol' | 'icloud' | 'other' | 'unknown';
+    would_pay: boolean;
   };
 }

@@ -13,7 +13,7 @@ import { users, waitlist } from '@declutrmail/db';
 import type { WaitlistJoinRequest, WaitlistV1JoinRequest } from '@declutrmail/shared/contracts';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import { classifyProvider } from './provider-classifier.js';
+import { classifyProvider, type ProviderClass } from './provider-classifier.js';
 
 @Injectable()
 export class WaitlistService {
@@ -46,24 +46,27 @@ export class WaitlistService {
 
   /**
    * Pro or provider waitlist. Idempotent on (email, tier, provider).
-   * Never logs the address. `classifyProvider` runs only for `kind:'provider'`
-   * when the caller did not pick a provider.
+   * Never logs the address. A provider signup always classifies so the
+   * growth event can carry `provider_class`. The stored provider stays
+   * the visitor's pick when they made one.
    */
   async joinLaunch(
     input: WaitlistV1JoinRequest,
     userId?: string,
-  ): Promise<'joined' | 'already_joined'> {
+  ): Promise<{ status: 'joined' | 'already_joined'; providerClass: ProviderClass | null }> {
     const email = await this.resolveEmail(input.email, userId);
     const tier = input.kind === 'pro' ? 'pro' : null;
     let provider: string | null = null;
+    let providerClass: ProviderClass | null = null;
     if (input.kind === 'provider') {
-      provider = input.provider ?? (await classifyProvider(email));
+      providerClass = await classifyProvider(email);
+      provider = input.provider ?? providerClass;
     }
     const status = await this.insertLaunchRow(email, tier, provider, input);
     this.logger.log(
       `waitlist.v1 kind=${input.kind} source=${safeSource(input.source)} status=${status} providerPicked=${Boolean(input.provider)}`,
     );
-    return status;
+    return { status, providerClass };
   }
 
   private async resolveEmail(

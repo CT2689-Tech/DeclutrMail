@@ -43,7 +43,10 @@ export class WaitlistV1Controller {
         message: parsed.error.issues[0]?.message ?? 'Invalid waitlist request.',
       });
     }
-    const status = await this.waitlist.joinLaunch(parsed.data, req.user?.userId);
-    return ok({ status });
+    const result = await this.waitlist.joinLaunch(parsed.data, req.user?.userId);
+    if (result.providerClass) {
+      return ok({ status: result.status, providerClass: result.providerClass });
+    }
+    return ok({ status: result.status });
   }
 }

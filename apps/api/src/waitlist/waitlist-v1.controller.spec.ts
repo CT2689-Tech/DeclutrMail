@@ -5,7 +5,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { WaitlistV1Controller } from './waitlist-v1.controller.js';
 import type { WaitlistService } from './waitlist.service.js';
 
-function makeController(joinLaunch = vi.fn().mockResolvedValue('joined')) {
+function makeController(
+  joinLaunch = vi.fn().mockResolvedValue({ status: 'joined', providerClass: null }),
+) {
   const controller = new WaitlistV1Controller({ joinLaunch } as unknown as WaitlistService);
   return { controller, joinLaunch };
 }
@@ -29,7 +31,9 @@ describe('WaitlistV1Controller', () => {
   });
 
   it('returns already_joined without changing the envelope shape', async () => {
-    const { controller } = makeController(vi.fn().mockResolvedValue('already_joined'));
+    const { controller } = makeController(
+      vi.fn().mockResolvedValue({ status: 'already_joined', providerClass: null }),
+    );
 
     const result = await controller.join(
       { kind: 'pro', email: 'person@example.com', source: 'pricing' },

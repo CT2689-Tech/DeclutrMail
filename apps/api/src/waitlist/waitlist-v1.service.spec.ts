@@ -45,7 +45,7 @@ describe('WaitlistService.joinLaunch', () => {
       undefined,
     );
 
-    expect(status).toBe('joined');
+    expect(status).toEqual({ status: 'joined', providerClass: null });
     expect(classifyProvider).not.toHaveBeenCalled();
     expect(values).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -72,7 +72,7 @@ describe('WaitlistService.joinLaunch', () => {
     );
   });
 
-  it('stores the picked provider and skips the classifier', async () => {
+  it('stores the picked provider and still classifies for the event', async () => {
     const { db, values } = makeDb({});
     const service = new WaitlistService(db);
 
@@ -86,7 +86,7 @@ describe('WaitlistService.joinLaunch', () => {
       undefined,
     );
 
-    expect(classifyProvider).not.toHaveBeenCalled();
+    expect(classifyProvider).toHaveBeenCalledWith('person@example.com');
     expect(values).toHaveBeenCalledWith(expect.objectContaining({ provider: 'outlook' }));
   });
 
@@ -99,7 +99,7 @@ describe('WaitlistService.joinLaunch', () => {
       undefined,
     );
 
-    expect(status).toBe('already_joined');
+    expect(status).toEqual({ status: 'already_joined', providerClass: null });
     expect(values).not.toHaveBeenCalled();
   });
 
