@@ -298,5 +298,25 @@
     "file": "packages/shared/src/flags/resolve.ts",
     "match": "$1",
     "count": 1
+  },
+  {
+    "file": "apps/web/src/features/billing/billing-model.ts",
+    "match": "30-day money",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/billing/billing-screen.test.tsx",
+    "match": "30-day money",
+    "count": 4
+  },
+  {
+    "file": "apps/web/src/features/billing/tier-gate.test.tsx",
+    "match": "30-day money",
+    "count": 2
+  },
+  {
+    "file": "apps/web/src/features/billing/upgrade-modal.test.tsx",
+    "match": "30-day money",
+    "count": 2
   }
 ]

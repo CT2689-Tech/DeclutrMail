@@ -39,6 +39,7 @@ import { metadata as howToHub } from './how-to/page';
 import { metadata as answersHub } from './answers/page';
 import { metadata as faq } from './faq/page';
 import { metadata as changelog } from './changelog/page';
+import { metadata as pricingChangelog } from './pricing/changelog/page';
 import { metadata as howItWorks } from './how-it-works/page';
 import { metadata as compare } from './compare/page';
 import { metadata as methodology } from './methodology/page';
@@ -193,6 +194,7 @@ describe("meta description length — stays inside Google's display limit", () =
 const STATIC_METADATA = new Map<string, Metadata>([
   ...PAGES.map((page) => [page.path, page.metadata] as const),
   ['/sign-in', signIn],
+  ['/pricing/changelog', pricingChangelog],
   ['/how-to/clean-gmail-by-sender', howToClean],
   ['/how-to/bulk-delete-emails-from-one-sender', howToDelete],
   ['/how-to/gmail-storage-full', howToStorage],
