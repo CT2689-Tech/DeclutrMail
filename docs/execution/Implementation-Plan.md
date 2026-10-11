@@ -11005,3 +11005,42 @@ provider-token persistence, mailbox activation, scan/watch scheduling or active
 mailbox change. Unfinished setup resumes with the requested route, while
 Settings and Billing remain accessible for account recovery. Preserve unexpected
 5xx logging/capture and the reduced-permission retry intent.
+
+---
+
+### D261 — Daily Brief ready notice: explicit opt-in, counts and inbox link
+
+**Founder decision, 2026-10-10.** A Pro inbox may send a notice at the user's
+existing local Brief delivery hour. It is off for existing and new users until
+Settings → Notifications explicitly enables `emailPrefs.briefReady`. The email
+contains aggregate Reply/FYI sender counts, Noise email count, and a link to that
+inbox's `/brief` screen. It contains no Gmail sender identities, subjects,
+previews, message IDs, or generated narrative. D61's withdrawn digest remains
+withdrawn; this is a separately verified notice.
+
+The hourly snapshot worker considers today's nonempty frozen Brief again after
+a missed enqueue. Delivery rechecks ownership, Pro access, active/ready inbox,
+local day/hour, opt-in, and deletion state. Queued jobs carry only identifiers in
+an isolated `brief-email-send` queue, so older email workers cannot consume them.
+One logical key per frozen run is also sent to the existing Resend adapter; the
+sent marker records only provider acceptance. Suppression, opted-out, stale and
+disabled deliveries do not mark success. Retried delivery uses identical content
+and unsubscribe headers. Indexed-data/account purge removes delivery rows and
+queue jobs; the JSON export includes only delivery dates, with processor and
+retention disclosures in the existing privacy registry.
+
+Verification belongs to D261: producer → real Redis queue → send worker →
+fresh resolver → delivery acknowledgement, adversarial skip/retry cases, opt-in
+persistence, unsubscribe-all, export and purge. Synthetic provider acceptance
+proves the integration contract; it does not claim a delivered production email.
+
+
+**Mixed-version consent/rollout contract.** D261 depends on the email preference
+compatibility release: stored readers ignore future categories and ALL-unsubscribe
+atomically rotates `emailAllOptOutRevision`. Explicit Brief opt-in captures the
+current valid revision in `emailBriefOptInRevision` under the same database row
+lock; missing/malformed/mismatched consent fails closed. Settings displays effective
+consent. Single-category/unrelated toggles never renew consent. Feature deployment
+requires every generic email broker actor to advertise the compatibility marker,
+even when billing notices are disabled; old or mixed workers block activation.
+After new category writes, rollback retains the compatibility release floor.

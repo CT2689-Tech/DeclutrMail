@@ -5,7 +5,11 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { activeSessions, mailboxAccounts, providerSyncState, users } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
-import { parseEmailPrefs, type EmailPrefs } from '@declutrmail/shared/contracts';
+import {
+  parseEmailPrefs,
+  hasBriefEmailConsent,
+  type EmailPrefs,
+} from '@declutrmail/shared/contracts';
 import { hasPostalAddress } from '@declutrmail/shared/copy';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
@@ -74,6 +78,7 @@ import type { WorkerContext } from './worker-context.js';
 
 /** The template kinds this pipeline delivers (D162; D6; D126; D189/D251; D232). */
 export type EmailKind =
+  | 'brief-ready'
   | 'billing-lifecycle'
   | 'sync-complete'
   | 'sync-reminder-24h'
@@ -101,6 +106,7 @@ export type EmailKind =
  * (on) precisely because it is the same promise.
  */
 const OPT_OUT_PREF_BY_KIND: Partial<Record<EmailKind, keyof EmailPrefs>> = {
+  'brief-ready': 'briefReady',
   'sync-reminder-24h': 'reminders',
   'lapse-reengagement': 'reminders',
   'sync-complete': 'syncComplete',
@@ -155,6 +161,8 @@ export const COMMERCIAL_KINDS: ReadonlySet<EmailKind> = new Set<EmailKind>([
 
 /** One transactional email send. */
 export interface EmailSendJobData {
+  /** Brief identifiers only; content is rendered from current owned state. */
+  briefRunId?: string;
   /** Identifier-only billing notice; validated and rendered at execution. */
   billingContext?: BillingLifecycleChangedPayload;
   kind: EmailKind;
@@ -251,6 +259,16 @@ export interface EmailSendWorkerDeps {
   queueName?: string;
   db: PostgresJsDatabase<typeof schema>;
   delivery: EmailDeliveryPort;
+  resolveBriefNotice?: (
+    runId: string,
+    mailboxAccountId: string,
+    userId: string,
+  ) => Promise<{
+    subject: string;
+    text: string;
+    headers: Record<string, string>;
+    markDelivered: () => Promise<void>;
+  } | null>;
   resolveBillingNotice?: (
     context: BillingLifecycleChangedPayload,
     userId: string,
@@ -270,6 +288,39 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
   }
 
   async processJob(payload: EmailSendJobData, ctx: WorkerContext): Promise<EmailSendResult> {
+    let markBriefDelivered: (() => Promise<void>) | undefined;
+    if (payload.kind === 'brief-ready') {
+      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (
+        !payload.briefRunId ||
+        !uuid.test(payload.briefRunId) ||
+        !payload.mailboxAccountId ||
+        !uuid.test(payload.mailboxAccountId) ||
+        !uuid.test(payload.userId) ||
+        payload.recipientOverride ||
+        payload.idempotencyKey !== `email__brief-ready__${payload.briefRunId}` ||
+        this.deps.queueName !== 'brief-email-send' ||
+        !this.deps.resolveBriefNotice
+      )
+        throw new ValidationError(
+          'Brief notice requires owned identifiers and its isolated resolver.',
+        );
+      const rendered = await this.deps.resolveBriefNotice(
+        payload.briefRunId,
+        payload.mailboxAccountId,
+        payload.userId,
+      );
+      if (!rendered) return { outcome: 'skipped_recovered', kind: payload.kind, providerId: null };
+      markBriefDelivered = rendered.markDelivered;
+      payload = {
+        ...payload,
+        subject: rendered.subject,
+        text: rendered.text,
+        headers: rendered.headers,
+      };
+      delete payload.html;
+      delete payload.skipIfUserActiveSince;
+    }
     if (payload.kind === 'billing-lifecycle') {
       if (!payload.billingContext || payload.recipientOverride || !this.deps.resolveBillingNotice)
         throw new ValidationError(
@@ -384,7 +435,10 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
       }
 
       const optOutKey = OPT_OUT_PREF_BY_KIND[payload.kind];
-      if (optOutKey && !parseEmailPrefs(user.preferences)[optOutKey]) {
+      if (
+        (optOutKey && !parseEmailPrefs(user.preferences)[optOutKey]) ||
+        (payload.kind === 'brief-ready' && !hasBriefEmailConsent(user.preferences))
+      ) {
         return { outcome: 'skipped_opted_out', kind: payload.kind, providerId: null };
       }
 
@@ -442,6 +496,15 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
     });
 
     if (delivered.ok) {
+      // A failed acknowledgement retries with the same provider key/body. A
+      // skipped or ambiguous delivery must never mark a Brief as sent.
+      if (markBriefDelivered) {
+        try {
+          await markBriefDelivered();
+        } catch {
+          throw new TransientError('Brief delivery acknowledgement failed.');
+        }
+      }
       return { outcome: 'sent', kind: payload.kind, providerId: delivered.providerId };
     }
     switch (delivered.reason) {

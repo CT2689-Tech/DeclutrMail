@@ -139,6 +139,8 @@ const PROCESSOR_SENTENCE: Record<GmailDataProcessor, string> = {
   DeclutrMail: '',
   Anthropic: ' May be sent to Anthropic for generated text.',
   Brandfetch: ' The domain alone may be sent to Brandfetch to find a logo.',
+  Resend:
+    ' Opt-in counts and a link may be sent through Resend; subjects and previews stay in the app.',
 };
 
 function deletionTriggerDetail(

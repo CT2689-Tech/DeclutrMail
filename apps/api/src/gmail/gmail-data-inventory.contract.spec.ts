@@ -1,6 +1,7 @@
 import { getTableColumns } from 'drizzle-orm';
 import {
   mailMessages,
+  briefRuns,
   mailboxAccounts,
   mailboxLabels,
   providerSyncState,
@@ -15,7 +16,12 @@ import {
   GMAIL_MESSAGE_DATA_INVENTORY,
   GMAIL_METADATA_HEADERS,
 } from '@declutrmail/shared/contracts';
-import { INITIAL_SYNC_QUEUE, scanProgressKey } from '@declutrmail/workers';
+import {
+  INITIAL_SYNC_QUEUE,
+  scanProgressKey,
+  BRIEF_EMAIL_SEND_QUEUE,
+  briefReadyEmailJobId,
+} from '@declutrmail/workers';
 import { describe, expect, it } from 'vitest';
 
 /** App-owned row bookkeeping rather than data fetched or derived from Gmail. */
@@ -105,6 +111,7 @@ describe('D245 Gmail data inventory contract', () => {
       ['provider_sync_state', columnNames(providerSyncState)],
       ['senders', columnNames(senders)],
       ['users', columnNames(users)],
+      ['brief_runs', columnNames(briefRuns)],
     ]);
 
     for (const ref of GMAIL_DATA_INVENTORY.flatMap((item) => item.storageRefs)) {
@@ -130,12 +137,16 @@ describe('D245 Gmail data inventory — Redis keys', () => {
       ref.startsWith('redis:'),
     );
 
-    expect(redisRefs).toEqual([
-      `redis:${scanProgressKey('{mailboxAccountId}')}`,
-      'redis:declutr:autopilot-preview:{mailboxAccountId}:{ruleId}:{previewId}',
-      `redis:bull:${INITIAL_SYNC_QUEUE}:{mailboxAccountId}`,
-      `redis:bull:${INITIAL_SYNC_QUEUE}:events`,
-    ]);
+    expect(redisRefs.sort()).toEqual(
+      [
+        `redis:${scanProgressKey('{mailboxAccountId}')}`,
+        'redis:declutr:autopilot-preview:{mailboxAccountId}:{ruleId}:{previewId}',
+        `redis:bull:${BRIEF_EMAIL_SEND_QUEUE}:${briefReadyEmailJobId('{runId}')}`,
+        `redis:bull:${BRIEF_EMAIL_SEND_QUEUE}:events`,
+        `redis:bull:${INITIAL_SYNC_QUEUE}:{mailboxAccountId}`,
+        `redis:bull:${INITIAL_SYNC_QUEUE}:events`,
+      ].sort(),
+    );
   });
 });
 

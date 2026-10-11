@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_EMAIL_PREFS, EmailPrefsPatchSchema, parseEmailPrefs } from './email-prefs';
+import {
+  DEFAULT_EMAIL_PREFS,
+  EmailPrefsPatchSchema,
+  parseEmailPrefs,
+  hasBriefEmailConsent,
+} from './email-prefs';
 
 /**
  * Email-prefs contract tests (D165) — the load-bearing case is the
@@ -24,6 +29,7 @@ describe('parseEmailPrefs', () => {
       reminders: false,
       syncComplete: true,
       weeklyReceipt: false,
+      briefReady: false,
     });
   });
 
@@ -32,16 +38,30 @@ describe('parseEmailPrefs', () => {
       reminders: true,
       syncComplete: false,
       weeklyReceipt: false,
+      briefReady: false,
     });
   });
 
-  it('falls back to defaults for malformed values and unknown keys', () => {
+  it('keeps all existing opt-outs and defaults the new notice to off', () => {
+    expect(
+      parseEmailPrefs({
+        emailPrefs: { reminders: false, syncComplete: false, weeklyReceipt: true },
+      }),
+    ).toEqual({ reminders: false, syncComplete: false, weeklyReceipt: true, briefReady: false });
+  });
+
+  it('falls back to defaults for malformed known values', () => {
     expect(parseEmailPrefs({ emailPrefs: 'garbage' })).toEqual(DEFAULT_EMAIL_PREFS);
     expect(parseEmailPrefs({ emailPrefs: { reminders: 'yes' } })).toEqual(DEFAULT_EMAIL_PREFS);
-    expect(parseEmailPrefs({ emailPrefs: { reminders: false, marketing: true } })).toEqual(
-      DEFAULT_EMAIL_PREFS,
-    );
   });
+});
+
+it('ignores future keys without resurrecting known opt-outs', () => {
+  expect(
+    parseEmailPrefs({
+      emailPrefs: { reminders: false, syncComplete: false, briefReady: true, marketing: true },
+    }),
+  ).toEqual({ reminders: false, syncComplete: false, weeklyReceipt: false, briefReady: true });
 });
 
 describe('EmailPrefsPatchSchema', () => {
@@ -49,11 +69,56 @@ describe('EmailPrefsPatchSchema', () => {
     expect(EmailPrefsPatchSchema.safeParse({ reminders: false }).success).toBe(true);
     expect(EmailPrefsPatchSchema.safeParse({ syncComplete: false }).success).toBe(true);
     expect(EmailPrefsPatchSchema.safeParse({ weeklyReceipt: true }).success).toBe(true);
+    expect(EmailPrefsPatchSchema.safeParse({ briefReady: true }).success).toBe(true);
   });
 
   it('rejects empty patches, unknown keys, and non-boolean values', () => {
     expect(EmailPrefsPatchSchema.safeParse({}).success).toBe(false);
     expect(EmailPrefsPatchSchema.safeParse({ marketing: true }).success).toBe(false);
     expect(EmailPrefsPatchSchema.safeParse({ reminders: 'yes' }).success).toBe(false);
+  });
+});
+
+describe('Brief explicit consent revision', () => {
+  const revision = 'b1111111-0000-4000-8000-000000000001';
+  it.each([
+    [{ emailPrefs: { briefReady: true } }, false],
+    [{ emailPrefs: { briefReady: true }, emailBriefOptInRevision: 'initial' }, true],
+    [{ emailPrefs: { briefReady: false }, emailBriefOptInRevision: 'initial' }, false],
+    [
+      {
+        emailPrefs: { briefReady: true },
+        emailAllOptOutRevision: revision,
+        emailBriefOptInRevision: revision,
+      },
+      true,
+    ],
+    [
+      {
+        emailPrefs: { briefReady: true },
+        emailAllOptOutRevision: revision,
+        emailBriefOptInRevision: 'initial',
+      },
+      false,
+    ],
+    [
+      {
+        emailPrefs: { briefReady: true },
+        emailAllOptOutRevision: 'corrupted',
+        emailBriefOptInRevision: 'corrupted',
+      },
+      false,
+    ],
+    [
+      {
+        emailPrefs: { briefReady: true },
+        emailAllOptOutRevision: null,
+        emailBriefOptInRevision: 'initial',
+      },
+      false,
+    ],
+    [{ emailPrefs: { briefReady: true }, emailBriefOptInRevision: null }, false],
+  ])('validates explicit matching consent (%#)', (bag, expected) => {
+    expect(hasBriefEmailConsent(bag)).toBe(expected);
   });
 });

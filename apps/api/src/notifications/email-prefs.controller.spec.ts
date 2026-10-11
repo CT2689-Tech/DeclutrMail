@@ -37,7 +37,7 @@ describe('EmailPrefsController', () => {
     expect(users.mergeEmailPrefs).toHaveBeenCalledWith('u1', { reminders: false });
     // Display view fills defaults for keys storage doesn't carry.
     expect(result.data).toEqual({
-      emailPrefs: { reminders: false, syncComplete: true, weeklyReceipt: false },
+      emailPrefs: { reminders: false, syncComplete: true, weeklyReceipt: false, briefReady: false },
     });
   });
 
@@ -48,19 +48,50 @@ describe('EmailPrefsController', () => {
     const result = await controller.patch(USER, { syncComplete: false });
     expect(users.mergeEmailPrefs).toHaveBeenCalledWith('u1', { syncComplete: false });
     expect(result.data).toEqual({
-      emailPrefs: { reminders: false, syncComplete: false, weeklyReceipt: false },
+      emailPrefs: {
+        reminders: false,
+        syncComplete: false,
+        weeklyReceipt: false,
+        briefReady: false,
+      },
     });
   });
 
   it('sets weeklyReceipt=true without touching existing categories', async () => {
     const { controller, users } = makeController({
-      emailPrefs: { reminders: false, syncComplete: true, weeklyReceipt: true },
+      emailPrefs: { reminders: false, syncComplete: true, weeklyReceipt: true, briefReady: false },
     });
     const result = await controller.patch(USER, { weeklyReceipt: true });
     expect(users.mergeEmailPrefs).toHaveBeenCalledWith('u1', { weeklyReceipt: true });
     expect(result.data).toEqual({
-      emailPrefs: { reminders: false, syncComplete: true, weeklyReceipt: true },
+      emailPrefs: { reminders: false, syncComplete: true, weeklyReceipt: true, briefReady: false },
     });
+  });
+
+  it('opts in to Brief notices without changing existing opt-outs', async () => {
+    const { controller, users } = makeController({
+      emailPrefs: { reminders: false, syncComplete: false, briefReady: true },
+      emailBriefOptInRevision: 'initial',
+    });
+    const result = await controller.patch(USER, { briefReady: true });
+    expect(users.mergeEmailPrefs).toHaveBeenCalledWith('u1', { briefReady: true });
+    expect(result.data.emailPrefs).toEqual({
+      reminders: false,
+      syncComplete: false,
+      weeklyReceipt: false,
+      briefReady: true,
+    });
+  });
+
+  it('displays off when a compatible older all-unsubscribe invalidated Brief consent', async () => {
+    const { controller } = makeController({
+      emailPrefs: { briefReady: true },
+      emailAllOptOutRevision: 'b1111111-0000-4000-8000-000000000001',
+      emailBriefOptInRevision: 'initial',
+    });
+    expect((await controller.patch(USER, { reminders: false })).data.emailPrefs.briefReady).toBe(
+      false,
+    );
   });
 
   it('forwards both keys when the patch carries both', async () => {
@@ -78,7 +109,7 @@ describe('EmailPrefsController', () => {
     const { controller } = makeController({ emailPrefs: 'garbage' });
     const result = await controller.patch(USER, { reminders: false });
     expect(result.data).toEqual({
-      emailPrefs: { reminders: true, syncComplete: true, weeklyReceipt: false },
+      emailPrefs: { reminders: true, syncComplete: true, weeklyReceipt: false, briefReady: false },
     });
   });
 

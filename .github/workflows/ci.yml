@@ -357,6 +357,15 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -373,6 +382,7 @@ jobs:
       # the matrix cannot leave a stale `/2` running half the suite green.
       - run: pnpm --filter @declutrmail/api test --shard=${{ matrix.shard }}/${{ strategy.job-total }}
         env:
+          TEST_REDIS_URL: redis://127.0.0.1:6379
           CLEANUP_TEST_PG_URL: postgres://postgres:postgres@localhost:5432/declutrmail_quota_test
           API_DRIVER_TEST_PG_URL: postgres://postgres:postgres@localhost:5432/declutrmail_quota_test
 
@@ -485,6 +495,16 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Compiler intermediates only: every run still builds current source.
+      # Keep marketing and synthetic browser build environments separate;
+      # never restore rendered pages, fetch results, sessions or test reports.
+      - name: Cache the marketing compiler
+        uses: actions/cache@v6
+        with:
+          path: apps/web/.next/cache/webpack
+          key: ${{ runner.os }}-next-marketing-v1-${{ hashFiles('pnpm-lock.yaml', '.nvmrc', 'apps/web/next.config.ts', 'tsconfig*.json', 'apps/web/tsconfig*.json', 'packages/shared/tsconfig*.json', 'pnpm-workspace.yaml', 'packages/config/**', '.github/workflows/ci.yml') }}-${{ hashFiles('apps/web/src/**', 'apps/web/public/**', 'packages/shared/src/**') }}
+          restore-keys: |
+            ${{ runner.os }}-next-marketing-v1-${{ hashFiles('pnpm-lock.yaml', '.nvmrc', 'apps/web/next.config.ts', 'tsconfig*.json', 'apps/web/tsconfig*.json', 'packages/shared/tsconfig*.json', 'pnpm-workspace.yaml', 'packages/config/**', '.github/workflows/ci.yml') }}-
       # Nothing in CI ran a production web build before this job, so a
       # build-only break (a server/client boundary violation, a bad
       # metadata export) reached Vercel unchallenged. `next build` is
@@ -657,11 +677,19 @@ jobs:
         run: node scripts/check-ci-required.mjs
 
   accessibility:
-    name: Authenticated accessibility smoke
+    name: Authenticated accessibility smoke (${{ matrix.lane }})
     needs: changes
     if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.a11y == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # Each lane gets its own Postgres, Redis, API and built web app. Keep
+    # tests serial inside a lane: their synthetic fixtures share state.
+    # All matrix results feed the existing CI required aggregate; a failed
+    # lane must not cancel siblings or hide their coverage evidence.
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [accessibility, hydration-billing, journeys]
     services:
       postgres:
         image: postgres:16-alpine
@@ -720,6 +748,14 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Restore the isolated browser compiler
+        id: browser-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: apps/web/.next/cache/webpack
+          key: ${{ runner.os }}-next-browser-v1-${{ hashFiles('pnpm-lock.yaml', '.nvmrc', 'apps/web/next.config.ts', 'tsconfig*.json', 'apps/web/tsconfig*.json', 'packages/shared/tsconfig*.json', 'pnpm-workspace.yaml', 'packages/config/**', '.github/workflows/ci.yml') }}-${{ hashFiles('apps/web/src/**', 'apps/web/public/**', 'packages/shared/src/**') }}
+          restore-keys: |
+            ${{ runner.os }}-next-browser-v1-${{ hashFiles('pnpm-lock.yaml', '.nvmrc', 'apps/web/next.config.ts', 'tsconfig*.json', 'apps/web/tsconfig*.json', 'packages/shared/tsconfig*.json', 'pnpm-workspace.yaml', 'packages/config/**', '.github/workflows/ci.yml') }}-
       # RETRIED, because the failure it guards against is not ours and
       # not detectable from the result. `--with-deps` runs apt-get, and
       # an Ubuntu mirror that stalls mid-fetch does not fail — it hangs
@@ -759,6 +795,7 @@ jobs:
       # how the ADR-0034 avatar shipped every logo as a broken-image
       # glyph over the monogram it was supposed to leave alone.
       - name: Run the shared-component paint specs
+        if: matrix.lane == 'accessibility'
         run: pnpm --filter @declutrmail/e2e run e2e:render
         env:
           E2E_JSON_REPORT: ${{ github.workspace }}/e2e-render-report.json
@@ -778,6 +815,14 @@ jobs:
       # The API remains in development mode for the isolated login harness.
       - name: Build the web app for browser verification
         run: pnpm --filter @declutrmail/web build
+      # One writer for the identical browser compiler cache. The other
+      # lanes only restore; they do not race to upload the same cache.
+      - name: Save the isolated browser compiler
+        if: matrix.lane == 'accessibility' && steps.browser-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: apps/web/.next/cache/webpack
+          key: ${{ steps.browser-cache.outputs.cache-primary-key }}
       - name: Start the API and web app
         run: |
           PORT=4104 pnpm --filter @declutrmail/api start > api-e2e.log 2>&1 &
@@ -813,10 +858,10 @@ jobs:
       # responsive lane covering every authenticated destination. Project
       # testMatch keeps the suites disjoint while one JSON report proves the
       # whole release gate ran.
-      # The job's own `name:` still says "Authenticated" and is left
-      # alone deliberately: it is a required status check, and renaming
-      # it would make the requirement match nothing.
+      # Branch protection requires CI required, which depends on the whole
+      # accessibility matrix. Individual matrix names are diagnostic only.
       - name: Run the accessibility gate (authenticated + public)
+        if: matrix.lane == 'accessibility'
         run: pnpm e2e:a11y
         env:
           E2E_JSON_REPORT: ${{ github.workspace }}/e2e-a11y-report.json
@@ -828,10 +873,12 @@ jobs:
       # passed every other gate. de-DE / Asia-Kolkata are pinned inside
       # the spec, not here.
       - name: Run the hydration smoke (non-en-US locale + timezone)
+        if: matrix.lane == 'hydration-billing'
         run: pnpm --filter @declutrmail/e2e run e2e:hydration
         env:
           E2E_JSON_REPORT: ${{ github.workspace }}/e2e-hydration-report.json
       - name: Run the billing money-path spec
+        if: matrix.lane == 'hydration-billing'
         # Was runnable-but-never-run: PR #401 changed the Free tier and
         # this spec rotted invisibly (flow audit 2026-07-28). In CI it
         # guards the paywall → signed webhook → entitlement flip chain.
@@ -842,29 +889,43 @@ jobs:
       # can pass having asserted nothing. This is the required check that
       # would go green over it, so coverage is asserted, not assumed.
       - name: Verify isolated harness guards
+        if: matrix.lane == 'journeys'
         run: pnpm --filter @declutrmail/e2e run test:harness
 
       - name: Run isolated product and public journeys
+        if: matrix.lane == 'journeys'
         run: pnpm --filter @declutrmail/e2e run e2e:journeys
         env:
           E2E_JSON_REPORT: ${{ github.workspace }}/e2e-journeys-report.json
 
       - name: Assert each required journey executed
-        if: always()
+        if: always() && matrix.lane == 'journeys'
         run: node packages/e2e/contracts/assert-journeys.mjs e2e-journeys-report.json
 
-      - name: Assert both e2e lanes actually ran
+      - name: Assert the selected browser lane actually ran
         if: always()
+        env:
+          BROWSER_LANE: ${{ matrix.lane }}
         run: |
-          node scripts/assert-e2e-ran.mjs e2e-render-report.json "component paint specs"
-          node scripts/assert-e2e-ran.mjs e2e-a11y-report.json "accessibility gate"
-          node scripts/assert-e2e-ran.mjs e2e-billing-report.json "billing money path"
-          node scripts/assert-e2e-ran.mjs e2e-hydration-report.json "hydration smoke"
+          case "$BROWSER_LANE" in
+            accessibility)
+              node scripts/assert-e2e-ran.mjs e2e-render-report.json "component paint specs"
+              node scripts/assert-e2e-ran.mjs e2e-a11y-report.json "accessibility gate"
+              ;;
+            hydration-billing)
+              node scripts/assert-e2e-ran.mjs e2e-billing-report.json "billing money path"
+              node scripts/assert-e2e-ran.mjs e2e-hydration-report.json "hydration smoke"
+              ;;
+            journeys)
+              node scripts/assert-e2e-ran.mjs e2e-journeys-report.json "product and public journeys"
+              ;;
+            *) echo "::error::Unknown browser lane: $BROWSER_LANE"; exit 1 ;;
+          esac
       - name: Upload accessibility diagnostics
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: accessibility-diagnostics
+          name: accessibility-diagnostics-${{ matrix.lane }}
           if-no-files-found: ignore
           path: |
             api-e2e.log

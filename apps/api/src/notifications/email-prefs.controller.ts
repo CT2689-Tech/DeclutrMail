@@ -3,7 +3,7 @@ import { BadRequestException, Body, Controller, Patch, UseGuards } from '@nestjs
 import {
   EmailPrefsPatchSchema,
   ok,
-  parseEmailPrefs,
+  displayEmailPrefs,
   type EmailPrefs,
   type Envelope,
 } from '@declutrmail/shared/contracts';
@@ -19,7 +19,7 @@ import { UsersService } from '../users/users.service.js';
  *
  * Minimal authed write surface for the email-notification toggles.
  * Stored under `users.preferences.emailPrefs`; the EmailSendWorker
- * reads the same key (via the shared `parseEmailPrefs` contract) at
+ * reads the same key (via the shared `displayEmailPrefs` contract) at
  * send time, so a flipped toggle takes effect on the very next queued
  * reminder.
  *
@@ -54,6 +54,7 @@ export class EmailPrefsController {
     // endpoint: an unsubscribe landing between this handler's read and
     // write would be overwritten — silently resubscribing the user.
     const patch = {
+      ...(parsed.data.briefReady !== undefined ? { briefReady: parsed.data.briefReady } : {}),
       ...(parsed.data.reminders !== undefined ? { reminders: parsed.data.reminders } : {}),
       ...(parsed.data.syncComplete !== undefined ? { syncComplete: parsed.data.syncComplete } : {}),
       ...(parsed.data.weeklyReceipt !== undefined
@@ -62,6 +63,6 @@ export class EmailPrefsController {
     };
     const preferences = await this.users.mergeEmailPrefs(user.userId, patch);
     // Display view materialises defaults; storage stays sparse.
-    return ok({ emailPrefs: parseEmailPrefs(preferences) });
+    return ok({ emailPrefs: displayEmailPrefs(preferences) });
   }
 }

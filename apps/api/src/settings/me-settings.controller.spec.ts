@@ -69,11 +69,20 @@ describe('MeSettingsController — GET /api/me/settings', () => {
     const { controller } = makeController({});
     const result = await controller.settings(USER);
     expect(result.data).toEqual({
-      emailPrefs: { reminders: true, syncComplete: true, weeklyReceipt: false },
+      emailPrefs: { reminders: true, syncComplete: true, weeklyReceipt: false, briefReady: false },
       actionSheetPrefs: { archive: false, unsubscribe: false, later: false },
       briefPrefs: { hour: 8 },
       senderViews: [],
     });
+  });
+
+  it('renders Brief off when an older all-unsubscribe invalidated consent', async () => {
+    const { controller } = makeController({
+      emailPrefs: { briefReady: true },
+      emailAllOptOutRevision: 'b1111111-0000-4000-8000-000000000001',
+      emailBriefOptInRevision: 'initial',
+    });
+    expect((await controller.settings(USER)).data.emailPrefs.briefReady).toBe(false);
   });
 
   it('returns stored prefs verbatim', async () => {
@@ -85,7 +94,7 @@ describe('MeSettingsController — GET /api/me/settings', () => {
     });
     const result = await controller.settings(USER);
     expect(result.data).toEqual({
-      emailPrefs: { reminders: false, syncComplete: true, weeklyReceipt: false },
+      emailPrefs: { reminders: false, syncComplete: true, weeklyReceipt: false, briefReady: false },
       actionSheetPrefs: { archive: true, unsubscribe: false, later: true },
       briefPrefs: { hour: 17 },
       senderViews: [VIEW],
@@ -100,7 +109,7 @@ describe('MeSettingsController — GET /api/me/settings', () => {
     });
     const result = await controller.settings(USER);
     expect(result.data).toEqual({
-      emailPrefs: { reminders: false, syncComplete: true, weeklyReceipt: false },
+      emailPrefs: { reminders: false, syncComplete: true, weeklyReceipt: false, briefReady: false },
       actionSheetPrefs: { archive: false, unsubscribe: false, later: false },
       briefPrefs: { hour: 8 },
       senderViews: [],

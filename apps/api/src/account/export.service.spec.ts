@@ -74,6 +74,7 @@ function makeService(opts: {
   messages?: (typeof MESSAGE_ROW)[];
   activity?: (typeof ACTIVITY_ROW)[];
   feedback?: (typeof FEEDBACK_ROW)[];
+  briefDeliveries?: { id: string; runDateLocal: string; sentAt: Date | null }[];
 }) {
   const service = new DataExportService({} as DrizzleDb);
   const svc = service as unknown as {
@@ -83,6 +84,7 @@ function makeService(opts: {
     activityBatch: AnyBatch;
     feedbackBatch: AnyBatch;
     mailboxVisits: (userId: string, mailboxId: string) => Promise<unknown[]>;
+    briefDeliveryBatch: AnyBatch;
   };
   svc.mailboxVisits = vi.fn().mockResolvedValue([
     {
@@ -106,6 +108,7 @@ function makeService(opts: {
   svc.messageBatch = vi.fn(batched(opts.messages ?? []));
   svc.activityBatch = vi.fn(batched(opts.activity ?? []));
   svc.feedbackBatch = vi.fn(batched(opts.feedback ?? []));
+  svc.briefDeliveryBatch = vi.fn(batched(opts.briefDeliveries ?? []));
   return service;
 }
 
@@ -148,6 +151,7 @@ describe('DataExportService.streamJson', () => {
     const mb = doc.mailboxes[0];
     expect(Object.keys(mb).sort()).toEqual([
       'activity',
+      'briefEmailDeliveries',
       'connectedAt',
       'email',
       'messages',
@@ -196,6 +200,28 @@ describe('DataExportService.streamJson', () => {
     expect(noData.mailboxes[0].messages).toEqual([]);
     expect(noData.mailboxes[0].activity).toEqual([]);
     expect(noData.mailboxes[0].productFeedback).toEqual([]);
+  });
+
+  it('exports delivery dates across batches without frozen Gmail payloads', async () => {
+    const rows = Array.from({ length: DataExportService.BATCH_SIZE + 1 }, (_, i) => ({
+      id: `brief-${String(i).padStart(6, '0')}`,
+      runDateLocal: '2026-10-10',
+      sentAt: new Date('2026-10-10T12:00:00Z'),
+      briefPayload: { subject: 'PRIVATE' },
+    }));
+    const doc = JSON.parse(
+      await collect(makeService({ briefDeliveries: rows }).streamJson('ws-1')),
+    );
+    expect(doc.mailboxes[0].briefEmailDeliveries).toHaveLength(rows.length);
+    expect(doc.mailboxes[0].briefEmailDeliveries[0]).toEqual({
+      runDateLocal: '2026-10-10',
+      sentAt: '2026-10-10T12:00:00.000Z',
+    });
+    expect(doc.mailboxes[0].briefEmailDeliveries[1]).toEqual({
+      runDateLocal: '2026-10-10',
+      sentAt: '2026-10-10T12:00:00.000Z',
+    });
+    expect(JSON.stringify(doc.mailboxes[0].briefEmailDeliveries)).not.toContain('PRIVATE');
   });
 
   it('comma-joins correctly across batch boundaries', async () => {

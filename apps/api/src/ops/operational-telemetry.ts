@@ -24,6 +24,7 @@ export const OPERATIONAL_QUEUES = [
   'incremental-sync',
   'email-send',
   'billing-email-send',
+  'brief-email-send',
   'snooze-wake',
 ] as const;
 export const OPERATIONAL_SCHEDULERS = [

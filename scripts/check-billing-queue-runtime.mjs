@@ -18,7 +18,8 @@ const PERMISSIONS = new Set([
 ]);
 /** Project fixed diagnostic metadata; never return raw provider text or arguments. */
 export function projectBillingProbeFailure(args, error) {
-  const text = String(error?.stderr ?? '');
+  // The CLI command prefix is not evidence of a missing permission.
+  const text = String(error?.stderr ?? '').replace(/\(gcloud\.[^)]+\)/g, '');
   let operation =
     args[0] === 'artifacts'
       ? 'image_describe'

@@ -4,6 +4,11 @@ import {
   buildBillingNoticeResolver,
   publishGrantExpiryNotices,
 } from './billing/billing-notices.js';
+import {
+  buildBriefNoticeResolver,
+  buildBriefNoticeEnqueuer,
+  buildBriefNoticeCleanup,
+} from './briefs/brief-ready-email.js';
 import 'reflect-metadata';
 
 import {
@@ -63,7 +68,8 @@ import {
   DrizzleDeadLetterRecorder,
   EMAIL_SEND_QUEUE,
   BILLING_EMAIL_SEND_QUEUE,
-  BILLING_QUEUE_COMPATIBLE_WORKER_NAME,
+  BRIEF_EMAIL_SEND_QUEUE,
+  EMAIL_PREFS_COMPATIBLE_WORKER_NAME,
   createBillingEmailSendConsumer,
   EmailSendWorker,
   enqueueEmailSend,
@@ -1082,7 +1088,12 @@ async function bootstrap(): Promise<void> {
    */
   const anthropicBreaker = new LlmCircuitBreaker({ onTrip: captureLlmProviderRejection });
   const briefLlm = buildBriefLlmAdapter(anthropicBreaker);
-  const briefSnapshotWorker = new BriefSnapshotWorker(briefLlm ? { db, llm: briefLlm } : { db });
+  const briefEmailSendQueue = new Queue<EmailSendJobData>(BRIEF_EMAIL_SEND_QUEUE, { connection });
+  const briefSnapshotWorker = new BriefSnapshotWorker({
+    db,
+    ...(briefLlm ? { llm: briefLlm } : {}),
+    notifyBriefReady: buildBriefNoticeEnqueuer(briefEmailSendQueue),
+  });
   briefSnapshotWorker.setObserver(observer);
   briefSnapshotWorker.setDeadLetterRecorder(deadLetterRecorder);
 
@@ -2136,6 +2147,11 @@ async function bootstrap(): Promise<void> {
   const emailSendQueue = new Queue<EmailSendJobData>(EMAIL_SEND_QUEUE, { connection });
   const emailSendDependencies = {
     db,
+    resolveBriefNotice: buildBriefNoticeResolver(
+      db,
+      process.env.WEB_URL ?? 'https://app.declutrmail.com',
+      process.env.API_URL ?? 'https://api.declutrmail.com',
+    ),
     resolveBillingNotice: buildBillingNoticeResolver(
       db,
       process.env.WEB_URL ?? 'https://declutrmail.com',
@@ -2148,7 +2164,7 @@ async function bootstrap(): Promise<void> {
   const emailSendBullWorker = new Worker<EmailSendJobData, EmailSendResult>(
     EMAIL_SEND_QUEUE,
     (job) => emailSendWorker.run(job),
-    { connection, concurrency: 5, ...userFacingTuning, name: BILLING_QUEUE_COMPATIBLE_WORKER_NAME },
+    { connection, concurrency: 5, ...userFacingTuning, name: EMAIL_PREFS_COMPATIBLE_WORKER_NAME },
   );
   emailSendBullWorker.on('error', (err) => {
     console.error(
@@ -2158,6 +2174,23 @@ async function bootstrap(): Promise<void> {
         queue: EMAIL_SEND_QUEUE,
         message: err.message,
       }),
+    );
+  });
+
+  const briefEmailSendWorker = new EmailSendWorker({
+    ...emailSendDependencies,
+    queueName: BRIEF_EMAIL_SEND_QUEUE,
+  });
+  briefEmailSendWorker.setObserver(observer);
+  briefEmailSendWorker.setDeadLetterRecorder(deadLetterRecorder);
+  const briefEmailSendBullWorker = new Worker<EmailSendJobData, EmailSendResult>(
+    BRIEF_EMAIL_SEND_QUEUE,
+    (job) => briefEmailSendWorker.run(job),
+    { connection, concurrency: 2, ...userFacingTuning },
+  );
+  briefEmailSendBullWorker.on('error', () => {
+    console.error(
+      JSON.stringify({ level: 'error', kind: 'bullmq.error', queue: BRIEF_EMAIL_SEND_QUEUE }),
     );
   });
 
@@ -2784,6 +2817,9 @@ async function bootstrap(): Promise<void> {
    * (local dev) skips the `users.stop` calls, mirroring
    * GmailWatchService.
    */
+  const briefEmailMaintenanceQueue = new Queue<EmailSendJobData>(BRIEF_EMAIL_SEND_QUEUE, {
+    connection: scanProgressConnection,
+  });
   const deletionPurgeWorker = new AccountDeletionPurgeWorker({
     db,
     billingSafety: new BillingDeletionGuard(db, new PaddleAdapter(), new RazorpayAdapter()),
@@ -2801,6 +2837,8 @@ async function bootstrap(): Promise<void> {
     // and trim the shared events stream — same best-effort reasoning as
     // scanProgress above.
     initialSyncQueue: reconcilerQueue,
+    briefEmailQueue: briefEmailMaintenanceQueue,
+    sweepBriefEmailArtifacts: buildBriefNoticeCleanup(db, briefEmailMaintenanceQueue),
     observer,
   });
   deletionPurgeWorker.setObserver(observer);
@@ -2944,6 +2982,9 @@ async function bootstrap(): Promise<void> {
       queue: BILLING_EMAIL_SEND_QUEUE,
       deliveryEnabled: billingEmailSendBullWorker !== null,
     }),
+  );
+  console.log(
+    JSON.stringify({ level: 'info', kind: 'worker.listening', queue: BRIEF_EMAIL_SEND_QUEUE }),
   );
   console.log(
     JSON.stringify({ level: 'info', kind: 'worker.listening', queue: AUTOPILOT_APPLY_QUEUE }),
@@ -3146,6 +3187,9 @@ async function bootstrap(): Promise<void> {
       await watchRenewalSchedulerQueue.close();
       await supportRequestBullWorker.close();
       await emailSendBullWorker.close();
+      await briefEmailSendBullWorker.close();
+      await briefEmailSendQueue.close();
+      await briefEmailMaintenanceQueue.close();
       await emailSendQueue.close();
       await billingEmailSendBullWorker?.close();
       await billingEmailSendQueue.close();

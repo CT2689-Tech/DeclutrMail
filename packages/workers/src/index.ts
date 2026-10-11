@@ -311,6 +311,7 @@ export type { VmcOptions, VmcResult } from './vmc-verifier.js';
 export { createAutopilotExecutionChain } from './autopilot-execution-chain.js';
 export type { AutopilotExecutionChain } from './autopilot-execution-chain.js';
 export { BriefSnapshotWorker } from './brief-snapshot.worker.js';
+export { resolveBriefLocalWindow } from './brief-timezone.js';
 export type {
   BriefSnapshotDeps,
   BriefSnapshotJobData,
@@ -474,7 +475,11 @@ export {
   EMAIL_SEND_JOB,
   EMAIL_SEND_QUEUE,
   BILLING_EMAIL_SEND_QUEUE,
+  BRIEF_EMAIL_SEND_QUEUE,
+  briefReadyEmailJobId,
   BILLING_QUEUE_COMPATIBLE_WORKER_NAME,
+  EMAIL_PREFS_COMPATIBLE_WORKER_NAME,
+  readEmailPrefsQueueCompatibility,
   createBillingEmailSendConsumer,
   readBillingQueueCompatibility,
   emailSendJobOptions,

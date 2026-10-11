@@ -162,6 +162,13 @@ export class UnsubscribeController {
       WHEN jsonb_typeof(${root} -> 'emailPrefs') = 'object' THEN ${root} -> 'emailPrefs'
       ELSE '{}'::jsonb
     END`;
+    // A later category records this revision when explicitly opted in. Older
+    // APIs still invalidate that consent on ALL unsubscribe, without needing
+    // to recognise the new category. Generate under the same row lock.
+    const revision =
+      claims.scope === 'all'
+        ? sql`jsonb_build_object('emailAllOptOutRevision', gen_random_uuid()::text)`
+        : sql`'{}'::jsonb`;
     const updated = await this.db
       .update(users)
       .set({
@@ -169,7 +176,7 @@ export class UnsubscribeController {
           ${root},
           '{emailPrefs}',
           ${currentPrefs} || ${JSON.stringify(offPatch)}::jsonb
-        )`,
+        ) || ${revision}`,
       })
       .where(eq(users.id, claims.userId))
       .returning({ id: users.id });

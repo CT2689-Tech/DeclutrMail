@@ -1,7 +1,7 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
-import type { EmailPrefs } from '@declutrmail/shared/contracts';
+import { DEFAULT_EMAIL_PREFS, type EmailPrefs } from '@declutrmail/shared/contracts';
 import {
   SettingsGroup,
   SettingsRow,
@@ -20,6 +20,11 @@ const CATEGORY_ROWS: ReadonlyArray<{
 }> = [
   { wire: 'syncComplete', label: 'Sync completion alerts' },
   { wire: 'reminders', label: 'Reminder emails' },
+  {
+    wire: 'briefReady',
+    label: 'Daily Brief ready email',
+    detail: 'Pro: counts and a link at your local Brief hour. No subjects or previews.',
+  },
   {
     wire: 'weeklyReceipt',
     label: 'Weekly value receipt',
@@ -73,18 +78,21 @@ export function EmailPrefsCard({
     >
       {state.kind === 'ready' ? (
         <>
-          {CATEGORY_ROWS.map(({ wire, label, detail }) => (
-            <SettingsRow key={wire} label={label} detail={detail}>
-              <SettingsSwitch
-                ariaLabel={`${state.prefs[wire] ? 'Disable' : 'Enable'} ${label.toLowerCase()}`}
-                on={state.prefs[wire]}
-                stateLabel={state.prefs[wire] ? 'On' : 'Off'}
-                disabled={pendingWire !== null}
-                pending={pendingWire === wire}
-                onToggle={() => onToggle(wire, !state.prefs[wire])}
-              />
-            </SettingsRow>
-          ))}
+          {CATEGORY_ROWS.map(({ wire, label, detail }) => {
+            const enabled = state.prefs[wire] ?? DEFAULT_EMAIL_PREFS[wire];
+            return (
+              <SettingsRow key={wire} label={label} detail={detail}>
+                <SettingsSwitch
+                  ariaLabel={`${enabled ? 'Disable' : 'Enable'} ${label.toLowerCase()}`}
+                  on={enabled}
+                  stateLabel={enabled ? 'On' : 'Off'}
+                  disabled={pendingWire !== null}
+                  pending={pendingWire === wire}
+                  onToggle={() => onToggle(wire, !enabled)}
+                />
+              </SettingsRow>
+            );
+          })}
           <SettingsRow label="Account notices" detail="Deletion confirmations and receipts.">
             <span style={{ fontSize: text.sm, color: color.fgMuted }}>Always on</span>
           </SettingsRow>

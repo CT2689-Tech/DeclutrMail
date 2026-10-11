@@ -44,6 +44,38 @@ Draft PRs currently run applicable CI. Marking a PR ready does not rerun it.
 A fresh push does. Green PR checks establish readiness; queue checks establish
 compatibility with the combined code.
 
+## Keep CI waits bounded
+
+Prepare one complete candidate locally before pushing. In addition to focused
+tests, run typecheck, lint and formatting. For web runtime changes, run the
+production build and its bundle/prerender budgets before pushing; run affected
+isolated browser journeys against that build. These catch failures that would
+otherwise cost another complete PR and queue cycle. Batch the resulting fixes
+into one push, and push again only for an actual defect or integration conflict.
+
+CI runs browser verification in three independent lanes: accessibility and
+component paint, hydration and billing, and product/public journeys. Each lane
+has disposable Postgres/Redis services and its own API and production web build.
+Tests stay serial inside each lane; all lanes must pass `CI required`, with
+coverage assertions rejecting missing, empty or skipped reports. Test retries,
+Lighthouse thresholds and its three measurements per page are unchanged.
+
+Only Next.js Webpack compiler intermediates are cached. Marketing and synthetic
+browser builds use separate cache namespaces; current-source production builds
+always execute. Rendered output, request data, sessions and test results are
+never restored. See [Next.js CI build caching](https://nextjs.org/docs/app/guides/ci-build-caching).
+
+Measure a full run by its critical path, not the sum of parallel job durations.
+Before this split, seven successful full runs on October 10, 2026 had a median
+of 6m49s (range 5m58s–7m08s); their browser job took 5m38s–6m46s. Runner startup
+was about 10–13s. Reference runs:
+[PR](https://github.com/CT2689-Tech/DeclutrMail/actions/runs/38113690363),
+[queue](https://github.com/CT2689-Tech/DeclutrMail/actions/runs/38114031962), and
+[main](https://github.com/CT2689-Tech/DeclutrMail/actions/runs/38114422845).
+Compare subsequent PR, queue and main runs separately; distinguish cold cache
+from a compiler cache hit. Parallel lanes spend more runner minutes to reduce
+wall time. Revisit concurrency only if measured runner waits become material.
+
 ## Required checks and rollout
 
 `scripts/required-checks.json` records the intended repository-owned required
