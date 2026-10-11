@@ -15,8 +15,8 @@
   display: inline-block;
 }
 
+/* Opacity stays 1. A rise that starts transparent fails contrast while it is sampled. */
 .dm-report [data-reveal] {
-  opacity: 0;
   transform: translateY(8px);
 }
 
@@ -43,11 +43,9 @@
 
 @keyframes dm-report-rise {
   from {
-    opacity: 0;
     transform: translateY(8px);
   }
   to {
-    opacity: 1;
     transform: translateY(0);
   }
 }
