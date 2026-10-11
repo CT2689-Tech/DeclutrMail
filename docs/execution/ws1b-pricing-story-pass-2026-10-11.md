@@ -149,11 +149,11 @@ unprocessed.
 
 `atlas.sum` was produced by Atlas community v1.3.0 (`atlas migrate hash`).
 None of these migrations has been applied to a live database. Merge
-order ahead of this PR is #985 (`0089`) → #981 (`0090_inbox_report_cache`)
-→ #983 → #980. These files stay `0089`/`0090`/`0091` until #981 has
-merged. They then become `0091_entitlement_grant_sources`,
-`0092_entitlement_grants_comp_email_uniq`, and
-`0093_waitlist_drop_email_uniq`. Do not renumber before that. The
+order ahead of this PR is #985 (`0089`) → #981 (`0090_inbox_report_cache`
+and `0091` concurrent `mail_messages` index) → #983 → #980. These files
+stay `0089`/`0090`/`0091` until #981 has merged. They then become
+`0092_entitlement_grant_sources`, `0093_entitlement_grants_comp_email_uniq`,
+and `0094_waitlist_drop_email_uniq`. Do not renumber before that. The
 grant-sources migration, whatever number it lands on, is the one that
 must apply before the new API serves checkouts.
 
@@ -177,6 +177,15 @@ must apply before the new API serves checkouts.
 - After a Pass overlay completes, billing toasts the deck resume line and
   calls `returnAfterUpgrade`. It does not reopen a Senders or Triage
   confirm. That confirm is WS2.
+
+## Next rebase, #997
+
+#997 (llms.txt H1-first order, deck r12) is expected to merge before this
+PR. Do not rebase until it has merged. On that rebase, keep the H1-first
+order. Do not restore disambiguation-first. Apply `withPricingChangelog()`
+to the body before `withOpeningFacts`. `llms-txt.test.ts` should expect
+`startsWith('# DeclutrMail\n')`. `## Pricing` still goes last when
+`PRICING_V2` is on.
 
 ## Rebase onto #978
 
