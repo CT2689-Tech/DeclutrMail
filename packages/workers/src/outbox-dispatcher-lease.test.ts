@@ -82,8 +82,9 @@ describe('RedisOutboxDispatcherLease', () => {
     const shared = key();
     const a = new RedisOutboxDispatcherLease(redis, { key: shared, log: silent });
     const b = new RedisOutboxDispatcherLease(redis, { key: shared, log: silent });
+    const stranger = new RedisOutboxDispatcherLease(redis, { key: shared, log: silent });
     expect(await a.ensureHeld()).toBe(true);
-    await b.release();
+    await stranger.release();
     expect(await b.ensureHeld()).toBe(false);
     await a.release();
     expect(a.isHeld()).toBe(false);
@@ -206,6 +207,32 @@ describe('RedisOutboxDispatcherLease', () => {
     await sleep(120);
     expect(lease.isHeld()).toBe(false);
     await lease.release();
+  });
+
+  it('a renewal still in flight at release never re-arms the lease', async () => {
+    const shared = key();
+    let gate: (() => void) | undefined;
+    const slow = {
+      eval: async (...args: Parameters<Redis['eval']>) => {
+        if (gate === undefined) await new Promise<void>((resolve) => (gate = resolve));
+        return redis.eval(...args);
+      },
+    } as unknown as Pick<Redis, 'eval'>;
+    const lines: Record<string, unknown>[] = [];
+    const lease = new RedisOutboxDispatcherLease(slow, {
+      key: shared,
+      log: (line) => lines.push(line),
+    });
+    const pending = lease.ensureHeld();
+    await sleep(10);
+    const released = lease.release();
+    gate?.();
+    expect(await pending).toBe(false);
+    await released;
+    expect(lease.isHeld()).toBe(false);
+    expect(await lease.ensureHeld()).toBe(false);
+    expect(await redis.get(shared)).toBeNull();
+    expect(lines.map((line) => line.kind)).toEqual(['outbox.dispatch.lease_released']);
   });
 
   it('rejects a renewal cadence that cannot land inside the validity window', () => {

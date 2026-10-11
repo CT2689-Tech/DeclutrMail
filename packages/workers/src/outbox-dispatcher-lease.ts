@@ -76,6 +76,7 @@ export class RedisOutboxDispatcherLease implements OutboxDispatcherLease {
   private refreshing: Promise<boolean> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private lastState: LeaseState | null = null;
+  private released = false;
 
   constructor(
     private readonly redis: Pick<Redis, 'eval'>,
@@ -99,6 +100,7 @@ export class RedisOutboxDispatcherLease implements OutboxDispatcherLease {
   }
 
   async ensureHeld(): Promise<boolean> {
+    if (this.released) return false;
     return this.isHeld() || this.refresh();
   }
 
@@ -114,9 +116,12 @@ export class RedisOutboxDispatcherLease implements OutboxDispatcherLease {
   }
 
   async release(): Promise<void> {
+    this.released = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     this.validUntil = 0;
+    // An in-flight renewal must not re-arm the deadline after release.
+    await this.refreshing;
     try {
       await this.bounded(this.redis.eval(RELEASE, 1, this.key, this.token));
     } catch {
@@ -142,6 +147,10 @@ export class RedisOutboxDispatcherLease implements OutboxDispatcherLease {
     } catch {
       this.validUntil = 0;
       this.transition('unavailable');
+      return false;
+    }
+    if (this.released) {
+      this.validUntil = 0;
       return false;
     }
     if (reply === 1) {
