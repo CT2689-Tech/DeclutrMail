@@ -9,6 +9,10 @@ const nextConfig: NextConfig = {
   // the parent checkout from an unrelated outer lockfile.
   outputFileTracingRoot: path.join(__dirname, '../..'),
   transpilePackages: ['@declutrmail/shared'],
+  // Only CI sets this. CI's `web-types` job type-checks build-web's generated
+  // route types and every deploy still runs Next's validation, so a CI build
+  // never decides whether types pass.
+  typescript: { ignoreBuildErrors: process.env.NEXT_SKIP_BUILD_TYPECHECK === '1' },
 
   /**
    * `@declutrmail/shared` is imported through its root barrel from ~25

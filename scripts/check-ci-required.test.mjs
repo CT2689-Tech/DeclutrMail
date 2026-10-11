@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -20,6 +20,8 @@ function fixture() {
     'test-web',
     'test-units',
     'build-web',
+    'web-types',
+    'lighthouse',
     'accessibility',
   ];
   const needs = Object.fromEntries(jobs.map((job) => [job, { result: 'success' }]));
@@ -62,6 +64,8 @@ test('docs-only PR may skip explicitly excluded suites but queue must run them',
     'test-web',
     'test-units',
     'build-web',
+    'web-types',
+    'lighthouse',
     'accessibility',
   ])
     needs[job].result = 'skipped';
@@ -92,10 +96,11 @@ test('isolated browser matrix preserves every suite and its coverage assertion',
   const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const browser = workflow.split('  accessibility:')[1];
   assert.match(browser, /fail-fast: false/);
-  assert.match(browser, /lane: \[accessibility, hydration-billing, journeys\]/);
+  assert.match(browser, /lane: \[accessibility, responsive, hydration-billing, journeys\]/);
   for (const [name, lane, command] of [
-    ['Run the shared-component paint specs', 'accessibility', 'e2e:render'],
-    ['Run the accessibility gate (authenticated + public)', 'accessibility', 'pnpm e2e:a11y'],
+    ['Run the shared-component paint specs', 'responsive', 'e2e:render'],
+    ['Run the accessibility gate (authenticated + public)', 'accessibility', 'e2e:a11y:wcag'],
+    ['Run the responsive layout gate (320px)', 'responsive', 'e2e:responsive'],
     ['Run the hydration smoke (non-en-US locale + timezone)', 'hydration-billing', 'e2e:hydration'],
     ['Run the billing money-path spec', 'hydration-billing', 'e2e:billing'],
     ['Verify isolated harness guards', 'journeys', 'test:harness'],
@@ -122,7 +127,8 @@ test('actual browser coverage step rejects each absent, skipped or empty lane re
     .replaceAll('node scripts/assert-e2e-ran.mjs', 'node "$ASSERT_E2E_SCRIPT"');
   const cwd = mkdtempSync(path.join(tmpdir(), 'browser-ci-coverage-'));
   const reports = {
-    accessibility: ['e2e-render-report.json', 'e2e-a11y-report.json'],
+    accessibility: ['e2e-a11y-report.json'],
+    responsive: ['e2e-render-report.json', 'e2e-responsive-report.json'],
     'hydration-billing': ['e2e-billing-report.json', 'e2e-hydration-report.json'],
     journeys: ['e2e-journeys-report.json'],
   };
@@ -176,9 +182,153 @@ test('build caching restores only compiler intermediates and never bypasses eith
   }
   assert.match(workflow, /next-marketing-v1/);
   assert.match(workflow, /next-browser-v1/);
-  for (const name of ['Build the web app', 'Build the web app for browser verification']) {
-    const step = workflow.split(`- name: ${name}\n`)[1]?.split('\n      - ')[0];
-    assert.match(step, /run: pnpm --filter @declutrmail\/web build/);
+  const stepNamed = (name) => workflow.split(`- name: ${name}\n`)[1]?.split('\n      - ')[0];
+  assert.match(stepNamed('Build the web app'), /run: pnpm --filter @declutrmail\/web build/);
+  const lane = stepNamed('Build the web app for browser verification');
+  assert.match(lane, /pnpm --filter @declutrmail\/web build --no-lint > web-build\.log 2>&1/);
+  const wait = stepNamed('Wait for the web build');
+  for (const step of [stepNamed('Build the web app'), lane, wait]) {
     assert.doesNotMatch(step, /if:|continue-on-error:/);
+  }
+});
+
+test('build-web skips Next type validation only because web-types runs it on that build', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const build = workflow.split('- name: Build the web app\n')[1].split('\n      - ')[0];
+  assert.match(build, /NEXT_SKIP_BUILD_TYPECHECK: '1'/);
+  const job = workflow.split('\n  web-types:\n')[1].split('\n  lighthouse:\n')[0];
+  assert.match(job, /needs: \[changes, build-web\]/);
+  const download = job.split('- name: Download the built web app\n')[1].split('\n      - ')[0];
+  assert.match(download, /name: web-build\n\s+path: apps\/web\/\.next/);
+  assert.doesNotMatch(download, /continue-on-error/);
+  assert.match(job, /run: pnpm --filter @declutrmail\/web typecheck/);
+  const web = JSON.parse(readFileSync(new URL('../apps/web/package.json', import.meta.url)));
+  assert.equal(web.scripts.typecheck, 'tsc --noEmit');
+  const tsconfig = JSON.parse(readFileSync(new URL('../apps/web/tsconfig.json', import.meta.url)));
+  assert.ok(tsconfig.include.includes('.next/types/**/*.ts'));
+
+  const guard = job
+    .split("- name: Require the build's generated route types\n")[1]
+    .split('run: |\n')[1]
+    .split('\n      - ')[0]
+    .replace(/^ {10}/gm, '');
+  const cwd = mkdtempSync(path.join(tmpdir(), 'web-route-types-'));
+  const run = () =>
+    spawnSync('bash', ['-e', '-u', '-o', 'pipefail', '-c', guard], { cwd, encoding: 'utf8' });
+  const write = (file, text) => {
+    mkdirSync(path.dirname(path.join(cwd, file)), { recursive: true });
+    writeFileSync(path.join(cwd, file), text);
+  };
+  const validator = 'apps/web/.next/types/validator.ts';
+  const validates = (...files) =>
+    files.map((file) => `// Validate ../../src/app/${file}\n`).join('');
+  try {
+    mkdirSync(path.join(cwd, 'apps/web/src/app'), { recursive: true });
+    write(validator, validates('layout.tsx'));
+    assert.notEqual(run().status, 0, 'no route files found');
+    write('apps/web/src/app/layout.tsx', '');
+    write('apps/web/src/app/(marketing)/blog/[slug]/page.tsx', '');
+    rmSync(path.join(cwd, validator));
+    assert.notEqual(run().status, 0, 'no validator');
+    write(validator, '');
+    assert.notEqual(run().status, 0, 'empty validator');
+    write(validator, validates('layout.tsx'));
+    const partial = run();
+    assert.notEqual(partial.status, 0, 'a route the validator does not cover');
+    assert.match(partial.stdout, /does not validate apps\/web\/src\/app\/\(marketing\)\/blog/);
+    write(validator, validates('layout.tsx', '(marketing)/blog/[slug]/page.tsx'));
+    const ok = run();
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.match(ok.stdout, /covers all 2 route file/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+const BUILD = 'pnpm --filter @declutrmail/web build --no-lint';
+
+/** A step's `run: |` body, as the runner hands it to bash. */
+function stepScript(name) {
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const step = workflow.split(`- name: ${name}\n`)[1].split('\n      - ')[0];
+  return step.split('run: |\n')[1].replace(/^ {10}/gm, '');
+}
+
+// GitHub runs `run:` steps as `bash --noprofile --norc -eo pipefail {0}`.
+const ghBash = (script, cwd, env = {}) =>
+  spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', script], {
+    cwd,
+    env: { ...process.env, ...env },
+    encoding: 'utf8',
+    // A wait that regresses to sleeping out its 15 minutes fails here instead.
+    timeout: 20_000,
+  });
+
+test('a background web build records its status under bash -e, failed or not', () => {
+  const producer = stepScript('Build the web app for browser verification');
+  assert.ok(producer.includes(BUILD), 'the lane no longer runs the expected build');
+  const fake = producer.replace(BUILD, 'sh -c "$FAKE_BUILD"');
+  const wait = stepScript('Wait for the web build');
+  for (const [build, status] of [
+    ['echo built', 0],
+    ['echo boom; exit 1', 1],
+    ['sleep 1; exit 7', 7],
+  ]) {
+    const cwd = mkdtempSync(path.join(tmpdir(), 'browser-ci-producer-'));
+    try {
+      const started = ghBash(fake, cwd, { FAKE_BUILD: build });
+      assert.equal(started.status, 0, started.stderr);
+      const begun = Date.now();
+      const waited = ghBash(wait, cwd);
+      assert.equal(waited.status, status, `${build}: ${waited.stdout}${waited.stderr}`);
+      assert.ok(Date.now() - begun < 15_000, `${build}: the wait took too long`);
+      assert.equal(readFileSync(path.join(cwd, 'web-build.rc'), 'utf8'), `${status}\n`);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }
+});
+
+test('the build wait fails promptly, by name, on every missing or bad status', () => {
+  const wait = stepScript('Wait for the web build');
+  const cwd = mkdtempSync(path.join(tmpdir(), 'browser-ci-build-'));
+  const file = (name) => path.join(cwd, name);
+  const dead = spawnSync('true').pid;
+  try {
+    writeFileSync(file('web-build.log'), 'build output\n');
+    const unstarted = ghBash(wait, cwd);
+    assert.notEqual(unstarted.status, 0);
+    assert.match(unstarted.stdout, /was never started/);
+
+    writeFileSync(file('web-build.pid'), `${dead}\n`);
+    const begun = Date.now();
+    const vanished = ghBash(wait, cwd);
+    assert.notEqual(vanished.status, 0);
+    assert.match(vanished.stdout, /exited without recording a status/);
+    assert.ok(Date.now() - begun < 5_000, 'a dead build was waited on');
+
+    writeFileSync(file('web-build.pid'), `${process.pid}\n`);
+    const slow = ghBash(wait.replace('seq 1 900', 'seq 1 2'), cwd);
+    assert.notEqual(slow.status, 0);
+    assert.match(slow.stdout, /did not finish within 15 minutes/);
+
+    for (const [rc, status] of [
+      ['1\n', 1],
+      ['\n', null],
+      ['oops\n', null],
+      ['0\n', 0],
+    ]) {
+      writeFileSync(file('web-build.rc'), rc);
+      const result = ghBash(wait, cwd);
+      if (status === null) {
+        assert.notEqual(result.status, 0, JSON.stringify(rc));
+        assert.match(result.stdout, /holds no exit status/);
+      } else {
+        assert.equal(result.status, status, JSON.stringify(rc));
+        assert.match(result.stdout, /build output/);
+      }
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
   }
 });
