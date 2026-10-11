@@ -44,9 +44,9 @@ export function Hero() {
         </div>
         <p className="dm-mkt-hero-note">{fillWs3(WS3_COPY['ws3.home.note'])}</p>
         <TrustRow />
-        <p className="dm-mkt-hero-note">
+        <div className="dm-mkt-hero-note">
           {WS3_COPY['ws3.home.gmailOnly']} <NotOnGmail source="landing" />
-        </p>
+        </div>
         {/* "Start free" opens the permission checkpoint; the
             pre-consent disclosure sits beside it (copy contract in
             packages/shared/src/copy/privacy.ts) — collapsed to one line. */}
