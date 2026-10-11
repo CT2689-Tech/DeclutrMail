@@ -235,10 +235,8 @@ export function ActionSheet({
     });
 
   // ADR-0028 — the reach is a control only when it changes the count.
-  const reachControl =
-    detail !== undefined && actionMovesMail(verb, effectiveArchiveHistoric)
-      ? detail.reachControl
-      : undefined;
+  const movesMail = actionMovesMail(verb, effectiveMode !== 'unsub_only');
+  const reachControl = detail !== undefined && movesMail ? detail.reachControl : undefined;
   const showReach =
     reachControl !== undefined && reachControl.inboxCount !== reachControl.allMailCount;
   // Empty inbox, archived mail exists: the default stays the safe one
@@ -258,9 +256,7 @@ export function ActionSheet({
       : cleanupCostLine(facts.unitsNeeded, quotaRemaining);
   const detailBlock = (
     <ActionPreviewDetailBlock
-      detail={
-        detail !== undefined && actionMovesMail(verb, effectiveArchiveHistoric) ? detail : undefined
-      }
+      detail={detail !== undefined && movesMail ? detail : undefined}
       leadFacts={facts.disclosures}
       trailingFacts={[
         { label: 'Why suggested', value: <PreviewReasoning row={row} /> },

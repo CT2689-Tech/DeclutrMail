@@ -9,6 +9,7 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -203,9 +204,89 @@ describe('UnsubscribeBacklogService', () => {
     });
     expect(result.backlog?.verb).toBe('archive');
     expect(result.senders[0]?.unsubStatus).toBe('failed');
-    expect(result.senders[0]?.reasonCode).toBe('generic');
+    expect(result.senders[0]?.reasonCode).toBe('send_disabled');
     expect(labelQueue.count).toBe(1);
     expect(unsubQueue.count).toBe(0);
+  });
+
+  it('still records unsubscribe when the archive job is already in progress', async () => {
+    const otherKey = 'c'.repeat(64);
+    const [other] = await db
+      .insert(senders)
+      .values({
+        mailboxAccountId: mailboxId,
+        senderKey: otherKey,
+        email: 'also@shop.example',
+        domain: 'shop.example',
+        gmailCategory: 'promotions',
+        firstSeenAt: new Date('2026-01-01'),
+        lastSeenAt: new Date('2026-05-01'),
+        unsubscribeMethod: 'one_click',
+        unsubscribeUrl: 'https://unsub.shop.example/also',
+      })
+      .returning({ id: senders.id });
+    await seedInbox(db, mailboxId, 1);
+    await db.insert(mailMessages).values({
+      mailboxAccountId: mailboxId,
+      providerMessageId: 'busy-m',
+      providerThreadId: 'busy-t',
+      senderKey: otherKey,
+      internalDate: new Date('2026-05-01'),
+      isUnread: false,
+      labelIds: ['INBOX'],
+      isOutbound: false,
+    });
+    await db.insert(actionJobs).values({
+      mailboxAccountId: mailboxId,
+      verb: 'archive',
+      direction: 'forward',
+      selector: { type: 'sender', senderId: other!.id, senderKey: otherKey },
+      status: 'executing',
+      idempotencyKey: 'busy-archive',
+      requestedCount: 1,
+    });
+
+    const result = await svc.confirm({
+      mailboxAccountId: mailboxId,
+      idempotencyKey: 'busy-key-1',
+      mode: 'archive',
+      senderIds: [senderId, other!.id],
+    });
+
+    expect(result.senders.find((row) => row.senderId === other!.id)?.unsubStatus).toBe('requested');
+    expect(unsubQueue.count).toBe(2);
+  });
+
+  it('maps an in-flight unsubscribe and a missing sender', async () => {
+    await seedInbox(db, mailboxId, 1);
+    const record = vi.spyOn(actions, 'recordUnsubscribeIntent');
+    record.mockRejectedValueOnce(
+      new ConflictException({
+        code: 'UNSUBSCRIBE_IN_FLIGHT',
+        message: 'An unsubscribe request to this sender is already on its way.',
+      }),
+    );
+    const inFlight = await svc.confirm({
+      mailboxAccountId: mailboxId,
+      idempotencyKey: 'inflight-key-1',
+      mode: 'unsub_only',
+      senderIds: [senderId],
+    });
+    expect(inFlight.senders[0]?.reasonCode).toBe('in_flight');
+
+    record.mockRejectedValueOnce(
+      new NotFoundException({
+        code: 'SENDER_NOT_FOUND',
+        message: 'Sender not found in the current mailbox.',
+      }),
+    );
+    const missing = await svc.confirm({
+      mailboxAccountId: mailboxId,
+      idempotencyKey: 'missing-key-1',
+      mode: 'unsub_only',
+      senderIds: [senderId],
+    });
+    expect(missing.senders[0]?.reasonCode).toBe('not_found');
   });
 
   it('returns a mailto draft and does not enqueue a send', async () => {

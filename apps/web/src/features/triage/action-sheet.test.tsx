@@ -292,6 +292,38 @@ describe('ActionSheet — live-preview confirm gate', () => {
     },
   );
 
+  it('keeps the match sample and Gmail check on Unsubscribe + Delete', () => {
+    render(
+      <ActionSheet
+        open
+        verb="Unsubscribe"
+        row={row}
+        inboxCount={4}
+        mailboxEmail="active@gmail.com"
+        detail={{
+          matchSample: {
+            rows: [{ subject: 'Weekly deals', date: 'May 1' }],
+            total: 4,
+          },
+          verifyInGmailUrl: 'https://mail.google.com/mail/u/0/#search/from%3Agroupon.com',
+        }}
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Weekly deals')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Check in Gmail/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+    expect(screen.getByText('Weekly deals')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Check in Gmail/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole('note', { name: 'Gmail account: active@gmail.com' }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
+    expect(screen.queryByText('Weekly deals')).toBeNull();
+    expect(screen.queryByRole('link', { name: /Check in Gmail/ })).toBeNull();
+  });
+
   it('keeps a pure unsubscribe request confirmable when the backlog move is off', () => {
     const onConfirm = vi.fn();
     const { rerender } = render(

@@ -5,7 +5,25 @@ import type { UnsubscribeBacklogResult } from '@/lib/api/actions';
 function reasonText(code: UnsubscribeBacklogResult['senders'][number]['reasonCode']): string {
   if (code === 'no_link') return WS5_COPY['f1.reason.noLink'];
   if (code === 'sender_error') return WS5_COPY['f1.reason.senderError'];
+  // Short clauses of the sentences those screens already show. The
+  // unsub-failed line already says "Unsubscribe failed", so the reason
+  // stays a clause and does not repeat that claim.
+  if (code === 'send_disabled') return 'sending is turned off in this environment';
+  if (code === 'in_flight') return 'a request is already on its way';
+  if (code === 'not_found') return 'the sender is no longer in this mailbox';
   return WS5_COPY['f1.reason.generic'];
+}
+
+function unsubFailedLine(
+  verb: 'archive' | 'delete',
+  n: number,
+  reason: UnsubscribeBacklogResult['senders'][number]['reasonCode'],
+): string {
+  const forms =
+    verb === 'delete'
+      ? WS5_COPY['f1.toast.unsubFailed.delete']
+      : WS5_COPY['f1.toast.unsubFailed.archive'];
+  return isPluralCopy(forms) ? pluralCopy(forms, n, { n, reason: reasonText(reason) }) : '';
 }
 
 function movedLine(verb: 'archive' | 'delete', n: number): string {
@@ -49,21 +67,23 @@ export function unsubscribeBacklogToast(result: UnsubscribeBacklogResult): strin
       if (manual.length > 0) parts.push(WS5_COPY['f1.toast.mailto']);
     } else if (manual.length > 0) {
       parts.push(withMoveLine(verb, n));
+    } else if (failed.length > 0) {
+      // Every unsubscribe failed, and the archive or delete still ran.
+      // Name that move. bulkFailed alone would hide it.
+      return unsubFailedLine(verb, n, failed[0]?.reasonCode ?? 'generic');
     }
-    if (failed.length > 0 && isPluralCopy(WS5_COPY['f1.toast.bulkFailed'])) {
+    if (
+      failed.length > 0 &&
+      requested.length + manual.length > 0 &&
+      isPluralCopy(WS5_COPY['f1.toast.bulkFailed'])
+    ) {
       parts.push(pluralCopy(WS5_COPY['f1.toast.bulkFailed'], failed.length, { k: failed.length }));
     }
     return parts.filter(Boolean).join(' · ');
   }
 
   if (result.backlog && failed.length > 0) {
-    const forms =
-      verb === 'delete'
-        ? WS5_COPY['f1.toast.unsubFailed.delete']
-        : WS5_COPY['f1.toast.unsubFailed.archive'];
-    if (isPluralCopy(forms)) {
-      return pluralCopy(forms, n, { n, reason: reasonText(failed[0]?.reasonCode ?? 'generic') });
-    }
+    return unsubFailedLine(verb, n, failed[0]?.reasonCode ?? 'generic');
   }
 
   if (result.backlog && manual.length > 0) return withMoveLine(verb, n);
@@ -72,9 +92,17 @@ export function unsubscribeBacklogToast(result: UnsubscribeBacklogResult): strin
 
   if (manual.length > 0) return WS5_COPY['f1.toast.mailto'];
 
+  // Zero one-click requests is a failure or a skip. Never claim a
+  // request that was not made.
+  if (requested.length === 0) {
+    if (failed.length > 0 && isPluralCopy(WS5_COPY['f1.toast.bulkFailed'])) {
+      return pluralCopy(WS5_COPY['f1.toast.bulkFailed'], failed.length, { k: failed.length });
+    }
+    return WS5_COPY['f1.reason.generic'];
+  }
+
   const unsub = WS5_COPY['report.celebrate.unsub'];
-  const m = Math.max(requested.length, 1);
-  if (isPluralCopy(unsub)) return pluralCopy(unsub, m, { m });
+  if (isPluralCopy(unsub)) return pluralCopy(unsub, requested.length, { m: requested.length });
   return WS5_COPY['f1.button.unsubOnly'];
 }
 

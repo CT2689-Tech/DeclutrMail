@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { HttpException, Inject, Injectable } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import {
@@ -8,11 +8,14 @@ import {
   senders,
   type SenderActionReach,
 } from '@declutrmail/db';
+import { UNSUB_SEND_DISABLED_CODE } from '@declutrmail/workers';
 
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { ActionsService } from './actions.service.js';
 import type {
+  BulkSkipReason,
+  UnsubscribeBacklogReasonCode,
   UnsubscribeBacklogResult,
   UnsubscribeBacklogSenderResult,
   UnsubscribeIntentResult,
@@ -74,7 +77,9 @@ export class UnsubscribeBacklogService {
         }
         const enqueued = await this.enqueueBacklog(input, actionable, reach, olderThanDays);
         backlog = enqueued.backlog;
-        skippedByEnqueue = enqueued.skippedIds;
+        skippedByEnqueue = new Set(
+          enqueued.skipped.filter((row) => row.reason !== 'in_progress').map((row) => row.senderId),
+        );
       }
     }
 
@@ -97,7 +102,10 @@ export class UnsubscribeBacklogService {
     actionable: Array<{ id: string }>,
     reach: SenderActionReach,
     olderThanDays: number | null,
-  ): Promise<{ backlog: UnsubscribeBacklogResult['backlog']; skippedIds: Set<string> }> {
+  ): Promise<{
+    backlog: UnsubscribeBacklogResult['backlog'];
+    skipped: Array<{ senderId: string; reason: BulkSkipReason }>;
+  }> {
     const verb = input.mode === 'delete' ? 'delete' : 'archive';
     const primary = {
       type: verb,
@@ -120,7 +128,7 @@ export class UnsubscribeBacklogService {
           requestedCount: result.primaryCount,
           verb,
         },
-        skippedIds: new Set(),
+        skipped: [],
       };
     }
     const result = await this.actions.enqueueBulkComposite({
@@ -135,7 +143,7 @@ export class UnsubscribeBacklogService {
         requestedCount: result.requestedTotal,
         verb,
       },
-      skippedIds: new Set(result.skipped.map((skip) => skip.senderId)),
+      skipped: result.skipped.map((skip) => ({ senderId: skip.senderId, reason: skip.reason })),
     };
   }
 
@@ -154,7 +162,7 @@ export class UnsubscribeBacklogService {
         ...(input.override === true ? { override: true } : {}),
       });
       return fromIntent(senderId, intent);
-    } catch {
+    } catch (err) {
       return {
         senderId,
         method: null,
@@ -162,7 +170,7 @@ export class UnsubscribeBacklogService {
         executionActionId: null,
         lifecycleStatus: null,
         unsubStatus: 'failed',
-        reasonCode: 'generic',
+        reasonCode: reasonFromRecordError(err),
       };
     }
   }
@@ -218,6 +226,19 @@ export class UnsubscribeBacklogService {
       );
     return Number(row?.n ?? 0);
   }
+}
+
+function reasonFromRecordError(err: unknown): UnsubscribeBacklogReasonCode {
+  if (!(err instanceof HttpException)) return 'generic';
+  const body = err.getResponse();
+  const code =
+    typeof body === 'object' && body !== null && 'code' in body
+      ? String((body as { code: unknown }).code)
+      : '';
+  if (code === UNSUB_SEND_DISABLED_CODE) return 'send_disabled';
+  if (code === 'UNSUBSCRIBE_IN_FLIGHT') return 'in_flight';
+  if (code === 'SENDER_NOT_FOUND' || err.getStatus() === 404) return 'not_found';
+  return 'generic';
 }
 
 function skipped(senderId: string): UnsubscribeBacklogSenderResult {

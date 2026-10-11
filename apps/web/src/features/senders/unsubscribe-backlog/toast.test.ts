@@ -201,6 +201,88 @@ describe('unsubscribeBacklogToast', () => {
     expect(deleted).not.toMatch(/requested/i);
   });
 
+  it('does not claim a request when nothing was requested', () => {
+    const failed = unsubscribeBacklogToast(
+      result({
+        mode: 'unsub_only',
+        senders: [
+          {
+            senderId: 'a',
+            method: 'one_click',
+            mailtoUrl: null,
+            executionActionId: null,
+            lifecycleStatus: null,
+            unsubStatus: 'failed',
+            reasonCode: 'generic',
+          },
+        ],
+      }),
+    );
+    expect(failed).toBe(pluralCopy(WS5_COPY['f1.toast.bulkFailed'], 1, { k: 1 }));
+    expect(failed).not.toMatch(/requested/i);
+
+    const skipped = unsubscribeBacklogToast(
+      result({
+        mode: 'unsub_only',
+        senders: [
+          {
+            senderId: 'a',
+            method: null,
+            mailtoUrl: null,
+            executionActionId: null,
+            lifecycleStatus: null,
+            unsubStatus: 'skipped',
+            reasonCode: null,
+          },
+        ],
+      }),
+    );
+    expect(skipped).toBe(WS5_COPY['f1.reason.generic']);
+    expect(skipped).not.toMatch(/requested/i);
+  });
+
+  it('names the archive or delete when every bulk unsubscribe failed', () => {
+    const sender = {
+      method: 'one_click' as const,
+      mailtoUrl: null,
+      executionActionId: null,
+      lifecycleStatus: null,
+      unsubStatus: 'failed' as const,
+      reasonCode: 'generic' as const,
+    };
+    const archived = unsubscribeBacklogToast(
+      result({
+        mode: 'archive',
+        backlog: { actionId: 'b', requestedCount: 6, verb: 'archive' },
+        senders: [
+          { ...sender, senderId: 'a' },
+          { ...sender, senderId: 'b' },
+        ],
+      }),
+    );
+    expect(archived).toBe(
+      pluralCopy(WS5_COPY['f1.toast.unsubFailed.archive'], 6, {
+        n: 6,
+        reason: WS5_COPY['f1.reason.generic'],
+      }),
+    );
+    expect(archived).toMatch(/Archived/);
+    expect(archived).not.toBe(pluralCopy(WS5_COPY['f1.toast.bulkFailed'], 2, { k: 2 }));
+
+    const deleted = unsubscribeBacklogToast(
+      result({
+        mode: 'delete',
+        backlog: { actionId: 'b', requestedCount: 2, verb: 'delete' },
+        senders: [
+          { ...sender, senderId: 'a' },
+          { ...sender, senderId: 'b' },
+        ],
+      }),
+    );
+    expect(deleted).toMatch(/Deleted/);
+    expect(deleted).not.toMatch(/requested/i);
+  });
+
   it('uses the failed-unsubscribe deck line', () => {
     expect(
       unsubscribeBacklogToast(
