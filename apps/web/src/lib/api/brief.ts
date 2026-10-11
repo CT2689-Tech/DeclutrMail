@@ -189,10 +189,13 @@ export async function fetchBriefHistory(
 export async function fetchRecentBriefs(
   signal?: AbortSignal,
 ): Promise<Envelope<BriefWire[], unknown>> {
-  const envelope = await apiGet<BriefWire[]>('/api/briefs/recent', { signal });
+  const envelope = await apiGet<BriefWire[] | null>('/api/briefs/recent', { signal });
+  // 204 and a null body are an empty list, the same absence
+  // `fetchBriefToday` treats as no edition. Mapping null throws.
+  const rows = Array.isArray(envelope.data) ? envelope.data : [];
   return {
     ...envelope,
-    data: envelope.data.map((row) => ({ ...row, noiseSenders: toNoiseSenders(row) })),
+    data: rows.map((row) => ({ ...row, noiseSenders: toNoiseSenders(row) })),
   };
 }
 

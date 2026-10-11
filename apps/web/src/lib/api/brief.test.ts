@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 
-import { fetchBriefToday } from './brief';
+import { fetchBriefToday, fetchRecentBriefs } from './brief';
 
 afterEach(() => resetFetchStub());
 
@@ -66,5 +66,56 @@ describe('fetchBriefToday', () => {
     ]);
     const envelope = await fetchBriefToday();
     expect(envelope.data?.noiseSenders).toEqual([]);
+  });
+});
+
+describe('fetchRecentBriefs', () => {
+  it('treats 204 as an empty list', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/recent',
+        respond: () => new Response(null, { status: 204 }),
+      },
+    ]);
+    await expect(fetchRecentBriefs()).resolves.toEqual({ data: [] });
+  });
+
+  it('treats a null body as an empty list', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/recent',
+        respond: () => jsonOk({ data: null }),
+      },
+    ]);
+    await expect(fetchRecentBriefs()).resolves.toEqual({ data: [] });
+  });
+
+  it('defaults a missing noise list on each edition', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/recent',
+        respond: () =>
+          jsonOk({
+            data: [
+              {
+                id: '11111111-1111-1111-1111-111111111111',
+                runDateLocal: '2026-05-24',
+                generatedBy: 'template',
+                briefPayload: { narrative: '', reply: [], fyi: [], noise: [] },
+                generatedAt: '2026-05-25T08:00:00Z',
+                openedAt: null,
+                emailSentAt: null,
+                feedbackRating: null,
+              },
+            ],
+          }),
+      },
+    ]);
+    const envelope = await fetchRecentBriefs();
+    expect(envelope.data).toHaveLength(1);
+    expect(envelope.data[0]?.noiseSenders).toEqual([]);
   });
 });
