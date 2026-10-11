@@ -1,0 +1,43 @@
+# Read-only Paddle catalog drift (WS1b A5).
+#
+# A missing PADDLE_READONLY_API_KEY fails closed (UNVERIFIED). A failed
+# run uses the same GitHub failed-workflow notification channel as the
+# cron-stale watchdog. This workflow never writes to Paddle.
+
+name: Billing catalog drift
+
+on:
+  schedule:
+    - cron: '0 15 * * *'
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - 'packages/shared/src/entitlements/**'
+      - 'scripts/billing-catalog-drift.ts'
+      - '.github/workflows/billing-catalog-drift.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: billing-catalog-drift-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Compare the manifest to Paddle
+        env:
+          PADDLE_READONLY_API_KEY: ${{ secrets.PADDLE_READONLY_API_KEY }}
+          PADDLE_ENV: ${{ vars.PADDLE_ENV || 'production' }}
+        run: pnpm tsx scripts/billing-catalog-drift.ts

@@ -156,6 +156,12 @@ export function TierGate({
       <Link
         href={upgradeHref}
         className="dm-gate-cta"
+        onClick={() => {
+          void track('upgrade_cta_clicked', {
+            source: 'tier_gate',
+            plan: requiredTierId === 'pro' ? 'pro' : 'plus',
+          });
+        }}
         style={{
           display: 'inline-flex',
           alignItems: 'center',
