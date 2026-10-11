@@ -1,4 +1,4 @@
-import type { JobsOptions, Queue } from 'bullmq';
+import { Worker, type Job, type JobsOptions, type Queue, type WorkerOptions } from 'bullmq';
 import { hasPostalAddress } from '@declutrmail/shared/copy';
 
 import { WORKER_POLICIES } from './worker-policies.js';
@@ -28,7 +28,38 @@ import type { EmailSendJobData, EmailSendResult } from './email-send.worker.js';
  */
 
 export const EMAIL_SEND_QUEUE = 'email-send';
+/** Queue boundary: pre-billing consumers must never claim lifecycle notices. */
+export const BILLING_EMAIL_SEND_QUEUE = 'billing-email-send';
+/** Broker-visible compatibility marker for the outbox/email runtime. */
+export const BILLING_QUEUE_COMPATIBLE_WORKER_NAME = 'billing-queue-v1';
 export const EMAIL_SEND_JOB = 'email-send';
+
+/** Read-only: empty, unavailable, unnamed or older runtime actors cannot clear rollout. */
+export async function readBillingQueueCompatibility(queue: Queue): Promise<{ workers: number }> {
+  if (queue.name !== EMAIL_SEND_QUEUE)
+    throw new Error('Billing compatibility needs the generic email queue');
+  const workers = await queue.getWorkers();
+  if (
+    workers.length === 0 ||
+    workers.some(
+      (worker) =>
+        typeof worker.rawname !== 'string' ||
+        !worker.rawname.endsWith(`:w:${BILLING_QUEUE_COMPATIBLE_WORKER_NAME}`),
+    )
+  ) {
+    throw new Error('Billing queue compatibility unverified');
+  }
+  return { workers: workers.length };
+}
+
+/** Disabled consumers do not poll; waiting jobs retain their finite retry budget. */
+export function createBillingEmailSendConsumer(
+  enabled: boolean,
+  processor: (job: Job<EmailSendJobData, EmailSendResult>) => Promise<EmailSendResult>,
+  options: WorkerOptions,
+): Worker<EmailSendJobData, EmailSendResult> | null {
+  return enabled ? new Worker(BILLING_EMAIL_SEND_QUEUE, processor, options) : null;
+}
 
 /** Delay before the "you haven't come back" reminder fires (D6). */
 export const SYNC_REMINDER_DELAY_MS = 24 * 60 * 60 * 1_000;

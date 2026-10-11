@@ -8,6 +8,7 @@ import {
 } from '@declutrmail/events';
 import {
   OutboxPublisher,
+  BILLING_EMAIL_SEND_QUEUE,
   enqueueEmailSend,
   type EmailSendJobData,
   type OutboxTx,
@@ -170,9 +171,11 @@ export async function publishGrantExpiryNotices(db: DrizzleDb): Promise<void> {
   console.warn('billing.notice.grant_scan_capped — remaining expiries unverified');
 }
 export function buildBillingNoticeHandler(db: DrizzleDb, queue: Queue<EmailSendJobData>) {
+  if (queue.name !== BILLING_EMAIL_SEND_QUEUE)
+    throw new Error('Billing notices require the isolated billing email queue');
   return async (payload: BillingLifecycleChangedPayload, eventId: string): Promise<void> => {
-    if (billingNoticeStart() === null)
-      throw new Error('Billing notice consumer disabled; event retained for retry');
+    // Routing stays available while publication/delivery are off. Waiting jobs
+    // retain their retry budget until a notice-capable consumer is enabled.
     const [user] = await db
       .select({ id: users.id })
       .from(users)
@@ -201,8 +204,9 @@ export function buildBillingNoticeResolver(db: DrizzleDb, appUrl: string) {
     const payload = BillingLifecycleChangedPayloadSchema.parse(untrusted);
     const start = billingNoticeStart(),
       now = Date.now();
+    if (start === null)
+      throw new Error('Billing notice consumer disabled; event retained for retry');
     if (
-      start === null ||
       Date.parse(payload.dueAt) < start ||
       now < Date.parse(payload.dueAt) ||
       now - Date.parse(payload.dueAt) >= DAY
