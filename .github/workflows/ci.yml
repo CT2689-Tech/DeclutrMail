@@ -530,21 +530,8 @@ jobs:
       - name: Build the web app
         run: pnpm --filter @declutrmail/web build --no-lint
         env:
-          NEXT_TELEMETRY_DISABLED: '1'
           NEXT_SKIP_BUILD_TYPECHECK: '1'
-      # The `lighthouse` job serves exactly this build. Compiler cache
-      # excluded: it is ~95% of `.next` and `next start` never reads it.
-      - name: Upload the built web app
-        uses: actions/upload-artifact@v7
-        with:
-          name: web-build
-          path: |
-            apps/web/.next/
-            !apps/web/.next/cache/
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 1
-          overwrite: true
+          NEXT_TELEMETRY_DISABLED: '1'
       # Main's measured sizes, uploaded by the push-to-main run below, for
       # the non-blocking >2 kB growth warning. Advisory only: when nothing
       # is found the budget step reports "not compared", never "no growth".
@@ -586,6 +573,19 @@ jobs:
       # whole public site, and nothing else fails when it happens.
       - name: Assert the public site is still prerendered
         run: node scripts/check-prerendered-routes.mjs
+      # The `lighthouse` job serves exactly this build. Compiler cache
+      # excluded: it is ~95% of `.next` and `next start` never reads it.
+      - name: Upload the built web app
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-build
+          path: |
+            apps/web/.next/
+            !apps/web/.next/cache/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
 
   # The type phase build-web skips: tsc over the web tsconfig, which
   # includes the route types that build generated under `.next/types`.
