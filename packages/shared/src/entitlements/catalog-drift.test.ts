@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { PROMO } from './pricing.config';
-import { checkCatalogDrift, type DriftPrice, type ManifestPriceCheck } from './catalog-drift';
+import { PROMO, PROMO_DISCOUNT_IDS, SANDBOX_PROMO_EXPIRES_AT } from './pricing.config';
+import {
+  checkCatalogDrift,
+  promoDiscountId,
+  promoExpiresAt,
+  type DriftPrice,
+  type ManifestPriceCheck,
+} from './catalog-drift';
 
 const PLUS = 'pri_plus_annual_fixture';
 const PASS = 'pri_pass_fixture';
@@ -100,5 +106,18 @@ describe('checkCatalogDrift', () => {
     });
     expect(report.failures.some((line) => line.includes('PH30 percent'))).toBe(true);
     expect(report.failures.some((line) => line.includes('PH30 expires_at'))).toBe(true);
+  });
+
+  it('keeps the sandbox PH30 id off the live slot', () => {
+    expect(promoDiscountId({ PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv)).toBe(
+      PROMO_DISCOUNT_IDS.sandbox,
+    );
+    expect(promoDiscountId({ PADDLE_ENV: 'production' } as NodeJS.ProcessEnv)).toBe('FILL_ME');
+    expect(promoDiscountId({} as NodeJS.ProcessEnv)).toBe('FILL_ME');
+    expect(promoExpiresAt({ PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv)).toBe(
+      SANDBOX_PROMO_EXPIRES_AT,
+    );
+    expect(promoExpiresAt({ PADDLE_ENV: 'production' } as NodeJS.ProcessEnv)).toBe(PROMO.endsAt);
+    expect(PROMO_DISCOUNT_IDS.live).toBe('FILL_ME');
   });
 });

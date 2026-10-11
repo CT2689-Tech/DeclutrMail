@@ -63,23 +63,26 @@ without a redeploy does not change pages already rendered at build time):
 None of the following was created in this PR. No Paddle or Razorpay
 write was made.
 
-- Plus annual 2026-10 (`PLUS_ANNUAL_2026_10.paddlePriceId` is `FILL_ME`,
-  `listed: false`). Create a sandbox price and a separate live price for
-  the manifest amount, then paste each id. Until the live id is real,
-  new Plus annual checkout returns `BILLING_NOT_PROVISIONED`. That is a
-  live Paddle change for the live id. `provision-billing-catalog.yml`
-  still provisions the old plus/pro/founding SKUs and does not create
-  this price, the Pass, or PH30.
-- Backlog Pass (`OFFERS.backlogPass.price.paddlePriceId` is `FILL_ME`).
-  Create a sandbox one-time price and a separate live one-time price.
-  Checkout 503s while the id is `FILL_ME`. The grant code is
-  `grantPassFromTransaction` on `transaction.completed` with no
+- Plus annual 2026-10 sandbox price is `SANDBOX_PRICE_IDS.plus_annual`
+  (`pri_01m4phk06hdmmq5cw5b8aa5r2y`, $59/yr, product
+  `pro_01ky067agvcnc77hf635bsjn01`). It is used only when
+  `PADDLE_ENV=sandbox`. The live slot
+  `PLUS_ANNUAL_2026_10.paddlePriceId` stays `FILL_ME` and `listed: false`.
+  Production checkout returns `BILLING_NOT_PROVISIONED` until that live
+  id is pasted. `BILLING_CATALOG_JSON` can still override the sandbox id.
+- Backlog Pass sandbox price is `SANDBOX_PRICE_IDS.pass_onetime`
+  (`pri_01m4phkr8yhydb76dz11b74br8`, $19 one-time, product
+  `pro_01m4phk7mrggrfyqgprpxgz1hr`), same sandbox gate. The live slot
+  `OFFERS.backlogPass.price.paddlePriceId` stays `FILL_ME`. The grant
+  code is `grantPassFromTransaction` on `transaction.completed` with no
   subscription id, and `revokePassByTransaction` on a one-off
-  `adjustment.created`. Both need migration `0089` applied first. Creating
-  the product and price is a live Paddle change for the live id.
-- PH30 (`PROMO_DISCOUNT_IDS` sandbox and live are `FILL_ME`). Creating
-  the discounts is a Paddle change in each environment. Checkout does
-  not send the code; the banner is display-only.
+  `adjustment.created`. Both need migration `0089` applied first.
+- PH30 sandbox discount is `PROMO_DISCOUNT_IDS.sandbox`
+  (`dsc_01m4phpp04scdes9ghqn3qps77`), 30%, code PH30, first payment
+  only, restricted to those two sandbox prices, expires
+  `2026-10-19T23:59:00Z`. `PROMO_DISCOUNT_IDS.live` stays `FILL_ME`.
+  Checkout does not send the code; the banner is display-only. The live
+  discount is created at launch and uses `PROMO.endsAt`.
 - `PADDLE_READONLY_API_KEY` GitHub repo secret is still missing. The
   drift workflow fails closed `UNVERIFIED`. That is not a Paddle write.
 - Razorpay stays a separate rail. `RAILS.razorpay.enabled` is false, and
@@ -90,10 +93,14 @@ write was made.
 - Migrations `0089` (required before the new API writes
   `pending_checkouts.offer`), then approved destructive `0090` and
   `0091`. None are applied by this PR.
-- A real Paddle sandbox overlay purchase was not run here. This
-  environment has no Paddle or Razorpay key, and the price id is
-  `FILL_ME`. `scripts/billing-pass-sandbox-rehearsal.ts` prints the
-  checklist and does not call Paddle.
+- A real Paddle sandbox overlay purchase was not run in this
+  environment. It has no `PADDLE_API_KEY`, `PADDLE_CLIENT_TOKEN`, or
+  `PADDLE_WEBHOOK_SECRET`, and no database. The sandbox price ids are
+  wired. Completing the purchase needs a sandbox API
+  (`PADDLE_ENV=sandbox`, those three secrets, `PRICING_V2=true`,
+  `BILLING_PASS_ENABLED=true`) and migration `0089` applied.
+  `scripts/billing-pass-sandbox-rehearsal.ts` prints the checklist and
+  does not call Paddle.
 - The launch refund window is 14 days. `POLICY.refundWindowDays` is 14.
   Flags-on `/refunds` renders `RefundsV2`. Every window sentence is a
   deck template (`refunds.toc.window`, `refunds.summary`,

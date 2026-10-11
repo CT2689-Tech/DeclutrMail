@@ -11,12 +11,14 @@ import {
   LEGACY_PRICE_IDS,
   OFFERS,
   PLUS_ANNUAL_2026_10,
+  SANDBOX_PRICE_IDS,
   TIER_MANIFEST,
   usablePriceId,
 } from '../packages/shared/src/entitlements/pricing.config.js';
 import {
   checkCatalogDrift,
   promoDiscountId,
+  promoExpiresAt,
   type DriftDiscount,
   type DriftPrice,
   type ManifestPriceCheck,
@@ -99,14 +101,15 @@ function manifestPrices(): ManifestPriceCheck[] {
   }
   const founding = TIER_MANIFEST.pro.promo?.annual;
   if (founding) push(founding.paddlePriceId, founding.usdCents, null, false);
+  const sandbox = process.env.PADDLE_ENV === 'sandbox';
   push(
-    PLUS_ANNUAL_2026_10.paddlePriceId,
+    sandbox ? SANDBOX_PRICE_IDS.plus_annual : PLUS_ANNUAL_2026_10.paddlePriceId,
     PLUS_ANNUAL_2026_10.usdCents,
     PLUS_ANNUAL_2026_10.inr?.paise ?? null,
     PLUS_ANNUAL_2026_10.inr?.taxInclusive ?? false,
   );
   push(
-    OFFERS.backlogPass.price.paddlePriceId,
+    sandbox ? SANDBOX_PRICE_IDS.pass_onetime : OFFERS.backlogPass.price.paddlePriceId,
     OFFERS.backlogPass.price.usdCents,
     OFFERS.backlogPass.price.inr?.paise ?? null,
     OFFERS.backlogPass.price.inr?.taxInclusive ?? false,
@@ -152,15 +155,16 @@ function promoId(id: string | null): string {
   return usablePriceId(id) ?? id ?? 'FILL_ME';
 }
 
+const sandboxCatalog = process.env.PADDLE_ENV === 'sandbox';
 const report = checkCatalogDrift({
   manifest: manifestPrices(),
   paddlePrices,
   discount,
   discountId,
-  promoPriceIds: [
-    promoId(PLUS_ANNUAL_2026_10.paddlePriceId),
-    promoId(OFFERS.backlogPass.price.paddlePriceId),
-  ],
+  promoPriceIds: sandboxCatalog
+    ? [SANDBOX_PRICE_IDS.plus_annual, SANDBOX_PRICE_IDS.pass_onetime]
+    : [promoId(PLUS_ANNUAL_2026_10.paddlePriceId), promoId(OFFERS.backlogPass.price.paddlePriceId)],
+  expectedExpiresAt: promoExpiresAt(),
 });
 
 if (!report.ok) {

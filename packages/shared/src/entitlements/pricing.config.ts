@@ -297,10 +297,26 @@ export const PROMO = {
   endsAt: '2026-11-04T07:59:00Z',
 } as const;
 
-/** Paddle discount ids for PH30. Placeholders until Chintan pastes them. */
+/**
+ * Paddle discount ids for PH30. Sandbox is provisioned. Live stays
+ * empty until the launch discount exists.
+ * Sandbox expiry is 2026-10-19 23:59 UTC. Live uses `PROMO.endsAt`.
+ */
 export const PROMO_DISCOUNT_IDS = {
-  sandbox: 'FILL_ME',
+  sandbox: 'dsc_01m4phpp04scdes9ghqn3qps77',
   live: 'FILL_ME',
+} as const;
+
+export const SANDBOX_PROMO_EXPIRES_AT = '2026-10-19T23:59:00Z';
+
+/**
+ * Sandbox Paddle price ids. Live ids stay on `PLUS_ANNUAL_2026_10`
+ * and `OFFERS.backlogPass.price`. `BILLING_CATALOG_JSON` still overrides
+ * these when `PADDLE_ENV=sandbox`.
+ */
+export const SANDBOX_PRICE_IDS = {
+  plus_annual: 'pri_01m4phk06hdmmq5cw5b8aa5r2y',
+  pass_onetime: 'pri_01m4phkr8yhydb76dz11b74br8',
 } as const;
 
 const UNPROVISIONED_PRICE_ID = 'FILL_ME';

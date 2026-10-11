@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
   LEGACY_PRICE_IDS,
+  OFFERS,
   PLUS_ANNUAL_2026_10,
+  SANDBOX_PRICE_IDS,
   TIER_MANIFEST,
 } from '@declutrmail/shared/entitlements';
 
-import { BillingCatalog, buildCatalog } from '../billing-catalog.js';
+import { BillingCatalog, buildCatalog, passPriceFromEnv } from '../billing-catalog.js';
 
 /**
  * BillingCatalog (D117) — manifest-derived price points + the
@@ -78,6 +80,42 @@ describe('buildCatalog', () => {
       });
     }
     expect(catalog.resolveByPriceId('paddle', 'pri_unknown')).toBeNull();
+  });
+
+  it('resolves sandbox Plus annual and Pass ids without writing them into the live slots', () => {
+    const sandboxEnv = { PRICING_V2: 'true', PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv;
+    const catalog = new BillingCatalog(buildCatalog(sandboxEnv), 0, passPriceFromEnv(sandboxEnv));
+    expect(catalog.resolvePriceId('paddle', 'plus', 'annual')).toBe(SANDBOX_PRICE_IDS.plus_annual);
+    expect(catalog.passPaddlePriceId).toBe(SANDBOX_PRICE_IDS.pass_onetime);
+    expect(catalog.resolveByPriceId('paddle', SANDBOX_PRICE_IDS.plus_annual)).toMatchObject({
+      planCode: 'plus_annual',
+      usdCents: 5900,
+    });
+    expect(PLUS_ANNUAL_2026_10.paddlePriceId).toBe('FILL_ME');
+    expect(OFFERS.backlogPass.price.paddlePriceId).toBe('FILL_ME');
+
+    const liveEnv = { PRICING_V2: 'true', PADDLE_ENV: 'production' } as NodeJS.ProcessEnv;
+    const live = new BillingCatalog(buildCatalog(liveEnv), 0, passPriceFromEnv(liveEnv));
+    expect(live.resolvePriceId('paddle', 'plus', 'annual')).toBeNull();
+    expect(live.passPaddlePriceId).toBeNull();
+
+    const flagsOff = buildCatalog({ PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv);
+    expect(flagsOff.find((entry) => entry.planCode === 'plus_annual')?.paddlePriceId).toBe(
+      TIER_MANIFEST.plus.prices.annual!.paddlePriceId,
+    );
+  });
+
+  it('lets BILLING_CATALOG_JSON replace the sandbox price ids', () => {
+    const env = {
+      PRICING_V2: 'true',
+      PADDLE_ENV: 'sandbox',
+      BILLING_CATALOG_JSON: JSON.stringify({
+        paddle: { plus_annual: 'pri_override_annual', pass_onetime: 'pri_override_pass' },
+      }),
+    } as NodeJS.ProcessEnv;
+    const catalog = new BillingCatalog(buildCatalog(env), 0, passPriceFromEnv(env));
+    expect(catalog.resolvePriceId('paddle', 'plus', 'annual')).toBe('pri_override_annual');
+    expect(catalog.passPaddlePriceId).toBe('pri_override_pass');
   });
 });
 

@@ -1,4 +1,9 @@
-import { LEGACY_PRICE_IDS, PROMO, PROMO_DISCOUNT_IDS } from './pricing.config';
+import {
+  LEGACY_PRICE_IDS,
+  PROMO,
+  PROMO_DISCOUNT_IDS,
+  SANDBOX_PROMO_EXPIRES_AT,
+} from './pricing.config';
 
 export interface DriftPrice {
   id: string;
@@ -42,6 +47,8 @@ export function checkCatalogDrift(input: {
   discountId: string;
   /** Price ids PH30 is restricted to. Not every legacy catalog id. */
   promoPriceIds: string[];
+  /** Defaults to the live promo end. Sandbox PH30 expires earlier. */
+  expectedExpiresAt?: string;
 }): DriftReport {
   const failures: string[] = [];
   const byId = new Map(input.paddlePrices.map((price) => [price.id, price]));
@@ -101,9 +108,10 @@ export function checkCatalogDrift(input: {
     if (restricted !== expectedRestricted) {
       failures.push(`PH30 restricted prices mismatch: paddle ${restricted || 'none'}`);
     }
-    if (discount.expiresAt !== PROMO.endsAt) {
+    const expectedExpiresAt = input.expectedExpiresAt ?? PROMO.endsAt;
+    if (discount.expiresAt !== expectedExpiresAt) {
       failures.push(
-        `PH30 expires_at mismatch: paddle ${discount.expiresAt ?? 'none'}, manifest ${PROMO.endsAt}`,
+        `PH30 expires_at mismatch: paddle ${discount.expiresAt ?? 'none'}, manifest ${expectedExpiresAt}`,
       );
     }
   }
@@ -113,4 +121,8 @@ export function checkCatalogDrift(input: {
 
 export function promoDiscountId(env: NodeJS.ProcessEnv = process.env): string {
   return env.PADDLE_ENV === 'sandbox' ? PROMO_DISCOUNT_IDS.sandbox : PROMO_DISCOUNT_IDS.live;
+}
+
+export function promoExpiresAt(env: NodeJS.ProcessEnv = process.env): string {
+  return env.PADDLE_ENV === 'sandbox' ? SANDBOX_PROMO_EXPIRES_AT : PROMO.endsAt;
 }

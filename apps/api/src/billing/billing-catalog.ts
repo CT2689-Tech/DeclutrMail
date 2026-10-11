@@ -8,8 +8,10 @@
 //
 // SANDBOX OVERRIDE: sandbox catalog ids are DIFFERENT objects from the
 // live ones (Paddle sandbox + Razorpay test mode have their own id
-// space), and the manifest can only hold one set. `BILLING_CATALOG_JSON`
-// overlays provider ids per plan code for non-production environments:
+// space), and the manifest can only hold one set. When
+// `PADDLE_ENV=sandbox`, the 2026-10 Plus annual and the Pass fall back
+// to `SANDBOX_PRICE_IDS`. `BILLING_CATALOG_JSON` still overlays provider
+// ids per plan code and wins over that map:
 //
 //   BILLING_CATALOG_JSON='{"paddle":{"plus_monthly":"pri_…"},"razorpay":{"pro_annual":"plan_…"}}'
 //
@@ -24,6 +26,7 @@ import {
   LEGACY_PRICE_IDS,
   OFFERS,
   PLUS_ANNUAL_2026_10,
+  SANDBOX_PRICE_IDS,
   TIER_MANIFEST,
   usablePriceId,
 } from '@declutrmail/shared/entitlements';
@@ -138,7 +141,11 @@ function buildV2Catalog(env: NodeJS.ProcessEnv): CatalogEntry[] {
     cycle: 'annual',
     founding: false,
     usdCents: PLUS_ANNUAL_2026_10.usdCents,
-    paddlePriceId: overrides.paddle?.plus_annual ?? PLUS_ANNUAL_2026_10.paddlePriceId,
+    paddlePriceId:
+      overrides.paddle?.plus_annual ??
+      (env.PADDLE_ENV === 'sandbox'
+        ? SANDBOX_PRICE_IDS.plus_annual
+        : PLUS_ANNUAL_2026_10.paddlePriceId),
     razorpayPlanId: null,
   });
   return entries;
@@ -152,7 +159,11 @@ export function passPriceFromEnv(env: NodeJS.ProcessEnv = process.env): string |
     const parsed = JSON.parse(raw) as { paddle?: { pass_onetime?: unknown } };
     if (typeof parsed.paddle?.pass_onetime === 'string') overlay = parsed.paddle.pass_onetime;
   }
-  return usablePriceId(overlay ?? OFFERS.backlogPass.price.paddlePriceId);
+  const fallback =
+    env.PADDLE_ENV === 'sandbox'
+      ? SANDBOX_PRICE_IDS.pass_onetime
+      : OFFERS.backlogPass.price.paddlePriceId;
+  return usablePriceId(overlay ?? fallback);
 }
 
 function legacyEntry(provider: BillingProviderId, providerPriceId: string): CatalogEntry | null {
