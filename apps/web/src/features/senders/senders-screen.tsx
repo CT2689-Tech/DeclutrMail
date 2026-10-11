@@ -132,6 +132,7 @@ import {
 import { SendersLoadingState } from './senders-loading-state';
 import { shouldShowFirstCleanupNudge } from './first-cleanup-nudge-policy';
 import { InboxReportFirstLanding } from '@/features/inbox-report/first-landing-entry';
+import { firstBacklogHeader } from './first-backlog-header';
 import { LaunchFilterRow } from './launch-filter-row';
 // This optional recommendation appears only after the mailbox summary and
 // stored sender list arrive. Its read/render code need not load at app entry.
@@ -2872,7 +2873,13 @@ function SendersScreenContent({
           <FirstLandingSlot
             candidates={[
               { id: 'inbox_report', ready: reportShown, node: null },
-              { id: 'first_backlog_header', ready: false, node: null },
+              {
+                id: 'first_backlog_header',
+                // The list payload has no exact backlog count paired with an
+                // inbox share, so the sentence stays omitted.
+                ready: firstBacklogHeader(null, null) !== null,
+                node: null,
+              },
               {
                 id: 'first_cleanup_nudge',
                 ready: showFirstCleanupNudge && senders[0] !== undefined,

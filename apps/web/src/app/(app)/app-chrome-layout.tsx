@@ -30,6 +30,7 @@ import { useCachedScreenerCount, useScreenerCount } from '@/features/screener/ap
 import { LaterReturnAlert } from '@/features/snoozed/later-return-alert';
 import { useSendersSummary } from '@/features/senders/api/use-senders-summary';
 import { LazyHomeVisitTracker } from '@/features/home/lazy-home-visit-tracker';
+import { AccessDeadlineBanner } from '@/features/shell/access-deadline-banner';
 import { BannerSlot } from '@/features/shell/banner-slot';
 import { MailboxReconnectBanner } from '@/features/mailboxes/mailbox-reconnect-banner';
 import { SyncErrorBanner } from '@/features/sync/sync-error-banner';
@@ -254,6 +255,7 @@ function AppChrome({ children }: { children: ReactNode }) {
       <>
         <BannerSlot>
           <GracePeriodBanner />
+          <AccessDeadlineBanner />
           {me.signupAttribution?.promptNeeded === true && <HeardFromPrompt />}
         </BannerSlot>
         <NoActiveMailbox />
@@ -271,6 +273,7 @@ function AppChrome({ children }: { children: ReactNode }) {
             banner that renders is shown, the rest sit behind "+N more". */}
         <BannerSlot>
           <GracePeriodBanner />
+          <AccessDeadlineBanner />
           {/* Passive incremental-sync failure surface (D224). Active-mailbox
               ONLY — its session-scoped status poll 409-storms without one,
               so it stays off on the user-scoped-route fallback (settings/

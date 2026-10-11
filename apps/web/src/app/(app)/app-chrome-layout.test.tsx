@@ -903,9 +903,10 @@ describe('(app) layout — one banner slot', () => {
 
 describe('(app) layout — banner priority order', () => {
   // The slot shows the FIRST banner that renders, so child order in
-  // `AppChromeLayout` IS the priority order. All five are made active at
-  // once and the order is read off the DOM: account deletion, sync error,
-  // mailbox reconnect, Later return, heard-from.
+  // `AppChromeLayout` IS the priority order. The access-deadline banner
+  // sits after deletion and renders nothing in this fixture. The other
+  // five are made active at once: account deletion, sync error, mailbox
+  // reconnect, Later return, heard-from.
   it('orders the five app banners: deletion, sync error, reconnect, later return, heard-from', async () => {
     window.localStorage.setItem('dm-cookie-consent', 'essential');
     const handlers = authedHandlers({
@@ -991,10 +992,18 @@ describe('(app) layout — banner priority order', () => {
 
       const items = Array.from(document.querySelectorAll('.dm-banner-item'));
       expect(banners.map((el) => items.indexOf(el.closest('.dm-banner-item')!))).toEqual([
-        0, 1, 2, 3, 4,
+        0, 2, 3, 4, 5,
       ]);
       // Only index 0 — the account-deletion banner — holds the slot.
-      expect(items.map((el) => el.hasAttribute('hidden'))).toEqual([false, true, true, true, true]);
+      // Index 1 is the access-deadline banner, inactive in this fixture.
+      expect(items.map((el) => el.hasAttribute('hidden'))).toEqual([
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+      ]);
     } finally {
       window.localStorage.removeItem('dm-cookie-consent');
     }
