@@ -78,6 +78,13 @@ The existing native Postgres SKIP LOCKED control is locally skipped without its
 dedicated database and runs in required CI. Final check counts and exact commit
 are recorded in the PR handoff.
 
+Exact PR CI `38131292789` retained one API failure: the existing sync-ready
+trigger's fake queue lacked BullMQ 6's `getBackend`/`toKey` contract used by the
+new durable-marker read. The six real entrypoint controls and all worker shards
+passed in that run. The fixture was corrected without changing production
+admission or weakening its re-enqueue assertion; the trigger suite is verified
+again before a new exact-source CI run. No unchanged failed job is retried.
+
 ## Managed drain rehearsal and preserved failures
 
 A reviewed, private, secretless Cloud Run Node fixture used the exact existing
