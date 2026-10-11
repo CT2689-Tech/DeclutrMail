@@ -27,7 +27,7 @@ export const GMAIL_DATA_RETENTION = {
 export type GmailDataCategory = 'connection' | 'message' | 'derived';
 export type GmailDataExportFormat =
   'json' | 'csv' | 'senders-csv' | 'decisions-csv' | 'activity-support-bundle';
-export type GmailDataProcessor = 'DeclutrMail' | 'Anthropic' | 'Brandfetch';
+export type GmailDataProcessor = 'DeclutrMail' | 'Anthropic' | 'Brandfetch' | 'Resend';
 export type GmailDataRemovalTrigger =
   'disconnect' | 'delete-indexed-data' | 'delete-account' | 'retention-policy';
 
@@ -46,6 +46,13 @@ export const GMAIL_OAUTH_ACCESS = [
 ] as const;
 
 export const GMAIL_DATA_PROCESSORS = {
+  Resend: {
+    purpose:
+      'Deliver service notices, including opt-in Brief counts and a link. No Gmail subjects, previews or sender identities are included in Brief emails.',
+    retention:
+      'Resend states that email and log data is retained for 30 days on Free, Pro and Scale plans; Enterprise retention can differ. Delivered email remains in the recipient’s inbox until they remove it.',
+    privacyUrl: 'https://resend.com/security/gdpr',
+  },
   DeclutrMail: {
     purpose: 'Index the listed Gmail data and provide the product features the user requests.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
@@ -423,6 +430,26 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
     transmittedTo: ['DeclutrMail', 'Anthropic'],
+    showInMessageStorageList: false,
+  },
+  {
+    id: 'brief-ready-notice',
+    category: 'derived',
+    label: 'Opt-in Brief counts and delivery status',
+    fetchedFrom: ['brief-followups-and-screener'],
+    storageRefs: [
+      'brief_runs.email_sent_at',
+      'redis:bull:brief-email-send:email__brief-ready__{runId}',
+      'redis:bull:brief-email-send:events',
+    ],
+    derived: true,
+    purpose:
+      'Notify you that this inbox’s Brief is ready, with section counts and an owned-inbox link only. The queue stores identifiers; counts are read at delivery.',
+    retention:
+      'Delivery status stays until this inbox’s saved data or the account is deleted. Completed queue jobs expire after seven days; failed jobs stay until resolved or removed by indexed-data/account purge. If Redis is unavailable, identifier-only residue is removed by bounded sweeps when it recovers; this does not delay database deletion. Delivered email and provider retention are separate.',
+    removalTrigger: 'delete-indexed-data',
+    exportedIn: ['json'],
+    transmittedTo: ['DeclutrMail', 'Resend'],
     showInMessageStorageList: false,
   },
   {

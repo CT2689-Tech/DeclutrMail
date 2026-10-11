@@ -29,6 +29,8 @@ export const EmailPrefsSchema = z
     syncComplete: z.boolean(),
     /** Plus/Pro weekly Screener value receipt. Default false. */
     weeklyReceipt: z.boolean(),
+    /** Daily Brief counts/link notice. Explicit opt-in; default false. */
+    briefReady: z.boolean(),
   })
   .strict();
 
@@ -38,6 +40,7 @@ export const DEFAULT_EMAIL_PREFS: EmailPrefs = {
   reminders: true,
   syncComplete: true,
   weeklyReceipt: false,
+  briefReady: false,
 };
 
 /**
@@ -50,6 +53,7 @@ export const EmailPrefsPatchSchema = z
     reminders: z.boolean().optional(),
     syncComplete: z.boolean().optional(),
     weeklyReceipt: z.boolean().optional(),
+    briefReady: z.boolean().optional(),
   })
   .strict()
   .refine((patch) => Object.keys(patch).length > 0, {
@@ -83,5 +87,36 @@ export function parseEmailPrefs(preferences: unknown): EmailPrefs {
     reminders: parsed.data.reminders ?? DEFAULT_EMAIL_PREFS.reminders,
     syncComplete: parsed.data.syncComplete ?? DEFAULT_EMAIL_PREFS.syncComplete,
     weeklyReceipt: parsed.data.weeklyReceipt ?? DEFAULT_EMAIL_PREFS.weeklyReceipt,
+    briefReady: parsed.data.briefReady ?? DEFAULT_EMAIL_PREFS.briefReady,
   };
+}
+
+/** A legacy bag has the initial all-unsubscribe revision, but never implicit consent. */
+export const INITIAL_EMAIL_OPT_OUT_REVISION = 'initial';
+export const EMAIL_OPT_OUT_REVISION_PATTERN =
+  '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$';
+const revisionPattern = new RegExp(EMAIL_OPT_OUT_REVISION_PATTERN);
+export function hasBriefEmailConsent(preferences: unknown): boolean {
+  if (
+    !parseEmailPrefs(preferences).briefReady ||
+    typeof preferences !== 'object' ||
+    preferences === null
+  )
+    return false;
+  const bag = preferences as Record<string, unknown>;
+  const all =
+    bag.emailAllOptOutRevision === undefined
+      ? INITIAL_EMAIL_OPT_OUT_REVISION
+      : bag.emailAllOptOutRevision;
+  const consent = bag.emailBriefOptInRevision;
+  return (
+    typeof consent === 'string' &&
+    (consent === INITIAL_EMAIL_OPT_OUT_REVISION || revisionPattern.test(consent)) &&
+    consent === all
+  );
+}
+
+/** Settings displays executable consent, including older-API all-unsubscribe invalidation. */
+export function displayEmailPrefs(preferences: unknown): EmailPrefs {
+  return { ...parseEmailPrefs(preferences), briefReady: hasBriefEmailConsent(preferences) };
 }

@@ -1,7 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, gt, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, isNotNull, sql } from 'drizzle-orm';
 
 import {
+  briefRuns,
   activityLog,
   mailMessages,
   mailboxAccounts,
@@ -261,9 +262,38 @@ export class DataExportService {
             createdAt: row.createdAt.toISOString(),
           }),
       );
+      yield ']';
+      yield ',"briefEmailDeliveries":[';
+      yield* this.streamJsonArray(
+        (after) => this.briefDeliveryBatch(mb.id, after),
+        (row) =>
+          JSON.stringify({
+            runDateLocal: row.runDateLocal,
+            sentAt: row.sentAt?.toISOString() ?? null,
+          }),
+      );
       yield ']}';
     }
     yield ']}';
+  }
+
+  private async briefDeliveryBatch(mailboxId: string, afterId: string | null) {
+    return this.db
+      .select({
+        id: briefRuns.id,
+        runDateLocal: briefRuns.runDateLocal,
+        sentAt: briefRuns.emailSentAt,
+      })
+      .from(briefRuns)
+      .where(
+        and(
+          eq(briefRuns.mailboxAccountId, mailboxId),
+          isNotNull(briefRuns.emailSentAt),
+          ...(afterId ? [gt(briefRuns.id, afterId)] : []),
+        ),
+      )
+      .orderBy(asc(briefRuns.id))
+      .limit(DataExportService.BATCH_SIZE);
   }
 
   /**

@@ -1,4 +1,4 @@
-import { and, eq, inArray, lt, lte, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, lt, lte, or, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type { Queue } from 'bullmq';
 
@@ -36,7 +36,7 @@ import type { schema } from '@declutrmail/db';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
-import { enqueueEmailSend } from './email-send.queue.js';
+import { enqueueEmailSend, briefReadyEmailJobId } from './email-send.queue.js';
 import type { EmailSendJobData } from './email-send.worker.js';
 import { PASSTHROUGH_MAILBOX_LOCK, type MailboxActionLock } from './label-action.worker.js';
 import { InvalidGrantError, TransientError } from './worker-errors.js';
@@ -147,6 +147,10 @@ export interface DeletionPurgeDeps {
    * other step here.
    */
   initialSyncQueue?: Queue<InitialSyncJobData>;
+  /** Identifier-only Brief jobs are removed with their mailbox snapshots. */
+  briefEmailQueue?: Queue<EmailSendJobData>;
+  /** Reconsider orphan queue rows even after their DB deletion request is gone. */
+  sweepBriefEmailArtifacts?: () => Promise<void>;
   /** D159 seam for per-request failures (sweep records-and-continues). */
   observer?: WorkerObserver;
 }
@@ -376,6 +380,14 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
       }
     }
 
+    try {
+      await this.deps.sweepBriefEmailArtifacts?.();
+    } catch {
+      console.error(
+        JSON.stringify({ level: 'error', kind: 'account_deletion.brief_orphan_sweep_failed' }),
+      );
+    }
+
     const totalDue = due.length + mailboxDue.length;
     const allFailed = totalDue > 0 && purged === 0 && failed > 0;
     await this.deps.db
@@ -526,6 +538,7 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
       await this.clearMailboxPreferences(mailbox.userId, request.mailboxAccountId);
       await this.clearScanProgress(request.mailboxAccountId);
       await this.clearInitialSyncArtifacts(request.mailboxAccountId);
+      await this.clearBriefEmailArtifacts(request.mailboxAccountId);
 
       const messagesDeleted = await this.deleteMailboxMessagesChunked(request.mailboxAccountId);
 
@@ -743,6 +756,51 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
     }
   }
 
+  private async clearBriefEmailArtifacts(mailboxAccountId: string): Promise<void> {
+    const queue = this.deps.briefEmailQueue;
+    if (!queue) return;
+    let afterId: string | null = null;
+    for (;;) {
+      const batch = await this.deps.db
+        .select({ id: briefRuns.id })
+        .from(briefRuns)
+        .where(
+          and(
+            eq(briefRuns.mailboxAccountId, mailboxAccountId),
+            ...(afterId ? [gt(briefRuns.id, afterId)] : []),
+          ),
+        )
+        .orderBy(asc(briefRuns.id))
+        .limit(100);
+      for (const run of batch) {
+        try {
+          await (await queue.getJob(briefReadyEmailJobId(run.id)))?.remove();
+        } catch {
+          console.error(
+            JSON.stringify({
+              level: 'error',
+              kind: 'account_deletion.brief_job_clear_failed',
+              mailboxAccountId,
+            }),
+          );
+        }
+      }
+      if (batch.length < 100) break;
+      afterId = batch.at(-1)!.id;
+    }
+    try {
+      await queue.trimEvents(0);
+    } catch {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'account_deletion.brief_events_trim_failed',
+          mailboxAccountId,
+        }),
+      );
+    }
+  }
+
   /** Clear mailbox-derived onboarding pins and only the matching active id. */
   private async clearMailboxPreferences(userId: string, mailboxAccountId: string): Promise<void> {
     await this.deps.db
@@ -909,6 +967,7 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
     for (const mailboxId of mailboxIds) {
       await this.clearScanProgress(mailboxId);
       await this.clearInitialSyncArtifacts(mailboxId);
+      await this.clearBriefEmailArtifacts(mailboxId);
     }
 
     await this.deps.billingSafety.assertStopped(request.userId);

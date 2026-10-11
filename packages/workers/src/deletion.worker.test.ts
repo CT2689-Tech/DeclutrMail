@@ -34,7 +34,7 @@ import { freshTestPglite } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { Redis } from 'ioredis';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { Queue, Worker, type Job } from 'bullmq';
 
 import {
@@ -44,6 +44,7 @@ import {
 import { isSyncPausedForDeletion } from './deletion-pause.js';
 import type { EmailSendJobData } from './email-send.worker.js';
 import type { GmailLifecycleAccess, GmailLifecycleClient } from './ports.js';
+import { briefReadyEmailJobId } from './email-send.queue.js';
 import { INITIAL_SYNC_JOB, type InitialSyncJobData } from './queue.js';
 import type { ScanProgressStore } from './scan-progress.js';
 import { TransientError } from './worker-errors.js';
@@ -251,7 +252,7 @@ async function seedDueDeletion(
   return { userId: user!.id, workspaceId: ws!.id, mailboxIds, requestId: request!.id };
 }
 
-function makeWorker(db: Db) {
+function makeWorker(db: Db, briefEmailQueue?: Queue<EmailSendJobData>) {
   const lifecycle = fakeLifecycle();
   const email = fakeEmailQueue();
   const scanProgress = fakeScanProgress();
@@ -264,6 +265,7 @@ function makeWorker(db: Db) {
     gmailLifecycle: lifecycle.access,
     topicName: TOPIC,
     emailQueue: email.queue,
+    ...(briefEmailQueue ? { briefEmailQueue } : {}),
     renderReceiptEmail: async ({ deletedAt }) => ({
       subject: 'Your DeclutrMail data has been deleted',
       text: `Deleted on ${deletedAt}.`,
@@ -819,6 +821,28 @@ describe('AccountDeletionPurgeWorker', () => {
 });
 
 describe('mailbox indexed-data purge', () => {
+  it('finishes a mailbox purge when Brief job cleanup is unavailable', async () => {
+    const db = await freshDb();
+    const target = await seedMailboxGraph(db, 'brief-outage');
+    await db.insert(mailboxDataDeletionRequests).values({ mailboxAccountId: target.mailboxId });
+    const queue = {
+      getJob: async () => {
+        throw new Error('Synthetic Redis outage');
+      },
+      trimEvents: async () => {
+        throw new Error('Synthetic Redis outage');
+      },
+    } as unknown as Queue<EmailSendJobData>;
+    const { worker } = makeWorker(db, queue);
+    expect(await worker.processJob({ scheduledAtMinute: '2026-10-10T10:01' }, ctx)).toMatchObject({
+      purged: 1,
+      failed: 0,
+    });
+    expect(
+      await db.select().from(briefRuns).where(eq(briefRuns.mailboxAccountId, target.mailboxId)),
+    ).toHaveLength(0);
+  });
+
   it('purges only the target index, preserves its stub, and completes the durable request', async () => {
     const { db, pg } = await freshHarness();
     const target = await seedMailboxGraph(db, 'target');
@@ -855,8 +879,22 @@ describe('mailbox indexed-data purge', () => {
       .values({ mailboxAccountId: target.mailboxId })
       .returning({ id: mailboxDataDeletionRequests.id });
 
-    const { worker, lifecycle, scanProgress } = makeWorker(db);
+    const runs = await db.select().from(briefRuns);
+    const targetRun = runs.find((run) => run.mailboxAccountId === target.mailboxId)!;
+    const removed: string[] = [];
+    const trimmed = vi.fn();
+    const briefQueue = {
+      getJob: async (id: string) => ({
+        remove: async () => {
+          removed.push(id);
+        },
+      }),
+      trimEvents: trimmed,
+    } as unknown as Queue<EmailSendJobData>;
+    const { worker, lifecycle, scanProgress } = makeWorker(db, briefQueue);
     const result = await worker.processJob({ scheduledAtMinute: '2026-07-14T10:00' }, ctx);
+    expect(removed).toEqual([briefReadyEmailJobId(targetRun.id)]);
+    expect(trimmed).toHaveBeenCalledWith(0);
 
     expect(result).toMatchObject({ outcome: 'swept', due: 1, purged: 1, failed: 0 });
     expect(lifecycle.stopped).toEqual([target.mailboxId]);

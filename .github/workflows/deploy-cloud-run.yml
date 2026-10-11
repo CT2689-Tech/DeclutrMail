@@ -258,16 +258,15 @@ jobs:
           docker push "$LATEST_TAG"
           echo "image=$SHA_TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Check billing queue actors before activation
+      - name: Check email queue actors before new preferences
         id: billing_queue_check
         env:
           IMAGE: ${{ steps.build.outputs.image }}
         run: |
           set -euo pipefail
-          if [ "$BILLING_APP_NOTICES_ENABLED" != 'true' ]; then
-            echo 'Billing notices remain off; compatibility foundation only'
-            exit 0
-          fi
+          # Brief preferences require the compatibility release even when
+          # billing notices are disabled. The candidate's private probe verifies
+          # both actor protocols; old/mixed workers fail before new writes.
           # The existing runtime can read its bound Redis secret; the deploy
           # identity deliberately cannot. Keep values inside a private job.
           # Success requires a terminal proof and verified owned-job cleanup.
