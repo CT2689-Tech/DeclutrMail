@@ -12,6 +12,8 @@ import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 import { PAGE_LAST_UPDATED } from '@/features/marketing/page-dates';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 import { BUSINESS_POSTAL_ADDRESS, hasPostalAddress } from '@declutrmail/shared/copy';
+import { hasLegalEntity } from '@declutrmail/shared/copy/legal-entity';
+import { fillWs3, WS3_COPY } from '@declutrmail/shared/copy/launch';
 
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Contact — DeclutrMail',
@@ -46,6 +48,7 @@ export default function ContactPage() {
         </a>
       </nav>
       <LegalSection id="support" title="General questions and support">
+        {hasLegalEntity() ? <p>{fillWs3(WS3_COPY['ws3.contact.legal'])}</p> : null}
         <p>
           Email <a href="mailto:support@declutrmail.com">support@declutrmail.com</a> for anything —
           questions, bugs, billing, refunds, or feedback. We reply within{' '}

@@ -156,7 +156,8 @@ describe('/privacy content — D7 + D228 posture', () => {
     const { container } = render(<PrivacyPolicyPage />);
     const text = (container.textContent ?? '').replace(/\s+/g, ' ');
 
-    expect(text).toContain('full email contents or attachments, they cannot leak from DeclutrMail');
+    expect(text).toContain('no message body in our systems to leak');
+    expect(text).not.toMatch(/cannot leak/i);
     expect(text).toContain(
       'Subject lines and Gmail preview snippets can still contain sensitive information',
     );

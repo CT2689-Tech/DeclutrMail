@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
+import { HIW_H1, WS3_COPY } from '@declutrmail/shared/copy/launch';
+
 import '@/features/marketing/product-story/product-story.css';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 import {
@@ -26,7 +28,11 @@ export const metadata: Metadata = marketingPageMetadata({
 export default function HowItWorksPage() {
   return (
     <ProductStoryShell
-      title="See the sender. Know what will change."
+      title={
+        HIW_H1 === 'current'
+          ? 'See the sender. Know what will change.'
+          : WS3_COPY['ws3.howItWorks.h1']
+      }
       lede="DeclutrMail puts recurring senders and their recent email in one place. Open a sender's details, then preview the scope before moving mail."
       visual={<HeroWorkspace />}
     >
@@ -62,6 +68,10 @@ export default function HowItWorksPage() {
             </p>
           </div>
         </div>
+        <p className="dm-story-note">
+          {WS3_COPY['ws3.howItWorks.gmailOnly']}{' '}
+          <Link href="/#not-on-gmail">{WS3_COPY['ws3.notOnGmail.link']}</Link>
+        </p>
         <p className="dm-story-note">
           Overview shows your next step. Clean up contains Senders, Triage and New senders.
           Automations contains Autopilot and Quiet hours. Activity records outcomes and available

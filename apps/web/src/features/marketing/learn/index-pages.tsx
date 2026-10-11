@@ -1,4 +1,6 @@
 import Link from 'next/link';
+
+import { WS3_COPY } from '@declutrmail/shared/copy/launch';
 import { SupportTasks } from './support-tasks';
 import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
@@ -135,6 +137,7 @@ export function BlogIndexPage() {
 export function FaqPage() {
   return (
     <ReadingLayout
+      variant="faq"
       title="Questions worth answering before Gmail access"
       lede="What is stored, what each action changes, where recovery stops, and how DeclutrMail fits beside Gmail. No universal-undo shorthand."
     >
@@ -164,6 +167,16 @@ export function FaqPage() {
             </div>
           </details>
         ))}
+      </section>
+      <section className="dm-read-closing" aria-label={WS3_COPY['ws3.faq.closing']}>
+        <h2>{WS3_COPY['ws3.faq.closing']}</h2>
+        <p>
+          <Link href="/inbox-simulator?workspace=senders">
+            {WS3_COPY['ws3.faq.closing.links'][0]}
+          </Link>
+          {' · '}
+          <Link href="/contact">{WS3_COPY['ws3.faq.closing.links'][1]}</Link>
+        </p>
       </section>
       <ReadingCta />
     </ReadingLayout>

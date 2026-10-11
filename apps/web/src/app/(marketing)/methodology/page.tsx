@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
+import { fillWs3, gatedText, WS3_COPY } from '@declutrmail/shared/copy/launch';
+
 import '@/features/marketing/product-story/product-story.css';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 import {
@@ -23,7 +25,7 @@ export const metadata: Metadata = marketingPageMetadata({
 const TOC = [
   { id: 'walkthrough', label: 'What we store' },
   { id: 'recommendations', label: 'How suggestions work' },
-  { id: 'brief-boundary', label: 'What a Pro Brief sends' },
+  { id: 'brief-boundary', label: fillWs3(WS3_COPY['ws3.methodology.briefHeading']) },
   { id: 'action-method', label: 'Preview before changes' },
   { id: 'automation-method', label: 'Manual versus automatic' },
   { id: 'access-and-control', label: 'Gmail permission' },
@@ -83,16 +85,11 @@ export default function MethodologyPage() {
         <RecommendationCascadeFigure />
         <details>
           <summary>Where language generation fits</summary>
-          <p>
-            Anthropic may turn the selected sender facts into a short explanation. It receives the
-            sender&rsquo;s name and domain, the suggested action, and the facts behind it. It does
-            not receive subject lines, preview snippets, or full email contents for this
-            explanation. If Anthropic is unavailable, DeclutrMail shows a standard explanation.
-          </p>
+          <p>{gatedText('ws3.methodology.explanations')}</p>
         </details>
       </DocSection>
 
-      <DocSection id="brief-boundary" title="What Anthropic receives for a Pro Brief.">
+      <DocSection id="brief-boundary" title={fillWs3(WS3_COPY['ws3.methodology.briefHeading'])}>
         <p>
           DeclutrMail can send the sender, subject line, and Gmail preview snippet to Anthropic to
           draft a Pro Brief. Full email contents, attachments, embedded images, and raw email source
