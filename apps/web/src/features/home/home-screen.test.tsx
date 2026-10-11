@@ -241,7 +241,8 @@ describe('HomeScreen', () => {
     authCell.me = meFor('pro', 'syncing');
     stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }) });
     renderHome();
-    expect(await screen.findByRole('heading', { name: 'Your Inbox Report' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Your Inbox Report' })).toBeNull();
+    expect(await screen.findByTestId('home-scan-bar')).toBeInTheDocument();
     expect(screen.queryByText('Reading your Gmail.')).toBeNull();
   });
 

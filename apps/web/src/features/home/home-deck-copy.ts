@@ -4,8 +4,8 @@ import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
 /**
  * Verbatim launch-deck sentences Home v1 renders.
  * Home sentences are drop2-r8 (`WS2_COPY`). Meter sentences are drop2-r7
- * (`WS1_COPY`). WS5 report sentences are quoted from drop2-r7 because
- * `WS5_COPY` is still empty.
+ * (`WS1_COPY`). Report and confirm sentences are read from `WS5_COPY`
+ * at render time and stay off the page while that module is empty.
  */
 export const HOME_DECK = {
   homeTitle: WS2_COPY.names.home,
@@ -25,31 +25,6 @@ export const HOME_DECK = {
   largestTitleOther: WS2_COPY.home.next.largest.title.other,
   largestBody: WS2_COPY.home.next.largest.body,
   largestCta: WS2_COPY.home.next.largest.cta,
-  reportTitle: 'Your Inbox Report',
-  reportBody:
-    'A quick look at who sends you the most, what you leave unread and what takes up space.',
-  trust:
-    'This report uses only the sender, date, size, labels and read/unread status of your email, plus who you’ve emailed. We never fetch or store full email contents.',
-  trustLink: 'What we store and share',
-  fallbackZero: 'Your inbox is in good shape. {total} emails, and nothing stands out yet.',
-  fixHeadingOne: '1 of these senders includes an unsubscribe link.',
-  fixHeadingOther: '{n} of these senders include an unsubscribe link.',
-  fixPrimaryOne: 'Unsubscribe + archive 1 sender',
-  fixPrimaryOther: 'Unsubscribe + archive {n} senders',
-  fixReview: 'Review them first',
-  mostlyUnreadSupportOne: 'It had less than 10% of its email marked read in Gmail in that time.',
-  mostlyUnreadSupportOther:
-    'Each had less than 10% of its email marked read in Gmail in that time.',
-  tileValue: '≈ {size}',
-  tileLabel: 'of email in your Gmail',
-  sizesNote: 'Sizes are Gmail’s estimates.',
-  f1TitleOne: 'Unsubscribe from {Sender} and archive 1 email?',
-  f1TitleOther: 'Unsubscribe from {Sender} and archive {n} emails?',
-  f1TitleBulk: 'Unsubscribe from {k} senders and archive {n} emails?',
-  f1Button: 'Unsubscribe + Archive',
-  f1Cancel: 'Cancel',
-  f1Honesty:
-    'The unsubscribe request can’t be recalled once delivered. The archive can be undone from Activity for 30 days.',
   chip: WS1_COPY['meter.chip'],
   chipAria: WS1_COPY['meter.chip.aria'],
   chipEmpty: WS1_COPY['meter.chip.empty'],

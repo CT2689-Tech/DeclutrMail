@@ -1,20 +1,21 @@
 'use client';
 
-import { useEffect } from 'react';
 import { Button } from '@declutrmail/shared';
+import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 
-import { fillDeck, formatCount, HOME_DECK } from './home-deck-copy';
+import { fillDeck, formatCount } from './home-deck-copy';
 import type { HomeFixCandidate } from './home-next-steps';
+import { homeFixCopy, type HomeFixCopy } from './home-ws5-copy';
 import styles from './home-view.module.css';
 
-function dialogTitle(step: HomeFixCandidate): string | null {
+function dialogTitle(step: HomeFixCandidate, copy: HomeFixCopy): string | null {
   const emails = step.emailCount;
   if (emails === undefined || emails <= 0) return null;
   if (step.senderCount === 1 && step.senderName) {
-    const template = emails === 1 ? HOME_DECK.f1TitleOne : HOME_DECK.f1TitleOther;
+    const template = emails === 1 ? copy.titleOne : copy.titleOther;
     return fillDeck(template, { Sender: step.senderName, n: formatCount(emails) });
   }
-  return fillDeck(HOME_DECK.f1TitleBulk, {
+  return fillDeck(copy.titleBulk, {
     k: formatCount(step.senderCount),
     n: formatCount(emails),
   });
@@ -22,7 +23,8 @@ function dialogTitle(step: HomeFixCandidate): string | null {
 
 /**
  * Prefills Unsubscribe + Archive and does not confirm on open or Enter.
- * Cancel takes initial focus. The sheet sits above the mobile tab bar.
+ * Cancel takes initial focus. Focus stays in the dialog and returns to
+ * the control that opened it.
  */
 export function HomeFixDialog({
   step,
@@ -33,11 +35,12 @@ export function HomeFixDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const title = dialogTitle(step);
-  useEffect(() => {
-    document.getElementById('home-fix-cancel')?.focus();
-  }, []);
-  if (title === null) return null;
+  const copy = homeFixCopy();
+  const title = copy === null ? null : dialogTitle(step, copy);
+  const trapRef = useFocusTrap<HTMLDivElement>(title !== null, {
+    initialFocusSelector: '#home-fix-cancel',
+  });
+  if (copy === null || title === null) return null;
   return (
     <div
       className={styles.dialogScrim}
@@ -47,6 +50,7 @@ export function HomeFixDialog({
       }}
     >
       <div
+        ref={trapRef}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="home-fix-title"
@@ -61,13 +65,13 @@ export function HomeFixDialog({
         }}
       >
         <h2 id="home-fix-title">{title}</h2>
-        <p id="home-fix-honesty">{HOME_DECK.f1Honesty}</p>
+        <p id="home-fix-honesty">{copy.honesty}</p>
         <div className={styles.dialogActions}>
           <Button tone="warn" size="lg" onClick={onConfirm}>
-            {HOME_DECK.f1Button}
+            {copy.button}
           </Button>
           <Button id="home-fix-cancel" tone="ghost" size="lg" onClick={onCancel}>
-            {HOME_DECK.f1Cancel}
+            {copy.cancel}
           </Button>
         </div>
       </div>

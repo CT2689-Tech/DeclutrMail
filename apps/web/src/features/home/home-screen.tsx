@@ -25,7 +25,7 @@ import { HomeView } from './home-view';
  * |                               | QueryCache handler also resets   |
  * |                               | the scoped cache off this error  |
  * | other summary failure         | ErrorState + retry               |
- * | no decisions, still syncing   | report card, no "Reading your Gmail" |
+ * | no decisions, still syncing   | scan bar; queued copy only when queued |
  * | no decisions, scan failed     | "Gmail scan failed" + Settings   |
  * | no decisions                  | "Nothing cleared yet" + button   |
  * | decisions                     | number + label + button          |

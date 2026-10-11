@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 
 import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
 import { ApiError } from '@/lib/api/client';
@@ -81,7 +80,8 @@ describe('HomeView', () => {
   it('keeps recorded progress and activity, and does not promote Pro', () => {
     render(<HomeView state={ready} tier="plus" />);
     expect(screen.getByTestId('home-hero')).toHaveTextContent('1,234');
-    expect(screen.getByText('Emails archived')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Progress' }).querySelector('dl')).toBeNull();
+    expect(screen.queryByText('Emails archived')).toBeNull();
     expect(screen.getByRole('link', { name: 'See your activity' })).toHaveAttribute(
       'href',
       '/activity',
@@ -115,15 +115,14 @@ describe('HomeView', () => {
       />,
     );
     expect(screen.getByRole('region', { name: 'Suggested next steps' })).toBeInTheDocument();
-    const primary = screen.getByRole('button', { name: 'Unsubscribe + archive 158 senders' });
-    expect(
-      primary.compareDocumentPosition(screen.getByRole('link', { name: 'Later' })) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Unsubscribe/ })).toBeNull();
+    expect(screen.queryByText(/of these senders/)).toBeNull();
+    expect(screen.getByRole('link', { name: 'Later' })).toHaveAttribute('href', '/later');
+    expect(screen.getByRole('link', { name: 'Later' }).closest('article')).not.toBeNull();
     expect(screen.queryByText('Your 10 largest senders')).toBeNull();
     expect(screen.queryByRole('link', { name: 'See largest senders' })).toBeNull();
-    expect(screen.getByText('≈ 7.7 GB')).toBeInTheDocument();
-    expect(screen.getByText('of email in your Gmail')).toBeInTheDocument();
+    expect(screen.queryByText('≈ 7.7 GB')).toBeNull();
+    expect(screen.queryByText('of email in your Gmail')).toBeNull();
     expect(document.querySelector('[data-home-mode="full"]')).not.toBeNull();
     expect(document.querySelector('[data-sender-size-view="off"]')).not.toBeNull();
   });
@@ -149,33 +148,12 @@ describe('HomeView', () => {
     );
   });
 
-  it('opens a prefilled dialog and confirms only from the confirm button', async () => {
-    const user = userEvent.setup();
-    const onConfirmFix = vi.fn();
-    render(<HomeView state={ready} nextSteps={[unsub]} onConfirmFix={onConfirmFix} />);
+  it('does not paint an unsubscribe step while the report deck is empty', () => {
+    render(<HomeView state={ready} nextSteps={[unsub]} />);
+    expect(screen.queryByRole('button', { name: /Unsubscribe/ })).toBeNull();
     expect(screen.queryByRole('alertdialog')).toBeNull();
-    await user.click(screen.getByRole('button', { name: 'Unsubscribe + archive 158 senders' }));
-    const dialog = screen.getByRole('alertdialog');
-    expect(dialog).toHaveTextContent('Unsubscribe from 158 senders and archive 1,200 emails?');
-    expect(dialog).toHaveTextContent(HOME_DECK.f1Honesty);
-    expect(onConfirmFix).not.toHaveBeenCalled();
-    expect(document.activeElement).toHaveTextContent('Cancel');
-    await user.keyboard('{Enter}');
-    expect(onConfirmFix).not.toHaveBeenCalled();
-    await user.click(screen.getByRole('button', { name: 'Unsubscribe + Archive' }));
-    expect(onConfirmFix).toHaveBeenCalledTimes(1);
-    expect(onConfirmFix).toHaveBeenCalledWith(unsub);
-    expect(screen.queryByRole('alertdialog')).toBeNull();
-  });
-
-  it('cancel closes the dialog and does not confirm', async () => {
-    const user = userEvent.setup();
-    const onConfirmFix = vi.fn();
-    render(<HomeView state={ready} nextSteps={[unsub]} onConfirmFix={onConfirmFix} />);
-    await user.click(screen.getByRole('button', { name: 'Unsubscribe + archive 158 senders' }));
-    await user.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(onConfirmFix).not.toHaveBeenCalled();
-    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.queryByText(/of these senders/)).toBeNull();
+    expect(document.querySelector('[data-home-fix-expected="false"]')).not.toBeNull();
   });
 
   it('uses the calm fallback when nothing is suggested', () => {
@@ -183,9 +161,7 @@ describe('HomeView', () => {
       <HomeView state={{ ...ready, secondary: [] }} nextSteps={[]} indexedEmailCount={47} />,
     );
     expect(container.firstElementChild).toHaveAttribute('data-home-mode', 'fallback');
-    expect(screen.getByTestId('home-calm')).toHaveTextContent(
-      'Your inbox is in good shape. 47 emails, and nothing stands out yet.',
-    );
+    expect(screen.queryByTestId('home-calm')).toBeNull();
     expect(screen.queryByText(/share card/i)).toBeNull();
     expect(screen.queryByRole('region', { name: 'Suggested next steps' })).toBeNull();
   });
@@ -193,7 +169,7 @@ describe('HomeView', () => {
   it('omits the calm count when the indexed total is unknown', () => {
     render(<HomeView state={ready} nextSteps={[]} indexedEmailCount={null} />);
     expect(screen.queryByTestId('home-calm')).toBeNull();
-    expect(screen.getByText(HOME_DECK.reportBody)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Your Inbox Report' })).toBeNull();
   });
 
   it('empty: no number, and a syncing mailbox does not say it is reading Gmail', () => {
@@ -208,7 +184,9 @@ describe('HomeView', () => {
     rerender(<HomeView state={{ kind: 'empty', syncing: true, action }} />);
     expect(screen.queryByText('Reading your Gmail.')).toBeNull();
     expect(screen.queryByText('Nothing cleared yet.')).toBeNull();
-    expect(screen.getByRole('heading', { name: 'Your Inbox Report' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Your Inbox Report' })).toBeNull();
+    expect(screen.queryByText('Your scan is waiting to start.')).toBeNull();
+    expect(screen.getByTestId('home-scan-bar')).toBeInTheDocument();
   });
 
   it('queued: uses the waiting title and does not say progress is saved', () => {
