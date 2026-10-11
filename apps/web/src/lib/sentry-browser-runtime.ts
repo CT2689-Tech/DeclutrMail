@@ -49,6 +49,48 @@ function readSampleRate(raw: string | undefined, fallback: number): number {
   return parsed;
 }
 
+const PRICING_PROBE = '/api/pricing/public';
+
+/** A missed public-catalog probe is an expected deploy-order miss, not a product error. */
+function isFailedPricingProbe(url: unknown, status: unknown): boolean {
+  if (typeof url !== 'string' || !url.includes(PRICING_PROBE)) return false;
+  if (typeof status !== 'number') return true;
+  return status < 200 || status >= 300;
+}
+
+function probeUrl(record: Record<string, unknown>): unknown {
+  return record.url ?? record['http.url'] ?? record.description;
+}
+
+function probeStatus(record: Record<string, unknown>): unknown {
+  return record['http.response.status_code'] ?? record.status_code;
+}
+
+function dropFailedPricingProbeSpans(event: Record<string, unknown>): Record<string, unknown> {
+  if (!Array.isArray(event.spans)) return event;
+  const spans = event.spans.filter((span) => {
+    if (!span || typeof span !== 'object') return true;
+    const record = span as Record<string, unknown>;
+    const data =
+      record.data && typeof record.data === 'object'
+        ? (record.data as Record<string, unknown>)
+        : {};
+    const url = probeUrl(data) ?? probeUrl(record);
+    const status = probeStatus(data) ?? probeStatus(record);
+    return !isFailedPricingProbe(url, status);
+  });
+  return spans.length === event.spans.length ? event : { ...event, spans };
+}
+
+function dropFailedPricingProbeBreadcrumb(
+  breadcrumb: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const data = breadcrumb.data;
+  if (!data || typeof data !== 'object') return breadcrumb;
+  const record = data as Record<string, unknown>;
+  return isFailedPricingProbe(probeUrl(record), probeStatus(record)) ? null : breadcrumb;
+}
+
 const REACT_INVARIANT = /^Minified React error #(\d{1,4});/u;
 const DEV_HYDRATION_FAILURE = /^Hydration failed because /u;
 
@@ -232,14 +274,18 @@ export function initSentryBrowserRuntime(dsn: string): BrowserSentryRuntime {
           labelCaptureSurface(labelReactInvariant(event as unknown as Record<string, unknown>)),
         ) as unknown as typeof event,
       beforeSendTransaction: (event) =>
-        scrubSentryTransaction(event as unknown as Record<string, unknown>) as unknown as
-          typeof event | null,
+        scrubSentryTransaction(
+          dropFailedPricingProbeSpans(event as unknown as Record<string, unknown>),
+        ) as unknown as typeof event | null,
       beforeSendLog: () => null,
       beforeSendMetric: () => null,
-      beforeBreadcrumb: (breadcrumb) =>
-        scrubSentryBreadcrumb(
+      beforeBreadcrumb: (breadcrumb) => {
+        const kept = dropFailedPricingProbeBreadcrumb(
           breadcrumb as unknown as Record<string, unknown>,
-        ) as unknown as typeof breadcrumb,
+        );
+        if (!kept) return null;
+        return scrubSentryBreadcrumb(kept) as unknown as typeof breadcrumb;
+      },
     });
     initialized = true;
   }

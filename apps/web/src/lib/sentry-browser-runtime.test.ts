@@ -151,6 +151,46 @@ describe('heavy Sentry browser runtime', () => {
     expect(
       options?.beforeSendTransaction?.({ transaction: leak } as never, {} as never),
     ).toBeNull();
+    const probe = options?.beforeSendTransaction?.(
+      {
+        type: 'transaction',
+        transaction: '/',
+        spans: [
+          {
+            op: 'http.client',
+            description: 'GET https://api.example/api/pricing/public',
+            span_id: 'd'.repeat(16),
+            data: {
+              url: 'https://api.example/api/pricing/public',
+              'http.response.status_code': 404,
+              'http.request.method': 'GET',
+            },
+          },
+          {
+            op: 'http.client',
+            description: 'GET https://api.example/api/pricing/public',
+            span_id: 'e'.repeat(16),
+            data: {
+              url: 'https://api.example/api/pricing/public',
+              'http.response.status_code': 200,
+              'http.request.method': 'GET',
+            },
+          },
+        ],
+      } as never,
+      {} as never,
+    );
+    const spans = (probe as { spans?: { span_id?: string }[] } | null)?.spans ?? [];
+    expect(spans.map((span) => span.span_id)).toEqual(['e'.repeat(16)]);
+    expect(
+      options?.beforeBreadcrumb?.(
+        {
+          category: 'fetch',
+          data: { url: 'https://api.example/api/pricing/public', status_code: 404 },
+        },
+        {} as never,
+      ),
+    ).toBeNull();
     expect(options?.beforeSendLog?.({ body: leak } as never)).toBeNull();
     expect(options?.beforeSendMetric?.({ name: leak } as never)).toBeNull();
   });

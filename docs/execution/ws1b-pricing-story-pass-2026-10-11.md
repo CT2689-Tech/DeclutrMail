@@ -87,11 +87,14 @@ None of these migrations has been applied to a live database.
   the entity line only when `hasLegalEntity()` is true.
 - `/pricing/changelog` redirects to `/pricing` while `PRICING_V2` is off,
   and that redirect is declared in `scripts/check-web-bundle-budget.mjs`.
-  A build with the flag on renders the page. Remove that redirect line
+  The sitemap and `llms.txt` include the URL only while the same flag is
+  on. A build with the flag on renders the page. Remove that redirect line
   in the same change so the bundle check measures it.
 - `/terms` and `/refunds` are static and follow the server env at build
-  time. `/pricing` and the home teaser read `GET /api/pricing/public`,
-  so those two flip without a web rebuild.
+  time. The flags-off refunds page keeps main's "cancelling". `/pricing`
+  and the home teaser read `GET /api/pricing/public`, so those two flip
+  without a web rebuild. A non-200 or network error on that fetch stays
+  on today's teaser and is not reported.
 - `scripts/web-bundle-budget.json` was regenerated with
   `pnpm check:bundle --rebaseline` after the pricing story and billing
   client graph grew the served JS. The launch teaser and pricing story
