@@ -36,6 +36,7 @@ const EXACT_SURFACES: Record<string, WebVitalEvent['surface']> = {
   '/methodology': 'methodology',
   '/onboarding': 'onboarding',
   '/pricing': 'pricing',
+  '/pricing/changelog': 'pricing',
   '/privacy': 'privacy',
   '/quiet': 'quiet',
   '/refunds': 'refunds',

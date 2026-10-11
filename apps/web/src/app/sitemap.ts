@@ -25,6 +25,7 @@ export const MARKETING_PATHS = [
   '/inbox-simulator',
   '/methodology',
   '/pricing',
+  '/pricing/changelog',
   '/beta',
   '/compare',
   ...COMPARISONS.map((comparison) => `/vs/${comparison.slug}` as const),
