@@ -553,6 +553,7 @@ test('dependabot stays quiet until 3 November 2026', () => {
   assert.match(source, /restore after 2026-11-03/);
   assert.equal(source.split('\n      all:').length - 1, 3);
   assert.equal(source.split('\n      security:').length - 1, 3);
+  assert.equal(source.split('default-days: 0').length - 1, 1);
   for (const group of ['framework:', 'nestjs:', 'lint-format:', 'dev-minor:']) {
     assert.equal(source.includes(group), false);
   }

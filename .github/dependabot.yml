@@ -44,6 +44,13 @@ updates:
       timezone: Etc/UTC
     rebase-strategy: disabled
     open-pull-requests-limit: 1
+    # GitHub's default 3-day version cooldown is passed to pnpm as
+    # --config.minimum-release-age=4320. vitest 5.0.3's only matching
+    # tinybench is 6.2.2, published inside that window, so every grouped
+    # lockfile refresh fails the same way (run 38170686471). 0 opts npm
+    # version updates out. Security updates are not cooled down.
+    cooldown:
+      default-days: 0
     versioning-strategy: increase-if-necessary
     commit-message:
       # Matches commitlint type-enum (CLAUDE.md §6). `chore` keeps the
