@@ -6,6 +6,10 @@ import deck from './deck/ws2.json' with { type: 'json' };
  * Revision: drop2-r8 (2026-10-11), plus the drop2-r11 `liveFix` key
  * `billing.scope`. The rest of this deck is still r8 — the r11 filing
  * was not in the repo, so no other `liveFix` strings are synced here.
+ * drop2-r12 keeps the long `aiConsent` / `aiPrompt` strings so imports
+ * compile and lists them on `_notShipping` (NOT SHIPPING). The consent
+ * card uses the short title, the How we use AI link, Allow / Not now,
+ * and a body line only when that key is present.
  * §P.5 glossary YAML was not in the r8 deck.
  */
 export const WS2_COPY = deck;

@@ -10,6 +10,7 @@ import { BRIEF_NAME } from '@declutrmail/shared/copy/screen-decisions';
 
 import { track } from '@/lib/posthog';
 
+import { dismissBriefUpgrade } from './ai-prompt-queue';
 import { useDecideAiConsent } from './use-decide-ai-consent';
 
 const { color, font, text, radius } = tokens;
@@ -20,11 +21,37 @@ function fillBrief(template: string): string {
 }
 
 /**
- * Allow / Not now. No checkbox, and nothing is selected until the user
- * presses a button. Links go to the privacy AI section.
+ * Short body, when Content has put one on the deck. Hidden when the key
+ * is absent, blank, or listed as NOT SHIPPING. No fixed height.
+ */
+function bodyLine(card: CardKind): string | null {
+  if (copy._notShipping.some((path) => path === 'body' || path.startsWith('body.'))) return null;
+  const body = (copy as { body?: string | { all?: string; withBrief?: string; upgrade?: string } })
+    .body;
+  if (body == null) return null;
+  const raw =
+    typeof body === 'string'
+      ? body
+      : card === 'upgrade'
+        ? (body.upgrade ?? '')
+        : card === 'withBrief'
+          ? (body.withBrief ?? body.all ?? '')
+          : (body.all ?? '');
+  const text = raw.trim();
+  return text.length > 0 ? fillBrief(text) : null;
+}
+
+function cardTitle(card: CardKind): string {
+  if (card === 'upgrade') return fillBrief(copy.upgrade.title);
+  return fillBrief(card === 'withBrief' ? copy.title.withBrief : copy.title.all);
+}
+
+/**
+ * Allow / Not now. Title, one optional body line, and the privacy link.
+ * Long deck keys stay in the JSON for imports and are not rendered.
  */
 export function AiConsentCard({
-  view,
+  view: _view,
   card,
   onDone,
 }: {
@@ -35,6 +62,7 @@ export function AiConsentCard({
   const decide = useDecideAiConsent();
   const inflight = useRef(false);
   const [failed, setFailed] = useState(false);
+  const body = bodyLine(card);
 
   useEffect(() => {
     void track('brief_ai_consent_shown', {});
@@ -46,6 +74,7 @@ export function AiConsentCard({
     setFailed(false);
     try {
       await decide.mutateAsync({ action, card });
+      if (action === 'not_now' && card === 'upgrade') dismissBriefUpgrade(Date.now());
       void track('brief_ai_consent_decided', { decision: action });
       if (action === 'allow') {
         const toastCopy =
@@ -59,19 +88,6 @@ export function AiConsentCard({
       inflight.current = false;
     }
   }
-
-  const title =
-    card === 'upgrade'
-      ? fillBrief(copy.upgrade.title)
-      : fillBrief(card === 'withBrief' ? copy.title.withBrief : copy.title.all);
-  const intro =
-    card === 'upgrade'
-      ? null
-      : fillBrief(card === 'withBrief' ? copy.intro.withBrief : copy.intro.all);
-  const decline =
-    card === 'upgrade'
-      ? fillBrief(copy.upgrade.decline)
-      : fillBrief(card === 'withBrief' ? copy.decline.withBrief : copy.decline.all);
 
   return (
     <section
@@ -89,32 +105,9 @@ export function AiConsentCard({
       }}
     >
       <h2 id="ai-consent-title" style={{ fontSize: text.lg, margin: 0, color: color.fg }}>
-        {title}
+        {cardTitle(card)}
       </h2>
-      {view.reask && <p style={{ margin: 0, color: color.fg }}>{copy.reask}</p>}
-      {intro && <p style={{ margin: 0, color: color.fgSoft }}>{intro}</p>}
-      {card !== 'upgrade' && (
-        <div>
-          <h3 style={{ fontSize: text.md, margin: '0 0 4px', color: color.fg }}>
-            {copy.explain.heading}
-          </h3>
-          <p style={{ margin: 0, color: color.fgSoft }}>{copy.explain.sends}</p>
-        </div>
-      )}
-      {card !== 'all' && (
-        <div>
-          <h3 style={{ fontSize: text.md, margin: '0 0 4px', color: color.fg }}>
-            {fillBrief(copy.brief.heading)}
-          </h3>
-          <p style={{ margin: 0, color: color.fgSoft }}>{fillBrief(copy.brief.sends)}</p>
-        </div>
-      )}
-      <p style={{ margin: 0, color: color.fgSoft }}>{copy.never}</p>
-      <p style={{ margin: 0, color: color.fg }}>{copy.noFetch}</p>
-      <p style={{ margin: 0, color: color.fgSoft }}>{copy.who}</p>
-      <p style={{ margin: 0, color: color.fgSoft }}>{copy.training}</p>
-      <p style={{ margin: 0, color: color.fgSoft }}>{decline}</p>
-      <p style={{ margin: 0, color: color.fgMuted }}>{copy.change}</p>
+      {body && <p style={{ margin: 0, color: color.fgSoft }}>{body}</p>}
       <Link className="dm-external-link" href="/privacy#ai-processing">
         {copy.link}
       </Link>

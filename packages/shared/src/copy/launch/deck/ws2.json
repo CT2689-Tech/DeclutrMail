@@ -301,6 +301,21 @@
     "refund": "{refundDays}-day money-back on any purchase, once per customer."
   },
   "aiConsent": {
+    "_notShipping": [
+      "intro",
+      "explain",
+      "brief.sends",
+      "never",
+      "noFetch",
+      "who",
+      "training",
+      "decline",
+      "change",
+      "reask",
+      "upgrade.decline",
+      "settings.help",
+      "settings.label.withBrief"
+    ],
     "title": {
       "all": "Use AI to explain suggestions?",
       "withBrief": "Use AI for suggestion explanations and your {BRIEF_NAME}?"
@@ -409,6 +424,7 @@
     "staleClaim": "No email arrived from this sender in the last 90 days, so there’s nothing to measure as marked read yet."
   },
   "aiPrompt": {
+    "_notShipping": ["frequency"],
     "text": "Want each explanation written in a sentence or two by AI? See what it would send first.",
     "review": "See what’s sent",
     "dismiss": "No thanks",
