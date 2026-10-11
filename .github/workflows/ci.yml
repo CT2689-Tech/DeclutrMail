@@ -922,16 +922,20 @@ jobs:
       # PostHog key above are inlined at build time. It runs in the
       # background while Chromium, the Postgres client and migrations
       # install; "Wait for the web build" fails the lane on its exit code.
-      # Lint and type validity are skipped here only — the lint and
-      # typecheck jobs and build-web's full `next build` still gate them.
+      # Lint and type validity are skipped here; the `lint` and
+      # `web-types` jobs gate them. The status is captured with `|| rc=$?`
+      # because steps run under `bash -e`: a bare failing build would end
+      # the subshell before it wrote web-build.rc.
       - name: Build the web app for browser verification
         env:
           NEXT_SKIP_BUILD_TYPECHECK: '1'
         run: |
           (
-            pnpm --filter @declutrmail/web build --no-lint > web-build.log 2>&1
-            echo $? > web-build.rc
+            rc=0
+            pnpm --filter @declutrmail/web build --no-lint > web-build.log 2>&1 || rc=$?
+            echo "$rc" > web-build.rc
           ) &
+          echo $! > web-build.pid
       # RETRIED, because the failure it guards against is not ours and
       # not detectable from the result. `--with-deps` runs apt-get, and
       # an Ubuntu mirror that stalls mid-fetch does not fail — it hangs
@@ -972,10 +976,23 @@ jobs:
           for migration in packages/db/migrations/*.sql; do
             psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$migration"
           done
+      # A build process that is gone without a status is a failure now,
+      # not after 15 minutes.
       - name: Wait for the web build
         run: |
+          if [ ! -s web-build.pid ]; then
+            echo "::error::the web build was never started (no web-build.pid)"
+            exit 1
+          fi
+          pid=$(cat web-build.pid)
           for _ in $(seq 1 900); do
             [ -f web-build.rc ] && break
+            if ! kill -0 "$pid" 2>/dev/null; then
+              [ -f web-build.rc ] && break
+              cat web-build.log 2>/dev/null || true
+              echo "::error::the web build process exited without recording a status"
+              exit 1
+            fi
             sleep 1
           done
           cat web-build.log
@@ -983,7 +1000,12 @@ jobs:
             echo "::error::the web build did not finish within 15 minutes"
             exit 1
           fi
-          exit "$(cat web-build.rc)"
+          rc=$(cat web-build.rc)
+          if ! [[ "$rc" =~ ^[0-9]+$ ]]; then
+            echo "::error::web-build.rc holds no exit status ('$rc')"
+            exit 1
+          fi
+          exit "$rc"
       # Deliberately BEFORE the stack boots: these specs serve their own
       # page and stub endpoint, so needing nothing is a property worth
       # proving, and a paint regression fails in seconds rather than

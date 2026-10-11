@@ -185,10 +185,7 @@ test('build caching restores only compiler intermediates and never bypasses eith
   const stepNamed = (name) => workflow.split(`- name: ${name}\n`)[1]?.split('\n      - ')[0];
   assert.match(stepNamed('Build the web app'), /run: pnpm --filter @declutrmail\/web build/);
   const lane = stepNamed('Build the web app for browser verification');
-  assert.match(
-    lane,
-    /pnpm --filter @declutrmail\/web build --no-lint > web-build\.log 2>&1\n\s+echo \$\? > web-build\.rc/,
-  );
+  assert.match(lane, /pnpm --filter @declutrmail\/web build --no-lint > web-build\.log 2>&1/);
   const wait = stepNamed('Wait for the web build');
   for (const step of [stepNamed('Build the web app'), lane, wait]) {
     assert.doesNotMatch(step, /if:|continue-on-error:/);
@@ -248,26 +245,89 @@ test('build-web skips Next type validation only because web-types runs it on tha
   }
 });
 
-test('a browser lane fails unless its background web build exits 0', () => {
+const BUILD = 'pnpm --filter @declutrmail/web build --no-lint';
+
+/** A step's `run: |` body, as the runner hands it to bash. */
+function stepScript(name) {
   const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
-  const wait = workflow.split('- name: Wait for the web build\n')[1].split('\n      - ')[0];
-  const shell = wait
-    .split('run: |\n')[1]
-    .replace(/^ {10}/gm, '')
-    .replace('seq 1 900', 'seq 1 2');
-  assert.notEqual(shell, wait);
+  const step = workflow.split(`- name: ${name}\n`)[1].split('\n      - ')[0];
+  return step.split('run: |\n')[1].replace(/^ {10}/gm, '');
+}
+
+// GitHub runs `run:` steps as `bash --noprofile --norc -eo pipefail {0}`.
+const ghBash = (script, cwd, env = {}) =>
+  spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', script], {
+    cwd,
+    env: { ...process.env, ...env },
+    encoding: 'utf8',
+    // A wait that regresses to sleeping out its 15 minutes fails here instead.
+    timeout: 20_000,
+  });
+
+test('a background web build records its status under bash -e, failed or not', () => {
+  const producer = stepScript('Build the web app for browser verification');
+  assert.ok(producer.includes(BUILD), 'the lane no longer runs the expected build');
+  const fake = producer.replace(BUILD, 'sh -c "$FAKE_BUILD"');
+  const wait = stepScript('Wait for the web build');
+  for (const [build, status] of [
+    ['echo built', 0],
+    ['echo boom; exit 1', 1],
+    ['sleep 1; exit 7', 7],
+  ]) {
+    const cwd = mkdtempSync(path.join(tmpdir(), 'browser-ci-producer-'));
+    try {
+      const started = ghBash(fake, cwd, { FAKE_BUILD: build });
+      assert.equal(started.status, 0, started.stderr);
+      const begun = Date.now();
+      const waited = ghBash(wait, cwd);
+      assert.equal(waited.status, status, `${build}: ${waited.stdout}${waited.stderr}`);
+      assert.ok(Date.now() - begun < 15_000, `${build}: the wait took too long`);
+      assert.equal(readFileSync(path.join(cwd, 'web-build.rc'), 'utf8'), `${status}\n`);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }
+});
+
+test('the build wait fails promptly, by name, on every missing or bad status', () => {
+  const wait = stepScript('Wait for the web build');
   const cwd = mkdtempSync(path.join(tmpdir(), 'browser-ci-build-'));
-  const run = () =>
-    spawnSync('bash', ['-e', '-u', '-o', 'pipefail', '-c', shell], { cwd, encoding: 'utf8' });
+  const file = (name) => path.join(cwd, name);
+  const dead = spawnSync('true').pid;
   try {
-    writeFileSync(path.join(cwd, 'web-build.log'), 'build output\n');
-    assert.notEqual(run().status, 0, 'no exit code recorded');
-    writeFileSync(path.join(cwd, 'web-build.rc'), '1\n');
-    assert.notEqual(run().status, 0, 'failed build');
-    writeFileSync(path.join(cwd, 'web-build.rc'), '0\n');
-    const ok = run();
-    assert.equal(ok.status, 0, ok.stderr);
-    assert.match(ok.stdout, /build output/);
+    writeFileSync(file('web-build.log'), 'build output\n');
+    const unstarted = ghBash(wait, cwd);
+    assert.notEqual(unstarted.status, 0);
+    assert.match(unstarted.stdout, /was never started/);
+
+    writeFileSync(file('web-build.pid'), `${dead}\n`);
+    const begun = Date.now();
+    const vanished = ghBash(wait, cwd);
+    assert.notEqual(vanished.status, 0);
+    assert.match(vanished.stdout, /exited without recording a status/);
+    assert.ok(Date.now() - begun < 5_000, 'a dead build was waited on');
+
+    writeFileSync(file('web-build.pid'), `${process.pid}\n`);
+    const slow = ghBash(wait.replace('seq 1 900', 'seq 1 2'), cwd);
+    assert.notEqual(slow.status, 0);
+    assert.match(slow.stdout, /did not finish within 15 minutes/);
+
+    for (const [rc, status] of [
+      ['1\n', 1],
+      ['\n', null],
+      ['oops\n', null],
+      ['0\n', 0],
+    ]) {
+      writeFileSync(file('web-build.rc'), rc);
+      const result = ghBash(wait, cwd);
+      if (status === null) {
+        assert.notEqual(result.status, 0, JSON.stringify(rc));
+        assert.match(result.stdout, /holds no exit status/);
+      } else {
+        assert.equal(result.status, status, JSON.stringify(rc));
+        assert.match(result.stdout, /build output/);
+      }
+    }
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
