@@ -44,7 +44,10 @@ describe('failed journey chunk downloads', () => {
     );
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Reload'));
     expect(screen.queryByRole('button', { name: 'Inbox action' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Open Gmail accounts' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open Gmail accounts' })).toHaveAttribute(
+      'href',
+      '/settings#mailboxes',
+    );
     state.target = false;
     view.rerender(
       <Suspense fallback={<p>Loading</p>}>

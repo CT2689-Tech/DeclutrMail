@@ -2729,14 +2729,22 @@ describe('SendersScreen — edge states', () => {
 
 describe('SendersScreen — first-cleanup nudge', () => {
   it('nudges a ready mailbox with senders and no completed action_jobs', async () => {
-    installFetchStub([oneSenderHandler(), sendersSummaryHandler({ hasCompletedCleanup: false })]);
+    installFetchStub([
+      oneSenderHandler(),
+      sendersSummaryHandler({ hasCompletedCleanup: false }),
+      {
+        method: 'GET',
+        path: '/api/onboarding/backlog',
+        respond: () => jsonOk({ data: { senderId: 'b', name: 'Biggest B', inboxEmails: 300 } }),
+      },
+    ]);
     renderScreen();
     await screen.findAllByText(/Sender A/);
     const nudge = await screen.findByTestId('first-cleanup-nudge');
-    expect(nudge).toHaveTextContent('Pick one sender');
+    expect(nudge).toHaveTextContent('Biggest B has 300 emails in your inbox');
     expect(screen.getByRole('link', { name: 'Open a sender' })).toHaveAttribute(
       'href',
-      '/senders/a',
+      '/senders/b',
     );
   });
 

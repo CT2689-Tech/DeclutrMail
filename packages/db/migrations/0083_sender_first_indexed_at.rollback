@@ -1,0 +1,6 @@
+-- Prefer rolling back the application/worker while retaining this compatible
+-- additive column. This structural rollback is only for operators who have
+-- stopped every new-code reader/writer and backed up first-indexed timestamps.
+-- Removing the column loses that derived history; reapply reconstructs a
+-- retained-message baseline, which cannot recover earlier first-indexed times when those messages are gone.
+ALTER TABLE senders DROP COLUMN first_indexed_at;

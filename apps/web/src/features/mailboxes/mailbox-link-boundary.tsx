@@ -1,9 +1,8 @@
 'use client';
 import dynamic from 'next/dynamic';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 function LinkDownloadFailure({ children }: { children: ReactNode }) {
-  const router = useRouter();
   const search = useSearchParams();
   if (!search.has('mailbox')) return children;
   return (
@@ -12,9 +11,7 @@ function LinkDownloadFailure({ children }: { children: ReactNode }) {
       <button type="button" onClick={() => window.location.reload()}>
         Reload
       </button>
-      <button type="button" onClick={() => router.replace('/settings#mailboxes')}>
-        Open Gmail accounts
-      </button>
+      <a href="/settings#mailboxes">Open Gmail accounts</a>
     </main>
   );
 }

@@ -8,12 +8,35 @@ import { E2E_ENV } from '../helpers/env';
 const fixture = BILLING_SEED;
 const expiredRecoveryTitle =
   'expired account-recovery link opens returning sign-in with its full destination';
+const homeVisitTitle = 'returning Home freezes its per-inbox counts across navigation and reload';
 // Logout revokes its server session, so never inherit the suite’s shared session.
 test.use({ storageState: { cookies: [], origins: [] } });
 test.beforeEach(async ({ page }, testInfo) => {
   const sql = dbConnect();
   try {
     await applyJourneySeed(sql);
+    if (testInfo.title === homeVisitTitle) {
+      // Seed before sign-in: entry tracking must never race a fixture rewrite.
+      const history = JSON.stringify({
+        [fixture.mailboxId]: [
+          {
+            visitId: '10000000-0000-4000-8000-000000000001',
+            since: null,
+            until: new Date(Date.now() - 86_400_000).toISOString(),
+            indexedEmails: null,
+            indexedSenders: null,
+          },
+        ],
+      });
+      // postgres.js encodes a string parameter inferred as jsonb again. Bind
+      // this serialized fixture as text so the stored value is an object.
+      await sql`UPDATE users SET preferences = jsonb_set(preferences, '{mailboxVisits}', ${history}::text::jsonb) WHERE id = ${fixture.userId}`;
+      const [stored] =
+        await sql`SELECT jsonb_typeof(preferences->'mailboxVisits') AS kind FROM users WHERE id = ${fixture.userId}`;
+      expect(stored?.kind).toBe('object');
+      await sql`UPDATE mail_messages SET created_at = now() - interval '1 minute' WHERE mailbox_account_id = ${fixture.mailboxId}`;
+      await sql`UPDATE senders SET first_indexed_at = now() - interval '1 minute' WHERE mailbox_account_id = ${fixture.mailboxId}`;
+    }
   } finally {
     await sql.end();
   }
@@ -119,27 +142,9 @@ test('intentional sign-out keeps its confirmation instead of a stale-session red
   ).toBeVisible();
 });
 
-test('returning Home freezes its per-inbox counts across navigation and reload', async ({
-  page,
-}) => {
+test(homeVisitTitle, async ({ page }) => {
   const sql = dbConnect();
   try {
-    const since = new Date(Date.now() - 86_400_000).toISOString();
-    const history = JSON.stringify({
-      [fixture.mailboxId]: [
-        {
-          visitId: '10000000-0000-4000-8000-000000000001',
-          since: null,
-          until: since,
-          indexedEmails: null,
-          indexedSenders: null,
-        },
-      ],
-    });
-    await sql`UPDATE users SET preferences = jsonb_set(preferences, '{mailboxVisits}', ${history}::jsonb) WHERE id = ${fixture.userId}`;
-    await sql`UPDATE mail_messages SET created_at = now() - interval '1 minute' WHERE mailbox_account_id = ${fixture.mailboxId}`;
-    await sql`UPDATE senders SET first_indexed_at = now() - interval '1 minute' WHERE mailbox_account_id = ${fixture.mailboxId}`;
-    await page.reload();
     const summary = page.getByRole('region', { name: 'Since your previous visit' });
     await expect(summary.getByRole('heading', { name: '3 emails newly indexed' })).toBeVisible();
     await expect(
