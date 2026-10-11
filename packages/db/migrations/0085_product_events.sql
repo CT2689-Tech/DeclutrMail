@@ -8,8 +8,9 @@
 -- file). user_id is ON DELETE SET NULL so account deletion keeps the
 -- de-identified count.
 --
--- Privacy (D7, D228): props is a closed key set and cannot contain '@'.
--- No email addresses, subjects, snippets, or tokens.
+-- Privacy (D7, D228): props is a closed key set. Each value is a scalar
+-- on a closed list or a short pattern. Nested objects, arrays, and free
+-- text are rejected. No email addresses, subjects, snippets, or tokens.
 
 CREATE TYPE "product_event_name" AS ENUM (
   'signup_completed',
@@ -33,6 +34,16 @@ CREATE TABLE "product_events" (
     jsonb_typeof("props") = 'object'
     AND ("props" - ARRAY['kind', 'plan', 'requested_bucket', 'duration_s', 'emails', 'template', 'mode', 'error_class', 'provider', 'mailbox_id']::text[]) = '{}'::jsonb
     AND strpos("props"::text, '@') = 0
+    AND ("props"->'kind' IS NULL OR (jsonb_typeof("props"->'kind') = 'string' AND "props"->>'kind' IN ('gmail', 'workspace')))
+    AND ("props"->'plan' IS NULL OR (jsonb_typeof("props"->'plan') = 'string' AND "props"->>'plan' ~ '^[A-Za-z0-9._+-]{1,64}$'))
+    AND ("props"->'requested_bucket' IS NULL OR (jsonb_typeof("props"->'requested_bucket') = 'string' AND "props"->>'requested_bucket' IN ('1', '2-10', '11-100', '101-1000', '1001+')))
+    AND ("props"->'duration_s' IS NULL OR (jsonb_typeof("props"->'duration_s') = 'number' AND ("props"->>'duration_s')::numeric IN (0, 30, 60, 120, 300, 600, 1800, 3600, 7200)))
+    AND ("props"->'emails' IS NULL OR (jsonb_typeof("props"->'emails') = 'number' AND ("props"->>'emails')::numeric IN (0, 100, 1000, 10000, 50000, 100000)))
+    AND ("props"->'template' IS NULL OR (jsonb_typeof("props"->'template') = 'string' AND "props"->>'template' IN ('sync_complete', 'sync_reminder_24h', 'lapse', 'weekly', 'weekly_detail', 'sync_failed', 'gmail_reconnect', 'deletion_scheduled')))
+    AND ("props"->'mode' IS NULL OR (jsonb_typeof("props"->'mode') = 'string' AND "props"->>'mode' IN ('login', 'connect', 'reconnect')))
+    AND ("props"->'error_class' IS NULL OR (jsonb_typeof("props"->'error_class') = 'string' AND "props"->>'error_class' ~ '^[A-Za-z][A-Za-z0-9]{0,63}$'))
+    AND ("props"->'provider' IS NULL OR (jsonb_typeof("props"->'provider') = 'string' AND "props"->>'provider' = 'google'))
+    AND ("props"->'mailbox_id' IS NULL OR (jsonb_typeof("props"->'mailbox_id') = 'string' AND "props"->>'mailbox_id' ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'))
   )
 );
 --> statement-breakpoint

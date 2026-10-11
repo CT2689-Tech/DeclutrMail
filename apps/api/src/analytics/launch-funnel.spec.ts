@@ -58,6 +58,29 @@ describe('product event writer', () => {
     ).rejects.toThrow();
   });
 
+  it('rejects a nested subject and a free-text template at the database check', async () => {
+    const db = await freshTestDb();
+    await expect(
+      db.insert(productEvents).values({
+        event: 'email_link_clicked',
+        props: { kind: { subject: 'Weekly update', token: 'ya29.secret' } } as never,
+      }),
+    ).rejects.toThrow();
+    await expect(
+      db.insert(productEvents).values({
+        event: 'email_link_clicked',
+        props: { template: 'Your receipt is ready' },
+      }),
+    ).rejects.toThrow();
+    expect(await db.select().from(productEvents)).toEqual([]);
+    const migration = readFileSync(
+      new URL('../../../../packages/db/migrations/0085_product_events.sql', import.meta.url),
+      'utf8',
+    );
+    expect(migration).toContain(`jsonb_typeof("props"->'kind') = 'string'`);
+    expect(migration).toContain(`jsonb_typeof("props"->'template') = 'string'`);
+  });
+
   it('records free_cap_hit from the entitlement gate and keeps the row', async () => {
     const db = await freshTestDb();
     const [ws] = await db
