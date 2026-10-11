@@ -40,13 +40,13 @@ fields do not forward container stdout, actor rows or provider messages:
 |    0 | —                           | Every generic email actor is compatible              |
 |    1 | `unclassified`              | Unexpected error or startup/import crash             |
 |  101 | `configuration_unavailable` | Probe flag or Redis URL missing in the task          |
-|  102 | `redis_not_ready`           | No classified error; not ready at the 25 s deadline  |
+|  102 | `redis_not_ready`           | No classified error; not ready at the 35 s deadline  |
 |  103 | `redis_network_error`       | DNS, refused, reset or timed-out connection          |
 |  104 | `redis_tls_error`           | TLS/certificate rejection                            |
 |  105 | `redis_reply_error`         | Redis reply error observed; cause unverified         |
-|  106 | `broker_read_stalled`       | Connected, but the actor read did not finish in 25 s |
+|  106 | `broker_read_stalled`       | Connected, but the actor read did not finish in 35 s |
 |  107 | `client_list_unavailable`   | Broker refuses `CLIENT LIST`; actors cannot be read  |
-|  108 | `no_workers`                | No `email-send` actor visible                        |
+|  108 | `no_workers`                | No `email-send` actor visible in any sample          |
 |  109 | `incompatible_workers`      | Missing, malformed or mismatched actor evidence      |
 
 Only fixed error names/codes are classified; error messages and URLs are not
@@ -68,3 +68,29 @@ substituted row. No production resource, IAM binding or secret was touched.
 Classified exits use 101-109 to avoid Node native exit-code collisions. An
 unsettled top-level await exits 13 without observing any TLS error; native 13
 therefore has no mapped probe reason. Unexpected/startup errors retain exit 1.
+
+## Sampled actor reads (run 447)
+
+Deploy #38123008533 (`07e65bf`) refused with `exitCode:108`,
+`probeReason:"no_workers"`, `runSeconds:12`, 23 minutes after #446 (`bc26bdc`)
+had found compatible workers. The always-on worker revision was
+`declutrmail-worker-00162-btj` (min 1 instance). A refusal 12 s after container start
+means one `CLIENT LIST` returned no matching name.
+
+Each listing is one instant on the probe's own broker connection. BullMQ
+6.3.8 names only the worker's dedicated blocking connection
+(`bull:<base64 queue>:w:<name>`, applied by ioredis on every connect), writes
+no worker heartbeat keys, and resets that connection whenever a blocking
+`BZPOPMIN` overruns its watchdog (timeout + 1 s; the user-facing `drainDelay`
+is 60 s). While it reconnects, the worker is absent from every listing.
+Upstash documents `CLIENT LIST` as one line per connection "to the server";
+whether a listing covers every server behind its endpoint is not documented,
+so a listing scoped to one server is unverified, not excluded.
+
+Locally, killing the worker's named connection and running the main-branch
+probe reproduced `108 no_workers` against a live worker. The probe now reads
+5 samples, 3 s apart, each through a fresh connection, inside a 35 s deadline
+(run 447 suggests ~10 s of container startup; the task timeout is 60 s). Absence is
+the only refusal retried. Any other refusal in any sample is final, and
+sampling continues after a compatible read, so an older actor visible in only
+some listings still refuses. `no_workers` now means no sample saw a worker.
