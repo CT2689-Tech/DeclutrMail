@@ -2,9 +2,13 @@
 
 ## Preview builds
 
-`apps/web/vercel.json` uses the dependency-free `scripts/vercel-ignore-build.mjs` before a Vercel build. Only subsequent previews whose changes since the last successful branch deployment are entirely in known documentation/backend paths may skip. Production, first previews, manual same-commit redeploys, marketing/shared code, dependency manifests, unknown files and incomplete history always build. `VERCEL_FORCE_BUILD=1` forces a build.
+`apps/web/vercel.json` uses the dependency-free `scripts/vercel-ignore-build.mjs` before a Vercel build of the `declutr-mail` project (root `apps/web`, the only Vercel project reporting on this repository). A preview skips when its branch starts with `dependabot/`, or when nothing under the web build inputs changed: `apps/web`, every workspace package it depends on (read transitively from `package.json` `workspace:` dependencies, currently `packages/shared`), and root install/compile files (`package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.npmrc`, `.nvmrc`, `tsconfig*.json`, `turbo.json`, `patches/`, the script itself).
 
-The project root must remain `apps/web` with files outside the root included. The command compares the complete repository, including removed/moved web paths. It does not use HEAD's parent as a substitute for the last successful deployment. Existing GitHub checks remain required. This repository has observed Vercel reporting a successful commit status for an ignored build, despite the deployment itself being marked canceled.
+The diff base is `VERCEL_GIT_PREVIOUS_SHA` (the branch's last successful deployment) when it is set and present or fetchable in Vercel's shallow clone, otherwise `HEAD^`. Production, the `main` ref, unknown environments, same-commit redeploys, empty commits, a checkout that does not match the commit, missing history and unreadable manifests always build. `VERCEL_FORCE_BUILD=1` forces a build.
+
+The `HEAD^` fallback trades a known gap for build minutes: when a branch's first deployment arrives as several commits at once, or every earlier deployment was skipped, only the last commit is compared, so an earlier web change can go unpreviewed. Production still builds every `main` commit, CI runs `next build` for web-changing PRs and every merge-queue candidate, and Vercel builds a queue candidate whenever its squashed change touches web inputs.
+
+The project root must remain `apps/web` with files outside the root included. An ignored build marks the deployment canceled and posts a successful `Vercel` commit status ("Canceled by Ignored Build Step", observed on PRs #925, #927, #938 and #945), so the required check does not stay pending. `scripts/ensure-vercel-queue-preview.mjs` treats such a canceled queue preview as reported only when that status is `success`.
 
 ## Artifact retention
 

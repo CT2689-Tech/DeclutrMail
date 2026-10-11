@@ -5,33 +5,14 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { ignoreBuild, isNonWebPath } from './vercel-ignore-build.mjs';
+import { ignoreBuild, isWebBuildPath, webBuildDirs } from './vercel-ignore-build.mjs';
 import { disableSnapshotPreview } from './disable-snapshot-preview.mjs';
 import { ensureQueuePreview } from './ensure-vercel-queue-preview.mjs';
 
-test('only known non-web paths qualify; marketing, shared code and install changes build', () => {
-  for (const path of [
-    'docs/ops.md',
-    'README.md',
-    'apps/api/src/a.ts',
-    'packages/workers/src/a.ts',
-  ]) {
-    assert.equal(isNonWebPath(path), true, path);
-  }
-  for (const path of [
-    'apps/web/src/features/marketing/page.tsx',
-    'packages/shared/src/copy/a.ts',
-    'apps/api/package.json',
-    'pnpm-lock.yaml',
-    'package.json',
-    'scripts/vercel-ignore-build.mjs',
-    'new-package/a.ts',
-    '.github/workflows/ci.yml',
-  ])
-    assert.equal(isNonWebPath(path), false, path);
-});
+const script = fileURLToPath(new URL('./vercel-ignore-build.mjs', import.meta.url));
 
-test('real git history preserves failed web changes, moves, first builds and manual redeploys', () => {
+/** A miniature workspace: web → shared → tokens; api and db are unrelated. */
+function workspaceFixture() {
   const cwd = mkdtempSync(join(tmpdir(), 'vercel-ignore-'));
   const git = (...args) =>
     execFileSync('git', args, { cwd, encoding: 'utf8', stdio: 'pipe' }).trim();
@@ -39,73 +20,227 @@ test('real git history preserves failed web changes, moves, first builds and man
     mkdirSync(dirname(join(cwd, path)), { recursive: true });
     writeFileSync(join(cwd, path), content);
   };
-  const commit = () => {
-    git('add', '.');
-    git('commit', '-qm', 'fixture');
+  const manifest = (dir, name, deps = {}) =>
+    write(`${dir}/package.json`, JSON.stringify({ name, dependencies: deps }));
+  const commit = (...extra) => {
+    git('add', '-A');
+    git('commit', '-qm', 'fixture', ...extra);
     return git('rev-parse', 'HEAD');
   };
+  git('init', '-q', '-b', 'feature');
+  git('config', 'user.email', 'fixture@example.test');
+  git('config', 'user.name', 'Fixture');
+  git('config', 'commit.gpgsign', 'false');
+  write('package.json', '{"name":"root"}');
+  write('pnpm-lock.yaml', 'lockfileVersion: 9');
+  write('tsconfig.base.json', '{}');
+  manifest('apps/web', '@x/web', { '@x/shared': 'workspace:*', react: '^19' });
+  manifest('apps/api', '@x/api', { '@x/shared': 'workspace:*', '@x/db': 'workspace:*' });
+  manifest('packages/shared', '@x/shared', { '@x/tokens': 'workspace:^' });
+  manifest('packages/tokens', '@x/tokens');
+  manifest('packages/db', '@x/db');
+  write('apps/web/src/page.tsx', 'page');
+  write('apps/api/src/a.ts', 'api');
+  write('packages/shared/src/a.ts', 'shared');
+  write('packages/tokens/src/a.ts', 'tokens');
+  write('packages/db/src/a.ts', 'db');
+  write('docs/note.md', 'docs');
+  const first = commit();
+  return {
+    cwd,
+    git,
+    write,
+    commit,
+    first,
+    cleanup: () => rmSync(cwd, { recursive: true, force: true }),
+  };
+}
+
+const previewEnv = (current, previous, extra = {}) => ({
+  VERCEL_ENV: 'preview',
+  VERCEL_GIT_COMMIT_REF: 'feature',
+  VERCEL_GIT_COMMIT_SHA: current,
+  VERCEL_GIT_PREVIOUS_SHA: previous,
+  ...extra,
+});
+
+test('web build inputs are the app, its transitive workspace deps and root build files', () => {
+  const f = workspaceFixture();
   try {
-    git('init', '-q');
-    git('config', 'user.email', 'fixture@example.test');
-    git('config', 'user.name', 'Fixture');
-    write('apps/web/src/page.tsx', 'original');
-    const previous = commit();
-    write('docs/note.md', 'docs');
-    let current = commit();
-    const check = (extra = {}) =>
-      ignoreBuild({
-        cwd,
-        env: {
-          VERCEL_ENV: 'preview',
-          VERCEL_GIT_PREVIOUS_SHA: previous,
-          VERCEL_GIT_COMMIT_SHA: current,
-          ...extra,
-        },
-      }).code;
-    assert.equal(check(), 0);
-    const nestedCommand = () =>
-      spawnSync(
-        process.execPath,
-        [fileURLToPath(new URL('./vercel-ignore-build.mjs', import.meta.url))],
-        {
-          cwd: join(cwd, 'apps/web'),
-          env: {
-            ...process.env,
-            VERCEL_ENV: 'preview',
-            VERCEL_GIT_PREVIOUS_SHA: previous,
-            VERCEL_GIT_COMMIT_SHA: current,
-            VERCEL_FORCE_BUILD: '',
-          },
-          encoding: 'utf8',
-        },
-      );
+    const dirs = webBuildDirs(f.cwd);
+    assert.deepEqual(dirs.sort(), ['apps/web/', 'packages/shared/', 'packages/tokens/']);
+    for (const path of [
+      'apps/web/src/features/marketing/page.tsx',
+      'apps/web/vercel.json',
+      'packages/shared/src/copy/a.ts',
+      'packages/tokens/src/a.ts',
+      'package.json',
+      'pnpm-lock.yaml',
+      'pnpm-workspace.yaml',
+      'tsconfig.base.json',
+      '.nvmrc',
+      'patches/next.patch',
+      'scripts/vercel-ignore-build.mjs',
+    ])
+      assert.equal(isWebBuildPath(path, dirs), true, path);
+    for (const path of [
+      'docs/ops.md',
+      'README.md',
+      'apps/api/src/a.ts',
+      'apps/api/package.json',
+      'packages/db/src/a.ts',
+      'packages/web-like/a.ts',
+      '.github/workflows/ci.yml',
+      'scripts/deploy-api-safely.mjs',
+    ])
+      assert.equal(isWebBuildPath(path, dirs), false, path);
+    f.write(
+      'apps/web/package.json',
+      JSON.stringify({ dependencies: { '@x/gone': 'workspace:*' } }),
+    );
+    assert.throws(() => webBuildDirs(f.cwd), /@x\/gone not found/);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('environment rules: dependabot skips, production/main/unknown/forced always build', () => {
+  // No repository at all: these decisions must not depend on git.
+  const cwd = mkdtempSync(join(tmpdir(), 'vercel-ignore-env-'));
+  const sha = 'a'.repeat(40);
+  const check = (env) => ignoreBuild({ cwd, env }).code;
+  try {
     assert.equal(
-      nestedCommand().status,
+      check(previewEnv(sha, '', { VERCEL_GIT_COMMIT_REF: 'dependabot/npm_and_yarn/x' })),
       0,
-      'Vercel runs the command from apps/web, not repository root',
     );
-    assert.equal(check({ VERCEL_ENV: 'production' }), 1);
-    assert.equal(check({ VERCEL_GIT_PREVIOUS_SHA: '' }), 1);
-    assert.equal(check({ VERCEL_GIT_PREVIOUS_SHA: 'a'.repeat(40) }), 1);
-    assert.equal(check({ VERCEL_GIT_PREVIOUS_SHA: current }), 1);
-    assert.equal(check({ VERCEL_FORCE_BUILD: '1' }), 1);
-    write('apps/web/src/page.tsx', 'unbuilt change');
-    current = commit();
-    write('docs/note.md', 'another docs change');
-    current = commit();
-    assert.equal(check(), 1, 'compare all changes since successful deployment, not HEAD^');
-    assert.equal(nestedCommand().status, 1, 'nested cwd still sees the complete repository diff');
-    const webBaseline = current;
-    mkdirSync(join(cwd, 'docs/moved'), { recursive: true });
-    renameSync(join(cwd, 'apps/web/src/page.tsx'), join(cwd, 'docs/moved/page.tsx'));
-    current = commit();
+    assert.equal(check(previewEnv(sha, '', { VERCEL_GIT_COMMIT_REF: 'main' })), 1);
+    assert.equal(check(previewEnv(sha, '', { VERCEL_ENV: 'production' })), 1);
     assert.equal(
-      check({ VERCEL_GIT_PREVIOUS_SHA: webBaseline }),
+      check(
+        previewEnv(sha, '', { VERCEL_ENV: 'production', VERCEL_GIT_COMMIT_REF: 'dependabot/x' }),
+      ),
       1,
-      'moving web code out must build',
+      'a production dependabot deploy still builds',
     );
+    for (const VERCEL_ENV of [undefined, '', 'development', 'staging'])
+      assert.equal(check(previewEnv(sha, '', { VERCEL_ENV })), 1, String(VERCEL_ENV));
+    assert.equal(
+      check(
+        previewEnv(sha, '', { VERCEL_GIT_COMMIT_REF: 'dependabot/x', VERCEL_FORCE_BUILD: '1' }),
+      ),
+      1,
+    );
+    assert.equal(check(previewEnv('', '')), 1, 'unknown commit');
+    assert.equal(check(previewEnv(sha, '')), 1, 'no repository means unsure');
   } finally {
     rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('previous deployment diff: unrelated changes skip, web/shared/root changes build', () => {
+  const f = workspaceFixture();
+  const check = (current, previous, extra) =>
+    ignoreBuild({ cwd: f.cwd, env: previewEnv(current, previous, extra) });
+  try {
+    const deployed = f.first;
+    f.write('docs/note.md', 'more docs');
+    f.write('apps/api/src/a.ts', 'api change');
+    f.write('packages/db/src/a.ts', 'db change');
+    let current = f.commit();
+    assert.equal(check(current, deployed).code, 0, 'docs/api/db only');
+    assert.equal(check(current, deployed, { VERCEL_GIT_COMMIT_REF: 'main' }).code, 1, 'main');
+    assert.equal(check(current, deployed, { VERCEL_ENV: 'production' }).code, 1, 'production');
+    const nested = spawnSync(process.execPath, [script], {
+      cwd: join(f.cwd, 'apps/web'),
+      env: { ...process.env, ...previewEnv(current, deployed), VERCEL_FORCE_BUILD: '' },
+      encoding: 'utf8',
+    });
+    assert.equal(nested.status, 0, 'Vercel runs the command from apps/web');
+    assert.match(nested.stdout, /SKIP: no web build inputs changed/);
+
+    for (const [path, label] of [
+      ['apps/web/src/page.tsx', 'web app'],
+      ['packages/shared/src/a.ts', 'direct shared package'],
+      ['packages/tokens/src/a.ts', 'transitive shared package'],
+      ['pnpm-lock.yaml', 'lockfile'],
+      ['tsconfig.base.json', 'base tsconfig'],
+    ]) {
+      f.write(path, `changed ${label}`);
+      const changed = f.commit();
+      const result = check(changed, current);
+      assert.equal(result.code, 1, label);
+      assert.match(result.reason, new RegExp(path.replace(/[.]/g, '\\.')));
+      current = changed;
+    }
+
+    const webBaseline = current;
+    f.write('apps/web/src/page.tsx', 'unbuilt web change');
+    f.commit();
+    f.write('docs/note.md', 'docs after web');
+    current = f.commit();
+    assert.equal(check(current, webBaseline).code, 1, 'all changes since deployment, not HEAD^');
+
+    mkdirSync(join(f.cwd, 'docs/moved'), { recursive: true });
+    renameSync(join(f.cwd, 'apps/web/src/page.tsx'), join(f.cwd, 'docs/moved/page.tsx'));
+    const moved = f.commit();
+    assert.equal(check(moved, current).code, 1, 'moving web code out must build');
+
+    const empty = f.commit('--allow-empty');
+    assert.equal(check(empty, moved).code, 1, 'empty commit requests a rebuild');
+    assert.equal(check(empty, empty).code, 1, 'same commit redeploy');
+    assert.equal(check(moved, current).code, 1, 'checkout must match the deployed commit');
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('missing or unreachable previous SHA falls back to HEAD^; no parent builds', () => {
+  const f = workspaceFixture();
+  const check = (current, previous) =>
+    ignoreBuild({ cwd: f.cwd, env: previewEnv(current, previous) }).code;
+  try {
+    assert.equal(check(f.first, ''), 1, 'root commit has no parent to compare');
+    f.write('docs/note.md', 'docs change');
+    let current = f.commit();
+    assert.equal(check(current, ''), 0, 'docs-only HEAD^ diff');
+    assert.equal(check(current, 'not-a-sha'), 0);
+    assert.equal(check(current, 'b'.repeat(40)), 0, 'unreachable previous uses HEAD^');
+    f.write('packages/shared/src/a.ts', 'shared change');
+    current = f.commit();
+    assert.equal(check(current, ''), 1, 'shared change in HEAD^ diff');
+    assert.equal(check(current, 'b'.repeat(40)), 1);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('shallow clones fetch the missing base, and build when it cannot be fetched', () => {
+  const f = workspaceFixture();
+  const clone = mkdtempSync(join(tmpdir(), 'vercel-ignore-shallow-'));
+  const git = (...args) =>
+    execFileSync('git', args, { cwd: clone, encoding: 'utf8', stdio: 'pipe' }).trim();
+  try {
+    const deployed = f.first;
+    f.write('apps/web/src/page.tsx', 'web change');
+    f.commit();
+    f.write('docs/note.md', 'docs change');
+    const current = f.commit();
+    execFileSync('git', ['clone', '-q', '--depth=1', `file://${f.cwd}`, clone]);
+    const check = (previous) =>
+      ignoreBuild({ cwd: clone, env: previewEnv(current, previous) }).code;
+    assert.throws(() => git('cat-file', '-e', `${deployed}^{commit}`), 'base starts missing');
+    assert.equal(check(deployed), 1, 'fetched base reveals the unbuilt web change');
+    git('cat-file', '-e', `${deployed}^{commit}`);
+
+    rmSync(clone, { recursive: true, force: true });
+    execFileSync('git', ['clone', '-q', '--depth=1', `file://${f.cwd}`, clone]);
+    git('remote', 'remove', 'origin');
+    assert.equal(check(deployed), 1, 'no base and no parent available must build');
+    assert.equal(check(''), 1);
+  } finally {
+    f.cleanup();
+    rmSync(clone, { recursive: true, force: true });
   }
 });
 
