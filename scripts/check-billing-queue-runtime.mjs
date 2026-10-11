@@ -259,7 +259,9 @@ export async function checkBillingQueueRuntime(
         '--cpu=1',
         '--memory=512Mi',
         '--command=node',
-        '--args=--import,@sentry/node/import,--import,@swc-node/register/esm-register,src/billing/verify-billing-queue.ts',
+        // gcloud's list parser rejects duplicate values. Keep each Node
+        // import option distinct rather than repeating the bare --import.
+        '--args=--import=@sentry/node/import,--import=@swc-node/register/esm-register,src/billing/verify-billing-queue.ts',
         '--set-env-vars=BILLING_NOTICE_PROBE=true',
         '--set-secrets=BILLING_NOTICE_REDIS_URL=redis-url-prod:latest',
         '--format=json(metadata.name)',
