@@ -7,6 +7,7 @@ import {
   parseImages,
   verifyInstalled,
   runCleanup,
+  providerVerdict,
   durationMs,
   POLICY_PATH,
   LIVE_CONFIRMATION,
@@ -301,4 +302,52 @@ test('an install whose readback differs is reported as a failure', () => {
 
 test('unknown modes are rejected', () => {
   assert.throws(() => runCleanup({ mode: 'apply' }), /--mode/);
+});
+
+const versionsPrefix =
+  'projects/declutrmail-ai-prod/locations/us-central1/repositories/declutrmail/packages/api/versions/';
+function verdictFixture({ entries, logError, tags = [] }) {
+  const lines = [];
+  const run = (...args) => {
+    if (args[0] === 'logging') {
+      if (logError) throw Object.assign(new Error('x'), { stderr: 'PERMISSION_DENIED' });
+      return JSON.stringify(entries);
+    }
+    assert.deepEqual(args.slice(0, 4), ['artifacts', 'docker', 'tags', 'list']);
+    return JSON.stringify(
+      tags.map(([tag, digest]) => ({
+        tag: `${versionsPrefix.replace('/versions/', '/tags/')}${tag}`,
+        version: `${versionsPrefix}${digest}`,
+      })),
+    );
+  };
+  return { run, lines, log: (l) => lines.push(l) };
+}
+const verdictEntry = (...digests) => ({
+  protoPayload: {
+    request: { validateOnly: true, names: digests.map((d) => `${versionsPrefix}${d}`) },
+  },
+});
+
+test('the provider verdict lists doomed versions and refuses one holding a serving- tag', () => {
+  const ok = verdictFixture({
+    entries: [verdictEntry(sha(2), sha(3)), verdictEntry(sha(3))],
+    tags: [['serving-api', sha(1)]],
+  });
+  assert.deepEqual(providerVerdict(ok), { verified: true, versions: [sha(2), sha(3)] });
+  assert.ok(ok.lines.some((l) => l.includes('would delete 2 api version(s)')));
+  const bad = verdictFixture({
+    entries: [verdictEntry(sha(1))],
+    tags: [['serving-api-rollback-3', sha(1)]],
+  });
+  assert.throws(() => providerVerdict(bad), /serving- tag; do not go live/);
+  assert.ok(bad.lines.some((l) => l.includes('PROTECTED (serving-api-rollback-3)')));
+});
+
+test('a missing or unreadable provider verdict is UNVERIFIED, never a clean result', () => {
+  for (const f of [verdictFixture({ entries: [] }), verdictFixture({ logError: true })]) {
+    assert.equal(providerVerdict(f).verified, false);
+    assert.ok(f.lines.some((l) => l.startsWith('::warning::UNVERIFIED')));
+    assert.ok(!f.lines.some((l) => l.includes('would delete')));
+  }
 });

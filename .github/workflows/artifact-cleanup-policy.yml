@@ -1,11 +1,14 @@
 # Preview and install the Artifact Registry cleanup policy for the `api` image.
 #
-# Manual only. See docs/ops/cost-efficiency.md for the rollout:
+# Policy changes are manual only. See docs/ops/cost-efficiency.md for the rollout:
 #   1. mode=dry-run  — pins serving/rollback images, prints repo size and what the
 #                      policy would delete now, installs the policy with --dry-run.
 #   2. Wait about a day, run mode=report and compare with the provider verdict step.
 #   3. mode=live + confirm_live=delete-unprotected-api-images — installs with
 #      --no-dry-run. Deletion then happens in Artifact Registry's background job.
+#
+# The schedule only re-pins serving tags, so a rollback done outside the deploy
+# workflow (console or gcloud traffic change) is protected within three hours.
 #
 # Installing needs `artifactregistry.repositories.update`, which the deploy SA's
 # `roles/artifactregistry.writer` does not include. Report mode needs only the
@@ -25,19 +28,40 @@ on:
         type: string
         required: false
         default: ''
+  schedule:
+    - cron: '23 */3 * * *'
 
 permissions:
   contents: read
   id-token: write
 
-# Same lock as releases: this moves the serving tags the deploy also moves.
+# Not the release lock: a pending run there would replace a queued deploy. Tag moves are
+# idempotent and read back, so a race with a deploy's own pin fails loudly, never silently.
 concurrency:
-  group: deploy-cloud-run-production
+  group: artifact-cleanup-${{ github.event_name }}
   cancel-in-progress: false
 
 jobs:
+  repin:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Authenticate to GCP via Workload Identity Federation
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Re-pin serving and rollback images
+        run: node scripts/pin-production-images.mjs
+
   cleanup-policy:
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -70,21 +94,4 @@ jobs:
         run: node scripts/artifact-cleanup-policy.mjs --mode="$MODE"
       - name: Artifact Registry's own dry-run verdict (last 3 days)
         if: always() && steps.auth.outcome == 'success'
-        run: |
-          set -uo pipefail
-          filter='protoPayload.serviceName="artifactregistry.googleapis.com" AND protoPayload.request.parent="projects/declutrmail-ai-prod/locations/us-central1/repositories/declutrmail/packages/-" AND protoPayload.request.validateOnly=true'
-          if ! out=$(gcloud logging read "$filter" --project=declutrmail-ai-prod \
-              --resource-names=projects/declutrmail-ai-prod --freshness=3d --format=json 2>&1); then
-            echo "UNVERIFIED: cannot read Data Access audit logs (needs roles/logging.privateLogViewer)."
-            echo "$out" | tail -n 3
-            exit 0
-          fi
-          echo "$out" | node --input-type=module -e '
-            let s = ""; for await (const c of process.stdin) s += c;
-            const names = [...new Set(JSON.parse(s).flatMap((e) => e.protoPayload?.request?.names ?? []))];
-            if (!names.length) {
-              console.log("UNVERIFIED: no provider dry-run verdict in the last 3 days. Either the background job has not run since install (about a day) or DATA_WRITE audit logs are off for artifactregistry.googleapis.com.");
-            } else {
-              console.log(`Provider dry run would delete ${names.length} version(s):`);
-              for (const n of names) console.log(`  ${n.split("/versions/").pop()}`);
-            }'
+        run: node scripts/artifact-cleanup-policy.mjs --mode=verdict

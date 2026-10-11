@@ -7,12 +7,12 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { IMAGE, pinProductionImages } from './pin-production-images.mjs';
+import { IMAGE, pinProductionImages, readTags } from './pin-production-images.mjs';
 
 const PROJECT = 'declutrmail-ai-prod';
 const REPO_SCOPE = ['declutrmail', '--location=us-central1', `--project=${PROJECT}`];
 export const POLICY_PATH = 'infra/artifact-cleanup-policy.json';
-export const MODES = ['validate', 'report', 'dry-run', 'live'];
+export const MODES = ['validate', 'report', 'dry-run', 'live', 'verdict'];
 export const LIVE_CONFIRMATION = 'delete-unprotected-api-images';
 const DURATION = /^(\d+)([smhd])$/;
 const UNIT_MS = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 };
@@ -225,6 +225,71 @@ function describeRepository(run) {
   return repository;
 }
 
+const VERDICT_FILTER = [
+  'protoPayload.serviceName="artifactregistry.googleapis.com"',
+  `protoPayload.request.parent="projects/${PROJECT}/locations/us-central1/repositories/declutrmail/packages/-"`,
+  'protoPayload.request.validateOnly=true',
+].join(' AND ');
+
+/**
+ * Artifact Registry's own dry-run verdict from Data Access audit logs, checked against the
+ * current serving- tags. No readable verdict is UNVERIFIED, never "nothing would be deleted".
+ */
+export function providerVerdict({ run = gcloud, log = console.log } = {}) {
+  let entries;
+  try {
+    entries = JSON.parse(
+      run(
+        'logging',
+        'read',
+        VERDICT_FILTER,
+        `--project=${PROJECT}`,
+        '--freshness=3d',
+        '--format=json',
+      ),
+    );
+    if (!Array.isArray(entries)) throw new Error('unexpected log listing');
+  } catch (error) {
+    log(
+      '::warning::UNVERIFIED: cannot read Data Access audit logs (needs roles/logging.privateLogViewer): ' +
+        String(error.stderr || error.message)
+          .trim()
+          .split('\n')
+          .at(-1),
+    );
+    return { verified: false, versions: [] };
+  }
+  const prefix = `projects/${PROJECT}/locations/us-central1/repositories/declutrmail/packages/api/versions/`;
+  const versions = [
+    ...new Set(
+      entries
+        .flatMap((e) => e?.protoPayload?.request?.names ?? [])
+        .filter((n) => typeof n === 'string' && n.startsWith(prefix))
+        .map((n) => decodeURIComponent(n.slice(prefix.length))),
+    ),
+  ].sort();
+  if (!entries.length) {
+    log(
+      '::warning::UNVERIFIED: no provider dry-run verdict in the last 3 days. Either the background ' +
+        'job has not run since install (about a day) or DATA_WRITE audit logs are off for ' +
+        'artifactregistry.googleapis.com.',
+    );
+    return { verified: false, versions };
+  }
+  const serving = new Map(
+    [...readTags(run)].filter(([tag]) => tag.startsWith('serving-')).map(([t, d]) => [d, t]),
+  );
+  log(`Provider dry run would delete ${versions.length} api version(s):`);
+  for (const v of versions) log(`  ${v}${serving.has(v) ? `  PROTECTED (${serving.get(v)})` : ''}`);
+  const overlap = versions.filter((v) => serving.has(v));
+  if (overlap.length)
+    throw new Error(
+      `Provider verdict would delete ${overlap.length} image(s) holding a serving- tag; do not go live`,
+    );
+  log('No image holding a serving- tag is in the provider verdict.');
+  return { verified: true, versions };
+}
+
 export function runCleanup({
   mode,
   confirm,
@@ -237,6 +302,7 @@ export function runCleanup({
   if (!MODES.includes(mode)) throw new Error(`--mode must be one of ${MODES.join(', ')}`);
   if (mode === 'live' && confirm !== LIVE_CONFIRMATION)
     throw new Error(`Live deletion requires the confirmation phrase ${LIVE_CONFIRMATION}`);
+  if (mode === 'verdict') return providerVerdict({ run, log });
   const policies = validateCleanupPolicy(JSON.parse(readFileSync(policyPath, 'utf8')));
   log(`${policyPath}: ${policies.length} valid rules (${policies.map((p) => p.name).join(', ')})`);
   if (mode === 'validate') return { policies };
