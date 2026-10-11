@@ -379,7 +379,7 @@ export function BillingScreen({
 
   useEffect(() => {
     if (data?.complimentary?.source !== 'pass') return;
-    let pendingPass = false;
+    let pendingPass: boolean;
     try {
       pendingPass = window.sessionStorage.getItem('dm.pass.checkout') === '1';
       if (pendingPass) window.sessionStorage.removeItem('dm.pass.checkout');
