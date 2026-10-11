@@ -380,4 +380,22 @@ test('worker cutover keeps every overlapping process lease-aware and never delet
   );
   assert.match(workflow, /--instances=1 \\/);
   assert.doesNotMatch(workflow, /services delete|worker-pools delete/);
+
+  const legacyRoll = workflow.slice(
+    workflow.indexOf('- name: Give the serving legacy worker the outbox lease'),
+    workflow.indexOf('- name: Record serving worker-pool revision'),
+  );
+  assert.match(legacyRoll, /is not serving \$IMAGE on 100% of traffic/);
+
+  const restore = workflow.slice(
+    workflow.indexOf('- name: Restore previous worker-pool revision after failed verification'),
+    workflow.indexOf('- name: Disable legacy worker service after pool is healthy'),
+  );
+  assert.match(restore, /\(failure\(\) \|\| cancelled\(\)\)/);
+  for (const step of ['pool_deploy', 'pool_verify', 'pool_notice']) {
+    assert.match(restore, new RegExp(`\\["failure","cancelled"\\]'\\), steps\\.${step}\\.outcome`));
+  }
+  const instances = restore.indexOf('--instances="$PREVIOUS_INSTANCES"');
+  assert.notEqual(instances, -1);
+  assert.ok(instances < restore.indexOf('update-instance-split'));
 });

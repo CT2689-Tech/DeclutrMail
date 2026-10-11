@@ -101,12 +101,11 @@ export class RedisOutboxDispatcherLease implements OutboxDispatcherLease {
   }
 
   async ensureHeld(): Promise<boolean> {
-    if (this.released) return false;
     return this.isHeld() || this.refresh();
   }
 
   start(onAcquired: () => void): void {
-    if (this.timer) return;
+    if (this.timer || this.released) return;
     this.timer = setInterval(() => {
       const wasHeld = this.isHeld();
       void this.refresh().then((held) => {
@@ -132,6 +131,7 @@ export class RedisOutboxDispatcherLease implements OutboxDispatcherLease {
   }
 
   private refresh(): Promise<boolean> {
+    if (this.released) return Promise.resolve(false);
     this.refreshing ??= this.acquireOrRenew().finally(() => {
       this.refreshing = null;
     });

@@ -337,6 +337,17 @@ jobs:
             --region="$WORKER_REGION" \
             --project="$PROJECT" \
             --quiet
+          # Traffic pinned to an older revision would leave pre-lease code
+          # serving beside the pool; the new revision must take all of it.
+          gcloud run services describe "$LEGACY_WORKER" --region="$WORKER_REGION" \
+            --project="$PROJECT" --format=json | jq -e --arg image "$IMAGE" '
+              .status as $s |
+              [$s.traffic[]? | select((.percent // 0) > 0)] as $serving |
+              .spec.template.spec.containers[0].image == $image and
+              $s.latestReadyRevisionName == $s.latestCreatedRevisionName and
+              ($serving | length) == 1 and $serving[0].percent == 100 and
+              $serving[0].revisionName == $s.latestReadyRevisionName' > /dev/null \
+            || { echo "::error::$LEGACY_WORKER is not serving $IMAGE on 100% of traffic"; exit 1; }
 
       - name: Record serving worker-pool revision
         id: pool_before
@@ -347,15 +358,22 @@ jobs:
           EXISTS=$(gcloud run worker-pools list --region="$WORKER_REGION" --project="$PROJECT" \
             --filter="metadata.name=$WORKER_POOL" --format="value(metadata.name)")
           PREVIOUS=""
+          PREVIOUS_INSTANCES=""
           if [ -n "$EXISTS" ]; then
-            PREVIOUS=$(gcloud run worker-pools describe "$WORKER_POOL" \
-              --region="$WORKER_REGION" --project="$PROJECT" --format=json | jq -er '
+            gcloud run worker-pools describe "$WORKER_POOL" \
+              --region="$WORKER_REGION" --project="$PROJECT" --format=json > pool-before.json
+            PREVIOUS=$(jq -er '
                 [.status.instanceSplits[]? | select((.percent // 0) > 0)] |
                 if length == 1 and .[0].percent == 100 then .[0].revisionName
-                else error("Worker pool must assign 100% to one revision before a deploy") end')
+                else error("Worker pool must assign 100% to one revision before a deploy") end' pool-before.json)
+            # A runbook rollback leaves the pool at 0 instances; a failed
+            # deploy must put that back, not just the revision.
+            PREVIOUS_INSTANCES=$(jq -er '.metadata.annotations["run.googleapis.com/manualInstanceCount"]
+                // error("Worker pool has no manual instance count")' pool-before.json)
           fi
           echo "previous=$PREVIOUS" >> "$GITHUB_OUTPUT"
-          echo "Worker-pool revision before deploy: ${PREVIOUS:-none (first deploy)}"
+          echo "previous_instances=$PREVIOUS_INSTANCES" >> "$GITHUB_OUTPUT"
+          echo "Worker-pool revision before deploy: ${PREVIOUS:-none (first deploy)} (${PREVIOUS_INSTANCES:-0} instances)"
 
       - name: Deploy declutrmail-worker-pool (BullMQ + crons)
         id: pool_deploy
@@ -431,7 +449,9 @@ jobs:
           # sufficient; the boot proof is the revision's own log line, which
           # `worker.ts` writes only after every queue consumer and the outbox
           # dispatcher are listening.
-          REVISION=$(gcloud run worker-pools describe "$WORKER_POOL" \
+          # Status can trail the deploy command briefly, so readiness is polled.
+          ready_deadline=$(( SECONDS + 3 * 60 ))
+          until REVISION=$(gcloud run worker-pools describe "$WORKER_POOL" \
             --region="$WORKER_REGION" --project="$PROJECT" --format=json | jq -er '
               .status as $s | .metadata.annotations as $a |
               ([$s.instanceSplits[]? | select((.percent // 0) > 0)]) as $serving |
@@ -443,7 +463,13 @@ jobs:
                 then error("Worker pool must assign 100% to its latest revision")
               elif $a["run.googleapis.com/scalingMode"] != "manual" or $a["run.googleapis.com/manualInstanceCount"] != "1"
                 then error("Worker pool must run exactly one manual instance")
-              else $s.latestReadyRevisionName end')
+              else $s.latestReadyRevisionName end'); do
+            if (( SECONDS >= ready_deadline )); then
+              echo "::error::$WORKER_POOL did not reach Ready on its latest revision within 3 minutes"
+              exit 1
+            fi
+            sleep 15
+          done
           echo "Worker-pool revision $REVISION is Ready with 100% of instances"
           # Needs logging.logEntries.list on the deploy SA (roles/logging.viewer).
           FILTER="resource.type=\"cloud_run_worker_pool\" AND resource.labels.worker_pool_name=\"$WORKER_POOL\" AND resource.labels.revision_name=\"$REVISION\" AND (jsonPayload.kind=\"worker.boot_failed\" OR (jsonPayload.kind=\"worker.listening\" AND jsonPayload.queue=\"outbox-dispatcher\"))"
@@ -502,20 +528,28 @@ jobs:
       # A worker pool has no startup probe to hold instances on the previous
       # revision, so a revision that never proves it booted is rolled back
       # here. Before the cutover the legacy service is still serving, so a
-      # first-deploy failure just disables the new pool.
+      # first-deploy failure just disables the new pool. A cancelled run is
+      # treated as failed: an unverified revision must not keep serving.
       - name: Restore previous worker-pool revision after failed verification
         if: >-
-          failure() && (steps.pool_deploy.outcome == 'failure' ||
-          steps.pool_verify.outcome == 'failure' || steps.pool_notice.outcome == 'failure')
+          (failure() || cancelled()) &&
+          (contains(fromJSON('["failure","cancelled"]'), steps.pool_deploy.outcome) ||
+          contains(fromJSON('["failure","cancelled"]'), steps.pool_verify.outcome) ||
+          contains(fromJSON('["failure","cancelled"]'), steps.pool_notice.outcome))
         env:
           PREVIOUS: ${{ steps.pool_before.outputs.previous }}
+          PREVIOUS_INSTANCES: ${{ steps.pool_before.outputs.previous_instances }}
         run: |
           set -euo pipefail
           if [ -n "$PREVIOUS" ]; then
+            # Instance count first, so a pool that was stopped never runs
+            # the failed revision while the split moves back.
+            gcloud run worker-pools update "$WORKER_POOL" --instances="$PREVIOUS_INSTANCES" \
+              --region="$WORKER_REGION" --project="$PROJECT" --quiet
             gcloud run worker-pools update-instance-split "$WORKER_POOL" \
               --to-revisions="$PREVIOUS=100" \
               --region="$WORKER_REGION" --project="$PROJECT" --quiet
-            echo "::warning::Worker pool restored to $PREVIOUS"
+            echo "::warning::Worker pool restored to $PREVIOUS at $PREVIOUS_INSTANCES instance(s)"
           elif [ -n "$(gcloud run worker-pools list --region="$WORKER_REGION" --project="$PROJECT" \
               --filter="metadata.name=$WORKER_POOL" --format="value(metadata.name)")" ]; then
             gcloud run worker-pools update "$WORKER_POOL" --instances=0 \

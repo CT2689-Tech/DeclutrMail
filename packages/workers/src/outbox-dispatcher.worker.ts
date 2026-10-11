@@ -918,7 +918,8 @@ export class OutboxDispatcherWorker {
       return;
     }
     // Keep renewing until every abandoned call settles; process exit ends
-    // renewal and the key's TTL frees it for the successor.
+    // renewal and the key's TTL frees it for the successor. The lease's
+    // Redis connection must stay open through shutdown for this to hold.
     void Promise.allSettled(orphans).then(() => lease.release());
   }
 

@@ -47,21 +47,25 @@ risk is correlated with its trigger rather than independent of it.
 2. **Give the serving legacy worker the outbox lease.** While the
    `declutrmail-worker` service still serves, it is rolled to the new image
    (image and `SENTRY_RELEASE` only). Without this, the first overlap would
-   pair a lease-aware pool with a service whose code ignores the lease. Once
-   the service is disabled, this step is a no-op.
-3. **Record serving worker-pool revision.** This is the rollback target if
-   verification fails. It is empty on the first deploy.
+   pair a lease-aware pool with a service whose code ignores the lease. The
+   step then checks that the new revision serves 100% of traffic, so a
+   pinned older revision fails the deploy. Once the service is disabled,
+   this step is a no-op.
+3. **Record serving worker-pool revision** and its instance count. This is
+   the rollback target if verification fails. It is empty on the first
+   deploy.
 4. **Deploy `declutrmail-worker-pool`** with `--instances=1`, 1 vCPU / 1Gi,
    the same runtime service account, env, secrets, and `node src/worker.ts`.
 5. **Smoke worker-pool revision.** The pool must be Ready, reconciled, at
-   manual scaling with 1 instance, and assigning 100% to its newest revision.
-   That revision must then log `worker.listening` with
+   manual scaling with 1 instance, and assigning 100% to its newest revision,
+   within 3 minutes. That revision must then log `worker.listening` with
    `queue=outbox-dispatcher` within 10 minutes. `worker.boot_failed` fails
    the step at once.
 6. **Verify billing notice worker.** This is the same env contract as before,
    read from the pool revision, plus the deployed image.
-7. If step 4, 5 or 6 fails, **restore** the instance split to the revision
-   recorded in step 3. On a first deploy, set the pool to `--instances=0`
+7. If step 4, 5 or 6 fails or the run is cancelled, **restore** the instance
+   count and then the instance split recorded in step 3. A pool stopped by a
+   rollback therefore stays stopped. On a first deploy, set the pool to `--instances=0`
    instead. The legacy service is still serving at that point.
 8. **Disable the legacy worker service** with
    `gcloud run services update declutrmail-worker --scaling=0`. gcloud
