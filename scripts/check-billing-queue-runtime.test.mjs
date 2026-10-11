@@ -378,3 +378,37 @@ test('real audit subprocess does not forward provider stderr, and workflow remai
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('generic probe refusal projects fixed concepts without private provider text', () => {
+  const result = projectBillingProbeFailure(['run', 'jobs', 'create'], {
+    stderr:
+      'FAILED_PRECONDITION private-service-account@example.test: image secret invalid memory cpu --args PRIVATE_TOKEN',
+  });
+  assert.equal(result.category, 'command_failed');
+  assert.deepEqual(result.hints, [
+    'secret',
+    'image',
+    'serviceAccount',
+    'memory',
+    'cpu',
+    'argument',
+    'validation',
+    'failedPrecondition',
+  ]);
+  assert.ok(!JSON.stringify(result).includes('PRIVATE'));
+  assert.ok(!JSON.stringify(result).includes('@'));
+});
+test('alternate provider permission and CLI value refusals retain closed categories', () => {
+  assert.equal(
+    projectBillingProbeFailure(['run', 'jobs', 'create'], {
+      stderr: 'PRIVATE does not have permission to access resource',
+    }).category,
+    'permission_denied',
+  );
+  assert.equal(
+    projectBillingProbeFailure(['run', 'jobs', 'create'], {
+      stderr: 'Invalid value for [--args]: PRIVATE',
+    }).category,
+    'cli_arguments_invalid',
+  );
+});

@@ -33,16 +33,46 @@ export function projectBillingProbeFailure(args, error) {
   )
     operation = 'unknown';
   let category = 'command_failed';
-  if (/PERMISSION_DENIED|permission[^\n]*denied/i.test(text)) category = 'permission_denied';
-  else if (/unrecognized arguments|argument[^\n]*(?:expected|invalid)/i.test(text))
+  if (
+    /PERMISSION_DENIED|permission[^\n]*denied|does not have permission|not authorized/i.test(text)
+  )
+    category = 'permission_denied';
+  else if (
+    /unrecognized arguments|argument[^\n]*(?:expected|invalid)|invalid value for \[--/i.test(text)
+  )
     category = 'cli_arguments_invalid';
   else if (/INVALID_ARGUMENT/i.test(text)) category = 'api_arguments_invalid';
   else if (/UNAUTHENTICATED|reauthentication|authentication required/i.test(text))
     category = 'authentication_required';
   else if (error?.code === 'ETIMEDOUT') category = 'command_deadline';
+  // Only fixed diagnostic concepts are projected. A generic create refusal
+  // otherwise hides CLI validation, image/secret readiness and policy failures
+  // behind the same exit code. Never emit provider phrases or argument values.
+  const hints =
+    operation !== 'unknown' && category === 'command_failed'
+      ? Object.entries({
+          secret: /\bsecret(?:s|manager)?\b/i,
+          image: /\bimage\b/i,
+          quota: /\bquota\b|RESOURCE_EXHAUSTED/i,
+          constraint: /\bconstraint\b|organization policy/i,
+          serviceAccount: /service[ -]account/i,
+          network: /\b(?:network|vpc)\b/i,
+          resourceMissing: /NOT_FOUND|not found|does not exist/i,
+          resourceExists: /ALREADY_EXISTS|already exists/i,
+          memory: /\bmemory\b/i,
+          cpu: /\bcpu\b/i,
+          argument: /--args|\b(?:arguments?|command)\b/i,
+          validation: /\b(?:invalid|unsupported|required|must|expected)\b/i,
+          apiDisabled: /SERVICE_DISABLED|API.*(?:not enabled|disabled)/i,
+          failedPrecondition: /FAILED_PRECONDITION/i,
+        })
+          .filter(([, pattern]) => pattern.test(text))
+          .map(([name]) => name)
+      : [];
   return {
     operation,
     category,
+    ...(hints.length ? { hints } : {}),
     permissions: [
       ...new Set(text.match(/(?:run|iam|secretmanager)\.[A-Za-z]+\.[A-Za-z]+/g) ?? []),
     ].filter((name) => PERMISSIONS.has(name)),

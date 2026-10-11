@@ -280,3 +280,23 @@ Independent review approved the final scope after correcting gcloud's repeated
 authorization-field selectors; the actual installed SDK formatter preserves
 multiple verdicts with the corrected array-aware projection. Touched lint,
 formatting and diff validation also pass. No new runtime proof is claimed yet.
+
+## Brief producer release diagnostic — 2026-10-11
+
+The Brief release #38116710998 stopped before producer deployment at its private
+runtime probe's jobs_create operation, with generic command_failed. Owned cleanup
+ran; no compatible producer release is claimed. The existing fixed failed-probe
+audit #38116441552 independently failed logging access with permission_denied.
+Local gcloud serving reads also failed authentication; fresh WIF snapshot
+#38117432398 observed API00611/worker00161 at100% on06:15:07Z. Browser Logs Explorer
+remained on its loading view, so dashboard usability is unverified.
+
+This isolated correction adds fixed diagnostic concept names only for otherwise
+unclassified gcloud refusals and recognizes alternate permission/CLI-value error
+wording. It does not print raw provider text, resources, identities or arguments;
+unknown operations cannot produce concepts. The original producer compatibility,
+immutable image, scoped ownership and verified cleanup requirements stay intact.
+Current root owns helper/test/this record, based on main62442545. No open PR shares
+these files; #945 owns separate sandbox billing rehearsal. No IAM, secret binding,
+service deployment, notice preference or billing flag is changed here. Runtime
+root cause remains unknown until the reviewed main diagnostic executes.
