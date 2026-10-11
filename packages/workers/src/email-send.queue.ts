@@ -91,12 +91,14 @@ export function readEmailPrefsQueueCompatibility(queue: Queue): Promise<{ worker
 }
 
 /**
- * `CLIENT LIST` is one instant on one broker connection, and a live worker's
- * named blocking connection is absent while BullMQ re-establishes it, so a
- * single empty listing does not prove there is no worker. Each sample reads
- * through a fresh queue handle. Absence is the only refusal retried: any
- * other refusal in any sample is final, so a stray older actor seen once
- * still refuses. Passes only if some sample saw every actor compatible.
+ * `CLIENT LIST` is one instant on one broker connection; the bound broker
+ * can return a different partial client set per connection, and a live
+ * worker's named connection is absent while BullMQ re-establishes it. A
+ * single empty listing therefore does not prove there is no worker. Each
+ * sample reads through a fresh queue handle. Absence is the only refusal
+ * retried: any other refusal in any sample is final, so a stray older actor
+ * seen once still refuses. A pass means every sampled actor was compatible,
+ * not that every consumer was listed.
  */
 export async function sampleEmailQueueCompatibility(
   withQueue: <T>(read: (queue: Queue) => Promise<T>) => Promise<T>,
