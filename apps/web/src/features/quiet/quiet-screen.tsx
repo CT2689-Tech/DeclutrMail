@@ -10,8 +10,7 @@ import {
 import { useEffect } from 'react';
 import Link from 'next/link';
 
-import { EmptyState, FeatureExplainer, ScreenIntro, tokens } from '@declutrmail/shared';
-import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { EmptyState, ScreenIntro, tokens } from '@declutrmail/shared';
 import type { QuietHoursConfig } from '@declutrmail/shared/contracts';
 
 import { useAuth } from '@/features/auth/auth-provider';
@@ -59,9 +58,8 @@ export function QuietRoute() {
         gap: 24,
       }}
     >
-      <EditorialKicker>Automations</EditorialKicker>
+      <EditorialKicker>Automations / On your schedule</EditorialKicker>
       <h1 style={editorialTitleStyle}>Quiet hours</h1>
-      <FeatureExplainer id="quiet-explainer">{WS2_COPY.explain.quiet}</FeatureExplainer>
       <EditorialDescription>
         Autopilot holds its actions during quiet hours. Gmail delivery continues.
       </EditorialDescription>

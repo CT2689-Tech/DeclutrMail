@@ -18,7 +18,7 @@ export default function AutopilotError({
     <RouteErrorScreen
       gap={32}
       title="Autopilot"
-      kicker="Automations"
+      kicker="Automations / Your rules"
       error={error}
       reset={reset}
       boundary="autopilot"

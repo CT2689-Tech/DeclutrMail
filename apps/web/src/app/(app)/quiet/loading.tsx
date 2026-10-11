@@ -4,7 +4,7 @@ export default function Loading() {
   return (
     <RouteLoading
       gap={24}
-      kicker="Automations"
+      kicker="Automations / On your schedule"
       title="Quiet hours"
       label="Loading quiet hours"
       rows={2}

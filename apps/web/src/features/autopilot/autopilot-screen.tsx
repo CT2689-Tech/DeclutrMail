@@ -11,14 +11,12 @@ import {
   Button,
   EmptyState,
   ErrorState,
-  FeatureExplainer,
   ScreenIntro,
   Skeleton,
   toast,
   tokens,
 } from '@declutrmail/shared';
 import { AUTOPILOT_PENDING_PAGE_SIZE } from '@declutrmail/shared/contracts';
-import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 
 import type {
   AutopilotApproveAllScopeDto,
@@ -854,7 +852,7 @@ export function AutopilotScreen({
         gap: 32,
       }}
     >
-      <EditorialKicker>Automations</EditorialKicker>
+      <EditorialKicker>Automations / Your rules</EditorialKicker>
       {/* Header — one line: title + the master pause (D105). */}
       <div
         style={{
@@ -865,10 +863,7 @@ export function AutopilotScreen({
           gap: 16,
         }}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-          <h1 style={editorialTitleStyle}>Autopilot</h1>
-          <FeatureExplainer id="autopilot-explainer">{WS2_COPY.explain.autopilot}</FeatureExplainer>
-        </div>
+        <h1 style={editorialTitleStyle}>Autopilot</h1>
         <Button
           tone="default"
           onClick={() => setPauseConfirmOpen(true)}

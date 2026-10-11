@@ -42,6 +42,18 @@
     "text": "A daily window per inbox when Autopilot holds its actions."
   },
   {
+    "file": "apps/web/src/app/(app)/screener/error.tsx",
+    "line": 19,
+    "id": "clean_verb",
+    "text": "Clean up / New senders"
+  },
+  {
+    "file": "apps/web/src/app/(app)/screener/loading.tsx",
+    "line": 7,
+    "id": "clean_verb",
+    "text": "Clean up / New senders"
+  },
+  {
     "file": "apps/web/src/app/(app)/triage/triage-route.tsx",
     "line": 32,
     "id": "action_word",

@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Pill, Skeleton, tokens } from '@declutrmail/shared';
-import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { SelectWell } from '@/features/settings/settings-list';
 import { Switch } from '@/features/settings/switch';
 import {
@@ -12,12 +11,6 @@ import {
 } from '@declutrmail/shared/contracts';
 
 const { color, font, radius, text } = tokens;
-
-function quietField(index: 0 | 1 | 2): string {
-  const label = WS2_COPY.names.quietFields[index];
-  if (!label) throw new Error('Quiet field label is missing from the copy deck.');
-  return label;
-}
 
 /**
  * Per-mailbox quiet-hours config card (U18 — D92/D95).
@@ -285,7 +278,7 @@ function QuietHoursForm({
             onChange={(next) => set({ enabled: next })}
           />
         </Row>
-        <Row label={quietField(0)} divider>
+        <Row label="Start" divider>
           <input
             className="dm-field"
             type="time"
@@ -296,7 +289,7 @@ function QuietHoursForm({
             style={inputStyle}
           />
         </Row>
-        <Row label={quietField(1)} divider>
+        <Row label="End" divider>
           <input
             className="dm-field"
             type="time"
@@ -307,7 +300,7 @@ function QuietHoursForm({
             style={inputStyle}
           />
         </Row>
-        <Row label={quietField(2)} divider className="dm-quiet-timezone-row">
+        <Row label="Timezone" divider className="dm-quiet-timezone-row">
           <div className="dm-quiet-timezone-control">
             <SelectWell
               value={draft.timezone}

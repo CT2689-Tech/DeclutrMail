@@ -8,15 +8,7 @@ import {
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
-import {
-  Button,
-  ErrorState,
-  FeatureExplainer,
-  ScreenIntro,
-  tokens,
-  toast,
-} from '@declutrmail/shared';
-import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { Button, ErrorState, ScreenIntro, tokens, toast } from '@declutrmail/shared';
 import { DEFAULT_DELETE_WINDOW_DAYS, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 
 // Cross-feature query-key imports are the invalidation contract (D200)
@@ -788,7 +780,7 @@ export function ScreenerScreen({
         gap: 24,
       }}
     >
-      <EditorialKicker>Cleanup</EditorialKicker>
+      <EditorialKicker>Clean up / First decisions</EditorialKicker>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
         <h1 style={editorialTitleStyle}>Screener</h1>
         {/* Only the count query knows the true total — the queue loads a
@@ -805,7 +797,10 @@ export function ScreenerScreen({
         )}
       </div>
 
-      <FeatureExplainer id="screener-explainer">{WS2_COPY.explain.screener}</FeatureExplainer>
+      <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm, lineHeight: 1.6 }}>
+        These senders are waiting for your first decision. Some may have been in your inbox for a
+        while; their email keeps arriving in Gmail until you decide.
+      </p>
       <ScreenIntro
         id="screener"
         title="How the Screener works"

@@ -2,8 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Button, ErrorState, FeatureExplainer, tokens } from '@declutrmail/shared';
-import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { Button, ErrorState, tokens } from '@declutrmail/shared';
 import {
   hasCapability,
   minimumTierForCapability,
@@ -90,9 +89,6 @@ export function AutopilotObservePreview() {
         >
           Autopilot
         </h1>
-        <FeatureExplainer id="autopilot-locked-explainer">
-          {WS2_COPY.explain.autopilotLocked.replaceAll('{plusName}', TIER_MANIFEST.plus.name)}
-        </FeatureExplainer>
         <p style={{ margin: '6px 0 0', color: color.fgMuted, fontSize: text.md, lineHeight: 1.5 }}>
           See what each preset rule would match right now. Previews are read-only.
         </p>
@@ -234,7 +230,7 @@ export function AutopilotObservePreview() {
             {price ? ` · ${price}` : ''}
           </Link>
           <Link
-            href={billingIntentPath({ plan: grantingPlan, cycle: 'monthly', from: '/autopilot' })}
+            href="/pricing"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
