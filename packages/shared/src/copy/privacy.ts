@@ -78,3 +78,23 @@ export const CASA_VERIFICATION_APPROVED_ON = '21 April 2026' as const;
 
 /** Month-level form, for surfaces too narrow for the full date. */
 export const CASA_VERIFICATION_APPROVED_MONTH = 'April 2026' as const;
+
+/** TAC Security letter of validation, submitted to Google. // CONFIRM before deploy (Chintan) */
+export const CASA_LOV_SUBMITTED_ON = '15 April 2026' as const;
+
+/** Google brand verification on the consent screen. // CONFIRM before deploy (Chintan) */
+export const BRAND_VERIFICATION_APPROVED_ON = '18 August 2026' as const;
+
+/**
+ * British `21 April 2026` → US `April 21, 2026`.
+ * The stored constants stay British so the claim-site test can forbid the literal.
+ */
+export function formatVerificationDate(british: string): string {
+  const match = /^(\d{1,2}) ([A-Za-z]+) (\d{4})$/.exec(british);
+  if (!match) return british;
+  const day = match[1];
+  const month = match[2];
+  const year = match[3];
+  if (!day || !month || !year) return british;
+  return `${month} ${Number(day)}, ${year}`;
+}
