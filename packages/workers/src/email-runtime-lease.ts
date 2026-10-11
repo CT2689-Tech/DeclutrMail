@@ -65,9 +65,31 @@ function registryKey(prefix: string): string {
   return `${prefix}:actors`;
 }
 
+/** Shared by actual claims and the final atomic delivery boundary. Validating
+ * protocol/expiry alone would admit a malformed record the reader refuses. */
+export const EMAIL_RUNTIME_ACTOR_VALIDATION_LUA = `
+local function validEmailRuntimeActor(id,a,protocol,now)
+ if type(a)~='table' or type(a.revision)~='string' or type(a.source)~='string' or type(a.ready)~='boolean' or type(a.billingConsumer)~='boolean' or type(a.expiresAt)~='number' or a.protocol~=protocol then return false end
+ if #id~=36 or string.sub(id,9,9)~='-' or string.sub(id,14,14)~='-' or string.sub(id,19,19)~='-' or string.sub(id,24,24)~='-' then return false end
+ local hex=string.gsub(id,'%-','');if #hex~=32 or not string.match(hex,'^[a-f0-9]+$') then return false end
+ local suffix=string.match(a.revision,'^declutrmail%-worker%-([a-z0-9%-]+)$')
+ if not suffix or #suffix>80 or #a.source~=40 or not string.match(a.source,'^[a-f0-9]+$') then return false end
+ if a.expiresAt~=math.floor(a.expiresAt) or a.expiresAt<=now or a.expiresAt>now+120000 then return false end
+ local fields=0;for _ in pairs(a) do fields=fields+1 end;return fields==6
+end
+local function validEmailRuntimeActors(key,protocol,now)
+ if redis.call('HLEN',key)>100 then return false end
+ local rows=redis.call('HGETALL',key)
+ for i=1,#rows,2 do
+  local ok,a=pcall(cjson.decode,rows[i+1])
+  if not ok or not validEmailRuntimeActor(rows[i],a,protocol,now) then return false end
+ end
+ return true
+end`;
+
 // Immutable identity is compared on admission/renewal. Missing or expired leases
 // cannot be resurrected by a delayed reconnect command or the same boot ID.
-const MUTATE = `
+const MUTATE = `${EMAIL_RUNTIME_ACTOR_VALIDATION_LUA}
 local t=redis.call('TIME');local now=tonumber(t[1])*1000+math.floor(tonumber(t[2])/1000)
 local old=redis.call('HGET',KEYS[1],ARGV[1]);local wasReady=false
 if ARGV[2]=='register' then
@@ -75,15 +97,11 @@ if ARGV[2]=='register' then
 else
  if not old then return 0 end
  local ok,d=pcall(cjson.decode,old)
- if not ok or d.expiresAt<=now or d.protocol~=ARGV[3] or d.revision~=ARGV[4] or d.source~=ARGV[5] or d.billingConsumer~=(ARGV[7]=='1') then return 0 end
+ if not ok or not validEmailRuntimeActor(ARGV[1],d,ARGV[3],now) or d.revision~=ARGV[4] or d.source~=ARGV[5] or d.billingConsumer~=(ARGV[7]=='1') then return 0 end
  wasReady=(d.ready==true)
  if ARGV[2]=='publish' then wasReady=true end
  if ARGV[2]=='admit' then
-  if redis.call('HLEN',KEYS[1])>100 then return 0 end
-  for _,value in ipairs(redis.call('HVALS',KEYS[1])) do
-   local valid,a=pcall(cjson.decode,value)
-   if not valid or type(a)~='table' or type(a.expiresAt)~='number' or a.expiresAt<=now or a.protocol~=ARGV[3] then return 0 end
-  end
+  if not validEmailRuntimeActors(KEYS[1],ARGV[3],now) then return 0 end
   return d.expiresAt
  end
 end

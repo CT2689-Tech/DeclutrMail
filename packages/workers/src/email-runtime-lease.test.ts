@@ -26,6 +26,7 @@ import {
   createEmailRuntimeConnection,
   EmailRuntimeLease,
   readEmailRuntimeLeases,
+  EMAIL_RUNTIME_LEASE_PROTOCOL,
   type EmailRuntimeAdoptionWitness,
 } from './email-runtime-lease.js';
 
@@ -42,6 +43,107 @@ function witness(): EmailRuntimeAdoptionWitness {
     revisions: [{ revision: REVISION, source: SOURCE }],
   };
 }
+
+it('pre-send admission refuses a late malformed compatible-protocol actor without an attempt', async () => {
+  await fixture(async ({ connection, admission, prefix }) => {
+    const queue = new Queue<EmailSendJobData, EmailSendResult>('email-send', {
+      connection,
+      prefix,
+    });
+    const lease = new EmailRuntimeLease(
+      admission,
+      { source: SOURCE, revision: REVISION },
+      { prefix },
+    );
+    const port = { deliver: vi.fn(async () => ({ ok: true as const, providerId: null })) };
+    const guard = new EmailRuntimeGuard(lease, port);
+    const worker = new Worker<EmailSendJobData, EmailSendResult>(
+      'email-send',
+      (job) =>
+        guard.run(job, async () => {
+          // Claim admission already passed; corrupt data appears at the final
+          // actual delivery boundary, so an earlier check cannot mask this gap.
+          await admission.hset(
+            lease.key,
+            randomUUID(),
+            JSON.stringify({
+              protocol: EMAIL_RUNTIME_LEASE_PROTOCOL,
+              expiresAt: Date.now() + 30_000,
+            }),
+          );
+          await guard.delivery.deliver({
+            to: 'synthetic@example.invalid',
+            subject: PAYLOAD.subject,
+            text: PAYLOAD.text,
+            idempotencyKey: PAYLOAD.idempotencyKey,
+          });
+          return { outcome: 'sent', kind: PAYLOAD.kind, providerId: null };
+        }),
+      { connection, prefix, autorun: false },
+    );
+    try {
+      await worker.waitUntilReady();
+      await lease.register();
+      await startEmailRuntimeConsumer(worker, lease, async () => {});
+      await lease.publish();
+      await queue.add('synthetic', PAYLOAD, { jobId: 'preserved', attempts: 3 });
+      await vi.waitFor(async () =>
+        expect(await (await queue.getJob('preserved'))?.getState()).toBe('delayed'),
+      );
+      expect(port.deliver).not.toHaveBeenCalled();
+      expect((await queue.getJob('preserved'))?.attemptsMade).toBe(0);
+      expect(await admission.hexists(queue.toKey('preserved'), 'emailRuntimeDeliveryV1')).toBe(0);
+    } finally {
+      await worker.close();
+      await guard.drain();
+      await lease.release();
+      await queue.close();
+    }
+  });
+});
+
+it.each([
+  ['missing fields', { revision: undefined }, 'runtime_registry_malformed'],
+  ['billing type', { billingConsumer: 'true' }, 'runtime_registry_malformed'],
+  ['ready type', { ready: 1 }, 'runtime_registry_malformed'],
+  ['source format', { source: 'invalid' }, 'incompatible_workers'],
+  ['API revision', { revision: 'declutrmail-api-001-synthetic' }, 'incompatible_workers'],
+  ['future expiry', {}, 'runtime_registry_malformed'],
+  ['fractional expiry', {}, 'runtime_registry_malformed'],
+  ['extra fields', { unrelated: true }, 'runtime_registry_malformed'],
+  ['invalid boot key', {}, 'runtime_registry_malformed'],
+] as const)(
+  'actual admission refuses a malformed compatible-protocol actor: %s',
+  async (kind, delta, reason) => {
+    await fixture(async ({ admission, prefix }) => {
+      const lease = new EmailRuntimeLease(
+        admission,
+        { source: SOURCE, revision: REVISION },
+        { prefix },
+      );
+      await lease.register();
+      await admission.hset(
+        lease.key,
+        kind === 'invalid boot key' ? 'invalid-boot-key' : randomUUID(),
+        JSON.stringify({
+          protocol: EMAIL_RUNTIME_LEASE_PROTOCOL,
+          expiresAt: Date.now() + 30_000,
+          revision: REVISION,
+          source: SOURCE,
+          ready: true,
+          billingConsumer: false,
+          ...delta,
+          ...(kind === 'future expiry' ? { expiresAt: Date.now() + 130_000 } : {}),
+          ...(kind === 'fractional expiry' ? { expiresAt: Date.now() + 30_000.5 } : {}),
+        }),
+      );
+      await expect(readEmailRuntimeLeases(admission, witness(), prefix)).rejects.toMatchObject({
+        reason,
+      });
+      await expect(lease.assertAdmission()).rejects.toMatchObject({ reason: 'lease_lost' });
+    });
+  },
+);
 
 async function fixture(
   run: (f: {
