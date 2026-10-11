@@ -55,7 +55,11 @@ import type {
 } from '@declutrmail/shared/contracts';
 
 type PaddleModule = typeof PaddleJs;
-import { CheckoutLaunchError, withCheckoutLoadDeadline } from './checkout-error';
+import {
+  CHECKOUT_LOAD_TIMEOUT_MS,
+  CheckoutLaunchError,
+  withCheckoutLoadDeadline,
+} from './checkout-error';
 export { CheckoutLaunchError } from './checkout-error';
 
 /** Overlay lifecycle callbacks — both providers render in-page. */

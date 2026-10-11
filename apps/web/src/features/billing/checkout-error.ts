@@ -6,7 +6,7 @@ export class CheckoutLaunchError extends Error {
   }
 }
 
-const CHECKOUT_LOAD_TIMEOUT_MS = 15_000;
+export const CHECKOUT_LOAD_TIMEOUT_MS = 15_000;
 export async function withCheckoutLoadDeadline<T>(task: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
