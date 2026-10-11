@@ -615,4 +615,4 @@ jobs:
 
       - name: Protect serving images from registry cleanup
         if: always() && steps.build.outcome == 'success'
-        run: node scripts/pin-production-images.mjs
+        run: node scripts/pin-production-images.mjs --namespace=deploy

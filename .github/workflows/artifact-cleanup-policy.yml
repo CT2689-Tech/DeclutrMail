@@ -1,0 +1,174 @@
+# Preview and install the Artifact Registry cleanup policy for the `api` image, re-pin
+# serving images, and roll production traffic back without exposing the target image.
+#
+# Policy changes are manual only. See docs/ops/cost-efficiency.md for the rollout:
+#   1. mode=dry-run  — pins serving/rollback images, prints repo size and what the
+#                      policy would delete now, installs the policy with --dry-run.
+#   2. After about a day, mode=report — the same preview, then Artifact Registry's own
+#      verdict for that installation. UNVERIFIED fails the run.
+#   3. mode=live + confirm_live=delete-unprotected-api-images — waits for approval on the
+#      `artifact-registry-live` environment, refuses unless step 2's receipt holds for the
+#      installed policy, then installs with --no-dry-run.
+#
+# mode=rollback moves all traffic of `rollback_role` to `rollback_revision` after tagging
+# its image. Use it instead of a direct gcloud traffic change: the hourly schedule only
+# re-pins, so a direct rollback to an old image is unprotected until it runs.
+#
+# Installing needs `artifactregistry.repositories.update`, which the deploy SA's
+# `roles/artifactregistry.writer` does not include. Report mode needs only the
+# writer role (tag moves use artifactregistry.tags.update; nothing is deleted).
+name: Artifact Registry cleanup policy
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'dry-run installs without deleting; report reviews; live enables deletion; rollback moves traffic'
+        type: choice
+        options: [dry-run, report, live, rollback]
+        default: dry-run
+      confirm_live:
+        description: 'live only: type delete-unprotected-api-images'
+        type: string
+        required: false
+        default: ''
+      rollback_role:
+        description: 'rollback only: api, worker or worker-pool'
+        type: string
+        required: false
+        default: ''
+      rollback_revision:
+        description: 'rollback only: the revision to send 100% of traffic to'
+        type: string
+        required: false
+        default: ''
+  schedule:
+    - cron: '17 * * * *'
+
+permissions:
+  contents: read
+  id-token: write
+
+# Every run here writes the reconciler's serving-observed- tags, so they share one lock and a
+# run never acts on state older than the previous run's. Deploys write serving- tags under
+# the release lock; neither writer moves the other's tags. Joining the release lock instead
+# would let a pending run here replace a queued deploy.
+concurrency:
+  group: artifact-registry-pins
+  cancel-in-progress: false
+
+jobs:
+  repin:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Authenticate to GCP via Workload Identity Federation
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Re-pin serving and rollback images
+        run: node scripts/pin-production-images.mjs --namespace=observed
+
+  rollback:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'rollback' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Authenticate to GCP via Workload Identity Federation
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Protect the target image, then move traffic
+        env:
+          ROLE: ${{ inputs.rollback_role }}
+          REVISION: ${{ inputs.rollback_revision }}
+        run: node scripts/pin-production-images.mjs --rollback-role="$ROLE" --rollback-revision="$REVISION"
+
+  cleanup-policy:
+    if: github.event_name == 'workflow_dispatch' && (inputs.mode == 'dry-run' || inputs.mode == 'report') && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Validate policy and retention contracts
+        run: node --test scripts/artifact-cleanup-policy.test.mjs scripts/pin-production-images.test.mjs
+      - name: Authenticate to GCP via Workload Identity Federation
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Pin serving images, report, and install
+        env:
+          MODE: ${{ inputs.mode }}
+        run: node scripts/artifact-cleanup-policy.mjs --mode="$MODE"
+      - name: Artifact Registry's own dry-run verdict for the installed policy
+        if: inputs.mode == 'report'
+        run: node scripts/artifact-cleanup-policy.mjs --mode=verdict
+
+  cleanup-live:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'live' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: artifact-registry-live
+    permissions:
+      contents: read
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Validate policy and retention contracts
+        run: node --test scripts/artifact-cleanup-policy.test.mjs scripts/pin-production-images.test.mjs
+      - name: Refuse unconfirmed live deletion
+        env:
+          CONFIRM: ${{ inputs.confirm_live }}
+        run: |
+          if [ "$CONFIRM" != delete-unprotected-api-images ]; then
+            echo "::error::Live deletion requires confirm_live=delete-unprotected-api-images"
+            exit 1
+          fi
+      # GitHub creates a missing environment without protection, so the approval gate is only
+      # real if the environment demonstrably requires a reviewer.
+      - name: Require a reviewer on the live environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! reviewers=$(gh api "repos/${{ github.repository }}/environments/artifact-registry-live" \
+              --jq '[.protection_rules[]? | select(.type == "required_reviewers")] | length'); then
+            echo "::error::Cannot read the artifact-registry-live environment; refusing live deletion"
+            exit 1
+          fi
+          if [ "$reviewers" -lt 1 ]; then
+            echo "::error::artifact-registry-live has no required reviewers; refusing live deletion"
+            exit 1
+          fi
+      - name: Authenticate to GCP via Workload Identity Federation
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Check the dry-run receipt, then enable deletion
+        env:
+          CLEANUP_CONFIRM: ${{ inputs.confirm_live }}
+        run: node scripts/artifact-cleanup-policy.mjs --mode=live

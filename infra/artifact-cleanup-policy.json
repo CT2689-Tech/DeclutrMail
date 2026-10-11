@@ -2,7 +2,7 @@
   {
     "name": "old-builds",
     "action": { "type": "Delete" },
-    "condition": { "tagState": "any", "packageNamePrefixes": ["api"], "olderThan": "30d" }
+    "condition": { "tagState": "any", "packageNamePrefixes": ["api"], "olderThan": "14d" }
   },
   {
     "name": "recent-rollbacks",
@@ -10,8 +10,27 @@
     "mostRecentVersions": { "packageNamePrefixes": ["api"], "keepCount": 20 }
   },
   {
+    "name": "latest-image",
+    "action": { "type": "Keep" },
+    "condition": { "tagState": "tagged", "packageNamePrefixes": ["api"], "tagPrefixes": ["latest"] }
+  },
+  {
     "name": "serving-images",
     "action": { "type": "Keep" },
-    "condition": { "tagState": "tagged", "tagPrefixes": ["retain-"] }
+    "condition": {
+      "tagState": "tagged",
+      "packageNamePrefixes": ["api"],
+      "tagPrefixes": ["serving-"]
+    }
+  },
+  {
+    "name": "recent-retention-tags",
+    "action": { "type": "Keep" },
+    "condition": {
+      "tagState": "tagged",
+      "packageNamePrefixes": ["api"],
+      "tagPrefixes": ["retain-"],
+      "newerThan": "14d"
+    }
   }
 ]
