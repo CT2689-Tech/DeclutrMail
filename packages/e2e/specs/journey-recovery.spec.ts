@@ -118,7 +118,10 @@ test('failed first scan exposes account controls while mailbox routes stay gated
 });
 
 test(expiredRecoveryTitle, async ({ page }) => {
-  await page.context().clearCookies();
+  // A signed-in page left open here fires its own 401 redirect (returnTo=/home)
+  // that races this link, so require the untouched page instead of clearing cookies.
+  expect(page.url()).toBe('about:blank');
+  expect(await page.context().cookies()).toEqual([]);
   await page.goto('/settings?cancelDeletion=1#account');
   await expect(page).toHaveURL(
     /\/sign-in\?returning=1&returnTo=%2Fsettings%3FcancelDeletion%3D1%23account$/,
