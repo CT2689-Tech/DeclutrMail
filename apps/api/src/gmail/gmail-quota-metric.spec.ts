@@ -86,9 +86,9 @@ describe('production worker quota pricing survives deployment', () => {
 
   // The worker's own deploy step, bounded at the NEXT deploy so a service
   // without its own env block cannot adopt a neighbour's. Exact service
-  // name: a `declutrmail-worker-canary` deploy must not match.
-  const deploys = [...workflow.matchAll(/gcloud run deploy (\S+)/g)];
-  const workerAt = deploys.findIndex((deploy) => deploy[1] === 'declutrmail-worker');
+  // name: a `declutrmail-worker-pool-canary` deploy must not match.
+  const deploys = [...workflow.matchAll(/gcloud run (?:worker-pools )?deploy (\S+)/g)];
+  const workerAt = deploys.findIndex((deploy) => deploy[1] === 'declutrmail-worker-pool');
   const section =
     workerAt === -1
       ? ''

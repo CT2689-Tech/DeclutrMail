@@ -135,12 +135,18 @@ test('smoke requires real dependencies and canonical unauthenticated error, not 
     /readyz/,
   );
 });
-test('workflow gates worker boot through HTTP, preserves production OAuth identity, and uses API helper', () => {
+test('workflow gates worker boot on its own log, preserves production OAuth identity, and uses API helper', () => {
   const workflow = readFileSync(
     new URL('../.github/workflows/deploy-cloud-run.yml', import.meta.url),
     'utf8',
   );
-  assert.match(workflow, /--startup-probe="httpGet.path=\/,httpGet.port=8080/);
+  // Worker pools have no startup probe; boot proof is the revision's own
+  // `worker.listening` line for the outbox dispatcher.
+  assert.match(workflow, /resource.labels.revision_name=\\"\$REVISION\\"/);
+  assert.match(
+    workflow,
+    /jsonPayload.kind=\\"worker.listening\\" AND jsonPayload.queue=\\"outbox-dispatcher\\"/,
+  );
   assert.match(workflow, /--liveness-probe="httpGet.path=\/api\/healthz/);
   assert.match(workflow, /node scripts\/deploy-api-safely.mjs/);
   assert.match(
@@ -148,7 +154,7 @@ test('workflow gates worker boot through HTTP, preserves production OAuth identi
     /GOOGLE_REDIRECT_URI=https:\/\/api.declutrmail.com\/api\/auth\/google\/callback/,
   );
   const worker = workflow.slice(
-    workflow.indexOf('gcloud run deploy declutrmail-worker'),
+    workflow.indexOf('gcloud run worker-pools deploy declutrmail-worker-pool'),
     workflow.indexOf('- name: Deploy declutrmail-api'),
   );
   assert.doesNotMatch(worker, /--no-traffic|--tag=/);
@@ -339,11 +345,39 @@ test('workflow keeps the verified API selector and runs preflight before build a
   assert.match(workflow, /API_DB_DRIVER=\$API_DB_DRIVER/);
   assert.ok(workflow.indexOf('--check-driver=') < workflow.indexOf('docker build --platform'));
   assert.ok(
-    workflow.indexOf('--check-driver=') < workflow.indexOf('gcloud run deploy declutrmail-worker'),
+    workflow.indexOf('--check-driver=') <
+      workflow.indexOf('gcloud run worker-pools deploy declutrmail-worker-pool'),
   );
   const worker = workflow.slice(
-    workflow.indexOf('gcloud run deploy declutrmail-worker'),
+    workflow.indexOf('gcloud run worker-pools deploy declutrmail-worker-pool'),
     workflow.indexOf('- name: Deploy declutrmail-api'),
   );
   assert.doesNotMatch(worker, /API_DB_DRIVER=/);
+});
+
+test('worker cutover keeps every overlapping process lease-aware and never deletes the rollback path', () => {
+  const workflow = readFileSync(
+    new URL('../.github/workflows/deploy-cloud-run.yml', import.meta.url),
+    'utf8',
+  );
+  const order = [
+    '- name: Check email queue actors before new preferences',
+    'gcloud run services update "$LEGACY_WORKER" \\\n            --image="$IMAGE"',
+    'gcloud run worker-pools deploy declutrmail-worker-pool',
+    '- name: Smoke worker-pool revision',
+    '- name: Verify billing notice worker before API producers',
+    '- name: Restore previous worker-pool revision after failed verification',
+    'gcloud run services update "$LEGACY_WORKER" --scaling=0',
+    '- name: Deploy declutrmail-api',
+  ].map((marker) => {
+    const at = workflow.indexOf(marker);
+    assert.notEqual(at, -1, `missing ${marker}`);
+    return at;
+  });
+  assert.deepEqual(
+    order,
+    [...order].sort((a, b) => a - b),
+  );
+  assert.match(workflow, /--instances=1 \\/);
+  assert.doesNotMatch(workflow, /services delete|worker-pools delete/);
 });

@@ -4,9 +4,12 @@ import { pathToFileURL } from 'node:url';
 
 const PROJECT = 'declutrmail-ai-prod';
 const IMAGE = `us-central1-docker.pkg.dev/${PROJECT}/declutrmail/api`;
-const SERVICES = [
-  ['declutrmail-api', 'us-central1'],
-  ['declutrmail-worker', 'us-west1'],
+// The disabled legacy worker service stays listed: its last revision is the
+// worker rollback path (docs/runbooks/worker-pool-cutover.md).
+const SOURCES = [
+  { kind: 'services', name: 'declutrmail-api', region: 'us-central1' },
+  { kind: 'services', name: 'declutrmail-worker', region: 'us-west1' },
+  { kind: 'worker-pools', name: 'declutrmail-worker-pool', region: 'us-west1' },
 ];
 const gcloud = (...args) =>
   execFileSync('gcloud', args, {
@@ -28,6 +31,19 @@ export function servingRevisions(service) {
   return [...new Set(names)].sort();
 }
 
+export function servingInstanceSplits(pool) {
+  const splits = pool.status?.instanceSplits;
+  if (!Array.isArray(splits) || splits.reduce((n, s) => n + (s.percent ?? 0), 0) !== 100)
+    throw new Error('Cannot establish complete instance split; refusing retention update');
+  const names = splits.filter((s) => s.percent > 0).map((s) => s.revisionName);
+  if (
+    !names.length ||
+    names.some((n) => typeof n !== 'string' || !/^declutrmail-worker-pool-[a-z0-9-]+$/.test(n))
+  )
+    throw new Error('Unknown serving revision');
+  return [...new Set(names)].sort();
+}
+
 export function retentionTag(revision) {
   if (!/^declutrmail-(api|worker)-[a-z0-9-]+$/.test(revision)) throw new Error('Unknown revision');
   // Additive protection: never move a tag away from an earlier known-good release.
@@ -36,11 +52,11 @@ export function retentionTag(revision) {
 
 export function pinProductionImages({ run = gcloud, log = console.log } = {}) {
   // Resolve every source before mutating tags, so incomplete discovery fails closed.
-  const pins = SERVICES.flatMap(([name, region]) => {
-    const service = JSON.parse(
+  const pins = SOURCES.flatMap(({ kind, name, region }) => {
+    const resource = JSON.parse(
       run(
         'run',
-        'services',
+        kind,
         'describe',
         name,
         `--region=${region}`,
@@ -48,11 +64,15 @@ export function pinProductionImages({ run = gcloud, log = console.log } = {}) {
         '--format=json',
       ),
     );
-    return servingRevisions(service).map((revision) => {
+    const serving =
+      kind === 'worker-pools' ? servingInstanceSplits(resource) : servingRevisions(resource);
+    const revisionsCommand =
+      kind === 'worker-pools' ? ['worker-pools', 'revisions'] : ['revisions'];
+    return serving.map((revision) => {
       const value = JSON.parse(
         run(
           'run',
-          'revisions',
+          ...revisionsCommand,
           'describe',
           revision,
           `--region=${region}`,

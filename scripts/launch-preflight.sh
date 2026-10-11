@@ -34,8 +34,15 @@ GCP_WORKER_REGION=us-west1
 
 region_for() {
   case "$1" in
-    declutrmail-worker) printf '%s' "$GCP_WORKER_REGION" ;;
-    *)                  printf '%s' "$GCP_REGION" ;;
+    declutrmail-worker-pool) printf '%s' "$GCP_WORKER_REGION" ;;
+    *)                       printf '%s' "$GCP_REGION" ;;
+  esac
+}
+# The worker runs as a Cloud Run worker pool, not a service.
+run_kind() {
+  case "$1" in
+    declutrmail-worker-pool) printf 'worker-pools' ;;
+    *)                       printf 'services' ;;
   esac
 }
 VERCEL_PROJECT=declutr-mail
@@ -595,11 +602,11 @@ MANIFEST='packages/shared/src/entitlements/manifest.ts'
 #     signatures in apps/api/src/webhooks/resend/. The worker serves no HTTP.
 #
 # Derived from: rg -l 'RESEND_API_KEY|RESEND_WEBHOOK_SECRET' apps/api/src packages
-SERVICES='declutrmail-api declutrmail-worker'
+SERVICES='declutrmail-api declutrmail-worker-pool'
 required_for() {
   case "$1" in
     declutrmail-api)    echo 'RESEND_WEBHOOK_SECRET' ;;
-    declutrmail-worker) echo 'RESEND_API_KEY' ;;
+    declutrmail-worker-pool) echo 'RESEND_API_KEY' ;;
   esac
 }
 # Only required once billing is live. Checkout adapters and webhook
@@ -634,10 +641,10 @@ billing_provider_provisioned() {
 }
 
 # The --update-secrets block belonging to ONE service: find its
-# `gcloud run deploy <svc>` line, take the first --update-secrets after it.
+# `gcloud run [worker-pools] deploy <svc>` line, take the first --update-secrets after it.
 svc_pairs() {
   awk -v svc="$1" '
-    $0 ~ ("gcloud run deploy " svc "([[:space:]]|\\\\|$)") { found=1 }
+    $0 ~ ("gcloud run (worker-pools )?deploy " svc "([[:space:]]|\\\\|$)") { found=1 }
     found && /--update-secrets=/ {
       match($0, /--update-secrets="[^"]*"/)
       s = substr($0, RSTART, RLENGTH)
@@ -649,7 +656,7 @@ svc_pairs() {
 }
 
 svc_live() {
-  gcloud run services describe "$1" --project="$GCP_PROJECT" --region="$(region_for "$1")" --format=json 2>/dev/null \
+  gcloud run "$(run_kind "$1")" describe "$1" --project="$GCP_PROJECT" --region="$(region_for "$1")" --format=json 2>/dev/null \
     | python3 -c "
 import json,sys
 try: e=json.load(sys.stdin)['spec']['template']['spec']['containers'][0]['env']
@@ -797,7 +804,7 @@ EOF
   local api_sa worker_sa
   api_sa=$(gcloud run services describe declutrmail-api --project="$GCP_PROJECT" --region="$GCP_REGION" \
              --format='value(spec.template.spec.serviceAccountName)' 2>/dev/null)
-  worker_sa=$(gcloud run services describe declutrmail-worker --project="$GCP_PROJECT" --region="$GCP_WORKER_REGION" \
+  worker_sa=$(gcloud run worker-pools describe declutrmail-worker-pool --project="$GCP_PROJECT" --region="$GCP_WORKER_REGION" \
              --format='value(spec.template.spec.serviceAccountName)' 2>/dev/null)
 
   # WARN, not FAIL. Both IAM findings are long-standing posture with a
@@ -811,7 +818,7 @@ EOF
     warn "both services run as ${api_sa}" \
         'the worker-only / api-only secret split is a convention, not a boundary: the public API can read the mail-sending key. See FOUNDER-FOLLOWUPS.md'
   else
-    ok 'declutrmail-api and declutrmail-worker run as distinct service accounts'
+    ok 'declutrmail-api and declutrmail-worker-pool run as distinct service accounts'
   fi
 
   # Even with a shared SA, a secret readable by any OTHER principal is a

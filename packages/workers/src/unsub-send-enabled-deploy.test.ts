@@ -42,11 +42,11 @@ interface EnvBlock {
 /** Every service's own `--set-env-vars` payload, keyed by service name. */
 function envBlocksByService(workflow: string): Map<string, EnvBlock> {
   const blocks = new Map<string, EnvBlock>();
-  // Each deploy is `gcloud run deploy <service>` followed by its own
+  // Each deploy is `gcloud run [worker-pools] deploy <name>` followed by its own
   // `--set-env-vars="…"`. Anchoring on the deploy line rather than counting
   // occurrences file-wide is the point: two vars in ONE block would satisfy a
   // file-wide count while leaving the other service unprotected.
-  const deploys = [...workflow.matchAll(/gcloud run deploy (\S+)/g)];
+  const deploys = [...workflow.matchAll(/gcloud run (?:worker-pools )?deploy (\S+)/g)];
   for (const [i, deploy] of deploys.entries()) {
     // Bound the search at the NEXT deploy, never at end-of-file. Searching to
     // EOF means a service with no `--set-env-vars` of its own silently adopts
@@ -65,7 +65,7 @@ function envBlocksByService(workflow: string): Map<string, EnvBlock> {
 }
 
 const BLOCKS = envBlocksByService(WORKFLOW);
-const SEND_SERVICES = ['declutrmail-api', 'declutrmail-worker'] as const;
+const SEND_SERVICES = ['declutrmail-api', 'declutrmail-worker-pool'] as const;
 
 describe('UNSUB_SEND_ENABLED survives deployment', () => {
   it('finds both deploys — the parse itself must not come back empty', () => {
