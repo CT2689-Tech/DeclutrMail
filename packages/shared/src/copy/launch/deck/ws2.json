@@ -1,1 +1,13 @@
-{}
+{
+  "names": {
+    "home": "Home",
+    "homeNextSteps": "Suggested next steps"
+  },
+  "home": {
+    "retrying": "Retrying automatically at {time}",
+    "reconnect": "Reconnect Gmail"
+  },
+  "locked": {
+    "compare": "Compare plans"
+  }
+}

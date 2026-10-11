@@ -138,33 +138,28 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('HomeScreen', () => {
-  it('shows the all-time cleared total and continues Triage', async () => {
+  it('shows the all-time cleared total without a Review today button', async () => {
     const calls = stub({ queueLength: 2, screenerPending: 4 });
     renderHome();
 
     expect(screen.getByRole('status', { name: 'Loading Home' })).toBeInTheDocument();
     expect(await screen.findByTestId('home-hero')).toHaveTextContent('1,234');
     expect(calls.summary).toEqual(['?window=all']);
-    const link = screen.getByRole('link', { name: 'Review 2 today' });
-    expect(link).toHaveAttribute('href', '/triage');
-    expect(link).toHaveTextContent('Review 2 today');
-    expect(screen.getByRole('link', { name: /Journal 0/ })).toHaveAttribute(
-      'href',
-      '/senders?sender=sender-0',
-    );
-    expect(screen.getByText('In inbox now')).toBeInTheDocument();
-    expect(calls.triage).toBe(1);
+    expect(screen.queryByRole('link', { name: /Review \d+ today/ })).toBeNull();
+    expect(screen.queryByText('In inbox now')).toBeNull();
+    expect(screen.queryByRole('link', { name: /Autopilot/ })).toBeNull();
+    expect(calls.triage).toBe(0);
+    expect(calls.screener).toBe(0);
   });
 
-  it('offers the Screener when Triage is clear', async () => {
+  it('does not offer the Screener as Home’s primary step', async () => {
     stub({ queueLength: 0, screenerPending: 4 });
     renderHome();
-    const link = await screen.findByRole('link', { name: 'Review 4 new' });
-    expect(link).toHaveAttribute('href', '/screener');
-    expect(link).toHaveTextContent('Review 4 new');
+    expect(await screen.findByTestId('home-hero')).toHaveTextContent('1,234');
+    expect(screen.queryByRole('link', { name: 'Review 4 new' })).toBeNull();
   });
 
-  it('shows cleanup totals while review tasks are still loading', async () => {
+  it('shows cleanup totals without waiting on a removed review list', async () => {
     let release!: () => void;
     const held = new Promise<void>((resolve) => {
       release = resolve;
@@ -203,50 +198,51 @@ describe('HomeScreen', () => {
       expect(await screen.findByTestId('home-hero', {}, { timeout: 300 })).toHaveTextContent(
         '1,234',
       );
-      expect(screen.getByText('Loading review tasks…')).toBeInTheDocument();
-      expect(screen.queryByRole('link', { name: 'Review senders' })).not.toBeInTheDocument();
+      expect(screen.queryByText('Loading review tasks…')).toBeNull();
+      expect(screen.queryByRole('link', { name: /Review \d+ today/ })).toBeNull();
     } finally {
       release();
     }
-    expect(await screen.findByRole('link', { name: 'Review senders' })).toBeInTheDocument();
   });
 
   it('never reads the Screener for a tier without it', async () => {
     authCell.me = meFor('free', 'ready');
     const calls = stub({ screenerPending: 4 });
     renderHome();
-    expect(await screen.findByRole('link', { name: 'Review senders' })).toHaveAttribute(
-      'href',
-      '/senders',
-    );
-    expect(calls.triage).toBe(1);
+    expect(await screen.findByTestId('home-hero')).toHaveTextContent('1,234');
+    expect(calls.triage).toBe(0);
     expect(calls.screener).toBe(0);
   });
 
-  it('shows existing review work before any cleanup history, without an achievement count', async () => {
+  it('shows an empty home without an achievement count or Review today', async () => {
     stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }), queueLength: 2 });
     renderHome();
-    expect(await screen.findByRole('link', { name: /Journal 0/ })).toHaveAttribute(
-      'href',
-      '/senders?sender=sender-0',
-    );
+    expect(await screen.findByText('Nothing cleared yet.')).toBeInTheDocument();
     expect(screen.queryByTestId('home-hero')).toBeNull();
-    expect(screen.getByRole('link', { name: 'Review 2 today' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Review 2 today' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Review senders' })).toHaveAttribute(
+      'href',
+      '/senders',
+    );
   });
 
-  it('new user: no number, a title and the button', async () => {
+  it('new user: no number, a title and the senders link', async () => {
     stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }) });
     renderHome();
     expect(await screen.findByText('Nothing cleared yet.')).toBeInTheDocument();
     expect(screen.queryByTestId('home-hero')).toBeNull();
-    expect(screen.getByRole('link')).toHaveAttribute('href', '/senders');
+    expect(screen.getByRole('link', { name: 'Review senders' })).toHaveAttribute(
+      'href',
+      '/senders',
+    );
   });
 
   it('new user whose mailbox is still syncing', async () => {
     authCell.me = meFor('pro', 'syncing');
     stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }) });
     renderHome();
-    expect(await screen.findByText('Reading your Gmail.')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Your Inbox Report' })).toBeInTheDocument();
+    expect(screen.queryByText('Reading your Gmail.')).toBeNull();
   });
 
   it('new user whose scan failed: says so and offers a scoped retry', async () => {

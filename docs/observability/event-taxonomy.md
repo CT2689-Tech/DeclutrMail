@@ -1,7 +1,7 @@
 # Event taxonomy (D159)
 
 Canonical list of PostHog events emitted by DeclutrMail. The TypeScript
-union in `packages/shared/src/observability/events.ts` is the source of
+union in `packages/shared/src/observability/events/app.ts` (and the sibling domain files) is the source of
 truth for event NAMES and PAYLOAD SHAPES; this document is the source
 of truth for WHEN they fire and HOW they're aggregated.
 
@@ -751,6 +751,46 @@ email was accepted for delivery) — never on a failed submit.
 **Retention / aggregation.** PostHog default. Usage signal for the
 in-app support form.
 
+### `report_viewed`
+
+**When fired.** Once per Home visit when the report slot renders (full or
+calm fallback). Browser `track()` only, after cookie consent. No counts
+or sender data.
+
+**Payload.**
+
+| Field     | Type     | Notes               |
+| --------- | -------- | ------------------- |
+| `surface` | `'home'` | Home v1 report slot |
+
+**Retention / aggregation.** PostHog default. D159 usage of the Home report.
+
+### `home_next_step_clicked`
+
+**When fired.** When a suggested next step is opened. Unsubscribe + archive
+opens the prefilled dialog and does not confirm the mail change.
+
+**Payload.**
+
+| Field  | Type                                          | Notes            |
+| ------ | --------------------------------------------- | ---------------- |
+| `kind` | `'unsub_archive' \| 'largest' \| 'later_due'` | Closed step kind |
+
+**Retention / aggregation.** PostHog default. No sender ids or counts.
+
+### `caught_up_viewed`
+
+**When fired.** When Home is ready and no suggested next step is ranked.
+Calm fallback only: no celebration and no share card.
+
+**Payload.**
+
+| Field     | Type     | Notes        |
+| --------- | -------- | ------------ |
+| `surface` | `'home'` | Home v1 calm |
+
+**Retention / aggregation.** PostHog default.
+
 ### `activity_support_bundle_exported`
 
 **When fired.** When an Activity support-bundle download reaches a terminal
@@ -881,7 +921,7 @@ existed. The server claim is held.
 ## Adding a new event
 
 1. Append the literal to the `EventName` union in
-   `packages/shared/src/observability/events.ts`.
+   `packages/shared/src/observability/events/app.ts` for app events.
 2. Add a matching entry to `EventPayloads` declaring the payload shape.
 3. Add a section to this doc with **When fired**, **Payload table**,
    and **Retention / aggregation**.

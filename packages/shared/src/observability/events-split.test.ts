@@ -4,8 +4,9 @@ import { describe, expect, it } from 'vitest';
 import { EVENT_NAMES } from './events/index';
 
 /**
- * Names in `events.ts` immediately before the domain split. The union
- * after the split must match this set exactly — no renames, no drops.
+ * Names in `events.ts` immediately before the domain split.
+ * Every pre-split name must still be present. New names may be appended
+ * in a domain file; none of these may be renamed or dropped.
  */
 const EVENT_NAMES_BEFORE_SPLIT = [
   'onboarding_step_viewed',
@@ -87,9 +88,17 @@ const OWNERS = {
 } as const;
 
 describe('event registry domain split', () => {
-  it('keeps the same event-name union as the pre-split registry', () => {
-    expect([...EVENT_NAMES].sort()).toEqual([...EVENT_NAMES_BEFORE_SPLIT].sort());
-    expect(new Set(EVENT_NAMES).size).toBe(EVENT_NAMES_BEFORE_SPLIT.length);
+  it('keeps every pre-split event name', () => {
+    for (const name of EVENT_NAMES_BEFORE_SPLIT) {
+      expect(EVENT_NAMES).toContain(name);
+    }
+    expect(new Set(EVENT_NAMES).size).toBe(EVENT_NAMES.length);
+  });
+
+  it('appends Home v1 names on the app domain', () => {
+    expect(EVENT_NAMES).toEqual(
+      expect.arrayContaining(['report_viewed', 'home_next_step_clicked', 'caught_up_viewed']),
+    );
   });
 
   it('names the owning workstream at the top of each domain file', () => {

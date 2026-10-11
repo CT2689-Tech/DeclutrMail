@@ -1,0 +1,9 @@
+.slot:has([data-testid='quota-chip']) .fallback {
+  display: none;
+}
+
+.fallback {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--dm-fg-soft);
+}

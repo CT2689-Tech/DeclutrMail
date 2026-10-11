@@ -5,11 +5,13 @@ import { useTier } from '@/features/auth/api/use-tier';
 import { isMailboxScopeConflict } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { NoActiveMailbox } from '@/features/mailboxes/no-active-mailbox';
 
-import { useHomePending } from './api/use-home-pending';
+import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
+import { getFixSet } from '@/features/inbox-report';
+
 import { useHomeSummary } from './api/use-home-summary';
-import { useHomeWorkflows } from './api/use-home-workflows';
-import { composeHomeAction, composeHomeNumbers, type HomeState } from './home-state';
 import { HomeArrivals } from './home-arrivals';
+import { rankHomeNextSteps } from './home-next-steps';
+import { composeHomeNumbers, type HomeState } from './home-state';
 import { HomeView } from './home-view';
 
 /**
@@ -23,7 +25,7 @@ import { HomeView } from './home-view';
  * |                               | QueryCache handler also resets   |
  * |                               | the scoped cache off this error  |
  * | other summary failure         | ErrorState + retry               |
- * | no decisions, still syncing   | "Reading your Gmail" + button    |
+ * | no decisions, still syncing   | report card, no "Reading your Gmail" |
  * | no decisions, scan failed     | "Gmail scan failed" + Settings   |
  * | no decisions                  | "Nothing cleared yet" + button   |
  * | decisions                     | number + label + button          |
@@ -31,14 +33,17 @@ import { HomeView } from './home-view';
  * A mailbox switch needs nothing here: `resetMailboxScopedCache`
  * invalidates every query, these included.
  */
+/** F2's size field is not on main, so the Largest card stays off. */
+const SENDER_SIZE_VIEW = false;
+
 export function HomeScreen() {
   const { me } = useAuth();
-  const { tier, cleanupRemaining, cleanupResetsAt } = useTier();
+  const { tier } = useTier();
   const hasActiveMailbox = me.activeMailboxId != null;
 
   const summary = useHomeSummary({ enabled: hasActiveMailbox });
-  const pending = useHomePending({ tier, enabled: hasActiveMailbox });
-  const workflows = useHomeWorkflows(tier, hasActiveMailbox);
+  const cleanup = useCleanupSummary();
+  const nextSteps = rankHomeNextSteps(getFixSet(), { senderSizeView: SENDER_SIZE_VIEW });
 
   const activeMailbox = me.mailboxes.find((m) => m.id === me.activeMailboxId);
   const readiness = activeMailbox?.readiness;
@@ -52,14 +57,11 @@ export function HomeScreen() {
     <HomeView
       state={resolve()}
       tier={tier}
-      workflows={workflows}
       timeZone={me.user.timezone ?? 'UTC'}
       visitSummary={<HomeArrivals />}
-      quota={
-        cleanupRemaining !== null
-          ? `${cleanupRemaining.toLocaleString('en-US')} cleanup actions left${cleanupResetsAt ? ` · resets ${new Date(cleanupResetsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: me.user.timezone ?? 'UTC' })}` : ''}`
-          : undefined
-      }
+      summary={cleanup.data ?? null}
+      nextSteps={nextSteps}
+      senderSizeView={SENDER_SIZE_VIEW}
     />
   );
 
@@ -77,9 +79,7 @@ export function HomeScreen() {
     // until its destination/count is known, so a link never moves under the cursor.
     if (summary.data === undefined) return { kind: 'loading' };
 
-    const action = pending.isLoading
-      ? { label: 'Loading review tasks…', href: '/senders', loading: true }
-      : composeHomeAction(pending);
+    const action = { label: 'Review senders', href: '/senders' };
     const numbers = composeHomeNumbers(summary.data);
     if (numbers === null) {
       // A failed scan is not a healthy empty mailbox — never "Nothing cleared yet".
@@ -88,7 +88,6 @@ export function HomeScreen() {
         syncing,
         queued: readiness === 'queued',
         action,
-        senders: pending.senders,
       };
     }
     return {
@@ -96,8 +95,6 @@ export function HomeScreen() {
       ...numbers,
       since: summary.data.since,
       action,
-      pending,
-      senders: pending.senders,
     };
   }
 }

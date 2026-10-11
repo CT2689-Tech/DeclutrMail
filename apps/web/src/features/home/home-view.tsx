@@ -1,109 +1,152 @@
 'use client';
 
 import Link from 'next/link';
-import type { ReactNode } from 'react';
-import { Avatar, ErrorState, ScreenIntro, Skeleton } from '@declutrmail/shared';
-import {
-  hasCapability,
-  minimumTierForCapability,
-  TIER_MANIFEST,
-  type TierId,
-} from '@declutrmail/shared/entitlements';
-import { EditorialKicker } from '@/features/editorial/page';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { ErrorState, Skeleton } from '@declutrmail/shared';
+import type { CleanupSummaryDto } from '@declutrmail/shared/contracts';
+import { planName, type TierId } from '@declutrmail/shared/entitlements';
+import { InboxReportCard } from '@/features/inbox-report';
+import { QuotaChipSlot } from '@/features/shell/quota-chip-slot';
 import { loadErrorDescription } from '@/lib/load-error-copy';
+import { track } from '@/lib/posthog';
+
+import { fillDeck, formatCount, HOME_DECK } from './home-deck-copy';
+import { HomeFixDialog } from './home-fix-dialog';
 import { HomeScanRecovery } from './home-scan-recovery';
+import {
+  homeV1Mode,
+  isRetiredReviewCta,
+  rankHomeNextSteps,
+  type HomeFixCandidate,
+  type HomeV1Mode,
+} from './home-next-steps';
 import { SYNC_FAILED_ACTION, type HomeAction, type HomeStat, type HomeState } from './home-state';
-import type { HomeSenderPreview } from './api/use-home-pending';
-import type { HomeWorkflows } from './api/use-home-workflows';
 import styles from './home-view.module.css';
 
-/** Real cleanup history and the next available task, with no inferred savings or inbox score. */
+const BILLING_HREF = '/billing?from=%2Fhome';
+
+/** Home v1: report, suggested next steps, progress. No promo and no auto-confirm. */
 export function HomeView({
   state,
   tier = 'free',
-  workflows,
   timeZone = 'UTC',
   visitSummary,
-  quota,
+  summary = null,
+  nextSteps = [],
+  senderSizeView = false,
+  reportSizeLabel = null,
+  indexedEmailCount = null,
+  onConfirmFix,
 }: {
   state: HomeState;
   visitSummary?: ReactNode;
-  quota?: string | undefined;
   tier?: TierId;
-  workflows?: HomeWorkflows | undefined;
   timeZone?: string;
+  summary?: CleanupSummaryDto | null;
+  nextSteps?: readonly HomeFixCandidate[];
+  /** F2 size view. Largest is dropped by the ranker before it arrives here. */
+  senderSizeView?: boolean;
+  /** Total Gmail size label, already formatted (for example "7.7 GB"). Never an amount freed. */
+  reportSizeLabel?: string | null;
+  indexedEmailCount?: number | null;
+  onConfirmFix?: (step: HomeFixCandidate) => void;
 }) {
-  const prioritizeReview =
-    state.kind === 'ready'
-      ? state.action.href !== '/senders' ||
-        (state.pending?.triagePending ?? 0) > 0 ||
-        (state.pending?.screenerPending ?? 0) > 0
-      : state.kind === 'empty' && !state.syncing && (state.senders?.length ?? 0) > 0;
+  const steps = rankHomeNextSteps(nextSteps, { senderSizeView });
+  const mode = homeV1Mode(state.kind, state.kind === 'ready' ? steps.length : 0);
+  const [pendingFix, setPendingFix] = useState<HomeFixCandidate | null>(null);
+  useHomeSurfaceEvents(mode);
+
   return (
-    <div className={styles.page} data-home-priority={prioritizeReview ? 'review' : 'intro'}>
-      <ScreenIntro
-        id="home"
-        title="How Home works"
-        body="Start with the next review task or open a sender to inspect its email. Your progress comes from completed cleanup actions; undone actions are excluded. Open Activity to see outcomes and undo supported actions."
-      />
+    <div
+      className={styles.page}
+      data-home-mode={mode}
+      data-sender-size-view={senderSizeView ? 'on' : 'off'}
+      data-home-priority={mode === 'full' ? 'review' : 'intro'}
+    >
       <header className={styles.header}>
-        <div>
-          <EditorialKicker>Your workspace / Home</EditorialKicker>
-          <h1>
-            A little room
-            <br />
-            for a <em>clearer day.</em>
-          </h1>
-          <p className={styles.subtitle}>
-            Review what needs attention and see the progress you’ve made.
-          </p>
-        </div>
+        <h1>{HOME_DECK.homeTitle}</h1>
+        {state.kind !== 'loading' && (
+          <div className={styles.planLine}>
+            <QuotaChipSlot summary={summary} timeZone={timeZone} />
+            <span>
+              <PlanLabel tier={tier} />
+              <Link href={BILLING_HREF}>{HOME_DECK.compare}</Link>
+            </span>
+          </div>
+        )}
       </header>
-      {quota && <p className={styles.subtitle}>{quota}</p>}
       {visitSummary}
-      <HomeBody state={state} tier={tier} workflows={workflows} timeZone={timeZone} />
+      <HomeBody
+        state={state}
+        timeZone={timeZone}
+        mode={mode}
+        steps={steps}
+        reportSizeLabel={reportSizeLabel}
+        indexedEmailCount={indexedEmailCount}
+        onOpenFix={(step) => {
+          void track('home_next_step_clicked', { kind: step.kind });
+          if (step.kind === 'unsub_archive') setPendingFix(step);
+        }}
+      />
+      {pendingFix !== null && (
+        <HomeFixDialog
+          step={pendingFix}
+          onCancel={() => setPendingFix(null)}
+          onConfirm={() => {
+            const step = pendingFix;
+            setPendingFix(null);
+            onConfirmFix?.(step);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function CleanupStamp({
-  state,
-  timeZone,
-}: {
-  state: Extract<HomeState, { kind: 'ready' }>;
-  timeZone: string;
-}) {
+function useHomeSurfaceEvents(mode: HomeV1Mode) {
+  const reported = useRef(false);
+  const caughtUp = useRef(false);
+  useEffect(() => {
+    if (mode !== 'full' && mode !== 'fallback') return;
+    if (!reported.current) {
+      reported.current = true;
+      void track('report_viewed', { surface: 'home' });
+    }
+    if (mode === 'fallback' && !caughtUp.current) {
+      caughtUp.current = true;
+      void track('caught_up_viewed', { surface: 'home' });
+    }
+  }, [mode]);
+}
+
+function PlanLabel({ tier }: { tier: TierId }) {
+  const name = planName(tier);
+  if (!name) return null;
   return (
-    <section className={styles.stamp} aria-label="Your cleanup so far">
-      <span className={styles.eyebrow}>The space you’ve made</span>
-      <strong data-testid="home-hero">{state.hero.value.toLocaleString('en-US')}</strong>
-      <span>
-        {state.hero.label}{' '}
-        {state.since && (
-          <span className={styles.since}>since {formatSince(state.since, timeZone)}</span>
-        )}
-      </span>
-      <small>Undone actions excluded</small>
-    </section>
+    <>
+      {name}
+      {' · '}
+    </>
   );
 }
 
 function HomeBody({
   state,
-  tier,
-  workflows,
   timeZone,
+  mode,
+  steps,
+  reportSizeLabel,
+  indexedEmailCount,
+  onOpenFix,
 }: {
   state: HomeState;
-  tier: TierId;
-  workflows?: HomeWorkflows | undefined;
   timeZone: string;
+  mode: HomeV1Mode;
+  steps: readonly HomeFixCandidate[];
+  reportSizeLabel: string | null;
+  indexedEmailCount: number | null;
+  onOpenFix: (step: HomeFixCandidate) => void;
 }) {
-  const hasAttention =
-    state.kind === 'ready' &&
-    (state.action.href !== '/senders' ||
-      (state.pending?.triagePending ?? 0) > 0 ||
-      (state.pending?.screenerPending ?? 0) > 0);
   switch (state.kind) {
     case 'loading':
       return <HomeSkeleton />;
@@ -118,44 +161,16 @@ function HomeBody({
       );
     case 'empty':
       return (
-        <section
-          className={state.senders?.length ? styles.summaryGrid : styles.beginning}
-          aria-label="Your next step"
-        >
-          <div className={state.senders?.length ? styles.nextStep : undefined}>
-            <span className={styles.eyebrow}>
-              {state.syncing ? 'Getting the picture' : 'A fresh start'}
-            </span>
-            <h2>
-              {state.queued
-                ? 'Your scan is queued.'
-                : state.syncing
-                  ? 'Reading your Gmail.'
-                  : state.senders?.length
-                    ? 'Your first review is ready.'
-                    : 'Nothing cleared yet.'}
-            </h2>
-            <p>
-              {state.queued
-                ? 'Your progress is saved. We’ll resume scanning when your turn starts.'
-                : state.syncing
-                  ? 'Your first scan is in progress. Available senders are ready to explore as the picture comes together.'
-                  : 'Start with the senders in your inbox. See their activity, then decide what deserves a place.'}
-            </p>
-            <PrimaryLink action={state.action} />
-            <span className={styles.footnote}>You’ll see a preview before email is moved.</span>
-          </div>
-          {!!state.senders?.length && (
-            <div className={styles.opportunityList}>
-              <SenderPreviews senders={state.senders} />
-            </div>
-          )}
-        </section>
+        <>
+          <ReportCard
+            mode="empty"
+            reportSizeLabel={reportSizeLabel}
+            indexedEmailCount={indexedEmailCount}
+          />
+          <EmptyCopy state={state} />
+        </>
       );
     case 'sync-failed':
-      // Never "the connection": a scan also stops on Gmail throttling, a
-      // Google error or a response it could not process. The step names
-      // reconnect only when the grant is what failed.
       return (
         <section className={styles.beginning} aria-label="Mailbox needs attention">
           <span className={styles.eyebrow}>Mailbox needs attention</span>
@@ -177,284 +192,203 @@ function HomeBody({
     case 'ready':
       return (
         <>
-          <section className={styles.summaryGrid} aria-label="Your next step">
-            <div className={styles.nextStep}>
-              <span className={styles.eyebrow}>A good place to start</span>
-              <h2>
-                {state.action.href === '/triage' ? (
-                  'Your daily review is ready.'
-                ) : state.action.href === '/screener' ? (
-                  'Give new senders a first decision.'
-                ) : (
-                  <>
-                    A few decisions.<span className={styles.nextLine}>A little more space.</span>
-                  </>
-                )}
-              </h2>
-              <p>
-                {state.action.href === '/triage'
-                  ? 'Take a look at these senders and decide what still belongs.'
-                  : state.action.href === '/screener'
-                    ? 'Senders awaiting a first decision are ready for your attention. Their email keeps arriving until you choose what to do.'
-                    : 'Explore your senders, look at their activity, and decide what still belongs in your inbox.'}
-              </p>
-              <PrimaryLink action={state.action} />
-              <span className={styles.footnote}>Preview email moves before confirming.</span>
-            </div>
-            <div className={styles.opportunityList}>
-              {state.senders && state.senders.length > 0 ? (
-                <SenderPreviews senders={state.senders} />
-              ) : (
-                <>
-                  <span className={styles.eyebrow}>Your recorded progress</span>
-                  {state.secondary.length > 0 ? (
-                    <SecondaryRow stats={state.secondary} />
-                  ) : (
-                    <div className={styles.emptyProgress}>
-                      <p className={styles.quietCopy}>
-                        Open Activity for individual outcomes and available Undo actions.
-                      </p>
-                      <Link href="/activity">
-                        View cleanup history <span aria-hidden="true">↗</span>
-                      </Link>
-                    </div>
-                  )}
-                  <p className={styles.footnote}>
-                    From your cleanup history. Undone actions are excluded.
-                  </p>
-                </>
-              )}
-            </div>
-          </section>
-          <CleanupStamp state={state} timeZone={timeZone} />
-          <section
-            className={styles.overviewLower}
-            style={!hasAttention ? { gridTemplateColumns: '1fr' } : undefined}
-          >
-            {hasAttention && (
-              <div className={styles.attention}>
-                <span className={styles.eyebrow}>Ready for your review</span>
-                <h2>A little attention.</h2>
-                {state.action.href !== '/triage' &&
-                  state.pending?.triagePending != null &&
-                  state.pending.triagePending > 0 && (
-                    <AttentionLink
-                      href="/triage"
-                      title={`${state.pending.triagePending.toLocaleString('en-US')} to review today`}
-                      description="One sender at a time, with the detail to decide."
-                    />
-                  )}
-                {state.action.href !== '/screener' &&
-                  state.pending?.screenerPending != null &&
-                  state.pending.screenerPending > 0 && (
-                    <AttentionLink
-                      href="/screener"
-                      title={`${state.pending.screenerPending.toLocaleString('en-US')} unreviewed ${state.pending.screenerPending === 1 ? 'sender' : 'senders'}`}
-                      description="Give each sender a first decision on your terms."
-                    />
-                  )}
-                {state.action.href !== '/senders' && (
-                  <AttentionLink
-                    href="/senders"
-                    title="See your senders"
-                    description="Revisit the senders that have a place in your inbox."
-                  />
-                )}
-              </div>
-            )}
-            <div
-              className={styles.activity}
-              style={!hasAttention ? { borderLeft: 0, paddingLeft: 0 } : undefined}
-            >
-              <span className={styles.eyebrow}>Small decisions add up</span>
-              <h2>
-                More space.
-                <br />
-                Less second-guessing.
-              </h2>
-              <p>
-                Your cleanup history keeps every outcome in view, with Undo available for supported
-                actions.
-              </p>
-              <Link href="/activity">
-                See your activity <span aria-hidden="true">↗</span>
-              </Link>
-            </div>
-          </section>
-          <WorkspaceOverview tier={tier} workflows={workflows} />
-          {state.senders && state.senders.length > 0 && state.secondary.length > 0 && (
-            <SecondaryRow stats={state.secondary} />
-          )}
-          <p className={styles.closing}>A considered inbox, one decision at a time.</p>
+          <ReportCard
+            mode={mode}
+            reportSizeLabel={reportSizeLabel}
+            indexedEmailCount={indexedEmailCount}
+          />
+          {steps.length > 0 && <NextSteps steps={steps} onOpenFix={onOpenFix} />}
+          <Progress state={state} timeZone={timeZone} />
         </>
       );
+    default: {
+      const unreachable: never = state;
+      return unreachable;
+    }
   }
 }
 
-function WorkspaceOverview({
-  tier,
-  workflows,
-}: {
-  tier: TierId;
-  workflows?: HomeWorkflows | undefined;
-}) {
-  const access = (capability: 'brief' | 'followups' | 'snoozed' | 'autopilot' | 'quiet') =>
-    hasCapability(tier, capability)
-      ? undefined
-      : `Included with ${TIER_MANIFEST[minimumTierForCapability(capability)].name}`;
-  const briefStatus = workflows?.brief
-    ? workflows.brief.opened
-      ? "Today's edition read"
-      : workflows.brief.replyCount > 0
-        ? `${workflows.brief.replyCount} ${workflows.brief.replyCount === 1 ? 'reply' : 'replies'} to consider`
-        : "Today's edition is ready"
-    : 'Open the latest edition';
-  const followupStatus =
-    workflows?.followups === null || workflows?.followups === undefined
-      ? 'See conversations awaiting a reply'
-      : workflows.followups === 0
-        ? 'No conversations waiting'
-        : `${workflows.followups} ${workflows.followups === 1 ? 'conversation' : 'conversations'} waiting`;
-  const suggestionStatus =
-    workflows?.suggestions === null || workflows?.suggestions === undefined
-      ? 'Inspect rules and suggestions'
-      : workflows.suggestions === 0
-        ? 'No suggestions waiting'
-        : `${workflows.suggestions === 50 ? '50+' : workflows.suggestions} ${workflows.suggestions === 1 ? 'suggestion' : 'suggestions'} to review`;
-
+function EmptyCopy({ state }: { state: Extract<HomeState, { kind: 'empty' }> }) {
+  if (state.syncing && !state.queued) return null;
   return (
-    <section className={styles.workflows} aria-labelledby="workflows-title">
-      <div className={styles.workflowsHeading}>
-        <span className={styles.eyebrow}>Your workspace</span>
-        <h2 id="workflows-title">The rest of your day, in view.</h2>
-        <p>Pick up a conversation, check what will return, or let a rule handle the repeat work.</p>
-      </div>
-      <div className={styles.workflowGrid}>
-        <div className={styles.workflowGroup}>
-          <h3>Catch up</h3>
-          <WorkflowLink
-            href="/brief"
-            title="Daily brief"
-            detail={briefStatus}
-            locked={access('brief')}
-          />
-          <WorkflowLink
-            href="/followups"
-            title="Follow-ups"
-            detail={followupStatus}
-            locked={access('followups')}
-          />
-          <WorkflowLink
-            href="/later"
-            title="Later"
-            detail="See what is set to return"
-            locked={access('snoozed')}
-          />
-        </div>
-        <div className={styles.workflowGroup}>
-          <h3>Keep it clear</h3>
-          <WorkflowLink
-            href="/autopilot"
-            title="Autopilot"
-            detail={suggestionStatus}
-            locked={access('autopilot')}
-          />
-          <WorkflowLink
-            href="/quiet"
-            title="Quiet hours"
-            detail="Choose when Autopilot holds its actions"
-            locked={access('quiet')}
-          />
-          <WorkflowLink
-            href="/activity"
-            title="Activity & Undo"
-            detail="See decisions and recover supported actions"
-          />
-        </div>
+    <section className={styles.beginning} aria-label="Your next step">
+      <h2>{state.queued ? 'Your scan is queued.' : 'Nothing cleared yet.'}</h2>
+      <p>
+        {state.queued
+          ? 'Your progress is saved. We’ll resume scanning when your turn starts.'
+          : 'Start with the senders in your inbox. See their activity, then decide what deserves a place.'}
+      </p>
+      {!state.queued && !isRetiredReviewCta(state.action.label) && (
+        <PrimaryLink action={state.action} />
+      )}
+    </section>
+  );
+}
+
+function ReportCard({
+  mode,
+  reportSizeLabel,
+  indexedEmailCount,
+}: {
+  mode: HomeV1Mode;
+  reportSizeLabel: string | null;
+  indexedEmailCount: number | null;
+}) {
+  const calm =
+    mode === 'fallback' && indexedEmailCount !== null && indexedEmailCount > 0
+      ? fillDeck(HOME_DECK.fallbackZero, { total: formatCount(indexedEmailCount) })
+      : null;
+  const tile =
+    reportSizeLabel !== null && reportSizeLabel !== ''
+      ? fillDeck(HOME_DECK.tileValue, { size: reportSizeLabel })
+      : null;
+  return (
+    <section className={styles.report} aria-label={HOME_DECK.reportTitle}>
+      <InboxReportCard surface="home" />
+      <div className={styles.reportFallback}>
+        <h2>{HOME_DECK.reportTitle}</h2>
+        <p>{HOME_DECK.reportBody}</p>
+        {calm !== null && <p data-testid="home-calm">{calm}</p>}
+        {tile !== null && (
+          <div className={styles.storageTile}>
+            <strong>{tile}</strong>
+            <span>{HOME_DECK.tileLabel}</span>
+            <small>{HOME_DECK.sizesNote}</small>
+          </div>
+        )}
+        <p className={styles.trust}>
+          {HOME_DECK.trust}{' '}
+          <Link href="/settings/privacy#what-we-store">
+            {HOME_DECK.trustLink}
+            <span aria-hidden="true"> →</span>
+          </Link>
+        </p>
       </div>
     </section>
   );
 }
 
-function WorkflowLink({
-  href,
-  title,
-  detail,
-  locked,
+function NextSteps({
+  steps,
+  onOpenFix,
 }: {
-  href: string;
-  title: string;
-  detail: string;
-  locked?: string | undefined;
+  steps: readonly HomeFixCandidate[];
+  onOpenFix: (step: HomeFixCandidate) => void;
 }) {
+  const [primary, ...secondary] = steps;
+  if (!primary) return null;
   return (
-    <Link href={href} className={styles.workflowLink}>
-      <span>
-        <strong>{title}</strong>
-        <small>{locked ?? detail}</small>
-      </span>
-      <span aria-hidden="true">↗</span>
-    </Link>
-  );
-}
-
-function SenderPreviews({ senders }: { senders: HomeSenderPreview[] }) {
-  return (
-    <>
-      <div className={styles.listLabel}>
-        <span>Sender</span>
-        <span>In inbox now</span>
+    <section className={styles.steps} aria-label={HOME_DECK.nextSteps}>
+      <h2 className={styles.eyebrow}>{HOME_DECK.nextSteps}</h2>
+      <div className={styles.stepGrid}>
+        <FixCard step={primary} primary onOpenFix={onOpenFix} />
+        {secondary.map((step) => (
+          <FixCard key={step.kind} step={step} primary={false} onOpenFix={onOpenFix} />
+        ))}
       </div>
-      {senders.map((sender) => (
-        <Link
-          className={styles.senderRow}
-          key={sender.id}
-          href={`/senders?sender=${encodeURIComponent(sender.id)}`}
-        >
-          <Avatar
-            name={sender.name}
-            domain={sender.domain}
-            size={36}
-            {...(sender.brandMark !== undefined ? { hasMark: sender.brandMark } : {})}
-          />
-          <span className={styles.senderIdentity}>
-            <strong>{sender.name}</strong>
-            <small>{sender.domain}</small>
-          </span>
-          <span className={styles.senderCount}>
-            {sender.inboxCount.toLocaleString('en-US')}
-            <small>{sender.inboxCount === 1 ? 'email' : 'emails'}</small>
-          </span>
-          <span aria-hidden="true">↗</span>
-        </Link>
-      ))}
-      <p className={styles.footnote}>
-        From your daily review queue. Preview confirms the exact scope.
-      </p>
-    </>
+    </section>
   );
 }
 
-function AttentionLink({
-  href,
-  title,
-  description,
+function FixCard({
+  step,
+  primary,
+  onOpenFix,
 }: {
-  href: string;
-  title: string;
-  description: string;
+  step: HomeFixCandidate;
+  primary: boolean;
+  onOpenFix: (step: HomeFixCandidate) => void;
+}) {
+  if (step.kind === 'unsub_archive') {
+    const heading =
+      step.senderCount === 1
+        ? HOME_DECK.fixHeadingOne
+        : fillDeck(HOME_DECK.fixHeadingOther, { n: formatCount(step.senderCount) });
+    const label =
+      step.senderCount === 1
+        ? HOME_DECK.fixPrimaryOne
+        : fillDeck(HOME_DECK.fixPrimaryOther, { n: formatCount(step.senderCount) });
+    const support =
+      step.senderCount === 1
+        ? HOME_DECK.mostlyUnreadSupportOne
+        : HOME_DECK.mostlyUnreadSupportOther;
+    if (heading === null || label === null) return null;
+    return (
+      <article className={primary ? styles.fixCard : styles.secondaryCard} data-step={step.kind}>
+        <h3>{heading}</h3>
+        <p>{support}</p>
+        {primary ? (
+          <div className={styles.fixActions}>
+            <button
+              type="button"
+              data-dm-button=""
+              className={`dm-button-link ${styles.primaryAction}`}
+              onClick={() => onOpenFix(step)}
+            >
+              {label}
+            </button>
+            <Link href="/senders">{HOME_DECK.fixReview}</Link>
+          </div>
+        ) : (
+          <button type="button" className={styles.textButton} onClick={() => onOpenFix(step)}>
+            {label}
+          </button>
+        )}
+      </article>
+    );
+  }
+  if (step.kind === 'largest') {
+    const line =
+      step.sizeLabel !== undefined && step.sizeLabel !== ''
+        ? fillDeck(HOME_DECK.top10, { size: step.sizeLabel })
+        : null;
+    return (
+      <article className={styles.secondaryCard} data-step={step.kind}>
+        <h3>{HOME_DECK.largestSort}</h3>
+        {line !== null && <p>{line}</p>}
+        <p>{HOME_DECK.storageNote}</p>
+      </article>
+    );
+  }
+  if (step.kind === 'later_due') {
+    return (
+      <article className={styles.secondaryCard} data-step={step.kind}>
+        <h3>
+          <Link
+            href="/later"
+            onClick={() => {
+              void track('home_next_step_clicked', { kind: 'later_due' });
+            }}
+          >
+            Later
+          </Link>
+        </h3>
+      </article>
+    );
+  }
+  const unreachable: never = step.kind;
+  return unreachable;
+}
+
+function Progress({
+  state,
+  timeZone,
+}: {
+  state: Extract<HomeState, { kind: 'ready' }>;
+  timeZone: string;
 }) {
   return (
-    <Link href={href} className={styles.attentionLink}>
-      <span className={styles.attentionIcon} aria-hidden="true">
-        ↗
-      </span>
+    <section className={styles.progressLine} aria-label="Progress">
+      <strong data-testid="home-hero">{state.hero.value.toLocaleString('en-US')}</strong>
       <span>
-        <strong>{title}</strong>
-        <small>{description}</small>
+        {state.hero.label}
+        {state.since !== null && (
+          <span className={styles.since}> since {formatSince(state.since, timeZone)}</span>
+        )}
       </span>
-      <span aria-hidden="true">→</span>
-    </Link>
+      {state.secondary.length > 0 && <SecondaryRow stats={state.secondary} />}
+      <Link href="/activity">{HOME_DECK.activityLink}</Link>
+    </section>
   );
 }
 
@@ -472,41 +406,34 @@ function SecondaryRow({ stats }: { stats: HomeStat[] }) {
 }
 
 function PrimaryLink({ action }: { action: HomeAction }) {
-  if (action.loading)
+  if (action.loading) {
     return (
       <span role="status" aria-live="polite" className={styles.loadingAction}>
         <Skeleton variant="rect" width={16} height={16} />
         {action.label}
       </span>
     );
+  }
   return (
-    <Link href={action.href} data-dm-button="" className="dm-button-link">
+    <Link href={action.href} data-dm-button="" className={`dm-button-link ${styles.primaryAction}`}>
       {action.label}
-      <span aria-hidden="true">↗</span>
     </Link>
   );
 }
 
 function HomeSkeleton() {
+  const labelId = useId();
   return (
-    <div role="status" aria-label="Loading Home" className={styles.summaryGrid}>
-      <div className={styles.progress}>
-        <Skeleton variant="text" width={160} />
-        <Skeleton variant="rect" width={210} height={90} />
-        <Skeleton variant="text" width={180} />
-      </div>
-      <div className={styles.nextStep}>
-        <Skeleton variant="text" width={150} />
-        <Skeleton variant="rect" width={210} height={80} />
-        <Skeleton variant="text" width={180} />
-        <Skeleton variant="rect" width={180} height={44} />
-      </div>
+    <div role="status" aria-labelledby={labelId} className={styles.summaryGrid}>
+      <span id={labelId} className={styles.srOnly}>
+        Loading Home
+      </span>
+      <Skeleton variant="text" width={160} />
+      <Skeleton variant="rect" width={210} height={90} />
     </div>
   );
 }
 
 function formatSince(iso: string, timeZone: string): string {
-  // A UTC server and a local browser can disagree at a month boundary.
-  // Use the session's timezone (or the same UTC fallback) for both renders.
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone });
 }

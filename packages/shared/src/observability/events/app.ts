@@ -52,6 +52,9 @@ export const APP_EVENT_NAMES = [
   'brief_hour_changed',
   'data_export_requested',
   'support_request_submitted',
+  'report_viewed',
+  'home_next_step_clicked',
+  'caught_up_viewed',
 ] as const;
 
 export type AppEventName = (typeof APP_EVENT_NAMES)[number];
@@ -383,6 +386,18 @@ export interface AppEventPayloads {
   brief_hour_changed: {
     /** Local hour chosen, 0-23. */
     hour: number;
+  };
+
+  report_viewed: {
+    surface: 'home';
+  };
+
+  home_next_step_clicked: {
+    kind: 'unsub_archive' | 'largest' | 'later_due';
+  };
+
+  caught_up_viewed: {
+    surface: 'home';
   };
 
   data_export_requested: {

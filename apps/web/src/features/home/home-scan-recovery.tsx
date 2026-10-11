@@ -6,10 +6,12 @@ import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import type { SyncStatus } from '@declutrmail/shared/contracts';
 import { Button, ErrorState } from '@declutrmail/shared';
 import { initialSyncRecovery } from '@declutrmail/shared/contracts';
+import { useAuth } from '@/features/auth/auth-provider';
 import { useSyncStatus } from '@/features/onboarding/api/use-sync-status';
 import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync';
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
 import { useNow } from '@/lib/use-now';
+import { fillDeck, formatRetryTime, HOME_DECK } from './home-deck-copy';
 
 export function HomeScanRecovery({
   mailboxId,
@@ -21,6 +23,13 @@ export function HomeScanRecovery({
   const status = useSyncStatus(mailboxId);
   const retry = useRetryInitialSync(mailboxId);
   const now = useNow(30_000);
+  const { me } = useAuth();
+  const timeZone = me.user.timezone ?? 'UTC';
+  const scheduled = status.data?.next_retry_at;
+  const retryingLabel =
+    scheduled != null
+      ? fillDeck(HOME_DECK.retrying, { time: formatRetryTime(scheduled, timeZone) ?? '' })
+      : null;
   const qc = useQueryClient();
   useEffect(() => {
     if (status.data?.is_ready_for_triage) void qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
@@ -32,6 +41,7 @@ export function HomeScanRecovery({
       pending={retry.isPending}
       needsReconnect={needsReconnect}
       now={now}
+      retryingLabel={retryingLabel}
       refresh={() => void status.refetch()}
       retry={() => retry.mutate()}
       reconnect={() => startMailboxConnect(mailboxId)}
@@ -45,6 +55,7 @@ export function HomeScanRecoveryView({
   pending,
   needsReconnect,
   now,
+  retryingLabel = null,
   refresh,
   retry,
   reconnect: connect,
@@ -54,6 +65,7 @@ export function HomeScanRecoveryView({
   pending: boolean;
   needsReconnect: boolean;
   now: number | null;
+  retryingLabel?: string | null;
   refresh: () => void;
   retry: () => void;
   reconnect: () => void;
@@ -88,9 +100,11 @@ export function HomeScanRecoveryView({
       <p>
         {reconnect
           ? 'Reconnect Gmail to continue with your saved progress.'
-          : data.next_retry_at
-            ? 'Your progress is saved. An automatic retry is scheduled.'
-            : 'Your progress is saved. Retry this inbox’s scan.'}
+          : waiting && retryingLabel
+            ? retryingLabel
+            : data.next_retry_at
+              ? 'Your progress is saved. An automatic retry is scheduled.'
+              : 'Your progress is saved. Retry this inbox’s scan.'}
       </p>
       <Button
         tone="primary"

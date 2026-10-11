@@ -1,0 +1,35 @@
+import { describe, expect, it } from 'vitest';
+
+import { homeV1Mode, rankHomeNextSteps, type HomeFixCandidate } from './home-next-steps';
+
+const unsub: HomeFixCandidate = { kind: 'unsub_archive', senderCount: 4, senderIds: ['a'] };
+const largest: HomeFixCandidate = { kind: 'largest', senderCount: 10, senderIds: ['b'] };
+const later: HomeFixCandidate = { kind: 'later_due', senderCount: 2, senderIds: ['c'] };
+const empty: HomeFixCandidate = { kind: 'unsub_archive', senderCount: 0, senderIds: [] };
+
+describe('rankHomeNextSteps', () => {
+  it('orders unsubscribe, then largest, then later, and keeps three', () => {
+    expect(
+      rankHomeNextSteps([later, largest, unsub, empty], { senderSizeView: true }).map(
+        (step) => step.kind,
+      ),
+    ).toEqual(['unsub_archive', 'largest', 'later_due']);
+  });
+
+  it('drops largest when the size view is off', () => {
+    expect(
+      rankHomeNextSteps([largest, later, unsub], { senderSizeView: false }).map(
+        (step) => step.kind,
+      ),
+    ).toEqual(['unsub_archive', 'later_due']);
+  });
+});
+
+describe('homeV1Mode', () => {
+  it('maps ready with steps to full and ready without steps to fallback', () => {
+    expect(homeV1Mode('ready', 1)).toBe('full');
+    expect(homeV1Mode('ready', 0)).toBe('fallback');
+    expect(homeV1Mode('empty', 3)).toBe('empty');
+    expect(homeV1Mode('sync-failed', 0)).toBe('sync-failed');
+  });
+});
