@@ -1,9 +1,10 @@
 /**
- * WS1 plan names and prices are empty until the catalog flags flip.
- * A sentence that needs one of those fillers must disappear whole.
+ * A sentence that needs an empty filler must disappear whole.
  * This file is the regression for the partial sentences that shipped
  * on 75fc956e: "/vs" FAQs, the comparison price cells, FAQPage JSON-LD,
- * and both llms documents.
+ * and both llms documents. After WS1a landed, the live catalog fills
+ * Free and Plus; pass price, pass days, and refund days stay blank,
+ * so those clauses stay omitted.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -37,7 +38,6 @@ const catalogEmpty = planName('free') === '' || planName('plus') === '';
 
 describe('empty WS1 fillers', () => {
   it('omits incomplete pricing sentences on every comparison', () => {
-    expect(catalogEmpty).toBe(true);
     for (const comparison of COMPARISONS) {
       const price = comparison.rows.find((row) => row.label === 'Public starting point');
       expect(price, comparison.slug).toBeTruthy();
@@ -58,6 +58,9 @@ describe('empty WS1 fillers', () => {
       if (catalogEmpty) {
         expect(faqs.some((faq) => faq.q === 'How much does DeclutrMail cost?')).toBe(false);
         expect(json).not.toContain('How much does DeclutrMail cost?');
+      } else {
+        expect(summary.trim(), comparison.slug).not.toBe('');
+        expect(faqs.some((faq) => faq.q === 'How much does DeclutrMail cost?')).toBe(true);
       }
     }
   });

@@ -1,14 +1,15 @@
 # WS3 website, SEO, and AEO — 2026-10-11
 
-Branch `codex/ws3-site-seo-aeo` is based on main `ed3e9de2` plus the WS1a stub
-cherry-pick `5347ac42` (local `4ad5caee`). Later WS1a commits are not included.
-Rebase once onto main after WS1a lands. Do not merge from this record.
+Branch `codex/ws3-site-seo-aeo` is rebased onto main after WS1a landed
+(`d72d2976`, PR #977). The temporary stub cherry-pick is not replayed.
+Do not merge from this record.
 
-Copy is deck revision `drop2-r6` (issued 2026-10-11T05:26:15-07:00). Prices, plan
-names, and the refund sentence come from the WS1 formatters. Those formatters
-still return empty strings, so `{refundDays}`, `{passDays}`, and `{passPrice}`
-render blank and the comparison price FAQ drops the empty “-day money-back”
-clause. The final comparison CTA hides `refundLine()` while it is empty.
+Copy is deck revision `drop2-r6` (issued 2026-10-11T05:26:15-07:00). Plan
+names and the Plus price come from the WS1 formatters (`planName`,
+`priceLine` on the manifest). `{passDays}`, `{passPrice}`, and `{refundDays}`
+stay blank, so `fillComplete` drops those clauses, including the “-day
+money-back” sentence. The final comparison CTA still hides `refundLine()`
+while that formatter is empty.
 
 ## Decisions assumed
 
@@ -27,12 +28,13 @@ clause. The final comparison CTA hides `refundLine()` while it is empty.
   does not ship.
 - `ORGANIZATION_SAME_AS` is empty, so Organization JSON-LD omits `sameAs`.
   Offers come only from `buildOffersJsonLd()` (currently `[]`).
-- `LEGAL_ENTITY_NAME` and `LEGAL_ENTITY_ADDRESS` stay `FILL_ME`. No legal name
-  or street address is stated in the privacy, terms, or contact pages, and
-  `BUSINESS_POSTAL_ADDRESS` is empty. The footer and /contact render the legal
-  sentence only when `hasLegalEntity()` is true. The shared test
-  `fails until the founder sets the legal name and address` is red until both
-  constants are replaced with the founder's text.
+- Founder decision 2026-10-11 12:26 PM PT: ship without a legal company
+  name or business address. `LEGAL_ENTITY_NAME` and `LEGAL_ENTITY_ADDRESS`
+  are empty strings. Filling both is the later one-line change. No flag
+  and no env var. `hasLegalEntity()` is false while either is blank, so
+  the footer and /contact omit the legal line instead of rendering a
+  placeholder, an empty element, or a broken sentence. The postal address
+  block stays omitted while `BUSINESS_POSTAL_ADDRESS` is empty.
 - Verification facts, from the founder on 2026-10-11, and nothing past them:
   Google OAuth verification for `gmail.modify` was approved April 21, 2026
   on GCP project `declutrmail-ai-prod`; brand verification was approved

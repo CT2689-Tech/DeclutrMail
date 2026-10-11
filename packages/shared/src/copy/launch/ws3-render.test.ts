@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { cleanupActionsPerMonthFor } from '../../entitlements';
+import { cleanupActionsPerMonthFor, planName } from '../../entitlements';
 import {
   BRAND_VERIFICATION_APPROVED_ON,
   CASA_LOV_SUBMITTED_ON,
@@ -9,6 +9,7 @@ import {
 } from '../privacy';
 import { AI_CONSENT_GATE_KEYS, AI_CONSENT_GATE_LIVE } from './ws3-decisions';
 import {
+  fillComplete,
   fillWs3,
   gateOpen,
   glanceLines,
@@ -54,17 +55,30 @@ describe('WS3 token fill', () => {
     expect(ws3Tokens().allowance).toBe(allowance!.toLocaleString('en-US'));
   });
 
-  it('does not invent a refund-day or pass-day number', () => {
+  it('drops a clause whose filler is still empty', () => {
     expect(ws3Tokens().refundDays).toBe('');
     expect(ws3Tokens().passDays).toBe('');
     expect(ws3Tokens().passPrice).toBe('');
-    expect(priceFaqAnswer()).toBe('');
-    expect(declutrPriceSummary()).toBe('');
-    expect(declutrPriceDetail()).toBe('');
-    expect(llmsPricingLine()).toBe('');
-    expect(llmsAutopilotLine()).toBe('');
-    expect(priceFaqAnswer()).not.toContain('-day money-back');
-    expect(priceFaqAnswer()).not.toMatch(/\$19|\$59/);
+    expect(fillComplete('{refundDays}-day money-back on any purchase, once per customer.')).toBe(
+      '',
+    );
+    const answer = priceFaqAnswer();
+    const summary = declutrPriceSummary();
+    const detail = declutrPriceDetail();
+    const pricing = llmsPricingLine();
+    const autopilot = llmsAutopilotLine();
+    for (const text of [answer, summary, detail, pricing, autopilot]) {
+      expect(text).not.toContain('{');
+      expect(text).not.toMatch(/ {2,}/);
+      expect(text).not.toMatch(/,\s*,/);
+      expect(text).not.toMatch(/(^|[.!?]\s+)-day\b/);
+    }
+    expect(answer).not.toContain('-day money-back');
+    expect(answer).not.toMatch(/\$19|\$59/);
+    expect(answer).toContain(planName('free'));
+    expect(answer).toContain(planName('plus'));
+    expect(autopilot).toContain(planName('plus'));
+    expect(autopilot).not.toMatch(/on\s+handle/);
   });
 
   it('keeps the consent gate off and lists the strings that wait for it', () => {
