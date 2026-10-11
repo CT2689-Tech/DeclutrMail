@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
 import { Queue, Worker } from 'bullmq';
+import { Redis } from 'ioredis';
 import { expect, it, vi } from 'vitest';
 import { createRedisConnection } from './queue.js';
 import {
@@ -15,11 +16,12 @@ import {
   enqueueEmailSend,
   readBillingQueueCompatibility,
   QueueActorCompatibilityError,
+  sampleEmailQueueCompatibility,
 } from './email-send.queue.js';
 import type { EmailSendJobData, EmailSendResult } from './email-send.worker.js';
 
-it('preserves waiting billing jobs while OFF and isolates them from a live legacy consumer', async () => {
-  // CI provides TEST_REDIS_URL; local runs may own an ephemeral Redis server.
+/** CI provides TEST_REDIS_URL; local runs own an ephemeral Redis server. */
+async function ownedRedis(): Promise<{ url: string; stop: () => Promise<void> }> {
   // Never use application REDIS_URL. A unique prefix owns every key cleaned here.
   let redisUrl = process.env.TEST_REDIS_URL;
   let server: ReturnType<typeof spawn> | undefined;
@@ -46,6 +48,22 @@ it('preserves waiting billing jobs while OFF and isolates them from a live legac
     await once(server, 'spawn');
     redisUrl = `redis://127.0.0.1:${address.port}`;
   }
+  const owned = server;
+  return {
+    url: redisUrl,
+    stop: async () => {
+      if (owned && owned.exitCode === null && owned.signalCode === null) {
+        const exited = once(owned, 'exit');
+        owned.kill('SIGTERM');
+        await exited;
+      }
+    },
+  };
+}
+
+it('preserves waiting billing jobs while OFF and isolates them from a live legacy consumer', async () => {
+  const redis = await ownedRedis();
+  const redisUrl = redis.url;
   const prefix = `billing-transport-${randomUUID()}`;
   const connection = createRedisConnection(redisUrl);
   const billing = new Queue<EmailSendJobData>(BILLING_EMAIL_SEND_QUEUE, { connection, prefix });
@@ -150,10 +168,57 @@ it('preserves waiting billing jobs while OFF and isolates them from a live legac
     await Promise.all([billing.obliterate({ force: true }), generic.obliterate({ force: true })]);
     await Promise.all([billing.close(), generic.close()]);
     connection.disconnect();
-    if (server && server.exitCode === null && server.signalCode === null) {
-      const exited = once(server, 'exit');
-      server.kill('SIGTERM');
-      await exited;
+    await redis.stop();
+  }
+}, 15000);
+
+it('finds a live worker whose named connection is momentarily reconnecting', async () => {
+  const redis = await ownedRedis();
+  const prefix = `actor-window-${randomUUID()}`;
+  // A slow reconnect holds the worker's named blocking connection absent long
+  // enough to observe, as a broker idle-close or proxy reset would.
+  const workerConnection = new Redis(redis.url, {
+    maxRetriesPerRequest: null,
+    retryStrategy: () => 1_000,
+  });
+  const admin = createRedisConnection(redis.url);
+  const worker = new Worker(EMAIL_SEND_QUEUE, async () => ({}), {
+    connection: workerConnection,
+    prefix,
+    name: EMAIL_PREFS_COMPATIBLE_WORKER_NAME,
+  });
+  worker.on('error', () => {});
+  const generic = new Queue(EMAIL_SEND_QUEUE, { connection: admin, prefix });
+  const withQueue = async <T>(read: (queue: Queue) => Promise<T>) => {
+    const queue = new Queue(EMAIL_SEND_QUEUE, { connection: admin, prefix });
+    try {
+      return await read(queue);
+    } finally {
+      await queue.close();
     }
+  };
+  try {
+    await worker.waitUntilReady();
+    expect(await readEmailPrefsQueueCompatibility(generic)).toEqual({ workers: 1 });
+    const [named] = await generic.getWorkers();
+    await admin.client('KILL', 'ID', named!.id!);
+    await expect(readEmailPrefsQueueCompatibility(generic)).rejects.toMatchObject({
+      reason: 'no_workers',
+    });
+    const sampled = await sampleEmailQueueCompatibility(withQueue, {
+      samples: 4,
+      intervalMs: 700,
+    }).catch((error: unknown) => error);
+    // Closing a worker mid-reconnect hangs, so let it return before asserting.
+    await vi.waitFor(async () => expect(await generic.getWorkers()).toHaveLength(1), {
+      timeout: 5_000,
+    });
+    expect(sampled).toEqual({ workers: 1 });
+  } finally {
+    await worker.close();
+    workerConnection.disconnect();
+    await generic.close();
+    admin.disconnect();
+    await redis.stop();
   }
 }, 15000);
