@@ -19,6 +19,7 @@ export {
 export {
   declutrPriceDetail,
   declutrPriceSummary,
+  fillComplete,
   fillWs3,
   gateOpen,
   gatedText,

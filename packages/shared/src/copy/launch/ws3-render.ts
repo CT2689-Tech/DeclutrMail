@@ -10,6 +10,7 @@ import {
   planName,
   priceLine,
   refundLine,
+  renderPricingMarkdown,
   TIER_MANIFEST,
 } from '../../entitlements';
 import { hasLegalEntity, LEGAL_ENTITY_ADDRESS, LEGAL_ENTITY_NAME } from '../legal-entity';
@@ -80,21 +81,58 @@ export function fillWs3(template: string, extra?: Record<string, string>): strin
   });
 }
 
+function clauseIsComplete(clause: string, tokens: Record<string, string>): boolean {
+  const keys = [...clause.matchAll(/\{([A-Za-z0-9_]+)\}/g)].map((match) => match[1] ?? '');
+  return keys.every((key) => (tokens[key] ?? '') !== '');
+}
+
+/**
+ * Fill a deck template, dropping any sentence or semicolon-clause that
+ * still needs an empty filler. A half-filled price sentence is worse
+ * than no sentence: `{plusName} is {plusPrice}` must not become " is ".
+ */
+export function fillComplete(template: string, extra?: Record<string, string>): string {
+  const tokens = ws3Tokens(extra);
+  const sentences = template.split(/(?<=[.!?])\s+/);
+  const kept: string[] = [];
+  for (const sentence of sentences) {
+    const clauses = sentence.split(/;\s+/);
+    const surviving = clauses.filter((clause) => clauseIsComplete(clause, tokens));
+    if (surviving.length === 0) continue;
+    let joined = surviving.join('; ');
+    const terminal = sentence.match(/[.!?]$/)?.[0];
+    if (terminal && !/[.!?]$/.test(joined)) joined = `${joined}${terminal}`;
+    kept.push(fillWs3(joined, extra));
+  }
+  return kept
+    .join(' ')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
+
+/** Plan names and the Plus price are still empty until the WS1 catalog flips. */
+function pricingCatalogReady(): boolean {
+  const tokens = ws3Tokens();
+  return tokens.freeName !== '' && tokens.plusName !== '' && tokens.plusPrice !== '';
+}
+
 /** The money-back line under a comparison CTA. Hidden when the formatter is still empty. */
 export function refundSentence(): string {
   return refundLine();
 }
 
 export function declutrPriceSummary(): string {
+  if (!pricingCatalogReady()) return '';
   const template = passListed()
     ? WS3_COPY['ws3.vs.declutr.price.summary']
     : WS3_COPY['ws3.vs.declutr.price.summary'].replace(/ or a one-time \{passName\}/, '');
-  return fillWs3(template);
+  return fillComplete(template);
 }
 
 export function declutrPriceDetail(): string {
-  if (!passListed()) return fillWs3(WS3_COPY['ws3.vs.faq.price.a.passOff']);
-  return fillWs3(WS3_COPY['ws3.vs.declutr.price.detail']);
+  if (!pricingCatalogReady()) return '';
+  if (!passListed()) return fillComplete(WS3_COPY['ws3.vs.faq.price.a.passOff']);
+  return fillComplete(WS3_COPY['ws3.vs.declutr.price.detail']);
 }
 
 const BEFORE_GATE: Record<string, string> = {
@@ -136,21 +174,22 @@ export function privacyFaqAnswer(): string {
 }
 
 export function priceFaqAnswer(): string {
+  if (!pricingCatalogReady()) return '';
   const key = passListed() ? 'ws3.vs.faq.price.a' : 'ws3.vs.faq.price.a.passOff';
-  const filled = fillWs3(WS3_COPY[key]);
-  if (ws3Tokens().refundDays !== '') return filled;
-  return filled.replace(/\s*-day money-back on any purchase, once per customer\./, '').trim();
+  return fillComplete(WS3_COPY[key]);
 }
 
 export function llmsAutopilotLine(): string {
-  return fillWs3(WS3_COPY['ws3.llms.fix.autopilot']);
+  if (ws3Tokens().plusName === '') return '';
+  return fillComplete(WS3_COPY['ws3.llms.fix.autopilot']);
 }
 
 export function llmsPricingLine(): string {
+  if (!pricingCatalogReady()) return '';
   const template = passListed()
     ? WS3_COPY['ws3.llms.fix.pricingLink']
     : WS3_COPY['ws3.llms.fix.pricingLink'].replace(' and the one-time {passName}', '');
-  return fillWs3(template);
+  return fillComplete(template);
 }
 
 export function llmsBetaLine(): string {
@@ -164,12 +203,16 @@ export const LLMS_AI_BEFORE_GATE =
 
 export function llmsKeyFacts(): readonly string[] {
   const facts = WS3_COPY['ws3.llms.keyFacts'];
-  return facts.map((fact, index) => {
-    if (index === 3 && !AI_CONSENT_GATE_LIVE) return LLMS_AI_BEFORE_GATE;
+  return facts.flatMap((fact, index) => {
+    if (index === 3 && !AI_CONSENT_GATE_LIVE) return [LLMS_AI_BEFORE_GATE];
+    // The deck points at the generated pricing section. Omit the pointer
+    // while that section is empty so the file does not describe a heading
+    // that is not there.
+    if (index === 5 && renderPricingMarkdown().trim() === '') return [];
     if (index === 6) {
-      return fillWs3(fact, { factsCheckedDate: 'October 11, 2026' });
+      return [fillWs3(fact, { factsCheckedDate: 'October 11, 2026' })];
     }
-    return fillWs3(fact);
+    return [fillComplete(fact)];
   });
 }
 

@@ -116,8 +116,18 @@ describe('comparison data', () => {
     expect(copy).toContain('Unsubscribe is not a reversible DeclutrMail action');
     expect(copy).not.toMatch(/every decision keeps running|all actions are undoable/i);
     expect(copy).not.toMatch(/founding offer/i);
-    expect(copy).toContain(declutrPriceSummary());
-    expect(copy).toContain(declutrPriceDetail());
+    const summary = declutrPriceSummary();
+    const detail = declutrPriceDetail();
+    if (summary === '') {
+      for (const comparison of COMPARISONS) {
+        const price = comparison.rows.find((row) => row.label === 'Public starting point');
+        expect(price?.declutrMail.summary).toBe('');
+        expect(price?.declutrMail.detail ?? '').toBe('');
+      }
+    } else {
+      expect(copy).toContain(summary);
+      expect(copy).toContain(detail);
+    }
   });
 
   it('stamps each page with its own verification date and the hub with the oldest', () => {

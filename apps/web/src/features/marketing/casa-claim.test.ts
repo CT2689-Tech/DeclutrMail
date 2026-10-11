@@ -34,6 +34,7 @@ const CLAIM_SITES = [
   'src/features/marketing/landing/sections.tsx',
   'src/features/marketing/trust/trust-row.tsx',
   'src/features/marketing/auth-entry/auth-entry.tsx',
+  'src/features/marketing/llms/llms-document.ts',
 ] as const;
 
 const read = (relative: string) => readFileSync(path.resolve(process.cwd(), relative), 'utf8');

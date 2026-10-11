@@ -13,6 +13,10 @@ import {
   gateOpen,
   glanceLines,
   llmsKeyFacts,
+  declutrPriceDetail,
+  declutrPriceSummary,
+  llmsAutopilotLine,
+  llmsPricingLine,
   priceFaqAnswer,
   privacyFaqAnswer,
   ws3Tokens,
@@ -54,6 +58,11 @@ describe('WS3 token fill', () => {
     expect(ws3Tokens().refundDays).toBe('');
     expect(ws3Tokens().passDays).toBe('');
     expect(ws3Tokens().passPrice).toBe('');
+    expect(priceFaqAnswer()).toBe('');
+    expect(declutrPriceSummary()).toBe('');
+    expect(declutrPriceDetail()).toBe('');
+    expect(llmsPricingLine()).toBe('');
+    expect(llmsAutopilotLine()).toBe('');
     expect(priceFaqAnswer()).not.toContain('-day money-back');
     expect(priceFaqAnswer()).not.toMatch(/\$19|\$59/);
   });

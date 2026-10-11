@@ -1,4 +1,5 @@
 import {
+  fillComplete,
   fillWs3,
   passListed,
   priceFaqAnswer,
@@ -68,10 +69,10 @@ export function comparisonFaqs(
       ? 'Does DeclutrMail read my emails?'
       : WS3_COPY['ws3.vs.faq.privacy.q'];
   return [
-    { q: question, a: FAQ_ANSWER[comparison.slug] },
+    { q: question, a: fillComplete(FAQ_ANSWER[comparison.slug]) },
     { q: privacyQuestion, a: privacyFaqAnswer() },
     { q: WS3_COPY['ws3.vs.faq.price.q'], a: priceFaqAnswer() },
-  ];
+  ].filter((faq) => faq.a !== '');
 }
 
 export function comparisonFaqJsonLd(comparison: ComparisonDefinition) {

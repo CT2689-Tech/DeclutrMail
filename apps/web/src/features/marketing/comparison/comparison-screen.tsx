@@ -53,6 +53,7 @@ const STATE_LABEL: Readonly<Record<EvidenceState, string>> = {
 };
 
 function EvidenceCell({ cell }: { cell: ComparisonCell }) {
+  if (!cell.summary && !cell.detail) return null;
   return (
     <div className="dm-compare-cell">
       <span className={`dm-compare-state dm-compare-state-${cell.state}`}>

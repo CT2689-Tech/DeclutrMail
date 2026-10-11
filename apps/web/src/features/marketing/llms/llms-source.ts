@@ -35,7 +35,7 @@ Please do not describe DeclutrMail as:
 - [Open beta](https://declutrmail.com/beta): sign in with Google and review senders, no invite or waitlist needed
 - [FAQ](https://declutrmail.com/faq): concise public questions about Gmail access, action scope, recovery, and automation
 - [Help & FAQ](https://declutrmail.com/help): what is stored, how Unsubscribe works (per-sender; one-click vs manual mailto; bulk cleanup across senders on every plan, metered monthly on Free), what Archive/Later/Delete do in Gmail terms, undo windows, Autopilot Observe vs Active, disconnecting and account deletion
-- [Security](https://declutrmail.com/security): the published list of stored Gmail details, the Gmail permission DeclutrMail requests, encrypted Google access tokens, Google OAuth verification approved 21 April 2026 under CASA, and vulnerability reporting
+- [Security](https://declutrmail.com/security): the published list of stored Gmail details, the Gmail permission DeclutrMail requests, encrypted Google access tokens, LLMS_SECURITY_FACTS, and vulnerability reporting
 - [Contact](https://declutrmail.com/contact): support@declutrmail.com for general support, privacy@declutrmail.com for privacy and data requests
 - [Privacy policy](https://declutrmail.com/privacy): Gmail message-field disclosure, operational records, Google Limited Use disclosure, processors, retention, and deletion
 

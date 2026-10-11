@@ -1,4 +1,9 @@
-import { CASA_VERIFICATION_APPROVED_ON } from '@declutrmail/shared';
+import {
+  BRAND_VERIFICATION_APPROVED_ON,
+  CASA_LOV_SUBMITTED_ON,
+  CASA_VERIFICATION_APPROVED_ON,
+  formatVerificationDate,
+} from '@declutrmail/shared';
 import { renderPricingMarkdown } from '@declutrmail/shared/entitlements';
 import {
   LAUNCH_STAGE,
@@ -15,6 +20,21 @@ import { LLMS_SOURCE } from './llms-source';
 
 const LAUNCH_SLUGS = ['mailstrom', 'inboxpurge', 'mailmop'] as const;
 
+const PREVIOUS_AUTOPILOT =
+  'Autopilot rules on Plus and Pro find future matches. Both plans support Observe, which waits for batch approval, and Active, which acts on future matches only after you preview and deliberately turn on a rule.';
+
+const PREVIOUS_PRICING =
+  '- [Pricing](https://declutrmail.com/pricing): Free, Plus, and Pro plans; paid plans carry a 30-day money-back guarantee — see the refund policy for terms';
+
+/** OAuth approval, brand verification, and the CASA letter are three facts. */
+export function llmsSecurityFacts(): string {
+  return [
+    `Google OAuth verification for gmail.modify approved ${formatVerificationDate(CASA_VERIFICATION_APPROVED_ON)}`,
+    `brand verification approved ${formatVerificationDate(BRAND_VERIFICATION_APPROVED_ON)}`,
+    `CASA Tier 2 letter of validation submitted ${formatVerificationDate(CASA_LOV_SUBMITTED_ON)}`,
+  ].join('; ');
+}
+
 function withLaunchLinks(body: string): string {
   const block = LAUNCH_SLUGS.map((slug) => {
     const page = COMPARISONS.find((comparison) => comparison.slug === slug);
@@ -30,15 +50,15 @@ function withLaunchLinks(body: string): string {
 }
 
 export function renderLlmsTxt(): string {
-  let body = LLMS_SOURCE.replaceAll('21 April 2026', CASA_VERIFICATION_APPROVED_ON);
-  body = body.replace(
-    'Autopilot rules on Plus and Pro find future matches. Both plans support Observe, which waits for batch approval, and Active, which acts on future matches only after you preview and deliberately turn on a rule.',
-    llmsAutopilotLine(),
-  );
-  body = body.replace(
-    '- [Pricing](https://declutrmail.com/pricing): Free, Plus, and Pro plans; paid plans carry a 30-day money-back guarantee — see the refund policy for terms',
-    `- [Pricing](https://declutrmail.com/pricing): ${llmsPricingLine()}`,
-  );
+  let body = LLMS_SOURCE.replaceAll('LLMS_SECURITY_FACTS', llmsSecurityFacts());
+  const autopilot = llmsAutopilotLine();
+  if (autopilot) body = body.replace(PREVIOUS_AUTOPILOT, autopilot);
+  const pricingLine = llmsPricingLine();
+  if (pricingLine)
+    body = body.replace(
+      PREVIOUS_PRICING,
+      `- [Pricing](https://declutrmail.com/pricing): ${pricingLine}`,
+    );
   if (LAUNCH_STAGE === 'ga') {
     body = body.replace(
       '- [Open beta](https://declutrmail.com/beta): sign in with Google and review senders, no invite or waitlist needed',
@@ -50,8 +70,9 @@ export function renderLlmsTxt(): string {
     .map((fact) => `- ${fact}`)
     .join('\n');
   const header = `${WS3_COPY['ws3.llms.disambiguation']}\n\n## ${WS3_COPY['ws3.llms.keyFacts.title']}\n\n${facts}\n\n`;
-  const pricing = renderPricingMarkdown();
-  return `${header}${body.trim()}\n\n## Pricing\n\n${pricing}\n`;
+  const pricing = renderPricingMarkdown().trim();
+  const pricingSection = pricing === '' ? '\n' : `\n\n## Pricing\n\n${pricing}\n`;
+  return `${header}${body.trim()}${pricingSection}`;
 }
 
 export function renderLlmsFullTxt(): string {
