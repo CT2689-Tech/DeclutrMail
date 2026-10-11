@@ -93,6 +93,69 @@ function resetDate(resetAt: string): string {
   }).format(parsed);
 }
 
+export const WINDOW_PRESET_DAYS = [30, 90, 180, 365] as const;
+
+/** Largest window preset whose preview count fits the remaining allowance. */
+export function suggestedWindowPreset(
+  remaining: number,
+  counts: Partial<Record<number, number>>,
+): number | null {
+  let best: number | null = null;
+  for (const days of WINDOW_PRESET_DAYS) {
+    const count = counts[days];
+    if (count === undefined || count <= 0 || count > remaining) continue;
+    if (best === null || days > best) best = days;
+  }
+  return best;
+}
+
+export function quotaUnitsForEnqueue(input: {
+  tier: TierId;
+  verb: string;
+  requestedCount: number;
+}): number {
+  if (!isMeterV2() || input.tier !== 'free') return 0;
+  const counts = METER.countsVerbs[input.verb as keyof typeof METER.countsVerbs];
+  if (!counts) return 0;
+  return Math.max(0, input.requestedCount);
+}
+
+export function meterChipLine(input: {
+  remaining: number;
+  limit: number;
+  resetAt: string;
+  compact?: boolean;
+}): { text: string; aria: string } {
+  const values = {
+    remaining: grouped(input.remaining),
+    allowance: grouped(input.limit),
+    resetDate: resetDate(input.resetAt),
+  };
+  const text =
+    input.remaining <= 0
+      ? fill(WS1_COPY['meter.chip.empty'], values)
+      : input.compact
+        ? fill(WS1_COPY['meter.chip.compact'], values)
+        : fill(WS1_COPY['meter.chip'], values);
+  return { text, aria: fill(WS1_COPY['meter.chip.aria'], values) };
+}
+
+export function meterPreviewText(requested: number, remaining: number): string {
+  if (requested > remaining) {
+    return fill(WS1_COPY['meter.preview.over'], {
+      requested: grouped(requested),
+      remaining: grouped(remaining),
+    });
+  }
+  if (requested === 1) {
+    return fill(WS1_COPY['meter.preview.fits.one'], { remaining: grouped(remaining) });
+  }
+  return fill(WS1_COPY['meter.preview.fits.other'], {
+    requested: grouped(requested),
+    remaining: grouped(remaining),
+  });
+}
+
 export function quotaExceededMessage(input: QuotaExceededMessageInput): string {
   const remaining = Math.max(0, input.limit - input.used);
   return fill(WS1_COPY['cap.api.message'], {

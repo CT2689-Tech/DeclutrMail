@@ -6,7 +6,8 @@ import { useUpgradeReturnTo } from '@/features/billing/use-upgrade-return-to';
 
 import { Button, tokens } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+import { planName, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { useTier } from '@/features/auth/api/use-tier';
 import {
@@ -49,6 +50,7 @@ const { color, font, radius, shadow, space, text } = tokens;
 export function UpgradeModal() {
   const hit = useUpgradeGateStore((s) => s.hit);
   const dismiss = useUpgradeGateStore((s) => s.dismiss);
+  const applyWindowPreset = useUpgradeGateStore((s) => s.applyWindowPreset);
   const { tier } = useTier();
   const from = useUpgradeReturnTo();
 
@@ -148,7 +150,9 @@ export function UpgradeModal() {
           }}
         >
           {hit.reason === 'free_cap'
-            ? freeCapTitle(hit.details)
+            ? typeof hit.details.requested === 'number'
+              ? WS1_COPY['cap.title']
+              : freeCapTitle(hit.details)
             : hit.reason === 'action_tier'
               ? actionTierTitle(hit.details)
               : hit.reason === 'pro_feature'
@@ -165,7 +169,8 @@ export function UpgradeModal() {
             textWrap: 'pretty',
           }}
         >
-          {hit.reason === 'free_cap' ? (
+          {hit.reason === 'free_cap' &&
+          typeof hit.details.requested === 'number' ? null : hit.reason === 'free_cap' ? (
             <>
               {TIER_MANIFEST.plus.name} removes the monthly cap
               {hit.details.resetsAt
@@ -199,7 +204,55 @@ export function UpgradeModal() {
             gap: space[2],
           }}
         >
-          {nudge ? (
+          {nudge && hit.reason === 'free_cap' && typeof hit.details.requested === 'number' ? (
+            <>
+              {typeof hit.details.suggestedPreset === 'number' ? (
+                <Button
+                  tone="default"
+                  size="lg"
+                  onClick={() => {
+                    if (typeof hit.details.suggestedPreset === 'number') {
+                      applyWindowPreset(hit.details.suggestedPreset);
+                    }
+                  }}
+                  style={{ width: '100%' }}
+                >
+                  {WS1_COPY['cap.fit.button']}
+                </Button>
+              ) : null}
+              <Link
+                href={billingIntentPath({
+                  plan: 'plus',
+                  cycle: 'annual',
+                  ...(from ? { from } : {}),
+                })}
+                onClick={dismiss}
+                data-dm-button=""
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  height: 50,
+                  padding: '0 28px',
+                  background: color.primary,
+                  color: color.fgInverse,
+                  borderRadius: radius.pill,
+                  boxShadow: shadow.button,
+                  fontSize: text.lg,
+                  fontWeight: 600,
+                  letterSpacing: '-0.006em',
+                  textDecoration: 'none',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {WS1_COPY['cap.plus.button'].replace('{plusName}', planName('plus'))}
+              </Link>
+              <Button tone="ghost" size="lg" onClick={dismiss} style={{ width: '100%' }}>
+                {WS1_COPY['cap.dismiss']}
+              </Button>
+            </>
+          ) : nudge ? (
             <>
               <Link
                 href={upgradeHref}

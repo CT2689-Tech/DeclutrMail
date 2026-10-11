@@ -29,7 +29,9 @@ export {
   inboxLimitReachedMessage,
   isMeterV2,
   isPricingV2,
+  meterChipLine,
   meterNoun,
+  meterPreviewText,
   planName,
   plusConnectCta,
   plusInboxLimitTitle,
@@ -40,7 +42,10 @@ export {
   proWaitlistJoined,
   promoBanner,
   quotaExceededMessage,
+  quotaUnitsForEnqueue,
   refundLine,
+  suggestedWindowPreset,
+  WINDOW_PRESET_DAYS,
   renderPricingMarkdown,
 } from './copy';
 export type { QuotaExceededMessageInput } from './copy';

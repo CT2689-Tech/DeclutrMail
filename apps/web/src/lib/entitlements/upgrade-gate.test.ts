@@ -61,6 +61,24 @@ describe('upgradeGateHitFrom', () => {
     });
   });
 
+  it('keeps the emails-cleared fields when the 402 carries them', () => {
+    const hit = upgradeGateHitFrom(
+      freeCap402({
+        remaining: 100,
+        limit: 1000,
+        used: 900,
+        requiredUnits: 2708,
+        requested: 2708,
+        suggestedPreset: 30,
+        resetsAt: '2026-11-09T00:00:00.000Z',
+      }),
+    );
+    expect(hit).toMatchObject({
+      reason: 'free_cap',
+      details: { requested: 2708, suggestedPreset: 30 },
+    });
+  });
+
   it('extracts INBOX_LIMIT_REACHED details', () => {
     const hit = upgradeGateHitFrom(inboxLimit402({ limit: 1, connected: 1, tier: 'free' }));
     expect(hit).toEqual({ reason: 'inbox_limit', details: { limit: 1, connected: 1 } });

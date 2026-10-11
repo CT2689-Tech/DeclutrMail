@@ -233,6 +233,7 @@ describe('LabelActionWorker', () => {
           direction: 'forward',
           selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
           idempotencyKey: 'idem-1',
+          quotaUnits: 10,
         })
         .returning();
 
@@ -251,6 +252,7 @@ describe('LabelActionWorker', () => {
       const [row] = await db.select().from(actionJobs).where(eq(actionJobs.id, job!.id));
       expect(row!.status).toBe('done');
       expect(row!.affectedCount).toBe(2);
+      expect(row!.quotaUnits).toBe(2);
       expect(row!.undoToken).toBe(result.undoToken);
       expect(row!.resolvedMessageIds.sort()).toEqual(['m1', 'm2']);
 
@@ -387,6 +389,7 @@ describe('LabelActionWorker', () => {
         direction: 'forward',
         selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
         idempotencyKey: 'idem-empty',
+        quotaUnits: 10,
       })
       .returning();
     const result = await worker.processJob(
@@ -396,6 +399,8 @@ describe('LabelActionWorker', () => {
     expect(result.affectedCount).toBe(0);
     expect(result.undoToken).toBeNull();
     expect(gmail.calls).toHaveLength(0);
+    const [settled] = await db.select().from(actionJobs).where(eq(actionJobs.id, job!.id));
+    expect(settled!.quotaUnits).toBe(0);
     const undos = await db.select().from(undoJournal);
     expect(undos).toHaveLength(0);
     // 2026-06-05 — audit-trail consistency: the user MADE a decision
@@ -1250,6 +1255,7 @@ describe('LabelActionWorker', () => {
         selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
         resolvedMessageIds: ['m1'],
         idempotencyKey: 'idem-fail',
+        quotaUnits: 10,
       })
       .returning();
 
@@ -1266,6 +1272,7 @@ describe('LabelActionWorker', () => {
     const [row] = await db.select().from(actionJobs).where(eq(actionJobs.id, job!.id));
     expect(row!.status).toBe('failed');
     expect(row!.errorCode).toBe('InvalidGrantError');
+    expect(row!.quotaUnits).toBe(0);
   });
 
   /**

@@ -151,6 +151,12 @@ export const actionJobs = pgTable(
     requestedCount: integer('requested_count').notNull().default(0),
     /** Count the worker actually mutated (set on `done`). */
     affectedCount: integer('affected_count').notNull().default(0),
+    /**
+     * Emails this row holds against the Free meter. Stamped at enqueue
+     * while `METER_V2` is on; 0 otherwise. Completion lowers it to the
+     * messages actually changed. Failed and no-op rows end at 0.
+     */
+    quotaUnits: integer('quota_units').notNull().default(0),
     status: actionJobStatus('status').notNull().default('queued'),
     /** Client `Idempotency-Key` (per click). UNIQUE — see index below. */
     idempotencyKey: text('idempotency_key').notNull(),

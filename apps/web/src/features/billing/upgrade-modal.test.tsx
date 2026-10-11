@@ -167,6 +167,53 @@ describe('UpgradeModal', () => {
     expect(useUpgradeGateStore.getState().hit).toBeNull();
   });
 
+  it('emails-cleared 402 offers clear-what-fits then Plus', () => {
+    useUpgradeGateStore.getState().report({
+      reason: 'free_cap',
+      details: {
+        remaining: 100,
+        limit: 1000,
+        used: 900,
+        requiredUnits: 2708,
+        requested: 2708,
+        suggestedPreset: 30,
+        resetsAt: '2026-11-09T00:00:00.000Z',
+      },
+    });
+    render(<UpgradeModal />);
+
+    expect(
+      screen.getByRole('heading', { name: 'Not enough free emails left this month' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Get Plus' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear what fits free' }));
+    expect(useUpgradeGateStore.getState().pendingWindowPreset).toBe(30);
+    expect(useUpgradeGateStore.getState().hit).toBeNull();
+  });
+
+  it('emails-cleared 402 links Plus without a fitting preset', () => {
+    useUpgradeGateStore.getState().report({
+      reason: 'free_cap',
+      details: {
+        remaining: 0,
+        limit: 1000,
+        used: 1000,
+        requiredUnits: 12,
+        requested: 12,
+        suggestedPreset: null,
+        resetsAt: null,
+      },
+    });
+    render(<UpgradeModal />);
+
+    expect(screen.queryByRole('button', { name: 'Clear what fits free' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Get Plus' })).toHaveAttribute(
+      'href',
+      '/billing?plan=plus&cycle=annual&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
+    );
+    expect(screen.getByRole('button', { name: 'Not now' })).toBeInTheDocument();
+  });
+
   it('free_cap (partial): bulk-needs-more headline', () => {
     useUpgradeGateStore.getState().report({
       reason: 'free_cap',

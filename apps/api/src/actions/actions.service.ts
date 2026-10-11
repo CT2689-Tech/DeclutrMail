@@ -54,6 +54,13 @@ import {
   type UnsubscribeManualTransition,
 } from '@declutrmail/shared/contracts';
 import { unsubscribeCapabilityOf } from '@declutrmail/shared/actions';
+import {
+  isMeterV2,
+  METER,
+  quotaUnitsForEnqueue,
+  WINDOW_PRESET_DAYS,
+  type TierId,
+} from '@declutrmail/shared/entitlements';
 
 import {
   EntitlementsService,
@@ -490,6 +497,10 @@ export class ActionsService {
           'inbox_only',
         )
       : null;
+    const presetCounts =
+      isMeterV2() && this.verbCountsTowardMeter(primary.type)
+        ? await this.windowPresetCounts(mailboxAccountId, [senderKey], primaryReach)
+        : undefined;
 
     // The workspace lock remains held through BOTH inserts. That makes a
     // fresh composite one atomic quota-consuming write: no concurrent
@@ -500,7 +511,18 @@ export class ActionsService {
     const persisted = await this.db.transaction(async (tx) => {
       const workspace = await this.entitlements.lockCleanupWorkspace(mailboxAccountId, tx);
       if (!(await this.hasJobWithKey(primaryStorageKey, tx))) {
-        await this.entitlements.assertCleanupCapacityForWorkspace(workspace, 1, tx);
+        const unitsNeeded = isMeterV2()
+          ? this.meterUnits(workspace?.tier, primary.type, primaryCount) +
+            (secondary && secondaryCount !== null
+              ? this.meterUnits(workspace?.tier, secondary.type, secondaryCount)
+              : 0)
+          : 1;
+        await this.entitlements.assertCleanupCapacityForWorkspace(
+          workspace,
+          unitsNeeded,
+          tx,
+          ...(presetCounts ? [presetCounts] : []),
+        );
         // A genuinely new request (not a retried replay of this exact
         // action — that case is handled above) must not race a still-live
         // job for the same sender. The client's Idempotency-Key is
@@ -523,6 +545,7 @@ export class ActionsService {
           selector: storedSelector,
           resolvedMessageIds,
           requestedCount: primaryCount,
+          quotaUnits: this.meterUnits(workspace?.tier, primary.type, primaryCount),
           idempotencyKey: primaryStorageKey,
           olderThanDays: primary.olderThanDays ?? null,
           wakeAt: primary.wakeAt ?? null,
@@ -541,6 +564,7 @@ export class ActionsService {
                 selector: storedSelector,
                 resolvedMessageIds,
                 requestedCount: secondaryCount,
+                quotaUnits: this.meterUnits(workspace?.tier, secondary.type, secondaryCount),
                 idempotencyKey: secondaryStorageKey,
                 olderThanDays: secondary.olderThanDays ?? null,
                 compositeId: primaryRow.row.id,
@@ -887,6 +911,10 @@ export class ActionsService {
           'inbox_only',
         )
       : null;
+    const bulkPresetCounts =
+      isMeterV2() && this.verbCountsTowardMeter(primary.type)
+        ? await this.windowPresetCounts(mailboxAccountId, keys, primaryReach)
+        : undefined;
 
     // A3 mandatory concurrency fix: the replay recheck, the capacity
     // check and EVERY insert share ONE transaction holding the finite-
@@ -898,7 +926,29 @@ export class ActionsService {
     const persisted = await this.db.transaction(async (tx) => {
       const workspace = await this.entitlements.lockCleanupWorkspace(mailboxAccountId, tx);
       if (!(await this.hasJobWithKey(anchorKey, tx))) {
-        await this.entitlements.assertCleanupCapacityForWorkspace(workspace, actionable.length, tx);
+        const unitsNeeded = isMeterV2()
+          ? actionable.reduce((sum, sender) => {
+              const primaryUnits = this.meterUnits(
+                workspace?.tier,
+                primary.type,
+                primaryCounts.get(sender.senderKey) ?? 0,
+              );
+              const secondaryUnits = secondary
+                ? this.meterUnits(
+                    workspace?.tier,
+                    secondary.type,
+                    secondaryCounts?.get(sender.senderKey) ?? 0,
+                  )
+                : 0;
+              return sum + primaryUnits + secondaryUnits;
+            }, 0)
+          : actionable.length;
+        await this.entitlements.assertCleanupCapacityForWorkspace(
+          workspace,
+          unitsNeeded,
+          tx,
+          ...(bulkPresetCounts ? [bulkPresetCounts] : []),
+        );
       }
 
       let anchorId: string | null = null;
@@ -917,6 +967,11 @@ export class ActionsService {
             selector: { type: 'sender', senderId: sender.id, senderKey: sender.senderKey },
             resolvedMessageIds: [], // worker resolves the live set at execute
             requestedCount: primaryCounts.get(sender.senderKey) ?? 0,
+            quotaUnits: this.meterUnits(
+              workspace?.tier,
+              primary.type,
+              primaryCounts.get(sender.senderKey) ?? 0,
+            ),
             idempotencyKey: primaryKey,
             olderThanDays: primary.olderThanDays ?? null,
             reach: primaryReach,
@@ -945,6 +1000,11 @@ export class ActionsService {
               selector: { type: 'sender', senderId: sender.id, senderKey: sender.senderKey },
               resolvedMessageIds: [],
               requestedCount: secondaryCounts?.get(sender.senderKey) ?? 0,
+              quotaUnits: this.meterUnits(
+                workspace?.tier,
+                secondary.type,
+                secondaryCounts?.get(sender.senderKey) ?? 0,
+              ),
               idempotencyKey: secondaryKey,
               olderThanDays: secondary.olderThanDays ?? null,
               compositeId: anchorId,
@@ -1145,7 +1205,11 @@ export class ActionsService {
     const persisted = await this.db.transaction(async (tx) => {
       const workspace = await this.entitlements.lockCleanupWorkspace(mailboxAccountId, tx);
       if (!(await this.hasJobWithKey(anchorKey, tx))) {
-        await this.entitlements.assertCleanupCapacityForWorkspace(workspace, actionable.length, tx);
+        await this.entitlements.assertCleanupCapacityForWorkspace(
+          workspace,
+          isMeterV2() ? 0 : actionable.length,
+          tx,
+        );
       }
 
       let anchorId: string | null = null;
@@ -1684,6 +1748,37 @@ export class ActionsService {
     return new Map(rows.map((r) => [r.senderKey, toCount(r.n)]));
   }
 
+  /** Emails this enqueue holds while the meter is on. Flag off stamps 0. */
+  private meterUnits(tier: TierId | undefined, verb: string, requestedCount: number): number {
+    if (!tier) return 0;
+    return quotaUnitsForEnqueue({ tier, verb, requestedCount });
+  }
+
+  private verbCountsTowardMeter(verb: string): boolean {
+    return METER.countsVerbs[verb as keyof typeof METER.countsVerbs] === true;
+  }
+
+  /** Preview counts for the fit-to-allowance presets, summed across senders. */
+  private async windowPresetCounts(
+    mailboxAccountId: string,
+    senderKeys: string[],
+    reach: SenderActionReach,
+  ): Promise<Partial<Record<number, number>>> {
+    const counts: Partial<Record<number, number>> = {};
+    for (const days of WINDOW_PRESET_DAYS) {
+      const grouped = await this.countSenderActionGrouped(
+        mailboxAccountId,
+        senderKeys,
+        days,
+        reach,
+      );
+      let total = 0;
+      for (const n of grouped.values()) total += n;
+      counts[days] = total;
+    }
+    return counts;
+  }
+
   /**
    * Count a sender's actionable messages narrowed by an optional
    * time-window (ADR-0020) at an explicit reach (ADR-0028). Mirrors the
@@ -2097,7 +2192,7 @@ export class ActionsService {
       if (method !== 'none') {
         await this.entitlements.assertCleanupCapacityForWorkspace(
           workspace,
-          includesBacklogAction ? 2 : 1,
+          isMeterV2() ? 0 : includesBacklogAction ? 2 : 1,
           tx,
         );
       }
@@ -2405,7 +2500,12 @@ export class ActionsService {
         // outcome is the worker's to record, not a guessed "failed".
         const [failedJob] = await tx
           .update(actionJobs)
-          .set({ status: 'failed', errorCode: ENQUEUE_FAILED_ERROR_CODE, updatedAt: sql`now()` })
+          .set({
+            status: 'failed',
+            errorCode: ENQUEUE_FAILED_ERROR_CODE,
+            quotaUnits: 0,
+            updatedAt: sql`now()`,
+          })
           .where(
             and(
               eq(actionJobs.id, actionId),
@@ -3066,6 +3166,11 @@ export class ActionsService {
       selector: LabelActionSelector;
       resolvedMessageIds: string[];
       requestedCount: number;
+      /**
+       * Emails held against the Free meter. 0 while `METER_V2` is off,
+       * and 0 for verbs the meter does not count.
+       */
+      quotaUnits?: number;
       idempotencyKey: string;
       /**
        * `action_verb` pg_enum value. Defaults to `archive` to keep
@@ -3102,6 +3207,7 @@ export class ActionsService {
         selector: input.selector,
         resolvedMessageIds: input.resolvedMessageIds,
         requestedCount: input.requestedCount,
+        ...(input.quotaUnits !== undefined ? { quotaUnits: input.quotaUnits } : {}),
         idempotencyKey: input.idempotencyKey,
         ...(input.undoToken ? { undoToken: input.undoToken } : {}),
         ...(input.olderThanDays !== undefined && input.olderThanDays !== null
@@ -3214,7 +3320,12 @@ export class ActionsService {
       // finished it — a Protected skip ends in milliseconds (D245).
       await this.db
         .update(actionJobs)
-        .set({ status: 'failed', errorCode: ENQUEUE_FAILED_ERROR_CODE, updatedAt: sql`now()` })
+        .set({
+          status: 'failed',
+          errorCode: ENQUEUE_FAILED_ERROR_CODE,
+          quotaUnits: 0,
+          updatedAt: sql`now()`,
+        })
         .where(
           and(
             eq(actionJobs.id, actionId),

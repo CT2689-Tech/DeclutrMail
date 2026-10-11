@@ -13,7 +13,12 @@ import {
 import type { Request, Response } from 'express';
 
 import { ok, type Envelope, type SyncReadiness } from '@declutrmail/shared/contracts';
-import { inboxLimitFor, isPricingV2, type TierId } from '@declutrmail/shared/entitlements';
+import {
+  inboxLimitFor,
+  isMeterV2,
+  isPricingV2,
+  type TierId,
+} from '@declutrmail/shared/entitlements';
 
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { RateLimit } from '../common/rate-limit/index.js';
@@ -72,6 +77,12 @@ export interface MeEnvelope {
   inboxLimit: number;
   /** Server env `PRICING_V2`. The browser does not read the env itself. */
   pricingV2: boolean;
+  /** Email allowance this period. `null` when the tier is not metered. */
+  cleanupLimit: number | null;
+  /** Emails held against the current period. */
+  cleanupUsed: number;
+  /** Server env `METER_V2`. The browser does not read the env itself. */
+  meterV2: boolean;
   /**
    * First-touch tracked `ref` vs skippable self-report. Never sum them.
    * `promptNeeded` is true until they answer or skip.
@@ -174,6 +185,9 @@ export class AuthController {
       cleanupResetsAt: quota.resetsAt?.toISOString() ?? null,
       inboxLimit: inboxLimitFor(quota.tier),
       pricingV2: isPricingV2(),
+      cleanupLimit: quota.limit,
+      cleanupUsed: quota.used,
+      meterV2: isMeterV2(),
       signupAttribution: {
         ref: user.signupAttributionRef,
         heardFrom: user.signupAttributionHeardFrom,
