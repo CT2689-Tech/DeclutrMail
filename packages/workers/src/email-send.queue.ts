@@ -105,27 +105,35 @@ export async function readEmailPrefsQueueCompatibility(queue: Queue): Promise<{ 
  * worker's named connection is absent while BullMQ re-establishes it. A
  * single empty listing therefore does not prove there is no worker.
  *
- * Each sample takes ONE listing through a fresh queue handle and applies
- * both the billing and the email-prefs predicate to that same listing, so no
- * actor seen by any listing can be outvoted by another, emptier listing.
- * An empty listing is the only result retried; any other refusal in any
- * sample is final, with no later sample able to override it. A pass means
+ * Each sample opens `breadth` fresh handles at one instant. The bound broker
+ * has listed a live email actor on one connection and omitted it from another
+ * connection at the same time, so one handle per instant can miss a running
+ * consumer for the whole window. Both predicates apply to each listing on its
+ * own: an emptier fragment cannot outvote an actor another fragment listed.
+ * An empty union is the only result retried; any other refusal in any
+ * fragment is final, with no later sample able to override it. A pass means
  * every sampled actor was compatible, not that every consumer was listed.
  */
 export async function sampleEmailQueueCompatibility(
   withQueue: <T>(read: (queue: Queue) => Promise<T>) => Promise<T>,
-  { samples, intervalMs }: { samples: number; intervalMs: number },
+  { samples, intervalMs, breadth = 1 }: { samples: number; intervalMs: number; breadth?: number },
 ): Promise<{ workers: number }> {
   let workers = 0;
   for (let sample = 0; sample < samples; sample++) {
     if (sample > 0) await new Promise((resolve) => setTimeout(resolve, intervalMs));
-    const listing = await withQueue((queue) => listGenericEmailActors(queue, 'Email prefs'));
-    if (listing.length === 0) continue;
-    classifyQueueActors(listing, BILLING_QUEUE_COMPATIBLE_WORKER_NAME, 'Billing');
-    workers = Math.max(
-      workers,
-      classifyQueueActors(listing, EMAIL_PREFS_COMPATIBLE_WORKER_NAME, 'Email prefs').workers,
+    const listings = await Promise.all(
+      Array.from({ length: breadth }, () =>
+        withQueue((queue) => listGenericEmailActors(queue, 'Email prefs')),
+      ),
     );
+    for (const listing of listings) {
+      if (listing.length === 0) continue;
+      classifyQueueActors(listing, BILLING_QUEUE_COMPATIBLE_WORKER_NAME, 'Billing');
+      workers = Math.max(
+        workers,
+        classifyQueueActors(listing, EMAIL_PREFS_COMPATIBLE_WORKER_NAME, 'Email prefs').workers,
+      );
+    }
   }
   if (workers === 0)
     throw new QueueActorCompatibilityError(

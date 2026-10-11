@@ -437,4 +437,82 @@ describe('sampled generic email actor compatibility', () => {
     expect(error).toBe(refusal);
     expect(handles).toBe(1);
   });
+
+  /**
+   * The bound broker's CLIENT LIST is connection-local. Five serial readers
+   * can all land on fragments that omit the live blocking actor (deploy
+   * 38141331053, exit 108). The actor is visible to every 8th connection.
+   */
+  function connectionLocalActors() {
+    let opened = 0;
+    const withQueue = async <T>(read: (queue: Queue) => Promise<T>) => {
+      const id = opened++;
+      const rows = id % 8 === 7 ? [current] : [];
+      return read({ name: EMAIL_SEND_QUEUE, getWorkers: async () => rows } as unknown as Queue);
+    };
+    return { withQueue, opened: () => opened };
+  }
+
+  it('reproduces no_workers when each sample opens only the blind fragment', async () => {
+    const blind = connectionLocalActors();
+    const error = await sampleEmailQueueCompatibility(blind.withQueue, {
+      samples: 5,
+      intervalMs: 0,
+      breadth: 1,
+    }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(QueueActorCompatibilityError);
+    expect(error).toMatchObject({ reason: 'no_workers' });
+    expect(blind.opened()).toBe(5);
+  });
+  it('sees a compatible actor that one connection per sample would miss', async () => {
+    const fragments = connectionLocalActors();
+    await expect(
+      sampleEmailQueueCompatibility(fragments.withQueue, {
+        samples: 5,
+        intervalMs: 0,
+        breadth: 8,
+      }),
+    ).resolves.toEqual({ workers: 1 });
+    // First sample's eighth connection lists the actor; later samples still run.
+    expect(fragments.opened()).toBe(40);
+  });
+  it('still refuses when every parallel fragment is empty', async () => {
+    let opened = 0;
+    const error = await sampleEmailQueueCompatibility(
+      async (read) => {
+        opened++;
+        return read({ name: EMAIL_SEND_QUEUE, getWorkers: async () => [] } as unknown as Queue);
+      },
+      { samples: 2, intervalMs: 0, breadth: 8 },
+    ).catch((e: unknown) => e);
+    expect(error).toMatchObject({ reason: 'no_workers' });
+    expect(opened).toBe(16);
+  });
+  it('refuses an older actor listed only by a sibling fragment', async () => {
+    let opened = 0;
+    const error = await sampleEmailQueueCompatibility(
+      async (read) => {
+        const id = opened++;
+        const rows = id === 0 ? [current] : id === 7 ? [older] : [];
+        return read({ name: EMAIL_SEND_QUEUE, getWorkers: async () => rows } as unknown as Queue);
+      },
+      { samples: 5, intervalMs: 0, breadth: 8 },
+    ).catch((e: unknown) => e);
+    expect(error).toMatchObject({ reason: 'incompatible_workers' });
+    expect(opened).toBe(8);
+  });
+  it('refuses a client-list failure on one fragment beside a compatible actor', async () => {
+    let opened = 0;
+    const error = await sampleEmailQueueCompatibility(
+      async (read) => {
+        const id = opened++;
+        const rows =
+          id === 0 ? [current] : id === 3 ? [{ name: 'GCP does not support client list' }] : [];
+        return read({ name: EMAIL_SEND_QUEUE, getWorkers: async () => rows } as unknown as Queue);
+      },
+      { samples: 2, intervalMs: 0, breadth: 4 },
+    ).catch((e: unknown) => e);
+    expect(error).toMatchObject({ reason: 'client_list_unavailable' });
+    expect(opened).toBe(4);
+  });
 });
