@@ -71,14 +71,23 @@ test('Free Brief upgrade retains its origin and opens the selected plan without 
   await expect(upgrade).toHaveAttribute('href', '/billing?plan=pro&cycle=monthly&from=%2Fbrief');
   await upgrade.click({ noWaitAfter: true });
   await expect(page).toHaveURL(/\/billing\?plan=pro&cycle=monthly&from=%2Fbrief$/);
-  await expect(
-    page.getByRole('button', { name: 'Continue to checkout', exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByText('$19 billed monthly, starting today. Renews automatically — cancel anytime.', {
-      exact: true,
-    }),
-  ).toBeVisible();
+  if (process.env.PRICING_V2 === 'true') {
+    await expect(
+      page.getByRole('button', { name: 'Join the Pro waitlist', exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Continue to checkout', exact: true }),
+    ).toHaveCount(0);
+  } else {
+    await expect(
+      page.getByRole('button', { name: 'Continue to checkout', exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText('$19 billed monthly, starting today. Renews automatically — cancel anytime.', {
+        exact: true,
+      }),
+    ).toBeVisible();
+  }
 });
 
 test('failed first scan exposes account controls while mailbox routes stay gated, then finish opens backlog', async ({

@@ -20,8 +20,15 @@ drop on Oct 11 at 9:31 AM PT. This PR still does not apply them.
 3. Plus annual 2026-10, the Backlog Pass, and PH30 are still `FILL_ME` and
    `listed: false`. Do not paste live price IDs or set `listed: true` in
    this PR.
-4. Do not set `PRICING_V2`, `METER_V2`, or `BILLING_PASS_ENABLED` in
-   production. The launch switch is a later go/no-go.
+4. Founder decision 2026-10-11 12:35 PM PT: the three flags are the
+   production state when this PR merges. Cloud Run API and worker
+   `--set-env-vars` set `PRICING_V2=true`, `METER_V2=true`, and
+   `BILLING_PASS_ENABLED=true`. Do not paste live price IDs or set
+   `listed: true` in this PR. Merging while the Pass and Plus annual
+   2026-10 ids are `FILL_ME` shows the offers and then checkout returns
+   `BILLING_NOT_PROVISIONED`. Migration `0089` must be applied before
+   the new API serves checkouts, because every checkout writes
+   `pending_checkouts.offer`.
 5. Add the repo secret `PADDLE_READONLY_API_KEY`. Until it exists, the
    nightly drift workflow fails closed (`UNVERIFIED`). That is intended.
 6. Billing/Ops runs `scripts/billing-pass-sandbox-rehearsal.ts` in the
@@ -30,14 +37,83 @@ drop on Oct 11 at 9:31 AM PT. This PR still does not apply them.
 
 ## Flags
 
-All three flags are server env, default false, never `NEXT_PUBLIC_*`.
+All three flags are server env (`=== 'true'`), never `NEXT_PUBLIC_*`.
+The Cloud Run deploy sets all three to `true` on the API and the worker.
+`--set-env-vars` full-replaces, so a live-only value would be wiped.
+
+Vercel Production, set before the merge build starts (a later edit
+without a redeploy does not change pages already rendered at build time):
+
+| Name                   | Value  | When the web reads it                                                                                                                                                                                                                                                |
+| ---------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PRICING_V2`           | `true` | Build time for static HTML: marketing layout JSON-LD, `/`, `/terms`, `/refunds`, `/pricing/changelog`, `sitemap.xml`. Request time for the billing page, the app-layout default provider, `llms.txt`, `/pricing.md`, and the `/pricing` fallback if the API is down. |
+| `BILLING_PASS_ENABLED` | `true` | Request time for `/pricing.md` and the `/pricing` fallback. The Pass card on `/pricing` and in the app follows the API `passEnabled` field.                                                                                                                          |
+
+`METER_V2` is not read by the web app. Set it on Cloud Run only.
 
 - `PRICING_V2` selects the launch pricing page, teaser, refunds, terms,
   and plan picker. Off keeps today's surfaces.
-- `METER_V2` is unchanged from WS1a.
+- `METER_V2` switches Free from the cleanup-action cap to the email meter.
 - `BILLING_PASS_ENABLED` shows the Pass and allows Pass checkout. The
   public `GET /api/pricing/public` response and `GET /api/auth/me` both
-  include `passEnabled`, so the client does not need a rebuild.
+  include `passEnabled`.
+
+## Readiness before merge
+
+None of the following was created in this PR. No Paddle or Razorpay
+write was made.
+
+- Plus annual 2026-10 (`PLUS_ANNUAL_2026_10.paddlePriceId` is `FILL_ME`,
+  `listed: false`). Create a sandbox price and a separate live price for
+  the manifest amount, then paste each id. Until the live id is real,
+  new Plus annual checkout returns `BILLING_NOT_PROVISIONED`. That is a
+  live Paddle change for the live id. `provision-billing-catalog.yml`
+  still provisions the old plus/pro/founding SKUs and does not create
+  this price, the Pass, or PH30.
+- Backlog Pass (`OFFERS.backlogPass.price.paddlePriceId` is `FILL_ME`).
+  Create a sandbox one-time price and a separate live one-time price.
+  Checkout 503s while the id is `FILL_ME`. The grant code is
+  `grantPassFromTransaction` on `transaction.completed` with no
+  subscription id, and `revokePassByTransaction` on a one-off
+  `adjustment.created`. Both need migration `0089` applied first. Creating
+  the product and price is a live Paddle change for the live id.
+- PH30 (`PROMO_DISCOUNT_IDS` sandbox and live are `FILL_ME`). Creating
+  the discounts is a Paddle change in each environment. Checkout does
+  not send the code; the banner is display-only.
+- `PADDLE_READONLY_API_KEY` GitHub repo secret is still missing. The
+  drift workflow fails closed `UNVERIFIED`. That is not a Paddle write.
+- Razorpay stays a separate rail. `RAILS.razorpay.enabled` is false, and
+  the new annual and Pass prices have no Razorpay plan id. Existing INR
+  subscriptions still resolve through `LEGACY_PRICE_IDS`. Creating a
+  Razorpay plan for the new prices would be a live Razorpay change and
+  is not required to keep the rail hidden.
+- Migrations `0089` (required before the new API writes
+  `pending_checkouts.offer`), then approved destructive `0090` and
+  `0091`. None are applied by this PR.
+- A real Paddle sandbox overlay purchase was not run here. This
+  environment has no Paddle or Razorpay key, and the price id is
+  `FILL_ME`. `scripts/billing-pass-sandbox-rehearsal.ts` prints the
+  checklist and does not call Paddle.
+
+## Impact when the flags flip
+
+- Current paying subscribers keep the Paddle or Razorpay price they
+  already pay. This code does not call the provider to change a
+  subscription. Legacy price ids still resolve.
+- Founding Pro subscriptions keep their legacy price and founding flag.
+  The claim, first-250, and promo deep-link sales UI hide. The founding
+  cancel note stays.
+- Free users mid-month move from the cleanup-action count to a sum of
+  `quota_units` in the same signup-anniversary month, cap 1,000 emails,
+  archive and delete only. Rows written while the flag was off stay at
+  `quota_units` 0, so past archives are not recounted. In-flight jobs
+  queued before the flip keep 0. Plus and Pro are not metered.
+- A checkout session already created at a legacy price id still
+  completes through the webhook. A new Plus annual, Pro, or Pass
+  checkout fails closed until a real price id exists. Pro deep links
+  open the waitlist card and do not open a Pro confirm panel. India
+  visitors default to Paddle; existing Razorpay subscriptions are not
+  cancelled.
 
 A paid `transaction.completed` for the Pass price still grants if the
 flag is off. The flag gates checkout and UI, not a payment that already
@@ -54,7 +130,11 @@ unprocessed.
 | `0091_waitlist_drop_email_uniq.sql`           | destructive, own commit | drop `waitlist_email_uniq`                                                                                     |
 
 `atlas.sum` was produced by Atlas community v1.3.0 (`atlas migrate hash`).
-None of these migrations has been applied to a live database.
+None of these migrations has been applied to a live database. PR #985
+(AI consent) is expected to take `0089` if it merges first. These files
+stay at `0089`/`0090`/`0091` until that merge is confirmed. The
+grant-sources migration, whatever number it lands on, is the one that
+must apply before the new API serves checkouts.
 
 ## Decisions assumed
 
@@ -85,11 +165,12 @@ None of these migrations has been applied to a live database.
   `renderPricingMarkdown()` and `buildOffersJsonLd()` are ready.
 - `legal-entity.ts` still returns nothing while `FILL_ME`. Terms render
   the entity line only when `hasLegalEntity()` is true.
-- `/pricing/changelog` redirects to `/pricing` while `PRICING_V2` is off,
-  and that redirect is declared in `scripts/check-web-bundle-budget.mjs`.
-  The sitemap and `llms.txt` include the URL only while the same flag is
-  on. A build with the flag on renders the page. Remove that redirect line
-  in the same change so the bundle check measures it.
+- `/pricing/changelog` redirects to `/pricing` while `PRICING_V2` is off.
+  `scripts/check-web-bundle-budget.mjs` declares that redirect only when
+  the flag is off. The CI web build sets the flag, renders the page, and
+  measures it. The sitemap and `llms.txt` include the URL only while the
+  same flag is on. With the flag on, the pricing bullet in `llms.txt`
+  is `refundLine()`.
 - `/terms` and `/refunds` are static and follow the server env at build
   time. The flags-off refunds page keeps main's "cancelling". `/pricing`
   and the home teaser read `GET /api/pricing/public`, so those two flip

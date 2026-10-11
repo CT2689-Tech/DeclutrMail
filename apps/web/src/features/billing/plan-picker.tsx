@@ -355,8 +355,11 @@ export function PlanPicker({
     // are the intended change flow.
     const intentCycleDiffers =
       intentCycle !== null && grantingSub !== null && intentCycle !== grantingSub.cycle;
+    // Launch pricing does not sell Pro. A Brief deep link lands on the
+    // waitlist card instead of a confirm panel the catalog cannot charge.
     if (
       intentPlan &&
+      !(pricingV2 && intentPlan === 'pro') &&
       (intentPlan !== currentTier || intentCycleDiffers) &&
       !disabled &&
       !consumedIntent.current
@@ -364,7 +367,7 @@ export function PlanPicker({
       consumedIntent.current = true;
       setSelected(intentPlan);
     }
-  }, [intentPlan, intentCycle, currentTier, disabled, grantingSub]);
+  }, [intentPlan, intentCycle, currentTier, disabled, grantingSub, pricingV2]);
 
   // A lock landing mid-session (pending action started in THIS tab or
   // ANOTHER via the storage event) must disarm any already-open confirm

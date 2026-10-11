@@ -187,7 +187,9 @@ export const REDIRECTS = {
   '/(marketing)/demo/page': '/inbox-simulator', // launch-post links, 308 (SEO sweep 2026-08-04)
   // Flag-off only. A build with PRICING_V2=true renders this page and
   // must drop this line so the rendered route is measured.
-  '/(marketing)/pricing/changelog/page': '/pricing',
+  ...(process.env.PRICING_V2 === 'true'
+    ? {}
+    : { '/(marketing)/pricing/changelog/page': '/pricing' }),
 };
 
 /**

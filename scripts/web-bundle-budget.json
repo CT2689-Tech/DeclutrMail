@@ -177,6 +177,10 @@
       "measuredKb": 164.4,
       "budgetKb": 173
     },
+    "/(marketing)/pricing/changelog/page": {
+      "measuredKb": 156.9,
+      "budgetKb": 165
+    },
     "/(marketing)/pricing/page": {
       "measuredKb": 180.1,
       "budgetKb": 190

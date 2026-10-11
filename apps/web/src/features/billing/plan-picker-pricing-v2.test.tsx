@@ -13,14 +13,19 @@ import { fillStory } from '@declutrmail/shared/entitlements';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { PlanPicker } from './plan-picker';
+import type { BillingIntent } from './billing-intent';
 
-function renderPicker(flags: { pricingV2: boolean; passEnabled: boolean }) {
+function renderPicker(
+  flags: { pricingV2: boolean; passEnabled: boolean },
+  initialIntent: BillingIntent | null = null,
+) {
   return render(
     <QueryWrapper client={createTestQueryClient()}>
       <PlanPicker
         currentTier="free"
         grantingSub={null}
         disabled={false}
+        initialIntent={initialIntent}
         pricingV2={flags.pricingV2}
         passEnabled={flags.passEnabled}
         onRequestCancel={() => undefined}
@@ -75,5 +80,11 @@ describe('PlanPicker launch pricing', () => {
     expect(screen.getByTestId('pass-offer-card')).toHaveTextContent(
       fillStory(WS1_COPY['pricing.pass.name']),
     );
+  });
+
+  it('does not open Pro checkout from a deep link while launch pricing is on', () => {
+    renderPicker({ pricingV2: true, passEnabled: false }, { plan: 'pro', cycle: 'monthly' });
+    expect(screen.queryByText('Loading checkout preview…')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Join the Pro waitlist' })).toBeInTheDocument();
   });
 });
