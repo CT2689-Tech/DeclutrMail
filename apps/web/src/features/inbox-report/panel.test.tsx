@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { WS5_COPY } from '@declutrmail/shared/copy/launch';
 import type { InboxReportDto } from '@declutrmail/shared/inbox-report';
 
 import { InboxReportCard } from './index';
@@ -102,8 +103,21 @@ describe('InboxReportPanel', () => {
 });
 
 describe('InboxReportCard', () => {
-  it('renders the home card with no report switch', () => {
+  it('lays the home surface out as a title, a body, and a separate action', () => {
     render(<InboxReportCard surface="home" mailboxId="mb" />);
-    expect(screen.getByRole('link', { name: /Open report/ })).toHaveAttribute('href', '/senders');
+    const title = screen.getByRole('heading', { name: WS5_COPY['report.home.title'] });
+    const body = screen.getByText(WS5_COPY['report.home.body']);
+    const action = screen.getByRole('link', { name: WS5_COPY['report.home.cta'] });
+    const card = title.closest('section');
+
+    expect(card).toHaveAttribute('data-surface', 'home');
+    expect(card).toHaveAttribute('data-mailbox', 'mb');
+    expect(card).toContainElement(body);
+    expect(action).toHaveAttribute('href', '/senders');
+    expect(action).toHaveTextContent(WS5_COPY['report.home.cta']);
+    expect(title.closest('a')).toBeNull();
+    expect(body.closest('a')).toBeNull();
+    expect(action).not.toContainElement(title);
+    expect(action).not.toContainElement(body);
   });
 });
