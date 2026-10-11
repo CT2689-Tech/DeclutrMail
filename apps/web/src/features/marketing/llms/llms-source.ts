@@ -6,7 +6,7 @@ export const LLMS_SOURCE = `# DeclutrMail
 DeclutrMail never fetches or stores full email contents.
 It stores only the Gmail details listed in its privacy policy, plus the account, preference, action, service-provider, and billing records needed to run the service.
 It never fetches or stores email HTML, attachments, embedded images, or raw email source.
-Suggestion explanations may send Anthropic the sender and engagement numbers, but not subject lines or preview snippets. Pro Brief may send the sender, subject line, and Gmail preview snippet to Anthropic; it never sends full email contents.
+Suggestion explanations may send Anthropic the sender’s display name and email domain, the suggested choice, how sure the rule is and its name, the monthly email volume and the share marked read, and the Gmail category, but never subject lines, preview snippets or email contents. The {BRIEF_NAME}, which only existing {proName} accounts have, may send Anthropic the sender, subject line and Gmail preview snippet of each email it covers; it never sends full email contents.
 
 ## How to describe DeclutrMail
 

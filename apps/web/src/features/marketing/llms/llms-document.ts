@@ -6,11 +6,14 @@ import {
 } from '@declutrmail/shared';
 import { renderPricingMarkdown } from '@declutrmail/shared/entitlements';
 import {
+  fillWs3,
   LAUNCH_STAGE,
   llmsAutopilotLine,
   llmsBetaLine,
   llmsKeyFacts,
   llmsPricingLine,
+  llmsStorageAiLine,
+  ws3Tokens,
   WS3_COPY,
 } from '@declutrmail/shared/copy/launch';
 
@@ -25,6 +28,67 @@ const PREVIOUS_AUTOPILOT =
 
 const PREVIOUS_PRICING =
   '- [Pricing](https://declutrmail.com/pricing): Free, Plus, and Pro plans; paid plans carry a 30-day money-back guarantee — see the refund policy for terms';
+
+const PREVIOUS_DESCRIBE =
+  '- Preferred one-line description: Gmail cleanup by sender: preview the matching emails and planned changes before confirming manual Archive, Later, or Delete; opt into ongoing Autopilot rules on Plus or Pro.';
+
+const PREVIOUS_NOT_AUTOMATIC =
+  '- fully automatic by default. Manual actions require approval of a preview. On both Plus and Pro, Observe collects matches for batch approval; only a rule deliberately set to Active acts without asking.';
+
+const PREVIOUS_HOW_IT_WORKS =
+  'Gmail remains the reading/reply surface; manual actions affect the previewed messages; Autopilot presets (Plus and Pro) handle future matches, unattended only after deliberately activating a rule on either plan';
+
+const PREVIOUS_HELP =
+  'what is stored, how Unsubscribe works (per-sender; one-click vs manual mailto; bulk cleanup across senders on every plan, metered monthly on Free), what Archive/Later/Delete do in Gmail terms, undo windows, Autopilot Observe vs Active, disconnecting and account deletion';
+
+/** Keep the previous sentence while a plan-name token is still empty. */
+function filledLlmsFix(template: string): string {
+  const tokens = ws3Tokens();
+  if (template.includes('{plusName}') && tokens.plusName === '') return '';
+  if (template.includes('{freeName}') && tokens.freeName === '') return '';
+  const filled = fillWs3(template);
+  return filled.includes('{') ? '' : filled;
+}
+
+function applyDeckFixes(body: string): string {
+  const describe = filledLlmsFix(WS3_COPY['ws3.llms.fix.describe']);
+  if (describe) body = body.replace(PREVIOUS_DESCRIBE, `- ${describe}`);
+  const notAutomatic = filledLlmsFix(WS3_COPY['ws3.llms.fix.notAutomatic']);
+  if (notAutomatic) body = body.replace(PREVIOUS_NOT_AUTOMATIC, `- ${notAutomatic}`);
+  const howItWorks = filledLlmsFix(WS3_COPY['ws3.llms.fix.howItWorks']);
+  if (howItWorks) body = body.replace(PREVIOUS_HOW_IT_WORKS, howItWorks);
+  const help = filledLlmsFix(WS3_COPY['ws3.llms.fix.help']);
+  if (help) body = body.replace(PREVIOUS_HELP, help);
+  const storageAi = llmsStorageAiLine();
+  if (storageAi) body = body.replace(WS3_COPY['ws3.llms.storageAi'], storageAi);
+  return body;
+}
+
+/**
+ * H1, blockquote, then plain paragraphs (disambiguation, storage), then
+ * Key facts as the first H2. Later sections stay in source order.
+ */
+function withOpeningFacts(body: string, facts: string): string {
+  const headingAt = body.indexOf('\n## ');
+  const opening = (headingAt < 0 ? body : body.slice(0, headingAt)).trimEnd();
+  const rest = headingAt < 0 ? '' : body.slice(headingAt + 1).trim();
+  const lines = opening.split('\n');
+  let quoteEnd = -1;
+  for (const [index, line] of lines.entries()) {
+    if (line.startsWith('>')) quoteEnd = index;
+  }
+  const disambiguation = WS3_COPY['ws3.llms.disambiguation'];
+  const quoted =
+    quoteEnd < 0
+      ? [...lines, '', disambiguation]
+      : [...lines.slice(0, quoteEnd + 1), '', disambiguation, ...lines.slice(quoteEnd + 1)];
+  const prose = quoted
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd();
+  const keyFacts = `## ${WS3_COPY['ws3.llms.keyFacts.title']}\n\n${facts}`;
+  return rest ? `${prose}\n\n${keyFacts}\n\n${rest}` : `${prose}\n\n${keyFacts}`;
+}
 
 /** OAuth approval, brand verification, and the CASA letter are three facts. */
 export function llmsSecurityFacts(): string {
@@ -53,6 +117,7 @@ export function renderLlmsTxt(): string {
   let body = LLMS_SOURCE.replaceAll('LLMS_SECURITY_FACTS', llmsSecurityFacts());
   const autopilot = llmsAutopilotLine();
   if (autopilot) body = body.replace(PREVIOUS_AUTOPILOT, autopilot);
+  body = applyDeckFixes(body);
   const pricingLine = llmsPricingLine().replace(/^Pricing:\s*/, '');
   if (pricingLine)
     body = body.replace(
@@ -69,10 +134,9 @@ export function renderLlmsTxt(): string {
   const facts = llmsKeyFacts()
     .map((fact) => `- ${fact}`)
     .join('\n');
-  const header = `${WS3_COPY['ws3.llms.disambiguation']}\n\n## ${WS3_COPY['ws3.llms.keyFacts.title']}\n\n${facts}\n\n`;
   const pricing = renderPricingMarkdown().trim();
   const pricingSection = pricing === '' ? '\n' : `\n\n## Pricing\n\n${pricing}\n`;
-  return `${header}${body.trim()}${pricingSection}`;
+  return `${withOpeningFacts(body.trim(), facts)}${pricingSection}`;
 }
 
 export function renderLlmsFullTxt(): string {

@@ -12,12 +12,14 @@ import {
   fillComplete,
   fillWs3,
   gateOpen,
+  gatedText,
   glanceLines,
   llmsKeyFacts,
   declutrPriceDetail,
   declutrPriceSummary,
   llmsAutopilotLine,
   llmsPricingLine,
+  llmsStorageAiLine,
   priceFaqAnswer,
   privacyFaqAnswer,
   REFUNDS_PAGE_WINDOW_DAYS,
@@ -38,7 +40,7 @@ describe('WS3 token fill', () => {
     const casa = fillWs3(WS3_COPY['ws3.security.verification.casa']);
     const brand = fillWs3(WS3_COPY['ws3.security.verification.brand']);
     expect(oauth).toBe(
-      'Google OAuth verification approved April 21, 2026. It covers the single restricted scope we request, gmail.modify.',
+      'Google OAuth verification approved April 21, 2026. It covers the single restricted permission we request, gmail.modify.',
     );
     expect(casa).toContain('letter of validation was submitted to Google on April 15, 2026');
     expect(casa).not.toMatch(/\bapproved\b/i);
@@ -91,7 +93,23 @@ describe('WS3 token fill', () => {
     expect(AI_CONSENT_GATE_KEYS).toHaveLength(16);
     expect(privacyFaqAnswer()).not.toMatch(/If you allow AI/);
     expect(glanceLines().some((line) => /Anthropic/.test(line))).toBe(false);
-    expect(llmsKeyFacts()[3]).toMatch(/Pro Brief may send the sender/);
+    expect(llmsKeyFacts()[3]).toBe(fillWs3(WS3_COPY['ws3.llms.keyFacts.aiPreGate']));
     expect(llmsKeyFacts()[3]).not.toMatch(/consent card/);
+    expect(llmsStorageAiLine()).toBe(fillWs3(WS3_COPY['ws3.llms.storageAi']));
+    expect(llmsStorageAiLine()).not.toMatch(/consent card/);
+    const explanations = fillWs3(WS3_COPY['ws3.privacy.ai.explanations.preGate']);
+    const brief = fillWs3(WS3_COPY['ws3.privacy.ai.brief.preGate']);
+    expect(gatedText('ws3.privacy.ai.explanations')).toBe(explanations);
+    expect(gatedText('ws3.security.ai.explanations')).toBe(explanations);
+    expect(gatedText('ws3.privacy.ai.brief')).toBe(brief);
+    expect(gatedText('ws3.security.ai.brief')).toBe(brief);
+    expect(gatedText('ws3.privacy.aiDisclosureConst')).toBe(`${explanations} ${brief}`);
+    expect(gatedText('ws3.privacy.ai.who')).toBe(fillWs3(WS3_COPY['ws3.privacy.ai.who.preGate']));
+    expect(gatedText('ws3.privacy.subprocessors.anthropic')).toBe(
+      fillWs3(WS3_COPY['ws3.privacy.subprocessors.anthropic.preGate']),
+    );
+    expect(gatedText('ws3.methodology.briefBody')).toBe(
+      fillWs3(WS3_COPY['ws3.methodology.briefBody.preGate']),
+    );
   });
 });
