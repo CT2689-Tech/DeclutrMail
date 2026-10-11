@@ -744,6 +744,7 @@ export class SendersReadService {
     )
       ? await this.mailboxHasOutboundIndexed(args.mailboxAccountId)
       : false;
+    const showStoredAi = await showStoredExplanations(this.db, args.mailboxAccountId);
 
     return rows.map((row) => {
       // Scalar `sql<number | string>` subqueries (last30dMsgs,
@@ -820,7 +821,7 @@ export class SendersReadService {
         lastReview: buildLastReview(
           row.lastDecision?.producedAt ?? null,
           row.lastDecision?.verdict ?? null,
-          row.lastDecision?.generatedBy ?? null,
+          visibleGeneratedBy(row.lastDecision?.generatedBy ?? null, showStoredAi),
           row.lastDecision?.confidence ?? null,
         ),
         protectionFlags: {
@@ -1773,7 +1774,7 @@ export class SendersReadService {
       lastReview: buildLastReview(
         row.lastDecision?.producedAt ?? null,
         row.lastDecision?.verdict ?? null,
-        row.lastDecision?.generatedBy ?? null,
+        visibleGeneratedBy(row.lastDecision?.generatedBy ?? null, showStoredAi),
         row.lastDecision?.confidence ?? null,
       ),
       recommendation: buildRecommendation(
@@ -2192,6 +2193,14 @@ function buildRecommendation(
     // a fact we don't have would be guessing.
     stale: expiry !== null && expiry.getTime() <= now.getTime(),
   };
+}
+
+function visibleGeneratedBy(
+  generatedBy: TriageReasoningSource | null,
+  showStoredAi: boolean,
+): TriageReasoningSource | null {
+  if (!showStoredAi && generatedBy === 'llm_haiku') return 'template';
+  return generatedBy;
 }
 
 function buildLastReview(

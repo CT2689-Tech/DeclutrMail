@@ -237,7 +237,8 @@ describe('SendersReadService', () => {
     ).toHaveLength(1);
     select.mockClear();
     await svc.listSenders({ mailboxAccountId: mailboxId, category: null, cursor: null, limit: 10 });
-    expect(select).toHaveBeenCalledTimes(1);
+    // List is one sender query plus the same consent lookup as detail.
+    expect(select).toHaveBeenCalledTimes(2);
     select.mockRestore();
   });
 
@@ -1593,6 +1594,33 @@ describe('SendersReadService', () => {
         });
       });
 
+      it('does not return model provenance on the list before explanations consent', async () => {
+        const a = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'reviewed-revoked@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        await seedTriageDecision(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          verdict: 'archive',
+          generatedBy: 'llm_haiku',
+          producedAt: new Date('2026-05-10T15:30:00Z'),
+        });
+        await db
+          .update(users)
+          .set({ aiExplanationsRevokedAt: new Date('2026-10-11T12:00:00Z') })
+          .where(eq(users.email, 'a@declutrmail.ai'));
+
+        const rows = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          cursor: null,
+          limit: 10,
+        });
+        expect(rows[0]!.lastReview?.generatedBy).toBe('template');
+      });
+
       it('does not leak a decision from another mailbox when sender_key collides', async () => {
         // Cross-mailbox safety — the lastReview subqueries use the
         // same outer-scope qualification as the timeseries reads.
@@ -1859,6 +1887,7 @@ describe('SendersReadService', () => {
           scoredAt: producedAt.toISOString(),
           stale: false,
         });
+        expect(detail!.lastReview?.generatedBy).toBe('llm_haiku');
       });
 
       it('replaces stored model prose on the next read after explanations are revoked', async () => {
@@ -1885,6 +1914,7 @@ describe('SendersReadService', () => {
 
         const detail = await svc.getSenderDetail(mailboxId, a.id);
         expect(detail!.recommendation?.generatedBy).toBe('template');
+        expect(detail!.lastReview?.generatedBy).toBe('template');
         expect(detail!.recommendation?.reasoning).not.toBe(model);
         expect(detail!.recommendation?.reasoning).toBe(
           plainVolumeExplanation({ name: 'This sender', last90Count: 0, readRate: null }),
