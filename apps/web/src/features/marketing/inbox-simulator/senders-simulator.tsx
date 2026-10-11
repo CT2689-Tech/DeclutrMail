@@ -4,12 +4,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ToastHost, toast } from '@declutrmail/shared';
 import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
-import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { WS5_COPY } from '@declutrmail/shared/copy/launch';
 
 import { InboxReportPanel } from '@/features/inbox-report/panel';
 import type { ActionRequest } from '@/features/senders/data';
 import { UnsubscribeBacklogDialog } from '@/features/senders/unsubscribe-backlog/unsubscribe-backlog-dialog';
-import { unsubscribeBacklogToast } from '@/features/senders/unsubscribe-backlog/toast';
+import {
+  unsubscribeBacklogActivityLine,
+  unsubscribeBacklogToast,
+} from '@/features/senders/unsubscribe-backlog/toast';
 import type { UnsubscribeBacklogResult } from '@/lib/api/actions';
 
 import { sampleInboxReport } from './sample-report';
@@ -32,7 +35,7 @@ interface SampleSender {
   markedRead: number;
   wroteTo: number;
   protected: boolean;
-  unsubscribe: 'one_click' | 'none';
+  unsubscribe: 'one_click' | 'mailto' | 'none';
   subjects: readonly string[];
   // Buckets are the current sample emails at ages 12, 45, 120, 240 and 420 days.
   inbox: readonly number[];
@@ -405,19 +408,13 @@ export function SendersSimulator() {
         mailtoUrl: null,
         executionActionId: null,
         lifecycleStatus: null,
-        unsubStatus: 'requested',
+        unsubStatus: sender.unsubscribe === 'mailto' ? 'manual' : 'requested',
         reasonCode: null,
       })),
     };
     const line = unsubscribeBacklogToast(result);
     toast(line);
-    const deleteRow = WS5_COPY['f1.toast.both.delete'];
-    const summary =
-      mode === 'archive'
-        ? fillCopy(WS5_COPY['f1.activity.row'], { n })
-        : mode === 'delete' && isPluralCopy(deleteRow)
-          ? pluralCopy(deleteRow, n, { n })
-          : line;
+    const summary = unsubscribeBacklogActivityLine(result);
     const note =
       mode === 'delete'
         ? WS5_COPY['f1.honesty.delete']

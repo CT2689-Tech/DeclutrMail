@@ -32,7 +32,7 @@ import {
   resetFetchStub,
 } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
-import { pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { fillCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { unsubscribeOutcomeToast } from '@/features/senders/unsub-status';
 import { undoKeys } from '@/features/undo/query-keys';
 import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './fixtures';
@@ -1074,7 +1074,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `${pluralCopy(WS5_COPY['f1.toast.both.archive'], 47, { n: 47 })} ${WS5_COPY['f1.toast.mailto']}`,
+        fillCopy(WS5_COPY['f1.toast.mailto.withMove.archive'], { n: 47 }),
         'info',
       ),
     );

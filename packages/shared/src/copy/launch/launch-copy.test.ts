@@ -41,4 +41,18 @@ describe('launch copy deck snapshots', () => {
     expect(WS5_COPY['f1.preview.future.mailto']).not.toMatch(/draft/i);
     expect(WS5_COPY['f1.toast.mailto']).not.toMatch(/draft/i);
   });
+
+  it('keeps the drop2-r11 move and mailto lines', () => {
+    expect(WS5_COPY['f1.toast.bulk.delete']).toEqual({
+      one: 'Unsubscribe requested from {m} senders · Deleted 1 email',
+      other: 'Unsubscribe requested from {m} senders · Deleted {n} emails',
+    });
+    expect(WS5_COPY['f1.activity.row.delete']).toBe('Unsubscribe requested · Deleted {n} emails');
+    expect(WS5_COPY['f1.toast.mailto.withMove.archive']).toBe(
+      'Archived {n} emails. To finish unsubscribing, press Send on the email that’s ready in Gmail.',
+    );
+    expect(WS5_COPY['f1.toast.mailto.withMove.delete']).toBe(
+      'Deleted {n} emails. To finish unsubscribing, press Send on the email that’s ready in Gmail.',
+    );
+  });
 });

@@ -14,30 +14,41 @@ function movedLine(verb: 'archive' | 'delete', n: number): string {
   return isPluralCopy(forms) ? pluralCopy(forms, n, { n }) : '';
 }
 
+function withMoveLine(verb: 'archive' | 'delete', n: number): string {
+  const template =
+    verb === 'delete'
+      ? WS5_COPY['f1.toast.mailto.withMove.delete']
+      : WS5_COPY['f1.toast.mailto.withMove.archive'];
+  return fillCopy(template, { n });
+}
+
+function bulkMovedLine(verb: 'archive' | 'delete', m: number, n: number): string {
+  if (verb === 'archive') return fillCopy(WS5_COPY['f1.toast.bulk'], { m, n });
+  const forms = WS5_COPY['f1.toast.bulk.delete'];
+  return isPluralCopy(forms) ? pluralCopy(forms, n, { m, n }) : '';
+}
+
 /**
  * Toast for one unsubscribe-backlog confirmation. Deck strings only.
- *
- * Missing deck keys (do not invent them):
- * - `f1.toast.bulk.delete` — `f1.toast.bulk` names Archive only
- * - a single sentence for a backlog move plus the mailto handoff
+ * `{m}` counts one-click requests. A mailto handoff uses the Send line
+ * and never says a request was already sent.
  */
 export function unsubscribeBacklogToast(result: UnsubscribeBacklogResult): string {
   const n = result.backlog?.requestedCount ?? 0;
   const verb = result.backlog?.verb ?? 'archive';
   const failed = result.senders.filter((sender) => sender.unsubStatus === 'failed');
   const manual = result.senders.filter((sender) => sender.unsubStatus === 'manual');
-  const requested = result.senders.filter(
-    (sender) => sender.unsubStatus === 'requested' || sender.unsubStatus === 'manual',
-  );
+  const requested = result.senders.filter((sender) => sender.unsubStatus === 'requested');
   const many = result.senders.length > 1;
   const parts: string[] = [];
 
   if (many && result.backlog) {
-    if (verb === 'archive') {
-      parts.push(fillCopy(WS5_COPY['f1.toast.bulk'], { m: requested.length, n }));
-    } else {
-      const moved = movedLine('delete', n);
+    if (requested.length > 0) {
+      const moved = bulkMovedLine(verb, requested.length, n);
       if (moved) parts.push(moved);
+      if (manual.length > 0) parts.push(WS5_COPY['f1.toast.mailto']);
+    } else if (manual.length > 0) {
+      parts.push(withMoveLine(verb, n));
     }
     if (failed.length > 0 && isPluralCopy(WS5_COPY['f1.toast.bulkFailed'])) {
       parts.push(pluralCopy(WS5_COPY['f1.toast.bulkFailed'], failed.length, { k: failed.length }));
@@ -55,12 +66,7 @@ export function unsubscribeBacklogToast(result: UnsubscribeBacklogResult): strin
     }
   }
 
-  if (result.backlog && manual.length > 0) {
-    const moved = movedLine(verb, n);
-    if (moved) parts.push(moved);
-    parts.push(WS5_COPY['f1.toast.mailto']);
-    return parts.join(' ');
-  }
+  if (result.backlog && manual.length > 0) return withMoveLine(verb, n);
 
   if (result.backlog) return movedLine(verb, n);
 
@@ -70,4 +76,19 @@ export function unsubscribeBacklogToast(result: UnsubscribeBacklogResult): strin
   const m = Math.max(requested.length, 1);
   if (isPluralCopy(unsub)) return pluralCopy(unsub, m, { m });
   return WS5_COPY['f1.button.unsubOnly'];
+}
+
+/**
+ * Activity summary for the same confirmation. One row covers every
+ * sender, so any mailto handoff uses the neutral Send wording.
+ */
+export function unsubscribeBacklogActivityLine(result: UnsubscribeBacklogResult): string {
+  if (!result.backlog) return unsubscribeBacklogToast(result);
+  const n = result.backlog.requestedCount;
+  const verb = result.backlog.verb;
+  if (result.senders.some((sender) => sender.unsubStatus === 'manual')) {
+    return withMoveLine(verb, n);
+  }
+  if (verb === 'delete') return fillCopy(WS5_COPY['f1.activity.row.delete'], { n });
+  return fillCopy(WS5_COPY['f1.activity.row'], { n });
 }
