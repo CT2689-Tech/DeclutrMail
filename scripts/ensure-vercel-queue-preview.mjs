@@ -44,6 +44,15 @@ export async function ensureQueuePreview(env = process.env, fetcher = fetch) {
       throw new Error('Queue ref identity is unavailable');
     return ref.object.sha === sha;
   };
+  const vercelCheckPassed = async () => {
+    const statuses = await request(
+      `https://api.github.com/repos/${repository}/commits/${sha}/statuses?per_page=100`,
+      env.GH_TOKEN,
+    );
+    if (!Array.isArray(statuses)) throw new Error('Queue commit statuses are unavailable');
+    // Newest first; only the latest Vercel status reflects the check's state.
+    return statuses.find((s) => s.context === 'Vercel')?.state === 'success';
+  };
   if (!(await current())) return { state: 'stale' };
 
   const list = await request(
@@ -56,7 +65,12 @@ export async function ensureQueuePreview(env = process.env, fetcher = fetch) {
       d.meta?.githubCommitSha === sha && d.meta?.githubCommitRef === branch && d.target === null,
   );
   if (existing) {
-    if (!activeStates.includes(existing.state ?? existing.readyState))
+    const state = existing.state ?? existing.readyState;
+    // The Ignored Build Step cancels the deployment yet posts a successful
+    // required check, so there is nothing to recover.
+    if (state === 'CANCELED' && (await vercelCheckPassed()))
+      return { state: 'ignored', id: existing.uid ?? existing.id };
+    if (!activeStates.includes(state))
       throw new Error(
         'Existing queue preview failed or was cancelled; diagnose it before retrying',
       );

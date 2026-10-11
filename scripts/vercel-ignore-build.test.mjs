@@ -309,7 +309,7 @@ test('snapshot publication persists preview policy even when report data has no 
   assert.doesNotMatch(publish, /git push[^\n]*HEAD:main/);
 });
 
-function queueFixture({ deployments = [], refs, created, failure } = {}) {
+function queueFixture({ deployments = [], refs, created, failure, statuses = [] } = {}) {
   const sha = 'a'.repeat(40);
   const branch = `gh-readonly-queue/main/pr-1-${'b'.repeat(40)}`;
   const env = {
@@ -332,6 +332,7 @@ function queueFixture({ deployments = [], refs, created, failure } = {}) {
     if (failure) return new Response('{}', { status: failure });
     if (url.startsWith('https://api.github.com/')) {
       assert.equal(init.method, 'GET', 'only Vercel may publish its required check');
+      if (url.includes(`/commits/${sha}/statuses`)) return Response.json(statuses);
       const ref = refs?.shift() ?? sha;
       return new Response(JSON.stringify({ object: { sha: ref } }), { status: 200 });
     }
@@ -383,6 +384,58 @@ test('native previews are reused, obsolete refs skipped and failed previews neve
       false,
     );
   }
+});
+
+test('a queue preview cancelled by the Ignored Build Step counts once Vercel reports success', async () => {
+  const cancelled = (f) => ({ ...f.preview, uid: 'dpl_ignored', state: 'CANCELED' });
+  const ignored = {
+    context: 'Vercel',
+    state: 'success',
+    description: 'Canceled by Ignored Build Step',
+  };
+  const base = queueFixture();
+  const f = queueFixture({
+    deployments: [cancelled(base)],
+    statuses: [
+      ignored,
+      { context: 'Vercel', state: 'pending' },
+      { context: 'CI', state: 'failure' },
+    ],
+  });
+  assert.deepEqual(await ensureQueuePreview(f.env, f.fetcher), {
+    state: 'ignored',
+    id: 'dpl_ignored',
+  });
+  assert.equal(
+    f.calls.some((c) => c.method === 'POST'),
+    false,
+  );
+  for (const statuses of [
+    [],
+    [{ context: 'Vercel', state: 'pending' }, ignored],
+    [{ context: 'Vercel', state: 'failure' }],
+    [{ context: 'Vercel – other', state: 'success' }],
+  ]) {
+    const g = queueFixture({ deployments: [cancelled(base)], statuses });
+    await assert.rejects(ensureQueuePreview(g.env, g.fetcher), /diagnose it before retrying/);
+    assert.equal(
+      g.calls.some((c) => c.method === 'POST'),
+      false,
+    );
+  }
+  const errored = queueFixture({
+    deployments: [{ ...base.preview, state: 'ERROR' }],
+    statuses: [ignored],
+  });
+  await assert.rejects(
+    ensureQueuePreview(errored.env, errored.fetcher),
+    /diagnose it before retrying/,
+  );
+  const unreadable = queueFixture({ deployments: [cancelled(base)], statuses: {} });
+  await assert.rejects(
+    ensureQueuePreview(unreadable.env, unreadable.fetcher),
+    /statuses are unavailable/,
+  );
 });
 
 test('bad inputs, provider failures and incorrect created identity fail closed', async () => {
@@ -438,7 +491,7 @@ test('queue recovery executes protected-main code with read-only GitHub permissi
   assert.match(workflow, /workflow_run.event == 'merge_group'/);
   assert.match(workflow, /workflow_dispatch' && github.ref == 'refs\/heads\/main'/);
   assert.match(workflow, /ref: main\n\s+persist-credentials: false/);
-  assert.match(workflow, /permissions:\n\s+contents: read/);
+  assert.match(workflow, /permissions:\n\s+contents: read\n(\s+#.*\n)?\s+statuses: read\n/);
   assert.doesNotMatch(workflow, /contents: write|statuses: write|pull_request_target/);
   assert.match(workflow, /run: node scripts\/ensure-vercel-queue-preview.mjs/);
 });
