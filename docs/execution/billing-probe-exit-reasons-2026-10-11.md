@@ -17,19 +17,25 @@ src/billing/verify-billing-queue.ts`, cwd `apps/api`):
 - Command, args, entrypoint and imports: accepted by gcloud (#948) and pass
   end to end locally.
 
-The production cause is still unverified. Every remaining candidate is on the
-broker side: Redis unreachable or rejecting the job's connection, or the
-broker reporting zero, unnamed or older `email-send` actors. These differ in
-timing only by the probe's own 25 s deadline, which is within the observed
-spread, so the run timings cannot tell them apart.
+Deploy #38120027471 (includes #952) then showed the task started and exited
+`1` by itself: `NonZeroExitCode`, no signal, no timeout. On that image every
+probe failure exits `1`, including its 25 s Redis deadline, so this still does
+not name the cause. The step took 64 s; a fast refusal would leave the
+container running only a few seconds, while startup plus the 25 s deadline
+fits all three observed runs. That leans toward Redis never becoming ready
+or a stalled broker read, but it is an inference from timing, not proof.
 
-The probe now exits with a fixed code per reason. With #952 merged, the
-deploy log's `billingProbeTask.exitCode` names it:
+The probe now exits with a fixed code per reason. The deploy log's
+`billingProbeTask` line adds `probeReason` (from the exit code) and
+`runSeconds` (container start to completion), for example
+`"exitCode":17,"probeReason":"no_workers","runSeconds":3`. Container stdout is
+not readable by the deploy identity, so the exit code is the only channel;
+actor counts cannot be carried and are deliberately not logged.
 
 | Exit | Reason                      | Meaning                                              |
 | ---: | --------------------------- | ---------------------------------------------------- |
 |    0 | —                           | Every generic email actor is compatible              |
-|    1 | `unclassified`              | Unexpected error                                     |
+|    1 | `unclassified`              | Unexpected error, or a startup/import crash          |
 |   10 | `configuration_unavailable` | Probe flag or Redis URL missing in the task          |
 |   11 | `redis_never_ready`         | No connection error, never ready within 25 s         |
 |   12 | `redis_network_error`       | DNS, refused, reset or timed-out connection          |
