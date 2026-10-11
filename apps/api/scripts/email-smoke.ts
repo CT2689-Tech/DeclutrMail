@@ -62,6 +62,7 @@ async function main(): Promise<void> {
     mailboxEmail: TO,
     messageCount: 12_345,
     appUrl: 'https://app.declutrmail.com',
+    onboarded: true,
     unsubscribeUrl: unsubscribe,
   });
 

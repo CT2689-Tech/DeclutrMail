@@ -14,6 +14,12 @@ export const OPS_EVENT_NAMES = [
 
 export type OpsEventName = (typeof OPS_EVENT_NAMES)[number];
 
+/**
+ * Consent-gated PostHog super-properties. Not event names: do not append
+ * these to `OPS_EVENT_NAMES`.
+ */
+export const OPS_SUPER_PROPERTIES = ['display_mode'] as const;
+
 export interface OpsEventPayloads {
   /**
    * Both sync events are emitted ONLY from the browser. Call sites:

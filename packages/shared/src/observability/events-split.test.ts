@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { EVENT_NAMES } from './events/index';
+import { OPS_SUPER_PROPERTIES } from './events/ops';
 
 /**
  * Names in `events.ts` immediately before the domain split.
@@ -99,6 +100,11 @@ describe('event registry domain split', () => {
     expect(EVENT_NAMES).toEqual(
       expect.arrayContaining(['report_viewed', 'home_next_step_clicked', 'caught_up_viewed']),
     );
+  });
+
+  it('keeps display_mode off the event-name list', () => {
+    expect(OPS_SUPER_PROPERTIES).toEqual(['display_mode']);
+    expect(EVENT_NAMES).not.toContain('display_mode');
   });
 
   it('names the owning workstream at the top of each domain file', () => {

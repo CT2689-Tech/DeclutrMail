@@ -1,3 +1,5 @@
+import { eq } from 'drizzle-orm';
+
 import { mailboxAccounts, users, workspaces } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import type { Queue } from 'bullmq';
@@ -129,7 +131,10 @@ describe('buildSyncReadyEmailHandler', () => {
     // appUrl is normalized.
     expect(completeData.text).toContain('4,321 emails');
     expect(completeData.text).toContain('inbox@gmail.com');
-    expect(completeData.text).toContain(`https://app.declutrmail.com/senders?mailbox=${mailboxId}`);
+    expect(completeData.text).toContain(
+      `https://app.declutrmail.com/onboarding?mailbox=${mailboxId}`,
+    );
+    expect(completeData.text).toContain('Finish setup');
     expect(completeOpts.jobId).toBe('email__sync-complete__ev-1');
     expect(completeOpts.delay).toBeUndefined();
 
@@ -147,8 +152,29 @@ describe('buildSyncReadyEmailHandler', () => {
     expect(reminderOpts.delay).toBe(24 * 60 * 60 * 1_000);
 
     // Multipart (D162): the rendered HTML twin rides the job.
-    expect(completeData.html).toContain(`https://app.declutrmail.com/senders?mailbox=${mailboxId}`);
-    expect(reminderData.html).toContain(`/senders?mailbox=${mailboxId}`);
+    expect(completeData.html).toContain(
+      `https://app.declutrmail.com/onboarding?mailbox=${mailboxId}`,
+    );
+    expect(reminderData.html).toContain(`/onboarding?mailbox=${mailboxId}`);
+  });
+
+  it('sends an onboarded user to Senders for that mailbox', async () => {
+    await db
+      .update(users)
+      .set({ onboardedAt: new Date('2026-06-01T00:00:00.000Z') })
+      .where(eq(users.id, userId));
+    const queue = fakeQueue();
+    const handler = buildSyncReadyEmailHandler({
+      db,
+      emailQueue: queue as unknown as Queue<EmailSendJobData>,
+      appUrl: 'https://app.declutrmail.com',
+      apiUrl: 'https://api.declutrmail.com',
+    });
+    await handler(payload(), 'ev-onboarded');
+    const [, completeData] = queue.add.mock.calls[0]! as [string, EmailSendJobData];
+    expect(completeData.text).toContain(`https://app.declutrmail.com/senders?mailbox=${mailboxId}`);
+    expect(completeData.text).toContain('Open Senders');
+    expect(completeData.text).not.toContain('/onboarding?');
   });
 
   it('keeps the transactional completion notice while commercial reminders are disabled', async () => {

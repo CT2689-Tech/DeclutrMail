@@ -20,6 +20,8 @@ export interface OpsRetentionResult {
   cronRunsDeleted: number;
   /** `dead_letter_jobs` rows removed this pass. */
   deadLetterDeleted: number;
+  /** `product_events` rows older than 13 months removed this pass. */
+  productEventsDeleted: number;
   /** True when a table hit the batch ceiling and has more to remove. */
   moreRemaining: boolean;
   durationMs: number;
@@ -70,6 +72,8 @@ export interface OpsRetentionResult {
  */
 export const CRON_RUNS_RETENTION_DAYS = 30;
 export const DEAD_LETTER_RETENTION_DAYS = 90;
+/** Product funnel rows. 13 months, no exception. */
+export const PRODUCT_EVENTS_RETENTION_MONTHS = 13;
 /** Max rows removed from ONE table in ONE pass. */
 export const RETENTION_BATCH_LIMIT = 5_000;
 
@@ -130,14 +134,29 @@ export class OpsRetentionWorker extends BaseDeclutrWorker<OpsRetentionJobData, O
       RETURNING 1
     `);
 
+    const productRows = await this.deps.db.execute(sql`
+      WITH doomed AS (
+        SELECT p.ctid
+        FROM product_events p
+        WHERE p.occurred_at < now() - ${sql.raw(`interval '${PRODUCT_EVENTS_RETENTION_MONTHS} months'`)}
+        LIMIT ${RETENTION_BATCH_LIMIT}
+      )
+      DELETE FROM product_events WHERE ctid IN (SELECT ctid FROM doomed)
+      RETURNING 1
+    `);
+
     const cronRunsDeleted = rowCount(cronRows);
     const deadLetterDeleted = rowCount(deadRows);
+    const productEventsDeleted = rowCount(productRows);
 
     return {
       cronRunsDeleted,
       deadLetterDeleted,
+      productEventsDeleted,
       moreRemaining:
-        cronRunsDeleted >= RETENTION_BATCH_LIMIT || deadLetterDeleted >= RETENTION_BATCH_LIMIT,
+        cronRunsDeleted >= RETENTION_BATCH_LIMIT ||
+        deadLetterDeleted >= RETENTION_BATCH_LIMIT ||
+        productEventsDeleted >= RETENTION_BATCH_LIMIT,
       durationMs: Date.now() - startedAt,
     };
   }

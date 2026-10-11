@@ -121,6 +121,11 @@ import {
   resolveFirstTouchRef,
   SIGNUP_REF_COOKIE,
 } from '@declutrmail/shared/contracts/signup-attribution-ref';
+import {
+  DM_ATTR_COOKIE,
+  DM_ATTR_MAX_AGE_SEC,
+  resolveFirstTouchCampaign,
+} from '@declutrmail/shared/contracts/signup-attribution-attr';
 
 import { AUTHED_APP_PATHS } from './app/robots';
 
@@ -312,6 +317,7 @@ export function middleware(request: NextRequest): NextResponse {
     );
     const redirect = NextResponse.redirect(destination, 307);
     captureSignupRefCookie(request, redirect);
+    captureDmAttrCookie(request, redirect);
     return redirect;
   }
 
@@ -364,6 +370,7 @@ export function middleware(request: NextRequest): NextResponse {
     response.headers.set('X-Robots-Tag', 'noindex, nofollow');
   }
   captureSignupRefCookie(request, response);
+  captureDmAttrCookie(request, response);
   return response;
 }
 
@@ -393,6 +400,25 @@ function captureSignupRefCookie(request: NextRequest, response: NextResponse): v
     // has decorated the href. Localhost and preview hosts remain host-only.
     ...(isDeclutrMailHostname(request.nextUrl.hostname) ? { domain: '.declutrmail.com' } : {}),
     maxAge: SIGNUP_REF_MAX_AGE_SEC,
+    sameSite: 'lax',
+    httpOnly: false,
+    secure: process.env.NODE_ENV === 'production',
+  });
+}
+
+function captureDmAttrCookie(request: NextRequest, response: NextResponse): void {
+  const value = resolveFirstTouchCampaign({
+    existing: request.cookies.get(DM_ATTR_COOKIE)?.value,
+    searchParams: request.nextUrl.searchParams,
+    pathname: request.nextUrl.pathname,
+  });
+  if (!value) return;
+  response.cookies.set({
+    name: DM_ATTR_COOKIE,
+    value,
+    path: '/',
+    ...(isDeclutrMailHostname(request.nextUrl.hostname) ? { domain: '.declutrmail.com' } : {}),
+    maxAge: DM_ATTR_MAX_AGE_SEC,
     sameSite: 'lax',
     httpOnly: false,
     secure: process.env.NODE_ENV === 'production',

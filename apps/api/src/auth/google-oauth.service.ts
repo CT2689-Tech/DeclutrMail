@@ -7,6 +7,7 @@ import {
 import type { Credentials, OAuth2Client } from 'google-auth-library';
 
 import { googleOAuthClient } from '../gmail/google-oauth-client.js';
+import { withProviderKind, type SignInProviderKind } from './sign-in-provider.js';
 
 /**
  * Gmail OAuth scopes (D4).
@@ -24,6 +25,8 @@ const SCOPES = [GMAIL_SCOPE, 'openid', 'https://www.googleapis.com/auth/userinfo
 export interface OAuthExchangeResult {
   email: string;
   refreshToken: string;
+  /** Set only when the identity classifies. Never the hosted domain. */
+  providerKind?: SignInProviderKind;
 }
 
 /**
@@ -93,7 +96,9 @@ export class GoogleOAuthService {
     });
   }
 
-  async exchangeSignInCode(code: string): Promise<{ email: string }> {
+  async exchangeSignInCode(
+    code: string,
+  ): Promise<{ email: string; providerKind?: SignInProviderKind }> {
     const client = this.oauthClient();
     const { tokens } = await client.getToken(code);
     if (!tokens.id_token) throw new BadRequestException('Google returned no identity token.');
@@ -116,7 +121,7 @@ export class GoogleOAuthService {
       throw new BadRequestException('Google did not verify a hosted email identity.');
     }
     // Deliberately discard every provider token; sign-in only issues our session.
-    return { email };
+    return withProviderKind({ email }, payload.hd);
   }
 
   /**
@@ -155,14 +160,15 @@ export class GoogleOAuthService {
       idToken: tokens.id_token,
       audience: GOOGLE_CLIENT_ID,
     });
-    const email = ticket.getPayload()?.email;
+    const payload = ticket.getPayload();
+    const email = payload?.email;
     if (!email) {
       throw new BadRequestException(
         'id_token carried no email claim — cannot identify the account.',
       );
     }
 
-    return { email, refreshToken: tokens.refresh_token };
+    return withProviderKind({ email, refreshToken: tokens.refresh_token }, payload?.hd);
   }
 
   /**

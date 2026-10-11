@@ -16,7 +16,6 @@ import { AuthProvider, useAuth } from '@/features/auth/auth-provider';
 import { useAnalyticsIdentity } from '@/features/auth/analytics-identity-bridge';
 import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
 import { useTier } from '@/features/auth/api/use-tier';
-import { EmailClickRecorder } from '@/features/analytics/email-click-recorder';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import { UpgradeModalHost } from '@/features/billing/upgrade-modal-host';
 import { MailboxLinkBoundary } from '@/features/mailboxes/mailbox-link-boundary';
@@ -121,7 +120,6 @@ export function AppChromeLayout({ children }: { children: ReactNode }) {
   return (
     <>
       <AuthProvider>
-        <EmailClickRecorder />
         <MailboxLinkBoundary>
           <LazyHomeVisitTracker />
           <AppChrome>{children}</AppChrome>

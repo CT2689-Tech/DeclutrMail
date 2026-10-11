@@ -1,4 +1,8 @@
 import { Button, Text } from '@react-email/components';
+
+import { WS4_COPY } from '@declutrmail/shared/copy/launch';
+
+import { emailLink } from './email-link.js';
 import { BODY_TEXT, CTA_BUTTON, Eyebrow, renderShell, Shell, type RenderedEmail } from './shell.js';
 
 export async function gmailReconnectEmail(input: {
@@ -6,7 +10,10 @@ export async function gmailReconnectEmail(input: {
   mailboxAccountId: string;
   appUrl: string;
 }): Promise<RenderedEmail> {
-  const url = `${input.appUrl.replace(/\/$/, '')}/settings#mailbox-${encodeURIComponent(input.mailboxAccountId)}`;
+  const url = emailLink(
+    `${input.appUrl.replace(/\/$/, '')}/settings#mailbox-${encodeURIComponent(input.mailboxAccountId)}`,
+    { template: 'gmail_reconnect' },
+  );
   // Sent for every `InvalidGrantError`: a refused refresh, and also a Gmail
   // permission left unticked at consent — so no "renewing" and no expiry.
   // Nothing here assumes the inbox ever synced: the 2026-09-04 recipient's
@@ -31,7 +38,7 @@ export async function gmailReconnectEmail(input: {
         Open Settings → Gmail accounts and choose Reconnect for this inbox.
       </Text>
       <Button href={url} style={CTA_BUTTON}>
-        Open Gmail accounts
+        {WS4_COPY.email.reconnect.button}
       </Button>
     </Shell>,
   );

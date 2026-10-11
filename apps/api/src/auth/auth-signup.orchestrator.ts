@@ -10,6 +10,10 @@ import {
   type ErrorCode,
   type SignupAttributionRef,
 } from '@declutrmail/shared/contracts';
+import {
+  narrowSignupCampaign,
+  type SignupCampaign,
+} from '@declutrmail/shared/contracts/signup-attribution-attr';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { GmailWatchService } from '../mailboxes/gmail-watch.service.js';
@@ -118,6 +122,7 @@ export class AuthSignupOrchestrator {
     ipAddress: string | null;
     userAgent: string | null;
     signupAttributionRef?: SignupAttributionRef;
+    signupCampaign?: SignupCampaign;
   }): Promise<{
     tokens: IssuedTokens;
     csrfToken: string;
@@ -162,7 +167,12 @@ export class AuthSignupOrchestrator {
     const encrypted = await this.tokenCrypto.encrypt(input.refreshToken);
     const persisted = identity
       ? await this.persistResolvedConnect(identity, email, encrypted, false)
-      : await this.bootstrapAndPersistConnect(email, encrypted, input.signupAttributionRef);
+      : await this.bootstrapAndPersistConnect(
+          email,
+          encrypted,
+          input.signupAttributionRef,
+          input.signupCampaign,
+        );
     const { userId, workspaceId, mailboxId, isNewSignup, syncIntent } = persisted;
 
     // Land the user on the mailbox they just authenticated with — set
@@ -357,12 +367,19 @@ export class AuthSignupOrchestrator {
     email: string,
     encrypted: EnvelopeCiphertext,
     signupAttributionRef?: SignupAttributionRef,
+    signupCampaign?: SignupCampaign,
   ): Promise<PersistedConnect> {
+    const campaign = narrowSignupCampaign(signupCampaign);
+    const hasCampaign = Boolean(
+      campaign.utmSource || campaign.utmMedium || campaign.utmCampaign || campaign.landingPath,
+    );
     try {
       return await this.db.transaction(async (tx) => {
-        const identity = signupAttributionRef
-          ? await this.users.insertWorkspaceAndUser(tx, email, signupAttributionRef)
-          : await this.users.insertWorkspaceAndUser(tx, email);
+        const identity = hasCampaign
+          ? await this.users.insertWorkspaceAndUser(tx, email, signupAttributionRef, campaign)
+          : signupAttributionRef
+            ? await this.users.insertWorkspaceAndUser(tx, email, signupAttributionRef)
+            : await this.users.insertWorkspaceAndUser(tx, email);
         const mailbox = await this.mailboxes.upsertConnect(tx, {
           workspaceId: identity.workspaceId,
           userId: identity.userId,

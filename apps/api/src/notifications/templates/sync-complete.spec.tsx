@@ -8,6 +8,7 @@ describe('sync-complete', () => {
     mailboxAccountId: '00000000-0000-4000-8000-000000000002',
     messageCount: 24310,
     appUrl: 'https://app.declutrmail.com',
+    onboarded: true,
     unsubscribeUrl: 'https://api.declutrmail.com/api/email/unsubscribe?t=tok',
   };
 
@@ -19,8 +20,10 @@ describe('sync-complete', () => {
     expect(email.text).toContain(
       'https://app.declutrmail.com/senders?mailbox=00000000-0000-4000-8000-000000000002',
     );
-    expect(email.text).toContain('Still in setup?');
-    expect(email.text).toContain('because you connected this mailbox');
+    expect(email.text).toContain('from=sync_complete');
+    expect(email.text).toContain('utm_source=email');
+    expect(email.text).not.toContain('Still in setup?');
+    expect(email.text).toContain('because you connected this Gmail account');
     expect(email.html).toContain('24,310 emails');
     expect(email.html).toContain(
       'https://app.declutrmail.com/senders?mailbox=00000000-0000-4000-8000-000000000002',
@@ -89,5 +92,15 @@ describe('sync-complete', () => {
     expect(email.html).toContain('Unsubscribe');
     expect(email.text).toContain(`Unsubscribe: ${input.unsubscribeUrl}`);
     expect(email.text).toContain('Email preferences: https://app.declutrmail.com/settings');
+    expect(email.text).toContain(`Unsubscribe: ${input.unsubscribeUrl}`);
+    expect(input.unsubscribeUrl).not.toContain('utm_');
+  });
+
+  it('sends a user still in setup to onboarding', async () => {
+    const email = await syncCompleteEmail({ ...input, onboarded: false });
+    expect(email.text).toContain('Finish setup: https://app.declutrmail.com/onboarding?');
+    expect(email.text).toContain('mailbox=00000000-0000-4000-8000-000000000002');
+    expect(email.html).toContain('Finish setup');
+    expect(email.text).not.toContain('/senders?');
   });
 });

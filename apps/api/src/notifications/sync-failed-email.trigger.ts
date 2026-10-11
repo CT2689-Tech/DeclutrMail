@@ -72,6 +72,7 @@ export function buildSyncFailedEmailHandler(
       mailboxEmail: mailbox.mailboxEmail,
       mailboxAccountId: payload.mailboxAccountId,
       appUrl,
+      errorCode: payload.errorCode,
     });
     await enqueueEmailSend(deps.emailQueue, {
       kind: 'sync-failed',

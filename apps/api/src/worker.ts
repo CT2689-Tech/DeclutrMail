@@ -35,6 +35,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq, sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { mailboxAccounts, schema } from '@declutrmail/db';
+import { scheduleProductEvent } from './analytics/schedule-product-event.js';
 import { reconcileInitialSyncs } from './sync/initial-sync-reconciler.js';
 import {
   AccountDeletionPurgeWorker,
@@ -916,6 +917,9 @@ async function bootstrap(): Promise<void> {
     // router below. Without this dep the worker WARNs
     // `sync.sync_ready_publish_skipped` on every ready flip.
     outbox: new OutboxPublisher(),
+    onProductEvent: (event) => {
+      scheduleProductEvent(db, event.name, event.props, event.userId);
+    },
     onSenderIndexBuilt: async (mailboxAccountId) => {
       const data: ScoreJobData = {
         mailboxAccountId,
