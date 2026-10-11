@@ -43,7 +43,7 @@ describe('RouteErrorScreen', () => {
       const reset = vi.fn();
       render(<View error={new Error('private backend value')} reset={reset} />);
       expect(screen.getByRole('heading', { level: 1, name: title })).toBeInTheDocument();
-      expect(screen.getByText(kicker)).toBeInTheDocument();
+      expect(screen.getAllByText(kicker)).toHaveLength(kicker === title ? 2 : 1);
       expect(screen.getByRole('heading', { level: 2, name: /couldn't load/i })).toBeInTheDocument();
       expect(screen.getByRole('region')).toHaveStyle({ maxWidth: '1480px', gap: `${gap}px` });
       expect(document.body).not.toHaveTextContent('private backend value');

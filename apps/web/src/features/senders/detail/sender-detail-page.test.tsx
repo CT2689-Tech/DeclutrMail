@@ -1403,7 +1403,11 @@ describe('SenderDetailRoute', () => {
 
       await waitFor(() => expect(capturedBody).toEqual({ policyType: 'keep' }));
       await waitFor(() => expect(h.dismissToast).toHaveBeenCalledOnce());
-      expect(h.toast).toHaveBeenCalledWith('Kept LinkedIn', 'success');
+      expect(h.toast).toHaveBeenCalledWith(
+        'Kept LinkedIn',
+        'success',
+        expect.objectContaining({ label: 'Undo' }),
+      );
     });
   });
 

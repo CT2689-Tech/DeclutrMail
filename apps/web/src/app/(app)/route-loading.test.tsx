@@ -35,7 +35,7 @@ describe('Route loading continuity', () => {
       expect(html).toContain(`font-size:${editorialTitleStyle.fontSize}`);
       expect(html).toContain(`padding:${editorialColumnStyle.padding}`);
       expect(heading.parentElement).toHaveStyle({ maxWidth: '1480px', gap: `${gap}px` });
-      expect(screen.getByText(kicker)).toBeInTheDocument();
+      expect(screen.getAllByText(kicker)).toHaveLength(kicker === title ? 2 : 1);
       expect(screen.getByRole('status', { name: /Loading/i })).toHaveAttribute('aria-busy', 'true');
       expect(screen.queryByRole('button')).toBeNull();
     },

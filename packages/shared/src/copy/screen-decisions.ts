@@ -2,7 +2,7 @@
  * Launch decision constants. WS2 owns this file after the WS1a stub
  * commit. Each value is the default Chintan can flip in one line.
  */
-import deck from './launch/deck/ws2.json';
+import deck from './launch/deck/ws2.json' with { type: 'json' };
 
 export const NAV_GROUP_LABEL = 'Cleanup'; // DECISION: Chintan
 export const CONNECTION_TERM = 'Gmail account'; // DECISION: Chintan

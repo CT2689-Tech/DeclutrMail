@@ -1,4 +1,4 @@
-import deck from './deck/ws2.json';
+import deck from './deck/ws2.json' with { type: 'json' };
 
 /**
  * WS2 launch copy. The checked-in deck file is the source; this module

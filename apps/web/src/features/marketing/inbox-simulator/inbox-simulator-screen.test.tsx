@@ -32,9 +32,11 @@ function sheetFor(name: string): HTMLElement {
   const byName = screen.queryByRole('dialog', { name });
   if (byName !== null) return byName;
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return within(
+  const region = within(
     screen.getByRole('region', { name: new RegExp(`^Preview · \\w+ ${escaped}$`) }),
-  ).getByRole('dialog');
+  );
+  // Irreversible sheets are alertdialog. within() does not use the screen patch.
+  return region.queryByRole('alertdialog') ?? region.getByRole('dialog');
 }
 
 const STORAGE_KEY = 'dm.inbox-simulator.state.v4';
