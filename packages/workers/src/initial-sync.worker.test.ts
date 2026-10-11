@@ -1,3 +1,8 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { PGlite } from '@electric-sql/pglite';
+import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   actionJobs,
   automationRules,
@@ -18,6 +23,7 @@ import {
 import { freshTestDb } from '@declutrmail/db/testing';
 import { TOPICS } from '@declutrmail/events';
 import { eq, sql } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyAutomaticProtection } from './automatic-protection.js';
@@ -3253,5 +3259,73 @@ describe('InitialSyncWorker — sync_runs history (F002)', () => {
     expect(runs).toHaveLength(1);
     expect(runs[0]!.attempts).toBe(3);
     expect(runs[0]!.status).toBe('succeeded');
+  });
+});
+
+/**
+ * Migrations stop at 0086, so `sync_readiness` does not contain
+ * `needs_reconnect`. A first-scan claim must still write `syncing`, and
+ * a reconnect-class terminal write must land on `failed`.
+ */
+async function dbThrough0086(): Promise<{
+  db: InitialSyncDeps['db'];
+  close: () => Promise<void>;
+}> {
+  const pg = new PGlite({ extensions: { citext } });
+  const dir = join(import.meta.dirname, '..', '..', 'db', 'migrations');
+  const files = readdirSync(dir)
+    .filter((f) => f.endsWith('.sql') && f <= '0086_product_events.sql')
+    .sort();
+  for (const file of files) {
+    for (const stmt of readFileSync(join(dir, file), 'utf8').split('--> statement-breakpoint')) {
+      const trimmed = stmt.trim();
+      if (trimmed) await pg.query(trimmed.replace(/\bCONCURRENTLY\b/gi, ''));
+    }
+  }
+  return {
+    db: drizzle(pg, { schema }) as unknown as InitialSyncDeps['db'],
+    close: () => pg.close(),
+  };
+}
+
+describe('InitialSyncWorker before needs_reconnect exists', () => {
+  it('claims a first scan as syncing and records a reconnect grant as failed', async () => {
+    const { db, close } = await dbThrough0086();
+    try {
+      const mailboxAccountId = await seedMailbox(db);
+      const error = new InvalidGrantError('grant revoked');
+      const worker = new InitialSyncWorker({
+        db,
+        gmailAccess: {
+          getClient: async () => {
+            throw error;
+          },
+        },
+        outbox: new OutboxPublisher(),
+      });
+
+      await expect(worker.processJob({ mailboxAccountId }, CTX)).rejects.toThrow(error.message);
+      expect((await db.select().from(providerSyncState))[0]!.readinessStatus).toBe('syncing');
+
+      await (
+        worker as unknown as {
+          onTerminalFailure(
+            p: { mailboxAccountId: string },
+            e: Error,
+            c: WorkerContext,
+          ): Promise<void>;
+        }
+      ).onTerminalFailure({ mailboxAccountId }, error, CTX);
+
+      const [row] = await db.select().from(providerSyncState);
+      expect(row).toMatchObject({
+        readinessStatus: 'failed',
+        errorCode: 'InvalidGrantError',
+        initialRetryAt: null,
+      });
+      expect(await db.select().from(outboxEvents)).toHaveLength(0);
+    } finally {
+      await close();
+    }
   });
 });

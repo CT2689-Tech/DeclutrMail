@@ -1955,7 +1955,12 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
             .onConflictDoUpdate({
               target: providerSyncState.mailboxAccountId,
               set: transition,
-              setWhere: sql`${providerSyncState.readinessStatus} <> 'ready' AND ${providerSyncState.readinessStatus} <> 'needs_reconnect' AND (${providerSyncState.initialRetryAt} IS NULL OR ${providerSyncState.initialRetryAt} <= now())`,
+              // `::text` on the new label: Postgres type-checks every enum
+              // literal in this INSERT … ON CONFLICT, including a first claim
+              // that does not conflict. Before 0087 adds the value that
+              // throws 22P02 and the scan never leaves `queued`. 'ready'
+              // has been in the enum since the column existed.
+              setWhere: sql`${providerSyncState.readinessStatus} <> 'ready' AND ${providerSyncState.readinessStatus}::text <> 'needs_reconnect' AND (${providerSyncState.initialRetryAt} IS NULL OR ${providerSyncState.initialRetryAt} <= now())`,
             })
             .returning({ id: providerSyncState.id });
         })

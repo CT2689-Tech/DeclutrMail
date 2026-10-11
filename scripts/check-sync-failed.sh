@@ -63,22 +63,6 @@ if ! command -v psql >/dev/null 2>&1; then
   exit 2
 fi
 
-# `needs_reconnect` is added by migration 0086. Quoting the label before
-# that migration is applied is a parse error, which would turn every run
-# red for a missing enum rather than for a stuck sync. Probe first.
-ENUM_CHECK=$(cat <<'EOF'
-SELECT EXISTS (
-  SELECT 1
-  FROM pg_enum e
-  JOIN pg_type t ON t.oid = e.enumtypid
-  JOIN pg_namespace n ON n.oid = t.typnamespace
-  WHERE n.nspname = 'public'
-    AND t.typname = 'sync_readiness'
-    AND e.enumlabel = 'needs_reconnect'
-);
-EOF
-)
-
 # Same CR/LF stripping + sslmode append as check-sync-stuck.sh — a
 # `gh secret set` pipe can smuggle a newline into the DSN, which makes
 # psql reject the URI outright.
@@ -88,35 +72,18 @@ case "$DSN" in
   *)    DSN="${DSN}?sslmode=require" ;;
 esac
 
+# Compare the label as text. `readiness_status IN ('needs_reconnect')`
+# is an enum literal: Postgres type-checks it even when no row holds the
+# value, and rejects the query with 22P02 until 0087 adds the label.
+# `::text` is valid before and after that migration. A row cannot store
+# the label until then, so the extra arm matches nothing.
+STATUS_FILTER="readiness_status::text IN ('failed', 'needs_reconnect')"
+
 # psql failure MUST surface as a distinct config/connection error (exit
 # 2), never as a "no failed syncs" exit 0 — an unreachable DB is not
 # evidence nothing is stuck (CLAUDE.md "a guard that cannot fail is not
 # a guard").
 PSQL_ERR="$(mktemp)"
-set +e
-HAS_NEEDS_RECONNECT=$(psql "$DSN" \
-  -At --quiet \
-  -c "$ENUM_CHECK" 2>"$PSQL_ERR")
-RC=$?
-set -e
-
-if [ "$RC" -ne 0 ]; then
-  echo "::error::psql failed (exit $RC) — watchdog could NOT check whether needs_reconnect exists; this is a config/connection problem, not a clean-bill-of-health signal" >&2
-  sed 's/^/  psql: /' "$PSQL_ERR" >&2 || true
-  rm -f "$PSQL_ERR"
-  exit 2
-fi
-: >"$PSQL_ERR"
-
-case "$HAS_NEEDS_RECONNECT" in
-  t|true|TRUE) STATUS_FILTER="readiness_status IN ('failed', 'needs_reconnect')" ;;
-  f|false|FALSE) STATUS_FILTER="readiness_status = 'failed'" ;;
-  *)
-    echo "::error::psql enum probe returned '${HAS_NEEDS_RECONNECT}', not a boolean — watchdog could NOT tell needs_reconnect rows from failed ones" >&2
-    rm -f "$PSQL_ERR"
-    exit 2
-    ;;
-esac
 
 QUERY=$(cat <<EOF
 SELECT
