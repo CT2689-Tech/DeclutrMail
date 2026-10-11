@@ -1,4 +1,4 @@
-h1:izYCUhqh9b43njye4nyTHmxOybWC3ySlQxbwJWUrLhw=
+h1:QsDaQ+0Fqz3k543MXFSX0Evj41xyuhc483noEdyfayM=
 0000_foundation_workspaces_users_mailboxes.sql h1:mvQjReZmzp+ne3ncQX3NsLph9Tlec0HLa4e0k636MV4=
 0001_messages_senders_schema.sql h1:1hE97u6u+JGGjHXjH50rrMA0K/i4UlPvqrkuN2Qs6Uk=
 0002_mailbox_oauth_tokens.sql h1:+w05bo7XzLJhpjftjhpIwna1kU+1MFYMWq6QJH0HZgg=
@@ -83,4 +83,4 @@ h1:izYCUhqh9b43njye4nyTHmxOybWC3ySlQxbwJWUrLhw=
 0083_sender_first_indexed_at.sql h1:E9hqg9sOMFrB1l9i3sp/FTRUAHcGeiSG5VDwcfJfnhM=
 0084_waitlist_launch_columns.sql h1:CxOnGNFC/Gs3oez5rR0FbIMXfhVHvZGwa8g1khW+Yz8=
 0085_action_jobs_quota_units.sql h1:t9ntB3bhX+jGkeSijjOF6kZ/ueBLv77aFCsefAU3t6M=
-0085_product_events.sql h1:LmGkDSG3GcfjAzAOXkR8tgGYc9PLryOrH6UhT5I+7CY=
+0086_product_events.sql h1:23HgpEeRTjifh6GueNFbZayFmL512BX4VScSIeRW7mk=

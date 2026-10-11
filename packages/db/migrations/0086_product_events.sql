@@ -1,4 +1,4 @@
--- 0085_product_events.sql
+-- 0086_product_events.sql
 --
 -- Append-only product funnel (D159). Signup, connect, first sync, cap,
 -- checkout, purchase, and email-click counts. Not PostHog: the server

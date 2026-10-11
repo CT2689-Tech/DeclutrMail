@@ -1,4 +1,4 @@
--- Rollback for 0085_product_events.sql
+-- Rollback for 0086_product_events.sql
 
 ALTER TABLE "users" DROP CONSTRAINT "users_signup_attribution_landing_path_chk";
 --> statement-breakpoint

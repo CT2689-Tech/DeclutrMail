@@ -75,7 +75,7 @@ describe('product event writer', () => {
     ).rejects.toThrow();
     expect(await db.select().from(productEvents)).toEqual([]);
     const migration = readFileSync(
-      new URL('../../../../packages/db/migrations/0085_product_events.sql', import.meta.url),
+      new URL('../../../../packages/db/migrations/0086_product_events.sql', import.meta.url),
       'utf8',
     );
     expect(migration).toContain(`jsonb_typeof("props"->'kind') = 'string'`);
