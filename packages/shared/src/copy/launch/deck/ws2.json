@@ -67,7 +67,7 @@
         "other": "Unsubscribe from {n} senders?"
       },
       "lead": "We’ll send a one-click unsubscribe request. Once it’s delivered, it can’t be recalled.",
-      "footer": "Stopping future email is up to the sender. Email you already have stays where it is.",
+      "footer": "Whether their email stops is up to the sender. Email you already have stays where it is.",
       "button": {
         "one": "Unsubscribe",
         "other": "Unsubscribe {n} senders"
@@ -76,15 +76,15 @@
         "one": "Unsubscribe request sent to {Sender}",
         "other": "Unsubscribe requests sent to {n} senders"
       },
-      "toastAccepted": "{Sender} accepted the unsubscribe request. Stopping is up to them.",
+      "toastAccepted": "{Sender} accepted the unsubscribe request. Whether their email stops is up to them.",
       "inline": "We’ll send a one-click unsubscribe request. It can’t be recalled once delivered.",
       "disabled": "No unsubscribe link from this sender"
     },
     "unsubMailto": {
       "title": "Unsubscribe from {Sender} by email?",
-      "body": "{Sender} takes unsubscribe requests by email. We’ll open a Gmail draft for you to send. Nothing is sent automatically.",
-      "button": "Open Gmail draft",
-      "toast": "Your draft is in Gmail. Send it from there.",
+      "body": "{Sender} takes unsubscribe requests by email. We’ll open a prefilled email in Gmail for you to send yourself. Nothing is sent automatically.",
+      "button": "Open email in Gmail",
+      "toast": "The email is ready in Gmail. Press Send there to finish.",
       "markSent": "Marked the unsubscribe email to {Sender} as sent"
     },
     "delete": {
@@ -217,6 +217,38 @@
     "home": {
       "retrying": "Retrying automatically at {time}",
       "reconnect": "Reconnect Gmail"
+    }
+  },
+  "home": {
+    "empty": {
+      "title": "Nothing cleared yet.",
+      "body": "Start with the senders in your inbox. See how much each one sends and how much of it is marked read, then choose what to do with them."
+    },
+    "progressHero": {
+      "one": "email cleared",
+      "other": "emails cleared"
+    },
+    "linkActivity": "See your activity",
+    "failedEyebrow": "Gmail account needs attention",
+    "queued": {
+      "title": "Your scan is waiting to start.",
+      "body": "It starts on its own and keeps anything already scanned. You don’t need to keep this page open."
+    },
+    "nextLargest": {
+      "title": {
+        "one": "Your largest sender",
+        "other": "Your {k} largest senders"
+      },
+      "body": "About {size} of email (Gmail’s estimates). Archiving doesn’t change storage. Deleting moves email to Gmail Trash, which Gmail empties after 30 days.",
+      "cta": "See largest senders"
+    },
+    "nextLaterDue": {
+      "title": {
+        "one": "1 sender comes back from Later today",
+        "other": "{n} senders come back from Later today"
+      },
+      "body": "Their email returns to your inbox at the time you picked.",
+      "cta": "Open Later"
     }
   },
   "pro": {

@@ -1699,7 +1699,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     await confirmUnsubWithoutBacklog();
 
     await waitFor(() => expect(screen.getByTestId('unsub-mailto-callout')).toBeDefined());
-    const link = screen.getByRole('link', { name: 'Open Gmail draft' });
+    const link = screen.getByRole('link', { name: 'Open email in Gmail' });
     expect(link.getAttribute('href')).toBe(
       'https://mail.google.com/mail/?authuser=owner%40gmail.com&view=cm&fs=1&to=unsubscribe%40linkedin.example&su=Remove+me',
     );

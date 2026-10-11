@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from 'react';
 import { tokens, toast } from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import type { UnsubscribeLifecycleStatus } from '@declutrmail/shared/contracts';
 import { useQueryClient } from '@tanstack/react-query';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
@@ -126,7 +127,7 @@ export function UnsubMailtoCallout({
               flexShrink: 0,
             }}
           >
-            Open Gmail draft
+            {WS2_COPY.dialog.unsubMailto.button}
           </a>
           <button
             type="button"

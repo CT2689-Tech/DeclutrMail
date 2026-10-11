@@ -357,7 +357,9 @@ export default function PrivacyPolicyPage() {
             </tr>
           </tbody>
         </table>
-        <p>{AI_PROCESSING_DISCLOSURE}</p>
+        <p id="ai-processing" style={{ scrollMarginTop: 88 }}>
+          {AI_PROCESSING_DISCLOSURE}
+        </p>
         <p>We will update this list before adding a new subprocessor that handles personal data.</p>
       </LegalSection>
 

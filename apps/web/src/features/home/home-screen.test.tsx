@@ -262,7 +262,7 @@ describe('HomeScreen', () => {
     authCell.me = meFor('pro', 'queued');
     stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }) });
     renderHome();
-    expect(await screen.findByText('Your scan is queued.')).toBeInTheDocument();
+    expect(await screen.findByText('Your scan is waiting to start.')).toBeInTheDocument();
     expect(screen.queryByText('Reading your Gmail.')).toBeNull();
   });
 
