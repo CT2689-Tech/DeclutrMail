@@ -312,6 +312,17 @@ test('a sender with no unsubscribe link reports the failure', async ({ page }) =
 test('a spent monthly allowance refuses the mail move before any unsubscribe', async ({ page }) => {
   await sql`UPDATE workspaces SET tier = 'free' WHERE id = ${BILLING_SEED.workspaceId}`;
   try {
+    // The archive and delete above leave a queued forward job. Senders
+    // treats that sender as still confirming and swallows the next click
+    // without a request. Settle those rows so this click can reach the cap.
+    await sql`
+      UPDATE action_jobs
+      SET status = 'done', updated_at = now() - interval '2 minutes'
+      WHERE mailbox_account_id = ${mailboxId}
+        AND created_at >= ${testStart.toISOString()}
+        AND status IN ('queued', 'executing')
+        AND idempotency_key NOT LIKE ${BILLING_SEED.quotaKeyPrefix + '%'}
+    `;
     const [before] = await sql<{ n: number }[]>`
       SELECT count(*)::int AS n FROM action_jobs
       WHERE mailbox_account_id = ${mailboxId}
@@ -325,12 +336,14 @@ test('a spent monthly allowance refuses the mail move before any unsubscribe', a
     await card.getByRole('button', { name: 'More actions' }).click();
     await card.getByRole('menuitem', { name: 'Unsubscribe', exact: true }).click();
     const sheet = page.getByRole('dialog');
+    const confirm = sheet.getByRole('button', { name: 'Unsubscribe + Archive' });
+    await expect(confirm).toBeEnabled();
     const post = page.waitForResponse(
       (response) =>
         response.url().includes('/api/actions/unsubscribe-backlog') &&
         response.request().method() === 'POST',
     );
-    await sheet.getByRole('button', { name: 'Unsubscribe + Archive' }).click();
+    await confirm.click();
     const response = await post;
     expect(response.status()).toBe(402);
     await expect(page.getByTestId('upgrade-modal')).toBeVisible();
