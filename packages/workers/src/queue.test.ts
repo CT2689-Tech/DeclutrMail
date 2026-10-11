@@ -201,7 +201,7 @@ describe('ensureInitialSyncJob', () => {
 describe('workerTuningOptions', () => {
   it('returns safe defaults per profile when env is unset', () => {
     expect(workerTuningOptions('user-facing', {})).toEqual({
-      drainDelay: 60,
+      drainDelay: 10,
       stalledInterval: 60_000,
     });
     expect(workerTuningOptions('cron', {})).toEqual({
