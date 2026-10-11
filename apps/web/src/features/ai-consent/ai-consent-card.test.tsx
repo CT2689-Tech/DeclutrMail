@@ -26,6 +26,9 @@ describe('AiConsentCard', () => {
       'href',
       '/privacy#ai-processing',
     );
+    expect(screen.getByRole('link', { name: WS2_COPY.aiConsent.link })).toHaveClass(
+      'dm-external-link',
+    );
     expect(screen.getByText(WS2_COPY.aiConsent.noFetch)).toBeInTheDocument();
   });
 

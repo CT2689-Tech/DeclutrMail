@@ -115,7 +115,9 @@ export function AiConsentCard({
       <p style={{ margin: 0, color: color.fgSoft }}>{copy.training}</p>
       <p style={{ margin: 0, color: color.fgSoft }}>{decline}</p>
       <p style={{ margin: 0, color: color.fgMuted }}>{copy.change}</p>
-      <Link href="/privacy#ai-processing">{copy.link}</Link>
+      <Link className="dm-external-link" href="/privacy#ai-processing">
+        {copy.link}
+      </Link>
       {failed && (
         <p role="alert" style={{ margin: 0, color: color.dangerText }}>
           {copy.error}
