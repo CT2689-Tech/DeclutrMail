@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Button, PreviewSheet, tokens } from '@declutrmail/shared';
 import type { CancelRequest } from '@declutrmail/shared/contracts';
 import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 
 import { PlanConsequences } from './plan-coverage';
 import { formatBillingDate, type SubscriptionRecord } from './billing-model';
@@ -54,6 +55,7 @@ export function CancelModal({
   onPause,
   isPausing,
   pauseError,
+  pricingV2 = false,
 }: {
   open: boolean;
   /** The record this cancel targets — backing or non-backing (A6). */
@@ -74,6 +76,8 @@ export function CancelModal({
   onPause: () => void;
   isPausing: boolean;
   pauseError: string | null;
+  /** Launch flag. Off keeps the pre-launch founding cancel sentence. */
+  pricingV2?: boolean;
   /** Accepted for callers; the sheet is a bottom sheet on phones by
    *  itself now (`PreviewSheet` is CSS-responsive). */
   variant?: 'modal' | 'sheet';
@@ -139,15 +143,12 @@ export function CancelModal({
             a refund.
           </span>
           {sub.foundingMember ? (
-            // QA-billing-20260901-09: the founding price lock is otherwise
-            // discoverable only after re-subscribing fails with
-            // FOUNDING_PRO_SOLD_OUT once the 250 slots are gone — name the
-            // cost before the click that can make it permanent.
             <>
               {' '}
               <span>
-                You&rsquo;re a Founding Pro member — this locked price doesn&rsquo;t come back once
-                canceled and the 250 slots fill up.
+                {pricingV2
+                  ? WS1_COPY['cancel.founding']
+                  : 'You\u2019re a Founding Pro member — this locked price doesn\u2019t come back once canceled and the 250 slots fill up.'}
               </span>
             </>
           ) : null}

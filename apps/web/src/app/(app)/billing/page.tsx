@@ -16,6 +16,7 @@ import { getServerBillingSubscription } from '@/features/billing/api/server-bill
 import { ServerBillingInvoices } from '@/features/billing/server-billing-invoices';
 import { parseBillingIntentParams } from '@/features/billing/parse-billing-intent';
 import { defaultProviderForCountry } from '@/features/billing/billing-region';
+import { isPricingV2 } from '@declutrmail/shared/entitlements';
 import { hasServerAccessCookie } from '@/features/auth/api/server-me';
 import { ServerQueryHydration } from '@/lib/server-query-hydration';
 import { COUNTRY_HEADER } from '@/middleware';
@@ -54,6 +55,8 @@ export default async function BillingPage({
         initialIntent={initialIntent}
         returnTo={parseUpgradeReturnTo(params.from)}
         initialProvider={defaultProviderForCountry(country)}
+        pricingV2={isPricingV2()}
+        country={country}
         invoiceHistory={
           <Suspense fallback={null}>
             <ServerBillingInvoices cookieHeader={cookieHeader} />

@@ -5,7 +5,8 @@
 
 import type { ActionTier } from '../contracts/verb-constants';
 import { ACTION_TIER_RANK } from '../contracts/verb-constants';
-import { TIER_MANIFEST } from './pricing.config';
+import { isPricingV2 } from './copy';
+import { INBOXES, TIER_MANIFEST } from './pricing.config';
 import { TIER_IDS, type Capability, type TierDefinition, type TierId } from './types';
 
 /** The full manifest entry for a tier. */
@@ -27,9 +28,16 @@ export function minimumTierForCapability(capability: Capability): TierId {
   return tier;
 }
 
-/** Connected-Gmail-account limit (D19/A3: Free 1 / Plus 1 / Pro 3). */
+/** Connected-Gmail-account limit. `PRICING_V2` uses `INBOXES` (Plus is 2). */
 export function inboxLimitFor(id: TierId): number {
+  if (isPricingV2() && (id === 'free' || id === 'plus' || id === 'pro')) return INBOXES[id];
   return TIER_MANIFEST[id].inboxLimit;
+}
+
+/** Self-serve checkout. Pro is waitlist-only while `PRICING_V2` is on. */
+export function tierIsPurchasable(id: TierId): boolean {
+  if (isPricingV2() && id === 'pro') return false;
+  return TIER_MANIFEST[id].purchasable;
 }
 
 /** Undo retention window in days for one tier. */

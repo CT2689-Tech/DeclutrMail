@@ -12,7 +12,7 @@ import {
 import { useTier } from '@/features/auth/api/use-tier';
 import { useRegionProvider } from '@/features/billing/billing-currency';
 import { billingIntentPath } from '@/features/billing/billing-intent';
-import { MONEY_BACK_NOTE } from '@/features/billing/billing-model';
+import { moneyBackNote } from '@/features/billing/billing-model';
 import { currencyForPricePoint, formatMoney } from '@/features/marketing/pricing/pricing-model';
 
 import { useAutopilotRules } from './api/use-autopilot-rules';
@@ -39,6 +39,7 @@ export function AutopilotEntitlementSurface() {
 }
 
 export function AutopilotObservePreview() {
+  const { pricingV2 } = useTier();
   const rules = useAutopilotRules();
   const preview = useRulePreview();
   const [previewRuleId, setPreviewRuleId] = useState<string | null>(null);
@@ -245,7 +246,9 @@ export function AutopilotObservePreview() {
             Compare plans
           </Link>
         </div>
-        <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
+        <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
+          {moneyBackNote(pricingV2)}
+        </p>
       </div>
     </div>
   );

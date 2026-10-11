@@ -205,11 +205,19 @@ function stubSubscription(respond: () => Response | Promise<Response>) {
   installFetchStub([{ method: 'GET', path: '/api/billing/subscription', respond }]);
 }
 
-function renderScreen(initialIntent: BillingIntent | null = null, returnTo?: string) {
+function renderScreen(
+  initialIntent: BillingIntent | null = null,
+  returnTo?: string,
+  options?: { pricingV2?: boolean },
+) {
   const client = createTestQueryClient();
   return render(
     <QueryWrapper client={client}>
-      <BillingScreen initialIntent={initialIntent} returnTo={returnTo} />
+      <BillingScreen
+        initialIntent={initialIntent}
+        returnTo={returnTo}
+        {...(options?.pricingV2 ? { pricingV2: true } : {})}
+      />
     </QueryWrapper>,
   );
 }
@@ -408,6 +416,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(within(panel).getByText(/Claim Founding Pro — \$129\/yr/)).toBeInTheDocument();
     expect(within(panel).getByText(/\$190 billed annually, starting today/)).toBeInTheDocument();
     expect(within(panel).getByText('30-day money-back guarantee')).toBeInTheDocument();
+    expect(within(panel).queryByText(/14-day money-back/)).not.toBeInTheDocument();
 
     // Click 2 — confirm into the provider surface.
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
@@ -2101,6 +2110,51 @@ describe('BillingScreen — paid subscriber', () => {
     const banner = await screen.findByTestId('founding-banner');
     expect(within(banner).getByText('Founding Pro member')).toBeInTheDocument();
     expect(within(banner).getByText(/price locked at \$129\/yr/)).toBeInTheDocument();
+  });
+
+  it('PRICING_V2 retires Founding Pro sales and uses the deck refund line', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+    ]);
+    renderScreen(null, undefined, { pricingV2: true });
+
+    expect(screen.queryByRole('button', { name: 'Upgrade to Pro' })).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: /Join the Pro waitlist/ }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
+    const panel = await screen.findByTestId('checkout-panel');
+    expect(
+      within(panel).getByText('14-day money-back on any purchase, once per customer.'),
+    ).toBeInTheDocument();
+    expect(within(panel).queryByText('30-day money-back guarantee')).not.toBeInTheDocument();
+    expect(within(panel).queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(within(panel).queryByText(/Claim Founding Pro/)).not.toBeInTheDocument();
+  });
+
+  it('PRICING_V2 hides the founding member sales banner', async () => {
+    mockTier = 'pro';
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          ...PRO_SUB,
+          foundingMember: true,
+          pendingCheckout: null,
+          complimentary: null,
+          subscription: { ...SUB, cycle: 'annual', foundingMember: true },
+        },
+      }),
+    );
+    renderScreen(null, undefined, { pricingV2: true });
+
+    await screen.findByTestId('current-plan-card');
+    expect(screen.queryByTestId('founding-banner')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Claim Founding Pro/)).not.toBeInTheDocument();
   });
 
   it('one notice slot: the money notice leads, the rest wait behind "+N"', async () => {

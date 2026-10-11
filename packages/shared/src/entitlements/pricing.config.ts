@@ -51,7 +51,7 @@
 //     that automation sits on Plus.
 
 import type { ActionTier, ActionVerb, SelectorType } from '../contracts/verb-constants';
-import type { Capability, TierManifest } from './types';
+import type { Capability, PricePoint, TierManifest } from './types';
 
 /**
  * Free = the whole manual cleanup product: read surfaces, the K/A/U/L/D
@@ -242,3 +242,173 @@ export const TIER_MANIFEST: TierManifest = {
     nonPurchasableRow: { kind: 'contact', label: 'Contact sales' },
   },
 };
+
+/** Launch pricing generation. Display and changelog read this, not a literal date. */
+export const PRICING_VERSION = '2026-10-27';
+
+/**
+ * India rail switch. Hiding Razorpay does not null `razorpayPlanId`:
+ * existing subscribers still resolve. `PRICING_V2` is what turns this on.
+ */
+export const RAILS = {
+  paddle: { enabled: true },
+  razorpay: { enabled: false },
+} as const;
+
+/** Connected Gmail accounts while `PRICING_V2` is on. */
+export const INBOXES = { free: 1, plus: 2, pro: 5 } as const;
+
+export const POLICY = {
+  refundWindowDays: 14,
+  refundOncePerCustomer: true,
+  dunningDays: 14,
+  refundPendingGraceDays: 7,
+  overLimitInboxes: 'keep',
+} as const;
+
+/**
+ * Emails-cleared meter. Enforced only while `METER_V2` is on.
+ * Archive and Delete count. Undo refunds restored emails in the same period.
+ */
+export const METER = {
+  unit: 'email',
+  unitLabel: { one: 'email', other: 'emails' },
+  free: { limit: 1000, period: 'signup_month' },
+  countsVerbs: {
+    archive: true,
+    delete: true,
+    later: false,
+    unsubscribe: false,
+    keep: false,
+    unarchive: false,
+  },
+  undoRefunds: 'restored_same_period',
+} as const;
+
+/** Display-only launch code. Checkout does not pass it through. */
+export const PROMO = {
+  code: 'PH30',
+  percentOff: 30,
+  appliesTo: ['plus_annual', 'pass_onetime'],
+  endsAt: '2026-11-04T07:59:00Z',
+} as const;
+
+const UNPROVISIONED_PRICE_ID = 'FILL_ME';
+
+function launchPrice(usdCents: number, paise: number): PricePoint {
+  return {
+    usdCents,
+    inrPaise: paise,
+    paddlePriceId: UNPROVISIONED_PRICE_ID,
+    razorpayPlanId: null,
+    listed: false,
+    version: '2026-10',
+    inr: { paise, taxInclusive: true },
+  };
+}
+
+/** Plus annual 2026-10 ($59 / ₹1,999). Unlisted until the Paddle id exists. */
+export const PLUS_ANNUAL_2026_10 = launchPrice(5900, 199_900);
+
+/**
+ * Backlog Pass config. Checkout and grants land in WS1b.
+ * Unlisted while the Paddle id is still FILL_ME.
+ */
+export const OFFERS = {
+  backlogPass: {
+    kind: 'one_time',
+    grantsTier: 'plus',
+    durationDays: 30,
+    stacks: 'extend',
+    enabledFlag: 'BILLING_PASS_ENABLED',
+    price: launchPrice(1900, 79_900),
+  },
+} as const;
+
+export interface LegacyPrice {
+  readonly plan: string;
+  readonly cycle: 'monthly' | 'annual';
+  readonly version: string;
+  readonly founding: boolean;
+  readonly usdCents: number;
+}
+
+/** Every previously-live Paddle and Razorpay id. Never archive these in Paddle. */
+export const LEGACY_PRICE_IDS: Readonly<Record<string, LegacyPrice>> = {
+  pri_01ky15axxbeeyge87f9hehw37t: {
+    plan: 'plus_monthly',
+    cycle: 'monthly',
+    version: 'legacy',
+    founding: false,
+    usdCents: 900,
+  },
+  plan_THtwadiHmKTaze: {
+    plan: 'plus_monthly',
+    cycle: 'monthly',
+    version: 'legacy',
+    founding: false,
+    usdCents: 900,
+  },
+  pri_01ky15axzc9mz8sxw43c0wtn6h: {
+    plan: 'plus_annual',
+    cycle: 'annual',
+    version: 'legacy',
+    founding: false,
+    usdCents: 9000,
+  },
+  plan_THtwb3iWLy7qyp: {
+    plan: 'plus_annual',
+    cycle: 'annual',
+    version: 'legacy',
+    founding: false,
+    usdCents: 9000,
+  },
+  pri_01ky15ay15wqjaz0wjfnhe94vs: {
+    plan: 'pro_monthly',
+    cycle: 'monthly',
+    version: 'legacy',
+    founding: false,
+    usdCents: 1900,
+  },
+  plan_THtwbSxTZRClHX: {
+    plan: 'pro_monthly',
+    cycle: 'monthly',
+    version: 'legacy',
+    founding: false,
+    usdCents: 1900,
+  },
+  pri_01ky15ay2p27rbevtvc0gb6qta: {
+    plan: 'pro_annual',
+    cycle: 'annual',
+    version: 'legacy',
+    founding: false,
+    usdCents: 19000,
+  },
+  plan_THtwbs4FAeqWlv: {
+    plan: 'pro_annual',
+    cycle: 'annual',
+    version: 'legacy',
+    founding: false,
+    usdCents: 19000,
+  },
+  pri_01ky15ay4bj9t68bv158hwwfqw: {
+    plan: 'pro_annual_founding',
+    cycle: 'annual',
+    version: 'legacy',
+    founding: true,
+    usdCents: 12900,
+  },
+  plan_THtwcIa7pf9HzZ: {
+    plan: 'pro_annual_founding',
+    cycle: 'annual',
+    version: 'legacy',
+    founding: true,
+    usdCents: 12900,
+  },
+};
+
+/** A placeholder id is present in config and absent from checkout. */
+export function usablePriceId(id: string | null | undefined): string | null {
+  if (!id || id === UNPROVISIONED_PRICE_ID) return null;
+  return id;
+}

@@ -5,11 +5,55 @@
 // Composes with @declutrmail/shared/actions (ACTION_REGISTRY) — see the
 // seam contract in types.ts.
 
-export { COUNTS_AS_CLEANUP, SELECTOR_CAPS, SELECTOR_TIERS, TIER_MANIFEST } from './pricing.config';
+export {
+  COUNTS_AS_CLEANUP,
+  INBOXES,
+  LEGACY_PRICE_IDS,
+  METER,
+  OFFERS,
+  PLUS_ANNUAL_2026_10,
+  POLICY,
+  PRICING_VERSION,
+  PROMO,
+  RAILS,
+  SELECTOR_CAPS,
+  SELECTOR_TIERS,
+  TIER_MANIFEST,
+  usablePriceId,
+} from './pricing.config';
+export type { LegacyPrice } from './pricing.config';
+export {
+  buildOffersJsonLd,
+  connectionTerm,
+  freeAllowanceLine,
+  inboxLimitReachedMessage,
+  isMeterV2,
+  isPricingV2,
+  meterChipLine,
+  meterNoun,
+  meterPreviewText,
+  planName,
+  plusConnectCta,
+  plusInboxLimitTitle,
+  priceLine,
+  pricePromiseLines,
+  proNotPurchasableMessage,
+  proWaitlistCta,
+  proWaitlistJoined,
+  promoBanner,
+  quotaExceededMessage,
+  quotaUnitsForEnqueue,
+  refundLine,
+  suggestedWindowPreset,
+  WINDOW_PRESET_DAYS,
+  renderPricingMarkdown,
+} from './copy';
+export type { QuotaExceededMessageInput } from './copy';
 export {
   cleanupActionsPerMonthFor,
   hasCapability,
   inboxLimitFor,
+  tierIsPurchasable,
   MAX_UNDO_WINDOW_DAYS,
   MIN_UNDO_WINDOW_DAYS,
   minimumTierForCapability,

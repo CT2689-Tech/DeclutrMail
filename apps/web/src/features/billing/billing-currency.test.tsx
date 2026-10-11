@@ -152,4 +152,22 @@ describe('a founding subscription is billed the promo point (D126)', () => {
       `${formatUsd(TIER_MANIFEST.pro.prices.monthly!.usdCents)}/mo`,
     );
   });
+
+  it('quotes INR from the price point for India when pricing v2 hides Razorpay', () => {
+    expect(
+      currencyForPricePoint({ razorpayPlanId: 'plan_x', inrPaise: 199900 }, 'paddle', {
+        pricingV2: true,
+        country: 'IN',
+      }),
+    ).toBe('INR');
+    expect(
+      currencyForPricePoint({ razorpayPlanId: 'plan_x', inrPaise: 199900 }, 'paddle', {
+        pricingV2: true,
+        country: 'US',
+      }),
+    ).toBe('USD');
+    expect(currencyForPricePoint({ razorpayPlanId: 'plan_x', inrPaise: 199900 }, 'paddle')).toBe(
+      'USD',
+    );
+  });
 });

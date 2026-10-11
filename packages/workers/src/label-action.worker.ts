@@ -43,6 +43,16 @@ import { WORKER_POLICIES } from './worker-policies.js';
 import type { WorkerContext } from './worker-context.js';
 
 /**
+ * Completion settlement for the emails-cleared meter.
+ * A no-op or failure releases the stamp. A partial success keeps
+ * the smaller of the stamp and the messages actually changed.
+ */
+export function settledQuotaUnits(affected: number): { quotaUnits: number | SQL } {
+  if (affected <= 0) return { quotaUnits: 0 };
+  return { quotaUnits: sql`LEAST(${actionJobs.quotaUnits}, ${affected})` };
+}
+
+/**
  * LabelActionWorker (D226) — the action-consumer for the async
  * destructive-action pipeline. ONE worker for every label-modify verb
  * (archive now; trash later) and BOTH directions (forward + undo).
@@ -415,7 +425,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
       await db.transaction(async (tx) => {
         await tx
           .update(actionJobs)
-          .set({ status: 'done', affectedCount: 0, updatedAt: sql`now()` })
+          .set({ status: 'done', affectedCount: 0, ...settledQuotaUnits(0), updatedAt: sql`now()` })
           .where(eq(actionJobs.id, job.id));
         await tx.insert(activityLog).values({
           mailboxAccountId,
@@ -637,6 +647,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
           status: 'done',
           affectedCount: ids.length,
           undoToken: issued.token,
+          ...settledQuotaUnits(ids.length),
           updatedAt: sql`now()`,
         })
         .where(eq(actionJobs.id, job.id));
@@ -787,7 +798,12 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
 
       await tx
         .update(actionJobs)
-        .set({ status: 'done', affectedCount: ids.length, updatedAt: sql`now()` })
+        .set({
+          status: 'done',
+          affectedCount: ids.length,
+          ...settledQuotaUnits(ids.length),
+          updatedAt: sql`now()`,
+        })
         .where(eq(actionJobs.id, job.id));
     });
 
@@ -814,6 +830,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
         status: 'done',
         affectedCount: 0,
         errorCode: LABEL_SENDER_PROTECTED_ERROR_CODE,
+        ...settledQuotaUnits(0),
         updatedAt: sql`now()`,
       })
       .where(eq(actionJobs.id, job.id))
@@ -855,6 +872,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
         status: 'failed',
         affectedCount: 0,
         errorCode: RECOVERY_SENDER_PROTECTED_ERROR_CODE,
+        ...settledQuotaUnits(0),
         updatedAt: sql`now()`,
       })
       .where(eq(actionJobs.id, job.id))
@@ -983,7 +1001,12 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     try {
       await this.deps.db
         .update(actionJobs)
-        .set({ status: 'failed', errorCode: error.name, updatedAt: sql`now()` })
+        .set({
+          status: 'failed',
+          errorCode: error.name,
+          ...settledQuotaUnits(0),
+          updatedAt: sql`now()`,
+        })
         .where(eq(actionJobs.id, payload.actionId));
     } catch (recordErr) {
       // Recording the failure must never mask the original error.

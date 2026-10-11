@@ -1,4 +1,4 @@
-h1:vm0oEjK/E0XR0+0DTzh74QJTMVOmEnH1ofV1H5Kya1A=
+h1:izYCUhqh9b43njye4nyTHmxOybWC3ySlQxbwJWUrLhw=
 0000_foundation_workspaces_users_mailboxes.sql h1:mvQjReZmzp+ne3ncQX3NsLph9Tlec0HLa4e0k636MV4=
 0001_messages_senders_schema.sql h1:1hE97u6u+JGGjHXjH50rrMA0K/i4UlPvqrkuN2Qs6Uk=
 0002_mailbox_oauth_tokens.sql h1:+w05bo7XzLJhpjftjhpIwna1kU+1MFYMWq6QJH0HZgg=
@@ -81,3 +81,5 @@ h1:vm0oEjK/E0XR0+0DTzh74QJTMVOmEnH1ofV1H5Kya1A=
 0081_mail_messages_current_partial_index.sql h1:3s5sUPzCh3AydNLq2W/akXz+ZuYz6sWnft7fJ5LSqaM=
 0082_initial_scan_recovery.sql h1:xoeX+LfYrH0pHeQEMgQ7VUroCtbTFC+VxLuI0pVjHjs=
 0083_sender_first_indexed_at.sql h1:E9hqg9sOMFrB1l9i3sp/FTRUAHcGeiSG5VDwcfJfnhM=
+0084_waitlist_launch_columns.sql h1:CxOnGNFC/Gs3oez5rR0FbIMXfhVHvZGwa8g1khW+Yz8=
+0085_action_jobs_quota_units.sql h1:t9ntB3bhX+jGkeSijjOF6kZ/ueBLv77aFCsefAU3t6M=

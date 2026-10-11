@@ -14,9 +14,12 @@ import {
   actionJobs,
   actionRecoveryPreviews,
   AUTOPILOT_CLAIM_KEY_PREFIXES,
+  mailboxAccounts,
   mailMessages,
   senderPolicies,
+  workspaces,
 } from '@declutrmail/db';
+import { quotaUnitsForEnqueue } from '@declutrmail/shared/entitlements';
 import type { LabelActionSelector } from '@declutrmail/db';
 import {
   ACTION_RECOVERY_JOB,
@@ -416,6 +419,21 @@ export class ActionRecoveryService {
         .limit(1);
       const attempt = (latest?.attempt ?? 0) + 1;
 
+      const [tierRow] = await tx
+        .select({ tier: workspaces.tier })
+        .from(mailboxAccounts)
+        .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
+        .where(eq(mailboxAccounts.id, input.mailboxAccountId))
+        .limit(1);
+      // The row being recovered is failed, so its stamp has been released.
+      // The retry holds the emails it will clear. A live (non-failed) row
+      // never reaches this insert.
+      const quotaUnits = quotaUnitsForEnqueue({
+        tier: tierRow?.tier ?? 'free',
+        verb: action.verb,
+        requestedCount: preview.targetMessageIds.length,
+      });
+
       const [child] = await tx
         .insert(actionJobs)
         .values({
@@ -423,6 +441,7 @@ export class ActionRecoveryService {
           verb: action.verb,
           direction: 'forward',
           selector: action.selector,
+          quotaUnits,
           // Reapply the complete verified target set. Already-applied
           // labels are Gmail no-ops, while the terminal transaction can
           // now create the missing mirror, Activity row, and Undo token.

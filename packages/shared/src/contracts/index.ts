@@ -220,8 +220,13 @@ export type {
 
 // D19 waitlist capture — POST /api/waitlist (pricing Team row +
 // marketing forms). Constant 202 body — no email-exists oracle.
-export { WaitlistJoinRequestSchema } from './waitlist';
-export type { WaitlistJoinRequest, WaitlistJoinResult } from './waitlist';
+export { WaitlistJoinRequestSchema, WaitlistV1JoinRequestSchema } from './waitlist';
+export type {
+  WaitlistJoinRequest,
+  WaitlistJoinResult,
+  WaitlistV1JoinRequest,
+  WaitlistV1JoinResult,
+} from './waitlist';
 
 // First-touch signup attribution (marketing runbook Phase B) — query
 // param `ref` allowlist + skippable self-report patch. Tracked and
@@ -289,6 +294,7 @@ export type {
   PurchasableTier,
   RazorpayCheckoutSession,
   SubscriptionStatus,
+  CleanupSummaryDto,
 } from './billing';
 // D162 / D165 transactional-email preferences — shared between the
 // PATCH /api/me/email-prefs route and the EmailSendWorker opt-out check.

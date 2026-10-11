@@ -1,0 +1,3 @@
+-- Rollback for 0085_action_jobs_quota_units.sql
+
+ALTER TABLE "action_jobs" DROP COLUMN "quota_units";

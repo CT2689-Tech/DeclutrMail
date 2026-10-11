@@ -1,4 +1,5 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { alias } from 'drizzle-orm/pg-core';
 import { and, count, eq, gte, inArray, ne, sql } from 'drizzle-orm';
 
 import {
@@ -15,13 +16,23 @@ import {
   cleanupActionsPerMonthFor,
   hasCapability,
   inboxLimitFor,
+  METER,
+  inboxLimitReachedMessage,
+  isMeterV2,
+  isPricingV2,
+  quotaExceededMessage,
+  suggestedWindowPreset,
   minimumTierForCapability,
   satisfiesActionTier,
+  tierIsPurchasable,
   type Capability,
   type TierId,
 } from '@declutrmail/shared/entitlements';
 import { ERROR_CODES } from '@declutrmail/shared/contracts';
 
+import type { ProductEventsPort } from '@declutrmail/shared/analytics/product-events';
+
+import { PRODUCT_EVENTS, recordProductEvent } from '../../analytics/product-events.port.js';
 import { DRIZZLE, type DrizzleDb } from '../../db/db.module.js';
 import { AppException } from '../app-exception.js';
 import { cleanupPeriodFor } from './cleanup-period.js';
@@ -58,6 +69,12 @@ export interface InboxWorkspace {
  * append-only subset of the registry, so the final filter keeps only
  * verbs that can actually appear in `action_jobs`.
  */
+/** Monthly email allowance while `METER_V2` is on. Flag off keeps the action cap. */
+function meterLimitFor(tier: TierId): number | null {
+  if (!isMeterV2()) return cleanupActionsPerMonthFor(tier);
+  return tier === 'free' ? METER.free.limit : null;
+}
+
 const PERSISTED_ACTION_VERBS = new Set<string>(actionVerb.enumValues);
 const CLEANUP_VERBS = Object.values(ACTION_REGISTRY)
   .filter((descriptor) => descriptor.capabilities.sender.countsAsCleanup)
@@ -116,7 +133,18 @@ export interface CleanupSummary {
  */
 @Injectable()
 export class EntitlementsService {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
+  private readonly productEvents: ProductEventsPort;
+
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleDb,
+    @Optional() @Inject(PRODUCT_EVENTS) productEvents?: ProductEventsPort,
+  ) {
+    this.productEvents = productEvents ?? {
+      record() {
+        // No-op when the analytics module is not in the test graph.
+      },
+    };
+  }
 
   /** The workspace's billing tier; defaults to 'free' if the row is gone. */
   async tierForWorkspace(workspaceId: string): Promise<TierId> {
@@ -184,8 +212,14 @@ export class EntitlementsService {
    *     `affected_count` is still its 0 default) keep counting — they
    *     represent intent that is about to move mail.
    *
-   * Derivation is purely from existing `action_jobs` data (no schema
-   * change): group id = `COALESCE(composite_id, root_action_id, id)`,
+   * While `METER_V2` is on, usage is the sum of forward `quota_units`
+   * in the period minus restored emails on done reverse rows whose
+   * forward row shares `undo_token` and was created in that same period,
+   * floored at 0. The action-count rule below stays in force while the
+   * flag is off.
+   *
+   * Derivation while the flag is off is from existing `action_jobs` data:
+   * group id = `COALESCE(composite_id, root_action_id, id)`,
    * sender unit = the selector's `senderId`; rows with a messages
    * selector fall back to their GROUP id, so a composite's primary +
    * secondary stay ONE unit there too (one click = one unit — reachable
@@ -198,6 +232,7 @@ export class EntitlementsService {
     executor: EntitlementsExecutor = this.db,
     periodStart?: Date,
   ): Promise<number> {
+    if (isMeterV2()) return this.meteredEmailsUsed(workspaceId, executor, periodStart);
     const [row] = await executor
       .select({
         used: sql<number>`count(DISTINCT (COALESCE(${actionJobs.compositeId}, ${actionJobs.rootActionId}, ${actionJobs.id}), COALESCE(${actionJobs.selector}->>'senderId', COALESCE(${actionJobs.compositeId}, ${actionJobs.rootActionId}, ${actionJobs.id})::text)))::int`,
@@ -225,6 +260,55 @@ export class EntitlementsService {
         ),
       );
     return coerceUsedCount(row?.used);
+  }
+
+  /**
+   * Emails held against the Free meter. Forward stamps minus same-period
+   * undo restorations. A reverse row refunds only when its forward row
+   * was created in the period being counted.
+   */
+  private async meteredEmailsUsed(
+    workspaceId: string,
+    executor: EntitlementsExecutor,
+    periodStart?: Date,
+  ): Promise<number> {
+    const chargedPeriod = periodStart ? [gte(actionJobs.createdAt, periodStart)] : [];
+    const [charged] = await executor
+      .select({
+        used: sql<number>`coalesce(sum(${actionJobs.quotaUnits}), 0)::int`,
+      })
+      .from(actionJobs)
+      .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, actionJobs.mailboxAccountId))
+      .where(
+        and(
+          eq(mailboxAccounts.workspaceId, workspaceId),
+          eq(actionJobs.direction, 'forward'),
+          ...chargedPeriod,
+        ),
+      );
+
+    const forward = alias(actionJobs, 'meter_forward');
+    const refundPeriod = periodStart ? [gte(forward.createdAt, periodStart)] : [];
+    const [restored] = await executor
+      .select({
+        used: sql<number>`coalesce(sum(${actionJobs.affectedCount}), 0)::int`,
+      })
+      .from(actionJobs)
+      .innerJoin(
+        forward,
+        and(eq(forward.undoToken, actionJobs.undoToken), eq(forward.direction, 'forward')),
+      )
+      .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, actionJobs.mailboxAccountId))
+      .where(
+        and(
+          eq(mailboxAccounts.workspaceId, workspaceId),
+          eq(actionJobs.direction, 'reverse'),
+          eq(actionJobs.status, 'done'),
+          ...refundPeriod,
+        ),
+      );
+
+    return Math.max(0, coerceUsedCount(charged?.used) - coerceUsedCount(restored?.used));
   }
 
   /**
@@ -273,7 +357,7 @@ export class EntitlementsService {
       .where(eq(workspaces.id, workspaceId))
       .limit(1);
     const tier = row?.tier ?? 'free';
-    const limit = cleanupActionsPerMonthFor(tier);
+    const limit = meterLimitFor(tier);
     if (limit === null || !row) {
       return { tier, limit: null, used: 0, remaining: null, resetsAt: null };
     }
@@ -319,21 +403,35 @@ export class EntitlementsService {
     workspace: CleanupWorkspace | null,
     unitsNeeded: number,
     executor: EntitlementsExecutor = this.db,
+    presetCounts?: Partial<Record<number, number>>,
   ): Promise<void> {
     // No workspace row ⇒ the mailbox is orphaned; ownership guards
     // upstream will reject the request — nothing to gate here.
     if (!workspace) return;
-    const limit = cleanupActionsPerMonthFor(workspace.tier);
+    // Unsubscribe, Keep, Later, Undo, preview and scan draw nothing
+    // while the emails-cleared meter is on.
+    if (isMeterV2() && unitsNeeded <= 0) return;
+    const limit = meterLimitFor(workspace.tier);
     if (limit === null) return; // unlimited tier
     const period = cleanupPeriodFor(workspace.createdAt, new Date());
     const used = await this.cleanupUnitsUsed(workspace.workspaceId, executor, period.periodStart);
     if (used + unitsNeeded > limit) {
       const remaining = Math.max(0, limit - used);
       const upgradePlan = unlimitedCleanupPlanName();
+      recordProductEvent(this.productEvents, 'free_cap_hit', {
+        requested_bucket: requestedBucket(unitsNeeded),
+      });
+      const resetsAt = period.resetsAt.toISOString();
       throw new AppException({
         code: 'FREE_CAP_REACHED',
-        message:
-          remaining > 0
+        message: isMeterV2()
+          ? quotaExceededMessage({
+              used,
+              limit,
+              resetAt: resetsAt,
+              requested: unitsNeeded,
+            })
+          : remaining > 0
             ? `This needs ${unitsNeeded} cleanup actions but only ${remaining} of your ${limit} are left this month. Upgrade to ${upgradePlan} for unlimited cleanup.`
             : `You've used all ${limit} cleanup actions for this month. Upgrade to ${upgradePlan} for unlimited cleanup — everything you've already done stays done.`,
         details: {
@@ -341,7 +439,15 @@ export class EntitlementsService {
           limit,
           used,
           requiredUnits: unitsNeeded,
-          resetsAt: period.resetsAt.toISOString(),
+          resetsAt,
+          ...(isMeterV2()
+            ? {
+                requested: unitsNeeded,
+                suggestedPreset: presetCounts
+                  ? suggestedWindowPreset(remaining, presetCounts)
+                  : null,
+              }
+            : {}),
         },
       });
     }
@@ -452,14 +558,17 @@ export class EntitlementsService {
     if (connected >= limit) {
       // Derive the upgrade target from the config: the first tier whose
       // inbox limit exceeds the current one (none ⇒ no upgrade pitch).
-      const upgradeTier = TIER_IDS.find((id) => inboxLimitFor(id) > limit);
-      const upgrade = upgradeTier
-        ? ` Upgrade to ${TIER_MANIFEST[upgradeTier].name} to connect up to ${inboxLimitFor(upgradeTier)} Gmail accounts.`
-        : '';
+      const upgradeTier = TIER_IDS.find((id) => inboxLimitFor(id) > limit && tierIsPurchasable(id));
+      const upgrade = isPricingV2()
+        ? ''
+        : upgradeTier
+          ? ` Upgrade to ${TIER_MANIFEST[upgradeTier].name} to connect up to ${inboxLimitFor(upgradeTier)} Gmail accounts.`
+          : '';
       throw new AppException({
         code: 'INBOX_LIMIT_REACHED',
-        message:
-          limit === 1
+        message: isPricingV2()
+          ? inboxLimitReachedMessage(tier)
+          : limit === 1
             ? `Your plan includes 1 connected inbox.${upgrade}`
             : `Your plan includes ${limit} connected inboxes and all are in use.${upgrade}`,
         details: { limit, connected, tier },
@@ -535,6 +644,15 @@ function capabilityUpgradeMessage(capability: Capability): string {
  * (mailbox-resolved tier) and `CapabilityGuard` (principal-resolved
  * tier).
  */
+/** Coarse size of a refused cleanup, so the funnel event does not carry the raw count. */
+export function requestedBucket(units: number): string {
+  if (!Number.isFinite(units) || units <= 1) return '1';
+  if (units <= 10) return '2-10';
+  if (units <= 100) return '11-100';
+  if (units <= 1000) return '101-1000';
+  return '1001+';
+}
+
 export function assertTierCapability(tier: TierId, capability: Capability): void {
   if (hasCapability(tier, capability)) return;
   throw new AppException({

@@ -10,6 +10,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 
 // Parametrizable tier — useTier() reads useAuth() from this module.
 let mockTier = 'free';
+let mockPricingV2 = false;
 vi.mock('next/navigation', () => ({
   usePathname: () => '/senders',
   useSearchParams: () => new URLSearchParams('sender=sender-1&q=news'),
@@ -29,6 +30,7 @@ vi.mock('@/features/auth/auth-provider', () => ({
         },
       ],
       tier: mockTier,
+      pricingV2: mockPricingV2,
       cleanupRemaining: mockTier === 'free' ? 0 : null,
     },
   }),
@@ -41,6 +43,7 @@ import { UpgradeModalHost } from './upgrade-modal-host';
 
 beforeEach(() => {
   mockTier = 'free';
+  mockPricingV2 = false;
   useUpgradeGateStore.getState().dismiss();
 });
 
@@ -149,6 +152,7 @@ describe('UpgradeModal', () => {
     // Manifest-derived price (D19) of the plan the CTA buys: Plus $9/mo.
     expect(screen.getByText(/Plus removes the monthly cap/)).toBeInTheDocument();
     expect(screen.getAllByText(/30-day money-back guarantee/)).toHaveLength(1);
+    expect(screen.queryByText(/14-day money-back on any purchase/)).not.toBeInTheDocument();
     // ONE checkout path (D117): the CTA deep-links the nudged plan into
     // /billing's confirm step via the validated billing intent.
     expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$9\/mo$/ })).toHaveAttribute(
@@ -163,6 +167,67 @@ describe('UpgradeModal', () => {
     );
     fireEvent.click(compare);
     expect(useUpgradeGateStore.getState().hit).toBeNull();
+  });
+
+  it('PRICING_V2 shows the deck refund line on the same layout', () => {
+    mockPricingV2 = true;
+    useUpgradeGateStore.getState().report({
+      reason: 'free_cap',
+      details: { remaining: 0, limit: 50, used: 50, requiredUnits: 1, resetsAt: null },
+    });
+    render(<UpgradeModal />);
+
+    expect(
+      screen.getAllByText(/14-day money-back on any purchase, once per customer/),
+    ).toHaveLength(1);
+    expect(screen.queryByText(/30-day money-back guarantee/)).not.toBeInTheDocument();
+  });
+
+  it('emails-cleared 402 offers clear-what-fits then Plus', () => {
+    useUpgradeGateStore.getState().report({
+      reason: 'free_cap',
+      details: {
+        remaining: 100,
+        limit: 1000,
+        used: 900,
+        requiredUnits: 2708,
+        requested: 2708,
+        suggestedPreset: 30,
+        resetsAt: '2026-11-09T00:00:00.000Z',
+      },
+    });
+    render(<UpgradeModal />);
+
+    expect(
+      screen.getByRole('heading', { name: 'Not enough free emails left this month' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Get Plus' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear what fits free' }));
+    expect(useUpgradeGateStore.getState().pendingWindowPreset).toBe(30);
+    expect(useUpgradeGateStore.getState().hit).toBeNull();
+  });
+
+  it('emails-cleared 402 links Plus without a fitting preset', () => {
+    useUpgradeGateStore.getState().report({
+      reason: 'free_cap',
+      details: {
+        remaining: 0,
+        limit: 1000,
+        used: 1000,
+        requiredUnits: 12,
+        requested: 12,
+        suggestedPreset: null,
+        resetsAt: null,
+      },
+    });
+    render(<UpgradeModal />);
+
+    expect(screen.queryByRole('button', { name: 'Clear what fits free' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Get Plus' })).toHaveAttribute(
+      'href',
+      '/billing?plan=plus&cycle=annual&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
+    );
+    expect(screen.getByRole('button', { name: 'Not now' })).toBeInTheDocument();
   });
 
   it('free_cap (partial): bulk-needs-more headline', () => {

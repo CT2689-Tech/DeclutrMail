@@ -13,7 +13,8 @@
  * `llms.txt` and the `text/markdown` alternate on `/pricing`.
  */
 
-import { type PricePoint } from '@declutrmail/shared/entitlements';
+import { isPricingV2, RAILS, type PricePoint } from '@declutrmail/shared/entitlements';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import {
@@ -46,6 +47,13 @@ function activityUndoWindowClause(): string {
 /** "$9/mo · ₹749/mo in India" — both real manifest amounts, never an FX rate. */
 function priceLine(point: PricePoint, per: string): string {
   const usd = `${formatUsd(point.usdCents)}${per}`;
+  if (isPricingV2()) {
+    const paise = point.inr?.paise ?? point.inrPaise;
+    if (!RAILS.razorpay.enabled && paise > 0) {
+      return `${usd} · ${formatInr(paise)}${per} ${WS1_COPY['price.inrSuffix']}`;
+    }
+    return usd;
+  }
   // INR is quoted only where that exact price point is provisioned on
   // Razorpay, matching what an India checkout will actually charge.
   return point.razorpayPlanId === null

@@ -8,10 +8,11 @@ import {
 } from './billing-copy';
 import type { BillingCycle, BillingProviderId } from '@declutrmail/shared/contracts';
 import { INR_NEW_PURCHASES_PAUSED } from '@declutrmail/shared/contracts/billing-availability';
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { priceLine as formatLaunchPrice, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import type { PricePoint } from '@declutrmail/shared/entitlements';
 import { currencyForPricePoint, formatMoney } from '@/features/marketing/pricing/pricing-model';
 import { GroupTitle } from '@/features/settings/settings-list';
-import { MONEY_BACK_NOTE } from './billing-model';
+import { moneyBackNote } from './billing-model';
 
 const { color, radius, text } = tokens;
 type PaidTier = 'plus' | 'pro';
@@ -21,6 +22,9 @@ export function ConfirmPanel({
   cycle,
   provider,
   razorpayOffered,
+  pricingV2 = false,
+  country = null,
+  pricePointOverride = null,
   onProviderChange,
   foundingEligible,
   claimFounding,
@@ -39,6 +43,9 @@ export function ConfirmPanel({
   /** Whether the price point this panel would buy has a Razorpay id —
    *  derived by the parent, which also bills with it. */
   razorpayOffered: boolean;
+  pricingV2?: boolean;
+  country?: string | null;
+  pricePointOverride?: PricePoint | null;
   onProviderChange: (provider: BillingProviderId) => void;
   foundingEligible: boolean;
   claimFounding: boolean;
@@ -55,14 +62,22 @@ export function ConfirmPanel({
   // render a fabricated "$0.00 billed …, starting today" promise —
   // block checkout instead. Unreachable with today's manifest (both
   // paid tiers carry both cycles); guards future tier edits.
-  const pricePoint = founding ? founding.annual : (point ?? null);
+  const pricePoint = founding ? founding.annual : (pricePointOverride ?? point ?? null);
   // D226 makes this preview the truthful "here is exactly what
   // happens" step, so it must quote the currency the SELECTED provider
   // actually charges: Razorpay settles INR, Paddle USD, and the
   // manifest carries both as independently chosen prices. Quoting $129
   // and then charging ₹10,999 is the preview lying about the one number
   // it exists to state.
-  const currency = pricePoint ? currencyForPricePoint(pricePoint, provider) : 'USD';
+  const currency = pricePoint
+    ? currencyForPricePoint(pricePoint, provider, { pricingV2, country })
+    : 'USD';
+  const amountLabel =
+    pricePoint && pricingV2
+      ? formatLaunchPrice(pricePoint, currency === 'INR' ? 'inr' : 'usd')
+      : pricePoint
+        ? formatMoney(pricePoint, currency)
+        : null;
   // The claim-founding label quotes a DIFFERENT price point than the one
   // `impact` describes — the promo and standard annual are separate SKUs
   // with separate Razorpay ids, so one being purchasable on a rail says
@@ -72,9 +87,9 @@ export function ConfirmPanel({
   const promoCurrency = tier.promo ? currencyForPricePoint(tier.promo.annual, provider) : currency;
   const checkoutPaused = provider === 'razorpay' && INR_NEW_PURCHASES_PAUSED;
   const impact = checkoutPaused
-    ? `${pricePoint ? `Reference price: ${formatMoney(pricePoint, currency)}/${cycle === 'annual' ? 'yr' : 'mo'}. ` : ''}New INR purchases are temporarily paused. Existing INR subscriptions can still be managed from Billing. Contact support@declutrmail.com for help.`
-    : pricePoint !== null
-      ? `${formatMoney(pricePoint, currency)} billed ${cycle === 'annual' ? 'annually' : 'monthly'}, starting today. Renews automatically — cancel anytime.`
+    ? `${amountLabel ? `Reference price: ${amountLabel}${pricingV2 ? '' : `/${cycle === 'annual' ? 'yr' : 'mo'}`}. ` : ''}New INR purchases are temporarily paused. Existing INR subscriptions can still be managed from Billing. Contact support@declutrmail.com for help.`
+    : amountLabel !== null
+      ? `${amountLabel} billed ${cycle === 'annual' ? 'annually' : 'monthly'}, starting today. Renews automatically — cancel anytime.`
       : `Pricing for the ${cycle} cycle isn't available right now — try the other billing cycle.`;
 
   return (
@@ -91,7 +106,7 @@ export function ConfirmPanel({
       }}
     >
       <GroupTitle as="div">Preview · before anything changes</GroupTitle>
-      {razorpayOffered || provider === 'razorpay' ? (
+      {!pricingV2 && (razorpayOffered || provider === 'razorpay') ? (
         <fieldset style={{ border: 'none', margin: 0, padding: 0 }}>
           {/* D117 — the provider is the user's explicit regional choice. */}
           <legend style={{ fontSize: text.sm, color: color.fgMuted, padding: 0, marginBottom: 6 }}>
@@ -169,7 +184,9 @@ export function ConfirmPanel({
           .
         </p>
       )}
-      <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
+      <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
+        {moneyBackNote(pricingV2)}
+      </p>
 
       {errorMessage != null && (
         <div

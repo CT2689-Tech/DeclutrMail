@@ -20,7 +20,18 @@ import type {
   BillingProviderId,
   BillingSubscription,
 } from '@declutrmail/shared/contracts';
-import { TIER_MANIFEST, TIER_RANK, type TierId } from '@declutrmail/shared/entitlements';
+import {
+  PLUS_ANNUAL_2026_10,
+  priceLine as formatLaunchPrice,
+  proNotPurchasableMessage,
+  proWaitlistCta,
+  proWaitlistJoined,
+  TIER_MANIFEST,
+  TIER_RANK,
+  type TierId,
+} from '@declutrmail/shared/entitlements';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+import { apiPost } from '@/lib/api/client';
 
 import {
   currencyForPricePoint,
@@ -191,6 +202,8 @@ export function PlanPicker({
   disabled,
   initialIntent = null,
   initialProvider = 'paddle',
+  pricingV2 = false,
+  country = null,
   onRequestCancel,
   onPaymentCompleted,
   onCheckoutAttempt,
@@ -220,6 +233,9 @@ export function PlanPicker({
    *  overrides it, and `effectiveProvider` still clamps it against the
    *  catalog so an unprovisioned region can never be preselected. */
   initialProvider?: BillingProviderId;
+  /** From the server. The browser bundle cannot read the pricing env. */
+  pricingV2?: boolean;
+  country?: string | null;
   /** Route to the cancel confirm (the downgrade-to-free path, D120). */
   onRequestCancel: () => void;
   /** Paddle overlay reported `checkout.completed` — payment made, tier
@@ -361,16 +377,20 @@ export function PlanPicker({
   // QA-billing-20260901-09/-05: independent of `selected` — the Pro
   // card's own disclosure needs this before the confirm panel is ever
   // opened, not just once it is.
-  const foundingPossible = cycle === 'annual' && grantingSub === null;
+  // Founding Pro sales UI stays while PRICING_V2 is off. The flag
+  // retires the claim, the first-250 hint, and the deep-link notice.
+  const foundingPossible = !pricingV2 && cycle === 'annual' && grantingSub === null;
   const foundingAvailability = useFoundingRemaining(foundingPossible);
-  // Advisory only (the checkout guard's own read stays authoritative) —
-  // while the count hasn't loaded yet, do not claim sold-out.
   const foundingSoldOut =
     foundingPossible &&
     foundingAvailability.data !== undefined &&
     foundingAvailability.data.remaining <= 0;
   const foundingEligible =
-    selected === 'pro' && cycle === 'annual' && grantingSub === null && !foundingSoldOut;
+    !pricingV2 &&
+    selected === 'pro' &&
+    cycle === 'annual' &&
+    grantingSub === null &&
+    !foundingSoldOut;
   const founding = foundingEligible && claimFounding;
   // Offering a provider and BILLING with it must read the same fact, or
   // a `provider` pick outlives the price point that offered it: the
@@ -380,7 +400,10 @@ export function PlanPicker({
   // BILLING_NOT_PROVISIONED. Derived once here; the panel renders from
   // it and `onConfirm` clamps to it.
   const razorpayOffered =
-    selected !== null && selected !== 'free' && razorpayIdFor(selected, cycle, founding) !== null;
+    !pricingV2 &&
+    selected !== null &&
+    selected !== 'free' &&
+    razorpayIdFor(selected, cycle, founding) !== null;
   const effectiveProvider: BillingProviderId = razorpayOffered ? provider : 'paddle';
   // The STRIP's currency. `razorpayOffered` is per-price-point, so with
   // no plan selected yet it is false and the strip would snap to USD
@@ -420,7 +443,7 @@ export function PlanPicker({
       disabled ||
       checkout.isPending ||
       confirmInFlight.current ||
-      (provider === 'razorpay' && INR_NEW_PURCHASES_PAUSED)
+      (!pricingV2 && provider === 'razorpay' && INR_NEW_PURCHASES_PAUSED)
     )
       return;
     confirmInFlight.current = true;
@@ -608,7 +631,9 @@ export function PlanPicker({
         }}
       >
         <h2 style={{ ...tokens.typography.sectionTitle, margin: 0 }}>Plans</h2>
-        <CycleToggle cycle={cycle} onChange={setCycle} monthsFree={monthsFree} />
+        {pricingV2 ? null : (
+          <CycleToggle cycle={cycle} onChange={setCycle} monthsFree={monthsFree} />
+        )}
       </div>
 
       {currentTier !== 'free' && grantingSub === null ? (
@@ -618,7 +643,7 @@ export function PlanPicker({
         </p>
       ) : null}
 
-      {initialIntent?.promo === 'foundingPro' && grantingSub !== null ? (
+      {!pricingV2 && initialIntent?.promo === 'foundingPro' && grantingSub !== null ? (
         <p
           role="status"
           style={{
@@ -645,38 +670,44 @@ export function PlanPicker({
           alignItems: 'stretch',
         }}
       >
-        {STRIP_TIER_IDS.map((id) => (
-          <PlanCard
-            key={id}
-            tierId={id}
-            cycle={cycle}
-            isCurrent={id === currentTier}
-            isUpgrade={TIER_RANK[id] > TIER_RANK[currentTier]}
-            currentCycle={grantingSub?.cycle ?? null}
-            canSwitchCycle={grantingSub?.provider === 'paddle'}
-            isSelected={id === selected}
-            disabled={disabled}
-            hasGrantingSubscription={grantingSub !== null}
-            provider={stripProvider}
-            onSelect={() => onSelect(id)}
-            // QA-billing-20260901-05: disclose the Founding Pro price on
-            // the card itself, not only one click later on the confirm
-            // panel — gated on the same live availability the checkbox
-            // uses, so the card never quotes a price the checkout can't
-            // honor.
-            showFoundingHint={
-              id === 'pro' && id !== currentTier && foundingPossible && !foundingSoldOut
-            }
-            // QA-billing-20260901-09: a founding member's price lock is
-            // otherwise discovered only after a click (a 409 on
-            // change-plan). Name it on their own current-plan card.
-            foundingMemberNote={
-              id === currentTier && grantingSub?.foundingMember === true
-                ? 'Founding Pro — price locked while this subscription stays active. Canceling ends the lock for good.'
-                : null
-            }
-          />
-        ))}
+        {STRIP_TIER_IDS.map((id) =>
+          pricingV2 && id === 'pro' && id !== currentTier ? (
+            <ProWaitlistCard key={id} disabled={disabled} />
+          ) : (
+            <PlanCard
+              key={id}
+              tierId={id}
+              cycle={cycle}
+              isCurrent={id === currentTier}
+              isUpgrade={TIER_RANK[id] > TIER_RANK[currentTier]}
+              currentCycle={grantingSub?.cycle ?? null}
+              canSwitchCycle={pricingV2 ? false : grantingSub?.provider === 'paddle'}
+              isSelected={id === selected}
+              disabled={disabled}
+              hasGrantingSubscription={grantingSub !== null}
+              provider={stripProvider}
+              {...(pricingV2 ? { geo: { pricingV2: true, country } } : {})}
+              {...(pricingV2 && id === 'plus' && cycle === 'annual'
+                ? { priceOverride: launchPlusLine(country) }
+                : {})}
+              onSelect={() => onSelect(id)}
+              showFoundingHint={
+                !pricingV2 &&
+                id === 'pro' &&
+                id !== currentTier &&
+                foundingPossible &&
+                !foundingSoldOut
+              }
+              foundingMemberNote={
+                id === currentTier && grantingSub?.foundingMember === true
+                  ? pricingV2
+                    ? WS1_COPY['cancel.founding']
+                    : 'Founding Pro — price locked while this subscription stays active. Canceling ends the lock for good.'
+                  : null
+              }
+            />
+          ),
+        )}
       </div>
 
       {selected !== null && !disabled ? (
@@ -700,6 +731,7 @@ export function PlanPicker({
               fromCycle={grantingSub.cycle}
               currentPeriodEnd={grantingSub.currentPeriodEnd}
               provider={grantingSub.provider}
+              pricingV2={pricingV2}
               isPending={changePlan.isPending}
               errorMessage={
                 changePlan.error ? planChangeInlineErrorMessage(changePlan.error) : null
@@ -714,8 +746,13 @@ export function PlanPicker({
           <ConfirmPanel
             target={selected}
             cycle={cycle}
-            provider={provider}
+            provider={pricingV2 ? 'paddle' : provider}
             razorpayOffered={razorpayOffered}
+            pricingV2={pricingV2}
+            country={country}
+            pricePointOverride={
+              pricingV2 && selected === 'plus' && cycle === 'annual' ? PLUS_ANNUAL_2026_10 : null
+            }
             onProviderChange={setProvider}
             foundingEligible={foundingEligible}
             claimFounding={claimFounding}
@@ -853,6 +890,72 @@ function CycleToggle({
   );
 }
 
+function launchPlusLine(country: string | null): { amount: string; per: string; note?: string } {
+  const currency = currencyForPricePoint(PLUS_ANNUAL_2026_10, 'paddle', {
+    pricingV2: true,
+    country,
+  });
+  if (currency === 'INR') return { amount: formatLaunchPrice(PLUS_ANNUAL_2026_10, 'inr'), per: '' };
+  return { amount: formatLaunchPrice(PLUS_ANNUAL_2026_10, 'usd'), per: '/yr' };
+}
+
+function ProWaitlistCard({ disabled }: { disabled: boolean }) {
+  const [joined, setJoined] = useState(false);
+  const [pending, setPending] = useState(false);
+  async function join() {
+    if (pending || joined) return;
+    setPending(true);
+    try {
+      await apiPost<{ status: 'joined' | 'already_joined' }>('/api/v1/waitlist', {
+        kind: 'pro',
+        source: 'billing',
+      });
+      setJoined(true);
+    } finally {
+      setPending(false);
+    }
+  }
+  return (
+    <div
+      data-testid="plan-option-pro"
+      style={{
+        flex: '1 1 180px',
+        padding: 24,
+        background: color.card,
+        border: `1px solid ${color.border}`,
+        borderRadius: radius.md,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+      }}
+    >
+      <span style={{ ...tokens.typography.sectionTitle, color: color.fg }}>
+        {TIER_MANIFEST.pro.name}
+      </span>
+      <span style={{ fontSize: text.sm, color: color.fgMuted, lineHeight: 1.4 }}>
+        {proNotPurchasableMessage()}
+      </span>
+      {joined ? (
+        <p role="status" style={{ margin: 0, fontSize: text.sm, color: color.fg }}>
+          {proWaitlistJoined()}
+        </p>
+      ) : (
+        <div style={{ marginTop: 'auto', paddingTop: 12 }}>
+          <Button
+            tone="primary"
+            style={{ width: '100%' }}
+            onClick={() => void join()}
+            disabled={disabled || pending}
+            ariaLabel={proWaitlistCta()}
+          >
+            {proWaitlistCta()}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PlanCard({
   tierId,
   cycle,
@@ -864,6 +967,8 @@ function PlanCard({
   canSwitchCycle,
   hasGrantingSubscription,
   provider,
+  geo,
+  priceOverride,
   showFoundingHint,
   foundingMemberNote,
   onSelect,
@@ -883,6 +988,8 @@ function PlanCard({
   /** Rail the strip prices against — clamped per point, so the cards
    *  agree with the confirm panel one click later. */
   provider: BillingProviderId;
+  geo?: { pricingV2?: boolean; country?: string | null };
+  priceOverride?: { amount: string; per: string; note?: string };
   /** QA-billing-20260901-05 — show the Founding Pro price on this card,
    *  gated by live availability (the parent already checked). */
   showFoundingHint?: boolean;
@@ -892,7 +999,7 @@ function PlanCard({
   onSelect: () => void;
 }) {
   const tier = TIER_MANIFEST[tierId];
-  const price = priceLineFor(tier, cycle, provider);
+  const price = priceOverride ?? priceLineFor(tier, cycle, provider, geo);
   const foundingPrice =
     showFoundingHint && tier.promo
       ? formatMoney(tier.promo.annual, currencyForPricePoint(tier.promo.annual, provider))

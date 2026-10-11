@@ -5,6 +5,11 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useUpgradeReturnTo } from '@/features/billing/use-upgrade-return-to';
 import { billingIntentPath } from '@/features/billing/billing-intent';
+import {
+  plusConnectCta,
+  plusInboxLimitTitle,
+  proWaitlistCta,
+} from '@declutrmail/shared/entitlements';
 import { tokens, toast } from '@declutrmail/shared';
 
 import { useAuth } from '@/features/auth/auth-provider';
@@ -70,7 +75,7 @@ export function AccountMenu() {
   // D19/D81 inbox limit — gates ADDING (or reactivating) a Gmail
   // account; existing connections keep working even over-limit. The BE
   // mirror is InboxLimitGuard on connect-mailbox/start (402).
-  const { tier, inboxLimit, connectedInboxes, atInboxLimit } = useTier();
+  const { tier, inboxLimit, connectedInboxes, atInboxLimit, pricingV2 } = useTier();
   // Keep the closed disclosure cheap. Opening enables the mailbox-keyed
   // health reads: the selected mailbox dedupes with banner/Sync-now, while
   // each other active row gets one low-frequency poll only while visible.
@@ -466,21 +471,35 @@ export function AccountMenu() {
                       `${connectedInboxes} inboxes connected — your ${tierLabel(tier)} plan includes ${inboxLimit}.`
                     : `${connectedInboxes} of ${inboxLimit} ${inboxLimit === 1 ? 'inbox' : 'inboxes'} connected — your ${tierLabel(tier)} plan's limit.`}
                 </span>
-                <Link
-                  href={billingIntentPath({
-                    plan: 'pro',
-                    cycle: 'monthly',
-                    ...(from ? { from } : {}),
-                  })}
-                  onClick={() => setOpen(false)}
-                  style={{
-                    color: color.primary,
-                    fontWeight: 600,
-                    textDecoration: 'none',
-                  }}
-                >
-                  Upgrade to connect another →
-                </Link>
+                {pricingV2 && tier === 'plus' ? (
+                  <Link
+                    href="/billing#change-plan"
+                    onClick={() => setOpen(false)}
+                    style={{
+                      color: color.primary,
+                      fontWeight: 600,
+                      textDecoration: 'none',
+                    }}
+                  >
+                    {plusInboxLimitTitle()} {proWaitlistCta()}
+                  </Link>
+                ) : (
+                  <Link
+                    href={billingIntentPath({
+                      plan: pricingV2 ? 'plus' : 'pro',
+                      cycle: pricingV2 ? 'annual' : 'monthly',
+                      ...(from ? { from } : {}),
+                    })}
+                    onClick={() => setOpen(false)}
+                    style={{
+                      color: color.primary,
+                      fontWeight: 600,
+                      textDecoration: 'none',
+                    }}
+                  >
+                    {pricingV2 ? plusConnectCta() : 'Upgrade to connect another →'}
+                  </Link>
+                )}
               </div>
             ) : (
               <button

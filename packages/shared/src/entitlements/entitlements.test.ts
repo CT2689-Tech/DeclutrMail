@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { ACTION_REGISTRY, listActionDescriptors } from '../actions/manifest-entries';
 import { ACTION_TIERS, SELECTOR_TYPES } from '../contracts/verb-constants';
@@ -10,6 +10,7 @@ import {
   minimumTierForCapability,
   satisfiesActionTier,
   tierById,
+  tierIsPurchasable,
   undoWindowDaysFor,
 } from './resolve';
 import type { Capability, TierId } from './types';
@@ -476,5 +477,26 @@ describe('type-level exhaustiveness', () => {
       const firstTierWithCap = TIER_IDS.find((id) => hasCapability(id, cap));
       expect(firstTierWithCap, cap).toBe(bucket);
     }
+  });
+});
+
+describe('PRICING_V2 inbox limits', () => {
+  const previous = process.env.PRICING_V2;
+
+  afterEach(() => {
+    if (previous === undefined) delete process.env.PRICING_V2;
+    else process.env.PRICING_V2 = previous;
+  });
+
+  it('keeps manifest limits while the flag is off and uses INBOXES while it is on', () => {
+    delete process.env.PRICING_V2;
+    expect(inboxLimitFor('plus')).toBe(TIER_MANIFEST.plus.inboxLimit);
+    expect(tierIsPurchasable('pro')).toBe(TIER_MANIFEST.pro.purchasable);
+    process.env.PRICING_V2 = 'true';
+    expect(inboxLimitFor('free')).toBe(1);
+    expect(inboxLimitFor('plus')).toBe(2);
+    expect(inboxLimitFor('pro')).toBe(5);
+    expect(tierIsPurchasable('pro')).toBe(false);
+    expect(tierIsPurchasable('plus')).toBe(true);
   });
 });

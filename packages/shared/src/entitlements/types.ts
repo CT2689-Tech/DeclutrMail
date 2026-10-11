@@ -99,6 +99,15 @@ export interface PricePoint {
   readonly paddlePriceId: string | null;
   /** Razorpay plan id — null until catalog provisioning (D117). */
   readonly razorpayPlanId: string | null;
+  /**
+   * Shown on pricing, the plan picker, JSON-LD and pricing.md.
+   * Omitted means listed (today's catalog). `false` stays resolvable.
+   */
+  readonly listed?: boolean;
+  /** Price generation, mirrored into Paddle custom_data. */
+  readonly version?: string;
+  /** INR amount decoupled from the Razorpay rail. Tax-inclusive when set. */
+  readonly inr?: { readonly paise: number; readonly taxInclusive: true };
 }
 
 /** Per-interval prices. `null` = the interval is not offered for the tier. */

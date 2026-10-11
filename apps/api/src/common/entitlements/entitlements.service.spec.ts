@@ -8,18 +8,22 @@ import {
   mailMessages,
   schema,
   senders,
+  undoJournal,
   users,
   workspaces,
 } from '@declutrmail/db';
 import { freshTestPglite } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  METER,
   TIER_IDS,
   TIER_MANIFEST,
   hasCapability,
+  inboxLimitReachedMessage,
+  quotaExceededMessage,
   type TierId,
 } from '@declutrmail/shared/entitlements';
 
@@ -133,6 +137,9 @@ async function seedJob(
     direction?: 'forward' | 'reverse';
     status?: 'queued' | 'executing' | 'done' | 'failed';
     affectedCount?: number;
+    quotaUnits?: number;
+    createdAt?: Date;
+    undoToken?: string;
     rootActionId?: string;
     retryOfActionId?: string;
     recoveryAttempt?: number;
@@ -152,6 +159,9 @@ async function seedJob(
       // Default to an EFFECTIVE action (moved ≥1 message); a no-op test
       // passes affectedCount: 0 explicitly.
       affectedCount: input.affectedCount ?? 1,
+      ...(input.quotaUnits !== undefined ? { quotaUnits: input.quotaUnits } : {}),
+      ...(input.createdAt ? { createdAt: input.createdAt } : {}),
+      ...(input.undoToken ? { undoToken: input.undoToken } : {}),
       status: input.status ?? 'done',
       idempotencyKey: input.key,
       ...(input.verb === 'later' ? { wakeAt: new Date('2099-07-21T09:00:00Z') } : {}),
@@ -605,6 +615,27 @@ describe('EntitlementsService — inbox limit (D19/D81)', () => {
     expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
   });
 
+  it('plus: a second inbox is allowed and the third names the Pro waitlist when PRICING_V2 is on', async () => {
+    process.env.PRICING_V2 = 'true';
+    try {
+      const { workspaceId, userId } = await seedWorkspace(db, 'plus');
+      await expect(svc.assertCanConnectMailbox(workspaceId)).resolves.toBeUndefined();
+      await db.insert(mailboxAccounts).values({
+        workspaceId,
+        userId,
+        provider: 'gmail',
+        providerAccountId: 'second@x',
+      });
+      const err = await svc.assertCanConnectMailbox(workspaceId).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(AppException);
+      expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
+      expect((err as AppException).message).toBe(inboxLimitReachedMessage('plus'));
+      expect((err as AppException).details).toEqual({ limit: 2, connected: 2, tier: 'plus' });
+    } finally {
+      delete process.env.PRICING_V2;
+    }
+  });
+
   it('locks the workspace tier and checks capacity on the caller transaction', async () => {
     const queryLog: string[] = [];
     db = await freshDb(queryLog);
@@ -890,5 +921,257 @@ describe('migration 0074 — purge of unentitled Brief / Follow-ups rows', () =>
         ).toBe(false);
       }
     }
+  });
+});
+
+describe('METER_V2 off keeps the cleanup-action count', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('ignores quota_units and counts one done archive as one action', async () => {
+    vi.stubEnv('METER_V2', 'false');
+    const db = await freshDb();
+    const { workspaceId, mailboxId } = await seedWorkspace(db, 'free');
+    const sender = await seedSender(db, mailboxId);
+    await seedJob(db, mailboxId, {
+      verb: 'archive',
+      key: 'meter-off',
+      senderId: sender.id,
+      senderKey: sender.key,
+      quotaUnits: 999,
+      affectedCount: 999,
+    });
+    const svc = new EntitlementsService(db as never);
+    expect(await svc.cleanupUnitsUsed(workspaceId)).toBe(1);
+  });
+
+  it('does not return a meter 402 envelope or a meter summary', async () => {
+    vi.stubEnv('METER_V2', 'false');
+    const db = await freshDb();
+    const { workspaceId, mailboxId } = await seedWorkspace(db, 'free');
+    const sender = await seedSender(db, mailboxId);
+    await seedJob(db, mailboxId, {
+      verb: 'archive',
+      key: 'meter-off-envelope',
+      senderId: sender.id,
+      senderKey: sender.key,
+      quotaUnits: 999,
+      affectedCount: 999,
+    });
+    const svc = new EntitlementsService(db as never);
+    const summary = await svc.cleanupSummary(workspaceId);
+    expect(summary).toEqual({
+      tier: 'free',
+      limit: FREE_LIMIT,
+      used: 1,
+      remaining: FREE_LIMIT - 1,
+      resetsAt: expect.any(Date),
+    });
+    expect(summary).not.toHaveProperty('metered');
+    expect(summary).not.toHaveProperty('requested');
+    expect(summary).not.toHaveProperty('suggestedPreset');
+
+    // One more cleanup action still fits the action cap, so the email
+    // stamp does not produce a 402.
+    await expect(svc.assertCleanupCapacity(mailboxId, 1)).resolves.toBeUndefined();
+
+    const [ws] = await db
+      .select({ createdAt: workspaces.createdAt })
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId));
+    const err = await svc
+      .assertCleanupCapacityForWorkspace(
+        { workspaceId, tier: 'free', createdAt: ws!.createdAt },
+        FREE_LIMIT,
+        db,
+        { 30: 80, 90: 400, 180: 1_200, 365: 2_708 },
+      )
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AppException);
+    const hit = err as AppException;
+    expect(hit.code).toBe('FREE_CAP_REACHED');
+    expect(hit.details).not.toHaveProperty('requested');
+    expect(hit.details).not.toHaveProperty('suggestedPreset');
+    expect(hit.details).toEqual({
+      remaining: FREE_LIMIT - 1,
+      limit: FREE_LIMIT,
+      used: 1,
+      requiredUnits: FREE_LIMIT,
+      resetsAt: expect.any(String),
+    });
+    expect(hit.message).toMatch(/cleanup actions/);
+    expect(hit.message).not.toMatch(/free emails/);
+  });
+});
+
+describe('METER_V2 emails-cleared meter', () => {
+  let db: Db;
+  let workspaceId: string;
+  let mailboxId: string;
+  let svc: EntitlementsService;
+
+  beforeEach(async () => {
+    vi.stubEnv('METER_V2', 'true');
+    db = await freshDb();
+    ({ workspaceId, mailboxId } = await seedWorkspace(db, 'free'));
+    svc = new EntitlementsService(db as never);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  async function issueUndo(): Promise<string> {
+    const [row] = await db
+      .insert(undoJournal)
+      .values({
+        mailboxAccountId: mailboxId,
+        actionKind: 'archive',
+        payload: { messageIds: [] },
+      })
+      .returning({ token: undoJournal.token });
+    return row!.token;
+  }
+
+  it('sums stamped emails, and a same-period undo refunds restored emails', async () => {
+    const sender = await seedSender(db, mailboxId);
+    const token = await issueUndo();
+    await seedJob(db, mailboxId, {
+      verb: 'archive',
+      key: 'charged',
+      senderId: sender.id,
+      senderKey: sender.key,
+      quotaUnits: 100,
+      affectedCount: 100,
+      undoToken: token,
+    });
+    await seedJob(db, mailboxId, {
+      verb: 'archive',
+      key: 'undo',
+      senderId: sender.id,
+      senderKey: sender.key,
+      direction: 'reverse',
+      affectedCount: 40,
+      quotaUnits: 0,
+      undoToken: token,
+    });
+    expect(await svc.cleanupUnitsUsed(workspaceId)).toBe(60);
+  });
+
+  it('does not refund an undo whose forward row is in an earlier period', async () => {
+    const now = new Date();
+    const anchor = new Date(now.getTime());
+    anchor.setUTCMonth(anchor.getUTCMonth() - 2);
+    anchor.setTime(anchor.getTime() - 60 * 60 * 1000);
+    await db.update(workspaces).set({ createdAt: anchor }).where(eq(workspaces.id, workspaceId));
+    const sender = await seedSender(db, mailboxId);
+    const oldToken = await issueUndo();
+    await seedJob(db, mailboxId, {
+      verb: 'delete',
+      key: 'old-period',
+      senderId: sender.id,
+      senderKey: sender.key,
+      quotaUnits: 200,
+      affectedCount: 200,
+      createdAt: new Date(now.getTime() - 40 * 24 * 60 * 60 * 1000),
+      undoToken: oldToken,
+    });
+    await seedJob(db, mailboxId, {
+      verb: 'delete',
+      key: 'old-undo',
+      direction: 'reverse',
+      affectedCount: 200,
+      undoToken: oldToken,
+    });
+    await seedJob(db, mailboxId, {
+      verb: 'archive',
+      key: 'this-period',
+      senderId: sender.id,
+      senderKey: sender.key,
+      quotaUnits: 50,
+      affectedCount: 50,
+    });
+    expect(await svc.cleanupUnitsUsed(workspaceId)).toBe(50);
+  });
+
+  it('counts a partial completion at the settled stamp, and free verbs at 0', async () => {
+    const sender = await seedSender(db, mailboxId);
+    await seedJob(db, mailboxId, {
+      verb: 'delete',
+      key: 'partial',
+      senderId: sender.id,
+      senderKey: sender.key,
+      quotaUnits: 40,
+      affectedCount: 40,
+    });
+    await seedJob(db, mailboxId, {
+      verb: 'unsubscribe',
+      key: 'unsub:partial',
+      senderId: sender.id,
+      senderKey: sender.key,
+      quotaUnits: 0,
+      affectedCount: 0,
+    });
+    await seedJob(db, mailboxId, {
+      verb: 'later',
+      key: 'later-partial',
+      senderId: sender.id,
+      senderKey: sender.key,
+      quotaUnits: 0,
+    });
+    expect(await svc.cleanupUnitsUsed(workspaceId)).toBe(40);
+  });
+
+  it('does not meter Plus', async () => {
+    const plus = await seedWorkspace(db, 'plus');
+    const plusSvc = new EntitlementsService(db as never);
+    await expect(plusSvc.assertCleanupCapacity(plus.mailboxId, 5_000)).resolves.toBeUndefined();
+    const summary = await plusSvc.cleanupSummary(plus.workspaceId);
+    expect(summary.limit).toBeNull();
+  });
+
+  it('402s a 2,708 delete at 900 used and then allows the fitting preset', async () => {
+    const sender = await seedSender(db, mailboxId);
+    await seedJob(db, mailboxId, {
+      verb: 'archive',
+      key: 'used-900',
+      senderId: sender.id,
+      senderKey: sender.key,
+      quotaUnits: 900,
+      affectedCount: 900,
+    });
+    const [ws] = await db
+      .select({ createdAt: workspaces.createdAt })
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId));
+    const workspace = { workspaceId, tier: 'free' as const, createdAt: ws!.createdAt };
+    const err = await svc
+      .assertCleanupCapacityForWorkspace(workspace, 2708, db, {
+        30: 80,
+        90: 400,
+        180: 1_200,
+        365: 2_708,
+      })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AppException);
+    const hit = err as AppException;
+    expect(hit.code).toBe('FREE_CAP_REACHED');
+    expect(hit.details).toMatchObject({
+      limit: METER.free.limit,
+      used: 900,
+      remaining: METER.free.limit - 900,
+      requested: 2708,
+      suggestedPreset: 30,
+    });
+    expect(hit.message).toBe(
+      quotaExceededMessage({
+        used: 900,
+        limit: METER.free.limit,
+        resetAt: String(hit.details?.resetsAt),
+        requested: 2708,
+      }),
+    );
+    await expect(svc.assertCleanupCapacityForWorkspace(workspace, 80, db)).resolves.toBeUndefined();
   });
 });

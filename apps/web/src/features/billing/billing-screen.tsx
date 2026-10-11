@@ -152,6 +152,8 @@ function processingPhaseAt(pending: PendingCheckout, now: number): ProcessingPha
 export function BillingScreen({
   initialIntent = null,
   initialProvider = 'paddle',
+  pricingV2 = false,
+  country = null,
   invoiceHistory,
   returnTo,
 }: {
@@ -159,6 +161,9 @@ export function BillingScreen({
   returnTo?: string | undefined;
   /** Geo-derived default rail (D117); the radio still overrides it. */
   initialProvider?: BillingProviderId;
+  /** Server-read launch flag. Absent means off, so an older shell still renders. */
+  pricingV2?: boolean;
+  country?: string | null;
   /** Optional server-streamed invoice section; stories retain the local fallback. */
   invoiceHistory?: ReactNode;
 }) {
@@ -755,7 +760,7 @@ export function BillingScreen({
     });
   }
   if (billingDark) notices.push({ key: 'billing-dark', node: <BillingDisabledNotice /> });
-  if (plan.foundingMember && backingSub) {
+  if (!pricingV2 && plan.foundingMember && backingSub) {
     notices.push({ key: 'founding', node: <FoundingBanner provider={backingSub.provider} /> });
   }
 
@@ -881,6 +886,8 @@ export function BillingScreen({
         }
         initialIntent={initialIntent}
         initialProvider={initialProvider}
+        pricingV2={pricingV2}
+        country={country}
         onRequestCancel={() => setCancelOpen(true)}
         onPaymentCompleted={(target, cycle, attemptId) =>
           // Own-id transition over this checkout's reservation: the
@@ -955,6 +962,7 @@ export function BillingScreen({
       </p>
       <CancelModal
         open={cancelOpen}
+        pricingV2={pricingV2}
         billingReviewPending={reviewPending}
         variant={isPhone ? 'sheet' : 'modal'}
         sub={backingSub ?? plan.nonBacking?.sub ?? null}
@@ -2171,6 +2179,7 @@ function NonBackingSubscriptionNotice({
  * Founding Pro banner (D119 / D126). Price straight off the manifest,
  * in the currency the member's own rail locked — a Razorpay founding
  * member's price is locked at ₹10,999/yr, not $129/yr.
+ * Shown only while `PRICING_V2` is off.
  */
 function FoundingBanner({ provider }: { provider: BillingProviderId }) {
   const promo = TIER_MANIFEST.pro.promo;

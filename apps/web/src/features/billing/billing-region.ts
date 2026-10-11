@@ -14,6 +14,7 @@
  */
 
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
+import { isPricingV2, RAILS } from '@declutrmail/shared/entitlements';
 
 /** ISO-3166-alpha-2 for India — the only Razorpay-routed market (D117). */
 export const RAZORPAY_COUNTRY = 'IN';
@@ -28,5 +29,6 @@ export const RAZORPAY_COUNTRY = 'IN';
  * deliberately separate questions.
  */
 export function defaultProviderForCountry(country: string | null | undefined): BillingProviderId {
+  if (isPricingV2() && !RAILS.razorpay.enabled) return 'paddle';
   return country?.toUpperCase() === RAZORPAY_COUNTRY ? 'razorpay' : 'paddle';
 }

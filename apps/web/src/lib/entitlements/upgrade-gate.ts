@@ -45,6 +45,13 @@ export interface FreeCapDetails {
   requiredUnits: number;
   /** Next anniversary reset (ISO) — server-computed; null if absent. */
   resetsAt: string | null;
+  /**
+   * Present only on the emails-cleared 402 (`METER_V2`).
+   * Absent means the cleanup-action meter, whose copy stays as it is.
+   */
+  requested?: number;
+  /** Largest window preset that fits, or null when none does. */
+  suggestedPreset?: number | null;
 }
 
 /** Scalar context the INBOX_LIMIT_REACHED 402 attaches to `details`. */
@@ -84,14 +91,22 @@ export type UpgradeGateHit =
 interface UpgradeGateState {
   /** The latest entitlement-gate hit, or null when none / dismissed. */
   hit: UpgradeGateHit | null;
+  /**
+   * Window preset chosen from "Clear what fits free".
+   * The confirm surface that owns the original action reads this.
+   */
+  pendingWindowPreset: number | null;
   report: (hit: UpgradeGateHit) => void;
   dismiss: () => void;
+  applyWindowPreset: (days: number) => void;
 }
 
 export const useUpgradeGateStore = create<UpgradeGateState>((set) => ({
   hit: null,
+  pendingWindowPreset: null,
   report: (hit) => set({ hit }),
-  dismiss: () => set({ hit: null }),
+  dismiss: () => set({ hit: null, pendingWindowPreset: null }),
+  applyWindowPreset: (days) => set({ hit: null, pendingWindowPreset: days }),
 }));
 
 /**
@@ -137,6 +152,10 @@ export function upgradeGateHitFrom(error: unknown): UpgradeGateHit | null {
         used: asCount(d['used'], FREE_CAP_FALLBACK.used),
         requiredUnits: asCount(d['requiredUnits'], FREE_CAP_FALLBACK.requiredUnits),
         resetsAt: typeof d['resetsAt'] === 'string' ? d['resetsAt'] : null,
+        ...(typeof d['requested'] === 'number' ? { requested: d['requested'] } : {}),
+        ...(typeof d['suggestedPreset'] === 'number' || d['suggestedPreset'] === null
+          ? { suggestedPreset: d['suggestedPreset'] }
+          : {}),
       },
     };
   }

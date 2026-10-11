@@ -6,7 +6,12 @@
  * discipline as the /pricing model, which this reuses).
  */
 
-import { TIER_MANIFEST, TIER_RANK, type TierId } from '@declutrmail/shared/entitlements';
+import {
+  refundLine,
+  TIER_MANIFEST,
+  TIER_RANK,
+  type TierId,
+} from '@declutrmail/shared/entitlements';
 import type { BillingCycle, BillingSubscription } from '@declutrmail/shared/contracts';
 
 import {
@@ -143,11 +148,18 @@ export function formatProviderAmount(amount: string, currencyCode: string): stri
 }
 
 /**
- * D121 — the money-back guarantee line. Applies to EVERY paid plan
- * (founder-confirmed 2026-07-08; the published /refunds policy and the
- * cancel flow both surface it for Plus and Pro alike).
+ * D121 flags-off line. `/refunds` and `/terms` still publish this
+ * sentence. `refundLine()` is the launch deck and stays behind
+ * `PRICING_V2` so the two windows are not on screen together.
  */
-export const MONEY_BACK_NOTE = '30-day money-back guarantee';
+const FLAGS_OFF_MONEY_BACK_NOTE = '30-day money-back guarantee';
+
+export function moneyBackNote(pricingV2: boolean): string {
+  return pricingV2 ? refundLine() : FLAGS_OFF_MONEY_BACK_NOTE;
+}
+
+/** Flags-off D121 line. Call `moneyBackNote` where `pricingV2` is known. */
+export const MONEY_BACK_NOTE = FLAGS_OFF_MONEY_BACK_NOTE;
 
 // ── D119/A6 — the single derived billing story ───────────────────────
 //
