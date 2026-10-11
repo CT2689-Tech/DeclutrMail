@@ -47,7 +47,7 @@ updates:
       time: '06:00'
       timezone: Etc/UTC
     rebase-strategy: disabled
-    open-pull-requests-limit: 8
+    open-pull-requests-limit: 3
     versioning-strategy: increase-if-necessary
     commit-message:
       # Matches commitlint type-enum (CLAUDE.md §6). `chore` keeps the
