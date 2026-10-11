@@ -70,3 +70,27 @@ The coordinated investigation owns the exact-image private replay and bounded
 metadata/liveness diagnosis. It must preserve empty/mixed-actor refusal, owned
 cleanup and the serving gates. No root activation retry, financial write,
 additional synthetic email or acceptance relaxation is justified by this record.
+
+## Activation contained after reproduced partial inventory
+
+The coordinated bounded discriminator at `2026-10-11T08:18:52Z` used two named
+normal connections against the bound broker. Both acknowledged their names before
+and after every read. Across four rounds, one connection listed 28 clients and
+one compatible generic email actor; the other listed 22 clients and no generic
+email actor. Each listed itself and omitted the other. `TYPE NORMAL` reproduced
+the same split. The identical native Redis control listed both connections from
+both readers. The owned Cloud Run execution completed and its job cleanup was
+verified. No queue messages, shared keys, providers or runtime flags were changed
+by this discriminator.
+
+This reproduces a false empty-worker read and establishes that a positive partial
+listing cannot prove every consumer compatible. It does not retrospectively
+classify the earlier generic exit-1 failures. Repeated connections or a single
+positive sample do not establish complete inventory.
+
+Root restores the deployment manifest notice switch to OFF, retaining the fixed
+cutoff. Production was already OFF at the last serving readback above. The prior
+ON request must not allow a later release to activate notices on incomplete actor
+evidence. No live refund restoration, checkout cutover or new synthetic email is
+included. Activation remains pending a reviewed repair with complete consumer
+proof and fresh end-to-end release verification.
