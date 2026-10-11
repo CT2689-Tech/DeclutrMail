@@ -133,7 +133,9 @@ export function PublicFooter() {
             <Logo size={27} />
           </Link>
           <p>{WS3_COPY['ws3.home.footerTagline']}</p>
-          {hasLegalEntity() ? <p>{fillWs3(WS3_COPY['ws3.footer.legal'])}</p> : null}
+          {hasLegalEntity() ? (
+            <p data-legal-entity>{fillWs3(WS3_COPY['ws3.footer.legal'])}</p>
+          ) : null}
         </div>
 
         <div className="dm-public-footer-groups">

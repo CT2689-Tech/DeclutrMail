@@ -48,7 +48,9 @@ export default function ContactPage() {
         </a>
       </nav>
       <LegalSection id="support" title="General questions and support">
-        {hasLegalEntity() ? <p>{fillWs3(WS3_COPY['ws3.contact.legal'])}</p> : null}
+        {hasLegalEntity() ? (
+          <p data-legal-entity>{fillWs3(WS3_COPY['ws3.contact.legal'])}</p>
+        ) : null}
         <p>
           Email <a href="mailto:support@declutrmail.com">support@declutrmail.com</a> for anything —
           questions, bugs, billing, refunds, or feedback. We reply within{' '}

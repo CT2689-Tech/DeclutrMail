@@ -1,20 +1,20 @@
 /**
- * Legal entity for the footer and /contact. FOUNDER INPUT.
+ * Legal entity for the footer and /contact.
  *
- * Neither a legal name nor a street address is stated in
- * apps/web/src/app/(marketing)/privacy/page.tsx,
- * apps/web/src/app/(marketing)/terms/page.tsx (India/Mumbai governing
- * law only), apps/web/src/app/(marketing)/contact/page.tsx, or
- * packages/shared/src/copy/postal-address.ts (`BUSINESS_POSTAL_ADDRESS`
- * is empty). Leave both as `FILL_ME`. The shared test
- * `fails until the founder sets the legal name and address` stays red
- * until both are replaced with the founder's text. Do not invent them.
+ * Founder decision 2026-10-11, 12:26 PM PT: ship without a legal company
+ * name or business address. Set both constants to the founder's text
+ * later — one assignment each. While either is blank, the footer,
+ * /contact, and the other legal pages omit the line. No flag and no
+ * env var. Do not invent the text.
+ *
+ * The postal address block is separate (`BUSINESS_POSTAL_ADDRESS`).
+ * It stays omitted until that array is filled.
  */
 
-export const LEGAL_ENTITY_NAME = 'FILL_ME'; // FOUNDER INPUT
-export const LEGAL_ENTITY_ADDRESS = 'FILL_ME'; // FOUNDER INPUT
+export const LEGAL_ENTITY_NAME = '';
+export const LEGAL_ENTITY_ADDRESS = '';
 
-/** False while either constant is still the unset placeholder. Render nothing in that case. */
+/** True only when both lines are non-blank. Callers render nothing otherwise. */
 export function hasLegalEntity(): boolean {
-  return LEGAL_ENTITY_NAME !== 'FILL_ME' && LEGAL_ENTITY_ADDRESS !== 'FILL_ME';
+  return LEGAL_ENTITY_NAME.trim() !== '' && LEGAL_ENTITY_ADDRESS.trim() !== '';
 }

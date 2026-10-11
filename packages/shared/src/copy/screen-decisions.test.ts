@@ -57,16 +57,12 @@ describe('screen decision defaults', () => {
   });
 });
 
-describe('legal entity placeholder', () => {
-  it('fails until the founder sets the legal name and address', () => {
-    expect(
-      LEGAL_ENTITY_NAME,
-      'Founder input: set LEGAL_ENTITY_NAME in packages/shared/src/copy/legal-entity.ts',
-    ).not.toBe('FILL_ME');
-    expect(
-      LEGAL_ENTITY_ADDRESS,
-      'Founder input: set LEGAL_ENTITY_ADDRESS in packages/shared/src/copy/legal-entity.ts',
-    ).not.toBe('FILL_ME');
-    expect(hasLegalEntity()).toBe(true);
+describe('legal entity', () => {
+  it('has no placeholder and is present only when both lines are set', () => {
+    expect(LEGAL_ENTITY_NAME).not.toContain('FILL_ME');
+    expect(LEGAL_ENTITY_ADDRESS).not.toContain('FILL_ME');
+    expect(hasLegalEntity()).toBe(
+      LEGAL_ENTITY_NAME.trim() !== '' && LEGAL_ENTITY_ADDRESS.trim() !== '',
+    );
   });
 });
