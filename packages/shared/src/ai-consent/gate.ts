@@ -56,7 +56,7 @@ export interface AiConsentView {
 export type AiConsentDecision =
   | { action: 'allow'; card: AiConsentCard }
   | { action: 'not_now'; card: AiConsentCard }
-  | { action: 'revoke'; scope?: 'explanations' | 'brief' };
+  | { action: 'revoke'; scope?: 'explanations' | 'brief' | undefined };
 
 /** Column write. `now` is the database clock; `keep` leaves the column. */
 export type ConsentMark = 'now' | 'keep' | null;
