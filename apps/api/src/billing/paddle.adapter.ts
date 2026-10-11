@@ -57,6 +57,39 @@ const DEFAULT_MAX_SKEW_SEC = 5;
 
 const API_TIMEOUT_MS = 10_000;
 
+const SANDBOX_REQUEST_ERROR_CODES = [
+  'validation',
+  'forbidden',
+  'authentication_failed',
+  'not_found',
+  'too_many_requests',
+  'transaction_checkout_url_domain_is_not_approved',
+  'transaction_checkout_not_enabled',
+  'transaction_default_checkout_url_not_set',
+];
+/** Only fixed sandbox request diagnostics; never forward raw provider errors. */
+export function sandboxCheckoutFailure(error: unknown) {
+  const details = error instanceof AppException ? error.details : undefined;
+  const code = error instanceof AppException ? error.code : 'unknown';
+  return {
+    code: ['BILLING_PROVIDER_ERROR', 'BILLING_NOT_PROVISIONED'].includes(code) ? code : 'unknown',
+    phase: ['request', 'http', 'json', 'facts'].includes(String(details?.sandboxPhase))
+      ? String(details?.sandboxPhase)
+      : 'unknown',
+    httpStatus:
+      typeof details?.sandboxHttpStatus === 'number' &&
+      Number.isInteger(details.sandboxHttpStatus) &&
+      details.sandboxHttpStatus >= 100 &&
+      details.sandboxHttpStatus <= 599
+        ? details.sandboxHttpStatus
+        : null,
+    errorCode: SANDBOX_REQUEST_ERROR_CODES.includes(String(details?.sandboxErrorCode))
+      ? String(details?.sandboxErrorCode)
+      : 'unknown',
+    checkoutUrlRejected: details?.sandboxCheckoutUrlRejected === true,
+  };
+}
+
 /**
  * How many billing documents one invoice read returns — Paddle's
  * per-page maximum.
@@ -422,6 +455,10 @@ export class PaddleAdapter implements BillingProvider {
   private async sandboxCheckoutRequest(path: string, method = 'GET', body?: unknown) {
     // Callers first enforce the sandbox boundary. Never emit raw responses,
     // network errors, custom data or credentials in diagnostics.
+    let phase = 'request',
+      httpStatus: number | null = null,
+      errorCode = 'unknown',
+      checkoutUrlRejected = false;
     try {
       const response = await fetch(`https://sandbox-api.paddle.com${path}`, {
         method,
@@ -433,13 +470,38 @@ export class PaddleAdapter implements BillingProvider {
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         signal: AbortSignal.timeout(API_TIMEOUT_MS),
       });
-      if (!response.ok) throw new Error('unconfirmed');
+      httpStatus = response.status;
+      if (!response.ok) {
+        phase = 'http';
+        try {
+          const rejected = (await response.json()) as {
+            error?: { code?: unknown; errors?: Array<{ field?: unknown }> };
+          };
+          if (SANDBOX_REQUEST_ERROR_CODES.includes(String(rejected.error?.code)))
+            errorCode = String(rejected.error?.code);
+          checkoutUrlRejected =
+            Array.isArray(rejected.error?.errors) &&
+            rejected.error.errors.some((error) => error?.field === 'checkout.url');
+        } catch {
+          /* Unreadable error bodies remain unknown, never forwarded. */
+        }
+        throw new Error('unconfirmed');
+      }
+      phase = 'json';
       return (await response.json()) as {
         data: Record<string, unknown> | Array<Record<string, unknown>>;
         meta?: { pagination?: { has_more?: unknown; next?: unknown } };
       };
     } catch {
-      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+      throw new AppException({
+        code: 'BILLING_PROVIDER_ERROR',
+        details: {
+          sandboxPhase: phase,
+          sandboxHttpStatus: httpStatus,
+          sandboxErrorCode: errorCode,
+          sandboxCheckoutUrlRejected: checkoutUrlRejected,
+        },
+      });
     }
   }
 
@@ -470,7 +532,10 @@ export class PaddleAdapter implements BillingProvider {
       items[0]?.quantity !== 1 ||
       !(data.subscription_id === null || typeof data.subscription_id === 'string')
     )
-      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+      throw new AppException({
+        code: 'BILLING_PROVIDER_ERROR',
+        details: { sandboxPhase: 'facts' },
+      });
     const subscriptionId = data.subscription_id as string | null;
     const checkout = data.checkout as { url?: unknown } | null;
     return {
