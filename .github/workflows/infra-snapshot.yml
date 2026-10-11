@@ -1,144 +1,41 @@
-# Daily infrastructure drift detector (D38, D159).
-#
-# Captures every external resource DeclutrMail depends on into a JSON
-# blob committed to docs/infra-snapshots/YYYY-MM-DD.json ON THE
-# `infra-snapshots` BRANCH — never on main, which is protected and
-# requires a PR plus 11 status checks. Only commits when the snapshot
-# differs from the most recent one; identical days stay silent so the
-# log doesn't fill with noise. On a drift day the diff is also written
-# to the run summary, so the signal is readable without checking out
-# the branch.
-#
-# Trigger:
-#   * Cron @ 06:00 UTC daily — quiet hour for the founder, lines up
-#     with the European morning if collaborators join.
-#   * workflow_dispatch — manual run, useful after a deploy where you
-#     want the new state captured immediately.
-#
-# Auth model:
-#   * GCP: Workload Identity Federation (same provider + SA the deploy
-#     workflow uses).
-#   * Supabase: SUPABASE_SESSION_DSN secret (same one Atlas uses).
-#   * GitHub: INFRA_SNAPSHOT_TOKEN when present, else GITHUB_TOKEN.
-#     `gh secret list` needs repo ADMIN, which GITHUB_TOKEN never has —
-#     no `permissions:` block can grant it. Without the PAT the snapshot
-#     still runs and records the GitHub-secrets section as
-#     `{"available": false, ...}` rather than silently claiming it read
-#     an empty secret list.
-#
-# Privacy posture (D7 / D228): the script reads ONLY infra metadata.
-# No row reads of mail_messages / senders / triage_decisions. Atlas
-# touches only `atlas_schema_revisions`.
-
-name: Infra snapshot
-
+# Temporary task branch only; never merge over the normal snapshot workflow.
+name: Billing queue access diagnosis
 on:
-  schedule:
-    # 06:00 UTC every day. GitHub may delay cron runs by minutes during
-    # peak load — that's fine, snapshot precision doesn't matter at the
-    # second level.
-    - cron: '0 6 * * *'
   workflow_dispatch: {}
-
 permissions:
-  contents: write
+  contents: read
   id-token: write
-
 concurrency:
-  group: infra-snapshot-${{ github.ref }}
+  group: billing-queue-access-diagnosis
   cancel-in-progress: false
-
 jobs:
-  snapshot:
+  diagnose:
+    if: github.ref == 'refs/heads/codex/billing-queue-access-diagnosis'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 8
+    env:
+      PROJECT: declutrmail-ai-prod
+      WORKER_REGION: us-west1
+      RUNTIME_SA: declutrmail-api@declutrmail-ai-prod.iam.gserviceaccount.com
+      IMAGE: us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api:2faa44067bfd806d99783441c1bef7d154b4b66f
     steps:
       - uses: actions/checkout@v7
-
-      - name: Authenticate to Google Cloud
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Verify bounded diagnostic and ownership controls
+        run: node --test scripts/diagnose-billing-queue-runtime.test.mjs scripts/check-billing-queue-runtime.test.mjs
+      - name: Authenticate using existing Workload Identity
         uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_DEPLOY_SA }}
-
-      - name: Install gcloud
-        uses: google-github-actions/setup-gcloud@v3
-
-      - name: Install Atlas
-        # The same pinned, checksum-verified community build the
-        # migration workflows use (scripts/install-atlas.sh).
-        run: |
-          ./scripts/install-atlas.sh "$RUNNER_TEMP/atlas"
-          echo "$RUNNER_TEMP/atlas" >> "$GITHUB_PATH"
-
-      - name: Run snapshot
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Diagnose the exact private probe without service deployment
+        id: probe
+        run: node scripts/diagnose-billing-queue-runtime.mjs
+      - name: Recover only the owned probe
+        if: always() && steps.probe.outputs.owned_probe == 'true'
         env:
-          GCP_PROJECT: declutrmail-ai-prod
-          GCP_REGION: us-central1
-          # The worker sits in its own region — see WORKER_REGION in
-          # deploy-cloud-run.yml. Passed explicitly so the snapshot and
-          # the deploy cannot drift apart silently.
-          GCP_WORKER_REGION: us-west1
-          SUPABASE_SESSION_DSN: ${{ secrets.SUPABASE_SESSION_DSN }}
-          GH_TOKEN: ${{ secrets.INFRA_SNAPSHOT_TOKEN || secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          DATE=$(date -u +%Y-%m-%d)
-          ./scripts/infra-snapshot.sh > "${RUNNER_TEMP}/${DATE}.json"
-          echo "DATE=$DATE" >> "$GITHUB_ENV"
-
-      # Snapshots live on their own branch, never on main. main is
-      # protected (PR + 11 required checks), so a bot pushing a daily
-      # commit to it is impossible without a bypass credential — and a
-      # standing bypass token in CI would defeat the protection itself.
-      # This step is why the workflow failed even after the snapshot
-      # script was fixed: it had never once reached the push before.
-      - name: Check out the snapshot branch
-        uses: actions/checkout@v7
-        with:
-          ref: infra-snapshots
-          path: snapshot-branch
-
-      - name: Publish when the snapshot has drifted
-        working-directory: snapshot-branch
-        run: |
-          set -euo pipefail
-          OUT="docs/infra-snapshots/${DATE}.json"
-          mkdir -p docs/infra-snapshots
-          # Most recent snapshot OTHER than today's, before we overwrite.
-          PRIOR=$(ls docs/infra-snapshots/*.json 2>/dev/null \
-            | grep -v "${DATE}.json" \
-            | sort -r \
-            | head -1 || true)
-          cp "${RUNNER_TEMP}/${DATE}.json" "$OUT"
-
-          if [ -n "$PRIOR" ] && diff -q "$PRIOR" "$OUT" >/dev/null 2>&1; then
-            echo "No drift since ${PRIOR}."
-            echo "### Infra snapshot ${DATE} — no drift since $(basename "$PRIOR" .json)" \
-              >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
-          git config user.name 'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add "$OUT"
-          if git diff --cached --quiet; then
-            echo "No staged change — nothing to publish."
-            exit 0
-          fi
-          git commit -m "chore(infra): snapshot ${DATE} drift detected (D38)"
-          git push origin HEAD:infra-snapshots
-
-          # The diff IS the alert — surface it in the run summary so drift
-          # is readable without navigating to the branch.
-          {
-            echo "### Infra snapshot ${DATE} — drift detected"
-            echo
-            if [ -n "$PRIOR" ]; then
-              echo '```diff'
-              diff -u "$PRIOR" "$OUT" | head -100 || true
-              echo '```'
-            else
-              echo "First snapshot on this branch."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          BILLING_NOTICE_PROBE_OWNED: ${{ steps.probe.outputs.owned_probe }}
+        run: node scripts/check-billing-queue-runtime.mjs --cleanup
