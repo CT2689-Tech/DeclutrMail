@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { servingRevisions, retentionTag, pinProductionImages } from './pin-production-images.mjs';
+import {
+  servingRevisions,
+  servingInstanceSplits,
+  retentionTag,
+  pinProductionImages,
+} from './pin-production-images.mjs';
 
 test('retention protects every traffic destination and tagged rollback route', () => {
   assert.deepEqual(
@@ -23,6 +28,28 @@ test('retention protects every traffic destination and tagged rollback route', (
     assert.throws(() => servingRevisions({ status: { traffic } }));
 });
 
+test('worker-pool retention protects every assigned revision and fails closed on a partial split', () => {
+  assert.deepEqual(
+    servingInstanceSplits({
+      status: {
+        instanceSplits: [
+          { revisionName: 'declutrmail-worker-pool-00002-b', percent: 100 },
+          { revisionName: 'declutrmail-worker-pool-00001-a', percent: 0 },
+        ],
+      },
+    }),
+    ['declutrmail-worker-pool-00002-b'],
+  );
+  for (const instanceSplits of [
+    undefined,
+    [],
+    [{ percent: 100 }],
+    [{ revisionName: 'declutrmail-worker-pool-00001-a', percent: 50 }],
+    [{ revisionName: 'declutrmail-api-001-a', percent: 100 }],
+  ])
+    assert.throws(() => servingInstanceSplits({ status: { instanceSplits } }));
+});
+
 test('new deployments and traffic reordering never reuse a previous release retention tag', () => {
   const old = retentionTag('declutrmail-api-001-a');
   assert.notEqual(old, retentionTag('declutrmail-api-002-b'));
@@ -33,15 +60,24 @@ test('new deployments and traffic reordering never reuse a previous release rete
 const image = 'us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api';
 const packageName =
   'projects/declutrmail-ai-prod/locations/us-central1/repositories/declutrmail/packages/api';
-const revisions = ['declutrmail-api-001-a', 'declutrmail-worker-002-b'];
+const revisions = [
+  'declutrmail-api-001-a',
+  'declutrmail-worker-002-b',
+  'declutrmail-worker-pool-00001-c',
+];
 const digest = `${image}@sha256:${'a'.repeat(64)}`;
 function registryFixture(initial = revisions, options = {}) {
   const tags = new Map(initial.map((revision) => [`retain-${revision}`, digest]));
   const writes = [];
+  const described = [];
   let reads = 0;
   const run = (...args) => {
     if (args[0] === 'run') {
-      if (args[1] === 'services')
+      if (args[1] === 'worker-pools' && args[2] === 'describe')
+        return JSON.stringify({
+          status: { instanceSplits: [{ revisionName: revisions[2], percent: 100 }] },
+        });
+      if (args[1] === 'services' && args[2] === 'describe')
         return JSON.stringify({
           status: {
             traffic: [
@@ -52,6 +88,7 @@ function registryFixture(initial = revisions, options = {}) {
             ],
           },
         });
+      described.push(args.slice(0, args.indexOf('describe') + 2));
       return JSON.stringify({ status: { imageDigest: digest } });
     }
     if (args[2] === 'tags' && args[3] === 'list') {
@@ -76,6 +113,7 @@ function registryFixture(initial = revisions, options = {}) {
     run,
     tags,
     writes,
+    described,
     get reads() {
       return reads;
     },
@@ -84,16 +122,23 @@ function registryFixture(initial = revisions, options = {}) {
 
 test('existing matching pins need no mutation or tag deletion permission', () => {
   const fixture = registryFixture();
-  assert.equal(pinProductionImages({ run: fixture.run, log: () => {} }).length, 2);
+  assert.equal(pinProductionImages({ run: fixture.run, log: () => {} }).length, 3);
   assert.equal(fixture.writes.length, 0);
   assert.equal(fixture.reads, 2);
+  assert.deepEqual(fixture.described, [
+    ['run', 'revisions', 'describe', revisions[0]],
+    ['run', 'revisions', 'describe', revisions[1]],
+    ['run', 'worker-pools', 'revisions', 'describe', revisions[2]],
+  ]);
 });
 
 test('missing pins use create-only API and are read back before success', () => {
   const fixture = registryFixture([revisions[0]]);
   pinProductionImages({ run: fixture.run, log: () => {} });
-  assert.equal(fixture.writes.length, 1);
-  assert.equal(fixture.writes[0][3], `retain-${revisions[1]}`);
+  assert.deepEqual(
+    fixture.writes.map((write) => write[3]),
+    [`retain-${revisions[1]}`, `retain-${revisions[2]}`],
+  );
   assert.ok(fixture.writes[0].includes(`--version=sha256:${'a'.repeat(64)}`));
   assert.equal(fixture.tags.get(`retain-${revisions[0]}`), digest);
 });

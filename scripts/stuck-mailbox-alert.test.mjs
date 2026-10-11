@@ -64,7 +64,7 @@ test('every policy it creates obeys the API limits that refused one live', () =>
   // EVALUATION_MISSING_DATA_INACTIVE (HTTP 400); the fake API in the dry
   // runs accepted it. The alertPolicies reference: duration is whole
   // minutes, evaluationMissingData needs duration >= 60s, autoClose >= 30m.
-  const resource = { type: 'cloud_run_revision', labels: {} };
+  const resource = { type: 'cloud_run_worker_pool', labels: {} };
   const test = starveTestResources('p', 'run1', resource);
   for (const policy of [
     stuckMailboxPolicy(),
@@ -101,7 +101,7 @@ test('a silent watchdog pages, including one whose heartbeat never arrived', () 
   const [condition] = watchdogSilentPolicy().conditions;
   assert.match(
     condition.conditionPrometheusQueryLanguage.query,
-    /^absent_over_time\(logging_googleapis_com:user_stuck_mailbox_watchdog_completed\{monitored_resource="cloud_run_revision",service_name="declutrmail-worker"\}\[45m\]\)$/,
+    /^absent_over_time\(logging_googleapis_com:user_stuck_mailbox_watchdog_completed\{monitored_resource="cloud_run_worker_pool",worker_pool_name="declutrmail-worker-pool"\}\[45m\]\)$/,
   );
   // Longer than the first 15-minute tick after the metric is created, so
   // installing the policy cannot page before the first heartbeat lands.
@@ -124,8 +124,12 @@ test('the metrics read the lines the worker writes', () => {
 test('starve-test lines never reach the production alert, and its test policies page nobody', () => {
   assert.ok(STUCK_METRIC.filter.includes('NOT jsonPayload.starveTest:*'));
   const resource = {
-    type: 'cloud_run_revision',
-    labels: { project_id: 'p', service_name: 'declutrmail-worker', location: 'us-central1' },
+    type: 'cloud_run_worker_pool',
+    labels: {
+      project_id: 'p',
+      worker_pool_name: 'declutrmail-worker-pool',
+      location: 'us-central1',
+    },
   };
   const r = starveTestResources('p', 'run1', resource);
   assert.notEqual(r.metric.name, STUCK_METRIC.name);

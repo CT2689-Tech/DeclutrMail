@@ -108,6 +108,7 @@ import {
   LabelActionWorker,
   OUTBOX_NOTIFY_CHANNEL,
   OutboxDispatcherWorker,
+  RedisOutboxDispatcherLease,
   selectIncrementalDriftCandidates,
   OutboxPublisher,
   perMailboxWorkerSettings,
@@ -3139,6 +3140,11 @@ async function bootstrap(): Promise<void> {
       captureBackgroundFailure: (err, ctx) =>
         observer.captureBackgroundFailure(err instanceof Error ? err : new Error(String(err)), ctx),
     },
+    // A rollout can run the old and new worker at once; only the holder dispatches.
+    // Fail-fast connection: a lease command that timed out locally must never
+    // replay on reconnect and leave a phantom holder. Left open at shutdown so
+    // renewal can outlive the other connections while orphans settle.
+    lease: new RedisOutboxDispatcherLease(createRedisProducerConnection(requireEnv('REDIS_URL'))),
     listen: async (handler) => {
       // Dedicated connection for the LISTEN — the dispatcher's own
       // pg pool is shared with feature reads/writes. A LISTEN holds

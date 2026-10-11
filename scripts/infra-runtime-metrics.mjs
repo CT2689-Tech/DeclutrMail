@@ -1,6 +1,6 @@
+import { WORKER_POOL_RESOURCE as WORKER } from './worker-pool-monitoring.mjs';
+
 /** Aggregate-only five-minute worker observations. Log distributions are samples, not gauges. */
-const WORKER =
-  'resource.type="cloud_run_revision" AND resource.labels.service_name="declutrmail-worker"';
 function distribution(name, kind, field, unit, labels = []) {
   return {
     name,

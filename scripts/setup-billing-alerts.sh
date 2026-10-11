@@ -34,7 +34,8 @@ POLICY_DISPLAY_NAME="BullMQ: Upstash max-requests limit exceeded (worker)"
 
 # Matches the exact Upstash rejection the worker logs as a structured
 # bullmq.error line ("ERR max requests limit exceeded. Limit: 500000").
-LOG_FILTER='resource.type="cloud_run_revision" AND resource.labels.service_name="declutrmail-worker" AND jsonPayload.kind="bullmq.error" AND jsonPayload.message=~"max requests limit exceeded"'
+# The worker runs as the Cloud Run worker pool `declutrmail-worker-pool`.
+LOG_FILTER='resource.type="cloud_run_worker_pool" AND resource.labels.worker_pool_name="declutrmail-worker-pool" AND jsonPayload.kind="bullmq.error" AND jsonPayload.message=~"max requests limit exceeded"'
 
 if ! command -v gcloud >/dev/null 2>&1; then
   echo "::error::gcloud not on PATH" >&2
@@ -106,7 +107,7 @@ else
     {
       "displayName": "${METRIC_NAME} > 0 over 5 min",
       "conditionThreshold": {
-        "filter": "metric.type=\"logging.googleapis.com/user/${METRIC_NAME}\" AND resource.type=\"cloud_run_revision\"",
+        "filter": "metric.type=\"logging.googleapis.com/user/${METRIC_NAME}\" AND resource.type=\"cloud_run_worker_pool\"",
         "comparison": "COMPARISON_GT",
         "thresholdValue": 0,
         "duration": "0s",

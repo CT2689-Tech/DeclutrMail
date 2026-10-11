@@ -2,8 +2,14 @@
 import { pathToFileURL } from 'node:url';
 import { loadInvoiceHistory } from './infra-invoice-history.mjs';
 import { PREFIX, METRICS, gcpToken, gcpRequest } from './infra-observability.mjs';
+import {
+  API_OR_WORKER_LOGS,
+  WORKER_POOL,
+  WORKER_POOL_RESOURCE_TYPE,
+} from './worker-pool-monitoring.mjs';
 
 const TITLE = 'DeclutrMail — infrastructure, cost and recovery';
+const WORKER_POOL_LABEL = `resource.labels.worker_pool_name="${WORKER_POOL}"`;
 function chart(
   title,
   type,
@@ -43,15 +49,15 @@ function distributionSnapshotChart(title, name, groups) {
   const widget = chart(
     title,
     'logging.googleapis.com/user/' + name,
-    'cloud_run_revision',
-    'resource.labels.service_name="declutrmail-worker"',
+    WORKER_POOL_RESOURCE_TYPE,
+    WORKER_POOL_LABEL,
     'ALIGN_SUM',
     '300s',
     'REDUCE_MEAN',
     [
       ...groups,
       'metric.label.log',
-      ...['project_id', 'location', 'service_name', 'configuration_name', 'revision_name'].map(
+      ...['project_id', 'location', 'worker_pool_name', 'configuration_name', 'revision_name'].map(
         (key) => 'resource.label.' + key,
       ),
     ],
@@ -62,6 +68,29 @@ function distributionSnapshotChart(title, name, groups) {
     crossSeriesReducer: 'REDUCE_MAX',
     groupByFields: groups,
   };
+  return widget;
+}
+/** A Cloud Run chart by service also plots the worker pool, which is not a service. */
+function withWorkerPool(widget) {
+  const [service] = widget.xyChart.dataSets;
+  const filter = service.timeSeriesQuery.timeSeriesFilter;
+  widget.xyChart.dataSets.push({
+    ...service,
+    timeSeriesQuery: {
+      timeSeriesFilter: {
+        filter: filter.filter.replace(
+          'resource.type="cloud_run_revision"',
+          `resource.type="${WORKER_POOL_RESOURCE_TYPE}" AND ${WORKER_POOL_LABEL}`,
+        ),
+        aggregation: {
+          ...filter.aggregation,
+          groupByFields: (filter.aggregation.groupByFields ?? []).map((field) =>
+            field === 'resource.label.service_name' ? 'resource.label.worker_pool_name' : field,
+          ),
+        },
+      },
+    },
+  });
   return widget;
 }
 export function dashboard(project) {
@@ -201,17 +230,19 @@ export function dashboard(project) {
             'container/network/sent_bytes_count',
           ],
         ].map(([title, metric]) =>
-          chart(
-            title,
-            'run.googleapis.com/' + metric,
-            'cloud_run_revision',
-            '',
-            'ALIGN_SUM',
-            '86400s',
-            'REDUCE_SUM',
-            metric.includes('network')
-              ? ['resource.label.service_name', 'metric.label.kind']
-              : ['resource.label.service_name'],
+          withWorkerPool(
+            chart(
+              title,
+              'run.googleapis.com/' + metric,
+              'cloud_run_revision',
+              '',
+              'ALIGN_SUM',
+              '86400s',
+              'REDUCE_SUM',
+              metric.includes('network')
+                ? ['resource.label.service_name', 'metric.label.kind']
+                : ['resource.label.service_name'],
+            ),
           ),
         ),
         ...[
@@ -259,8 +290,8 @@ export function dashboard(project) {
           chart(
             title,
             'logging.googleapis.com/user/' + name,
-            'cloud_run_revision',
-            'resource.labels.service_name="declutrmail-worker"',
+            WORKER_POOL_RESOURCE_TYPE,
+            WORKER_POOL_LABEL,
             name === 'ops_sync_attempt_duration' ? 'ALIGN_PERCENTILE_95' : 'ALIGN_PERCENTILE_99',
             '300s',
             'REDUCE_MAX',
@@ -270,8 +301,8 @@ export function dashboard(project) {
         chart(
           'Reconnect email — provider accepted / skipped, not delivered',
           'logging.googleapis.com/user/ops_reconnect_email_outcome',
-          'cloud_run_revision',
-          'resource.labels.service_name="declutrmail-worker"',
+          WORKER_POOL_RESOURCE_TYPE,
+          WORKER_POOL_LABEL,
           'ALIGN_SUM',
           '300s',
           'REDUCE_SUM',
@@ -280,8 +311,8 @@ export function dashboard(project) {
         chart(
           'Runtime collection failures — observations per five minutes',
           'logging.googleapis.com/user/ops_collection_failed',
-          'cloud_run_revision',
-          'resource.labels.service_name="declutrmail-worker"',
+          WORKER_POOL_RESOURCE_TYPE,
+          WORKER_POOL_LABEL,
           'ALIGN_SUM',
           '300s',
           'REDUCE_SUM',
@@ -290,8 +321,8 @@ export function dashboard(project) {
         chart(
           'Runtime collection freshness — successful observations per five minutes',
           'logging.googleapis.com/user/ops_collection_completed',
-          'cloud_run_revision',
-          'resource.labels.service_name="declutrmail-worker"',
+          WORKER_POOL_RESOURCE_TYPE,
+          WORKER_POOL_LABEL,
           'ALIGN_SUM',
           '300s',
           'REDUCE_SUM',
@@ -307,35 +338,41 @@ export function dashboard(project) {
           'REDUCE_MEAN',
           ['metric.label.check_id'],
         ),
-        chart(
-          'Cloud Run CPU — worst revision p95 by service',
-          'run.googleapis.com/container/cpu/utilizations',
-          'cloud_run_revision',
-          '',
-          'ALIGN_PERCENTILE_95',
-          '300s',
-          'REDUCE_MAX',
-          ['resource.label.service_name'],
+        withWorkerPool(
+          chart(
+            'Cloud Run CPU — worst revision p95 by service',
+            'run.googleapis.com/container/cpu/utilizations',
+            'cloud_run_revision',
+            '',
+            'ALIGN_PERCENTILE_95',
+            '300s',
+            'REDUCE_MAX',
+            ['resource.label.service_name'],
+          ),
         ),
-        chart(
-          'Cloud Run memory — worst revision p95 by service',
-          'run.googleapis.com/container/memory/utilizations',
-          'cloud_run_revision',
-          '',
-          'ALIGN_PERCENTILE_95',
-          '300s',
-          'REDUCE_MAX',
-          ['resource.label.service_name'],
+        withWorkerPool(
+          chart(
+            'Cloud Run memory — worst revision p95 by service',
+            'run.googleapis.com/container/memory/utilizations',
+            'cloud_run_revision',
+            '',
+            'ALIGN_PERCENTILE_95',
+            '300s',
+            'REDUCE_MAX',
+            ['resource.label.service_name'],
+          ),
         ),
-        chart(
-          'Cloud Run instances — summed by service and state',
-          'run.googleapis.com/container/instance_count',
-          'cloud_run_revision',
-          '',
-          'ALIGN_MEAN',
-          '60s',
-          'REDUCE_SUM',
-          ['resource.label.service_name', 'metric.label.state'],
+        withWorkerPool(
+          chart(
+            'Cloud Run instances — summed by service and state',
+            'run.googleapis.com/container/instance_count',
+            'cloud_run_revision',
+            '',
+            'ALIGN_MEAN',
+            '60s',
+            'REDUCE_SUM',
+            ['resource.label.service_name', 'metric.label.state'],
+          ),
         ),
         chart(
           'API requests per second — by response class',
@@ -376,8 +413,8 @@ export function dashboard(project) {
         chart(
           'Mailbox failures past grace window — observations, not distinct users',
           'logging.googleapis.com/user/stuck_mailbox_unnoticed',
-          'cloud_run_revision',
-          '',
+          WORKER_POOL_RESOURCE_TYPE,
+          WORKER_POOL_LABEL,
           'ALIGN_SUM',
           '1800s',
         ),
@@ -386,7 +423,8 @@ export function dashboard(project) {
           logsPanel: {
             resourceNames: [`projects/${project}`],
             filter:
-              'resource.type="cloud_run_revision" AND (jsonPayload.kind="mailbox.stuck_unnoticed" OR jsonPayload.kind="stuck_mailbox_watchdog.failed" OR jsonPayload.kind="email.not_delivered" OR jsonPayload.kind="email.refused_no_postal_address" OR jsonPayload.kind="worker.incremental.terminal_failed" OR jsonPayload.kind="worker.heartbeat_failed")',
+              API_OR_WORKER_LOGS +
+              ' AND (jsonPayload.kind="mailbox.stuck_unnoticed" OR jsonPayload.kind="stuck_mailbox_watchdog.failed" OR jsonPayload.kind="email.not_delivered" OR jsonPayload.kind="email.refused_no_postal_address" OR jsonPayload.kind="worker.incremental.terminal_failed" OR jsonPayload.kind="worker.heartbeat_failed")',
           },
         },
       ],

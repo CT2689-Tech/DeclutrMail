@@ -135,12 +135,14 @@ test('smoke requires real dependencies and canonical unauthenticated error, not 
     /readyz/,
   );
 });
-test('workflow gates worker boot through HTTP, preserves production OAuth identity, and uses API helper', () => {
+test('workflow gates worker boot on its own log, preserves production OAuth identity, and uses API helper', () => {
   const workflow = readFileSync(
     new URL('../.github/workflows/deploy-cloud-run.yml', import.meta.url),
     'utf8',
   );
-  assert.match(workflow, /--startup-probe="httpGet.path=\/,httpGet.port=8080/);
+  // Worker pools have no startup probe; boot proof is the started revision's
+  // own log line (filter and fixtures in worker-executor.test.mjs).
+  assert.match(workflow, /run: node scripts\/worker-executor\.mjs smoke/);
   assert.match(workflow, /--liveness-probe="httpGet.path=\/api\/healthz/);
   assert.match(workflow, /node scripts\/deploy-api-safely.mjs/);
   assert.match(
@@ -148,7 +150,7 @@ test('workflow gates worker boot through HTTP, preserves production OAuth identi
     /GOOGLE_REDIRECT_URI=https:\/\/api.declutrmail.com\/api\/auth\/google\/callback/,
   );
   const worker = workflow.slice(
-    workflow.indexOf('gcloud run deploy declutrmail-worker'),
+    workflow.indexOf('gcloud run worker-pools deploy declutrmail-worker-pool'),
     workflow.indexOf('- name: Deploy declutrmail-api'),
   );
   assert.doesNotMatch(worker, /--no-traffic|--tag=/);
@@ -339,11 +341,55 @@ test('workflow keeps the verified API selector and runs preflight before build a
   assert.match(workflow, /API_DB_DRIVER=\$API_DB_DRIVER/);
   assert.ok(workflow.indexOf('--check-driver=') < workflow.indexOf('docker build --platform'));
   assert.ok(
-    workflow.indexOf('--check-driver=') < workflow.indexOf('gcloud run deploy declutrmail-worker'),
+    workflow.indexOf('--check-driver=') <
+      workflow.indexOf('gcloud run worker-pools deploy declutrmail-worker-pool'),
   );
   const worker = workflow.slice(
-    workflow.indexOf('gcloud run deploy declutrmail-worker'),
+    workflow.indexOf('gcloud run worker-pools deploy declutrmail-worker-pool'),
     workflow.indexOf('- name: Deploy declutrmail-api'),
   );
   assert.doesNotMatch(worker, /API_DB_DRIVER=/);
+});
+
+test('worker transitions are stop, prove zero, then start, with one cleanup on failure or cancel', () => {
+  const workflow = readFileSync(
+    new URL('../.github/workflows/deploy-cloud-run.yml', import.meta.url),
+    'utf8',
+  );
+  const order = [
+    '- name: Check email queue actors before new preferences',
+    'run: node scripts/worker-executor.mjs plan',
+    'run: node scripts/worker-executor.mjs stop-all',
+    'gcloud run worker-pools deploy declutrmail-worker-pool',
+    'run: node scripts/worker-executor.mjs start',
+    'run: node scripts/worker-executor.mjs smoke',
+    '- name: Verify billing notice worker before API producers',
+    'run: node scripts/worker-executor.mjs mark-verified',
+    'run: node scripts/worker-executor.mjs reconcile',
+    '- name: Deploy declutrmail-api',
+  ].map((marker) => {
+    const at = workflow.indexOf(marker);
+    assert.notEqual(at, -1, `missing ${marker}`);
+    return at;
+  });
+  assert.deepEqual(
+    order,
+    [...order].sort((a, b) => a - b),
+  );
+  const worker = workflow.slice(
+    workflow.indexOf('- name: Plan worker transition'),
+    workflow.indexOf('- name: Deploy declutrmail-api'),
+  );
+  // The deploy never starts a worker; only the executor changes who runs.
+  assert.match(worker, /--instances=0 \\\n/);
+  assert.doesNotMatch(worker, /--instances=[1-9]|--scaling=|update-instance-split|services update/);
+  assert.doesNotMatch(workflow, /services delete|worker-pools delete/);
+  // #974's admission paths stay off on the pool: --set-env-vars replaces all.
+  assert.doesNotMatch(worker, /EMAIL_RUNTIME_LEASE_ENABLED|WORKER_ADMISSION_HELD/);
+  const reconcile = worker.slice(worker.indexOf('- name: Reconcile worker executors'));
+  assert.match(reconcile, /^- name: .*\n {8}if: always\(\)\n {8}timeout-minutes: 30\n/);
+  // Every worker step is bounded so the cleanup gets its turn.
+  for (const step of worker.split('      - name: ').slice(1))
+    assert.match(step, /\n {8}timeout-minutes: \d+\n/, step.split('\n')[0]);
+  assert.match(workflow, /scripts\/worker-executor\.test\.mjs/);
 });

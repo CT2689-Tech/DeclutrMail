@@ -381,6 +381,11 @@ export type {
   OutboxDispatcherDeps,
   OutboxObserver,
 } from './outbox-dispatcher.worker.js';
+export {
+  OUTBOX_DISPATCHER_LEASE_KEY,
+  RedisOutboxDispatcherLease,
+} from './outbox-dispatcher-lease.js';
+export type { OutboxDispatcherLease } from './outbox-dispatcher-lease.js';
 export { OutboxPublisher } from './outbox-publisher.js';
 export type { OutboxPublishInput, OutboxTx } from './outbox-publisher.js';
 export { UndoExpiryWorker } from './undo-expiry.worker.js';
