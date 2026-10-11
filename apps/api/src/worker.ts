@@ -72,6 +72,11 @@ import {
   EMAIL_PREFS_COMPATIBLE_WORKER_NAME,
   createBillingEmailSendConsumer,
   EmailSendWorker,
+  EmailRuntimeLease,
+  EmailRuntimeGuard,
+  startEmailRuntimeConsumer,
+  finishEmailRuntimeStartup,
+  createEmailRuntimeConnection,
   enqueueEmailSend,
   ensureIncrementalSyncJob,
   ensureInitialSyncJob,
@@ -326,6 +331,7 @@ function auditRequiredEnv(): void {
  * Cloud Run default but is respected if injected.
  */
 let bootstrapComplete = false;
+let workerAdmissionHeld = false;
 function startHealthServer(): void {
   // Lazy import keeps the import surface unchanged for local + tests.
   import('node:http')
@@ -333,7 +339,7 @@ function startHealthServer(): void {
       const port = Number.parseInt(process.env.PORT ?? '8080', 10);
       createServer((_req, res) => {
         res.statusCode = bootstrapComplete ? 200 : 503;
-        res.end(bootstrapComplete ? 'ok' : 'starting');
+        res.end(workerAdmissionHeld ? 'admission-held' : bootstrapComplete ? 'ok' : 'starting');
       }).listen(port, () => {
         console.log(
           JSON.stringify({
@@ -2146,6 +2152,33 @@ async function bootstrap(): Promise<void> {
   });
 
   const emailSendQueue = new Queue<EmailSendJobData>(EMAIL_SEND_QUEUE, { connection });
+  // Staged OFF until independently reviewed legacy-runtime adoption. Enabling
+  // this flag enrolls actual consumers; it never certifies old actor retirement.
+  let emailRuntimeFailed = false;
+  const emailPollingReady: Promise<void>[] = [];
+  const runtimeLeaseEnabled = process.env.EMAIL_RUNTIME_LEASE_ENABLED === 'true';
+  const runtimeConnection = runtimeLeaseEnabled
+    ? createEmailRuntimeConnection(requireEnv('REDIS_URL'))
+    : undefined;
+  if (runtimeConnection) await runtimeConnection.connect();
+  const emailRuntimeLease = runtimeConnection
+    ? new EmailRuntimeLease(
+        runtimeConnection,
+        {
+          revision: requireEnv('K_REVISION'),
+          source: requireEnv('SENTRY_RELEASE'),
+        },
+        { billingConsumer: billingNoticeStart() !== null },
+      )
+    : undefined;
+  const emailDelivery = new EmailService(new EmailSuppressionService(db));
+  const emailRuntimeGuard = emailRuntimeLease
+    ? new EmailRuntimeGuard(emailRuntimeLease, emailDelivery)
+    : undefined;
+  const runEmailJob = (
+    worker: EmailSendWorker,
+    job: import('bullmq').Job<EmailSendJobData, EmailSendResult>,
+  ) => (emailRuntimeGuard ? emailRuntimeGuard.run(job, () => worker.run(job)) : worker.run(job));
   const emailSendDependencies = {
     db,
     resolveBriefNotice: buildBriefNoticeResolver(
@@ -2157,15 +2190,27 @@ async function bootstrap(): Promise<void> {
       db,
       process.env.WEB_URL ?? 'https://declutrmail.com',
     ),
-    delivery: new EmailService(new EmailSuppressionService(db)),
+    delivery: emailRuntimeGuard?.delivery ?? emailDelivery,
+    ...(emailRuntimeGuard
+      ? {
+          assertDeliveryAdmission: emailRuntimeGuard.assertDeliveryAdmission,
+          classifyDeliveryFailure: emailRuntimeGuard.classifyDeliveryFailure,
+        }
+      : {}),
   };
   const emailSendWorker = new EmailSendWorker(emailSendDependencies);
   emailSendWorker.setObserver(observer);
   emailSendWorker.setDeadLetterRecorder(deadLetterRecorder);
   const emailSendBullWorker = new Worker<EmailSendJobData, EmailSendResult>(
     EMAIL_SEND_QUEUE,
-    (job) => emailSendWorker.run(job),
-    { connection, concurrency: 5, ...userFacingTuning, name: EMAIL_PREFS_COMPATIBLE_WORKER_NAME },
+    (job) => runEmailJob(emailSendWorker, job),
+    {
+      connection,
+      concurrency: 5,
+      ...userFacingTuning,
+      name: EMAIL_PREFS_COMPATIBLE_WORKER_NAME,
+      autorun: !runtimeLeaseEnabled,
+    },
   );
   emailSendBullWorker.on('error', (err) => {
     console.error(
@@ -2186,8 +2231,8 @@ async function bootstrap(): Promise<void> {
   briefEmailSendWorker.setDeadLetterRecorder(deadLetterRecorder);
   const briefEmailSendBullWorker = new Worker<EmailSendJobData, EmailSendResult>(
     BRIEF_EMAIL_SEND_QUEUE,
-    (job) => briefEmailSendWorker.run(job),
-    { connection, concurrency: 2, ...userFacingTuning },
+    (job) => runEmailJob(briefEmailSendWorker, job),
+    { connection, concurrency: 2, ...userFacingTuning, autorun: !runtimeLeaseEnabled },
   );
   briefEmailSendBullWorker.on('error', () => {
     console.error(
@@ -2208,8 +2253,8 @@ async function bootstrap(): Promise<void> {
   billingEmailSendWorker.setDeadLetterRecorder(deadLetterRecorder);
   const billingEmailSendBullWorker = createBillingEmailSendConsumer(
     billingNoticeStart() !== null,
-    (job) => billingEmailSendWorker.run(job),
-    { connection, concurrency: 1, ...userFacingTuning },
+    (job) => runEmailJob(billingEmailSendWorker, job),
+    { connection, concurrency: 1, ...userFacingTuning, autorun: !runtimeLeaseEnabled },
   );
   billingEmailSendBullWorker?.on('error', (err) => {
     console.error(
@@ -3049,6 +3094,7 @@ async function bootstrap(): Promise<void> {
   });
   const outboxDispatcher = new OutboxDispatcherWorker({
     db,
+    ...(emailRuntimeLease ? { assertAdmission: () => emailRuntimeLease.assertAdmission() } : {}),
     // U-WIRE (D225): full consumer deps. `autopilotApplyQueue` routes
     // sync_ready + score_run_completed into the apply sweep (U14);
     // `onMailboxSyncReady` enqueues the D6/D162 sync-complete email +
@@ -3111,7 +3157,38 @@ async function bootstrap(): Promise<void> {
       };
     },
   });
-  await outboxDispatcher.start();
+  await outboxDispatcher.start(async () => {
+    if (!emailRuntimeLease) return;
+    const consumers = [
+      emailSendBullWorker,
+      briefEmailSendBullWorker,
+      ...(billingEmailSendBullWorker ? [billingEmailSendBullWorker] : []),
+    ];
+    await Promise.all(consumers.map((worker) => worker.waitUntilReady()));
+    await emailRuntimeLease.register();
+    const stopEmailClaims = async () => {
+      emailRuntimeFailed = true;
+      bootstrapComplete = false;
+      await Promise.allSettled(consumers.map((worker) => worker.pause(true)));
+      await outboxDispatcher.stop();
+    };
+    emailRuntimeLease.startRenewing(stopEmailClaims);
+    for (const consumer of consumers) {
+      emailPollingReady.push(
+        startEmailRuntimeConsumer(consumer, emailRuntimeLease, async () => {
+          if (shuttingDown) return;
+          emailRuntimeFailed = true;
+          bootstrapComplete = false;
+          console.error(JSON.stringify({ level: 'error', kind: 'email.runtime_polling_failed' }));
+          await stopEmailClaims();
+        }),
+      );
+    }
+  });
+  if (emailRuntimeLease) {
+    await Promise.all(emailPollingReady);
+    await emailRuntimeLease.publish();
+  }
   console.log(
     JSON.stringify({ level: 'info', kind: 'worker.listening', queue: 'outbox-dispatcher' }),
   );
@@ -3156,6 +3233,34 @@ async function bootstrap(): Promise<void> {
     // Optional read-only probes must not consume the worker drain grace period.
     operationalConnection.disconnect();
     void Promise.allSettled(operationalQueues.map((queue) => queue.close()));
+    // Fence mail/outbox immediately, independent of slow Gmail/drift sweeps.
+    // Retain the lease until their actual provider/orphan calls have settled.
+    if (emailRuntimeLease) {
+      emailRuntimeFailed = true;
+      bootstrapComplete = false;
+    }
+    // invalidate() fences admission and stops renewal synchronously; the owned
+    // expired record stays present throughout the actual drain.
+    const emailRuntimeRevocation = emailRuntimeLease?.invalidate();
+    void emailRuntimeRevocation?.catch(() => undefined);
+    const emailRuntimeDrain = emailRuntimeLease
+      ? (async () => {
+          await Promise.all([
+            outboxDispatcher.stop(),
+            emailSendBullWorker.close(),
+            briefEmailSendBullWorker.close(),
+            billingEmailSendBullWorker?.close(),
+          ]);
+          await outboxDispatcher.drainOrphans();
+          await emailRuntimeGuard?.drain();
+          await emailRuntimeRevocation;
+          await emailRuntimeLease.release();
+          runtimeConnection?.disconnect();
+        })()
+      : undefined;
+    void emailRuntimeDrain?.catch(() => {
+      console.error(JSON.stringify({ level: 'error', kind: 'email.runtime_drain_failed' }));
+    });
     void (async () => {
       if (heartbeatInFlight) await heartbeatInFlight;
       if (stuckMailboxInFlight) await stuckMailboxInFlight;
@@ -3199,6 +3304,7 @@ async function bootstrap(): Promise<void> {
       await emailSendQueue.close();
       await billingEmailSendBullWorker?.close();
       await billingEmailSendQueue.close();
+      await emailRuntimeDrain;
       await weeklyValueReceiptBullWorker.close();
       await weeklyValueReceiptQueue.close();
       await lapseReengagementBullWorker.close();
@@ -3253,7 +3359,27 @@ async function bootstrap(): Promise<void> {
   // Cloud Run health probe: flip to 200 only after every BullMQ worker
   // is listening + the outbox dispatcher is wired. Probes before this
   // point return 503 so a half-booted revision isn't routed traffic.
-  bootstrapComplete = true;
+  if (emailRuntimeLease) {
+    const emailConsumers = [
+      emailSendBullWorker,
+      briefEmailSendBullWorker,
+      ...(billingEmailSendBullWorker ? [billingEmailSendBullWorker] : []),
+    ];
+    if (!emailConsumers.every((consumer) => consumer.isRunning()))
+      throw new Error('Email runtime consumer unavailable');
+    await finishEmailRuntimeStartup(
+      emailRuntimeLease,
+      () =>
+        !emailRuntimeFailed &&
+        !shuttingDown &&
+        emailConsumers.every((consumer) => consumer.isRunning()),
+      () => {
+        bootstrapComplete = true;
+      },
+    );
+  } else {
+    bootstrapComplete = true;
+  }
   heartbeatTick();
 }
 
@@ -3270,32 +3396,50 @@ async function bootstrap(): Promise<void> {
 // after a successful boot, and a critical signal if the bootstrap
 // `initSentry()` itself was the failure (the second call still
 // completes since the DSN is read fresh from env).
-bootstrap().catch((err: unknown) => {
-  const error = err instanceof Error ? err : new Error(String(err));
-  console.error(
-    JSON.stringify({
-      level: 'error',
-      kind: 'worker.boot_failed',
-      message: error.message,
-    }),
-  );
-  void (async () => {
-    try {
-      // Gate Sentry in the failure path the same way bootstrap does —
-      // without this, a Sentry init hang in the boot-failure recovery
-      // path leaves the process stuck rather than exiting with code 1.
-      if (process.env.WORKER_SENTRY_ENABLED === 'true') {
-        await initSentry();
-        const obs = await createSentryWorkerObserver({
-          dsnSet: Boolean(process.env.SENTRY_DSN),
-        });
-        obs.captureBackgroundFailure(error, { kind: 'worker.boot_failed' });
+const admissionHeldValue = process.env.WORKER_ADMISSION_HELD;
+if (
+  admissionHeldValue !== undefined &&
+  admissionHeldValue !== 'false' &&
+  admissionHeldValue !== 'true'
+) {
+  console.error(JSON.stringify({ level: 'error', kind: 'worker.admission_configuration_invalid' }));
+  process.exit(1);
+}
+if (admissionHeldValue === 'true') {
+  // Cloud Run validates a new revision even at manual zero. This immutable
+  // held revision never constructs clients or begins normal bootstrap/work.
+  workerAdmissionHeld = true;
+  bootstrapComplete = true;
+  startHealthServer();
+  console.log(JSON.stringify({ level: 'info', kind: 'worker.admission_held', polling: false }));
+} else {
+  bootstrap().catch((err: unknown) => {
+    const error = err instanceof Error ? err : new Error(String(err));
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'worker.boot_failed',
+        message: error.message,
+      }),
+    );
+    void (async () => {
+      try {
+        // Gate Sentry in the failure path the same way bootstrap does —
+        // without this, a Sentry init hang in the boot-failure recovery
+        // path leaves the process stuck rather than exiting with code 1.
+        if (process.env.WORKER_SENTRY_ENABLED === 'true') {
+          await initSentry();
+          const obs = await createSentryWorkerObserver({
+            dsnSet: Boolean(process.env.SENTRY_DSN),
+          });
+          obs.captureBackgroundFailure(error, { kind: 'worker.boot_failed' });
+        }
+      } catch {
+        // Capturing the boot failure must never itself crash the exit
+        // path — better to lose the Sentry event than hang the process.
+      } finally {
+        process.exit(1);
       }
-    } catch {
-      // Capturing the boot failure must never itself crash the exit
-      // path — better to lose the Sentry event than hang the process.
-    } finally {
-      process.exit(1);
-    }
-  })();
-});
+    })();
+  });
+}

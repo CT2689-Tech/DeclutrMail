@@ -4,9 +4,18 @@ import {
   createRedisConnection,
   EMAIL_SEND_QUEUE,
   QueueActorCompatibilityError,
-  readBillingQueueCompatibility,
-  readEmailPrefsQueueCompatibility,
+  sampleEmailQueueCompatibility,
 } from '@declutrmail/workers';
+
+type Redis = ReturnType<typeof createRedisConnection>;
+
+/**
+ * Fresh broker connection per sample, so neither a worker that is momentarily
+ * reconnecting nor this probe's own connection placement decides the verdict.
+ * Startup plus the deadline must stay inside the task's 60 s timeout.
+ */
+export const PROBE_SAMPLING = { samples: 5, intervalMs: 3_000 };
+export const PROBE_DEADLINE_MS = 35_000;
 
 /**
  * Task exit codes. The deploy reads only this number from the Cloud Run task,
@@ -70,42 +79,57 @@ export async function verifyBillingQueue(): Promise<{ workers: number }> {
       'Billing queue probe configuration unavailable',
       'configuration_unavailable',
     );
-  let connection: ReturnType<typeof createRedisConnection> | undefined;
-  let queue: Queue | undefined;
+  const redisUrl = process.env.BILLING_NOTICE_REDIS_URL;
+  type Handle = { connection: Redis; queue?: Queue; error?: ProbeFailureReason | undefined };
+  const open = new Set<Handle>();
+  let current: Handle | undefined;
+  let finished = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let lastRedisError: ProbeFailureReason | undefined;
-  try {
-    connection = createRedisConnection(process.env.BILLING_NOTICE_REDIS_URL);
-    connection.on('error', (error: unknown) => {
-      lastRedisError = redisErrorReason(error) ?? lastRedisError;
+  const release = async (handle: Handle) => {
+    open.delete(handle);
+    if (current === handle) current = undefined;
+    handle.connection.disconnect();
+    await handle.queue?.close().catch(() => {});
+  };
+  const withQueue = async <T>(read: (queue: Queue) => Promise<T>): Promise<T> => {
+    if (finished) throw new BillingQueueProbeError('Billing queue probe deadline', 'unclassified');
+    const handle: Handle = { connection: createRedisConnection(redisUrl) };
+    open.add(handle);
+    current = handle;
+    handle.connection.on('error', (error: unknown) => {
+      handle.error = redisErrorReason(error) ?? handle.error;
     });
-    queue = new Queue(EMAIL_SEND_QUEUE, { connection, skipMetasUpdate: true });
-    queue.on('error', () => {});
-    const redis = connection;
+    try {
+      handle.queue = new Queue(EMAIL_SEND_QUEUE, {
+        connection: handle.connection,
+        skipMetasUpdate: true,
+      });
+      handle.queue.on('error', () => {});
+      return await read(handle.queue);
+    } finally {
+      await release(handle);
+    }
+  };
+  /** Between samples every read so far was answered, so the broker is slow, not unreachable. */
+  const deadlineReason = (): ProbeFailureReason =>
+    !current || current.connection.status === 'ready'
+      ? 'broker_read_stalled'
+      : (current.error ?? 'redis_not_ready');
+  try {
     return await Promise.race([
-      Promise.all([
-        readBillingQueueCompatibility(queue),
-        readEmailPrefsQueueCompatibility(queue),
-      ]).then(([, prefs]) => prefs),
+      sampleEmailQueueCompatibility(withQueue, PROBE_SAMPLING),
       new Promise<never>((_resolve, reject) => {
         timer = setTimeout(
           () =>
-            reject(
-              new BillingQueueProbeError(
-                'Billing queue probe deadline',
-                redis.status === 'ready'
-                  ? 'broker_read_stalled'
-                  : (lastRedisError ?? 'redis_not_ready'),
-              ),
-            ),
-          25_000,
+            reject(new BillingQueueProbeError('Billing queue probe deadline', deadlineReason())),
+          PROBE_DEADLINE_MS,
         );
       }),
     ]);
   } finally {
+    finished = true;
     clearTimeout(timer);
-    connection?.disconnect();
-    await queue?.close().catch(() => {});
+    await Promise.all([...open].map(release));
   }
 }
 

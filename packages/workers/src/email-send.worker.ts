@@ -257,6 +257,9 @@ export interface EmailDeliveryPort {
 
 export interface EmailSendWorkerDeps {
   queueName?: string;
+  /** Owned runtime admission immediately before any external delivery. */
+  assertDeliveryAdmission?: (ctx: WorkerContext) => Promise<void>;
+  classifyDeliveryFailure?: (error: Error) => Promise<Error>;
   db: PostgresJsDatabase<typeof schema>;
   delivery: EmailDeliveryPort;
   resolveBriefNotice?: (
@@ -281,6 +284,10 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
 
   constructor(private readonly deps: EmailSendWorkerDeps) {
     super();
+  }
+
+  protected override classifyRunFailure(error: Error): Promise<Error> {
+    return this.deps.classifyDeliveryFailure?.(error) ?? Promise.resolve(error);
   }
 
   protected override getIdempotencyKey(payload: EmailSendJobData): string {
@@ -484,6 +491,8 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
       }
     }
 
+    await this.deps.assertDeliveryAdmission?.(ctx);
+    if (ctx.signal?.aborted) throw new TransientError('Email delivery deadline exceeded.');
     const delivered = await this.deps.delivery.deliver({
       to,
       subject: payload.subject,

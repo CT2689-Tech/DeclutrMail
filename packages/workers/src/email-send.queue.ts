@@ -1,3 +1,4 @@
+import { EMAIL_RUNTIME_DELIVERY_FIELD } from './email-runtime-lease.js';
 import { Worker, type Job, type JobsOptions, type Queue, type WorkerOptions } from 'bullmq';
 import { hasPostalAddress } from '@declutrmail/shared/copy';
 
@@ -52,14 +53,20 @@ export class QueueActorCompatibilityError extends Error {
   }
 }
 
-async function readQueueActors(
-  queue: Queue,
-  workerName: string,
-  label: string,
-): Promise<{ workers: number }> {
+type QueueActors = Awaited<ReturnType<Queue['getWorkers']>>;
+
+/** One `CLIENT LIST` read of the generic email queue's named actors. */
+async function listGenericEmailActors(queue: Queue, label: string): Promise<QueueActors> {
   if (queue.name !== EMAIL_SEND_QUEUE)
     throw new Error(`${label} compatibility needs the generic email queue`);
-  const workers = await queue.getWorkers();
+  return queue.getWorkers();
+}
+
+function classifyQueueActors(
+  workers: QueueActors,
+  workerName: string,
+  label: string,
+): { workers: number } {
   const message = `${label} queue compatibility unverified`;
   if (workers.length === 0) throw new QueueActorCompatibilityError(message, 'no_workers');
   // Only this exact BullMQ sentinel establishes a refused CLIENT LIST.
@@ -81,13 +88,51 @@ async function readQueueActors(
 }
 
 /** Read-only: empty, unavailable, unnamed or older runtime actors cannot clear rollout. */
-export function readBillingQueueCompatibility(queue: Queue): Promise<{ workers: number }> {
-  return readQueueActors(queue, BILLING_QUEUE_COMPATIBLE_WORKER_NAME, 'Billing');
+export async function readBillingQueueCompatibility(queue: Queue): Promise<{ workers: number }> {
+  const workers = await listGenericEmailActors(queue, 'Billing');
+  return classifyQueueActors(workers, BILLING_QUEUE_COMPATIBLE_WORKER_NAME, 'Billing');
 }
 
 /** Every generic email actor must tolerate future categories before their first write. */
-export function readEmailPrefsQueueCompatibility(queue: Queue): Promise<{ workers: number }> {
-  return readQueueActors(queue, EMAIL_PREFS_COMPATIBLE_WORKER_NAME, 'Email prefs');
+export async function readEmailPrefsQueueCompatibility(queue: Queue): Promise<{ workers: number }> {
+  const workers = await listGenericEmailActors(queue, 'Email prefs');
+  return classifyQueueActors(workers, EMAIL_PREFS_COMPATIBLE_WORKER_NAME, 'Email prefs');
+}
+
+/**
+ * `CLIENT LIST` is one instant on one broker connection; the bound broker
+ * can return a different partial client set per connection, and a live
+ * worker's named connection is absent while BullMQ re-establishes it. A
+ * single empty listing therefore does not prove there is no worker.
+ *
+ * Each sample takes ONE listing through a fresh queue handle and applies
+ * both the billing and the email-prefs predicate to that same listing, so no
+ * actor seen by any listing can be outvoted by another, emptier listing.
+ * An empty listing is the only result retried; any other refusal in any
+ * sample is final, with no later sample able to override it. A pass means
+ * every sampled actor was compatible, not that every consumer was listed.
+ */
+export async function sampleEmailQueueCompatibility(
+  withQueue: <T>(read: (queue: Queue) => Promise<T>) => Promise<T>,
+  { samples, intervalMs }: { samples: number; intervalMs: number },
+): Promise<{ workers: number }> {
+  let workers = 0;
+  for (let sample = 0; sample < samples; sample++) {
+    if (sample > 0) await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    const listing = await withQueue((queue) => listGenericEmailActors(queue, 'Email prefs'));
+    if (listing.length === 0) continue;
+    classifyQueueActors(listing, BILLING_QUEUE_COMPATIBLE_WORKER_NAME, 'Billing');
+    workers = Math.max(
+      workers,
+      classifyQueueActors(listing, EMAIL_PREFS_COMPATIBLE_WORKER_NAME, 'Email prefs').workers,
+    );
+  }
+  if (workers === 0)
+    throw new QueueActorCompatibilityError(
+      'Email prefs queue compatibility unverified',
+      'no_workers',
+    );
+  return { workers };
 }
 
 /** Disabled consumers do not poll; waiting jobs retain their finite retry budget. */
@@ -258,6 +303,11 @@ export async function enqueueEmailSend(
     if (!reapable) {
       return 'noop';
     }
+    // A late acknowledgement can complete as a skip after an earlier accepted
+    // send. Durable acceptance/unknown evidence outranks that return value.
+    const client = await queue.getBackend().client;
+    if (await client.hexists(queue.toKey(existing.id!), EMAIL_RUNTIME_DELIVERY_FIELD))
+      return 'noop';
     // `remove()` REJECTS if a worker locked the job between `getState()`
     // and here. Treat that lost race as a no-op rather than adding under
     // a half-removed hash — the attempt that won the race runs, and a

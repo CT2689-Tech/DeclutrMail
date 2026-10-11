@@ -1,6 +1,6 @@
 import { createHmac, randomBytes } from 'node:crypto';
 
-import { type Job, UnrecoverableError } from 'bullmq';
+import { DelayedError, type Job, UnrecoverableError } from 'bullmq';
 
 import type { DeadLetterEntry, DeadLetterRecorder } from './dead-letter.recorder.js';
 import type { WorkerContext } from './worker-context.js';
@@ -104,6 +104,8 @@ function telemetryReferenceKey(): Buffer | null {
  * AsyncLocalStorage correlation ids.
  */
 export abstract class BaseDeclutrWorker<TPayload, TResult> {
+  /** Domain safety can turn an ambiguous external effect into a retained hold. */
+  protected classifyRunFailure?(error: Error): Promise<Error>;
   /** Stable name for logs + failure capture. */
   abstract readonly workerName: string;
 
@@ -294,7 +296,13 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
       this.emit('worker.succeeded', ctx, { result: sanitizeWorkerResult(result) });
       return result;
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
+      // BullMQ processor admission explicitly moved this job to delayed. It is
+      // infrastructure backpressure, not a consumed attempt or terminal failure.
+      if (err instanceof DelayedError) throw err;
+      const originalError = err instanceof Error ? err : new Error(String(err));
+      const error = this.classifyRunFailure
+        ? await this.classifyRunFailure(originalError)
+        : originalError;
       const terminal = isNonRetryable(error) || ctx.attempt >= ctx.maxAttempts;
       this.emit('worker.failed', ctx, { error: safeWorkerErrorKind(error), terminal });
 

@@ -124,6 +124,102 @@ describe('OutboxDispatcherWorker', () => {
     }
   });
 
+  it('runtime admission precedes the real claim and preserves row attempt history', async () => {
+    const { db, pg } = await freshDb();
+    activePg = pg;
+    await db.transaction(async (tx) => {
+      await new OutboxPublisher().publish(tx, {
+        topic: 'sync.history_processed',
+        aggregateId: 'runtime-admission',
+        payload: {},
+        schema: EmptyPayload,
+      });
+    });
+    const consumer = vi.fn(async () => {});
+    let admitted = false;
+    const dispatcher = new OutboxDispatcherWorker({
+      db: db as unknown as PostgresJsDatabase<typeof schema>,
+      consumer,
+      assertAdmission: async () => {
+        if (!admitted) throw new Error('synthetic expired lease');
+      },
+    });
+    activeDispatcher = dispatcher;
+    const before = await db.select().from(outboxEvents);
+    const refused = await dispatcher.tick();
+    expect(refused.claimed).toBe(0);
+    expect(consumer).not.toHaveBeenCalled();
+    const held = await db.select().from(outboxEvents);
+    expect(held[0]?.attempts).toBe(before[0]?.attempts);
+    expect(held[0]?.status).toBe('pending');
+    admitted = true;
+    await dispatcher.tick();
+    expect(consumer).toHaveBeenCalledOnce();
+  });
+
+  it('enrollment follows LISTEN readiness and precedes the first claim', async () => {
+    const { db, pg } = await freshDb();
+    activePg = pg;
+    const order: string[] = [];
+    const dispatcher = new OutboxDispatcherWorker({
+      db: db as unknown as PostgresJsDatabase<typeof schema>,
+      consumer: async () => {},
+      listen: async () => {
+        order.push('listen');
+        return async () => {};
+      },
+      assertAdmission: async () => {
+        order.push('admit');
+      },
+    });
+    activeDispatcher = dispatcher;
+    await dispatcher.start(async () => {
+      order.push('enroll');
+    });
+    expect(order.slice(0, 3)).toEqual(['listen', 'enroll', 'admit']);
+  });
+
+  it('runtime drain waits for an orphan after stop has finished its timed-out tick', async () => {
+    const { db, pg } = await freshDb();
+    activePg = pg;
+    await db.transaction(async (tx) => {
+      await new OutboxPublisher().publish(tx, {
+        topic: 'sync.history_processed',
+        aggregateId: 'runtime-orphan',
+        payload: {},
+        schema: EmptyPayload,
+      });
+    });
+    let release!: () => void;
+    const actualIo = new Promise<void>((r) => {
+      release = r;
+    });
+    const dispatcher = new OutboxDispatcherWorker({
+      db: db as unknown as PostgresJsDatabase<typeof schema>,
+      consumer: async () => {
+        await actualIo;
+      },
+      consumerTimeoutMs: 20,
+    });
+    activeDispatcher = dispatcher;
+    try {
+      const result = await dispatcher.tick();
+      expect(result.consumerTimedOut).toBe(1);
+      await dispatcher.stop();
+      let drained = false;
+      const drain = dispatcher.drainOrphans().then(() => {
+        drained = true;
+      });
+      await new Promise((r) => setTimeout(r, 20));
+      expect(drained).toBe(false);
+      release();
+      await drain;
+      expect(drained).toBe(true);
+    } finally {
+      release();
+    }
+  });
+
   it('publishes a row inside a transaction and the dispatcher dispatches it', async () => {
     const { db, pg } = await freshDb();
     activePg = pg;
