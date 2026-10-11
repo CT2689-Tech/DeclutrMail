@@ -1,9 +1,10 @@
 import Link from 'next/link';
 
 import { WS3_COPY } from '@declutrmail/shared/copy/launch';
-import { SupportTasks } from './support-tasks';
 import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
+import { TrustRow } from '@/features/marketing/trust/trust-row';
+import { SupportTasks } from './support-tasks';
 import { BLOG_ARTICLES, BLOG_SLUGS } from './blog-content';
 import { CHANGELOG_ENTRIES } from './changelog-content';
 import { FAQ_ENTRIES } from './faq-content';
@@ -141,6 +142,7 @@ export function FaqPage() {
       title="Questions worth answering before Gmail access"
       lede="What is stored, what each action changes, where recovery stops, and how DeclutrMail fits beside Gmail. No universal-undo shorthand."
     >
+      <TrustRow />
       <JsonLd
         data={{
           '@context': 'https://schema.org',

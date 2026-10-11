@@ -22,6 +22,7 @@ export function PublicMobileMenu({
   const signedIn = useSessionHint();
   const onSignIn = pathname === '/sign-in';
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
 
@@ -34,7 +35,50 @@ export function PublicMobileMenu({
   useEffect(() => {
     if (!open) return;
     document.body.classList.add('dm-public-menu-open');
-    return () => document.body.classList.remove('dm-public-menu-open');
+    const header = document.querySelector('.dm-public-header');
+    const syncOffset = () => {
+      if (!(header instanceof HTMLElement)) return;
+      document.documentElement.style.setProperty(
+        '--dm-public-header-offset',
+        `${header.getBoundingClientRect().height}px`,
+      );
+    };
+    syncOffset();
+    window.addEventListener('resize', syncOffset);
+    return () => {
+      document.body.classList.remove('dm-public-menu-open');
+      document.documentElement.style.removeProperty('--dm-public-header-offset');
+      window.removeEventListener('resize', syncOffset);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      const root = menuRef.current;
+      if (!root) return;
+      const focusable = [...root.querySelectorAll<HTMLElement>('a[href], button:not([disabled])')];
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!first || !last) return;
+      const active = document.activeElement;
+      if (!(active instanceof HTMLElement) || !root.contains(active)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+        return;
+      }
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
   }, [open]);
 
   return (
@@ -50,6 +94,7 @@ export function PublicMobileMenu({
         </TrackedCta>
       ) : null}
       <div
+        ref={menuRef}
         className="dm-public-menu"
         data-open={open ? 'true' : 'false'}
         onKeyDown={(event) => {

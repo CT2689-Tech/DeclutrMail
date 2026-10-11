@@ -18,6 +18,7 @@ import { CompareTable } from './compare-table';
 import { TierCard } from './tier-card';
 import { WaitlistForm } from './waitlist-form';
 import { FAQ_ENTRIES } from '../learn/faq-content';
+import { TrustRow } from '../trust/trust-row';
 import { useConsentedPageView } from '../use-consented-page-view';
 
 // The shared safety summary, one fact per line. Split, never reworded:
@@ -101,6 +102,8 @@ export function PricingScreen() {
           <TierCard key={tier.id} tier={tier} interval={interval} highlighted={tier.id === 'pro'} />
         ))}
       </section>
+
+      <TrustRow />
 
       {/* Every tier CTA starts Google OAuth for a signed-out visitor
           (cta.ts routes a live session to the app instead), so the scope

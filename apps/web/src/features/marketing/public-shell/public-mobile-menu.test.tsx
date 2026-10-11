@@ -52,6 +52,20 @@ describe('PublicMobileMenu', () => {
     );
   });
 
+  it('keeps Tab inside the open menu', () => {
+    render(<PublicMobileMenu links={links} startUrl="/oauth" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
+    const nav = screen.getByRole('navigation', { name: 'Mobile navigation' });
+    const last = [...nav.querySelectorAll('a')].at(-1);
+    expect(last).toBeTruthy();
+    last!.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close navigation' }));
+
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(last);
+  });
+
   it('closes immediately when a link targets the current route', () => {
     pathnameRef.current = '/how-it-works';
     render(<PublicMobileMenu links={links} startUrl="/oauth" />);

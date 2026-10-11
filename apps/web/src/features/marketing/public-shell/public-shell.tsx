@@ -109,7 +109,9 @@ export function PublicHeader() {
           <PublicAuthActions />
 
           {isFeatureEnabled('darkMode') ? (
-            <ThemeToggle className="dm-public-theme-toggle" showLabel />
+            <div className="dm-public-theme-toggle">
+              <ThemeToggle showLabel />
+            </div>
           ) : null}
           <PublicMobileMenu
             links={PRODUCT_LINKS}
