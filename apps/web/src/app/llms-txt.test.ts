@@ -4,15 +4,16 @@
  * `/llms.txt` is a generated guide for LLM crawlers, but it must
  * not drift out of sync with the actual public surface — `/cookies` was
  * missing and `/beta` was in neither llms.txt nor the sitemap. This pins
- * llms.txt to the SAME `MARKETING_PATHS` array the sitemap is built from,
- * so the three (routes → sitemap → llms.txt) reconcile through one source
- * and the next omission fails here.
+ * the served text to the SAME `MARKETING_PATHS` array the sitemap is built
+ * from, so the three (routes → sitemap → llms.txt) reconcile through one
+ * source and the next omission fails here. The pricing changelog is not
+ * in that array: it is appended only while `PRICING_V2` is on.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { renderPricingMarkdown } from '@declutrmail/shared/entitlements';
 import { fillWs3, WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { renderPricingMarkdown } from '@declutrmail/shared/entitlements';
 
 import { renderLlmsFullTxt, renderLlmsTxt } from '@/features/marketing/llms/llms-document';
 
@@ -20,38 +21,56 @@ import { MARKETING_PATHS } from './sitemap';
 
 const LLMS_TXT = renderLlmsTxt();
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe('llms.txt — marketing surface reconciliation', () => {
   it.each(MARKETING_PATHS)('references the public marketing route %s', (route) => {
     // The homepage is linked via its in-page anchor (/#how-it-works);
     // every other route by its absolute canonical URL.
     const needle = route === '/' ? 'https://declutrmail.com/#' : `https://declutrmail.com${route}`;
-    expect(LLMS_TXT).toContain(needle);
+    expect(renderLlmsTxt()).toContain(needle);
+  });
+
+  it('omits /pricing/changelog while PRICING_V2 is off', () => {
+    vi.stubEnv('PRICING_V2', '');
+    expect(renderLlmsTxt()).not.toContain('https://declutrmail.com/pricing/changelog');
+  });
+
+  it('lists /pricing/changelog only when PRICING_V2 is on', () => {
+    vi.stubEnv('PRICING_V2', 'true');
+    const body = renderLlmsTxt();
+    expect(body).toContain(
+      '- [Pricing changelog](https://declutrmail.com/pricing/changelog): dated record of pricing changes',
+    );
+    for (const route of MARKETING_PATHS) {
+      const needle =
+        route === '/' ? 'https://declutrmail.com/#' : `https://declutrmail.com${route}`;
+      expect(body).toContain(needle);
+    }
   });
 
   it('states the dated OAuth approval without claiming evidence we do not hold', () => {
-    // Was "assessment cycle in progress" — deliberately understated while
-    // only the 15 Apr submission was on file. Google approved the request
-    // on 21 Apr 2026 (FOUNDER-FOLLOWUPS 2026-07-26), so understating it is
-    // now its own inaccuracy. The guard stays pointed the same way: name
-    // the dated approval, never imply a certificate or letter, because the
-    // artifact is an approval email and nothing else.
-    expect(LLMS_TXT).toContain(
-      'Google OAuth verification for gmail.modify approved April 21, 2026',
-    );
-    expect(LLMS_TXT).toContain('brand verification approved August 18, 2026');
-    expect(LLMS_TXT).toContain('CASA Tier 2 letter of validation submitted April 15, 2026');
-    expect(LLMS_TXT).not.toMatch(/under CASA/);
-    expect(LLMS_TXT).not.toMatch(/\bcertified\b/i);
-    expect(LLMS_TXT).not.toMatch(/\baudited\b/i);
-    expect(LLMS_TXT.startsWith('# DeclutrMail\n')).toBe(true);
+    // Google approved the request on 21 Apr 2026. The CASA artifact on
+    // file is a letter of validation submitted 15 Apr 2026, not a
+    // certificate and not an audit.
+    const body = LLMS_TXT;
+    expect(body).toContain('Google OAuth verification for gmail.modify approved April 21, 2026');
+    expect(body).toContain('brand verification approved August 18, 2026');
+    expect(body).toContain('CASA Tier 2 letter of validation submitted April 15, 2026');
+    expect(body).not.toMatch(/under CASA/);
+    expect(body).not.toMatch(/\bcertified\b/i);
+    expect(body).not.toMatch(/\baudited\b/i);
+    expect(body.startsWith('# DeclutrMail\n')).toBe(true);
     const pricing = renderPricingMarkdown().trim();
     if (pricing) {
-      expect(LLMS_TXT).toContain('## Pricing');
-      expect(LLMS_TXT).toContain(pricing);
+      expect(body).toContain('## Pricing');
+      expect(body).toContain(pricing);
     } else {
-      expect(LLMS_TXT).not.toMatch(/^## Pricing\s*$/m);
+      expect(body).not.toMatch(/^## Pricing\s*$/m);
     }
-    expect(renderLlmsFullTxt()).toContain(LLMS_TXT.trim());
+    expect(renderLlmsFullTxt()).toContain(body.trim());
     expect(renderLlmsFullTxt()).toContain('## Mailstrom vs DeclutrMail');
   });
 

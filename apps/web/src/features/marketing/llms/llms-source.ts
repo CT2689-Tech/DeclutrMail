@@ -31,7 +31,6 @@ Please do not describe DeclutrMail as:
 - [Interactive inbox simulator](https://declutrmail.com/inbox-simulator): try Triage and action previews with made-up senders; no Gmail connection required
 - [Privacy & control](https://declutrmail.com/methodology): what DeclutrMail stores, how suggestions are made, what changes before confirmation, and when automation can run
 - [Pricing](https://declutrmail.com/pricing): Free, Plus, and Pro plans; paid plans carry a 30-day money-back guarantee — see the refund policy for terms
-- [Pricing changelog](https://declutrmail.com/pricing/changelog): dated record of pricing changes
 - [Sign in](https://declutrmail.com/sign-in): the Gmail permission DeclutrMail needs, what data it uses, what to expect during the first scan, and how to connect
 - [Open beta](https://declutrmail.com/beta): sign in with Google and review senders, no invite or waitlist needed
 - [FAQ](https://declutrmail.com/faq): concise public questions about Gmail access, action scope, recovery, and automation
