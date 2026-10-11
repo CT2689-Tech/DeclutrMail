@@ -129,7 +129,7 @@
     "file": "apps/web/src/app/(marketing)/compare/page.tsx",
     "line": 16,
     "id": "clean_verb",
-    "text": "DeclutrMail vs. Clean Email, Trimbox, SaneBox, Leave Me Alone, Unroll.Me and native Gmail — what each actually does. Official sources, unknowns left unknown."
+    "text": "DeclutrMail vs. Clean Email, Trimbox, SaneBox, Leave Me Alone, Unroll.Me and native Gmail \u2014 what each actually does. Official sources, unknowns left unknown."
   },
   {
     "file": "apps/web/src/app/(marketing)/compare/page.tsx",
@@ -159,7 +159,7 @@
     "file": "apps/web/src/app/(marketing)/faq/page.tsx",
     "line": 6,
     "id": "action_word",
-    "text": "DeclutrMail FAQ — Gmail access, actions, undo, and privacy"
+    "text": "DeclutrMail FAQ \u2014 Gmail access, actions, undo, and privacy"
   },
   {
     "file": "apps/web/src/app/(marketing)/help/page.tsx",
@@ -177,7 +177,7 @@
     "file": "apps/web/src/app/(marketing)/help/page.tsx",
     "line": 60,
     "id": "action_word",
-    "text": "There is no single “unsubscribe from everything” button. DeclutrMail ranks your senders by how much they email you so you can start with the busiest. Every plan lets you review and act on several senders at once; on Free, those actions count toward the monthly limit. One-click requests run separately. When a sender requires an unsubscribe email, DeclutrMail gives you a checklist of prefilled Gmail drafts to open and send. Senders without an unsubscribe option are skipped so you can choose Archive instead."
+    "text": "There is no single \u201cunsubscribe from everything\u201d button. DeclutrMail ranks your senders by how much they email you so you can start with the busiest. Every plan lets you review and act on several senders at once; on Free, those actions count toward the monthly limit. One-click requests run separately. When a sender requires an unsubscribe email, DeclutrMail gives you a checklist of prefilled Gmail drafts to open and send. Senders without an unsubscribe option are skipped so you can choose Archive instead."
   },
   {
     "file": "apps/web/src/app/(marketing)/help/page.tsx",
@@ -189,19 +189,19 @@
     "file": "apps/web/src/app/(marketing)/help/page.tsx",
     "line": 76,
     "id": "action_word",
-    "text": "Open the Gmail account menu in the app’s top bar and choose Disconnect for that mailbox. That revokes DeclutrMail’s Google access and stops all syncing and actions for it immediately; your historical activity log is kept so you can reconnect later. You can also revoke access directly from your Google account permissions page."
+    "text": "Open the Gmail account menu in the app\u2019s top bar and choose Disconnect for that mailbox. That revokes DeclutrMail\u2019s Google access and stops all syncing and actions for it immediately; your historical activity log is kept so you can reconnect later. You can also revoke access directly from your Google account permissions page."
   },
   {
     "file": "apps/web/src/app/(marketing)/help/page.tsx",
     "line": 76,
     "id": "sync_word",
-    "text": "Open the Gmail account menu in the app’s top bar and choose Disconnect for that mailbox. That revokes DeclutrMail’s Google access and stops all syncing and actions for it immediately; your historical activity log is kept so you can reconnect later. You can also revoke access directly from your Google account permissions page."
+    "text": "Open the Gmail account menu in the app\u2019s top bar and choose Disconnect for that mailbox. That revokes DeclutrMail\u2019s Google access and stops all syncing and actions for it immediately; your historical activity log is kept so you can reconnect later. You can also revoke access directly from your Google account permissions page."
   },
   {
     "file": "apps/web/src/app/(marketing)/help/page.tsx",
     "line": 81,
     "id": "action_word",
-    "text": "Settings → Privacy & Data → Delete account. Deletion has a 7-day grace period during which you can change your mind. If you have actions still inside a longer undo window, deletion is scheduled after the latest window expires — so undo keeps working for its full window."
+    "text": "Settings \u2192 Privacy & Data \u2192 Delete account. Deletion has a 7-day grace period during which you can change your mind. If you have actions still inside a longer undo window, deletion is scheduled after the latest window expires \u2014 so undo keeps working for its full window."
   },
   {
     "file": "apps/web/src/app/(marketing)/help/page.tsx",
@@ -273,7 +273,7 @@
     "file": "apps/web/src/app/(marketing)/inbox-simulator/opengraph-image.tsx",
     "line": 31,
     "id": "action_word",
-    "text": "DeclutrMail inbox simulator — an action preview showing the exact email count and Gmail changes before approval, using made-up data."
+    "text": "DeclutrMail inbox simulator \u2014 an action preview showing the exact email count and Gmail changes before approval, using made-up data."
   },
   {
     "file": "apps/web/src/app/(marketing)/inbox-simulator/page.tsx",
@@ -309,7 +309,7 @@
     "file": "apps/web/src/app/(marketing)/page.tsx",
     "line": 27,
     "id": "clean_verb",
-    "text": "Clean up Gmail, one sender at a time — DeclutrMail"
+    "text": "Clean up Gmail, one sender at a time \u2014 DeclutrMail"
   },
   {
     "file": "apps/web/src/app/(marketing)/pricing/page.tsx",
@@ -495,7 +495,7 @@
     "file": "apps/web/src/features/activity/activity-screen.tsx",
     "line": 2760,
     "id": "action_word",
-    "text": "This action can’t be retried safely from Activity."
+    "text": "This action can\u2019t be retried safely from Activity."
   },
   {
     "file": "apps/web/src/features/activity/activity-screen.tsx",
@@ -519,7 +519,7 @@
     "file": "apps/web/src/features/activity/activity-screen.tsx",
     "line": 934,
     "id": "action_word",
-    "text": "Undone actions aren’t counted."
+    "text": "Undone actions aren\u2019t counted."
   },
   {
     "file": "apps/web/src/features/activity/api/use-activity.ts",
@@ -639,7 +639,7 @@
     "file": "apps/web/src/features/brief/brief-screen.tsx",
     "line": 1185,
     "id": "action_word",
-    "text": "Protected — kept out of bulk actions"
+    "text": "Protected \u2014 kept out of bulk actions"
   },
   {
     "file": "apps/web/src/features/brief/brief-screen.tsx",
@@ -675,7 +675,7 @@
     "file": "apps/web/src/features/help/glossary-content.ts",
     "line": 40,
     "id": "action_word",
-    "text": "An instruction for future matching email. Watch first only suggests; Active can perform the rule’s action automatically."
+    "text": "An instruction for future matching email. Watch first only suggests; Active can perform the rule\u2019s action automatically."
   },
   {
     "file": "apps/web/src/features/help/glossary-content.ts",
@@ -735,13 +735,13 @@
     "file": "apps/web/src/features/mailboxes/account-menu.tsx",
     "line": 344,
     "id": "sync_word",
-    "text": "Syncing…"
+    "text": "Syncing\u2026"
   },
   {
     "file": "apps/web/src/features/mailboxes/mailbox-data-controls-dialog.tsx",
     "line": 128,
     "id": "sync_word",
-    "text": "Gmail access and sync are already stopped. Choose whether to keep or permanently delete this mailbox’s saved data."
+    "text": "Gmail access and sync are already stopped. Choose whether to keep or permanently delete this mailbox\u2019s saved data."
   },
   {
     "file": "apps/web/src/features/mailboxes/use-mailbox-sync-toasts.ts",
@@ -777,13 +777,13 @@
     "file": "apps/web/src/features/onboarding/sync-gate.tsx",
     "line": 130,
     "id": "clean_verb",
-    "text": "DeclutrMail couldn’t finish setup because Google didn’t get all the permissions we asked for. Reconnect and approve every permission on the Google screen — we need them to find senders and clean up mail."
+    "text": "DeclutrMail couldn\u2019t finish setup because Google didn\u2019t get all the permissions we asked for. Reconnect and approve every permission on the Google screen \u2014 we need them to find senders and clean up mail."
   },
   {
     "file": "apps/web/src/features/onboarding/sync-gate.tsx",
     "line": 146,
     "id": "sync_word",
-    "text": "We already pulled a lot of your mail, then Gmail slowed us down. Finish sync to complete, or continue with what’s ready if that control is shown."
+    "text": "We already pulled a lot of your mail, then Gmail slowed us down. Finish sync to complete, or continue with what\u2019s ready if that control is shown."
   },
   {
     "file": "apps/web/src/features/onboarding/sync-gate.tsx",
@@ -801,7 +801,7 @@
     "file": "apps/web/src/features/onboarding/sync-gate.tsx",
     "line": 216,
     "id": "contact_promise",
-    "text": "You can close this tab — we’ll email you when your inbox is ready."
+    "text": "You can close this tab \u2014 we\u2019ll email you when your inbox is ready."
   },
   {
     "file": "apps/web/src/features/onboarding/sync-gate.tsx",
@@ -981,7 +981,7 @@
     "file": "apps/web/src/features/senders/data.ts",
     "line": 202,
     "id": "superlative",
-    "text": "Deals and marketing — the best candidates to unsubscribe."
+    "text": "Deals and marketing \u2014 the best candidates to unsubscribe."
   },
   {
     "file": "apps/web/src/features/senders/data.ts",
@@ -1005,7 +1005,7 @@
     "file": "apps/web/src/features/senders/detail/sender-detail-page.tsx",
     "line": 1374,
     "id": "action_word",
-    "text": "Review the sender’s current mail, recent history and suggestions before choosing an action. Archive, Later and Delete preview the matching emails before you confirm. Protect keeps a sender out of bulk and automatic actions."
+    "text": "Review the sender\u2019s current mail, recent history and suggestions before choosing an action. Archive, Later and Delete preview the matching emails before you confirm. Protect keeps a sender out of bulk and automatic actions."
   },
   {
     "file": "apps/web/src/features/senders/detail/sender-detail-page.tsx",
@@ -1065,13 +1065,13 @@
     "file": "apps/web/src/features/senders/detail/sender-detail-page.tsx",
     "line": 800,
     "id": "action_word",
-    "text": "Still confirming your last action — give it a moment."
+    "text": "Still confirming your last action \u2014 give it a moment."
   },
   {
     "file": "apps/web/src/features/senders/detail/sender-detail-page.tsx",
     "line": 918,
     "id": "action_word",
-    "text": "Still confirming your last action — give it a moment."
+    "text": "Still confirming your last action \u2014 give it a moment."
   },
   {
     "file": "apps/web/src/features/senders/keyboard-cheatsheet.tsx",
@@ -1113,25 +1113,25 @@
     "file": "apps/web/src/features/senders/sender-row.tsx",
     "line": 307,
     "id": "action_word",
-    "text": "Protected — left out of bulk and automatic actions"
+    "text": "Protected \u2014 left out of bulk and automatic actions"
   },
   {
     "file": "apps/web/src/features/senders/senders-screen.tsx",
     "line": 1318,
     "id": "action_word",
-    "text": "Still confirming your last action for this sender — give it a moment."
+    "text": "Still confirming your last action for this sender \u2014 give it a moment."
   },
   {
     "file": "apps/web/src/features/senders/senders-screen.tsx",
     "line": 1319,
     "id": "action_word",
-    "text": "Still confirming your last action for some of these senders — give it a moment."
+    "text": "Still confirming your last action for some of these senders \u2014 give it a moment."
   },
   {
     "file": "apps/web/src/features/senders/senders-screen.tsx",
     "line": 1320,
     "id": "action_word",
-    "text": "An earlier action is still confirming — bulk actions unlock when it finishes."
+    "text": "An earlier action is still confirming \u2014 bulk actions unlock when it finishes."
   },
   {
     "file": "apps/web/src/features/senders/senders-screen.tsx",
@@ -1143,7 +1143,7 @@
     "file": "apps/web/src/features/senders/senders-screen.tsx",
     "line": 1816,
     "id": "action_word",
-    "text": "Still confirming your last action — give it a moment."
+    "text": "Still confirming your last action \u2014 give it a moment."
   },
   {
     "file": "apps/web/src/features/senders/senders-screen.tsx",
@@ -1161,7 +1161,7 @@
     "file": "apps/web/src/features/senders/senders-screen.tsx",
     "line": 3202,
     "id": "sync_word",
-    "text": "Still syncing — this list may be incomplete or stale."
+    "text": "Still syncing \u2014 this list may be incomplete or stale."
   },
   {
     "file": "apps/web/src/features/senders/senders-screen.tsx",
@@ -1263,13 +1263,13 @@
     "file": "apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx",
     "line": 157,
     "id": "sync_word",
-    "text": "disconnected — sync stopped"
+    "text": "disconnected \u2014 sync stopped"
   },
   {
     "file": "apps/web/src/features/settings/settings-index/action-sheet-prefs-card.tsx",
     "line": 105,
     "id": "action_word",
-    "text": "Loading action preferences…"
+    "text": "Loading action preferences\u2026"
   },
   {
     "file": "apps/web/src/features/settings/settings-index/action-sheet-prefs-card.tsx",
@@ -1323,7 +1323,7 @@
     "file": "apps/web/src/features/snoozed/snoozed-screen.tsx",
     "line": 332,
     "id": "sync_word",
-    "text": "count syncing…"
+    "text": "count syncing\u2026"
   },
   {
     "file": "apps/web/src/features/sync/api/use-retry-initial-sync.ts",
@@ -1353,13 +1353,13 @@
     "file": "apps/web/src/features/sync/api/use-sync-now.ts",
     "line": 183,
     "id": "sync_word",
-    "text": "That mailbox is no longer connected — switch accounts to sync."
+    "text": "That mailbox is no longer connected \u2014 switch accounts to sync."
   },
   {
     "file": "apps/web/src/features/sync/api/use-sync-now.ts",
     "line": 186,
     "id": "sync_word",
-    "text": "Sync failed — please try again."
+    "text": "Sync failed \u2014 please try again."
   },
   {
     "file": "apps/web/src/features/sync/api/use-sync-now.ts",
@@ -1389,7 +1389,7 @@
     "file": "apps/web/src/features/sync/sync-error-banner.tsx",
     "line": 138,
     "id": "sync_word",
-    "text": "New email isn't syncing — the last attempt failed."
+    "text": "New email isn't syncing \u2014 the last attempt failed."
   },
   {
     "file": "apps/web/src/features/sync/sync-now-button.tsx",
@@ -1407,19 +1407,19 @@
     "file": "apps/web/src/features/sync/sync-now-button.tsx",
     "line": 174,
     "id": "sync_word",
-    "text": "Sync didn't finish — reconnect Gmail."
+    "text": "Sync didn't finish \u2014 reconnect Gmail."
   },
   {
     "file": "apps/web/src/features/sync/sync-now-button.tsx",
     "line": 175,
     "id": "sync_word",
-    "text": "Sync didn't finish — try again."
+    "text": "Sync didn't finish \u2014 try again."
   },
   {
     "file": "apps/web/src/features/sync/sync-now-button.tsx",
     "line": 183,
     "id": "sync_word",
-    "text": "Inbox up to date — synced just now."
+    "text": "Inbox up to date \u2014 synced just now."
   },
   {
     "file": "apps/web/src/features/sync/sync-now-button.tsx",
@@ -1443,7 +1443,7 @@
     "file": "apps/web/src/features/sync/sync-now-button.tsx",
     "line": 256,
     "id": "sync_word",
-    "text": "Syncing…"
+    "text": "Syncing\u2026"
   },
   {
     "file": "apps/web/src/features/sync/sync-now-button.tsx",
@@ -1527,7 +1527,7 @@
     "file": "apps/web/src/features/triage/triage-row.tsx",
     "line": 385,
     "id": "action_word",
-    "text": "Protected — automatic and bulk actions stay off unless you choose otherwise"
+    "text": "Protected \u2014 automatic and bulk actions stay off unless you choose otherwise"
   },
   {
     "file": "apps/web/src/features/triage/triage-screen.tsx",
@@ -1761,7 +1761,7 @@
     "file": "packages/shared/src/contracts/error-codes.ts",
     "line": 128,
     "id": "action_word",
-    "text": "You've used all your free cleanup actions for this month. Upgrade for unlimited cleanup — everything you've already done stays done."
+    "text": "You've used all your free cleanup actions for this month. Upgrade for unlimited cleanup \u2014 everything you've already done stays done."
   },
   {
     "file": "packages/shared/src/contracts/error-codes.ts",
@@ -1809,7 +1809,7 @@
     "file": "packages/shared/src/contracts/error-codes.ts",
     "line": 668,
     "id": "sync_word",
-    "text": "This mailbox has no finished scan to sync from — the scan is still running, or it stopped before completing."
+    "text": "This mailbox has no finished scan to sync from \u2014 the scan is still running, or it stopped before completing."
   },
   {
     "file": "packages/shared/src/contracts/error-codes.ts",
@@ -1833,7 +1833,7 @@
     "file": "packages/shared/src/contracts/error-codes.ts",
     "line": 744,
     "id": "action_word",
-    "text": "Actions are queued elsewhere right now. Your email is untouched — try again in a moment."
+    "text": "Actions are queued elsewhere right now. Your email is untouched \u2014 try again in a moment."
   },
   {
     "file": "packages/shared/src/contracts/error-codes.ts",
@@ -1905,7 +1905,7 @@
     "file": "packages/shared/src/contracts/gmail-data-inventory.ts",
     "line": 510,
     "id": "sync_word",
-    "text": "Cleared immediately when this mailbox’s saved data is deleted. Otherwise, a completed attempt’s result is dropped automatically within 24 hours, sooner if this mailbox syncs again; a failed attempt’s reason has no automatic expiry and stays until this mailbox syncs again or its data is deleted."
+    "text": "Cleared immediately when this mailbox\u2019s saved data is deleted. Otherwise, a completed attempt\u2019s result is dropped automatically within 24 hours, sooner if this mailbox syncs again; a failed attempt\u2019s reason has no automatic expiry and stays until this mailbox syncs again or its data is deleted."
   },
   {
     "file": "packages/shared/src/copy/action-safety.ts",
@@ -1978,5 +1978,35 @@
     "line": 315,
     "id": "workspace_word",
     "text": "Workspace settings"
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws1.ts",
+    "id": "allowance_word",
+    "line": 10,
+    "text": "{remaining} of {allowance} left"
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws1.ts",
+    "id": "allowance_word",
+    "line": 12,
+    "text": "{remaining} of {allowance} free emails left this month. Resets {resetDate}."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws1.ts",
+    "id": "allowance_word",
+    "line": 36,
+    "text": "This needs {requested} free emails, but {remaining} of {allowance} are left this month. More on {resetDate}."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws1.ts",
+    "id": "allowance_word",
+    "line": 8,
+    "text": "Clear {allowance} emails a month free"
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws1.ts",
+    "id": "allowance_word",
+    "line": 9,
+    "text": "{remaining} of {allowance} free emails left \u00b7 resets {resetDate}"
   }
 ]

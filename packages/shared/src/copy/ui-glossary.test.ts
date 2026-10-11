@@ -38,6 +38,7 @@ describe('ui glossary', () => {
       }
       const sample = samples[ban.id];
       expect(sample, ban.id).toBeTruthy();
+      if (!sample) continue;
       expect(glossaryHits(sample, glossary).some((hit) => hit.id === ban.id)).toBe(true);
     }
   });

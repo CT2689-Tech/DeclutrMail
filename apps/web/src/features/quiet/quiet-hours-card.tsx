@@ -13,6 +13,12 @@ import {
 
 const { color, font, radius, text } = tokens;
 
+function quietField(index: 0 | 1 | 2): string {
+  const label = WS2_COPY.names.quietFields[index];
+  if (!label) throw new Error('Quiet field label is missing from the copy deck.');
+  return label;
+}
+
 /**
  * Per-mailbox quiet-hours config card (U18 — D92/D95).
  *
@@ -279,7 +285,7 @@ function QuietHoursForm({
             onChange={(next) => set({ enabled: next })}
           />
         </Row>
-        <Row label={WS2_COPY.names.quietFields[0]} divider>
+        <Row label={quietField(0)} divider>
           <input
             className="dm-field"
             type="time"
@@ -290,7 +296,7 @@ function QuietHoursForm({
             style={inputStyle}
           />
         </Row>
-        <Row label={WS2_COPY.names.quietFields[1]} divider>
+        <Row label={quietField(1)} divider>
           <input
             className="dm-field"
             type="time"
@@ -301,7 +307,7 @@ function QuietHoursForm({
             style={inputStyle}
           />
         </Row>
-        <Row label={WS2_COPY.names.quietFields[2]} divider className="dm-quiet-timezone-row">
+        <Row label={quietField(2)} divider className="dm-quiet-timezone-row">
           <div className="dm-quiet-timezone-control">
             <SelectWell
               value={draft.timezone}

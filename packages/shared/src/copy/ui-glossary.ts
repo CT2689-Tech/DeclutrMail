@@ -75,13 +75,13 @@ export function parseUiGlossary(yaml: string): UiGlossary {
       else flushAllow();
       const body = line.slice(4).trim();
       const [key, ...rest] = body.split(':');
-      assign(current, key.trim(), rest.join(':').trim());
+      if (key) assign(current, key.trim(), rest.join(':').trim());
       continue;
     }
     if ((section === 'banned' || section === 'allow') && line.startsWith('    ')) {
       const body = line.trim();
       const [key, ...rest] = body.split(':');
-      assign(current, key.trim(), rest.join(':').trim());
+      if (key) assign(current, key.trim(), rest.join(':').trim());
       continue;
     }
     if (section === 'defs') {

@@ -23,7 +23,6 @@ import {
   useIsAtMost,
 } from '@declutrmail/shared';
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
-import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { useLocalState } from '@declutrmail/shared/hooks/use-local-state';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { ActionReach } from '@declutrmail/shared/contracts';

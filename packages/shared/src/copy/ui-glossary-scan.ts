@@ -77,15 +77,16 @@ function collect(path: string, glossary: UiGlossary, hits: BaselineEntry[]) {
   const visit = (node: TsNode) => {
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
       const text = node.text;
-      for (const hit of glossaryHits(text, glossary, scope)) {
-        const line = file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1;
-        hits.push({
-          file: relative(REPO, path),
-          line,
-          id: hit.id,
-          text,
-        });
-      }
+      if (text)
+        for (const hit of glossaryHits(text, glossary, scope)) {
+          const line = file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1;
+          hits.push({
+            file: relative(REPO, path),
+            line,
+            id: hit.id,
+            text,
+          });
+        }
     }
     ts.forEachChild(node, visit);
   };

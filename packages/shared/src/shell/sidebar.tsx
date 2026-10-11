@@ -37,9 +37,17 @@ export const NAV: readonly NavItem[] = [
   { id: 'activity', icon: 'M3 12h4l3-9 4 18 3-9h4' },
 ];
 
-const CATCH_UP_MEMBERS = (CATCH_UP_LATER_FIRST
-  ? ['snoozed', 'brief', 'followups']
-  : ['brief', 'followups', 'snoozed']) as const satisfies readonly LabelKey[];
+const CATCH_UP_LATER_ORDER = [
+  'snoozed',
+  'brief',
+  'followups',
+] as const satisfies readonly LabelKey[];
+const CATCH_UP_BRIEF_ORDER = [
+  'brief',
+  'followups',
+  'snoozed',
+] as const satisfies readonly LabelKey[];
+const CATCH_UP_MEMBERS = CATCH_UP_LATER_FIRST ? CATCH_UP_LATER_ORDER : CATCH_UP_BRIEF_ORDER;
 
 export const WORKSPACE_NAV = [
   { id: 'home', label: 'Home', icon: 'm3 10 9-7 9 7v10H3V10Zm6 10v-7h6v7', members: ['home'] },
@@ -209,7 +217,7 @@ export function Sidebar({
             const number = typeof value === 'object' ? value.text : value;
             return number != null && number !== 0 && number !== '0';
           });
-          const destination = members[0];
+          const destination = members[0] ?? item.id;
           const signalNavigationIntent = () => {
             if (!on) onNavigateIntent?.(destination);
           };
