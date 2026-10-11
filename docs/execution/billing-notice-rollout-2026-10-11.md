@@ -243,3 +243,40 @@ requiring rejection. Authentication runtime is unchanged; the failed CI remains
 recorded. Root also owns this bounded test repair; no other open PR touches it.
 Independent review approved it; all 10 focused JWT tests, API typecheck, touched
 lint, formatting and diff validation passed.
+
+## OFF serving recovery and bounded audit read
+
+PR #938 merged through the normal queue at
+`2ab7324a5b74f6dc47f2d225023620183e82a108`; the combined queue also merged #937
+at `d7d23563b3905590f17978024c30a3e9af1220c7`. Corrected PR CI #38113554447,
+queue CI #38114031206/#38114031962 and exact-main CI #38114422845 passed.
+Release #38114422873 completed, checked both services' actual serving source,
+notices OFF, the preserved `2026-10-11T03:15:41.000Z` cutoff and automatic
+refund restoration OFF. Immutable digest:
+`sha256:535a65fc0dd404a90de77cdde597a4ac4eeb356c0c2841878a83bf5bb94e2deb`.
+Fresh WIF #38115070215 observed at `2026-10-11T05:31:55Z` confirms API
+`declutrmail-api-00605-yov` and worker `declutrmail-worker-00159-bdv`, each 100%.
+Local reads still separately failed authentication; ordinary releases are restored.
+
+The main-only diagnosis #38115095739 authenticated successfully and then failed
+`jobs_create` with category `command_failed`; owned cleanup returned
+`probeDeleted:true`. The referenced `run.jobs.create` can come from the CLI command
+prefix, so this does not establish an IAM denial. The helper now excludes that
+prefix. Underlying creation failure remains unverified; no permission is granted.
+
+The next main-only workflow reads the already-cleaned fixed probe's Cloud Run
+CreateJob audit records during the single minute of that failure. It never creates
+or executes a job, deploys services or changes access. The bounded captured query
+projects status codes, allowlisted authorization verdicts, readiness and coarse
+hints only; identities, request/resource values and raw provider messages remain
+excluded. Empty/unavailable results cannot establish a cause. Root owns the new
+workflow/script, existing helper/test and record, depending on merged #938. Open
+PRs #939/#940/#941 do not overlap these files. Notices and financial restoration
+remain OFF; checkout architecture still awaits the founder's decision.
+
+All 41 helper/audit/deployment tests pass, including real subprocess privacy and
+scope controls. The audit tests use the existing CI/release helper-test entrypoint.
+Independent review approved the final scope after correcting gcloud's repeated
+authorization-field selectors; the actual installed SDK formatter preserves
+multiple verdicts with the corrected array-aware projection. Touched lint,
+formatting and diff validation also pass. No new runtime proof is claimed yet.
