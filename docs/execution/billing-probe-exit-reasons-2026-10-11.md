@@ -1,5 +1,12 @@
 # Private probe exit reasons
 
+The first task-metadata release, #38120027471 at `f78c43ec`, failed with an
+actual task exit code `1`, status code `10` and `NonZeroExitCode`, with no
+memory-limit or timeout hint. Cleanup reported `probeDeleted:true`; neither
+producer deployed. Memory-hint fixtures printed by safety-contract tests in
+that log are not observations of the real task. The actual failure still
+needs the fixed reason codes below.
+
 Deploy #38119342171 (`9a21d50`, includes #948) and main-only diagnostic
 #38118665413 both fail at `jobs_execute`, ~66 s and ~55 s after step start.
 The private task exits non-zero, but every probe failure exited `1`, so the
@@ -17,9 +24,9 @@ src/billing/verify-billing-queue.ts`, cwd `apps/api`):
 - Command, args, entrypoint and imports: accepted by gcloud (#948) and pass
   end to end locally.
 
-The production cause is still unverified. Every remaining candidate is on the
-broker side: Redis unreachable or rejecting the job's connection, or the
-broker reporting zero, unnamed or older `email-send` actors. These differ in
+The production cause is still unverified. Broker-side candidates include
+Redis unreachable or rejecting the job's connection, or the broker reporting
+zero, unnamed or older `email-send` actors. These differ in
 timing only by the probe's own 25 s deadline, which is within the observed
 spread, so the run timings cannot tell them apart.
 
@@ -31,19 +38,23 @@ deploy log's `billingProbeTask.exitCode` names it:
 |    0 | —                           | Every generic email actor is compatible              |
 |    1 | `unclassified`              | Unexpected error                                     |
 |   10 | `configuration_unavailable` | Probe flag or Redis URL missing in the task          |
-|   11 | `redis_never_ready`         | No connection error, never ready within 25 s         |
+|   11 | `redis_not_ready`           | No classified error; not ready at the 25 s deadline  |
 |   12 | `redis_network_error`       | DNS, refused, reset or timed-out connection          |
 |   13 | `redis_tls_error`           | TLS/certificate rejection                            |
-|   14 | `redis_reply_error`         | Redis refused the connection (auth, limits)          |
+|   14 | `redis_reply_error`         | Redis reply error observed; cause unverified         |
 |   15 | `broker_read_stalled`       | Connected, but the actor read did not finish in 25 s |
 |   16 | `client_list_unavailable`   | Broker refuses `CLIENT LIST`; actors cannot be read  |
 |   17 | `no_workers`                | No `email-send` actor visible                        |
-|   18 | `incompatible_workers`      | An unnamed or older `email-send` actor is connected  |
+|   18 | `incompatible_workers`      | Missing, malformed or mismatched actor evidence      |
 
-Only the name or code of an error is classified; messages, URLs and client
-rows are never read or printed. Every non-zero reason still refuses
+Only fixed error names/codes are classified; error messages and URLs are not
+inspected. The compatibility predicate reads actor names and the exact BullMQ
+fallback sentinel, but client rows and names are never logged. Every non-zero reason still refuses
 deployment, and the compatibility predicate is unchanged. Exit 17 or 18 is a
 correct refusal: find the stray or missing actor rather than loosen the check.
+Exit 16 requires BullMQ's exact singleton fallback sentinel; other missing or
+malformed actor names remain incompatible evidence rather than establishing
+that the broker refuses `CLIENT LIST`.
 The main-only diagnostic still pins the pre-change image, so its tasks will
 report `1`; the next push-triggered deploy builds an image with these codes.
 

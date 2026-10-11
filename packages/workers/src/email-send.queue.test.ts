@@ -328,6 +328,21 @@ describe('enqueueEmailSend', () => {
 });
 
 describe('generic email actor refusal reasons', () => {
+  it('keeps malformed or unknown actor evidence separate from the BullMQ fallback', async () => {
+    for (const row of [
+      { name: 'unknown' },
+      { name: 'GCP does not support client list', rawname: null },
+      { rawname: 42 },
+      {},
+    ]) {
+      const queue = {
+        name: EMAIL_SEND_QUEUE,
+        getWorkers: async () => [row],
+      } as unknown as Queue;
+      for (const read of [readBillingQueueCompatibility, readEmailPrefsQueueCompatibility])
+        await expect(read(queue)).rejects.toMatchObject({ reason: 'incompatible_workers' });
+    }
+  });
   it('names a broker that refuses CLIENT LIST instead of calling it incompatible', async () => {
     // The exact row BullMQ substitutes on `ERR unknown command 'client'`.
     const queue = {

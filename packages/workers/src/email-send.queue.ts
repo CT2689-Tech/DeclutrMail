@@ -62,10 +62,20 @@ async function readQueueActors(
   const workers = await queue.getWorkers();
   const message = `${label} queue compatibility unverified`;
   if (workers.length === 0) throw new QueueActorCompatibilityError(message, 'no_workers');
-  // BullMQ substitutes a single rawname-less row when the broker refuses CLIENT LIST.
-  if (workers.some((worker) => typeof worker.rawname !== 'string'))
+  // Only this exact BullMQ sentinel establishes a refused CLIENT LIST.
+  // Other missing names remain unknown/incompatible actor evidence.
+  if (
+    workers.length === 1 &&
+    Object.keys(workers[0]!).length === 1 &&
+    workers[0]!.name === 'GCP does not support client list'
+  )
     throw new QueueActorCompatibilityError(message, 'client_list_unavailable');
-  if (workers.some((worker) => !worker.rawname!.endsWith(`:w:${workerName}`)))
+  if (
+    workers.some(
+      (worker) =>
+        typeof worker.rawname !== 'string' || !worker.rawname.endsWith(`:w:${workerName}`),
+    )
+  )
     throw new QueueActorCompatibilityError(message, 'incompatible_workers');
   return { workers: workers.length };
 }

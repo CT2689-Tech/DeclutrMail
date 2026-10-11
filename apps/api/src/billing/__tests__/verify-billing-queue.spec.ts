@@ -111,6 +111,14 @@ describe('standalone billing queue probe', () => {
     expect(probeFailureReason(error)).toBe('incompatible_workers');
     expect(probeFailureReason(new Error('PRIVATE'))).toBe('unclassified');
   });
+  it('classifies an immediately rejected broker read without exposing its message', async () => {
+    const error = Object.assign(new Error('PRIVATE provider response'), { name: 'ReplyError' });
+    f.read.mockRejectedValueOnce(error);
+    const refusal = await verifyBillingQueue().catch((e: unknown) => e);
+    expect(probeFailureReason(refusal)).toBe('redis_reply_error');
+    expect(f.connection.disconnect).toHaveBeenCalledOnce();
+    expect(f.queue.close).toHaveBeenCalledOnce();
+  });
   describe('deadline reasons', () => {
     async function deadlineReason(status: string, errors: unknown[] = []) {
       vi.useFakeTimers();
@@ -123,9 +131,9 @@ describe('standalone billing queue probe', () => {
       await vi.advanceTimersByTimeAsync(25_000);
       return probeFailureReason(await pending);
     }
-    it('separates a stalled broker read from a connection that never became ready', async () => {
+    it('separates a stalled broker read from a connection not ready at the deadline', async () => {
       expect(await deadlineReason('ready')).toBe('broker_read_stalled');
-      expect(await deadlineReason('connecting')).toBe('redis_never_ready');
+      expect(await deadlineReason('connecting')).toBe('redis_not_ready');
     });
     it('classifies connection errors by fixed name and code only', async () => {
       const coded = (code: string) => Object.assign(new Error('PRIVATE'), { code });

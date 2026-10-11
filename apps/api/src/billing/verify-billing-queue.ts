@@ -15,7 +15,7 @@ import {
 export const PROBE_EXIT_CODES = {
   unclassified: 1,
   configuration_unavailable: 10,
-  redis_never_ready: 11,
+  redis_not_ready: 11,
   redis_network_error: 12,
   redis_tls_error: 13,
   redis_reply_error: 14,
@@ -60,7 +60,7 @@ function redisErrorReason(error: unknown): ProbeFailureReason | undefined {
 export function probeFailureReason(error: unknown): ProbeFailureReason {
   if (error instanceof BillingQueueProbeError || error instanceof QueueActorCompatibilityError)
     return error.reason;
-  return 'unclassified';
+  return redisErrorReason(error) ?? 'unclassified';
 }
 
 /** Standalone private diagnostic; never imports the API/worker bootstrap. */
@@ -95,7 +95,7 @@ export async function verifyBillingQueue(): Promise<{ workers: number }> {
                 'Billing queue probe deadline',
                 redis.status === 'ready'
                   ? 'broker_read_stalled'
-                  : (lastRedisError ?? 'redis_never_ready'),
+                  : (lastRedisError ?? 'redis_not_ready'),
               ),
             ),
           25_000,
