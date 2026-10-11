@@ -14,6 +14,14 @@ export const SOURCES = [
   { role: 'api', kind: 'service', name: 'declutrmail-api', region: 'us-central1' },
   { role: 'worker', kind: 'service', name: 'declutrmail-worker', region: 'us-west1' },
 ];
+// Images a workflow runs by a fixed tag instead of a release. Each gets its own serving- tag.
+export const PINNED = [
+  {
+    tag: 'serving-pinned-billing-probe',
+    source: 'bc26bdc496bdcc8a4fc9f0325b927587cc2b38b8',
+    workflow: '.github/workflows/billing-queue-access-diagnosis.yml',
+  },
+];
 const KINDS = {
   service: {
     describe: (name) => ['run', 'services', 'describe', name],
@@ -28,7 +36,6 @@ const KINDS = {
 };
 const REVISION = /^declutrmail-(api|worker)-[a-z0-9-]+$/;
 const DIGEST = /^sha256:[a-f0-9]{64}$/;
-const SLOT = /^serving-(api|worker)(-route-[1-9]|-rollback-[1-9])?$/;
 const gcloud = (...args) =>
   execFileSync('gcloud', args, {
     encoding: 'utf8',
@@ -66,16 +73,24 @@ function imageDigest(revision) {
   return DIGEST.test(digest) ? digest : null;
 }
 
-/** The newest distinct images deployed before the primary serving revision, excluding live ones. */
-export function rollbackDigests(revisions, primary, live) {
+/**
+ * The newest distinct images deployed before the primary serving revision, excluding live ones.
+ * Revisions that once served traffic (`served`, known from their retain- tags) come first, so a
+ * candidate that failed its smoke and never took traffic cannot displace a known-good image.
+ */
+export function rollbackDigests(revisions, primary, live, served = new Set()) {
   const created = (r) => Date.parse(r.metadata?.creationTimestamp ?? '');
   const head = revisions.find((r) => r.metadata?.name === primary);
   if (!head || Number.isNaN(created(head)))
     throw new Error(`Cannot establish deployment history before ${primary}`);
-  const digests = [];
-  for (const r of revisions
+  const earlier = revisions
     .filter((r) => created(r) < created(head))
-    .sort((a, b) => created(b) - created(a))) {
+    .sort((a, b) => created(b) - created(a));
+  const digests = [];
+  for (const r of [
+    ...earlier.filter((r) => served.has(r.metadata?.name)),
+    ...earlier.filter((r) => !served.has(r.metadata?.name)),
+  ]) {
     const digest = imageDigest(r);
     if (digest && !live.includes(digest) && !digests.includes(digest)) digests.push(digest);
   }
@@ -98,7 +113,7 @@ export function releaseSlots(role, live, rollbacks) {
   return slots.map(([tag, digest]) => ({ tag, digest }));
 }
 
-function readRelease(source, run) {
+function readRelease(source, run, tags) {
   const kind = KINDS[source.kind];
   if (!kind) throw new Error(`Unknown release source kind ${source.kind}`);
   const scope = [`--region=${source.region}`, `--project=${PROJECT}`, '--format=json'];
@@ -115,11 +130,17 @@ function readRelease(source, run) {
     return { revision, digest };
   });
   const live = [...new Set(serving.map((s) => s.digest))];
-  const rollbacks = rollbackDigests(revisions, serving[0].revision, live);
+  const served = new Set(
+    revisions
+      .map((r) => r.metadata?.name)
+      .filter((name) => typeof name === 'string' && tags.has(`retain-${name}`)),
+  );
+  const rollbacks = rollbackDigests(revisions, serving[0].revision, live, served);
   return { source, serving, rollbacks, slots: releaseSlots(source.role, live, rollbacks) };
 }
 
-function readTags(run) {
+/** Every tag on the api package as name → digest; managed names are parsed strictly. */
+export function readTags(run) {
   const entries = JSON.parse(
     run('artifacts', 'docker', 'tags', 'list', IMAGE, '--format=json(tag,version)'),
   );
@@ -130,29 +151,65 @@ function readTags(run) {
       typeof tag === 'string' && tag.startsWith(`${PACKAGE}/tags/`)
         ? tag.slice(`${PACKAGE}/tags/`.length)
         : '';
-    const managed = /^retain-declutrmail-(api|worker)-[a-z0-9-]+$/.test(name) || SLOT.test(name);
-    if (!managed) continue;
     const digest =
       typeof version === 'string' && version.startsWith(`${PACKAGE}/versions/`)
         ? version.slice(`${PACKAGE}/versions/`.length)
         : '';
-    if (!DIGEST.test(digest) || tags.has(name))
+    const managed =
+      /^retain-declutrmail-(api|worker)-[a-z0-9-]+$/.test(name) || name.startsWith('serving-');
+    if (managed && (!DIGEST.test(digest) || tags.has(name)))
       throw new Error('Unexpected retention tag metadata');
-    tags.set(name, digest);
+    if (name && DIGEST.test(digest)) tags.set(name, digest);
   }
   return tags;
 }
 
-export function pinProductionImages({ run = gcloud, log = console.log, sources = SOURCES } = {}) {
+/**
+ * Order slot writes so no write removes the last serving- tag of an image that is still wanted:
+ * a slot is written only once its current image is unwanted or also held by another serving-
+ * tag. A pure permutation (no spare holder) is broken arbitrarily; the gap is one write long.
+ */
+export function writeOrder(slots, existing) {
+  const state = new Map(existing);
+  const wanted = new Set(slots.map((s) => s.digest));
+  const held = (digest, except) =>
+    [...state].some(([t, d]) => t !== except && d === digest && t.startsWith('serving-'));
+  const pending = slots.filter((s) => state.get(s.tag) !== s.digest);
+  const order = [];
+  while (pending.length) {
+    const ready = pending.findIndex((s) => {
+      const current = state.get(s.tag);
+      return !current || !wanted.has(current) || held(current, s.tag);
+    });
+    const [slot] = pending.splice(Math.max(ready, 0), 1);
+    order.push({ ...slot, existed: state.has(slot.tag) });
+    state.set(slot.tag, slot.digest);
+  }
+  return order;
+}
+
+export function pinProductionImages({
+  run = gcloud,
+  log = console.log,
+  sources = SOURCES,
+  pinned = PINNED,
+} = {}) {
   // Resolve every source before mutating tags, so incomplete discovery fails closed.
-  const releases = sources.map((source) => readRelease(source, run));
+  const existing = readTags(run);
+  const releases = sources.map((source) => readRelease(source, run, existing));
   const retained = releases.flatMap((r) =>
     r.serving.map(({ revision, digest }) => ({ revision, digest, tag: retentionTag(revision) })),
   );
-  const slots = releases.flatMap((r) => r.slots);
+  const missing = pinned.filter((p) => !existing.has(p.tag) && !existing.has(p.source));
+  const slots = [
+    ...releases.flatMap((r) => r.slots),
+    ...pinned
+      .filter((p) => !missing.includes(p))
+      // Follow the image the workflow names; keep the last pin if that tag is gone.
+      .map((p) => ({ tag: p.tag, digest: existing.get(p.source) ?? existing.get(p.tag) })),
+  ];
   if (new Set(slots.map((s) => s.tag)).size !== slots.length)
     throw new Error('Two release sources share a role');
-  const existing = readTags(run);
   // Validate all conflicts before writing. A retention tag must never move.
   for (const pin of retained) {
     const digest = existing.get(`retain-${pin.revision}`);
@@ -178,21 +235,17 @@ export function pinProductionImages({ run = gcloud, log = console.log, sources =
         '--quiet',
       );
   }
-  // Oldest slot first: shifting history right never leaves a still-wanted image without a tag.
   // Moving a tag is `tags update` (artifactregistry.tags.update); no tag is ever deleted.
-  for (const slot of [...slots].reverse()) {
-    const current = existing.get(slot.tag);
-    if (current === slot.digest) continue;
+  for (const slot of writeOrder(slots, existing))
     run(
       'artifacts',
       'tags',
-      current ? 'update' : 'create',
+      slot.existed ? 'update' : 'create',
       slot.tag,
       ...scope,
       `--version=${slot.digest}`,
       '--quiet',
     );
-  }
   const verified = readTags(run);
   for (const pin of retained) {
     if (verified.get(`retain-${pin.revision}`) !== pin.digest)
@@ -206,6 +259,11 @@ export function pinProductionImages({ run = gcloud, log = console.log, sources =
     log(
       `Protected ${r.source.name}: serving ${r.serving.map((s) => s.revision).join(', ')}; ` +
         `${r.rollbacks.length} rollback image(s)`,
+    );
+  if (missing.length)
+    throw new Error(
+      `Cannot pin ${missing.map((p) => `${p.tag} (source tag ${p.source} not found)`).join(', ')}; ` +
+        'every other image is protected',
     );
   return { retained, slots, protectedDigests: [...new Set(slots.map((s) => s.digest))] };
 }
