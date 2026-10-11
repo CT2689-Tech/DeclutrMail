@@ -6,7 +6,8 @@
  *
  *   PADDLE_ENV=sandbox pnpm tsx scripts/billing-pass-sandbox-rehearsal.ts
  *
- * The unattended proof is `.github/workflows/billing-pass-sandbox-rehearsal.yml`.
+ * The unattended proof is the pass job in
+ * `.github/workflows/billing-checkout-revocation-rehearsal.yml`.
  */
 const env = process.env.PADDLE_ENV;
 if (env !== 'sandbox') {

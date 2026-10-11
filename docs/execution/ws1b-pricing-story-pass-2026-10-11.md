@@ -93,12 +93,18 @@ write was made.
 - Migrations `0089` (required before the new API writes
   `pending_checkouts.offer`), then approved destructive `0090` and
   `0091`. None are applied by this PR.
-- The Pass purchase proof is the sandbox-only workflow
-  `.github/workflows/billing-pass-sandbox-rehearsal.yml`. It uses the
-  Sandbox environment's `PADDLE_API_KEY`, creates its own notification
-  destination, pays the Pass price twice and the annual price once with
-  PH30, and cancels what it creates. This environment still has no
-  Paddle key, so the proof is that workflow run, not a local checkout.
+- The Pass purchase proof is the `pass` job in
+  `.github/workflows/billing-checkout-revocation-rehearsal.yml`,
+  dispatched with `rehearsal=pass`. It is a normal job, same shape as
+  the checkout rehearsal, because a reusable workflow that sets
+  `environment: Sandbox` keeps that environment's secrets and drops
+  inherited repository secrets. Run 38185414914 had `PADDLE_API_KEY`
+  and an empty `REHEARSAL_OPERATOR_KEY`, so it exited before any
+  purchase or cleanup. The job uses the Sandbox `PADDLE_API_KEY` and
+  the repository operator key, pays the Pass price twice and the
+  annual price once with PH30, and cancels what it creates. This
+  environment still has no Paddle key, so the proof is that workflow
+  run, not a local checkout.
 - The launch refund window is 14 days. `POLICY.refundWindowDays` is 14.
   Flags-on `/refunds` renders `RefundsV2`. Every window sentence is a
   deck template (`refunds.toc.window`, `refunds.summary`,

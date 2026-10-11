@@ -45,18 +45,6 @@ describe('Backlog Pass sandbox rehearsal checks', () => {
       'utf8',
     );
     expect(source).not.toContain('https://api.paddle.com');
-    const workflow = readFileSync(
-      resolve(
-        import.meta.dirname,
-        '../../../../../.github/workflows/billing-pass-sandbox-rehearsal.yml',
-      ),
-      'utf8',
-    );
-    expect(workflow).toContain('environment: Sandbox');
-    expect(workflow).toContain('workflow_call:');
-    expect(workflow).toContain("github.ref == 'refs/heads/codex/ws1b-pricing-story-pass'");
-    expect(workflow).toContain('PADDLE_ENV: sandbox');
-    expect(workflow).not.toContain('PADDLE_ENV: production');
     const caller = readFileSync(
       resolve(
         import.meta.dirname,
@@ -64,8 +52,14 @@ describe('Backlog Pass sandbox rehearsal checks', () => {
       ),
       'utf8',
     );
-    expect(caller).toContain('uses: ./.github/workflows/billing-pass-sandbox-rehearsal.yml');
+    expect(caller).toContain('environment: Sandbox');
+    expect(caller).toContain("github.ref == 'refs/heads/codex/ws1b-pricing-story-pass'");
+    expect(caller).toContain('PADDLE_ENV: sandbox');
+    expect(caller).not.toContain('PADDLE_ENV: production');
+    expect(caller).toContain('scripts/billing-pass-sandbox-rehearsal.ts');
     expect(caller).toContain("github.event.inputs.rehearsal == 'pass'");
     expect(caller).toContain("github.event.inputs.rehearsal != 'pass'");
+    expect(caller).not.toContain('secrets: inherit');
+    expect(caller).not.toContain('workflow_call:');
   });
 });
