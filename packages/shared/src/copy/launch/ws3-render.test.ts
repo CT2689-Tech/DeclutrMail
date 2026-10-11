@@ -12,6 +12,7 @@ import {
   fillComplete,
   fillWs3,
   gateOpen,
+  gatedText,
   glanceLines,
   llmsKeyFacts,
   declutrPriceDetail,
@@ -96,5 +97,19 @@ describe('WS3 token fill', () => {
     expect(llmsKeyFacts()[3]).not.toMatch(/consent card/);
     expect(llmsStorageAiLine()).toBe(fillWs3(WS3_COPY['ws3.llms.storageAi']));
     expect(llmsStorageAiLine()).not.toMatch(/consent card/);
+    const explanations = fillWs3(WS3_COPY['ws3.privacy.ai.explanations.preGate']);
+    const brief = fillWs3(WS3_COPY['ws3.privacy.ai.brief.preGate']);
+    expect(gatedText('ws3.privacy.ai.explanations')).toBe(explanations);
+    expect(gatedText('ws3.security.ai.explanations')).toBe(explanations);
+    expect(gatedText('ws3.privacy.ai.brief')).toBe(brief);
+    expect(gatedText('ws3.security.ai.brief')).toBe(brief);
+    expect(gatedText('ws3.privacy.aiDisclosureConst')).toBe(`${explanations} ${brief}`);
+    expect(gatedText('ws3.privacy.ai.who')).toBe(fillWs3(WS3_COPY['ws3.privacy.ai.who.preGate']));
+    expect(gatedText('ws3.privacy.subprocessors.anthropic')).toBe(
+      fillWs3(WS3_COPY['ws3.privacy.subprocessors.anthropic.preGate']),
+    );
+    expect(gatedText('ws3.methodology.briefBody')).toBe(
+      fillWs3(WS3_COPY['ws3.methodology.briefBody.preGate']),
+    );
   });
 });

@@ -3,7 +3,6 @@
  * Prices, plan names, and refund windows are never written as literals here.
  */
 
-import { BRIEF_AI_DISCLOSURE, RECOMMENDATION_AI_DISCLOSURE } from '../action-safety';
 import { GMAIL_DATA_PROCESSORS } from '../../contracts/gmail-data-inventory';
 import {
   cleanupActionsPerMonthFor,
@@ -152,19 +151,21 @@ export function declutrPriceDetail(): string {
   return fillComplete(WS3_COPY['ws3.vs.declutr.price.detail']);
 }
 
+const PRE_GATE_EXPLANATIONS = WS3_COPY['ws3.privacy.ai.explanations.preGate'];
+const PRE_GATE_BRIEF = WS3_COPY['ws3.privacy.ai.brief.preGate'];
+
 const BEFORE_GATE: Record<string, string> = {
-  'ws3.security.ai.explanations': RECOMMENDATION_AI_DISCLOSURE,
-  'ws3.security.ai.brief': BRIEF_AI_DISCLOSURE,
+  'ws3.security.ai.explanations': PRE_GATE_EXPLANATIONS,
+  'ws3.security.ai.brief': PRE_GATE_BRIEF,
   'ws3.security.ai.control': '',
   'ws3.methodology.explanations':
     'Anthropic may turn the selected sender facts into a short explanation. It receives the sender’s name and domain, the suggested action, and the facts behind it. It does not receive subject lines, preview snippets, or full email contents for this explanation. If Anthropic is unavailable, DeclutrMail shows a standard explanation.',
-  'ws3.privacy.ai.explanations': RECOMMENDATION_AI_DISCLOSURE,
-  'ws3.privacy.ai.brief': BRIEF_AI_DISCLOSURE,
-  'ws3.privacy.subprocessors.anthropic':
-    'Suggestion explanations and Pro Brief summaries. A Pro Brief can include the subject line and Gmail preview snippet, but never full email contents.',
-  'ws3.privacy.aiDisclosureConst': `${RECOMMENDATION_AI_DISCLOSURE} ${BRIEF_AI_DISCLOSURE}`,
-  'ws3.privacy.ai.who':
-    'Suggestion explanations may send Anthropic the sender and engagement numbers. Pro Brief may send the sender, subject line, and Gmail preview snippet. Neither receives full email contents.',
+  'ws3.methodology.briefBody': WS3_COPY['ws3.methodology.briefBody.preGate'],
+  'ws3.privacy.ai.explanations': PRE_GATE_EXPLANATIONS,
+  'ws3.privacy.ai.brief': PRE_GATE_BRIEF,
+  'ws3.privacy.subprocessors.anthropic': WS3_COPY['ws3.privacy.subprocessors.anthropic.preGate'],
+  'ws3.privacy.aiDisclosureConst': `${PRE_GATE_EXPLANATIONS} ${PRE_GATE_BRIEF}`,
+  'ws3.privacy.ai.who': WS3_COPY['ws3.privacy.ai.who.preGate'],
   'ws3.privacy.ai.retention': GMAIL_DATA_PROCESSORS.Anthropic.retention,
   'ws3.privacy.ai.training':
     'We do not use Gmail data to train generalized AI or machine-learning models.',
@@ -178,7 +179,7 @@ export function gateOpen(): boolean {
 
 /** Deck string after the gate; today's wording before it. Empty means omit the line. */
 export function gatedText(key: keyof typeof WS3_COPY): string {
-  if (!AI_CONSENT_GATE_LIVE && key in BEFORE_GATE) return BEFORE_GATE[key] ?? '';
+  if (!AI_CONSENT_GATE_LIVE && key in BEFORE_GATE) return fillWs3(BEFORE_GATE[key] ?? '');
   const value = WS3_COPY[key];
   return typeof value === 'string' ? fillWs3(value) : '';
 }

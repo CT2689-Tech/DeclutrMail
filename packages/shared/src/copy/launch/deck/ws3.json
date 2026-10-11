@@ -1,7 +1,7 @@
 {
   "_meta": {
-    "revision": "drop2-r13",
-    "issued": "2026-10-11T16:15:00-07:00",
+    "revision": "drop2-r14",
+    "issued": "2026-10-11T16:16:00-07:00",
     "section": "ws3"
   },
   "ws3.home.title": "Clean up Gmail, one sender at a time — DeclutrMail",
@@ -263,6 +263,9 @@
   "ws3.security.report": "If you believe you’ve found a security vulnerability in DeclutrMail, email {securityContact} with the details. We review every report and will respond, and we ask that you give us reasonable time to fix an issue before disclosing it publicly.",
   "ws3.security.txtContact": "privacy@declutrmail.com",
   "ws3.methodology.briefHeading": "What Anthropic receives for a {BRIEF_NAME}.",
+  "ws3.methodology.briefBody.preGate": "For existing {proName} accounts, DeclutrMail can send the sender, subject line, and Gmail preview snippet to Anthropic to draft the {BRIEF_NAME}. Full email contents, attachments, embedded images, and raw email source are not sent. If Anthropic is unavailable, DeclutrMail uses a standard summary.",
+  "ws3.methodology.briefBody": "Only after you allow it on the AI consent card, DeclutrMail can send the sender, subject line, and Gmail preview snippet to Anthropic to draft your {BRIEF_NAME}. Full email contents, attachments, embedded images, and raw email source are not sent. If you don’t allow it, turn it off in Settings → AI, or Anthropic is unavailable, DeclutrMail uses a standard summary written without AI.",
+  "ws3.methodology.briefCaption": "What the {BRIEF_NAME} sends to Anthropic",
   "ws3.methodology.explanations": "On every plan, if you allow AI on the consent card, Anthropic may turn the selected sender facts into a short explanation. It receives the sender’s name and domain, the suggested choice and the rule behind it, and the facts behind it, including their Gmail category. It does not receive subject lines, preview snippets, or full email contents for this explanation. Until you allow it, if you turn it off in Settings → AI, or if Anthropic is unavailable, DeclutrMail shows an explanation written from its rules.",
   "ws3.privacy.ai.title": "AI processing",
   "ws3.privacy.ai.who": "We use Anthropic, PBC to generate short pieces of text in two features. Anthropic processes this data on our instructions to provide those features.",
@@ -272,6 +275,10 @@
   "ws3.privacy.ai.training": "We do not use Gmail data to train generalized artificial-intelligence or machine-learning models. Anthropic sets its own retention and training terms.",
   "ws3.privacy.ai.humans": "No one at DeclutrMail looks at what is sent to Anthropic, except as described in Section 4.",
   "ws3.privacy.subprocessors.anthropic": "Only if you allow AI in the app: suggestion explanations on every plan (sender name and domain, the suggestion and its numbers, Gmail category) and {BRIEF_NAME} summaries (sender, subject line and Gmail preview snippet). Never full email contents. See AI processing.",
+  "ws3.privacy.ai.explanations.preGate": "To write a short explanation for a suggestion, DeclutrMail can send Anthropic the sender’s name and domain, the suggested choice and the numbers behind it, and the Gmail category. It does not send subject lines, preview snippets, or full email contents for this explanation.",
+  "ws3.privacy.ai.brief.preGate": "To write the {BRIEF_NAME}, which only existing {proName} accounts have, DeclutrMail can send Anthropic the sender, subject line, and Gmail’s short preview snippet. It never sends the full contents of an email.",
+  "ws3.privacy.ai.who.preGate": "Suggestion explanations may send Anthropic the sender’s name and domain, the suggested choice and the numbers behind it, and the Gmail category. The {BRIEF_NAME}, which only existing {proName} accounts have, may send the sender, subject line and Gmail preview snippet. Neither receives full email contents.",
+  "ws3.privacy.subprocessors.anthropic.preGate": "Suggestion explanations (the sender’s name and domain, the suggested choice and the numbers behind it, and the Gmail category) and {BRIEF_NAME} summaries for existing {proName} accounts (sender, subject line and Gmail preview snippet). Never full email contents.",
   "ws3.privacy.aiDisclosureConst": "Only if you allow AI in the app: to write a short explanation for a suggestion, on any plan, DeclutrMail can send Anthropic the sender’s name and domain, the suggested choice and the rule behind it, the numbers behind it, and the Gmail category. It does not send subject lines, preview snippets, or full email contents for this explanation. To write your {BRIEF_NAME}, DeclutrMail can send Anthropic the sender, subject line, and Gmail’s short preview snippet. It never sends the full contents of an email. You can turn AI off in Settings → AI.",
   "ws3.llms.disambiguation": "DeclutrMail (one word, “Declutr” + “Mail”) is a Gmail app for going through your email by sender. It is not Decluttr (decluttr.com, a trade-in company) and not DeclutterMyMail.",
   "ws3.llms.keyFacts.title": "Key facts",

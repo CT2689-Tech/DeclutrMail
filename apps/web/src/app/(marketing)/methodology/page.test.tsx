@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { PRIVACY_NEVER_ITEMS, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
+import { fillWs3, WS3_COPY } from '@declutrmail/shared/copy/launch';
 import { describe, expect, it } from 'vitest';
 
 import MethodologyPage, { metadata } from './page';
@@ -27,6 +28,16 @@ describe('/methodology', () => {
       'does not receive subject lines, preview snippets, or full email contents',
     );
     expect(copy).toContain('DeclutrMail shows a standard explanation');
+  });
+
+  it('renders the pre-gate Brief lines from the deck', () => {
+    const { container } = render(<MethodologyPage />);
+    const copy = container.textContent ?? '';
+    const caption = fillWs3(WS3_COPY['ws3.methodology.briefCaption']);
+    expect(copy).toContain(fillWs3(WS3_COPY['ws3.methodology.briefBody.preGate']));
+    expect(copy).toContain(caption);
+    expect(screen.getByRole('region', { name: caption })).toBeInTheDocument();
+    expect(copy).not.toMatch(/\{[A-Za-z0-9_]+\}/);
   });
 
   it('states what a Pro Brief sends without inventing provider terms', () => {
