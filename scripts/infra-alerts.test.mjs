@@ -509,3 +509,15 @@ test('fast first-sync rehearsal prints report fields and refuses production', ()
   assert.match(runbook, /qa5/);
   assert.match(runbook, /does not call Gmail/);
 });
+
+test('dependabot stays quiet until 3 November 2026', () => {
+  const source = readFileSync('.github/dependabot.yml', 'utf8');
+  assert.equal(source.split('rebase-strategy: disabled').length - 1, 3);
+  assert.equal(source.split('open-pull-requests-limit: 3').length - 1, 3);
+  assert.equal(source.includes('open-pull-requests-limit: 8'), false);
+  assert.equal(source.includes('open-pull-requests-limit: 2'), false);
+  assert.match(source, /restore after 2026-11-03/);
+  for (const group of ['framework:', 'nestjs:', 'lint-format:', 'dev-minor:', 'security:']) {
+    assert.ok(source.includes(group));
+  }
+});
