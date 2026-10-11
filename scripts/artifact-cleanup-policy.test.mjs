@@ -207,9 +207,38 @@ test('readback requires exactly the file rules and the requested dry-run flag', 
   );
 });
 
-function cleanupFixture({ protectedDigests = [sha(1)], listing, installedAfter } = {}) {
+const INSTALLED_AT = NOW - 2 * DAY;
+const versionsPrefix =
+  'projects/declutrmail-ai-prod/locations/us-central1/repositories/declutrmail/packages/api/versions/';
+const verdictEntry = (at, ...digests) => ({
+  timestamp: new Date(at).toISOString(),
+  protoPayload: {
+    request: { validateOnly: true, names: digests.map((d) => `${versionsPrefix}${d}`) },
+  },
+});
+const dryRunInstalled = () => ({
+  cleanupPolicies: installedForm(policy),
+  cleanupPolicyDryRun: true,
+  updateTime: new Date(INSTALLED_AT).toISOString(),
+});
+// sha(120)…sha(129) are 21–30 days old, untagged and outside the newest 20: the local preview
+// deletes exactly those.
+const receipt = () => [verdictEntry(INSTALLED_AT + DAY, sha(128), sha(129))];
+
+function cleanupFixture({
+  protectedDigests = [sha(1)],
+  unknown = [],
+  listing,
+  installed: initial,
+  installedAfter,
+  entries = [],
+  logError,
+} = {}) {
   const calls = [];
-  let installed = { cleanupPolicies: {}, cleanupPolicyDryRun: false };
+  let installed = initial ?? {
+    cleanupPolicies: {},
+    updateTime: new Date(NOW - 30 * DAY).toISOString(),
+  };
   const images = listing ?? [
     {
       package: IMAGE,
@@ -227,12 +256,17 @@ function cleanupFixture({ protectedDigests = [sha(1)], listing, installedAfter }
   ];
   const run = (...args) => {
     calls.push(args);
+    if (args[0] === 'logging') {
+      if (logError) throw Object.assign(new Error('x'), { stderr: 'PERMISSION_DENIED' });
+      return JSON.stringify(entries);
+    }
     if (args[1] === 'repositories' && args[2] === 'describe')
       return JSON.stringify({ sizeBytes: String(17 * 1024 ** 3), ...installed });
     if (args[1] === 'docker' && args[2] === 'images') return JSON.stringify(images);
     if (args[2] === 'set-cleanup-policies') {
       installed = installedAfter ?? {
         cleanupPolicies: installedForm(policy),
+        updateTime: new Date(NOW).toISOString(),
         ...(args.includes('--dry-run') && { cleanupPolicyDryRun: true }),
       };
       return '';
@@ -240,12 +274,17 @@ function cleanupFixture({ protectedDigests = [sha(1)], listing, installedAfter }
     throw new Error(`unexpected ${args.join(' ')}`);
   };
   const lines = [];
-  return {
-    calls,
-    lines,
-    options: { run, log: (l) => lines.push(l), now: NOW, pin: () => ({ protectedDigests }) },
+  const pin = ({ namespace }) => {
+    assert.equal(namespace, 'observed');
+    return {
+      protectedDigests,
+      servingTags: new Map(protectedDigests.map((d, i) => [`serving-api-rollback-${i + 1}`, d])),
+      unknown,
+    };
   };
+  return { calls, lines, options: { run, log: (l) => lines.push(l), now: NOW, pin } };
 }
+const installs = (f) => f.calls.filter((c) => c[2] === 'set-cleanup-policies');
 
 test('dry-run prints repo size and the would-delete list, then installs with --dry-run and reads back', () => {
   const f = cleanupFixture();
@@ -255,35 +294,105 @@ test('dry-run prints repo size and the would-delete list, then installs with --d
   assert.match(out, /Would delete now under .*: 10 version\(s\)/);
   assert.ok(out.includes(sha(129)));
   assert.equal(verdicts.find((v) => v.version === sha(1)).deleted, false);
-  const set = f.calls.find((c) => c[2] === 'set-cleanup-policies');
+  const [set] = installs(f);
   assert.ok(set.includes('--dry-run') && !set.includes('--no-dry-run'));
 });
 
 test('report mode never changes the repository', () => {
   const f = cleanupFixture();
   runCleanup({ mode: 'report', ...f.options });
-  assert.ok(!f.calls.some((c) => c[2] === 'set-cleanup-policies'));
+  assert.equal(installs(f).length, 0);
 });
 
 test('live deletion requires the confirmation phrase before any cloud call', () => {
   for (const confirm of [undefined, '', 'yes', LIVE_CONFIRMATION.toUpperCase()]) {
-    const f = cleanupFixture();
+    const f = cleanupFixture({ installed: dryRunInstalled(), entries: receipt() });
     assert.throws(() => runCleanup({ mode: 'live', confirm, ...f.options }), /confirmation/);
     assert.equal(f.calls.length, 0);
   }
-  const f = cleanupFixture();
+});
+
+test('live installs only after a provider verdict for this exact dry-run installation', () => {
+  const f = cleanupFixture({ installed: dryRunInstalled(), entries: receipt() });
   runCleanup({ mode: 'live', confirm: LIVE_CONFIRMATION, ...f.options });
-  assert.ok(f.calls.find((c) => c[2] === 'set-cleanup-policies').includes('--no-dry-run'));
+  const [set] = installs(f);
+  assert.ok(set.includes('--no-dry-run'));
+  assert.ok(
+    f.calls.findIndex((c) => c[0] === 'logging') < f.calls.indexOf(set),
+    'the verdict must be read before deletion is enabled',
+  );
+});
+
+for (const [label, setup, error] of [
+  ['without a dry run installed', {}, /reviewed dry run of this exact policy/],
+  [
+    'when a different policy is installed in dry-run',
+    {
+      installed: {
+        ...dryRunInstalled(),
+        cleanupPolicies: installedForm(policy.filter((p) => p.name !== 'serving-images')),
+      },
+      entries: receipt(),
+    },
+    /reviewed dry run of this exact policy/,
+  ],
+  [
+    'when the only verdict predates the installation',
+    { installed: dryRunInstalled(), entries: [verdictEntry(INSTALLED_AT - DAY, sha(129))] },
+    /UNVERIFIED/,
+  ],
+  [
+    'when the audit log is unreadable',
+    { installed: dryRunInstalled(), logError: true },
+    /UNVERIFIED/,
+  ],
+  [
+    'when the provider would delete a serving- image',
+    { installed: dryRunInstalled(), entries: [verdictEntry(INSTALLED_AT + DAY, sha(1))] },
+    /serving- tag/,
+  ],
+  [
+    'when the provider would delete what the local preview keeps',
+    { installed: dryRunInstalled(), entries: [verdictEntry(INSTALLED_AT + DAY, sha(100))] },
+    /local preview keeps/,
+  ],
+])
+  test(`live is refused ${label}`, () => {
+    const f = cleanupFixture(setup);
+    assert.throws(
+      () => runCleanup({ mode: 'live', confirm: LIVE_CONFIRMATION, ...f.options }),
+      error,
+    );
+    assert.equal(installs(f).length, 0);
+  });
+
+test('an unknown serving- tag blocks every install and the report', () => {
+  for (const mode of ['dry-run', 'report', 'live']) {
+    const f = cleanupFixture({
+      unknown: ['serving-obsolete-role'],
+      installed: dryRunInstalled(),
+      entries: receipt(),
+    });
+    assert.throws(
+      () => runCleanup({ mode, confirm: LIVE_CONFIRMATION, ...f.options }),
+      /Unknown serving- tags would keep their images forever: serving-obsolete-role/,
+    );
+    assert.equal(installs(f).length, 0);
+  }
 });
 
 test('a policy that would delete a protected image is never installed', () => {
   // sha(129) is 30 days old, untagged and outside the newest 20.
-  const f = cleanupFixture({ protectedDigests: [sha(1), sha(129)] });
+  const f = cleanupFixture({
+    protectedDigests: [sha(1), sha(129)],
+    installed: dryRunInstalled(),
+    entries: receipt(),
+  });
   assert.throws(
     () => runCleanup({ mode: 'live', confirm: LIVE_CONFIRMATION, ...f.options }),
     /protected images/,
   );
-  assert.ok(!f.calls.some((c) => c[2] === 'set-cleanup-policies'));
+  assert.equal(installs(f).length, 0);
 });
 
 test('a protected image missing from the listing fails closed instead of reading as safe', () => {
@@ -292,7 +401,7 @@ test('a protected image missing from the listing fails closed instead of reading
     () => runCleanup({ mode: 'dry-run', ...f.options }),
     /missing from the version listing/,
   );
-  assert.ok(!f.calls.some((c) => c[2] === 'set-cleanup-policies'));
+  assert.equal(installs(f).length, 0);
 });
 
 test('an install whose readback differs is reported as a failure', () => {
@@ -304,8 +413,6 @@ test('unknown modes are rejected', () => {
   assert.throws(() => runCleanup({ mode: 'apply' }), /--mode/);
 });
 
-const versionsPrefix =
-  'projects/declutrmail-ai-prod/locations/us-central1/repositories/declutrmail/packages/api/versions/';
 function verdictFixture({ entries, logError, tags = [] }) {
   const lines = [];
   const run = (...args) => {
@@ -321,33 +428,64 @@ function verdictFixture({ entries, logError, tags = [] }) {
       })),
     );
   };
-  return { run, lines, log: (l) => lines.push(l) };
+  return { run, lines, log: (l) => lines.push(l), since: INSTALLED_AT };
 }
-const verdictEntry = (...digests) => ({
-  protoPayload: {
-    request: { validateOnly: true, names: digests.map((d) => `${versionsPrefix}${d}`) },
-  },
-});
+const after = INSTALLED_AT + DAY;
 
 test('the provider verdict lists doomed versions and refuses one holding a serving- tag', () => {
   const ok = verdictFixture({
-    entries: [verdictEntry(sha(2), sha(3)), verdictEntry(sha(3))],
+    entries: [verdictEntry(after, sha(2), sha(3)), verdictEntry(after, sha(3))],
     tags: [['serving-api', sha(1)]],
   });
   assert.deepEqual(providerVerdict(ok), { verified: true, versions: [sha(2), sha(3)] });
   assert.ok(ok.lines.some((l) => l.includes('would delete 2 api version(s)')));
   const bad = verdictFixture({
-    entries: [verdictEntry(sha(1))],
-    tags: [['serving-api-rollback-3', sha(1)]],
+    entries: [verdictEntry(after, sha(1))],
+    tags: [['serving-observed-api-rollback-3', sha(1)]],
   });
   assert.throws(() => providerVerdict(bad), /serving- tag; do not go live/);
-  assert.ok(bad.lines.some((l) => l.includes('PROTECTED (serving-api-rollback-3)')));
+  assert.ok(bad.lines.some((l) => l.includes('PROTECTED (serving-observed-api-rollback-3)')));
 });
 
-test('a missing or unreadable provider verdict is UNVERIFIED, never a clean result', () => {
-  for (const f of [verdictFixture({ entries: [] }), verdictFixture({ logError: true })]) {
+test('a missing, stale or unreadable provider verdict is UNVERIFIED, never a clean result', () => {
+  for (const f of [
+    verdictFixture({ entries: [] }),
+    verdictFixture({ entries: [verdictEntry(INSTALLED_AT - DAY, sha(2))] }),
+    verdictFixture({ logError: true }),
+  ]) {
     assert.equal(providerVerdict(f).verified, false);
     assert.ok(f.lines.some((l) => l.startsWith('::warning::UNVERIFIED')));
     assert.ok(!f.lines.some((l) => l.includes('would delete')));
   }
+  const f = cleanupFixture({ installed: dryRunInstalled() });
+  assert.throws(() => runCleanup({ mode: 'verdict', ...f.options }), /UNVERIFIED/);
+});
+
+test('the workflow enables deletion only from the reviewed live job', () => {
+  const workflow = readFileSync('.github/workflows/artifact-cleanup-policy.yml', 'utf8');
+  const jobs = Object.fromEntries(
+    workflow
+      .split(/\n(?= {2}[a-z-]+:\n)/)
+      .slice(1)
+      .map((block) => [block.match(/^ {2}([a-z-]+):/)[1], block]),
+  );
+  const live = Object.entries(jobs).filter(([, b]) => b.includes('--mode=live'));
+  assert.deepEqual(
+    live.map(([name]) => name),
+    ['cleanup-live'],
+  );
+  assert.match(jobs['cleanup-live'], /environment: artifact-registry-live/);
+  assert.match(jobs['cleanup-live'], /required_reviewers/);
+  assert.match(jobs['cleanup-live'], /inputs\.mode == 'live'/);
+  assert.doesNotMatch(jobs['cleanup-policy'], /'live'|--mode=live|confirm_live/);
+  assert.match(workflow, /group: artifact-registry-pins\n/);
+  for (const name of ['repin', 'rollback', 'cleanup-policy', 'cleanup-live'])
+    assert.ok(jobs[name], `missing job ${name}`);
+});
+
+test('traffic changes go through the protecting rollback, and the reconciler runs hourly', () => {
+  const workflow = readFileSync('.github/workflows/artifact-cleanup-policy.yml', 'utf8');
+  assert.match(workflow, /cron: '\d+ \* \* \* \*'/);
+  assert.match(workflow, /--rollback-role="\$ROLE" --rollback-revision="\$REVISION"/);
+  assert.match(workflow, /options: \[dry-run, report, live, rollback\]/);
 });

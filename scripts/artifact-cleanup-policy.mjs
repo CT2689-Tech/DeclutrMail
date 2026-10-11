@@ -233,9 +233,12 @@ const VERDICT_FILTER = [
 
 /**
  * Artifact Registry's own dry-run verdict from Data Access audit logs, checked against the
- * current serving- tags. No readable verdict is UNVERIFIED, never "nothing would be deleted".
+ * current serving- tags. Only entries written after `since` (the repository's last update, so
+ * the installed configuration) count. No readable verdict is UNVERIFIED, never "nothing would be
+ * deleted".
  */
-export function providerVerdict({ run = gcloud, log = console.log } = {}) {
+export function providerVerdict({ run = gcloud, log = console.log, since, servingTags } = {}) {
+  if (!Number.isFinite(since)) throw new Error('Cannot establish when the policy was installed');
   let entries;
   try {
     entries = JSON.parse(
@@ -259,25 +262,28 @@ export function providerVerdict({ run = gcloud, log = console.log } = {}) {
     );
     return { verified: false, versions: [] };
   }
+  const current = entries.filter((e) => Date.parse(e?.timestamp ?? '') > since);
   const prefix = `projects/${PROJECT}/locations/us-central1/repositories/declutrmail/packages/api/versions/`;
   const versions = [
     ...new Set(
-      entries
+      current
         .flatMap((e) => e?.protoPayload?.request?.names ?? [])
         .filter((n) => typeof n === 'string' && n.startsWith(prefix))
         .map((n) => decodeURIComponent(n.slice(prefix.length))),
     ),
   ].sort();
-  if (!entries.length) {
+  if (!current.length) {
     log(
-      '::warning::UNVERIFIED: no provider dry-run verdict in the last 3 days. Either the background ' +
-        'job has not run since install (about a day) or DATA_WRITE audit logs are off for ' +
-        'artifactregistry.googleapis.com.',
+      `::warning::UNVERIFIED: no provider dry-run verdict since the policy was installed ` +
+        `(${new Date(since).toISOString()}). Either the background job has not run yet (about a ` +
+        'day) or DATA_WRITE audit logs are off for artifactregistry.googleapis.com.',
     );
     return { verified: false, versions };
   }
   const serving = new Map(
-    [...readTags(run)].filter(([tag]) => tag.startsWith('serving-')).map(([t, d]) => [d, t]),
+    [...(servingTags ?? readTags(run))]
+      .filter(([tag]) => tag.startsWith('serving-'))
+      .map(([t, d]) => [d, t]),
   );
   log(`Provider dry run would delete ${versions.length} api version(s):`);
   for (const v of versions) log(`  ${v}${serving.has(v) ? `  PROTECTED (${serving.get(v)})` : ''}`);
@@ -289,6 +295,8 @@ export function providerVerdict({ run = gcloud, log = console.log } = {}) {
   log('No image holding a serving- tag is in the provider verdict.');
   return { verified: true, versions };
 }
+
+const installedAt = (repository) => Date.parse(repository.updateTime ?? '');
 
 export function runCleanup({
   mode,
@@ -302,13 +310,18 @@ export function runCleanup({
   if (!MODES.includes(mode)) throw new Error(`--mode must be one of ${MODES.join(', ')}`);
   if (mode === 'live' && confirm !== LIVE_CONFIRMATION)
     throw new Error(`Live deletion requires the confirmation phrase ${LIVE_CONFIRMATION}`);
-  if (mode === 'verdict') return providerVerdict({ run, log });
+  if (mode === 'verdict') {
+    const result = providerVerdict({ run, log, since: installedAt(describeRepository(run)) });
+    if (!result.verified) throw new Error('UNVERIFIED: no provider verdict to review');
+    return result;
+  }
   const policies = validateCleanupPolicy(JSON.parse(readFileSync(policyPath, 'utf8')));
   log(`${policyPath}: ${policies.length} valid rules (${policies.map((p) => p.name).join(', ')})`);
   if (mode === 'validate') return { policies };
 
-  // Move serving tags to the current releases before judging what the policy would remove.
-  const { protectedDigests } = pin({ run, log });
+  // Move the reconciler's serving tags to the current releases before judging what the policy
+  // would remove. The protected set is every serving- tag, from either writer.
+  const { protectedDigests, servingTags, unknown } = pin({ run, log, namespace: 'observed' });
   const before = describeRepository(run);
   const size = Number(before.sizeBytes);
   log(`Repository size: ${Number.isFinite(size) ? `${gib(size)} (${size} bytes)` : 'unavailable'}`);
@@ -356,7 +369,37 @@ export function runCleanup({
   log(
     `Kept: ${versions.length - doomed.length} version(s); by rule: ${[...kept].map(([k, n]) => `${k}=${n}`).join(', ')}`,
   );
+  // The serving- keep rule has no age bound, so an unowned serving- tag would keep its image
+  // forever. Bounded retention needs the exact managed set.
+  if (unknown.length)
+    throw new Error(
+      `Unknown serving- tags would keep their images forever: ${unknown.join(', ')}. Delete them ` +
+        'with an admin account (gcloud artifacts docker tags delete), then re-run',
+    );
   if (mode === 'report') return { policies, verdicts, protectedDigests };
+
+  if (mode === 'live') {
+    // Receipt: this exact policy is installed in dry-run mode, and Artifact Registry's own
+    // verdict for that installation exists, spares every serving- image, and lists nothing the
+    // local preview keeps.
+    try {
+      verifyInstalled(before, policies, 'dry-run');
+    } catch (error) {
+      throw new Error(
+        `Live requires a reviewed dry run of this exact policy first: ${error.message}`,
+      );
+    }
+    const verdict = providerVerdict({ run, log, since: installedAt(before), servingTags });
+    if (!verdict.verified)
+      throw new Error('UNVERIFIED: no provider verdict for the installed dry run; not going live');
+    const deleting = new Set(doomed.map((v) => v.version));
+    const surprise = verdict.versions.filter((v) => !deleting.has(v));
+    if (surprise.length)
+      throw new Error(
+        `Provider verdict deletes ${surprise.length} version(s) the local preview keeps ` +
+          `(${surprise.join(', ')}); not going live`,
+      );
+  }
 
   try {
     run(
@@ -379,7 +422,7 @@ export function runCleanup({
   log(
     mode === 'live'
       ? 'Installed with deletion ENABLED. Artifact Registry applies it in a background job within about a day.'
-      : 'Installed in dry-run mode. Nothing is deleted; review the audit-log verdict after about a day.',
+      : 'Installed in dry-run mode. Nothing is deleted; run mode=report after about a day.',
   );
   return { policies, verdicts, protectedDigests };
 }
