@@ -128,7 +128,7 @@ describe('AI consent gate', () => {
     expect(aiConsentPatch({ action: 'allow', card: 'all' })).toMatchObject({
       aiConsentVersion: VERSION,
       aiExplanationsConsentAt: 'now',
-      aiConsentScopes: ['explanations', 'brief'],
+      aiConsentScopes: ['explanations'],
       briefAiConsentAt: 'keep',
       briefAiDeclinedAt: 'keep',
     });
@@ -165,8 +165,16 @@ describe('AI consent gate', () => {
     });
     expect(aiConsentPatch({ action: 'allow', card: 'upgrade' })).toMatchObject({
       briefAiConsentAt: 'now',
-      aiConsentScopes: ['explanations', 'brief'],
+      aiConsentScopes: ['brief'],
+      aiExplanationsConsentAt: 'keep',
       aiExplanationsRevokedAt: null,
     });
+    expect(
+      aiConsentPatch({ action: 'allow', card: 'upgrade' }, VERSION, ['explanations'])
+        .aiConsentScopes,
+    ).toEqual(['explanations', 'brief']);
+    expect(
+      aiConsentPatch({ action: 'allow', card: 'all' }, VERSION, ['brief']).aiConsentScopes,
+    ).toEqual(['explanations', 'brief']);
   });
 });

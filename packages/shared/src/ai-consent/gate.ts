@@ -183,9 +183,38 @@ const KEEP: Pick<
   briefAiDeclinedAt: 'keep',
 };
 
+/**
+ * Scopes this Allow card showed. A later card must not drop a scope it
+ * leaves in place: explanations-only keeps an existing Brief grant, and
+ * the Brief upgrade keeps an existing explanations grant.
+ */
+function scopesAgreedOnCard(card: AiConsentCard): readonly string[] {
+  switch (card) {
+    case 'all':
+      return ['explanations'];
+    case 'withBrief':
+      return ['explanations', 'brief'];
+    case 'upgrade':
+      return ['brief'];
+    default: {
+      const unreachable: never = card;
+      return unreachable;
+    }
+  }
+}
+
+function allowScopes(card: AiConsentCard, previous: readonly string[] | null): string[] {
+  const kept = new Set(scopesAgreedOnCard(card));
+  const prior = previous ?? [];
+  if (card === 'all' && prior.includes('brief')) kept.add('brief');
+  if (card === 'upgrade' && prior.includes('explanations')) kept.add('explanations');
+  return ['explanations', 'brief'].filter((scope) => kept.has(scope));
+}
+
 export function aiConsentPatch(
   decision: AiConsentDecision,
   version: string = AI_CONSENT_VERSION,
+  previousScopes: readonly string[] | null = null,
 ): AiConsentPatch {
   if (decision.action === 'revoke') {
     return {
@@ -242,7 +271,7 @@ export function aiConsentPatch(
       aiExplanationsConsentAt: 'keep',
       aiExplanationsRevokedAt: null,
       aiConsentDeclinedAt: null,
-      aiConsentScopes: ['explanations', 'brief'],
+      aiConsentScopes: allowScopes(decision.card, previousScopes),
       briefAiConsentAt: 'now',
       briefAiConsentVersion: version,
       briefAiConsentRevokedAt: null,
@@ -255,7 +284,7 @@ export function aiConsentPatch(
       aiConsentVersion: version,
       aiExplanationsConsentAt: 'now',
       aiExplanationsRevokedAt: null,
-      aiConsentScopes: ['explanations', 'brief'],
+      aiConsentScopes: allowScopes(decision.card, previousScopes),
       aiConsentDeclinedAt: null,
       briefAiConsentAt: 'keep',
       briefAiConsentVersion: 'keep',
@@ -267,7 +296,7 @@ export function aiConsentPatch(
     aiConsentVersion: version,
     aiExplanationsConsentAt: 'now',
     aiExplanationsRevokedAt: null,
-    aiConsentScopes: ['explanations', 'brief'],
+    aiConsentScopes: allowScopes(decision.card, previousScopes),
     aiConsentDeclinedAt: null,
     briefAiConsentAt: 'now',
     briefAiConsentVersion: version,

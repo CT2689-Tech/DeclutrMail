@@ -3,7 +3,7 @@ import type { Queue } from 'bullmq';
 import { and, eq } from 'drizzle-orm';
 
 import { mailboxAccounts, users, workspaces } from '@declutrmail/db';
-import type { AiConsentDecision } from '@declutrmail/shared/ai-consent';
+import { aiConsentPatch, type AiConsentDecision } from '@declutrmail/shared/ai-consent';
 import { parseBriefPrefs } from '@declutrmail/shared/contracts';
 import { hasCapability, type TierId } from '@declutrmail/shared/entitlements';
 import {
@@ -36,18 +36,12 @@ export function scopesGrantedBy(decision: AiConsentDecision): {
   brief: boolean;
 } {
   if (decision.action !== 'allow') return { explanations: false, brief: false };
-  switch (decision.card) {
-    case 'all':
-      return { explanations: true, brief: false };
-    case 'withBrief':
-      return { explanations: true, brief: true };
-    case 'upgrade':
-      return { explanations: false, brief: true };
-    default: {
-      const unreachable: never = decision.card;
-      throw new Error(`Unhandled consent card: ${String(unreachable)}`);
-    }
-  }
+  const written = aiConsentPatch(decision).aiConsentScopes;
+  if (written === 'keep') return { explanations: false, brief: false };
+  return {
+    explanations: written.includes('explanations'),
+    brief: written.includes('brief'),
+  };
 }
 
 /**

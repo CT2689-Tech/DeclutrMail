@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { aiConsentPatch } from '@declutrmail/shared/ai-consent';
 import { hasCapability, TIER_IDS, type TierId } from '@declutrmail/shared/entitlements';
 import {
   BRIEF_SNAPSHOT_JOB,
@@ -12,6 +13,7 @@ import {
 import {
   AiConsentFollowup,
   enqueueAiConsentJobs,
+  scopesGrantedBy,
   type ConsentMailbox,
 } from './ai-consent-followup.js';
 
@@ -133,7 +135,50 @@ describe('enqueueAiConsentJobs', () => {
   });
 });
 
+function consentDb(rows: ConsentMailbox[]) {
+  return {
+    select: () => ({
+      from: () => ({
+        innerJoin: () => ({
+          innerJoin: () => ({
+            where: () => Promise.resolve(rows),
+          }),
+        }),
+      }),
+    }),
+  };
+}
+
 describe('AiConsentFollowup', () => {
+  it('enqueues only the scopes that Allow card writes', async () => {
+    const cards = ['all', 'withBrief', 'upgrade'] as const;
+    for (const card of cards) {
+      const written = aiConsentPatch({ action: 'allow', card }).aiConsentScopes;
+      expect(written).toEqual(
+        card === 'all'
+          ? ['explanations']
+          : card === 'upgrade'
+            ? ['brief']
+            : ['explanations', 'brief'],
+      );
+      const granted = scopesGrantedBy({ action: 'allow', card });
+      expect(granted).toEqual({
+        explanations: written.includes('explanations'),
+        brief: written.includes('brief'),
+      });
+      const score = dedupQueue();
+      const brief = dedupQueue();
+      const service = new AiConsentFollowup(
+        consentDb([mailbox('mb-a', BRIEF_TIER)]) as never,
+        score as never,
+        brief as never,
+      );
+      await service.afterCommittedGrant('user-1', { action: 'allow', card });
+      expect(score.add).toHaveBeenCalledTimes(granted.explanations ? 1 : 0);
+      expect(brief.add).toHaveBeenCalledTimes(granted.brief ? 1 : 0);
+    }
+  });
+
   it('enqueues nothing for Not now, decline, or revoke', async () => {
     const db = new Proxy(
       {},

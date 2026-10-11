@@ -327,7 +327,8 @@ export class UsersService {
 
   /** Record an Allow / Not now / revoke decision. Returns the view the client renders. */
   async applyAiConsent(userId: string, decision: AiConsentDecision): Promise<AiConsentView> {
-    const patch = aiConsentPatch(decision);
+    const current = decision.action === 'allow' ? await this.findById(userId) : null;
+    const patch = aiConsentPatch(decision, undefined, current?.aiConsentScopes ?? null);
     await this.db
       .update(users)
       .set({
