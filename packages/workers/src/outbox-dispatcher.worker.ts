@@ -4,6 +4,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { outboxEvents } from '@declutrmail/db';
 import type { OutboxEvent, schema } from '@declutrmail/db';
 
+import type { OutboxDispatcherLease } from './outbox-dispatcher-lease.js';
 import type { BackgroundFailureContext } from './worker-observer.js';
 
 /** The Drizzle client, bound to the full `@declutrmail/db` schema. */
@@ -236,6 +237,14 @@ export interface OutboxDispatcherDeps {
    * Same finite-positive normalization as `consumerTimeoutMs`.
    */
   timeoutStuckCeilingMs?: number;
+  /**
+   * Cross-process single-holder lease (`outbox-dispatcher-lease.ts`). When
+   * set, only the holder claims rows, so a rollout's two overlapping
+   * processes never both run the orphan-guarded consumer path. Production
+   * always wires it; omitting it restores single-process semantics for
+   * tests and local harnesses.
+   */
+  lease?: OutboxDispatcherLease;
 }
 
 const DEFAULT_CLAIM_BATCH = 32;
@@ -719,17 +728,20 @@ const EMPTY_TICK_RESULT: DispatcherTickResult = {
  *
  * This guard is PROCESS-LOCAL: it prevents self-overlap within one
  * dispatcher instance, not across multiple concurrently-running
- * dispatcher replicas — a cross-process version would need a DB-backed
- * lease, not an in-memory Map; not implemented here. The design
- * therefore DEPENDS on there being exactly one live dispatcher process
- * at a time — enforced today by `--max-instances=1` on the worker
- * Cloud Run service (`.github/workflows/deploy-cloud-run.yml`). Before
- * this fix that assumption didn't matter here (a consumer call held
- * its `FOR UPDATE` lock for its whole duration, so Postgres itself kept
- * two dispatcher instances from double-processing a row); now that a
- * call can be abandoned and the row released before it settles, a
- * deploy's brief two-instance overlap window is the one time two
+ * dispatcher replicas. Before this fix that didn't matter (a consumer
+ * call held its `FOR UPDATE` lock for its whole duration, so Postgres
+ * itself kept two dispatcher instances from double-processing a row);
+ * now that a call can be abandoned and the row released before it
+ * settles, a deploy's two-instance overlap window is the one time two
  * processes could each think they alone own a given orphan.
+ *
+ * `deps.lease` closes that window: only the lease holder claims rows,
+ * every claimed row re-checks the lease locally before its consumer
+ * runs, and `stop()` keeps the lease while any orphan is still running
+ * so a successor cannot claim that unit until the orphan settles or this
+ * process exits (then the key expires on its TTL). Residual risk: a
+ * holder that loses Redis for longer than the lease TTL while its own
+ * orphan is still running cannot stop another process from acquiring.
  *
  * A timeout also never counts toward `maxAttempts` on its own (see
  * `runOneTick`'s catch block) — an infrastructure outage must not
@@ -857,6 +869,10 @@ export class OutboxDispatcherWorker {
     // Don't keep the process alive solely on the poll timer; the
     // LISTEN connection (or whatever spawned us) is the foreground.
     this.pollHandle.unref();
+    // A standby that takes over drains the backlog now, not at the next poll.
+    this.deps.lease?.start(() => {
+      void this.tick().catch((err) => this.logTickError(err));
+    });
   }
 
   /**
@@ -892,6 +908,16 @@ export class OutboxDispatcherWorker {
       this.unsubscribeListen = null;
       await unsub();
     }
+    const lease = this.deps.lease;
+    if (!lease) return;
+    const orphans = [...this.orphanedEvents.values()].map((orphan) => orphan.promise);
+    if (orphans.length === 0) {
+      await lease.release();
+      return;
+    }
+    // Keep renewing until every abandoned call settles; process exit ends
+    // renewal and the key's TTL frees it for the successor.
+    void Promise.allSettled(orphans).then(() => lease.release());
   }
 
   /**
@@ -1137,43 +1163,46 @@ export class OutboxDispatcherWorker {
     // transaction has committed them — never a log or Sentry call inside
     // it, and nothing reported for bookkeeping that rolled back.
     const failures: ConsumerFailure[] = [];
+    // Resolved before the claim transaction opens: no network call inside it.
+    const holdsLease = !this.deps.lease || (await this.deps.lease.ensureHeld());
 
     try {
-      await this.deps.db.transaction(async (tx) => {
-        // Exclude every currently-orphaned (topic, aggregateId) unit
-        // from the claim itself, rather than claiming it and skipping
-        // it in the loop below. Orphaned rows never age out of
-        // `ORDER BY created_at`'s FIFO order — they keep their original
-        // `created_at` and `attempts` untouched — so once the number of
-        // distinct orphaned keys reaches `claimBatchSize`, a
-        // claim-then-skip design re-claims the SAME stuck rows on
-        // every tick forever, and any genuinely-processable row behind
-        // them in FIFO order is never claimed at all: a livelock during
-        // a real outage (architecture-guardian review, 2026-09-29).
-        // Excluding them here lets SKIP LOCKED's own query plan move
-        // past them to the next claimable rows within the same LIMIT.
-        const orphanExclusion =
-          this.orphanedEvents.size === 0
-            ? sql``
-            : sql`AND NOT (${sql.join(
-                [...this.orphanedEvents.values()].map(
-                  (orphan) =>
-                    sql`(topic = ${orphan.topic} AND aggregate_id = ${orphan.aggregateId})`,
-                ),
-                sql` OR `,
-              )})`;
-        // Claim a batch with FOR UPDATE SKIP LOCKED — Postgres locks
-        // these rows for the duration of THIS transaction; a parallel
-        // dispatcher's claim transaction sees them locked and skips
-        // past them to the next un-locked row.
-        const claimed = await tx.execute<{
-          id: string;
-          topic: string;
-          aggregate_id: string;
-          payload: unknown;
-          attempts: number;
-          created_at: Date;
-        }>(sql`
+      if (holdsLease)
+        await this.deps.db.transaction(async (tx) => {
+          // Exclude every currently-orphaned (topic, aggregateId) unit
+          // from the claim itself, rather than claiming it and skipping
+          // it in the loop below. Orphaned rows never age out of
+          // `ORDER BY created_at`'s FIFO order — they keep their original
+          // `created_at` and `attempts` untouched — so once the number of
+          // distinct orphaned keys reaches `claimBatchSize`, a
+          // claim-then-skip design re-claims the SAME stuck rows on
+          // every tick forever, and any genuinely-processable row behind
+          // them in FIFO order is never claimed at all: a livelock during
+          // a real outage (architecture-guardian review, 2026-09-29).
+          // Excluding them here lets SKIP LOCKED's own query plan move
+          // past them to the next claimable rows within the same LIMIT.
+          const orphanExclusion =
+            this.orphanedEvents.size === 0
+              ? sql``
+              : sql`AND NOT (${sql.join(
+                  [...this.orphanedEvents.values()].map(
+                    (orphan) =>
+                      sql`(topic = ${orphan.topic} AND aggregate_id = ${orphan.aggregateId})`,
+                  ),
+                  sql` OR `,
+                )})`;
+          // Claim a batch with FOR UPDATE SKIP LOCKED — Postgres locks
+          // these rows for the duration of THIS transaction; a parallel
+          // dispatcher's claim transaction sees them locked and skips
+          // past them to the next un-locked row.
+          const claimed = await tx.execute<{
+            id: string;
+            topic: string;
+            aggregate_id: string;
+            payload: unknown;
+            attempts: number;
+            created_at: Date;
+          }>(sql`
           SELECT id, topic, aggregate_id, payload, attempts, created_at
           FROM outbox_events
           WHERE status = 'pending'
@@ -1183,173 +1212,176 @@ export class OutboxDispatcherWorker {
           FOR UPDATE SKIP LOCKED
         `);
 
-        // Driver-shape adapter (postgres-js vs PGlite): postgres-js'
-        // `execute` returns an iterable RowList; PGlite returns
-        // `{ rows: Row[] }`. Normalize so the dispatcher reads the
-        // same way against either driver.
-        const rows: Array<{
-          id: string;
-          topic: string;
-          aggregate_id: string;
-          payload: unknown;
-          attempts: number;
-          created_at: Date;
-        }> = Array.isArray(claimed)
-          ? (claimed as unknown as Array<{
-              id: string;
-              topic: string;
-              aggregate_id: string;
-              payload: unknown;
-              attempts: number;
-              created_at: Date;
-            }>)
-          : ((claimed as unknown as { rows: typeof rows }).rows ?? []);
+          // Driver-shape adapter (postgres-js vs PGlite): postgres-js'
+          // `execute` returns an iterable RowList; PGlite returns
+          // `{ rows: Row[] }`. Normalize so the dispatcher reads the
+          // same way against either driver.
+          const rows: Array<{
+            id: string;
+            topic: string;
+            aggregate_id: string;
+            payload: unknown;
+            attempts: number;
+            created_at: Date;
+          }> = Array.isArray(claimed)
+            ? (claimed as unknown as Array<{
+                id: string;
+                topic: string;
+                aggregate_id: string;
+                payload: unknown;
+                attempts: number;
+                created_at: Date;
+              }>)
+            : ((claimed as unknown as { rows: typeof rows }).rows ?? []);
 
-        result.claimed = rows.length;
-        if (rows.length === 0) {
-          return;
-        }
-
-        for (const row of rows) {
-          const event: DispatchedEvent = {
-            id: row.id,
-            topic: row.topic,
-            aggregateId: row.aggregate_id,
-            payload: row.payload as OutboxEvent['payload'],
-            attempts: row.attempts,
-            createdAt: row.created_at,
-          };
-          // The SQL claim above already excludes a key orphaned BEFORE
-          // this tick started. This check catches the one window that
-          // can't be excluded at claim time: a row LATER in this SAME
-          // claimed batch sharing a (topic, aggregateId) with an
-          // EARLIER row in the batch that just timed out and orphaned,
-          // mid-tick (rows are processed one at a time, sequentially —
-          // see the loop below). Re-invoking it now would run that
-          // concurrency unit's consumer concurrently with the still-
-          // running orphaned call, which is not safe for every consumer
-          // today (see the class docstring's "Orphan guard" section).
-          // Leave the row completely untouched — still `pending`,
-          // `attempts` unchanged — until the orphan settles.
-          if (this.orphanedEvents.has(orphanGuardKey(event))) {
-            continue;
+          result.claimed = rows.length;
+          if (rows.length === 0) {
+            return;
           }
-          // Per-row savepoint isolates one consumer failure from the
-          // rest of the batch — a thrown consumer rolls back ONLY its
-          // own UPDATE attempt and the outer tx continues to the next
-          // row. Without this, one bad row would force a tx rollback
-          // and we'd re-claim the whole batch next tick (livelock).
-          try {
-            await tx.transaction(async (sp) => {
-              await this.runConsumerWithOrphanGuard(event);
-              await sp
-                .update(outboxEvents)
-                .set({ status: 'dispatched', dispatchedAt: new Date() })
-                .where(eq(outboxEvents.id, event.id));
-            });
-            result.dispatched += 1;
-            // This event's timeout streak (if it had one) is over.
-            this.timeoutStuckSince.delete(event.id);
-          } catch (err) {
-            result.consumerFailed += 1;
-            const isTimeout = isOutboxTimeoutError(err);
-            if (isTimeout) {
-              result.consumerTimedOut += 1;
+
+          for (const row of rows) {
+            const event: DispatchedEvent = {
+              id: row.id,
+              topic: row.topic,
+              aggregateId: row.aggregate_id,
+              payload: row.payload as OutboxEvent['payload'],
+              attempts: row.attempts,
+              createdAt: row.created_at,
+            };
+            // The SQL claim above already excludes a key orphaned BEFORE
+            // this tick started. This check catches the one window that
+            // can't be excluded at claim time: a row LATER in this SAME
+            // claimed batch sharing a (topic, aggregateId) with an
+            // EARLIER row in the batch that just timed out and orphaned,
+            // mid-tick (rows are processed one at a time, sequentially —
+            // see the loop below). Re-invoking it now would run that
+            // concurrency unit's consumer concurrently with the still-
+            // running orphaned call, which is not safe for every consumer
+            // today (see the class docstring's "Orphan guard" section).
+            // Leave the row completely untouched — still `pending`,
+            // `attempts` unchanged — until the orphan settles.
+            // A lease that lapsed mid-batch (renewal failed, or a long batch)
+            // may already belong to another process. Leave the rest pending.
+            if (this.deps.lease && !this.deps.lease.isHeld()) break;
+            if (this.orphanedEvents.has(orphanGuardKey(event))) {
+              continue;
             }
-            const nextAttempts = event.attempts + 1;
-            const lastError = truncateError(err);
-            // A timeout is an infrastructure failure (Redis/DB slow or
-            // down), not evidence the EVENT is broken — `maxAttempts`
-            // exists to stop a persistently-broken event from spinning
-            // forever (see the dep's docstring), and failing to reach
-            // a downstream dependency is not that. Excluding timeouts
-            // also matters in practice because the orphaned event is
-            // now skip-guarded above: `attempts` cannot even be bumped
-            // again until the orphan settles, so a sustained outage
-            // cannot burn through `maxAttempts` and permanently fail
-            // an event that a few more minutes would have delivered
-            // (silent-failure-hunter + architecture-guardian review,
-            // 2026-09-28 — the previous version of this fix could flip
-            // a row to `failed` after roughly 2.5-7.5 minutes of Redis
-            // being down, sometimes AFTER the abandoned call had
-            // already succeeded).
-            //
-            // That exemption has no end state on its own — a row whose
-            // OWN streak of timeouts never breaks would otherwise retry
-            // forever with no Sentry signal (2026-09-29 review). Track
-            // the streak's start per event id (not the orphan-guard
-            // key: a different event sharing this one's concurrency
-            // unit has its own, independent streak) and, once it has
-            // run longer than `timeoutStuckCeilingMs`, let this timeout
-            // fail like any other exhausted event instead of exempting
-            // it again.
-            let timeoutStreakExceededCeiling = false;
-            if (isTimeout) {
-              const streakStartedAt = this.timeoutStuckSince.get(event.id) ?? Date.now();
-              if (!this.timeoutStuckSince.has(event.id)) {
-                this.timeoutStuckSince.set(event.id, streakStartedAt);
-              }
-              timeoutStreakExceededCeiling =
-                Date.now() - streakStartedAt >= this.timeoutStuckCeilingMs;
-            } else {
-              // A genuine (non-timeout) failure ends any prior timeout
-              // streak this event had — it is no longer "stuck on
-              // infrastructure," it is failing for a different reason,
-              // and `nextAttempts >= maxAttempts` below already governs
-              // it.
-              this.timeoutStuckSince.delete(event.id);
-            }
-            const shouldFail =
-              timeoutStreakExceededCeiling || (!isTimeout && nextAttempts >= this.maxAttempts);
-            if (shouldFail) {
-              this.timeoutStuckSince.delete(event.id);
-            }
-            // The savepoint that ran the consumer + UPDATE rolled
-            // back; the bookkeeping UPDATE runs in the outer tx so it
-            // commits even on consumer failure. Without this, a
-            // thrown consumer would leave `attempts` un-bumped and
-            // the row would retry forever with no audit trail.
-            //
-            // Audit guard: `attempts = event.attempts` on the WHERE
-            // clause. If a parallel tick (post-crash, see
-            // lock-expiry doc above) already bumped the row, our
-            // update affects 0 rows and our bookkeeping is a no-op
-            // instead of clobbering theirs. There is no lock-token
-            // column on `outbox_events`; the attempts counter doubles
-            // as the optimistic-concurrency token, which is enough
-            // because attempts only ever increases.
-            const bumped = await tx
-              .update(outboxEvents)
-              .set({
-                attempts: nextAttempts,
-                lastError,
-                ...(shouldFail ? { status: 'failed' as const } : {}),
-              })
-              .where(
-                and(
-                  eq(outboxEvents.id, event.id),
-                  eq(outboxEvents.status, 'pending'),
-                  eq(outboxEvents.attempts, event.attempts),
-                ),
-              )
-              .returning({ id: outboxEvents.id });
-            if (shouldFail) {
-              result.flippedToFailed += 1;
-            }
-            // A parallel tick that bumped the row first owns this attempt,
-            // and reports it.
-            if (bumped.length > 0) {
-              failures.push({
-                event,
-                error: err,
-                attempts: nextAttempts,
-                failed: shouldFail,
-                timedOut: isTimeout,
+            // Per-row savepoint isolates one consumer failure from the
+            // rest of the batch — a thrown consumer rolls back ONLY its
+            // own UPDATE attempt and the outer tx continues to the next
+            // row. Without this, one bad row would force a tx rollback
+            // and we'd re-claim the whole batch next tick (livelock).
+            try {
+              await tx.transaction(async (sp) => {
+                await this.runConsumerWithOrphanGuard(event);
+                await sp
+                  .update(outboxEvents)
+                  .set({ status: 'dispatched', dispatchedAt: new Date() })
+                  .where(eq(outboxEvents.id, event.id));
               });
+              result.dispatched += 1;
+              // This event's timeout streak (if it had one) is over.
+              this.timeoutStuckSince.delete(event.id);
+            } catch (err) {
+              result.consumerFailed += 1;
+              const isTimeout = isOutboxTimeoutError(err);
+              if (isTimeout) {
+                result.consumerTimedOut += 1;
+              }
+              const nextAttempts = event.attempts + 1;
+              const lastError = truncateError(err);
+              // A timeout is an infrastructure failure (Redis/DB slow or
+              // down), not evidence the EVENT is broken — `maxAttempts`
+              // exists to stop a persistently-broken event from spinning
+              // forever (see the dep's docstring), and failing to reach
+              // a downstream dependency is not that. Excluding timeouts
+              // also matters in practice because the orphaned event is
+              // now skip-guarded above: `attempts` cannot even be bumped
+              // again until the orphan settles, so a sustained outage
+              // cannot burn through `maxAttempts` and permanently fail
+              // an event that a few more minutes would have delivered
+              // (silent-failure-hunter + architecture-guardian review,
+              // 2026-09-28 — the previous version of this fix could flip
+              // a row to `failed` after roughly 2.5-7.5 minutes of Redis
+              // being down, sometimes AFTER the abandoned call had
+              // already succeeded).
+              //
+              // That exemption has no end state on its own — a row whose
+              // OWN streak of timeouts never breaks would otherwise retry
+              // forever with no Sentry signal (2026-09-29 review). Track
+              // the streak's start per event id (not the orphan-guard
+              // key: a different event sharing this one's concurrency
+              // unit has its own, independent streak) and, once it has
+              // run longer than `timeoutStuckCeilingMs`, let this timeout
+              // fail like any other exhausted event instead of exempting
+              // it again.
+              let timeoutStreakExceededCeiling = false;
+              if (isTimeout) {
+                const streakStartedAt = this.timeoutStuckSince.get(event.id) ?? Date.now();
+                if (!this.timeoutStuckSince.has(event.id)) {
+                  this.timeoutStuckSince.set(event.id, streakStartedAt);
+                }
+                timeoutStreakExceededCeiling =
+                  Date.now() - streakStartedAt >= this.timeoutStuckCeilingMs;
+              } else {
+                // A genuine (non-timeout) failure ends any prior timeout
+                // streak this event had — it is no longer "stuck on
+                // infrastructure," it is failing for a different reason,
+                // and `nextAttempts >= maxAttempts` below already governs
+                // it.
+                this.timeoutStuckSince.delete(event.id);
+              }
+              const shouldFail =
+                timeoutStreakExceededCeiling || (!isTimeout && nextAttempts >= this.maxAttempts);
+              if (shouldFail) {
+                this.timeoutStuckSince.delete(event.id);
+              }
+              // The savepoint that ran the consumer + UPDATE rolled
+              // back; the bookkeeping UPDATE runs in the outer tx so it
+              // commits even on consumer failure. Without this, a
+              // thrown consumer would leave `attempts` un-bumped and
+              // the row would retry forever with no audit trail.
+              //
+              // Audit guard: `attempts = event.attempts` on the WHERE
+              // clause. If a parallel tick (post-crash, see
+              // lock-expiry doc above) already bumped the row, our
+              // update affects 0 rows and our bookkeeping is a no-op
+              // instead of clobbering theirs. There is no lock-token
+              // column on `outbox_events`; the attempts counter doubles
+              // as the optimistic-concurrency token, which is enough
+              // because attempts only ever increases.
+              const bumped = await tx
+                .update(outboxEvents)
+                .set({
+                  attempts: nextAttempts,
+                  lastError,
+                  ...(shouldFail ? { status: 'failed' as const } : {}),
+                })
+                .where(
+                  and(
+                    eq(outboxEvents.id, event.id),
+                    eq(outboxEvents.status, 'pending'),
+                    eq(outboxEvents.attempts, event.attempts),
+                  ),
+                )
+                .returning({ id: outboxEvents.id });
+              if (shouldFail) {
+                result.flippedToFailed += 1;
+              }
+              // A parallel tick that bumped the row first owns this attempt,
+              // and reports it.
+              if (bumped.length > 0) {
+                failures.push({
+                  event,
+                  error: err,
+                  attempts: nextAttempts,
+                  failed: shouldFail,
+                  timedOut: isTimeout,
+                });
+              }
             }
           }
-        }
-      });
+        });
       for (const failure of failures) this.reportConsumerFailure(failure);
     } catch (err) {
       // Tx-level failure (db down, deadlock, etc.) — log and continue;
