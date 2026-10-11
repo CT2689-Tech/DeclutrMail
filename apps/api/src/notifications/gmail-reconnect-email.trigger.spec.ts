@@ -52,8 +52,14 @@ it('routes a reconnect incident to the exact mailbox and suppresses delivery aft
   await consume(event);
   const payload = queue.add.mock.calls[0]![1] as EmailSendJobData;
   expect(payload.kind).toBe('gmail-reconnect');
-  expect(payload.text).toContain(`/settings#mailbox-${account!.id}`);
-  expect(payload.html).toContain(`/settings#mailbox-${account!.id}`);
+  expect(payload.text).toContain(`#mailbox-${account!.id}`);
+  expect(payload.html).toContain(`#mailbox-${account!.id}`);
+  expect(payload.text).toContain(`mailbox=${account!.id}`);
+  expect(payload.html).toContain(`mailbox=${account!.id}`);
+  expect(payload.text).toContain('from=gmail_reconnect');
+  expect(payload.html).toContain('from=gmail_reconnect');
+  expect(payload.text).toContain('utm_campaign=gmail_reconnect');
+  expect(payload.html).toContain('utm_campaign=gmail_reconnect');
   const deliver = vi.fn().mockResolvedValue({ ok: true, providerId: 'test' });
   const worker = new EmailSendWorker({ db: db as never, delivery: { deliver } });
   const context = { jobId: 'test', attempt: 1 } as never;
