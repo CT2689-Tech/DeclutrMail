@@ -1,29 +1,13 @@
 import { pathToFileURL } from 'node:url';
-import { Queue } from 'bullmq';
-import {
-  createRedisConnection,
-  EMAIL_SEND_QUEUE,
-  QueueActorCompatibilityError,
-  sampleEmailQueueCompatibility,
-} from '@declutrmail/workers';
+import { createRedisConnection, readEmailRuntimeLeases } from '@declutrmail/workers';
 
 type Redis = ReturnType<typeof createRedisConnection>;
 
 /**
- * Five instants, 3s apart, eight fresh connections each. One connection can
- * omit the live blocking actor that another connection lists at the same
- * instant, so a single reader per instant can miss a running consumer for
- * the whole window. The reads in one instant run together; the gap between
- * instants is what covers a reconnect. Startup plus the deadline must stay
- * inside the task's 60 s timeout. The deadline covers the eight parallel
- * handshakes as well as the gaps between instants.
- */
-export const PROBE_SAMPLING = { samples: 5, intervalMs: 3_000, breadth: 8 };
-export const PROBE_DEADLINE_MS = 40_000;
-
-/**
  * Task exit codes. The deploy reads only this number from the Cloud Run task,
  * so every failure must map to a fixed reason and never carry provider text.
+ * `client_list_unavailable` remains so historical tasks keep their recorded
+ * reason. This probe does not list broker clients.
  */
 export const PROBE_EXIT_CODES = {
   unclassified: 1,
@@ -36,6 +20,8 @@ export const PROBE_EXIT_CODES = {
   client_list_unavailable: 107,
   no_workers: 108,
   incompatible_workers: 109,
+  adoption_unverified: 110,
+  settlement_unverified: 111,
 } as const;
 export type ProbeFailureReason = keyof typeof PROBE_EXIT_CODES;
 
@@ -59,6 +45,14 @@ const NETWORK_CODES = new Set([
   'EPIPE',
 ]);
 
+const LEASE_REASONS: Record<string, ProbeFailureReason> = {
+  runtime_adoption_unverified: 'adoption_unverified',
+  no_workers: 'no_workers',
+  incompatible_workers: 'incompatible_workers',
+  runtime_settlement_unverified: 'settlement_unverified',
+  client_list_unavailable: 'client_list_unavailable',
+};
+
 /** Classifies a connection error by its fixed name/code; its message is never read. */
 function redisErrorReason(error: unknown): ProbeFailureReason | undefined {
   const { name, code } = (error ?? {}) as { name?: unknown; code?: unknown };
@@ -70,83 +64,49 @@ function redisErrorReason(error: unknown): ProbeFailureReason | undefined {
   return undefined;
 }
 
-export function probeFailureReason(error: unknown): ProbeFailureReason {
-  if (error instanceof BillingQueueProbeError || error instanceof QueueActorCompatibilityError)
-    return error.reason;
-  return redisErrorReason(error) ?? 'unclassified';
+function leaseReason(error: unknown): ProbeFailureReason | undefined {
+  if (!error || typeof error !== 'object' || !('reason' in error)) return undefined;
+  const reason = (error as { reason: unknown }).reason;
+  return typeof reason === 'string' ? LEASE_REASONS[reason] : undefined;
 }
 
-/** Standalone private diagnostic; never imports the API/worker bootstrap. */
-export async function verifyBillingQueue(): Promise<{ workers: number }> {
+export function probeFailureReason(error: unknown): ProbeFailureReason {
+  if (error instanceof BillingQueueProbeError) return error.reason;
+  return leaseReason(error) ?? redisErrorReason(error) ?? 'unclassified';
+}
+
+/** Standalone private diagnostic. It does not list broker clients and never
+ * accepts an environment-supplied witness. Missing adoption evidence fails closed.
+ */
+export async function verifyBillingQueue(): Promise<never> {
   if (process.env.BILLING_NOTICE_PROBE !== 'true' || !process.env.BILLING_NOTICE_REDIS_URL)
     throw new BillingQueueProbeError(
       'Billing queue probe configuration unavailable',
       'configuration_unavailable',
     );
-  const redisUrl = process.env.BILLING_NOTICE_REDIS_URL;
-  type Handle = { connection: Redis; queue?: Queue; error?: ProbeFailureReason | undefined };
-  const open = new Set<Handle>();
-  let current: Handle | undefined;
-  let finished = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const release = async (handle: Handle) => {
-    open.delete(handle);
-    if (current === handle) current = undefined;
-    handle.connection.disconnect();
-    await handle.queue?.close().catch(() => {});
-  };
-  const withQueue = async <T>(read: (queue: Queue) => Promise<T>): Promise<T> => {
-    if (finished) throw new BillingQueueProbeError('Billing queue probe deadline', 'unclassified');
-    const handle: Handle = { connection: createRedisConnection(redisUrl) };
-    open.add(handle);
-    current = handle;
-    handle.connection.on('error', (error: unknown) => {
-      handle.error = redisErrorReason(error) ?? handle.error;
-    });
-    try {
-      handle.queue = new Queue(EMAIL_SEND_QUEUE, {
-        connection: handle.connection,
-        skipMetasUpdate: true,
-      });
-      handle.queue.on('error', () => {});
-      return await read(handle.queue);
-    } finally {
-      await release(handle);
-    }
-  };
-  /** Between samples every read so far was answered, so the broker is slow, not unreachable. */
-  const deadlineReason = (): ProbeFailureReason =>
-    !current || current.connection.status === 'ready'
-      ? 'broker_read_stalled'
-      : (current.error ?? 'redis_not_ready');
+  if (process.env.EMAIL_RUNTIME_ADOPTION_WITNESS || process.env.CLIENT_LIST_COMPATIBLE)
+    throw new BillingQueueProbeError('Billing queue adoption unverified', 'adoption_unverified');
+  const connection: Redis = createRedisConnection(process.env.BILLING_NOTICE_REDIS_URL);
+  connection.on('error', () => undefined);
   try {
-    return await Promise.race([
-      sampleEmailQueueCompatibility(withQueue, PROBE_SAMPLING),
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(
-          () =>
-            reject(new BillingQueueProbeError('Billing queue probe deadline', deadlineReason())),
-          PROBE_DEADLINE_MS,
-        );
-      }),
-    ]);
+    await connection.ping();
+    await readEmailRuntimeLeases(connection, undefined);
+    throw new BillingQueueProbeError('Billing queue adoption unverified', 'adoption_unverified');
+  } catch (error) {
+    if (error instanceof BillingQueueProbeError) throw error;
+    const redis = redisErrorReason(error);
+    if (redis) throw new BillingQueueProbeError('Billing queue probe redis unverified', redis);
+    const lease = leaseReason(error);
+    if (lease) throw new BillingQueueProbeError('Billing queue adoption unverified', lease);
+    throw new BillingQueueProbeError('Billing queue adoption unverified', 'unclassified');
   } finally {
-    finished = true;
-    clearTimeout(timer);
-    await Promise.all([...open].map(release));
+    connection.disconnect();
   }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    const proof = await verifyBillingQueue();
-    console.log(
-      JSON.stringify({
-        billingQueueCompatible: true,
-        emailPrefsCompatible: true,
-        workers: proof.workers,
-      }),
-    );
+    await verifyBillingQueue();
   } catch (error) {
     const reason = probeFailureReason(error);
     console.error(JSON.stringify({ billingQueueProbe: { reason } }));
