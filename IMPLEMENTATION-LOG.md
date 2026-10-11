@@ -32,7 +32,7 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-250 decisions — ⬜ Not started 70 · 🔵 Shipped 115 · 🟢 Verified 62 · 🟡 In progress 1 · 🚫 Retired 2
+250 decisions — ⬜ Not started 70 · 🔵 Shipped 114 · 🟢 Verified 63 · 🟡 In progress 1 · 🚫 Retired 2
 
 <!-- AUTO:SUMMARY:END -->
 
@@ -298,7 +298,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D258 | Signup attribution survives the Google hop | 🔵 | #640 |  |  |
 | D259 | A route's server render is one request per surface | 🔵 | #641 |  |  |
 | D260 | Complimentary tier is a floor, granted by email | 🔵 | #642 |  |  |
-| D261 | Daily Brief ready notice: explicit opt-in, counts and inbox link | 🔵 | #940 | docs/execution/brief-ready-email-2026-10-11.md — real PGlite/Redis, fake provider, consent invalidation, owned export/purge, Settings keyboard persistence, 390px layout, production build and Storybook. | Implementation verified locally. Compatibility #939 serving floor and dual-protocol broker proof must precede new producer activation; no actual Resend delivery or outside-user reconnect was exercised. |
+| D261 | Daily Brief ready notice: explicit opt-in, counts and inbox link | 🟢 | #940 | smoke: Built-in browser synthetic Settings keyboard On survives reload and Off restores original preference; 390px layout inspected. Real PGlite/Redis/fake-provider tests, typecheck, lint, production budgets and Storybook pass; docs/execution/brief-ready-email-2026-10-11.md preserves evidence and production limits. @ be47ccc3 2026-10-11 | Implementation verified locally. Compatibility #939 serving floor and dual-protocol broker proof must precede new producer activation; no actual Resend delivery or outside-user reconnect was exercised. |
 
 <!-- AUTO:DECISIONS:END -->
 
