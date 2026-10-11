@@ -8,6 +8,8 @@ import { createRedisConnection } from './queue.js';
 import {
   BILLING_EMAIL_SEND_QUEUE,
   BILLING_QUEUE_COMPATIBLE_WORKER_NAME,
+  EMAIL_PREFS_COMPATIBLE_WORKER_NAME,
+  readEmailPrefsQueueCompatibility,
   EMAIL_SEND_QUEUE,
   createBillingEmailSendConsumer,
   enqueueEmailSend,
@@ -56,6 +58,7 @@ it('preserves waiting billing jobs while OFF and isolates them from a live legac
   } satisfies EmailSendResult);
   let consumer: Worker<EmailSendJobData, EmailSendResult> | null = null;
   let compatibleLegacy: Worker | undefined;
+  let futureCompatible: Worker | undefined;
   try {
     await Promise.all([
       billing.waitUntilReady(),
@@ -96,6 +99,22 @@ it('preserves waiting billing jobs while OFF and isolates them from a live legac
     );
     await legacy.close();
     expect(await readBillingQueueCompatibility(generic)).toEqual({ workers: 1 });
+    await expect(readEmailPrefsQueueCompatibility(generic)).rejects.toThrow(
+      'compatibility unverified',
+    );
+    futureCompatible = new Worker(EMAIL_SEND_QUEUE, oldProcessor, {
+      connection,
+      prefix,
+      concurrency: 1,
+      name: EMAIL_PREFS_COMPATIBLE_WORKER_NAME,
+    });
+    await futureCompatible.waitUntilReady();
+    await expect(readEmailPrefsQueueCompatibility(generic)).rejects.toThrow(
+      'compatibility unverified',
+    );
+    await compatibleLegacy.close();
+    expect(await readEmailPrefsQueueCompatibility(generic)).toEqual({ workers: 1 });
+    expect(await readBillingQueueCompatibility(generic)).toEqual({ workers: 1 });
     consumer = createBillingEmailSendConsumer(true, processor, {
       connection,
       prefix,
@@ -112,6 +131,7 @@ it('preserves waiting billing jobs while OFF and isolates them from a live legac
     await consumer?.close();
     await legacy.close();
     await compatibleLegacy?.close();
+    await futureCompatible?.close();
     await Promise.all([billing.obliterate({ force: true }), generic.obliterate({ force: true })]);
     await Promise.all([billing.close(), generic.close()]);
     connection.disconnect();

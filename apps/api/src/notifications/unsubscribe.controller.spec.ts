@@ -66,6 +66,7 @@ describe('UnsubscribeController', () => {
 
     expect(res.status).toBe('ok');
     expect(await readPrefs(db, userId)).toEqual({
+      emailAllOptOutRevision: expect.any(String),
       emailPrefs: { reminders: false, syncComplete: false, weeklyReceipt: false },
     });
   });
@@ -131,6 +132,7 @@ describe('UnsubscribeController', () => {
     await controller.unsubscribe(token);
 
     expect(await readPrefs(db, userId)).toEqual({
+      emailAllOptOutRevision: expect.any(String),
       emailPrefs: { reminders: false, syncComplete: false, weeklyReceipt: false },
     });
   });
@@ -150,6 +152,7 @@ describe('UnsubscribeController', () => {
 
     expect(await readPrefs(db, userId)).toEqual({
       profilePreset: 'calm',
+      emailAllOptOutRevision: expect.any(String),
       emailPrefs: {
         reminders: false,
         futureCategory: true,
@@ -172,6 +175,7 @@ describe('UnsubscribeController', () => {
 
     expect(res.status).toBe('ok');
     expect(await readPrefs(db, userId)).toEqual({
+      emailAllOptOutRevision: expect.any(String),
       emailPrefs: { reminders: false, syncComplete: false, weeklyReceipt: false },
     });
   });
@@ -188,8 +192,35 @@ describe('UnsubscribeController', () => {
     await controller.unsubscribe(token);
 
     expect(await readPrefs(db, userId)).toEqual({
+      emailAllOptOutRevision: expect.any(String),
       emailPrefs: { reminders: false, syncComplete: false, weeklyReceipt: false },
     });
+  });
+
+  it('invalidates future opt-in consent atomically, while a category unsubscribe preserves it', async () => {
+    const db = await freshDb();
+    const originalRevision = 'b1111111-0000-4000-8000-000000000001';
+    const userId = await seedUser(db, {
+      emailAllOptOutRevision: originalRevision,
+      emailBriefOptInRevision: originalRevision,
+      emailPrefs: { reminders: false, syncComplete: false, briefReady: true },
+    });
+    const controller = new UnsubscribeController(db, securityEventsStub());
+    await controller.unsubscribe(await signUnsubscribeToken({ userId, scope: 'reminders' }));
+    expect((await readPrefs(db, userId)).emailAllOptOutRevision).toBe(originalRevision);
+    const token = await signUnsubscribeToken({ userId, scope: 'all' });
+    await controller.unsubscribe(token);
+    const prefs = await readPrefs(db, userId);
+    expect(prefs).toEqual({
+      emailAllOptOutRevision: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f-]{27}$/),
+      emailBriefOptInRevision: originalRevision,
+      emailPrefs: { reminders: false, syncComplete: false, weeklyReceipt: false, briefReady: true },
+    });
+    expect(prefs.emailAllOptOutRevision).not.toBe(originalRevision);
+    await controller.unsubscribe(token);
+    expect((await readPrefs(db, userId)).emailAllOptOutRevision).not.toBe(
+      prefs.emailAllOptOutRevision,
+    );
   });
 
   it('GET never mutates, even with a perfectly valid token', async () => {

@@ -63,7 +63,7 @@ import {
   DrizzleDeadLetterRecorder,
   EMAIL_SEND_QUEUE,
   BILLING_EMAIL_SEND_QUEUE,
-  BILLING_QUEUE_COMPATIBLE_WORKER_NAME,
+  EMAIL_PREFS_COMPATIBLE_WORKER_NAME,
   createBillingEmailSendConsumer,
   EmailSendWorker,
   enqueueEmailSend,
@@ -2148,7 +2148,7 @@ async function bootstrap(): Promise<void> {
   const emailSendBullWorker = new Worker<EmailSendJobData, EmailSendResult>(
     EMAIL_SEND_QUEUE,
     (job) => emailSendWorker.run(job),
-    { connection, concurrency: 5, ...userFacingTuning, name: BILLING_QUEUE_COMPATIBLE_WORKER_NAME },
+    { connection, concurrency: 5, ...userFacingTuning, name: EMAIL_PREFS_COMPATIBLE_WORKER_NAME },
   );
   emailSendBullWorker.on('error', (err) => {
     console.error(

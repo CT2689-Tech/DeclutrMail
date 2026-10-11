@@ -60,11 +60,12 @@ export type EmailPrefsPatch = z.infer<typeof EmailPrefsPatchSchema>;
 
 /**
  * Stored bags written before a key existed lack that key — parse them
- * PARTIALLY and fill the gap from defaults, so adding a category can
+ * PARTIALLY, ignore future categories, and fill the gap from defaults.
+ * Reads tolerate mixed versions while PATCH stays strict, so adding a category can
  * never wipe an existing opt-out (a strict full-object parse would
  * fail on `{ reminders: false }` and silently reset it to `true`).
  */
-const EmailPrefsPartialSchema = EmailPrefsSchema.partial();
+const EmailPrefsPartialSchema = EmailPrefsSchema.partial().strip();
 
 /**
  * Read the email prefs out of a raw `users.preferences` bag, falling

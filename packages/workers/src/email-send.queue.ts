@@ -32,6 +32,8 @@ export const EMAIL_SEND_QUEUE = 'email-send';
 export const BILLING_EMAIL_SEND_QUEUE = 'billing-email-send';
 /** Broker-visible compatibility marker for the outbox/email runtime. */
 export const BILLING_QUEUE_COMPATIBLE_WORKER_NAME = 'billing-queue-v1';
+/** Includes the billing suffix so deployed billing probes keep recognising this actor. */
+export const EMAIL_PREFS_COMPATIBLE_WORKER_NAME = `email-prefs-v2:w:${BILLING_QUEUE_COMPATIBLE_WORKER_NAME}`;
 export const EMAIL_SEND_JOB = 'email-send';
 
 /** Read-only: empty, unavailable, unnamed or older runtime actors cannot clear rollout. */
@@ -48,6 +50,24 @@ export async function readBillingQueueCompatibility(queue: Queue): Promise<{ wor
     )
   ) {
     throw new Error('Billing queue compatibility unverified');
+  }
+  return { workers: workers.length };
+}
+
+/** Every generic email actor must tolerate future categories before their first write. */
+export async function readEmailPrefsQueueCompatibility(queue: Queue): Promise<{ workers: number }> {
+  if (queue.name !== EMAIL_SEND_QUEUE)
+    throw new Error('Email prefs compatibility needs the generic email queue');
+  const workers = await queue.getWorkers();
+  if (
+    workers.length === 0 ||
+    workers.some(
+      (worker) =>
+        typeof worker.rawname !== 'string' ||
+        !worker.rawname.endsWith(`:w:${EMAIL_PREFS_COMPATIBLE_WORKER_NAME}`),
+    )
+  ) {
+    throw new Error('Email prefs queue compatibility unverified');
   }
   return { workers: workers.length };
 }
