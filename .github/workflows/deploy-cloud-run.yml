@@ -74,6 +74,7 @@ on:
       - 'scripts/select-deployment.mjs'
       - 'scripts/deploy-api-safely*'
       - 'scripts/check-billing-queue-runtime*'
+      - 'scripts/worker-executor*'
   workflow_dispatch:
     # Allow manual re-deploys (e.g. after a Secret Manager rotation
     # where the IMAGE hasn't changed but the env needs to be repulled).
