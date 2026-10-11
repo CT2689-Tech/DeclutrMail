@@ -5,9 +5,16 @@ import { EVENT_NAMES } from './events/index';
 import { OPS_SUPER_PROPERTIES } from './events/ops';
 
 /**
- * Names in `events.ts` immediately before the domain split. The union
- * after the split must match this set exactly — no renames, no drops.
+ * Names in `events.ts` immediately before the domain split. That set
+ * stays a subset. A5 names are an explicit addition — no renames, no drops.
  */
+const A5_EVENT_NAMES = [
+  'upgrade_cta_clicked',
+  'checkout_closed',
+  'free_cap_hit',
+  'pass_selected',
+  'plus_selected',
+] as const;
 const EVENT_NAMES_BEFORE_SPLIT = [
   'onboarding_step_viewed',
   'onboarding_step_completed',
@@ -88,13 +95,10 @@ const OWNERS = {
 } as const;
 
 describe('event registry domain split', () => {
-  it('keeps the pre-split event names and only appends growth events', () => {
-    const appended = ['provider_waitlist_joined'] as const;
+  it('keeps the pre-split names and appends A5 and growth events', () => {
+    const appended = [...A5_EVENT_NAMES, 'provider_waitlist_joined'] as const;
     expect([...EVENT_NAMES].sort()).toEqual([...EVENT_NAMES_BEFORE_SPLIT, ...appended].sort());
     expect(new Set(EVENT_NAMES).size).toBe(EVENT_NAMES_BEFORE_SPLIT.length + appended.length);
-    for (const name of EVENT_NAMES_BEFORE_SPLIT) {
-      expect(EVENT_NAMES).toContain(name);
-    }
   });
 
   it('keeps display_mode off the event-name list', () => {

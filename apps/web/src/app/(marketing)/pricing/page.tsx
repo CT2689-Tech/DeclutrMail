@@ -6,22 +6,25 @@
 // `features/marketing/pricing`.
 
 import type { Metadata } from 'next';
+import dynamic from 'next/dynamic';
 import { headers } from 'next/headers';
 
 import { BillingCurrencyProvider } from '@/features/billing/billing-currency';
 import { defaultProviderForCountry } from '@/features/billing/billing-region';
+import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
+import { pricingPageMetadata } from '@/features/marketing/pricing/pricing-metadata';
 import { PricingScreen } from '@/features/marketing/pricing/pricing-screen';
 import '@/features/marketing/pricing/pricing.css';
-import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 import { COUNTRY_HEADER } from '@/middleware';
 
-export const metadata: Metadata = marketingPageMetadata({
-  title: 'Pricing — DeclutrMail',
-  description:
-    'Free includes manual sender cleanup. Plus adds Screener, Autopilot and Quiet hours with no monthly limit. Pro adds the Daily Brief, Follow-ups and more inboxes.',
-  path: '/pricing',
-  markdownAlternate: '/pricing.md',
-});
+const PricingStory = dynamic(() =>
+  import('@/features/marketing/pricing/pricing-story').then((mod) => mod.PricingStory),
+);
+
+export async function generateMetadata(): Promise<Metadata> {
+  const flags = await loadPricingFlags();
+  return pricingPageMetadata(flags.pricingV2);
+}
 
 /**
  * DYNAMIC ON PURPOSE (Option A′, founder 2026-08-14). The billing rail
@@ -33,9 +36,19 @@ export const metadata: Metadata = marketingPageMetadata({
  */
 export default async function PricingPage() {
   const country = (await headers()).get(COUNTRY_HEADER);
+  const flags = await loadPricingFlags();
+  const locale = country === 'IN' ? 'inr' : 'usd';
   return (
     <BillingCurrencyProvider provider={defaultProviderForCountry(country)}>
-      <PricingScreen />
+      {flags.pricingV2 ? (
+        <PricingStory
+          passEnabled={flags.passEnabled}
+          locale={locale}
+          now={new Date().toISOString()}
+        />
+      ) : (
+        <PricingScreen />
+      )}
     </BillingCurrencyProvider>
   );
 }

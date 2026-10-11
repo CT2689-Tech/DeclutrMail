@@ -621,3 +621,35 @@
     width: calc(100% - 32px);
   }
 }
+
+.dm-pricing-tiers[data-count='2'] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dm-tier-expand {
+  align-self: flex-start;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dm-primary);
+  font: 600 14px/1.4 var(--dm-font-sans);
+  cursor: pointer;
+}
+
+.dm-pricing-pro-row {
+  margin: 28px 0 0;
+  text-align: center;
+}
+
+@media (min-width: 721px) {
+  .dm-tier-expand {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .dm-tier-features[data-features='collapsed'] li:nth-child(n + 5) {
+    display: none;
+  }
+}

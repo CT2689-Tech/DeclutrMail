@@ -285,12 +285,22 @@ export const METER = {
   undoRefunds: 'restored_same_period',
 } as const;
 
-/** Display-only launch code. Checkout does not pass it through. */
+/**
+ * Display-only launch code. Checkout does not pass it through.
+ * `startsAt` is launch: 2026-10-27 12:01 AM PT.
+ */
 export const PROMO = {
   code: 'PH30',
   percentOff: 30,
   appliesTo: ['plus_annual', 'pass_onetime'],
+  startsAt: '2026-10-27T07:01:00Z',
   endsAt: '2026-11-04T07:59:00Z',
+} as const;
+
+/** Paddle discount ids for PH30. Placeholders until Chintan pastes them. */
+export const PROMO_DISCOUNT_IDS = {
+  sandbox: 'FILL_ME',
+  live: 'FILL_ME',
 } as const;
 
 const UNPROVISIONED_PRICE_ID = 'FILL_ME';

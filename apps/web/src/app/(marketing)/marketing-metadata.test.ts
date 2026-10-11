@@ -23,7 +23,10 @@ import { comparisonBySlug } from '@/features/marketing/comparison/comparison-dat
 
 import { metadata as landing } from './page';
 import { metadata as beta } from './beta/page';
-import { metadata as pricing } from './pricing/page';
+import { pricingPageMetadata } from '@/features/marketing/pricing/pricing-metadata';
+
+/** Flag-off metadata. `generateMetadata` returns this unless PRICING_V2 is on. */
+const pricing = pricingPageMetadata(false);
 import { metadata as privacy } from './privacy/page';
 import { metadata as terms } from './terms/page';
 import { metadata as refunds } from './refunds/page';
@@ -109,6 +112,15 @@ describe('the blog index title — D250 §3.6 row 21', () => {
     expect(blog.title).toEqual({
       absolute: 'DeclutrMail articles — previews, undo, and the limits of bulk email',
     });
+  });
+});
+
+describe('pricing metadata follows the launch flag', () => {
+  it('keeps today’s description while the flag is off and the deck sub while it is on', () => {
+    expect(pricingPageMetadata(false).description).toBe(pricing.description);
+    expect(pricingPageMetadata(true).description?.length).toBeLessThanOrEqual(160);
+    expect(pricingPageMetadata(true).description).not.toMatch(/\$\d/);
+    expect(pricingPageMetadata(true).alternates?.canonical).toBe('/pricing');
   });
 });
 

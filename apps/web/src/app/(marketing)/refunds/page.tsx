@@ -11,7 +11,9 @@
 // the interim 14-day pro-rata default.
 
 import type { Metadata } from 'next';
+import { isPricingV2 } from '@declutrmail/shared/entitlements';
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
+import { RefundsV2 } from '@/features/marketing/pricing/refunds-v2';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 import { PAGE_LAST_UPDATED } from '@/features/marketing/page-dates';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
@@ -38,6 +40,7 @@ const TOC = [
 ] as const;
 
 export default function RefundPolicyPage() {
+  if (isPricingV2()) return <RefundsV2 />;
   return (
     <LegalPageLayout title="Refund Policy" lastUpdated={LAST_UPDATED} toc={TOC}>
       <PageViewTracker page="refunds" />
@@ -76,7 +79,7 @@ export default function RefundPolicyPage() {
             refund-review access deadline is reached, whichever comes first
           </strong>{' '}
           and your account moves to the Free plan unless a separate complimentary grant applies —
-          this is the one way it differs from cancelling, which keeps your features until the end of
+          this is the one way it differs from canceling, which keeps your features until the end of
           the period you paid for (Section 2). Your data is untouched either way, and nothing stops
           you subscribing again later.
         </p>

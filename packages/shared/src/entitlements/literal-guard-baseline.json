@@ -1,0 +1,302 @@
+[
+  {
+    "file": "apps/web/src/app/(marketing)/help/page.tsx",
+    "match": "30-day money",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/app/(marketing)/help/page.tsx",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/app/(marketing)/how-it-works/page.tsx",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/app/(marketing)/inbox-simulator/page.tsx",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/app/(marketing)/legal-pages.test.tsx",
+    "match": "30-day money",
+    "count": 3
+  },
+  {
+    "file": "apps/web/src/app/(marketing)/marketing-metadata.test.ts",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/app/(marketing)/page.test.tsx",
+    "match": "30-day money",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/app/(marketing)/page.test.tsx",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/app/(marketing)/pricing.md/route.ts",
+    "match": "30-day money",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/app/(marketing)/refunds/page.tsx",
+    "match": "30-day money",
+    "count": 4
+  },
+  {
+    "file": "apps/web/src/app/(marketing)/support-pages.test.tsx",
+    "match": "30-day money",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/app/(marketing)/terms/page.tsx",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/activity/activity-screen.tsx",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/billing/billing-copy.ts",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/billing/billing-screen.test.tsx",
+    "match": "cleanup action",
+    "count": 3
+  },
+  {
+    "file": "apps/web/src/features/billing/billing-screen.tsx",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/billing/cancel-modal.tsx",
+    "match": "30-day money",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/billing/plan-coverage.tsx",
+    "match": "cleanup action",
+    "count": 3
+  },
+  {
+    "file": "apps/web/src/features/billing/plan-picker.tsx",
+    "match": "first 250",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/billing/upgrade-modal.stories.tsx",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/billing/upgrade-modal.test.tsx",
+    "match": "cleanup action",
+    "count": 2
+  },
+  {
+    "file": "apps/web/src/features/billing/upgrade-modal.tsx",
+    "match": "cleanup action",
+    "count": 2
+  },
+  {
+    "file": "apps/web/src/features/brief/noise-archive-sheet.stories.tsx",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/home/api/use-home-workflows.ts",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/home/home-screen.tsx",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/home/home-view.tsx",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/marketing/comparison/comparison-data.ts",
+    "match": "cleanup action",
+    "count": 3
+  },
+  {
+    "file": "apps/web/src/features/marketing/comparison/comparison-screen.tsx",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.test.tsx",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.tsx",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/marketing/landing/hero.tsx",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/marketing/landing/pricing-teaser-view.tsx",
+    "match": "30-day money",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/marketing/landing/pricing-teaser-view.tsx",
+    "match": "cleanup action",
+    "count": 2
+  },
+  {
+    "file": "apps/web/src/features/marketing/learn/blog-content.ts",
+    "match": "cleanup action",
+    "count": 2
+  },
+  {
+    "file": "apps/web/src/features/marketing/learn/changelog-content.ts",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/marketing/learn/faq-content.ts",
+    "match": "30-day money",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/marketing/learn/faq-content.ts",
+    "match": "cleanup action",
+    "count": 2
+  },
+  {
+    "file": "apps/web/src/features/marketing/learn/how-to-content.ts",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/marketing/pricing/pricing-model.test.ts",
+    "match": "cleanup action",
+    "count": 2
+  },
+  {
+    "file": "apps/web/src/features/marketing/pricing/pricing-model.ts",
+    "match": "cleanup action",
+    "count": 2
+  },
+  {
+    "file": "apps/web/src/features/marketing/pricing/pricing-screen.test.tsx",
+    "match": "30-day money",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/marketing/pricing/pricing-screen.tsx",
+    "match": "cleanup action",
+    "count": 2
+  },
+  {
+    "file": "apps/web/src/features/marketing/screener-truth.test.ts",
+    "match": "$1",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/screener/api/use-screener.ts",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/senders/confirm-action-modal.test.tsx",
+    "match": "cleanup action",
+    "count": 6
+  },
+  {
+    "file": "apps/web/src/features/senders/confirm-action-modal.tsx",
+    "match": "cleanup action",
+    "count": 4
+  },
+  {
+    "file": "apps/web/src/features/triage/action-preview-detail.test.tsx",
+    "match": "cleanup action",
+    "count": 6
+  },
+  {
+    "file": "apps/web/src/features/triage/action-preview-presentation.tsx",
+    "match": "cleanup action",
+    "count": 2
+  },
+  {
+    "file": "apps/web/src/features/triage/action-sheet.test.tsx",
+    "match": "cleanup action",
+    "count": 6
+  },
+  {
+    "file": "apps/web/src/features/triage/action-sheet.tsx",
+    "match": "cleanup action",
+    "count": 2
+  },
+  {
+    "file": "apps/web/src/features/triage/batch-action-sheet.test.tsx",
+    "match": "cleanup action",
+    "count": 7
+  },
+  {
+    "file": "apps/web/src/features/triage/batch-action-sheet.tsx",
+    "match": "cleanup action",
+    "count": 3
+  },
+  {
+    "file": "apps/web/src/features/triage/empty-state.tsx",
+    "match": "cleanup action",
+    "count": 4
+  },
+  {
+    "file": "apps/web/src/features/triage/inline-preview.tsx",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/triage/triage-screen.actions.test.tsx",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/features/triage/triage-screen.quota-wiring.test.tsx",
+    "match": "cleanup action",
+    "count": 3
+  },
+  {
+    "file": "apps/web/src/features/triage/triage-screen.test.tsx",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "apps/web/src/lib/bulk-action-copy.ts",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "packages/shared/src/contracts/error-codes.ts",
+    "match": "cleanup action",
+    "count": 1
+  },
+  {
+    "file": "packages/shared/src/flags/resolve.ts",
+    "match": "$1",
+    "count": 1
+  }
+]

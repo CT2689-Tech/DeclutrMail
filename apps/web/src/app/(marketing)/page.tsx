@@ -5,7 +5,7 @@ import '@/features/marketing/landing/landing.css';
 import '@/features/marketing/landing/homepage-sections.css';
 import { Hero } from '@/features/marketing/landing/hero';
 import { HowItWorks, PrivacyDesk, ProductBreadth } from '@/features/marketing/landing/sections';
-import { PricingTeaserView } from '@/features/marketing/landing/pricing-teaser-view';
+import { PricingTeaserGate } from '@/features/marketing/landing/pricing-teaser-story';
 import { FinalCta } from '@/features/marketing/landing/footer';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
@@ -89,7 +89,7 @@ export default function LandingPage() {
       <HowItWorks />
       <ProductBreadth />
       <PrivacyDesk />
-      <PricingTeaserView provider="paddle" />
+      <PricingTeaserGate />
       <FinalCta />
     </div>
   );

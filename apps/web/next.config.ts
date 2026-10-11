@@ -6,6 +6,10 @@ import { legacyDomainRedirects, wwwApexRedirects } from './src/lib/legacy-domain
 import { noindexHeaderRules } from './src/lib/noindex-headers';
 
 const nextConfig: NextConfig = {
+  // `/pricing` stays dynamic so India sees INR, and Next otherwise streams
+  // that route's metadata into the body. Matching every user agent makes
+  // the blocking metadata render in `<head>`.
+  htmlLimitedBots: /.*/,
   // Keep nested worktrees inside their own monorepo, rather than inferring
   // the parent checkout from an unrelated outer lockfile.
   outputFileTracingRoot: path.join(__dirname, '../..'),
