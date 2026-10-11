@@ -716,6 +716,17 @@ export interface SenderPolicyResultDto {
  * lifecycle (no preview, no Idempotency-Key header; idempotency is the
  * set-state semantics).
  */
+export function undoSenderKeep(
+  id: string,
+  signal?: AbortSignal,
+): Promise<Envelope<SenderPolicyResultDto, unknown>> {
+  return apiPost<SenderPolicyResultDto>(
+    `/api/senders/${encodeURIComponent(id)}/keep/undo`,
+    {},
+    signal ? { signal } : {},
+  );
+}
+
 export function patchSenderPolicy(
   id: string,
   patch: SenderPolicyPatch,

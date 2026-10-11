@@ -62,6 +62,18 @@ describe('MailboxDataControlsDialog', () => {
     window.matchMedia = originalMatchMedia;
   });
 
+  it('opens on Keep current setup, and Enter does not disconnect or delete', () => {
+    const { onDisconnect, onDeleteIndexedData } = renderDialog();
+    const cancel = screen.getByRole('button', { name: /keep current setup/i });
+    expect(
+      screen.getByRole('alertdialog', { name: /disconnect person@example\.com/i }),
+    ).toBeInTheDocument();
+    expect(cancel).toHaveFocus();
+    fireEvent.keyDown(cancel, { key: 'Enter' });
+    expect(onDisconnect).not.toHaveBeenCalled();
+    expect(onDeleteIndexedData).not.toHaveBeenCalled();
+  });
+
   it('renders as a bottom sheet at phone width without dropping the inventory', () => {
     setViewportWidth(375);
     renderDialog();

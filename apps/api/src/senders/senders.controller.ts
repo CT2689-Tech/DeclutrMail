@@ -30,6 +30,7 @@ import {
   HttpStatus,
   Param,
   Patch,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -449,6 +450,23 @@ export class SendersController {
    *   - 400 INVALID_REQUEST (bad body) / non-UUID id
    *   - 404 SENDER_NOT_FOUND (ownership mismatch collapses to 404)
    */
+  @RateLimit({ bucket: 'gmail-action' })
+  @Post(':id/keep/undo')
+  @UseGuards(CsrfGuard)
+  async undoKeep(
+    @CurrentMailbox() mailbox: { id: string },
+    @Param('id') id: string,
+  ): Promise<Envelope<SenderPolicyResult>> {
+    if (!isUuid(id)) {
+      throw new BadRequestException('Sender id must be a UUID.');
+    }
+    const result = await this.policies.undoKeep({
+      mailboxAccountId: mailbox.id,
+      senderId: id,
+    });
+    return ok(result);
+  }
+
   @RateLimit({ bucket: 'gmail-action' })
   @Patch(':id/policy')
   @UseGuards(CsrfGuard)

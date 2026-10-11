@@ -176,6 +176,52 @@ describe('SendersPolicyService', () => {
     });
   });
 
+  describe('undo keep', () => {
+    it('deletes the keep policy and reverts the keep audit row', async () => {
+      await svc.setPolicy({ mailboxAccountId: mailboxId, senderId, patch: { policyType: 'keep' } });
+      const res = await svc.undoKeep({ mailboxAccountId: mailboxId, senderId });
+      expect(res).toMatchObject({ policyType: null, changed: true, isProtected: false });
+      expect(await policyRow(db, mailboxId)).toBeNull();
+      const [audit] = await db
+        .select()
+        .from(activityLog)
+        .where(eq(activityLog.mailboxAccountId, mailboxId));
+      expect(audit!.action).toBe('keep');
+      expect(audit!.revertedAt).not.toBeNull();
+    });
+
+    it('reverts a keep audit row before the policy projection lands', async () => {
+      await db.insert(activityLog).values({
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_KEY,
+        source: 'manual',
+        action: 'keep',
+        affectedCount: 0,
+        undoToken: null,
+      });
+      const res = await svc.undoKeep({ mailboxAccountId: mailboxId, senderId });
+      expect(res.changed).toBe(true);
+      expect(await policyRow(db, mailboxId)).toBeNull();
+      const [audit] = await db
+        .select()
+        .from(activityLog)
+        .where(eq(activityLog.mailboxAccountId, mailboxId));
+      expect(audit!.revertedAt).not.toBeNull();
+    });
+
+    it('refuses to undo a protected keep', async () => {
+      await svc.setPolicy({
+        mailboxAccountId: mailboxId,
+        senderId,
+        patch: { policyType: 'keep', isProtected: true },
+      });
+      await expect(svc.undoKeep({ mailboxAccountId: mailboxId, senderId })).rejects.toMatchObject({
+        status: 409,
+      });
+      expect(await policyRow(db, mailboxId)).not.toBeNull();
+    });
+  });
+
   describe('Protect toggle (D42, D43, D22)', () => {
     it('protects with user_defined provenance + protection_set_at + audit row', async () => {
       const res = await svc.setPolicy({

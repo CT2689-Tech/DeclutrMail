@@ -84,7 +84,7 @@ describe('DeleteAccountModal', () => {
   it('renders as a bottom sheet at phone width, both steps still reachable', () => {
     setViewportWidth(375);
     renderModal();
-    const dialog = screen.getByRole('dialog');
+    const dialog = screen.getByRole('alertdialog');
     // Phone layout is pure CSS (the shared sheet's ≤520px rule).
     expect(dialog).toHaveClass('dm-sheet-panel');
     expect(screen.getByText(/what gets permanently deleted/i)).toBeInTheDocument();
@@ -92,6 +92,15 @@ describe('DeleteAccountModal', () => {
     expect(
       screen.getByRole('button', { name: /schedule deletion/i, hidden: false }),
     ).toBeDisabled();
+  });
+
+  it('opens on Keep my account, and Enter does not delete', () => {
+    const onConfirm = renderModal();
+    const cancel = screen.getByRole('button', { name: /keep my account/i });
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(cancel).toHaveFocus();
+    fireEvent.keyDown(cancel, { key: 'Enter' });
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 
   it('step 1 gates Continue behind the acknowledgment checkbox', () => {

@@ -87,7 +87,7 @@ export function ApproveConfirmModal({
       }`}
       note={primary.activityUndo.summary}
       confirmLabel={confirmLabel}
-      {...(primary.verb === 'unsubscribe' ? { confirmTone: 'danger' as const } : {})}
+      {...(primary.verb === 'unsubscribe' ? { confirmTone: 'warn' as const } : {})}
       confirmBusyLabel="Approving…"
       canConfirm={shown > 0}
       mailboxEmail={mailboxEmail}

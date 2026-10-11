@@ -66,7 +66,8 @@ import {
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
 } from '@/lib/api/use-action';
-import { useSetSenderPolicy } from './api/use-sender-policy';
+import { useSetSenderPolicy, useUndoSenderKeep } from './api/use-sender-policy';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { sendersKeys } from './api/query-keys';
 import {
   actionLabel,
@@ -756,6 +757,7 @@ function SendersScreenContent({
   // D40 — Keep is a standing-policy write (`policy_type='keep'`), not a
   // Gmail mutation. The hook owns the senders/activity invalidation.
   const setPolicy = useSetSenderPolicy();
+  const undoKeep = useUndoSenderKeep();
   // D51 — saved filter views (users.preferences.senderViews). One
   // full-replace mutation covers save + delete; apply is client-side
   // (write the compose URL state + sort store).
@@ -1863,20 +1865,36 @@ function SendersScreenContent({
             const failed = failures.length;
             const succeeded = results.length - failed;
             if (succeeded > 0) trackActionConfirmed('keep');
+            const keptIds = senderRefs
+              .filter((_, index) => results[index]?.status === 'fulfilled')
+              .map((sender) => sender.id);
+            const undoAction =
+              keptIds.length === 0
+                ? undefined
+                : {
+                    label: WS2_COPY.undo.button,
+                    onClick: () => {
+                      for (const senderId of keptIds) void undoKeep.mutate({ senderId });
+                    },
+                  };
             if (!isBulk) {
               toast(
-                failed ? `Couldn't keep ${senderRefs[0]!.name}` : `Kept ${senderRefs[0]!.name}`,
+                failed
+                  ? `Couldn't keep ${senderRefs[0]!.name}`
+                  : WS2_COPY.keepUndo.toast.one.replace('{Sender}', senderRefs[0]!.name),
                 failed ? 'warn' : 'success',
+                failed ? undefined : undoAction,
               );
               return;
             }
             toast(
               succeeded === 0
                 ? `Couldn't keep ${failed} senders — try again`
-                : `Kept ${succeeded} sender${succeeded === 1 ? '' : 's'}${
+                : `${WS2_COPY.keepUndo.toast.other.replace('{n}', String(succeeded))}${
                     failed ? ` · ${failed} failed, try again` : ''
                   }`,
               failed > 0 ? 'warn' : 'success',
+              undoAction,
             );
           })
           .finally(() => {

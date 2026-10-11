@@ -1728,6 +1728,7 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
   afterEach(() => resetFetchStub());
 
   it('starts a bulk unsubscribe preview on Cancel, not the irreversible approval', async () => {
+    const onConfirm = vi.fn();
     render(
       <ApproveConfirmModal
         rule={NEWSLETTER_GRAVEYARD}
@@ -1738,14 +1739,15 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
         isApproving={false}
         error={null}
         onCancel={() => undefined}
-        onConfirm={() => undefined}
+        onConfirm={onConfirm}
       />,
     );
-    const dialog = screen.getByRole('dialog');
-    await waitFor(() =>
-      expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus(),
-    );
-    expect(within(dialog).getByRole('button', { name: 'Approve 1' })).toBeEnabled();
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    await waitFor(() => expect(cancel).toHaveFocus());
+    fireEvent.keyDown(cancel, { key: 'Enter' });
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Approve 1' })).toBeEnabled();
   });
 
   it('never describes a many-sender Unsubscribe rule as one unchecked sender', () => {

@@ -3550,6 +3550,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       await selectBothAndPress('k');
       await waitFor(() => expect(patched.sort()).toEqual(['a', 'b']));
       await screen.findByText('Kept 2 senders');
+      expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
       expect(trackMock).toHaveBeenCalledWith('action_confirmed', {
         journey: 'daily',
         verb: 'keep',
@@ -3571,7 +3572,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       ]);
       renderScreenWithToasts();
       await selectBothAndPress('k');
-      await screen.findByText('Kept 1 sender · 1 failed, try again');
+      await screen.findByText('Kept 1 senders · 1 failed, try again');
     });
 
     it.each(['success', 'failure'] as const)(

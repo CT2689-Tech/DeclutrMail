@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, ErrorState, ScreenIntro, tokens, toast, useIsAtMost } from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { useLocalState } from '@declutrmail/shared/hooks/use-local-state';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { ActionReach } from '@declutrmail/shared/contracts';
@@ -70,11 +71,12 @@ import {
   VERB_TO_WIRE,
 } from '@/features/settings/api/use-me-settings';
 
+import { useUndoSenderKeep } from '@/features/senders/api/use-sender-policy';
+import { useRefreshStaleRead } from '@/features/senders/api/use-refresh-stale-read';
+import { useExplainReasons } from '@/features/senders/api/use-explain-reasons';
 import { useKeepIntent } from './api/use-triage-actions';
 import { invalidateAfterDecision } from './api/invalidate';
 import { TRIAGE_BOOTSTRAP_KEY } from './api/query-options';
-import { useRefreshStaleRead } from '@/features/senders/api/use-refresh-stale-read';
-import { useExplainReasons } from '@/features/senders/api/use-explain-reasons';
 import { UnprotectButton } from './unprotect-button';
 import type { PreviewCount } from './action-preview';
 import { type TriageDecisionRow, type TriageScreenState } from './data';
@@ -303,6 +305,7 @@ export function TriageScreen({
   );
 
   const keepIntent = useKeepIntent();
+  const undoKeep = useUndoSenderKeep();
   const unsubIntent = useRecordUnsubscribeIntent();
   const enqueueComposite = useEnqueueComposite();
 
@@ -1058,6 +1061,10 @@ export function TriageScreen({
               invalidateAfterDecision(qc);
               if (currentMailboxRef.current === actionMailboxId) incrementSessionDecided();
               setExpandedRow(null);
+              toast(WS2_COPY.keepUndo.toast.one.replace('{Sender}', row.senderName), 'success', {
+                label: WS2_COPY.undo.button,
+                onClick: () => undoKeep.mutate({ senderId: row.senderId }),
+              });
             },
             onError: (err) => {
               captureFeatureException(err, { surface: 'triage', reason: 'keep_intent' });
@@ -1309,6 +1316,7 @@ export function TriageScreen({
       actionMailboxId,
       enqueueComposite,
       keepIntent,
+      undoKeep,
       unsubIntent,
       qc,
       clearPending,

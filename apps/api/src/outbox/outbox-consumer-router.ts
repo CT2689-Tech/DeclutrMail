@@ -1,6 +1,7 @@
-import { and, eq, inArray, isNull, not, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, not, sql } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
 import {
+  activityLog,
   followupReplyExists,
   followupTracker,
   screenerQuarantine,
@@ -575,6 +576,22 @@ async function handleTriageVerdictApplied(
   if (payload.verdict !== 'keep') {
     return;
   }
+  // Undo marks the keep audit row reverted before this projection may
+  // run. Re-applying the policy would put Keep back after the user
+  // undid it. A newer unreverted keep (Keep again) still projects.
+  const [latestKeep] = await db
+    .select({ revertedAt: activityLog.revertedAt })
+    .from(activityLog)
+    .where(
+      and(
+        eq(activityLog.mailboxAccountId, payload.mailboxAccountId),
+        eq(activityLog.senderKey, payload.senderKey),
+        eq(activityLog.action, 'keep'),
+      ),
+    )
+    .orderBy(desc(activityLog.occurredAt))
+    .limit(1);
+  if (latestKeep?.revertedAt != null) return;
   await db
     .insert(senderPolicies)
     .values({
