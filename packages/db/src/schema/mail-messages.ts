@@ -106,7 +106,7 @@ export const mailMessages = pgTable(
      * not a third-party sender.
      *
      * A mailbox-wide `is_outbound = false` scan is still not its own
-     * index: that predicate matches the inbound majority. The 0090
+     * index: that predicate matches the inbound majority. The 0091
      * partial index is narrower — `(mailbox, sender_key, size_bytes)`
      * where outbound is false — so the per-sender size SUM can be
      * index-only. `building_sender_index` keeps using the mailbox
@@ -149,7 +149,7 @@ export const mailMessages = pgTable(
      * (FOUNDER-FOLLOWUPS 2026-06-06). The Sender Detail Recent Messages
      * row renders an em-dash on NULL rather than a misleading "0B".
      * The per-sender SUM is backed by
-     * `mail_messages_account_sender_inbound_size_idx` (migration 0090).
+     * `mail_messages_account_sender_inbound_size_idx` (migration 0091).
      */
     sizeBytes: integer('size_bytes'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
@@ -241,7 +241,7 @@ export const mailMessages = pgTable(
       .on(table.mailboxAccountId, table.internalDate)
       .where(sql`${table.labelIds} && ARRAY['DRAFT','CHAT']::text[]`),
     /**
-     * Migration 0090 — the correlated SUM behind Senders' size column,
+     * Migration 0091 — the correlated SUM behind Senders' size column,
      * size sort, and size cursor. Inbound only, Trash included, so the
      * predicate is `is_outbound = false` and the key can answer the sum
      * without a heap visit for size_bytes.

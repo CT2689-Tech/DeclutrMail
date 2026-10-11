@@ -1,4 +1,4 @@
-h1:DZwj8f1B4X8EYWHcgaiTx5su9mLywxkNa37uiZ60nTM=
+h1:F5Nhdu9lT5R2Mvcdd1JjdL2SB1OLdocvEByeKAqg93g=
 0000_foundation_workspaces_users_mailboxes.sql h1:mvQjReZmzp+ne3ncQX3NsLph9Tlec0HLa4e0k636MV4=
 0001_messages_senders_schema.sql h1:1hE97u6u+JGGjHXjH50rrMA0K/i4UlPvqrkuN2Qs6Uk=
 0002_mailbox_oauth_tokens.sql h1:+w05bo7XzLJhpjftjhpIwna1kU+1MFYMWq6QJH0HZgg=
@@ -86,4 +86,5 @@ h1:DZwj8f1B4X8EYWHcgaiTx5su9mLywxkNa37uiZ60nTM=
 0086_product_events.sql h1:23HgpEeRTjifh6GueNFbZayFmL512BX4VScSIeRW7mk=
 0087_sync_readiness_needs_reconnect.sql h1:eOJVO3YWDbUUMnyKmTiDpWz3Dm6G6ld+kZ8AOM0e52U=
 0088_backfill_needs_reconnect.sql h1:90Akfcbj6seVTT2924LO2xpJKe5vh0kt6evtMHbDMfY=
-0090_inbox_report_cache.sql h1:4WqjNBFjv333s8jRC3skgl7cu9XYmZEE7ig1bN/E5SM=
+0090_inbox_report_cache.sql h1:jCf2CydQtzQj1r5DZSnfviOdQuiuaPfatKBYDuvsoes=
+0091_mail_messages_sender_size_idx.sql h1:kTq5X5rY/D22e3a8c6iRNNdKkF/c485NCFbaQ7FucMI=
