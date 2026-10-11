@@ -48,6 +48,7 @@ The workflow provisions disposable Postgres/Redis services; no worker or real cr
 | Search (3 cases) | Complete keystrokes, suggestion debounce cancellation, clear |
 | Public journeys (2) | Connected guide/privacy/pricing/demo cleanup and Undo; comparison/sources/refunds/signup ref at intercepted OAuth boundary |
 | Consent (2) | Decline remains silent; accept produces intercepted dummy-key PostHog traffic |
+| Unsubscribe backlog (4) | Archive and delete previews, mailto handoff, no-link failure, Activity Undo enqueue, spent monthly allowance |
 
 `contracts/assert-journeys.mjs` requires every named file and its expected minimum case count; skips, failed cases and flaky retries fail the lane. `test:harness` runs safety and report-contract checks without a browser. `typecheck` validates all specs.
 

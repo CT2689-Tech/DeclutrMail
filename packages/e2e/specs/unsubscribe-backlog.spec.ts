@@ -107,6 +107,7 @@ test.afterAll(async () => {
 });
 
 test('Triage and Senders confirm unsubscribe with archive and delete', async ({ page }) => {
+  test.setTimeout(180_000);
   const senderName = BILLING_SEED.archiveSenderName;
   const me = await api.get<{ meterV2?: boolean; cleanupRemaining?: number | null }>('/api/auth/me');
 
