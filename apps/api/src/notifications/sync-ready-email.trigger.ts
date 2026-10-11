@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
 
-import { mailboxAccounts } from '@declutrmail/db';
+import { mailboxAccounts, users } from '@declutrmail/db';
 import type { MailboxSyncReadyPayload } from '@declutrmail/events';
 import {
   enqueueEmailSend,
@@ -77,8 +77,10 @@ export function buildSyncReadyEmailHandler(deps: SyncReadyEmailTriggerDeps): Syn
       .select({
         userId: mailboxAccounts.userId,
         mailboxEmail: mailboxAccounts.providerAccountId,
+        onboardedAt: users.onboardedAt,
       })
       .from(mailboxAccounts)
+      .innerJoin(users, eq(users.id, mailboxAccounts.userId))
       .where(eq(mailboxAccounts.id, payload.mailboxAccountId))
       .limit(1);
 
@@ -115,11 +117,13 @@ export function buildSyncReadyEmailHandler(deps: SyncReadyEmailTriggerDeps): Syn
       scope: 'all',
       apiUrl: deps.apiUrl,
     });
+    const onboarded = mailbox.onboardedAt !== null;
     const complete = await syncCompleteEmail({
       mailboxEmail: mailbox.mailboxEmail,
       mailboxAccountId: payload.mailboxAccountId,
       messageCount: payload.messageCount,
       appUrl,
+      onboarded,
       unsubscribeUrl: unsubscribe,
     });
     await enqueueEmailSend(deps.emailQueue, {
@@ -137,6 +141,7 @@ export function buildSyncReadyEmailHandler(deps: SyncReadyEmailTriggerDeps): Syn
       mailboxEmail: mailbox.mailboxEmail,
       mailboxAccountId: payload.mailboxAccountId,
       appUrl,
+      onboarded,
       unsubscribeUrl: unsubscribe,
     });
     await enqueueEmailSend(

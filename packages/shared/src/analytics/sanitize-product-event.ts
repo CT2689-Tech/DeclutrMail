@@ -20,7 +20,7 @@ const PROP_KEY_SET = new Set<string>(PRODUCT_EVENT_PROP_KEYS);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SCALAR = /^[A-Za-z0-9._+-]{1,64}$/;
 const ERROR_CLASS = /^[A-Za-z][A-Za-z0-9]{0,63}$/;
-const EMAIL_TEMPLATES = new Set([
+export const EMAIL_LINK_TEMPLATES = [
   'sync_complete',
   'sync_reminder_24h',
   'lapse',
@@ -29,7 +29,11 @@ const EMAIL_TEMPLATES = new Set([
   'sync_failed',
   'gmail_reconnect',
   'deletion_scheduled',
-]);
+] as const;
+
+export type EmailLinkTemplate = (typeof EMAIL_LINK_TEMPLATES)[number];
+
+const EMAIL_TEMPLATES = new Set<string>(EMAIL_LINK_TEMPLATES);
 const REQUESTED_BUCKETS = new Set(['1', '2-10', '11-100', '101-1000', '1001+']);
 const DURATION_BUCKETS = new Set([0, 30, 60, 120, 300, 600, 1800, 3600, 7200]);
 const EMAIL_BUCKETS = new Set([0, 100, 1000, 10000, 50000, 100000]);

@@ -2,6 +2,7 @@ import { ConfigModule } from '@nestjs/config';
 import { Module } from '@nestjs/common';
 
 import { AccountModule } from './account/account.module.js';
+import { EmailClickModule } from './analytics/email-click.module.js';
 import { ProductEventsModule } from './analytics/product-events.module.js';
 import { ActionsModule } from './actions/actions.module.js';
 import { ActivityModule } from './activity/activity.module.js';
@@ -68,6 +69,7 @@ const pubsubWebhookEnabled = process.env.PUBSUB_WEBHOOK_ENABLED === 'true';
     // REDIS_URL is absent so local dev without Redis still works.
     RateLimitModule,
     ProductEventsModule,
+    EmailClickModule,
     HealthModule,
     HomeModule,
     UsersModule,

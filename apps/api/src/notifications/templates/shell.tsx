@@ -7,6 +7,7 @@ import {
   hasPostalAddress,
   PRIVACY_BADGE_HEADLINE,
 } from '@declutrmail/shared/copy';
+import { WS4_COPY } from '@declutrmail/shared/copy/launch';
 
 /** Rendered email — what the EmailSendWorker job carries. */
 export interface RenderedEmail {
@@ -189,11 +190,11 @@ export function Shell(props: {
           {props.optOut ? (
             <Text style={{ color: MUTED, fontSize: '12px', lineHeight: '18px', margin: '8px 0 0' }}>
               <a href={props.optOut.unsubscribeUrl} style={FOOTER_LINK}>
-                Unsubscribe
+                {WS4_COPY.email.unsubscribe}
               </a>
               {' · '}
               <a href={props.optOut.preferencesUrl} style={FOOTER_LINK}>
-                Email preferences
+                {WS4_COPY.email.preferences}
               </a>
             </Text>
           ) : null}

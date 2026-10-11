@@ -39,7 +39,10 @@ describe('gmail-reconnect', () => {
   it('links the reconnect to the mailbox it names', async () => {
     const email = await gmailReconnectEmail(input);
     expect(email.subject).toBe('Reconnect Gmail for you@gmail.com');
-    expect(email.text).toContain('https://app.declutrmail.com/settings#mailbox-mailbox-1');
-    expect(email.html).toContain('https://app.declutrmail.com/settings#mailbox-mailbox-1');
+    expect(email.text).toContain('#mailbox-mailbox-1');
+    expect(email.html).toContain('#mailbox-mailbox-1');
+    expect(email.text).toContain('from=gmail_reconnect');
+    expect(email.text).toContain('utm_campaign=gmail_reconnect');
+    expect(email.html).toContain('Open Gmail accounts');
   });
 });
