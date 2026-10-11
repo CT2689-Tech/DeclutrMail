@@ -1,0 +1,213 @@
+# TEMPORARY — removed before this PR is marked ready. Soaks the journeys
+# lane (same stack, env and specs as ci.yml's journeys lane, zero retries).
+name: Journeys soak (temporary)
+
+on:
+  push:
+    branches: [codex/ci-latency-journey-recovery]
+
+permissions:
+  contents: read
+
+jobs:
+  soak:
+    name: Journeys soak (${{ matrix.mode }} ${{ matrix.leg }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [soak]
+        leg: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        include:
+          # Pre-#924 shape: every test signs in, this one clears cookies.
+          - mode: race
+            leg: 1
+          # Current guard with the sign-in skip removed: must fail every time.
+          - mode: guard
+            leg: 1
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: declutrmail_e2e
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d declutrmail_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/declutrmail_e2e
+      REDIS_URL: redis://127.0.0.1:6379/12
+      RATE_LIMIT_ENABLED: 'false'
+      JWT_ACCESS_SECRET: e2e-access-secret-is-longer-than-thirty-two-bytes
+      JWT_REFRESH_SECRET: e2e-refresh-secret-is-different-and-long-enough
+      GOOGLE_CLIENT_ID: e2e-google-client
+      GOOGLE_CLIENT_SECRET: e2e-google-secret
+      GOOGLE_REDIRECT_URI: http://127.0.0.1:4104/api/auth/google/callback
+      ENCRYPTION_LOCAL_KEY: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+      DEV_AUTH_ENABLED: 'true'
+      DEV_AUTH_EMAIL_PREFIX: chintan.e2e.
+      WEB_URL: http://127.0.0.1:3104
+      CORS_ORIGIN: http://127.0.0.1:3104
+      E2E_WEB_URL: http://127.0.0.1:3104
+      E2E_API_URL: http://127.0.0.1:4104
+      E2E_ISOLATED: '1'
+      E2E_POSTHOG: '1'
+      NEXT_PUBLIC_POSTHOG_KEY: phc_e2e_dummy
+      E2E_LOGIN_EMAIL: chintan.e2e.billing@synthetic.test
+      E2E_BILLING_LOGIN_EMAIL: chintan.e2e.billing@synthetic.test
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:4104
+      BILLING_ENABLED: 'true'
+      PADDLE_WEBHOOK_SECRET: e2e_local_paddle_webhook_secret
+      E2E_PADDLE_WEBHOOK_SECRET: e2e_local_paddle_webhook_secret
+      BILLING_CATALOG_JSON: '{"paddle":{"pro_monthly":"pri_e2e_pro_monthly"}}'
+      TARGET: expired account-recovery link opens returning sign-in with its full destination
+      SPEC: packages/e2e/specs/journey-recovery.spec.ts
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply the control patch
+        if: matrix.mode != 'soak'
+        env:
+          MODE: ${{ matrix.mode }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const file = process.env.SPEC;
+            let src = fs.readFileSync(file, "utf8");
+            const swap = (from, to) => {
+              if (!src.includes(from)) { console.error("anchor missing: " + from); process.exit(1); }
+              src = src.replace(from, to);
+            };
+            swap("  if (testInfo.title === expiredRecoveryTitle) return;\n", "");
+            if (process.env.MODE === "race") {
+              swap(
+                "  expect(page.url()).toBe(\x27about:blank\x27);\n  expect(await page.context().cookies()).toEqual([]);\n",
+                "  await page.context().clearCookies();\n",
+              );
+            }
+            fs.writeFileSync(file, src);
+          '
+          git diff -- "$SPEC"
+      - name: Install Chromium
+        run: |
+          for attempt in 1 2 3; do
+            if timeout 4m pnpm --filter @declutrmail/e2e exec playwright install --with-deps chromium; then
+              exit 0
+            fi
+            sleep $((attempt * 15))
+          done
+          exit 1
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends postgresql-client
+      - name: Apply migrations to the disposable database
+        run: |
+          for migration in packages/db/migrations/*.sql; do
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$migration"
+          done
+      - name: Build the web app for browser verification
+        run: pnpm --filter @declutrmail/web build
+      - name: Start the API and web app
+        run: |
+          PORT=4104 pnpm --filter @declutrmail/api start > api-e2e.log 2>&1 &
+          PORT=3104 pnpm --filter @declutrmail/web start > web-e2e.log 2>&1 &
+          for attempt in $(seq 1 90); do
+            if curl --silent --output /dev/null http://127.0.0.1:4104/api/not-a-route &&
+              curl --silent --output /dev/null http://127.0.0.1:3104; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+      - name: Run isolated product and public journeys
+        if: matrix.mode == 'soak'
+        run: pnpm --filter @declutrmail/e2e run e2e:journeys
+        env:
+          E2E_JSON_REPORT: ${{ github.workspace }}/e2e-journeys-report.json
+      - name: Assert each required journey executed
+        if: matrix.mode == 'soak'
+        run: |
+          node packages/e2e/contracts/assert-journeys.mjs e2e-journeys-report.json
+          node scripts/assert-e2e-ran.mjs e2e-journeys-report.json "product and public journeys"
+      - name: Repeat the target journey
+        if: always()
+        id: repeat
+        env:
+          E2E_JSON_REPORT: ${{ github.workspace }}/e2e-repeat-report.json
+          REPEAT: ${{ matrix.mode == 'race' && 100 || 20 }}
+        run: |
+          set +e
+          pnpm --filter @declutrmail/e2e exec playwright test journey-recovery --project=default \
+            -g "$TARGET" --repeat-each="$REPEAT"
+          echo "rc=$?" >> "$GITHUB_OUTPUT"
+      - name: Count results
+        if: always()
+        env:
+          MODE: ${{ matrix.mode }}
+          LEG: ${{ matrix.leg }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const count = (file, only) => {
+              if (!fs.existsSync(file)) return null;
+              const out = { passed: 0, failed: 0, skipped: 0, messages: {} };
+              const walk = (suite) => {
+                for (const s of suite.suites ?? []) walk(s);
+                for (const spec of suite.specs ?? []) {
+                  if (only && spec.title !== only) continue;
+                  for (const t of spec.tests)
+                    for (const r of t.results) {
+                      if (r.status === "passed") out.passed++;
+                      else if (r.status === "skipped") out.skipped++;
+                      else {
+                        out.failed++;
+                        const m = (r.error?.message ?? r.status).replace(/\u001b\[[0-9;]*m/g, "").split("\n").slice(0, 4).join(" ");
+                        out.messages[m] = (out.messages[m] ?? 0) + 1;
+                      }
+                    }
+                }
+              };
+              walk(JSON.parse(fs.readFileSync(file, "utf8")));
+              return out;
+            };
+            const lane = count("e2e-journeys-report.json");
+            const laneTarget = count("e2e-journeys-report.json", process.env.TARGET);
+            const repeat = count("e2e-repeat-report.json", process.env.TARGET);
+            const line = JSON.stringify({ mode: process.env.MODE, leg: process.env.LEG, lane, laneTarget, repeat });
+            console.log(line);
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, "```\n" + line + "\n```\n");
+            const mode = process.env.MODE;
+            if (!repeat || repeat.passed + repeat.failed === 0) { console.error("repeat ran nothing"); process.exit(1); }
+            if (mode === "soak" && (lane.failed || repeat.failed)) process.exit(1);
+            if (mode === "guard" && repeat.passed) { console.error("guard let a signed-in page through"); process.exit(1); }
+          '
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: soak-${{ matrix.mode }}-${{ matrix.leg }}
+          if-no-files-found: ignore
+          path: |
+            api-e2e.log
+            web-e2e.log
+            packages/e2e/test-results/
