@@ -25,7 +25,7 @@ export function deadLetterShouldPage(count) {
 export function gmailRateLimitShouldPage(count) {
   return count > GMAIL_RATE_LIMIT_PER_10_MIN;
 }
-function oauthFailureQuery() {
+function callbackFailureQuery() {
   const failure =
     'logging_googleapis_com:user_oauth_callback_failure{monitored_resource="cloud_run_revision",service_name="declutrmail-api"}';
   const start =
@@ -318,7 +318,7 @@ export function infrastructurePolicies({ runtime = false } = {}) {
     gmail.documentation = documentation(
       'More than 30 RateLimitError events in 10 minutes across allowlisted Gmail workers, summed together. This is an initial guardrail, not a measured Gmail quota baseline. Domain icon lookups are excluded.',
     );
-    const oauth = {
+    const callbackFailures = {
       displayName: 'DeclutrMail OAuth callback failures',
       documentation: documentation(
         'OAuth callback failures reached 3 in 1 hour, or more than 20% of starts over 24 hours. Consent cancelled, reconnect cancelled, and the inbox limit are excluded. Inspect security_event reason values. This ratio is an initial guardrail, not a measured baseline.',
@@ -327,14 +327,14 @@ export function infrastructurePolicies({ runtime = false } = {}) {
         {
           displayName: 'OAuth callback failure count or ratio',
           conditionPrometheusQueryLanguage: {
-            query: oauthFailureQuery(),
+            query: callbackFailureQuery(),
             duration: '60s',
             evaluationInterval: '60s',
           },
         },
       ],
     };
-    policies.push(initialSync, recovery, deadLetters, oom, gmail, oauth);
+    policies.push(initialSync, recovery, deadLetters, oom, gmail, callbackFailures);
   }
   return policies;
 }

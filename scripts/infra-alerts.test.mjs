@@ -423,6 +423,11 @@ test('launch log metrics keep OAuth on the API and Gmail quota on allowlisted wo
   }
   assert.ok(service.includes("new Set(['oauth.start', 'login.failure'])"));
   assert.ok(!service.includes("'signup.denied'"));
+  const alerts = readFileSync('scripts/setup-infra-alerts.mjs', 'utf8');
+  // CodeQL treats a binding named `oauth` as a credential. The plan logger
+  // prints policies, so that name must not be the policy binding.
+  assert.doesNotMatch(alerts, /\b(?:const|let|function) oauth\b/);
+  assert.doesNotMatch(alerts, /\bfunction oauthFailureQuery\b/);
   const dead = byName.worker_dead_lettered;
   assert.ok(dead.filter.includes('jsonPayload.kind="worker.dead_lettered"'));
   assert.ok(!dead.filter.includes('dead_letter.parked'));
