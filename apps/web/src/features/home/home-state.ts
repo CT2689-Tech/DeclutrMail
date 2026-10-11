@@ -18,6 +18,7 @@
 
 import type { HomeSenderPreview } from './api/use-home-pending';
 import type { HomeSummary } from './api/use-home-summary';
+import { HOME_DECK } from './home-deck-copy';
 
 export interface HomeAction {
   label: string;
@@ -119,7 +120,7 @@ export function composeHomeNumbers(
       });
     }
     return {
-      hero: { label: plural(cleared, 'email cleared', 'emails cleared'), value: cleared },
+      hero: { label: plural(cleared, HOME_DECK.heroOne, HOME_DECK.heroOther), value: cleared },
       secondary,
     };
   }

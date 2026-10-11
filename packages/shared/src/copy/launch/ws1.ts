@@ -1,5 +1,5 @@
 /**
- * WS1 copy from the launch deck (drop2-r6, 2026-10-11).
+ * WS1 copy from the launch deck (drop2-r7, 2026-10-11).
  * Tokens stay in the string; formatters fill them from config.
  */
 export const WS1_COPY = {
@@ -15,6 +15,7 @@ export const WS1_COPY = {
     'This clears {requested} emails. You have {remaining} free this month.',
   'meter.preview.over':
     'This clears {requested} emails. You have {remaining} free left this month.',
+  'meter.preview.free': 'Unsubscribing is free and doesn\u2019t count.',
   'pricing.refundLine': '{refundDays}-day money-back on any purchase, once per customer.',
   'pricing.promise.keep':
     'If we change prices, existing subscribers keep their price for as long as they stay subscribed. If we lower a price, you get the lower price at your next renewal.',

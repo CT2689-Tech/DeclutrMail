@@ -1,11 +1,11 @@
 import type { CleanupSummaryDto } from '@declutrmail/shared/contracts';
-import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
 
 /**
  * Verbatim launch-deck sentences Home v1 renders.
- * WS2 keys come from the checked-in module. WS1 meter and WS5 report
- * sentences are quoted here because those modules are owned by other
- * workstreams and are still empty. Deck revision: drop2-r6.
+ * Home sentences are drop2-r8 (`WS2_COPY`). Meter sentences are drop2-r7
+ * (`WS1_COPY`). WS5 report sentences are quoted from drop2-r7 because
+ * `WS5_COPY` is still empty.
  */
 export const HOME_DECK = {
   homeTitle: WS2_COPY.names.home,
@@ -13,6 +13,18 @@ export const HOME_DECK = {
   retrying: WS2_COPY.home.retrying,
   reconnect: WS2_COPY.home.reconnect,
   compare: WS2_COPY.locked.compare,
+  emptyTitle: WS2_COPY.home.empty.title,
+  emptyBody: WS2_COPY.home.empty.body,
+  heroOne: WS2_COPY.home.progress.hero.one,
+  heroOther: WS2_COPY.home.progress.hero.other,
+  activityLink: WS2_COPY.home.link.activity,
+  failedEyebrow: WS2_COPY.home.failed.eyebrow,
+  queuedTitle: WS2_COPY.home.queued.title,
+  queuedBody: WS2_COPY.home.queued.body,
+  largestTitleOne: WS2_COPY.home.next.largest.title.one,
+  largestTitleOther: WS2_COPY.home.next.largest.title.other,
+  largestBody: WS2_COPY.home.next.largest.body,
+  largestCta: WS2_COPY.home.next.largest.cta,
   reportTitle: 'Your Inbox Report',
   reportBody:
     'A quick look at who sends you the most, what you leave unread and what takes up space.',
@@ -31,10 +43,6 @@ export const HOME_DECK = {
   tileValue: '≈ {size}',
   tileLabel: 'of email in your Gmail',
   sizesNote: 'Sizes are Gmail’s estimates.',
-  top10: 'Your 10 largest senders take up about {size} of your email.',
-  storageNote:
-    'Deleted email keeps using Gmail storage until Trash is emptied. Gmail empties it after 30 days.',
-  largestSort: 'Largest senders',
   f1TitleOne: 'Unsubscribe from {Sender} and archive 1 email?',
   f1TitleOther: 'Unsubscribe from {Sender} and archive {n} emails?',
   f1TitleBulk: 'Unsubscribe from {k} senders and archive {n} emails?',
@@ -42,15 +50,14 @@ export const HOME_DECK = {
   f1Cancel: 'Cancel',
   f1Honesty:
     'The unsubscribe request can’t be recalled once delivered. The archive can be undone from Activity for 30 days.',
-  chip: '{remaining} of {allowance} free emails left · resets {resetDate}',
-  chipAria: '{remaining} of {allowance} free emails left this month. Resets {resetDate}.',
-  chipEmpty: 'No free emails left · resets {resetDate}',
-  chipCompact: '{remaining} of {allowance} left',
-  previewFitsOne: 'This clears 1 email. You have {remaining} free this month.',
-  previewFitsOther: 'This clears {requested} emails. You have {remaining} free this month.',
-  previewOver: 'This clears {requested} emails. You have {remaining} free left this month.',
-  previewFree: 'Unsubscribing is free and doesn’t count.',
-  activityLink: 'See your activity',
+  chip: WS1_COPY['meter.chip'],
+  chipAria: WS1_COPY['meter.chip.aria'],
+  chipEmpty: WS1_COPY['meter.chip.empty'],
+  chipCompact: WS1_COPY['meter.chip.compact'],
+  previewFitsOne: WS1_COPY['meter.preview.fits.one'],
+  previewFitsOther: WS1_COPY['meter.preview.fits.other'],
+  previewOver: WS1_COPY['meter.preview.over'],
+  previewFree: WS1_COPY['meter.preview.free'],
 } as const;
 
 export function fillDeck(template: string, vars: Record<string, string | number>): string | null {

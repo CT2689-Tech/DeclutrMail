@@ -67,7 +67,7 @@ export function HomeView({
         <h1>{HOME_DECK.homeTitle}</h1>
         {state.kind !== 'loading' && (
           <div className={styles.planLine}>
-            <QuotaChipSlot summary={summary} timeZone={timeZone} />
+            <QuotaChipSlot summary={summary} />
             <span>
               <PlanLabel tier={tier} />
               <Link href={BILLING_HREF}>{HOME_DECK.compare}</Link>
@@ -172,8 +172,8 @@ function HomeBody({
       );
     case 'sync-failed':
       return (
-        <section className={styles.beginning} aria-label="Mailbox needs attention">
-          <span className={styles.eyebrow}>Mailbox needs attention</span>
+        <section className={styles.beginning} aria-label={HOME_DECK.failedEyebrow}>
+          <span className={styles.eyebrow}>{HOME_DECK.failedEyebrow}</span>
           <h2>Gmail scan failed.</h2>
           {state.mailboxId ? (
             <HomeScanRecovery mailboxId={state.mailboxId} needsReconnect={state.needsReconnect} />
@@ -212,12 +212,8 @@ function EmptyCopy({ state }: { state: Extract<HomeState, { kind: 'empty' }> }) 
   if (state.syncing && !state.queued) return null;
   return (
     <section className={styles.beginning} aria-label="Your next step">
-      <h2>{state.queued ? 'Your scan is queued.' : 'Nothing cleared yet.'}</h2>
-      <p>
-        {state.queued
-          ? 'Your progress is saved. We’ll resume scanning when your turn starts.'
-          : 'Start with the senders in your inbox. See their activity, then decide what deserves a place.'}
-      </p>
+      <h2>{state.queued ? HOME_DECK.queuedTitle : HOME_DECK.emptyTitle}</h2>
+      <p>{state.queued ? HOME_DECK.queuedBody : HOME_DECK.emptyBody}</p>
       {!state.queued && !isRetiredReviewCta(state.action.label) && (
         <PrimaryLink action={state.action} />
       )}
@@ -338,15 +334,20 @@ function FixCard({
     );
   }
   if (step.kind === 'largest') {
-    const line =
+    const title =
+      step.senderCount === 1
+        ? HOME_DECK.largestTitleOne
+        : fillDeck(HOME_DECK.largestTitleOther, { k: formatCount(step.senderCount) });
+    const body =
       step.sizeLabel !== undefined && step.sizeLabel !== ''
-        ? fillDeck(HOME_DECK.top10, { size: step.sizeLabel })
+        ? fillDeck(HOME_DECK.largestBody, { size: step.sizeLabel })
         : null;
+    if (title === null) return null;
     return (
       <article className={styles.secondaryCard} data-step={step.kind}>
-        <h3>{HOME_DECK.largestSort}</h3>
-        {line !== null && <p>{line}</p>}
-        <p>{HOME_DECK.storageNote}</p>
+        <h3>{title}</h3>
+        {body !== null && <p>{body}</p>}
+        <Link href="/senders">{HOME_DECK.largestCta}</Link>
       </article>
     );
   }

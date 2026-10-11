@@ -31,12 +31,9 @@ export function hideLegacyQuotaLine(
 }
 
 /**
- * Mounts WS1's preview line. The stub renders null, so the deck sentence
- * shows the email count from the same server summary. Once the line sets
- * `data-testid="meter-preview-line"`, the sentence hides.
- *
- * Unsubscribe with no mail move uses the free sentence. A zero email
- * count never becomes "clears 0".
+ * Mounts WS1's preview line for a counted cleanup. Unsubscribe with no
+ * mail move uses the free deck sentence, because that line does not.
+ * A zero email count never becomes "clears 0".
  */
 export function MeterPreviewSlot({
   requested,
@@ -47,16 +44,12 @@ export function MeterPreviewSlot({
   summary?: CleanupSummaryDto | null;
   freeUnsubscribe?: boolean;
 }) {
-  const sentence = meterPreviewCopy(requested, summary, freeUnsubscribe);
   const showLine =
     !freeUnsubscribe && summary?.metered === true && requested != null && requested > 0;
-  if (sentence === null && !showLine) return null;
-  return (
-    <span className={styles.slot} data-meter-slot="">
-      {showLine && requested != null ? (
-        <MeterPreviewLine requested={requested} summary={summary} />
-      ) : null}
-      {sentence !== null && <span className={styles.fallback}>{sentence}</span>}
-    </span>
-  );
+  if (showLine && requested != null && summary != null) {
+    return <MeterPreviewLine requested={requested} summary={summary} />;
+  }
+  const sentence = meterPreviewCopy(requested, summary, freeUnsubscribe);
+  if (sentence === null) return null;
+  return <span className={styles.fallback}>{sentence}</span>;
 }

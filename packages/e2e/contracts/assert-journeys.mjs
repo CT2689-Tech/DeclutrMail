@@ -15,6 +15,7 @@ const expected = new Map([
   ['public-journeys.spec.ts', 2],
   ['cookie-consent.spec.ts', 2],
   ['journey-recovery.spec.ts', 4],
+  ['home-next-step.spec.ts', 1],
 ]);
 const report = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const counts = new Map();

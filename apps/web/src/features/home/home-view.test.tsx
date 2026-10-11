@@ -120,7 +120,8 @@ describe('HomeView', () => {
       primary.compareDocumentPosition(screen.getByRole('link', { name: 'Later' })) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(screen.queryByText('Largest senders')).toBeNull();
+    expect(screen.queryByText('Your 10 largest senders')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'See largest senders' })).toBeNull();
     expect(screen.getByText('≈ 7.7 GB')).toBeInTheDocument();
     expect(screen.getByText('of email in your Gmail')).toBeInTheDocument();
     expect(document.querySelector('[data-home-mode="full"]')).not.toBeNull();
@@ -136,10 +137,16 @@ describe('HomeView', () => {
         reportSizeLabel="7.7 GB"
       />,
     );
-    expect(screen.getByText('Largest senders')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Your 10 largest senders' })).toBeInTheDocument();
     expect(
-      screen.getByText('Your 10 largest senders take up about 2.1 GB of your email.'),
+      screen.getByText(
+        'About 2.1 GB of email (Gmail’s estimates). Archiving doesn’t change storage. Deleting moves email to Gmail Trash, which Gmail empties after 30 days.',
+      ),
     ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'See largest senders' })).toHaveAttribute(
+      'href',
+      '/senders',
+    );
   });
 
   it('opens a prefilled dialog and confirms only from the confirm button', async () => {
@@ -193,6 +200,7 @@ describe('HomeView', () => {
     const { rerender } = render(<HomeView state={{ kind: 'empty', syncing: false, action }} />);
     expect(screen.queryByTestId('home-hero')).toBeNull();
     expect(screen.getByText('Nothing cleared yet.')).toBeInTheDocument();
+    expect(screen.getByText(HOME_DECK.emptyBody)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Review senders' })).toHaveAttribute(
       'href',
       '/senders',
@@ -201,6 +209,14 @@ describe('HomeView', () => {
     expect(screen.queryByText('Reading your Gmail.')).toBeNull();
     expect(screen.queryByText('Nothing cleared yet.')).toBeNull();
     expect(screen.getByRole('heading', { name: 'Your Inbox Report' })).toBeInTheDocument();
+  });
+
+  it('queued: uses the waiting title and does not say progress is saved', () => {
+    render(<HomeView state={{ kind: 'empty', syncing: true, queued: true, action }} />);
+    expect(screen.getByRole('heading', { name: HOME_DECK.queuedTitle })).toBeInTheDocument();
+    expect(screen.getByText(HOME_DECK.queuedBody)).toBeInTheDocument();
+    expect(screen.queryByText(/Your progress is saved/)).toBeNull();
+    expect(screen.queryByText('Nothing cleared yet.')).toBeNull();
   });
 
   it('does not use Review today as the empty primary action', () => {
@@ -219,6 +235,7 @@ describe('HomeView', () => {
   it('sync-failed: says the scan failed and links to Gmail accounts — never "Nothing cleared yet"', () => {
     render(<HomeView state={{ kind: 'sync-failed', needsReconnect: false }} />);
     expect(screen.getByText('Gmail scan failed.')).toBeInTheDocument();
+    expect(screen.getByText('Gmail account needs attention')).toBeInTheDocument();
     expect(screen.queryByText('Nothing cleared yet.')).toBeNull();
     expect(screen.queryByTestId('home-hero')).toBeNull();
     expect(screen.getByRole('link', { name: 'Open Settings' })).toHaveAttribute(

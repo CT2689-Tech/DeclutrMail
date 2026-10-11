@@ -319,11 +319,7 @@ function AppChrome({ children }: { children: ReactNode }) {
             }}
             topbarRight={
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                <QuotaChipSlot
-                  summary={cleanupSummary.data ?? null}
-                  timeZone={me.user.timezone ?? 'UTC'}
-                  compact
-                />
+                <QuotaChipSlot summary={cleanupSummary.data ?? null} compact />
                 {isFeatureEnabled('darkMode') && <ThemeToggle />}
                 {/* Same 409-storm guard as SyncErrorBanner — the button
                     polls session-scoped sync status, meaningless (and

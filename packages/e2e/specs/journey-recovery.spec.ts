@@ -233,7 +233,7 @@ test('Home retries the displayed inbox and truthfully reports queued recovery', 
   try {
     await sql`UPDATE provider_sync_state SET readiness_status='failed', current_stage='failed', error_code='TransientError', initial_recovery_attempts=5, initial_retry_at=NULL, initial_attempt_id=NULL, last_history_id=987654321 WHERE mailbox_account_id=${fixture.mailboxId}`;
     await page.reload();
-    const recovery = page.getByRole('region', { name: 'Mailbox needs attention' });
+    const recovery = page.getByRole('region', { name: 'Gmail account needs attention' });
     const response = page.waitForResponse(
       (res) =>
         res.url().endsWith('/api/v1/sync/initial/retry') && res.request().method() === 'POST',
@@ -242,7 +242,7 @@ test('Home retries the displayed inbox and truthfully reports queued recovery', 
     const result = await response;
     expect(result.ok()).toBe(true);
     expect(result.request().headers()['x-active-mailbox-id']).toBe(fixture.mailboxId);
-    await expect(page.getByText('Your scan is queued.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Your scan is waiting to start.', { exact: true })).toBeVisible();
     const [state] =
       await sql`SELECT readiness_status, last_history_id::text AS cursor FROM provider_sync_state WHERE mailbox_account_id=${fixture.mailboxId}`;
     expect(state).toMatchObject({ readiness_status: 'queued', cursor: '987654321' });
