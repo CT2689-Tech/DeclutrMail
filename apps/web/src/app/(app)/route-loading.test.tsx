@@ -14,12 +14,12 @@ import Triage from './triage/loading';
 
 const routes = [
   { View: Activity, title: 'Activity', kicker: 'Activity', gap: 20 },
-  { View: Autopilot, title: 'Autopilot', kicker: 'Automations', gap: 32 },
+  { View: Autopilot, title: 'Autopilot', kicker: 'Automations / Your rules', gap: 32 },
   { View: Brief, title: 'Daily Brief', kicker: 'Catch up', gap: 24 },
   { View: Followups, title: 'Follow-ups', kicker: 'Catch up', gap: 32 },
   { View: Later, title: 'Later', kicker: 'Catch up', gap: 32 },
-  { View: Quiet, title: 'Quiet hours', kicker: 'Automations', gap: 24 },
-  { View: Screener, title: 'Screener', kicker: 'Cleanup', gap: 24 },
+  { View: Quiet, title: 'Quiet hours', kicker: 'Automations / On your schedule', gap: 24 },
+  { View: Screener, title: 'Screener', kicker: 'Clean up / New senders', gap: 24 },
   { View: Settings, title: 'Settings', kicker: 'Settings', gap: 32 },
 ];
 
