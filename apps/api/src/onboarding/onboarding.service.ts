@@ -13,6 +13,7 @@ import type {
   OnboardingState,
 } from '@declutrmail/shared/contracts';
 
+import { SendersReadService } from '../senders/senders.read-service.js';
 import { AutopilotReadService } from '../autopilot/autopilot.read-service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import {
@@ -130,6 +131,7 @@ export class OnboardingService {
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly triageReads: TriageReadService,
     private readonly autopilotReads: AutopilotReadService,
+    private readonly senderReads: SendersReadService,
   ) {}
 
   /** GET /api/onboarding/state — the flags the step machine derives from. */
@@ -144,6 +146,14 @@ export class OnboardingService {
       presets: ONBOARDING_PRESET_CATALOG,
       verbTourCompletedAt: readVerbTourCompletedAt(prefs),
     };
+  }
+
+  async firstBacklog(mailboxId: string) {
+    return this.senderReads.firstBacklog(mailboxId);
+  }
+
+  async scanPreview(mailboxId: string) {
+    return this.senderReads.scanPreview(mailboxId);
   }
 
   /**

@@ -1,5 +1,6 @@
 'use client';
 
+import { ScanPreview } from './scan-preview';
 import { OnboardingAccountLinks } from './onboarding-account-links';
 
 import { editorialOnboardingActionStyle } from '@/features/editorial/page';
@@ -265,17 +266,21 @@ export function SyncGate({
       />
     );
   }
-  return <SyncProgress status={status} escape={escape} readyEmail={readyEmail} />;
+  return (
+    <SyncProgress status={status} escape={escape} readyEmail={readyEmail} mailboxId={mailboxId} />
+  );
 }
 
 function SyncProgress({
   status,
   escape,
   readyEmail,
+  mailboxId,
 }: {
   status: SyncStatus;
   escape?: SyncGateEscape | undefined;
   readyEmail: boolean;
+  mailboxId?: string | null | undefined;
 }) {
   // A non-finite percentage must not defeat the clamp: every comparison
   // against NaN is false, so Math.min/max would propagate it into the
@@ -369,6 +374,8 @@ function SyncProgress({
           <style>{SCAN_COUNT_CSS}</style>
         </>
       )}
+
+      {!ready && mailboxId && <ScanPreview key={mailboxId} mailboxId={mailboxId} />}
 
       {/* The secondary keeps syncing in the background after the hop; the
           account-switcher badge + ready-toast (D116) announce completion. */}
@@ -479,6 +486,7 @@ function SyncFailed({
                 : retryLabel}
           </Button>
         )}
+        {mailboxId && <ScanPreview key={mailboxId} mailboxId={mailboxId} />}
         {recovery.reason === 'rate_limit' && recovery.partlyReady && onContinuePartial && (
           <Button tone="ghost" onClick={onContinuePartial}>
             Continue ready

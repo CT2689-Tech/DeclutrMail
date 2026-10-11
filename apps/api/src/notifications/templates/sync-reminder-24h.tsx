@@ -15,6 +15,8 @@ import {
 export interface SyncReminderEmailInput {
   /** The user's own connected mailbox address. */
   mailboxEmail: string;
+  /** Owned inbox selected before opening the linked screen. */
+  mailboxAccountId: string;
   /** Web app origin. */
   appUrl: string;
   /**
@@ -32,7 +34,7 @@ export interface SyncReminderEmailInput {
  */
 export async function syncReminder24hEmail(input: SyncReminderEmailInput): Promise<RenderedEmail> {
   const footer = 'You received this because you connected this mailbox to DeclutrMail.';
-  const triageUrl = `${input.appUrl}/triage`;
+  const sendersUrl = `${input.appUrl}/senders?${new URLSearchParams({ mailbox: input.mailboxAccountId })}`;
   const preferencesUrl = `${input.appUrl}/settings`;
 
   const text = [
@@ -40,7 +42,7 @@ export async function syncReminder24hEmail(input: SyncReminderEmailInput): Promi
     '',
     'Your senders are grouped and waiting.',
     '',
-    `Pick it up here: ${triageUrl}`,
+    `Pick it up here: ${sendersUrl}`,
     '',
     '— DeclutrMail',
     '',
@@ -77,8 +79,8 @@ export async function syncReminder24hEmail(input: SyncReminderEmailInput): Promi
       <Text style={{ ...BODY_TEXT, margin: '0 0 26px' }}>
         Your senders are grouped and waiting.
       </Text>
-      <Button href={triageUrl} style={CTA_BUTTON}>
-        Open Triage
+      <Button href={sendersUrl} style={CTA_BUTTON}>
+        Open Senders
       </Button>
     </Shell>,
   );

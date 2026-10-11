@@ -31,6 +31,7 @@ import {
 import {
   and,
   asc,
+  count,
   desc,
   eq,
   getTableName,
@@ -1137,6 +1138,85 @@ export class SendersReadService {
    * `?q=` honors the same search predicate as the list endpoint so
    * chip/KPI/hero narrow in lockstep with visible rows.
    */
+  /** Largest current inbox backlog eligible for cleanup; Protected senders stay out. */
+  async firstBacklog(
+    mailboxId: string,
+  ): Promise<{ senderId: string; name: string; inboxEmails: number } | null> {
+    const [row] = await this.db
+      .select({
+        senderId: senders.id,
+        name: sql<string>`coalesce(nullif(${senders.displayName}, ''), ${senders.email})`,
+        inboxEmails: count(),
+      })
+      .from(mailMessages)
+      .innerJoin(
+        senders,
+        and(
+          eq(senders.mailboxAccountId, mailMessages.mailboxAccountId),
+          eq(senders.senderKey, mailMessages.senderKey),
+        ),
+      )
+      .leftJoin(
+        senderPolicies,
+        and(
+          eq(senderPolicies.mailboxAccountId, senders.mailboxAccountId),
+          eq(senderPolicies.senderKey, senders.senderKey),
+        ),
+      )
+      .where(
+        and(
+          eq(mailMessages.mailboxAccountId, mailboxId),
+          eq(mailMessages.isOutbound, false),
+          sql`'INBOX' = ANY(${mailMessages.labelIds})`,
+          sql`coalesce(${senderPolicies.isProtected}, false) = false`,
+        ),
+      )
+      .groupBy(senders.id, senders.displayName, senders.email)
+      .orderBy(desc(count()), senders.id)
+      .limit(1);
+    return row ?? null;
+  }
+
+  /** Sender identities and stored counts only; no message subject/snippet. */
+  async scanPreview(mailboxId: string): Promise<{ name: string; indexedEmails: number }[]> {
+    return this.db
+      .select({
+        name: sql<string>`coalesce(nullif(${senders.displayName}, ''), ${senders.email})`,
+        indexedEmails: count(),
+      })
+      .from(mailMessages)
+      .innerJoin(
+        senders,
+        and(
+          eq(senders.mailboxAccountId, mailMessages.mailboxAccountId),
+          eq(senders.senderKey, mailMessages.senderKey),
+        ),
+      )
+      .where(and(eq(mailMessages.mailboxAccountId, mailboxId), eq(mailMessages.isOutbound, false)))
+      .groupBy(senders.id, senders.displayName, senders.email)
+      .orderBy(desc(count()), senders.id)
+      .limit(5);
+  }
+  async indexedArrivals(
+    mailboxId: string,
+    since: Date,
+    until: Date,
+    executor: Pick<DrizzleDb, 'execute'> = this.db,
+  ): Promise<{ indexedEmails: number; indexedSenders: number }> {
+    // createdAt is an Autopilot generation marker; firstIndexedAt survives rebuilds.
+    // Both counts share one SQL snapshot and archived mail remains indexed mail.
+    const result = await executor.execute(sql`
+      SELECT
+        (SELECT count(*)::int FROM mail_messages WHERE mailbox_account_id = ${mailboxId}
+          AND is_outbound = false AND created_at > ${since.toISOString()}::timestamptz AND created_at <= ${until.toISOString()}::timestamptz) AS emails,
+        (SELECT count(*)::int FROM senders WHERE mailbox_account_id = ${mailboxId}
+          AND first_indexed_at > ${since.toISOString()}::timestamptz AND first_indexed_at <= ${until.toISOString()}::timestamptz) AS senders
+    `);
+    type Counts = { emails: number; senders: number };
+    const [row] = (result as { rows?: Counts[] }).rows ?? (result as Counts[]);
+    return { indexedEmails: row!.emails, indexedSenders: row!.senders };
+  }
+
   async getSenderSummary(args: {
     mailboxAccountId: string;
     q?: string | null;

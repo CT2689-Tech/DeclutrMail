@@ -531,6 +531,28 @@ describe('InitialSyncWorker', () => {
     }
   });
 
+  it('preserves the sender first-indexed date across a full rebuild while refreshing its generation', async () => {
+    const client = new FakeGmailClient(makeMessages(3, 1));
+    const worker = new InitialSyncWorker({ db, gmailAccess: accessFor(client) });
+    await worker.processJob({ mailboxAccountId }, CTX);
+    const initial = new Date('2020-01-01T00:00:00Z');
+    await db
+      .update(senders)
+      .set({ firstIndexedAt: initial, createdAt: initial })
+      .where(eq(senders.mailboxAccountId, mailboxAccountId));
+    await db
+      .update(schema.providerSyncState)
+      .set({ readinessStatus: 'syncing' })
+      .where(eq(schema.providerSyncState.mailboxAccountId, mailboxAccountId));
+    await worker.processJob({ mailboxAccountId }, CTX);
+    const [rebuilt] = await db
+      .select()
+      .from(senders)
+      .where(eq(senders.mailboxAccountId, mailboxAccountId));
+    expect(rebuilt!.firstIndexedAt).toEqual(initial);
+    expect(rebuilt!.createdAt.getTime()).toBeGreaterThan(initial.getTime());
+  });
+
   it('fresh sync — mirrors every message and materializes senders', async () => {
     const client = new FakeGmailClient(makeMessages(30, 6));
     const worker = new InitialSyncWorker({ db, gmailAccess: accessFor(client) });

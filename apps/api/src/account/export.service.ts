@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, gt } from 'drizzle-orm';
+import { and, asc, eq, gt, sql } from 'drizzle-orm';
 
 import {
   activityLog,
@@ -8,8 +8,11 @@ import {
   productFeedback,
   senderPolicies,
   senders,
+  users,
 } from '@declutrmail/db';
 import { DATA_EXPORT_FORMAT_MANIFEST, DATA_EXPORT_LIMITATION } from '@declutrmail/shared/contracts';
+
+import { HomeVisitSummarySchema } from '@declutrmail/shared/contracts/home-visit';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { csvField } from '../common/csv.js';
@@ -49,6 +52,7 @@ export class DataExportService {
     return this.db
       .select({
         id: mailboxAccounts.id,
+        userId: mailboxAccounts.userId,
         email: mailboxAccounts.providerAccountId,
         status: mailboxAccounts.status,
         connectedAt: mailboxAccounts.connectedAt,
@@ -56,6 +60,19 @@ export class DataExportService {
       .from(mailboxAccounts)
       .where(eq(mailboxAccounts.workspaceId, workspaceId))
       .orderBy(asc(mailboxAccounts.id));
+  }
+
+  private async mailboxVisits(userId: string, mailboxId: string) {
+    const [row] = await this.db
+      .select({ visits: sql<unknown>`${users.preferences}->'mailboxVisits'->${mailboxId}` })
+      .from(users)
+      .where(eq(users.id, userId));
+    return Array.isArray(row?.visits)
+      ? row.visits.slice(0, 32).flatMap((entry) => {
+          const parsed = HomeVisitSummarySchema.safeParse(entry);
+          return parsed.success ? [parsed.data] : [];
+        })
+      : [];
   }
 
   /**
@@ -184,6 +201,7 @@ export class DataExportService {
       if (i > 0) yield ',';
       yield `{"email":${JSON.stringify(mb.email)},"status":${JSON.stringify(mb.status)},"connectedAt":${JSON.stringify(mb.connectedAt?.toISOString() ?? null)}`;
 
+      yield `,"visitSummaries":${JSON.stringify(await this.mailboxVisits(mb.userId, mb.id))}`;
       yield ',"senders":[';
       yield* this.streamJsonArray(
         (after) => this.senderBatch(mb.id, after),

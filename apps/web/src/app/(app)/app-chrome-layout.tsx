@@ -17,6 +17,7 @@ import { HeardFromPrompt } from '@/features/auth/heard-from-prompt';
 import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
 import { useTier } from '@/features/auth/api/use-tier';
 import { UpgradeModalHost } from '@/features/billing/upgrade-modal-host';
+import { MailboxLinkBoundary } from '@/features/mailboxes/mailbox-link-boundary';
 import { AccountMenu } from '@/features/mailboxes/account-menu';
 import { NoActiveMailbox } from '@/features/mailboxes/no-active-mailbox';
 import { useMailboxSyncToasts } from '@/features/mailboxes/use-mailbox-sync-toasts';
@@ -28,6 +29,7 @@ import { useSyncGateFunnel } from '@/features/sync/use-sync-funnel';
 import { useCachedScreenerCount, useScreenerCount } from '@/features/screener/api/use-screener';
 import { LaterReturnAlert } from '@/features/snoozed/later-return-alert';
 import { useSendersSummary } from '@/features/senders/api/use-senders-summary';
+import { LazyHomeVisitTracker } from '@/features/home/lazy-home-visit-tracker';
 import { BannerSlot } from '@/features/shell/banner-slot';
 import { MailboxReconnectBanner } from '@/features/mailboxes/mailbox-reconnect-banner';
 import { SyncErrorBanner } from '@/features/sync/sync-error-banner';
@@ -106,7 +108,10 @@ export function AppChromeLayout({ children }: { children: ReactNode }) {
   return (
     <>
       <AuthProvider>
-        <AppChrome>{children}</AppChrome>
+        <MailboxLinkBoundary>
+          <LazyHomeVisitTracker />
+          <AppChrome>{children}</AppChrome>
+        </MailboxLinkBoundary>
       </AuthProvider>
       {/* D147 consent ask — outside AuthProvider on purpose: consent is
           auth-independent and must stay answerable through every branch
@@ -142,6 +147,7 @@ function AppChrome({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(MAILBOX_SCOPE_RESET_EVENT, refreshServerScope);
   }, [router]);
   const { me } = useAuth();
+
   useAnalyticsIdentity(me.user.id, me.signupAttribution?.ref, me.tier);
   // D245: `snoozed` remains the internal capability/nav key, while
   // `/later` is the canonical user-facing route.

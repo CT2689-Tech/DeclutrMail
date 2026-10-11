@@ -128,7 +128,8 @@ import {
   type SenderRowActivity,
 } from './row-activity';
 import { SendersLoadingState } from './senders-loading-state';
-import { FirstCleanupNudge, shouldShowFirstCleanupNudge } from './first-cleanup-nudge';
+import { FirstBacklogNudge } from './first-backlog-nudge';
+import { shouldShowFirstCleanupNudge } from './first-cleanup-nudge';
 import type { SenderListDirection, SenderListSort } from '@/lib/api/senders';
 import { useSaveSenderViews, useSenderViews } from './api/use-sender-views';
 import { SENDER_VIEWS_CAP, type SavedSenderView } from '@declutrmail/shared/contracts';
@@ -2832,9 +2833,7 @@ function SendersScreenContent({
             </div>
           )}
 
-          {showFirstCleanupNudge && senders[0] !== undefined && (
-            <FirstCleanupNudge href={`/senders/${senders[0].id}`} />
-          )}
+          {showFirstCleanupNudge && senders[0] !== undefined && <FirstBacklogNudge />}
 
           {/* D248 — multi-sender unsubscribe result. Its own surface: three
             terminal outcomes, no Undo (a delivered request is one-way). */}

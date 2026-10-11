@@ -58,6 +58,7 @@ async function main(): Promise<void> {
   const headers = unsubscribeHeadersFor(unsubscribe);
 
   const rendered = await syncCompleteEmail({
+    mailboxAccountId: process.env.SMOKE_MAILBOX_ID ?? '00000000-0000-4000-8000-00000000dead',
     mailboxEmail: TO,
     messageCount: 12_345,
     appUrl: 'https://app.declutrmail.com',

@@ -834,6 +834,10 @@ describe('mailbox indexed-data purge', () => {
           activeMailboxId: target.mailboxId,
           onboardingFirstTriageKeys: ['target-pin'],
           keepMe: true,
+          mailboxVisits: {
+            [target.mailboxId]: [{ indexedEmails: 12 }],
+            [sibling.mailboxId]: [{ indexedEmails: 3 }],
+          },
         },
       })
       .where(eq(users.id, target.userId));
@@ -919,7 +923,11 @@ describe('mailbox indexed-data purge', () => {
     expect(completed!.completedAt).not.toBeNull();
 
     const [owner] = await db.select().from(users).where(eq(users.id, target.userId));
-    expect(owner!.preferences).toEqual({ activeMailboxId: null, keepMe: true });
+    expect(owner!.preferences).toEqual({
+      activeMailboxId: null,
+      keepMe: true,
+      mailboxVisits: { [sibling.mailboxId]: [{ indexedEmails: 3 }] },
+    });
     const [otherUser] = await db.select().from(users).where(eq(users.id, stranger.userId));
     expect(otherUser!.preferences).toEqual({
       activeMailboxId: stranger.mailboxId,

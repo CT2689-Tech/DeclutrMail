@@ -748,7 +748,7 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
     await this.deps.db
       .update(users)
       .set({
-        preferences: sql`(${users.preferences} - 'onboardingFirstTriageKeys') || CASE WHEN ${users.preferences}->>'activeMailboxId' = ${mailboxAccountId} THEN '{"activeMailboxId":null}'::jsonb ELSE '{}'::jsonb END`,
+        preferences: sql`jsonb_set((${users.preferences} - 'onboardingFirstTriageKeys'), '{mailboxVisits}', CASE WHEN jsonb_typeof(${users.preferences}->'mailboxVisits') = 'object' THEN (${users.preferences}->'mailboxVisits') - ${mailboxAccountId}::text ELSE '{}'::jsonb END, true) || CASE WHEN ${users.preferences}->>'activeMailboxId' = ${mailboxAccountId} THEN '{"activeMailboxId":null}'::jsonb ELSE '{}'::jsonb END`,
       })
       .where(eq(users.id, userId));
   }

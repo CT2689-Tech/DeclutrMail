@@ -356,6 +356,21 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     showInMessageStorageList: false,
   },
   {
+    id: 'mailbox-visit-summary',
+    category: 'derived',
+    label: 'Mailbox visit times and indexed-arrival counts',
+    fetchedFrom: ['sender-profile-and-stats', 'message-identifiers'],
+    storageRefs: ['users.preferences.mailboxVisits'],
+    derived: true,
+    purpose:
+      'Show a stable per-mailbox summary since the previous visit; at most 32 snapshots per mailbox.',
+    retention: GMAIL_DATA_RETENTION.derivedMailboxData,
+    removalTrigger: 'delete-indexed-data',
+    exportedIn: ['json'],
+    transmittedTo: ['DeclutrMail'],
+    showInMessageStorageList: false,
+  },
+  {
     id: 'choices-rules-and-suggestions',
     category: 'derived',
     label: 'Sender decisions, protection settings, rules, and generated suggestions',

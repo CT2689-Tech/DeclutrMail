@@ -108,3 +108,14 @@ export const FirstReviewReady: Story<typeof HomeView> = {
     },
   },
 };
+
+export const QueuedScan: Story<typeof HomeView> = {
+  args: {
+    state: {
+      kind: 'empty',
+      syncing: true,
+      queued: true,
+      action: { label: 'Review senders', href: '/senders' },
+    },
+  },
+};

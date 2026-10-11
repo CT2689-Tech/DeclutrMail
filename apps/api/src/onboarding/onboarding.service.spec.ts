@@ -17,6 +17,7 @@ import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { SendersReadService } from '../senders/senders.read-service.js';
 import { AutopilotReadService } from '../autopilot/autopilot.read-service.js';
 import { TriageReadService, type TriageQueueFacts } from '../triage/triage.read-service.js';
 import { OnboardingService, pickFirstTriageCandidates } from './onboarding.service.js';
@@ -180,6 +181,7 @@ function makeService(db: Db): OnboardingService {
     db as never,
     new TriageReadService(db as never),
     new AutopilotReadService(db as never),
+    new SendersReadService(db as never),
   );
 }
 

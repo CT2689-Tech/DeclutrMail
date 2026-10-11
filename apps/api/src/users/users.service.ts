@@ -5,6 +5,12 @@ import { users, workspaces } from '@declutrmail/db';
 import type { SignupAttributionRef, SignupHeardFromPatch } from '@declutrmail/shared/contracts';
 
 import { liveGrantTierForEmail } from '../common/entitlements/entitlement-grants.js';
+import {
+  HomeVisitSummarySchema,
+  type HomeVisitSummary,
+  type HomeVisitCounts,
+} from '@declutrmail/shared/contracts/home-visit';
+
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 
 /**
@@ -37,6 +43,82 @@ export class UsersService {
   async findById(userId: string) {
     const [row] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
     return row ?? null;
+  }
+
+  /** Keep visit boundaries stable through reloads and concurrent mailbox visits. */
+  async recordMailboxVisit(
+    userId: string,
+    mailboxId: string,
+    visitId: string,
+    readCounts: (
+      since: Date,
+      until: Date,
+      executor: Pick<DrizzleDb, 'execute'>,
+    ) => Promise<HomeVisitCounts>,
+    assertEligible: (executor: Pick<DrizzleDb, 'execute'>) => Promise<void>,
+    now?: Date,
+  ): Promise<HomeVisitSummary> {
+    return this.db.transaction(async (tx) => {
+      const [user] = await tx
+        .select({ preferences: users.preferences })
+        .from(users)
+        .where(eq(users.id, userId))
+        .for('update');
+      if (!user) throw new InternalServerErrorException('User not found.');
+      // Guard resolution predates this lock. A purge may have disconnected the
+      // mailbox and cleared its snapshots while this request waited for it.
+      await assertEligible(tx);
+      const prefs: Record<string, unknown> =
+        user.preferences && typeof user.preferences === 'object' && !Array.isArray(user.preferences)
+          ? (user.preferences as Record<string, unknown>)
+          : {};
+      const raw = prefs.mailboxVisits;
+      const visits =
+        raw && typeof raw === 'object' && !Array.isArray(raw)
+          ? (raw as Record<string, unknown>)
+          : {};
+      const history = Array.isArray(visits[mailboxId])
+        ? (visits[mailboxId] as unknown[]).flatMap((entry) => {
+            const parsed = HomeVisitSummarySchema.safeParse(entry);
+            return parsed.success ? [parsed.data] : [];
+          })
+        : [];
+      const existing = history.find((entry) => entry.visitId === visitId);
+      if (existing) return existing;
+      const latest = history[0];
+      const instant =
+        now ??
+        new Date(
+          (
+            await tx
+              .select({ at: sql<string>`clock_timestamp()::text` })
+              .from(users)
+              .where(eq(users.id, userId))
+              .limit(1)
+          )[0]!.at,
+        );
+      const until = new Date(
+        Math.max(instant.getTime(), latest ? Date.parse(latest.until) : 0),
+      ).toISOString();
+      const since = latest?.until ?? null;
+      // Read once while the user row is locked; a failed read rolls back the visit.
+      // The callback is a read-only owner facade, never a provider/network call.
+      const counts =
+        since === null
+          ? { indexedEmails: null, indexedSenders: null }
+          : await readCounts(new Date(since), new Date(until), tx);
+      const window: HomeVisitSummary = { visitId, since, until, ...counts };
+      await tx
+        .update(users)
+        .set({
+          preferences: {
+            ...prefs,
+            mailboxVisits: { ...visits, [mailboxId]: [window, ...history].slice(0, 32) },
+          },
+        })
+        .where(eq(users.id, userId));
+      return window;
+    });
   }
 
   /**
