@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { cleanupActionsPerMonthFor, planName, POLICY } from '../../entitlements';
 import {
@@ -29,6 +29,10 @@ import {
 import { WS3_COPY } from './ws3';
 
 describe('WS3 token fill', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('formats the verification date in US order from the British constant', () => {
     expect(formatVerificationDate(CASA_VERIFICATION_APPROVED_ON)).toBe('April 21, 2026');
     expect(formatVerificationDate(CASA_LOV_SUBMITTED_ON)).toBe('April 15, 2026');
@@ -85,6 +89,15 @@ describe('WS3 token fill', () => {
     expect(answer).toContain(planName('plus'));
     expect(autopilot).toContain(planName('plus'));
     expect(autopilot).not.toMatch(/on\s+handle/);
+  });
+
+  it('fills the refund window from POLICY when PRICING_V2 is on', () => {
+    vi.stubEnv('PRICING_V2', 'true');
+    const days = String(POLICY.refundWindowDays);
+    expect(ws3Tokens().refundDays).toBe(days);
+    expect(refundSentence()).toBe(`${days}-day money-back on any purchase, once per customer.`);
+    expect(llmsPricingLine()).toContain(`${days}-day money-back`);
+    expect(priceFaqAnswer()).toContain(`${days}-day money-back`);
   });
 
   it('keeps the consent gate off and lists the strings that wait for it', () => {

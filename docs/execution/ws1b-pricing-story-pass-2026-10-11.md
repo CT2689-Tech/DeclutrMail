@@ -99,10 +99,12 @@ write was made.
   deck template (`refunds.toc.window`, `refunds.summary`,
   `refunds.window`, and the other `{refundDays}` lines) filled by
   `fillStory` with that constant. `refundLine()` uses the same constant
-  on pricing, billing, flags-on `llms.txt`, and `/pricing.md`. Flags-off
-  `/refunds` still publishes the D121 30-day page (`MONEY_BACK_NOTE`)
-  so a flags-off view matches main. That 30-day page is not the launch
-  policy.
+  on pricing, billing, flags-on `llms.txt`, and `/pricing.md`. With
+  `PRICING_V2` on, `/faq`, `/help`, the home teaser, the comparison
+  money-back line, and `moneyBackNote(true)` use that same window.
+  Flags-off `/refunds`, FAQ, help, and the home teaser still publish
+  the D121 30-day page (`MONEY_BACK_NOTE`) so a flags-off view matches
+  main. That 30-day page is not the launch policy.
 
 ## Impact when the flags flip
 
@@ -139,9 +141,12 @@ unprocessed.
 | `0091_waitlist_drop_email_uniq.sql`           | destructive, own commit | drop `waitlist_email_uniq`                                                                                     |
 
 `atlas.sum` was produced by Atlas community v1.3.0 (`atlas migrate hash`).
-None of these migrations has been applied to a live database. PR #985
-(AI consent) is expected to take `0089` if it merges first. These files
-stay at `0089`/`0090`/`0091` until that merge is confirmed. The
+None of these migrations has been applied to a live database. Merge
+order ahead of this PR is #985 (`0089`) → #981 (`0090_inbox_report_cache`)
+→ #983 → #980. These files stay `0089`/`0090`/`0091` until #981 has
+merged. They then become `0091_entitlement_grant_sources`,
+`0092_entitlement_grants_comp_email_uniq`, and
+`0093_waitlist_drop_email_uniq`. Do not renumber before that. The
 grant-sources migration, whatever number it lands on, is the one that
 must apply before the new API serves checkouts.
 
@@ -166,14 +171,14 @@ must apply before the new API serves checkouts.
   calls `returnAfterUpgrade`. It does not reopen a Senders or Triage
   confirm. That confirm is WS2.
 
-## Parked until told
+## Rebase onto #978
 
-- Do not rebase onto #978 until that merge is confirmed. When it is:
-  keep #978's deck-generated `llms.txt` body, and add only the
-  `/pricing/changelog` line behind the existing `PRICING_V2`. Allow
-  `CASA Tier 2 letter of validation submitted April 15, 2026`. Keep
-  forbidding `certified` and `audited`.
-- Do not renumber migrations for #985 until that merge is confirmed.
+#978 is on main. This branch keeps its deck-generated `llms.txt` body
+and adds only the `/pricing/changelog` line behind `PRICING_V2`. The
+CASA line `CASA Tier 2 letter of validation submitted April 15, 2026`
+stays. `certified` and `audited` stay forbidden. `next.config.ts` keeps
+both `htmlLimitedBots` and the noindex header rules. `joinLaunch` keeps
+the object return and `onConflictDoNothing()` with no target.
 
 ## Cross-WS
 
@@ -187,13 +192,15 @@ must apply before the new API serves checkouts.
   `scripts/check-web-bundle-budget.mjs` declares that redirect only when
   the flag is off. The CI web build sets the flag, renders the page, and
   measures it. The sitemap and `llms.txt` include the URL only while the
-  same flag is on. With the flag on, the pricing bullet in `llms.txt`
-  is `refundLine()`.
+  same flag is on. With the flag on, the pricing bullet and the pricing
+  markdown section both use `POLICY.refundWindowDays`.
 - `/terms` and `/refunds` are static and follow the server env at build
-  time. The flags-off refunds page keeps main's "cancelling". `/pricing`
-  and the home teaser read `GET /api/pricing/public`, so those two flip
-  without a web rebuild. A non-200 or network error on that fetch stays
-  on today's teaser and is not reported.
+  time. The flags-off refunds page keeps main's "cancelling". `/faq` and
+  `/help` follow the same server env. `/pricing` reads
+  `GET /api/pricing/public`. The home teaser uses the server flag for
+  first paint and still reads that endpoint. A non-200 or network error
+  keeps the server paint and is not reported. With the server flag off,
+  that paint is today's teaser.
 - `scripts/web-bundle-budget.json` was regenerated with
   `pnpm check:bundle --rebaseline` after the pricing story and billing
   client graph grew the served JS. The launch teaser and pricing story

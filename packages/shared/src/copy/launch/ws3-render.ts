@@ -6,6 +6,7 @@
 import { GMAIL_DATA_PROCESSORS } from '../../contracts/gmail-data-inventory';
 import {
   cleanupActionsPerMonthFor,
+  isPricingV2,
   planName,
   POLICY,
   priceLine,
@@ -63,7 +64,7 @@ export function ws3Tokens(extra?: Record<string, string>): Record<string, string
     // No pass price point or duration is exported yet. Leave blank rather than invent one.
     passPrice: '',
     passDays: '',
-    refundDays: '',
+    refundDays: isPricingV2() ? String(POLICY.refundWindowDays) : '',
     BRIEF_NAME,
     anthropicRetention: GMAIL_DATA_PROCESSORS.Anthropic.retention,
     legalEntity: hasLegalEntity() ? LEGAL_ENTITY_NAME : '',
@@ -124,10 +125,12 @@ export const REFUNDS_PAGE_WINDOW_DAYS = 30;
 
 /**
  * Money-back line under a comparison CTA, linked to `/refunds`.
- * Empty until that page and `POLICY.refundWindowDays` state the same
- * window, and while `{refundDays}` is still blank. No flag and no env var.
+ * With `PRICING_V2` on, `/refunds` is the deck page, so this is
+ * `refundLine()`. Otherwise it stays empty while the published page
+ * still states a different window.
  */
 export function refundSentence(): string {
+  if (isPricingV2()) return refundLine();
   if (ws3Tokens().refundDays === '') return '';
   // Widened: a literal `30 !== 14` is a type error, and the two
   // constants have to be comparable again once they are the same number.

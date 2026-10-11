@@ -15,8 +15,10 @@ const PricingTeaserStory = dynamic(() =>
  * Read the public catalog. The landing page stays static so its metadata
  * stays in `<head>`; this island keeps today's teaser until that catalog
  * says the launch flag is on. The launch teaser is a separate chunk.
- * Any non-200 or network failure stays on today's teaser: a web deploy
- * that lands before the API must not surface an error or report the miss.
+ * The server passes its own flag so first paint matches a flags-on build.
+ * Any non-200 or network failure keeps that paint: a web deploy that
+ * lands before the API must not surface an error, report the miss, or
+ * put the flags-off teaser back.
  */
 async function readLaunchFlags(signal: AbortSignal): Promise<PricingFlags | null> {
   const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
@@ -35,8 +37,16 @@ async function readLaunchFlags(signal: AbortSignal): Promise<PricingFlags | null
   };
 }
 
-export function PricingTeaserGate() {
-  const [flags, setFlags] = useState<PricingFlags | null>(null);
+export function PricingTeaserGate({
+  pricingV2 = false,
+  passEnabled = false,
+}: {
+  pricingV2?: boolean;
+  passEnabled?: boolean;
+} = {}) {
+  const [flags, setFlags] = useState<PricingFlags | null>(
+    pricingV2 ? { pricingV2: true, passEnabled } : null,
+  );
   useEffect(() => {
     const controller = new AbortController();
     void readLaunchFlags(controller.signal)

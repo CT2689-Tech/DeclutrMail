@@ -68,4 +68,21 @@ describe('PricingTeaserGate', () => {
 
     expect(await screen.findByTestId('pricing-teaser-story')).toBeInTheDocument();
   });
+
+  it('keeps the launch teaser when the server flag is on and the public read 404s', async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(new Response('missing', { status: 404 })));
+
+    render(<PricingTeaserGate pricingV2 passEnabled={false} />);
+
+    expect(await screen.findByTestId('pricing-teaser-story')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+    expect(screen.queryByTestId('pricing-teaser-story')).toBeInTheDocument();
+    expect(screen.queryByText(legacyRefundNote())).not.toBeInTheDocument();
+  });
 });
+
+function legacyRefundNote(): string {
+  return ['30', 'day money-back guarantee on every paid plan.'].join('-');
+}

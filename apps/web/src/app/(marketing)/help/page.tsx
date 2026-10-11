@@ -123,26 +123,32 @@ const FAQS: ReadonlyArray<{
   },
 ];
 
-/**
- * schema.org FAQPage mirroring the rendered Q&A verbatim (Google
- * requires the marked-up answers to appear on the page).
- */
-const FAQ_JSON_LD = {
-  '@context': 'https://schema.org',
-  '@type': 'FAQPage',
-  mainEntity: FAQS.map(({ q, a, link }) => ({
-    '@type': 'Question',
-    name: q,
-    acceptedAnswer: {
-      '@type': 'Answer',
-      text: link ? `${a} <a href="${siteUrl()}${link.href}">${link.label}</a>` : a,
-    },
-  })),
-};
+/** Refund copy follows `PRICING_V2` at render, so JSON-LD cannot be baked at import. */
+function liveFaqs() {
+  return FAQS.map((faq) =>
+    faq.id === 'refunds' ? { ...faq, a: faqAnswer('refunds-support') } : faq,
+  );
+}
+
+function faqJsonLd(faqs: ReturnType<typeof liveFaqs>) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: faqs.map(({ q, a, link }) => ({
+      '@type': 'Question',
+      name: q,
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: link ? `${a} <a href="${siteUrl()}${link.href}">${link.label}</a>` : a,
+      },
+    })),
+  };
+}
 
 const TOC = FAQS.map(({ id, q }) => ({ id, label: q }));
 
 export default function HelpPage() {
+  const faqs = liveFaqs();
   return (
     <LegalPageLayout title="Help with your workspace" lastUpdated={LAST_UPDATED} toc={TOC}>
       <PageViewTracker page="help" />
@@ -150,8 +156,8 @@ export default function HelpPage() {
       <p>
         Before you connect? <a href="/faq">Read the product and permission FAQ</a>.
       </p>
-      <JsonLd data={FAQ_JSON_LD} />
-      {FAQS.map(({ id, q, a, link }) => (
+      <JsonLd data={faqJsonLd(faqs)} />
+      {faqs.map(({ id, q, a, link }) => (
         <LegalSection key={id} id={id} title={q}>
           <p>
             {a}

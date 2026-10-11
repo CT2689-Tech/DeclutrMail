@@ -1,4 +1,5 @@
 import { ProductJourney } from '@/features/marketing/landing/product-journey';
+import { isBillingPassEnabled, isPricingV2 } from '@declutrmail/shared/entitlements';
 import type { Metadata } from 'next';
 
 import '@/features/marketing/landing/landing.css';
@@ -89,7 +90,7 @@ export default function LandingPage() {
       <HowItWorks />
       <ProductBreadth />
       <PrivacyDesk />
-      <PricingTeaserGate />
+      <PricingTeaserGate pricingV2={isPricingV2()} passEnabled={isBillingPassEnabled()} />
       <FinalCta />
     </div>
   );
