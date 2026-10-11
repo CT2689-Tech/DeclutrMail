@@ -7,7 +7,7 @@ import { useUpgradeReturnTo } from '@/features/billing/use-upgrade-return-to';
 import { Button, tokens } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
-import { planName, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { fillStory, planName, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { useTier } from '@/features/auth/api/use-tier';
 import {
@@ -51,12 +51,18 @@ export function UpgradeModal() {
   const hit = useUpgradeGateStore((s) => s.hit);
   const dismiss = useUpgradeGateStore((s) => s.dismiss);
   const applyWindowPreset = useUpgradeGateStore((s) => s.applyWindowPreset);
-  const { tier, pricingV2 } = useTier();
+  const { tier, pricingV2, passEnabled } = useTier();
   const from = useUpgradeReturnTo();
 
   useEffect(() => {
     if (!hit) return;
     void track('upgrade_prompt_shown', { reason: hit.reason, source: 'upgrade_modal' });
+    if (hit.reason === 'free_cap' && typeof hit.details.requested === 'number') {
+      void track('free_cap_hit', {
+        requested: hit.details.requested,
+        remaining: hit.details.remaining,
+      });
+    }
   }, [hit]);
 
   useEffect(() => {
@@ -206,6 +212,36 @@ export function UpgradeModal() {
         >
           {nudge && hit.reason === 'free_cap' && typeof hit.details.requested === 'number' ? (
             <>
+              {pricingV2 && passEnabled ? (
+                <Link
+                  href={billingIntentPath({
+                    plan: 'plus',
+                    cycle: 'annual',
+                    offer: 'pass_onetime',
+                    ...(from ? { from } : {}),
+                  })}
+                  onClick={() => {
+                    void track('upgrade_cta_clicked', { source: 'upgrade_modal', plan: 'pass' });
+                    void track('pass_selected', { source: 'upgrade_modal' });
+                    dismiss();
+                  }}
+                  data-dm-button=""
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    height: 50,
+                    padding: '0 28px',
+                    background: color.primary,
+                    color: color.fgInverse,
+                    borderRadius: radius.pill,
+                    textDecoration: 'none',
+                    fontWeight: 600,
+                  }}
+                >
+                  {fillStory(WS1_COPY['cap.pass.button'])}
+                </Link>
+              ) : null}
               {typeof hit.details.suggestedPreset === 'number' ? (
                 <Button
                   tone="default"

@@ -123,19 +123,24 @@ export function paddleTransactionCompleted(args: {
   customerId?: string;
   /** Checkout attribution Paddle copies onto the transaction. */
   workspaceId?: string;
+  transactionId?: string;
+  priceIds?: string[];
 }): Record<string, unknown> {
   return {
     event_id: args.eventId ?? 'evt_01paddle_txn_000001',
     event_type: 'transaction.completed',
     occurred_at: '2026-06-11T10:00:05.000000Z',
     data: {
-      id: 'txn_01paddle000001',
+      id: args.transactionId ?? 'txn_01paddle000001',
       status: 'completed',
       customer_id: args.customerId ?? 'ctm_01paddle000001',
       subscription_id:
         args.subscriptionId === undefined ? 'sub_01paddle000001' : args.subscriptionId,
       currency_code: 'USD',
       details: { totals: { grand_total: '900' } },
+      ...(args.priceIds
+        ? { items: args.priceIds.map((id) => ({ price: { id }, quantity: 1 })) }
+        : {}),
       ...(args.workspaceId ? { custom_data: signedCustomData(args.workspaceId) } : {}),
     },
   };
@@ -150,6 +155,8 @@ export function paddleAdjustmentCreated(args: {
   adjustmentType?: 'full' | 'partial';
   /** Item-level coverage is the fallback when the overall type is not full. */
   itemTypes?: string[];
+  status?: 'approved' | 'pending_approval' | 'rejected';
+  transactionId?: string;
 }): Record<string, unknown> {
   return {
     event_id: args.eventId ?? 'evt_01paddle_adj_000001',
@@ -159,11 +166,11 @@ export function paddleAdjustmentCreated(args: {
       id: 'adj_01paddle000001',
       action: args.action ?? 'refund',
       type: args.adjustmentType ?? 'partial',
-      transaction_id: 'txn_01paddle000001',
+      transaction_id: args.transactionId ?? 'txn_01paddle000001',
       subscription_id:
         args.subscriptionId === undefined ? 'sub_01paddle000001' : args.subscriptionId,
       reason: 'requested_by_customer',
-      status: 'pending_approval',
+      status: args.status ?? 'pending_approval',
       items: (args.itemTypes ?? ['full']).map((type, i) => ({
         id: `adjitm_0${i}`,
         item_id: `txnitm_0${i}`,

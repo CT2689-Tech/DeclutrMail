@@ -22,6 +22,7 @@
 
 import {
   LEGACY_PRICE_IDS,
+  OFFERS,
   PLUS_ANNUAL_2026_10,
   TIER_MANIFEST,
   usablePriceId,
@@ -143,6 +144,17 @@ function buildV2Catalog(env: NodeJS.ProcessEnv): CatalogEntry[] {
   return entries;
 }
 
+/** Pass stays out of `buildCatalog()` so the flag-on subscription snapshot is unchanged. */
+export function passPriceFromEnv(env: NodeJS.ProcessEnv = process.env): string | null {
+  let overlay: string | undefined;
+  const raw = env.BILLING_CATALOG_JSON;
+  if (raw && raw.trim() !== '') {
+    const parsed = JSON.parse(raw) as { paddle?: { pass_onetime?: unknown } };
+    if (typeof parsed.paddle?.pass_onetime === 'string') overlay = parsed.paddle.pass_onetime;
+  }
+  return usablePriceId(overlay ?? OFFERS.backlogPass.price.paddlePriceId);
+}
+
 function legacyEntry(provider: BillingProviderId, providerPriceId: string): CatalogEntry | null {
   const legacy = LEGACY_PRICE_IDS[providerPriceId];
   if (!legacy) return null;
@@ -160,11 +172,18 @@ function legacyEntry(provider: BillingProviderId, providerPriceId: string): Cata
 
 /** The catalog read API the billing services consume. */
 export class BillingCatalog {
+  /** Usable Paddle price id for the Backlog Pass, or null while it is FILL_ME. */
+  readonly passPaddlePriceId: string | null;
+
   constructor(
     private readonly entries: CatalogEntry[] = buildCatalog(),
     /** D126 cap — injectable so tests can exercise the counter cheaply. */
     readonly foundingMaxRedemptions: number = TIER_MANIFEST.pro.promo?.maxRedemptions ?? 0,
-  ) {}
+    passPriceId?: string | null,
+  ) {
+    this.passPaddlePriceId =
+      passPriceId === undefined ? passPriceFromEnv() : usablePriceId(passPriceId);
+  }
 
   /** Forward: (tier, cycle, founding?) → provider price id or null. */
   resolvePriceId(

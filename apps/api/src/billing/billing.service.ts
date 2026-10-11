@@ -51,7 +51,14 @@ import type {
 import { AppException } from '../common/app-exception.js';
 import { highestLiveGrantForWorkspace } from '../common/entitlements/entitlement-grants.js';
 import type { ProductEventsPort } from '@declutrmail/shared/analytics/product-events';
-import { isPricingV2, proNotPurchasableMessage, RAILS } from '@declutrmail/shared/entitlements';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+import {
+  fillStory,
+  isBillingPassEnabled,
+  isPricingV2,
+  proNotPurchasableMessage,
+  RAILS,
+} from '@declutrmail/shared/entitlements';
 
 import { PRODUCT_EVENTS, recordProductEvent } from '../analytics/product-events.port.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
@@ -120,6 +127,12 @@ export class BillingService {
     if (isPricingV2() && dto.provider === 'razorpay' && !RAILS.razorpay.enabled) {
       throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
     }
+    const pass = dto.offer === 'pass_onetime';
+    if (pass) {
+      if (!isBillingPassEnabled() || dto.provider !== 'paddle' || !this.catalog.passPaddlePriceId) {
+        throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+      }
+    }
     // One subscription per workspace at a time — plan CHANGES are a
     // provider-side update flow (D120), not a second checkout.
     //
@@ -156,7 +169,17 @@ export class BillingService {
       // names the stronger blocker when both exist.
       .orderBy(sql`CASE WHEN ${subscriptions.status} = 'paused' THEN 1 ELSE 0 END`)
       .limit(1);
-    if (existing) {
+    if (existing && pass) {
+      const granting =
+        (existing.status === 'active' || existing.status === 'past_due') &&
+        !existing.entitlementLapsed;
+      if (granting) {
+        throw new AppException({
+          code: 'PASS_INCLUDED_IN_PLUS',
+          message: fillStory(WS1_COPY['picker.pass.includedInPlus']),
+        });
+      }
+    } else if (existing) {
       // D253 — the settling window. A row ended by a REFUND whose entitlement
       // has ALREADY lapsed is not a live subscription: it is a dead row still
       // sitting in the slot until the provider confirms the refund settled,
@@ -190,7 +213,7 @@ export class BillingService {
         details: { reason: 'inr_checkout_paused' },
       });
 
-    const founding = dto.promo === 'foundingPro';
+    const founding = !pass && dto.promo === 'foundingPro';
     if (founding) {
       // Advisory availability check — the AUTHORITATIVE gate is the
       // race-safe counter in the webhook path; this stops obviously
@@ -201,7 +224,9 @@ export class BillingService {
       }
     }
 
-    const priceId = this.catalog.resolvePriceId(dto.provider, dto.tierId, dto.cycle, founding);
+    const priceId = pass
+      ? this.catalog.passPaddlePriceId
+      : this.catalog.resolvePriceId(dto.provider, dto.tierId, dto.cycle, founding);
     if (!priceId) {
       // Catalog not provisioned for this price point (founder step F3).
       throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
@@ -250,6 +275,7 @@ export class BillingService {
           provider: dto.provider,
           tier: dto.tierId,
           billingCycle: dto.cycle,
+          offer: pass ? 'pass_onetime' : null,
           expiresAt: new Date(Date.now() + PENDING_CHECKOUT_TTL_MS),
         })
         .onConflictDoUpdate({
@@ -258,6 +284,7 @@ export class BillingService {
             provider: dto.provider,
             tier: dto.tierId,
             billingCycle: dto.cycle,
+            offer: pass ? 'pass_onetime' : null,
             // New claim cycle — the previous attempt's provider artifact
             // (if any) no longer describes THIS checkout (D249).
             providerRef: null,
@@ -347,7 +374,7 @@ export class BillingService {
     recordProductEvent(
       this.productEvents,
       'checkout_created',
-      { plan: dto.tierId },
+      { plan: pass ? 'pass' : dto.tierId },
       principal.userId,
     );
     return session;
@@ -462,7 +489,11 @@ export class BillingService {
       foundingMember: ws.foundingMember,
       pendingCheckout,
       complimentary: grant
-        ? { tier: grant.tier, expiresAt: grant.expiresAt?.toISOString() ?? null }
+        ? {
+            tier: grant.tier,
+            expiresAt: grant.expiresAt?.toISOString() ?? null,
+            source: grant.source,
+          }
         : null,
       subscription:
         sub && (sub.tier === 'plus' || sub.tier === 'pro')

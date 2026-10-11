@@ -6,7 +6,10 @@
  * discipline as the /pricing model, which this reuses).
  */
 
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import {
+  fillStory,
+  passEndLabel,
   refundLine,
   TIER_MANIFEST,
   TIER_RANK,
@@ -452,6 +455,11 @@ export function complimentaryNote(view: BillingPlanView): string | null {
   // entitlement agrees. A comp BELOW the resolved tier still renders —
   // that is a comped Plus who also pays for Pro, and both are true.
   if (TIER_RANK[comp.tier] > TIER_RANK[view.entitlementTier]) return null;
+  if (comp.source === 'pass' && comp.expiresAt) {
+    return fillStory(WS1_COPY['billing.pass.status'], 'usd', {
+      passEndDate: passEndLabel(comp.expiresAt),
+    });
+  }
   const name = TIER_MANIFEST[comp.tier].name;
   const until = formatBillingDate(comp.expiresAt);
   if (until === null) {

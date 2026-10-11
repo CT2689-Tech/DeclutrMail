@@ -57,6 +57,8 @@ export const CheckoutRequestSchema = z
     cycle: BillingCycleSchema,
     provider: BillingProviderIdSchema,
     promo: z.literal('foundingPro').optional(),
+    /** Backlog Pass. Requires Plus annual on Paddle. Not a subscription tier. */
+    offer: z.literal('pass_onetime').optional(),
   })
   .superRefine((val, ctx) => {
     if (val.promo === 'foundingPro' && (val.tierId !== 'pro' || val.cycle !== 'annual')) {
@@ -64,6 +66,16 @@ export const CheckoutRequestSchema = z
         code: 'custom',
         message: 'foundingPro is an annual-only Pro promo (D126).',
         path: ['promo'],
+      });
+    }
+    if (
+      val.offer === 'pass_onetime' &&
+      (val.tierId !== 'plus' || val.cycle !== 'annual' || val.promo)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'pass_onetime is a Plus annual one-time offer.',
+        path: ['offer'],
       });
     }
   });
@@ -210,6 +222,8 @@ export const BillingSubscriptionSchema = z.object({
     .object({
       tier: z.enum(['free', 'plus', 'pro', 'team', 'enterprise']),
       expiresAt: z.iso.datetime().nullable(),
+      /** `pass` is a Backlog Pass. Absent means a complimentary grant. */
+      source: z.enum(['comp', 'pass', 'promo']).optional(),
     })
     .nullable(),
 });

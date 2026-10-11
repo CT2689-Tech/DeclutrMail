@@ -288,16 +288,28 @@ describe('PaddleAdapter.mapWebhookEvent', () => {
     });
   });
 
-  it('ignores pending, partial, unrelated, and unlinked adjustment updates', () => {
+  it('ignores pending, partial, unrelated, and pending-unlinked adjustment updates', () => {
     for (const event of [
       paddleAdjustmentUpdated({ status: 'pending_approval' }),
       paddleAdjustmentUpdated({ status: 'approved', itemTypes: ['partial'] }),
       paddleAdjustmentUpdated({ status: 'rejected', itemTypes: ['partial'] }),
       paddleAdjustmentUpdated({ status: 'approved', action: 'credit' }),
-      paddleAdjustmentUpdated({ status: 'approved', subscriptionId: null }),
+      paddleAdjustmentUpdated({ status: 'pending_approval', subscriptionId: null }),
     ]) {
       expect(adapter.mapWebhookEvent(event)).toMatchObject({ kind: 'ignored' });
     }
+  });
+
+  it('maps an approved unlinked full refund to a pass revoke', () => {
+    expect(
+      adapter.mapWebhookEvent(
+        paddleAdjustmentUpdated({ status: 'approved', subscriptionId: null }),
+      ),
+    ).toMatchObject({
+      kind: 'pass_revoked',
+      reason: 'refund',
+      providerTransactionId: 'txn_01paddle000001',
+    });
   });
 
   it('a full refund still revokes — including the dashboard shape and an unreadable one', () => {

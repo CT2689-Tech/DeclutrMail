@@ -28,6 +28,7 @@ import { BillingRazorpayWebhookController } from '../webhooks/billing-razorpay.c
 import { BillingCatalog } from './billing-catalog.js';
 import { BillingDeletionGuard } from './billing-deletion-guard.js';
 import { BillingController } from './billing.controller.js';
+import { PricingPublicController } from './pricing-public.controller.js';
 import { BillingReconciliationService } from './billing-reconciliation.service.js';
 import { BillingService } from './billing.service.js';
 import { BillingWebhookService } from './billing-webhook.service.js';
@@ -42,6 +43,7 @@ import { BillingUpgradeRefundService } from './billing-upgrade-refund.service.js
   imports: [AuthModule, AutopilotModule],
   controllers: [
     BillingController,
+    PricingPublicController,
     BillingPaddleWebhookController,
     BillingRazorpayWebhookController,
   ],

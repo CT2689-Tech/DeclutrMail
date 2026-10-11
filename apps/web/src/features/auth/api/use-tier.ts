@@ -22,6 +22,8 @@ export interface TierEntitlements {
   inboxLimit: number;
   /** Launch pricing flag, from `/api/auth/me`. */
   pricingV2: boolean;
+  /** Backlog Pass checkout flag, from `/api/auth/me`. Absent means hidden. */
+  passEnabled: boolean;
   /** Mailboxes currently connected (status='active'). */
   connectedInboxes: number;
   /**
@@ -49,6 +51,7 @@ export function useTier(): TierEntitlements {
   const tier = me.tier ?? 'free';
   const inboxLimit = me.inboxLimit ?? inboxLimitFor(tier);
   const pricingV2 = me.pricingV2 === true;
+  const passEnabled = me.passEnabled === true;
   const connectedInboxes = me.mailboxes.filter((m) => m.status === 'active').length;
   return {
     tier,
@@ -56,6 +59,7 @@ export function useTier(): TierEntitlements {
     cleanupResetsAt: me.cleanupResetsAt ?? null,
     inboxLimit,
     pricingV2,
+    passEnabled,
     connectedInboxes,
     atInboxLimit: connectedInboxes >= inboxLimit,
   };

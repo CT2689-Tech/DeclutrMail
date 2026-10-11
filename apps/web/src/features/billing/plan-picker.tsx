@@ -21,6 +21,8 @@ import type {
   BillingSubscription,
 } from '@declutrmail/shared/contracts';
 import {
+  fillStory,
+  OFFERS,
   PLUS_ANNUAL_2026_10,
   priceLine as formatLaunchPrice,
   proNotPurchasableMessage,
@@ -203,6 +205,7 @@ export function PlanPicker({
   initialIntent = null,
   initialProvider = 'paddle',
   pricingV2 = false,
+  passEnabled = false,
   country = null,
   onRequestCancel,
   onPaymentCompleted,
@@ -235,6 +238,8 @@ export function PlanPicker({
   initialProvider?: BillingProviderId;
   /** From the server. The browser bundle cannot read the pricing env. */
   pricingV2?: boolean;
+  /** From `/api/auth/me`. Hidden when false. */
+  passEnabled?: boolean;
   country?: string | null;
   /** Route to the cancel confirm (the downgrade-to-free path, D120). */
   onRequestCancel: () => void;
@@ -303,6 +308,7 @@ export function PlanPicker({
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [cycle, setCycle] = useState<BillingCycle>(initialIntent?.cycle ?? 'annual');
   const [selected, setSelected] = useState<StripTierId | null>(null);
+  const [passSelected, setPassSelected] = useState(initialIntent?.offer === 'pass_onetime');
   const [provider, setProvider] = useState<BillingProviderId>(initialProvider);
   // Default OFF. The control reads "Claim Founding Pro", which is the
   // language of an opt-in, and it was pre-ticked — so the quoted price and
@@ -429,7 +435,12 @@ export function PlanPicker({
     checkout.reset();
     changePlan.reset();
     setLaunchError(null);
+    setPassSelected(false);
     setSelected((prev) => (prev === id ? null : id));
+    if (pricingV2 && id === 'plus') {
+      void track('plus_selected', { source: 'plan_picker' });
+      void track('upgrade_cta_clicked', { source: 'plan_picker', plan: 'plus' });
+    }
   }
 
   async function onConfirm(target: PaidTier) {
@@ -466,9 +477,10 @@ export function PlanPicker({
     checkout.mutate(
       {
         tierId: target,
-        cycle,
+        cycle: passSelected ? 'annual' : cycle,
         provider: effectiveProvider,
         ...(founding ? { promo: 'foundingPro' as const } : {}),
+        ...(passSelected ? { offer: 'pass_onetime' as const } : {}),
       },
       {
         onSuccess: (session) => {
@@ -486,6 +498,13 @@ export function PlanPicker({
                   onCompleted: () => {
                     if (ownsCheckout && !ownsCheckout()) return;
                     void track('checkout_overlay_completed', funnel);
+                    if (passSelected) {
+                      try {
+                        sessionStorage.setItem('dm.pass.checkout', '1');
+                      } catch {
+                        // The grant still lands; Billing stays the fallback.
+                      }
+                    }
                     closePanel();
                     onPaymentCompleted(target, cycle, attemptId);
                   },
@@ -661,6 +680,22 @@ export function PlanPicker({
         </p>
       ) : null}
 
+      {pricingV2 && passEnabled ? (
+        <PassOfferCard
+          included={
+            grantingSub !== null && (grantingSub.tier === 'plus' || grantingSub.tier === 'pro')
+          }
+          selected={passSelected}
+          disabled={disabled}
+          onSelect={() => {
+            setSelected(null);
+            setPassSelected(true);
+            void track('pass_selected', { source: 'plan_picker' });
+            void track('upgrade_cta_clicked', { source: 'plan_picker', plan: 'pass' });
+          }}
+        />
+      ) : null}
+
       <div
         style={{
           display: 'flex',
@@ -710,7 +745,29 @@ export function PlanPicker({
         )}
       </div>
 
-      {selected !== null && !disabled ? (
+      {passSelected && !disabled ? (
+        <ConfirmPanel
+          target="plus"
+          cycle="annual"
+          offer="pass_onetime"
+          provider="paddle"
+          razorpayOffered={false}
+          pricingV2={pricingV2}
+          country={country}
+          pricePointOverride={OFFERS.backlogPass.price}
+          onProviderChange={setProvider}
+          foundingEligible={false}
+          claimFounding={false}
+          onClaimFoundingChange={setClaimFounding}
+          isPending={checkout.isPending}
+          errorMessage={launchError ?? errorMessage}
+          onConfirm={() => void onConfirm('plus')}
+          onDismiss={() => {
+            void track('checkout_closed', { plan: 'pass' });
+            setPassSelected(false);
+          }}
+        />
+      ) : selected !== null && !disabled ? (
         selected === 'free' ? (
           grantingSub !== null ? (
             <DowngradePanel
@@ -760,7 +817,12 @@ export function PlanPicker({
             isPending={checkout.isPending}
             errorMessage={launchError ?? errorMessage}
             onConfirm={() => void onConfirm(selected)}
-            onDismiss={closePanel}
+            onDismiss={() => {
+              void track('checkout_closed', {
+                plan: selected === 'pro' ? 'pro' : 'plus',
+              });
+              closePanel();
+            }}
           />
         )
       ) : null}
@@ -1227,6 +1289,45 @@ function DowngradePanel({
           Continue to cancellation
         </Button>
       </div>
+    </div>
+  );
+}
+
+function PassOfferCard({
+  included,
+  selected,
+  disabled,
+  onSelect,
+}: {
+  included: boolean;
+  selected: boolean;
+  disabled: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <div
+      data-testid="pass-offer-card"
+      style={{
+        padding: 16,
+        border: `1px solid ${selected ? color.primary : color.border}`,
+        borderRadius: radius.md,
+        background: color.card,
+      }}
+    >
+      <div style={{ fontWeight: 600 }}>{fillStory(WS1_COPY['pricing.pass.name'])}</div>
+      <div style={{ color: color.fgMuted, marginTop: 4 }}>
+        {fillStory(WS1_COPY['price.passLine'])}
+      </div>
+      <Button
+        tone="default"
+        disabled={disabled || included}
+        onClick={onSelect}
+        style={{ marginTop: 12 }}
+      >
+        {included
+          ? fillStory(WS1_COPY['picker.pass.includedInPlus'])
+          : fillStory(WS1_COPY['picker.pass.cta'])}
+      </Button>
     </div>
   );
 }
