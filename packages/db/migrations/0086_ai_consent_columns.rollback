@@ -1,4 +1,4 @@
--- Rollback for 0085_ai_consent_columns.sql
+-- Rollback for 0086_ai_consent_columns.sql
 
 ALTER TABLE "users" DROP COLUMN "brief_ai_declined_at";
 --> statement-breakpoint
