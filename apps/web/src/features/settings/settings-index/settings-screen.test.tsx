@@ -972,7 +972,7 @@ describe('SettingsScreen', () => {
     },
     {
       result: 'cancelled',
-      message: 'Gmail reconnect was cancelled.',
+      message: 'Gmail reconnect was canceled.',
       tone: 'info',
       liveRole: 'status',
     },

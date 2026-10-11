@@ -1217,7 +1217,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     // only the backlog archive did not.
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        expect.stringMatching(/Unsubscribe request recorded.*wasn't archived — Archive it/),
+        expect.stringMatching(/Unsubscribe requested.*wasn't archived — Archive it/),
         'warn',
       ),
     );
@@ -1243,7 +1243,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `Unsubscribe request recorded, but can't tell if Archive started for older email from ${LINKEDIN.senderName} — check Activity before retrying.`,
+        `Unsubscribe requested, but can't tell if Archive started for older email from ${LINKEDIN.senderName} — check Activity before retrying.`,
         'warn',
       ),
     );

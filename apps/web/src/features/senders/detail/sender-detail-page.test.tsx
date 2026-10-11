@@ -723,12 +723,7 @@ describe('SenderDetailRoute', () => {
     renderDetail();
 
     await waitFor(() => expect(screen.getByText(/Nothing decided yet/i)).toBeInTheDocument());
-    for (const claim of [
-      'Keep decision saved',
-      'Archived',
-      'Unsubscribe request recorded',
-      'Moved to Later',
-    ]) {
+    for (const claim of ['Kept', 'Archived', 'Unsubscribe requested', 'Moved to Later']) {
       expect(
         within(screen.getByRole('region', { name: 'Decision timeline' })).queryByText(claim),
       ).not.toBeInTheDocument();
