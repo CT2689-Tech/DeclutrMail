@@ -121,8 +121,8 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
 
   it('signs in a returning primary without any mailbox, token, scan, or watch change', async () => {
     users.findByEmail.mockResolvedValue({ userId: 'u1', workspaceId: 'w1' });
-    const result = await orchestrator.signIn({ ...INPUT, email: '  Me@GMAIL.COM  ' });
-    expect(result?.user).toEqual({ id: 'u1', workspaceId: 'w1', email: 'me@gmail.com' });
+    const result = await orchestrator.signIn({ ...INPUT, email: '  Owner@GMAIL.COM  ' });
+    expect(result?.user).toEqual({ id: 'u1', workspaceId: 'w1', email: 'owner@gmail.com' });
     expect(result?.onboardingComplete).toBe(true);
     expect(sessions.issue).toHaveBeenCalledWith({
       userId: 'u1',

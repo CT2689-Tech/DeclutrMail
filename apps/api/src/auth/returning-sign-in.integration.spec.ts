@@ -28,7 +28,7 @@ let db: ReturnType<typeof drizzle<typeof schema>>;
 let jwt: JwtService;
 let sessions: SessionsService;
 let controller: GoogleOAuthController;
-let identity = 'secondary@gmail.com';
+let identity = 'disconnected@gmail.com';
 let userId: string;
 let mailboxId: string;
 const forbidden = new Proxy(
@@ -84,7 +84,7 @@ beforeAll(async () => {
     .insert(users)
     .values({
       workspaceId: workspace!.id,
-      email: 'primary@gmail.com',
+      email: 'owner@gmail.com',
       preferences: { activeMailboxId: null },
     })
     .returning();
@@ -95,7 +95,7 @@ beforeAll(async () => {
       workspaceId: workspace!.id,
       userId,
       provider: 'gmail',
-      providerAccountId: 'secondary@gmail.com',
+      providerAccountId: 'disconnected@gmail.com',
       status: 'disconnected',
     })
     .returning();
@@ -146,7 +146,7 @@ it('completes signed start → callback → persisted session for a disconnected
   expect(res.cookie.mock.calls.find(([name]) => name === 'dm_csrf')![1]).toMatch(
     /^[A-Za-z0-9_-]+$/,
   );
-  identity = 'unknown@gmail.com';
+  identity = 'oneshot@gmail.com';
   const unknownRes = { cookie: vi.fn(), clearCookie: vi.fn(), redirect: vi.fn() };
   await controller.start(
     { cookies: {} } as Request,

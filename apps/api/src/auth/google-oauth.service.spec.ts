@@ -95,8 +95,8 @@ describe('GoogleOAuthService.exchangeCode — the Gmail grant (D108)', () => {
 
   it.each([
     undefined,
-    { email: 'me@gmail.com' },
-    { email: 'me@gmail.com', email_verified: false },
+    { email: 'owner@gmail.com' },
+    { email: 'owner@gmail.com', email_verified: false },
     { email: 'me@example.com', email_verified: true },
     { email: '', email_verified: true, hd: 'example.com' },
   ])('refuses an absent, unverified, or non-authoritative identity: %j', async (payload) => {

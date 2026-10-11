@@ -96,10 +96,10 @@ describe('GoogleOAuthService.exchangeCode — through the real google-auth-libra
       expires_in: 3599,
     };
     vi.mocked(OAuth2Client.prototype.verifyIdToken).mockResolvedValue({
-      getPayload: () => ({ email: 'me@gmail.com', email_verified: true }),
+      getPayload: () => ({ email: 'owner@gmail.com', email_verified: true }),
     } as never);
     await expect(new GoogleOAuthService().exchangeSignInCode('code')).resolves.toEqual({
-      email: 'me@gmail.com',
+      email: 'owner@gmail.com',
     });
     expect(request).toHaveBeenCalledTimes(1);
   });

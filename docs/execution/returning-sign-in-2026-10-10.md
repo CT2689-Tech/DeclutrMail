@@ -62,3 +62,5 @@ PGlite is a migrated PostgreSQL WASM fixture, not an external native PostgreSQL
 server. Independent architecture/privacy/security review is clear after the two
 fixes. A later local ENOSPC interrupted formatter output; this task's completed
 Brief build copy was removed, formatter rerun, and build completed successfully.
+
+CI preserved failures: first PR body used `Relates D108` instead of required `Relates to D108`; consumer-domain synthetic local parts were outside the existing placeholder list; expired-session journey asserted a URL ending before the newly required identity-only `intent=sign-in`. Corrected the reference, used existing placeholders (no guard relaxation), and strengthened the URL assertion to require the full destination plus returning intent.

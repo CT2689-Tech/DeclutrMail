@@ -2385,7 +2385,7 @@ describe('GoogleOAuthController — returning identity sign-in', () => {
       getConsentUrl: vi.fn(() => 'https://accounts.google.test/connect'),
       getSignInUrl: vi.fn(() => 'https://accounts.google.test/sign-in'),
       exchangeCode: vi.fn(),
-      exchangeSignInCode: vi.fn().mockResolvedValue({ email: 'me@gmail.com' }),
+      exchangeSignInCode: vi.fn().mockResolvedValue({ email: 'owner@gmail.com' }),
     };
     orchestrator = {
       signIn: vi.fn().mockResolvedValue({
@@ -2450,7 +2450,7 @@ describe('GoogleOAuthController — returning identity sign-in', () => {
       nonce,
     );
     expect(orchestrator.signIn).toHaveBeenCalledWith({
-      email: 'me@gmail.com',
+      email: 'owner@gmail.com',
       ipAddress: null,
       userAgent: null,
     });
