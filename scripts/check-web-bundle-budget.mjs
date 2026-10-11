@@ -418,8 +418,9 @@ export function growthOver(rows, baseline, limitKb = GROWTH_WARN_KB) {
 
 /**
  * The non-blocking growth report: a workflow warning per grown route plus
- * the step summary. It never affects the exit code. An unreadable baseline
- * is reported as "not compared", never as "no growth".
+ * the step summary. It never affects the exit code. An unreadable baseline,
+ * or one sharing no route with this build, is reported as "not compared",
+ * never as "no growth".
  */
 function reportGrowth(rows, baselinePath) {
   const lines = [`### Bundle growth vs main (warning above ${GROWTH_WARN_KB} kB)`, ''];
@@ -430,20 +431,21 @@ function reportGrowth(rows, baselinePath) {
       throw new Error('it lists no routes');
     }
   } catch (error) {
-    const reason = `main's measured sizes could not be read (${error.code ?? error.message})`;
-    console.log(`::notice title=Bundle growth not compared::${reason}`);
-    lines.push(`Not compared: ${reason}. The budget check itself still ran.`);
-    writeSummary(lines);
+    notCompared(lines, `main's measured sizes could not be read (${error.code ?? error.message})`);
+    return;
+  }
+  const against = baseline.commit ? `main @ ${String(baseline.commit).slice(0, 7)}` : 'main';
+  const compared = rows.filter(({ route }) => typeof baseline.routes[route] === 'number').length;
+  if (compared === 0) {
+    notCompared(lines, `${against}'s measured sizes share no route with this build`);
     return;
   }
   const grown = growthOver(rows, baseline.routes);
-  const against = baseline.commit ? `main @ ${String(baseline.commit).slice(0, 7)}` : 'main';
   for (const { route, fromKb, toKb, grewTenths } of grown) {
     console.log(
       `::warning title=Bundle growth::${route} grew ${(grewTenths / 10).toFixed(1)} kB vs ${against} (${fromKb} → ${toKb} kB)`,
     );
   }
-  const compared = rows.filter(({ route }) => typeof baseline.routes[route] === 'number').length;
   if (grown.length === 0) {
     lines.push(
       `No route grew more than ${GROWTH_WARN_KB} kB vs ${against} (${compared} compared).`,
@@ -460,6 +462,12 @@ function reportGrowth(rows, baselinePath) {
       );
     }
   }
+  writeSummary(lines);
+}
+
+function notCompared(lines, reason) {
+  console.log(`::notice title=Bundle growth not compared::${reason}`);
+  lines.push(`Not compared: ${reason}. The budget check itself still ran.`);
   writeSummary(lines);
 }
 

@@ -554,6 +554,26 @@ test('the growth warning still reports when the run is over budget', (t) => {
   assert.match(out, /::warning title=Bundle growth::\/\(app\)\/zz-app\/page grew/);
 });
 
+test('a baseline sharing no route with this build reads as "not compared"', (t) => {
+  const dir = fixture(t);
+  const baseline = join(dir, 'main.json');
+  writeFileSync(
+    baseline,
+    JSON.stringify({ commit: 'abcdef1234', routes: { '/(app)/gone/page': 1 } }),
+  );
+  const summary = join(dir, 'summary.md');
+  const { code, out } = run(dir, { GITHUB_STEP_SUMMARY: summary }, ['--baseline', baseline]);
+
+  assert.equal(code, 0, out);
+  assert.match(
+    out,
+    /::notice title=Bundle growth not compared::main @ abcdef1's measured sizes share no route/,
+  );
+  const report = readFileSync(summary, 'utf8');
+  assert.match(report, /Not compared: .*share no route with this build/);
+  assert.ok(!/No route grew/.test(report), report);
+});
+
 test('an unreadable main baseline reads as "not compared", never as "no growth"', (t) => {
   const dir = fixture(t);
   const summary = join(dir, 'summary.md');
