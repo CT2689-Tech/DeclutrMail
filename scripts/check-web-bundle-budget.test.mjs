@@ -19,8 +19,8 @@ import {
 
 const SCRIPT = fileURLToPath(new URL('./check-web-bundle-budget.mjs', import.meta.url));
 
-// Fixture group defaults, so the committed table can be rebaselined
-// without touching these tests.
+// Fixture caps every listed fixture route gets, so the committed table can
+// be rebaselined without touching these tests.
 const DEFAULT_KB = 151;
 const AUTHED_DEFAULT_KB = 264;
 
@@ -50,8 +50,7 @@ const page = (...chunks) => ({
   html: chunks.map((c) => `<script src="/_next/static/chunks/${c}" async=""></script>`).join(''),
 });
 
-// One route per group, unknown to the override table, so each is held to
-// its group default. Both layouts list `shared-1.js`, the way the real
+// One route per group, each listed at its group's fixture cap. Both layouts list `shared-1.js`, the way the real
 // build's layouts share chunks every page loads.
 const PUBLIC = ['webpack-1.js', 'app/layout-1.js', 'shared-1.js', 'app/(marketing)/layout-1.js'];
 const APP = ['webpack-1.js', 'app/layout-1.js', 'shared-1.js', 'app/(app)/layout-1.js'];
@@ -70,7 +69,15 @@ const SITE = {
 /** A fixture build plus the site its stand-in server answers with. */
 function fixture(
   t,
-  { pages = {}, chunks = {}, site = {}, prerendered = {}, hang = false, routes = {} } = {},
+  {
+    pages = {},
+    chunks = {},
+    site = {},
+    prerendered = {},
+    hang = false,
+    routes = {},
+    unlisted = [],
+  } = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), 'bundle-budget-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -96,10 +103,13 @@ function fixture(
   writeFileSync(join(dir, 'prerender-manifest.json'), JSON.stringify({ routes: prerendered }));
   writeFileSync(join(dir, 'site.json'), JSON.stringify({ hang, pages: { ...SITE, ...site } }));
   writeFileSync(join(dir, 'server.mjs'), SERVER);
-  writeFileSync(
-    join(dir, 'table.json'),
-    JSON.stringify({ defaults: { public: DEFAULT_KB, authed: AUTHED_DEFAULT_KB }, routes }),
-  );
+  const caps = { '/(marketing)/': DEFAULT_KB, '/(app)/': AUTHED_DEFAULT_KB };
+  const table = {};
+  for (const key of Object.keys(listed).filter((k) => k.endsWith('/page'))) {
+    const cap = Object.entries(caps).find(([prefix]) => key.startsWith(prefix))?.[1];
+    if (cap && !unlisted.includes(key)) table[key] = { measuredKb: 1, budgetKb: cap };
+  }
+  writeFileSync(join(dir, 'table.json'), JSON.stringify({ routes: { ...table, ...routes } }));
   return dir;
 }
 
@@ -396,7 +406,7 @@ test('--rebaseline writes every route at its floor, byte-identically, and the ch
   for (const { measuredKb, budgetKb } of Object.values(table.routes)) {
     assert.equal(budgetKb, budgetFor(measuredKb));
   }
-  assert.equal(table.defaults.public, table.routes['/(marketing)/zz-public/page'].budgetKb);
+  assert.deepEqual(Object.keys(table).sort(), ['$comment', 'routes']);
 
   assert.equal(run(dir, {}, ['--rebaseline']).code, 0);
   assert.equal(readFileSync(join(dir, 'table.json'), 'utf8'), written, 'not deterministic');
@@ -414,13 +424,48 @@ test('--rebaseline writes every route at its floor, byte-identically, and the ch
   assert.ok(over.out.includes('pnpm check:bundle --rebaseline'), over.out);
 });
 
-test('a listed route is held to its own cap, not its group default', (t) => {
+test('a listed route is held to its own cap', (t) => {
   const { code, out } = run(
     fixture(t, { routes: { '/(app)/zz-app/page': { measuredKb: 1, budgetKb: 2 } } }),
   );
   assert.equal(code, 1, out);
   assert.match(out, /OVER .* \/ +2 kB {2}\/\(app\)\/zz-app\/page/);
-  assert.match(out, /\/\(marketing\)\/zz-public\/page {2}\(not in the table: public default\)/);
+  assert.match(out, /ok .*\/\(marketing\)\/zz-public\/page/);
+});
+
+test('deleting a route from the table fails the run instead of loosening its cap', (t) => {
+  const dir = fixture(t);
+  assert.equal(run(dir, {}, ['--rebaseline']).code, 0);
+  const file = join(dir, 'table.json');
+  const table = JSON.parse(readFileSync(file, 'utf8'));
+  delete table.routes['/(app)/zz-app/page'];
+  writeFileSync(file, serializeTable(table));
+
+  const { code, out } = run(dir);
+  assert.equal(code, 1, out);
+  assert.match(out, /NONE .*\/\(app\)\/zz-app\/page {2}\(not in the table\)/);
+  assert.match(out, /1 measured route\(s\) have no cap in the table:\n {2}\/\(app\)\/zz-app\/page/);
+  assert.ok(out.includes('pnpm check:bundle --rebaseline'), out);
+});
+
+test('a route added since the last rebaseline fails until the table is rebaselined', (t) => {
+  const added = 'app/(marketing)/zz-new/page-1.js';
+  const dir = fixture(t, {
+    pages: { '/(marketing)/zz-new/page': ['webpack-1.js', added] },
+    site: { '/zz-new': page(...PUBLIC, added) },
+    unlisted: ['/(marketing)/zz-new/page'],
+  });
+  const unbudgeted = run(dir);
+  assert.equal(unbudgeted.code, 1, unbudgeted.out);
+  assert.match(unbudgeted.out, /have no cap in the table:\n {2}\/\(marketing\)\/zz-new\/page/);
+  assert.match(unbudgeted.out, /ok .*\/\(marketing\)\/zz-public\/page/);
+
+  assert.equal(run(dir, {}, ['--rebaseline']).code, 0);
+  const { routes } = JSON.parse(readFileSync(join(dir, 'table.json'), 'utf8'));
+  const { measuredKb, budgetKb } = routes['/(marketing)/zz-new/page'];
+  assert.equal(budgetKb, budgetFor(measuredKb));
+  const rebased = run(dir);
+  assert.equal(rebased.code, 0, rebased.out);
 });
 
 test('--rebaseline writes nothing when a route cannot be measured', (t) => {
