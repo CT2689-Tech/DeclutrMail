@@ -8,7 +8,8 @@ import { mailboxAccounts } from './mailbox-accounts';
  *
  * The payload is the computed report: counts, sums, and the sender ids
  * the fix set needs. It holds no subject, snippet, body, or per-message
- * row. A newer succeeded sync run replaces it on the next read.
+ * row. Incremental sync and mail-changing actions delete the row;
+ * the next read recomputes it.
  */
 export const inboxReportCache = pgTable('inbox_report_cache', {
   mailboxAccountId: uuid('mailbox_account_id')

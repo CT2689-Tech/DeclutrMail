@@ -5,6 +5,7 @@ import type { InboxReportDto } from '@declutrmail/shared/inbox-report';
 
 import { CurrentUser, JwtGuard } from '../auth/jwt.guard.js';
 import type { SessionPrincipal } from '../auth/sessions.service.js';
+import { RateLimit } from '../common/rate-limit/index.js';
 import { InboxReportService } from './inbox-report.service.js';
 
 @Controller('mailboxes')
@@ -13,6 +14,7 @@ export class InboxReportController {
   constructor(private readonly reports: InboxReportService) {}
 
   @Get(':id/inbox-report')
+  @RateLimit('triage-load')
   async get(
     @CurrentUser() user: SessionPrincipal,
     @Param('id') id: string,

@@ -38,7 +38,20 @@ function flag(value: unknown): boolean {
 export class InboxReportService {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
 
+  /** One compute per mailbox while a miss is already in flight. */
+  private readonly inflight = new Map<string, Promise<InboxReportDto>>();
+
   async getForMailbox(mailboxId: string, now = new Date()): Promise<InboxReportDto> {
+    const existing = this.inflight.get(mailboxId);
+    if (existing) return existing;
+    const work = this.loadForMailbox(mailboxId, now).finally(() => {
+      this.inflight.delete(mailboxId);
+    });
+    this.inflight.set(mailboxId, work);
+    return work;
+  }
+
+  private async loadForMailbox(mailboxId: string, now: Date): Promise<InboxReportDto> {
     const syncId = await this.latestSucceededSyncId(mailboxId);
     const [cached] = await this.db
       .select()

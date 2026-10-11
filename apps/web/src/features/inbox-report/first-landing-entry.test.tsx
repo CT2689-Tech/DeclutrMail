@@ -50,11 +50,20 @@ describe('InboxReportFirstLanding', () => {
   it('shows the report and confirms unsubscribe plus archive', async () => {
     const bodies: unknown[] = [];
     const onResolved = vi.fn();
+    let releasePreview: (response: Response) => void = () => {};
+    const preview = new Promise<Response>((resolve) => {
+      releasePreview = resolve;
+    });
     installFetchStub([
       {
         method: 'GET',
         path: '/api/mailboxes/mb-1/inbox-report',
         respond: () => jsonOk({ data: report }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () => preview,
       },
       {
         method: 'POST',
@@ -90,7 +99,29 @@ describe('InboxReportFirstLanding', () => {
     expect(await screen.findByText(/mostly leave unread/)).toBeInTheDocument();
     await waitFor(() => expect(onResolved).toHaveBeenCalledWith(true));
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Archive' }));
+    expect(screen.getByRole('radio', { name: 'Unsubscribe and archive' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: 'Unsubscribe and delete' })).toBeDisabled();
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('archive 4 emails');
+    releasePreview(
+      jsonOk({
+        data: {
+          counts: { all: 7, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 },
+          recentMessages: {
+            all: [],
+            olderThan30d: [],
+            olderThan90d: [],
+            olderThan180d: [],
+            olderThan365d: [],
+          },
+          unsubAvailable: true,
+          protected: false,
+        },
+      }),
+    );
+    const confirm = await screen.findByRole('button', { name: 'Unsubscribe + Archive' });
+    expect(confirm).toBeEnabled();
+    expect(screen.getByRole('dialog')).toHaveTextContent('archive 7 emails');
+    fireEvent.click(confirm);
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).toMatchObject({
       mode: 'archive',

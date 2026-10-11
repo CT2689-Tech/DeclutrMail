@@ -1,8 +1,11 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { WS5_COPY } from '@declutrmail/shared/copy/launch';
 import type { InboxReportDto } from '@declutrmail/shared/inbox-report';
+
+import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
+import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { InboxReportCard } from './index';
 import { InboxReportPanel } from './panel';
@@ -35,6 +38,8 @@ const calm: InboxReportDto = {
   variant: 'fallback',
 };
 
+afterEach(() => resetFetchStub());
+
 describe('InboxReportPanel', () => {
   it('opens the archive-prefilled dialog and does not confirm it', () => {
     const onFixConfirmed = vi.fn();
@@ -59,6 +64,71 @@ describe('InboxReportPanel', () => {
       'Unsubscribe from 2 senders and archive 10 emails?',
     );
     expect(onFixConfirmed).not.toHaveBeenCalled();
+  });
+
+  it('keeps Archive disabled until the live preview count resolves', async () => {
+    let releasePreview: (response: Response) => void = () => {};
+    const preview = new Promise<Response>((resolve) => {
+      releasePreview = resolve;
+    });
+    installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/actions/preview/bulk',
+        respond: () => preview,
+      },
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <InboxReportPanel report={full} mailboxId="mb-1" onDismiss={() => {}} onReopen={() => {}} />
+      </QueryWrapper>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
+    const archive = screen.getByRole('radio', { name: 'Unsubscribe and archive' });
+    expect(archive).toBeDisabled();
+    expect(screen.getByRole('radio', { name: 'Unsubscribe and delete' })).toBeDisabled();
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('archive 10 emails');
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('Archive 0');
+    releasePreview(
+      jsonOk({
+        data: {
+          senders: [
+            {
+              senderId: 's1',
+              name: 'One',
+              protected: false,
+              counts: {
+                all: 3,
+                olderThan30d: 0,
+                olderThan90d: 0,
+                olderThan180d: 0,
+                olderThan365d: 0,
+              },
+            },
+            {
+              senderId: 's2',
+              name: 'Two',
+              protected: false,
+              counts: {
+                all: 4,
+                olderThan30d: 0,
+                olderThan90d: 0,
+                olderThan180d: 0,
+                olderThan365d: 0,
+              },
+            },
+          ],
+          totals: { all: 7, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 },
+          protectedCount: 0,
+        },
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: 'Unsubscribe and archive 7 emails' })).toBeEnabled(),
+    );
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'Unsubscribe from 2 senders and archive 7 emails?',
+    );
   });
 
   it('uses the calm fallback without a fix, a share card, or a celebration', () => {

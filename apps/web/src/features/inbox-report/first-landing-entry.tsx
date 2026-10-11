@@ -48,6 +48,7 @@ export function InboxReportFirstLanding(props: {
   return (
     <InboxReportPanel
       report={report}
+      mailboxId={mailboxId}
       dismissed={dismissed}
       onDismiss={() => {
         setReportDismissed(mailboxId, true);

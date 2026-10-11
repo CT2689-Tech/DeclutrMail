@@ -1,5 +1,6 @@
 import {
   deriveSenderId,
+  invalidateInboxReportCache,
   isNonMail,
   mailboxAccounts,
   mailMessages,
@@ -1018,6 +1019,11 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
             lastIncrementalErrorCode: null,
           })
           .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+
+        // The report cache keys off the last succeeded sync run, which
+        // only the initial sync writes. A finished incremental run has
+        // to drop the row or the report stays frozen.
+        await invalidateInboxReportCache(this.deps.db, mailboxAccountId);
 
         return {
           recordsProcessed: events.length,

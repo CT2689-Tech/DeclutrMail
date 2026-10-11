@@ -19,6 +19,7 @@ import {
 
 import { UnsubscribeBacklogDialog } from '@/features/senders/unsubscribe-backlog/unsubscribe-backlog-dialog';
 import type { ActionRequest } from '@/features/senders/data';
+import { useBulkActionPreview, useCompositePreview } from '@/lib/api/use-action';
 
 import './report.css';
 
@@ -41,6 +42,7 @@ export function InboxReportPanel({
   onReopen,
   onFixConfirmed,
   celebration = null,
+  mailboxId,
   senderNames,
   /** In-demo review. The signed-in app keeps the senders link. */
   onReview,
@@ -57,6 +59,11 @@ export function InboxReportPanel({
   onReview?: () => void;
   trustHref?: string;
   celebration?: { archived: number; senders: number } | null;
+  /**
+   * Signed-in mailbox. When set, Archive and Delete wait for a live
+   * preview count instead of the cached report figure.
+   */
+  mailboxId?: string;
   /** Sample or loaded names. The report DTO only carries sender ids. */
   senderNames?: Readonly<
     Record<string, { name: string; unsubscribeMethod?: 'one_click' | 'mailto' | 'none' | null }>
@@ -220,23 +227,10 @@ export function InboxReportPanel({
         </>
       )}
       {fixOpen ? (
-        <UnsubscribeBacklogDialog
-          request={
-            {
-              verb: 'Unsubscribe',
-              senders: report.fix.senderKeys.map((id) => {
-                const known = senderNames?.[id];
-                return {
-                  id,
-                  name: known?.name ?? '',
-                  ...(known?.unsubscribeMethod
-                    ? { unsubscribeMethod: known.unsubscribeMethod }
-                    : {}),
-                };
-              }),
-            } as ActionRequest
-          }
-          preferredInboxCount={report.fix.inboxEmailCount}
+        <ReportFixDialog
+          report={report}
+          senderNames={senderNames}
+          mailboxId={mailboxId}
           onCancel={() => setFixOpen(false)}
           onConfirm={(opts) => {
             setFixOpen(false);
@@ -248,3 +242,95 @@ export function InboxReportPanel({
     </section>
   );
 }
+
+function reportFixRequest(
+  report: InboxReportDto,
+  senderNames: InboxReportPanelProps['senderNames'],
+): ActionRequest {
+  return {
+    verb: 'Unsubscribe',
+    senders: report.fix.senderKeys.map((id) => {
+      const known = senderNames?.[id];
+      return {
+        id,
+        name: known?.name ?? '',
+        ...(known?.unsubscribeMethod ? { unsubscribeMethod: known.unsubscribeMethod } : {}),
+      };
+    }),
+  } as ActionRequest;
+}
+
+type FixConfirm = (opts: {
+  secondary: { type: 'archive' | 'delete'; olderThanDays: null } | null;
+}) => void;
+
+function ReportFixDialog({
+  report,
+  senderNames,
+  mailboxId,
+  onCancel,
+  onConfirm,
+}: {
+  report: InboxReportDto;
+  senderNames: InboxReportPanelProps['senderNames'];
+  mailboxId: string | undefined;
+  onCancel: () => void;
+  onConfirm: FixConfirm;
+}) {
+  const request = reportFixRequest(report, senderNames);
+  if (!mailboxId) {
+    return (
+      <UnsubscribeBacklogDialog
+        request={request}
+        preferredInboxCount={report.fix.inboxEmailCount}
+        onCancel={onCancel}
+        onConfirm={onConfirm}
+      />
+    );
+  }
+  return (
+    <LiveReportFixDialog
+      mailboxId={mailboxId}
+      request={request}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    />
+  );
+}
+
+function LiveReportFixDialog({
+  mailboxId,
+  request,
+  onCancel,
+  onConfirm,
+}: {
+  mailboxId: string;
+  request: ActionRequest;
+  onCancel: () => void;
+  onConfirm: FixConfirm;
+}) {
+  const ids = request.senders.map((sender) => sender.id);
+  const composite = useCompositePreview(ids.length === 1 ? ids[0]! : null, mailboxId);
+  const bulk = useBulkActionPreview(ids.length > 1 ? ids : null, mailboxId);
+  if (ids.length > 1) {
+    return (
+      <UnsubscribeBacklogDialog
+        request={request}
+        bulkPreview={{ data: bulk.data, loading: bulk.isPending }}
+        onCancel={onCancel}
+        onConfirm={onConfirm}
+      />
+    );
+  }
+  return (
+    <UnsubscribeBacklogDialog
+      request={request}
+      compositePreview={composite.data}
+      compositePreviewLoading={composite.isPending}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    />
+  );
+}
+
+type InboxReportPanelProps = Parameters<typeof InboxReportPanel>[0];

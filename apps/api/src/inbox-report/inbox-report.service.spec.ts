@@ -1,4 +1,8 @@
+import { randomUUID } from 'node:crypto';
+
 import {
+  inboxReportCache,
+  invalidateInboxReportCache,
   mailMessages,
   mailboxAccounts,
   schema,
@@ -8,8 +12,9 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { InboxReportService } from './inbox-report.service.js';
 
@@ -24,7 +29,7 @@ async function seedMailbox(db: Db): Promise<{ mailboxId: string; workspaceId: st
     .returning({ id: workspaces.id });
   const [user] = await db
     .insert(users)
-    .values({ workspaceId: ws!.id, email: 'report@declutrmail.test' })
+    .values({ workspaceId: ws!.id, email: `report-${randomUUID()}@declutrmail.test` })
     .returning({ id: users.id });
   const [mailbox] = await db
     .insert(mailboxAccounts)
@@ -32,7 +37,7 @@ async function seedMailbox(db: Db): Promise<{ mailboxId: string; workspaceId: st
       workspaceId: ws!.id,
       userId: user!.id,
       provider: 'gmail',
-      providerAccountId: 'report@gmail.test',
+      providerAccountId: `report-${randomUUID()}@gmail.test`,
     })
     .returning({ id: mailboxAccounts.id });
   return { mailboxId: mailbox!.id, workspaceId: ws!.id };
@@ -138,5 +143,58 @@ describe('InboxReportService', () => {
       service.assertInWorkspace('00000000-0000-0000-0000-000000000000', mailboxId),
     ).rejects.toThrow();
     await expect(service.assertInWorkspace(workspaceId, mailboxId)).resolves.toBeUndefined();
+  });
+
+  it('runs one compute when two cache misses overlap', async () => {
+    const { mailboxId } = await seedMailbox(db);
+    const execute = vi.spyOn(db, 'execute');
+    const [left, right] = await Promise.all([
+      service.getForMailbox(mailboxId, NOW),
+      service.getForMailbox(mailboxId, NOW),
+    ]);
+    expect(left).toEqual(right);
+    const duringMiss = execute.mock.calls.length;
+    expect(duringMiss).toBeGreaterThan(0);
+    execute.mockClear();
+    await service.getForMailbox(mailboxId, NOW);
+    expect(execute).not.toHaveBeenCalled();
+    // A second overlapping miss that did not join the first would have
+    // doubled the fact queries. One compute is three executes.
+    expect(duringMiss).toBe(3);
+  });
+
+  it('recomputes after the cache row is deleted, with no new sync run', async () => {
+    const { mailboxId } = await seedMailbox(db);
+    await db.insert(mailMessages).values({
+      mailboxAccountId: mailboxId,
+      providerMessageId: 'live-1',
+      providerThreadId: 'live-t-1',
+      senderKey: 'c'.repeat(64),
+      internalDate: new Date('2026-10-01T00:00:00.000Z'),
+      isUnread: true,
+      labelIds: ['INBOX'],
+      isOutbound: false,
+    });
+    const first = await service.getForMailbox(mailboxId, NOW);
+    expect(first.receivedCount).toBe(1);
+    await db.insert(mailMessages).values({
+      mailboxAccountId: mailboxId,
+      providerMessageId: 'live-2',
+      providerThreadId: 'live-t-2',
+      senderKey: 'c'.repeat(64),
+      internalDate: new Date('2026-10-02T00:00:00.000Z'),
+      isUnread: true,
+      labelIds: ['INBOX'],
+      isOutbound: false,
+    });
+    expect((await service.getForMailbox(mailboxId, NOW)).receivedCount).toBe(1);
+    await invalidateInboxReportCache(db, mailboxId);
+    expect(
+      await db
+        .select()
+        .from(inboxReportCache)
+        .where(eq(inboxReportCache.mailboxAccountId, mailboxId)),
+    ).toEqual([]);
+    expect((await service.getForMailbox(mailboxId, NOW)).receivedCount).toBe(2);
   });
 });
