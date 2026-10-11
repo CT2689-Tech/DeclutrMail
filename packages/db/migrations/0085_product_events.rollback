@@ -1,0 +1,21 @@
+-- Rollback for 0085_product_events.sql
+
+ALTER TABLE "users" DROP CONSTRAINT "users_signup_attribution_landing_path_chk";
+--> statement-breakpoint
+ALTER TABLE "users" DROP CONSTRAINT "users_signup_attribution_utm_campaign_chk";
+--> statement-breakpoint
+ALTER TABLE "users" DROP CONSTRAINT "users_signup_attribution_utm_medium_chk";
+--> statement-breakpoint
+ALTER TABLE "users" DROP CONSTRAINT "users_signup_attribution_utm_source_chk";
+--> statement-breakpoint
+ALTER TABLE "users" DROP COLUMN "signup_attribution_landing_path";
+--> statement-breakpoint
+ALTER TABLE "users" DROP COLUMN "signup_attribution_utm_campaign";
+--> statement-breakpoint
+ALTER TABLE "users" DROP COLUMN "signup_attribution_utm_medium";
+--> statement-breakpoint
+ALTER TABLE "users" DROP COLUMN "signup_attribution_utm_source";
+--> statement-breakpoint
+DROP TABLE "product_events";
+--> statement-breakpoint
+DROP TYPE "product_event_name";

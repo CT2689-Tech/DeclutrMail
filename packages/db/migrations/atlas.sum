@@ -83,3 +83,4 @@ h1:izYCUhqh9b43njye4nyTHmxOybWC3ySlQxbwJWUrLhw=
 0083_sender_first_indexed_at.sql h1:E9hqg9sOMFrB1l9i3sp/FTRUAHcGeiSG5VDwcfJfnhM=
 0084_waitlist_launch_columns.sql h1:CxOnGNFC/Gs3oez5rR0FbIMXfhVHvZGwa8g1khW+Yz8=
 0085_action_jobs_quota_units.sql h1:t9ntB3bhX+jGkeSijjOF6kZ/ueBLv77aFCsefAU3t6M=
+0085_product_events.sql h1:sWXH7XzV9uLjo8OJkfAOBW3N0uSwvbnyuZesmBVQsC4=

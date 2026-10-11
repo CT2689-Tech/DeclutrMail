@@ -540,6 +540,7 @@ export const SAFE_WORKER_RESULT_KEYS: ReadonlySet<string> = new Set([
   'paidUsersChecked',
   'preferenceSkips',
   'primaryKeepsExpired',
+  'productEventsDeleted',
   'protectionsReleased',
   'purged',
   'rebilling',

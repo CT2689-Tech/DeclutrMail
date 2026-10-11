@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
   check,
   index,
   jsonb,
@@ -84,6 +85,14 @@ export const users = pgTable(
     signupAttributionHeardFrom: text('signup_attribution_heard_from'),
     /** Free-text only when heard_from = 'other'. */
     signupAttributionHeardDetail: text('signup_attribution_heard_detail'),
+    /** First-touch utm_source. Set-once at signup. Not an email address. */
+    signupAttributionUtmSource: text('signup_attribution_utm_source'),
+    /** First-touch utm_medium. Set-once at signup. */
+    signupAttributionUtmMedium: text('signup_attribution_utm_medium'),
+    /** First-touch utm_campaign. Set-once at signup. */
+    signupAttributionUtmCampaign: text('signup_attribution_utm_campaign'),
+    /** Pathname of the first attributed landing. No query string. */
+    signupAttributionLandingPath: text('signup_attribution_landing_path'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),
@@ -106,8 +115,31 @@ export const users = pgTable(
       'users_signup_attribution_heard_detail_chk',
       sql`(${table.signupAttributionHeardDetail} IS NULL AND ${table.signupAttributionHeardFrom} IS DISTINCT FROM 'other') OR (${table.signupAttributionHeardFrom} = 'other' AND ${table.signupAttributionHeardDetail} IS NOT NULL AND char_length(${table.signupAttributionHeardDetail}) BETWEEN 1 AND 200)`,
     ),
+    signupAttributionUtmSourceCheck: utmCheck(
+      'users_signup_attribution_utm_source_chk',
+      table.signupAttributionUtmSource,
+    ),
+    signupAttributionUtmMediumCheck: utmCheck(
+      'users_signup_attribution_utm_medium_chk',
+      table.signupAttributionUtmMedium,
+    ),
+    signupAttributionUtmCampaignCheck: utmCheck(
+      'users_signup_attribution_utm_campaign_chk',
+      table.signupAttributionUtmCampaign,
+    ),
+    signupAttributionLandingPathCheck: check(
+      'users_signup_attribution_landing_path_chk',
+      sql`${table.signupAttributionLandingPath} IS NULL OR (char_length(${table.signupAttributionLandingPath}) BETWEEN 1 AND 200 AND ${table.signupAttributionLandingPath} LIKE '/%' AND strpos(${table.signupAttributionLandingPath}, '@') = 0 AND strpos(${table.signupAttributionLandingPath}, '?') = 0 AND strpos(${table.signupAttributionLandingPath}, '#') = 0 AND strpos(${table.signupAttributionLandingPath}, ' ') = 0)`,
+    ),
   }),
 );
+
+function utmCheck(name: string, column: AnyPgColumn) {
+  return check(
+    name,
+    sql`${column} IS NULL OR (char_length(${column}) BETWEEN 1 AND 64 AND strpos(${column}, '@') = 0 AND strpos(${column}, '?') = 0 AND strpos(${column}, '#') = 0 AND strpos(${column}, ' ') = 0 AND strpos(${column}, '/') = 0)`,
+  );
+}
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;

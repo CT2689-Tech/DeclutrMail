@@ -1,4 +1,4 @@
-import { cronRuns, deadLetterJobs } from '@declutrmail/db';
+import { cronRuns, deadLetterJobs, productEvents, users, workspaces } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import type { drizzle } from 'drizzle-orm/pglite';
@@ -139,6 +139,34 @@ describe('OpsRetentionWorker', () => {
       .find((l) => l?.kind === 'worker.succeeded');
     expect(succeeded?.result).toHaveProperty('cronRunsDeleted', 1);
     expect(succeeded?.result).toHaveProperty('deadLetterDeleted');
+  });
+
+  it('deletes product_events older than 13 months and keeps a newer row', async () => {
+    const [ws] = await db.insert(workspaces).values({ name: 'W', tier: 'free' }).returning();
+    const [user] = await db
+      .insert(users)
+      .values({ workspaceId: ws!.id, email: 'ada@example.com' })
+      .returning();
+    await db.insert(productEvents).values([
+      {
+        userId: user!.id,
+        event: 'signup_completed',
+        props: { provider: 'google' },
+        occurredAt: daysAgo(400),
+      },
+      {
+        userId: user!.id,
+        event: 'gmail_connected',
+        props: { mode: 'login' },
+        occurredAt: daysAgo(10),
+      },
+    ]);
+
+    const result = await run();
+
+    expect(result.productEventsDeleted).toBe(1);
+    const left = await db.select({ event: productEvents.event }).from(productEvents);
+    expect(left.map((row) => row.event)).toEqual(['gmail_connected']);
   });
 
   it('flags a backlog instead of silently truncating it', async () => {

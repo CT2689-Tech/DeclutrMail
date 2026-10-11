@@ -60,6 +60,7 @@ describe('D245 Gmail data inventory contract', () => {
       // so a mailbox purge has nothing of the user's to remove from it.
       'sender-logo-lookup',
       'mailbox-security-and-deletion-audit',
+      'product-funnel-events',
     ]);
     // Founder decision 2026-09-28 (docs/log/founder-followups/
     // 2026-09-26-redis-sync-count-retention.md): a mailbox purge clears

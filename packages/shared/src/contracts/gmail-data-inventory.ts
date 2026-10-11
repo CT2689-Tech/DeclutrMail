@@ -574,6 +574,22 @@ export const GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY = [
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: false,
   },
+  {
+    id: 'product-funnel-events',
+    category: 'connection',
+    label: 'Product funnel counts',
+    fetchedFrom: ['DeclutrMail signup, connect, sync, and billing events'],
+    storageRefs: ['product_events.*'],
+    derived: true,
+    purpose:
+      'Count how people move from signup to a paid plan. Rows store an event name and a closed set of labels such as plan and duration bucket.',
+    retention:
+      'Rows are deleted 13 months after they are written. Account deletion clears the user link and leaves the de-identified count until that window ends. Rows do not contain email addresses or email contents.',
+    removalTrigger: 'retention-policy',
+    exportedIn: [],
+    transmittedTo: ['DeclutrMail'],
+    showInMessageStorageList: false,
+  },
 ] as const satisfies readonly GmailDataInventoryItem[];
 
 export const GMAIL_DATA_INVENTORY = [

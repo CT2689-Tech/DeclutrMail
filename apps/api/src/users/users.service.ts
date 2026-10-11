@@ -9,6 +9,10 @@ import {
   type SignupAttributionRef,
   type SignupHeardFromPatch,
 } from '@declutrmail/shared/contracts';
+import {
+  narrowSignupCampaign,
+  type SignupCampaign,
+} from '@declutrmail/shared/contracts/signup-attribution-attr';
 
 import { liveGrantTierForEmail } from '../common/entitlements/entitlement-grants.js';
 import {
@@ -247,6 +251,7 @@ export class UsersService {
     tx: DrizzleDb,
     email: string,
     signupAttributionRef?: SignupAttributionRef,
+    campaign?: SignupCampaign,
   ): Promise<{ userId: string; workspaceId: string }> {
     const grantedTier = await liveGrantTierForEmail(tx, email);
     const [workspace] = await tx
@@ -262,6 +267,7 @@ export class UsersService {
         workspaceId: workspace.id,
         email,
         ...(signupAttributionRef ? { signupAttributionRef } : {}),
+        ...signupCampaignColumns(campaign),
       })
       .onConflictDoNothing({ target: users.email })
       .returning({ id: users.id });
@@ -309,6 +315,21 @@ export class UsersService {
       alreadySet: current.signupAttributionHeardFrom !== null,
     };
   }
+}
+
+function signupCampaignColumns(campaign: SignupCampaign | undefined): {
+  signupAttributionUtmSource?: string;
+  signupAttributionUtmMedium?: string;
+  signupAttributionUtmCampaign?: string;
+  signupAttributionLandingPath?: string;
+} {
+  const narrow = narrowSignupCampaign(campaign);
+  return {
+    ...(narrow.utmSource ? { signupAttributionUtmSource: narrow.utmSource } : {}),
+    ...(narrow.utmMedium ? { signupAttributionUtmMedium: narrow.utmMedium } : {}),
+    ...(narrow.utmCampaign ? { signupAttributionUtmCampaign: narrow.utmCampaign } : {}),
+    ...(narrow.landingPath ? { signupAttributionLandingPath: narrow.landingPath } : {}),
+  };
 }
 
 /**
