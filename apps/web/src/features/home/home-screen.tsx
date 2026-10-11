@@ -8,6 +8,9 @@ import { NoActiveMailbox } from '@/features/mailboxes/no-active-mailbox';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import { getFixSet } from '@/features/inbox-report';
 
+import { useSyncStatus } from '@/features/onboarding/api/use-sync-status';
+import { inProgressStageSentence } from '@/features/onboarding/sync-stage-copy';
+
 import { useHomeSummary } from './api/use-home-summary';
 import { HomeArrivals } from './home-arrivals';
 import { rankHomeNextSteps } from './home-next-steps';
@@ -25,7 +28,7 @@ import { HomeView } from './home-view';
  * |                               | QueryCache handler also resets   |
  * |                               | the scoped cache off this error  |
  * | other summary failure         | ErrorState + retry               |
- * | no decisions, still syncing   | scan bar; queued copy only when queued |
+ * | no decisions, still syncing   | title, status, Review senders, scan bar |
  * | no decisions, scan failed     | "Gmail scan failed" + Settings   |
  * | no decisions                  | "Nothing cleared yet" + button   |
  * | decisions                     | number + label + button          |
@@ -42,6 +45,7 @@ export function HomeScreen() {
   const hasActiveMailbox = me.activeMailboxId != null;
 
   const summary = useHomeSummary({ enabled: hasActiveMailbox });
+  const sync = useSyncStatus(me.activeMailboxId ?? undefined, { enabled: hasActiveMailbox });
   const cleanup = useCleanupSummary();
   const nextSteps = rankHomeNextSteps(getFixSet(), { senderSizeView: SENDER_SIZE_VIEW });
 
@@ -83,10 +87,13 @@ export function HomeScreen() {
     const numbers = composeHomeNumbers(summary.data);
     if (numbers === null) {
       // A failed scan is not a healthy empty mailbox — never "Nothing cleared yet".
+      const stageSentence =
+        readiness === 'syncing' ? (inProgressStageSentence(sync.data) ?? undefined) : undefined;
       return {
         kind: 'empty',
         syncing,
         queued: readiness === 'queued',
+        ...(stageSentence !== undefined ? { stageSentence } : {}),
         action,
       };
     }

@@ -25,45 +25,45 @@ These render the deck sentence.
 
 ## Held
 
-| Key                            | Status                                                                                        |
-| ------------------------------ | --------------------------------------------------------------------------------------------- |
-| `ws2.home.next.largest.title`  | Renders only while `SENDER_SIZE_VIEW` is on. The flag is off, so the card is not on the page. |
-| `ws2.home.next.largest.body`   | Same gate.                                                                                    |
-| `ws2.home.next.largest.cta`    | Same gate. The link target is `/senders` until a size-sorted view exists.                     |
-| `ws2.home.next.laterDue.title` | Not shipped.                                                                                  |
-| `ws2.home.next.laterDue.body`  | Not shipped.                                                                                  |
-| `ws2.home.next.laterDue.cta`   | Not shipped. The card is the screen name Later only. Count, body, and “Open Later” stay off.  |
+| Key                            | Status                                                                                                                 |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `ws2.home.next.largest.title`  | Renders only while `SENDER_SIZE_VIEW` is on. The flag is off, so the card is not on the page.                          |
+| `ws2.home.next.largest.body`   | Same gate.                                                                                                             |
+| `ws2.home.next.largest.cta`    | Same gate. The link target is `/senders` until a size-sorted view exists.                                              |
+| `ws2.home.next.laterDue.title` | Not shipped.                                                                                                           |
+| `ws2.home.next.laterDue.body`  | Not shipped.                                                                                                           |
+| `ws2.home.next.laterDue.cta`   | Not shipped. The card title is Later, and the action repeats that screen name. Count, body, and “Open Later” stay off. |
 
 ## Not shipped
 
 Content said these do not go on Home.
 
-| Text                                                                                | Status                                                                                     |
-| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Free plan                                                                           | Not rendered.                                                                              |
-| Progress since you joined                                                           | Not rendered. The progress line still says “since {month}” from the recorded date.         |
-| Your first scan is running                                                          | Not rendered.                                                                              |
-| Senders appear as the scan finishes. You can close this tab.                        | Not rendered.                                                                              |
-| See your senders                                                                    | Not rendered. The empty action stays Review senders.                                       |
-| Nothing stands out right now. New senders and changes show up here after each scan. | Not rendered. The calm line is `ws5.report.fallback.zero` when the indexed count is known. |
-| Open report                                                                         | Not rendered. `/inbox-report` is not on main. Reuse `ws5.report.home.cta` once WS5 lands.  |
+| Text                                                                                | Status                                                                                                         |
+| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Free plan                                                                           | Not rendered.                                                                                                  |
+| Progress since you joined                                                           | Not rendered. The progress line still says “since {month}” from the recorded date.                             |
+| Your first scan is running                                                          | Not rendered.                                                                                                  |
+| Senders appear as the scan finishes. You can close this tab.                        | Not rendered.                                                                                                  |
+| See your senders                                                                    | Not rendered. The empty action stays Review senders.                                                           |
+| Nothing stands out right now. New senders and changes show up here after each scan. | Not rendered. The calm line is `ws5.report.fallback.zero` when the indexed count is known.                     |
+| Open report                                                                         | Rendered from `ws5.report.home.cta` once that key exists. It opens Senders. There is no `/inbox-report` route. |
 
 ## Mock lines with no deck key
 
 Left off the page. Home does not invent a sentence for them.
 
-| Mock line                                                    | Why it is absent                                                           |
-| ------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| Your first scan is running                                   | No deck key. A syncing mailbox shows the progress bar only.                |
-| Senders appear as the scan finishes. You can close this tab. | No deck key.                                                               |
-| Found {n} emails                                             | No deck key. A count needs the sentence that names it.                     |
-| See your senders                                             | Not shipped. The empty action stays Review senders.                        |
-| {n} emails archived or deleted                               | No deck key. Progress is one line: `{n}` plus `ws2.home.progress.hero`.    |
-| {n} senders decided                                          | No deck key. The four-number grid is not rendered.                         |
-| Progress since you joined                                    | Not shipped.                                                               |
-| {n} senders come back from Later today                       | `ws2.home.next.laterDue.title` is held. The count is not rendered.         |
-| Their email returns to your inbox at the time you picked.    | `ws2.home.next.laterDue.body` is held.                                     |
-| Open Later                                                   | `ws2.home.next.laterDue.cta` is held. The card uses the screen name Later. |
+| Mock line                                                    | Why it is absent                                                                                                                                               |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Your first scan is running                                   | No `ws2.home.syncing.title`. The title is the sync gate’s “Reading your Gmail…”.                                                                               |
+| Senders appear as the scan finishes. You can close this tab. | No `ws2.home.syncing.body`. Status is the sync-gate stage sentence when the status read names a stage, otherwise “You can close this tab and come back later.” |
+| Found {n} emails                                             | No deck key. A count needs the sentence that names it.                                                                                                         |
+| See your senders                                             | No `ws2.home.syncing.cta` or `ws2.home.queued.cta`. The action is Review senders.                                                                              |
+| {n} emails archived or deleted                               | No deck key. Progress is one line: `{n}` plus `ws2.home.progress.hero`.                                                                                        |
+| {n} senders decided                                          | No deck key. The four-number grid is not rendered.                                                                                                             |
+| Progress since you joined                                    | Not shipped.                                                                                                                                                   |
+| {n} senders come back from Later today                       | `ws2.home.next.laterDue.title` is held. The count is not rendered.                                                                                             |
+| Their email returns to your inbox at the time you picked.    | `ws2.home.next.laterDue.body` is held.                                                                                                                         |
+| Open Later                                                   | `ws2.home.next.laterDue.cta` is held. The title is Later and the action repeats it.                                                                            |
 
 ## §P.1 swaps checked
 

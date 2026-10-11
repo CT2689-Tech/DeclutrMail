@@ -13,8 +13,14 @@ import {
   type InitialSyncRecovery,
   type SyncMessageProgress,
   type SyncStatus,
-  type SyncStage,
 } from '@declutrmail/shared/contracts';
+import {
+  STAGE_SENTENCE,
+  SYNC_LEAVE_EMAIL_LINE,
+  SYNC_LEAVE_LINE,
+  SYNC_READING_TITLE,
+  stageSentence,
+} from './sync-stage-copy';
 
 import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync';
 import { useLogout } from '@/features/auth/api/use-logout';
@@ -47,36 +53,6 @@ const { color, font, text, radius, motion } = tokens;
  * a waiting screen is not a decision point — it renders on the promise
  * step, directly above the button that starts Google consent.
  */
-
-/**
- * ONE sentence per REAL backend stage (D224). Typed against the
- * contract's stage union, so a new worker stage is a compile error here
- * until it has a sentence — the gate can never show a label for work
- * the worker is not doing.
- */
-const STAGE_SENTENCE: Record<SyncStage, string> = {
-  queued: 'Waiting to start.',
-  fetching_metadata: 'Reading sender info.',
-  building_sender_index: 'Grouping email by sender.',
-  computing_recommendations: 'Preparing recommendations.',
-  finalizing: 'Finishing up.',
-  ready: 'Your inbox is ready.',
-  failed: 'The scan stopped.',
-};
-
-/**
- * The sentence under the bar. "Your inbox is ready" is reachable ONLY
- * from `readiness_status === 'ready'` — the one signal that means it.
- * The worker writes late stages at 80–97% while the app is still gated —
- * seconds on a 101k-message mailbox (dev `sync_runs`, 2026-09; scoring is
- * queued, not run, in that stage) — and a stage/readiness disagreement
- * must never read as done (audit 2026-08-21).
- */
-function stageSentence(status: SyncStatus): string {
-  if (status.readiness_status === 'ready') return STAGE_SENTENCE.ready;
-  if (status.current_stage === 'ready') return STAGE_SENTENCE.finalizing;
-  return STAGE_SENTENCE[status.current_stage];
-}
 
 /**
  * The counts, only while the scan reads the mailbox — the one stage they
@@ -212,9 +188,7 @@ export interface SyncGateEscape {
  * re-runs the scan, and nobody acts on the sentence.)
  */
 function leaveSentence(readyEmail: boolean): string {
-  return readyEmail
-    ? 'You can close this tab — we’ll email you when your inbox is ready.'
-    : 'You can close this tab and come back later.';
+  return readyEmail ? SYNC_LEAVE_EMAIL_LINE : SYNC_LEAVE_LINE;
 }
 
 export function SyncGate({
@@ -306,7 +280,7 @@ function SyncProgress({
     <Shell>
       {/* "Gmail", not "inbox": the scan reads all mail but Spam and Trash,
           and the count below says how much. */}
-      <h1 style={titleStyle}>{ready ? 'Your inbox is ready.' : 'Reading your Gmail…'}</h1>
+      <h1 style={titleStyle}>{ready ? STAGE_SENTENCE.ready : SYNC_READING_TITLE}</h1>
       {!ready && (
         // Same sub-line treatment as StepShell on the sibling steps.
         <p

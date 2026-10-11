@@ -89,6 +89,28 @@ const ready = {
   action: { label: 'Review senders', href: '/senders' },
 };
 
+describe('full Home when the WS5 keys exist', () => {
+  it.each([false, true])(
+    'has a lead and a primary action (size view %s)',
+    async (senderSizeView) => {
+      gate.showReport = false;
+      const { rerender } = render(
+        <HomeView state={ready} nextSteps={[step]} senderSizeView={senderSizeView} />,
+      );
+      expect(screen.getByRole('heading', { name: 'Your Inbox Report' })).toBeInTheDocument();
+      const reportAction = screen.getByRole('link', { name: 'Open report' });
+      expect(reportAction).toHaveAttribute('href', '/senders');
+      expect(reportAction.className.split(/\s+/)).toContain('dm-button-link');
+
+      gate.showReport = true;
+      rerender(<HomeView state={ready} nextSteps={[step]} senderSizeView={senderSizeView} />);
+      expect(screen.getByRole('heading', { name: 'Your Inbox Report' })).toBeInTheDocument();
+      const fix = await screen.findByRole('button', { name: 'Unsubscribe + archive 158 senders' });
+      expect(fix.className.split(/\s+/)).toContain('dm-button-link');
+    },
+  );
+});
+
 describe('Home unsubscribe step', () => {
   it('hides the sender count until the report names those senders', async () => {
     gate.showReport = false;

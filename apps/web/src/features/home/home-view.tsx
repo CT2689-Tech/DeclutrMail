@@ -14,6 +14,7 @@ import { ErrorState, Skeleton, useLabels } from '@declutrmail/shared';
 import type { CleanupSummaryDto } from '@declutrmail/shared/contracts';
 import { planName, type TierId } from '@declutrmail/shared/entitlements';
 import { InboxReportCard } from '@/features/inbox-report';
+import { SYNC_LEAVE_LINE, SYNC_READING_TITLE } from '@/features/onboarding/sync-stage-copy';
 import { QuotaChipSlot } from '@/features/shell/quota-chip-slot';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
@@ -256,17 +257,13 @@ function HomeBody({
 
 function EmptyCopy({ state }: { state: Extract<HomeState, { kind: 'empty' }> }) {
   if (state.syncing) {
+    const title = state.queued ? HOME_DECK.queuedTitle : SYNC_READING_TITLE;
+    const status = state.queued ? HOME_DECK.queuedBody : (state.stageSentence ?? SYNC_LEAVE_LINE);
     return (
-      <section
-        className={styles.beginning}
-        aria-label={state.queued ? HOME_DECK.queuedTitle : undefined}
-      >
-        {state.queued && (
-          <>
-            <h2>{HOME_DECK.queuedTitle}</h2>
-            <p>{HOME_DECK.queuedBody}</p>
-          </>
-        )}
+      <section className={styles.beginning} aria-label={title}>
+        <h2>{title}</h2>
+        <p>{status}</p>
+        {!isRetiredReviewCta(state.action.label) && <PrimaryLink action={state.action} />}
         <div className={styles.scanBar} data-testid="home-scan-bar" aria-hidden="true">
           <span />
         </div>
@@ -321,7 +318,16 @@ function ReportCard({
       <div className={styles.reportFallback}>
         <h2>{copy.title}</h2>
         <p>{copy.body}</p>
-        {copy.cta !== '' && <p>{copy.cta}</p>}
+        {copy.cta !== '' && (
+          // There is no /inbox-report route. Senders is where the report card opens.
+          <Link
+            href="/senders"
+            data-dm-button=""
+            className={`dm-button-link ${styles.primaryAction}`}
+          >
+            {copy.cta}
+          </Link>
+        )}
         {calm !== null && <p data-testid="home-calm">{calm}</p>}
         {tile !== null && tileCopy !== null && (
           <div className={styles.storageTile}>
@@ -465,21 +471,39 @@ function FixCard({
   return unreachable;
 }
 
+/** Same clock as the Later row in the shell. There is no laterDue title or action key. */
+const LATER_ICON = 'M12 6v6l4 2M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z';
+
 function LaterCard({ step }: { step: HomeFixCandidate }) {
   const labels = useLabels();
   return (
     <article className={styles.secondaryCard} data-step={step.kind}>
-      <h3>
-        <Link
-          href="/later"
-          className="dm-external-link"
-          onClick={() => {
-            void track('home_next_step_clicked', { kind: 'later_due' });
-          }}
+      <div className={styles.cardTitle}>
+        <svg
+          className={styles.cardIcon}
+          width={20}
+          height={20}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
         >
-          {labels.snoozed}
-        </Link>
-      </h3>
+          <path d={LATER_ICON} />
+        </svg>
+        <h3>{labels.snoozed}</h3>
+      </div>
+      <Link
+        href="/later"
+        className={`dm-external-link ${styles.cardAction}`}
+        onClick={() => {
+          void track('home_next_step_clicked', { kind: 'later_due' });
+        }}
+      >
+        {labels.snoozed}
+      </Link>
     </article>
   );
 }

@@ -38,6 +38,8 @@ export type HomeState =
       kind: 'empty';
       syncing: boolean;
       queued?: boolean;
+      /** Shipped sync-gate stage sentence. Absent until the status read names a stage. */
+      stageSentence?: string;
       action: HomeAction;
       senders?: HomeSenderPreview[];
     }

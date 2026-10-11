@@ -64,9 +64,10 @@ interface Stub {
   summary?: () => Response;
   queueLength?: number;
   screenerPending?: number;
+  sync?: Record<string, unknown>;
 }
 
-function stub({ summary, queueLength = 0, screenerPending = 0 }: Stub = {}) {
+function stub({ summary, queueLength = 0, screenerPending = 0, sync }: Stub = {}) {
   const calls = { summary: [] as string[], triage: 0, screener: 0 };
   installFetchStub([
     {
@@ -79,7 +80,11 @@ function stub({ summary, queueLength = 0, screenerPending = 0 }: Stub = {}) {
       path: '/api/v1/sync/status',
       respond: () =>
         jsonOk({
-          data: { readiness_status: 'failed', error_code: 'TransientError', progress_pct: 25 },
+          data: sync ?? {
+            readiness_status: 'failed',
+            error_code: 'TransientError',
+            progress_pct: 25,
+          },
         }),
     },
     {
@@ -242,8 +247,26 @@ describe('HomeScreen', () => {
     stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }) });
     renderHome();
     expect(screen.queryByRole('heading', { name: 'Your Inbox Report' })).toBeNull();
-    expect(await screen.findByTestId('home-scan-bar')).toBeInTheDocument();
-    expect(screen.queryByText('Reading your Gmail.')).toBeNull();
+    expect(await screen.findByRole('heading', { name: 'Reading your Gmail…' })).toBeInTheDocument();
+    expect(screen.getByText('You can close this tab and come back later.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Review senders' })).toHaveAttribute(
+      'href',
+      '/senders',
+    );
+    expect(screen.queryByText('Waiting to start.')).toBeNull();
+    expect(screen.getByTestId('home-scan-bar')).toBeInTheDocument();
+  });
+
+  it('syncing home shows the stage the status read reports', async () => {
+    authCell.me = meFor('pro', 'syncing');
+    stub({
+      summary: () => jsonOk({ data: EMPTY_SUMMARY }),
+      sync: { readiness_status: 'syncing', current_stage: 'fetching_metadata', progress_pct: 10 },
+    });
+    renderHome();
+    expect(await screen.findByText('Reading sender info.')).toBeInTheDocument();
+    expect(screen.queryByText('You can close this tab and come back later.')).toBeNull();
+    expect(screen.queryByText('Waiting to start.')).toBeNull();
   });
 
   it('new user whose scan failed: says so and offers a scoped retry', async () => {
@@ -260,7 +283,12 @@ describe('HomeScreen', () => {
     stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }) });
     renderHome();
     expect(await screen.findByText('Your scan is waiting to start.')).toBeInTheDocument();
-    expect(screen.queryByText('Reading your Gmail.')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Review senders' })).toHaveAttribute(
+      'href',
+      '/senders',
+    );
+    expect(screen.queryByRole('heading', { name: 'Reading your Gmail…' })).toBeNull();
+    expect(screen.queryByText('Waiting to start.')).toBeNull();
   });
 
   it('a syncing mailbox with history still shows its number', async () => {

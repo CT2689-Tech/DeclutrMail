@@ -117,8 +117,13 @@ describe('HomeView', () => {
     expect(screen.getByRole('region', { name: 'Suggested next steps' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Unsubscribe/ })).toBeNull();
     expect(screen.queryByText(/of these senders/)).toBeNull();
-    expect(screen.getByRole('link', { name: 'Later' })).toHaveAttribute('href', '/later');
-    expect(screen.getByRole('link', { name: 'Later' }).closest('article')).not.toBeNull();
+    const laterLink = screen.getByRole('link', { name: 'Later' });
+    const laterCard = laterLink.closest('article');
+    expect(laterLink).toHaveAttribute('href', '/later');
+    expect(laterCard).not.toBeNull();
+    expect(laterCard?.querySelector('h3')).toHaveTextContent('Later');
+    expect(laterCard?.querySelector('h3')?.contains(laterLink)).toBe(false);
+    expect(laterCard?.querySelector('svg')).not.toBeNull();
     expect(screen.queryByText('Your 10 largest senders')).toBeNull();
     expect(screen.queryByRole('link', { name: 'See largest senders' })).toBeNull();
     expect(screen.queryByText('≈ 7.7 GB')).toBeNull();
@@ -182,19 +187,47 @@ describe('HomeView', () => {
       '/senders',
     );
     rerender(<HomeView state={{ kind: 'empty', syncing: true, action }} />);
-    expect(screen.queryByText('Reading your Gmail.')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Reading your Gmail…' })).toBeInTheDocument();
+    expect(screen.getByText('You can close this tab and come back later.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Review senders' })).toHaveAttribute(
+      'href',
+      '/senders',
+    );
     expect(screen.queryByText('Nothing cleared yet.')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Your Inbox Report' })).toBeNull();
     expect(screen.queryByText('Your scan is waiting to start.')).toBeNull();
+    expect(screen.queryByText('Waiting to start.')).toBeNull();
     expect(screen.getByTestId('home-scan-bar')).toBeInTheDocument();
+  });
+
+  it('syncing: a known stage replaces the leave line and is not the queued sentence', () => {
+    render(
+      <HomeView
+        state={{
+          kind: 'empty',
+          syncing: true,
+          action,
+          stageSentence: 'Reading sender info.',
+        }}
+      />,
+    );
+    expect(screen.getByRole('heading', { name: 'Reading your Gmail…' })).toBeInTheDocument();
+    expect(screen.getByText('Reading sender info.')).toBeInTheDocument();
+    expect(screen.queryByText('You can close this tab and come back later.')).toBeNull();
+    expect(screen.queryByText('Waiting to start.')).toBeNull();
   });
 
   it('queued: uses the waiting title and does not say progress is saved', () => {
     render(<HomeView state={{ kind: 'empty', syncing: true, queued: true, action }} />);
     expect(screen.getByRole('heading', { name: HOME_DECK.queuedTitle })).toBeInTheDocument();
     expect(screen.getByText(HOME_DECK.queuedBody)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Review senders' })).toHaveAttribute(
+      'href',
+      '/senders',
+    );
     expect(screen.queryByText(/Your progress is saved/)).toBeNull();
     expect(screen.queryByText('Nothing cleared yet.')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Reading your Gmail…' })).toBeNull();
   });
 
   it('does not use Review today as the empty primary action', () => {

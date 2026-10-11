@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { AppShell } from '@declutrmail/shared';
 
+import { STAGE_SENTENCE } from '@/features/onboarding/sync-stage-copy';
+
 import { HomeView } from './home-view';
 import { HOME_PREVIEW_STATES, type HomePreviewState } from './home-preview-state';
 import styles from './home-view.module.css';
@@ -88,7 +90,14 @@ function fixture(state: HomePreviewState): Parameters<typeof HomeView>[0] {
     case 'empty':
       return { state: { kind: 'empty', syncing: false, action } };
     case 'syncing':
-      return { state: { kind: 'empty', syncing: true, action } };
+      return {
+        state: {
+          kind: 'empty',
+          syncing: true,
+          action,
+          stageSentence: STAGE_SENTENCE.fetching_metadata,
+        },
+      };
     case 'queued':
       return { state: { kind: 'empty', syncing: true, queued: true, action } };
     case 'failed':

@@ -4,6 +4,11 @@ import { planName } from '@declutrmail/shared/entitlements';
 import { WS1_COPY, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
 import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
+import {
+  STAGE_SENTENCE,
+  SYNC_LEAVE_LINE,
+  SYNC_READING_TITLE,
+} from '@/features/onboarding/sync-stage-copy';
 import { ApiError } from '@/lib/api/client';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 
@@ -105,6 +110,8 @@ describe('rendered Home text', () => {
     deckPhrases(WS1_COPY, phrases);
     deckPhrases(WS2_COPY, phrases);
     deckPhrases(WS5_COPY, phrases);
+    deckPhrases(STAGE_SENTENCE, phrases);
+    phrases.push(SYNC_READING_TITLE, SYNC_LEAVE_LINE);
 
     const views = [
       <HomeView key="ready" state={ready} nextSteps={steps} senderSizeView timeZone="UTC" />,
