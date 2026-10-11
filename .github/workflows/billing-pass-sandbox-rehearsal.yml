@@ -1,0 +1,82 @@
+name: Rehearse Backlog Pass in isolated Paddle sandbox
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: billing-pass-sandbox
+  cancel-in-progress: false
+
+jobs:
+  rehearse:
+    # Sandbox environment secrets are not branch-limited. This job is.
+    # Drop the feature-branch clause after the branch is gone.
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/ws1b-pricing-story-pass'
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    environment: Sandbox
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: refund_fixture
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d refund_fixture"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Migrate the disposable fixture database
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/refund_fixture
+        run: |
+          for migration in packages/db/migrations/*.sql; do
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$migration"
+          done
+      - name: Boundary verification
+        run: pnpm --filter @declutrmail/api test src/billing/__tests__/pass-rehearsal-assertions.spec.ts src/billing/__tests__/sandbox-rehearsal-boundary.spec.ts src/billing/__tests__/sandbox-rehearsal-failure.spec.ts
+      - name: Install the checkout browser
+        run: pnpm --filter @declutrmail/e2e exec playwright install --with-deps chromium
+      - name: Pay the sandbox Pass and annual prices
+        env:
+          BILLING_REHEARSAL: sandbox
+          PADDLE_ENV: sandbox
+          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
+          REHEARSAL_OPERATOR_KEY: ${{ secrets.BILLING_REHEARSAL_OPERATOR_KEY }}
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/refund_fixture
+          REHEARSAL_REPORT_PATH: ${{ runner.temp }}/pass-sandbox-rehearsal.json
+        run: |
+          curl --fail --location --silent --show-error https://github.com/cloudflare/cloudflared/releases/download/2026.10.0/cloudflared-linux-amd64 -o "$RUNNER_TEMP/cloudflared"
+          echo 'd33ff2d14475178d2012c2c56beba87389ac5ded27649519f198a7d3134a99db  '"$RUNNER_TEMP/cloudflared" | sha256sum --check --strict
+          chmod 700 "$RUNNER_TEMP/cloudflared"
+          env -u PADDLE_API_KEY -u REHEARSAL_OPERATOR_KEY -u DATABASE_URL "$RUNNER_TEMP/cloudflared" tunnel --no-autoupdate --url http://127.0.0.1:4049 > "$RUNNER_TEMP/tunnel.log" 2>&1 &
+          tunnel_pid=$!
+          trap 'kill "$tunnel_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            fixture_url=$(sed -nE 's/.*(https:\/\/[a-z0-9-]+\.trycloudflare\.com).*/\1/p' "$RUNNER_TEMP/tunnel.log" | head -1)
+            if [ -n "$fixture_url" ]; then break; fi
+            sleep 1
+          done
+          if [ -z "$fixture_url" ]; then exit 1; fi
+          export REHEARSAL_PUBLIC_URL="$fixture_url"
+          cd apps/api && node --import @swc-node/register/esm-register scripts/billing-pass-sandbox-rehearsal.ts
+      - name: Retain only sanitized proof and cleanup outcomes
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pass-sandbox-rehearsal
+          path: ${{ runner.temp }}/pass-sandbox-rehearsal.json
+          retention-days: 1
+          if-no-files-found: error

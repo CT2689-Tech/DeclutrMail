@@ -5,6 +5,8 @@
  * against sandbox: purchase, grant, accelerated expiry, refund revoke.
  *
  *   PADDLE_ENV=sandbox pnpm tsx scripts/billing-pass-sandbox-rehearsal.ts
+ *
+ * The unattended proof is `.github/workflows/billing-pass-sandbox-rehearsal.yml`.
  */
 const env = process.env.PADDLE_ENV;
 if (env !== 'sandbox') {

@@ -93,14 +93,12 @@ write was made.
 - Migrations `0089` (required before the new API writes
   `pending_checkouts.offer`), then approved destructive `0090` and
   `0091`. None are applied by this PR.
-- A real Paddle sandbox overlay purchase was not run in this
-  environment. It has no `PADDLE_API_KEY`, `PADDLE_CLIENT_TOKEN`, or
-  `PADDLE_WEBHOOK_SECRET`, and no database. The sandbox price ids are
-  wired. Completing the purchase needs a sandbox API
-  (`PADDLE_ENV=sandbox`, those three secrets, `PRICING_V2=true`,
-  `BILLING_PASS_ENABLED=true`) and migration `0089` applied.
-  `scripts/billing-pass-sandbox-rehearsal.ts` prints the checklist and
-  does not call Paddle.
+- The Pass purchase proof is the sandbox-only workflow
+  `.github/workflows/billing-pass-sandbox-rehearsal.yml`. It uses the
+  Sandbox environment's `PADDLE_API_KEY`, creates its own notification
+  destination, pays the Pass price twice and the annual price once with
+  PH30, and cancels what it creates. This environment still has no
+  Paddle key, so the proof is that workflow run, not a local checkout.
 - The launch refund window is 14 days. `POLICY.refundWindowDays` is 14.
   Flags-on `/refunds` renders `RefundsV2`. Every window sentence is a
   deck template (`refunds.toc.window`, `refunds.summary`,

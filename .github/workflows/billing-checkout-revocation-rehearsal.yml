@@ -2,6 +2,15 @@ name: Rehearse checkout revocation in isolated Paddle sandbox
 
 on:
   workflow_dispatch:
+    inputs:
+      rehearsal:
+        description: checkout keeps revocation; pass runs Backlog Pass
+        required: false
+        default: checkout
+        type: choice
+        options:
+          - checkout
+          - pass
 
 permissions:
   contents: read
@@ -12,7 +21,8 @@ concurrency:
 
 jobs:
   rehearse:
-    if: github.ref == 'refs/heads/main'
+    # The Pass file is not on main yet, so this input runs it from the selected ref.
+    if: github.ref == 'refs/heads/main' && github.event.inputs.rehearsal != 'pass'
     runs-on: ubuntu-latest
     timeout-minutes: 55
     environment: Sandbox
@@ -75,3 +85,8 @@ jobs:
           path: ${{ runner.temp }}/checkout-revocation-rehearsal.json
           retention-days: 1
           if-no-files-found: error
+  pass:
+    name: Rehearse Backlog Pass
+    if: github.event.inputs.rehearsal == 'pass' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/ws1b-pricing-story-pass')
+    uses: ./.github/workflows/billing-pass-sandbox-rehearsal.yml
+    secrets: inherit
