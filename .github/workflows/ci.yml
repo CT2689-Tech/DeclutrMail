@@ -183,6 +183,7 @@ jobs:
               # build-web runs these; editing only one (a budget raise) must
               # still run the job that executes it, not wait for the queue.
               - 'scripts/check-web-bundle-budget.mjs'
+              - 'scripts/web-bundle-budget.json'
               - 'scripts/check-prerendered-routes.mjs'
             units:
               - *infra
@@ -487,6 +488,10 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.web == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    permissions:
+      contents: read
+      # Reads main's `web-bundle-sizes` artifact for the growth warning.
+      actions: read
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -513,12 +518,43 @@ jobs:
         run: pnpm --filter @declutrmail/web build
         env:
           NEXT_TELEMETRY_DISABLED: '1'
+      # Main's measured sizes, uploaded by the push-to-main run below, for
+      # the non-blocking >2 kB growth warning. Advisory only: when nothing
+      # is found the budget step reports "not compared", never "no growth".
+      - name: Fetch main's bundle sizes
+        if: ${{ github.event_name != 'push' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO_ID: ${{ github.repository_id }}
+        run: |
+          dir="$RUNNER_TEMP/main-bundle-sizes"
+          mkdir -p "$dir"
+          id=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=web-bundle-sizes&per_page=100" \
+            --jq "[.artifacts[] | select(.expired | not) | select(.workflow_run.head_branch == \"main\" and .workflow_run.head_repository_id == $REPO_ID)] | sort_by(.created_at) | last | .id // empty")
+          if [ -z "$id" ]; then
+            echo "No unexpired web-bundle-sizes artifact from main."
+            exit 0
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > "$dir/sizes.zip"
+          unzip -o -q "$dir/sizes.zip" -d "$dir"
       # D160's other unbuilt check. See the script header for what the
       # numbers mean and why they are a ratchet rather than a target. It
       # serves this build with `next start` on a free port and fetches
       # every route itself, so it needs no other server.
-      - name: Enforce the public bundle budget
-        run: node scripts/check-web-bundle-budget.mjs
+      - name: Enforce the bundle budget
+        run: >-
+          node scripts/check-web-bundle-budget.mjs
+          --sizes-out bundle-sizes.json
+          --baseline "$RUNNER_TEMP/main-bundle-sizes/bundle-sizes.json"
+      - name: Upload main's bundle sizes
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-bundle-sizes
+          path: bundle-sizes.json
+          retention-days: 30
+          if-no-files-found: error
       # One per-request read in a shared node silently un-statics the
       # whole public site, and nothing else fails when it happens.
       - name: Assert the public site is still prerendered

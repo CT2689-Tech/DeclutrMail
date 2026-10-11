@@ -65,6 +65,20 @@ browser builds use separate cache namespaces; current-source production builds
 always execute. Rendered output, request data, sessions and test results are
 never restored. See [Next.js CI build caching](https://nextjs.org/docs/app/guides/ci-build-caching).
 
+Before pushing any change under `apps/web` or `packages/shared`, run:
+
+```bash
+pnpm --filter @declutrmail/web build && pnpm check:bundle
+```
+
+Each route's cap in `scripts/web-bundle-budget.json` is its measured size plus
+max(5%, 5 kB). If a route goes over and the growth is intended, or a new route
+fails because it has no cap yet, run `pnpm check:bundle --rebaseline` after the
+same build and commit the regenerated table with the change. Never edit the
+table by hand; its contract test rejects caps that do not match the formula. CI
+also warns, without failing, when a route grows more than 2 kB against main's
+last measured sizes.
+
 Measure a full run by its critical path, not the sum of parallel job durations.
 Before this split, seven successful full runs on October 10, 2026 had a median
 of 6m49s (range 5m58s–7m08s); their browser job took 5m38s–6m46s. Runner startup
