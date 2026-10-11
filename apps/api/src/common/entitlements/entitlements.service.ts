@@ -32,6 +32,7 @@ import { ERROR_CODES } from '@declutrmail/shared/contracts';
 
 import type { ProductEventsPort } from '@declutrmail/shared/analytics/product-events';
 
+import { earliestWorkspaceUserId } from '../../analytics/earliest-workspace-user.js';
 import { PRODUCT_EVENTS, recordProductEvent } from '../../analytics/product-events.port.js';
 import { DRIZZLE, type DrizzleDb } from '../../db/db.module.js';
 import { AppException } from '../app-exception.js';
@@ -418,10 +419,14 @@ export class EntitlementsService {
     if (used + unitsNeeded > limit) {
       const remaining = Math.max(0, limit - used);
       const upgradePlan = unlimitedCleanupPlanName();
-      recordProductEvent(this.productEvents, 'free_cap_hit', {
-        requested_bucket: requestedBucket(unitsNeeded),
-      });
       const resetsAt = period.resetsAt.toISOString();
+      const userId = await earliestWorkspaceUserId(executor, workspace.workspaceId);
+      recordProductEvent(
+        this.productEvents,
+        'free_cap_hit',
+        { requested_bucket: requestedBucket(unitsNeeded) },
+        userId,
+      );
       throw new AppException({
         code: 'FREE_CAP_REACHED',
         message: isMeterV2()

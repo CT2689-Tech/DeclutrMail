@@ -14,6 +14,7 @@ import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { describe, expect, it } from 'vitest';
 
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
+import { earliestWorkspaceUserId } from './earliest-workspace-user.js';
 import { ProductEventsWriter } from './product-events.writer.js';
 import { scheduleProductEvent } from './schedule-product-event.js';
 import { assertLocalFunnelDsn, funnelSql } from '../../../../scripts/launch-funnel-sql';
@@ -100,16 +101,68 @@ describe('product event writer', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       event: 'free_cap_hit',
+      userId: null,
       props: { requested_bucket: '11-100' },
     });
+  });
+
+  it('stores the earliest workspace user on free_cap_hit and not their email', async () => {
+    const db = await freshTestDb();
+    const [ws] = await db
+      .insert(workspaces)
+      .values({ name: 'Free', tier: 'free' })
+      .returning({ id: workspaces.id, createdAt: workspaces.createdAt });
+    const [earlier] = await db
+      .insert(users)
+      .values({
+        workspaceId: ws!.id,
+        email: 'earlier@example.com',
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      })
+      .returning({ id: users.id });
+    await db.insert(users).values({
+      workspaceId: ws!.id,
+      email: 'later@example.com',
+      createdAt: new Date('2026-06-01T00:00:00.000Z'),
+    });
+    const writer = new ProductEventsWriter(db as never);
+    const entitlements = new EntitlementsService(db as never, writer);
+    await expect(
+      entitlements.assertCleanupCapacityForWorkspace(
+        { workspaceId: ws!.id, tier: 'free', createdAt: ws!.createdAt },
+        FREE_LIMIT + 1,
+      ),
+    ).rejects.toMatchObject({ code: 'FREE_CAP_REACHED' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const rows = await db.select().from(productEvents);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      event: 'free_cap_hit',
+      userId: earlier!.id,
+      props: { requested_bucket: '11-100' },
+    });
+    expect(JSON.stringify(rows)).not.toContain('@');
+    expect(await earliestWorkspaceUserId(db, ws!.id)).toBe(earlier!.id);
   });
 
   it('keeps the billing record() calls that this writer serves', () => {
     const root = join(process.cwd(), 'src/billing');
     const checkout = readFileSync(join(root, 'billing.service.ts'), 'utf8');
     const paid = readFileSync(join(root, 'billing-webhook.service.ts'), 'utf8');
+    const gate = readFileSync(
+      join(process.cwd(), 'src/common/entitlements/entitlements.service.ts'),
+      'utf8',
+    );
+    const lookup = readFileSync(new URL('./earliest-workspace-user.ts', import.meta.url), 'utf8');
     expect(checkout).toMatch(/recordProductEvent\(\s*this\.productEvents,\s*'checkout_created'/);
-    expect(paid).toMatch(/recordProductEvent\(\s*this\.productEvents,\s*'purchase_confirmed'/);
+    expect(paid).toMatch(
+      /recordProductEvent\(\s*this\.productEvents,\s*'purchase_confirmed',\s*\{ plan: tier \},\s*userId\s*\)/,
+    );
+    expect(gate).toMatch(
+      /recordProductEvent\(\s*this\.productEvents,\s*'free_cap_hit',[\s\S]*?,\s*userId,\s*\)/,
+    );
+    expect(lookup).toContain('id: users.id');
+    expect(lookup).not.toContain('users.email');
   });
 });
 

@@ -40,7 +40,7 @@ describe('EmailClickRecorder', () => {
       template: 'lapse',
       mailboxId: '00000000-0000-4000-8000-000000000001',
     });
-    expect(replace).toHaveBeenCalledWith('/?keep=1');
+    expect(replace).toHaveBeenCalledWith('/?keep=1', { scroll: false });
     const posted = JSON.stringify(post.mock.calls);
     expect(posted).not.toContain('@');
   });
@@ -50,6 +50,15 @@ describe('EmailClickRecorder', () => {
     render(<EmailClickRecorder />);
     expect(post).toHaveBeenCalledWith('/api/v1/analytics/email-click', { template: 'lapse' });
     expect(JSON.stringify(post.mock.calls)).not.toContain('@');
-    expect(replace).toHaveBeenCalledWith('/?keep=1');
+    expect(replace).toHaveBeenCalledWith('/?keep=1', { scroll: false });
+  });
+
+  it('keeps the location hash and does not scroll', () => {
+    window.location.hash = '#mailbox-00000000-0000-4000-8000-000000000001';
+    render(<EmailClickRecorder />);
+    expect(replace).toHaveBeenCalledWith('/?keep=1#mailbox-00000000-0000-4000-8000-000000000001', {
+      scroll: false,
+    });
+    window.location.hash = '';
   });
 });
