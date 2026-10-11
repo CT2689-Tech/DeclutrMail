@@ -58,7 +58,9 @@ it('routes a reconnect incident to the exact mailbox and suppresses delivery aft
   await consume(event);
   const payload = queue.add.mock.calls[0]![1] as EmailSendJobData;
   expect(payload.kind).toBe('gmail-reconnect');
-  for (const part of [payload.text, payload.html]) {
+  const html = payload.html ?? '';
+  expect(html).not.toBe('');
+  for (const part of [payload.text, html]) {
     const url = reconnectUrl(part);
     expect(url.pathname).toBe('/settings');
     expect(url.hash).toBe(`#mailbox-${account!.id}`);
