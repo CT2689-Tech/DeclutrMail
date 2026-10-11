@@ -161,6 +161,8 @@ jobs:
               # real output by an apps/api spec; editing only the script
               # must still run it.
               - 'scripts/setup-llm-rejection-alert.mjs'
+              # Assigns this suite's files to its shards.
+              - 'scripts/vitest-weighted-shard.mjs'
               - *shared_server
               # Specs here read the deploy manifest's --set-env-vars (the
               # quota metric pairing); a manifest-only PR must run them.
@@ -310,7 +312,7 @@ jobs:
       - name: Performance probes and release contract
         run: node --test scripts/check-sender-release-contract.test.mjs scripts/probe-db-latency.test.mjs scripts/summarize-performance.test.mjs
       - name: CI and release coordination contracts
-        run: node --test scripts/check-ci-required.test.mjs scripts/check-merge-queue-ready.test.mjs scripts/select-deployment.test.mjs scripts/select-lighthouse-url.test.mjs
+        run: node --test scripts/check-ci-required.test.mjs scripts/check-merge-queue-ready.test.mjs scripts/select-deployment.test.mjs scripts/select-lighthouse-url.test.mjs scripts/vitest-weighted-shard.test.mjs
       - name: Bundle budget contracts (served-HTML measure, fails closed)
         run: node --test scripts/check-web-bundle-budget.test.mjs
       # Re-renders every brand raster from the geometry in ADR-0036 and
