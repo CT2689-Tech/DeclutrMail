@@ -1,4 +1,4 @@
-/** WS2 copy filled for Home v1 (drop2-r9). Other sections land with their owning screens. */
+/** WS2 copy filled for Home v1 (drop2-r10). Other sections land with their owning screens. */
 export const WS2_COPY = {
   names: {
     home: 'Home',
@@ -45,6 +45,13 @@ export const WS2_COPY = {
         },
         body: 'About {size} of email (Gmail\u2019s estimates). Archiving doesn\u2019t change storage. Deleting moves email to Gmail Trash, which Gmail empties after 30 days.',
         cta: 'See largest senders',
+      },
+      later: {
+        title: 'Later',
+      },
+      laterDue: {
+        body: 'Email you moved to Later comes back to your inbox at the time you picked.',
+        cta: 'Open Later',
       },
     },
   },

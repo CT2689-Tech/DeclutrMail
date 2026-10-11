@@ -1,3 +1,5 @@
+import { getFixSet, type InboxReportSource } from '@/features/inbox-report';
+
 import type { HomeState } from './home-state';
 
 /** Closed set for `home_next_step_clicked`. Order is the card rank. */
@@ -34,6 +36,21 @@ export function rankHomeNextSteps(
     .slice()
     .sort((a, b) => (RANK.get(a.kind) ?? 99) - (RANK.get(b.kind) ?? 99))
     .slice(0, 3);
+}
+
+/** Unsubscribe step from a report. No report means no step. Later is not in this set. */
+export function homeCandidatesFromReport(report: InboxReportSource | null): HomeFixCandidate[] {
+  if (report === null) return [];
+  const fix = getFixSet(report);
+  if (fix.sendersCount < 1 || fix.senderKeys.length === 0) return [];
+  return [
+    {
+      kind: 'unsub_archive',
+      senderCount: fix.sendersCount,
+      emailCount: fix.inboxEmailCount,
+      senderIds: fix.senderKeys,
+    },
+  ];
 }
 
 export function homeV1Mode(kind: HomeState['kind'], stepCount: number): HomeV1Mode {

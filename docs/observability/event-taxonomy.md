@@ -766,17 +766,12 @@ in-app support form.
 
 ### `report_viewed`
 
-**When fired.** Once per Home visit when the report slot renders (full or
-calm fallback). Browser `track()` only, after cookie consent. No counts
-or sender data.
+**When fired.** Not from Home. The name belongs to the report domain so it
+does not collide with that payload. Home does not send `{ surface: 'home' }`.
 
-**Payload.**
+**Payload.** Owned by the report domain.
 
-| Field     | Type     | Notes               |
-| --------- | -------- | ------------------- |
-| `surface` | `'home'` | Home v1 report slot |
-
-**Retention / aggregation.** PostHog default. D159 usage of the Home report.
+**Retention / aggregation.** PostHog default. D159 usage of the Inbox Report.
 
 ### `home_next_step_clicked`
 

@@ -98,7 +98,7 @@ describe('event registry domain split', () => {
 
   it('appends Home v1 names on the app domain', () => {
     expect(EVENT_NAMES).toEqual(
-      expect.arrayContaining(['report_viewed', 'home_next_step_clicked', 'caught_up_viewed']),
+      expect.arrayContaining(['home_next_step_clicked', 'caught_up_viewed']),
     );
   });
 

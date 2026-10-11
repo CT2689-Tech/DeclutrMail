@@ -3,7 +3,7 @@ import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
 
 /**
  * Verbatim launch-deck sentences Home v1 renders.
- * Home sentences are drop2-r9 (`WS2_COPY`). Meter sentences are drop2-r7
+ * Home sentences are drop2-r10 (`WS2_COPY`). Meter sentences are drop2-r7
  * (`WS1_COPY`). Report and confirm sentences are read from `WS5_COPY`
  * at render time and stay off the page while that module is empty.
  */
@@ -28,6 +28,9 @@ export const HOME_DECK = {
   largestTitleOther: WS2_COPY.home.next.largest.title.other,
   largestBody: WS2_COPY.home.next.largest.body,
   largestCta: WS2_COPY.home.next.largest.cta,
+  laterTitle: WS2_COPY.home.next.later.title,
+  laterBody: WS2_COPY.home.next.laterDue.body,
+  laterCta: WS2_COPY.home.next.laterDue.cta,
   chip: WS1_COPY['meter.chip'],
   chipAria: WS1_COPY['meter.chip.aria'],
   chipEmpty: WS1_COPY['meter.chip.empty'],

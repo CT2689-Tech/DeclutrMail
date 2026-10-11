@@ -5,6 +5,7 @@ import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
 import { ApiError } from '@/lib/api/client';
 
 import { HOME_DECK } from './home-deck-copy';
+import { homePreviewReport } from './home-preview-report';
 import type { HomeFixCandidate } from './home-next-steps';
 import { HomeView } from './home-view';
 
@@ -117,11 +118,15 @@ describe('HomeView', () => {
     expect(screen.getByRole('region', { name: 'Suggested next steps' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Unsubscribe/ })).toBeNull();
     expect(screen.queryByText(/of these senders/)).toBeNull();
-    const laterLink = screen.getByRole('link', { name: 'Later' });
+    const laterLink = screen.getByRole('link', { name: HOME_DECK.laterCta });
     const laterCard = laterLink.closest('article');
     expect(laterLink).toHaveAttribute('href', '/later');
     expect(laterCard).not.toBeNull();
-    expect(laterCard?.querySelector('h3')).toHaveTextContent('Later');
+    expect(laterCard?.querySelector('h3')).toHaveTextContent(HOME_DECK.laterTitle);
+    expect(laterCard).toHaveTextContent(HOME_DECK.laterBody);
+    expect(laterCard).not.toHaveTextContent('3');
+    expect(laterCard).not.toHaveTextContent(/sender/);
+    expect(screen.queryByRole('link', { name: 'Later' })).toBeNull();
     expect(laterCard?.querySelector('h3')?.contains(laterLink)).toBe(false);
     expect(laterCard?.querySelector('svg')).not.toBeNull();
     expect(screen.queryByText('Your 10 largest senders')).toBeNull();
@@ -130,6 +135,29 @@ describe('HomeView', () => {
     expect(screen.queryByText('of email in your Gmail')).toBeNull();
     expect(document.querySelector('[data-home-mode="full"]')).not.toBeNull();
     expect(document.querySelector('[data-sender-size-view="off"]')).not.toBeNull();
+  });
+
+  it('preview full state shows the fixture report and a count-free Later card', () => {
+    render(
+      <HomeView
+        state={ready}
+        nextSteps={[later, unsub]}
+        mailboxId="mb-preview"
+        previewReport={homePreviewReport('full')}
+      />,
+    );
+    expect(screen.getByRole('heading', { name: 'Your Inbox Report' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open report' })).toHaveAttribute('href', '/senders');
+    expect(screen.getByText(/195 senders you mostly leave unread/)).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Unsubscribe + archive 158 senders' }),
+    ).toBeInTheDocument();
+    const laterCard = screen.getByRole('link', { name: 'Open Later' }).closest('article');
+    expect(laterCard).toHaveTextContent(HOME_DECK.laterBody);
+    expect(laterCard).not.toHaveTextContent('3');
+    expect(homePreviewReport('caught-up')?.calm).toMatch(/47 emails/);
+    expect(homePreviewReport('syncing')).toBeNull();
+    expect(homePreviewReport('empty')).toBeNull();
   });
 
   it('shows the largest card only when the size view is on', () => {

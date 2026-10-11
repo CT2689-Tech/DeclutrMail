@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { homeV1Mode, rankHomeNextSteps, type HomeFixCandidate } from './home-next-steps';
+import {
+  homeCandidatesFromReport,
+  homeV1Mode,
+  rankHomeNextSteps,
+  type HomeFixCandidate,
+} from './home-next-steps';
 
 const unsub: HomeFixCandidate = { kind: 'unsub_archive', senderCount: 4, senderIds: ['a'] };
 const largest: HomeFixCandidate = { kind: 'largest', senderCount: 10, senderIds: ['b'] };
@@ -22,6 +27,27 @@ describe('rankHomeNextSteps', () => {
         (step) => step.kind,
       ),
     ).toEqual(['unsub_archive', 'later_due']);
+  });
+});
+
+describe('homeCandidatesFromReport', () => {
+  it('returns no step when there is no report', () => {
+    expect(homeCandidatesFromReport(null)).toEqual([]);
+  });
+
+  it('reads getFixSet(report) and does not invent a later card', () => {
+    expect(
+      homeCandidatesFromReport({
+        fix: { senderKeys: ['s1', 's2'], sendersCount: 2, inboxEmailCount: 9 },
+      }),
+    ).toEqual([
+      {
+        kind: 'unsub_archive',
+        senderCount: 2,
+        emailCount: 9,
+        senderIds: ['s1', 's2'],
+      },
+    ]);
   });
 });
 

@@ -44,6 +44,13 @@
         },
         "body": "About {size} of email (Gmail’s estimates). Archiving doesn’t change storage. Deleting moves email to Gmail Trash, which Gmail empties after 30 days.",
         "cta": "See largest senders"
+      },
+      "later": {
+        "title": "Later"
+      },
+      "laterDue": {
+        "body": "Email you moved to Later comes back to your inbox at the time you picked.",
+        "cta": "Open Later"
       }
     }
   },

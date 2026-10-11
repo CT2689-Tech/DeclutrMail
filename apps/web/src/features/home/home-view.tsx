@@ -10,7 +10,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { ErrorState, Skeleton, useLabels } from '@declutrmail/shared';
+import { ErrorState, Skeleton } from '@declutrmail/shared';
 import type { CleanupSummaryDto } from '@declutrmail/shared/contracts';
 import { planName, type TierId } from '@declutrmail/shared/entitlements';
 import { InboxReportCard } from '@/features/inbox-report';
@@ -19,6 +19,7 @@ import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
 
 import { fillDeck, formatCount, HOME_DECK } from './home-deck-copy';
+import type { HomePreviewReport } from './home-preview-report';
 import { HomeFixDialog } from './home-fix-dialog';
 import {
   homeCalmTemplate,
@@ -51,6 +52,8 @@ export function HomeView({
   senderSizeView = false,
   reportSizeLabel = null,
   indexedEmailCount = null,
+  mailboxId = '',
+  previewReport = null,
   onConfirmFix,
 }: {
   state: HomeState;
@@ -64,6 +67,10 @@ export function HomeView({
   /** Total Gmail size label, already formatted (for example "7.7 GB"). Never an amount freed. */
   reportSizeLabel?: string | null;
   indexedEmailCount?: number | null;
+  /** Passed through to `InboxReportCard`. Empty until a mailbox is in scope. */
+  mailboxId?: string;
+  /** Preview route only. Production Home leaves this null. */
+  previewReport?: HomePreviewReport | null;
   onConfirmFix?: (step: HomeFixCandidate) => void;
 }) {
   const steps = rankHomeNextSteps(nextSteps, { senderSizeView });
@@ -71,9 +78,11 @@ export function HomeView({
   const [pendingFix, setPendingFix] = useState<HomeFixCandidate | null>(null);
   const reportRef = useRef<HTMLDivElement>(null);
   const reportMounted = useInboxReportMounted(reportRef);
+  const fixCopy = previewReport?.fix ?? homeFixCopy();
+  const namesSenders = previewReport !== null || homeReportNamesSenders();
   const fixReady =
-    homeFixCopy() !== null &&
-    homeReportNamesSenders() &&
+    fixCopy !== null &&
+    namesSenders &&
     reportMounted &&
     steps.some((step) => step.kind === 'unsub_archive');
   useHomeSurfaceEvents(mode);
@@ -110,6 +119,8 @@ export function HomeView({
         reportMounted={reportMounted}
         reportSizeLabel={reportSizeLabel}
         indexedEmailCount={indexedEmailCount}
+        mailboxId={mailboxId}
+        previewReport={previewReport}
         onOpenFix={(step) => {
           void track('home_next_step_clicked', { kind: step.kind });
           if (step.kind === 'unsub_archive') setPendingFix(step);
@@ -131,18 +142,11 @@ export function HomeView({
 }
 
 function useHomeSurfaceEvents(mode: HomeV1Mode) {
-  const reported = useRef(false);
   const caughtUp = useRef(false);
   useEffect(() => {
-    if (mode !== 'full' && mode !== 'fallback') return;
-    if (!reported.current) {
-      reported.current = true;
-      void track('report_viewed', { surface: 'home' });
-    }
-    if (mode === 'fallback' && !caughtUp.current) {
-      caughtUp.current = true;
-      void track('caught_up_viewed', { surface: 'home' });
-    }
+    if (mode !== 'fallback' || caughtUp.current) return;
+    caughtUp.current = true;
+    void track('caught_up_viewed', { surface: 'home' });
   }, [mode]);
 }
 
@@ -174,6 +178,8 @@ function HomeBody({
   reportMounted,
   reportSizeLabel,
   indexedEmailCount,
+  mailboxId,
+  previewReport,
   onOpenFix,
 }: {
   state: HomeState;
@@ -184,6 +190,8 @@ function HomeBody({
   reportMounted: boolean;
   reportSizeLabel: string | null;
   indexedEmailCount: number | null;
+  mailboxId: string;
+  previewReport: HomePreviewReport | null;
   onOpenFix: (step: HomeFixCandidate) => void;
 }) {
   const report = (
@@ -192,6 +200,8 @@ function HomeBody({
       mode={mode}
       reportSizeLabel={reportSizeLabel}
       indexedEmailCount={indexedEmailCount}
+      mailboxId={mailboxId}
+      previewReport={previewReport}
     />
   );
   switch (state.kind) {
@@ -241,7 +251,12 @@ function HomeBody({
         <>
           {report}
           {steps.length > 0 && (
-            <NextSteps steps={steps} reportMounted={reportMounted} onOpenFix={onOpenFix} />
+            <NextSteps
+              steps={steps}
+              reportMounted={reportMounted}
+              previewReport={previewReport}
+              onOpenFix={onOpenFix}
+            />
           )}
           <TrustLine />
           <Progress state={state} timeZone={timeZone} />
@@ -284,13 +299,17 @@ function ReportCard({
   mode,
   reportSizeLabel,
   indexedEmailCount,
+  mailboxId,
+  previewReport,
 }: {
   reportRef: RefObject<HTMLDivElement | null>;
   mode: HomeV1Mode;
   reportSizeLabel: string | null;
   indexedEmailCount: number | null;
+  mailboxId: string;
+  previewReport: HomePreviewReport | null;
 }) {
-  const copy = homeReportCopy();
+  const copy = previewReport ?? homeReportCopy();
   const calmTemplate = homeCalmTemplate();
   const calm =
     copy !== null &&
@@ -305,16 +324,50 @@ function ReportCard({
     copy !== null && tileCopy !== null && reportSizeLabel !== null && reportSizeLabel !== ''
       ? fillDeck(tileCopy.value, { size: reportSizeLabel })
       : null;
+  if (previewReport !== null) {
+    return (
+      <section ref={reportRef} className={styles.report} aria-label={previewReport.title}>
+        <InboxReportCard surface="home" mailboxId={mailboxId} />
+        <div data-inbox-report data-preview-report className={styles.previewReport}>
+          <h2>{previewReport.title}</h2>
+          <p>{previewReport.body}</p>
+          <Link
+            href="/senders"
+            data-dm-button=""
+            className={`dm-button-link ${styles.primaryAction}`}
+          >
+            {previewReport.cta}
+          </Link>
+          <p>{previewReport.headline}</p>
+          {previewReport.calm !== null && <p data-testid="home-calm">{previewReport.calm}</p>}
+          {previewReport.tileValue !== null && previewReport.tileLabel !== null && (
+            <div className={styles.storageTile}>
+              <strong>{previewReport.tileValue}</strong>
+              <span>{previewReport.tileLabel}</span>
+              {previewReport.tileNote !== null && <small>{previewReport.tileNote}</small>}
+            </div>
+          )}
+          <p>
+            {previewReport.trust}{' '}
+            <Link href="/settings/privacy#what-we-store" className="dm-external-link">
+              {previewReport.trustLink}
+              <span aria-hidden="true"> →</span>
+            </Link>
+          </p>
+        </div>
+      </section>
+    );
+  }
   if (copy === null) {
     return (
       <div ref={reportRef} hidden>
-        <InboxReportCard surface="home" />
+        <InboxReportCard surface="home" mailboxId={mailboxId} />
       </div>
     );
   }
   return (
     <section ref={reportRef} className={styles.report} aria-label={copy.title}>
-      <InboxReportCard surface="home" />
+      <InboxReportCard surface="home" mailboxId={mailboxId} />
       <div className={styles.reportFallback}>
         <h2>{copy.title}</h2>
         <p>{copy.body}</p>
@@ -360,16 +413,18 @@ function TrustLine() {
 function NextSteps({
   steps,
   reportMounted,
+  previewReport,
   onOpenFix,
 }: {
   steps: readonly HomeFixCandidate[];
   reportMounted: boolean;
+  previewReport: HomePreviewReport | null;
   onOpenFix: (step: HomeFixCandidate) => void;
 }) {
+  const fixCopy = previewReport?.fix ?? homeFixCopy();
+  const namesSenders = previewReport !== null || homeReportNamesSenders();
   const visible = steps.filter(
-    (step) =>
-      step.kind !== 'unsub_archive' ||
-      (homeFixCopy() !== null && reportMounted && homeReportNamesSenders()),
+    (step) => step.kind !== 'unsub_archive' || (fixCopy !== null && reportMounted && namesSenders),
   );
   const [primary, ...secondary] = visible;
   if (!primary) return null;
@@ -377,13 +432,20 @@ function NextSteps({
     <section className={styles.steps} aria-label={HOME_DECK.nextSteps}>
       <h2 className={styles.eyebrow}>{HOME_DECK.nextSteps}</h2>
       <div className={styles.stepGrid}>
-        <FixCard step={primary} primary reportMounted={reportMounted} onOpenFix={onOpenFix} />
+        <FixCard
+          step={primary}
+          primary
+          reportMounted={reportMounted}
+          previewReport={previewReport}
+          onOpenFix={onOpenFix}
+        />
         {secondary.map((step) => (
           <FixCard
             key={step.kind}
             step={step}
             primary={false}
             reportMounted={reportMounted}
+            previewReport={previewReport}
             onOpenFix={onOpenFix}
           />
         ))}
@@ -396,18 +458,21 @@ function FixCard({
   step,
   primary,
   reportMounted,
+  previewReport,
   onOpenFix,
 }: {
   step: HomeFixCandidate;
   primary: boolean;
   reportMounted: boolean;
+  previewReport: HomePreviewReport | null;
   onOpenFix: (step: HomeFixCandidate) => void;
 }) {
   if (step.kind === 'unsub_archive') {
-    const copy = homeFixCopy();
+    const copy = previewReport?.fix ?? homeFixCopy();
+    const namesSenders = previewReport !== null || homeReportNamesSenders();
     // "of these senders" counts a set the report names. Hide it until that
     // sentence is on the page.
-    if (copy === null || !reportMounted || !homeReportNamesSenders()) return null;
+    if (copy === null || !reportMounted || !namesSenders) return null;
     const heading =
       step.senderCount === 1
         ? copy.headingOne
@@ -471,11 +536,10 @@ function FixCard({
   return unreachable;
 }
 
-/** Same clock as the Later row in the shell. There is no laterDue title or action key. */
+/** Same clock as the Later row in the shell. The count key is held, so the card shows none. */
 const LATER_ICON = 'M12 6v6l4 2M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z';
 
 function LaterCard({ step }: { step: HomeFixCandidate }) {
-  const labels = useLabels();
   return (
     <article className={styles.secondaryCard} data-step={step.kind}>
       <div className={styles.cardTitle}>
@@ -493,8 +557,9 @@ function LaterCard({ step }: { step: HomeFixCandidate }) {
         >
           <path d={LATER_ICON} />
         </svg>
-        <h3>{labels.snoozed}</h3>
+        <h3>{HOME_DECK.laterTitle}</h3>
       </div>
+      <p>{HOME_DECK.laterBody}</p>
       <Link
         href="/later"
         className={`dm-external-link ${styles.cardAction}`}
@@ -502,7 +567,7 @@ function LaterCard({ step }: { step: HomeFixCandidate }) {
           void track('home_next_step_clicked', { kind: 'later_due' });
         }}
       >
-        {labels.snoozed}
+        {HOME_DECK.laterCta}
       </Link>
     </article>
   );

@@ -6,14 +6,12 @@ import { isMailboxScopeConflict } from '@/features/mailboxes/api/reset-mailbox-c
 import { NoActiveMailbox } from '@/features/mailboxes/no-active-mailbox';
 
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
-import { getFixSet } from '@/features/inbox-report';
-
 import { useSyncStatus } from '@/features/onboarding/api/use-sync-status';
 import { inProgressStageSentence } from '@/features/onboarding/sync-stage-copy';
 
 import { useHomeSummary } from './api/use-home-summary';
 import { HomeArrivals } from './home-arrivals';
-import { rankHomeNextSteps } from './home-next-steps';
+import { homeCandidatesFromReport, rankHomeNextSteps } from './home-next-steps';
 import { composeHomeNumbers, type HomeState } from './home-state';
 import { HomeView } from './home-view';
 
@@ -47,7 +45,10 @@ export function HomeScreen() {
   const summary = useHomeSummary({ enabled: hasActiveMailbox });
   const sync = useSyncStatus(me.activeMailboxId ?? undefined, { enabled: hasActiveMailbox });
   const cleanup = useCleanupSummary();
-  const nextSteps = rankHomeNextSteps(getFixSet(), { senderSizeView: SENDER_SIZE_VIEW });
+  // No report read on this screen until WS5's inbox report is the source.
+  const nextSteps = rankHomeNextSteps(homeCandidatesFromReport(null), {
+    senderSizeView: SENDER_SIZE_VIEW,
+  });
 
   const activeMailbox = me.mailboxes.find((m) => m.id === me.activeMailboxId);
   const readiness = activeMailbox?.readiness;
@@ -66,6 +67,7 @@ export function HomeScreen() {
       summary={cleanup.data ?? null}
       nextSteps={nextSteps}
       senderSizeView={SENDER_SIZE_VIEW}
+      mailboxId={activeMailbox?.id ?? ''}
     />
   );
 

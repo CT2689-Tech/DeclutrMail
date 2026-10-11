@@ -6,6 +6,7 @@ import { AppShell } from '@declutrmail/shared';
 import { STAGE_SENTENCE } from '@/features/onboarding/sync-stage-copy';
 
 import { HomeView } from './home-view';
+import { homePreviewReport } from './home-preview-report';
 import { HOME_PREVIEW_STATES, type HomePreviewState } from './home-preview-state';
 import styles from './home-view.module.css';
 
@@ -58,7 +59,11 @@ export function HomePreview({ state }: { state: HomePreviewState }) {
               </Link>
             ))}
           </nav>
-          <HomeView {...fixture(state)} />
+          <HomeView
+            {...fixture(state)}
+            mailboxId="mb-preview"
+            previewReport={homePreviewReport(state)}
+          />
         </AppShell>
       </div>
     </div>

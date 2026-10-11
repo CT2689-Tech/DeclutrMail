@@ -1,6 +1,6 @@
 # Glossary content requests — WS2b Home
 
-Deck revision: Home sentences are drop2-r9 (`ws2.json`). Meter sentences are
+Deck revision: Home sentences are drop2-r10 (`ws2.json`). Meter sentences are
 drop2-r7 (`ws1.json`). Report and confirm sentences are read from
 `WS5_COPY` when those keys exist. The module is still `{}`, so Home
 renders no report slot and no unsubscribe step until WS5 lands.
@@ -36,16 +36,23 @@ These render the deck sentence.
 
 `ws2.home.syncing.cta` and `ws2.home.queued.cta` are “(no button)”. That is an instruction: neither state renders a button. Senders cannot be reviewed while a scan is in progress. The empty state that is not scanning still links to Review senders.
 
+## Resolved in drop2-r10
+
+| Key                           | Where                                                                  |
+| ----------------------------- | ---------------------------------------------------------------------- |
+| `ws2.home.next.later.title`   | Later card title.                                                      |
+| `ws2.home.next.laterDue.body` | Later card body. No count in the sentence.                             |
+| `ws2.home.next.laterDue.cta`  | Later card action, “Open Later”. Replaces a link whose name was Later. |
+
 ## Held
 
-| Key                            | Status                                                                                                                 |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `ws2.home.next.largest.title`  | Renders only while `SENDER_SIZE_VIEW` is on. The flag is off, so the card is not on the page.                          |
-| `ws2.home.next.largest.body`   | Same gate.                                                                                                             |
-| `ws2.home.next.largest.cta`    | Same gate. The link target is `/senders` until a size-sorted view exists.                                              |
-| `ws2.home.next.laterDue.title` | Not shipped.                                                                                                           |
-| `ws2.home.next.laterDue.body`  | Not shipped.                                                                                                           |
-| `ws2.home.next.laterDue.cta`   | Not shipped. The card title is Later, and the action repeats that screen name. Count, body, and “Open Later” stay off. |
+| Key                            | Status                                                                                        |
+| ------------------------------ | --------------------------------------------------------------------------------------------- |
+| `ws2.home.next.largest.title`  | Renders only while `SENDER_SIZE_VIEW` is on. The flag is off, so the card is not on the page. |
+| `ws2.home.next.largest.body`   | Same gate.                                                                                    |
+| `ws2.home.next.largest.cta`    | Same gate. The link target is `/senders` until a size-sorted view exists.                     |
+| `ws2.home.next.laterDue.count` | Not rendered. The Later card has a title, body, and “Open Later”, and no count.               |
+| `ws2.home.next.laterDue.title` | Not shipped. The title is `ws2.home.next.later.title`.                                        |
 
 ## Not shipped
 
@@ -74,9 +81,9 @@ Left off the page. Home does not invent a sentence for them.
 | {n} emails archived or deleted                               | No deck key. Progress is one line: `{n}` plus `ws2.home.progress.hero`.                             |
 | {n} senders decided                                          | No deck key. The four-number grid is not rendered.                                                  |
 | Progress since you joined                                    | Not shipped.                                                                                        |
-| {n} senders come back from Later today                       | `ws2.home.next.laterDue.title` is held. The count is not rendered.                                  |
-| Their email returns to your inbox at the time you picked.    | `ws2.home.next.laterDue.body` is held.                                                              |
-| Open Later                                                   | `ws2.home.next.laterDue.cta` is held. The title is Later and the action repeats it.                 |
+| {n} senders come back from Later today                       | `ws2.home.next.laterDue.count` is held. The card renders no count.                                  |
+| Their email returns to your inbox at the time you picked.    | Replaced by `ws2.home.next.laterDue.body`.                                                          |
+| Open Later                                                   | `ws2.home.next.laterDue.cta`. The title is `ws2.home.next.later.title`.                             |
 
 ## §P.1 swaps checked
 
