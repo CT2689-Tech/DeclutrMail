@@ -292,6 +292,10 @@ export {
   EmailPrefsPatchSchema,
   EmailPrefsSchema,
   parseEmailPrefs,
+  hasBriefEmailConsent,
+  displayEmailPrefs,
+  INITIAL_EMAIL_OPT_OUT_REVISION,
+  EMAIL_OPT_OUT_REVISION_PATTERN,
 } from './email-prefs';
 export type { EmailPrefs, EmailPrefsPatch } from './email-prefs';
 

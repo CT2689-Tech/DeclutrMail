@@ -14,7 +14,7 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { type StoredUnsubscribeMethod, unsubscribeCapabilityOf } from '@declutrmail/shared/actions';
-import { parseBriefPrefs } from '@declutrmail/shared/contracts';
+import { parseBriefPrefs, hasBriefEmailConsent } from '@declutrmail/shared/contracts';
 import { hasCapability, TIER_IDS } from '@declutrmail/shared/entitlements';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
@@ -102,6 +102,12 @@ export interface BriefSnapshotResult {
 
 export interface BriefSnapshotDeps {
   db: WorkerDb;
+  /** Identifier-only notice; delivery rechecks eligibility and renders counts. */
+  notifyBriefReady?: (input: {
+    runId: string;
+    mailboxAccountId: string;
+    userId: string;
+  }) => Promise<void>;
   /** Override clock for tests. Defaults to `() => new Date()`. */
   now?: () => Date;
   /**
@@ -273,6 +279,7 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
       .select({
         id: mailboxAccounts.id,
         workspaceId: mailboxAccounts.workspaceId,
+        userId: mailboxAccounts.userId,
         // D64 — the owning user's preference bag; `parseBriefPrefs`
         // extracts the delivery hour with a safe default (8am local).
         preferences: users.preferences,
@@ -326,6 +333,30 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
             if (generated) {
               briefsGenerated += 1;
               if (generated.isEmpty) emptyBriefs += 1;
+            }
+            // Existing frozen rows are reconsidered too: a lost enqueue or a
+            // known-unsent outcome can catch up on the next hourly tick.
+            if (this.deps.notifyBriefReady && hasBriefEmailConsent(mb.preferences)) {
+              const [run] = await this.deps.db
+                .select({
+                  id: briefRuns.id,
+                  payload: briefRuns.briefPayload,
+                  sentAt: briefRuns.emailSentAt,
+                })
+                .from(briefRuns)
+                .where(
+                  and(
+                    eq(briefRuns.mailboxAccountId, mb.id),
+                    eq(briefRuns.runDateLocal, localWindow.runDateLocal),
+                  ),
+                )
+                .limit(1);
+              if (run && !run.sentAt && !isEmptyBriefPayload(run.payload))
+                await this.deps.notifyBriefReady({
+                  runId: run.id,
+                  mailboxAccountId: mb.id,
+                  userId: mb.userId,
+                });
             }
           } catch (err) {
             mailboxesFailed += 1;

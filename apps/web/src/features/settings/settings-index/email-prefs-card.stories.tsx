@@ -50,7 +50,7 @@ const noop = () => undefined;
 const baseArgs: CardArgs = {
   state: {
     kind: 'ready',
-    prefs: { reminders: true, syncComplete: true, weeklyReceipt: false },
+    prefs: { reminders: true, syncComplete: true, weeklyReceipt: false, briefReady: false },
   },
   pendingWire: null,
   saveFailed: false,
@@ -66,7 +66,7 @@ export const OptedOut: Story<typeof EmailPrefsCard> = {
     ...baseArgs,
     state: {
       kind: 'ready',
-      prefs: { reminders: false, syncComplete: false, weeklyReceipt: false },
+      prefs: { reminders: false, syncComplete: false, weeklyReceipt: false, briefReady: false },
     },
   },
 };
@@ -85,4 +85,17 @@ export const Loading: Story<typeof EmailPrefsCard> = {
 
 export const Error: Story<typeof EmailPrefsCard> = {
   args: { ...baseArgs, state: { kind: 'error', onRetry: noop } },
+};
+
+export const BriefOptedIn: Story<typeof EmailPrefsCard> = {
+  args: {
+    ...baseArgs,
+    state: {
+      kind: 'ready',
+      prefs: { reminders: true, syncComplete: true, weeklyReceipt: false, briefReady: true },
+    },
+  },
+};
+export const SavingBrief: Story<typeof EmailPrefsCard> = {
+  args: { ...baseArgs, pendingWire: 'briefReady' },
 };

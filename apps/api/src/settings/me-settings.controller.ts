@@ -7,7 +7,7 @@ import {
   ok,
   parseActionSheetPrefs,
   parseBriefPrefs,
-  parseEmailPrefs,
+  displayEmailPrefs,
   parseSenderViews,
   SenderViewsPutSchema,
   SignupHeardFromPatchSchema,
@@ -53,7 +53,7 @@ export class MeSettingsController {
   async settings(@CurrentUser() user: SessionPrincipal): Promise<Envelope<MeSettings>> {
     const current = await this.users.findById(user.userId);
     return ok({
-      emailPrefs: parseEmailPrefs(current?.preferences),
+      emailPrefs: displayEmailPrefs(current?.preferences),
       actionSheetPrefs: parseActionSheetPrefs(current?.preferences),
       briefPrefs: parseBriefPrefs(current?.preferences),
       senderViews: parseSenderViews(current?.preferences),

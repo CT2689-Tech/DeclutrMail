@@ -801,6 +801,45 @@ describe('SettingsScreen', () => {
     );
   });
 
+  it('Brief notice opt-in PATCHes only briefReady and renders the saved state', async () => {
+    const patches: unknown[] = [];
+    installFetchStub([
+      ...happyHandlers(),
+      {
+        method: 'PATCH',
+        path: '/api/me/email-prefs',
+        respond: async (req) => {
+          const body = (await req.json()) as Record<string, boolean>;
+          patches.push(body);
+          return jsonOk({
+            data: {
+              emailPrefs: {
+                reminders: body.reminders ?? true,
+                syncComplete: body.syncComplete ?? true,
+                weeklyReceipt: body.weeklyReceipt ?? false,
+                briefReady: body.briefReady ?? false,
+              },
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+
+    const toggle = await screen.findByRole('switch', {
+      name: /^enable daily brief ready email$/i,
+    });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await userEvent.click(toggle);
+
+    await waitFor(() => expect(patches).toEqual([{ briefReady: true }]));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('switch', { name: /^disable daily brief ready email$/i }),
+      ).toBeInTheDocument(),
+    );
+  });
+
   it('renders the honest billing-disabled copy on 503 BILLING_DISABLED (no fake Free)', async () => {
     installFetchStub([
       ...happyHandlers().filter((h) => h.path !== '/api/billing/subscription'),
