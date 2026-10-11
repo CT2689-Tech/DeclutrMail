@@ -402,6 +402,22 @@ describe('sampled generic email actor compatibility', () => {
     expect(error).toMatchObject({ reason: 'client_list_unavailable' });
     expect(handles).toBe(2);
   });
+  it('refuses a legacy actor seen by any listing even if another listing in that sample is empty', async () => {
+    // Every CLIENT LIST call returns the next partial listing, as on the bound broker.
+    const listings = [[older], [], [current], [current], [current], [current]];
+    let calls = 0;
+    const withQueue = async <T>(read: (queue: Queue) => Promise<T>) =>
+      read({
+        name: EMAIL_SEND_QUEUE,
+        getWorkers: async () => listings[calls++] ?? [],
+      } as unknown as Queue);
+    const error = await sampleEmailQueueCompatibility(withQueue, {
+      samples: 3,
+      intervalMs: 0,
+    }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(QueueActorCompatibilityError);
+    expect(error).toMatchObject({ reason: 'incompatible_workers' });
+  });
   it('does not retry broker errors as absence', async () => {
     let handles = 0;
     const refusal = Object.assign(new Error('PRIVATE'), { name: 'ReplyError' });
