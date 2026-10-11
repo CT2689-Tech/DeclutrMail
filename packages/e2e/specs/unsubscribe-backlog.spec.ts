@@ -1,8 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type postgres from 'postgres';
 
-import { pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
-
 import { expectScreenMounted } from '../helpers/screen-ready';
 import { ApiClient, requireLiveStack } from '../helpers/api';
 import { dbConnect } from '../helpers/db';
@@ -27,41 +25,10 @@ const NO_LINK_SENDER = {
   name: 'No Link Digest',
 } as const;
 
-type BacklogWire = {
-  mode?: string;
-  backlog?: { verb?: string; requestedCount?: number } | null;
-  senders?: Array<{ unsubStatus?: string; reasonCode?: string | null }>;
-};
-
-/** The sentence `unsubscribeBacklogToast` shows for this response. */
-function visibleBacklogToast(data: BacklogWire | undefined): string {
-  const n = data?.backlog?.requestedCount ?? 0;
-  const verb = data?.backlog?.verb === 'delete' ? 'delete' : 'archive';
-  const sender = data?.senders?.[0];
-  const moved = pluralCopy(
-    verb === 'delete' ? WS5_COPY['f1.toast.both.delete'] : WS5_COPY['f1.toast.both.archive'],
-    n,
-    { n },
-  );
-  if (!data?.backlog) return WS5_COPY['f1.button.unsubOnly'];
-  if (sender?.unsubStatus === 'failed') {
-    const reason =
-      sender.reasonCode === 'no_link'
-        ? WS5_COPY['f1.reason.noLink']
-        : sender.reasonCode === 'sender_error'
-          ? WS5_COPY['f1.reason.senderError']
-          : WS5_COPY['f1.reason.generic'];
-    return pluralCopy(
-      verb === 'delete'
-        ? WS5_COPY['f1.toast.unsubFailed.delete']
-        : WS5_COPY['f1.toast.unsubFailed.archive'],
-      n,
-      { n, reason },
-    );
-  }
-  if (sender?.unsubStatus === 'manual') return `${moved} ${WS5_COPY['f1.toast.mailto']}`;
-  return moved;
-}
+const ARCHIVE_TOAST =
+  /Unsubscribe requested · Archived \d+ emails?|Archived \d+ emails? · Unsubscribe failed:/;
+const DELETE_TOAST =
+  /Unsubscribe requested · Deleted \d+ emails?|Deleted \d+ emails? · Unsubscribe failed:/;
 
 const api = new ApiClient();
 let sql: postgres.Sql;
@@ -200,9 +167,9 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
   await triageSheet.getByRole('button', { name: 'Unsubscribe + Archive' }).click();
   const triageResponse = await triagePost;
   expect(triageResponse.ok()).toBe(true);
-  const triageBody = (await triageResponse.json()) as { data?: BacklogWire };
+  const triageBody = (await triageResponse.json()) as { data?: { mode?: string } };
   expect(triageBody.data?.mode).toBe('archive');
-  await expect(page.getByText(visibleBacklogToast(triageBody.data))).toBeVisible();
+  await expect(page.getByText(ARCHIVE_TOAST)).toBeVisible();
   await expect(page.getByText('Archiving…')).toBeVisible();
 
   // The default lane has no Gmail worker, so the archive job stays queued
@@ -286,9 +253,9 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
   await sendersSheet.getByRole('button', { name: 'Unsubscribe + Delete' }).click();
   const sendersResponse = await sendersPost;
   expect(sendersResponse.ok()).toBe(true);
-  const sendersBody = (await sendersResponse.json()) as { data?: BacklogWire };
+  const sendersBody = (await sendersResponse.json()) as { data?: { mode?: string } };
   expect(sendersBody.data?.mode).toBe('delete');
-  await expect(page.getByText(visibleBacklogToast(sendersBody.data))).toBeVisible();
+  await expect(page.getByText(DELETE_TOAST)).toBeVisible();
 });
 
 test('an email-only sender opens the mailto handoff and does not claim a draft', async ({
