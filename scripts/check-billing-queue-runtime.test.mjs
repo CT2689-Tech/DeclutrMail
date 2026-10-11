@@ -8,6 +8,7 @@ import {
   checkBillingQueueRuntime,
   cleanupBillingQueueProbe,
   projectBillingProbeFailure,
+  projectBillingProbeTask,
 } from './check-billing-queue-runtime.mjs';
 import {
   FAILED_PROBE,
@@ -50,7 +51,7 @@ function fixture(mode = {}) {
       }
       if (args[2] === 'execute') {
         ran = true;
-        return { ok: !mode.running, output: '{}' };
+        return { ok: !mode.running && !mode.taskFailed, output: '{}' };
       }
       if (args[2] === 'describe')
         return json({ status: { latestCreatedExecution: ran ? { name: execution } : undefined } });
@@ -59,6 +60,25 @@ function fixture(mode = {}) {
         return { ok: true };
       }
       if (args[2] === 'executions') {
+        if (args[3] === 'tasks')
+          return mode.taskReadDenied
+            ? { ok: false }
+            : json([
+                {
+                  status: {
+                    startTime: '2026-10-11T04:00:00Z',
+                    completionTime: '2026-10-11T04:00:01Z',
+                    lastAttemptResult: { exitCode: 137 },
+                    conditions: [
+                      {
+                        type: 'Completed',
+                        status: 'False',
+                        message: 'Container memory limit exceeded SYNTHETIC_PRIVATE_TASK',
+                      },
+                    ],
+                  },
+                },
+              ]);
         if (args[3] === 'cancel') {
           finished = true;
           return { ok: true };
@@ -74,8 +94,9 @@ function fixture(mode = {}) {
             status: finished
               ? {
                   completionTime: '2026-10-11T04:00:00Z',
-                  succeededCount: 1,
-                  conditions: [{ type: 'Completed', status: 'True' }],
+                  succeededCount: mode.taskFailed ? 0 : 1,
+                  failedCount: mode.taskFailed ? 1 : 0,
+                  conditions: [{ type: 'Completed', status: mode.taskFailed ? 'False' : 'True' }],
                 }
               : { runningCount: 1 },
             spec: {
@@ -129,6 +150,73 @@ test('rejects wrong execution source and still cleans its exact resources', asyn
   const f = fixture({ wrongImage: true });
   await assert.rejects(checkBillingQueueRuntime(env, f.run), /unverified/);
   assert.ok(f.calls.some((c) => c[2] === 'delete'));
+});
+test('projects failed owned task metadata before deletion and still refuses deployment', async () => {
+  const f = fixture({ taskFailed: true });
+  const evidence = [];
+  await assert.rejects(
+    checkBillingQueueRuntime(env, f.run, undefined, undefined, (value) => evidence.push(value)),
+    /unverified/,
+  );
+  assert.equal(evidence.length, 1);
+  assert.equal(evidence[0].exitCode, 137);
+  assert.deepEqual(evidence[0].hints, ['memoryLimit']);
+  assert.ok(!JSON.stringify(evidence).includes('SYNTHETIC_PRIVATE_TASK'));
+  const taskRead = f.calls.findIndex((c) => c[3] === 'tasks');
+  const deletion = f.calls.findIndex((c) => c[3] === 'delete');
+  assert.ok(taskRead >= 0 && taskRead < deletion);
+  assert.ok(f.calls[taskRead].includes(`--execution=${execution}`));
+  assert.ok(f.calls[taskRead].includes('--limit=2'));
+  assert.equal(f.calls.at(-1)[2], 'list');
+});
+test('an unavailable task read cannot prevent cleanup or clear the failed execution', async () => {
+  const f = fixture({ taskFailed: true, taskReadDenied: true });
+  const evidence = [];
+  await assert.rejects(
+    checkBillingQueueRuntime(env, f.run, undefined, undefined, (value) => evidence.push(value)),
+  );
+  assert.deepEqual(evidence, [{ available: false, reason: 'task_metadata_unavailable' }]);
+  assert.ok(f.calls.some((c) => c[2] === 'delete'));
+});
+test('task projection rejects incomplete reads and never forwards raw fields or reasons', () => {
+  for (const rows of [
+    null,
+    [],
+    [{ status: {} }, { status: {} }],
+    [{ metadata: {} }],
+    [{ status: 'SYNTHETIC_PRIVATE_TASK' }],
+    [{ status: [] }],
+    [{ status: 1 }],
+    [{ status: {} }],
+    [{ status: { conditions: [{ type: 'SYNTHETIC_PRIVATE_TASK', status: 'False' }] } }],
+  ])
+    assert.deepEqual(projectBillingProbeTask(rows), {
+      available: false,
+      reason: 'task_metadata_unavailable',
+    });
+  const projected = projectBillingProbeTask([
+    {
+      private: 'SYNTHETIC_PRIVATE_TASK',
+      status: {
+        lastAttemptResult: {
+          exitCode: -1,
+          termSignal: 9,
+          status: { code: 3, message: 'Task exceeded timeout SYNTHETIC_PRIVATE_TASK' },
+        },
+        conditions: [
+          { type: 'Completed', status: 'False', reason: 'SYNTHETIC_PRIVATE_TASK' },
+          { type: 'SYNTHETIC_PRIVATE_TASK', status: 'False' },
+        ],
+      },
+    },
+  ]);
+  assert.equal(projected.exitCode, null);
+  assert.equal(projected.termSignal, 9);
+  assert.deepEqual(projected.hints, ['taskTimeout']);
+  assert.deepEqual(projected.conditions, [
+    { type: 'Completed', status: 'False', reason: 'unknown' },
+  ]);
+  assert.ok(!JSON.stringify(projected).includes('SYNTHETIC_PRIVATE_TASK'));
 });
 test('uncertain execution is cancelled, observed terminal and removed before job deletion', async () => {
   const f = fixture({ running: true });

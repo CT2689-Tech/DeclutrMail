@@ -13,6 +13,7 @@ const PERMISSIONS = new Set([
   'run.executions.list',
   'run.executions.delete',
   'run.executions.cancel',
+  'run.tasks.list',
   'iam.serviceAccounts.actAs',
   'secretmanager.versions.access',
 ]);
@@ -23,11 +24,13 @@ export function projectBillingProbeFailure(args, error) {
   let operation =
     args[0] === 'artifacts'
       ? 'image_describe'
-      : args[2] === 'executions'
-        ? `executions_${args[3]}`
-        : `jobs_${args[2]}`;
+      : args[2] === 'executions' && args[3] === 'tasks'
+        ? 'tasks_list'
+        : args[2] === 'executions'
+          ? `executions_${args[3]}`
+          : `jobs_${args[2]}`;
   if (
-    !/^(?:image_describe|jobs_(?:list|describe|create|execute|delete)|executions_(?:list|describe|cancel|delete))$/.test(
+    !/^(?:image_describe|tasks_list|jobs_(?:list|describe|create|execute|delete)|executions_(?:list|describe|cancel|delete))$/.test(
       operation,
     )
   )
@@ -84,7 +87,7 @@ function gcloud(args) {
       ok: true,
       output: execFileSync('gcloud', args, {
         encoding: 'utf8',
-        timeout: 180_000,
+        timeout: args[2] === 'executions' && args[3] === 'tasks' ? 30_000 : 180_000,
         stdio: ['ignore', 'pipe', 'pipe'],
       }),
     };
@@ -158,6 +161,70 @@ function successful(status) {
   );
 }
 
+/** Control-plane metadata only: never emit raw conditions, messages or task fields. */
+export function projectBillingProbeTask(rows) {
+  if (
+    !Array.isArray(rows) ||
+    rows.length !== 1 ||
+    !rows[0]?.status ||
+    typeof rows[0].status !== 'object' ||
+    Array.isArray(rows[0].status)
+  )
+    return { available: false, reason: 'task_metadata_unavailable' };
+  const status = rows[0].status;
+  const integer = (value, max) =>
+    Number.isInteger(value) && value >= 0 && value <= max ? value : null;
+  const result = status.lastAttemptResult;
+  const conditions = Array.isArray(status.conditions) ? status.conditions : [];
+  const text = [result?.status?.message, ...conditions.map((c) => c?.message)]
+    .filter((message) => typeof message === 'string')
+    .join('\n');
+  const projected = {
+    available: true,
+    started: Number.isFinite(Date.parse(status.startTime ?? '')),
+    completed: Number.isFinite(Date.parse(status.completionTime ?? '')),
+    exitCode: integer(result?.exitCode, 255),
+    termSignal: integer(result?.termSignal, 128),
+    statusCode: integer(result?.status?.code, 16),
+    hints: Object.entries({
+      memoryLimit: /memory[^\n]*(?:limit|exceed)|out of memory/i,
+      taskTimeout: /(?:task|container)[^\n]*(?:timed? out|timeout|deadline)/i,
+      secretUnavailable: /secret[^\n]*(?:access|denied|unavailable|not found)/i,
+      imageUnavailable: /image[^\n]*(?:pull|not found|unavailable)/i,
+    })
+      .filter(([, pattern]) => pattern.test(text))
+      .map(([name]) => name),
+    conditions: conditions
+      .filter(
+        (c) =>
+          ['Started', 'Completed', 'ResourcesAvailable', 'Ready'].includes(c?.type) &&
+          ['True', 'False', 'Unknown'].includes(c?.status),
+      )
+      .map((c) => ({
+        type: c.type,
+        status: ['True', 'False', 'Unknown'].includes(c.status) ? c.status : 'Unknown',
+        reason: [
+          'NonZeroExitCode',
+          'TaskTimeout',
+          'MemoryLimitExceeded',
+          'ContainerMissing',
+          'ImagePullError',
+          'Cancelled',
+        ].includes(c.reason)
+          ? c.reason
+          : 'unknown',
+      })),
+  };
+  return projected.started ||
+    projected.completed ||
+    projected.exitCode !== null ||
+    projected.termSignal !== null ||
+    projected.statusCode !== null ||
+    projected.conditions.length
+    ? projected
+    : { available: false, reason: 'task_metadata_unavailable' };
+}
+
 export async function cleanupBillingQueueProbe(
   env = process.env,
   run = gcloud,
@@ -221,6 +288,7 @@ export async function checkBillingQueueRuntime(
   run = gcloud,
   sleep,
   onOwnedAttempt = () => {},
+  onTaskEvidence = (value) => console.error(JSON.stringify({ billingProbeTask: value })),
 ) {
   const { job, common } = scope(env);
   if (jobExists(job, common, run)) throw new Error(FAILURE);
@@ -294,6 +362,29 @@ export async function checkBillingQueueRuntime(
       successful(state.status) &&
       state.spec?.template?.spec?.containers?.[0]?.image === image &&
       state.spec?.template?.spec?.serviceAccountName === env.RUNTIME_SA;
+    if (!verified) {
+      let evidence;
+      try {
+        evidence = projectBillingProbeTask(
+          parsed(
+            run([
+              'run',
+              'jobs',
+              'executions',
+              'tasks',
+              'list',
+              `--execution=${execution}`,
+              ...common,
+              '--limit=2',
+              '--format=json(status)',
+            ]),
+          ),
+        );
+      } catch {
+        evidence = { available: false, reason: 'task_metadata_unavailable' };
+      }
+      onTaskEvidence(evidence);
+    }
   } catch {
     // Preserve refusal while recovering the exact owned probe below.
   }
