@@ -70,6 +70,7 @@ on:
       - '.github/workflows/deploy-cloud-run.yml'
       - 'scripts/select-deployment.mjs'
       - 'scripts/deploy-api-safely*'
+      - 'scripts/check-billing-queue-runtime*'
   workflow_dispatch:
     # Allow manual re-deploys (e.g. after a Secret Manager rotation
     # where the IMAGE hasn't changed but the env needs to be repulled).
@@ -224,7 +225,7 @@ jobs:
         uses: google-github-actions/setup-gcloud@v3
 
       - name: Verify deployment safety contracts
-        run: node --test scripts/deploy-api-safely.test.mjs
+        run: node --test scripts/deploy-api-safely.test.mjs scripts/check-billing-queue-runtime.test.mjs
 
       - name: Check serving API driver before releasing either service
         run: node scripts/deploy-api-safely.mjs --check-driver="$API_DB_DRIVER" --region="$REGION" --project="$PROJECT"
@@ -258,6 +259,7 @@ jobs:
           echo "image=$SHA_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Check billing queue actors before activation
+        id: billing_queue_check
         env:
           IMAGE: ${{ steps.build.outputs.image }}
         run: |
@@ -266,34 +268,10 @@ jobs:
             echo 'Billing notices remain off; compatibility foundation only'
             exit 0
           fi
-          # Use existing WIF/Secret Manager inside CI, never a laptop export.
-          # Only broker compatibility/count metadata leaves the container.
-          BILLING_NOTICE_REDIS_URL=$(gcloud secrets versions access latest \
-            --secret=redis-url-prod --project="$PROJECT")
-          export BILLING_NOTICE_REDIS_URL
-          timeout 30s docker run --rm --env BILLING_NOTICE_REDIS_URL \
-            --entrypoint node "$IMAGE" --import @sentry/node/import \
-            --import @swc-node/register/esm-register \
-            --input-type=module -e '
-              import { Queue } from "bullmq";
-              import { createRedisConnection, EMAIL_SEND_QUEUE, readBillingQueueCompatibility } from "@declutrmail/workers";
-              let connection, queue;
-              try {
-                connection = createRedisConnection(process.env.BILLING_NOTICE_REDIS_URL);
-                connection.on("error", () => {});
-                queue = new Queue(EMAIL_SEND_QUEUE, { connection, skipMetasUpdate: true });
-                queue.on("error", () => {});
-                const proof = await readBillingQueueCompatibility(queue);
-                console.log(JSON.stringify({ billingQueueCompatible: true, workers: proof.workers }));
-              } catch {
-                console.error("Billing queue compatibility unverified; no producer deployment");
-                process.exitCode = 1;
-              } finally {
-                connection?.disconnect();
-                await queue?.close().catch(() => {});
-              }
-            '
-          unset BILLING_NOTICE_REDIS_URL
+          # The existing runtime can read its bound Redis secret; the deploy
+          # identity deliberately cannot. Keep values inside a private job.
+          # Success requires a terminal proof and verified owned-job cleanup.
+          node scripts/check-billing-queue-runtime.mjs
 
       # WORKER DEPLOYS BEFORE API (swapped 2026-09-03, architecture-guardian
       # review of the RateLimitError backoff fix). Both services share this
@@ -626,6 +604,13 @@ jobs:
                 select(.name == "BILLING_UPGRADE_REFUND_RESTORE_ENABLED")] |
                 all(.value == "false" and (has("valueFrom") | not) and (has("valueSource") | not)))'
           echo "Notice API serving $NOTICE_REVISION; enrollment $BILLING_APP_NOTICES_START_AT"
+
+      - name: Recover owned billing probe after failed or cancelled release
+        if: always() && steps.billing_queue_check.outputs.owned_probe == 'true'
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+          BILLING_NOTICE_PROBE_OWNED: ${{ steps.billing_queue_check.outputs.owned_probe }}
+        run: node scripts/check-billing-queue-runtime.mjs --cleanup
 
       - name: Protect serving images from registry cleanup
         if: always() && steps.build.outcome == 'success'
