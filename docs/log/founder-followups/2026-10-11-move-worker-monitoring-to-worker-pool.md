@@ -1,0 +1,6 @@
+### 2026-10-11 — Move worker alerts and dashboards to the worker pool
+**Source:** worker-pool migration PR (`cursor/worker-pool-migration-6392`)
+**Why:** After the cutover the worker logs as `resource.type="cloud_run_worker_pool"` with `resource.labels.worker_pool_name="declutrmail-worker-pool"`. Live alerts, log metrics and the dashboard still filter on `resource.type="cloud_run_revision"` and `service_name="declutrmail-worker"`. Absence alerts on worker log metrics (scheduler success, runtime observations, stuck-mailbox watchdog) will fire, and threshold alerts on worker logs and container metrics (memory, Upstash request limit) will go quiet. The `/api/worker-readyz` heartbeat uptime check is unaffected.
+**How:** Point the worker filters in `scripts/setup-infra-alerts.mjs`, `setup-infra-dashboard.mjs`, `setup-stuck-mailbox-alert.mjs`, `setup-mailbox-lock-alert.mjs`, `setup-billing-alerts.sh` and `infra-runtime-metrics.mjs` at the worker-pool resource, confirming each worker-pool metric type in Metrics Explorer first. Then re-run each setup script against `declutrmail-ai-prod`.
+**Verifies by:** Each worker alert policy shows recent data points from `declutrmail-worker-pool` in Cloud Monitoring, and the worker absence alerts are closed.
+**Status:** Open
