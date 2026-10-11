@@ -8,7 +8,8 @@ import './trust-row.css';
 /**
  * One trust line. The date is `CASA_VERIFICATION_APPROVED_ON`, formatted at render.
  * Wide screens keep the chosen deck variant. Narrow screens show the short
- * deck line, clamped to two lines, so the row is not a raw default link.
+ * deck line, clamped to three lines. The link carries `dm-trust-link` so
+ * prose rules (`.dm-story a:not([class])`, `.dm-read-body a`) do not restyle it.
  */
 export function TrustRow({ variant = TRUST_ROW_VARIANT }: { variant?: 'full' | 'short' }) {
   const oauthDate = formatVerificationDate(CASA_VERIFICATION_APPROVED_ON);
@@ -19,7 +20,11 @@ export function TrustRow({ variant = TRUST_ROW_VARIANT }: { variant?: 'full' | '
   const narrow = fillWs3(WS3_COPY['ws3.trust.short'], { OAUTH_DATE: oauthDate });
   return (
     <p className="dm-trust-row">
-      <Link href="/security#verification" aria-label={WS3_COPY['ws3.trust.aria']}>
+      <Link
+        className="dm-trust-link"
+        href="/security#verification"
+        aria-label={WS3_COPY['ws3.trust.aria']}
+      >
         <svg
           className="dm-trust-badge"
           aria-hidden="true"

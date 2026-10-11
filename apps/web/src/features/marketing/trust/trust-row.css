@@ -3,18 +3,21 @@
   max-width: 40rem;
 }
 
-.dm-trust-row a {
+.dm-trust-row a.dm-trust-link {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   color: var(--dm-fg-muted);
   font: 400 13px/1.4 var(--dm-font-sans);
   text-decoration: none;
+  text-decoration-thickness: 0;
+  text-underline-offset: 0;
 }
 
-.dm-trust-row a:hover,
-.dm-trust-row a:focus-visible {
+.dm-trust-row a.dm-trust-link:hover,
+.dm-trust-row a.dm-trust-link:focus-visible {
   color: var(--dm-fg);
+  text-decoration: none;
 }
 
 .dm-trust-badge {
@@ -36,6 +39,6 @@
     display: -webkit-box;
     overflow: hidden;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: 3;
   }
 }
