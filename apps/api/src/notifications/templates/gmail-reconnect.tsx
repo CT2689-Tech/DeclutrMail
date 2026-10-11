@@ -12,7 +12,7 @@ export async function gmailReconnectEmail(input: {
 }): Promise<RenderedEmail> {
   const url = emailLink(
     `${input.appUrl.replace(/\/$/, '')}/settings#mailbox-${encodeURIComponent(input.mailboxAccountId)}`,
-    { template: 'gmail_reconnect', mailboxId: input.mailboxAccountId },
+    { template: 'gmail_reconnect' },
   );
   // Sent for every `InvalidGrantError`: a refused refresh, and also a Gmail
   // permission left unticked at consent — so no "renewing" and no expiry.

@@ -6,6 +6,12 @@ import { EmailSendWorker, type EmailSendJobData } from '@declutrmail/workers';
 import { eq } from 'drizzle-orm';
 import { expect, it, vi } from 'vitest';
 
+function reconnectUrl(part: string): URL {
+  const raw = part.match(/https:\/\/app\.declutrmail\.com[^\s"'<>]*/)?.[0];
+  expect(raw).toBeTruthy();
+  return new URL(raw!.replaceAll('&amp;', '&'));
+}
+
 it('routes a reconnect incident to the exact mailbox and suppresses delivery after recovery', async () => {
   const db = await freshTestDb();
   const [workspace] = await db.insert(workspaces).values({ name: 'Recovery' }).returning();
@@ -52,14 +58,15 @@ it('routes a reconnect incident to the exact mailbox and suppresses delivery aft
   await consume(event);
   const payload = queue.add.mock.calls[0]![1] as EmailSendJobData;
   expect(payload.kind).toBe('gmail-reconnect');
-  expect(payload.text).toContain(`#mailbox-${account!.id}`);
-  expect(payload.html).toContain(`#mailbox-${account!.id}`);
-  expect(payload.text).toContain(`mailbox=${account!.id}`);
-  expect(payload.html).toContain(`mailbox=${account!.id}`);
-  expect(payload.text).toContain('from=gmail_reconnect');
-  expect(payload.html).toContain('from=gmail_reconnect');
-  expect(payload.text).toContain('utm_campaign=gmail_reconnect');
-  expect(payload.html).toContain('utm_campaign=gmail_reconnect');
+  for (const part of [payload.text, payload.html]) {
+    const url = reconnectUrl(part);
+    expect(url.pathname).toBe('/settings');
+    expect(url.hash).toBe(`#mailbox-${account!.id}`);
+    expect(url.searchParams.has('mailbox')).toBe(false);
+    expect(part).not.toContain('mailbox=');
+    expect(url.searchParams.get('from')).toBe('gmail_reconnect');
+    expect(url.searchParams.get('utm_campaign')).toBe('gmail_reconnect');
+  }
   const deliver = vi.fn().mockResolvedValue({ ok: true, providerId: 'test' });
   const worker = new EmailSendWorker({ db: db as never, delivery: { deliver } });
   const context = { jobId: 'test', attempt: 1 } as never;
