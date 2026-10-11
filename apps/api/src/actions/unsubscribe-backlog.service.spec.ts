@@ -13,14 +13,13 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { METER } from '@declutrmail/shared/entitlements';
 
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { ActionsService } from './actions.service.js';
 import { UnsubscribeBacklogService } from './unsubscribe-backlog.service.js';
 
 const SENDER_KEY = 'b'.repeat(64);
-const FREE_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth!;
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -92,26 +91,6 @@ async function seedInbox(db: Db, mailboxAccountId: string, count: number): Promi
   }
 }
 
-async function seedCountedJobs(
-  db: Db,
-  mailboxAccountId: string,
-  senderId: string,
-  count: number,
-): Promise<void> {
-  for (let i = 0; i < count; i += 1) {
-    await db.insert(actionJobs).values({
-      mailboxAccountId,
-      verb: 'archive',
-      direction: 'forward',
-      selector: { type: 'sender', senderId, senderKey: SENDER_KEY },
-      requestedCount: 1,
-      affectedCount: 1,
-      status: 'done',
-      idempotencyKey: `prior-${i}`,
-    });
-  }
-}
-
 describe('UnsubscribeBacklogService', () => {
   let db: Db;
   let mailboxId: string;
@@ -179,7 +158,18 @@ describe('UnsubscribeBacklogService', () => {
 
   it('402s on the email count under METER_V2 and sends no unsubscribe', async () => {
     process.env.METER_V2 = 'true';
-    await seedCountedJobs(db, mailboxId, senderId, FREE_LIMIT - 1);
+    const alreadyCleared = METER.free.limit - 3;
+    await db.insert(actionJobs).values({
+      mailboxAccountId: mailboxId,
+      verb: 'archive',
+      direction: 'forward',
+      selector: { type: 'sender', senderId, senderKey: SENDER_KEY },
+      requestedCount: alreadyCleared,
+      affectedCount: alreadyCleared,
+      quotaUnits: alreadyCleared,
+      status: 'done',
+      idempotencyKey: 'prior-emails',
+    });
     await seedInbox(db, mailboxId, 4);
     const record = vi.spyOn(actions, 'recordUnsubscribeIntent');
 
