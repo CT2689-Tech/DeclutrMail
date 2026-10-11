@@ -20,7 +20,11 @@ describe('ActionsController.unsubscribeIntent', () => {
     [{ senderId: SENDER_ID, override: true }, false, true],
   ] as const)('forwards the parsed flags (%s)', async (body, backlog, override) => {
     const recordUnsubscribeIntent = vi.fn().mockResolvedValue(RESULT);
-    const controller = new ActionsController({ recordUnsubscribeIntent } as never, {} as never);
+    const controller = new ActionsController(
+      { recordUnsubscribeIntent } as never,
+      {} as never,
+      {} as never,
+    );
 
     await expect(
       controller.unsubscribeIntent({ id: MAILBOX_ID }, 'idempotency-key-123', body),

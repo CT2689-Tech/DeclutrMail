@@ -41,7 +41,7 @@ export function UnsubscribeBacklogDialog({
 }: {
   request: ActionRequest;
   compositePreview?: CompositeActionPreviewResult | undefined;
-  compositePreviewLoading?: boolean;
+  compositePreviewLoading?: boolean | undefined;
   bulkPreview?:
     | {
         data?:
@@ -58,7 +58,7 @@ export function UnsubscribeBacklogDialog({
       }
     | undefined;
   preferredInboxCount?: number | undefined;
-  submitting?: boolean;
+  submitting?: boolean | undefined;
   onCancel: () => void;
   onConfirm: (opts: {
     secondary: { type: 'archive' | 'delete'; olderThanDays: null } | null;
