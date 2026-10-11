@@ -291,14 +291,19 @@ test('paid workflow is manual, main-only, confirmed, and shares provider seriali
     paid,
     /if: github.event_name == 'workflow_dispatch' && github.ref == 'refs\/heads\/main' && inputs.paid_test_confirmation == 'APPROVED_ONE_TEST_USD20_CAP'/,
   );
-  for (const workflow of [paid, free]) {
+  for (const [workflow, job] of [
+    [free, '  upstash-free-revocation-rehearse:'],
+    [paid, '  upstash-capped-revocation-rehearse:'],
+  ]) {
     assert.match(
       workflow,
       /group: upstash-revocation-provider-\$\{\{ github.event_name \}\}-\$\{\{ github.ref \}\}/,
     );
     assert.match(workflow, /cancel-in-progress: false/);
-    assert.equal(workflow.split('  rehearse:')[0].includes('secrets.'), false);
+    assert.equal(workflow.split(job)[0].includes('secrets.'), false);
+    assert.match(workflow.split(job)[1], /environment: Sandbox/);
     assert.doesNotMatch(workflow, /pull_request_target|schedule:|workflow_run:|checkout[^\n]*ref:/);
+    assert.doesNotMatch(workflow, /^\s*push:/m);
   }
   assert.doesNotMatch(
     free,
@@ -539,6 +544,11 @@ test('CLI exits 0 only for an expected zero-cost plan refusal with nothing creat
     'utf8',
   );
   assert.match(source, /process\.exitCode = cliExitCode\(report\)/);
+  const capped = readFileSync(
+    new URL('./upstash-capped-revocation-rehearsal.mjs', import.meta.url),
+    'utf8',
+  );
+  assert.match(capped, /process\.exitCode = cliExitCode\(report\)/);
   const expectedBodies = [
     { error: 'Cannot create a free database without a payment method' },
     { error: 'Only paid databases are allowed in this account' },
@@ -644,29 +654,36 @@ test('baseline inventory keeps only database ids and drops passwords and tokens 
   assert.equal(JSON.stringify(cleanupRow).includes(marker), false);
 });
 
-test('free revocation job name does not collide and is not a required check', () => {
-  const workflow = readFileSync(
-    new URL('../.github/workflows/upstash-free-revocation-rehearsal.yml', import.meta.url),
-    'utf8',
-  );
+test('Upstash rehearsal job names do not collide and are not required checks', () => {
   const required = readFileSync(new URL('./required-checks.json', import.meta.url), 'utf8');
-  assert.match(workflow, /^ {2}upstash-free-revocation-rehearse:/m);
-  assert.doesNotMatch(workflow, /^ {2}rehearse:/m);
-  const live = workflow.split('  upstash-free-revocation-rehearse:')[1];
-  assert.match(live, /environment: Sandbox/);
-  assert.equal(
-    workflow.split('  upstash-free-revocation-rehearse:')[0].includes('environment:'),
-    false,
-  );
+  const jobs = [
+    [
+      '../.github/workflows/upstash-free-revocation-rehearsal.yml',
+      'upstash-free-revocation-rehearse',
+    ],
+    [
+      '../.github/workflows/upstash-capped-revocation-rehearsal.yml',
+      'upstash-capped-revocation-rehearse',
+    ],
+  ];
+  for (const [path, job] of jobs) {
+    const workflow = readFileSync(new URL(path, import.meta.url), 'utf8');
+    assert.match(workflow, new RegExp(`^ {2}${job}:`, 'm'));
+    assert.doesNotMatch(workflow, /^ {2}rehearse:/m);
+    const live = workflow.split(`  ${job}:`)[1];
+    assert.match(live, /environment: Sandbox/);
+    assert.equal(workflow.split(`  ${job}:`)[0].includes('environment:'), false);
+    assert.equal(required.includes(job), false);
+  }
   assert.equal(required.includes('rehearse'), false);
-  assert.equal(required.includes('upstash-free-revocation-rehearse'), false);
 });
 
-test('free revocation workflow has no schedule or push trigger', () => {
-  const workflow = readFileSync(
-    new URL('../.github/workflows/upstash-free-revocation-rehearsal.yml', import.meta.url),
-    'utf8',
-  );
-  assert.equal(/^\s*schedule:/m.test(workflow), false);
-  assert.equal(/^\s*push:/m.test(workflow), false);
+test('Upstash revocation workflows have no push trigger', () => {
+  for (const path of [
+    '../.github/workflows/upstash-free-revocation-rehearsal.yml',
+    '../.github/workflows/upstash-capped-revocation-rehearsal.yml',
+  ]) {
+    const workflow = readFileSync(new URL(path, import.meta.url), 'utf8');
+    assert.doesNotMatch(workflow, /^\s*push:/m);
+  }
 });
