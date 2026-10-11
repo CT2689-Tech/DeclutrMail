@@ -152,7 +152,9 @@ export function consentCard(view: AiConsentView, briefCapable: boolean): AiConse
     return briefCapable ? 'withBrief' : 'all';
   }
   if (view.explanations === 'unset') return briefCapable ? 'withBrief' : 'all';
-  if (view.explanations === 'allowed' && briefCapable && view.brief === 'unset') return 'upgrade';
+  // Brief declined, revoked, or never chosen. Not now on this card writes
+  // only the Brief columns, so an explanations grant already stored stays.
+  if (view.explanations === 'allowed' && briefCapable && view.brief !== 'allowed') return 'upgrade';
   return null;
 }
 

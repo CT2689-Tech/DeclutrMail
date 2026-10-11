@@ -53,21 +53,49 @@ describe('AI consent gate', () => {
     expect(consentCard(view, true)).toBe('upgrade');
   });
 
-  it('hides the card after Not now and after an upgrade decline', () => {
+  it('hides the card after Not now on the full choice', () => {
     const declined = row({
       aiConsentVersion: VERSION,
       aiConsentDeclinedAt: '2026-10-02T00:00:00.000Z',
     });
     expect(consentCard(aiConsentView(declined), false)).toBe(null);
-    const upgradeDeclined = row({
+    expect(consentCard(aiConsentView(declined), true)).toBe(null);
+  });
+
+  it('keeps the upgrade card when Brief is declined or off, and Not now leaves explanations', () => {
+    const declinedBrief = row({
       ...allowedExplanations,
       briefAiConsentVersion: VERSION,
       briefAiDeclinedAt: '2026-10-04T00:00:00.000Z',
     });
-    const view = aiConsentView(upgradeDeclined);
-    expect(view.brief).toBe('declined');
-    expect(consentCard(view, true)).toBeNull();
-    expect(explanationsConsentActive(upgradeDeclined)).toBe(true);
+    const declinedView = aiConsentView(declinedBrief);
+    expect(declinedView.brief).toBe('declined');
+    expect(declinedView.explanations).toBe('allowed');
+    expect(consentCard(declinedView, true)).toBe('upgrade');
+    expect(consentCard(declinedView, false)).toBeNull();
+
+    const revokedBrief = row({
+      ...allowedExplanations,
+      briefAiConsentAt: '2026-10-03T00:00:00.000Z',
+      briefAiConsentVersion: VERSION,
+      aiConsentScopes: ['explanations', 'brief'],
+      briefAiConsentRevokedAt: '2026-10-04T00:00:00.000Z',
+    });
+    const revokedView = aiConsentView(revokedBrief);
+    expect(revokedView.brief).toBe('off');
+    expect(consentCard(revokedView, true)).toBe('upgrade');
+
+    const patch = aiConsentPatch({ action: 'not_now', card: 'upgrade' });
+    expect(patch).toMatchObject({
+      aiExplanationsConsentAt: 'keep',
+      aiExplanationsRevokedAt: 'keep',
+      aiConsentDeclinedAt: 'keep',
+      aiConsentScopes: 'keep',
+      briefAiDeclinedAt: 'now',
+      briefAiConsentAt: null,
+    });
+    expect(explanationsConsentActive(declinedBrief)).toBe(true);
+    expect(explanationsConsentActive(revokedBrief)).toBe(true);
   });
 
   it('re-asks when the stored version is not current', () => {
