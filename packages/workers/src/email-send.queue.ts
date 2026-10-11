@@ -41,40 +41,53 @@ export const BILLING_QUEUE_COMPATIBLE_WORKER_NAME = 'billing-queue-v1';
 export const EMAIL_PREFS_COMPATIBLE_WORKER_NAME = `email-prefs-v2:w:${BILLING_QUEUE_COMPATIBLE_WORKER_NAME}`;
 export const EMAIL_SEND_JOB = 'email-send';
 
-/** Read-only: empty, unavailable, unnamed or older runtime actors cannot clear rollout. */
-export async function readBillingQueueCompatibility(queue: Queue): Promise<{ workers: number }> {
+/** Fixed refusal reasons; safe to surface because they carry no broker or client data. */
+export type QueueActorRefusal = 'client_list_unavailable' | 'no_workers' | 'incompatible_workers';
+export class QueueActorCompatibilityError extends Error {
+  constructor(
+    message: string,
+    readonly reason: QueueActorRefusal,
+  ) {
+    super(message);
+  }
+}
+
+async function readQueueActors(
+  queue: Queue,
+  workerName: string,
+  label: string,
+): Promise<{ workers: number }> {
   if (queue.name !== EMAIL_SEND_QUEUE)
-    throw new Error('Billing compatibility needs the generic email queue');
+    throw new Error(`${label} compatibility needs the generic email queue`);
   const workers = await queue.getWorkers();
+  const message = `${label} queue compatibility unverified`;
+  if (workers.length === 0) throw new QueueActorCompatibilityError(message, 'no_workers');
+  // Only this exact BullMQ sentinel establishes a refused CLIENT LIST.
+  // Other missing names remain unknown/incompatible actor evidence.
   if (
-    workers.length === 0 ||
+    workers.length === 1 &&
+    Object.keys(workers[0]!).length === 1 &&
+    workers[0]!.name === 'GCP does not support client list'
+  )
+    throw new QueueActorCompatibilityError(message, 'client_list_unavailable');
+  if (
     workers.some(
       (worker) =>
-        typeof worker.rawname !== 'string' ||
-        !worker.rawname.endsWith(`:w:${BILLING_QUEUE_COMPATIBLE_WORKER_NAME}`),
+        typeof worker.rawname !== 'string' || !worker.rawname.endsWith(`:w:${workerName}`),
     )
-  ) {
-    throw new Error('Billing queue compatibility unverified');
-  }
+  )
+    throw new QueueActorCompatibilityError(message, 'incompatible_workers');
   return { workers: workers.length };
 }
 
+/** Read-only: empty, unavailable, unnamed or older runtime actors cannot clear rollout. */
+export function readBillingQueueCompatibility(queue: Queue): Promise<{ workers: number }> {
+  return readQueueActors(queue, BILLING_QUEUE_COMPATIBLE_WORKER_NAME, 'Billing');
+}
+
 /** Every generic email actor must tolerate future categories before their first write. */
-export async function readEmailPrefsQueueCompatibility(queue: Queue): Promise<{ workers: number }> {
-  if (queue.name !== EMAIL_SEND_QUEUE)
-    throw new Error('Email prefs compatibility needs the generic email queue');
-  const workers = await queue.getWorkers();
-  if (
-    workers.length === 0 ||
-    workers.some(
-      (worker) =>
-        typeof worker.rawname !== 'string' ||
-        !worker.rawname.endsWith(`:w:${EMAIL_PREFS_COMPATIBLE_WORKER_NAME}`),
-    )
-  ) {
-    throw new Error('Email prefs queue compatibility unverified');
-  }
-  return { workers: workers.length };
+export function readEmailPrefsQueueCompatibility(queue: Queue): Promise<{ workers: number }> {
+  return readQueueActors(queue, EMAIL_PREFS_COMPATIBLE_WORKER_NAME, 'Email prefs');
 }
 
 /** Disabled consumers do not poll; waiting jobs retain their finite retry budget. */

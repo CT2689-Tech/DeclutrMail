@@ -161,6 +161,19 @@ function successful(status) {
   );
 }
 
+/** Mirrors `PROBE_EXIT_CODES` in apps/api/src/billing/verify-billing-queue.ts. */
+export const PROBE_EXIT_REASONS = {
+  1: 'unclassified',
+  101: 'configuration_unavailable',
+  102: 'redis_not_ready',
+  103: 'redis_network_error',
+  104: 'redis_tls_error',
+  105: 'redis_reply_error',
+  106: 'broker_read_stalled',
+  107: 'client_list_unavailable',
+  108: 'no_workers',
+  109: 'incompatible_workers',
+};
 /** Control-plane metadata only: never emit raw conditions, messages or task fields. */
 export function projectBillingProbeTask(rows) {
   if (
@@ -179,13 +192,20 @@ export function projectBillingProbeTask(rows) {
   const text = [result?.status?.message, ...conditions.map((c) => c?.message)]
     .filter((message) => typeof message === 'string')
     .join('\n');
+  const exitCode = integer(result?.exitCode, 255);
   const projected = {
     available: true,
     started: Number.isFinite(Date.parse(status.startTime ?? '')),
     completed: Number.isFinite(Date.parse(status.completionTime ?? '')),
-    exitCode: integer(result?.exitCode, 255),
+    exitCode,
     termSignal: integer(result?.termSignal, 128),
     statusCode: integer(result?.status?.code, 16),
+    // An import crash also exits 1, so `unclassified` includes startup errors.
+    probeReason: exitCode === null ? null : (PROBE_EXIT_REASONS[exitCode] ?? null),
+    runSeconds: integer(
+      Math.round((Date.parse(status.completionTime) - Date.parse(status.startTime)) / 1000),
+      3600,
+    ),
     hints: Object.entries({
       memoryLimit: /memory[^\n]*(?:limit|exceed)|out of memory/i,
       taskTimeout: /(?:task|container)[^\n]*(?:timed? out|timeout|deadline)/i,

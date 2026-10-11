@@ -14,6 +14,7 @@ import {
   createBillingEmailSendConsumer,
   enqueueEmailSend,
   readBillingQueueCompatibility,
+  QueueActorCompatibilityError,
 } from './email-send.queue.js';
 import type { EmailSendJobData, EmailSendResult } from './email-send.worker.js';
 
@@ -87,6 +88,17 @@ it('preserves waiting billing jobs while OFF and isolates them from a live legac
     await expect(readBillingQueueCompatibility(generic)).rejects.toThrow(
       'compatibility unverified',
     );
+    await expect(readBillingQueueCompatibility(generic)).rejects.toMatchObject({
+      reason: 'incompatible_workers',
+    });
+    const empty = new Queue(EMAIL_SEND_QUEUE, { connection, prefix: `${prefix}-empty` });
+    try {
+      const refusal = await readEmailPrefsQueueCompatibility(empty).catch((e: unknown) => e);
+      expect(refusal).toBeInstanceOf(QueueActorCompatibilityError);
+      expect(refusal).toMatchObject({ reason: 'no_workers' });
+    } finally {
+      await empty.close();
+    }
     compatibleLegacy = new Worker(EMAIL_SEND_QUEUE, oldProcessor, {
       connection,
       prefix,
@@ -112,6 +124,9 @@ it('preserves waiting billing jobs while OFF and isolates them from a live legac
     await expect(readEmailPrefsQueueCompatibility(generic)).rejects.toThrow(
       'compatibility unverified',
     );
+    await expect(readEmailPrefsQueueCompatibility(generic)).rejects.toMatchObject({
+      reason: 'incompatible_workers',
+    });
     await compatibleLegacy.close();
     expect(await readEmailPrefsQueueCompatibility(generic)).toEqual({ workers: 1 });
     expect(await readBillingQueueCompatibility(generic)).toEqual({ workers: 1 });

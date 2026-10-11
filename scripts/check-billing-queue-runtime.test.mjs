@@ -9,6 +9,7 @@ import {
   cleanupBillingQueueProbe,
   projectBillingProbeFailure,
   projectBillingProbeTask,
+  PROBE_EXIT_REASONS,
 } from './check-billing-queue-runtime.mjs';
 import {
   FAILED_PROBE,
@@ -160,6 +161,8 @@ test('projects failed owned task metadata before deletion and still refuses depl
   );
   assert.equal(evidence.length, 1);
   assert.equal(evidence[0].exitCode, 137);
+  assert.equal(evidence[0].probeReason, null);
+  assert.equal(evidence[0].runSeconds, 1);
   assert.deepEqual(evidence[0].hints, ['memoryLimit']);
   assert.ok(!JSON.stringify(evidence).includes('SYNTHETIC_PRIVATE_TASK'));
   const taskRead = f.calls.findIndex((c) => c[3] === 'tasks');
@@ -507,5 +510,34 @@ test('alternate provider permission and CLI value refusals retain closed categor
       stderr: 'Invalid value for [--args]: PRIVATE',
     }).category,
     'cli_arguments_invalid',
+  );
+});
+
+test('probe exit codes name a fixed reason and the container run time', () => {
+  const task = (lastAttemptResult, startTime = '2026-10-11T07:10:00Z') => [
+    { status: { startTime, completionTime: '2026-10-11T07:10:31.6Z', lastAttemptResult } },
+  ];
+  assert.equal(projectBillingProbeTask(task({ exitCode: 108 })).probeReason, 'no_workers');
+  assert.equal(projectBillingProbeTask(task({ exitCode: 1 })).probeReason, 'unclassified');
+  assert.equal(projectBillingProbeTask(task({ exitCode: 1 })).runSeconds, 32);
+  for (const exitCode of [13, 137, 'toString', '__proto__', -1, 1.5])
+    assert.equal(projectBillingProbeTask(task({ exitCode })).probeReason, null);
+  assert.equal(projectBillingProbeTask(task({ exitCode: 1 }, 'PRIVATE')).runSeconds, null);
+  assert.equal(
+    projectBillingProbeTask(task({ exitCode: 1 }, '2026-10-11T08:00:00Z')).runSeconds,
+    null,
+  );
+});
+test('exit reason map matches the probe that sets the codes', () => {
+  const source = readFileSync('apps/api/src/billing/verify-billing-queue.ts', 'utf8');
+  const block = source.match(/PROBE_EXIT_CODES = \{([^}]*)\}/)?.[1];
+  assert.ok(block, 'probe exit code table not found');
+  const probe = Object.fromEntries(
+    [...block.matchAll(/(\w+): (\d+),/g)].map(([, reason, code]) => [code, reason]),
+  );
+  assert.ok(Object.keys(probe).length >= 10);
+  assert.deepEqual(
+    probe,
+    Object.fromEntries(Object.entries(PROBE_EXIT_REASONS).map(([c, r]) => [String(c), r])),
   );
 });
