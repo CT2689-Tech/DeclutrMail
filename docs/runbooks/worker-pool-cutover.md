@@ -139,24 +139,22 @@ gcloud run worker-pools update-instance-split declutrmail-worker-pool \
   --to-revisions=<revision>=100 --region=us-west1 --project=declutrmail-ai-prod
 ```
 
-## Monitoring that still targets the service
+## Monitoring
 
-These scripts filter on `resource.type="cloud_run_revision"` and
-`service_name="declutrmail-worker"`, so they stop seeing the worker after the
-cutover: `setup-infra-alerts.mjs`, `setup-infra-dashboard.mjs`,
-`setup-stuck-mailbox-alert.mjs`, `setup-mailbox-lock-alert.mjs`,
-`setup-billing-alerts.sh`, `infra-runtime-metrics.mjs`. Pool logs carry
-`resource.type="cloud_run_worker_pool"` and
-`resource.labels.worker_pool_name`.
+The monitoring scripts select the worker as
+`resource.type="cloud_run_worker_pool"` with
+`resource.labels.worker_pool_name="declutrmail-worker-pool"`. The selectors
+live in `scripts/worker-pool-monitoring.mjs`, and
+`scripts/worker-pool-monitoring.test.mjs` fails if any definition still
+selects the old service. Signals that both the API and the worker log are
+watched on both resource types.
 
-- Absence alerts on worker log metrics (scheduler success, runtime
-  observations, stuck-mailbox watchdog) will fire.
-- Threshold alerts on worker logs or container metrics (memory, Upstash
-  request limit) will go quiet.
-- The worker heartbeat uptime check is unaffected.
-
-Moving them needs a live re-apply. It is tracked in
+Live resources change only when the scripts are re-run. Until they are
+re-run after the cutover, absence alerts on worker log metrics fire and
+threshold alerts on worker lines go quiet. The order and the manual commands
+for the create-only scripts are in
 `docs/log/founder-followups/2026-10-11-move-worker-monitoring-to-worker-pool.md`.
+After a rollback to the service, the worker-only alerts go blind again.
 
 ## Cost
 
