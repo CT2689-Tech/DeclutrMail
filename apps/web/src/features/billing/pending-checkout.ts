@@ -90,7 +90,7 @@ const failedWrites = new Set<string>();
  */
 export function readPendingCheckout(workspaceId: string): PendingCheckout | null {
   if (typeof window === 'undefined') return null;
-  let raw: string | null = null;
+  let raw: string | null;
   try {
     raw = window.localStorage.getItem(pendingCheckoutKey(workspaceId));
   } catch {

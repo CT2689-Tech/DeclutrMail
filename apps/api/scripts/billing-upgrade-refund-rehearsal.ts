@@ -79,10 +79,10 @@ const evidence: Record<string, unknown> = {
   actionFailures,
 };
 let endpointSecret = '',
-  clientToken = '',
   finished = false,
   verifiedWebhooks = 0,
   rejectedSignatures = 0;
+let clientToken: string;
 let stopping = false;
 type CaseName = 'monthly' | 'cycle';
 type Fixture = {
