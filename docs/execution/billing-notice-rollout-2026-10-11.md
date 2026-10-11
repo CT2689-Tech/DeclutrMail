@@ -189,3 +189,57 @@ installed gcloud metadata projections. The expanded CI helper command passed
 all 41 tests; both CI and manual releases now run the new regression tests.
 Root owns this corrective preflight and integration; enrollment remains fixed at
 `2026-10-11T03:15:41.000Z`, and automatic refund restoration remains OFF.
+
+## Redacted production preflight diagnosis
+
+Runtime-secret correction #936 merged at `2faa44067bfd806d99783441c1bef7d154b4b66f`.
+Queue CI #38111192482 and exact-main CI #38111577157 passed, including all selected
+release suites and browser journey assertions. Release #38111577109 built its
+image but failed the preflight at `2026-10-11T04:34:11Z`, after absence/image
+proof and the owned-attempt marker. Both service deployments were skipped. The
+always recovery completed with `probeDeleted:true`; the failed run remains a
+failed activation, and the underlying create-operation cause is unverified.
+
+Fresh main-branch WIF snapshot #38112072598 at `2026-10-11T04:35:47Z` confirms the
+OFF foundation API `declutrmail-api-00602-rob` and worker
+`declutrmail-worker-00158-x9m` still serve 100%. Local reads remain separately
+unavailable due to authentication. A temporary branch-only diagnostic
+#38112268124 was refused by Workload Identity's attribute condition before a probe
+ran; the main route remains available. The browser audit page separately requires
+passkey verification. No IAM grant, credential export or billing policy change
+has occurred.
+
+The next correction holds both manifest notice flags OFF while preserving the
+original enrollment instant. Current production notices are already OFF. This
+restores ordinary service releases without adopting unverified broker access as
+activation proof. The main-only `billing-queue-access-diagnosis.yml` uses existing
+WIF, the reviewed built probe image, the same ownership/cleanup gates and the
+shared production release lock. It never deploys a service or enables a producer.
+The normal infra snapshot workflow is unchanged.
+
+The helper emits only a fixed operation/category and allowlisted
+permission names when a gcloud command fails. Its captured provider text and
+arguments remain private. This preserves compatibility, source/identity checks,
+ownership, cleanup and the producer gate; it does not claim to fix the underlying
+runtime access issue. Root owns the two workflows, helper/test/record and
+integration. The temporary snapshot
+workflow replacement is confined to its diagnostic branch and is not included.
+Independent final review found no blocker; all 36 helper/deployment tests,
+touched lint, formatting and diff validation passed. No TypeScript runtime or
+provider behavior changed in this correction. Re-enabling notices still requires
+successful real broker/cleanup evidence and both enabled-serving checks.
+The expanded hold/main-only diagnostic also passed independent review and all
+32 actual serving-script controls across ON and OFF modes. The initial #938 queue
+candidate was dequeued for this confirmed release-blocking defect; it is not a
+production failure or serving proof.
+
+The updated hold candidate's first CI #38113195202 failed the preexisting
+JWT tampering fixture. Reconstructing its synthetic claims and test secret
+confirmed that replacing the final two base64url characters with `XX` changed
+only the encoding's unused padding bits; decoded signature bytes stayed equal
+and the existing verifier correctly accepted the signature. The test now flips
+one decoded signature byte, asserts that bytes changed, and re-encodes it before
+requiring rejection. Authentication runtime is unchanged; the failed CI remains
+recorded. Root also owns this bounded test repair; no other open PR touches it.
+Independent review approved it; all 10 focused JWT tests, API typecheck, touched
+lint, formatting and diff validation passed.
