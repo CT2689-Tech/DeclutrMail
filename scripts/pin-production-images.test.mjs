@@ -8,13 +8,20 @@ import {
   rollbackDigests,
   releaseSlots,
   writeOrder,
+  managedTags,
+  jobImages,
   pinProductionImages,
+  rollbackTraffic,
   IMAGE,
   PINNED,
+  SOURCES,
+  NAMESPACES,
+  JOB_SLOTS,
   ROLLBACK_SLOTS,
   ROUTE_SLOTS,
 } from './pin-production-images.mjs';
 
+const policy = JSON.parse(readFileSync(POLICY_PATH, 'utf8'));
 const packageName =
   'projects/declutrmail-ai-prod/locations/us-central1/repositories/declutrmail/packages/api';
 const sha = (n) => `sha256:${n.toString(16).padStart(64, '0')}`;
@@ -32,10 +39,16 @@ test('retention protects every traffic destination and tagged rollback route, pr
           { revisionName: 'declutrmail-api-002-b', percent: 10 },
           { revisionName: 'declutrmail-api-001-a', percent: 90 },
           { revisionName: 'declutrmail-api-003-c', tag: 'rollback' },
+          { revisionName: 'declutrmail-api-004-d', percent: 0, tag: 'verify-abc' },
         ],
       },
-    }),
-    ['declutrmail-api-001-a', 'declutrmail-api-002-b', 'declutrmail-api-003-c'],
+    }).map((s) => [s.revision, s.served]),
+    [
+      ['declutrmail-api-001-a', true],
+      ['declutrmail-api-002-b', true],
+      ['declutrmail-api-003-c', true],
+      ['declutrmail-api-004-d', false],
+    ],
   );
   for (const traffic of [
     [],
@@ -54,7 +67,7 @@ test('worker pools are read from their instance split', () => {
         },
       },
       'workerPool',
-    ),
+    ).map((s) => s.revision),
     ['declutrmail-worker-pool-001-a'],
   );
   assert.throws(() => servingRevisions({ status: { traffic: [] } }, 'workerPool'));
@@ -119,61 +132,111 @@ test('unused slots point at the primary image so no slot can retain an old build
   );
 });
 
+/** Apply `order` one write at a time; after every write, each `kept` image still has a holder. */
+function assertGapFree(existing, order, kept) {
+  const state = new Map(existing);
+  for (const [i, w] of order.entries()) {
+    state.set(w.tag, w.digest);
+    const held = new Set([...state].filter(([t]) => t.startsWith('serving-')).map(([, d]) => d));
+    for (const d of kept) assert.ok(held.has(d), `${d} has no serving- tag after write ${i}`);
+  }
+  return state;
+}
+
 test('write order frees a wanted image only after another serving tag holds it', () => {
-  // Shift left (traffic rollback): rollback-1 becomes primary; writing rollback-3 first would
-  // drop sha(3), which rollback-2 still wants.
+  // Shift left (traffic rollback): rollback-1 becomes primary; writing rollback-2 first would
+  // drop sha(3), which rollback-1 still wants.
   const existing = new Map([
     ['serving-api', sha(1)],
     ['serving-api-rollback-1', sha(2)],
     ['serving-api-rollback-2', sha(3)],
+    ['serving-spare', sha(1)],
   ]);
-  const slots = [
+  const left = [
     { tag: 'serving-api', digest: sha(2) },
     { tag: 'serving-api-rollback-1', digest: sha(3) },
     { tag: 'serving-api-rollback-2', digest: sha(4) },
   ];
-  assert.deepEqual(
-    writeOrder(slots, existing).map((s) => s.tag),
-    ['serving-api', 'serving-api-rollback-1', 'serving-api-rollback-2'],
-  );
+  const order = writeOrder(left, existing, 'serving-spare', sha(2));
+  assertGapFree(existing, order, [sha(2), sha(3)]);
   // Shift right (new deploy) runs the other way round.
   const right = [
     { tag: 'serving-api', digest: sha(0) },
     { tag: 'serving-api-rollback-1', digest: sha(1) },
     { tag: 'serving-api-rollback-2', digest: sha(2) },
   ];
-  assert.deepEqual(
-    writeOrder(right, existing).map((s) => s.tag),
-    ['serving-api-rollback-2', 'serving-api-rollback-1', 'serving-api'],
-  );
-  assert.deepEqual(
-    writeOrder(right, existing).map((s) => s.existed),
-    [true, true, true],
-  );
+  const rightOrder = writeOrder(right, existing, 'serving-spare', sha(0));
+  assertGapFree(existing, rightOrder, [sha(1), sha(2)]);
+  assert.ok(rightOrder.every((w) => w.existed));
 });
 
-/** A Cloud Run + Artifact Registry fake: services, their revision history, and the tag table. */
-function registryFixture({
-  api,
-  worker,
-  workerKind = 'service',
-  tags = new Map(),
-  options = {},
-} = {}) {
+test('a pure swap between slots parks one image on the spare tag, so there is never a gap', () => {
+  const existing = new Map([
+    ['serving-api', sha(1)],
+    ['serving-api-route-1', sha(2)],
+  ]);
+  const swap = [
+    { tag: 'serving-api', digest: sha(2) },
+    { tag: 'serving-api-route-1', digest: sha(1) },
+  ];
+  const order = writeOrder(swap, existing, 'serving-spare', sha(2));
+  assert.equal(order[0].tag, 'serving-spare');
+  assert.equal(order[0].existed, false);
+  const final = assertGapFree(existing, order, [sha(1), sha(2)]);
+  assert.equal(final.get('serving-api'), sha(2));
+  assert.equal(final.get('serving-api-route-1'), sha(1));
+  assert.equal(final.get('serving-spare'), sha(2));
+  // A three-way rotation with a spare that already holds an unwanted image.
+  const rotate = new Map([
+    ['serving-a', sha(1)],
+    ['serving-b', sha(2)],
+    ['serving-c', sha(3)],
+    ['serving-spare', sha(9)],
+  ]);
+  const wanted = [
+    { tag: 'serving-a', digest: sha(2) },
+    { tag: 'serving-b', digest: sha(3) },
+    { tag: 'serving-c', digest: sha(1) },
+  ];
+  assertGapFree(rotate, writeOrder(wanted, rotate, 'serving-spare', sha(2)), [1, 2, 3].map(sha));
+});
+
+/** A Cloud Run + Artifact Registry fake: services, revision history, jobs and the tag table. */
+function registryFixture({ api, worker, pool, tags = new Map(), jobs = [], options = {} } = {}) {
   const writes = [];
-  let reads = 0;
+  const calls = [];
   const history = {
     'declutrmail-api': api,
-    [workerKind === 'service' ? 'declutrmail-worker' : 'declutrmail-worker-pool']: worker,
+    'declutrmail-worker': worker,
+    'declutrmail-worker-pool': pool,
   };
   const fixed = [['latest', sha(1)], ...(options.noProbe ? [] : [[PINNED[0].source, PROBE]])];
   const run = (...args) => {
+    calls.push(args);
     if (args[0] === 'run') {
+      if (args[1] === 'jobs') {
+        if (options.jobsError) throw new Error('Permission denied');
+        return JSON.stringify(jobs);
+      }
+      if (args[2] === 'update-traffic' || args[2] === 'update-instance-split') {
+        const h = history[args[3]];
+        h.serving = args[4].split('=')[1];
+        h.routes = [];
+        options.onShift?.(tags);
+        return '';
+      }
       const list = args.includes('list');
       const flag = args.find((a) => a.startsWith('--service=') || a.startsWith('--worker-pool='));
       const name = list ? flag.split('=')[1] : args[args.indexOf('describe') + 1];
       const h = history[name];
-      if (!h) throw new Error(`not found ${name}`);
+      if (!h) {
+        if (options.poolError && name === 'declutrmail-worker-pool')
+          throw Object.assign(new Error('Command failed'), { stderr: 'PERMISSION_DENIED' });
+        const what = args[1] === 'services' ? 'service' : 'worker pool';
+        throw Object.assign(new Error('Command failed'), {
+          stderr: `ERROR: (gcloud.run.${args[1]}.describe) Cannot find ${what} [${name}]`,
+        });
+      }
       if (list) return JSON.stringify(h.revisions);
       const splits = [{ revisionName: h.serving, percent: 100 }, ...(h.routes ?? [])];
       return JSON.stringify({
@@ -181,7 +244,6 @@ function registryFixture({
       });
     }
     if (args[2] === 'tags' && args[3] === 'list') {
-      reads++;
       if (options.lookupError) throw new Error('Permission denied');
       if (options.malformed) return '{"unexpected":true}';
       return JSON.stringify(
@@ -193,6 +255,7 @@ function registryFixture({
     }
     assert.deepEqual(args.slice(0, 2), ['artifacts', 'tags']);
     assert.ok(['create', 'update'].includes(args[2]), `unexpected tag mutation ${args[2]}`);
+    options.beforeWrite?.(writes.length);
     if (options.failAt === writes.length) throw new Error('Quota exceeded');
     writes.push(args);
     if (options.writeError) throw new Error('Permission denied');
@@ -206,15 +269,7 @@ function registryFixture({
     options.afterWrite?.(tags);
     return '';
   };
-  return {
-    run,
-    tags,
-    writes,
-    options,
-    get reads() {
-      return reads;
-    },
-  };
+  return { run, tags, writes, calls, options, history };
 }
 
 const deployHistory = (prefix, count, base = 1000) =>
@@ -234,7 +289,37 @@ function twoServices(count = 8) {
 
 const servingHolders = (tags) =>
   new Set([...tags].filter(([t]) => t.startsWith('serving-')).map(([, d]) => d));
-const pin = (fixture) => pinProductionImages({ run: fixture.run, log: () => {} });
+const pin = (fixture, namespace = 'deploy', extra = {}) =>
+  pinProductionImages({ run: fixture.run, log: () => {}, namespace, ...extra });
+/** Months later: every image is older than 14 days and outside the newest 20. */
+function cleanupVerdicts(fixture, digests) {
+  const now = Date.UTC(2026, 11, 1);
+  const versions = [
+    ...digests.map((digest, i) => ({
+      package: 'api',
+      version: digest,
+      createTime: Date.UTC(2026, 8, 1) + i * 3_600_000,
+      tags: [
+        ...(digest === PROBE ? [PINNED[0].source] : []),
+        ...[...fixture.tags].filter(([, d]) => d === digest).map(([t]) => t),
+      ],
+    })),
+    ...Array.from({ length: 25 }, (_, i) => ({
+      package: 'api',
+      version: sha(5000 + i),
+      createTime: now - (i + 1) * 3_600_000,
+      tags: [],
+    })),
+  ];
+  const verdicts = evaluateCleanupPolicy(policy, versions, now);
+  return new Set(verdicts.filter((v) => v.deleted).map((v) => v.version));
+}
+
+test('every pin needs an explicit writer namespace', () => {
+  const fixture = registryFixture(twoServices());
+  assert.throws(() => pinProductionImages({ run: fixture.run, log() {} }), /--namespace/);
+  assert.equal(fixture.calls.length, 0);
+});
 
 test('first run creates every serving slot and protects current plus five rollback images', () => {
   const fixture = registryFixture(twoServices());
@@ -246,6 +331,7 @@ test('first run creates every serving slot and protects current plus five rollba
     assert.equal(fixture.tags.get(`serving-worker-rollback-${i}`), sha(2007 - i));
   }
   assert.equal(fixture.tags.get('serving-pinned-billing-probe'), PROBE);
+  assert.equal(fixture.tags.get('serving-spare'), sha(1007));
   assert.deepEqual(
     new Set(result.protectedDigests),
     new Set([
@@ -262,18 +348,13 @@ test('a new deploy moves slots with tags update and never deletes', () => {
   const fixture = registryFixture(services);
   pin(fixture);
   fixture.writes.length = 0;
-  for (const s of [services.api, services.worker]) {
-    const prefix = s.serving.replace(/-\d+$/, '');
-    const base = prefix.endsWith('api') ? 1008 : 2008;
-    s.revisions.push(revision(`${prefix}-00008`, base, 9));
-    s.serving = `${prefix}-00008`;
-  }
+  services.api.revisions.push(revision('declutrmail-api-00008', 1008, 9));
+  services.api.serving = 'declutrmail-api-00008';
   pin(fixture);
   assert.ok(fixture.writes.some((w) => w[2] === 'update' && w[3] === 'serving-api'));
   assert.equal(fixture.tags.get('serving-api'), sha(1008));
   assert.equal(fixture.tags.get('serving-api-rollback-1'), sha(1007));
   assert.equal(fixture.tags.get('serving-api-rollback-5'), sha(1003));
-  assert.equal(fixture.tags.get('serving-worker-rollback-5'), sha(2003));
   // The image that fell out of rollback history keeps no serving tag.
   assert.ok(!servingHolders(fixture.tags).has(sha(1002)));
 });
@@ -289,19 +370,24 @@ for (const [label, move] of [
   ],
   ['traffic rollback', (s) => (s.api.serving = 'declutrmail-api-00006')],
   ['rollback by two', (s) => (s.api.serving = 'declutrmail-api-00005')],
+  [
+    'route swap',
+    (s) => {
+      s.api.serving = 'declutrmail-api-00006';
+      s.api.routes = [{ revisionName: 'declutrmail-api-00007', tag: 'canary' }];
+    },
+  ],
 ])
   test(`${label}: an interrupted pin leaves every still-wanted image tagged`, () => {
     let completed = false;
     for (let failAt = 0; !completed; failAt++) {
       const services = twoServices();
+      services.api.routes = [{ revisionName: 'declutrmail-api-00006', tag: 'canary' }];
       const fixture = registryFixture(services);
       const before = new Set(pin(fixture).protectedDigests);
       fixture.writes.length = 0;
       move(services);
-      const after = new Set(
-        pinProductionImages({ run: registryFixture(structuredClone(services)).run, log() {} })
-          .protectedDigests,
-      );
+      const after = new Set(pin(registryFixture(structuredClone(services))).protectedDigests);
       const kept = [...before].filter((d) => after.has(d));
       assert.ok(kept.length > 0);
       fixture.options.failAt = failAt;
@@ -339,40 +425,46 @@ test('a failed candidate that never served does not take a rollback slot', () =>
   assert.ok(!servingHolders(fixture.tags).has(sha(1008)));
 });
 
+test('a re-pin during a smoke protects the candidate but never records it as served', () => {
+  const services = twoServices();
+  const fixture = registryFixture({
+    ...services,
+    tags: new Map(
+      services.api.revisions.map((r, i) => [`retain-${r.metadata.name}`, sha(1000 + i)]),
+    ),
+  });
+  pin(fixture);
+  // deploy-api-safely stages the candidate at 0% behind a verify- tag; the hourly re-pin runs.
+  services.api.revisions.push(revision('declutrmail-api-00008', 1008, 9));
+  services.api.routes = [{ revisionName: 'declutrmail-api-00008', percent: 0, tag: 'verify-1a2b' }];
+  pin(fixture, 'observed');
+  assert.equal(fixture.tags.get('serving-observed-api-route-1'), sha(1008));
+  assert.ok(!fixture.tags.has('retain-declutrmail-api-00008'));
+  // The smoke fails and the tag is removed; the next release succeeds.
+  services.api.routes = [];
+  services.api.revisions.push(revision('declutrmail-api-00009', 1009, 10));
+  services.api.serving = 'declutrmail-api-00009';
+  pin(fixture);
+  assert.deepEqual(
+    Array.from({ length: ROLLBACK_SLOTS }, (_, i) =>
+      fixture.tags.get(`serving-api-rollback-${i + 1}`),
+    ),
+    [1007, 1006, 1005, 1004, 1003].map(sha),
+  );
+});
+
 test('the cleanup policy never deletes the serving image or the last five rollback images', () => {
-  const policy = JSON.parse(readFileSync(POLICY_PATH, 'utf8'));
   const fixture = registryFixture(twoServices());
   const { protectedDigests } = pin(fixture);
-  const now = Date.UTC(2026, 11, 1);
-  const tagsOf = (digest) => [
-    ...(digest === PROBE ? [PINNED[0].source] : []),
-    ...[...fixture.tags].filter(([, d]) => d === digest).map(([t]) => t),
-  ];
-  const old = (digest, i) => ({
-    package: 'api',
-    version: digest,
-    createTime: Date.UTC(2026, 8, 1 + i),
-    tags: tagsOf(digest),
-  });
-  const versions = [
-    // Every deployed image is now months old and outside the newest 20.
-    ...Array.from({ length: 8 }, (_, i) => old(sha(1000 + i), i)),
-    ...Array.from({ length: 8 }, (_, i) => old(sha(2000 + i), i)),
-    old(PROBE, 0),
-    ...Array.from({ length: 25 }, (_, i) => ({
-      package: 'api',
-      version: sha(5000 + i),
-      createTime: now - (i + 1) * 3_600_000,
-      tags: [],
-    })),
-  ];
-  const verdicts = evaluateCleanupPolicy(policy, versions, now);
-  const gone = verdicts.filter((v) => v.deleted).map((v) => v.version);
-  for (const digest of protectedDigests)
-    assert.ok(!gone.includes(digest), `${digest} would be deleted`);
+  const gone = cleanupVerdicts(fixture, [
+    ...Array.from({ length: 8 }, (_, i) => sha(1000 + i)),
+    ...Array.from({ length: 8 }, (_, i) => sha(2000 + i)),
+    PROBE,
+  ]);
+  for (const digest of protectedDigests) assert.ok(!gone.has(digest), `${digest} would be deleted`);
   assert.equal(protectedDigests.length, 2 * (1 + ROLLBACK_SLOTS) + 1);
   // Negative control: images older than the five rollbacks lose protection, so growth stops.
-  assert.deepEqual(gone, [sha(1000), sha(1001), sha(2000), sha(2001)]);
+  assert.deepEqual([...gone], [sha(1000), sha(1001), sha(2000), sha(2001)]);
 });
 
 test('existing matching pins need no mutation', () => {
@@ -383,23 +475,53 @@ test('existing matching pins need no mutation', () => {
   assert.equal(fixture.writes.length, 0);
 });
 
-test('the worker can be pointed at a worker pool by changing its source entry', () => {
+test('production sources protect the API, the legacy worker service and the worker pool', () => {
+  assert.deepEqual(
+    SOURCES.map((s) => [s.name, s.kind]),
+    [
+      ['declutrmail-api', 'service'],
+      ['declutrmail-worker', 'service'],
+      ['declutrmail-worker-pool', 'workerPool'],
+    ],
+  );
   const services = twoServices();
-  services.worker = {
+  const pool = {
     revisions: deployHistory('declutrmail-worker-pool', 3, 3000),
     serving: 'declutrmail-worker-pool-00002',
   };
-  const fixture = registryFixture({ ...services, workerKind: 'workerPool' });
-  pinProductionImages({
-    run: fixture.run,
-    log: () => {},
-    sources: [
-      { role: 'api', kind: 'service', name: 'declutrmail-api', region: 'us-central1' },
-      { role: 'worker', kind: 'workerPool', name: 'declutrmail-worker-pool', region: 'us-west1' },
-    ],
-  });
-  assert.equal(fixture.tags.get('serving-worker'), sha(3002));
-  assert.equal(fixture.tags.get('serving-worker-rollback-2'), sha(3000));
+  const fixture = registryFixture({ ...services, pool });
+  pin(fixture);
+  assert.equal(fixture.tags.get('serving-worker'), sha(2007));
+  assert.equal(fixture.tags.get('serving-worker-pool'), sha(3002));
+  assert.equal(fixture.tags.get('serving-worker-pool-rollback-2'), sha(3000));
+  assert.equal(fixture.tags.get('retain-declutrmail-worker-pool-00002'), sha(3002));
+});
+
+test('only a definite not-found skips the optional pool; a required source must exist', () => {
+  const absent = registryFixture(twoServices());
+  const lines = [];
+  pinProductionImages({ run: absent.run, log: (l) => lines.push(l), namespace: 'deploy' });
+  assert.ok(lines.some((l) => l.includes('declutrmail-worker-pool does not exist')));
+  const denied = registryFixture({ ...twoServices(), options: { poolError: true } });
+  assert.throws(() => pin(denied), /Command failed/);
+  assert.equal(denied.writes.length, 0);
+  const noWorker = registryFixture({ api: twoServices().api });
+  assert.throws(() => pin(noWorker), /Command failed/);
+  assert.equal(noWorker.writes.length, 0);
+});
+
+test('every Cloud Run resource the deploy workflow deploys is a required source', () => {
+  const workflow = readFileSync('.github/workflows/deploy-cloud-run.yml', 'utf8');
+  const targets = [
+    ...workflow.matchAll(/gcloud run (?:worker-pools )?deploy (declutrmail-[a-z-]+)/g),
+  ].map((m) => m[1]);
+  assert.ok(targets.includes('declutrmail-api') && targets.includes('declutrmail-worker'));
+  for (const name of targets)
+    assert.ok(
+      SOURCES.some((s) => s.name === name && s.required),
+      `${name} is deployed but is not a required pin source`,
+    );
+  assert.match(workflow, /node scripts\/pin-production-images\.mjs --namespace=deploy/);
 });
 
 test('every pinned image is the one its workflow runs', () => {
@@ -422,6 +544,144 @@ test('a missing pinned source fails loudly after protecting every release image'
     options: { noProbe: true },
   });
   assert.ok(pin(pinned).protectedDigests.includes(PROBE));
+});
+
+const job = (image) => ({
+  metadata: { name: `billing-queue-probe-${image.slice(-4)}` },
+  spec: { template: { spec: { template: { spec: { containers: [{ image }] } } } } },
+});
+
+test('an orphaned Cloud Run job keeps the image it references, by digest or by tag', () => {
+  const services = twoServices();
+  const fixture = registryFixture({
+    ...services,
+    tags: new Map([['commit-old', sha(1001)]]),
+    jobs: [job(`${IMAGE}@${sha(1000)}`), job(`${IMAGE}:commit-old`), job('gcr.io/other/image:1')],
+  });
+  const { protectedDigests } = pin(fixture);
+  assert.equal(fixture.tags.get('serving-job-1'), sha(1000));
+  assert.equal(fixture.tags.get('serving-job-2'), sha(1001));
+  assert.equal(fixture.tags.get(`serving-job-${JOB_SLOTS}`), sha(1007));
+  const gone = cleanupVerdicts(
+    fixture,
+    Array.from({ length: 8 }, (_, i) => sha(1000 + i)),
+  );
+  for (const d of [sha(1000), sha(1001)]) {
+    assert.ok(protectedDigests.includes(d));
+    assert.ok(!gone.has(d), `${d} referenced by a job would be deleted`);
+  }
+});
+
+test('job images that cannot be pinned fail loudly; an unreadable job list fails first', () => {
+  const tooMany = registryFixture({
+    ...twoServices(),
+    jobs: Array.from({ length: JOB_SLOTS + 1 }, (_, i) => job(`${IMAGE}@${sha(1000 + i)}`)),
+  });
+  assert.throws(() => pin(tooMany), /exceed/);
+  assert.equal(tooMany.tags.get('serving-api'), sha(1007));
+  const dangling = registryFixture({ ...twoServices(), jobs: [job(`${IMAGE}:gone`)] });
+  assert.throws(() => pin(dangling), /not in the registry/);
+  assert.deepEqual(jobImages([job(`${IMAGE}:gone`)], new Map()).unresolved, [`${IMAGE}:gone`]);
+  const unreadable = registryFixture({ ...twoServices(), options: { jobsError: true } });
+  assert.throws(() => pin(unreadable), /Permission denied/);
+  assert.equal(unreadable.writes.length, 0);
+});
+
+test('the managed tag set is exact, and anything else under serving- is reported', () => {
+  const managed = managedTags();
+  const perNamespace =
+    SOURCES.length * (1 + ROUTE_SLOTS + ROLLBACK_SLOTS) + JOB_SLOTS + PINNED.length + 1;
+  assert.equal(managed.size, Object.keys(NAMESPACES).length * perNamespace);
+  for (const prefix of Object.values(NAMESPACES))
+    for (const tag of managed) if (tag.startsWith(prefix)) assert.ok(tag.length > prefix.length);
+  const fixture = registryFixture({
+    ...twoServices(),
+    tags: new Map([['serving-obsolete-role', sha(1000)]]),
+  });
+  const lines = [];
+  const { unknown } = pinProductionImages({
+    run: fixture.run,
+    log: (l) => lines.push(l),
+    namespace: 'deploy',
+  });
+  assert.deepEqual(unknown, ['serving-obsolete-role']);
+  assert.ok(lines.some((l) => l.startsWith('::warning::') && l.includes('serving-obsolete-role')));
+});
+
+test('a stale reconciler run cannot undo a newer deploy pin', () => {
+  const services = twoServices();
+  const fixture = registryFixture(services);
+  pin(fixture);
+  pin(fixture, 'observed');
+  services.api.revisions.push(revision('declutrmail-api-00008', 1008, 9));
+  services.api.serving = 'declutrmail-api-00008';
+  pin(fixture);
+  // The reconciler reads release state A (00008). Before it writes, traffic is rolled back to
+  // an old image and the deploy pins state B; the reconciler then resumes with stale targets.
+  let interleaved = false;
+  fixture.options.beforeWrite = () => {
+    if (interleaved) return;
+    interleaved = true;
+    services.api.serving = 'declutrmail-api-00001';
+    pin(fixture);
+  };
+  assert.throws(() => pin(fixture, 'observed'), /serving state changed/);
+  assert.ok(interleaved);
+  assert.equal(fixture.tags.get('serving-api'), sha(1001));
+  assert.ok(servingHolders(fixture.tags).has(sha(1001)));
+  assert.ok(
+    !cleanupVerdicts(
+      fixture,
+      Array.from({ length: 9 }, (_, i) => sha(1000 + i)),
+    ).has(sha(1001)),
+  );
+});
+
+test('the sanctioned rollback tags the target image before it moves traffic', () => {
+  const services = twoServices(30);
+  const fixture = registryFixture(services);
+  pin(fixture);
+  pin(fixture, 'observed');
+  const target = sha(1002); // outside the five rollbacks, so only the rollback path protects it
+  assert.ok(!servingHolders(fixture.tags).has(target));
+  let heldAtShift = false;
+  fixture.options.onShift = (tags) => (heldAtShift = servingHolders(tags).has(target));
+  rollbackTraffic({ role: 'api', revision: 'declutrmail-api-00002', run: fixture.run, log() {} });
+  assert.ok(heldAtShift, 'traffic moved before the target image had a serving- tag');
+  assert.equal(services.api.serving, 'declutrmail-api-00002');
+  assert.equal(fixture.tags.get('serving-observed-api'), target);
+  const shift = fixture.calls.find((c) => c[2] === 'update-traffic');
+  assert.deepEqual(shift.slice(0, 5), [
+    'run',
+    'services',
+    'update-traffic',
+    'declutrmail-api',
+    '--to-revisions=declutrmail-api-00002=100',
+  ]);
+  const gone = cleanupVerdicts(
+    fixture,
+    Array.from({ length: 30 }, (_, i) => sha(1000 + i)),
+  );
+  assert.ok(!gone.has(target));
+});
+
+test('a rollback whose target cannot be protected never moves traffic', () => {
+  const services = twoServices(30);
+  const fixture = registryFixture({ ...services, options: { writeError: true } });
+  assert.throws(
+    () =>
+      rollbackTraffic({
+        role: 'api',
+        revision: 'declutrmail-api-00002',
+        run: fixture.run,
+        log() {},
+      }),
+    /traffic not moved/,
+  );
+  assert.ok(!fixture.calls.some((c) => c[2] === 'update-traffic'));
+  assert.equal(services.api.serving, 'declutrmail-api-00029');
+  for (const revision of ['declutrmail-api-x', 'declutrmail-worker-00001', '../x'])
+    assert.throws(() => rollbackTraffic({ role: 'api', revision, run: fixture.run, log() {} }));
 });
 
 test('a conflicting retention tag prevents every mutation', () => {
@@ -451,14 +711,9 @@ for (const options of [{ lookupError: true }, { malformed: true }])
 for (const options of [{ writeError: true }, { missingReadback: true }])
   test(`failed write or readback cannot report success ${JSON.stringify(options)}`, () => {
     const fixture = registryFixture({ ...twoServices(), options });
-    let logged = false;
+    const lines = [];
     assert.throws(() =>
-      pinProductionImages({
-        run: fixture.run,
-        log: () => {
-          logged = true;
-        },
-      }),
+      pinProductionImages({ run: fixture.run, namespace: 'deploy', log: (l) => lines.push(l) }),
     );
-    assert.equal(logged, false);
+    assert.ok(!lines.some((l) => l.startsWith('Protected')), lines.join('\n'));
   });
