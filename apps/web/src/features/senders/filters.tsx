@@ -25,6 +25,8 @@
 
 import { useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { BottomSheet, tokens, useIsAtMost } from '@declutrmail/shared';
+import { WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { isSenderSizeViewEnabled } from '@declutrmail/shared/inbox-report';
 import { WINDOWS } from '@declutrmail/shared/senders';
 import type {
   ActivityBucket,
@@ -800,7 +802,7 @@ export function ActiveFilterChips({
 
 /* ─── sort ──────────────────────────────────────────────────────── */
 
-type SortColumn = 'total' | 'last_seen' | 'first_seen' | 'name';
+type SortColumn = 'total' | 'last_seen' | 'first_seen' | 'name' | 'size';
 
 const SORT_OPTIONS: ReadonlyArray<{
   sort: SortColumn;
@@ -821,8 +823,16 @@ const SORT_OPTIONS: ReadonlyArray<{
   { sort: 'name', direction: 'desc', label: 'Z → A', group: 'Name' },
 ];
 
+function visibleSortOptions(): typeof SORT_OPTIONS {
+  if (!isSenderSizeViewEnabled()) return SORT_OPTIONS;
+  return [
+    { sort: 'size', direction: 'desc', label: WS5_COPY['f2.sort'], group: 'Size' },
+    ...SORT_OPTIONS,
+  ];
+}
+
 function activeSortLabel(sort: SenderListSort, direction: SenderListDirection): string {
-  const match = SORT_OPTIONS.find((o) => o.sort === sort && o.direction === direction);
+  const match = visibleSortOptions().find((o) => o.sort === sort && o.direction === direction);
   return match?.label ?? `${sort} ${direction === 'desc' ? '↓' : '↑'}`;
 }
 
@@ -839,8 +849,9 @@ export function SortMenu({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
   useDismiss(open, ref, () => setOpen(false));
-  const groups = new Map<string, (typeof SORT_OPTIONS)[number][]>();
-  for (const opt of SORT_OPTIONS) groups.set(opt.group, [...(groups.get(opt.group) ?? []), opt]);
+  const options = visibleSortOptions();
+  const groups = new Map<string, (typeof options)[number][]>();
+  for (const opt of options) groups.set(opt.group, [...(groups.get(opt.group) ?? []), opt]);
   return (
     <span ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
       <button

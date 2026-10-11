@@ -67,6 +67,7 @@ import {
 } from '@/features/triage/unsub-send-disabled';
 import { formatReadRatePct } from '../fact-language';
 import { relTime } from './data';
+import { senderSizeDetail } from '../sender-size';
 import { trackActionConfirmed } from '@/lib/action-analytics';
 import { unsubscribeBacklogToast } from '../unsubscribe-backlog/toast';
 import { track } from '@/lib/posthog';
@@ -77,7 +78,6 @@ import {
   getActionFailureCopy,
   stillRunningCopy,
 } from '@/lib/action-error-copy';
-import { backlogAfterUnsubFailureCopy } from '@/lib/bulk-action-copy';
 import {
   isUnsubscribeInFlight,
   unsubscribeInFlightCopy,
@@ -659,6 +659,7 @@ function ReadyState({
   }, [initial, setPolicy.isPending]);
 
   const { sender, recommendation, stats } = detail;
+  const sizeCopy = senderSizeDetail(sender.name, sender.sizeBytes);
   // Secondary reads have no optimistic local edits. Render their current
   // query snapshot directly, without one effect-frame of previous data.
   const { recentMessages, timeseries, history } = initial;
@@ -1515,6 +1516,13 @@ function ReadyState({
                 {sender.monthlyVolume === 1 ? 'email' : 'emails'} in the last 90 days ·{' '}
                 {sender.totalReceived.toLocaleString('en-US')} received · all time
               </p>
+            </div>
+          )}
+          {sizeCopy && (
+            <div data-testid="sender-size">
+              <p>{sizeCopy.detail}</p>
+              <p>{sizeCopy.note}</p>
+              <p>{sizeCopy.estimates}</p>
             </div>
           )}
           <dl aria-label="Sender stats" className={styles.statsGrid}>

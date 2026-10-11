@@ -11,3 +11,9 @@ export function isInboxReportShareEnabled(env: NodeJS.ProcessEnv = process.env):
   const raw = env.NEXT_PUBLIC_INBOX_REPORT_SHARE_ENABLED ?? env.INBOX_REPORT_SHARE_ENABLED;
   return raw === '1' || raw === 'true';
 }
+
+/** Read-only size-by-sender stays off until the launch switch. */
+export function isSenderSizeViewEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = env.NEXT_PUBLIC_SENDER_SIZE_VIEW ?? env.SENDER_SIZE_VIEW;
+  return raw === '1' || raw === 'true';
+}

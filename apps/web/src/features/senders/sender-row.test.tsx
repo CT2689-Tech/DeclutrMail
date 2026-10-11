@@ -55,6 +55,11 @@ describe('resolvesToSwipeRight — the phone row gesture', () => {
 describe('<SenderRow /> — what the row says', () => {
   // Senders are keyed by ADDRESS, so one brand legitimately owns several
   // rows; the domain alone renders them identical.
+  it('hides the size cell while SENDER_SIZE_VIEW is off', () => {
+    renderRow({ sizeBytes: 1_500_000 });
+    expect(screen.queryByTestId('sender-size-cell')).not.toBeInTheDocument();
+  });
+
   it('shows the full address, not just the domain', () => {
     renderRow({ displayName: 'Redfin', email: 'listings@redfin.com', domain: 'redfin.com' });
     expect(screen.getByText('listings@redfin.com')).toBeInTheDocument();

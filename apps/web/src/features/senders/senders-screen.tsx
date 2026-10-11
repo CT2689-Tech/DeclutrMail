@@ -40,6 +40,8 @@ import {
 } from './data';
 import { SenderSearch } from './sender-search';
 import { isFeatureEnabled } from '@/lib/flags';
+import { WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { senderSizeCell } from './sender-size';
 import {
   ActiveFilterChips,
   EMPTY_COMPOSE,
@@ -78,11 +80,7 @@ import {
   getActionFailureCopy,
   stillRunningCopy,
 } from '@/lib/action-error-copy';
-import {
-  backlogAfterUnsubFailureCopy,
-  NO_ACTIONABLE_SENDERS_COPY,
-  skippedAtClickCopy,
-} from '@/lib/bulk-action-copy';
+import { NO_ACTIONABLE_SENDERS_COPY, skippedAtClickCopy } from '@/lib/bulk-action-copy';
 import {
   isUnsubscribeInFlight,
   unsubscribeInFlightCopy,
@@ -2621,6 +2619,14 @@ function SendersScreenContent({
               />
               <SortMenu sort={sortCol} direction={sortDirection} onChange={setSort} />
             </div>
+            {senders.some((row) => senderSizeCell(row.sizeBytes)) && (
+              <p
+                data-testid="sender-size-note"
+                style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}
+              >
+                {WS5_COPY['f2.note']} {WS5_COPY['f2.estimates']}
+              </p>
+            )}
 
             {/* Hero — the screen's one big number: senders matching the
             active filters, mailbox-wide (BE-honest). On the untouched

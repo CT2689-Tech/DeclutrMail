@@ -3,7 +3,7 @@ export {
   INBOX_REPORT_THRESHOLDS,
   type InboxReportInsightId,
 } from './thresholds';
-export { isInboxReportEnabled, isInboxReportShareEnabled } from './flags';
+export { isInboxReportEnabled, isInboxReportShareEnabled, isSenderSizeViewEnabled } from './flags';
 export {
   formatReportSize,
   getFixSet,

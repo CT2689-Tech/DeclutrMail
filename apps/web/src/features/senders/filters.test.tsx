@@ -3,7 +3,7 @@
  * row, and the Sort menu (D38).
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -310,6 +310,10 @@ describe('ActiveFilterChips', () => {
 });
 
 describe('SortMenu', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('names the sort in force and emits the picked column + direction', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
@@ -327,5 +331,19 @@ describe('SortMenu', () => {
     render(<SortMenu sort="total" direction="desc" onChange={vi.fn()} />);
     await user.click(screen.getByRole('button', { name: /sort/i }));
     expect(screen.queryByRole('menuitemradio', { name: /recommended/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('menuitemradio', { name: 'Largest senders' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('offers Largest senders only while the size view is on', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SENDER_SIZE_VIEW', 'true');
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<SortMenu sort="total" direction="desc" onChange={onChange} />);
+    await user.click(screen.getByRole('button', { name: /sort/i }));
+    await user.click(screen.getByRole('menuitemradio', { name: 'Largest senders' }));
+    expect(onChange).toHaveBeenCalledWith({ sort: 'size', direction: 'desc' });
+    vi.unstubAllEnvs();
   });
 });

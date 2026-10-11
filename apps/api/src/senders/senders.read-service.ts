@@ -57,6 +57,7 @@ import {
 } from '@declutrmail/db';
 import type { TriageReasoningSource, TriageVerdict } from '@declutrmail/db';
 import { normalizeUnsubscribeLifecycleStatus } from '@declutrmail/shared/contracts';
+import { isSenderSizeViewEnabled } from '@declutrmail/shared/inbox-report';
 import { normalizeProtectionReason } from '@declutrmail/shared/copy';
 import {
   CONFIDENCE,
@@ -151,6 +152,7 @@ const DEFAULT_DIRECTION_BY_SORT: Record<SenderListSort, SenderListDirection> = {
   last_seen: 'desc',
   first_seen: 'desc',
   name: 'asc',
+  size: 'desc',
   read: 'desc',
   recommended: 'desc',
 };
@@ -294,6 +296,24 @@ interface InboxStats {
 }
 
 /** Shared live Archive scope for list rows and sender details. */
+/**
+ * Inbound stored size for one sender, including Trash. The same
+ * expression is the list column, the detail column, the ORDER BY, and
+ * the keyset cursor — those four must stay identical or pages tear.
+ * Outbound mail is the user's own sent mail, not "email from" the sender.
+ */
+function senderStoredSizeSql(): SQL<number | string | null> {
+  const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
+  const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
+  return sql<number | string | null>`(
+    SELECT SUM(${mailMessages.sizeBytes})::bigint
+    FROM ${mailMessages}
+    WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
+      AND ${mailMessages.senderKey} = ${outerSenderKey}
+      AND ${mailMessages.isOutbound} = false
+  )`;
+}
+
 /**
  * Less than half of inbound mail in the engine window is marked read,
  * excluding sweeper marks from the numerator. Same facts as `readRate`.
@@ -564,7 +584,11 @@ export class SendersReadService {
   }): Promise<SenderFacts[]> {
     const { mailboxAccountId, category, isProtected, cursor, limit } = args;
     const sort: SenderListSort = args.sort ?? 'total';
-    if (!SUPPORTED_SORTS.has(sort)) {
+    const sizeView = isSenderSizeViewEnabled();
+    // `size` is implemented, but only while SENDER_SIZE_VIEW is on.
+    // Flag off must 400 the same way an unknown sort does, so a stale
+    // URL cannot start the aggregate.
+    if (sort === 'size' ? !sizeView : !SUPPORTED_SORTS.has(sort)) {
       throw new BadRequestException(`Unsupported sort: ${sort}`);
     }
     const direction: SenderListDirection = args.direction ?? DEFAULT_DIRECTION_BY_SORT[sort];
@@ -694,6 +718,7 @@ export class SendersReadService {
         firstSeenAt: senders.firstSeenAt,
         lastSeenAt: senders.lastSeenAt,
         totalReceived: senders.totalReceived,
+        sizeBytes: sizeView ? senderStoredSizeSql() : sql<number | string | null>`NULL::bigint`,
         wroteToCount: senders.wroteToCount,
         unsubscribeMethod: senders.unsubscribeMethod,
         rollingStats: rollingStatsSql,
@@ -782,6 +807,7 @@ export class SendersReadService {
         // `mode: 'number'` coerces to a JS number at the boundary. The
         // assertion makes a violation explicit at the wire boundary.
         totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
+        sizeBytes: sizeView ? ensureOptionalSafeInteger(row.sizeBytes, 'senders.sizeBytes') : null,
         // `wrote_to_count` — mig 0063 integer column, NOT NULL DEFAULT 0.
         // Drives the Sender Detail "you replied N×" copy.
         wroteToCount: ensureSafeIntegerNumber(row.wroteToCount, 'senders.wrote_to_count'),
@@ -1609,6 +1635,7 @@ export class SendersReadService {
     // rather than bare `${senders.column}` interpolations, and for the
     // trend-bucket / last-reviewed subquery rationale.
     const now = args.now ?? new Date();
+    const sizeView = isSenderSizeViewEnabled();
     // Same ROLLING-WINDOW stats the list path uses — `monthlyVolume` /
     // `readRate` / `volumeTrend` are one product-wide fact, so they are
     // computed from one definition.
@@ -1627,6 +1654,7 @@ export class SendersReadService {
         firstSeenAt: senders.firstSeenAt,
         lastSeenAt: senders.lastSeenAt,
         totalReceived: senders.totalReceived,
+        sizeBytes: sizeView ? senderStoredSizeSql() : sql<number | string | null>`NULL::bigint`,
         wroteToCount: senders.wroteToCount,
         unsubscribeMethod: senders.unsubscribeMethod,
         // The mailto: channel for D230's manual compose deep link —
@@ -1739,6 +1767,7 @@ export class SendersReadService {
       firstSeenAt: row.firstSeenAt.toISOString(),
       lastSeenAt: row.lastSeenAt.toISOString(),
       totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
+      sizeBytes: sizeView ? ensureOptionalSafeInteger(row.sizeBytes, 'senders.sizeBytes') : null,
       wroteToCount: ensureSafeIntegerNumber(row.wroteToCount, 'senders.wrote_to_count'),
       // Identical semantics to the list path — the same sender reports
       // the same volume / read rate / trend on both. Volume + read rate
@@ -2270,6 +2299,14 @@ const effectiveNameSql = sql<string>`LOWER(COALESCE(NULLIF(TRIM(${senders.displa
 
 function buildSortOrderBy(sort: SenderListSort, direction: SenderListDirection): SQL[] {
   const orient = direction === 'asc' ? asc : desc;
+  if (sort === 'size') {
+    // NULLS LAST in both directions so an unknown estimate never leads
+    // "Largest senders". Postgres defaults DESC to NULLS FIRST.
+    const expr = senderStoredSizeSql();
+    const sizeOrder =
+      direction === 'asc' ? sql`${expr} ASC NULLS LAST` : sql`${expr} DESC NULLS LAST`;
+    return [sizeOrder, orient(senders.id) as SQL];
+  }
   const column = (() => {
     switch (sort) {
       case 'total':
@@ -2352,6 +2389,24 @@ function buildCursorPredicate(
         and(eq(effectiveNameSql, cursor.key), op(senders.id, cursor.id)),
       )!;
     }
+    case 'size': {
+      const expr = senderStoredSizeSql();
+      // Empty key is the null region (ORDER BY ... NULLS LAST). A
+      // numeric boundary still includes later nulls; ORDER BY places
+      // them after every remaining number.
+      if (cursor.key === '') {
+        return and(sql`${expr} IS NULL`, op(senders.id, cursor.id))!;
+      }
+      const sortVal = Number.parseInt(cursor.key, 10);
+      if (!Number.isSafeInteger(sortVal) || sortVal < 0) {
+        throw new BadRequestException('Invalid cursor: size must be an integer.');
+      }
+      return or(
+        op(expr, sortVal),
+        and(sql`${expr} = ${sortVal}`, op(senders.id, cursor.id)),
+        sql`${expr} IS NULL`,
+      )!;
+    }
     default:
       throw new Error(`Unsupported sort in buildCursorPredicate: ${sort as string}`);
   }
@@ -2368,6 +2423,14 @@ function buildCursorPredicate(
  * into the FE. `label` is included in the error so a future regression
  * shows up grep-able at the call site.
  */
+function ensureOptionalSafeInteger(
+  value: string | number | null | undefined,
+  label: string,
+): number | null {
+  if (value == null) return null;
+  return ensureSafeIntegerNumber(value, label);
+}
+
 function ensureSafeIntegerNumber(value: string | number, label: string): number {
   const n = typeof value === 'number' ? value : Number.parseInt(value, 10);
   if (!Number.isFinite(n) || !Number.isSafeInteger(n) || n < 0) {
