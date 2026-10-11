@@ -4,6 +4,7 @@ const repository = 'CT2689-Tech/DeclutrMail';
 const project = 'prj_hWYbyer4xJEWfCiSb9M3krrdh5D7';
 const repoId = '1238347982';
 const activeStates = ['QUEUED', 'INITIALIZING', 'BUILDING', 'READY'];
+const deploymentUrl = 'https://vercel.com/chintanathakkar-gmailcoms-projects/declutr-mail/';
 
 export async function ensureQueuePreview(env = process.env, fetcher = fetch) {
   const branch = env.QUEUE_BRANCH;
@@ -44,14 +45,22 @@ export async function ensureQueuePreview(env = process.env, fetcher = fetch) {
       throw new Error('Queue ref identity is unavailable');
     return ref.object.sha === sha;
   };
-  const vercelCheckPassed = async () => {
+  // The required check is satisfied only if its latest status is Vercel's own
+  // ignore-step success for exactly this deployment of this project.
+  const ignoredByVercel = async (id) => {
+    if (!/^dpl_[A-Za-z0-9]+$/.test(id ?? '')) return false;
     const statuses = await request(
       `https://api.github.com/repos/${repository}/commits/${sha}/statuses?per_page=100`,
       env.GH_TOKEN,
     );
     if (!Array.isArray(statuses)) throw new Error('Queue commit statuses are unavailable');
-    // Newest first; only the latest Vercel status reflects the check's state.
-    return statuses.find((s) => s.context === 'Vercel')?.state === 'success';
+    const latest = statuses.find((s) => s.context === 'Vercel');
+    return (
+      latest?.state === 'success' &&
+      latest.creator?.login === 'vercel[bot]' &&
+      latest.description === 'Canceled by Ignored Build Step' &&
+      latest.target_url === `${deploymentUrl}${id.slice('dpl_'.length)}`
+    );
   };
   if (!(await current())) return { state: 'stale' };
 
@@ -68,13 +77,13 @@ export async function ensureQueuePreview(env = process.env, fetcher = fetch) {
     const state = existing.state ?? existing.readyState;
     // The Ignored Build Step cancels the deployment yet posts a successful
     // required check, so there is nothing to recover.
-    if (state === 'CANCELED' && (await vercelCheckPassed()))
-      return { state: 'ignored', id: existing.uid ?? existing.id };
+    const id = existing.uid ?? existing.id;
+    if (state === 'CANCELED' && (await ignoredByVercel(id))) return { state: 'ignored', id };
     if (!activeStates.includes(state))
       throw new Error(
         'Existing queue preview failed or was cancelled; diagnose it before retrying',
       );
-    return { state: 'existing', id: existing.uid ?? existing.id };
+    return { state: 'existing', id };
   }
   // The queue may have advanced while we queried Vercel. Never deploy a
   // replacement ref or turn an obsolete candidate into additional work.
