@@ -4427,7 +4427,8 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       },
     ]);
     await confirmBulkUnsubscribe();
-    expect(await screen.findByText('Unsubscribe requested from 1 sender')).toBeInTheDocument();
+    expect(await screen.findByText('something went wrong')).toBeInTheDocument();
+    expect(screen.queryByText(/Unsubscribe requested/)).toBeNull();
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       await act(async () => {
@@ -4462,9 +4463,9 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       },
     ]);
     await confirmBulkUnsubscribe();
-    // No requested sender: the toast still uses the one-sender celebrate
-    // line (m = max(requested, 1)). It must not invent a receipt.
-    expect(await screen.findByText('Unsubscribe requested from 1 sender')).toBeInTheDocument();
+    // No requested sender: say the skip, and do not invent a request.
+    expect(await screen.findByText('something went wrong')).toBeInTheDocument();
+    expect(screen.queryByText(/Unsubscribe requested/)).toBeNull();
     expect(screen.queryByText('No unsubscribe requests sent')).toBeNull();
     expect(screen.queryByText(/Not sent: 2 Protected senders/)).toBeNull();
     expect(screen.queryByText('✓')).toBeNull();

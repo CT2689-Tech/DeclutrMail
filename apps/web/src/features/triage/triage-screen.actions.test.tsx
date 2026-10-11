@@ -1934,9 +1934,9 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] }),
     );
     expect(screen.queryByTestId('unsub-mailto-callout')).toBeNull();
-    expect(h.toast).toHaveBeenCalledWith('Unsubscribe requested from 1 sender', 'warn');
+    expect(h.toast).toHaveBeenCalledWith(WS5_COPY['f1.reason.generic'], 'warn');
     expect(h.toast).not.toHaveBeenCalledWith(
-      expect.stringMatching(/\bunsubscribed\b/i),
+      expect.stringMatching(/\b(unsubscribed|requested)\b/i),
       expect.anything(),
     );
   });
