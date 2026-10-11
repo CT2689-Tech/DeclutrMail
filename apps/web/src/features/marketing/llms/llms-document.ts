@@ -12,6 +12,7 @@ import {
   llmsBetaLine,
   llmsKeyFacts,
   llmsPricingLine,
+  llmsStorageAiLine,
   ws3Tokens,
   WS3_COPY,
 } from '@declutrmail/shared/copy/launch';
@@ -58,6 +59,8 @@ function applyDeckFixes(body: string): string {
   if (howItWorks) body = body.replace(PREVIOUS_HOW_IT_WORKS, howItWorks);
   const help = filledLlmsFix(WS3_COPY['ws3.llms.fix.help']);
   if (help) body = body.replace(PREVIOUS_HELP, help);
+  const storageAi = llmsStorageAiLine();
+  if (storageAi) body = body.replace(WS3_COPY['ws3.llms.storageAi'], storageAi);
   return body;
 }
 

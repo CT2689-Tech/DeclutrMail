@@ -214,9 +214,17 @@ export function llmsBetaLine(): string {
   return 'Open beta: sign in with Google and review senders, no invite or waitlist needed';
 }
 
-/** Current llms.txt AI sentence. The deck bullet replaces it only after the gate. */
-export const LLMS_AI_BEFORE_GATE =
-  'Suggestion explanations may send Anthropic the sender and engagement numbers, but not subject lines or preview snippets. Pro Brief may send the sender, subject line, and Gmail preview snippet to Anthropic; it never sends full email contents.';
+/** Pre-gate Key facts AI line. The deck bullet replaces it only after the gate. */
+export const LLMS_AI_BEFORE_GATE = fillWs3(WS3_COPY['ws3.llms.keyFacts.aiPreGate']);
+
+/** Storage-paragraph AI line. The `.gate` string replaces it once consent is live. */
+export function llmsStorageAiLine(): string {
+  const template = AI_CONSENT_GATE_LIVE
+    ? WS3_COPY['ws3.llms.storageAi.gate']
+    : WS3_COPY['ws3.llms.storageAi'];
+  const filled = fillWs3(template);
+  return filled.includes('{') ? '' : filled;
+}
 
 export function llmsKeyFacts(): readonly string[] {
   const facts = WS3_COPY['ws3.llms.keyFacts'];

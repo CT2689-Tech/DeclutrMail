@@ -18,6 +18,7 @@ import {
   declutrPriceSummary,
   llmsAutopilotLine,
   llmsPricingLine,
+  llmsStorageAiLine,
   priceFaqAnswer,
   privacyFaqAnswer,
   REFUNDS_PAGE_WINDOW_DAYS,
@@ -91,7 +92,9 @@ describe('WS3 token fill', () => {
     expect(AI_CONSENT_GATE_KEYS).toHaveLength(16);
     expect(privacyFaqAnswer()).not.toMatch(/If you allow AI/);
     expect(glanceLines().some((line) => /Anthropic/.test(line))).toBe(false);
-    expect(llmsKeyFacts()[3]).toMatch(/Pro Brief may send the sender/);
+    expect(llmsKeyFacts()[3]).toBe(fillWs3(WS3_COPY['ws3.llms.keyFacts.aiPreGate']));
     expect(llmsKeyFacts()[3]).not.toMatch(/consent card/);
+    expect(llmsStorageAiLine()).toBe(fillWs3(WS3_COPY['ws3.llms.storageAi']));
+    expect(llmsStorageAiLine()).not.toMatch(/consent card/);
   });
 });

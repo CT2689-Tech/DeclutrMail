@@ -11,8 +11,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { planName, renderPricingMarkdown } from '@declutrmail/shared/entitlements';
-import { WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { renderPricingMarkdown } from '@declutrmail/shared/entitlements';
+import { fillWs3, WS3_COPY } from '@declutrmail/shared/copy/launch';
 
 import { renderLlmsFullTxt, renderLlmsTxt } from '@/features/marketing/llms/llms-document';
 
@@ -67,25 +67,28 @@ describe('llms.txt — marketing surface reconciliation', () => {
     expect(keyFacts).toBeGreaterThan(storage);
     expect(describe).toBeGreaterThan(keyFacts);
     const headings = [...LLMS_TXT.matchAll(/^## .+$/gm)].map((match) => match[0]);
-    expect(headings[0]).toBe('## Key facts');
-    const pricingAt = headings.indexOf('## Pricing');
-    if (pricingAt !== -1) expect(pricingAt).toBe(headings.length - 1);
+    const sections = [
+      '## Key facts',
+      '## How to describe DeclutrMail',
+      '## Product and trust',
+      '## Comparisons',
+      '## Alternatives round-ups',
+      '## Gmail how-to guides',
+      '## Direct answers',
+      '## Journal and build log',
+      '## Legal',
+    ];
+    const pricing = renderPricingMarkdown().trim();
+    expect(headings).toEqual(pricing ? [...sections, '## Pricing'] : sections);
 
-    const plus = planName('plus');
-    const free = planName('free');
-    expect(plus).not.toBe('');
-    expect(free).not.toBe('');
-    expect(LLMS_TXT).toContain(`opt into ongoing Autopilot rules on ${plus}.`);
-    expect(LLMS_TXT).toContain(
-      `On ${plus}, Autopilot rules set to Watch first collect matches for your approval`,
-    );
-    expect(LLMS_TXT).toContain(
-      `Autopilot rules (${plus}) handle future matches, and act without asking only after you deliberately set a rule to Act now`,
-    );
-    expect(LLMS_TXT).toContain(`metered monthly on ${free}`);
-    expect(LLMS_TXT).toContain('Autopilot Watch first vs Act now');
+    expect(LLMS_TXT).toContain(fillWs3(WS3_COPY['ws3.llms.storageAi']));
+    expect(LLMS_TXT).toContain(fillWs3(WS3_COPY['ws3.llms.fix.describe']));
+    expect(LLMS_TXT).toContain(fillWs3(WS3_COPY['ws3.llms.fix.notAutomatic']));
+    expect(LLMS_TXT).toContain(fillWs3(WS3_COPY['ws3.llms.fix.howItWorks']));
+    expect(LLMS_TXT).toContain(fillWs3(WS3_COPY['ws3.llms.fix.help']));
     expect(LLMS_TXT).not.toContain('Plus or Pro');
     expect(LLMS_TXT).not.toContain('Observe');
     expect(LLMS_TXT).not.toContain('Plus and Pro');
+    expect(LLMS_TXT).not.toContain('Pro Brief');
   });
 });

@@ -1,7 +1,7 @@
 {
   "_meta": {
-    "revision": "drop2-r12",
-    "issued": "2026-10-11T15:35:00-07:00",
+    "revision": "drop2-r13",
+    "issued": "2026-10-11T16:15:00-07:00",
     "section": "ws3"
   },
   "ws3.home.title": "Clean up Gmail, one sender at a time — DeclutrMail",
@@ -285,6 +285,9 @@
     "Facts checked {factsCheckedDate}."
   ],
   "ws3.llms.fix.autopilot": "Autopilot rules on {plusName} handle new email from senders you’ve already decided on. Watch first waits for your approval; Act now moves matching email as it arrives, only after you preview and turn the rule on.",
+  "ws3.llms.storageAi": "Suggestion explanations may send Anthropic the sender’s display name and email domain, the suggested choice, how sure the rule is and its name, the monthly email volume and the share marked read, and the Gmail category, but never subject lines, preview snippets or email contents. The {BRIEF_NAME}, which only existing {proName} accounts have, may send Anthropic the sender, subject line and Gmail preview snippet of each email it covers; it never sends full email contents.",
+  "ws3.llms.storageAi.gate": "Only if the user allows AI on an in-app consent card, and until they turn it off in Settings → AI: suggestion explanations, on every plan, may send Anthropic the sender’s display name and email domain, the suggested choice and the numbers behind it, and the Gmail category, but never subject lines, preview snippets or email contents; the {BRIEF_NAME} ({proName}) may send the sender, subject line and Gmail preview snippet of each email it covers. Without it, explanations are written from rules and the {BRIEF_NAME} is written without AI. Never full email contents.",
+  "ws3.llms.keyFacts.aiPreGate": "AI: suggestion explanations can send Anthropic the sender’s name and domain, the suggested choice and the numbers behind it, and the Gmail category, never subject lines or preview snippets. The {BRIEF_NAME}, which only existing {proName} accounts have, can send the sender, subject line and preview snippet. Never full email contents.",
   "ws3.llms.fix.describe": "Preferred one-line description: Gmail cleanup by sender: preview the matching emails and planned changes before confirming manual Archive, Later, or Delete; opt into ongoing Autopilot rules on {plusName}.",
   "ws3.llms.fix.notAutomatic": "fully automatic by default. Archive, Later and Delete you start yourself run only after you approve a preview. On {plusName}, Autopilot rules set to Watch first collect matches for your approval; only a rule you deliberately set to Act now acts without asking.",
   "ws3.llms.fix.howItWorks": "Gmail remains the reading/reply surface; Archive, Later and Delete you start yourself change only the previewed messages; Autopilot rules ({plusName}) handle future matches, and act without asking only after you deliberately set a rule to Act now",
@@ -292,5 +295,10 @@
   "ws3.llms.fix.pricingLink": "Pricing: {freeName}, {plusName} and the one-time {passName}; {proName} is waitlist only. {refundDays}-day money-back on any purchase, once per customer.",
   "ws3.llms.fix.beta": "Get started: sign in with Google and review senders. No invite or waitlist needed.",
   "ws3.jsonld.disambiguatingDescription": "DeclutrMail is a Gmail cleanup app. It is not affiliated with Decluttr (decluttr.com) or DeclutterMyMail.",
-  "ws3.jsonld.alternateName": ["Declutr Mail"]
+  "ws3.jsonld.alternateName": ["Declutr Mail"],
+  "ws3.liveFix.privacy.access": "DeclutrMail connects to your Gmail account through Google’s official API, only after you give permission on Google’s consent screen. We request one Gmail permission, gmail.modify, which Google classes as restricted, because DeclutrMail’s job is to change your email when you tell it to: archive, label, delete and unsubscribe.",
+  "ws3.liveFix.privacy.casa": "Apps that use a restricted Gmail permission go through Google’s independent CASA (Cloud Application Security Assessment) process. Google OAuth verification approved {OAUTH_DATE}. The approval covers the one restricted permission we request, gmail.modify. Verification is recertified every year.",
+  "ws3.liveFix.simulator.oauthNote": "Google OAuth verification approved {OAUTH_DATE}. The approval covers the one restricted permission this connection would request, gmail.modify.",
+  "ws3.liveFix.simulator.manualClaim": "Archive and Later change the inbox email that matches what you approved, as it stands when they run. Delete can also include archived email if you choose that. Archive, Later and Delete you start yourself don’t create rules for future email. Autopilot handles future email separately: you preview a rule before turning it on, then choose Watch first (it asks you) or Act now (it acts without asking).",
+  "ws3.liveFix.simulator.noMatch": "No sample email matched the older email you chose."
 }
