@@ -4,9 +4,10 @@ Branch `codex/ws2a-app-polish`. Deck revision `drop2-r6`. This record
 covers H0, D1, D2 copy, H1, H2, H3, H5, B1, the empty Daily Brief
 response, and the AI consent gate. WS2b is a later branch.
 
-Rebased onto main after #977 merged. The WS1a stub cherry-pick was
+Rebased onto main after #977 and #979. The WS1a stub cherry-pick was
 dropped; main already has the real pricing foundation. Consent columns
-are migration `0086` because `0085` is the emails-cleared meter.
+are migration `0092`. `0086` is product events. `0087`–`0091` are
+reserved for in-flight PRs.
 
 ## Flags
 
@@ -22,7 +23,7 @@ flag has to be flipped for that. There is no backfill.
 
 ## Migration
 
-`0086_ai_consent_columns.sql` is additive. It adds nullable consent
+`0092_ai_consent_columns.sql` is additive. It adds nullable consent
 columns on `users`. It was not applied to a live database. Rollback
 drops those columns.
 
