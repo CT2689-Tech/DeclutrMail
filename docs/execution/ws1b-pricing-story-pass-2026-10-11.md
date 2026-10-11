@@ -1,17 +1,20 @@
 # WS1b pricing story, Backlog Pass, and catalog drift
 
-Branch `codex/ws1b-pricing-story-pass`, stacked on `codex/ws1a-pricing-foundation`.
+Branch `codex/ws1b-pricing-story-pass`, rebased onto `main`.
 Deck revision `drop2-r6` (2026-10-11T05:26:15-07:00). This record covers A3, A4,
 and A5. It does not flip IMPLEMENTATION-LOG rows: the PR says Relates to
 D19, D117, and D126.
 
-## Needs Chintan's OK
+## Destructive migrations
 
-1. Destructive migration `0087_entitlement_grants_comp_email_uniq` replaces
+Chintan approved applying the comp-unique swap and the waitlist unique
+drop on Oct 11 at 9:31 AM PT. This PR still does not apply them.
+
+1. Destructive migration `0090_entitlement_grants_comp_email_uniq` replaces
    `entitlement_grants_email_uniq` with a partial unique index on
    `(email) where source = 'comp'`. It refuses to run if any email has two
    `source='comp'` rows. No columns are dropped. Comp rows are not updated.
-2. Destructive migration `0088_waitlist_drop_email_uniq` drops
+2. Destructive migration `0091_waitlist_drop_email_uniq` drops
    `waitlist_email_uniq`. WS1a left that index in place on purpose.
    Rollback recreates it and refuses if duplicate emails exist.
 3. Plus annual 2026-10, the Backlog Pass, and PH30 are still `FILL_ME` and
@@ -46,9 +49,9 @@ unprocessed.
 
 | File                                          | Kind                    | What                                                                                                           |
 | --------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `0086_entitlement_grant_sources.sql`          | additive                | `source` default `comp`, `provider`, `provider_transaction_id` unique, source check, `pending_checkouts.offer` |
-| `0087_entitlement_grants_comp_email_uniq.sql` | destructive, own commit | drop full email unique, add partial unique for comps                                                           |
-| `0088_waitlist_drop_email_uniq.sql`           | destructive, own commit | drop `waitlist_email_uniq`                                                                                     |
+| `0089_entitlement_grant_sources.sql`          | additive                | `source` default `comp`, `provider`, `provider_transaction_id` unique, source check, `pending_checkouts.offer` |
+| `0090_entitlement_grants_comp_email_uniq.sql` | destructive, own commit | drop full email unique, add partial unique for comps                                                           |
+| `0091_waitlist_drop_email_uniq.sql`           | destructive, own commit | drop `waitlist_email_uniq`                                                                                     |
 
 `atlas.sum` was produced by Atlas community v1.3.0 (`atlas migrate hash`).
 None of these migrations has been applied to a live database.

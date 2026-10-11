@@ -1,4 +1,5 @@
--- DESTRUCTIVE. Needs Chintan's OK before this is applied anywhere persistent.
+-- DESTRUCTIVE. Chintan approved applying the comp-unique swap and the
+-- waitlist unique drop on Oct 11 at 9:31 AM PT.
 -- Replaces entitlement_grants_email_uniq with a partial unique index on
 -- comp rows so a Backlog Pass can share an email with a comp, and a
 -- repeat Pass purchase can insert another row. No columns are dropped.

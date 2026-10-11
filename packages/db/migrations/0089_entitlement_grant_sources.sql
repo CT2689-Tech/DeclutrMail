@@ -1,5 +1,5 @@
 -- Additive. Backlog Pass grants share entitlement_grants with comps.
--- Existing rows become source='comp'. unique(email) stays until 0087.
+-- Existing rows become source='comp'. unique(email) stays until 0090.
 
 ALTER TABLE "entitlement_grants" ADD COLUMN "source" text DEFAULT 'comp' NOT NULL;
 --> statement-breakpoint

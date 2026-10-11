@@ -50,7 +50,7 @@ export const waitlist = pgTable(
   (table) => ({
     /**
      * One row per address, launch tier, and provider. The older
-     * unique(email) is dropped in 0088 so a second kind can be stored.
+     * unique(email) is dropped in 0091 so a second kind can be stored.
      */
     emailTierProviderUniq: uniqueIndex('waitlist_email_tier_provider_uniq').on(
       table.email,
