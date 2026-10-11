@@ -1,0 +1,56 @@
+name: Ensure Vercel queue preview
+
+on:
+  # workflow_run loads this workflow from main. Candidate code never runs
+  # with the Vercel token: checkout and helper both come from protected main.
+  workflow_run:
+    workflows: [CI]
+    types: [requested, completed]
+  workflow_dispatch:
+    inputs:
+      queue_branch:
+        description: Exact gh-readonly-queue/main branch to recover
+        required: true
+        type: string
+      queue_sha:
+        description: Exact 40-character queue candidate SHA
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vercel-queue-preview-${{ github.event.workflow_run.head_sha || inputs.queue_sha }}
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    name: Ensure exact queue preview exists
+    if: >-
+      github.repository == 'CT2689-Tech/DeclutrMail' &&
+      ((github.event_name == 'workflow_run' &&
+        github.event.workflow_run.event == 'merge_group' &&
+        (github.event.action == 'requested' || github.event.workflow_run.conclusion == 'success')) ||
+       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Give the native Git integration time to report
+        if: github.event.action == 'requested'
+        run: sleep 15
+      - name: Recover only a missing preview producer
+        env:
+          QUEUE_BRANCH: ${{ github.event.workflow_run.head_branch || inputs.queue_branch }}
+          QUEUE_SHA: ${{ github.event.workflow_run.head_sha || inputs.queue_sha }}
+          GH_TOKEN: ${{ github.token }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+        run: node scripts/ensure-vercel-queue-preview.mjs

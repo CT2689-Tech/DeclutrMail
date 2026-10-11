@@ -82,6 +82,19 @@ branch or a detached checkout; application PRs, queue candidates and main keep
 their existing Vercel validation. Snapshot collection and drift evidence remain
 enabled. See [Vercel Git deployment configuration](https://vercel.com/docs/project-configuration/git-configuration).
 
+`Ensure Vercel queue preview` watches queue CI from protected main. After a
+brief allowance for the native Git integration, it checks for an exact-SHA
+preview and creates one only if missing. It checks the queue ref twice, skips
+obsolete refs, and refuses to retry a failed/cancelled preview. Provider errors
+remain failures. It never posts a GitHub success status; Vercel's own required
+check must pass. The completed-CI trigger provides a second lookup, and manual
+main dispatch can recover a named queue ref/SHA during rollout. Credentials
+remain in the existing GitHub secrets; candidate code is never checked out in
+this workflow. The CI split's first queue candidate passed all GitHub checks
+but received no native Vercel deployment/status; an exact-commit preview was
+needed to restore the missing required producer. Preserve that observation
+when assessing queue reliability.
+
 Full post-merge CI remains enabled. A queue candidate and a squash commit have
 separate identities, and there is no verified artifact-reuse mechanism yet.
 Never skip post-merge validation just because a PR or a nearby commit was green.
