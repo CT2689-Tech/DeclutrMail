@@ -167,7 +167,9 @@ export const OAUTH_FAILURE_REASONS = [
   'orchestrator_failed',
   'sign_in_failed',
   'connect_session_invalid',
+  'connect_failed',
   'gmail_scope_missing',
+  'MAILBOX_OWNED_BY_OTHER_WORKSPACE',
 ];
 /** Logged, but designed non-outages. Kept out of the failure metric. */
 export const OAUTH_IGNORED_REASONS = [
@@ -226,12 +228,12 @@ export const LAUNCH_LOG_METRICS = [
   counter(
     'worker_oom_or_exit',
     'Worker container memory-limit or exit lines. API revisions are excluded.',
-    `${WORKER} AND (textPayload:"Memory limit of" OR jsonPayload.message:"Memory limit of" OR textPayload:"Container called exit" OR jsonPayload.message:"Container called exit")`,
+    `${WORKER} AND (textPayload:"Memory limit of" OR jsonPayload.message:"Memory limit of" OR ((textPayload:"Container called exit" OR jsonPayload.message:"Container called exit") AND NOT textPayload:"Container called exit(0)" AND NOT jsonPayload.message:"Container called exit(0)"))`,
   ),
   counter(
     'gmail_rate_limit_events',
     'RateLimitError on allowlisted Gmail workers. Initial guardrail, not a measured Gmail quota baseline. Domain icon lookups are excluded.',
-    `${WORKER} AND jsonPayload.error="RateLimitError" AND (jsonPayload.kind="worker.failed" OR jsonPayload.kind="worker.retried" OR jsonPayload.kind="worker.dead_lettered") AND (${GMAIL_QUOTA_WORKERS.map((worker) => `jsonPayload.worker="${worker}"`).join(' OR ')})`,
+    `${WORKER} AND jsonPayload.error="RateLimitError" AND jsonPayload.kind="worker.failed" AND (${GMAIL_QUOTA_WORKERS.map((worker) => `jsonPayload.worker="${worker}"`).join(' OR ')})`,
   ),
 ];
 

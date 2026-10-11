@@ -30,7 +30,9 @@ const SECURITY_LOG_REASONS = new Set([
   'orchestrator_failed',
   'sign_in_failed',
   'connect_session_invalid',
+  'connect_failed',
   'gmail_scope_missing',
+  'MAILBOX_OWNED_BY_OTHER_WORKSPACE',
   'INBOX_LIMIT_REACHED',
 ]);
 

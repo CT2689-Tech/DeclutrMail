@@ -437,10 +437,17 @@ test('launch log metrics keep OAuth on the API and Gmail quota on allowlisted wo
   assert.ok(!oom.filter.includes('declutrmail-api'));
   assert.ok(oom.filter.includes('Memory limit of'));
   assert.ok(oom.filter.includes('Container called exit'));
+  assert.ok(oom.filter.includes('NOT textPayload:"Container called exit(0)"'));
+  assert.ok(oom.filter.includes('NOT jsonPayload.message:"Container called exit(0)"'));
   const gmail = byName.gmail_rate_limit_events;
   assert.ok(gmail.filter.includes('jsonPayload.error="RateLimitError"'));
+  assert.ok(gmail.filter.includes('jsonPayload.kind="worker.failed"'));
+  assert.ok(!gmail.filter.includes('worker.retried'));
+  assert.ok(!gmail.filter.includes('worker.dead_lettered'));
   assert.ok(!gmail.filter.includes('GmailQuotaError'));
   assert.ok(!gmail.filter.includes('DomainIconWorker'));
+  assert.ok(failure.filter.includes('jsonPayload.reason="connect_failed"'));
+  assert.ok(failure.filter.includes('jsonPayload.reason="MAILBOX_OWNED_BY_OTHER_WORKSPACE"'));
   for (const worker of GMAIL_QUOTA_WORKERS)
     assert.ok(gmail.filter.includes(`jsonPayload.worker="${worker}"`));
   const runbook = readFileSync('docs/ops/observability-alerts.md', 'utf8');

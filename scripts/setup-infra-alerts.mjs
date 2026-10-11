@@ -307,7 +307,7 @@ export function infrastructurePolicies({ runtime = false } = {}) {
       '600s',
     );
     oom.documentation = documentation(
-      'The worker container logged a memory limit or container exit in a 10-minute window. This is separate from the 90% memory utilization alert and does not include the API service.',
+      'The worker container logged a memory limit or a non-zero container exit in a 10-minute window. A normal exit(0) does not page. This is separate from the 90% memory utilization alert and does not include the API service.',
     );
     const gmail = counted(
       'DeclutrMail Gmail rate limit above guardrail',
@@ -316,7 +316,7 @@ export function infrastructurePolicies({ runtime = false } = {}) {
       '600s',
     );
     gmail.documentation = documentation(
-      'More than 30 RateLimitError events in 10 minutes across allowlisted Gmail workers, summed together. This is an initial guardrail, not a measured Gmail quota baseline. Domain icon lookups are excluded.',
+      'More than 30 RateLimitError throws in 10 minutes across allowlisted Gmail workers, counted once on worker.failed. The paired retried or dead-letter line is not counted again. This is an initial guardrail, not a measured Gmail quota baseline. Domain icon lookups are excluded.',
     );
     const callbackFailures = {
       displayName: 'DeclutrMail OAuth callback failures',

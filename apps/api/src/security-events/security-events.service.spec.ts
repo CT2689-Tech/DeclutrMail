@@ -99,6 +99,16 @@ describe('SecurityEventsService (D181)', () => {
       });
       expect(JSON.parse(String(log.mock.calls[0]?.[0])).reason).toBe('other');
 
+      for (const reason of ['connect_failed', 'MAILBOX_OWNED_BY_OTHER_WORKSPACE']) {
+        log.mockClear();
+        await service.record({
+          eventType: 'login.failure',
+          severity: 'warning',
+          payload: { reason },
+        });
+        expect(JSON.parse(String(log.mock.calls[0]?.[0])).reason).toBe(reason);
+      }
+
       log.mockClear();
       await service.record({ eventType: 'rate_limit.breach', severity: 'warning' });
       expect(log).not.toHaveBeenCalled();

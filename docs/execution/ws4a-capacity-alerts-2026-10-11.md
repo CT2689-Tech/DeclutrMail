@@ -42,9 +42,13 @@ those decisions. WS4b is out of scope. PR #972 stays paused.
   `login.failure`, with a closed reason or `other`. No address, account, or
   request identity is logged. `signup.denied` is not logged.
 - Dead-letter growth counts `worker.dead_lettered`, not `dead_letter.parked`.
-- Gmail quota matches `RateLimitError` on the allowlisted Gmail workers.
-  The 30-in-10-minutes figure is an initial guardrail, not a measured
-  baseline.
+- Gmail quota matches `RateLimitError` on `worker.failed` only. Each
+  throw also emits `worker.retried` or `worker.dead_lettered`, so
+  counting those lines would page at 16 throws. The 30-in-10-minutes
+  figure is an initial guardrail, not a measured baseline.
+- Mailbox-connect failures log `connect_failed` or
+  `MAILBOX_OWNED_BY_OTHER_WORKSPACE`. Both are allowlisted. A normal
+  worker `exit(0)` does not page.
 - `--runtime --apply` refuses until a fresh `source=recovery` success
   exists. Apply after the Q1 deploy, not before.
 - Squash merges produce a different SHA from the merge-queue run, so the
