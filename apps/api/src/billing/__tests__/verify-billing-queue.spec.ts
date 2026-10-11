@@ -121,22 +121,41 @@ describe('standalone billing queue probe', () => {
     expect(f.connection.disconnect).toHaveBeenCalledOnce();
     expect(f.queue.close).toHaveBeenCalledOnce();
   });
-  it('opens no further broker connection once the deadline has fired', async () => {
+  it('names a deadline between samples as a slow broker and opens nothing after it', async () => {
     vi.useFakeTimers();
+    f.connection.status = 'end';
     let resume!: () => void;
     let late: Promise<unknown> | undefined;
     f.sample.mockImplementationOnce(async (withQueue: WithQueue) => {
+      await withQueue(f.read);
       await new Promise<void>((resolve) => (resume = resolve));
       late = withQueue(f.read).catch((e: unknown) => e);
       return late;
     });
     const pending = verifyBillingQueue().catch((e: unknown) => e);
     await vi.advanceTimersByTimeAsync(PROBE_DEADLINE_MS);
-    expect(probeFailureReason(await pending)).toBe('redis_not_ready');
+    expect(probeFailureReason(await pending)).toBe('broker_read_stalled');
     resume();
     await vi.waitFor(() => expect(late).toBeDefined());
     await late;
-    expect(f.connect).not.toHaveBeenCalled();
+    expect(f.connect).toHaveBeenCalledOnce();
+  });
+  it("does not blame a later deadline on an earlier sample's recovered error", async () => {
+    vi.useFakeTimers();
+    f.connection.status = 'connecting';
+    const reset = Object.assign(new Error('PRIVATE'), { code: 'ECONNRESET' });
+    f.sample.mockImplementationOnce(async (withQueue: WithQueue) => {
+      await withQueue(async (queue) => {
+        const [, onError] = f.connection.on.mock.calls.at(-1) as [string, (e: unknown) => void];
+        onError(reset);
+        return f.read(queue);
+      });
+      return withQueue(() => new Promise(() => {}));
+    });
+    const pending = verifyBillingQueue().catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(PROBE_DEADLINE_MS);
+    expect(probeFailureReason(await pending)).toBe('redis_not_ready');
+    expect(f.connect).toHaveBeenCalledTimes(2);
   });
   it('names configuration refusal without connecting', async () => {
     vi.stubEnv('BILLING_NOTICE_REDIS_URL', '');

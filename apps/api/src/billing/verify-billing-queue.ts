@@ -80,25 +80,24 @@ export async function verifyBillingQueue(): Promise<{ workers: number }> {
       'configuration_unavailable',
     );
   const redisUrl = process.env.BILLING_NOTICE_REDIS_URL;
-  const open = new Set<{ connection: Redis; queue?: Queue }>();
-  let current: Redis | undefined;
+  type Handle = { connection: Redis; queue?: Queue; error?: ProbeFailureReason | undefined };
+  const open = new Set<Handle>();
+  let current: Handle | undefined;
   let finished = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let lastRedisError: ProbeFailureReason | undefined;
-  const release = async (handle: { connection: Redis; queue?: Queue }) => {
+  const release = async (handle: Handle) => {
     open.delete(handle);
+    if (current === handle) current = undefined;
     handle.connection.disconnect();
     await handle.queue?.close().catch(() => {});
   };
   const withQueue = async <T>(read: (queue: Queue) => Promise<T>): Promise<T> => {
     if (finished) throw new BillingQueueProbeError('Billing queue probe deadline', 'unclassified');
-    const handle: { connection: Redis; queue?: Queue } = {
-      connection: createRedisConnection(redisUrl),
-    };
+    const handle: Handle = { connection: createRedisConnection(redisUrl) };
     open.add(handle);
-    current = handle.connection;
+    current = handle;
     handle.connection.on('error', (error: unknown) => {
-      lastRedisError = redisErrorReason(error) ?? lastRedisError;
+      handle.error = redisErrorReason(error) ?? handle.error;
     });
     try {
       handle.queue = new Queue(EMAIL_SEND_QUEUE, {
@@ -111,20 +110,18 @@ export async function verifyBillingQueue(): Promise<{ workers: number }> {
       await release(handle);
     }
   };
+  /** Between samples every read so far was answered, so the broker is slow, not unreachable. */
+  const deadlineReason = (): ProbeFailureReason =>
+    !current || current.connection.status === 'ready'
+      ? 'broker_read_stalled'
+      : (current.error ?? 'redis_not_ready');
   try {
     return await Promise.race([
       sampleEmailQueueCompatibility(withQueue, PROBE_SAMPLING),
       new Promise<never>((_resolve, reject) => {
         timer = setTimeout(
           () =>
-            reject(
-              new BillingQueueProbeError(
-                'Billing queue probe deadline',
-                current?.status === 'ready'
-                  ? 'broker_read_stalled'
-                  : (lastRedisError ?? 'redis_not_ready'),
-              ),
-            ),
+            reject(new BillingQueueProbeError('Billing queue probe deadline', deadlineReason())),
           PROBE_DEADLINE_MS,
         );
       }),
