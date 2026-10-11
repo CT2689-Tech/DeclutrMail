@@ -1,0 +1,227 @@
+'use client';
+
+import { useState } from 'react';
+
+import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import {
+  isInboxReportShareEnabled,
+  reportFallback,
+  reportGlyph,
+  reportHeadline,
+  reportSupport,
+  type InboxReportDto,
+} from '@declutrmail/shared/inbox-report';
+import {
+  BACKLOG_PASS_NAME,
+  CONNECTION_TERM,
+  SCREENER_NAME,
+} from '@declutrmail/shared/copy/screen-decisions';
+
+import { UnsubscribeBacklogDialog } from '@/features/senders/unsubscribe-backlog/unsubscribe-backlog-dialog';
+import type { ActionRequest } from '@/features/senders/data';
+
+import './report.css';
+
+function passEnabled(): boolean {
+  const raw = process.env.NEXT_PUBLIC_BILLING_PASS_ENABLED ?? process.env.BILLING_PASS_ENABLED;
+  return raw === 'true' || raw === '1';
+}
+
+function money(cents: number | null | undefined): string {
+  if (cents == null) return '';
+  return `$${Math.round(cents / 100)}`;
+}
+
+export function InboxReportPanel({
+  report,
+  mailboxEmail,
+  dismissed = false,
+  resetDate = '',
+  onDismiss,
+  onReopen,
+  onFixConfirmed,
+  celebration = null,
+}: {
+  report: InboxReportDto;
+  mailboxEmail?: string;
+  dismissed?: boolean;
+  resetDate?: string;
+  onDismiss: () => void;
+  onReopen: () => void;
+  onFixConfirmed?: (mode: 'archive' | 'delete' | 'unsub_only') => void;
+  celebration?: { archived: number; senders: number } | null;
+}) {
+  const [fixOpen, setFixOpen] = useState(false);
+  const calm = report.variant === 'fallback';
+  const headline = calm ? null : report.insights[0] ? reportHeadline(report.insights[0]) : null;
+  const glyph =
+    headline && report.insights[0]?.id === 'mostly_unread_share'
+      ? reportGlyph(report.insights[0].pct)
+      : null;
+  const support = report.insights[0] ? reportSupport(report.insights[0]) : null;
+  const facts = calm ? [] : report.insights.slice(1, 3);
+  const fallback = reportFallback(report);
+  const fixCopy = WS5_COPY['report.fix.primary'];
+  const fixLabel =
+    !calm && isPluralCopy(fixCopy)
+      ? pluralCopy(fixCopy, report.fix.sendersCount, { n: report.fix.sendersCount })
+      : '';
+  const allowance = TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0;
+  const plusPrice = money(TIER_MANIFEST.plus.prices.annual?.usdCents);
+  const showShare = !calm && isInboxReportShareEnabled();
+
+  return (
+    <section
+      className="dm-report is-revealed"
+      aria-label={WS5_COPY['report.eyebrow']}
+      data-variant={report.variant}
+    >
+      {dismissed ? (
+        <div className="dm-report-strip">
+          <span>{WS5_COPY['report.reopen.strip']}</span>
+          <button type="button" onClick={onReopen}>
+            {WS5_COPY['report.reopen.button']}
+          </button>
+        </div>
+      ) : (
+        <>
+          <header>
+            <span>{WS5_COPY['report.eyebrow']}</span>
+            <button type="button" aria-label={WS5_COPY['report.close.aria']} onClick={onDismiss}>
+              ×
+            </button>
+          </header>
+          {calm ? (
+            <div>
+              <p>{fallback.body}</p>
+              {fallback.cta ? <button type="button">{fallback.cta}</button> : null}
+            </div>
+          ) : (
+            <div>
+              {headline?.figure ? <span className="dm-display-xl">{headline.figure}</span> : null}
+              <p>{headline?.sentence}</p>
+              {glyph ? (
+                <p role="img" aria-label={glyph.label}>
+                  {glyph.label}
+                </p>
+              ) : null}
+              {support ? (
+                <p data-reveal style={{ ['--i' as string]: 1 }}>
+                  {support}
+                </p>
+              ) : null}
+              {facts.map((insight) => (
+                <p key={insight.id} data-reveal>
+                  {reportHeadline(insight).sentence}
+                </p>
+              ))}
+              {mailboxEmail ? (
+                <p>
+                  {fillCopy(WS5_COPY['report.basis'], {
+                    total: report.receivedCount,
+                    mailboxEmail,
+                  })}{' '}
+                  {WS5_COPY['report.sizesNote']}
+                </p>
+              ) : null}
+              {report.fix.sendersCount > 0 ? (
+                <div>
+                  <p>
+                    {isPluralCopy(WS5_COPY['report.fix.heading'])
+                      ? pluralCopy(WS5_COPY['report.fix.heading'], report.fix.sendersCount, {
+                          n: report.fix.sendersCount,
+                        })
+                      : ''}
+                  </p>
+                  <button type="button" onClick={() => setFixOpen(true)}>
+                    {fixLabel}
+                  </button>
+                  <a href={`/senders?fix=${report.fix.senderKeys.join(',')}`}>
+                    {WS5_COPY['report.fix.review']}
+                  </a>
+                  <button type="button" onClick={onDismiss}>
+                    {WS5_COPY['report.fix.notNow']}
+                  </button>
+                </div>
+              ) : null}
+              <p>
+                {WS5_COPY['report.trust']}{' '}
+                <a href="/settings/privacy">{WS5_COPY['report.trust.link']}</a>
+              </p>
+              {showShare ? <button type="button">{WS5_COPY['share.button']}</button> : null}
+              {celebration ? (
+                <div data-celebration>
+                  <p>
+                    {celebration.senders === 1
+                      ? fillCopy(WS5_COPY['report.celebrate.archive.one'], {
+                          X: celebration.archived,
+                        })
+                      : fillCopy(WS5_COPY['report.celebrate.archive'], {
+                          X: celebration.archived,
+                          n: celebration.senders,
+                        })}
+                  </p>
+                  <p>{WS5_COPY['report.celebrate.undo']}</p>
+                  <p>{WS5_COPY['report.storageNote']}</p>
+                </div>
+              ) : null}
+            </div>
+          )}
+          {!calm && resetDate ? (
+            <div>
+              {passEnabled() ? (
+                <p>{fillCopy(WS5_COPY['report.upgrade.pass'], { passName: BACKLOG_PASS_NAME })}</p>
+              ) : (
+                <p>
+                  {fillCopy(WS5_COPY['report.upgrade.plus.passOff'], {
+                    plusName: TIER_MANIFEST.plus.name,
+                  })}
+                  <span>
+                    {fillCopy(WS5_COPY['report.upgrade.plus.passOff.sub'], {
+                      plusPrice,
+                      plusInboxes: TIER_MANIFEST.plus.inboxLimit,
+                      CONNECTION_TERM_PLURAL: `${CONNECTION_TERM}s`,
+                    })}
+                  </span>
+                </p>
+              )}
+              <p>
+                {fillCopy(WS5_COPY['report.upgrade.free'], {
+                  freeName: TIER_MANIFEST.free.name,
+                  allowance,
+                  resetDate,
+                })}
+              </p>
+              <p>
+                {fillCopy(WS5_COPY['report.upgrade.plusLink'], {
+                  plusName: TIER_MANIFEST.plus.name,
+                  plusPrice,
+                  plusInboxes: TIER_MANIFEST.plus.inboxLimit,
+                  CONNECTION_TERM_PLURAL: `${CONNECTION_TERM}s`,
+                  SCREENER_NAME,
+                })}
+              </p>
+            </div>
+          ) : null}
+        </>
+      )}
+      {fixOpen ? (
+        <UnsubscribeBacklogDialog
+          request={
+            {
+              verb: 'Unsubscribe',
+              senders: report.fix.senderKeys.map((id) => ({ id, name: '' })),
+            } as ActionRequest
+          }
+          preferredInboxCount={report.fix.inboxEmailCount}
+          onCancel={() => setFixOpen(false)}
+          onConfirm={(opts) => {
+            const mode = opts.secondary?.type ?? 'unsub_only';
+            onFixConfirmed?.(mode);
+          }}
+        />
+      ) : null}
+    </section>
+  );
+}

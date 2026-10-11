@@ -33,6 +33,8 @@ export function UnsubscribeBacklogDialog({
   compositePreview,
   compositePreviewLoading = false,
   bulkPreview,
+  /** Report fix set: the archive count until the live preview resolves. */
+  preferredInboxCount,
   submitting = false,
   onCancel,
   onConfirm,
@@ -55,6 +57,7 @@ export function UnsubscribeBacklogDialog({
         loading: boolean;
       }
     | undefined;
+  preferredInboxCount?: number | undefined;
   submitting?: boolean;
   onCancel: () => void;
   onConfirm: (opts: {
@@ -65,10 +68,10 @@ export function UnsubscribeBacklogDialog({
   const single = request.senders.length === 1;
   const bulkRows = bulkPreview?.data?.senders.filter((row) => !row.protected) ?? [];
   const inboxCount = single
-    ? (compositePreview?.counts.all ?? null)
+    ? (compositePreview?.counts.all ?? preferredInboxCount ?? null)
     : bulkPreview?.data
       ? bulkRows.reduce((sum, row) => sum + row.counts.all, 0)
-      : null;
+      : (preferredInboxCount ?? null);
   const loading = single ? compositePreviewLoading : (bulkPreview?.loading ?? false);
   const [mode, setMode] = useState<Mode>('unsub_only');
   const armed = useRef(false);

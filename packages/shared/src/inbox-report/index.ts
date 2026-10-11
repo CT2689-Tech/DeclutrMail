@@ -3,7 +3,16 @@ export {
   INBOX_REPORT_THRESHOLDS,
   type InboxReportInsightId,
 } from './thresholds';
-export { isInboxReportEnabled } from './flags';
+export { isInboxReportEnabled, isInboxReportShareEnabled } from './flags';
+export {
+  formatReportSize,
+  getFixSet,
+  reportFallback,
+  reportGlyph,
+  reportHeadline,
+  reportSupport,
+} from './present';
+export type { ReportHeadline } from './present';
 export {
   isReportableInternalDate,
   mailboxSizeBucket,

@@ -5,3 +5,9 @@ export function isInboxReportEnabled(env: NodeJS.ProcessEnv = process.env): bool
   if (raw === '0' || raw === 'false') return false;
   return env.NODE_ENV !== 'production';
 }
+
+/** Share card stays off until it is explicitly switched on. */
+export function isInboxReportShareEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = env.NEXT_PUBLIC_INBOX_REPORT_SHARE_ENABLED ?? env.INBOX_REPORT_SHARE_ENABLED;
+  return raw === '1' || raw === 'true';
+}
