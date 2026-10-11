@@ -1011,6 +1011,57 @@ describe('ScoreWorker — LLM port', () => {
     expect(row?.reasoning).toBe('Stays in Primary and gets marked read.');
   });
 
+  it('does not call the provider for a later sender after consent is revoked mid-job', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const firstKey = await seedSender(db, mailboxAccountId, 'first@test.test', {
+      gmailCategory: 'primary',
+    });
+    const laterKey = await seedSender(db, mailboxAccountId, 'later@test.test', {
+      gmailCategory: 'primary',
+    });
+    const [owner] = await db
+      .select({ userId: mailboxAccounts.userId })
+      .from(mailboxAccounts)
+      .where(eq(mailboxAccounts.id, mailboxAccountId));
+    let calls = 0;
+    const worker = new ScoreWorker({
+      db,
+      reasoningConcurrency: 1,
+      llm: {
+        explain: async () => {
+          calls += 1;
+          await db
+            .update(users)
+            .set({ aiExplanationsRevokedAt: new Date('2026-05-23T01:00:00Z') })
+            .where(eq(users.id, owner!.userId));
+          return 'Stays in Primary and gets marked read.';
+        },
+      },
+      now: () => new Date('2026-05-23T00:00:00Z'),
+    });
+    const result = await worker.processJob(
+      {
+        mailboxAccountId,
+        trigger: 'consent_grant',
+        producedAtMs: Date.parse('2026-05-22T00:00:00Z'),
+      },
+      FAKE_CTX,
+    );
+    expect(result.explainCandidates).toBe(2);
+    expect(calls).toBe(1);
+    expect(result.llmCalls).toBe(1);
+    const rows = await db
+      .select({
+        senderKey: triageDecisions.senderKey,
+        generatedBy: triageDecisions.generatedBy,
+      })
+      .from(triageDecisions);
+    const byKey = new Map(rows.map((row) => [row.senderKey, row.generatedBy]));
+    const sources = [byKey.get(firstKey), byKey.get(laterKey)].sort();
+    expect(sources).toEqual(['llm_haiku', 'template']);
+  });
+
   it('reports llmCalls and llmReused on worker.succeeded — the allowlist drops silently', async () => {
     // `SAFE_WORKER_RESULT_KEYS` is a denylist by omission: a counter missing
     // from it vanishes from the ops line with no error anywhere, and these

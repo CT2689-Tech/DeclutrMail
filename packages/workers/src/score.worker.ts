@@ -589,8 +589,6 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
   private readonly explainTimeoutMs: number;
   /** How many senders a `sync_complete` sweep explains. */
   private readonly firstView: { queueRows: number; volumeRows: number };
-  /** One consent read per job. A lookup failure stays not-allowed. */
-  private explanationConsent: { mailboxAccountId: string; allowed: boolean } | null = null;
 
   constructor(private readonly deps: ScoreWorkerDeps) {
     super();
@@ -653,7 +651,6 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
   }
 
   override async processJob(payload: ScoreJobData, _ctx: WorkerContext): Promise<ScoreJobResult> {
-    this.explanationConsent = null;
     if (!payload?.mailboxAccountId) {
       throw new ValidationError('score job is missing mailboxAccountId');
     }
@@ -1196,6 +1193,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       signals,
       result,
     );
+    if (prose.withheld) return skip('no_consent');
     if (prose.blocked) return { kind: 'blocked' };
     if (prose.reasoning === null) {
       return { kind: 'called', written: false, timedOut: prose.timedOut };
@@ -1247,15 +1245,15 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
    * upsert `triage_decisions`. Returns `null` when no `senders` row
    * exists yet (the sync stage hasn't materialized it).
    */
-  /** Fail closed: a missing row or a lookup error buys no sentence. */
+  /**
+   * Fail closed: a missing row or a lookup error buys no sentence.
+   * Not cached. A revoke during a running sweep must be visible to the
+   * next sender, and again immediately before that sender's provider call.
+   */
   private async explanationsAllowed(mailboxAccountId: string): Promise<boolean> {
-    if (this.explanationConsent?.mailboxAccountId === mailboxAccountId) {
-      return this.explanationConsent.allowed;
-    }
-    let allowed: boolean;
     try {
       const row = await loadAiConsentForMailbox(this.deps.db, mailboxAccountId);
-      allowed = explanationsConsentActive(row);
+      return explanationsConsentActive(row);
     } catch (err) {
       console.warn(
         JSON.stringify({
@@ -1266,10 +1264,8 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
           error: err instanceof Error ? err.name : 'Error',
         }),
       );
-      allowed = false;
+      return false;
     }
-    this.explanationConsent = { mailboxAccountId, allowed };
-    return allowed;
   }
 
   private async scoreOne(
@@ -1344,7 +1340,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         const prose = await this.generateProse(port, mailboxAccountId, senderKey, signals, result);
         if (prose.blocked) {
           blocked = true;
-        } else {
+        } else if (!prose.withheld) {
           called = true;
           reasoning = prose.reasoning;
           timedOut = prose.timedOut;
@@ -1488,7 +1484,13 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     senderKey: string,
     signals: { signals: SenderSignals; displayName: string; domain: string; email: string },
     result: CascadeResult,
-  ): Promise<{ reasoning: string | null; timedOut: boolean; blocked: boolean }> {
+  ): Promise<{
+    reasoning: string | null;
+    timedOut: boolean;
+    blocked: boolean;
+    /** Consent was withdrawn before this call. The provider was not asked. */
+    withheld?: boolean;
+  }> {
     if (port.isBlocked?.() || !(await this.waitForSlot(port))) {
       // The provider refused the account (credit, spend limit, key),
       // before this row's turn or while it waited for it: this call
@@ -1496,6 +1498,13 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       // — on 2026-09-24 each refused call still waited its turn, 2,927
       // of them in 431 s for one mailbox.
       return { reasoning: null, timedOut: false, blocked: true };
+    }
+    // After the rate-limit wait, and before the provider. A revoke that
+    // landed while an earlier sender in this job was in flight must not
+    // be sent on this one. `aiConsent: 'granted'` is only passed once
+    // this read says the scope is still active.
+    if (!(await this.explanationsAllowed(mailboxAccountId))) {
+      return { reasoning: null, timedOut: false, blocked: false, withheld: true };
     }
     const raced = await runWithTimeout(
       () =>
