@@ -1,6 +1,10 @@
 import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PaddleAdapter, type SandboxCheckoutIdentity } from '../paddle.adapter.js';
+import {
+  PaddleAdapter,
+  sandboxCheckoutFailure,
+  type SandboxCheckoutIdentity,
+} from '../paddle.adapter.js';
 
 const secret = 'fixture-only-secret';
 const identity: SandboxCheckoutIdentity = {
@@ -78,6 +82,86 @@ describe('ADR-0046 sandbox checkout boundary and payment holds', () => {
       items: [{ price_id: identity.priceId, quantity: 1 }],
       custom_data: { checkout_attempt_id: identity.attemptId },
     });
+  });
+  it('records only request stage for network failure, never raw request/error text', async () => {
+    const fetch = vi.fn().mockRejectedValue(new Error('SYNTHETIC_PRIVATE_REQUEST'));
+    vi.stubGlobal('fetch', fetch);
+    const failure = await new PaddleAdapter(env)
+      .prepareSandboxCheckout(identity)
+      .catch(sandboxCheckoutFailure);
+    expect(failure).toEqual({
+      code: 'BILLING_PROVIDER_ERROR',
+      phase: 'request',
+      httpStatus: null,
+      errorCode: 'unknown',
+      checkoutUrlRejected: false,
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('projects a provider rejection without body values or error messages', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 'validation',
+              detail: 'SYNTHETIC_PRIVATE_REQUEST',
+              errors: [{ field: 'checkout.url', message: 'SYNTHETIC_PRIVATE_REQUEST' }],
+            },
+          }),
+          { status: 400 },
+        ),
+      ),
+    );
+    const failure = await new PaddleAdapter(env)
+      .prepareSandboxCheckout(identity)
+      .catch(sandboxCheckoutFailure);
+    expect(failure).toEqual({
+      code: 'BILLING_PROVIDER_ERROR',
+      phase: 'http',
+      httpStatus: 400,
+      errorCode: 'validation',
+      checkoutUrlRejected: true,
+    });
+    expect(JSON.stringify(failure)).not.toContain('SYNTHETIC_PRIVATE_REQUEST');
+  });
+  it('rejects unknown provider codes/fields rather than forwarding them', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: { code: 'SYNTHETIC_PRIVATE_REQUEST', errors: [{ field: 'SYNTHETIC_PRIVATE' }] },
+          }),
+          { status: 403 },
+        ),
+      ),
+    );
+    expect(
+      await new PaddleAdapter(env).prepareSandboxCheckout(identity).catch(sandboxCheckoutFailure),
+    ).toEqual({
+      code: 'BILLING_PROVIDER_ERROR',
+      phase: 'http',
+      httpStatus: 403,
+      errorCode: 'unknown',
+      checkoutUrlRejected: false,
+    });
+  });
+  it('keeps accepted but unverified provider facts distinct from transport failure', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(response(transaction('draft', { origin: 'web' }))),
+    );
+    const failure = await new PaddleAdapter(env)
+      .prepareSandboxCheckout(identity)
+      .catch(sandboxCheckoutFailure);
+    expect(failure).toMatchObject({ phase: 'facts', httpStatus: null, errorCode: 'unknown' });
+  });
+  it('unknown exceptions disclose no raw text', () => {
+    const failure = sandboxCheckoutFailure(new Error('SYNTHETIC_PRIVATE_REQUEST'));
+    expect(failure).toMatchObject({ code: 'unknown', phase: 'unknown', httpStatus: null });
+    expect(JSON.stringify(failure)).not.toContain('SYNTHETIC_PRIVATE_REQUEST');
   });
   it('requires fresh cancellation readback and keeps payment winning during cancellation held', async () => {
     const fetch = vi

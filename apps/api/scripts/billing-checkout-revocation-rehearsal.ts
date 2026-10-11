@@ -20,6 +20,7 @@ import {
   type SandboxCheckoutFacts,
   type SandboxCheckoutIdentity,
   verifiedWorkspaceId,
+  sandboxCheckoutFailure,
 } from '../src/billing/paddle.adapter.js';
 import { RazorpayAdapter } from '../src/billing/razorpay.adapter.js';
 import { BillingCatalog } from '../src/billing/billing-catalog.js';
@@ -62,6 +63,7 @@ type Fixture = SandboxCheckoutIdentity & {
   revocation?: SandboxCheckoutFacts;
   crashRecovered?: boolean;
   last?: Record<string, unknown>;
+  preparationFailure?: ReturnType<typeof sandboxCheckoutFailure>;
 };
 const fixtures = new Map<CaseName, Fixture>();
 function fixture(name: CaseName): Fixture {
@@ -155,6 +157,7 @@ async function record() {
               bound: f.bound,
               observations: f.observations,
               errors: f.errors,
+              preparationFailure: f.preparationFailure,
               originalFrameClosed: f.originalFrameClosed,
               originalFrameRefused: f.originalFrameRefused,
               replayStarted: f.replayStarted,
@@ -249,6 +252,7 @@ async function state(name: CaseName) {
   });
   f.last = {
     provider,
+    preparationFailure: f.preparationFailure ?? null,
     proposedHold,
     productionGuard,
     paymentSticky: paid,
@@ -516,10 +520,15 @@ const server = createServer((req, res) => {
           });
           await record();
           if (selected !== 'legacy') {
-            const facts = await paddle.prepareSandboxCheckout(
-              f,
-              `${publicUrl}/pay?case=${selected}`,
-            );
+            let facts: SandboxCheckoutFacts;
+            try {
+              facts = await paddle.prepareSandboxCheckout(f, `${publicUrl}/pay?case=${selected}`);
+            } catch (error) {
+              f.preparationFailure = sandboxCheckoutFailure(error);
+              await journal(f, 'local.sandbox_checkout_preparation_failed', f.preparationFailure);
+              await record();
+              throw error;
+            }
             ownedTransactions.set(facts.transactionId, f);
             if (selected === 'crash') {
               evidence.crashBeforeBindingInjected = true; /* Intentionally omit durable binding, as a crash would. */
