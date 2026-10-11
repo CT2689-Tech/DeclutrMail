@@ -422,9 +422,9 @@ export function ActionSheet({
                       : ' emails'
                   } already in the inbox`
                 }
-                hint={
-                  cleanupSummary.data?.metered ? undefined : 'Uses a second cleanup action on Free.'
-                }
+                {...(cleanupSummary.data?.metered
+                  ? {}
+                  : { hint: 'Uses a second cleanup action on Free.' })}
               />
             )}
 
