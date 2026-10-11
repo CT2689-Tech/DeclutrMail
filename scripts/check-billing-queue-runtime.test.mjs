@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import {
   checkBillingQueueRuntime,
   cleanupBillingQueueProbe,
+  projectBillingProbeFailure,
 } from './check-billing-queue-runtime.mjs';
 
 const env = {
@@ -173,11 +174,14 @@ test('actual always-recovery contract cannot adopt a preexisting or unreadable j
   );
   assert.equal(owned, true); // Recovery is allowed only after the proven absence.
 });
-test('real subprocess errors remain private rather than forwarding child stderr', () => {
+test('real subprocess errors expose fixed categories without forwarding private child stderr', () => {
   const dir = mkdtempSync(join(tmpdir(), 'billing-queue-private-'));
   try {
     const stub = join(dir, 'gcloud');
-    writeFileSync(stub, '#!/bin/sh\necho SYNTHETIC_PRIVATE_PROVIDER_ERROR >&2\nexit 1\n');
+    writeFileSync(
+      stub,
+      '#!/bin/sh\necho PERMISSION_DENIED run.jobs.list SYNTHETIC_PRIVATE_PROVIDER_ERROR >&2\nexit 1\n',
+    );
     chmodSync(stub, 0o700);
     const result = spawnSync(
       process.execPath,
@@ -190,7 +194,58 @@ test('real subprocess errors remain private rather than forwarding child stderr'
     assert.equal(result.status, 1);
     assert.ok(!`${result.stdout}${result.stderr}`.includes('SYNTHETIC_PRIVATE'));
     assert.match(result.stderr, /compatibility or cleanup unverified/);
+    assert.deepEqual(JSON.parse(result.stderr.split('\n')[0]), {
+      billingProbeDiagnostic: {
+        operation: 'jobs_list',
+        category: 'permission_denied',
+        permissions: ['run.jobs.list'],
+      },
+    });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+test('allowlisted permission projection excludes raw text and unknown permission names', () => {
+  assert.deepEqual(
+    projectBillingProbeFailure(['run', 'jobs', 'create'], {
+      stderr:
+        'PERMISSION_DENIED run.jobs.create iam.serviceAccounts.actAs secret.private.value PRIVATE',
+    }),
+    {
+      operation: 'jobs_create',
+      category: 'permission_denied',
+      permissions: ['run.jobs.create', 'iam.serviceAccounts.actAs'],
+    },
+  );
+});
+test('CLI and API errors retain distinct fixed categories without private arguments', () => {
+  assert.equal(
+    projectBillingProbeFailure(['run', 'jobs', 'create'], {
+      stderr: 'unrecognized arguments: PRIVATE',
+    }).category,
+    'cli_arguments_invalid',
+  );
+  assert.equal(
+    projectBillingProbeFailure(['run', 'jobs', 'create'], { stderr: 'INVALID_ARGUMENT PRIVATE' })
+      .category,
+    'api_arguments_invalid',
+  );
+  assert.equal(
+    projectBillingProbeFailure(['run', 'jobs', 'create'], { stderr: 'UNAUTHENTICATED PRIVATE' })
+      .category,
+    'authentication_required',
+  );
+  assert.equal(
+    projectBillingProbeFailure(['run', 'jobs', 'create'], { code: 'ETIMEDOUT' }).category,
+    'command_deadline',
+  );
+});
+test('unknown diagnostic operations and fields cannot print private command names', () => {
+  assert.deepEqual(
+    projectBillingProbeFailure(['private', 'private', 'private'], {
+      stderr: 'PRIVATE',
+      private: 'PRIVATE',
+    }),
+    { operation: 'unknown', category: 'command_failed', permissions: [] },
+  );
 });

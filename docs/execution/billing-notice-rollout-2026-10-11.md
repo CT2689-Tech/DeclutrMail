@@ -189,3 +189,32 @@ installed gcloud metadata projections. The expanded CI helper command passed
 all 41 tests; both CI and manual releases now run the new regression tests.
 Root owns this corrective preflight and integration; enrollment remains fixed at
 `2026-10-11T03:15:41.000Z`, and automatic refund restoration remains OFF.
+
+## Redacted production preflight diagnosis
+
+Runtime-secret correction #936 merged at `2faa44067bfd806d99783441c1bef7d154b4b66f`.
+Queue CI #38111192482 and exact-main CI #38111577157 passed, including all selected
+release suites and browser journey assertions. Release #38111577109 built its
+image but failed the preflight at `2026-10-11T04:34:11Z`, after absence/image
+proof and the owned-attempt marker. Both service deployments were skipped. The
+always recovery completed with `probeDeleted:true`; the failed run remains a
+failed activation, and the underlying create-operation cause is unverified.
+
+Fresh main-branch WIF snapshot #38112072598 at `2026-10-11T04:35:47Z` confirms the
+OFF foundation API `declutrmail-api-00602-rob` and worker
+`declutrmail-worker-00158-x9m` still serve 100%. Local reads remain separately
+unavailable due to authentication. A temporary branch-only diagnostic
+#38112268124 was refused by Workload Identity's attribute condition before a probe
+ran; the main route remains available. The browser audit page separately requires
+passkey verification. No IAM grant, credential export or billing policy change
+has occurred.
+
+The next correction emits only a fixed operation/category and allowlisted
+permission names when a gcloud command fails. Its captured provider text and
+arguments remain private. This preserves compatibility, source/identity checks,
+ownership, cleanup and the producer gate; it does not claim to fix the underlying
+runtime access issue. Root owns this helper/test/record. The temporary snapshot
+workflow replacement is confined to its diagnostic branch and is not included.
+Independent final review found no blocker; all 36 helper/deployment tests,
+touched lint, formatting and diff validation passed. No TypeScript runtime or
+provider behavior changed in this diagnostic correction.

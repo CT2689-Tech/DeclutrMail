@@ -3,6 +3,50 @@ import { appendFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 const FAILURE = 'Billing queue compatibility or cleanup unverified; no producer deployment';
+const PERMISSIONS = new Set([
+  'run.jobs.create',
+  'run.jobs.run',
+  'run.jobs.delete',
+  'run.jobs.get',
+  'run.jobs.list',
+  'run.executions.get',
+  'run.executions.list',
+  'run.executions.delete',
+  'run.executions.cancel',
+  'iam.serviceAccounts.actAs',
+  'secretmanager.versions.access',
+]);
+/** Project fixed diagnostic metadata; never return raw provider text or arguments. */
+export function projectBillingProbeFailure(args, error) {
+  const text = String(error?.stderr ?? '');
+  let operation =
+    args[0] === 'artifacts'
+      ? 'image_describe'
+      : args[2] === 'executions'
+        ? `executions_${args[3]}`
+        : `jobs_${args[2]}`;
+  if (
+    !/^(?:image_describe|jobs_(?:list|describe|create|execute|delete)|executions_(?:list|describe|cancel|delete))$/.test(
+      operation,
+    )
+  )
+    operation = 'unknown';
+  let category = 'command_failed';
+  if (/PERMISSION_DENIED|permission[^\n]*denied/i.test(text)) category = 'permission_denied';
+  else if (/unrecognized arguments|argument[^\n]*(?:expected|invalid)/i.test(text))
+    category = 'cli_arguments_invalid';
+  else if (/INVALID_ARGUMENT/i.test(text)) category = 'api_arguments_invalid';
+  else if (/UNAUTHENTICATED|reauthentication|authentication required/i.test(text))
+    category = 'authentication_required';
+  else if (error?.code === 'ETIMEDOUT') category = 'command_deadline';
+  return {
+    operation,
+    category,
+    permissions: [
+      ...new Set(text.match(/(?:run|iam|secretmanager)\.[A-Za-z]+\.[A-Za-z]+/g) ?? []),
+    ].filter((name) => PERMISSIONS.has(name)),
+  };
+}
 function gcloud(args) {
   try {
     return {
@@ -13,7 +57,10 @@ function gcloud(args) {
         stdio: ['ignore', 'pipe', 'pipe'],
       }),
     };
-  } catch {
+  } catch (error) {
+    console.error(
+      JSON.stringify({ billingProbeDiagnostic: projectBillingProbeFailure(args, error) }),
+    );
     return { ok: false };
   }
 }
