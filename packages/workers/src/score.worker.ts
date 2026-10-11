@@ -1252,7 +1252,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     if (this.explanationConsent?.mailboxAccountId === mailboxAccountId) {
       return this.explanationConsent.allowed;
     }
-    let allowed = false;
+    let allowed: boolean;
     try {
       const row = await loadAiConsentForMailbox(this.deps.db, mailboxAccountId);
       allowed = explanationsConsentActive(row);
