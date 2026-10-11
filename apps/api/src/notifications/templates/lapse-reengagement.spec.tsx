@@ -26,10 +26,11 @@ describe('lapse-reengagement', () => {
     // mailboxes while Triage shows one. Whitespace-flattened, so a
     // rewrap is not a failure.
     const flat = email.text.replace(/\s+/g, ' ');
-    expect(flat).toContain('five days');
-    expect(flat).toContain('across all your mailboxes');
-    expect(flat).toContain('one mailbox at a time');
-    expect(email.text).toContain('Open Triage: https://app.declutrmail.com/triage');
+    expect(flat).toContain('across all your Gmail accounts');
+    expect(flat).not.toContain('five days');
+    expect(email.text).toContain('Go to Home: https://app.declutrmail.com/home?');
+    expect(email.text).toContain('from=lapse');
+    expect(email.text).not.toContain('/triage');
     // Commercial mail: visible opt-out AND postal address in the text
     // alternative, not only in the RFC 8058 header.
     expect(email.text).toContain(
@@ -41,15 +42,7 @@ describe('lapse-reengagement', () => {
 
   it('uses the canonical K/A/U/L/D verbs (D227)', () => {
     const text = render(4).text;
-    for (const key of [
-      'K to keep',
-      'A to archive',
-      'U to unsubscribe',
-      'L for later',
-      'D to delete',
-    ]) {
-      expect(text).toContain(key);
-    }
+    expect(text).toContain('Shortcuts: K Keep, A Archive, U Unsubscribe, L Later, D Delete.');
     // "Screen" is an internal enum only — never product copy.
     expect(text).not.toMatch(/\bScreen\b/);
   });
@@ -79,9 +72,9 @@ describe('lapse-reengagement', () => {
   it('does not claim the count equals what the Triage screen shows', () => {
     const text = render(4).text;
     const normalized = text.replace(/\s+/g, ' ');
-    expect(normalized).toContain('across all your mailboxes');
-    expect(normalized).toContain('Triage shows one mailbox at a time');
-    expect(text).not.toMatch(/waiting in Triage/);
+    expect(normalized).toContain('across all your Gmail accounts');
+    expect(text).not.toMatch(/Triage/);
+    expect(text).toContain('connected a Gmail account');
   });
 
   it('singularises a one-sender queue', () => {

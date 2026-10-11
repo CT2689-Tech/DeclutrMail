@@ -1,1 +1,85 @@
-{}
+{
+  "email": {
+    "syncFailed": {
+      "subject": "We couldn’t finish scanning {mailboxEmail}",
+      "preview": "The scan of {mailboxEmail} stopped and needs you to finish it.",
+      "eyebrow": "Scan stopped",
+      "lead": "DeclutrMail couldn’t finish scanning {mailboxEmail}.",
+      "safe": "Nothing in your Gmail was changed, and everything already scanned is kept. When the scan resumes, it picks up where it stopped.",
+      "needsYou": "We tried again automatically and it still didn’t finish, so it won’t try again on its own. Open DeclutrMail to resume the scan.",
+      "needsReconnect": "DeclutrMail no longer has permission to scan this Gmail account. Reconnect it to resume the scan.",
+      "permanent": "This scan can’t continue. Open DeclutrMail to see what happened and what you can do.",
+      "button": "Resume your scan",
+      "button.reconnect": "Reconnect Gmail",
+      "footer": "This is a required account notice. It can’t be turned off.",
+      "retrying": "The scan of {mailboxEmail} stopped. We’ll try again automatically at {time} and email you when your inbox is ready."
+    },
+    "syncComplete": {
+      "subject": "Your inbox is ready",
+      "body": {
+        "one": "1 email scanned from {mailboxEmail}. Your senders are grouped and ready to review.",
+        "other": "{n} emails scanned from {mailboxEmail}. Your senders are grouped and ready to review."
+      },
+      "button": {
+        "onboarded": "Open Senders",
+        "notOnboarded": "Finish setup"
+      }
+    },
+    "syncReminder": {
+      "subject": "Your inbox is still ready",
+      "body": "Yesterday DeclutrMail finished scanning {mailboxEmail}. Your senders are grouped and waiting.",
+      "button": {
+        "onboarded": "Open Senders",
+        "notOnboarded": "Finish setup"
+      }
+    },
+    "footer": {
+      "connected": "You received this because you connected this {CONNECTION_TERM} to DeclutrMail."
+    },
+    "lapse": {
+      "subject": {
+        "one": "1 sender is waiting on a decision",
+        "other": "{n} senders are waiting on a decision"
+      },
+      "body": "These senders, across all your {CONNECTION_TERM_PLURAL}, are still waiting for your first decision.",
+      "keys": "Shortcuts: K Keep, A Archive, U Unsubscribe, L Later, D Delete.",
+      "button": "Go to Home"
+    },
+    "weekly": {
+      "subject": "Your week with DeclutrMail",
+      "intro": "This week DeclutrMail:",
+      "rules": {
+        "one": "Moved 1 email out of your inbox with Autopilot rules you turned on",
+        "other": "Moved {n} emails out of your inbox with Autopilot rules you turned on"
+      },
+      "decided": {
+        "one": "1 sender you decided on yourself",
+        "other": "{n} senders you decided on yourself"
+      },
+      "brief": {
+        "one": "1 sender in your {BRIEF_NAME} worth a look",
+        "other": "{n} senders in your {BRIEF_NAME} worth a look"
+      },
+      "undone": {
+        "one": "1 change you undid",
+        "other": "{n} changes you undid"
+      },
+      "screener": {
+        "one": "1 new sender is waiting in Screener for your review.",
+        "other": "{n} new senders are waiting in Screener for your review."
+      },
+      "trust": "Nothing was deleted permanently. Delete moves email to Gmail Trash, where Gmail keeps it for up to 30 days unless you empty it.",
+      "button": "Go to Home",
+      "detail": "See the detail",
+      "footer": "You turned on this weekly email in Settings."
+    },
+    "reconnect": {
+      "button": "Open Gmail accounts"
+    },
+    "deletion": {
+      "button": "Cancel deletion"
+    },
+    "unsubscribe": "Unsubscribe",
+    "preferences": "Email preferences"
+  }
+}

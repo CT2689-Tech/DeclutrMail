@@ -136,6 +136,8 @@ export { outboxEvents, outboxStatus } from './schema/outbox-events';
 export type { NewOutboxEvent, OutboxEvent, OutboxStatus } from './schema/outbox-events';
 export { providerSyncState, syncReadiness, syncStage } from './schema/provider-sync-state';
 export type { NewProviderSyncState, ProviderSyncState } from './schema/provider-sync-state';
+export { productEventName, productEvents } from './schema/product-events';
+export type { NewProductEventRow, ProductEventRow } from './schema/product-events';
 export {
   productFeedback,
   productFeedbackRating,

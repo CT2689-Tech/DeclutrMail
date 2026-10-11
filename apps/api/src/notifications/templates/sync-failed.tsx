@@ -1,5 +1,13 @@
 import { Button, Text } from '@react-email/components';
 
+import {
+  fillWs4,
+  SYNC_FAILED_NOTICE_WHILE_RETRYING,
+  WS4_COPY,
+} from '@declutrmail/shared/copy/launch';
+
+import { emailLink } from './email-link.js';
+import { syncFailedNotice, type SyncFailedNotice } from './sync-failed-reason.js';
 import { BODY_TEXT, CTA_BUTTON, Eyebrow, renderShell, Shell, type RenderedEmail } from './shell.js';
 
 export interface SyncFailedEmailInput {
@@ -9,70 +17,74 @@ export interface SyncFailedEmailInput {
   mailboxAccountId: string;
   /** Web app origin for the retry link (WEB_URL). */
   appUrl: string;
+  /** `provider_sync_state.error_code` / the sync_failed payload. */
+  errorCode: string;
 }
 
-const FOOTER = 'This is a required account notice; it cannot be turned off.';
-
 /**
- * D162 / D224 — sent when an initial inbox scan fails TERMINALLY
- * (worker retries exhausted, `readiness_status = 'failed'`).
- *
- * Before this email existed, a terminal failure was silent: the user
- * discovered it by sitting on the sync gate, and the gate's old copy
- * even promised an automatic retry that never came (first-run-trap
- * audit 2026-07-28). This notice states what actually happened and the
- * recovery route — reconnect Gmail or retry in the product. It promises no
- * automatic retry, because there isn't one.
- *
- * Classification: SYSTEM notice (account state, not marketing) — no
- * opt-out preference and exempt from the postal-address commercial
- * block, same footing as the deletion notices. No message content, no
- * counts beyond the mailbox's own address (D7/D228).
+ * D162 / D224 — sent when an initial inbox scan fails in a way the user
+ * must hear about. Automatic recovery (up to 3 tries) runs BEFORE this
+ * email. The notice is the needs-you, reconnect, or permanent variant.
+ * The pending retrying sentence is not rendered.
  */
 export async function syncFailedEmail(input: SyncFailedEmailInput): Promise<RenderedEmail> {
-  const retryUrl = `${input.appUrl}/onboarding?mailbox=${encodeURIComponent(input.mailboxAccountId)}`;
+  const notice = syncFailedNotice(input.errorCode);
+  const copy = WS4_COPY.email.syncFailed;
+  const vars = { mailboxEmail: input.mailboxEmail };
+  const retryUrl = emailLink(`${input.appUrl.replace(/\/$/, '')}/onboarding`, {
+    template: 'sync_failed',
+    mailboxId: input.mailboxAccountId,
+  });
+  const reason = reasonCopy(notice);
+  const button = notice === 'needsReconnect' ? copy['button.reconnect'] : copy.button;
+  const subject = fillWs4(copy.subject, vars);
+  const preview = fillWs4(copy.preview, vars);
+  const lead = fillWs4(copy.lead, vars);
+  const footer = copy.footer;
 
   const text = [
-    `DeclutrMail could not finish scanning ${input.mailboxEmail}.`,
+    lead,
     '',
-    'The scan could not continue and stopped. Nothing in your Gmail',
-    'account was changed, and anything already scanned is kept — a',
-    'retry picks up from there rather than starting over.',
+    copy.safe,
     '',
-    'We will not retry on our own. When you are ready, open the product',
-    'to reconnect Gmail or try the scan again:',
-    retryUrl,
+    reason,
+    '',
+    `${button}: ${retryUrl}`,
     '',
     '— DeclutrMail',
     '',
-    FOOTER,
+    footer,
   ].join('\n');
 
   const html = await renderShell(
-    <Shell
-      preview={`The scan of ${input.mailboxEmail} stopped — retry when ready.`}
-      footer={FOOTER}
-    >
-      <Eyebrow>Scan stopped</Eyebrow>
-      <Text style={{ ...BODY_TEXT, margin: '0 0 16px' }}>
-        DeclutrMail could not finish scanning <strong>{input.mailboxEmail}</strong>. The scan could
-        not continue and stopped.
-      </Text>
-      <Text style={{ ...BODY_TEXT, margin: '0 0 16px' }}>
-        Nothing in your Gmail account was changed, and anything already scanned is kept — a retry
-        picks up from there rather than starting over.
-      </Text>
-      <Text style={{ ...BODY_TEXT, margin: '0 0 26px' }}>
-        We will not retry on our own. When you are ready:
-      </Text>
-      {/* No "reply to this email" line: sends carry no Reply-To until
-          EMAIL_REPLY_TO names a mailbox verified to receive, so a reply
-          would reach the sending domain's bounce handler, not a person. */}
+    <Shell preview={preview} footer={footer}>
+      <Eyebrow>{copy.eyebrow}</Eyebrow>
+      <Text style={{ ...BODY_TEXT, margin: '0 0 16px' }}>{lead}</Text>
+      <Text style={{ ...BODY_TEXT, margin: '0 0 16px' }}>{copy.safe}</Text>
+      <Text style={{ ...BODY_TEXT, margin: '0 0 26px' }}>{reason}</Text>
       <Button href={retryUrl} style={CTA_BUTTON}>
-        Resume your scan
+        {button}
       </Button>
     </Shell>,
   );
 
-  return { subject: `We couldn't finish scanning ${input.mailboxEmail}`, text, html };
+  return { subject, text, html };
+}
+
+function reasonCopy(notice: SyncFailedNotice): string {
+  if (SYNC_FAILED_NOTICE_WHILE_RETRYING) {
+    return WS4_COPY.email.syncFailed.retrying;
+  }
+  switch (notice) {
+    case 'needsYou':
+      return WS4_COPY.email.syncFailed.needsYou;
+    case 'needsReconnect':
+      return WS4_COPY.email.syncFailed.needsReconnect;
+    case 'permanent':
+      return WS4_COPY.email.syncFailed.permanent;
+    default: {
+      const unreachable: never = notice;
+      return unreachable;
+    }
+  }
 }

@@ -1,5 +1,9 @@
 import { Button, Text } from '@react-email/components';
 
+import { WS4_COPY } from '@declutrmail/shared/copy/launch';
+
+import { emailLink } from './email-link.js';
+
 import {
   BODY_TEXT,
   CTA_BUTTON,
@@ -37,7 +41,7 @@ export async function deletionScheduledEmail(
     'itself is touched.',
     '',
     'Changed your mind? Cancel any time before then:',
-    input.cancelUrl,
+    emailLink(input.cancelUrl, { template: 'deletion_scheduled' }),
     '',
     '— DeclutrMail',
     '',
@@ -68,8 +72,11 @@ export async function deletionScheduledEmail(
         in your Gmail account itself is touched.
       </Text>
       <Text style={{ ...BODY_TEXT, margin: '0 0 26px' }}>Changed your mind?</Text>
-      <Button href={input.cancelUrl} style={CTA_BUTTON}>
-        Cancel deletion
+      <Button
+        href={emailLink(input.cancelUrl, { template: 'deletion_scheduled' })}
+        style={CTA_BUTTON}
+      >
+        {WS4_COPY.email.deletion.button}
       </Button>
     </Shell>,
   );

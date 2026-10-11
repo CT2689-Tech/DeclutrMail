@@ -1,7 +1,9 @@
 import { Button, Text } from '@react-email/components';
 
 import { postalAddressLine } from '@declutrmail/shared/copy';
+import { connectedFooter, fillWs4, WS4_COPY } from '@declutrmail/shared/copy/launch';
 
+import { emailLink } from './email-link.js';
 import {
   BODY_TEXT,
   CTA_BUTTON,
@@ -19,10 +21,12 @@ export interface SyncReminderEmailInput {
   mailboxAccountId: string;
   /** Web app origin. */
   appUrl: string;
+  /** True when `users.onboarded_at` is set. */
+  onboarded: boolean;
   /**
    * Signed one-click unsubscribe URL. REQUIRED — a re-engagement nudge
    * is the most clearly commercial of the four kinds, so it must never
-   * render without a visible opt-out.
+   * render without a visible opt-out. Tracking params stay off this URL.
    */
   unsubscribeUrl: string;
 }
@@ -33,57 +37,52 @@ export interface SyncReminderEmailInput {
  * execution time) and has not opted out of reminders (D165).
  */
 export async function syncReminder24hEmail(input: SyncReminderEmailInput): Promise<RenderedEmail> {
-  const footer = 'You received this because you connected this mailbox to DeclutrMail.';
-  const sendersUrl = `${input.appUrl}/senders?${new URLSearchParams({ mailbox: input.mailboxAccountId })}`;
-  const preferencesUrl = `${input.appUrl}/settings`;
+  const copy = WS4_COPY.email.syncReminder;
+  const appUrl = input.appUrl.replace(/\/$/, '');
+  const body = fillWs4(copy.body, { mailboxEmail: input.mailboxEmail });
+  const button = input.onboarded ? copy.button.onboarded : copy.button.notOnboarded;
+  const destination = emailLink(`${appUrl}${input.onboarded ? '/senders' : '/onboarding'}`, {
+    template: 'sync_reminder_24h',
+    mailboxId: input.mailboxAccountId,
+  });
+  const preferencesUrl = `${appUrl}/settings`;
+  const footer = connectedFooter('this');
 
   const text = [
-    `Yesterday DeclutrMail finished scanning ${input.mailboxEmail}.`,
+    body,
     '',
-    'Your senders are grouped and waiting.',
-    '',
-    `Pick it up here: ${sendersUrl}`,
+    `${button}: ${destination}`,
     '',
     '— DeclutrMail',
     '',
     footer,
-    // The plain-text alternative carries the opt-out too — a text-only
-    // reader must not be left without one.
-    `Unsubscribe: ${input.unsubscribeUrl}`,
-    `Email preferences: ${preferencesUrl}`,
-    // CAN-SPAM / CASL postal address — the text alternative must carry
-    // it too; a text-only reader gets the same legal footer.
+    `${WS4_COPY.email.unsubscribe}: ${input.unsubscribeUrl}`,
+    `${WS4_COPY.email.preferences}: ${preferencesUrl}`,
     ...(postalAddressLine() ? [postalAddressLine() as string] : []),
   ].join('\n');
 
   const html = await renderShell(
     <Shell
-      preview="Your senders are grouped and waiting."
+      preview={body}
       footer={footer}
       optOut={{ unsubscribeUrl: input.unsubscribeUrl, preferencesUrl }}
     >
-      <Eyebrow>Still waiting for you</Eyebrow>
+      <Eyebrow>{copy.subject}</Eyebrow>
       <Text style={{ ...BODY_TEXT, margin: '0 0 16px' }}>
         Yesterday DeclutrMail finished scanning{' '}
-        {/* Explicit anchor so Gmail does not autolink the bare address
-            into default-blue underlined link text. */}
         <a
           href={`mailto:${input.mailboxEmail}`}
           style={{ color: INK, fontWeight: 600, textDecoration: 'none' }}
         >
           {input.mailboxEmail}
         </a>
-        .
+        . Your senders are grouped and waiting.
       </Text>
-      {/* No time or outcome promise — nothing measures either. */}
-      <Text style={{ ...BODY_TEXT, margin: '0 0 26px' }}>
-        Your senders are grouped and waiting.
-      </Text>
-      <Button href={sendersUrl} style={CTA_BUTTON}>
-        Open Senders
+      <Button href={destination} style={CTA_BUTTON}>
+        {button}
       </Button>
     </Shell>,
   );
 
-  return { subject: 'Your inbox is still ready', text, html };
+  return { subject: copy.subject, text, html };
 }

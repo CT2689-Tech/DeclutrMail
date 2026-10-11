@@ -17,6 +17,8 @@
     "./contracts/app-navigation": "./src/contracts/app-navigation.ts",
     "./contracts/account-navigation": "./src/contracts/account-navigation.ts",
     "./contracts/signup-attribution-ref": "./src/contracts/signup-attribution-ref.ts",
+    "./contracts/signup-attribution-attr": "./src/contracts/signup-attribution-attr.ts",
+    "./analytics/sanitize-product-event": "./src/analytics/sanitize-product-event.ts",
     "./copy": "./src/copy/index.ts",
     "./copy/preview-eyebrow": "./src/copy/preview-eyebrow.ts",
     "./entitlements": "./src/entitlements/index.ts",

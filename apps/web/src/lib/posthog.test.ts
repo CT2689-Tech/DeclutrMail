@@ -26,9 +26,27 @@ const posthogMock = vi.hoisted(() => ({
   opt_out_capturing: vi.fn(),
   opt_in_capturing: vi.fn(),
   has_opted_out_capturing: vi.fn(() => false),
+  register: vi.fn(),
 }));
 
 vi.mock('posthog-js', () => ({ default: posthogMock }));
+
+function installDisplayMode(standalone: boolean): void {
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    writable: true,
+    value: (query: string) => ({
+      matches: standalone && query === '(display-mode: standalone)',
+      media: query,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => false,
+    }),
+  });
+}
 
 function clearStoredConsent(): void {
   window.localStorage.removeItem('dm-cookie-consent');
@@ -46,7 +64,9 @@ beforeEach(() => {
   posthogMock.opt_out_capturing.mockClear();
   posthogMock.opt_in_capturing.mockClear();
   posthogMock.has_opted_out_capturing.mockClear();
+  posthogMock.register.mockClear();
   posthogMock.has_opted_out_capturing.mockReturnValue(false);
+  installDisplayMode(false);
   vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'phc_test');
 });
 
@@ -97,6 +117,7 @@ describe('track() consent gate (D147)', () => {
     await track('page_viewed', { page: 'senders', mailbox_id: null });
     expect(posthogMock.init).not.toHaveBeenCalled();
     expect(posthogMock.capture).not.toHaveBeenCalled();
+    expect(posthogMock.register).not.toHaveBeenCalled();
   });
 
   it('does nothing after "Essential only"', async () => {
@@ -104,6 +125,7 @@ describe('track() consent gate (D147)', () => {
     await track('page_viewed', { page: 'senders', mailbox_id: null });
     expect(posthogMock.init).not.toHaveBeenCalled();
     expect(posthogMock.capture).not.toHaveBeenCalled();
+    expect(posthogMock.register).not.toHaveBeenCalled();
   });
 
   it('after "Accept all": initializes once with the key and captures events', async () => {
@@ -140,6 +162,18 @@ describe('track() consent gate (D147)', () => {
       'page_viewed',
       expect.objectContaining({ page: 'senders' }),
     );
+    expect(posthogMock.register).toHaveBeenCalledTimes(1);
+    expect(posthogMock.register).toHaveBeenCalledWith({ display_mode: 'browser' });
+  });
+
+  it('registers standalone only after consent', async () => {
+    installDisplayMode(true);
+    await track('page_viewed', { page: 'senders', mailbox_id: null });
+    expect(posthogMock.register).not.toHaveBeenCalled();
+    storeConsent('all');
+    await track('page_viewed', { page: 'senders', mailbox_id: null });
+    expect(posthogMock.register).toHaveBeenCalledTimes(1);
+    expect(posthogMock.register).toHaveBeenCalledWith({ display_mode: 'standalone' });
   });
 
   it('does not initialize after consent is withdrawn while the SDK import is pending', async () => {

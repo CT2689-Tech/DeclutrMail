@@ -1,16 +1,16 @@
 import { Button, Text } from '@react-email/components';
 
 import { postalAddressLine } from '@declutrmail/shared/copy';
+import { connectedFooter, pluralWs4, WS4_COPY } from '@declutrmail/shared/copy/launch';
 
+import { emailLink } from './email-link.js';
 import {
   BODY_TEXT,
   CTA_BUTTON,
   Eyebrow,
-  formatCount,
   formatNumber,
   HERO_NUMERAL,
   INK,
-  MUTED,
   renderShell,
   Shell,
   SOFT,
@@ -26,84 +26,73 @@ export interface SyncCompleteEmailInput {
   messageCount: number;
   /** Web app origin, e.g. "https://app.declutrmail.com". */
   appUrl: string;
+  /** True when `users.onboarded_at` is set. */
+  onboarded: boolean;
   /**
    * Signed one-click unsubscribe URL. REQUIRED, not optional: this kind
    * is opt-out-able, so shipping it without a visible unsubscribe link
    * is a CAN-SPAM/GDPR defect. Required means the type system refuses
-   * to render a non-compliant send.
+   * to render a non-compliant send. Tracking params stay off this URL.
    */
   unsubscribeUrl: string;
 }
 
-const FOOTER = 'You received this because you connected this mailbox to DeclutrMail.';
-
 /** D6 — sent when a mailbox's initial sync reaches `ready`. */
 export async function syncCompleteEmail(input: SyncCompleteEmailInput): Promise<RenderedEmail> {
-  // "emails", matching the HTML body — the text part and preview said
-  // "messages" while the body said "emails".
-  const emails = formatCount(input.messageCount, 'email', 'emails');
-  const sendersUrl = `${input.appUrl}/senders?${new URLSearchParams({ mailbox: input.mailboxAccountId })}`;
-  const preferencesUrl = `${input.appUrl}/settings`;
+  const copy = WS4_COPY.email.syncComplete;
+  const appUrl = input.appUrl.replace(/\/$/, '');
+  const body = pluralWs4(copy.body, input.messageCount, {
+    n: formatNumber(input.messageCount),
+    mailboxEmail: input.mailboxEmail,
+  });
+  const button = input.onboarded ? copy.button.onboarded : copy.button.notOnboarded;
+  const destination = emailLink(`${appUrl}${input.onboarded ? '/senders' : '/onboarding'}`, {
+    template: 'sync_complete',
+    mailboxId: input.mailboxAccountId,
+  });
+  const preferencesUrl = `${appUrl}/settings`;
+  const footer = connectedFooter('this');
+  const noun = input.messageCount === 1 ? 'email' : 'emails';
 
   const text = [
-    `DeclutrMail finished scanning ${input.mailboxEmail}.`,
+    body,
     '',
-    `${emails} scanned — your senders are grouped and ready to review.`,
-    '',
-    `Jump back in: ${sendersUrl}`,
-    '(Still in setup? That link drops you right back where you left off.)',
+    `${button}: ${destination}`,
     '',
     '— DeclutrMail',
     '',
-    FOOTER,
-    // The plain-text alternative carries the opt-out too — a text-only
-    // reader must not be left without one.
-    `Unsubscribe: ${input.unsubscribeUrl}`,
-    `Email preferences: ${preferencesUrl}`,
-    // CAN-SPAM / CASL postal address — the text alternative must carry
-    // it too; a text-only reader gets the same legal footer.
+    footer,
+    `${WS4_COPY.email.unsubscribe}: ${input.unsubscribeUrl}`,
+    `${WS4_COPY.email.preferences}: ${preferencesUrl}`,
     ...(postalAddressLine() ? [postalAddressLine() as string] : []),
   ].join('\n');
 
   const html = await renderShell(
     <Shell
-      preview={`${emails} scanned and ready to review`}
-      footer={FOOTER}
+      preview={body}
+      footer={footer}
       optOut={{ unsubscribeUrl: input.unsubscribeUrl, preferencesUrl }}
     >
-      <Eyebrow>Your inbox is ready</Eyebrow>
-
-      {/* Hero numeral — the count is the news, so it leads at display
-          size instead of sitting mid-paragraph. */}
+      <Eyebrow>{copy.subject}</Eyebrow>
       <Text style={{ ...HERO_NUMERAL, margin: '0 0 4px' }}>{formatNumber(input.messageCount)}</Text>
       <Text style={{ color: SOFT, fontSize: '15px', lineHeight: '22px', margin: '0 0 22px' }}>
-        {input.messageCount === 1 ? 'email' : 'emails'} scanned from{' '}
-        {/* Rendered as an explicit anchor so Gmail does not autolink the
-            bare address into default-blue underlined link text. `mailto:`
-            with inherited styling keeps it looking like the prose it is. */}
+        {noun} scanned from{' '}
         <a
           href={`mailto:${input.mailboxEmail}`}
           style={{ color: INK, fontWeight: 600, textDecoration: 'none' }}
         >
           {input.mailboxEmail}
         </a>
+        .
       </Text>
-
-      {/* No time or outcome promise: nothing measures how long a first
-          pass takes or how much it clears. */}
       <Text style={{ ...BODY_TEXT, margin: '0 0 26px' }}>
         Your senders are grouped and ready to review.
       </Text>
-
-      <Button href={sendersUrl} style={CTA_BUTTON}>
-        Open Senders
+      <Button href={destination} style={CTA_BUTTON}>
+        {button}
       </Button>
-
-      <Text style={{ color: MUTED, fontSize: '13px', lineHeight: '19px', margin: '18px 0 0' }}>
-        Still in setup? That link drops you right back where you left off.
-      </Text>
     </Shell>,
   );
 
-  return { subject: 'Your inbox is ready', text, html };
+  return { subject: copy.subject, text, html };
 }

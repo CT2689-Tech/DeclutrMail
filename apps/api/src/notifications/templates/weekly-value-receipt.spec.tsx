@@ -32,19 +32,25 @@ describe('weekly-value-receipt', () => {
     expect(email.html).toBeUndefined();
     expect(email.text.split('\n').slice(0, 8)).toEqual([
       'This week DeclutrMail:',
-      '- 184 messages kept out of your inbox by rules you turned on',
+      '- Moved 184 emails out of your inbox with Autopilot rules you turned on',
       '- 23 senders you decided on yourself',
-      '- 6 senders surfaced in your Brief as worth reading',
-      '- 2 actions you undid',
+      '- 6 senders in your Daily Brief worth a look',
+      '- 2 changes you undid',
       '',
-      // Current state, kept OUT of the "this week" list on purpose.
-      '12 new senders are waiting in Screener right now.',
+      '12 new senders are waiting in Screener for your review.',
       '',
     ]);
     // D189's load-bearing trust line, stated as the checkable guarantee
     // it is: Delete adds Gmail's TRASH label and nothing calls Gmail's
     // permanent messages.delete.
-    expect(email.text).toContain('Nothing was deleted permanently.');
+    expect(email.text).toContain(
+      'Nothing was deleted permanently. Delete moves email to Gmail Trash, where Gmail keeps it for up to 30 days unless you empty it.',
+    );
+    expect(email.text).toContain('Go to Home: https://app.declutrmail.com/home?');
+    expect(email.text).toContain('from=weekly');
+    expect(email.text).toContain('See the detail: https://app.declutrmail.com/activity?');
+    expect(email.text).toContain('utm_campaign=weekly_detail');
+    expect(email.text).toContain('You turned on this weekly email in Settings.');
     expect(email.text).toContain(
       'Unsubscribe: https://api.declutrmail.com/api/email/unsubscribe?t=tok',
     );
@@ -80,7 +86,9 @@ describe('weekly-value-receipt', () => {
     // No bullets means nothing happened this week; a "This week
     // DeclutrMail:" header over an empty list would imply otherwise.
     expect(email.text).not.toContain('This week DeclutrMail:');
-    expect(email.text.split('\n')[0]).toBe('12 new senders are waiting in Screener right now.');
+    expect(email.text.split('\n')[0]).toBe(
+      '12 new senders are waiting in Screener for your review.',
+    );
   });
 
   it('never states a projected figure — no minutes-saved estimate', () => {
@@ -99,9 +107,12 @@ describe('weekly-value-receipt', () => {
       pendingScreener: 1,
     });
 
-    expect(email.text).toContain('- 1 message kept out of your inbox');
+    expect(email.text).toContain(
+      '- Moved 1 email out of your inbox with Autopilot rules you turned on',
+    );
     expect(email.text).toContain('- 1 sender you decided on yourself');
-    expect(email.text).toContain('- 1 action you undid');
-    expect(email.text).toContain('1 new sender is waiting in Screener right now.');
+    expect(email.text).toContain('- 1 sender in your Daily Brief worth a look');
+    expect(email.text).toContain('- 1 change you undid');
+    expect(email.text).toContain('1 new sender is waiting in Screener for your review.');
   });
 });

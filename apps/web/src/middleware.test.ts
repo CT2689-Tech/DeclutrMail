@@ -332,13 +332,47 @@ describe('signup first-touch cookie (Phase B)', () => {
     request.cookies.set('dm_signup_ref', 'hn');
     const response = middleware(request);
     expect(response.cookies.get('dm_signup_ref')).toBeUndefined();
-    expect(response.headers.get('set-cookie')).toBeNull();
+    expect(response.headers.get('set-cookie') ?? '').not.toContain('dm_signup_ref=');
   });
 
   it('attributes a bare simulator visit when nothing is captured yet', () => {
     const request = new NextRequest('https://declutrmail.com/inbox-simulator');
     const response = middleware(request);
     expect(response.cookies.get('dm_signup_ref')?.value).toBe('simulator');
+  });
+});
+
+describe('dm_attr first-touch cookie', () => {
+  it('sets utm, ref, and landing path once for 30 days on our domain', () => {
+    const request = new NextRequest(
+      'https://declutrmail.com/pricing?utm_source=hn&utm_medium=social&utm_campaign=launch&ref=hn',
+    );
+    const response = middleware(request);
+    const cookie = response.cookies.get('dm_attr');
+    expect(cookie?.value).toContain('utm_source=hn');
+    expect(cookie?.value).toContain('utm_medium=social');
+    expect(cookie?.value).toContain('utm_campaign=launch');
+    expect(cookie?.value).toContain('ref=hn');
+    expect(cookie?.value).toContain('landing=%2Fpricing');
+    const header = response.headers.get('set-cookie') ?? '';
+    expect(header).toContain('Domain=.declutrmail.com');
+    expect(header).toContain('Max-Age=2592000');
+    expect(header).not.toContain('HttpOnly');
+  });
+
+  it('does not overwrite a captured campaign with a later utm', () => {
+    const request = new NextRequest('https://declutrmail.com/pricing?utm_source=google');
+    request.cookies.set('dm_attr', 'utm_source=hn&landing=%2Fstart');
+    const response = middleware(request);
+    expect(response.cookies.get('dm_attr')).toBeUndefined();
+  });
+
+  it('drops values that look like an email address', () => {
+    const request = new NextRequest('https://declutrmail.com/?utm_source=a@b.com&utm_medium=cpc');
+    const response = middleware(request);
+    const value = response.cookies.get('dm_attr')?.value ?? '';
+    expect(value).not.toContain('@');
+    expect(value).toContain('utm_medium=cpc');
   });
 });
 

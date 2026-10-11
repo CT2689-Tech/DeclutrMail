@@ -100,6 +100,7 @@ describe('GoogleOAuthService.exchangeCode — through the real google-auth-libra
     } as never);
     await expect(new GoogleOAuthService().exchangeSignInCode('code')).resolves.toEqual({
       email: 'owner@gmail.com',
+      providerKind: 'gmail',
     });
     expect(request).toHaveBeenCalledTimes(1);
   });

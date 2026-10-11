@@ -2,6 +2,7 @@
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
+import { EmailClickRecorder } from '@/features/analytics/email-click-recorder';
 import styles from './mailbox-link-boundary.module.css';
 function LinkDownloadFailure({ children }: { children: ReactNode }) {
   const search = useSearchParams();
@@ -30,5 +31,10 @@ export function MailboxLinkBoundary({ children }: { children: ReactNode }) {
   // Remember entry into the resolver before paint; keep it mounted through a
   // query change so an in-flight switch cannot be escaped into mailbox actions.
   if (targetPresent && !usedResolver) setUsedResolver(true);
-  return targetPresent || usedResolver ? <Resolver>{children}</Resolver> : children;
+  return (
+    <>
+      <EmailClickRecorder />
+      {targetPresent || usedResolver ? <Resolver>{children}</Resolver> : children}
+    </>
+  );
 }

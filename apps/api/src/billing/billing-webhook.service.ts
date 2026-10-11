@@ -66,6 +66,7 @@ import {
 } from '../common/entitlements/entitlement-grants.js';
 import type { ProductEventsPort } from '@declutrmail/shared/analytics/product-events';
 
+import { earliestWorkspaceUserId } from '../analytics/earliest-workspace-user.js';
 import { PRODUCT_EVENTS, recordProductEvent } from '../analytics/product-events.port.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
@@ -1438,9 +1439,10 @@ export class BillingWebhookService {
     }
 
     let tier = 'free';
+    let workspaceId: string | null = event.workspaceId;
     if (event.providerSubscriptionId) {
       const [row] = await this.db
-        .select({ tier: subscriptions.tier })
+        .select({ tier: subscriptions.tier, workspaceId: subscriptions.workspaceId })
         .from(subscriptions)
         .where(
           and(
@@ -1449,14 +1451,18 @@ export class BillingWebhookService {
           ),
         )
         .limit(1);
-      if (row) tier = row.tier;
+      if (row) {
+        tier = row.tier;
+        workspaceId = row.workspaceId;
+      }
     }
+    const userId = workspaceId ? await earliestWorkspaceUserId(this.db, workspaceId) : undefined;
     await this.markProcessed(eventRowId);
     this.logger.log(
       `billing_event kind=payment_${event.outcome} tier=${tier} provider=${provider} sub=${event.providerSubscriptionId ?? 'none'}`,
     );
     if (event.outcome === 'succeeded') {
-      recordProductEvent(this.productEvents, 'purchase_confirmed', { plan: tier });
+      recordProductEvent(this.productEvents, 'purchase_confirmed', { plan: tier }, userId);
     }
     return { kind: 'processed', effect: `payment:${event.outcome}` };
   }

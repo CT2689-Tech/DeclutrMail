@@ -24,6 +24,11 @@ import {
   MailboxSyncReadyPayloadSchema,
   TOPICS,
 } from '@declutrmail/events';
+import {
+  bucketDurationSeconds,
+  bucketEmailCount,
+  sanitizeErrorClass,
+} from '@declutrmail/shared/analytics/sanitize-product-event';
 import { and, count, desc, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
@@ -108,6 +113,16 @@ export interface InitialSyncDeps {
    * Absent, the line never shows; the scan is unaffected either way.
    */
   scanProgress?: ScanProgressStore;
+  /**
+   * Funnel row after the ready/failed transaction commits. Optional so
+   * tests that don't care about product events stay quiet. A throw here
+   * must not fail the scan.
+   */
+  onProductEvent?: (event: {
+    name: 'first_sync_ready' | 'first_sync_failed_terminal';
+    userId: string;
+    props: Record<string, string | number | boolean>;
+  }) => void;
 }
 
 /**
@@ -670,7 +685,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     }
 
     const [account] = await this.deps.db
-      .select({ workspaceId: mailboxAccounts.workspaceId })
+      .select({
+        workspaceId: mailboxAccounts.workspaceId,
+        userId: mailboxAccounts.userId,
+      })
       .from(mailboxAccounts)
       .where(eq(mailboxAccounts.id, mailboxAccountId))
       .limit(1);
@@ -679,6 +697,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       return;
     }
 
+    let emitTerminal = false;
     await this.deps.db.transaction(async (tx) => {
       const claimed = await failedUpsert(tx);
       if (claimed.length === 0) return;
@@ -689,6 +708,12 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         claimed[0]!.initialRecoveryAttempts < INITIAL_RECOVERY_LIMIT
       )
         return;
+      const [prior] = await tx
+        .select({ lastSyncedAt: providerSyncState.lastSyncedAt })
+        .from(providerSyncState)
+        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
+        .limit(1);
+      emitTerminal = (prior?.lastSyncedAt ?? null) === null;
       await outbox.publish(tx, {
         topic: TOPICS.MAILBOX_SYNC_FAILED,
         aggregateId: mailboxAccountId,
@@ -701,6 +726,13 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         schema: MailboxSyncFailedPayloadSchema,
       });
     });
+    if (emitTerminal) {
+      emitSyncProductEvent(this.deps, {
+        name: 'first_sync_failed_terminal',
+        userId: account.userId,
+        props: { error_class: sanitizeErrorClass(error.name) },
+      });
+    }
     await this.recordFailedRun(mailboxAccountId, error, attempts);
   }
 
@@ -1979,7 +2011,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     }
 
     const [account] = await this.deps.db
-      .select({ workspaceId: mailboxAccounts.workspaceId })
+      .select({
+        workspaceId: mailboxAccounts.workspaceId,
+        userId: mailboxAccounts.userId,
+      })
       .from(mailboxAccounts)
       .where(eq(mailboxAccounts.id, mailboxAccountId))
       .limit(1);
@@ -1987,6 +2022,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       throw new ValidationError(`mailbox account ${mailboxAccountId} not found at markReady`);
     }
 
+    let firstReady = false;
     await this.deps.db.transaction(async (tx) => {
       // Read BEFORE the ready upsert stamps `last_synced_at`. No reset
       // clears it — `markQueued` (any connect that needs a scan, e.g. a reconnect),
@@ -2004,7 +2040,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
         .for('update')
         .limit(1);
-      const firstReady = (prior?.lastSyncedAt ?? null) === null;
+      firstReady = (prior?.lastSyncedAt ?? null) === null;
       if ((await readyUpsert(tx)).length === 0)
         throw new TransientError('Initial scan attempt superseded');
       await runInsert(tx);
@@ -2021,6 +2057,38 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         schema: MailboxSyncReadyPayloadSchema,
       });
     });
+    if (firstReady) {
+      emitSyncProductEvent(this.deps, {
+        name: 'first_sync_ready',
+        userId: account.userId,
+        props: {
+          duration_s: bucketDurationSeconds(run.durationMs),
+          emails: bucketEmailCount(run.messagesSynced),
+        },
+      });
+    }
+  }
+}
+
+function emitSyncProductEvent(
+  deps: InitialSyncDeps,
+  event: {
+    name: 'first_sync_ready' | 'first_sync_failed_terminal';
+    userId: string;
+    props: Record<string, string | number | boolean>;
+  },
+): void {
+  if (!deps.onProductEvent) return;
+  try {
+    deps.onProductEvent(event);
+  } catch {
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        kind: 'sync.product_event_failed',
+        name: event.name,
+      }),
+    );
   }
 }
 

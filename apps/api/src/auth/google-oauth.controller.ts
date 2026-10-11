@@ -4,7 +4,9 @@ import {
   BadRequestException,
   Controller,
   Get,
+  Inject,
   Logger,
+  Optional,
   Query,
   Req,
   Res,
@@ -31,6 +33,16 @@ import {
   type SignInResult,
   type SignupAttributionRef,
 } from '@declutrmail/shared/contracts';
+import type { ProductEventsPort } from '@declutrmail/shared/analytics/product-events';
+import {
+  campaignFromQuery,
+  DM_ATTR_COOKIE,
+  parseDmAttr,
+  type SignupCampaign,
+} from '@declutrmail/shared/contracts/signup-attribution-attr';
+import { recordConnectFunnel, recordSignInProvider } from '../analytics/record-connect-funnel.js';
+import type { SignInProviderKind } from './sign-in-provider.js';
+import { PRODUCT_EVENTS } from '../analytics/product-events.port.js';
 
 import { InboxLimitGuard } from '../common/entitlements/inbox-limit.guard.js';
 import { MailboxAccountsService } from '../mailboxes/mailbox-accounts.service.js';
@@ -78,6 +90,11 @@ interface LoginOAuthState extends OAuthStateBase {
   returnTo?: string | undefined;
   /** First-touch marketing channel; login mode only. Set-once on new signup. */
   ref?: SignupAttributionRef | undefined;
+  /** First-touch campaign fields from dm_attr. Login mode only. No email. */
+  utmSource?: string | undefined;
+  utmMedium?: string | undefined;
+  utmCampaign?: string | undefined;
+  landingPath?: string | undefined;
 }
 
 interface ConnectOAuthState extends OAuthStateBase {
@@ -114,6 +131,8 @@ type PendingOAuthState =
 
 const boundedString = z.string().min(1).max(256);
 const uuidSchema = z.string().uuid();
+const utmSchema = z.string().regex(/^[A-Za-z0-9._-]{1,64}$/);
+const landingSchema = z.string().regex(/^\/[A-Za-z0-9._~/-]{0,199}$/);
 const oauthStateSchema = z
   .discriminatedUnion('mode', [
     z
@@ -125,6 +144,10 @@ const oauthStateSchema = z
         intent: z.literal('sign-in').optional(),
         returnTo: z.string().max(1024).optional(),
         ref: z.enum(SIGNUP_ATTRIBUTION_REFS).optional(),
+        utmSource: utmSchema.optional(),
+        utmMedium: utmSchema.optional(),
+        utmCampaign: utmSchema.optional(),
+        landingPath: landingSchema.optional(),
       })
       .strict(),
     z
@@ -178,6 +201,7 @@ export class GoogleOAuthController {
     private readonly mailboxes: MailboxAccountsService,
     private readonly jwt: JwtService,
     private readonly sessions: SessionsService,
+    @Optional() @Inject(PRODUCT_EVENTS) private readonly productEvents?: ProductEventsPort,
   ) {}
 
   /**
@@ -206,6 +230,9 @@ export class GoogleOAuthController {
     @Query('returnTo') returnTo?: unknown,
     @Query('ref') ref?: unknown,
     @Query('intent') intent?: unknown,
+    @Query('utm_source') utmSource?: unknown,
+    @Query('utm_medium') utmMedium?: unknown,
+    @Query('utm_campaign') utmCampaign?: unknown,
   ): Promise<void> {
     const safeReturnTo = parseAppReturnTo(returnTo);
     const cookies = req.cookies as Record<string, unknown> | undefined;
@@ -214,6 +241,9 @@ export class GoogleOAuthController {
     // .declutrmail.com cookie.
     const safeRef =
       parseSignupAttributionRef(cookies?.[SIGNUP_REF_COOKIE]) ?? parseSignupAttributionRef(ref);
+    const campaign =
+      parseDmAttr(cookies?.[DM_ATTR_COOKIE]) ??
+      campaignFromQuery({ utmSource, utmMedium, utmCampaign, ref: safeRef });
 
     if (await this.hasLiveSession(req)) {
       const webBase = (process.env.WEB_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
@@ -227,6 +257,7 @@ export class GoogleOAuthController {
       ...(intent === 'sign-in' ? { intent: 'sign-in' as const } : {}),
       ...(safeReturnTo ? { returnTo: safeReturnTo } : {}),
       ...(safeRef ? { ref: safeRef } : {}),
+      ...campaignState(campaign),
     });
   }
 
@@ -543,8 +574,12 @@ export class GoogleOAuthController {
 
     let email: string;
     let refreshToken: string;
+    let providerKind: SignInProviderKind | null = null;
     try {
-      ({ email, refreshToken } = await this.oauth.exchangeCode(code));
+      const exchanged = await this.oauth.exchangeCode(code);
+      email = exchanged.email;
+      refreshToken = exchanged.refreshToken;
+      providerKind = exchanged.providerKind ?? null;
     } catch (err) {
       if (err instanceof GmailScopeNotGrantedError) {
         this.returnForGmailAccess(res, webBase, cookieState, ipAddress, userAgent);
@@ -679,6 +714,12 @@ export class GoogleOAuthController {
           userAgent,
           payload: { provider: 'google', mode: 'connect' },
         });
+        recordConnectFunnel(this.productEvents, {
+          userId: cookieState.userId,
+          isNewSignup: false,
+          mode: recoveryState ? 'reconnect' : 'connect',
+        });
+        recordSignInProvider(this.productEvents, cookieState.userId, providerKind);
         // Route the freshly-connected mailbox through the sync gate
         // (D6 strict-gate-everywhere, D109) instead of dumping the user
         // on an empty /triage. addMailbox set it active, so the gate
@@ -778,6 +819,7 @@ export class GoogleOAuthController {
         ipAddress,
         userAgent,
         ...(cookieState.ref ? { signupAttributionRef: cookieState.ref } : {}),
+        ...loginCampaign(cookieState),
       });
     } catch (err) {
       if (err instanceof BetaGateDeniedError) {
@@ -849,6 +891,12 @@ export class GoogleOAuthController {
         isNewSignup: result.isNewSignup,
       },
     });
+    recordConnectFunnel(this.productEvents, {
+      userId: result.user.id,
+      isNewSignup: result.isNewSignup,
+      mode: 'login',
+    });
+    recordSignInProvider(this.productEvents, result.user.id, providerKind);
     // New signups land on the onboarding sync gate (D6, D109) — it
     // polls real sync state and auto-advances once readiness = ready.
     // Returning users with unfinished setup resume onboarding, unless
@@ -922,9 +970,15 @@ export class GoogleOAuthController {
     userAgent: string | null,
   ): Promise<void> {
     let result: Awaited<ReturnType<AuthSignupOrchestrator['signIn']>>;
+    let providerKind: SignInProviderKind | null = null;
     try {
-      const { email } = await this.oauth.exchangeSignInCode(code);
-      result = await this.orchestrator.signIn({ email, ipAddress: sourceIp, userAgent });
+      const exchanged = await this.oauth.exchangeSignInCode(code);
+      providerKind = exchanged.providerKind ?? null;
+      result = await this.orchestrator.signIn({
+        email: exchanged.email,
+        ipAddress: sourceIp,
+        userAgent,
+      });
     } catch (err) {
       void this.securityEvents.record({
         eventType: 'login.failure',
@@ -953,6 +1007,7 @@ export class GoogleOAuthController {
       workspaceId: result.user.workspaceId,
       payload: { provider: 'google', mode: 'sign-in', isNewSignup: false },
     });
+    recordSignInProvider(this.productEvents, result.user.id, providerKind);
     const returnTo = parseAppReturnTo(state.returnTo);
     const accountRecovery =
       returnTo !== undefined && isUserScopedAppPath(new URL(returnTo, webBase).pathname);
@@ -1236,6 +1291,44 @@ function isTargetedRecoveryState(state: OAuthState): state is TargetedRecoverySt
     ((state.reconnectMailboxId !== undefined && state.reactivateMailboxId === undefined) ||
       (state.reconnectMailboxId === undefined && state.reactivateMailboxId !== undefined))
   );
+}
+
+function campaignState(
+  campaign:
+    | {
+        utmSource?: string | undefined;
+        utmMedium?: string | undefined;
+        utmCampaign?: string | undefined;
+        landingPath?: string | undefined;
+      }
+    | undefined,
+): {
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  landingPath?: string;
+} {
+  if (!campaign) return {};
+  return {
+    ...(campaign.utmSource ? { utmSource: campaign.utmSource } : {}),
+    ...(campaign.utmMedium ? { utmMedium: campaign.utmMedium } : {}),
+    ...(campaign.utmCampaign ? { utmCampaign: campaign.utmCampaign } : {}),
+    ...(campaign.landingPath ? { landingPath: campaign.landingPath } : {}),
+  };
+}
+
+function loginCampaign(state: OAuthState): { signupCampaign?: SignupCampaign } {
+  if (state.mode !== 'login') return {};
+  const campaign = campaignState(state);
+  if (
+    !campaign.utmSource &&
+    !campaign.utmMedium &&
+    !campaign.utmCampaign &&
+    !campaign.landingPath
+  ) {
+    return {};
+  }
+  return { signupCampaign: campaign };
 }
 
 function getRecoveryMailboxId(state: TargetedRecoveryState): string {
