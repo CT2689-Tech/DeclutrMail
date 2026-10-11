@@ -2008,5 +2008,11 @@
     "id": "allowance_word",
     "line": 9,
     "text": "{remaining} of {allowance} free emails left \u00b7 resets {resetDate}"
+  },
+  {
+    "file": "packages/shared/src/contracts/gmail-data-inventory.ts",
+    "id": "sync_word",
+    "line": 581,
+    "text": "DeclutrMail signup, connect, sync, and billing events"
   }
 ]
