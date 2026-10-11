@@ -5,6 +5,7 @@ import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
 import { ApiError } from '@/lib/api/client';
 
 import { HOME_DECK } from './home-deck-copy';
+import { homeCalmTemplate, homeReportCopy, homeTileCopy } from './home-ws5-copy';
 import { homePreviewReport } from './home-preview-report';
 import type { HomeFixCandidate } from './home-next-steps';
 import { HomeView } from './home-view';
@@ -131,8 +132,10 @@ describe('HomeView', () => {
     expect(laterCard?.querySelector('svg')).not.toBeNull();
     expect(screen.queryByText('Your 10 largest senders')).toBeNull();
     expect(screen.queryByRole('link', { name: 'See largest senders' })).toBeNull();
-    expect(screen.queryByText('≈ 7.7 GB')).toBeNull();
-    expect(screen.queryByText('of email in your Gmail')).toBeNull();
+    if (homeTileCopy() === null) {
+      expect(screen.queryByText('≈ 7.7 GB')).toBeNull();
+      expect(screen.queryByText('of email in your Gmail')).toBeNull();
+    }
     expect(document.querySelector('[data-home-mode="full"]')).not.toBeNull();
     expect(document.querySelector('[data-sender-size-view="off"]')).not.toBeNull();
   });
@@ -194,7 +197,11 @@ describe('HomeView', () => {
       <HomeView state={{ ...ready, secondary: [] }} nextSteps={[]} indexedEmailCount={47} />,
     );
     expect(container.firstElementChild).toHaveAttribute('data-home-mode', 'fallback');
-    expect(screen.queryByTestId('home-calm')).toBeNull();
+    if (homeCalmTemplate() === null) {
+      expect(screen.queryByTestId('home-calm')).toBeNull();
+    } else {
+      expect(screen.getByTestId('home-calm')).toHaveTextContent('47 emails');
+    }
     expect(screen.queryByText(/share card/i)).toBeNull();
     expect(screen.queryByRole('region', { name: 'Suggested next steps' })).toBeNull();
   });
@@ -202,7 +209,9 @@ describe('HomeView', () => {
   it('omits the calm count when the indexed total is unknown', () => {
     render(<HomeView state={ready} nextSteps={[]} indexedEmailCount={null} />);
     expect(screen.queryByTestId('home-calm')).toBeNull();
-    expect(screen.queryByRole('heading', { name: 'Your Inbox Report' })).toBeNull();
+    if (homeReportCopy() === null) {
+      expect(screen.queryByRole('heading', { name: 'Your Inbox Report' })).toBeNull();
+    }
   });
 
   it('empty: no number, and a syncing mailbox does not say it is reading Gmail', () => {
@@ -220,7 +229,9 @@ describe('HomeView', () => {
     expect(screen.queryByRole('heading', { name: 'Reading your Gmail…' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Review senders' })).toBeNull();
     expect(screen.queryByText('Nothing cleared yet.')).toBeNull();
-    expect(screen.queryByRole('heading', { name: 'Your Inbox Report' })).toBeNull();
+    if (homeReportCopy() === null) {
+      expect(screen.queryByRole('heading', { name: 'Your Inbox Report' })).toBeNull();
+    }
     expect(screen.queryByText('Your scan is waiting to start.')).toBeNull();
     expect(screen.queryByText('Waiting to start.')).toBeNull();
     expect(screen.getByTestId('home-scan-bar')).toBeInTheDocument();

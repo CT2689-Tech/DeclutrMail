@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { EVENT_NAMES } from './events/index';
 import { OPS_SUPER_PROPERTIES } from './events/ops';
+import { REPORT_EVENT_NAMES } from './events/report';
 
 /**
  * Names in `events.ts` immediately before the domain split.
@@ -89,17 +90,18 @@ const OWNERS = {
 } as const;
 
 describe('event registry domain split', () => {
-  it('keeps every pre-split event name', () => {
+  it('keeps every pre-split event name and adds report and home events', () => {
+    const names = new Set<string>(EVENT_NAMES);
     for (const name of EVENT_NAMES_BEFORE_SPLIT) {
-      expect(EVENT_NAMES).toContain(name);
+      expect(names.has(name)).toBe(true);
     }
-    expect(new Set(EVENT_NAMES).size).toBe(EVENT_NAMES.length);
-  });
-
-  it('appends Home v1 names on the app domain', () => {
-    expect(EVENT_NAMES).toEqual(
-      expect.arrayContaining(['home_next_step_clicked', 'caught_up_viewed']),
-    );
+    const before = new Set<string>(EVENT_NAMES_BEFORE_SPLIT);
+    const added = [...names].filter((name) => !before.has(name)).sort();
+    const allowed = [
+      ...new Set<string>([...REPORT_EVENT_NAMES, 'home_next_step_clicked', 'caught_up_viewed']),
+    ].sort();
+    expect(added).toEqual(allowed);
+    expect(names.size).toBe(before.size + allowed.length);
   });
 
   it('keeps display_mode off the event-name list', () => {

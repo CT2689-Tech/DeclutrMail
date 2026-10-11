@@ -1,4 +1,4 @@
-import { getFixSet, type InboxReportSource } from '@/features/inbox-report';
+import { getFixSet } from '@/features/inbox-report';
 
 import type { HomeState } from './home-state';
 
@@ -39,7 +39,9 @@ export function rankHomeNextSteps(
 }
 
 /** Unsubscribe step from a report. No report means no step. Later is not in this set. */
-export function homeCandidatesFromReport(report: InboxReportSource | null): HomeFixCandidate[] {
+export function homeCandidatesFromReport(
+  report: Parameters<typeof getFixSet>[0] | null,
+): HomeFixCandidate[] {
   if (report === null) return [];
   const fix = getFixSet(report);
   if (fix.sendersCount < 1 || fix.senderKeys.length === 0) return [];

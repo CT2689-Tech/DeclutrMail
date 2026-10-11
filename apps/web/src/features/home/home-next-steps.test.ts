@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { getFixSet } from '@/features/inbox-report';
+
 import {
   homeCandidatesFromReport,
   homeV1Mode,
@@ -39,7 +41,7 @@ describe('homeCandidatesFromReport', () => {
     expect(
       homeCandidatesFromReport({
         fix: { senderKeys: ['s1', 's2'], sendersCount: 2, inboxEmailCount: 9 },
-      }),
+      } as Parameters<typeof getFixSet>[0]),
     ).toEqual([
       {
         kind: 'unsub_archive',
