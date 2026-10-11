@@ -1,13 +1,14 @@
 'use client';
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import styles from './mailbox-link-boundary.module.css';
 function LinkDownloadFailure({ children }: { children: ReactNode }) {
   const search = useSearchParams();
   if (!search.has('mailbox')) return children;
   return (
-    <main style={{ maxWidth: 540, margin: '80px auto', padding: 24 }}>
-      <p role="alert">We couldn’t open this inbox link. Reload to try again.</p>
+    <main className={styles.recovery}>
+      <p role="alert">This inbox link couldn’t load. Reload to retry.</p>
       <button type="button" onClick={() => window.location.reload()}>
         Reload
       </button>
@@ -20,14 +21,14 @@ const Resolver = dynamic(
     import('./mailbox-link-resolver')
       .then((module) => module.MailboxLinkResolver)
       .catch(() => LinkDownloadFailure),
-  { ssr: false, loading: () => <p role="status">Opening the inbox from your link…</p> },
+  { ssr: false, loading: () => <p role="status">Opening linked inbox…</p> },
 );
 export function MailboxLinkBoundary({ children }: { children: ReactNode }) {
   const search = useSearchParams();
   const targetPresent = search.has('mailbox');
   const [usedResolver, setUsedResolver] = useState(targetPresent);
-  useEffect(() => {
-    if (targetPresent) setUsedResolver(true);
-  }, [targetPresent]);
+  // Remember entry into the resolver before paint; keep it mounted through a
+  // query change so an in-flight switch cannot be escaped into mailbox actions.
+  if (targetPresent && !usedResolver) setUsedResolver(true);
   return targetPresent || usedResolver ? <Resolver>{children}</Resolver> : children;
 }

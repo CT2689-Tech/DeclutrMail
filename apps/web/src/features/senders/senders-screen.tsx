@@ -128,8 +128,17 @@ import {
   type SenderRowActivity,
 } from './row-activity';
 import { SendersLoadingState } from './senders-loading-state';
-import { FirstBacklogNudge } from './first-backlog-nudge';
-import { shouldShowFirstCleanupNudge } from './first-cleanup-nudge';
+import { shouldShowFirstCleanupNudge } from './first-cleanup-nudge-policy';
+// This optional recommendation appears only after the mailbox summary and
+// stored sender list arrive. Its read/render code need not load at app entry.
+const UnavailableBacklogNudge = () => null;
+const FirstBacklogNudge = dynamic(
+  () =>
+    import('./first-backlog-nudge')
+      .then((module) => module.FirstBacklogNudge)
+      .catch(() => UnavailableBacklogNudge),
+  { ssr: false },
+);
 import type { SenderListDirection, SenderListSort } from '@/lib/api/senders';
 import { useSaveSenderViews, useSenderViews } from './api/use-sender-views';
 import { SENDER_VIEWS_CAP, type SavedSenderView } from '@declutrmail/shared/contracts';

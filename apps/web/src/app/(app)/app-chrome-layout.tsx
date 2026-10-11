@@ -3,6 +3,7 @@
 import { isUserScopedAppPath } from '@declutrmail/shared/contracts/account-navigation';
 
 import { useEffect, type ReactNode } from 'react';
+import dynamic from 'next/dynamic';
 import { usePathname, useRouter } from 'next/navigation';
 import { AppShell, ToastHost } from '@declutrmail/shared';
 import {
@@ -13,7 +14,6 @@ import {
 import { GracePeriodBanner } from '@/features/account-deletion/lazy-grace-period-banner';
 import { AuthProvider, useAuth } from '@/features/auth/auth-provider';
 import { useAnalyticsIdentity } from '@/features/auth/analytics-identity-bridge';
-import { HeardFromPrompt } from '@/features/auth/heard-from-prompt';
 import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
 import { useTier } from '@/features/auth/api/use-tier';
 import { UpgradeModalHost } from '@/features/billing/upgrade-modal-host';
@@ -37,6 +37,16 @@ import { SyncNowAnimationStyle, SyncNowButton } from '@/features/sync/sync-now-b
 import { ThemeToggle } from '@/features/theme/theme-toggle';
 import { ProductUndoTray } from '@/features/triage/triage-undo-tray';
 import { isFeatureEnabled } from '@/lib/flags';
+
+// Optional acquisition survey is only downloaded for accounts still awaiting it.
+const UnavailableSurvey = () => null;
+const HeardFromPrompt = dynamic(
+  () =>
+    import('@/features/auth/heard-from-prompt')
+      .then((module) => module.HeardFromPrompt)
+      .catch(() => UnavailableSurvey),
+  { ssr: false },
+);
 
 function shellRoute(id: string): string {
   return id === 'snoozed' ? '/later' : `/${id}`;
@@ -244,7 +254,7 @@ function AppChrome({ children }: { children: ReactNode }) {
       <>
         <BannerSlot>
           <GracePeriodBanner />
-          <HeardFromPrompt />
+          {me.signupAttribution?.promptNeeded === true && <HeardFromPrompt />}
         </BannerSlot>
         <NoActiveMailbox />
         <ToastHost />
@@ -274,7 +284,7 @@ function AppChrome({ children }: { children: ReactNode }) {
           {/* Return recovery is an all-tier safety guarantee. Successful
               returns stay silent; only missed/failed timers surface. */}
           <LaterReturnAlert enabled={hasActiveMailbox} />
-          <HeardFromPrompt />
+          {me.signupAttribution?.promptNeeded === true && <HeardFromPrompt />}
         </BannerSlot>
         <div style={{ flex: 1, minHeight: 0 }}>
           <AppShell

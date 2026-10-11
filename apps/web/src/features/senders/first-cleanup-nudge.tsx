@@ -26,13 +26,7 @@ const { color, font, radius } = tokens;
  * never write `action_jobs`, so they do not dismiss the nudge
  * (product call — leave unless asked).
  */
-export function shouldShowFirstCleanupNudge(args: {
-  mailboxReady: boolean;
-  hasCompletedCleanup: boolean | undefined;
-  visibleSenderCount: number;
-}): boolean {
-  return args.mailboxReady && args.hasCompletedCleanup === false && args.visibleSenderCount > 0;
-}
+export { shouldShowFirstCleanupNudge } from './first-cleanup-nudge-policy';
 
 /**
  * Post-sync surface for a ready mailbox that has senders but no
