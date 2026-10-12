@@ -1,21 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { quietHoursQueryOptions } from './query-options';
-
-const originalVisibility = Object.getOwnPropertyDescriptor(document, 'visibilityState');
-const originalOnline = Object.getOwnPropertyDescriptor(navigator, 'onLine');
-
-function setVisibility(value: DocumentVisibilityState): void {
-  Object.defineProperty(document, 'visibilityState', { configurable: true, value });
-}
-
-function setOnline(value: boolean): void {
-  Object.defineProperty(navigator, 'onLine', { configurable: true, value });
-}
-
-afterEach(() => {
-  if (originalVisibility) Object.defineProperty(document, 'visibilityState', originalVisibility);
-  if (originalOnline) Object.defineProperty(navigator, 'onLine', originalOnline);
-});
 
 /**
  * "N Autopilot actions are held." and the "Quiet now" pill are a
@@ -24,30 +8,19 @@ afterEach(() => {
  * invalidates this key. Without a poll, an open tab keeps showing a
  * quiet window as active, and its held count as current, long after
  * the window actually ended (design-system review, PR #808).
+ *
+ * The interval stays a number. Returning false while the tab is hidden
+ * would clear TanStack's timer, and focus would not start it again.
  */
 describe('quietHoursQueryOptions — self-refreshing', () => {
   const reader = async () => {
     throw new Error('not called');
   };
 
-  function currentInterval(): number | false | undefined {
-    const interval = quietHoursQueryOptions('mb-1', reader).refetchInterval;
-    return typeof interval === 'function' ? interval({} as never) : interval;
-  }
-
   it('polls, so an open tab does not hold a stale "Quiet now" indefinitely', () => {
-    setVisibility('visible');
-    setOnline(true);
-    expect(quietHoursQueryOptions('mb-1', reader).refetchInterval).toBeTypeOf('function');
-    expect(currentInterval()).toBeGreaterThan(0);
-  });
-
-  it('does not poll a hidden or offline tab', () => {
-    setVisibility('hidden');
-    setOnline(true);
-    expect(currentInterval()).toBe(false);
-    setVisibility('visible');
-    setOnline(false);
-    expect(currentInterval()).toBe(false);
+    const options = quietHoursQueryOptions('mb-1', reader);
+    expect(options.refetchInterval).toBeTypeOf('number');
+    expect(options.refetchInterval).toBeGreaterThan(0);
+    expect(options.refetchIntervalInBackground).toBe(false);
   });
 });

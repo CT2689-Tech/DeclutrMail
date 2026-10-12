@@ -36,7 +36,6 @@ import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { useTier } from '@/features/auth/api/use-tier';
 import { currencyForProvider, formatMoney } from '@/features/marketing/pricing/pricing-model';
 import { ApiError, apiDelete } from '@/lib/api/client';
-import { backgroundPollPaused } from '@/lib/api/background-poll';
 import { useHydrated } from '@/lib/use-hydrated';
 import { track } from '@/lib/posthog';
 
@@ -121,11 +120,6 @@ const PAYMENT_PROCESSING_SLOW_AFTER_MS = 90_000;
  */
 const PAYMENT_UNCONFIRMED_AFTER_MS = 15 * 60_000;
 const PAYMENT_UNCONFIRMED_POLL_MS = 30_000;
-
-function billingPollInterval(intervalMs: number | false): number | false {
-  if (intervalMs === false || backgroundPollPaused()) return false;
-  return intervalMs;
-}
 
 /** How far along the webhook wait is — drives the notice + poll pace. */
 type ProcessingPhase = 'fresh' | 'slow' | 'unconfirmed';
@@ -212,25 +206,27 @@ export function BillingScreen({
   const subscriptionQuery = useBillingSubscription({
     // Three waits, and the pending-payment one outranks: it is measured
     // in seconds and its lock hides the other notices anyway.
+    // A number, including while the tab is hidden or the browser is
+    // offline. Returning false here clears TanStack's timer, and focus
+    // or online does not start it again. The default
+    // refetchIntervalInBackground skips the tick while hidden, and the
+    // default online network mode pauses the fetch while offline; the
+    // next tick after the tab is back runs the read.
     refetchInterval:
       pending === null
         ? pauseConfirming
-          ? () => billingPollInterval(PAYMENT_PROCESSING_POLL_MS)
+          ? () => PAYMENT_PROCESSING_POLL_MS
           : // The settling window polls itself back to life. Read off the
             // query's own data rather than the derived view, which does
             // not exist yet at this line — and the promise the notice
             // makes ("we'll switch this back on automatically") is only
-            // true because of this. Hidden and offline tabs do not poll.
-            (query) =>
-              billingPollInterval(
-                isRefundSettling(query.state.data) ? REFUND_SETTLING_POLL_MS : false,
-              )
+            // true because of this. A settled subscription returns false
+            // and the timer stops, which is the end of the wait.
+            (query) => (isRefundSettling(query.state.data) ? REFUND_SETTLING_POLL_MS : false)
         : () =>
-            billingPollInterval(
-              processingPhase === 'unconfirmed'
-                ? PAYMENT_UNCONFIRMED_POLL_MS
-                : PAYMENT_PROCESSING_POLL_MS,
-            ),
+            processingPhase === 'unconfirmed'
+              ? PAYMENT_UNCONFIRMED_POLL_MS
+              : PAYMENT_PROCESSING_POLL_MS,
   });
   const cancel = useCancelSubscription();
   const resumeCancellation = useResumeCancellation();

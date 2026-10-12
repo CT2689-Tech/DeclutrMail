@@ -12,13 +12,3 @@ export function retryTransientOnly(failureCount: number, error: unknown): boolea
   if (error instanceof ApiError && error.status >= 400 && error.status < 500) return false;
   return failureCount < 3;
 }
-
-/**
- * Retry only a fetch that threw before a response. A 503 is not one of
- * these: the billing subscription read must surface BILLING_DISABLED
- * immediately, or the invoice gate remounts itself in a loop.
- */
-export function retryDroppedFetch(failureCount: number, error: unknown): boolean {
-  if (!(error instanceof TypeError) || error.name === 'AbortError') return false;
-  return failureCount < 3;
-}

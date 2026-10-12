@@ -1,7 +1,6 @@
 import { queryOptions } from '@tanstack/react-query';
 import type { QuietHoursState } from '@declutrmail/shared/contracts';
 
-import { backgroundRefetchInterval } from '@/lib/api/background-poll';
 import { quietKeys } from './query-keys';
 
 type QuietHoursReader = (signal: AbortSignal) => Promise<QuietHoursState>;
@@ -14,7 +13,7 @@ export function quietHoursQueryOptions(mailboxId: string, reader: QuietHoursRead
     // trigger to refresh them (no refetchOnWindowFocus; only the save PUT
     // invalidates this key) — without a poll, an open tab keeps showing a
     // window as active, and its count as current, long after it ended.
-    refetchInterval: () => backgroundRefetchInterval(60_000),
+    refetchInterval: 60_000,
     refetchIntervalInBackground: false,
   });
 }

@@ -45,8 +45,8 @@ export function useScreenerQueue(options: { enabled?: boolean } = {}) {
  * Sidebar badge count (D74). Polls while mounted so a new sender
  * landing mid-session moves the badge (the pulse reacts to the
  * increase). A read 4xx (guard 409 / tier 402) is a designed state,
- * never something to hammer (§8). A dropped connection retries, and the
- * poll pauses while the tab is hidden or the browser is offline.
+ * never something to hammer (§8). The poll interval stays on while the
+ * tab is hidden; the next tick after the tab returns runs the read.
  */
 export function useScreenerCount(options: { enabled?: boolean } = {}) {
   return useQuery({
