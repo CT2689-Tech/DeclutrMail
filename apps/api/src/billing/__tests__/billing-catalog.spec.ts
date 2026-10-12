@@ -60,9 +60,9 @@ describe('buildCatalog', () => {
     );
   });
 
-  it('PRICING_V2 lists Plus only and still resolves every legacy price id', () => {
+  it('PRICING_V2 lists Plus annual only and still resolves every legacy price id', () => {
     const entries = buildCatalog({ PRICING_V2: 'true' } as NodeJS.ProcessEnv);
-    expect(entries.map((entry) => entry.planCode)).toEqual(['plus_monthly', 'plus_annual']);
+    expect(entries.map((entry) => entry.planCode)).toEqual(['plus_annual']);
     expect(entries.find((entry) => entry.planCode === 'plus_annual')).toMatchObject({
       usdCents: PLUS_ANNUAL_2026_10.usdCents,
       razorpayPlanId: null,
@@ -70,6 +70,8 @@ describe('buildCatalog', () => {
     });
     const catalog = new BillingCatalog(entries);
     expect(catalog.resolvePriceId('paddle', 'plus', 'annual')).toBeNull();
+    expect(catalog.resolvePriceId('paddle', 'plus', 'monthly')).toBeNull();
+    expect(catalog.resolvePriceId('razorpay', 'plus', 'monthly')).toBeNull();
     expect(catalog.resolvePriceId('paddle', 'pro', 'monthly')).toBeNull();
     for (const [id, legacy] of Object.entries(LEGACY_PRICE_IDS)) {
       const provider = id.startsWith('pri_') ? 'paddle' : 'razorpay';
@@ -79,7 +81,32 @@ describe('buildCatalog', () => {
         usdCents: legacy.usdCents,
       });
     }
+    expect(catalog.resolveByPriceId('paddle', 'pri_01ky15axxbeeyge87f9hehw37t')).toMatchObject({
+      planCode: 'plus_monthly',
+      cycle: 'monthly',
+      usdCents: 900,
+    });
+    expect(catalog.resolveByPriceId('paddle', 'pri_01ky15axzc9mz8sxw43c0wtn6h')).toMatchObject({
+      planCode: 'plus_annual',
+      cycle: 'annual',
+      usdCents: 9000,
+    });
     expect(catalog.resolveByPriceId('paddle', 'pri_unknown')).toBeNull();
+  });
+
+  it('PRICING_V2 does not let a monthly catalog overlay become a new checkout', () => {
+    const catalog = new BillingCatalog(
+      buildCatalog({
+        PRICING_V2: 'true',
+        BILLING_CATALOG_JSON: JSON.stringify({
+          paddle: { plus_monthly: 'pri_should_not_sell' },
+          razorpay: { plus_monthly: 'plan_should_not_sell' },
+        }),
+      } as NodeJS.ProcessEnv),
+    );
+    expect(catalog.resolvePriceId('paddle', 'plus', 'monthly')).toBeNull();
+    expect(catalog.resolvePriceId('razorpay', 'plus', 'monthly')).toBeNull();
+    expect(catalog.resolveByPriceId('paddle', 'pri_should_not_sell')).toBeNull();
   });
 
   it('resolves sandbox Plus annual and Pass ids without writing them into the live slots', () => {

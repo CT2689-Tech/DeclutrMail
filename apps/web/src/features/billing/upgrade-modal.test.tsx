@@ -181,6 +181,40 @@ describe('UpgradeModal', () => {
       screen.getAllByText(/14-day money-back on any purchase, once per customer/),
     ).toHaveLength(1);
     expect(screen.queryByText(/30-day money-back guarantee/)).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$59\/yr$/ })).toHaveAttribute(
+      'href',
+      '/billing?plan=plus&cycle=annual&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
+    );
+    expect(screen.queryByRole('link', { name: /\$9\/mo/ })).not.toBeInTheDocument();
+  });
+
+  it('PRICING_V2 points a Plus feature gate at annual', () => {
+    mockPricingV2 = true;
+    useUpgradeGateStore.getState().report({
+      reason: 'pro_feature',
+      details: { capability: 'quiet', tier: 'free', requiredTier: 'plus' },
+    });
+    render(<UpgradeModal />);
+
+    expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$59\/yr$/ })).toHaveAttribute(
+      'href',
+      '/billing?plan=plus&cycle=annual&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
+    );
+  });
+
+  it('PRICING_V2 points a Pro feature gate at annual', () => {
+    mockPricingV2 = true;
+    mockTier = 'plus';
+    useUpgradeGateStore.getState().report({
+      reason: 'pro_feature',
+      details: { capability: 'followups', tier: 'plus', requiredTier: 'pro' },
+    });
+    render(<UpgradeModal />);
+
+    expect(screen.getByRole('link', { name: /^Upgrade to Pro\s*\$19\/mo$/ })).toHaveAttribute(
+      'href',
+      '/billing?plan=pro&cycle=annual&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
+    );
   });
 
   it('emails-cleared 402 offers clear-what-fits then Plus', () => {

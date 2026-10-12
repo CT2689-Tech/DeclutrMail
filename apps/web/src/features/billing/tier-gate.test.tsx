@@ -4,7 +4,7 @@
  * CTA and the children NEVER mount (no under-tier data fetching).
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
 let mockTier = 'free';
@@ -35,6 +35,13 @@ vi.mock('@/features/auth/auth-provider', () => ({
 }));
 
 import { TierGate } from './tier-gate';
+
+const RETURN_TO = 'from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews';
+
+beforeEach(() => {
+  mockTier = 'free';
+  mockPricingV2 = false;
+});
 
 function renderGate(capability: 'brief' | 'triage' | 'screener' = 'brief') {
   // NOTE (D251): `screener` is now a PLUS capability, so it is the fixture
@@ -86,6 +93,26 @@ describe('TierGate', () => {
       screen.getAllByText(/14-day money-back on any purchase, once per customer/),
     ).toHaveLength(1);
     expect(screen.queryByText(/30-day money-back guarantee/)).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /^Upgrade to Pro\s*\$19\/mo$/ })).toHaveAttribute(
+      'href',
+      `/billing?plan=pro&cycle=annual&${RETURN_TO}`,
+    );
+  });
+
+  it('PRICING_V2 offers Plus annual and no monthly checkout link', () => {
+    mockTier = 'free';
+    mockPricingV2 = true;
+    renderGate('screener');
+    expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$59\/yr$/ })).toHaveAttribute(
+      'href',
+      `/billing?plan=plus&cycle=annual&${RETURN_TO}`,
+    );
+    expect(screen.queryByRole('link', { name: /\$9\/mo/ })).not.toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole('link')
+        .some((link) => link.getAttribute('href')?.includes('cycle=monthly')),
+    ).toBe(false);
   });
 
   it('plus tier: still gated for the Pro-only automation set (D77, narrowed by D251)', () => {

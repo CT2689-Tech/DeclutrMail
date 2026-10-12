@@ -117,38 +117,29 @@ function buildCurrentCatalog(env: NodeJS.ProcessEnv): CatalogEntry[] {
 }
 
 /**
- * Launch catalog. Plus annual is the 2026-10 price. Plus monthly and
- * the previous annual stay resolvable and unlisted. Pro is not sold.
+ * Launch catalog. New checkouts are Plus annual at the 2026-10 price.
+ * Plus monthly ($9) and the previous $90 annual stay resolvable through
+ * `LEGACY_PRICE_IDS` for subscribers who already have them. They are not
+ * new-checkout SKUs, and a catalog overlay cannot put monthly back.
+ * Pro is not sold.
  */
 function buildV2Catalog(env: NodeJS.ProcessEnv): CatalogEntry[] {
   const overrides = parseOverrides(env.BILLING_CATALOG_JSON);
-  const monthly = TIER_MANIFEST.plus.prices.monthly;
-  const entries: CatalogEntry[] = [];
-  if (monthly) {
-    entries.push({
-      planCode: 'plus_monthly',
+  return [
+    {
+      planCode: 'plus_annual',
       tierId: 'plus',
-      cycle: 'monthly',
+      cycle: 'annual',
       founding: false,
-      usdCents: monthly.usdCents,
-      paddlePriceId: overrides.paddle?.plus_monthly ?? monthly.paddlePriceId,
-      razorpayPlanId: overrides.razorpay?.plus_monthly ?? monthly.razorpayPlanId,
-    });
-  }
-  entries.push({
-    planCode: 'plus_annual',
-    tierId: 'plus',
-    cycle: 'annual',
-    founding: false,
-    usdCents: PLUS_ANNUAL_2026_10.usdCents,
-    paddlePriceId:
-      overrides.paddle?.plus_annual ??
-      (env.PADDLE_ENV === 'sandbox'
-        ? SANDBOX_PRICE_IDS.plus_annual
-        : PLUS_ANNUAL_2026_10.paddlePriceId),
-    razorpayPlanId: null,
-  });
-  return entries;
+      usdCents: PLUS_ANNUAL_2026_10.usdCents,
+      paddlePriceId:
+        overrides.paddle?.plus_annual ??
+        (env.PADDLE_ENV === 'sandbox'
+          ? SANDBOX_PRICE_IDS.plus_annual
+          : PLUS_ANNUAL_2026_10.paddlePriceId),
+      razorpayPlanId: null,
+    },
+  ];
 }
 
 /** Pass stays out of `buildCatalog()` so the flag-on subscription snapshot is unchanged. */

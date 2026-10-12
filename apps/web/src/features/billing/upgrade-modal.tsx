@@ -20,7 +20,12 @@ import {
 import { track } from '@/lib/posthog';
 
 import { billingIntentPath } from './billing-intent';
-import { formatBillingMonthDay, moneyBackNote, quotedPlanPrice } from './billing-model';
+import {
+  formatBillingMonthDay,
+  launchPlusQuote,
+  moneyBackNote,
+  quotedPlanPrice,
+} from './billing-model';
 import { useRegionProvider } from './billing-currency';
 
 const { color, font, radius, shadow, space, text } = tokens;
@@ -94,16 +99,20 @@ export function UpgradeModal() {
 
   // ONE checkout path (D117): the CTA deep-links the nudged plan into
   // /billing's confirm step via the same validated intent the pricing
-  // page uses — the copy above quotes monthly prices, so the intent
-  // carries `monthly` (the billing screen's toggle flips it in place).
+  // page uses. Launch pricing sells Plus annual. Flags off still quotes
+  // the monthly price the link buys.
   const targetPlan: 'plus' | 'pro' = hit.reason === 'free_cap' ? 'plus' : (requiredTier ?? 'pro');
+  const checkoutCycle = pricingV2 ? 'annual' : 'monthly';
   const upgradeHref = billingIntentPath({
     plan: targetPlan,
-    cycle: 'monthly',
+    cycle: checkoutCycle,
     ...(from ? { from } : {}),
   });
   const upgradeLabel = `Upgrade to ${TIER_MANIFEST[targetPlan].name}`;
-  const targetMonthly = quotedPlanPrice(targetPlan, 'monthly', regionProvider);
+  const targetQuote =
+    pricingV2 && targetPlan === 'plus'
+      ? launchPlusQuote(regionProvider)
+      : quotedPlanPrice(targetPlan, 'monthly', regionProvider);
 
   return (
     // The PreviewSheet grammar and classes — a centred dialog on desktop,
@@ -313,10 +322,10 @@ export function UpgradeModal() {
                 }}
               >
                 {upgradeLabel}
-                {targetMonthly ? (
+                {targetQuote ? (
                   <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.85 }}>
                     {' '}
-                    {targetMonthly}
+                    {targetQuote}
                   </span>
                 ) : null}
               </Link>

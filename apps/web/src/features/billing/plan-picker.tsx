@@ -306,7 +306,9 @@ export function PlanPicker({
 }) {
   const isPhone = useIsAtMost('xs');
   const [comparisonOpen, setComparisonOpen] = useState(false);
-  const [cycle, setCycle] = useState<BillingCycle>(initialIntent?.cycle ?? 'annual');
+  const [cycle, setCycle] = useState<BillingCycle>(
+    pricingV2 ? 'annual' : (initialIntent?.cycle ?? 'annual'),
+  );
   const [selected, setSelected] = useState<StripTierId | null>(null);
   const [passSelected, setPassSelected] = useState(initialIntent?.offer === 'pass_onetime');
   const [provider, setProvider] = useState<BillingProviderId>(initialProvider);
@@ -353,8 +355,13 @@ export function PlanPicker({
     // A deep link naming a DIFFERENT tier, OR the same tier at a DIFFERENT
     // cycle (a real monthly<->annual switch), still opens normally; both
     // are the intended change flow.
+    // A leftover `cycle=monthly` link cannot open a monthly checkout
+    // while launch pricing is on. The offered cycle is annual.
+    const intentCycleForOpen = pricingV2 ? 'annual' : intentCycle;
     const intentCycleDiffers =
-      intentCycle !== null && grantingSub !== null && intentCycle !== grantingSub.cycle;
+      intentCycleForOpen !== null &&
+      grantingSub !== null &&
+      intentCycleForOpen !== grantingSub.cycle;
     // Launch pricing does not sell Pro. A Brief deep link lands on the
     // waitlist card instead of a confirm panel the catalog cannot charge.
     if (

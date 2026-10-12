@@ -1889,6 +1889,16 @@ describe('BillingService PRICING_V2', () => {
     ).rejects.toMatchObject({ code: 'BILLING_NOT_PROVISIONED' });
   });
 
+  it('rejects a new Plus monthly checkout', async () => {
+    process.env.PRICING_V2 = 'true';
+    await expect(
+      service().createCheckout(
+        { userId: 'user-1', workspaceId: 'workspace-1' },
+        { tierId: 'plus', cycle: 'monthly', provider: 'paddle' },
+      ),
+    ).rejects.toMatchObject({ code: 'BILLING_NOT_PROVISIONED' });
+  });
+
   it('rejects a Pass checkout while the flag is off or the price id is still FILL_ME', async () => {
     process.env.PRICING_V2 = 'true';
     delete process.env.BILLING_PASS_ENABLED;

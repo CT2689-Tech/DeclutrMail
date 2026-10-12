@@ -133,6 +133,11 @@ export class BillingService {
         throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
       }
     }
+    // Launch pricing sells Plus annual and the Pass. Monthly is not a
+    // new checkout, including when a client still sends cycle=monthly.
+    if (isPricingV2() && !pass && dto.cycle === 'monthly') {
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    }
     // One subscription per workspace at a time — plan CHANGES are a
     // provider-side update flow (D120), not a second checkout.
     //

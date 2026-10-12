@@ -168,7 +168,12 @@ completed` and `checkoutFrames` empty. Paddle's `checkout.url` was
 
 - Current paying subscribers keep the Paddle or Razorpay price they
   already pay. This code does not call the provider to change a
-  subscription. Legacy price ids still resolve.
+  subscription. Legacy price ids still resolve, including Plus monthly
+  (`pri_01ky15axxbeeyge87f9hehw37t`, $9) and the previous Plus annual
+  (`pri_01ky15axzc9mz8sxw43c0wtn6h`, $90). A new checkout cannot buy
+  those prices. With `PRICING_V2` on, `resolvePriceId` for Plus monthly
+  is null and `createCheckout` returns `BILLING_NOT_PROVISIONED`. The
+  tier gate and the leftover upgrade-modal CTA deep-link `cycle=annual`.
 - Founding Pro subscriptions keep their legacy price and founding flag.
   The claim, first-250, and promo deep-link sales UI hide. The founding
   cancel note stays.

@@ -10,6 +10,9 @@ import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import {
   fillStory,
   passEndLabel,
+  PLUS_ANNUAL_2026_10,
+  plusAmount,
+  priceLine,
   refundLine,
   TIER_MANIFEST,
   TIER_RANK,
@@ -62,6 +65,15 @@ export function quotedPlanPrice(
   const point = TIER_MANIFEST[tier].prices[cycle === 'annual' ? 'annual' : 'monthly'];
   if (!point) return null;
   return priceLabel(tier, cycle, currencyForPricePoint(point, provider));
+}
+
+/**
+ * The only Plus price a new launch checkout sells. INR uses the launch
+ * price line; USD is the annual amount. This is not the legacy $9 or $90.
+ */
+export function launchPlusQuote(provider: BillingProviderId = 'paddle'): string {
+  if (provider === 'razorpay') return priceLine(PLUS_ANNUAL_2026_10, 'inr');
+  return `${plusAmount('usd')}/yr`;
 }
 
 /**

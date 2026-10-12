@@ -87,4 +87,14 @@ describe('PlanPicker launch pricing', () => {
     expect(screen.queryByText('Loading checkout preview…')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Join the Pro waitlist' })).toBeInTheDocument();
   });
+
+  it('ignores a monthly Plus deep link and quotes annual', async () => {
+    renderPicker({ pricingV2: true, passEnabled: false }, { plan: 'plus', cycle: 'monthly' });
+    expect(screen.queryByRole('button', { name: 'Monthly' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('plan-option-plus')).toHaveTextContent('$59/yr');
+    expect(screen.getByTestId('plan-option-plus')).not.toHaveTextContent('$9');
+    const panel = await screen.findByTestId('checkout-panel');
+    expect(panel).toHaveTextContent('billed yearly');
+    expect(panel).not.toHaveTextContent('$9');
+  });
 });
