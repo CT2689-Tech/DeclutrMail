@@ -7,11 +7,12 @@
  * and opens the provider's payment surface:
  *
  *   - Paddle (`kind: 'overlay'`): initialize Paddle.js with the
- *     publishable client token + environment from the session, then
- *     open the overlay with the price id. `customData` is passed
- *     through VERBATIM — the webhook resolves the workspace from it on
- *     first contact (the contract's hard requirement). The optional
- *     `events` callbacks surface the overlay's own lifecycle
+ *     publishable client token + environment from the session. While
+ *     rupee purchases are paused the overlay opens with the server
+ *     transaction id only — no price id, items, or discount — because
+ *     that transaction's currency is already USD. A price-id session
+ *     is not opened. The optional `events` callbacks surface the
+ *     overlay's own lifecycle
  *     (`checkout.completed` / `checkout.closed`) so the billing screen
  *     can render a truthful "payment processing" state.
  *   - Razorpay (`kind: 'hosted'`): the subscription was created
@@ -53,6 +54,7 @@ import type {
   PaddleCheckoutSession,
   RazorpayCheckoutSession,
 } from '@declutrmail/shared/contracts';
+import { INR_NEW_PURCHASES_PAUSED } from '@declutrmail/shared/contracts/billing-availability';
 import { usableDiscountId } from '@declutrmail/shared/entitlements';
 
 type PaddleModule = typeof PaddleJs;
@@ -211,6 +213,9 @@ async function openPaddleOverlay(
   events: CheckoutEvents,
   mayOpen: () => boolean,
 ): Promise<void> {
+  if (!session.transactionId && (INR_NEW_PURCHASES_PAUSED || !session.priceId)) {
+    throw new CheckoutLaunchError(false);
+  }
   if (!paddleInstance) {
     // A timed-out import/init may still finish. Retrying awaits the same
     // initialization; an abandoned launch never opens when it resolves late.
@@ -234,11 +239,18 @@ async function openPaddleOverlay(
   }
   if (!mayOpen()) throw new CheckoutLaunchError(false);
   activeEvents = events;
+  if (session.transactionId) {
+    // Currency and discount are already on the transaction. Items would
+    // let Paddle localize a price that carries an INR override.
+    paddleInstance.Checkout.open({ transactionId: session.transactionId });
+    return;
+  }
+  if (!session.priceId) throw new CheckoutLaunchError(false);
   const discountId = usableDiscountId(session.discountId);
   paddleInstance.Checkout.open({
     items: [{ priceId: session.priceId, quantity: 1 }],
     // Verbatim pass-through — webhook workspace attribution (D117).
-    customData: session.customData,
+    ...(session.customData ? { customData: session.customData } : {}),
     // A FILL_ME placeholder is dropped so checkout opens at full price.
     ...(discountId ? { discountId } : {}),
   });

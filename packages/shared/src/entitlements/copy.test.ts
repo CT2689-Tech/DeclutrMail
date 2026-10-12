@@ -3,7 +3,12 @@ import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  INR_CHECKOUT_PAUSED_MESSAGE,
+  INR_NEW_PURCHASES_PAUSED,
+} from '../contracts/billing-availability';
+import {
   buildOffersJsonLd,
+  fillStory,
   indiaFaqAnswer,
   isBillingPassEnabled,
   isPricingV2,
@@ -203,6 +208,24 @@ describe('pricing story builders', () => {
       }
     }
     expect(termsPastDue()).toContain(`${POLICY.dunningDays} days`);
+  });
+
+  it('uses the paused India answer only while new INR purchases are paused', () => {
+    const paused = indiaFaqAnswer(true, 'inr', true);
+    const open = indiaFaqAnswer(true, 'inr', false);
+    expect(paused).toBe(fillStory(WS1_COPY['pricing.faq.india.a.paused'], 'inr'));
+    expect(open).toBe(fillStory(WS1_COPY['pricing.faq.india.a'], 'inr'));
+    expect(paused).toContain('Buying in rupees is paused for now');
+    expect(paused).not.toContain('You can pay with UPI');
+    expect(open).not.toContain('You can pay with UPI');
+    expect(open).not.toContain('paused for now');
+    expect(indiaFaqAnswer(false, 'inr', true)).not.toContain('Backlog Pass');
+    expect(indiaFaqAnswer(false, 'inr', true)).toContain('Buying in rupees is paused for now');
+    expect(indiaFaqAnswer(false, 'inr', false)).not.toContain('Backlog Pass');
+    expect(indiaFaqAnswer(false, 'inr', false)).not.toContain('paused for now');
+    expect(indiaFaqAnswer(false, 'inr', false)).not.toContain('You can pay with UPI');
+    expect(indiaFaqAnswer(true)).toBe(indiaFaqAnswer(true, 'inr', INR_NEW_PURCHASES_PAUSED));
+    expect(INR_CHECKOUT_PAUSED_MESSAGE).toBe(WS1_COPY['pricing.inrPaused.checkout']);
   });
 
   it('reads BILLING_PASS_ENABLED only as the string true', () => {

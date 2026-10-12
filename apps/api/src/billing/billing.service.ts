@@ -72,8 +72,9 @@ import { RazorpayAdapter } from './razorpay.adapter.js';
 import { hasUnresolvedUpgrade } from './upgrade-intents.js';
 import { BillingUpgradeRefundService } from './billing-upgrade-refund.service.js';
 import {
-  INR_NEW_PURCHASES_PAUSED,
   INR_CHECKOUT_PAUSED_MESSAGE,
+  INR_NEW_PURCHASES_PAUSED,
+  inrNewPurchasePaused,
 } from '@declutrmail/shared/contracts';
 
 /** 0051 — pending-checkout display/lock horizon. */
@@ -209,8 +210,10 @@ export class BillingService {
       });
     }
 
-    // Refuse before region updates, claims, provider artifacts or notification side effects.
-    if (dto.provider === 'razorpay' && INR_NEW_PURCHASES_PAUSED)
+    // Razorpay is a rupee purchase on every country. Paddle's currency is
+    // not decided here: the adapter creates a USD transaction, and a
+    // price-id session is rejected below. The client country is ignored.
+    if (dto.provider === 'razorpay' && inrNewPurchasePaused(dto.provider, 'INR'))
       throw new AppException({
         // Existing clients already release a local reservation for this pre-claim refusal.
         code: 'BILLING_NOT_PROVISIONED',
@@ -322,6 +325,19 @@ export class BillingService {
         cycle: dto.cycle,
         providerPriceId: priceId,
       });
+      // A price id or the signed attribution blob is enough to open a
+      // checkout Paddle localizes from the buyer location, including to
+      // an INR override. While the pause is on, only a transaction id
+      // may leave this method.
+      if (
+        INR_NEW_PURCHASES_PAUSED &&
+        session.provider === 'paddle' &&
+        (session.priceId !== undefined ||
+          session.customData !== undefined ||
+          session.transactionId === undefined)
+      ) {
+        throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+      }
     } catch (err) {
       // The claim SURVIVES a provider-call failure — deliberately
       // (Codex stop-review 2026-07-29). A thrown error here is not
