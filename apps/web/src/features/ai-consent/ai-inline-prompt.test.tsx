@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { hydrateRoot } from 'react-dom/client';
 import { renderToStaticMarkup, renderToString } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -56,11 +56,12 @@ describe('AiInlinePrompt', () => {
     );
   });
 
-  it('does not paint the suggestion into server HTML', () => {
+  it('does not paint the suggestion into server HTML', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     client.setQueryData(ME_SETTINGS_QUERY_KEY, {
       aiConsent: { explanations: 'unset', brief: 'unset', reask: false },
     });
+    localStorage.clear();
     const html = renderToString(
       <QueryClientProvider client={client}>
         <AiInlinePrompt />
@@ -71,14 +72,22 @@ describe('AiInlinePrompt', () => {
     const container = document.createElement('div');
     container.innerHTML = html;
     document.body.appendChild(container);
-    hydrateRoot(
-      container,
-      <QueryClientProvider client={client}>
-        <AiInlinePrompt />
-      </QueryClientProvider>,
-      { onRecoverableError: (error) => errors.push(error) },
-    );
-    expect(errors).toEqual([]);
-    container.remove();
+    let root!: ReturnType<typeof hydrateRoot>;
+    try {
+      await act(async () => {
+        root = hydrateRoot(
+          container,
+          <QueryClientProvider client={client}>
+            <AiInlinePrompt />
+          </QueryClientProvider>,
+          { onRecoverableError: (error) => errors.push(error) },
+        );
+      });
+      expect(errors).toEqual([]);
+      expect(container.textContent).toContain(WS2_COPY.aiPrompt.text);
+    } finally {
+      await act(async () => root?.unmount());
+      container.remove();
+    }
   });
 });
