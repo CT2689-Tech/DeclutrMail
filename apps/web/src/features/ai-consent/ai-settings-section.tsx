@@ -21,7 +21,7 @@ function fillBrief(template: string): string {
   return template.replaceAll('{BRIEF_NAME}', BRIEF_NAME);
 }
 
-function SwitchHelp({ text, note }: { text: string; note?: string }): ReactNode {
+function SwitchHelp({ text, note }: { text: string; note?: string | undefined }): ReactNode {
   return (
     <>
       {note ? <span style={{ display: 'block' }}>{note}</span> : null}
