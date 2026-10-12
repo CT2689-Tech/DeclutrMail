@@ -41,7 +41,7 @@ import {
 import { SenderSearch } from './sender-search';
 import { isFeatureEnabled } from '@/lib/flags';
 import { normalizeProtectionReason, protectionReasonClause } from '@declutrmail/shared/copy';
-import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { fillCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { senderSizeCell } from './sender-size';
 import {
   ActiveFilterChips,
