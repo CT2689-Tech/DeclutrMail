@@ -95,13 +95,15 @@ write was made.
   `0094`. None are applied by this PR.
 - The Pass purchase proof is the `rehearse` job in
   `.github/workflows/billing-checkout-revocation-rehearsal.yml`,
-  dispatched with `rehearsal=pass`. Run 38186077360 used a new job id
-  and logged `REHEARSAL_OPERATOR_KEY` empty while `PADDLE_API_KEY`,
-  `BILLING_REHEARSAL`, and `PADDLE_ENV` were set. The main checkout
-  job (run 38120969543) logs the operator key as set. Pass steps now
-  stay in that `rehearse` job. A step prints `boundary NAME=ok`,
-  `absent`, or `mismatch` and does not print values. This environment
-  still has no Paddle key, so the proof is that workflow run.
+  dispatched with `rehearsal=pass`. Run 38190128825 logged
+  `boundary REHEARSAL_OPERATOR_KEY=absent`. `PADDLE_API_KEY`,
+  `DATABASE_URL`, `BILLING_REHEARSAL`, and `PADDLE_ENV` were ok. The
+  checkout step in that job was skipped by its `if`. The main checkout
+  step has no `if` and logs the operator key as set (run 38120969543).
+  An unconditional step now loads the same secret, and the pass steps
+  inherit it. The boundary check is unchanged. The shape step writes
+  the status report with no values. This environment still has no
+  Paddle key, so the proof is that workflow run.
 - The launch refund window is 14 days. `POLICY.refundWindowDays` is 14.
   Flags-on `/refunds` renders `RefundsV2`. Every window sentence is a
   deck template (`refunds.toc.window`, `refunds.summary`,
