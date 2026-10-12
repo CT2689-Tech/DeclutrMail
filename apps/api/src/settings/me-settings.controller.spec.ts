@@ -199,6 +199,7 @@ const VIEW = {
     windowDays: null,
     domain: null,
     unsubIgnored: false,
+    mostlyUnread: false,
   },
   sort: 'total' as const,
   direction: 'desc' as const,
