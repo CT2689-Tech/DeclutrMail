@@ -112,9 +112,23 @@ describe('useSyncStatus', () => {
     );
   });
 
-  it.each([new ApiError(503, {}, 'unavailable'), new TypeError('Failed to fetch')])(
-    'recovers a failed status poll without a focus event (%s)',
-    async (failure) => {
+  it.each([
+    {
+      label: 'ApiError: unavailable',
+      failure: new ApiError(503, {}, 'unavailable'),
+      // A 503 is a response, so the client does not replay it.
+      giveUpAfter: 2,
+    },
+    {
+      label: 'TypeError: Failed to fetch',
+      failure: new TypeError('Failed to fetch'),
+      // GET replays a thrown fetch twice inside one query attempt.
+      // The first read and the explicit refetch each exhaust that budget.
+      giveUpAfter: 6,
+    },
+  ])(
+    'recovers a failed status poll without a focus event ($label)',
+    async ({ failure, giveUpAfter }) => {
       let requests = 0;
       installFetchStub([
         {
@@ -122,7 +136,7 @@ describe('useSyncStatus', () => {
           path: '/api/v1/sync/status',
           respond: () => {
             requests += 1;
-            if (requests <= 2) throw failure;
+            if (requests <= giveUpAfter) throw failure;
             return jsonOk({ data: READY });
           },
         },
@@ -141,7 +155,7 @@ describe('useSyncStatus', () => {
         await act(async () => {
           await vi.advanceTimersByTimeAsync(11_000);
         });
-        expect(requests).toBe(3);
+        expect(requests).toBe(giveUpAfter + 1);
         expect(result.current.data).toEqual(READY);
       } finally {
         unmount();
