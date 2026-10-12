@@ -2,6 +2,8 @@
 
 import { useAuth } from '@/features/auth/auth-provider';
 import { useTier } from '@/features/auth/api/use-tier';
+import { QuotaChip } from '@/features/billing/quota-chip';
+import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import { isMailboxScopeConflict } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { NoActiveMailbox } from '@/features/mailboxes/no-active-mailbox';
 
@@ -34,6 +36,7 @@ import { HomeView } from './home-view';
 export function HomeScreen() {
   const { me } = useAuth();
   const { tier, cleanupRemaining, cleanupResetsAt } = useTier();
+  const cleanupSummary = useCleanupSummary();
   const hasActiveMailbox = me.activeMailboxId != null;
 
   const summary = useHomeSummary({ enabled: hasActiveMailbox });
@@ -58,9 +61,11 @@ export function HomeScreen() {
         mailboxId={me.activeMailboxId}
         visitSummary={<HomeArrivals />}
         quota={
-          cleanupRemaining !== null
-            ? `${cleanupRemaining.toLocaleString('en-US')} cleanup actions left${cleanupResetsAt ? ` · resets ${new Date(cleanupResetsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: me.user.timezone ?? 'UTC' })}` : ''}`
-            : undefined
+          cleanupSummary.data?.metered ? (
+            <QuotaChip summary={cleanupSummary.data} />
+          ) : cleanupRemaining !== null ? (
+            `${cleanupRemaining.toLocaleString('en-US')} cleanup actions left${cleanupResetsAt ? ` · resets ${new Date(cleanupResetsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: me.user.timezone ?? 'UTC' })}` : ''}`
+          ) : undefined
         }
       />
     </>

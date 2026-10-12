@@ -297,6 +297,44 @@ describe('currentPlanPriceLabel', () => {
     expect(currentPlanPriceLabel(view)).toBe('$19/mo');
   });
 
+  it('shows the 2026-10 Plus annual price a $59 subscriber pays', () => {
+    const sub = {
+      ...SUB,
+      tier: 'plus' as const,
+      cycle: 'annual' as const,
+      providerPriceId: 'pri_01m4phk06hdmmq5cw5b8aa5r2y',
+    };
+    const view = deriveBillingViewState(snapshot({ data: body('plus', sub) }));
+    if (view.kind !== 'plan') throw new Error('expected plan');
+    expect(currentPlanPriceLabel(view)).toBe('$59/yr');
+  });
+
+  it('shows catalog cents when the price id is not the legacy list price', () => {
+    const sub = {
+      ...SUB,
+      tier: 'plus' as const,
+      cycle: 'annual' as const,
+      providerPriceId: 'pri_overlay',
+      chargedUsdCents: 5900,
+    };
+    const view = deriveBillingViewState(snapshot({ data: body('plus', sub) }));
+    if (view.kind !== 'plan') throw new Error('expected plan');
+    expect(currentPlanPriceLabel(view)).toBe('$59/yr');
+  });
+
+  it('keeps a legacy Plus annual subscription at $90', () => {
+    const sub = {
+      ...SUB,
+      tier: 'plus' as const,
+      cycle: 'annual' as const,
+      providerPriceId: 'pri_01ky15axzc9mz8sxw43c0wtn6h',
+      chargedUsdCents: 9000,
+    };
+    const view = deriveBillingViewState(snapshot({ data: body('plus', sub) }));
+    if (view.kind !== 'plan') throw new Error('expected plan');
+    expect(currentPlanPriceLabel(view)).toBe('$90/yr');
+  });
+
   it('renders the founding promo price for a founding annual backing sub', () => {
     const sub = { ...SUB, cycle: 'annual' as const, foundingMember: true };
     const view = deriveBillingViewState(snapshot({ data: body('pro', sub, true) }));

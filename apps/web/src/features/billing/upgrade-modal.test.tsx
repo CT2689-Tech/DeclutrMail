@@ -235,6 +235,15 @@ describe('UpgradeModal', () => {
     expect(
       screen.getByRole('heading', { name: 'Not enough free emails left this month' }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'This clears 2,708 emails. You have 100 of 1,000 free emails left until Nov 9.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Only emails older than 30 days, within your free total'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('$59 a year · no monthly limit')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Get Plus' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Clear what fits free' }));
     expect(useUpgradeGateStore.getState().pendingWindowPreset).toBe(30);
@@ -256,6 +265,8 @@ describe('UpgradeModal', () => {
     });
     render(<UpgradeModal />);
 
+    expect(screen.getByText(/used all 1,000 free emails this month/)).toBeInTheDocument();
+    expect(screen.getByText('$59 a year · no monthly limit')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Clear what fits free' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Get Plus' })).toHaveAttribute(
       'href',

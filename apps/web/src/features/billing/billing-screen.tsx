@@ -78,6 +78,8 @@ import {
   type PendingKind,
 } from './pending-checkout';
 import { PlanCoverage } from './plan-coverage';
+import { QuotaChip } from './quota-chip';
+import { useCleanupSummary } from './use-cleanup-summary';
 import { PlanPicker } from './plan-picker';
 import { GroupTitle } from '@/features/settings/settings-list';
 
@@ -1485,6 +1487,7 @@ function CurrentPlanCard({
   resumeCancellationError: string | null;
 }) {
   const manifest = TIER_MANIFEST[plan.entitlementTier];
+  const cleanupSummary = useCleanupSummary();
   const { backing } = plan;
   // Two-step (matrix E3): the button arms an inline confirm that states
   // the renewal date and price before anything is sent. Same
@@ -1583,7 +1586,11 @@ function CurrentPlanCard({
         </p>
       ) : null}
 
-      {plan.entitlementTier === 'free' && cleanupRemaining !== null ? (
+      {plan.entitlementTier === 'free' && cleanupSummary.data?.metered ? (
+        <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
+          <QuotaChip summary={cleanupSummary.data} />
+        </p>
+      ) : plan.entitlementTier === 'free' && cleanupRemaining !== null ? (
         <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
           <strong style={{ fontWeight: 600, color: color.fg }}>
             {cleanupRemaining} of {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions left

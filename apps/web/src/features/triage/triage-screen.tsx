@@ -174,9 +174,13 @@ const NO_ROWS: readonly TriageDecisionRow[] = [];
  * group, outside the (app) shell, so a full document load is correct
  * (same pattern as the OAuth start navigation in AccountMenu).
  */
-function openPricing(plan: 'plus' | 'pro'): void {
+function openPricing(plan: 'plus' | 'pro', pricingV2: boolean): void {
   window.location.assign(
-    `/billing?${new URLSearchParams({ plan, cycle: 'monthly', from: '/triage' })}`,
+    `/billing?${new URLSearchParams({
+      plan,
+      cycle: pricingV2 ? 'annual' : 'monthly',
+      from: '/triage',
+    })}`,
   );
 }
 
@@ -246,6 +250,7 @@ export function TriageScreen({
 }) {
   const qc = useQueryClient();
   const auth = useOptionalAuth();
+  const pricingV2 = auth?.me.pricingV2 === true;
   const actionMailboxId = auth?.me.activeMailboxId ?? undefined;
   const currentMailboxRef = useRef(actionMailboxId);
   currentMailboxRef.current = actionMailboxId;
@@ -1736,7 +1741,9 @@ export function TriageScreen({
           <section aria-label="Nothing to decide">
             <TriageEmptyState
               stats={state.stats}
-              onOpenUpgrade={() => openPricing(state.stats.tier === 'plus' ? 'pro' : 'plus')}
+              onOpenUpgrade={() =>
+                openPricing(state.stats.tier === 'plus' ? 'pro' : 'plus', pricingV2)
+              }
               readiness={mailboxReadiness}
               syncNeedsReconnect={mailboxNeedsReconnect}
               footnote={journey === 'daily' ? <TodayHandledLine /> : undefined}

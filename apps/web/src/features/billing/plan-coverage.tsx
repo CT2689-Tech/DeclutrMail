@@ -4,8 +4,11 @@ import linkStyles from './billing-links.module.css';
 
 import Link from 'next/link';
 import { tokens } from '@declutrmail/shared';
-import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory, TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
+import { useOptionalAuth } from '@/features/auth/auth-provider';
 import { useTier } from '@/features/auth/api/use-tier';
+import { useCleanupSummary } from './use-cleanup-summary';
 import { CAPABILITY_LABELS } from '@/features/marketing/pricing/pricing-model';
 
 const { color } = tokens;
@@ -20,7 +23,9 @@ const tools = [
 
 export function PlanCoverage({ tier }: { tier: TierId }) {
   const { connectedInboxes } = useTier();
+  const cleanupSummary = useCleanupSummary();
   const plan = TIER_MANIFEST[tier];
+  const meteredFree = tier === 'free' && cleanupSummary.data?.metered === true;
   return (
     <section
       aria-label="Your plan includes"
@@ -40,11 +45,11 @@ export function PlanCoverage({ tier }: { tier: TierId }) {
         </p>
       ) : null}
       <div>
-        {plan.cleanupActionsPerMonth === null
-          ? 'Unlimited cleanup'
-          : `${plan.cleanupActionsPerMonth} cleanup actions per month`}
-        . One cleanup action counts one sender acted on, not one email. Keep and Unarchive do not
-        use this allowance.
+        {meteredFree
+          ? fillStory(WS1_COPY['meter.freeAllowanceLine'])
+          : plan.cleanupActionsPerMonth === null
+            ? 'Unlimited cleanup. One cleanup action counts one sender acted on, not one email. Keep and Unarchive do not use this allowance.'
+            : `${plan.cleanupActionsPerMonth} cleanup actions per month. One cleanup action counts one sender acted on, not one email. Keep and Unarchive do not use this allowance.`}
       </div>
       <nav
         aria-label="Included tools"
@@ -65,6 +70,7 @@ export function PlanCoverage({ tier }: { tier: TierId }) {
 export function PlanConsequences({ fromTier, toTier }: { fromTier: TierId; toTier: TierId }) {
   const from = TIER_MANIFEST[fromTier];
   const to = TIER_MANIFEST[toTier];
+  const meterV2 = useOptionalAuth()?.me.meterV2 === true;
   const lost = from.capabilities.filter((cap) => !to.capabilities.includes(cap));
   const gained = to.capabilities.filter((cap) => !from.capabilities.includes(cap));
   const labelsFor = (capabilities: typeof lost) =>
@@ -79,7 +85,9 @@ export function PlanConsequences({ fromTier, toTier }: { fromTier: TierId; toTie
         {to.name} includes {to.inboxLimit} connected {to.inboxLimit === 1 ? 'inbox' : 'inboxes'} and{' '}
         {to.cleanupActionsPerMonth === null
           ? 'unlimited cleanup'
-          : `${to.cleanupActionsPerMonth} cleanup actions per month`}
+          : meterV2
+            ? fillStory(WS1_COPY['meter.freeAllowanceLine'])
+            : `${to.cleanupActionsPerMonth} cleanup actions per month`}
         .
       </p>
       {to.inboxLimit < from.inboxLimit ? (

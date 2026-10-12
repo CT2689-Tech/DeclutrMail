@@ -160,6 +160,18 @@ export const BillingSubscriptionSchema = z.object({
        * tier-mismatched paid subscription grants the current account. */
       grantsAccess: z.boolean().optional(),
       cycle: BillingCycleSchema,
+      /**
+       * Provider price id (`pri_…` / `plan_…`). Optional during a rolling
+       * deploy. The plan card uses it to name the price this subscription
+       * actually bills, including the 2026-10 Plus annual price.
+       */
+      providerPriceId: z.string().min(1).optional(),
+      /**
+       * USD cents this subscription's price id resolves to in the catalog,
+       * including legacy and 2026-10 prices. Optional during a rolling
+       * deploy. Absent when the id is unknown.
+       */
+      chargedUsdCents: z.number().int().nonnegative().optional(),
       currentPeriodEnd: z.iso.datetime().nullable(),
       /** Exact access deadline from the server; optional during rolling deploys. */
       entitlementEndsAt: z.iso.datetime().nullable().optional(),

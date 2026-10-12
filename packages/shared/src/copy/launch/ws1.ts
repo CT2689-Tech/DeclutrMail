@@ -1,6 +1,6 @@
 /**
- * WS1 copy from the launch deck (drop2-r6, 2026-10-11).
- * Tokens stay in the string; formatters fill them from config.
+ * WS1 copy from the launch deck. Promo lines use the r19 wording
+ * ("Launch offer"). Tokens stay in the string; formatters fill them.
  */
 export const WS1_COPY = {
   'meter.noun.one': '1 email',
@@ -71,9 +71,9 @@ export const WS1_COPY = {
   'pricing.taxes': 'Paddle, our merchant of record, handles tax. Prices in INR include GST.',
   'pricing.refundLine': '{refundDays}-day money-back on any purchase, once per customer.',
   'pricing.promo.passOn':
-    'Launch week: code {promoCode} takes {promoPercent}% off the {passName} or your first year of {plusName}, until {promoEnd}.',
+    'Launch offer: code {promoCode} takes {promoPercent}% off the {passName} or your first year of {plusName}, until {promoEnd}.',
   'pricing.promo.passOff':
-    'Launch week: code {promoCode} takes {promoPercent}% off your first year of {plusName}, until {promoEnd}.',
+    'Launch offer: code {promoCode} takes {promoPercent}% off your first year of {plusName}, until {promoEnd}.',
   'pricing.faq.charged.q': 'Will I be charged again?',
   'pricing.faq.charged.a':
     '{freeName} never charges you. The {passName} is a single payment and never renews. {plusName} renews once a year until you cancel, and you can cancel any time in {BILLING_NAME}.',

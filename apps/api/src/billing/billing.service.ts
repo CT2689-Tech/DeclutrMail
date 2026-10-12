@@ -487,6 +487,7 @@ export class BillingService {
           .map((r) => hasUnresolvedUpgrade(this.db, r.providerSubscriptionId)),
       )
     ).some(Boolean);
+    const charged = sub ? this.catalog.resolveByPriceId(sub.provider, sub.providerPriceId) : null;
     return {
       checkoutSetupComplete: await this.checkoutSetupComplete(workspaceId),
       ...(billingReviewPending ? { billingReviewPending: true } : {}),
@@ -508,6 +509,8 @@ export class BillingService {
               status: sub.status,
               grantsAccess: sub.grantsAccess,
               cycle: sub.billingCycle,
+              providerPriceId: sub.providerPriceId,
+              ...(charged ? { chargedUsdCents: charged.usdCents } : {}),
               currentPeriodEnd: sub.currentPeriodEnd?.toISOString() ?? null,
               entitlementEndsAt: sub.entitlementEndsAt?.toISOString() ?? null,
               cancelAtPeriodEnd: sub.cancelAtPeriodEnd,

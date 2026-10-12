@@ -7,6 +7,7 @@ import { createTestQueryClient } from '@/test/query-wrapper';
 
 import { AUTO_ARCHIVE_LOW_ENGAGEMENT } from './fixtures';
 
+let mockPricingV2 = false;
 vi.mock('@/features/auth/auth-provider', () => ({
   useAuth: () => ({
     me: {
@@ -22,6 +23,7 @@ vi.mock('@/features/auth/auth-provider', () => ({
         },
       ],
       tier: 'free',
+      pricingV2: mockPricingV2,
       cleanupRemaining: 5,
     },
   }),
@@ -30,7 +32,10 @@ vi.mock('@/features/auth/auth-provider', () => ({
 import { AutopilotEntitlementSurface } from './autopilot-entitlement-surface';
 
 describe('AutopilotEntitlementSurface — safe pre-upgrade value', () => {
-  beforeEach(() => installFetchStub([]));
+  beforeEach(() => {
+    mockPricingV2 = false;
+    installFetchStub([]);
+  });
   afterEach(() => resetFetchStub());
 
   it('recovers a failed catalog read with an explicit retry', async () => {
@@ -135,5 +140,25 @@ describe('AutopilotEntitlementSurface — safe pre-upgrade value', () => {
     expect(
       screen.queryByRole('button', { name: /pause every autopilot rule/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it('quotes Plus annual under launch pricing', async () => {
+    mockPricingV2 = true;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/autopilot/rules',
+        respond: () => jsonOk({ data: [AUTO_ARCHIVE_LOW_ENGAGEMENT] }),
+      },
+    ]);
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <AutopilotEntitlementSurface />
+      </QueryClientProvider>,
+    );
+    expect(
+      await screen.findByRole('link', { name: /upgrade to plus · \$59\/yr/i }),
+    ).toHaveAttribute('href', '/billing?plan=plus&cycle=annual');
+    expect(screen.queryByRole('link', { name: /\$9\/mo/i })).not.toBeInTheDocument();
   });
 });

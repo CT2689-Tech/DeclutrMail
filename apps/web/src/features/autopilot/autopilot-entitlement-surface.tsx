@@ -12,7 +12,7 @@ import {
 import { useTier } from '@/features/auth/api/use-tier';
 import { useRegionProvider } from '@/features/billing/billing-currency';
 import { billingIntentPath } from '@/features/billing/billing-intent';
-import { moneyBackNote } from '@/features/billing/billing-model';
+import { launchPlusQuote, moneyBackNote } from '@/features/billing/billing-model';
 import { currencyForPricePoint, formatMoney } from '@/features/marketing/pricing/pricing-model';
 
 import { useAutopilotRules } from './api/use-autopilot-rules';
@@ -57,9 +57,14 @@ export function AutopilotObservePreview() {
   const monthly = TIER_MANIFEST[grantingTier].prices.monthly;
   // Was a hardcoded `$` template — an India-bound user read "$19/mo"
   // here and was charged ₹1,599 at the checkout this nudge leads to.
+  // Launch pricing sells Plus annual at $59. Flags off still quote monthly.
   const regionProvider = useRegionProvider();
-  const price =
-    monthly == null
+  const checkoutCycle = pricingV2 ? 'annual' : 'monthly';
+  const price = pricingV2
+    ? grantingPlan === 'plus'
+      ? launchPlusQuote(regionProvider)
+      : null
+    : monthly == null
       ? null
       : `${formatMoney(monthly, currencyForPricePoint(monthly, regionProvider))}/mo`;
 
@@ -210,7 +215,7 @@ export function AutopilotObservePreview() {
         </p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <Link
-            href={billingIntentPath({ plan: grantingPlan, cycle: 'monthly' })}
+            href={billingIntentPath({ plan: grantingPlan, cycle: checkoutCycle })}
             style={{
               display: 'inline-flex',
               alignItems: 'center',

@@ -10,6 +10,8 @@ import {
   fillStoryList,
   indiaFaqAnswer,
   moneyAmount,
+  passAmount,
+  plusAmount,
   pricePromiseLines,
   promoBanner,
   refundLine,
@@ -19,6 +21,7 @@ import { PricingTrustSlot } from '@/features/marketing/trust/pricing-trust-slot'
 import { track } from '@/lib/posthog';
 
 import { navigateToCheckout, navigateToFreeApp } from './cta';
+import { CheckGlyph } from './tier-card';
 
 const COLLAPSE_AFTER = 4;
 
@@ -54,7 +57,7 @@ export function PricingStory({
             id: 'pass' as const,
             name: fillStory(WS1_COPY['pricing.pass.name'], locale),
             tagline: fillStory(WS1_COPY['pricing.pass.tagline'], locale),
-            price: fillStory(WS1_COPY['price.passLine'], locale),
+            price: passAmount(locale),
             suffix: fillStory(WS1_COPY['pricing.pass.priceSuffix'], locale),
             renewal: fillStory(WS1_COPY['pricing.pass.renewal'], locale),
             features: fillStoryList(WS1_COPY['pricing.pass.features'], locale),
@@ -68,7 +71,7 @@ export function PricingStory({
       id: 'plus' as const,
       name: fillStory(WS1_COPY['pricing.plus.name'], locale),
       tagline: fillStory(WS1_COPY['pricing.plus.tagline'], locale),
-      price: fillStory(WS1_COPY['price.plusLine'], locale),
+      price: plusAmount(locale),
       suffix: fillStory(WS1_COPY['pricing.plus.priceSuffix'], locale),
       renewal: fillStory(WS1_COPY['pricing.plus.renewal'], locale),
       features: fillStoryList(WS1_COPY['pricing.plus.features'], locale),
@@ -155,12 +158,11 @@ export function PricingStory({
         <h2>{fillStory(WS1_COPY['pricing.faq.india.q'], locale)}</h2>
         <p>{indiaFaqAnswer(passEnabled, 'inr')}</p>
       </section>
-      <section>
+      <section data-testid="price-promise">
         <h2>{fillStory(WS1_COPY['pricing.promise.title'], locale)}</h2>
         {pricePromiseLines().map((line) => (
           <p key={line}>{line}</p>
         ))}
-        <p>{refundLine()}</p>
         <Link href="/pricing/changelog">
           {fillStory(WS1_COPY['pricing.promise.changelogLink'], locale)}
         </Link>
@@ -211,7 +213,10 @@ function StoryCard({
       <p className="dm-tier-note">{card.renewal}</p>
       <ul className="dm-tier-features" data-features={canCollapse && !open ? 'collapsed' : 'open'}>
         {card.features.map((feature) => (
-          <li key={feature}>{feature}</li>
+          <li key={feature}>
+            <CheckGlyph />
+            <span>{feature}</span>
+          </li>
         ))}
       </ul>
       {canCollapse ? (

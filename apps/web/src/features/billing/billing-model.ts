@@ -14,6 +14,7 @@ import {
   plusAmount,
   priceLine,
   refundLine,
+  SANDBOX_PRICE_IDS,
   TIER_MANIFEST,
   TIER_RANK,
   type TierId,
@@ -92,11 +93,19 @@ export function launchPlusQuote(provider: BillingProviderId = 'paddle'): string 
  * tier states a charge that never happens, and contradicts the founding
  * banner sitting on the same screen.
  */
+function isLaunchPlusAnnualPrice(providerPriceId: string): boolean {
+  if (providerPriceId === SANDBOX_PRICE_IDS.plus_annual) return true;
+  const live = PLUS_ANNUAL_2026_10.paddlePriceId;
+  return live !== 'FILL_ME' && providerPriceId === live;
+}
+
 export function chargedPlanPrice(
   tier: TierId,
   cycle: BillingCycle,
   provider: BillingProviderId,
   founding = false,
+  providerPriceId?: string,
+  chargedUsdCents?: number,
 ): string | null {
   const currency = currencyForProvider(provider);
   const promo = TIER_MANIFEST[tier].promo;
@@ -104,6 +113,15 @@ export function chargedPlanPrice(
   // other cycle is billed the standard line.
   if (founding && promo && cycle === 'annual') {
     return `${formatMoney(promo.annual, currency)}/yr`;
+  }
+  // Catalog resolution wins over the current list price. A Plus annual
+  // subscriber on the 2026-10 price pays $59, not the legacy $90 the
+  // manifest still lists for that tier and cycle.
+  if (currency === 'USD' && typeof chargedUsdCents === 'number') {
+    return `${formatUsd(chargedUsdCents)}${cycle === 'annual' ? '/yr' : '/mo'}`;
+  }
+  if (providerPriceId && isLaunchPlusAnnualPrice(providerPriceId)) {
+    return currency === 'INR' ? priceLine(PLUS_ANNUAL_2026_10, 'inr') : `${plusAmount('usd')}/yr`;
   }
   return priceLabel(tier, cycle, currency);
 }
@@ -452,7 +470,16 @@ export function deriveBillingViewState(read: BillingReadSnapshot): BillingViewSt
 export function currentPlanPriceLabel(view: BillingPlanView): string {
   if (view.backing.state !== 'none') {
     const { sub } = view.backing;
-    return chargedPlanPrice(sub.tier, sub.cycle, sub.provider, sub.foundingMember) ?? '';
+    return (
+      chargedPlanPrice(
+        sub.tier,
+        sub.cycle,
+        sub.provider,
+        sub.foundingMember,
+        sub.providerPriceId,
+        sub.chargedUsdCents,
+      ) ?? ''
+    );
   }
   if (view.entitlementTier === 'free') return formatUsd(0);
   // A comp is the reason there is no price, so say so instead of the

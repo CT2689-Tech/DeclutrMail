@@ -31,7 +31,7 @@ export function HomeView({
 }: {
   state: HomeState;
   visitSummary?: ReactNode;
-  quota?: string | undefined;
+  quota?: ReactNode | undefined;
   mailboxId?: string | null;
   tier?: TierId;
   workflows?: HomeWorkflows | undefined;

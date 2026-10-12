@@ -30,8 +30,8 @@ let mockCleanupRemaining: number | null = 3;
 // from a calendar-month one so the fixture actually exercises the fix
 // rather than coincidentally matching the old "this month" copy.
 const mockCleanupResetsAt: string | null = '2026-09-17T00:00:00.000Z';
-vi.mock('@/features/auth/auth-provider', () => ({
-  useAuth: () => ({
+vi.mock('@/features/auth/auth-provider', () => {
+  const auth = () => ({
     me: {
       user: { id: 'u', email: 'me@example.com', workspaceId: mockWorkspaceId },
       activeMailboxId: 'mb-1',
@@ -48,8 +48,9 @@ vi.mock('@/features/auth/auth-provider', () => ({
       cleanupRemaining: mockCleanupRemaining,
       cleanupResetsAt: mockCleanupResetsAt,
     },
-  }),
-}));
+  });
+  return { useAuth: auth, useOptionalAuth: auth };
+});
 
 // Provider launch is a side-effect seam (Paddle overlay / Razorpay
 // navigation) — stub it; the checkout CONTRACT is asserted on the wire

@@ -7,7 +7,7 @@ import { useUpgradeReturnTo } from '@/features/billing/use-upgrade-return-to';
 import { Button, tokens } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
-import { fillStory, planName, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { fillStory, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { useTier } from '@/features/auth/api/use-tier';
 import {
@@ -184,8 +184,9 @@ export function UpgradeModal() {
             textWrap: 'pretty',
           }}
         >
-          {hit.reason === 'free_cap' &&
-          typeof hit.details.requested === 'number' ? null : hit.reason === 'free_cap' ? (
+          {hit.reason === 'free_cap' && typeof hit.details.requested === 'number' ? (
+            capBody(hit.details)
+          ) : hit.reason === 'free_cap' ? (
             <>
               {TIER_MANIFEST.plus.name} removes the monthly cap
               {hit.details.resetsAt
@@ -251,19 +252,31 @@ export function UpgradeModal() {
                   {fillStory(WS1_COPY['cap.pass.button'])}
                 </Link>
               ) : null}
+              {pricingV2 && passEnabled ? (
+                <span style={{ fontSize: text.sm, color: color.fgMuted }}>
+                  {fillStory(WS1_COPY['cap.pass.sublabel'])}
+                </span>
+              ) : null}
               {typeof hit.details.suggestedPreset === 'number' ? (
-                <Button
-                  tone="default"
-                  size="lg"
-                  onClick={() => {
-                    if (typeof hit.details.suggestedPreset === 'number') {
-                      applyWindowPreset(hit.details.suggestedPreset);
-                    }
-                  }}
-                  style={{ width: '100%' }}
-                >
-                  {WS1_COPY['cap.fit.button']}
-                </Button>
+                <>
+                  <Button
+                    tone="default"
+                    size="lg"
+                    onClick={() => {
+                      if (typeof hit.details.suggestedPreset === 'number') {
+                        applyWindowPreset(hit.details.suggestedPreset);
+                      }
+                    }}
+                    style={{ width: '100%' }}
+                  >
+                    {WS1_COPY['cap.fit.button']}
+                  </Button>
+                  <span style={{ fontSize: text.sm, color: color.fgMuted }}>
+                    {fillStory(WS1_COPY['cap.fit.sublabel.noCount'], 'usd', {
+                      presetDays: hit.details.suggestedPreset,
+                    })}
+                  </span>
+                </>
               ) : null}
               <Link
                 href={billingIntentPath({
@@ -291,8 +304,11 @@ export function UpgradeModal() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                {WS1_COPY['cap.plus.button'].replace('{plusName}', planName('plus'))}
+                {fillStory(WS1_COPY['cap.plus.button'])}
               </Link>
+              <span style={{ fontSize: text.sm, color: color.fgMuted }}>
+                {fillStory(WS1_COPY['cap.plus.sublabel'])}
+              </span>
               <Button tone="ghost" size="lg" onClick={dismiss} style={{ width: '100%' }}>
                 {WS1_COPY['cap.dismiss']}
               </Button>
@@ -356,6 +372,22 @@ export function UpgradeModal() {
       </div>
     </div>
   );
+}
+
+function capBody(d: FreeCapDetails): string {
+  const resetDate = d.resetsAt
+    ? (formatBillingMonthDay(d.resetsAt) ?? 'your next monthly reset')
+    : 'your next monthly reset';
+  const allowance = d.limit.toLocaleString('en-US');
+  if (d.remaining <= 0) {
+    return fillStory(WS1_COPY['cap.body.zero'], 'usd', { allowance, resetDate });
+  }
+  return fillStory(WS1_COPY['cap.body'], 'usd', {
+    requested: (d.requested ?? d.requiredUnits).toLocaleString('en-US'),
+    remaining: d.remaining.toLocaleString('en-US'),
+    allowance,
+    resetDate,
+  });
 }
 
 function freeCapTitle(d: FreeCapDetails): string {

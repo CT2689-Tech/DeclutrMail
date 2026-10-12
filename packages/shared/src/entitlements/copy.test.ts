@@ -89,6 +89,8 @@ describe('promoBanner', () => {
     const on = promoBanner(start, true);
     expect(on).toContain(promoEndLabel());
     expect(on).toContain('PH30');
+    expect(on).toMatch(/^Launch offer:/);
+    expect(on).not.toContain('Launch week');
     expect(on).not.toMatch(/\$\d/);
     expect(promoBanner(start, false)).not.toContain('Backlog Pass');
   });
