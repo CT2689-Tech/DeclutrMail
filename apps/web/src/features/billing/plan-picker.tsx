@@ -507,7 +507,6 @@ export function PlanPicker({
         provider: effectiveProvider,
         ...(founding ? { promo: 'foundingPro' as const } : {}),
         ...(passSelected ? { offer: 'pass_onetime' as const } : {}),
-        ...(country && /^[A-Za-z]{2}$/.test(country) ? { country: country.toUpperCase() } : {}),
       },
       {
         onSuccess: (session) => {

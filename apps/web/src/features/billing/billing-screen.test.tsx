@@ -2290,7 +2290,6 @@ describe('BillingScreen — paid subscriber', () => {
         tierId: 'plus',
         cycle: 'annual',
         provider: 'paddle',
-        country: 'US',
       }),
     );
   });

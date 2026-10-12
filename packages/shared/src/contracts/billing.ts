@@ -46,9 +46,8 @@ export type PurchasableTier = z.infer<typeof PurchasableTierSchema>;
  * `users.billing_region` rather than re-deriving it from IP at
  * checkout time.
  *
- * `country` is the edge country the billing page already resolved.
- * It does not choose the provider. While new rupee purchases are
- * paused, an India visitor quoted INR on Paddle is refused.
+ * `country` is accepted and ignored. It does not choose the provider
+ * or the checkout currency.
  *
  * `promo: 'foundingPro'` requires `tierId: 'pro'` + `cycle: 'annual'`
  * (the promo is an annual-only Pro price point, D126) — enforced by
@@ -63,7 +62,7 @@ export const CheckoutRequestSchema = z
     promo: z.literal('foundingPro').optional(),
     /** Backlog Pass. Requires Plus annual on Paddle. Not a subscription tier. */
     offer: z.literal('pass_onetime').optional(),
-    /** ISO 3166-1 alpha-2 edge country. Omitted when the page has none. */
+    /** Ignored. Present so an older client that still sends it does not fail validation. */
     country: z
       .string()
       .regex(/^[A-Za-z]{2}$/)
@@ -91,19 +90,27 @@ export const CheckoutRequestSchema = z
 export type CheckoutRequest = z.infer<typeof CheckoutRequestSchema>;
 
 /**
- * Paddle checkout session — the FE opens the Paddle.js OVERLAY with
- * these values (Paddle Billing has no server-created hosted session
- * for overlay checkouts; the price id + client-side token ARE the
- * session). `clientToken` is Paddle's publishable client-side token
- * (safe to expose to an authed user by design, like a Stripe
- * publishable key). `customData` MUST be passed through to
- * `Paddle.Checkout.open({ customData })` verbatim — the webhook
- * resolves the workspace from it on first contact.
+ * Paddle checkout session. While new rupee purchases are paused the
+ * session is a server-created transaction whose `currency_code` is
+ * USD, and `priceId` is omitted so the overlay cannot localize that
+ * price. `transactionId` is the only value `Checkout.open` may receive.
+ * `priceId` remains for a checkout opened after the pause lifts.
+ * `clientToken` is Paddle's publishable client-side token (safe to
+ * expose to an authed user by design, like a Stripe publishable key).
+ * On a price overlay, `customData` is passed through to
+ * `Paddle.Checkout.open({ customData })` verbatim. On a transaction,
+ * the same blob is stored on the transaction before the overlay opens.
  */
 export const PaddleCheckoutSessionSchema = z.object({
   provider: z.literal('paddle'),
   kind: z.literal('overlay'),
-  priceId: z.string().min(1),
+  /** Omitted while the session is a currency-locked transaction. */
+  priceId: z.string().min(1).optional(),
+  /** Server-created transaction. Opening it does not send `items`. */
+  transactionId: z
+    .string()
+    .regex(/^txn_[a-z\d]{26}$/)
+    .optional(),
   clientToken: z.string().min(1),
   environment: z.enum(['sandbox', 'production']),
   // snake_case ON PURPOSE: this object is stored verbatim by Paddle and

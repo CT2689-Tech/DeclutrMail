@@ -2,9 +2,8 @@
  * Tests for `launchCheckout` (D117) — the provider seam.
  *
  * Pins the contract-critical behaviors:
- *   - Paddle: initialize with the session's token + environment, open
- *     the overlay with the price id, and pass `customData` through
- *     VERBATIM (webhook workspace attribution depends on it).
+ *   - Paddle: initialize with the session's token + environment and open
+ *     the overlay with the server transaction id only.
  *   - Paddle events: `checkout.completed` / `checkout.closed` reach the
  *     caller's callbacks — and ONLY those events (the truthful
  *     post-checkout state must never fire on e.g. `checkout.loaded`).
@@ -22,7 +21,7 @@ import { __setPaddleLoaderForTests, __setRazorpayLoaderForTests, launchCheckout 
 const PADDLE_SESSION: PaddleCheckoutSession = {
   provider: 'paddle',
   kind: 'overlay',
-  priceId: 'pri_123',
+  transactionId: 'txn_01ky067arw41802a6ssessknxh',
   clientToken: 'ctk_live_x',
   environment: 'sandbox',
   customData: { workspace_id: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff', sig: 'test-sig' },
@@ -75,26 +74,37 @@ describe('launchCheckout', () => {
       }),
     );
     expect(open).toHaveBeenCalledWith({
-      items: [{ priceId: 'pri_123', quantity: 1 }],
-      customData: { workspace_id: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff', sig: 'test-sig' },
+      transactionId: 'txn_01ky067arw41802a6ssessknxh',
     });
   });
 
-  it('drops a FILL_ME discount and forwards a real discount id', async () => {
+  it('opens a transaction without items, custom data, or a discount', async () => {
     const { open } = stubPaddle();
-    await launchCheckout({ ...PADDLE_SESSION, discountId: 'FILL_ME' });
-    expect(open).toHaveBeenCalledWith({
-      items: [{ priceId: 'pri_123', quantity: 1 }],
-      customData: PADDLE_SESSION.customData,
-    });
-
-    open.mockClear();
-    await launchCheckout({ ...PADDLE_SESSION, discountId: 'dsc_01m4phpp04scdes9ghqn3qps77' });
-    expect(open).toHaveBeenCalledWith({
-      items: [{ priceId: 'pri_123', quantity: 1 }],
-      customData: PADDLE_SESSION.customData,
+    await launchCheckout({
+      ...PADDLE_SESSION,
       discountId: 'dsc_01m4phpp04scdes9ghqn3qps77',
+      priceId: 'pri_123',
     });
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledWith({
+      transactionId: 'txn_01ky067arw41802a6ssessknxh',
+    });
+  });
+
+  it('does not open a price-only overlay while rupee purchases are paused', async () => {
+    const { open, initializePaddle } = stubPaddle();
+    await expect(
+      launchCheckout({
+        provider: 'paddle',
+        kind: 'overlay',
+        priceId: 'pri_123',
+        clientToken: PADDLE_SESSION.clientToken,
+        environment: 'sandbox',
+        customData: PADDLE_SESSION.customData,
+      }),
+    ).rejects.toMatchObject({ canRetry: false });
+    expect(initializePaddle).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
   });
 
   it('paddle: routes checkout.completed / checkout.closed to the caller, nothing else', async () => {
