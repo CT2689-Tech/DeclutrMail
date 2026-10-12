@@ -324,10 +324,22 @@
     "text": "Clean up Gmail, one sender at a time \u2014 DeclutrMail"
   },
   {
+    "file": "apps/web/src/app/(marketing)/pricing/changelog/page.tsx",
+    "line": 8,
+    "id": "metadata_word",
+    "text": "@/features/marketing/page-metadata"
+  },
+  {
     "file": "apps/web/src/app/(marketing)/pricing/page.tsx",
     "line": 15,
     "id": "metadata_word",
     "text": "@/features/marketing/page-metadata"
+  },
+  {
+    "file": "apps/web/src/app/(marketing)/pricing/page.tsx",
+    "line": 15,
+    "id": "metadata_word",
+    "text": "@/features/marketing/pricing/pricing-metadata"
   },
   {
     "file": "apps/web/src/app/(marketing)/privacy/page.tsx",
@@ -2020,6 +2032,48 @@
     "id": "allowance_word",
     "line": 9,
     "text": "{remaining} of {allowance} free emails left \u00b7 resets {resetDate}"
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws1.ts",
+    "id": "allowance_word",
+    "line": 27,
+    "text": "{allowance} emails cleared a month (Archive or Delete)"
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws1.ts",
+    "id": "allowance_word",
+    "line": 87,
+    "text": "You\u2019re back on {freeName}. Email you already cleared stays where you put it, and you can clear {allowance} more emails a month for free. Nothing renews, and you can buy another {passName} any time."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws1.ts",
+    "id": "allowance_word",
+    "line": 103,
+    "text": "Launch pricing: {freeName} with {allowance} emails cleared a month, {passName} {passPrice} once, {plusName} {plusPrice} a year with up to {plusInboxes} {CONNECTION_TERM_PLURAL}."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws1.ts",
+    "id": "allowance_word",
+    "line": 132,
+    "text": "This clears {requested} emails. You have {remaining} of {allowance} free emails left until {resetDate}."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws1.ts",
+    "id": "allowance_word",
+    "line": 134,
+    "text": "You\u2019ve used all {allowance} free emails this month. You get {allowance} more on {resetDate}."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws1.ts",
+    "id": "action_word",
+    "line": 164,
+    "text": "gate.action.senderFilter"
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws1.ts",
+    "id": "allowance_word",
+    "line": 193,
+    "text": "{freeName} \u00b7 {remaining} of {allowance} free emails left \u00b7 resets {resetDate}"
   },
   {
     "file": "packages/shared/src/contracts/gmail-data-inventory.ts",

@@ -166,8 +166,8 @@
       "budgetKb": 166
     },
     "/(marketing)/inbox-simulator/page": {
-      "measuredKb": 223.1,
-      "budgetKb": 235
+      "measuredKb": 237.1,
+      "budgetKb": 249
     },
     "/(marketing)/methodology/page": {
       "measuredKb": 157.1,
@@ -176,6 +176,10 @@
     "/(marketing)/page": {
       "measuredKb": 173.3,
       "budgetKb": 182
+    },
+    "/(marketing)/pricing/changelog/page": {
+      "measuredKb": 162.8,
+      "budgetKb": 171
     },
     "/(marketing)/pricing/page": {
       "measuredKb": 190.3,
@@ -194,8 +198,8 @@
       "budgetKb": 166
     },
     "/(marketing)/sign-in/page": {
-      "measuredKb": 164.3,
-      "budgetKb": 173
+      "measuredKb": 175.5,
+      "budgetKb": 185
     },
     "/(marketing)/terms/page": {
       "measuredKb": 157.4,
