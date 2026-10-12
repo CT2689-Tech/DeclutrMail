@@ -34,11 +34,11 @@ it('hydrates the billing price and a September date when Intl disagrees', async 
   vi.spyOn(Intl, 'NumberFormat').mockImplementation(((...args: unknown[]) => {
     const format = new NumberFormat(...(args as ConstructorParameters<typeof NumberFormat>));
     return Object.assign(format, { format: () => '$\u00a059' });
-  }) as typeof Intl.NumberFormat);
+  }) as unknown as typeof Intl.NumberFormat);
   vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(((...args: unknown[]) => {
     const format = new DateTimeFormat(...(args as ConstructorParameters<typeof DateTimeFormat>));
     return Object.assign(format, { format: () => 'Sept 15' });
-  }) as typeof Intl.DateTimeFormat);
+  }) as unknown as typeof Intl.DateTimeFormat);
 
   const errors: unknown[] = [];
   const container = document.createElement('div');
