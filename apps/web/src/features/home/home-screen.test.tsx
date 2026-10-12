@@ -243,7 +243,14 @@ describe('HomeScreen', () => {
       'href',
       '/senders',
     );
-    expect(screen.getByRole('link', { name: /Open report/ })).toHaveAttribute('href', '/senders');
+    const report = screen.getByRole('link', { name: /Open report/ });
+    expect(report).toHaveAttribute('href', '/senders');
+    const title = screen.getByRole('heading', { level: 1 });
+    const column = title.closest('[data-home-priority]');
+    const card = document.querySelector('[data-home-report-card]');
+    expect(column).not.toBeNull();
+    expect(card?.parentElement).toBe(column);
+    expect(title.compareDocumentPosition(card!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('new user whose mailbox is still syncing', async () => {

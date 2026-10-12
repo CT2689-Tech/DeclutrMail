@@ -25,7 +25,7 @@ const full: InboxReportDto = {
   ],
   fix: { senderKeys: ['s1', 's2'], sendersCount: 2, inboxEmailCount: 10 },
   fallbackSenderCount: 2,
-  receivedCount: 40,
+  receivedCount: 1139,
   totalBytes: 1000,
   variant: 'full',
 };
@@ -61,7 +61,7 @@ describe('InboxReportPanel', () => {
     ).toBeInTheDocument();
     expect(screen.getAllByText(/91%/).length).toBe(1);
     expect(screen.getByText('Last 90 days')).toBeInTheDocument();
-    expect(screen.getByText('Based on 40 emails in a@example.com')).toBeInTheDocument();
+    expect(screen.getByText('Based on 1,139 emails in a@example.com')).toBeInTheDocument();
     expect(screen.getByText('Sizes are Gmail’s estimates.')).toBeInTheDocument();
     expect(document.querySelectorAll('[data-report-glyphs] svg')).toHaveLength(10);
     expect(screen.queryByRole('button', { name: 'Make a share card' })).toBeNull();
@@ -173,6 +173,38 @@ describe('InboxReportPanel', () => {
     expect(screen.queryByRole('button', { name: 'Unsubscribe + archive 2 senders' })).toBeNull();
     expect(screen.getByText(/your storage doesn’t change/)).toBeInTheDocument();
     expect(screen.getByText(/Unsubscribe stays free and unlimited/)).toBeInTheDocument();
+  });
+
+  it('groups a large archive result', () => {
+    render(
+      <InboxReportPanel
+        report={full}
+        onDismiss={() => {}}
+        onReopen={() => {}}
+        celebration={{ archived: 1139, senders: 12 }}
+      />,
+    );
+    expect(screen.getByText('Archived 1,139 emails from 12 senders.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Unsubscribe \+ archive/ })).toBeNull();
+  });
+
+  it('marks the primary action and keeps the review link inside the report card', () => {
+    render(
+      <InboxReportPanel
+        report={full}
+        mailboxEmail="a@example.com"
+        onDismiss={() => {}}
+        onReopen={() => {}}
+      />,
+    );
+    const report = document.querySelector('.dm-report');
+    const fix = screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' });
+    const review = screen.getByRole('link', { name: 'Review them first' });
+    expect(report).not.toBeNull();
+    expect(fix).toHaveAttribute('data-report-fix');
+    expect(report).toContainElement(fix);
+    expect(report).toContainElement(review);
+    expect(review).toHaveAttribute('href', '/senders?fix=s1,s2');
   });
 
   it('collapses to the reopen strip', () => {

@@ -35,6 +35,28 @@ afterEach(() => {
 });
 
 describe('InboxReportFirstLanding', () => {
+  it('keeps the done state after a reload and does not offer the action again', async () => {
+    localStorage.setItem(
+      'dm-inbox-report-celebration:mb-1',
+      JSON.stringify({ archived: 4, senders: 1 }),
+    );
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mb-1/inbox-report',
+        respond: () => jsonOk({ data: report }),
+      },
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
+      </QueryWrapper>,
+    );
+    expect(await screen.findByText('Archived 4 emails from 1 sender.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Unsubscribe/ })).toBeNull();
+    localStorage.removeItem('dm-inbox-report-celebration:mb-1');
+  });
+
   it('stays hidden when the report request fails', async () => {
     const onResolved = vi.fn();
     installFetchStub([]);

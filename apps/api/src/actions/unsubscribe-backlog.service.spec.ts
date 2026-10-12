@@ -388,7 +388,7 @@ describe('UnsubscribeBacklogService', () => {
     });
   });
 
-  it('keeps mailto and a missing link off the not-found skip', async () => {
+  it('keeps mailto, a missing link, and an unknown method off the not-found skip', async () => {
     const [other] = await db
       .insert(senders)
       .values({
@@ -402,6 +402,19 @@ describe('UnsubscribeBacklogService', () => {
         unsubscribeMethod: 'mailto',
       })
       .returning({ id: senders.id });
+    const [unknown] = await db
+      .insert(senders)
+      .values({
+        mailboxAccountId: mailboxId,
+        senderKey: 'f'.repeat(64),
+        email: 'unknown@shop.example',
+        domain: 'shop.example',
+        gmailCategory: 'promotions',
+        firstSeenAt: new Date('2026-01-01'),
+        lastSeenAt: new Date('2026-05-01'),
+        unsubscribeMethod: 'none',
+      })
+      .returning({ id: senders.id });
     await seedInbox(db, mailboxId, 1);
     vi.spyOn(actions, 'enqueueBulkComposite').mockResolvedValue({
       batchId: '22222222-2222-4222-8222-222222222222',
@@ -412,13 +425,14 @@ describe('UnsubscribeBacklogService', () => {
       skipped: [
         { senderId, reason: 'mailto' },
         { senderId: other!.id, reason: 'no_channel' },
+        { senderId: unknown!.id, reason: 'unknown' },
       ],
     });
     const result = await svc.confirm({
       mailboxAccountId: mailboxId,
       idempotencyKey: 'skip-codes-1',
       mode: 'archive',
-      senderIds: [senderId, other!.id],
+      senderIds: [senderId, other!.id, unknown!.id],
     });
     expect(result.senders.find((row) => row.senderId === senderId)).toMatchObject({
       unsubStatus: 'skipped',
@@ -428,6 +442,11 @@ describe('UnsubscribeBacklogService', () => {
       unsubStatus: 'skipped',
       reasonCode: 'no_link',
     });
+    expect(result.senders.find((row) => row.senderId === unknown!.id)).toMatchObject({
+      unsubStatus: 'skipped',
+      reasonCode: 'method_unknown',
+    });
+    expect(result.senders.map((row) => row.reasonCode)).not.toContain('not_found');
   });
 
   it('undo reverses the backlog only', async () => {

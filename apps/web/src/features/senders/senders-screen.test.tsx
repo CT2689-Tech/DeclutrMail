@@ -152,7 +152,15 @@ function backlogSender(
     method?: 'one_click' | 'mailto' | 'none';
     mailtoUrl?: string | null;
     executionActionId?: string | null;
-    reasonCode?: 'no_link' | 'sender_error' | 'generic' | null;
+    reasonCode?:
+      | 'no_link'
+      | 'sender_error'
+      | 'generic'
+      | 'protected'
+      | 'not_found'
+      | 'mailto_only'
+      | 'method_unknown'
+      | null;
   } = {},
 ) {
   return {
@@ -4427,6 +4435,98 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     );
     expect(toast.textContent?.toLowerCase()).not.toMatch(/failed|not sent|unsubscribed/);
     expect(screen.queryByText(/Not sent: 1 Protected sender/)).toBeNull();
+  });
+
+  it('includes a Protected sender in the request so the mixed toast can name it', async () => {
+    const bodies: Array<{ senderIds?: string[] }> = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW, PROTECTED_B],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 2, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+      compositePreviewHandler(12),
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-backlog',
+        respond: async (req) => {
+          bodies.push((await req.json()) as { senderIds?: string[] });
+          return jsonOk({
+            data: {
+              mode: 'archive',
+              backlog: { actionId: 'batch-mixed', requestedCount: 12, verb: 'archive' },
+              senders: [
+                backlogSender('a', 'requested'),
+                backlogSender('b', 'skipped', { reasonCode: 'protected' }),
+              ],
+            },
+          });
+        },
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/batch-mixed',
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: 'batch-mixed',
+              verb: 'archive',
+              direction: 'forward',
+              status: 'done',
+              requestedCount: 12,
+              affectedCount: 12,
+              wakeAt: null,
+              undoToken: null,
+              undoExpiresAt: null,
+              undoExecutedAt: null,
+              undoRevertedAt: null,
+              errorCode: null,
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/batch/batch-mixed',
+        respond: () =>
+          jsonOk({
+            data: {
+              batchId: 'batch-mixed',
+              status: 'done',
+              total: 1,
+              done: 1,
+              failed: 0,
+              requestedCount: 12,
+              affectedCount: 12,
+              undoToken: null,
+            },
+          }),
+      },
+    ]);
+    renderScreenWithToasts();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /select protected co/i }));
+    fireEvent.keyDown(document.body, { key: 'u' });
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(
+      await within(dialog).findByRole('radio', { name: /Unsubscribe and archive \d+/ }),
+    );
+    const confirm = await within(dialog).findByRole('button', { name: 'Unsubscribe + Archive' });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]?.senderIds).toEqual(['a', 'b']);
+    expect(
+      await screen.findByText(
+        'Unsubscribe requested from 1 sender · Archived 12 emails · 1 Protected sender left as it is',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('never grows a Protected "Not sent" receipt after the backlog request is overdue', async () => {

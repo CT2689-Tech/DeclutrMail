@@ -315,11 +315,11 @@ export function InboxReportPanel({
                     <p>
                       {celebration.senders === 1
                         ? fillCopy(WS5_COPY['report.celebrate.archive.one'], {
-                            X: celebration.archived,
+                            X: celebration.archived.toLocaleString('en-US'),
                           })
                         : fillCopy(WS5_COPY['report.celebrate.archive'], {
-                            X: celebration.archived,
-                            n: celebration.senders,
+                            X: celebration.archived.toLocaleString('en-US'),
+                            n: celebration.senders.toLocaleString('en-US'),
                           })}
                     </p>
                     <p>{WS5_COPY['report.celebrate.undo']}</p>

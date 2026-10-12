@@ -144,6 +144,15 @@ describe('unsubscribeBacklogToast', () => {
       ),
     ).toBe(bulkParts(2, 1, 'delete'));
     expect(WS5_COPY['f1.toast.bulk']).not.toBe(bulkParts(2, 30));
+    expect(
+      unsubscribeBacklogToast(
+        result({
+          mode: 'archive',
+          backlog: { actionId: 'b', requestedCount: 1139, verb: 'archive' },
+          senders,
+        }),
+      ),
+    ).toBe('Unsubscribe requested from 2 senders · Archived 1,139 emails');
   });
 
   it('counts only requested senders and still shows the Send line for mailto', () => {
