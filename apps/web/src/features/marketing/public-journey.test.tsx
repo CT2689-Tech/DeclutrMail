@@ -116,9 +116,9 @@ describe('every shared public content variant has a usable next step', () => {
   );
   it.each(COMPARISONS)('/vs/$slug preserves sources and offers a relevant demo', (comparison) => {
     render(<ComparisonDetailScreen comparison={comparison} />);
-    expect(screen.getByRole('link', { name: demoForTopic(comparison.slug).label })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Try the demo' })).toHaveAttribute(
       'href',
-      demoForTopic(comparison.slug).href,
+      '/inbox-simulator?workspace=senders',
     );
     for (const source of comparison.sources)
       expect(screen.getByRole('link', { name: source.label })).toHaveAttribute('href', source.url);
@@ -127,9 +127,9 @@ describe('every shared public content variant has a usable next step', () => {
     const page = alternativesFor(slug)!;
     render(<AlternativesScreen page={page} />);
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(page.subject.name);
-    expect(screen.getByRole('link', { name: demoForTopic(slug).label })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Try the demo' })).toHaveAttribute(
       'href',
-      demoForTopic(slug).href,
+      '/inbox-simulator?workspace=senders',
     );
   });
 });
@@ -149,8 +149,8 @@ describe('truthful Watch first activation guidance', () => {
     expect(guide).not.toMatch(/Every preset begins in|After seven days, you review/);
   });
 
-  it('uses the same visible mode name in Help, FAQ, articles and the stable glossary anchor', () => {
-    const help = text(renderToStaticMarkup(<HelpPage />));
+  it('uses the same visible mode name in Help, FAQ, articles and the stable glossary anchor', async () => {
+    const help = text(renderToStaticMarkup(await HelpPage()));
     expect(help).toContain('Watch first and Active');
     const content = JSON.stringify([FAQ_ENTRIES, HOW_TO_ARTICLES, ANSWER_ARTICLES, BLOG_ARTICLES]);
     expect(content).not.toMatch(/Observe (?:mode|only|before)|in Observe|begins in Observe/);

@@ -43,6 +43,35 @@ export function scheduledAtMinute(now: Date = new Date()): string {
   return iso.slice(0, 16);
 }
 
+/**
+ * BullMQ id for the snapshot queued when Brief consent is allowed.
+ * One job per mailbox per local date, so a second Allow the same day
+ * does not start a second generation. Hyphens only: BullMQ rejects `:`.
+ */
+export function briefConsentJobId(mailboxAccountId: string, runDateLocal: string): string {
+  if (mailboxAccountId.includes(':') || runDateLocal.includes(':')) {
+    throw new Error('briefConsentJobId: mailboxAccountId/runDateLocal must not contain ":"');
+  }
+  return `BriefSnapshotWorker-consent-${mailboxAccountId}-${runDateLocal}`;
+}
+
+/** Same retry budget as the hourly tick. The id is the idempotency key. */
+export function briefConsentJobOptions(
+  mailboxAccountId: string,
+  runDateLocal: string,
+): JobsOptions {
+  const policy = WORKER_POLICIES.cronPolicy;
+  return {
+    jobId: briefConsentJobId(mailboxAccountId, runDateLocal),
+    attempts: policy.maxAttempts,
+    ...(policy.backoff
+      ? { backoff: { type: policy.backoff.type, delay: policy.backoff.delayMs } }
+      : {}),
+    removeOnComplete: { age: 24 * 60 * 60 },
+    removeOnFail: false,
+  };
+}
+
 export function briefSnapshotJobOptions(scheduledAtMinuteValue: string): JobsOptions {
   const policy = WORKER_POLICIES.cronPolicy;
   return {

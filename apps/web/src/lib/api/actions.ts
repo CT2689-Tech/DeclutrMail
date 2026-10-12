@@ -29,7 +29,7 @@ import {
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { ActionStatusSnapshot } from '@declutrmail/shared/actions';
 
-import { apiGet, apiPost } from './client';
+import { ApiError, apiGet, apiPost } from './client';
 
 /** Lifecycle of an `action_jobs` row — mirrors the BE `ActionJobStatus`. */
 export type { ActionJobStatus };
@@ -505,6 +505,194 @@ export async function recordUnsubscribeIntent(
     },
   );
   return env.data;
+}
+
+export type UnsubscribeBacklogMode = 'unsub_only' | 'archive' | 'delete';
+
+export interface UnsubscribeBacklogSenderResult {
+  senderId: string;
+  method: 'one_click' | 'mailto' | 'none' | null;
+  mailtoUrl: string | null;
+  executionActionId: string | null;
+  lifecycleStatus: UnsubscribeLifecycleStatus | null;
+  unsubStatus: 'requested' | 'manual' | 'failed' | 'skipped';
+  reasonCode:
+    | 'no_link'
+    | 'sender_error'
+    | 'generic'
+    | 'send_disabled'
+    | 'in_flight'
+    | 'not_found'
+    | 'protected'
+    | 'mailto_only'
+    | 'method_unknown'
+    | null;
+}
+
+export interface UnsubscribeBacklogResult {
+  mode: UnsubscribeBacklogMode;
+  backlog: {
+    actionId: string;
+    /** Absent on an API that predates the field. `batch` is a batch id. */
+    handle?: 'action' | 'batch';
+    requestedCount: number;
+    verb: 'archive' | 'delete';
+    /** Sum of Gmail size estimates when it matches `requestedCount`. */
+    movedBytes?: number;
+  } | null;
+  senders: UnsubscribeBacklogSenderResult[];
+}
+
+/**
+ * One confirmation: backlog Archive/Delete first, then unsubscribe.
+ * A 402 means nothing was sent.
+ */
+export async function confirmUnsubscribeBacklog(
+  input: {
+    mode: UnsubscribeBacklogMode;
+    senderIds: string[];
+    olderThanDays?: number | null;
+    reach?: ActionReach;
+    override?: boolean;
+  },
+  options: ActionRequestOptions & { idempotencyKey?: string } = {},
+): Promise<UnsubscribeBacklogResult> {
+  const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey();
+  try {
+    const env = await apiPost<UnsubscribeBacklogResult>(
+      '/api/actions/unsubscribe-backlog',
+      {
+        mode: input.mode,
+        senderIds: input.senderIds,
+        ...(input.olderThanDays !== undefined ? { olderThanDays: input.olderThanDays } : {}),
+        ...(input.reach ? { reach: input.reach } : {}),
+        ...(input.override === true ? { override: true } : {}),
+      },
+      {
+        headers: { 'Idempotency-Key': idempotencyKey },
+        ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
+      },
+    );
+    return env.data;
+  } catch (err) {
+    // Vercel can ship the web before Cloud Run finishes migrations, so
+    // this route 404s for that window. The older endpoints still exist.
+    if (err instanceof ApiError && err.status === 404) {
+      return confirmUnsubscribeBacklogFallback(input, options, idempotencyKey);
+    }
+    throw err;
+  }
+}
+
+async function confirmUnsubscribeBacklogFallback(
+  input: {
+    mode: UnsubscribeBacklogMode;
+    senderIds: string[];
+    olderThanDays?: number | null;
+    reach?: ActionReach;
+    override?: boolean;
+  },
+  options: ActionRequestOptions,
+  idempotencyKey: string,
+): Promise<UnsubscribeBacklogResult> {
+  const verb = input.mode === 'delete' ? 'delete' : 'archive';
+  let backlog: UnsubscribeBacklogResult['backlog'] = null;
+  if (input.mode !== 'unsub_only') {
+    const primary = {
+      type: verb,
+      olderThanDays: input.olderThanDays ?? null,
+      ...(input.mode === 'delete' && input.reach ? { reach: input.reach } : {}),
+    } as const;
+    if (input.senderIds.length === 1) {
+      const enqueued = await enqueueCompositeAction({
+        senderId: input.senderIds[0]!,
+        primary,
+        idempotencyKey,
+        ...(input.override === true ? { override: true } : {}),
+        ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
+      });
+      backlog = {
+        actionId: enqueued.actionId,
+        handle: 'action',
+        requestedCount: enqueued.primaryCount,
+        verb,
+      };
+    } else {
+      const enqueued = await enqueueBulkAction({
+        senderIds: input.senderIds,
+        primary,
+        idempotencyKey,
+        ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
+      });
+      backlog = {
+        actionId: enqueued.batchId,
+        handle: 'batch',
+        requestedCount: enqueued.requestedTotal,
+        verb,
+      };
+    }
+  }
+  const senders: UnsubscribeBacklogSenderResult[] = [];
+  for (const senderId of input.senderIds) {
+    try {
+      const intent = await recordUnsubscribeIntent(senderId, {
+        idempotencyKey: `${idempotencyKey}-${senderId}`,
+        includesBacklogAction: input.mode !== 'unsub_only',
+        ...(input.override === true ? { override: true } : {}),
+        ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
+      });
+      senders.push(backlogSenderFromIntent(senderId, intent));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 402) throw err;
+      senders.push({
+        senderId,
+        method: null,
+        mailtoUrl: null,
+        executionActionId: null,
+        lifecycleStatus: null,
+        unsubStatus: 'failed',
+        reasonCode: 'generic',
+      });
+    }
+  }
+  return { mode: input.mode, backlog, senders };
+}
+
+function backlogSenderFromIntent(
+  senderId: string,
+  intent: UnsubscribeIntentResult,
+): UnsubscribeBacklogSenderResult {
+  if (intent.method === 'none') {
+    return {
+      senderId,
+      method: 'none',
+      mailtoUrl: null,
+      executionActionId: null,
+      lifecycleStatus: intent.lifecycleStatus,
+      unsubStatus: 'failed',
+      reasonCode: 'no_link',
+    };
+  }
+  if (intent.method === 'mailto') {
+    return {
+      senderId,
+      method: 'mailto',
+      mailtoUrl: intent.mailtoUrl,
+      executionActionId: null,
+      lifecycleStatus: intent.lifecycleStatus,
+      unsubStatus: 'manual',
+      reasonCode: null,
+    };
+  }
+  return {
+    senderId,
+    method: 'one_click',
+    mailtoUrl: null,
+    executionActionId: intent.executionActionId,
+    lifecycleStatus: intent.lifecycleStatus,
+    unsubStatus: 'requested',
+    reasonCode: null,
+  };
 }
 
 /** Persist an explicit step in the user-sent mailto unsubscribe flow. */

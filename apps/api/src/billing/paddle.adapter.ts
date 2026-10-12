@@ -25,6 +25,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import { Logger } from '@nestjs/common';
 import type { CheckoutSession, SubscriptionStatus } from '@declutrmail/shared/contracts';
+import { checkoutDiscountId } from '@declutrmail/shared/entitlements';
 
 import { AppException } from '../common/app-exception.js';
 import type {
@@ -327,6 +328,45 @@ function endsSubscription(adjustment: PaddleAdjustment): boolean {
   return !(adjustment.items ?? []).some((i) => i?.type === 'partial');
 }
 
+/** Price ids only. A null or contradictory price `custom_data` does not change the match. */
+function transactionPriceIds(data: PaddleTransaction | undefined): string[] {
+  const fromItems = (data?.items ?? [])
+    .map((item) => item.price?.id)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0);
+  if (fromItems.length > 0) return fromItems;
+  return (data?.details?.line_items ?? [])
+    .map((item) => item.price_id)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0);
+}
+
+/** A one-off refund/chargeback that ends the purchase. Pending refunds stay ignored. */
+function oneTimePassRevoke(
+  data: PaddleAdjustment | undefined,
+  eventId: string,
+  eventType: string,
+): NormalizedBillingEvent | null {
+  if (!data?.transaction_id || data.subscription_id || !endsSubscription(data)) return null;
+  if (data.action === 'chargeback') {
+    return {
+      kind: 'pass_revoked',
+      providerEventId: eventId,
+      eventType,
+      providerTransactionId: data.transaction_id,
+      reason: 'chargeback',
+    };
+  }
+  if (data.action === 'refund' && data.status === 'approved') {
+    return {
+      kind: 'pass_revoked',
+      providerEventId: eventId,
+      eventType,
+      providerTransactionId: data.transaction_id,
+      reason: 'refund',
+    };
+  }
+  return null;
+}
+
 /** Paddle webhook envelope (API v2 notifications). */
 interface PaddleWebhookBody {
   event_id?: string;
@@ -368,6 +408,7 @@ function toNormalizedSubscription(
   sub: PaddleSubscription,
   webhookSecret: string | undefined,
 ): NormalizedSubscription | null {
+  // Plan identity is the price id. Price `custom_data` is not a plan code.
   const priceId = sub.items?.[0]?.price?.id;
   if (!sub.id || !priceId) {
     throw new Error('Paddle subscription payload missing id or items[0].price.id');
@@ -423,6 +464,7 @@ export class PaddleAdapter implements BillingProvider {
     if (!clientToken || !webhookSecret) {
       throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
     }
+    const discountId = checkoutDiscountId(this.env, input.providerPriceId);
     return {
       provider: 'paddle',
       kind: 'overlay',
@@ -434,6 +476,8 @@ export class PaddleAdapter implements BillingProvider {
         workspace_id: input.workspaceId,
         sig: attributionSignature(input.workspaceId, webhookSecret),
       },
+      // FILL_ME is null here, so the overlay opens with no discount.
+      ...(discountId ? { discountId } : {}),
     };
   }
 
@@ -1763,14 +1807,21 @@ export class PaddleAdapter implements BillingProvider {
       }
       case 'transaction.completed': {
         const data = body.data as PaddleTransaction | undefined;
+        const subscriptionId = data?.subscription_id ?? null;
         return {
           kind: 'payment',
           providerEventId: eventId,
           eventType,
           outcome: 'succeeded',
-          providerSubscriptionId: data?.subscription_id ?? null,
+          providerSubscriptionId: subscriptionId,
           providerCustomerId: data?.customer_id ?? null,
           workspaceId: verifiedWorkspaceId(data?.custom_data, this.env.PADDLE_WEBHOOK_SECRET),
+          ...(subscriptionId
+            ? {}
+            : {
+                providerTransactionId: data?.id ?? null,
+                oneTimePriceIds: transactionPriceIds(data),
+              }),
         };
       }
       case 'transaction.payment_failed': {
@@ -1787,8 +1838,9 @@ export class PaddleAdapter implements BillingProvider {
       }
       case 'adjustment.created': {
         // A refund request starts the pending grace; a chargeback ends
-        // entitlement immediately. Adjustments without a subscription
-        // link (one-off transactions — we sell none) are ignored.
+        // entitlement immediately. A one-off adjustment with no
+        // subscription link is a Backlog Pass revoke when it ends the
+        // purchase; pending and partial ones stay ignored.
         const data = body.data as PaddleAdjustment | undefined;
         const action = data?.action;
         // The dispute was WON: Paddle clawed the money back from the bank
@@ -1805,6 +1857,10 @@ export class PaddleAdapter implements BillingProvider {
             providerSubscriptionId: data.subscription_id,
             reason: 'chargeback_reverse',
           };
+        }
+        if ((action === 'refund' || action === 'chargeback') && !data?.subscription_id) {
+          const passRevoke = oneTimePassRevoke(data, eventId, eventType);
+          if (passRevoke) return passRevoke;
         }
         if ((action === 'refund' || action === 'chargeback') && data?.subscription_id) {
           if (!endsSubscription(data)) {
@@ -1829,6 +1885,11 @@ export class PaddleAdapter implements BillingProvider {
         // adjustments inert; the reconciliation sweep remains the backup
         // when this event is delayed or the destination omits it.
         const data = body.data as PaddleAdjustment | undefined;
+        if (data?.action === 'refund' && !data.subscription_id) {
+          const passRevoke = oneTimePassRevoke(data, eventId, eventType);
+          if (passRevoke) return passRevoke;
+          return { kind: 'ignored', providerEventId: eventId, eventType };
+        }
         if (data?.action !== 'refund' || !data.subscription_id || !endsSubscription(data)) {
           return { kind: 'ignored', providerEventId: eventId, eventType };
         }

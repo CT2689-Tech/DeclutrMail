@@ -831,16 +831,15 @@ through the MutationCache handler (`source: 'upgrade_modal'`, U13), the
 workspace (`source: 'tier_gate'`, with `reason: 'feature_tier'` or
 `'pro_feature'`, D68/D77),
 the AccountMenu inbox-limit row replacing "Connect another"
-(`source: 'account_menu'`), or the Triage empty-state free-cap nudge.
-One emit per appearance, not per render. (`source: 'actions_402'` was
-the pre-U13 inline prompt, retired in favor of the modal.)
+(`source: 'account_menu'`).
+One emit per appearance, not per render.
 
 **Payload.**
 
-| Field    | Type                                                                                        | Notes                    |
-| -------- | ------------------------------------------------------------------------------------------- | ------------------------ |
-| `reason` | `'free_cap' \| 'inbox_limit' \| 'action_tier' \| 'feature_tier' \| 'pro_feature'`           | Which gate triggered it  |
-| `source` | `'actions_402' \| 'account_menu' \| 'triage_empty_state' \| 'upgrade_modal' \| 'tier_gate'` | Surface that rendered it |
+| Field    | Type                                                                              | Notes                    |
+| -------- | --------------------------------------------------------------------------------- | ------------------------ |
+| `reason` | `'free_cap' \| 'inbox_limit' \| 'action_tier' \| 'feature_tier' \| 'pro_feature'` | Which gate triggered it  |
+| `source` | `'account_menu' \| 'upgrade_modal' \| 'tier_gate'`                                | Surface that rendered it |
 
 **Retention / aggregation.** PostHog default. Drives the
 prompt-shown → pricing-visit → checkout free-to-paid funnel alongside
@@ -923,6 +922,40 @@ existed. The server claim is held.
 **Payload.** Same fields as `checkout_started`.
 
 **Retention / aggregation.** 2y raw. CSP / CDN / extension failures.
+
+---
+
+### `upgrade_cta_clicked`
+
+**When fired.** A launch upgrade CTA is clicked: pricing card, plan picker, upgrade modal, tier gate, or the quota chip.
+
+**Payload.** `source` (surface slug), `plan` (`plus` | `pass` | `pro`).
+
+**Retention / aggregation.** PostHog default. Consent-gated in the browser. No mailbox content.
+
+### `checkout_closed`
+
+**When fired.** The checkout confirm step is dismissed before a provider session opens.
+
+**Payload.** `plan` (`plus` | `pass` | `pro`).
+
+**Retention / aggregation.** PostHog default.
+
+### `free_cap_hit`
+
+**When fired.** The upgrade modal shows an emails-cleared 402.
+
+**Payload.** `requested` and `remaining` counts. No message content.
+
+**Retention / aggregation.** PostHog default.
+
+### `pass_selected` / `plus_selected`
+
+**When fired.** The plan picker or pricing page selects Backlog Pass or Plus.
+
+**Payload.** `source` (surface slug).
+
+**Retention / aggregation.** PostHog default.
 
 ---
 

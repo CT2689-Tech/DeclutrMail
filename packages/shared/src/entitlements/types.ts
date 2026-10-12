@@ -104,7 +104,10 @@ export interface PricePoint {
    * Omitted means listed (today's catalog). `false` stays resolvable.
    */
   readonly listed?: boolean;
-  /** Price generation, mirrored into Paddle custom_data. */
+  /**
+   * Local price generation. Checkout, webhooks, and entitlements match
+   * `paddlePriceId`. Paddle price `custom_data` is not read.
+   */
   readonly version?: string;
   /** INR amount decoupled from the Razorpay rail. Tax-inclusive when set. */
   readonly inr?: { readonly paise: number; readonly taxInclusive: true };

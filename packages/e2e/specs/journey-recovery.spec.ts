@@ -1,4 +1,7 @@
 import { expect, test } from '@playwright/test';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { BRIEF_NAME } from '@declutrmail/shared/copy/screen-decisions';
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { dbConnect } from '../helpers/db';
 import { applyJourneySeed } from '../helpers/seed-journeys';
 import { BILLING_SEED } from '../helpers/seed-billing';
@@ -57,9 +60,7 @@ test.afterEach(async () => {
   }
 });
 
-test('Free Brief upgrade retains its origin and opens the selected plan without buying', async ({
-  page,
-}) => {
+test('Free Brief shows Coming with Pro and does not open checkout', async ({ page }) => {
   const sql = dbConnect();
   try {
     await sql`UPDATE workspaces SET tier = 'free' WHERE id = ${fixture.workspaceId}`;
@@ -67,18 +68,26 @@ test('Free Brief upgrade retains its origin and opens the selected plan without 
     await sql.end();
   }
   await page.goto('/brief');
-  const upgrade = page.getByRole('link', { name: 'Upgrade to Pro $19/mo', exact: true });
-  await expect(upgrade).toHaveAttribute('href', '/billing?plan=pro&cycle=monthly&from=%2Fbrief');
-  await upgrade.click({ noWaitAfter: true });
-  await expect(page).toHaveURL(/\/billing\?plan=pro&cycle=monthly&from=%2Fbrief$/);
+  const proName = TIER_MANIFEST.pro.name;
+  const fill = (template: string) => template.replaceAll('{proName}', proName);
+  const gate = page.getByRole('region', { name: fill(WS2_COPY.pro.badge), exact: true });
+  await expect(gate).toBeVisible();
   await expect(
-    page.getByRole('button', { name: 'Continue to checkout', exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByText('$19 billed monthly, starting today. Renews automatically — cancel anytime.', {
+    gate.getByRole('heading', {
+      name: WS2_COPY.pro.brief.title.replaceAll('{BRIEF_NAME}', BRIEF_NAME),
       exact: true,
     }),
   ).toBeVisible();
+  await expect(gate.getByText(fill(WS2_COPY.pro.status), { exact: true })).toBeVisible();
+  await expect(
+    gate.getByRole('button', { name: fill(WS2_COPY.pro.cta), exact: true }),
+  ).toBeVisible();
+  await expect(
+    gate.getByRole('link', { name: WS2_COPY.pro.secondary, exact: true }),
+  ).toHaveAttribute('href', '/later');
+  await expect(page.getByRole('link', { name: 'Upgrade to Pro $19/mo', exact: true })).toHaveCount(
+    0,
+  );
 });
 
 test('failed first scan exposes account controls while mailbox routes stay gated, then finish opens backlog', async ({

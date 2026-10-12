@@ -87,9 +87,13 @@ export async function liveGrantTierForWorkspace(
 export async function highestLiveGrantForWorkspace(
   db: Pick<DrizzleDb, 'select'>,
   workspaceId: string,
-): Promise<{ tier: TierId; expiresAt: Date | null } | null> {
+): Promise<{ tier: TierId; expiresAt: Date | null; source: 'comp' | 'pass' | 'promo' } | null> {
   const rows = await db
-    .select({ tier: entitlementGrants.tier, expiresAt: entitlementGrants.expiresAt })
+    .select({
+      tier: entitlementGrants.tier,
+      expiresAt: entitlementGrants.expiresAt,
+      source: entitlementGrants.source,
+    })
     .from(entitlementGrants)
     .innerJoin(users, eq(users.email, entitlementGrants.email))
     .where(
@@ -99,11 +103,34 @@ export async function highestLiveGrantForWorkspace(
         or(isNull(entitlementGrants.expiresAt), gt(entitlementGrants.expiresAt, new Date())),
       ),
     );
-  let best: { tier: TierId; expiresAt: Date | null } | null = null;
+  let best: { tier: TierId; expiresAt: Date | null; source: 'comp' | 'pass' | 'promo' } | null =
+    null;
   for (const row of rows) {
-    if (best === null || TIER_RANK[row.tier] > TIER_RANK[best.tier]) best = row;
+    const source = grantSource(row.source);
+    const candidate = { tier: row.tier, expiresAt: row.expiresAt, source };
+    if (best === null || preferGrant(candidate, best)) best = candidate;
   }
   return best;
+}
+
+function grantSource(value: string): 'comp' | 'pass' | 'promo' {
+  if (value === 'pass' || value === 'promo') return value;
+  return 'comp';
+}
+
+/** Higher rank wins. A tie prefers a comp so a permanent comp is not described as a Pass. */
+function preferGrant(
+  candidate: { tier: TierId; expiresAt: Date | null; source: 'comp' | 'pass' | 'promo' },
+  current: { tier: TierId; expiresAt: Date | null; source: 'comp' | 'pass' | 'promo' },
+): boolean {
+  if (TIER_RANK[candidate.tier] !== TIER_RANK[current.tier]) {
+    return TIER_RANK[candidate.tier] > TIER_RANK[current.tier];
+  }
+  if (candidate.source === 'comp' && current.source !== 'comp') return true;
+  if (current.source === 'comp' && candidate.source !== 'comp') return false;
+  const candidateEnd = candidate.expiresAt?.getTime() ?? Number.POSITIVE_INFINITY;
+  const currentEnd = current.expiresAt?.getTime() ?? Number.POSITIVE_INFINITY;
+  return candidateEnd > currentEnd;
 }
 
 /**

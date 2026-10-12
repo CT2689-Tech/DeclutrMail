@@ -66,6 +66,8 @@ export interface Me {
   cleanupUsed?: number;
   /** Server `METER_V2`. Absent means the flag is off. */
   meterV2?: boolean;
+  /** Server `BILLING_PASS_ENABLED`. Absent means the Pass stays hidden. */
+  passEnabled?: boolean;
   /**
    * First-touch tracked `ref` vs skippable self-report. Optional during a
    * rolling API/web deploy — absent means do not show the prompt.

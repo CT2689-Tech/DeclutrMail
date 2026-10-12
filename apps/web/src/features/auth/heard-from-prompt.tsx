@@ -1,10 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useLayoutEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, tokens } from '@declutrmail/shared';
 import type { SignupHeardFromPatch } from '@declutrmail/shared/contracts';
 
+import { AI_PROMPT_CHANGED, aiConsentBlocksHeardFrom } from '@/features/ai-consent/ai-prompt-queue';
+import { readMeSettings } from '@/features/settings/api/me-settings-reader';
+import { meSettingsQueryOptions } from '@/features/settings/api/query-options';
 import { apiPatch } from '@/lib/api/client';
 import { CONSENT_CHANGE_EVENT, readStoredConsent } from '@/lib/cookie-consent';
 import { ME_QUERY_KEY } from './api/me-contract';
@@ -39,6 +43,7 @@ const CHOICES = [
  * server render and the first client paint agree.
  */
 export function HeardFromPrompt() {
+  const pathname = usePathname();
   const { me } = useAuth();
   const queryClient = useQueryClient();
   const [otherDetail, setOtherDetail] = useState('');
@@ -46,6 +51,8 @@ export function HeardFromPrompt() {
   const [dismissed, setDismissed] = useState(false);
   const [failed, setFailed] = useState(false);
   const [consentSettled, setConsentSettled] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [promptTick, setPromptTick] = useState(0);
 
   useEffect(() => {
     const sync = () => setConsentSettled(readStoredConsent() !== null);
@@ -54,7 +61,54 @@ export function HeardFromPrompt() {
     return () => window.removeEventListener(CONSENT_CHANGE_EVENT, sync);
   }, []);
 
-  if (!consentSettled || dismissed || me.signupAttribution?.promptNeeded !== true) return null;
+  useLayoutEffect(() => {
+    const sync = () =>
+      setSheetOpen(document.querySelector('[role="dialog"], [role="alertdialog"]') !== null);
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['role'],
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  const onAiSurface = pathname === '/brief' || pathname === '/triage' || pathname === '/senders';
+  const settings = useQuery({
+    ...meSettingsQueryOptions(readMeSettings),
+    enabled: onAiSurface && consentSettled,
+  });
+
+  useEffect(() => {
+    const sync = () => setPromptTick((tick) => tick + 1);
+    window.addEventListener(AI_PROMPT_CHANGED, sync);
+    return () => window.removeEventListener(AI_PROMPT_CHANGED, sync);
+  }, []);
+
+  if (!consentSettled || dismissed || sheetOpen || me.signupAttribution?.promptNeeded !== true) {
+    return null;
+  }
+  if (pathname === '/settings' || pathname.startsWith('/settings/')) return null;
+  // Phone width makes this card as wide as the page. Billing leaves the
+  // plan controls clear.
+  if (pathname === '/billing') return null;
+
+  // `promptTick` is the same-tab dismissal signal. The read below sees
+  // the localStorage write only because that event re-rendered us.
+  void promptTick;
+  if (
+    aiConsentBlocksHeardFrom({
+      pathname,
+      view: settings.data?.aiConsent,
+      tier: me.tier ?? 'free',
+      now: Date.now(),
+      settingsPending: onAiSurface && settings.isLoading && settings.data == null,
+    })
+  ) {
+    return null;
+  }
 
   const submit = async (patch: SignupHeardFromPatch) => {
     if (busy) return;

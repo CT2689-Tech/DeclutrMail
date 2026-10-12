@@ -1,15 +1,13 @@
 'use client';
 
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
-import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
-import {
-  MeterPreviewSlot,
-  hideLegacyQuotaLine,
-  meterPreviewCopy,
-} from '@/features/shell/meter-preview-slot';
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { Avatar, Button, PreviewSheet, SheetSegmented, tokens } from '@declutrmail/shared';
+import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { unnamedUnsubscribeTitle } from '@/features/senders/unsubscribe-backlog/preview-copy';
+import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
+import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import type { ActionReach } from '@declutrmail/shared/contracts';
 import type { PreviewCount } from './action-preview';
 import {
@@ -30,6 +28,8 @@ const { color, font, radius, shadow, space, text } = tokens;
 
 export interface ConfirmDetails {
   archiveHistoric: boolean;
+  /** Unsubscribe backlog choice. Archive is the default when the inbox count is above zero. */
+  backlogMode?: 'unsub_only' | 'archive' | 'delete';
   /** Exact return time confirmed for Later; null for other verbs. */
   wakeAt: string | null;
   /** Final value of the remember-preference toggle when confirming. */
@@ -116,13 +116,13 @@ export function ActionSheet({
    */
   quotaRemaining?: number | null | undefined;
 }) {
-  // Unsubscribe defaults to leaving the backlog alone. It is a separate
-  // Gmail mutation and a second cleanup unit on Free, so it must be an
-  // explicit opt-in. Archive and Later ignore the toggle —
-  // both verbs already act on every inbox message from the sender
-  // (the worker resolves "in INBOX now"), so a separate historic
-  // toggle would be a no-op lie.
-  const [archiveHistoric, setArchiveHistoric] = useState(false);
+  // Unsubscribe defaults to Archive when the inbox count is above zero.
+  // The unsubscribe request is free. While the email meter is off, the
+  // mail move still spends one cleanup action and the existing unit line
+  // stays. Archive and Later ignore a separate historic toggle — both
+  // verbs already act on every inbox message from the sender.
+  const cleanupSummary = useCleanupSummary();
+  const [backlogMode, setBacklogMode] = useState<'unsub_only' | 'archive' | 'delete'>('unsub_only');
   const [rememberPreference, setRememberPreference] = useState(false);
   const [selectedWakeAt, setSelectedWakeAt] = useState<string | null>(wakeAt);
   const actionKey = open && row ? `${verb}:${row.id}` : null;
@@ -130,8 +130,12 @@ export function ActionSheet({
   // The first render of a newly opened Unsubscribe sheet must use its safe
   // default immediately, before the reset effect runs. Otherwise a fast
   // Cmd/Ctrl-Enter could observe the previous action's `false` toggle.
-  const effectiveArchiveHistoric =
-    actionKey !== null && initializedActionKey !== actionKey ? false : archiveHistoric;
+  const countKnown = typeof inboxCount === 'number' ? inboxCount : null;
+  const defaultBacklog =
+    verb === 'Unsubscribe' && countKnown !== null && countKnown > 0 ? 'archive' : 'unsub_only';
+  const effectiveMode =
+    actionKey !== null && initializedActionKey !== actionKey ? defaultBacklog : backlogMode;
+  const effectiveArchiveHistoric = effectiveMode === 'archive';
 
   // Archive/Later/Delete always move inbox mail. Unsubscribe only does when the
   // user keeps the backlog option on. Any such action requires the live
@@ -141,7 +145,7 @@ export function ActionSheet({
     verb === 'Archive' ||
     verb === 'Later' ||
     verb === 'Delete' ||
-    (verb === 'Unsubscribe' && effectiveArchiveHistoric);
+    (verb === 'Unsubscribe' && effectiveMode !== 'unsub_only');
   const previewUnavailable = inboxCount === 'unavailable';
   const previewPending = inboxCount === 'loading';
   const wakeAtInvalid =
@@ -152,7 +156,7 @@ export function ActionSheet({
   // on the same decision.
   // Gate on the PRIMARY verb only. Unsubscribe is deliberately excluded, as
   // it is in senders (`primaryActsOnInbox`): it cuts FUTURE mail, so it is
-  // real work at a zero backlog and is charged a unit either way.
+  // real work at a zero backlog. The unsubscribe itself is free.
   const primaryActsOnInbox = verb === 'Archive' || verb === 'Later' || verb === 'Delete';
   const nothingToActOn = primaryActsOnInbox && inboxCount === 0;
   const confirmDisabled =
@@ -176,10 +180,21 @@ export function ActionSheet({
       setInitializedActionKey(null);
       return;
     }
-    setArchiveHistoric(false);
+    setBacklogMode(
+      verb === 'Unsubscribe' && typeof inboxCount === 'number' && inboxCount > 0
+        ? 'archive'
+        : 'unsub_only',
+    );
+    setInitializedActionKey(actionKey);
+  }, [open, verb, actionKey, inboxCount]);
+
+  // Remember and the Later date belong to the action, not the preview.
+  // `inboxCount` arrives after the sheet opens; resetting on that change
+  // cleared a toggle the user had already checked.
+  useEffect(() => {
+    if (!open || actionKey === null) return;
     setRememberPreference(false);
     setSelectedWakeAt(verb === 'Later' ? wakeAt : null);
-    setInitializedActionKey(actionKey);
   }, [open, verb, wakeAt, actionKey]);
 
   useEffect(() => {
@@ -189,6 +204,7 @@ export function ActionSheet({
         e.preventDefault();
         onConfirm({
           archiveHistoric: effectiveArchiveHistoric,
+          ...(verb === 'Unsubscribe' ? { backlogMode: effectiveMode } : {}),
           rememberPreference,
           wakeAt: verb === 'Later' ? selectedWakeAt : null,
         });
@@ -200,13 +216,12 @@ export function ActionSheet({
     open,
     verb,
     effectiveArchiveHistoric,
+    effectiveMode,
     rememberPreference,
     selectedWakeAt,
     onConfirm,
     confirmDisabled,
   ]);
-
-  const cleanupSummary = useCleanupSummary();
 
   if (!open || !row) return null;
 
@@ -214,6 +229,7 @@ export function ActionSheet({
     verb,
     row,
     archiveHistoric: effectiveArchiveHistoric,
+    ...(verb === 'Unsubscribe' ? { backlogMode: effectiveMode } : {}),
     inboxCount,
     wakeAt: selectedWakeAt,
     reach,
@@ -221,15 +237,14 @@ export function ActionSheet({
   const confirm = () =>
     onConfirm({
       archiveHistoric: effectiveArchiveHistoric,
+      ...(verb === 'Unsubscribe' ? { backlogMode: effectiveMode } : {}),
       rememberPreference,
       wakeAt: verb === 'Later' ? selectedWakeAt : null,
     });
 
   // ADR-0028 — the reach is a control only when it changes the count.
-  const reachControl =
-    detail !== undefined && actionMovesMail(verb, effectiveArchiveHistoric)
-      ? detail.reachControl
-      : undefined;
+  const movesMail = actionMovesMail(verb, effectiveMode !== 'unsub_only');
+  const reachControl = detail !== undefined && movesMail ? detail.reachControl : undefined;
   const showReach =
     reachControl !== undefined && reachControl.inboxCount !== reachControl.allMailCount;
   // Empty inbox, archived mail exists: the default stays the safe one
@@ -242,18 +257,14 @@ export function ActionSheet({
       ? 'Switch to Inbox + archived to reach the archived email.'
       : null;
 
-  const costLine = hideLegacyQuotaLine(
-    cleanupCostLine(facts.unitsNeeded, quotaRemaining),
-    cleanupSummary.data,
-  );
-  const freeUnsubscribe = verb === 'Unsubscribe' && !effectiveArchiveHistoric;
-  const meterRequested = freeUnsubscribe ? null : facts.liveCount;
-  const meterCopy = meterPreviewCopy(meterRequested, cleanupSummary.data, freeUnsubscribe);
+  const emailMeter = cleanupSummary.data?.metered === true;
+  const costLine =
+    emailMeter || facts.unitsNeeded === 0
+      ? null
+      : cleanupCostLine(facts.unitsNeeded, quotaRemaining);
   const detailBlock = (
     <ActionPreviewDetailBlock
-      detail={
-        detail !== undefined && actionMovesMail(verb, effectiveArchiveHistoric) ? detail : undefined
-      }
+      detail={detail !== undefined && movesMail ? detail : undefined}
       leadFacts={facts.disclosures}
       trailingFacts={[
         { label: 'Why suggested', value: <PreviewReasoning row={row} /> },
@@ -311,26 +322,60 @@ export function ActionSheet({
             />
           </span>
         }
-        title={facts.title}
+        title={
+          verb === 'Unsubscribe'
+            ? unsubscribeTitle(effectiveMode, row.senderName, countKnown ?? 0)
+            : facts.title
+        }
         subtitle={reachHint ?? facts.subtitle ?? undefined}
-        note={facts.note ?? undefined}
+        note={
+          verb === 'Unsubscribe'
+            ? effectiveMode === 'delete'
+              ? WS5_COPY['f1.honesty.delete']
+              : effectiveMode === 'archive'
+                ? WS5_COPY['f1.honesty.archive']
+                : WS5_COPY['f1.honesty.unsubOnly']
+            : (facts.note ?? undefined)
+        }
         primary={{
-          label: isProtectedRow ? `${verb} anyway` : facts.primaryLabel,
+          label:
+            verb === 'Unsubscribe'
+              ? effectiveMode === 'delete'
+                ? WS5_COPY['f1.button.delete']
+                : effectiveMode === 'archive'
+                  ? WS5_COPY['f1.button.archive']
+                  : WS5_COPY['f1.button.unsubOnly']
+              : isProtectedRow
+                ? `${verb} anyway`
+                : facts.primaryLabel,
           onClick: confirm,
-          tone: verb === 'Delete' ? 'danger' : verb === 'Unsubscribe' ? 'warn' : 'primary',
+          tone:
+            verb === 'Delete' || (verb === 'Unsubscribe' && effectiveMode === 'delete')
+              ? 'danger'
+              : verb === 'Unsubscribe'
+                ? 'warn'
+                : 'primary',
           disabled: confirmDisabled,
         }}
         status={status ?? undefined}
         details={detailBlock}
         footer={
-          costLine === null && meterCopy === null && verb === 'Delete' ? undefined : (
+          costLine === null && verb === 'Delete' ? undefined : (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+              {verb === 'Unsubscribe' ? (
+                <span>
+                  {WS5_COPY['f1.footer']}
+                  {effectiveMode === 'delete' ? ` ${WS5_COPY['f1.deleteNote']}` : ''}
+                </span>
+              ) : null}
               {costLine !== null && <span>{costLine}</span>}
-              <MeterPreviewSlot
-                requested={meterRequested}
-                summary={cleanupSummary.data ?? null}
-                freeUnsubscribe={freeUnsubscribe}
-              />
+              {emailMeter &&
+              cleanupSummary.data &&
+              verb !== 'Unsubscribe' &&
+              typeof inboxCount === 'number' &&
+              inboxCount > 0 ? (
+                <MeterPreviewLine requested={inboxCount} summary={cleanupSummary.data} />
+              ) : null}
               {/*
                * D34 — remember-preference. Persists per verb in the triage
                * store. The sheet still renders for THIS action — the
@@ -411,21 +456,43 @@ export function ActionSheet({
                 message from the sender, so the backlog toggle exists only
                 where the primary verb does NOT touch past mail. */}
             {verb === 'Unsubscribe' && (
-              <CheckRow
-                checked={effectiveArchiveHistoric}
-                onToggle={() => setArchiveHistoric(!effectiveArchiveHistoric)}
-                label={
-                  // The live count (never a lifetime estimate — D226).
-                  `Also archive the${
-                    typeof inboxCount === 'number'
-                      ? ` ${inboxCount.toLocaleString('en-US')} email${inboxCount === 1 ? '' : 's'}`
-                      : ' emails'
-                  } already in the inbox`
-                }
-                {...(cleanupSummary.data?.metered
-                  ? {}
-                  : { hint: 'Uses a second cleanup action on Free.' })}
-              />
+              <div role="radiogroup" aria-label={WS5_COPY['f1.segment.unsubOnly']}>
+                <BacklogChoice
+                  checked={effectiveMode === 'unsub_only'}
+                  label={WS5_COPY['f1.segment.unsubOnly']}
+                  onSelect={() => setBacklogMode('unsub_only')}
+                />
+                <BacklogChoice
+                  checked={effectiveMode === 'archive'}
+                  disabled={countKnown === null || countKnown === 0}
+                  label={
+                    isPluralCopy(WS5_COPY['f1.segment.archive'])
+                      ? pluralCopy(WS5_COPY['f1.segment.archive'], countKnown ?? 0, {
+                          n: countKnown ?? 0,
+                        })
+                      : ''
+                  }
+                  onSelect={() => setBacklogMode('archive')}
+                />
+                <BacklogChoice
+                  checked={effectiveMode === 'delete'}
+                  disabled={countKnown === null || countKnown === 0}
+                  label={
+                    isPluralCopy(WS5_COPY['f1.segment.delete'])
+                      ? pluralCopy(WS5_COPY['f1.segment.delete'], countKnown ?? 0, {
+                          n: countKnown ?? 0,
+                        })
+                      : ''
+                  }
+                  onSelect={() => setBacklogMode('delete')}
+                />
+                {emailMeter && effectiveMode !== 'unsub_only' ? (
+                  <p>{WS5_COPY['f1.meterFree']}</p>
+                ) : null}
+                {emailMeter && effectiveMode !== 'unsub_only' && cleanupSummary.data ? (
+                  <MeterPreviewLine requested={countKnown ?? 0} summary={cleanupSummary.data} />
+                ) : null}
+              </div>
             )}
 
             {isProtectedRow && (
@@ -560,5 +627,45 @@ function CheckRow({
         )}
       </span>
     </button>
+  );
+}
+
+function unsubscribeTitle(
+  mode: 'unsub_only' | 'archive' | 'delete',
+  senderName: string,
+  n: number,
+): string {
+  if (senderName.trim() === '') return unnamedUnsubscribeTitle(mode, n);
+  if (mode === 'archive' && isPluralCopy(WS5_COPY['f1.title.archive'])) {
+    return pluralCopy(WS5_COPY['f1.title.archive'], n, { n, Sender: senderName });
+  }
+  if (mode === 'delete' && isPluralCopy(WS5_COPY['f1.title.delete'])) {
+    return pluralCopy(WS5_COPY['f1.title.delete'], n, { n, Sender: senderName });
+  }
+  return fillCopy(WS5_COPY['f1.title.unsubOnly'], { Sender: senderName });
+}
+
+function BacklogChoice({
+  checked,
+  disabled = false,
+  label,
+  onSelect,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  label: string;
+  onSelect: () => void;
+}) {
+  return (
+    <label style={{ display: 'flex', gap: 8, minHeight: 44, alignItems: 'center' }}>
+      <input
+        type="radio"
+        name="triage-unsubscribe-backlog"
+        checked={checked}
+        disabled={disabled}
+        onChange={onSelect}
+      />
+      {label}
+    </label>
   );
 }

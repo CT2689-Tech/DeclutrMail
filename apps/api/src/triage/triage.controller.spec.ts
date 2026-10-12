@@ -201,12 +201,15 @@ describe('TriageController.explain — explanations on demand (D24)', () => {
     const triage = {
       explainSenders: vi.fn().mockResolvedValue({ queued: [ID_A] }),
     };
+    const reads = {
+      explanationsAllowed: vi.fn().mockResolvedValue(true),
+    };
     const controller = new TriageController(
       triage as unknown as TriageService,
-      {} as TriageReadService,
+      reads as unknown as TriageReadService,
       {} as IconsService,
     );
-    return { controller, triage };
+    return { controller, triage, reads };
   }
 
   it('hands the service a de-duplicated list of the ids asked for', async () => {
@@ -219,6 +222,16 @@ describe('TriageController.explain — explanations on demand (D24)', () => {
       senderIds: [ID_A, ID_B],
     });
     expect(res.data).toEqual({ queued: [ID_A] });
+  });
+
+  it('queues nothing when explanations consent is missing', async () => {
+    const { controller, triage, reads } = makeExplainController();
+    reads.explanationsAllowed.mockResolvedValue(false);
+
+    const res = await controller.explain({ id: 'mailbox-1' }, { senderIds: [ID_A] });
+
+    expect(res.data).toEqual({ queued: [] });
+    expect(triage.explainSenders).not.toHaveBeenCalled();
   });
 
   it.each([

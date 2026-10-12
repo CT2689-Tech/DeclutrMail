@@ -538,7 +538,7 @@ describe('ActionsService', () => {
     queue.staleJobIds.add(hashedQueueId);
     queue.staleJobIds.add(legacyQueueId);
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    let warningLogs: unknown[][] = [];
+    let warningLogs: unknown[][];
 
     // Second attempt — MUST retry the same row, not return cached failure.
     let second: Awaited<ReturnType<ActionsService['enqueueRevert']>>;
@@ -596,7 +596,7 @@ describe('ActionsService', () => {
     });
     queue.getJobErrors.set(hashedQueueId, hostileQueueError);
     const hostileWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    let hostileWarningLogs: unknown[][] = [];
+    let hostileWarningLogs: unknown[][];
     let third: Awaited<ReturnType<ActionsService['enqueueRevert']>>;
     try {
       third = await svc.enqueueRevert({
@@ -3586,6 +3586,21 @@ describe('ActionsService', () => {
       expect(acts).toHaveLength(1);
       const events = await db.select().from(outboxEvents);
       expect(events).toHaveLength(1);
+    });
+
+    it('a reverted keep inside the window is a fresh decision, not a replay', async () => {
+      const first = await svc.recordKeepIntent({ mailboxAccountId: mailboxId, senderId });
+      await db
+        .update(activityLog)
+        .set({ revertedAt: sql`now()` })
+        .where(eq(activityLog.id, first.activityLogId));
+      const second = await svc.recordKeepIntent({ mailboxAccountId: mailboxId, senderId });
+      expect(second.activityLogId).not.toBe(first.activityLogId);
+      const acts = await db
+        .select()
+        .from(activityLog)
+        .where(eq(activityLog.mailboxAccountId, mailboxId));
+      expect(acts).toHaveLength(2);
     });
 
     it('a keep decision OLDER than the window is a fresh decision, not a replay', async () => {

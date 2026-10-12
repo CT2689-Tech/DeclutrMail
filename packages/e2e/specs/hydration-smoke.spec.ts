@@ -1,6 +1,10 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
+
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { ApiClient, requireLiveStack } from '../helpers/api';
+import { dbConnect } from '../helpers/db';
+import { BILLING_SEED } from '../helpers/seed-billing';
 
 test.use({ locale: 'de-DE', timezoneId: 'Asia/Kolkata' });
 
@@ -113,6 +117,230 @@ async function expectRouteHydrates(page: Page, route: string): Promise<void> {
   ).toHaveCount(0);
   expect(hydrationErrors, `${route} hydration diagnostics`).toEqual([]);
 }
+
+/** Enough repeats to hit the races that showed up in 6 of 18 and 16 of 18 loads. */
+const HYDRATION_LOADS = 6;
+
+async function expectLoadsHydrate(
+  page: Page,
+  route: string,
+  settled: () => Promise<void>,
+): Promise<void> {
+  const hydrationErrors: string[] = [];
+  const onConsole = (message: ConsoleMessage) => {
+    const text = message.text();
+    if (
+      message.type() === 'error' &&
+      (text.includes('Hydration failed') || text.includes('Minified React error #418'))
+    ) {
+      hydrationErrors.push(text);
+    }
+  };
+  const onPageError = (error: Error) => hydrationErrors.push(error.message);
+  page.on('console', onConsole);
+  page.on('pageerror', onPageError);
+  try {
+    for (let load = 1; load <= HYDRATION_LOADS; load += 1) {
+      hydrationErrors.length = 0;
+      const response = await page.goto(route, { waitUntil: 'domcontentloaded' });
+      await page.locator('body').waitFor({ state: 'visible' });
+      await page.waitForTimeout(750);
+      expect(response?.status(), `${route} load ${load}`).toBe(200);
+      expect(hydrationErrors, `${route} load ${load} hydration diagnostics`).toEqual([]);
+      await settled();
+    }
+  } finally {
+    page.off('console', onConsole);
+    page.off('pageerror', onPageError);
+  }
+}
+
+test('Pro Brief with undecided consent hydrates across repeated loads', async ({ page }) => {
+  test.setTimeout(180_000);
+  const sql = dbConnect();
+  const [before] = await sql<{ tier: string }[]>`
+    SELECT tier FROM workspaces WHERE id = ${BILLING_SEED.workspaceId}
+  `;
+  try {
+    await sql`UPDATE workspaces SET tier = 'pro' WHERE id = ${BILLING_SEED.workspaceId}`;
+    await sql`
+      UPDATE users SET
+        ai_consent_version = NULL,
+        ai_explanations_consent_at = NULL,
+        ai_explanations_revoked_at = NULL,
+        ai_consent_scopes = NULL,
+        ai_consent_declined_at = NULL,
+        brief_ai_consent_at = NULL,
+        brief_ai_consent_version = NULL,
+        brief_ai_consent_revoked_at = NULL,
+        brief_ai_declined_at = NULL
+      WHERE id = ${BILLING_SEED.userId}
+    `;
+    await expectLoadsHydrate(page, '/brief', async () => {
+      await expect(
+        page.getByRole('heading', { name: 'Use AI to explain and summarize?' }),
+      ).toBeVisible();
+    });
+  } finally {
+    if (before) {
+      await sql`UPDATE workspaces SET tier = ${before.tier} WHERE id = ${BILLING_SEED.workspaceId}`;
+    }
+    await sql.end();
+  }
+});
+
+test('billing hydrates across repeated loads when the subscription read is disabled', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.context().addCookies([
+    {
+      name: 'dm_e2e_billing_dark',
+      value: '1',
+      url: process.env.E2E_WEB_URL ?? 'http://127.0.0.1:3104',
+    },
+  ]);
+  await page.route('**/api/billing/subscription', (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    return route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: { code: 'BILLING_DISABLED', message: 'Billing is not available yet.' },
+      }),
+    });
+  });
+  await expectLoadsHydrate(page, '/billing', async () => {
+    await expect(page.getByTestId('billing-disabled-notice')).toBeVisible();
+  });
+});
+
+function usd(cents: number): string {
+  const dollars = cents / 100;
+  return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
+}
+
+function manifestPrice(tier: 'plus' | 'pro', cycle: 'monthly' | 'annual'): string {
+  const point = TIER_MANIFEST[tier].prices[cycle];
+  if (!point) throw new Error(`missing ${cycle} price for ${tier}`);
+  return `${usd(point.usdCents)}${cycle === 'annual' ? '/yr' : '/mo'}`;
+}
+
+/**
+ * Live complimentary Pro, then a normal paid Plus plan. Both restore the
+ * synthetic workspace. The grant and the paid row belong to this spec.
+ */
+async function withBillingFixture(
+  setup: 'complimentary-pro' | 'paid-plus',
+  run: () => Promise<void>,
+): Promise<void> {
+  const sql = dbConnect();
+  const [workspace] = await sql<{ tier: string }[]>`
+    SELECT tier FROM workspaces WHERE id = ${BILLING_SEED.workspaceId}
+  `;
+  const [grant] = await sql<
+    {
+      tier: string;
+      reason: string;
+      granted_by: string;
+      expires_at: Date | null;
+      revoked_at: Date | null;
+    }[]
+  >`
+    SELECT tier, reason, granted_by, expires_at, revoked_at
+    FROM entitlement_grants
+    WHERE email = ${BILLING_SEED.email}
+  `;
+  try {
+    await sql`DELETE FROM subscriptions WHERE workspace_id = ${BILLING_SEED.workspaceId}`;
+    if (setup === 'complimentary-pro') {
+      await sql`UPDATE workspaces SET tier = 'pro' WHERE id = ${BILLING_SEED.workspaceId}`;
+      // Comp uniqueness is partial on source = 'comp'. A bare
+      // ON CONFLICT (email) does not match that index.
+      await sql`
+        INSERT INTO entitlement_grants (email, tier, reason, granted_by, source)
+        VALUES (${BILLING_SEED.email}, 'pro', 'hydration smoke', 'e2e', 'comp')
+        ON CONFLICT (email) WHERE source = 'comp' DO UPDATE
+        SET tier = 'pro', reason = 'hydration smoke', granted_by = 'e2e',
+            expires_at = NULL, revoked_at = NULL, updated_at = now()
+      `;
+    } else {
+      await sql`DELETE FROM entitlement_grants WHERE email = ${BILLING_SEED.email}`;
+      await sql`UPDATE workspaces SET tier = 'plus' WHERE id = ${BILLING_SEED.workspaceId}`;
+      await sql`
+        INSERT INTO subscriptions (
+          workspace_id, provider, provider_subscription_id, tier, status,
+          provider_price_id, billing_cycle, current_period_end
+        ) VALUES (
+          ${BILLING_SEED.workspaceId}, 'paddle', 'sub_e2e_hydration_paid', 'plus', 'active',
+          'pri_e2e_hydration', 'monthly', now() + interval '30 days'
+        )
+      `;
+    }
+    await run();
+  } finally {
+    await sql`DELETE FROM subscriptions WHERE workspace_id = ${BILLING_SEED.workspaceId} AND provider_subscription_id = 'sub_e2e_hydration_paid'`;
+    if (workspace) {
+      await sql`UPDATE workspaces SET tier = ${workspace.tier} WHERE id = ${BILLING_SEED.workspaceId}`;
+    }
+    if (grant) {
+      await sql`
+        UPDATE entitlement_grants
+        SET tier = ${grant.tier},
+            reason = ${grant.reason},
+            granted_by = ${grant.granted_by},
+            expires_at = ${grant.expires_at},
+            revoked_at = ${grant.revoked_at}
+        WHERE email = ${BILLING_SEED.email}
+      `;
+    } else {
+      await sql`DELETE FROM entitlement_grants WHERE email = ${BILLING_SEED.email}`;
+    }
+    await sql.end();
+  }
+}
+
+test('live Pro complimentary billing hydrates on annual across repeated loads', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await withBillingFixture('complimentary-pro', async () => {
+    await expectLoadsHydrate(page, '/billing', async () => {
+      await expect(page.getByTestId('complimentary-note')).toContainText(
+        'Pro is complimentary on this account',
+      );
+      await expect(page.getByRole('button', { name: /^Annual/, pressed: true })).toBeVisible();
+      await expect(page.getByText(manifestPrice('plus', 'annual')).first()).toBeVisible();
+      await expect(page.getByText(manifestPrice('pro', 'annual')).first()).toBeVisible();
+    });
+  });
+});
+
+test('live Pro complimentary billing hydrates with the monthly toggle selected', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await withBillingFixture('complimentary-pro', async () => {
+    await expectLoadsHydrate(page, '/billing?plan=plus&cycle=monthly', async () => {
+      await expect(page.getByTestId('complimentary-note')).toContainText(
+        'Pro is complimentary on this account',
+      );
+      await expect(page.getByRole('button', { name: 'Monthly', pressed: true })).toBeVisible();
+      await expect(page.getByText(manifestPrice('plus', 'monthly')).first()).toBeVisible();
+    });
+  });
+});
+
+test('a normal paid plan hydrates across repeated loads', async ({ page }) => {
+  test.setTimeout(180_000);
+  await withBillingFixture('paid-plus', async () => {
+    await expectLoadsHydrate(page, '/billing', async () => {
+      await expect(page.getByTestId('complimentary-note')).toHaveCount(0);
+      await expect(page.getByText(manifestPrice('plus', 'monthly')).first()).toBeVisible();
+      await expect(page.getByTestId('current-plan-card')).toContainText('Plus');
+    });
+  });
+});
 
 for (const route of HYDRATED_ROUTES) {
   test(`server-hydrated route mounts without recovery: ${route}`, async ({ page }) => {

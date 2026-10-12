@@ -1,8 +1,15 @@
 import Link from 'next/link';
 
-import { demoForTopic } from '../learn/journey-links';
+import {
+  declutrPriceDetail,
+  declutrPriceSummary,
+  refundSentence,
+  WS3_COPY,
+} from '@declutrmail/shared/copy/launch';
 import { OAUTH_SCOPE_DISCLOSURE } from '@declutrmail/shared';
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+
+import { TrustRow } from '../trust/trust-row';
+import { comparisonFaqJsonLd, comparisonFaqs } from './comparison-faqs';
 
 import { JsonLd } from '../json-ld';
 import { TrackedCta } from '../landing/tracked-cta';
@@ -29,7 +36,7 @@ import { COMPARE_DIY_GUIDES, COMPARISON_RELATED_GUIDES } from './related-guides'
  * leave the prose behind.
  */
 const COMPARISON_COUNT_WORD =
-  ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'][
+  ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven'][
     COMPARISONS.length
   ] ?? String(COMPARISONS.length);
 
@@ -50,7 +57,25 @@ const STATE_LABEL: Readonly<Record<EvidenceState, string>> = {
   native: 'Native',
 };
 
+const PRICE_ROW = 'Public starting point';
+
+type LaunchFlags = {
+  pricingV2?: boolean | undefined;
+  passEnabled?: boolean | undefined;
+};
+
+/** Baked cells stay for callers that have not resolved the public API. */
+function launchPriceCell(cell: ComparisonCell, flags: LaunchFlags | undefined): ComparisonCell {
+  if (flags?.pricingV2 === undefined && flags?.passEnabled === undefined) return cell;
+  return {
+    ...cell,
+    summary: declutrPriceSummary(flags.passEnabled, flags.pricingV2),
+    detail: declutrPriceDetail(flags.passEnabled, flags.pricingV2),
+  };
+}
+
 function EvidenceCell({ cell }: { cell: ComparisonCell }) {
+  if (!cell.summary && !cell.detail) return null;
   return (
     <div className="dm-compare-cell">
       <span className={`dm-compare-state dm-compare-state-${cell.state}`}>
@@ -78,7 +103,8 @@ export function MethodNote() {
         Competitor claims come from the company&rsquo;s own product, help, pricing, and privacy
         pages. &ldquo;Not publicly stated&rdquo; means those reviewed pages did not answer the
         question; it is not a claim that the feature does not exist. DeclutrMail facts reflect the
-        current product and tier manifest. There are no affiliate links or paid placements here.
+        current product, with prices {WS3_COPY['ws3.vs.pricingRef']}. There are no affiliate links
+        or paid placements here.
       </p>
     </aside>
   );
@@ -86,12 +112,13 @@ export function MethodNote() {
 
 export function FinalCta({
   competitorName,
-  topic = 'senders',
+  pricingV2,
 }: {
   competitorName?: string;
   topic?: string;
+  pricingV2?: boolean | undefined;
 }) {
-  const demo = demoForTopic(topic);
+  const refund = refundSentence(pricingV2);
   return (
     <section className="dm-compare-final" aria-labelledby="comparison-final-title">
       <h2 id="comparison-final-title">
@@ -99,27 +126,33 @@ export function FinalCta({
           ? `Still deciding between ${competitorName} and DeclutrMail?`
           : 'The right cleanup method is the one you will keep using.'}
       </h2>
-      <p>
-        Connect one Gmail inbox, review every sender, and use{' '}
-        {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions a month on Free. Full message
-        bodies and attachments are not fetched.
-      </p>
+      <p>{WS3_COPY['ws3.vs.gmailOnly']}</p>
       <div className="dm-story-actions">
-        <TrackedCta href={demo.href} className="dm-story-link" cta="try_demo" placement="final">
-          {demo.label}
-        </TrackedCta>
         <TrackedCta
           href={permissionEntryUrl()}
           className="dm-story-button dm-story-button-primary"
           cta="connect_gmail"
           placement="final"
         >
-          Start free
+          {WS3_COPY['ws3.vs.cta.primary']}
+        </TrackedCta>
+        <TrackedCta
+          href="/inbox-simulator?workspace=senders"
+          className="dm-story-link"
+          cta="try_demo"
+          placement="final"
+        >
+          {WS3_COPY['ws3.vs.cta.demo']}
         </TrackedCta>
         <TrackedCta href="/pricing" className="dm-story-link" cta="see_pricing" placement="final">
           See every tier
         </TrackedCta>
       </div>
+      {refund ? (
+        <p>
+          <Link href="/refunds">{refund}</Link>
+        </p>
+      ) : null}
       <details className="dm-story-scope">
         <summary>What Google will ask you to allow</summary>
         <p>{OAUTH_SCOPE_DISCLOSURE}</p>
@@ -173,17 +206,14 @@ const QUICK_FITS = [
   },
 ] as const;
 
-export function ComparisonIndexScreen() {
+export function ComparisonIndexScreen({ pricingV2, passEnabled }: LaunchFlags = {}) {
   return (
     <div className="dm-story dm-comparison">
       <JsonLd data={INDEX_JSON_LD} />
       <header className="dm-compare-hero dm-compare-narrow">
         <h1>Email cleanup tools solve different problems.</h1>
-        <p className="dm-compare-lede">
-          DeclutrMail is a Gmail cleanup companion that shows the scope of a manual move before it
-          runs. These comparisons show where focused unsubscribers, learned sorters, broad cleanup
-          suites, and Gmail&rsquo;s own filters are genuinely stronger, and where DeclutrMail fits.
-        </p>
+        <p className="dm-compare-lede">{WS3_COPY['ws3.vs.compare.verdict']}</p>
+        <TrustRow />
         <p className="dm-compare-verified">
           {capitalized(COMPARISON_COUNT_WORD)} direct comparisons. No affiliate rankings.{' '}
           {comparisonVerifiedLabel(COMPARISONS_VERIFIED_FLOOR_ISO)}; every page links to the exact
@@ -284,12 +314,12 @@ export function ComparisonIndexScreen() {
         </ul>
       </section>
 
-      <MatrixSection />
+      <MatrixSection pricingV2={pricingV2} passEnabled={passEnabled} />
 
       <div className="dm-compare-narrow">
         <MethodNote />
       </div>
-      <FinalCta />
+      <FinalCta pricingV2={pricingV2} />
     </div>
   );
 }
@@ -305,7 +335,7 @@ export function ComparisonIndexScreen() {
  * renders as an explicit dash with a screen-reader phrase, never as a
  * blank a reader could read as "no".
  */
-function MatrixSection() {
+function MatrixSection({ pricingV2, passEnabled }: LaunchFlags) {
   return (
     <section className="dm-compare-section dm-compare-wide" aria-labelledby="matrix-title">
       <div className="dm-compare-narrow-inner">
@@ -346,34 +376,38 @@ function MatrixSection() {
               </tr>
             </thead>
             <tbody>
-              {ROUNDUP_DIMENSIONS.map((dimension) => (
-                <tr key={dimension.label}>
-                  <th scope="row">{dimension.label}</th>
-                  <td data-col="DeclutrMail">
-                    <span
-                      className={`dm-compare-state dm-compare-state-${dimension.declutrMail.state}`}
-                    >
-                      {STATE_LABEL[dimension.declutrMail.state]}
-                    </span>
-                    <strong>{dimension.declutrMail.summary}</strong>
-                  </td>
-                  {dimension.competitors.map(([slug, cell]) => (
-                    <td key={slug} data-col={COMPARISON_NAME_BY_SLUG[slug]}>
-                      {cell ? (
-                        <>
-                          <span className={`dm-compare-state dm-compare-state-${cell.state}`}>
-                            {STATE_LABEL[cell.state]}
-                          </span>
-                          <strong>{cell.summary}</strong>
-                        </>
-                      ) : (
-                        <span aria-hidden="true">&mdash;</span>
-                      )}
-                      {cell ? null : <span className="dm-story-sr-only">Not compared</span>}
+              {ROUNDUP_DIMENSIONS.map((dimension) => {
+                const declutrMail =
+                  dimension.label === PRICE_ROW
+                    ? launchPriceCell(dimension.declutrMail, { pricingV2, passEnabled })
+                    : dimension.declutrMail;
+                return (
+                  <tr key={dimension.label}>
+                    <th scope="row">{dimension.label}</th>
+                    <td data-col="DeclutrMail">
+                      <span className={`dm-compare-state dm-compare-state-${declutrMail.state}`}>
+                        {STATE_LABEL[declutrMail.state]}
+                      </span>
+                      <strong>{declutrMail.summary}</strong>
                     </td>
-                  ))}
-                </tr>
-              ))}
+                    {dimension.competitors.map(([slug, cell]) => (
+                      <td key={slug} data-col={COMPARISON_NAME_BY_SLUG[slug]}>
+                        {cell ? (
+                          <>
+                            <span className={`dm-compare-state dm-compare-state-${cell.state}`}>
+                              {STATE_LABEL[cell.state]}
+                            </span>
+                            <strong>{cell.summary}</strong>
+                          </>
+                        ) : (
+                          <span aria-hidden="true">&mdash;</span>
+                        )}
+                        {cell ? null : <span className="dm-story-sr-only">Not compared</span>}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -452,11 +486,18 @@ function RelatedGuides({ slug }: { slug: ComparisonSlug }) {
   );
 }
 
-export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonDefinition }) {
+export function ComparisonDetailScreen({
+  comparison,
+  pricingV2,
+  passEnabled,
+}: { comparison: ComparisonDefinition } & LaunchFlags) {
   const alternativesHref = alternativesPageHref(comparison.slug);
+  const flags = { pricingV2, passEnabled };
+  const faqs = comparisonFaqs(comparison, passEnabled, pricingV2);
   return (
     <div className="dm-story dm-comparison">
       <JsonLd data={comparisonJsonLd(comparison)} />
+      <JsonLd data={comparisonFaqJsonLd(comparison, passEnabled, pricingV2)} />
       <header className="dm-compare-hero dm-compare-narrow">
         <nav className="dm-compare-breadcrumb" aria-label="Breadcrumb">
           <Link href="/compare">All comparisons</Link>
@@ -464,7 +505,10 @@ export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonD
           <span>{comparison.name}</span>
         </nav>
         <h1>DeclutrMail vs {comparison.name}</h1>
+        <p className="dm-compare-kicker">{WS3_COPY['ws3.vs.verdict.heading']}</p>
         <p className="dm-compare-lede">{comparison.verdict}</p>
+        <TrustRow />
+        <p>{WS3_COPY['ws3.vs.gmailOnly']}</p>
         {alternativesHref ? (
           <p>
             <a href={alternativesHref}>{`See all ${comparison.name} alternatives`}</a>
@@ -535,7 +579,13 @@ export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonD
                 <tr key={row.label}>
                   <th scope="row">{row.label}</th>
                   <td data-col="DeclutrMail">
-                    <EvidenceCell cell={row.declutrMail} />
+                    <EvidenceCell
+                      cell={
+                        row.label === PRICE_ROW
+                          ? launchPriceCell(row.declutrMail, flags)
+                          : row.declutrMail
+                      }
+                    />
                   </td>
                   <td data-col={comparison.name}>
                     <EvidenceCell cell={row.competitor} />
@@ -576,7 +626,17 @@ export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonD
         <MethodNote />
       </section>
 
-      <FinalCta competitorName={comparison.name} topic={comparison.slug} />
+      <section className="dm-compare-section dm-compare-narrow" aria-labelledby="compare-faq-title">
+        <h2 id="compare-faq-title">Questions</h2>
+        {faqs.map((faq) => (
+          <details key={faq.q}>
+            <summary>{faq.q}</summary>
+            <p>{faq.a}</p>
+          </details>
+        ))}
+      </section>
+
+      <FinalCta competitorName={comparison.name} topic={comparison.slug} pricingV2={pricingV2} />
 
       <RelatedGuides slug={comparison.slug} />
 

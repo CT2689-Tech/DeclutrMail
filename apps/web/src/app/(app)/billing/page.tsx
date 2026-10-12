@@ -5,21 +5,37 @@ import { parseUpgradeReturnTo } from '@declutrmail/shared/contracts/app-navigati
 // Thin route shell — layout, data fetching, and the designed states
 // (billing-disabled 503, loading, error) live in `BillingScreen` so
 // they can be exercised by tests and Storybook without the router.
+//
+// Invoices stream on this same boundary. A nested Suspense that awaited
+// its own hydration boundary painted the invoice list on the server and
+// the empty fallback on the client (React hydration error #418).
 
-import { Suspense } from 'react';
+import type { BillingInvoiceList } from '@declutrmail/shared/contracts';
 
 import { headers } from 'next/headers';
 
 import { BillingScreen } from '@/features/billing/billing-screen';
-import { billingSubscriptionQueryOptions } from '@/features/billing/api/query-options';
+import { BillingInvoiceHistoryGate } from '@/features/billing/billing-invoice-history-gate';
+import {
+  billingInvoicesQueryOptions,
+  billingSubscriptionQueryOptions,
+} from '@/features/billing/api/query-options';
+import { parseBillingInvoices } from '@/features/billing/api/parse-payload';
 import { getServerBillingSubscription } from '@/features/billing/api/server-billing';
-import { ServerBillingInvoices } from '@/features/billing/server-billing-invoices';
 import { parseBillingIntentParams } from '@/features/billing/parse-billing-intent';
 import { defaultProviderForCountry } from '@/features/billing/billing-region';
-import { isPricingV2 } from '@declutrmail/shared/entitlements';
+import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
 import { hasServerAccessCookie } from '@/features/auth/api/server-me';
+import { ServerApiError, serverGet } from '@/lib/api/server';
 import { ServerQueryHydration } from '@/lib/server-query-hydration';
 import { COUNTRY_HEADER } from '@/middleware';
+
+const EMPTY_INVOICES: BillingInvoiceList = {
+  invoices: [],
+  unavailableProviders: [],
+  omittedRows: 0,
+  truncated: false,
+};
 
 export const metadata = {
   title: 'Billing — DeclutrMail',
@@ -30,7 +46,11 @@ export default async function BillingPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const [requestHeaders, params] = await Promise.all([headers(), searchParams]);
+  const [requestHeaders, params, flags] = await Promise.all([
+    headers(),
+    searchParams,
+    loadPricingFlags(),
+  ]);
   const initialIntent = parseBillingIntentParams(params);
   // Geo is resolved at the edge and read HERE (server) so the picker
   // renders the right rail on first paint — a client-side guess would
@@ -38,6 +58,12 @@ export default async function BillingPage({
   const country = requestHeaders.get(COUNTRY_HEADER);
   const cookieHeader = requestHeaders.get('cookie') ?? '';
   const eligible = hasServerAccessCookie(cookieHeader);
+  // The hydration smoke sets this cookie so the server paints the loading
+  // placeholder while the browser is handed a 503. Production has no
+  // E2E_ISOLATED, so the cookie does nothing there.
+  const e2eBillingDark =
+    process.env.E2E_ISOLATED === '1' &&
+    cookieHeader.split(';').some((part) => part.trim() === 'dm_e2e_billing_dark=1');
   return (
     <ServerQueryHydration
       surface="billing"
@@ -46,7 +72,32 @@ export default async function BillingPage({
           ? []
           : [
               queryClient.fetchQuery(
-                billingSubscriptionQueryOptions(() => getServerBillingSubscription(cookieHeader)),
+                billingSubscriptionQueryOptions(() =>
+                  e2eBillingDark
+                    ? Promise.reject(
+                        new ServerApiError(
+                          503,
+                          { error: { code: 'BILLING_DISABLED' } },
+                          'Billing is not available yet.',
+                        ),
+                      )
+                    : getServerBillingSubscription(cookieHeader),
+                ),
+              ),
+            ]
+      }
+      streamPrefetch={(queryClient) =>
+        !eligible
+          ? []
+          : [
+              queryClient.fetchQuery(
+                billingInvoicesQueryOptions(async (signal) => {
+                  const subscription = await getServerBillingSubscription(cookieHeader);
+                  if (subscription.subscription == null) return EMPTY_INVOICES;
+                  return parseBillingInvoices(
+                    await serverGet<unknown>('/api/billing/invoices', cookieHeader, signal),
+                  );
+                }),
               ),
             ]
       }
@@ -54,14 +105,10 @@ export default async function BillingPage({
       <BillingScreen
         initialIntent={initialIntent}
         returnTo={parseUpgradeReturnTo(params.from)}
-        initialProvider={defaultProviderForCountry(country)}
-        pricingV2={isPricingV2()}
+        initialProvider={defaultProviderForCountry(country, flags.pricingV2)}
+        pricingV2={flags.pricingV2}
         country={country}
-        invoiceHistory={
-          <Suspense fallback={null}>
-            <ServerBillingInvoices cookieHeader={cookieHeader} />
-          </Suspense>
-        }
+        invoiceHistory={<BillingInvoiceHistoryGate />}
       />
     </ServerQueryHydration>
   );

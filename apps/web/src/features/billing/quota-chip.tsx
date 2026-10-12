@@ -3,8 +3,11 @@
 import type { JSX } from 'react';
 
 import { tokens } from '@declutrmail/shared';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import type { CleanupSummaryDto } from '@declutrmail/shared/contracts';
-import { meterChipLine } from '@declutrmail/shared/entitlements';
+import { fillStory, meterChipLine } from '@declutrmail/shared/entitlements';
+
+import { track } from '@/lib/posthog';
 
 const AMBER_AT = 0.8;
 
@@ -21,17 +24,30 @@ export function QuotaChip(props: {
     ...(props.compact ? { compact: true } : {}),
   });
   const amber = props.summary.limit > 0 && props.summary.used / props.summary.limit >= AMBER_AT;
+  const from =
+    typeof window === 'undefined' ? '/' : `${window.location.pathname}${window.location.search}`;
   return (
-    <span
-      data-testid="quota-chip"
-      data-tone={amber ? 'amber' : 'default'}
-      aria-label={line.aria}
-      style={{
-        color: amber ? tokens.color.amber : tokens.color.fg,
-        fontVariantNumeric: 'tabular-nums',
-      }}
-    >
-      {line.text}
-    </span>
+    <>
+      <span
+        data-testid="quota-chip"
+        data-tone={amber ? 'amber' : 'default'}
+        aria-label={line.aria}
+        style={{
+          color: amber ? tokens.color.amber : tokens.color.fg,
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
+        {line.text}
+      </span>
+      {' \u00b7 '}
+      <a
+        href={`/billing?from=${encodeURIComponent(from)}`}
+        onClick={() => {
+          void track('upgrade_cta_clicked', { source: 'quota_chip', plan: 'plus' });
+        }}
+      >
+        {fillStory(WS1_COPY['meter.chip.link'])}
+      </a>
+    </>
   );
 }

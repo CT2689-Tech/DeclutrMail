@@ -1,38 +1,13 @@
-'use client';
+import type { InboxReportDto } from '@declutrmail/shared/inbox-report';
+import { getFixSet as fixSetOf } from '@declutrmail/shared/inbox-report';
 
-import type { JSX } from 'react';
+export { InboxReportFirstLanding } from './first-landing-entry';
+export { InboxReportCard } from './card';
 
-/**
- * Signature matches WS5 (`getFixSet(report)`, `InboxReportCard` with a
- * mailbox id). One module file, so a later merge does not keep both
- * `index.ts` and `index.tsx`. The card stays empty until that report lands.
- */
-export function InboxReportCard(_props: {
-  surface: 'home';
-  mailboxId: string;
-}): JSX.Element | null {
-  return null;
-}
-
-export interface InboxReportFix {
-  senderKeys: readonly string[];
-  sendersCount: number;
-  inboxEmailCount: number;
-}
-
-/** The report object Home can pass. WS5's `InboxReportDto` has this `fix`. */
-export interface InboxReportSource {
-  fix: InboxReportFix;
-}
-
-export function getFixSet(report: InboxReportSource): {
+export function getFixSet(report: InboxReportDto): {
   senderKeys: string[];
   sendersCount: number;
   inboxEmailCount: number;
 } {
-  return {
-    senderKeys: [...report.fix.senderKeys],
-    sendersCount: report.fix.sendersCount,
-    inboxEmailCount: report.fix.inboxEmailCount,
-  };
+  return fixSetOf(report);
 }

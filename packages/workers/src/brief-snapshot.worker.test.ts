@@ -11,6 +11,7 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
+import { grantedAiConsentInsert } from '@declutrmail/shared/ai-consent';
 import {
   hasCapability,
   minimumTierForCapability,
@@ -66,7 +67,13 @@ async function seedMailbox(
     });
   const [user] = await db
     .insert(users)
-    .values({ workspaceId: ws!.id, email, timezone, ...(preferences ? { preferences } : {}) })
+    .values({
+      workspaceId: ws!.id,
+      email,
+      timezone,
+      ...(preferences ? { preferences } : {}),
+      ...grantedAiConsentInsert(),
+    })
     .returning({ id: users.id });
   const [mb] = await db
     .insert(mailboxAccounts)
@@ -1227,7 +1234,132 @@ describe('BriefSnapshotWorker', () => {
     // smuggled through the input.
     expect(arg.reply[0]).not.toHaveProperty('senderKey');
     expect(arg.reply[0]).not.toHaveProperty('messageIds');
+    expect(arg.aiConsent).toBe('granted');
     expect(arg.reply[0]).not.toHaveProperty('body');
+  });
+
+  it('D61 — no Brief consent means zero LLM calls and a template Brief', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    await db.update(users).set({
+      aiConsentVersion: null,
+      aiExplanationsConsentAt: null,
+      aiConsentScopes: null,
+      briefAiConsentAt: null,
+      briefAiConsentVersion: null,
+    });
+    await seedSender(db, mailboxAccountId, {
+      email: 'boss@example.com',
+      senderKey: KEY_BOSS,
+      displayName: 'Boss',
+      verdict: 'keep',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_BOSS,
+      subject: 'Q4 plans',
+      snippet: 'Can we move the Q4 sync to Thursday?',
+      internalDate: YESTERDAY_AT(10),
+    });
+    const generateNarrative = vi.fn().mockResolvedValue('must not be produced');
+    const worker = new BriefSnapshotWorker({
+      db: db as never,
+      now: () => NOW,
+      llm: { generateNarrative },
+    });
+    await worker.processJob({ scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) }, FAKE_CTX);
+    expect(generateNarrative).not.toHaveBeenCalled();
+    const [row] = await db
+      .select({ generatedBy: briefRuns.generatedBy })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+    expect(row!.generatedBy).toBe('template');
+  });
+
+  it('calls the model only when Brief consent is granted', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const [owner] = await db
+      .select({ userId: mailboxAccounts.userId })
+      .from(mailboxAccounts)
+      .where(eq(mailboxAccounts.id, mailboxAccountId));
+    await db
+      .update(users)
+      .set({
+        aiConsentVersion: null,
+        aiExplanationsConsentAt: null,
+        aiConsentScopes: null,
+        briefAiConsentAt: null,
+        briefAiConsentVersion: null,
+      })
+      .where(eq(users.id, owner!.userId));
+    await seedSender(db, mailboxAccountId, {
+      email: 'boss@example.com',
+      senderKey: KEY_BOSS,
+      displayName: 'Boss',
+      verdict: 'keep',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_BOSS,
+      subject: 'Q4 plans',
+      snippet: 'Can we move the Q4 sync to Thursday?',
+      internalDate: YESTERDAY_AT(10),
+    });
+    const generateNarrative = vi.fn().mockResolvedValue('Boss needs a reply about Q4.');
+    const worker = new BriefSnapshotWorker({
+      db: db as never,
+      now: () => NOW,
+      llm: { generateNarrative },
+    });
+    await worker.processJob({ scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) }, FAKE_CTX);
+    expect(generateNarrative).not.toHaveBeenCalled();
+
+    await db.update(users).set(grantedAiConsentInsert()).where(eq(users.id, owner!.userId));
+    const upgraded = await worker.processJob(
+      {
+        scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW),
+        consentMailboxAccountId: mailboxAccountId,
+      },
+      FAKE_CTX,
+    );
+    expect(generateNarrative).toHaveBeenCalledTimes(1);
+    expect(upgraded.briefsGenerated).toBe(1);
+    const [row] = await db
+      .select({ generatedBy: briefRuns.generatedBy, briefPayload: briefRuns.briefPayload })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+    expect(row!.generatedBy).toBe('llm_haiku');
+    expect(row!.briefPayload.narrative).toBe('Boss needs a reply about Q4.');
+
+    await worker.processJob(
+      {
+        scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW),
+        consentMailboxAccountId: mailboxAccountId,
+      },
+      FAKE_CTX,
+    );
+    expect(generateNarrative).toHaveBeenCalledTimes(1);
+
+    await db
+      .update(users)
+      .set({ briefAiConsentRevokedAt: new Date('2026-05-25T09:00:00Z') })
+      .where(eq(users.id, owner!.userId));
+    const skipped = await worker.processJob(
+      {
+        scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW),
+        consentMailboxAccountId: mailboxAccountId,
+      },
+      FAKE_CTX,
+    );
+    expect(generateNarrative).toHaveBeenCalledTimes(1);
+    expect(skipped.briefsGenerated).toBe(0);
+    const [kept] = await db
+      .select({ generatedBy: briefRuns.generatedBy, briefPayload: briefRuns.briefPayload })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+    expect(kept!.generatedBy).toBe('llm_haiku');
+    expect(kept!.briefPayload.narrative).toBe('Boss needs a reply about Q4.');
   });
 
   it('D62 — LLM null return falls back to deterministic template', async () => {

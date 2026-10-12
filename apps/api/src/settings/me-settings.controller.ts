@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
 
 import {
   ActionSheetPrefsPatchSchema,
@@ -18,12 +18,14 @@ import {
   type MeSettings,
   type SavedSenderView,
 } from '@declutrmail/shared/contracts';
+import { AiConsentDecisionSchema, type AiConsentView } from '@declutrmail/shared/ai-consent';
 
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { CurrentUser, JwtGuard } from '../auth/jwt.guard.js';
 import type { SessionPrincipal } from '../auth/sessions.service.js';
 import { RateLimit } from '../common/rate-limit/index.js';
-import { UsersService } from '../users/users.service.js';
+import { currentAiConsentView, UsersService } from '../users/users.service.js';
+import { AiConsentFollowup } from './ai-consent-followup.js';
 
 /**
  * Settings read + D34 action-sheet prefs write (U23).
@@ -46,7 +48,10 @@ import { UsersService } from '../users/users.service.js';
 @Controller('me')
 @UseGuards(JwtGuard)
 export class MeSettingsController {
-  constructor(private readonly users: UsersService) {}
+  constructor(
+    private readonly users: UsersService,
+    private readonly aiConsentFollowup: AiConsentFollowup,
+  ) {}
 
   @Get('settings')
   @RateLimit('default')
@@ -57,7 +62,40 @@ export class MeSettingsController {
       actionSheetPrefs: parseActionSheetPrefs(current?.preferences),
       briefPrefs: parseBriefPrefs(current?.preferences),
       senderViews: parseSenderViews(current?.preferences),
+      aiConsent: currentAiConsentView(current),
     });
+  }
+
+  /** POST /api/me/ai-consent — Allow, Not now, or turn AI off. */
+  @Post('ai-consent')
+  @UseGuards(CsrfGuard)
+  @RateLimit('default')
+  async decideAiConsent(
+    @CurrentUser() user: SessionPrincipal,
+    @Body() body: unknown,
+  ): Promise<Envelope<{ aiConsent: AiConsentView }>> {
+    const parsed = AiConsentDecisionSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: 'INVALID_REQUEST',
+        message: parsed.error.issues[0]?.message ?? 'Invalid AI consent decision.',
+      });
+    }
+    const aiConsent = await this.users.applyAiConsent(user.userId, parsed.data);
+    // The update above has committed. Enqueue after it, and do not fail
+    // the Allow the user already saved if Redis is down.
+    try {
+      await this.aiConsentFollowup.afterCommittedGrant(user.userId, parsed.data);
+    } catch (err) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'ai_consent.enqueue_failed',
+          error: err instanceof Error ? err.name : 'Error',
+        }),
+      );
+    }
+    return ok({ aiConsent });
   }
 
   @Patch('action-sheet-prefs')

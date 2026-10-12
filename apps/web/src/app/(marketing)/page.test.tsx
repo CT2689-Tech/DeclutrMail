@@ -7,10 +7,10 @@
  * probe, stubbed here to the anonymous-visitor 401.
  */
 
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
-import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import { cleanupActionsPerMonthFor, MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 import { installFetchStub } from '@/test/fetch-stub';
 import LandingPage, { metadata } from './page';
@@ -39,6 +39,9 @@ async function renderLanding() {
 }
 
 describe('landing page — D134', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
   it('renders the launch headline as the page h1', async () => {
     await renderLanding();
     const h1 = screen.getByRole('heading', { level: 1 });
@@ -48,13 +51,13 @@ describe('landing page — D134', () => {
 
   it('states the D228 trust copy once, plus the collapsed scope disclosures', async () => {
     const { container } = await renderLanding();
-    // The locked headline used to appear seven times on this page. It now
-    // is VISIBLE once, in the Privacy section lede. The only other copies sit
-    // inside the collapsed OAuth scope disclosures (which quote it
-    // verbatim) — one beside each CTA that starts Google OAuth.
+    // Visible twice on purpose: the hero trust row and the Privacy section
+    // lede. The row also keeps a narrow line in the DOM for small screens;
+    // CSS hides it above 880px, so it is not a third copy. Further copies
+    // stay inside collapsed scope disclosures.
     const visible = container.cloneNode(true) as HTMLElement;
-    visible.querySelectorAll('details').forEach((d) => d.remove());
-    expect((visible.textContent ?? '').split(PRIVACY_BADGE_HEADLINE).length - 1).toBe(1);
+    visible.querySelectorAll('details, .dm-trust-row-narrow').forEach((node) => node.remove());
+    expect((visible.textContent ?? '').split(PRIVACY_BADGE_HEADLINE).length - 1).toBe(2);
     expect(container.querySelectorAll('details.dm-mkt-scope')).toHaveLength(2);
     expect(container.querySelector('.dm-mkt-privacy-data')).toBeInTheDocument();
     // What actually needs guarding is that the generated list reaches the
@@ -115,6 +118,45 @@ describe('landing page — D134', () => {
     expect(foot?.textContent).toContain('every paid plan');
   });
 
+  it('renders the launch teaser when the public pricing API says v2', async () => {
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.example.test');
+    vi.stubEnv('PRICING_V2', '');
+    vi.stubEnv('BILLING_PASS_ENABLED', '');
+    // The server read is the first call. A later client refetch that
+    // fails must keep that paint, which is what a blocked browser sees.
+    let pricingReads = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/auth/me',
+        respond: () => new Response(JSON.stringify({ error: 'unauthenticated' }), { status: 401 }),
+      },
+      {
+        method: 'GET',
+        path: '/api/pricing/public',
+        respond: () => {
+          pricingReads += 1;
+          if (pricingReads > 1) return new Response('missing', { status: 404 });
+          return new Response(
+            JSON.stringify({ data: { pricingV2: true, passEnabled: true, meterV2: true } }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        },
+      },
+    ]);
+    const { container } = render(await LandingPage());
+    const plans = await waitFor(() => {
+      const section = container.querySelector('#plans');
+      expect(section).not.toBeNull();
+      return section;
+    });
+    const text = plans?.textContent ?? '';
+    expect(text).toContain('$59');
+    expect(text).not.toMatch(/\$9\s*\/\s*month/);
+    expect(text).not.toContain('$129');
+    expect(text).not.toContain('30-day');
+  });
+
   it('keeps the complete data list available without making it the first trust message', async () => {
     const { container } = await renderLanding();
     expect(container.querySelector('.dm-mkt-privacy-inventory')).not.toHaveAttribute('open');
@@ -154,7 +196,7 @@ describe('landing page — D134', () => {
     expect(within(hero).getByRole('link', { name: 'Start free' }).getAttribute('href')).toBe(
       '/sign-in',
     );
-    expect(within(hero).getByRole('link', { name: /Explore the demo/ })).toHaveAttribute(
+    expect(within(hero).getByRole('link', { name: 'Try the demo' })).toHaveAttribute(
       'href',
       '/inbox-simulator?workspace=senders',
     );
@@ -215,8 +257,12 @@ describe('landing page — D134', () => {
 describe('Hero disclaimer — states the Free-tier cap (QA-sign-in-05)', () => {
   it('mentions the monthly cleanup-action cap alongside the undo window', () => {
     render(<Hero />);
-    const disclaimer = screen.getByText(/No credit card/i);
-    expect(disclaimer.textContent).toMatch(/50 cleanup actions a month/i);
+    const disclaimer = screen.getByText(/No card required/i);
+    const allowance = cleanupActionsPerMonthFor('free');
+    expect(allowance).not.toBeNull();
+    expect(disclaimer.textContent).toContain(
+      `${allowance!.toLocaleString('en-US')} emails cleared a month`,
+    );
   });
 });
 

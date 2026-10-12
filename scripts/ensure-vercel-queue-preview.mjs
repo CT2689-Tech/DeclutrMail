@@ -45,16 +45,24 @@ export async function ensureQueuePreview(env = process.env, fetcher = fetch) {
       throw new Error('Queue ref identity is unavailable');
     return ref.object.sha === sha;
   };
+  const deploymentIdFromUrl = (url) => {
+    if (typeof url !== 'string' || !url.startsWith(deploymentUrl)) return '';
+    const suffix = url.slice(deploymentUrl.length).split(/[?#]/)[0];
+    return /^[A-Za-z0-9]+$/.test(suffix) ? `dpl_${suffix}` : '';
+  };
   // The required check is satisfied only if its latest status is Vercel's own
   // ignore-step success for exactly this deployment of this project.
-  const ignoredByVercel = async (id) => {
-    if (!/^dpl_[A-Za-z0-9]+$/.test(id ?? '')) return false;
+  const latestVercelStatus = async () => {
     const statuses = await request(
       `https://api.github.com/repos/${repository}/commits/${sha}/statuses?per_page=100`,
       env.GH_TOKEN,
     );
     if (!Array.isArray(statuses)) throw new Error('Queue commit statuses are unavailable');
-    const latest = statuses.find((s) => s.context === 'Vercel');
+    return statuses.find((s) => s.context === 'Vercel') ?? null;
+  };
+  const ignoredByVercel = async (id) => {
+    if (!/^dpl_[A-Za-z0-9]+$/.test(id ?? '')) return false;
+    const latest = await latestVercelStatus();
     return (
       latest?.state === 'success' &&
       latest.creator?.login === 'vercel[bot]' &&
@@ -88,6 +96,23 @@ export async function ensureQueuePreview(env = process.env, fetcher = fetch) {
   // The queue may have advanced while we queried Vercel. Never deploy a
   // replacement ref or turn an obsolete candidate into additional work.
   if (!(await current())) return { state: 'stale' };
+  // Queue previews are skipped by the ignore script. A second deployment
+  // would post pending and the merge queue would wait on that build.
+  // Create one only when Vercel has posted no status for this commit, so a
+  // missing native check can still be produced (and then ignored).
+  const latest = await latestVercelStatus();
+  if (latest?.creator?.login === 'vercel[bot]') {
+    const id = deploymentIdFromUrl(latest.target_url);
+    if (id && latest.state === 'success' && latest.description === 'Canceled by Ignored Build Step')
+      return { state: 'ignored', id };
+    if (id && latest.state === 'success') return { state: 'existing', id };
+    if (latest.state === 'pending' && (id || !latest.target_url))
+      return id ? { state: 'existing', id } : { state: 'existing' };
+    if (id && (latest.state === 'failure' || latest.state === 'error'))
+      throw new Error(
+        'Existing queue preview failed or was cancelled; diagnose it before retrying',
+      );
+  }
   const deployment = await request(
     `https://api.vercel.com/v13/deployments?teamId=${team}`,
     env.VERCEL_TOKEN,

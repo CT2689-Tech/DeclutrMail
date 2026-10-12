@@ -1,8 +1,8 @@
 import type * as CheckoutModule from './checkout';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
-vi.mock('@/features/auth/auth-provider', () => ({
-  useAuth: () => ({
+vi.mock('@/features/auth/auth-provider', () => {
+  const auth = () => ({
     me: {
       user: { id: 'u', workspaceId: 'chunk-fixture' },
       tier: 'free',
@@ -10,8 +10,9 @@ vi.mock('@/features/auth/auth-provider', () => ({
       mailboxes: [],
       activeMailboxId: null,
     },
-  }),
-}));
+  });
+  return { useAuth: auth, useOptionalAuth: auth };
+});
 vi.mock('./checkout', async (importOriginal) => {
   const original = await importOriginal<typeof CheckoutModule>();
   return {

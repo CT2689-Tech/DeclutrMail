@@ -13,11 +13,12 @@ function scalar(value: QueryValue): string | null {
 
 /** Validate the only public-to-product checkout intent we accept. */
 export function parseBillingIntentParams(params: Record<string, QueryValue>): BillingIntent | null {
-  if (Object.keys(params).some((key) => !['plan', 'cycle', 'promo', 'from'].includes(key)))
+  if (Object.keys(params).some((key) => !['plan', 'cycle', 'promo', 'from', 'offer'].includes(key)))
     return null;
   const plan = scalar(params.plan);
   const cycle = scalar(params.cycle);
   const promo = scalar(params.promo);
+  const offer = scalar(params.offer);
   const from = parseUpgradeReturnTo(params.from);
   if (params.from !== undefined && !from) return null;
   if ((plan !== 'plus' && plan !== 'pro') || (cycle !== 'monthly' && cycle !== 'annual')) {
@@ -25,10 +26,13 @@ export function parseBillingIntentParams(params: Record<string, QueryValue>): Bi
   }
   if (promo !== null && promo !== 'foundingPro') return null;
   if (promo === 'foundingPro' && (plan !== 'pro' || cycle !== 'annual')) return null;
+  if (offer !== null && offer !== 'pass_onetime') return null;
+  if (offer === 'pass_onetime' && (plan !== 'plus' || cycle !== 'annual')) return null;
   return {
     plan,
     cycle,
     ...(promo === 'foundingPro' ? { promo } : {}),
+    ...(offer === 'pass_onetime' ? { offer } : {}),
     ...(from ? { from } : {}),
   };
 }
@@ -44,12 +48,13 @@ export function parseBillingIntentPath(value: string | null | undefined): Billin
   }
   if (url.origin !== 'https://declutrmail.invalid' || url.pathname !== '/billing') return null;
   const keys = [...url.searchParams.keys()];
-  if (keys.some((key) => !['plan', 'cycle', 'promo', 'from'].includes(key))) return null;
+  if (keys.some((key) => !['plan', 'cycle', 'promo', 'from', 'offer'].includes(key))) return null;
   if (new Set(keys).size !== keys.length) return null;
   return parseBillingIntentParams({
     plan: url.searchParams.get('plan') ?? undefined,
     cycle: url.searchParams.get('cycle') ?? undefined,
     promo: url.searchParams.get('promo') ?? undefined,
+    offer: url.searchParams.get('offer') ?? undefined,
     from: url.searchParams.get('from') ?? undefined,
   });
 }

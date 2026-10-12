@@ -1,19 +1,36 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-const cardGate = vi.hoisted(() => ({ link: false }));
+const cardGate = vi.hoisted(() => ({ shape: 'none' as 'none' | 'anchor' | 'shell' }));
 
 vi.mock('@/features/inbox-report', () => ({
-  InboxReportCard: (props: { mailboxId: string }) =>
-    cardGate.link ? (
-      <a href="/senders" data-mailbox={props.mailboxId}>
-        <strong>Your Inbox Report</strong>
-        <span>
-          A quick look at who sends you the most, what you leave unread and what takes up space.
-        </span>
-        <span>Open report</span>
-      </a>
-    ) : null,
+  InboxReportCard: (props: { mailboxId: string }) => {
+    if (cardGate.shape === 'anchor') {
+      return (
+        <a href="/senders" data-mailbox={props.mailboxId}>
+          <strong>Your Inbox Report</strong>
+          <span>
+            A quick look at who sends you the most, what you leave unread and what takes up space.
+          </span>
+          <span>Open report</span>
+        </a>
+      );
+    }
+    if (cardGate.shape === 'shell') {
+      return (
+        <div data-surface="home" data-mailbox={props.mailboxId}>
+          <h2 className="dm-home-report-title">Your Inbox Report</h2>
+          <span className="dm-home-report-body">
+            A quick look at who sends you the most, what you leave unread and what takes up space.
+          </span>
+          <a className="dm-home-report-cta dm-button-link" href="/senders">
+            Open report
+          </a>
+        </div>
+      );
+    }
+    return null;
+  },
   getFixSet: (report: {
     fix: { senderKeys: readonly string[]; sendersCount: number; inboxEmailCount: number };
   }) => ({
@@ -26,7 +43,7 @@ vi.mock('@/features/inbox-report', () => ({
 import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
 import { ApiError } from '@/lib/api/client';
 
-import { HOME_DECK } from './home-deck-copy';
+import { fillDeck, HOME_DECK } from './home-deck-copy';
 import { homeCalmTemplate, homeReportCopy, homeTileCopy } from './home-ws5-copy';
 import { homePreviewReport } from './home-preview-report';
 import type { HomeFixCandidate } from './home-next-steps';
@@ -189,7 +206,7 @@ describe('HomeView', () => {
   });
 
   it('keeps the lead, size tile, and trust line when the home card link is present', async () => {
-    cardGate.link = true;
+    cardGate.shape = 'anchor';
     render(
       <HomeView
         state={ready}
@@ -211,7 +228,36 @@ describe('HomeView', () => {
     expect(card).not.toBeNull();
     expect(card?.querySelector('strong')).toHaveTextContent('Your Inbox Report');
     expect(card?.querySelectorAll('span')).toHaveLength(2);
-    cardGate.link = false;
+    cardGate.shape = 'none';
+  });
+
+  it('keeps the lead, size tile, and trust line when the shipped home card is present', async () => {
+    cardGate.shape = 'shell';
+    render(
+      <HomeView
+        state={ready}
+        nextSteps={[later, unsub]}
+        mailboxId="mb-preview"
+        previewReport={homePreviewReport('full')}
+      />,
+    );
+    const lead = await screen.findByText('91%');
+    expect(lead.closest('[data-report-lead]')).not.toBeNull();
+    expect(lead.closest('[data-home-report-card]')).toBeNull();
+    expect(lead.closest('[hidden]')).toBeNull();
+    expect(screen.getByText('≈ 7.7 GB').closest('[data-report-tile]')).not.toBeNull();
+    expect(
+      screen.getByText(/We never fetch or store full email contents/).closest('[hidden]'),
+    ).toBeNull();
+    const shell = document.querySelector('[data-home-report-card] [data-surface="home"]');
+    expect(shell?.querySelector('h2')).toHaveTextContent('Your Inbox Report');
+    expect(shell?.querySelector('.dm-home-report-body')).not.toBeNull();
+    expect(shell?.querySelector('a')).toHaveTextContent('Open report');
+    expect(shell?.querySelector('h2')?.textContent).not.toContain('Open report');
+    await waitFor(() => {
+      expect(screen.getAllByRole('link', { name: 'Open report' })).toHaveLength(1);
+    });
+    cardGate.shape = 'none';
   });
 
   it('shows the largest card only when the size view is on', () => {
@@ -224,11 +270,9 @@ describe('HomeView', () => {
       />,
     );
     expect(screen.getByRole('heading', { name: 'Your 10 largest senders' })).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'About 2.1 GB of email (Gmail’s estimates). Archiving doesn’t change storage. Deleting moves email to Gmail Trash, which Gmail empties after 30 days.',
-      ),
-    ).toBeInTheDocument();
+    const largestBody = fillDeck(HOME_DECK.largestBody, { size: '2.1 GB' });
+    expect(largestBody).not.toBeNull();
+    expect(screen.getByText(largestBody ?? '')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'See largest senders' })).toHaveAttribute(
       'href',
       '/senders',

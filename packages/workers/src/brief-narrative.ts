@@ -98,6 +98,11 @@ export interface BriefNarrativeInput {
   fyi: BriefNarrativeItem[];
   /** D63 Noise section sender groups (counts only — no snippet noise). */
   noise: BriefNarrativeNoiseGroup[];
+  /**
+   * The worker sets this only after it has read current-version Brief
+   * consent. Adapters must not call the provider without it.
+   */
+  aiConsent?: 'granted';
 }
 
 /** One Reply/FYI item, enriched with the representative Gmail snippet. */

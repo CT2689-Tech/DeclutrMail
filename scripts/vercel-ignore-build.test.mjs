@@ -5,7 +5,12 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { ignoreBuild, isWebBuildPath, webBuildDirs } from './vercel-ignore-build.mjs';
+import {
+  ignoreBuild,
+  isWebBuildPath,
+  webBuildDirs,
+  webRuntimeDirs,
+} from './vercel-ignore-build.mjs';
 import { disableSnapshotPreview } from './disable-snapshot-preview.mjs';
 import { ensureQueuePreview } from './ensure-vercel-queue-preview.mjs';
 
@@ -27,17 +32,25 @@ function workspaceFixture() {
     git('commit', '-qm', 'fixture', ...extra);
     return git('rev-parse', 'HEAD');
   };
-  git('init', '-q', '-b', 'feature');
+  git('init', '-q', '-b', 'main');
   git('config', 'user.email', 'fixture@example.test');
   git('config', 'user.name', 'Fixture');
   git('config', 'commit.gpgsign', 'false');
   write('package.json', '{"name":"root"}');
   write('pnpm-lock.yaml', 'lockfileVersion: 9');
   write('tsconfig.base.json', '{}');
-  manifest('apps/web', '@x/web', { '@x/shared': 'workspace:*', react: '^19' });
+  write(
+    'apps/web/package.json',
+    JSON.stringify({
+      name: '@x/web',
+      dependencies: { '@x/shared': 'workspace:*', react: '^19' },
+      devDependencies: { '@x/lint': 'workspace:*' },
+    }),
+  );
   manifest('apps/api', '@x/api', { '@x/shared': 'workspace:*', '@x/db': 'workspace:*' });
   manifest('packages/shared', '@x/shared', { '@x/tokens': 'workspace:^' });
   manifest('packages/tokens', '@x/tokens');
+  manifest('packages/lint', '@x/lint');
   manifest('packages/db', '@x/db');
   write('apps/web/src/page.tsx', 'page');
   write('apps/api/src/a.ts', 'api');
@@ -46,12 +59,21 @@ function workspaceFixture() {
   write('packages/db/src/a.ts', 'db');
   write('docs/note.md', 'docs');
   const first = commit();
+  git('checkout', '-q', '-b', 'feature');
+  const trackMain = (sha = git('rev-parse', 'HEAD')) => {
+    git('update-ref', 'refs/remotes/origin/main', sha);
+    if (git('rev-parse', '--abbrev-ref', 'HEAD') !== 'main')
+      git('update-ref', 'refs/heads/main', sha);
+    return sha;
+  };
+  trackMain(first);
   return {
     cwd,
     git,
     write,
     commit,
     first,
+    trackMain,
     cleanup: () => rmSync(cwd, { recursive: true, force: true }),
   };
 }
@@ -68,7 +90,17 @@ test('web build inputs are the app, its transitive workspace deps and root build
   const f = workspaceFixture();
   try {
     const dirs = webBuildDirs(f.cwd);
-    assert.deepEqual(dirs.sort(), ['apps/web/', 'packages/shared/', 'packages/tokens/']);
+    assert.deepEqual(dirs.sort(), [
+      'apps/web/',
+      'packages/lint/',
+      'packages/shared/',
+      'packages/tokens/',
+    ]);
+    assert.deepEqual(webRuntimeDirs(f.cwd).sort(), [
+      'apps/web',
+      'packages/shared',
+      'packages/tokens',
+    ]);
     for (const path of [
       'apps/web/src/features/marketing/page.tsx',
       'apps/web/vercel.json',
@@ -163,6 +195,7 @@ test('previous deployment diff: unrelated changes skip, web/shared/root changes 
       ['.pnpmfile.cjs', 'new pnpm install hook'],
       ['.npmrc', 'npm config'],
     ]) {
+      f.trackMain();
       f.write(
         path,
         path.endsWith('package.json')
@@ -177,6 +210,7 @@ test('previous deployment diff: unrelated changes skip, web/shared/root changes 
     }
 
     const dependabot = { VERCEL_GIT_COMMIT_REF: 'dependabot/github_actions/checkout-7' };
+    f.trackMain();
     f.write('.github/workflows/ci.yml', 'actions bump');
     const actionsBump = f.commit();
     assert.equal(
@@ -184,19 +218,22 @@ test('previous deployment diff: unrelated changes skip, web/shared/root changes 
       0,
       'dependabot, proven non-web diff',
     );
-    f.write('pnpm-lock.yaml', 'dependabot lock bump');
+    f.trackMain();
+    f.write('pnpm-lock.yaml', 'dependabot lock only');
     const lockBump = f.commit();
-    assert.equal(check(lockBump, actionsBump, dependabot).code, 1, 'dependabot lockfile');
-    f.write('apps/web/src/page.tsx', 'dependabot web change');
+    assert.equal(check(lockBump, actionsBump, dependabot).code, 0, 'dependabot lockfile-only');
+    assert.equal(check(lockBump, actionsBump).code, 1, 'same lockfile on a feature branch builds');
+    f.trackMain();
+    f.write('apps/web/src/page.tsx', 'dependabot web source');
     current = f.commit();
-    assert.equal(check(current, lockBump, dependabot).code, 1, 'dependabot web change');
+    assert.equal(check(current, lockBump, dependabot).code, 0, 'dependabot source is not runtime');
 
-    const webBaseline = current;
+    f.trackMain();
     f.write('apps/web/src/page.tsx', 'unbuilt web change');
     f.commit();
     f.write('docs/note.md', 'docs after web');
     current = f.commit();
-    assert.equal(check(current, webBaseline).code, 1, 'all changes since deployment, not HEAD^');
+    assert.equal(check(current, 'b'.repeat(40)).code, 1, 'branch changes since main, not HEAD^');
 
     mkdirSync(join(f.cwd, 'docs/moved'), { recursive: true });
     renameSync(join(f.cwd, 'apps/web/src/page.tsx'), join(f.cwd, 'docs/moved/page.tsx'));
@@ -204,29 +241,158 @@ test('previous deployment diff: unrelated changes skip, web/shared/root changes 
     assert.equal(check(moved, current).code, 1, 'moving web code out must build');
 
     const empty = f.commit('--allow-empty');
-    assert.equal(check(empty, moved).code, 1, 'empty commit requests a rebuild');
+    const emptied = check(empty, moved);
+    assert.equal(emptied.code, 0, 'empty commit does not request a rebuild');
+    assert.match(emptied.reason, /empty commit/);
     assert.equal(check(empty, empty).code, 1, 'same commit redeploy');
+    assert.equal(
+      check(empty, moved, { VERCEL_FORCE_BUILD: '1' }).code,
+      1,
+      'explicit force still builds an empty commit',
+    );
     assert.equal(check(moved, current).code, 1, 'checkout must match the deployed commit');
   } finally {
     f.cleanup();
   }
 });
 
-test('a missing, invalid or unreachable previous SHA builds; HEAD^ is never a baseline', () => {
+test('queue preview skips, and main or production still builds that commit', () => {
   const f = workspaceFixture();
-  const check = (current, previous) =>
-    ignoreBuild({ cwd: f.cwd, env: previewEnv(current, previous) });
+  const queue = `gh-readonly-queue/main/pr-12-${'c'.repeat(40)}`;
   try {
-    f.write('apps/web/src/page.tsx', 'web change in the first of two pushed commits');
-    f.commit();
-    f.write('docs/note.md', 'docs-only HEAD commit');
+    f.write('apps/web/src/page.tsx', 'queued web change');
     const current = f.commit();
-    for (const previous of ['', 'not-a-sha', 'b'.repeat(40)]) {
-      const result = check(current, previous);
-      assert.equal(result.code, 1, `previous=${previous || 'unset'}`);
-      assert.match(result.reason, /previous/);
-    }
-    assert.equal(check(f.first, '').code, 1, 'first commit');
+    const skipped = ignoreBuild({
+      cwd: f.cwd,
+      env: previewEnv(current, '', { VERCEL_GIT_COMMIT_REF: queue }),
+    });
+    assert.equal(skipped.code, 0, skipped.reason);
+    assert.match(skipped.reason, /merge-queue preview/);
+    assert.equal(
+      ignoreBuild({
+        cwd: f.cwd,
+        env: previewEnv(current, '', { VERCEL_GIT_COMMIT_REF: queue, VERCEL_ENV: 'production' }),
+      }).code,
+      1,
+      'production',
+    );
+    assert.equal(
+      ignoreBuild({
+        cwd: f.cwd,
+        env: previewEnv(current, '', { VERCEL_GIT_COMMIT_REF: 'main' }),
+      }).code,
+      1,
+      'main',
+    );
+    assert.equal(
+      ignoreBuild({
+        cwd: f.cwd,
+        env: previewEnv(current, '', { VERCEL_GIT_COMMIT_REF: queue, VERCEL_FORCE_BUILD: '1' }),
+      }).code,
+      1,
+      'forced queue preview',
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('first preview skips when the branch has no web changes since main', () => {
+  const f = workspaceFixture();
+  try {
+    f.write('docs/note.md', 'docs only');
+    f.write('apps/api/src/a.ts', 'api only');
+    const current = f.commit();
+    const skipped = ignoreBuild({ cwd: f.cwd, env: previewEnv(current, '') });
+    assert.equal(skipped.code, 0, skipped.reason);
+    assert.match(skipped.reason, /no web build inputs changed/);
+    f.write('apps/web/src/page.tsx', 'first web change');
+    const web = f.commit();
+    assert.equal(ignoreBuild({ cwd: f.cwd, env: previewEnv(web, 'not-a-sha') }).code, 1);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('a rebased branch ignores main commits and an old previous deployment SHA', () => {
+  const f = workspaceFixture();
+  try {
+    f.write('docs/note.md', 'branch docs');
+    f.commit();
+    f.git('checkout', '-q', 'main');
+    f.write('apps/web/src/page.tsx', 'main web');
+    const mainTip = f.commit();
+    f.trackMain(mainTip);
+    f.git('checkout', '-q', 'feature');
+    f.git('rebase', '-q', 'main');
+    const rebased = f.git('rev-parse', 'HEAD');
+    const skipped = ignoreBuild({
+      cwd: f.cwd,
+      env: previewEnv(rebased, f.first),
+    });
+    assert.equal(skipped.code, 0, skipped.reason);
+    f.write('apps/web/src/page.tsx', 'feature web');
+    const ownWeb = f.commit();
+    assert.equal(ignoreBuild({ cwd: f.cwd, env: previewEnv(ownWeb, f.first) }).code, 1);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('dependabot lockfile-only skips and a web runtime dependency builds', () => {
+  const f = workspaceFixture();
+  const ref = { VERCEL_GIT_COMMIT_REF: 'dependabot/npm_and_yarn/entities-8.1.0' };
+  const check = (current) => ignoreBuild({ cwd: f.cwd, env: previewEnv(current, '', ref) });
+  try {
+    f.write('pnpm-lock.yaml', 'lockfileVersion: 9\nbumped: true\n');
+    const lockOnly = f.commit();
+    const skipped = check(lockOnly);
+    assert.equal(skipped.code, 0, skipped.reason);
+    assert.match(skipped.reason, /no web runtime dependency change/);
+
+    f.trackMain();
+    const web = JSON.parse(readFileSync(join(f.cwd, 'apps/web/package.json'), 'utf8'));
+    web.devDependencies.vitest = '^9.0.0';
+    f.write('apps/web/package.json', JSON.stringify(web));
+    const devOnly = f.commit();
+    assert.equal(check(devOnly).code, 0, 'devDependency only');
+
+    f.trackMain();
+    web.dependencies.react = '^19.9.9';
+    f.write('apps/web/package.json', JSON.stringify(web));
+    const runtime = f.commit();
+    const built = check(runtime);
+    assert.equal(built.code, 1, built.reason);
+    assert.match(built.reason, /apps\/web\/package.json web runtime dependencies changed/);
+
+    f.trackMain();
+    const shared = JSON.parse(readFileSync(join(f.cwd, 'packages/shared/package.json'), 'utf8'));
+    shared.dependencies.zod = '^4.9.9';
+    f.write('packages/shared/package.json', JSON.stringify(shared));
+    const transitive = f.commit();
+    const transitiveResult = check(transitive);
+    assert.equal(transitiveResult.code, 1, transitiveResult.reason);
+    assert.match(transitiveResult.reason, /packages\/shared\/package.json web runtime/);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('an empty commit skips even when the branch still differs from main in web files', () => {
+  const f = workspaceFixture();
+  try {
+    f.write('apps/web/src/page.tsx', 'web change that a later empty commit must not rebuild');
+    const web = f.commit();
+    assert.equal(ignoreBuild({ cwd: f.cwd, env: previewEnv(web, '') }).code, 1);
+    const empty = f.commit('--allow-empty');
+    const skipped = ignoreBuild({ cwd: f.cwd, env: previewEnv(empty, f.first) });
+    assert.equal(skipped.code, 0, skipped.reason);
+    assert.match(skipped.reason, /empty commit/);
+    assert.equal(
+      ignoreBuild({ cwd: f.cwd, env: previewEnv(empty, '', { VERCEL_ENV: 'production' }) }).code,
+      1,
+      'production still builds an empty commit',
+    );
   } finally {
     f.cleanup();
   }
@@ -389,7 +555,57 @@ test('missing queue preview is created for the exact source without changing pro
   });
   for (const property of ['target', 'projectSettings', 'withLatestCommit', 'deploymentId'])
     assert.equal(Object.hasOwn(payload, property), false, property);
-  assert.equal(f.calls.filter((c) => c.url.startsWith('https://api.github.com/')).length, 2);
+  assert.equal(f.calls.filter((c) => c.url.startsWith('https://api.github.com/')).length, 3);
+});
+
+test('a queue status already posted by Vercel is not replaced with another deployment', async () => {
+  const target = 'https://vercel.com/chintanathakkar-gmailcoms-projects/declutr-mail/ignored123';
+  const ignored = {
+    context: 'Vercel',
+    state: 'success',
+    description: 'Canceled by Ignored Build Step',
+    creator: { login: 'vercel[bot]' },
+    target_url: target,
+  };
+  const ignoredRun = queueFixture({ statuses: [ignored] });
+  assert.deepEqual(await ensureQueuePreview(ignoredRun.env, ignoredRun.fetcher), {
+    state: 'ignored',
+    id: 'dpl_ignored123',
+  });
+  assert.equal(
+    ignoredRun.calls.some((c) => c.method === 'POST'),
+    false,
+  );
+
+  const pending = queueFixture({
+    statuses: [{ ...ignored, state: 'pending', description: 'Deployment is building' }],
+  });
+  assert.equal((await ensureQueuePreview(pending.env, pending.fetcher)).state, 'existing');
+  assert.equal(
+    pending.calls.some((c) => c.method === 'POST'),
+    false,
+  );
+
+  const built = queueFixture({
+    statuses: [{ ...ignored, description: 'Deployment has completed' }],
+  });
+  assert.equal((await ensureQueuePreview(built.env, built.fetcher)).state, 'existing');
+  assert.equal(
+    built.calls.some((c) => c.method === 'POST'),
+    false,
+  );
+
+  const failed = queueFixture({
+    statuses: [{ ...ignored, state: 'failure', description: 'Deployment failed' }],
+  });
+  await assert.rejects(
+    ensureQueuePreview(failed.env, failed.fetcher),
+    /diagnose it before retrying/,
+  );
+  assert.equal(
+    failed.calls.some((c) => c.method === 'POST'),
+    false,
+  );
 });
 
 test('native previews are reused, obsolete refs skipped and failed previews never retried', async () => {

@@ -8,6 +8,7 @@ import { STAGE_SENTENCE } from '@/features/onboarding/sync-stage-copy';
 import { ApiError } from '@/lib/api/client';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 
+import { HOME_DECK } from './home-deck-copy';
 import { HomeView } from './home-view';
 
 const action = { label: 'Review senders', href: '/senders' };
@@ -119,7 +120,7 @@ describe('rendered Home text', () => {
           kind: 'empty',
           syncing: true,
           action,
-          stageSentence: WS2_COPY.home.syncing.stage.fetching_metadata,
+          stageSentence: HOME_DECK.syncingStage.fetching_metadata,
         }}
       />,
       <HomeView key="queued" state={{ kind: 'empty', syncing: true, queued: true, action }} />,

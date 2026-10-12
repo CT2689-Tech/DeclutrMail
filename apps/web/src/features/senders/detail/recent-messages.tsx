@@ -43,7 +43,7 @@ export function RecentMessages({
     let mounted = true;
     // Keep the entity table out of the initial route bundle. Until it loads,
     // the original snippet remains readable, safely escaped React text.
-    void import('entities/lib/decode.js')
+    void import('entities/decode')
       .then(({ decodeHTML }) => {
         if (mounted) setDecodeSnippet(() => decodeHTML);
       })

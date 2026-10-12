@@ -1,10 +1,13 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
+
 import { TrackedCta } from '../landing/tracked-cta';
 import { useSessionHint } from './use-session-hint';
 
 export function PublicAuthActions() {
   const signedIn = useSessionHint();
+  const onSignIn = usePathname() === '/sign-in';
   return (
     <div className="dm-public-actions">
       {signedIn ? (
@@ -21,14 +24,16 @@ export function PublicAuthActions() {
           >
             Sign in
           </TrackedCta>
-          <TrackedCta
-            className="dm-public-start"
-            href="/sign-in"
-            cta="connect_gmail"
-            placement="nav"
-          >
-            Start free
-          </TrackedCta>
+          {onSignIn ? null : (
+            <TrackedCta
+              className="dm-public-start"
+              href="/sign-in"
+              cta="connect_gmail"
+              placement="nav"
+            >
+              Start free
+            </TrackedCta>
+          )}
         </>
       )}
     </div>

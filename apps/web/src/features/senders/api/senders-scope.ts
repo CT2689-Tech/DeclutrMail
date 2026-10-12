@@ -25,6 +25,7 @@ export interface SendersScreenScope {
     domain: string | null;
     unsubIgnored: boolean;
     hasInboxMail?: boolean;
+    mostlyUnread?: boolean;
   };
 }
 
@@ -74,7 +75,8 @@ function parseSort(raw: string | null): SenderListSort {
     raw === 'first_seen' ||
     raw === 'name' ||
     raw === 'read' ||
-    raw === 'recommended'
+    raw === 'recommended' ||
+    raw === 'size'
     ? raw
     : 'total';
 }
@@ -101,6 +103,7 @@ export function parseSendersScope(params: Pick<URLSearchParams, 'get'>): Senders
       domain: params.get('domain')?.trim() || null,
       unsubIgnored: params.get('unsub_ignored') === 'true',
       hasInboxMail: params.get('has_inbox_mail') === 'true',
+      mostlyUnread: params.get('mostly_unread') === 'true',
     },
     // Trimmed to match the screen's `query.trim()` before hashing — an
     // untrimmed `?q=%20acme` would hydrate a key no observer ever reads.

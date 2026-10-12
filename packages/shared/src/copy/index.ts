@@ -14,6 +14,9 @@ export {
   OAUTH_SCOPE_DISCLOSURE,
   CASA_VERIFICATION_APPROVED_ON,
   CASA_VERIFICATION_APPROVED_MONTH,
+  CASA_LOV_SUBMITTED_ON,
+  BRAND_VERIFICATION_APPROVED_ON,
+  formatVerificationDate,
 } from './privacy';
 
 export { BUSINESS_POSTAL_ADDRESS, postalAddressLine, hasPostalAddress } from './postal-address';

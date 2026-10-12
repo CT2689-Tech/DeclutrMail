@@ -11,11 +11,11 @@
     "e2e:billing": "playwright test billing-upgrade.spec.ts --project=default",
     "e2e:render": "E2E_SKIP_STACK_SETUP=1 playwright test --project=render",
     "e2e:ui": "playwright test --ui",
-    "e2e:hydration": "playwright test hydration-smoke --project=default",
+    "e2e:hydration": "playwright test hydration-smoke public-nav-390 --project=default",
     "e2e:install": "playwright install chromium",
     "typecheck": "tsc --noEmit",
     "build": "echo 'no build'",
-    "e2e:journeys": "playwright test triage-keep sender-policy protection-review autopilot-pages followups-dismiss later-recovery quiet-hours brief-preview senders-search-typing public-journeys cookie-consent journey-recovery scan-recovery home-next-step --project=default",
+    "e2e:journeys": "playwright test triage-keep sender-policy protection-review autopilot-pages followups-dismiss later-recovery quiet-hours brief-preview senders-search-typing public-journeys cookie-consent journey-recovery scan-recovery unsubscribe-backlog home-next-step --project=default",
     "test:harness": "node --experimental-strip-types --test contracts/*.test.mjs",
     "seed": "tsx helpers/seed-local.ts",
     "stack": "node --experimental-strip-types helpers/start-isolated.mjs"
@@ -23,9 +23,9 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
     "@declutrmail/shared": "workspace:*",
-    "@playwright/test": "^1.63.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
+    "@playwright/test": "^1.64.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "postgres": "^3.4.5",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"

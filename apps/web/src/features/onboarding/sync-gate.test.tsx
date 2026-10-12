@@ -9,7 +9,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { STALE_INITIAL_SYNC_MS, type SyncStatus } from '@declutrmail/shared/contracts';
 
-import { SyncGate, stageSentence, timeLeftPhrase } from './sync-gate';
+import { SyncGate, stageSentence, syncGateViewState, timeLeftPhrase } from './sync-gate';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
 
@@ -618,6 +618,10 @@ describe('SyncGate — stuck queued/syncing (stale heartbeat)', () => {
     expect(screen.getByText('This scan has not moved.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
     expect(screen.getByText(/Gmail is untouched/)).toHaveAttribute('data-reason-code', 'stuck');
+    expect(screen.getByRole('link', { name: 'Get help' })).toHaveAttribute(
+      'href',
+      '/settings/help',
+    );
     expect(screen.queryByText(/Reading your inbox/)).not.toBeInTheDocument();
     expect(screen.getByText(/Gmail is untouched/)).toBeInTheDocument();
   });
@@ -719,6 +723,7 @@ describe('SyncGate — failure copy names only what its error proves', () => {
     expect(html).not.toMatch(/connection/i);
     expect(html).toContain('Try again');
     expect(html).toContain('support@declutrmail.com');
+    expect(html).toContain('href="/settings/help"');
   });
 
   it('keeps "Try again" when the incremental grant failure is older than a success', () => {
@@ -731,6 +736,46 @@ describe('SyncGate — failure copy names only what its error proves', () => {
     };
     render(withClient(<SyncGate status={status} mailboxId="mb-1" />));
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
+});
+
+describe('SyncGate — trust line and view state', () => {
+  it('puts the trust line under progress and not on a failed scan', () => {
+    const progress = renderToStaticMarkup(<SyncGate status={SYNCING} />);
+    expect(progress).toContain('We never fetch or store full email contents.');
+    expect(progress).toContain('href="/settings/privacy#what-we-store"');
+    const failed = renderToStaticMarkup(withClient(<SyncGate status={FAILED} />));
+    expect(failed).not.toContain('We never fetch or store full email contents.');
+  });
+
+  it('maps progress, ready, and each recovery reason', () => {
+    expect(syncGateViewState(SYNCING, undefined)).toBe('progress');
+    expect(syncGateViewState(READY, undefined)).toBe('ready');
+    expect(syncGateViewState({ ...FAILED, error_code: 'ProviderPermissionError' }, undefined)).toBe(
+      'insufficient_scopes',
+    );
+    expect(syncGateViewState({ ...FAILED, error_code: 'InvalidGrantError' }, undefined)).toBe(
+      'invalid_grant',
+    );
+    expect(syncGateViewState({ ...FAILED, error_code: 'AuthExpiredError' }, undefined)).toBe(
+      'reconnect_required',
+    );
+    expect(syncGateViewState({ ...FAILED, error_code: 'RateLimitError' }, undefined)).toBe(
+      'rate_limit',
+    );
+    expect(syncGateViewState({ ...FAILED, error_code: 'PermanentError' }, undefined)).toBe(
+      'unknown',
+    );
+    const now = Date.parse('2026-09-21T12:00:00.000Z');
+    expect(
+      syncGateViewState(
+        {
+          ...SYNCING,
+          updated_at: new Date(now - STALE_INITIAL_SYNC_MS - 1_000).toISOString(),
+        },
+        now,
+      ),
+    ).toBe('stuck');
   });
 });
 

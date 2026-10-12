@@ -17,6 +17,7 @@ import { AuthModule } from '../auth/auth.module.js';
 import { EntitlementsModule } from '../common/entitlements/entitlements.module.js';
 import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 import { ActionsController } from './actions.controller.js';
+import { UnsubscribeBacklogService } from './unsubscribe-backlog.service.js';
 import { ACTION_RECOVERY_QUEUE_TOKEN, ActionRecoveryService } from './action-recovery.service.js';
 import { ACTION_QUEUE_TOKEN, ActionsService, UNSUB_QUEUE_TOKEN } from './actions.service.js';
 
@@ -79,6 +80,7 @@ import { ACTION_QUEUE_TOKEN, ActionsService, UNSUB_QUEUE_TOKEN } from './actions
     },
     ActionsService,
     ActionRecoveryService,
+    UnsubscribeBacklogService,
   ],
   exports: [ActionsService],
 })

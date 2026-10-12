@@ -511,6 +511,13 @@
   padding: 22px 32px 20px;
 }
 
+/* The shipped home card brings its own shell. Don't wrap a second frame around it. */
+.report:has([data-surface='home']) {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
 /* Slot for InboxReportCard surface="home". The card's anchor is the direct
    child: strong (title), span (body), span (action). Home stacks that link.
    Lead, tile, and trust stay in .reportFacts and are not hidden. */

@@ -5,10 +5,15 @@ import {
   PROVIDER_SWITCH_NOTE,
   RAZORPAY_LIMITATIONS_NOTE,
 } from '@/features/billing/billing-copy';
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory, isPricingV2, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import type { FaqEntry } from './types';
+
+/** Flags-off D121 answer. The launch deck replaces it only while `PRICING_V2` is on. */
+const FLAGS_OFF_REFUND_SUPPORT =
+  'Every paid plan has a 30-day money-back guarantee subject to the published fair-use terms. Email support@declutrmail.com for product help and privacy@declutrmail.com for privacy, data-rights, or vulnerability reports.';
 
 export const FAQ_ENTRIES: readonly FaqEntry[] = [
   {
@@ -165,8 +170,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
   {
     id: 'refunds-support',
     question: 'What is the refund policy, and how do I get help?',
-    answer:
-      'Every paid plan has a 30-day money-back guarantee subject to the published fair-use terms. Email support@declutrmail.com for product help and privacy@declutrmail.com for privacy, data-rights, or vulnerability reports.',
+    answer: FLAGS_OFF_REFUND_SUPPORT,
     link: {
       href: '/refunds',
       label: 'Read the refund policy',
@@ -175,8 +179,22 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
   },
 ];
 
+/** Live refund answer. Flags-off stays the stored D121 sentence. */
+export function refundSupportAnswer(pricingV2 = isPricingV2()): string {
+  if (!pricingV2) return FLAGS_OFF_REFUND_SUPPORT;
+  return fillStory(WS1_COPY['pricing.faq.refunds.a']);
+}
+
+/** FAQ entries with the refund answer read at render time. */
+export function publishedFaqEntries(pricingV2 = isPricingV2()): readonly FaqEntry[] {
+  return FAQ_ENTRIES.map((entry) =>
+    entry.id === 'refunds-support' ? { ...entry, answer: refundSupportAnswer(pricingV2) } : entry,
+  );
+}
+
 /** Help and acquisition FAQ share the same answer for overlapping product questions. */
-export function faqAnswer(id: string): string {
+export function faqAnswer(id: string, pricingV2 = isPricingV2()): string {
+  if (id === 'refunds-support') return refundSupportAnswer(pricingV2);
   const entry = FAQ_ENTRIES.find((item) => item.id === id);
   if (!entry) throw new Error(`Unknown public FAQ: ${id}`);
   return entry.answer;

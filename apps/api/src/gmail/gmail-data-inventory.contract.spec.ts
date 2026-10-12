@@ -2,6 +2,7 @@ import { getTableColumns } from 'drizzle-orm';
 import {
   mailMessages,
   briefRuns,
+  inboxReportCache,
   mailboxAccounts,
   mailboxLabels,
   providerSyncState,
@@ -113,6 +114,7 @@ describe('D245 Gmail data inventory contract', () => {
       ['senders', columnNames(senders)],
       ['users', columnNames(users)],
       ['brief_runs', columnNames(briefRuns)],
+      ['inbox_report_cache', columnNames(inboxReportCache)],
     ]);
 
     for (const ref of GMAIL_DATA_INVENTORY.flatMap((item) => item.storageRefs)) {

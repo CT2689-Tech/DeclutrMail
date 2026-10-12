@@ -12,24 +12,21 @@
 // 2026-07-08 (D121): 30-day money-back guarantee on every paid plan;
 // the answer states it and links /refunds for the full terms.
 
+import type { Metadata } from 'next';
+
+import { isPricingV2 } from '@declutrmail/shared/entitlements';
+
 import { faqAnswer } from '@/features/marketing/learn/faq-content';
 import { SupportTasks } from '@/features/marketing/learn/support-tasks';
-import type { Metadata } from 'next';
 import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
 
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 import { PAGE_LAST_UPDATED } from '@/features/marketing/page-dates';
-import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
-
-export const metadata: Metadata = marketingPageMetadata({
-  title: 'Help & FAQ — DeclutrMail',
-  description:
-    'What DeclutrMail stores, how Unsubscribe works, what Archive, Later, and Delete do in Gmail terms, undo windows, Autopilot modes, and how to reach support.',
-  path: '/help',
-});
+import { marketingPageMetadata } from '@/features/marketing/page-metadata';
+import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
 
 const LAST_UPDATED = PAGE_LAST_UPDATED['/help'];
 
@@ -123,26 +120,32 @@ const FAQS: ReadonlyArray<{
   },
 ];
 
-/**
- * schema.org FAQPage mirroring the rendered Q&A verbatim (Google
- * requires the marked-up answers to appear on the page).
- */
-const FAQ_JSON_LD = {
-  '@context': 'https://schema.org',
-  '@type': 'FAQPage',
-  mainEntity: FAQS.map(({ q, a, link }) => ({
-    '@type': 'Question',
-    name: q,
-    acceptedAnswer: {
-      '@type': 'Answer',
-      text: link ? `${a} <a href="${siteUrl()}${link.href}">${link.label}</a>` : a,
-    },
-  })),
-};
+/** Refund copy follows the launch flag at render, so JSON-LD cannot be baked at import. */
+function liveFaqs(pricingV2 = isPricingV2()) {
+  return FAQS.map((faq) =>
+    faq.id === 'refunds' ? { ...faq, a: faqAnswer('refunds-support', pricingV2) } : faq,
+  );
+}
+
+function faqJsonLd(faqs: ReturnType<typeof liveFaqs>) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: faqs.map(({ q, a, link }) => ({
+      '@type': 'Question',
+      name: q,
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: link ? `${a} <a href="${siteUrl()}${link.href}">${link.label}</a>` : a,
+      },
+    })),
+  };
+}
 
 const TOC = FAQS.map(({ id, q }) => ({ id, label: q }));
 
-export default function HelpPage() {
+function HelpPage({ pricingV2 = isPricingV2() }: { pricingV2?: boolean } = {}) {
+  const faqs = liveFaqs(pricingV2);
   return (
     <LegalPageLayout title="Help with your workspace" lastUpdated={LAST_UPDATED} toc={TOC}>
       <PageViewTracker page="help" />
@@ -150,8 +153,8 @@ export default function HelpPage() {
       <p>
         Before you connect? <a href="/faq">Read the product and permission FAQ</a>.
       </p>
-      <JsonLd data={FAQ_JSON_LD} />
-      {FAQS.map(({ id, q, a, link }) => (
+      <JsonLd data={faqJsonLd(faqs)} />
+      {faqs.map(({ id, q, a, link }) => (
         <LegalSection key={id} id={id} title={q}>
           <p>
             {a}
@@ -171,4 +174,16 @@ export default function HelpPage() {
       </p>
     </LegalPageLayout>
   );
+}
+
+export const metadata: Metadata = marketingPageMetadata({
+  title: 'Help & FAQ — DeclutrMail',
+  description:
+    'What DeclutrMail stores, how Unsubscribe works, what Archive, Later, and Delete do in Gmail terms, undo windows, Autopilot modes, and how to reach support.',
+  path: '/help',
+});
+
+export default async function HelpRoute() {
+  const flags = await loadPricingFlags();
+  return <HelpPage pricingV2={flags.pricingV2} />;
 }

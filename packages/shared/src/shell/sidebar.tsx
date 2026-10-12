@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { Logo } from '../components/logo';
+import { WS2_COPY } from '../copy/launch/ws2';
+import { BRIEF_NAME, CATCH_UP_LATER_FIRST } from '../copy/screen-decisions';
 import { font, motion, radius, text } from '../tokens/tokens';
-import { useLabels, type LabelKey } from '../hooks/use-labels';
+import { NAV_GROUP, useLabels, type LabelKey } from '../hooks/use-labels';
 
 interface NavItem {
   id: LabelKey;
@@ -35,11 +37,23 @@ export const NAV: readonly NavItem[] = [
   { id: 'activity', icon: 'M3 12h4l3-9 4 18 3-9h4' },
 ];
 
+const CATCH_UP_LATER_ORDER = [
+  'snoozed',
+  'brief',
+  'followups',
+] as const satisfies readonly LabelKey[];
+const CATCH_UP_BRIEF_ORDER = [
+  'brief',
+  'followups',
+  'snoozed',
+] as const satisfies readonly LabelKey[];
+const CATCH_UP_MEMBERS = CATCH_UP_LATER_FIRST ? CATCH_UP_LATER_ORDER : CATCH_UP_BRIEF_ORDER;
+
 export const WORKSPACE_NAV = [
   { id: 'home', label: 'Home', icon: 'm3 10 9-7 9 7v10H3V10Zm6 10v-7h6v7', members: ['home'] },
   {
     id: 'senders',
-    label: 'Clean up',
+    label: NAV_GROUP,
     icon: 'M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2M16 3a4 4 0 0 1 0 8m5 10v-2a4 4 0 0 0-3-3.87M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z',
     members: ['senders', 'triage', 'screener'],
   },
@@ -53,7 +67,7 @@ export const WORKSPACE_NAV = [
     id: 'brief',
     label: 'Catch up',
     icon: 'M3 4h7l2 2 2-2h7v15h-7l-2 2-2-2H3V4Zm9 2v15',
-    members: ['brief', 'followups', 'snoozed'],
+    members: CATCH_UP_MEMBERS,
   },
   { id: 'activity', label: 'Activity', icon: 'M3 12h4l3-8 4 16 3-8h4', members: ['activity'] },
 ] as const satisfies readonly {
@@ -203,8 +217,9 @@ export function Sidebar({
             const number = typeof value === 'object' ? value.text : value;
             return number != null && number !== 0 && number !== '0';
           });
+          const destination = members[0] ?? item.id;
           const signalNavigationIntent = () => {
-            if (!on) onNavigateIntent?.(item.id);
+            if (!on) onNavigateIntent?.(destination);
           };
           return (
             <button
@@ -213,7 +228,7 @@ export function Sidebar({
               className="dm-nav-row"
               onClick={() => {
                 setHint(null);
-                onNavigate(item.id);
+                onNavigate(destination);
               }}
               onFocus={(event) => {
                 signalNavigationIntent();
@@ -228,6 +243,7 @@ export function Sidebar({
               onMouseLeave={() => setHint(null)}
               aria-current={on ? 'page' : undefined}
               aria-label={collapsed ? label : undefined}
+              aria-describedby={item.id === 'brief' ? 'nav-catchup-hint' : undefined}
               aria-description={collapsed && context ? context : undefined}
               title={collapsed ? hintLabel : undefined}
               style={{
@@ -293,6 +309,9 @@ export function Sidebar({
             </button>
           );
         })}
+        <p id="nav-catchup-hint" hidden>
+          {WS2_COPY.explain.catchup.replaceAll('{BRIEF_NAME}', BRIEF_NAME)}
+        </p>
       </nav>
       <button
         type="button"

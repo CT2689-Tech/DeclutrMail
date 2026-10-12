@@ -25,7 +25,7 @@
 
 import type { Envelope } from '@declutrmail/shared/contracts';
 
-import { apiGet, apiPost } from './client';
+import { ApiError, apiGet, apiPost } from './client';
 
 /** D62 — provenance of the narrative string. */
 export type BriefGeneratedByWire = 'llm_haiku' | 'template';
@@ -139,18 +139,29 @@ export interface BriefMarkOpenedResultWire {
 }
 
 /**
- * GET /api/briefs/today — the snapshot for today (D69 frozen). 404 if
- * the snapshot worker hasn't fired yet (the FE renders
- * an empty / "Brief lands soon" state in that case; the snapshot worker
- * ticks every hour per D69 so a refetch on focus picks it up).
+ * GET /api/briefs/today — the snapshot for today (D69 frozen). No
+ * snapshot yet is `{ data: null }` with status 200. A 404 or 204 is
+ * the same absence, kept so an older API still renders "Brief lands
+ * soon" instead of an error while Home and the API deploy apart.
  *
  * The server resolves the day from persisted `users.timezone`, the
  * same authority snapshot generation uses. Browser state cannot select
  * a different Brief day.
  */
-export async function fetchBriefToday(signal?: AbortSignal): Promise<Envelope<BriefWire, unknown>> {
-  const envelope = await apiGet<BriefWire>('/api/briefs/today', { signal });
-  return { ...envelope, data: { ...envelope.data, noiseSenders: toNoiseSenders(envelope.data) } };
+export async function fetchBriefToday(
+  signal?: AbortSignal,
+): Promise<Envelope<BriefWire | null, unknown>> {
+  try {
+    const envelope = await apiGet<BriefWire | null>('/api/briefs/today', { signal });
+    if (envelope.data == null) return { ...envelope, data: null };
+    return {
+      ...envelope,
+      data: { ...envelope.data, noiseSenders: toNoiseSenders(envelope.data) },
+    };
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return { data: null };
+    throw error;
+  }
 }
 
 /**
@@ -177,11 +188,19 @@ export async function fetchBriefHistory(
 export async function fetchRecentBriefs(
   signal?: AbortSignal,
 ): Promise<Envelope<BriefWire[], unknown>> {
-  const envelope = await apiGet<BriefWire[]>('/api/briefs/recent', { signal });
-  return {
-    ...envelope,
-    data: envelope.data.map((row) => ({ ...row, noiseSenders: toNoiseSenders(row) })),
-  };
+  try {
+    const envelope = await apiGet<BriefWire[] | null>('/api/briefs/recent', { signal });
+    // 204, 404, and a null body are an empty list, the same absence
+    // `fetchBriefToday` treats as no edition. Mapping null throws.
+    const rows = Array.isArray(envelope.data) ? envelope.data : [];
+    return {
+      ...envelope,
+      data: rows.map((row) => ({ ...row, noiseSenders: toNoiseSenders(row) })),
+    };
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return { data: [] };
+    throw error;
+  }
 }
 
 /**

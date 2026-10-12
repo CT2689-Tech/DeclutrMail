@@ -41,7 +41,7 @@ describe('UnsubMailtoCallout', () => {
         mailtoUrl="mailto:unsubscribe@linkedin.example?subject=Unsubscribe%20me"
       />,
     );
-    const link = screen.getByRole('link', { name: 'Open Gmail draft' });
+    const link = screen.getByRole('link', { name: 'Open email in Gmail' });
     expect(link.getAttribute('href')).toBe(
       'https://mail.google.com/mail/?authuser=newsletters%2Bdeclutr%40example.com&view=cm&fs=1&to=unsubscribe%40linkedin.example&su=Unsubscribe+me',
     );
@@ -62,7 +62,7 @@ describe('UnsubMailtoCallout', () => {
     expect(callout.textContent).toContain('by email');
     expect(callout.textContent).toContain('send it yourself');
     // The two steps are the buttons, not a sentence narrating them.
-    expect(screen.getByRole('link', { name: /Open Gmail draft/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Open email in Gmail/ })).toBeInTheDocument();
   });
 
   it('dismisses via the close button when onDismiss is provided', () => {

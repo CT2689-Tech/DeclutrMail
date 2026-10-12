@@ -6,11 +6,18 @@ import {
   infrastructurePolicies,
   workerHeartbeatPolicy,
   assertRuntimeCoverage,
+  oauthCallbackShouldPage,
+  deadLetterShouldPage,
+  gmailRateLimitShouldPage,
 } from './setup-infra-alerts.mjs';
 import {
   RUNTIME_LOG_METRICS,
+  LAUNCH_LOG_METRICS,
   EXPECTED_RUNTIME_COLLECTIONS,
   RECONNECT_EMAIL_OUTCOMES,
+  OAUTH_FAILURE_REASONS,
+  OAUTH_IGNORED_REASONS,
+  GMAIL_QUOTA_WORKERS,
 } from './infra-runtime-metrics.mjs';
 import { dashboard } from './setup-infra-dashboard.mjs';
 
@@ -40,7 +47,7 @@ test('runtime absence is gated until deployment and does not hide a missing sour
   assert.ok(rule.query.includes(' + sum('));
   assert.equal(rule.labels.service, 'declutrmail-worker');
   assert.equal(rule.duration, '0s');
-  for (const source of ['mailbox', 'queue', 'scheduler', 'database', 'reconnect']) {
+  for (const source of ['mailbox', 'queue', 'scheduler', 'database', 'reconnect', 'recovery']) {
     assert.ok(
       absent.conditions.some((c) =>
         c.conditionPrometheusQueryLanguage.query.includes(`source="${source}"`),
@@ -142,6 +149,14 @@ test('runtime activation rejects missing, stale, future and failed-only observat
         now,
       ),
     /actions/,
+  );
+  assert.throws(
+    () =>
+      assertRuntimeCoverage(
+        series.filter((s) => s.metric.labels.source !== 'recovery'),
+        now,
+      ),
+    /recovery/,
   );
   for (const endTime of ['2026-09-05T11:00:00Z', '2026-09-05T12:01:00Z']) {
     assert.throws(() =>
@@ -320,4 +335,227 @@ test('snapshot age uses the source timestamp and keeps absence unavailable', () 
     /Empty event-only failure or outcome counters mean no matching events observed/,
   );
   assert.match(copy, /Periodic runtime gauges and heartbeats.*blank means unavailable/);
+});
+
+test('launch alerts page only past the stated thresholds and stay off the offline plan', () => {
+  const offline = JSON.stringify(infrastructurePolicies());
+  assert.equal(offline.includes('initial-sync queue wait'), false);
+  assert.equal(offline.includes('OAuth callback'), false);
+  const policies = infrastructurePolicies({ runtime: true });
+  const find = (title) => policies.find((policy) => policy.displayName === title);
+  const initial = find('DeclutrMail initial-sync queue wait over 10 minutes');
+  const initialRule = initial.conditions[0].conditionThreshold;
+  assert.equal(initialRule.thresholdValue, 600);
+  assert.equal(initialRule.comparison, 'COMPARISON_GT');
+  assert.equal(initialRule.duration, '600s');
+  assert.equal(initialRule.aggregations[0].alignmentPeriod, '300s');
+  assert.ok(initialRule.filter.includes('metric.labels.queue="initial-sync"'));
+  const genericWait = find('DeclutrMail internal queue waiting age').conditions[0]
+    .conditionThreshold;
+  assert.equal(genericWait.thresholdValue, 300);
+  assert.ok(genericWait.filter.includes('metric.labels.queue!="initial-sync"'));
+  const recovery = find('DeclutrMail initial recovery budget exhausted').conditions[0]
+    .conditionThreshold;
+  assert.equal(recovery.thresholdValue, 0);
+  assert.equal(recovery.comparison, 'COMPARISON_GT');
+  assert.equal(recovery.aggregations[0].perSeriesAligner, 'ALIGN_PERCENTILE_99');
+  assert.equal(recovery.aggregations[0].alignmentPeriod, '300s');
+  assert.ok(Number.parseInt(recovery.duration) >= 600);
+  const dead = find('DeclutrMail worker dead-letter growth').conditions[0].conditionThreshold;
+  assert.equal(dead.thresholdValue, 5);
+  assert.equal(dead.comparison, 'COMPARISON_GT');
+  assert.equal(dead.aggregations[0].alignmentPeriod, '3600s');
+  assert.deepEqual(dead.aggregations[0].groupByFields, ['metric.label.worker']);
+  assert.equal(deadLetterShouldPage(5), false);
+  assert.equal(deadLetterShouldPage(6), true);
+  const oom = find('DeclutrMail worker OOM or container exit').conditions[0].conditionThreshold;
+  assert.equal(oom.thresholdValue, 0);
+  assert.equal(oom.comparison, 'COMPARISON_GT');
+  assert.ok(!oom.filter.includes('declutrmail-api'));
+  const gmail = find('DeclutrMail Gmail rate limit above guardrail').conditions[0]
+    .conditionThreshold;
+  assert.equal(gmail.thresholdValue, 30);
+  assert.equal(gmail.comparison, 'COMPARISON_GT');
+  assert.equal(gmail.aggregations[0].alignmentPeriod, '600s');
+  assert.equal(gmail.aggregations[0].crossSeriesReducer, 'REDUCE_SUM');
+  assert.equal(gmail.aggregations[0].groupByFields, undefined);
+  assert.equal(gmailRateLimitShouldPage(30), false);
+  assert.equal(gmailRateLimitShouldPage(31), true);
+  const oauth = find('DeclutrMail OAuth callback failures').conditions[0]
+    .conditionPrometheusQueryLanguage;
+  assert.equal(oauth.duration, '60s');
+  assert.match(oauth.query, />= 3/);
+  assert.match(oauth.query, /> 0\.2/);
+  assert.match(oauth.query, /\[24h\]\)\) >= 10/);
+  assert.doesNotMatch(oauth.query, /\[24h\]\)\) > 0\)/);
+  assert.equal(
+    oauthCallbackShouldPage({ failuresLastHour: 2, failuresLastDay: 2, startsLastDay: 0 }),
+    false,
+  );
+  assert.equal(
+    oauthCallbackShouldPage({ failuresLastHour: 2, failuresLastDay: 4, startsLastDay: 20 }),
+    false,
+  );
+  assert.equal(
+    oauthCallbackShouldPage({ failuresLastHour: 2, failuresLastDay: 5, startsLastDay: 20 }),
+    true,
+  );
+  assert.equal(
+    oauthCallbackShouldPage({ failuresLastHour: 1, failuresLastDay: 1, startsLastDay: 1 }),
+    false,
+  );
+  assert.equal(
+    oauthCallbackShouldPage({ failuresLastHour: 1, failuresLastDay: 9, startsLastDay: 9 }),
+    false,
+  );
+  assert.equal(
+    oauthCallbackShouldPage({ failuresLastHour: 1, failuresLastDay: 2, startsLastDay: 10 }),
+    false,
+  );
+  assert.equal(
+    oauthCallbackShouldPage({ failuresLastHour: 1, failuresLastDay: 3, startsLastDay: 10 }),
+    true,
+  );
+  assert.equal(
+    oauthCallbackShouldPage({ failuresLastHour: 3, failuresLastDay: 3, startsLastDay: 100 }),
+    true,
+  );
+});
+
+test('launch log metrics keep OAuth on the API and Gmail quota on allowlisted workers', () => {
+  const byName = Object.fromEntries(LAUNCH_LOG_METRICS.map((metric) => [metric.name, metric]));
+  const failure = byName.oauth_callback_failure;
+  const start = byName.oauth_callback_start;
+  assert.ok(failure.filter.includes('service_name="declutrmail-api"'));
+  assert.ok(failure.filter.includes('jsonPayload.eventType="login.failure"'));
+  assert.ok(start.filter.includes('jsonPayload.eventType="oauth.start"'));
+  assert.ok(!failure.filter.includes('declutrmail-worker'));
+  for (const reason of OAUTH_FAILURE_REASONS)
+    assert.ok(failure.filter.includes(`jsonPayload.reason="${reason}"`));
+  for (const reason of OAUTH_IGNORED_REASONS) assert.ok(!failure.filter.includes(reason));
+  assert.ok(!failure.filter.includes('signup.denied'));
+  const service = readFileSync('apps/api/src/security-events/security-events.service.ts', 'utf8');
+  for (const reason of [...OAUTH_FAILURE_REASONS, ...OAUTH_IGNORED_REASONS]) {
+    assert.ok(service.includes(`'${reason}'`), reason);
+  }
+  assert.ok(service.includes("new Set(['oauth.start', 'login.failure'])"));
+  assert.ok(!service.includes("'signup.denied'"));
+  const alerts = readFileSync('scripts/setup-infra-alerts.mjs', 'utf8');
+  // CodeQL treats a binding named `oauth` as a credential. The plan logger
+  // prints policies, so that name must not be the policy binding.
+  assert.doesNotMatch(alerts, /\b(?:const|let|function) oauth\b/);
+  assert.doesNotMatch(alerts, /\bfunction oauthFailureQuery\b/);
+  const dead = byName.worker_dead_lettered;
+  assert.ok(dead.filter.includes('jsonPayload.kind="worker.dead_lettered"'));
+  assert.ok(!dead.filter.includes('dead_letter.parked'));
+  assert.equal(dead.labelExtractors.worker, 'EXTRACT(jsonPayload.worker)');
+  const oom = byName.worker_oom_or_exit;
+  assert.ok(oom.filter.includes('service_name="declutrmail-worker"'));
+  assert.ok(!oom.filter.includes('declutrmail-api'));
+  assert.ok(oom.filter.includes('Memory limit of'));
+  assert.ok(oom.filter.includes('Container called exit'));
+  assert.ok(oom.filter.includes('NOT textPayload:"Container called exit(0)"'));
+  assert.ok(oom.filter.includes('NOT jsonPayload.message:"Container called exit(0)"'));
+  const gmail = byName.gmail_rate_limit_events;
+  assert.ok(gmail.filter.includes('jsonPayload.error="RateLimitError"'));
+  assert.ok(gmail.filter.includes('jsonPayload.kind="worker.failed"'));
+  assert.ok(!gmail.filter.includes('worker.retried'));
+  assert.ok(!gmail.filter.includes('worker.dead_lettered'));
+  assert.ok(!gmail.filter.includes('GmailQuotaError'));
+  assert.ok(!gmail.filter.includes('DomainIconWorker'));
+  assert.ok(failure.filter.includes('jsonPayload.reason="connect_failed"'));
+  assert.ok(failure.filter.includes('jsonPayload.reason="MAILBOX_OWNED_BY_OTHER_WORKSPACE"'));
+  for (const worker of GMAIL_QUOTA_WORKERS)
+    assert.ok(gmail.filter.includes(`jsonPayload.worker="${worker}"`));
+  const snooze = readFileSync('packages/workers/src/snooze-wake.worker.ts', 'utf8');
+  assert.ok(snooze.includes('gmailMutation.getClient'));
+  assert.ok(snooze.includes("'RateLimitError'"));
+  assert.ok(GMAIL_QUOTA_WORKERS.includes('SnoozeWakeWorker'));
+  const runbook = readFileSync('docs/ops/observability-alerts.md', 'utf8');
+  assert.match(
+    runbook,
+    /node scripts\/setup-infra-alerts\.mjs declutrmail-ai-prod --runtime --apply/,
+  );
+  assert.match(runbook, /kind=ops\.collection source=recovery success=1/);
+});
+
+function rehearsalReport(args, env = process.env) {
+  const raw = execFileSync(
+    'pnpm',
+    ['exec', 'tsx', 'scripts/rehearse-first-sync-load.ts', ...args],
+    {
+      encoding: 'utf8',
+      env,
+    },
+  );
+  return JSON.parse(raw.trim().split('\n').at(-1));
+}
+
+test('fast first-sync rehearsal prints report fields and refuses production', () => {
+  const report = rehearsalReport(['--mailboxes', '3', '--fast']);
+  for (const key of [
+    'mailboxes',
+    'emails',
+    'queueWaitP50Ms',
+    'queueWaitP90Ms',
+    'completionP50Ms',
+    'completionP90Ms',
+    'peakRssBytes',
+    'failures',
+  ])
+    assert.equal(typeof report[key], 'number', key);
+  assert.equal(rehearsalReport(['--fast']).mailboxes, 20);
+  assert.equal(report.mailboxes, 3);
+  assert.equal(report.emails, 60);
+  assert.equal(report.failures, 0);
+  assert.ok(report.peakRssBytes > 0);
+  assert.equal(report.queueWaitP90Ms >= report.queueWaitP50Ms, true);
+  const failed = rehearsalReport(['--mailboxes', '3', '--fast', '--inject-failures']);
+  assert.ok(failed.failures > 0);
+  assert.throws(() =>
+    rehearsalReport(['--mailboxes', '1', '--fast'], {
+      ...process.env,
+      GOOGLE_CLOUD_PROJECT: 'declutrmail-ai-prod',
+    }),
+  );
+  assert.throws(() => rehearsalReport(['--mailboxes', '1', '--fast', '--production-users']));
+  assert.throws(() =>
+    rehearsalReport(['--mailboxes', '1'], {
+      ...process.env,
+      DATABASE_URL: 'postgres://example.supabase.co/postgres',
+    }),
+  );
+  assert.throws(() =>
+    execFileSync(
+      'pnpm',
+      [
+        'exec',
+        'tsx',
+        '-e',
+        "import { percentile } from './scripts/rehearse-first-sync-load.ts'; percentile([], 50)",
+      ],
+      { encoding: 'utf8' },
+    ),
+  );
+  const runbook = readFileSync('docs/runbooks/first-sync-load-rehearsal.md', 'utf8');
+  assert.match(runbook, /qa1/);
+  assert.match(runbook, /qa5/);
+  assert.match(runbook, /does not call Gmail/);
+});
+
+test('dependabot rebases stay disabled and version updates stay one weekly group', () => {
+  const source = readFileSync('.github/dependabot.yml', 'utf8');
+  assert.equal(source.split('rebase-strategy: disabled').length - 1, 3);
+  assert.equal(source.split('interval: weekly').length - 1, 3);
+  assert.equal(source.split('open-pull-requests-limit: 1').length - 1, 3);
+  assert.equal(source.includes('open-pull-requests-limit: 8'), false);
+  assert.equal(source.includes('open-pull-requests-limit: 3'), false);
+  assert.equal(source.includes('open-pull-requests-limit: 2'), false);
+  assert.equal(source.includes('rebase-strategy: auto'), false);
+  assert.equal(/restore after \d{4}-\d{2}-\d{2}/.test(source), false);
+  assert.equal(source.split('\n      all:').length - 1, 3);
+  assert.equal(source.split('\n      security:').length - 1, 3);
+  for (const group of ['framework:', 'nestjs:', 'lint-format:', 'dev-minor:']) {
+    assert.equal(source.includes(group), false);
+  }
 });

@@ -1,4 +1,5 @@
 export { BaseDeclutrWorker } from './base-declutr-worker.js';
+export { isNeedsReconnectEnumMissing } from './initial-sync.worker.js';
 export type { WorkerContext } from './worker-context.js';
 export { NOOP_WORKER_OBSERVER } from './worker-observer.js';
 export type {
@@ -339,6 +340,8 @@ export {
   BRIEF_SNAPSHOT_INTERVAL_MS,
   BRIEF_SNAPSHOT_JOB,
   BRIEF_SNAPSHOT_QUEUE,
+  briefConsentJobId,
+  briefConsentJobOptions,
   briefSnapshotJobOptions,
   enqueueBriefSnapshotTick,
   scheduledAtMinute as briefSnapshotScheduledAtMinute,
@@ -362,6 +365,7 @@ export {
   SCORE_EXPLAIN_QUEUE,
   SCORE_JOB,
   SCORE_QUEUE,
+  consentRescoreJobId,
   scoreBullWorkerOptions,
   scoreJobId,
   scoreJobOptions,
@@ -467,11 +471,29 @@ export {
   createEmailRuntimeConnection,
   EmailRuntimeLease,
   EmailRuntimeLeaseError,
+  invalidateEmailRuntimeAdoption,
   readEmailRuntimeLeases,
   EMAIL_RUNTIME_LEASE_PROTOCOL,
   EMAIL_RUNTIME_REGISTRY_PREFIX,
+  EMAIL_RUNTIME_WORKER_REVISION,
   type EmailRuntimeAdoptionWitness,
 } from './email-runtime-lease.js';
+export {
+  API_VALIDATION_START,
+  advanceEmailRuntimeAdoption,
+  attestEmailRuntimeAdoption,
+  classifyEmailRuntimeHosting,
+  emailRuntimeEvidenceDigest,
+  emailRuntimeHostingDigest,
+  verifySealedAdoptionWitness,
+  EMAIL_RUNTIME_ADOPTION_PROTOCOL,
+  type EmailRuntimeAdoptionEvidence,
+  type EmailRuntimeCredentialHolder,
+  type EmailRuntimeHostingSnapshot,
+  type EmailRuntimeProcedureState,
+  type EmailRuntimeRetirementBoundary,
+  type EmailRuntimeWorkload,
+} from './email-runtime-adoption.js';
 export {
   EmailRuntimeGuard,
   startEmailRuntimeConsumer,

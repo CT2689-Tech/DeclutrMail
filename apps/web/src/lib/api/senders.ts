@@ -110,6 +110,11 @@ export interface SenderListRow {
    */
   totalReceived: number;
   /**
+   * Sum of Gmail size estimates for inbound mail from this sender,
+   * including Trash. Null when every stored estimate is null.
+   */
+  sizeBytes?: number | null;
+  /**
    * Messages currently carrying INBOX for this sender — what the
    * inbox-scoped verbs can actually reach (ADR-0028 companion surface).
    * Optional: an API predating the field omits it (deploy skew) and
@@ -477,7 +482,8 @@ export interface DecisionHistoryRowDto {
  * name`; `read | recommended` are reserved but deferred (the BE
  * returns 400 for either). When omitted, the BE defaults to `total`.
  */
-export type SenderListSort = 'total' | 'last_seen' | 'first_seen' | 'name' | 'read' | 'recommended';
+export type SenderListSort =
+  'total' | 'last_seen' | 'first_seen' | 'name' | 'size' | 'read' | 'recommended';
 
 /** Sort direction. When omitted, the BE picks a sane default per sort. */
 export type SenderListDirection = 'asc' | 'desc';
@@ -536,6 +542,8 @@ export interface ListSendersParams {
   hasInboxMail?: boolean | undefined;
   /** Exclude senders whose inbound mail is entirely outside Inbox + archived. */
   currentMailOnly?: boolean | undefined;
+  /** Less than half of the last 90 days is marked read. */
+  mostlyUnread?: boolean | undefined;
 }
 
 /**
@@ -643,6 +651,7 @@ export function sendersListRequestQuery(
     unsub_ignored: params.unsubIgnored === true ? 'true' : undefined,
     has_inbox_mail: params.hasInboxMail === true ? 'true' : undefined,
     current_mail_only: params.currentMailOnly === true ? 'true' : undefined,
+    mostly_unread: params.mostlyUnread === true ? 'true' : undefined,
   };
 }
 
@@ -716,6 +725,17 @@ export interface SenderPolicyResultDto {
  * lifecycle (no preview, no Idempotency-Key header; idempotency is the
  * set-state semantics).
  */
+export function undoSenderKeep(
+  id: string,
+  signal?: AbortSignal,
+): Promise<Envelope<SenderPolicyResultDto, unknown>> {
+  return apiPost<SenderPolicyResultDto>(
+    `/api/senders/${encodeURIComponent(id)}/keep/undo`,
+    {},
+    signal ? { signal } : {},
+  );
+}
+
 export function patchSenderPolicy(
   id: string,
   patch: SenderPolicyPatch,

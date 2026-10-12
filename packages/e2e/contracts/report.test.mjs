@@ -18,6 +18,7 @@ const files = [
   ['public-journeys', 2],
   ['cookie-consent', 2],
   ['journey-recovery', 4],
+  ['unsubscribe-backlog', 4],
   ['home-next-step', 1],
 ];
 function report() {

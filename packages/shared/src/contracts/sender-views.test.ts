@@ -19,6 +19,7 @@ const VIEW: SavedSenderView = {
     domain: null,
     unsubIgnored: false,
     hasInboxMail: false,
+    mostlyUnread: false,
   },
   sort: 'total',
   direction: 'desc',
@@ -27,6 +28,12 @@ const VIEW: SavedSenderView = {
 describe('parseSenderViews', () => {
   it('returns stored views verbatim', () => {
     expect(parseSenderViews({ senderViews: [VIEW] })).toEqual([VIEW]);
+  });
+
+  it('keeps a size sort', () => {
+    const sized = { ...VIEW, name: 'Largest', sort: 'size' as const };
+    expect(parseSenderViews({ senderViews: [sized] })).toEqual([sized]);
+    expect(SenderViewsPutSchema.safeParse({ views: [sized] }).success).toBe(true);
   });
 
   it('keeps older saved views usable and defaults the Inbox filter off', () => {
@@ -38,6 +45,16 @@ describe('parseSenderViews', () => {
     const inboxView = { ...VIEW, compose: { ...VIEW.compose, hasInboxMail: true } };
     expect(SenderViewsPutSchema.safeParse({ views: [inboxView] }).success).toBe(true);
     expect(parseSenderViews({ senderViews: [inboxView] })).toEqual([inboxView]);
+  });
+
+  it('accepts the mostly-unread filter and defaults it off', () => {
+    const on = { ...VIEW, compose: { ...VIEW.compose, mostlyUnread: true } };
+    expect(SenderViewsPutSchema.safeParse({ views: [on] }).success).toBe(true);
+    expect(parseSenderViews({ senderViews: [on] })).toEqual([on]);
+    const { mostlyUnread: _removed, ...older } = on.compose;
+    expect(parseSenderViews({ senderViews: [{ ...VIEW, compose: older }] })).toEqual([
+      { ...on, compose: { ...older, mostlyUnread: false } },
+    ]);
   });
 
   it('degrades a missing / malformed key to [] without throwing', () => {

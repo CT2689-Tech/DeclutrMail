@@ -57,6 +57,8 @@ export const CheckoutRequestSchema = z
     cycle: BillingCycleSchema,
     provider: BillingProviderIdSchema,
     promo: z.literal('foundingPro').optional(),
+    /** Backlog Pass. Requires Plus annual on Paddle. Not a subscription tier. */
+    offer: z.literal('pass_onetime').optional(),
   })
   .superRefine((val, ctx) => {
     if (val.promo === 'foundingPro' && (val.tierId !== 'pro' || val.cycle !== 'annual')) {
@@ -64,6 +66,16 @@ export const CheckoutRequestSchema = z
         code: 'custom',
         message: 'foundingPro is an annual-only Pro promo (D126).',
         path: ['promo'],
+      });
+    }
+    if (
+      val.offer === 'pass_onetime' &&
+      (val.tierId !== 'plus' || val.cycle !== 'annual' || val.promo)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'pass_onetime is a Plus annual one-time offer.',
+        path: ['offer'],
       });
     }
   });
@@ -97,6 +109,11 @@ export const PaddleCheckoutSessionSchema = z.object({
     // webhook discards any blob whose signature does not verify.
     sig: z.string().min(1),
   }),
+  /**
+   * PH30 discount, when that environment has a real Paddle id.
+   * Absent while live is `FILL_ME`: the overlay opens at full price.
+   */
+  discountId: z.string().min(1).optional(),
 });
 export type PaddleCheckoutSession = z.infer<typeof PaddleCheckoutSessionSchema>;
 
@@ -148,6 +165,18 @@ export const BillingSubscriptionSchema = z.object({
        * tier-mismatched paid subscription grants the current account. */
       grantsAccess: z.boolean().optional(),
       cycle: BillingCycleSchema,
+      /**
+       * Provider price id (`pri_…` / `plan_…`). Optional during a rolling
+       * deploy. The plan card uses it to name the price this subscription
+       * actually bills, including the 2026-10 Plus annual price.
+       */
+      providerPriceId: z.string().min(1).optional(),
+      /**
+       * USD cents this subscription's price id resolves to in the catalog,
+       * including legacy and 2026-10 prices. Optional during a rolling
+       * deploy. Absent when the id is unknown.
+       */
+      chargedUsdCents: z.number().int().nonnegative().optional(),
       currentPeriodEnd: z.iso.datetime().nullable(),
       /** Exact access deadline from the server; optional during rolling deploys. */
       entitlementEndsAt: z.iso.datetime().nullable().optional(),
@@ -210,6 +239,8 @@ export const BillingSubscriptionSchema = z.object({
     .object({
       tier: z.enum(['free', 'plus', 'pro', 'team', 'enterprise']),
       expiresAt: z.iso.datetime().nullable(),
+      /** `pass` is a Backlog Pass. Absent means a complimentary grant. */
+      source: z.enum(['comp', 'pass', 'promo']).optional(),
     })
     .nullable(),
 });

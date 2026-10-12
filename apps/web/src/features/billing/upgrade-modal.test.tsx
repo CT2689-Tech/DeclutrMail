@@ -181,6 +181,42 @@ describe('UpgradeModal', () => {
       screen.getAllByText(/14-day money-back on any purchase, once per customer/),
     ).toHaveLength(1);
     expect(screen.queryByText(/30-day money-back guarantee/)).not.toBeInTheDocument();
+    expect(screen.getByText('Unsubscribe, Keep, Later and Undo stay free.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Get Plus' })).toHaveAttribute(
+      'href',
+      '/billing?plan=plus&cycle=annual&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
+    );
+    expect(screen.getByText('$59 a year · no monthly limit')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /\$9\/mo/ })).not.toBeInTheDocument();
+  });
+
+  it('PRICING_V2 points a Plus feature gate at annual', () => {
+    mockPricingV2 = true;
+    useUpgradeGateStore.getState().report({
+      reason: 'pro_feature',
+      details: { capability: 'quiet', tier: 'free', requiredTier: 'plus' },
+    });
+    render(<UpgradeModal />);
+
+    expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$59 a year$/ })).toHaveAttribute(
+      'href',
+      '/billing?plan=plus&cycle=annual&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
+    );
+  });
+
+  it('PRICING_V2 points a Pro feature gate at annual', () => {
+    mockPricingV2 = true;
+    mockTier = 'plus';
+    useUpgradeGateStore.getState().report({
+      reason: 'pro_feature',
+      details: { capability: 'followups', tier: 'plus', requiredTier: 'pro' },
+    });
+    render(<UpgradeModal />);
+
+    expect(screen.getByRole('link', { name: /^Upgrade to Pro\s*\$19\/mo$/ })).toHaveAttribute(
+      'href',
+      '/billing?plan=pro&cycle=annual&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
+    );
   });
 
   it('emails-cleared 402 offers clear-what-fits then Plus', () => {
@@ -201,6 +237,16 @@ describe('UpgradeModal', () => {
     expect(
       screen.getByRole('heading', { name: 'Not enough free emails left this month' }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'This clears 2,708 emails. You have 100 of 1,000 free emails left until Nov 9.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Only emails older than 30 days, within your free total'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('$59 a year · no monthly limit')).toBeInTheDocument();
+    expect(screen.getByText('Unsubscribe, Keep, Later and Undo stay free.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Get Plus' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Clear what fits free' }));
     expect(useUpgradeGateStore.getState().pendingWindowPreset).toBe(30);
@@ -222,6 +268,8 @@ describe('UpgradeModal', () => {
     });
     render(<UpgradeModal />);
 
+    expect(screen.getByText(/used all 1,000 free emails this month/)).toBeInTheDocument();
+    expect(screen.getByText('$59 a year · no monthly limit')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Clear what fits free' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Get Plus' })).toHaveAttribute(
       'href',

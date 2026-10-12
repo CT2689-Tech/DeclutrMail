@@ -6,10 +6,16 @@ import { color, font, radius, shadow, text } from '../tokens/tokens';
 
 export type ToastTone = 'info' | 'success' | 'warn' | 'danger';
 
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface ToastItem {
   id: string;
   msg: string;
   tone: ToastTone;
+  action?: ToastAction;
 }
 
 /**
@@ -25,9 +31,9 @@ function emit() {
 }
 
 /** Return an idempotent dismiss callback for notifications tied to a pending request. */
-export function toast(msg: string, tone: ToastTone = 'info'): () => void {
+export function toast(msg: string, tone: ToastTone = 'info', action?: ToastAction): () => void {
   const id = Math.random().toString(36).slice(2);
-  queue = [...queue, { id, msg, tone }];
+  queue = [...queue, { id, msg, tone, ...(action == null ? {} : { action }) }];
   emit();
   let dismissed = false;
   const dismiss = () => {
@@ -70,7 +76,10 @@ export function ToastHost() {
     <div
       style={{
         position: 'fixed',
-        bottom: 'calc(20px + var(--dm-tabbar-inset, 0px))',
+        // Sit above the undo tray when it is mounted. The tray publishes
+        // its top-to-viewport distance; without that, fall back to the
+        // tab bar so a toast never covers the tray's Undo button.
+        bottom: 'var(--dm-undo-tray-inset, calc(20px + var(--dm-tabbar-inset, 0px)))',
         maxWidth: 'calc(100vw - 32px)',
         width: 'max-content',
         left: '50%',
@@ -83,7 +92,12 @@ export function ToastHost() {
       }}
     >
       {items.map((t) => (
-        <ToastAnnouncement key={t.id} msg={t.msg} tone={t.tone} />
+        <ToastAnnouncement
+          key={t.id}
+          msg={t.msg}
+          tone={t.tone}
+          {...(t.action == null ? {} : { action: t.action })}
+        />
       ))}
     </div>,
     document.body,
@@ -98,7 +112,15 @@ export function ToastHost() {
  * Exported from this module (but not the package barrel) so the ARIA
  * contract can be tested without mounting the module-level toast bus.
  */
-export function ToastAnnouncement({ msg, tone }: { msg: string; tone: ToastTone }) {
+export function ToastAnnouncement({
+  msg,
+  tone,
+  action,
+}: {
+  msg: string;
+  tone: ToastTone;
+  action?: ToastAction;
+}) {
   const assertive = tone === 'warn' || tone === 'danger';
 
   return (
@@ -134,7 +156,26 @@ export function ToastAnnouncement({ msg, tone }: { msg: string; tone: ToastTone 
           }}
         />
       )}
-      {msg}
+      <span>{msg}</span>
+      {action == null ? null : (
+        <button
+          type="button"
+          onClick={action.onClick}
+          style={{
+            marginLeft: 8,
+            background: 'transparent',
+            border: 'none',
+            color: 'inherit',
+            font: 'inherit',
+            fontWeight: 600,
+            cursor: 'pointer',
+            textDecoration: 'underline',
+            textUnderlineOffset: 2,
+          }}
+        >
+          {action.label}
+        </button>
+      )}
     </div>
   );
 }

@@ -6,19 +6,16 @@
 // the D146 validation threshold.
 
 import type { Metadata } from 'next';
+
+import { isPricingV2 } from '@declutrmail/shared/entitlements';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
+import { TermsPlansV2 } from '@/features/marketing/pricing/terms-v2';
 import { ACTION_SAFETY_SUMMARY } from '@declutrmail/shared';
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 import { PAGE_LAST_UPDATED } from '@/features/marketing/page-dates';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
-
-export const metadata: Metadata = marketingPageMetadata({
-  title: 'Terms of Service — DeclutrMail',
-  description:
-    'The terms that govern your use of DeclutrMail: service description, Gmail account requirement, plans and billing, acceptable use, and liability.',
-  path: '/terms',
-});
+import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
 
 const LAST_UPDATED = PAGE_LAST_UPDATED['/terms'];
 
@@ -37,7 +34,7 @@ const TOC = [
   { id: 'contact', label: 'Contact' },
 ] as const;
 
-export default function TermsOfServicePage() {
+function TermsOfServicePage({ pricingV2 = isPricingV2() }: { pricingV2?: boolean } = {}) {
   return (
     <LegalPageLayout title="Terms of Service" lastUpdated={LAST_UPDATED} toc={TOC}>
       <PageViewTracker page="terms" />
@@ -88,39 +85,43 @@ export default function TermsOfServicePage() {
         </p>
       </LegalSection>
 
-      <LegalSection id="plans-billing" title="4. Plans and billing">
-        <p>
-          DeclutrMail offers a Free plan and paid subscriptions (Plus and Pro), billed monthly or
-          annually. Current pricing and what each plan includes are shown at purchase time.
-          Subscriptions renew automatically until canceled; you can cancel at any time and keep
-          access until the end of the period you paid for.
-        </p>
-        <ul>
-          <li>
-            <strong>Outside India:</strong> purchases are processed by Paddle, our merchant of
-            record. Paddle handles payment, applicable taxes, and invoicing, and Paddle&rsquo;s
-            buyer terms apply to the transaction.
-          </li>
-          <li>
-            <strong>In India:</strong> payments are processed by Razorpay, and DeclutrMail is your
-            seller.
-          </li>
-        </ul>
-        <p>
-          Refunds are described in our <a href="/refunds">Refund Policy</a>. A subscription marked
-          past due keeps subscription access for up to 14 days after its billing period ends. If the
-          provider supplies no period end, the window starts when the past-due event is processed.
-          Access can end sooner if the provider cancels or halts the subscription. When subscription
-          access ends, your plan is Free unless a separate complimentary grant still applies; your
-          data is not deleted.
-        </p>
-        <p>
-          Paddle offers a 30-day pause: subscription access ends immediately and billing resumes
-          automatically after 30 days. Razorpay plan changes, payment-method updates, pausing and
-          undoing cancellation require support. Existing connected inboxes keep working after a
-          downgrade; new connections are blocked while above your plan’s inbox limit.
-        </p>
-      </LegalSection>
+      {pricingV2 ? (
+        <TermsPlansV2 />
+      ) : (
+        <LegalSection id="plans-billing" title="4. Plans and billing">
+          <p>
+            DeclutrMail offers a Free plan and paid subscriptions (Plus and Pro), billed monthly or
+            annually. Current pricing and what each plan includes are shown at purchase time.
+            Subscriptions renew automatically until canceled; you can cancel at any time and keep
+            access until the end of the period you paid for.
+          </p>
+          <ul>
+            <li>
+              <strong>Outside India:</strong> purchases are processed by Paddle, our merchant of
+              record. Paddle handles payment, applicable taxes, and invoicing, and Paddle&rsquo;s
+              buyer terms apply to the transaction.
+            </li>
+            <li>
+              <strong>In India:</strong> payments are processed by Razorpay, and DeclutrMail is your
+              seller.
+            </li>
+          </ul>
+          <p>
+            Refunds are described in our <a href="/refunds">Refund Policy</a>. A subscription marked
+            past due keeps subscription access for up to 14 days after its billing period ends. If
+            the provider supplies no period end, the window starts when the past-due event is
+            processed. Access can end sooner if the provider cancels or halts the subscription. When
+            subscription access ends, your plan is Free unless a separate complimentary grant still
+            applies; your data is not deleted.
+          </p>
+          <p>
+            Paddle offers a 30-day pause: subscription access ends immediately and billing resumes
+            automatically after 30 days. Razorpay plan changes, payment-method updates, pausing and
+            undoing cancellation require support. Existing connected inboxes keep working after a
+            downgrade; new connections are blocked while above your plan’s inbox limit.
+          </p>
+        </LegalSection>
+      )}
 
       <LegalSection id="acceptable-use" title="5. Acceptable use">
         <p>You agree not to:</p>
@@ -212,4 +213,16 @@ export default function TermsOfServicePage() {
       </LegalSection>
     </LegalPageLayout>
   );
+}
+
+export const metadata: Metadata = marketingPageMetadata({
+  title: 'Terms of Service — DeclutrMail',
+  description:
+    'The terms that govern your use of DeclutrMail: service description, Gmail account requirement, plans and billing, acceptable use, and liability.',
+  path: '/terms',
+});
+
+export default async function TermsOfServiceRoute() {
+  const flags = await loadPricingFlags();
+  return <TermsOfServicePage pricingV2={flags.pricingV2} />;
 }

@@ -3,6 +3,8 @@
 import { useActionPreviewAnalytics } from '@/lib/use-action-preview-analytics';
 import type { Verb } from '@declutrmail/shared/observability';
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
+import { UnsubscribeBacklogDialog } from './unsubscribe-backlog/unsubscribe-backlog-dialog';
+import { someProtectedSelectionCopy } from './unsubscribe-backlog/preview-copy';
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import {
@@ -30,16 +32,13 @@ import {
   type UnsubscribeChannel,
 } from '@declutrmail/shared/actions';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
-import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
-import {
-  MeterPreviewSlot,
-  hideLegacyQuotaLine,
-  meterPreviewCopy,
-} from '@/features/shell/meter-preview-slot';
 import { mailLocationValue } from '@/features/triage/action-preview-detail';
 import { afterLead } from '@/lib/copy/after-lead';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
+import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import { useUpgradeGateStore } from '@/lib/entitlements/upgrade-gate';
 import type {
   BulkActionPreviewResult,
@@ -629,7 +628,16 @@ export function ConfirmActionModal({
   //
   // A no-channel Unsubscribe consumes nothing (`method !== 'none'`
   // guards the assert), so it must not claim a unit either.
-  const quotaRemaining = cleanupQuota?.remaining ?? null;
+  const emailMeter = cleanupSummary.data?.metered === true ? cleanupSummary.data : null;
+  const meterCounts =
+    isArchiveVerb ||
+    isDeleteVerb ||
+    (hasSecondaryAction && (secondaryVerb === 'archive' || secondaryVerb === 'delete'));
+  const emailsRequested =
+    emailMeter && meterCounts && livePreviewReady && typeof compositeCount === 'number'
+      ? compositeCount
+      : null;
+  const quotaRemaining = emailMeter ? emailMeter.remaining : (cleanupQuota?.remaining ?? null);
   const unitsPerSender =
     (isUnsubVerb && unsubscribeChannel === 'none' ? 0 : 1) + (hasSecondaryAction ? 1 : 0);
   // The live bulk preview's actionable (non-Protected) sender count —
@@ -660,16 +668,17 @@ export function ConfirmActionModal({
           return !s.protected && original?.unsubscribeMethod === 'one_click';
         }).length
       : null;
-  const unitsNeeded = unitsPerSender * (bulkActionableSenderCount ?? 1);
+  const unitsNeeded = emailMeter
+    ? (emailsRequested ?? 0)
+    : unitsPerSender * (bulkActionableSenderCount ?? 1);
   // Set when `requestAction` already trimmed this request to what the
   // allowance covers. The senders here ARE the ones that will run, so the
   // preview above is truthful as-is; all this changes is the copy, which
   // has to say the selection was larger.
   const quotaCappedFrom = request?.quotaCappedFrom ?? null;
-  // The email meter does not block confirm on a sender-unit shortfall.
-  // Over-allowance is a sentence; the click still runs.
-  const emailMeter = cleanupSummary.data?.metered === true;
-  const quotaShort = !emailMeter && quotaRemaining !== null && unitsNeeded > quotaRemaining;
+  const quotaShort = emailMeter
+    ? emailsRequested !== null && emailsRequested > emailMeter.remaining
+    : quotaRemaining !== null && unitsNeeded > quotaRemaining;
 
   // `nothingToActOn` already carries its own verb test — repeating a
   // narrower one here would silently re-exclude Later.
@@ -703,6 +712,21 @@ export function ConfirmActionModal({
   // cover this click — routed through the same upgrade-gate store the
   // server's 402 uses, so both paths land on one UpgradeModal.
   const reportQuotaShort = () => {
+    if (emailMeter && emailsRequested !== null) {
+      useUpgradeGateStore.getState().report({
+        reason: 'free_cap',
+        details: {
+          remaining: emailMeter.remaining,
+          limit: emailMeter.limit,
+          used: emailMeter.used,
+          requiredUnits: emailsRequested,
+          requested: emailsRequested,
+          resetsAt: emailMeter.resetAt,
+        },
+      });
+      onCancel();
+      return;
+    }
     const limit = TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0;
     useUpgradeGateStore.getState().report({
       reason: 'free_cap',
@@ -747,7 +771,7 @@ export function ConfirmActionModal({
   // `PreviewSheet` — which keeps Cancel and Esc LIVE while submitting,
   // because this sheet never hands it a `busyLabel` (see `primary` below).
   useEffect(() => {
-    if (!request) return;
+    if (!request || request.verb === 'Unsubscribe') return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
         e.preventDefault();
@@ -777,6 +801,19 @@ export function ConfirmActionModal({
   ]);
 
   const auth = useOptionalAuth();
+  if (request?.verb === 'Unsubscribe') {
+    return (
+      <UnsubscribeBacklogDialog
+        request={request}
+        compositePreview={compositePreview}
+        compositePreviewLoading={compositePreviewLoading}
+        bulkPreview={bulkPreview}
+        submitting={submitting}
+        onCancel={onCancel}
+        onConfirm={onConfirm}
+      />
+    );
+  }
 
   if (!request) return null;
 
@@ -1149,7 +1186,7 @@ export function ConfirmActionModal({
   // A no-op spends no cleanup action, and a sheet that cannot run has
   // nothing to charge — the status line above is the reason.
   const quotaLine =
-    previewStateCopy !== null || nothingActionableBulk || nothingToActOn
+    emailMeter || previewStateCopy !== null || nothingActionableBulk || nothingToActOn
       ? null
       : quotaCappedFrom
         ? `${unitsNeeded} of ${quotaCappedFrom} eligible senders — all you have left this month.`
@@ -1158,10 +1195,6 @@ export function ConfirmActionModal({
           : quotaRemaining !== null
             ? `Uses ${unitsNeeded} of your ${quotaRemaining} cleanup action${quotaRemaining === 1 ? '' : 's'} left this month.`
             : null;
-  const visibleQuotaLine = hideLegacyQuotaLine(quotaLine, cleanupSummary.data);
-  const freeUnsubscribe = isUnsubVerb && !hasSecondaryAction;
-  const meterRequested = freeUnsubscribe ? null : liveCount;
-  const meterCopy = meterPreviewCopy(meterRequested, cleanupSummary.data, freeUnsubscribe);
 
   // ── Details ──────────────────────────────────────────────────────────
   // Short label/value facts (`SheetFactList`). Each value says the same
@@ -1274,7 +1307,10 @@ export function ConfirmActionModal({
     </div>
   ) : null;
   if (protectedSkipped > 0) {
-    facts.push({ label: 'Protected', value: 'Unprotect a sender to include it' });
+    facts.push({
+      label: 'Protected',
+      value: someProtectedSelectionCopy(protectedSkipped),
+    });
   }
   if (peopleSkipped > 0) {
     facts.push({ label: 'People', value: 'Unsubscribe doesn’t apply to people' });
@@ -1459,7 +1495,16 @@ export function ConfirmActionModal({
             ? // Swap confirm for a truthful upgrade action when the quota
               // cannot cover this click — routed through the same upgrade
               // gate the server's 402 uses.
-              { label: 'Upgrade for unlimited cleanup', onClick: reportQuotaShort }
+              {
+                label: emailMeter
+                  ? fillStory(
+                      auth?.me.passEnabled === true
+                        ? WS1_COPY['cap.pass.button']
+                        : WS1_COPY['cap.plus.button'],
+                    )
+                  : 'Upgrade for unlimited cleanup',
+                onClick: reportQuotaShort,
+              }
             : {
                 // Not `busyLabel`: PreviewSheet locks Cancel, Esc and the
                 // backdrop while busy, and this sheet must keep them LIVE
@@ -1476,15 +1521,17 @@ export function ConfirmActionModal({
         }
         status={status ?? undefined}
         footer={
-          visibleQuotaLine === null && meterCopy === null ? undefined : (
-            <>
-              {visibleQuotaLine !== null && <span>{visibleQuotaLine}</span>}
-              <MeterPreviewSlot
-                requested={meterRequested}
-                summary={cleanupSummary.data ?? null}
-                freeUnsubscribe={freeUnsubscribe}
-              />
-            </>
+          emailMeter &&
+          previewStateCopy === null &&
+          !nothingActionableBulk &&
+          !nothingToActOn &&
+          isUnsubVerb &&
+          !meterCounts ? (
+            <span>{fillStory(WS1_COPY['meter.preview.free'])}</span>
+          ) : emailMeter && emailsRequested !== null && emailsRequested > 0 ? (
+            <MeterPreviewLine requested={emailsRequested} summary={emailMeter} />
+          ) : quotaLine === null ? undefined : (
+            <span>{quotaLine}</span>
           )
         }
       >

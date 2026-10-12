@@ -3,8 +3,13 @@ import path from 'node:path';
 import { withSentryConfig } from '@sentry/nextjs/config';
 
 import { legacyDomainRedirects, wwwApexRedirects } from './src/lib/legacy-domain-redirects';
+import { noindexHeaderRules } from './src/lib/noindex-headers';
 
 const nextConfig: NextConfig = {
+  // `/pricing` stays dynamic so India sees INR, and Next otherwise streams
+  // that route's metadata into the body. Matching every user agent makes
+  // the blocking metadata render in `<head>`.
+  htmlLimitedBots: /.*/,
   // Keep nested worktrees inside their own monorepo, rather than inferring
   // the parent checkout from an unrelated outer lockfile.
   outputFileTracingRoot: path.join(__dirname, '../..'),
@@ -78,6 +83,8 @@ const nextConfig: NextConfig = {
     { source: '/dashboard', destination: '/home', permanent: true },
     { source: '/app', destination: '/home', permanent: true },
   ],
+
+  headers: async () => noindexHeaderRules(),
 
   /**
    * Inject the release tag into the PUBLIC env at build time so the

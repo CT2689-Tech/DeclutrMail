@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto';
 
 import { Logger } from '@nestjs/common';
+import { PROMO_DISCOUNT_IDS, SANDBOX_PRICE_IDS } from '@declutrmail/shared/entitlements';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { PaddleAdapter } from '../paddle.adapter.js';
@@ -210,6 +211,38 @@ describe('PaddleAdapter.mapWebhookEvent', () => {
     });
   });
 
+  it('matches the subscription and the Pass on the price id when price custom_data is null', () => {
+    const annual = paddleSubscriptionActivated({
+      priceId: 'pri_01m4qk99878y7jynh1h00jfhy8',
+      priceCustomData: null,
+    });
+    expect(adapter.mapWebhookEvent(annual)).toMatchObject({
+      kind: 'subscription',
+      subscription: { providerPriceId: 'pri_01m4qk99878y7jynh1h00jfhy8' },
+    });
+
+    const lying = paddleSubscriptionActivated({
+      eventId: 'evt_lying_plan_code',
+      priceId: 'pri_01m4qk99878y7jynh1h00jfhy8',
+      priceCustomData: { plan_code: 'plus_monthly', version: 'legacy' },
+    });
+    expect(adapter.mapWebhookEvent(lying)).toMatchObject({
+      kind: 'subscription',
+      subscription: { providerPriceId: 'pri_01m4qk99878y7jynh1h00jfhy8' },
+    });
+
+    const pass = paddleTransactionCompleted({
+      subscriptionId: null,
+      priceIds: ['pri_01m4qkayqz3t54gdh9jq5b8ypq'],
+      priceCustomData: null,
+    });
+    expect(adapter.mapWebhookEvent(pass)).toMatchObject({
+      kind: 'payment',
+      providerSubscriptionId: null,
+      oneTimePriceIds: ['pri_01m4qkayqz3t54gdh9jq5b8ypq'],
+    });
+  });
+
   it('maps transaction.completed / payment_failed to payment effects', () => {
     expect(adapter.mapWebhookEvent(paddleTransactionCompleted({}))).toMatchObject({
       kind: 'payment',
@@ -288,16 +321,28 @@ describe('PaddleAdapter.mapWebhookEvent', () => {
     });
   });
 
-  it('ignores pending, partial, unrelated, and unlinked adjustment updates', () => {
+  it('ignores pending, partial, unrelated, and pending-unlinked adjustment updates', () => {
     for (const event of [
       paddleAdjustmentUpdated({ status: 'pending_approval' }),
       paddleAdjustmentUpdated({ status: 'approved', itemTypes: ['partial'] }),
       paddleAdjustmentUpdated({ status: 'rejected', itemTypes: ['partial'] }),
       paddleAdjustmentUpdated({ status: 'approved', action: 'credit' }),
-      paddleAdjustmentUpdated({ status: 'approved', subscriptionId: null }),
+      paddleAdjustmentUpdated({ status: 'pending_approval', subscriptionId: null }),
     ]) {
       expect(adapter.mapWebhookEvent(event)).toMatchObject({ kind: 'ignored' });
     }
+  });
+
+  it('maps an approved unlinked full refund to a pass revoke', () => {
+    expect(
+      adapter.mapWebhookEvent(
+        paddleAdjustmentUpdated({ status: 'approved', subscriptionId: null }),
+      ),
+    ).toMatchObject({
+      kind: 'pass_revoked',
+      reason: 'refund',
+      providerTransactionId: 'txn_01paddle000001',
+    });
   });
 
   it('a full refund still revokes — including the dashboard shape and an unreadable one', () => {
@@ -392,6 +437,40 @@ describe('PaddleAdapter checkout + cancel', () => {
       customData: { workspace_id: WORKSPACE, sig: expect.any(String) },
     });
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('omits the launch discount while the live id is still FILL_ME', async () => {
+    const adapter = makeAdapter({ PADDLE_CLIENT_TOKEN: 'test_abc', PADDLE_ENV: 'production' });
+    const session = await adapter.createCheckout({
+      workspaceId: WORKSPACE,
+      userEmail: 'user@example.com',
+      tierId: 'plus',
+      cycle: 'annual',
+      providerPriceId: 'pri_01m4qk99878y7jynh1h00jfhy8',
+    });
+    expect(session).toEqual({
+      provider: 'paddle',
+      kind: 'overlay',
+      priceId: 'pri_01m4qk99878y7jynh1h00jfhy8',
+      clientToken: 'test_abc',
+      environment: 'production',
+      customData: { workspace_id: WORKSPACE, sig: expect.any(String) },
+    });
+    expect(JSON.stringify(session)).not.toContain('FILL_ME');
+    expect(session).not.toHaveProperty('discountId');
+    expect(session).not.toHaveProperty('plan_code');
+  });
+
+  it('attaches the sandbox PH30 discount only to a launch price', async () => {
+    const adapter = makeAdapter({ PADDLE_CLIENT_TOKEN: 'test_abc', PADDLE_ENV: 'sandbox' });
+    const session = await adapter.createCheckout({
+      workspaceId: WORKSPACE,
+      userEmail: 'user@example.com',
+      tierId: 'plus',
+      cycle: 'annual',
+      providerPriceId: SANDBOX_PRICE_IDS.plus_annual,
+    });
+    expect(session).toMatchObject({ discountId: PROMO_DISCOUNT_IDS.sandbox });
   });
 
   // Regression (2026-07-20): the writer emitted `workspaceId` while the

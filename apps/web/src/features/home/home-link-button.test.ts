@@ -100,6 +100,24 @@ describe('Home link buttons', () => {
     expect(getComputedStyle(link).flexDirection).toBe('column');
     expect(getComputedStyle(facts).display).not.toBe('none');
 
+    const shellSlot = document.createElement('div');
+    shellSlot.className = locals.reportCard ?? '';
+    const shell = document.createElement('div');
+    shell.dataset.surface = 'home';
+    shell.dataset.mailbox = 'mb-1';
+    shell.innerHTML =
+      '<h2 class="dm-home-report-title">Your Inbox Report</h2><span class="dm-home-report-body">A quick look</span><a class="dm-home-report-cta dm-button-link" href="/senders">Open report</a>';
+    shellSlot.appendChild(shell);
+    const shellFacts = document.createElement('div');
+    shellFacts.className = locals.reportFacts ?? '';
+    shellFacts.textContent = '91%';
+    report.replaceChildren(shellSlot, shellFacts);
+
+    expect(getComputedStyle(shellSlot).display).not.toBe('none');
+    expect(getComputedStyle(shellFacts).display).not.toBe('none');
+    expect(shell.querySelector('h2')?.textContent).toBe('Your Inbox Report');
+    expect(shell.querySelector('a')?.textContent).toBe('Open report');
+
     style.remove();
     report.remove();
   });

@@ -57,10 +57,12 @@ describe('screen decision defaults', () => {
   });
 });
 
-describe('legal entity placeholder', () => {
-  it('renders nothing while the entity is unset', () => {
-    expect(LEGAL_ENTITY_NAME).toBe('FILL_ME');
-    expect(LEGAL_ENTITY_ADDRESS).toBe('FILL_ME');
-    expect(hasLegalEntity()).toBe(false);
+describe('legal entity', () => {
+  it('has no placeholder and is present only when both lines are set', () => {
+    expect(LEGAL_ENTITY_NAME).not.toContain('FILL_ME');
+    expect(LEGAL_ENTITY_ADDRESS).not.toContain('FILL_ME');
+    expect(hasLegalEntity()).toBe(
+      LEGAL_ENTITY_NAME.trim() !== '' && LEGAL_ENTITY_ADDRESS.trim() !== '',
+    );
   });
 });

@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import type { getFixSet } from '@/features/inbox-report';
@@ -13,6 +17,17 @@ const unsub: HomeFixCandidate = { kind: 'unsub_archive', senderCount: 4, senderI
 const largest: HomeFixCandidate = { kind: 'largest', senderCount: 10, senderIds: ['b'] };
 const later: HomeFixCandidate = { kind: 'later_due', senderCount: 2, senderIds: ['c'] };
 const empty: HomeFixCandidate = { kind: 'unsub_archive', senderCount: 0, senderIds: [] };
+
+describe('getFixSet import', () => {
+  it('imports getFixSet as a type so the test file stays lint-clean', () => {
+    const source = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'home-next-steps.test.ts'),
+      'utf8',
+    );
+    expect(source).toMatch(/^import type \{ getFixSet \} from '@\/features\/inbox-report';/m);
+    expect(source).not.toMatch(/^import \{[^}\n]*\bgetFixSet\b/m);
+  });
+});
 
 describe('rankHomeNextSteps', () => {
   it('orders unsubscribe, then largest, then later, and keeps three', () => {

@@ -6,8 +6,10 @@
  * claim stays `unknown`; it is never completed from memory or a review site.
  */
 
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { declutrPriceDetail, declutrPriceSummary, WS3_COPY } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
+
+import { buildLaunchComparisons } from './comparison-launch-pages';
 
 /**
  * Freshness is per comparison, because verification is per comparison:
@@ -33,7 +35,10 @@ export type ComparisonSlug =
   | 'unroll-me'
   | 'gmail-filters'
   | 'gmail'
-  | 'meta-muse';
+  | 'meta-muse'
+  | 'mailstrom'
+  | 'inboxpurge'
+  | 'mailmop';
 
 export type EvidenceState = 'supported' | 'limited' | 'not-supported' | 'unknown' | 'native';
 
@@ -87,18 +92,6 @@ export interface ComparisonDefinition {
   readonly sources: readonly ComparisonSource[];
 }
 
-function usd(point: { usdCents: number } | null): string {
-  if (!point) return 'not offered';
-  const dollars = point.usdCents / 100;
-  return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
-}
-
-const plusMonthly = usd(TIER_MANIFEST.plus.prices.monthly);
-const plusAnnual = usd(TIER_MANIFEST.plus.prices.annual);
-const proMonthly = usd(TIER_MANIFEST.pro.prices.monthly);
-const proAnnual = usd(TIER_MANIFEST.pro.prices.annual);
-const foundingAnnual = TIER_MANIFEST.pro.promo ? usd(TIER_MANIFEST.pro.promo.annual) : null;
-
 // This sentence carries TWO numbers: the Activity Undo window (ours —
 // derived from UNIFORM_UNDO_WINDOW_DAYS, hedged only while the ladder
 // diverges) and Gmail Trash's own retention (Google's, always literal).
@@ -120,7 +113,7 @@ const DECLUTR = {
   },
   providers: {
     summary: 'Gmail and Google Workspace',
-    detail: 'DeclutrMail is intentionally Gmail-specific today.',
+    detail: WS3_COPY['ws3.vs.declutr.providers.detail'],
     state: 'limited',
   },
   existingMail: {
@@ -142,7 +135,7 @@ const DECLUTR = {
     state: 'limited',
   },
   preview: {
-    summary: 'Preview before cleanup actions',
+    summary: WS3_COPY['ws3.vs.declutr.preview.summary'],
     detail:
       'Archive, Later, Unsubscribe, and Delete use a confirmation preview. Keep is an inline sender decision.',
     state: 'supported',
@@ -164,8 +157,8 @@ const DECLUTR = {
     state: 'supported',
   },
   price: {
-    summary: `Free, ${plusMonthly} Plus, or ${proMonthly} Pro monthly`,
-    detail: `Free includes ${TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions per month. Plus is ${plusAnnual}/year; Pro is ${proAnnual}/year${foundingAnnual ? `, with a limited ${foundingAnnual} founding offer` : ''}.`,
+    summary: declutrPriceSummary(),
+    detail: declutrPriceDetail(),
     state: 'supported',
   },
 } as const satisfies Record<string, ComparisonCell>;
@@ -824,9 +817,8 @@ const unrollMe: ComparisonDefinition = {
       label: 'How the product is funded',
       declutrMail: DECLUTR.funding,
       competitor: {
-        summary: 'A market-research panel, stated on its own site',
-        detail:
-          'Its site says: “We use your data to fuel our market research business, NielsenIQ.” The privacy notice says panelist data about the commercial emails you receive, plus demographics, may be sold or shared with customers including e-commerce businesses, investment companies, consumer brands, media companies, and data brokers — while directly identifying details are never sold to target you. The notice separately limits Gmail API data to providing the service and restricts transfers; do not apply the general panel terms to every Gmail connection.',
+        summary: WS3_COPY['ws3.vs.unroll-me.quote.summary'],
+        detail: WS3_COPY['ws3.vs.unroll-me.quote.detail'],
         state: 'supported',
       },
     },
@@ -1311,7 +1303,38 @@ const metaMuse: ComparisonDefinition = {
  * and the hub would render "Last verified Invalid Date" — the worst
  * failure mode for a page whose entire claim is that it was verified.
  */
-export const COMPARISONS: readonly [ComparisonDefinition, ...ComparisonDefinition[]] = [
+function verdictFor(slug: ComparisonSlug): string {
+  switch (slug) {
+    case 'clean-email':
+      return WS3_COPY['ws3.vs.clean-email.verdict'];
+    case 'trimbox':
+      return WS3_COPY['ws3.vs.trimbox.verdict'];
+    case 'sanebox':
+      return WS3_COPY['ws3.vs.sanebox.verdict'];
+    case 'leave-me-alone':
+      return WS3_COPY['ws3.vs.leave-me-alone.verdict'];
+    case 'unroll-me':
+      return WS3_COPY['ws3.vs.unroll-me.verdict'];
+    case 'gmail-filters':
+      return WS3_COPY['ws3.vs.gmail-filters.verdict'];
+    case 'gmail':
+      return WS3_COPY['ws3.vs.gmail.verdict'];
+    case 'meta-muse':
+      return WS3_COPY['ws3.vs.meta-muse.verdict'];
+    case 'mailstrom':
+      return WS3_COPY['ws3.vs.mailstrom.verdict'];
+    case 'inboxpurge':
+      return WS3_COPY['ws3.vs.inboxpurge.verdict'];
+    case 'mailmop':
+      return WS3_COPY['ws3.vs.mailmop.verdict'];
+    default: {
+      const neverSlug: never = slug;
+      return neverSlug;
+    }
+  }
+}
+
+const COMPARISON_LIST: readonly ComparisonDefinition[] = [
   cleanEmail,
   trimbox,
   sanebox,
@@ -1320,6 +1343,12 @@ export const COMPARISONS: readonly [ComparisonDefinition, ...ComparisonDefinitio
   gmailFilters,
   gmailNative,
   metaMuse,
+  ...buildLaunchComparisons(DECLUTR),
+].map((comparison) => ({ ...comparison, verdict: verdictFor(comparison.slug) }));
+
+export const COMPARISONS = COMPARISON_LIST as unknown as readonly [
+  ComparisonDefinition,
+  ...ComparisonDefinition[],
 ];
 
 /**

@@ -52,12 +52,23 @@ export function formatUsd(cents: number): string {
  * ₹749 / ₹10,999 — Indian digit grouping (`en-IN` groups by lakh, so
  * ₹1,09,999 not ₹109,999 once amounts pass 1,00,000).
  */
+function groupIndianDigits(digits: string): string {
+  if (digits.length <= 3) return digits;
+  const head = digits.slice(0, -3);
+  const tail = digits.slice(-3);
+  return `${head.replace(/\B(?=(\d{2})+(?!\d))/g, ',')},${tail}`;
+}
+
 export function formatInr(paise: number): string {
   const rupees = paise / 100;
-  return `₹${new Intl.NumberFormat('en-IN', {
-    minimumFractionDigits: Number.isInteger(rupees) ? 0 : 2,
-    maximumFractionDigits: 2,
-  }).format(rupees)}`;
+  if (!Number.isFinite(rupees)) return '₹NaN';
+  const negative = rupees < 0;
+  const abs = Math.abs(rupees);
+  const [whole, frac] = (Number.isInteger(abs) ? String(abs) : abs.toFixed(2)).split('.');
+  const body = frac
+    ? `${groupIndianDigits(whole ?? '0')}.${frac}`
+    : groupIndianDigits(whole ?? '0');
+  return `${negative ? '-' : ''}₹${body}`;
 }
 
 /**

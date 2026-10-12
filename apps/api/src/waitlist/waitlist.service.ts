@@ -1,10 +1,11 @@
 // apps/api/src/waitlist/waitlist.service.ts — waitlist capture writes
 // (D19 pricing page Team row + marketing forms).
 //
-// One job: idempotent insert into `waitlist`. Dedupe rides the citext
-// unique index on `email` via `ON CONFLICT DO NOTHING`, so a duplicate
-// submit is indistinguishable from a fresh one at the HTTP layer (no
-// email-exists oracle — the controller returns the same 202 either way).
+// One job: idempotent insert into `waitlist`. Dedupe is
+// `ON CONFLICT DO NOTHING` with no target, so it matches whichever
+// unique constraint is present. A duplicate submit is indistinguishable
+// from a fresh one at the HTTP layer (no email-exists oracle — the
+// controller returns the same 202 either way).
 
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
@@ -13,7 +14,7 @@ import { users, waitlist } from '@declutrmail/db';
 import type { WaitlistJoinRequest, WaitlistV1JoinRequest } from '@declutrmail/shared/contracts';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import { classifyProvider } from './provider-classifier.js';
+import { classifyProvider, type ProviderClass } from './provider-classifier.js';
 
 @Injectable()
 export class WaitlistService {
@@ -35,7 +36,7 @@ export class WaitlistService {
         tierInterest: input.tierInterest ?? null,
         source: input.source,
       })
-      .onConflictDoNothing({ target: waitlist.email })
+      .onConflictDoNothing()
       .returning({ id: waitlist.id });
 
     // Privacy (D7): never log the address — attribution + outcome only.
@@ -46,24 +47,27 @@ export class WaitlistService {
 
   /**
    * Pro or provider waitlist. Idempotent on (email, tier, provider).
-   * Never logs the address. `classifyProvider` runs only for `kind:'provider'`
-   * when the caller did not pick a provider.
+   * Never logs the address. A provider signup always classifies so the
+   * growth event can carry `provider_class`. The stored provider stays
+   * the visitor's pick when they made one.
    */
   async joinLaunch(
     input: WaitlistV1JoinRequest,
     userId?: string,
-  ): Promise<'joined' | 'already_joined'> {
+  ): Promise<{ status: 'joined' | 'already_joined'; providerClass: ProviderClass | null }> {
     const email = await this.resolveEmail(input.email, userId);
     const tier = input.kind === 'pro' ? 'pro' : null;
     let provider: string | null = null;
+    let providerClass: ProviderClass | null = null;
     if (input.kind === 'provider') {
-      provider = input.provider ?? (await classifyProvider(email));
+      providerClass = await classifyProvider(email);
+      provider = input.provider ?? providerClass;
     }
     const status = await this.insertLaunchRow(email, tier, provider, input);
     this.logger.log(
       `waitlist.v1 kind=${input.kind} source=${safeSource(input.source)} status=${status} providerPicked=${Boolean(input.provider)}`,
     );
-    return status;
+    return { status, providerClass };
   }
 
   private async resolveEmail(
@@ -136,10 +140,8 @@ export class WaitlistService {
   }
 
   /**
-   * unique(email) still allows only one row per address. When that row
-   * has no launch tier or provider yet, record them. A second kind for
-   * an address that already has one stays `already_joined` until that
-   * unique index is dropped.
+   * A unique violation on the composite key means this kind is already
+   * stored. An older empty row (no tier, no provider) can still be filled.
    */
   private async fillEmptyLaunchRow(
     email: string,

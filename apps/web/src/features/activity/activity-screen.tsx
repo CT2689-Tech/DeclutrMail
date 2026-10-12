@@ -27,6 +27,7 @@ import {
   Button,
   EmptyState,
   ErrorState as RecoverableErrorState,
+  FeatureExplainer,
   Pill,
   ScreenIntro,
   TechnicalDetails,
@@ -34,6 +35,7 @@ import {
   tokens,
   useIsAtMost,
 } from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import Link from 'next/link';
 import {
   ACTIVITY_REVIEW_OUTCOME_ROW_LABELS,
@@ -43,6 +45,7 @@ import {
   type VerbTone,
 } from '@declutrmail/shared/actions';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
+import { isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
 import { InlineFeedback } from '@/features/feedback/inline-feedback';
 import { ApiError } from '@/lib/api/client';
@@ -423,11 +426,14 @@ export function ActivityScreen() {
 
   return (
     <div style={screenColumnStyle}>
-      <EditorialKicker>Your history / Every outcome in view</EditorialKicker>
+      <EditorialKicker>Activity</EditorialKicker>
       <ScreenIntro id="activity" title="Activity" body={activityUndoRecoveryHelp} />
 
       <header style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-        <h1 style={{ ...editorialTitleStyle, marginRight: 'auto' }}>Activity</h1>
+        <div style={{ marginRight: 'auto', minWidth: 0 }}>
+          <h1 style={editorialTitleStyle}>Activity</h1>
+          <FeatureExplainer id="activity-explainer">{WS2_COPY.explain.activity}</FeatureExplainer>
+        </div>
         <div style={isMobile ? { order: 3, flexBasis: '100%' } : undefined}>
           <SenderSearchInput
             value={filters.senderQuery ?? ''}
@@ -615,11 +621,70 @@ function dayKey(ms: number, timeZone: string): string {
   }).format(ms);
 }
 
+const ACTIVITY_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+const ACTIVITY_MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
+
+function zonedCalendar(
+  ms: number,
+  timeZone: string,
+): { year: number; month: number; day: number; hour: number; minute: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    hourCycle: 'h23',
+  }).formatToParts(ms);
+  const read = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value ?? '');
+  let hour = read('hour');
+  if (hour === 24) hour = 0;
+  return {
+    year: read('year'),
+    month: read('month'),
+    day: read('day'),
+    hour,
+    minute: read('minute'),
+  };
+}
+
+function activityWeekday(year: number, month: number, day: number): string {
+  return ACTIVITY_WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()] ?? '';
+}
+
+function activityMonthDay(month: number, day: number): string {
+  return `${ACTIVITY_MONTHS[month - 1] ?? ''} ${day}`;
+}
+
+function activityClock(hour: number, minute: number): string {
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${String(minute).padStart(2, '0')} ${period}`;
+}
+
 /**
  * "Today" / "Yesterday" / "Mon, Sep 15". `nowMs` is null on the server and
  * the first client render (`useNow`), where the absolute form is the only
  * one both can agree on; the relative words arrive after mount. Exported
  * for the exact-string unit test.
+ *
+ * Month and weekday names come from fixed tables. `toLocaleDateString`
+ * hydrates "Sep" on one runtime and "Sept" on another (React #418).
  */
 export function activityDayLabel(iso: string, nowMs: number | null, timeZone: string): string {
   const then = new Date(iso).getTime();
@@ -630,13 +695,9 @@ export function activityDayLabel(iso: string, nowMs: number | null, timeZone: st
     if (key === dayKey(nowMs - 24 * 60 * 60 * 1000, timeZone)) return 'Yesterday';
   }
   const sameYear = nowMs === null || key.slice(0, 4) === dayKey(nowMs, timeZone).slice(0, 4);
-  return new Date(then).toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    ...(sameYear ? {} : { year: 'numeric' }),
-    timeZone,
-  });
+  const cal = zonedCalendar(then, timeZone);
+  const label = `${activityWeekday(cal.year, cal.month, cal.day)}, ${activityMonthDay(cal.month, cal.day)}`;
+  return sameYear ? label : `${label}, ${cal.year}`;
 }
 
 /** Consecutive rows that share a calendar day, in the order they arrived. */
@@ -1838,19 +1899,17 @@ export function activityResultColor(row: ActivityRowWire): string {
 
 /**
  * Clock time for a row under a day header; date + time inside a sender
- * group, where rows from many days share one list. Locale + user zone
- * pinned — this is server-rendered (React #418). Exported for the
- * exact-string unit test.
+ * group, where rows from many days share one list. Assembled from
+ * numeric zone parts so server HTML and the browser agree (React #418):
+ * ICU "Sept" and a narrow no-break space before AM/PM are different text.
+ * Exported for the exact-string unit test.
  */
 export function activityRowTime(iso: string, timeZone: string, withDate: boolean): string {
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return '';
-  return d.toLocaleString('en-US', {
-    ...(withDate ? { month: 'short', day: 'numeric' } : {}),
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone,
-  });
+  const cal = zonedCalendar(d.getTime(), timeZone);
+  const clock = activityClock(cal.hour, cal.minute);
+  return withDate ? `${activityMonthDay(cal.month, cal.day)}, ${clock}` : clock;
 }
 
 function ActivityRow({
@@ -1974,7 +2033,7 @@ function ActivityRow({
         <span data-row-result style={{ color: resultColor }}>
           {verbLabel}
         </span>
-        {row.affectedCount > 0 && (
+        {row.affectedCount > 0 && !row.combinedUnsubscribe && (
           <span
             style={{
               ...numeralStyle,
@@ -2720,7 +2779,7 @@ function ActivityEmptyState({ scope, window }: { scope: EmptyScope; window: Acti
       <EmptyState
         headingLevel={2}
         title="No activity yet."
-        description="Actions you, Autopilot, or your rules take will be recorded here."
+        description={WS2_COPY.explain.activityEmpty}
       />
     );
   }
@@ -2812,6 +2871,15 @@ function activityRowActionLabel(row: ActivityRowWire): string {
   if (row.reviewOutcome === 'skipped' || row.reviewOutcome === 'protected') {
     return ACTIVITY_REVIEW_OUTCOME_ROW_LABELS[row.reviewOutcome];
   }
+  if (row.combinedUnsubscribe && (row.action === 'archive' || row.action === 'delete')) {
+    const forms =
+      row.action === 'delete' ? WS5_COPY['f1.activity.row.delete'] : WS5_COPY['f1.activity.row'];
+    if (isPluralCopy(forms)) {
+      return pluralCopy(forms, row.affectedCount, {
+        n: row.affectedCount.toLocaleString('en-US'),
+      });
+    }
+  }
   return sharedActivityActionLabel(row.action, row.executionState);
 }
 
@@ -2840,12 +2908,10 @@ export function windowToLabel(
   dateTo: string | null,
 ): string {
   if (dateFrom || dateTo) {
-    const dayLabel = (iso: string) =>
-      new Date(iso).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        timeZone: 'UTC',
-      });
+    const dayLabel = (iso: string) => {
+      const cal = zonedCalendar(new Date(iso).getTime(), 'UTC');
+      return activityMonthDay(cal.month, cal.day);
+    };
     const fromStr = dateFrom ? dayLabel(dateFrom) : '…';
     const toStr = dateTo ? dayLabel(dateTo) : '…';
     return `${fromStr} – ${toStr}`;
@@ -2893,5 +2959,6 @@ export function absoluteTime(iso: string, timeZone?: string): string {
 export function formatExpiry(iso: string, timeZone: string): string {
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return iso;
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone });
+  const cal = zonedCalendar(d.getTime(), timeZone);
+  return activityMonthDay(cal.month, cal.day);
 }

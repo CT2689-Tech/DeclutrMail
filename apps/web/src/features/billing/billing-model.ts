@@ -6,8 +6,15 @@
  * discipline as the /pricing model, which this reuses).
  */
 
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import {
+  fillStory,
+  passEndLabel,
+  PLUS_ANNUAL_2026_10,
+  plusAmount,
+  priceLine,
   refundLine,
+  SANDBOX_PRICE_IDS,
   TIER_MANIFEST,
   TIER_RANK,
   type TierId,
@@ -62,6 +69,15 @@ export function quotedPlanPrice(
 }
 
 /**
+ * The only Plus price a new launch checkout sells. INR uses the launch
+ * price line; USD is the annual amount. This is not the legacy $9 or $90.
+ */
+export function launchPlusQuote(provider: BillingProviderId = 'paddle'): string {
+  if (provider === 'razorpay') return priceLine(PLUS_ANNUAL_2026_10, 'inr');
+  return fillStory(WS1_COPY['price.plusLine']);
+}
+
+/**
  * Configured plan price for an existing subscription, not a provider
  * upcoming-invoice total. Taxes/adjustments are not available here.
  *
@@ -77,11 +93,19 @@ export function quotedPlanPrice(
  * tier states a charge that never happens, and contradicts the founding
  * banner sitting on the same screen.
  */
+function isLaunchPlusAnnualPrice(providerPriceId: string): boolean {
+  if (providerPriceId === SANDBOX_PRICE_IDS.plus_annual) return true;
+  const live = PLUS_ANNUAL_2026_10.paddlePriceId;
+  return live !== 'FILL_ME' && providerPriceId === live;
+}
+
 export function chargedPlanPrice(
   tier: TierId,
   cycle: BillingCycle,
   provider: BillingProviderId,
   founding = false,
+  providerPriceId?: string,
+  chargedUsdCents?: number,
 ): string | null {
   const currency = currencyForProvider(provider);
   const promo = TIER_MANIFEST[tier].promo;
@@ -89,6 +113,15 @@ export function chargedPlanPrice(
   // other cycle is billed the standard line.
   if (founding && promo && cycle === 'annual') {
     return `${formatMoney(promo.annual, currency)}/yr`;
+  }
+  // Catalog resolution wins over the current list price. A Plus annual
+  // subscriber on the 2026-10 price pays $59, not the legacy $90 the
+  // manifest still lists for that tier and cycle.
+  if (currency === 'USD' && typeof chargedUsdCents === 'number') {
+    return `${formatUsd(chargedUsdCents)}${cycle === 'annual' ? '/yr' : '/mo'}`;
+  }
+  if (providerPriceId && isLaunchPlusAnnualPrice(providerPriceId)) {
+    return currency === 'INR' ? priceLine(PLUS_ANNUAL_2026_10, 'inr') : `${plusAmount('usd')}/yr`;
   }
   return priceLabel(tier, cycle, currency);
 }
@@ -115,17 +148,37 @@ export function isDeferredDowngrade(
   );
 }
 
-/** "Jun 1, 2026" — en-US to match the D119 mock. Null-safe. */
+const BILLING_MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
+
+/**
+ * "Jun 1, 2026" in UTC. Month names are fixed so Node and the browser
+ * cannot disagree on "Sep" versus "Sept" during hydration.
+ */
 export function formatBillingDate(iso: string | null): string | null {
   if (!iso) return null;
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
+  return `${BILLING_MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}, ${date.getUTCFullYear()}`;
+}
+
+/** "Aug 27" in UTC. Invalid instants return null so the caller can fall back. */
+export function formatBillingMonthDay(iso: string): string | null {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return `${BILLING_MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}`;
 }
 
 /**
@@ -141,7 +194,10 @@ export function formatProviderAmount(amount: string, currencyCode: string): stri
   try {
     const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: currencyCode });
     const digits = fmt.resolvedOptions().maximumFractionDigits ?? 2;
-    return fmt.format(n / 10 ** digits);
+    // Node often inserts a NBSP between "$" and the digits; Chrome often
+    // does not. Replacing that NBSP with a normal space still hydrated as
+    // a different text node (React #418 on /billing). Drop the gap.
+    return fmt.format(n / 10 ** digits).replace(/\s+/g, '');
   } catch {
     return null;
   }
@@ -414,9 +470,21 @@ export function deriveBillingViewState(read: BillingReadSnapshot): BillingViewSt
 export function currentPlanPriceLabel(view: BillingPlanView): string {
   if (view.backing.state !== 'none') {
     const { sub } = view.backing;
-    return chargedPlanPrice(sub.tier, sub.cycle, sub.provider, sub.foundingMember) ?? '';
+    return (
+      chargedPlanPrice(
+        sub.tier,
+        sub.cycle,
+        sub.provider,
+        sub.foundingMember,
+        sub.providerPriceId,
+        sub.chargedUsdCents,
+      ) ?? ''
+    );
   }
   if (view.entitlementTier === 'free') return formatUsd(0);
+  // A Backlog Pass is a paid grant, not a complimentary one. The deck
+  // names it and prices it once; "Complimentary" is only a comp.
+  if (passCoversPlan(view)) return fillStory(WS1_COPY['price.passLine']);
   // A comp is the reason there is no price, so say so instead of the
   // generic line. Only when the grant reaches the tier being named: a
   // comped Plus sitting on a paid-but-non-backing Pro row is not a
@@ -426,6 +494,19 @@ export function currentPlanPriceLabel(view: BillingPlanView): string {
     return 'Complimentary';
   }
   return 'Included with your account';
+}
+
+/** Headline plan name. A Pass that is the plan is the Pass, not Plus. */
+export function currentPlanTitle(view: BillingPlanView): string {
+  if (passCoversPlan(view)) return fillStory(WS1_COPY['planName.pass']);
+  return TIER_MANIFEST[view.entitlementTier].name;
+}
+
+/** The live grant is a Backlog Pass and it is the plan on the card. */
+export function passCoversPlan(view: BillingPlanView): boolean {
+  const grant = view.complimentary;
+  if (grant?.source !== 'pass' || view.backing.state !== 'none') return false;
+  return TIER_RANK[grant.tier] >= tierRank(view);
 }
 
 function tierRank(view: BillingPlanView): number {
@@ -452,6 +533,11 @@ export function complimentaryNote(view: BillingPlanView): string | null {
   // entitlement agrees. A comp BELOW the resolved tier still renders —
   // that is a comped Plus who also pays for Pro, and both are true.
   if (TIER_RANK[comp.tier] > TIER_RANK[view.entitlementTier]) return null;
+  if (comp.source === 'pass' && comp.expiresAt) {
+    return fillStory(WS1_COPY['billing.pass.status'], 'usd', {
+      passEndDate: passEndLabel(comp.expiresAt),
+    });
+  }
   const name = TIER_MANIFEST[comp.tier].name;
   const until = formatBillingDate(comp.expiresAt);
   if (until === null) {

@@ -9,6 +9,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ScreenIntro, toast, tokens } from '@declutrmail/shared';
+import { SETTINGS_PREVIEWS_TITLE } from '@declutrmail/shared/copy/screen-decisions';
 import { hasCapability, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { DEFAULT_BRIEF_PREFS } from '@declutrmail/shared/contracts';
 import type { ActionSheetPrefs, EmailPrefs } from '@declutrmail/shared/contracts';
@@ -57,6 +58,7 @@ import { BriefPrefsCard, type BriefPrefsCardState } from './brief-prefs-card';
 import { EmailPrefsCard, type EmailPrefsCardState } from './email-prefs-card';
 import { MailboxesCard } from './mailboxes-card';
 import { VerbTourCard } from './verb-tour-card';
+import { AiSettingsSection } from '@/features/ai-consent/ai-settings-section';
 
 const { color, font, text, radius, motion } = tokens;
 
@@ -120,7 +122,14 @@ export function SettingsScreen({
   const accountRef = useRef<HTMLDivElement>(null);
   const didDeepLinkScroll = useRef(false);
   const wantsCancelDeletion = searchParams.get('cancelDeletion') === '1';
-  const layoutSettled = !settings.isPending && !billing.isPending;
+  // Prefetched settings and billing can sit in the client cache before this
+  // screen's first paint, while the server HTML is still the loading shell
+  // (useSearchParams keeps the screen in a Suspense hole). Reading those
+  // caches on that first paint swaps in the AI link, preview choices, and
+  // plan name and fails hydration. The shell stays up until after mount.
+  const settingsView = mounted ? settings : null;
+  const billingView = mounted ? billing : null;
+  const layoutSettled = mounted && !settings.isPending && !billing.isPending;
   const [highlightAccount, setHighlightAccount] = useState(false);
   useEffect(() => {
     if (!wantsCancelDeletion || !layoutSettled || didDeepLinkScroll.current) return;
@@ -199,32 +208,35 @@ export function SettingsScreen({
   const [tourOpen, setTourOpen] = useState(false);
 
   const [pendingWire, setPendingWire] = useState<keyof ActionSheetPrefs | null>(null);
-  const sheetPrefsState: ActionSheetPrefsCardState = settings.isPending
-    ? { kind: 'loading' }
-    : settings.isError
-      ? { kind: 'error', onRetry: () => void settings.refetch() }
-      : { kind: 'ready', prefs: settings.data.actionSheetPrefs };
+  const sheetPrefsState: ActionSheetPrefsCardState =
+    settingsView == null || settingsView.isPending
+      ? { kind: 'loading' }
+      : settingsView.isError
+        ? { kind: 'error', onRetry: () => void settings.refetch() }
+        : { kind: 'ready', prefs: settingsView.data.actionSheetPrefs };
 
   const [pendingEmailWire, setPendingEmailWire] = useState<keyof EmailPrefs | null>(null);
-  const emailPrefsState: EmailPrefsCardState = settings.isPending
-    ? { kind: 'loading' }
-    : settings.isError
-      ? { kind: 'error', onRetry: () => void settings.refetch() }
-      : { kind: 'ready', prefs: settings.data.emailPrefs };
+  const emailPrefsState: EmailPrefsCardState =
+    settingsView == null || settingsView.isPending
+      ? { kind: 'loading' }
+      : settingsView.isError
+        ? { kind: 'error', onRetry: () => void settings.refetch() }
+        : { kind: 'ready', prefs: settingsView.data.emailPrefs };
 
-  const briefPrefsState: BriefPrefsCardState = settings.isPending
-    ? { kind: 'loading' }
-    : settings.isError
-      ? { kind: 'error', onRetry: () => void settings.refetch() }
-      : // The read is typed, not runtime-validated, so an API that
-        // predates this key returns a payload TypeScript still accepts.
-        // Falling back to the server's own default keeps Settings —
-        // including account deletion and data export — reachable;
-        // reading `.hour` off an absent slice would throw and take the
-        // whole screen with it (the 2026-07-09 whole-screen class).
-        { kind: 'ready', prefs: settings.data.briefPrefs ?? DEFAULT_BRIEF_PREFS };
+  const briefPrefsState: BriefPrefsCardState =
+    settingsView == null || settingsView.isPending
+      ? { kind: 'loading' }
+      : settingsView.isError
+        ? { kind: 'error', onRetry: () => void settings.refetch() }
+        : // The read is typed, not runtime-validated, so an API that
+          // predates this key returns a payload TypeScript still accepts.
+          // Falling back to the server's own default keeps Settings —
+          // including account deletion and data export — reachable;
+          // reading `.hour` off an absent slice would throw and take the
+          // whole screen with it (the 2026-07-09 whole-screen class).
+          { kind: 'ready', prefs: settingsView.data.briefPrefs ?? DEFAULT_BRIEF_PREFS };
 
-  const tier = billing.data?.tier ?? null;
+  const tier = billingView?.data?.tier ?? null;
   const manifestTier = tier && tier in TIER_MANIFEST ? TIER_MANIFEST[tier] : null;
   // The card configures a Brief this workspace only receives on an
   // entitled tier. Under-tier settings would be a control with no
@@ -275,13 +287,14 @@ export function SettingsScreen({
       >
         {reconnectAnnouncement?.liveRole === 'alert' ? reconnectAnnouncement.message : ''}
       </div>
-      <EditorialKicker>Your workspace / Preferences</EditorialKicker>
+      <EditorialKicker>Settings</EditorialKicker>
       <PageHeader title="Settings" />
       <EditorialContents
         items={[
           { href: '#mailboxes', label: 'Gmail accounts' },
-          { href: '#actions', label: 'Action previews' },
+          { href: '#actions', label: SETTINGS_PREVIEWS_TITLE },
           { href: '#notifications', label: 'Notifications' },
+          ...(settingsView?.data?.aiConsent ? [{ href: '#ai', label: 'AI' }] : []),
           { href: '#more', label: 'Policies and help' },
           { href: '#account', label: 'Account' },
         ]}
@@ -289,7 +302,7 @@ export function SettingsScreen({
       <ScreenIntro
         id="settings"
         title="Settings"
-        body="Mailboxes, action previews, notifications, privacy and plan."
+        body="Gmail accounts, previews, emails, privacy and your plan."
       />
 
       <MailboxesCard
@@ -337,6 +350,10 @@ export function SettingsScreen({
         )}
       </EmailPrefsCard>
 
+      {settingsView?.data?.aiConsent && (
+        <AiSettingsSection view={settingsView.data.aiConsent} briefCapable={briefUnlocked} />
+      )}
+
       {/* Autopilot and Quiet hours live in the sidebar; these are the
           destinations that have no other way in. */}
       <SettingsGroup id="more" title="Policies and help">
@@ -345,19 +362,19 @@ export function SettingsScreen({
         <DrillRow href="/settings/help" label="Help & glossary" />
         <PlanRow
           state={
-            billing.isPending
+            billingView == null || billingView.isPending
               ? { kind: 'loading' }
-              : billing.isError
+              : billingView.isError
                 ? // Only the BILLING_DISABLED envelope code means the flag is
                   // off. A bare 503 also covers BILLING_NOT_PROVISIONED and
                   // any upstream outage — those are failures, and retryable.
-                  isBillingDisabledError(billing.error)
+                  isBillingDisabledError(billingView.error)
                   ? { kind: 'disabled' }
                   : { kind: 'error', onRetry: () => void billing.refetch() }
                 : {
                     kind: 'ready',
-                    planName: manifestTier?.name ?? billing.data.tier,
-                    foundingMember: billing.data.foundingMember,
+                    planName: manifestTier?.name ?? billingView.data.tier,
+                    foundingMember: billingView.data.foundingMember,
                   }
           }
         />

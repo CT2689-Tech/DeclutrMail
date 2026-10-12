@@ -45,6 +45,8 @@ export const pendingCheckouts = pgTable(
     billingCycle: billingCycle('billing_cycle').notNull(),
     /** Provider subscription id when known at claim time (D249). */
     providerRef: text('provider_ref'),
+    /** `pass_onetime` when the claim is a Backlog Pass. Null for a subscription checkout. */
+    offer: text('offer'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),

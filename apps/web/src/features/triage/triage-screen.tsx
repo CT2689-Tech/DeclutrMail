@@ -8,12 +8,22 @@ import {
   EditorialKicker,
 } from '@/features/editorial/page';
 
+import { AiInlinePrompt } from '@/features/ai-consent/ai-inline-prompt';
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { useSenderInFlightLock } from '@/features/undo/in-flight';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button, ErrorState, ScreenIntro, tokens, toast, useIsAtMost } from '@declutrmail/shared';
+import {
+  Button,
+  ErrorState,
+  FeatureExplainer,
+  ScreenIntro,
+  tokens,
+  toast,
+  useIsAtMost,
+} from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { useLocalState } from '@declutrmail/shared/hooks/use-local-state';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { ActionReach } from '@declutrmail/shared/contracts';
@@ -24,6 +34,7 @@ import {
   useBulkActionPreview,
   useCompositePreview,
   useEnqueueBulkAction,
+  useConfirmUnsubscribeBacklog,
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
 } from '@/lib/api/use-action';
@@ -35,11 +46,7 @@ import {
   getActionFailureCopy,
   stillRunningCopy,
 } from '@/lib/action-error-copy';
-import {
-  backlogAfterUnsubFailureCopy,
-  NO_ACTIONABLE_SENDERS_COPY,
-  skippedAtClickCopy,
-} from '@/lib/bulk-action-copy';
+import { NO_ACTIONABLE_SENDERS_COPY, skippedAtClickCopy } from '@/lib/bulk-action-copy';
 import {
   isUnsubscribeInFlight,
   unsubscribeInFlightCopy,
@@ -49,7 +56,10 @@ import { useUnconfirmedHolds } from '@/features/undo/unconfirmed-holds';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { trackActionConfirmed } from '@/lib/action-analytics';
+import { unsubscribeBacklogToast } from '@/features/senders/unsubscribe-backlog/toast';
 import { track } from '@/lib/posthog';
+import { useNow } from '@/lib/use-now';
+import { triageDaySubtitle } from './day-subtitle';
 import { captureFeatureException } from '@/lib/sentry';
 // Cross-feature component import per ADR-0007's second-consumer rule —
 // the senders feature owns unsubscribe; D220's allowlist gates a
@@ -70,11 +80,12 @@ import {
   VERB_TO_WIRE,
 } from '@/features/settings/api/use-me-settings';
 
+import { useUndoSenderKeep } from '@/features/senders/api/use-sender-policy';
+import { useRefreshStaleRead } from '@/features/senders/api/use-refresh-stale-read';
+import { useExplainReasons } from '@/features/senders/api/use-explain-reasons';
 import { useKeepIntent } from './api/use-triage-actions';
 import { invalidateAfterDecision } from './api/invalidate';
 import { TRIAGE_BOOTSTRAP_KEY } from './api/query-options';
-import { useRefreshStaleRead } from '@/features/senders/api/use-refresh-stale-read';
-import { useExplainReasons } from '@/features/senders/api/use-explain-reasons';
 import { UnprotectButton } from './unprotect-button';
 import type { PreviewCount } from './action-preview';
 import { type TriageDecisionRow, type TriageScreenState } from './data';
@@ -163,9 +174,13 @@ const NO_ROWS: readonly TriageDecisionRow[] = [];
  * group, outside the (app) shell, so a full document load is correct
  * (same pattern as the OAuth start navigation in AccountMenu).
  */
-function openPricing(plan: 'plus' | 'pro'): void {
+function openPricing(plan: 'plus' | 'pro', pricingV2: boolean): void {
   window.location.assign(
-    `/billing?${new URLSearchParams({ plan, cycle: 'monthly', from: '/triage' })}`,
+    `/billing?${new URLSearchParams({
+      plan,
+      cycle: pricingV2 ? 'annual' : 'monthly',
+      from: '/triage',
+    })}`,
   );
 }
 
@@ -219,9 +234,12 @@ export function TriageScreen({
   state,
   journey = 'daily',
   offerUnprotect = false,
+  onboardedAt = null,
 }: {
   state: TriageScreenState;
   journey?: 'daily' | 'first_relief';
+  /** When the user finished onboarding. Day one is the first 24 hours. */
+  onboardedAt?: string | null;
   /**
    * Show a direct Unprotect control on Protected rows (D245). Set by
    * the onboarding protection review, whose subject IS the protection —
@@ -232,6 +250,7 @@ export function TriageScreen({
 }) {
   const qc = useQueryClient();
   const auth = useOptionalAuth();
+  const pricingV2 = auth?.me.pricingV2 === true;
   const actionMailboxId = auth?.me.activeMailboxId ?? undefined;
   const currentMailboxRef = useRef(actionMailboxId);
   currentMailboxRef.current = actionMailboxId;
@@ -243,6 +262,9 @@ export function TriageScreen({
   const mailboxReadiness = activeMailbox?.readiness;
   const mailboxNeedsReconnect = activeMailbox?.needsReconnect === true;
   const pendingAction = useTriageStore((s) => s.pendingAction);
+  const nowMs = useNow();
+  const daySubtitle =
+    nowMs == null ? 'Today’s senders · one choice each' : triageDaySubtitle(onboardedAt, nowMs);
   // ADR-0028 — the Delete preview's reach. Form state, local on purpose.
   // Stored WITH the pending action it was chosen for, so a wider
   // destructive scope can never be read for a different sender or verb —
@@ -303,7 +325,9 @@ export function TriageScreen({
   );
 
   const keepIntent = useKeepIntent();
+  const undoKeep = useUndoSenderKeep();
   const unsubIntent = useRecordUnsubscribeIntent();
+  const confirmBacklog = useConfirmUnsubscribeBacklog();
   const enqueueComposite = useEnqueueComposite();
 
   // D34 — mirror the persisted skip-sheet prefs into the triage store
@@ -1030,7 +1054,8 @@ export function TriageScreen({
         enqueueBulk.isPending ||
         enqueueComposite.isPending ||
         keepIntent.isPending ||
-        unsubIntent.isPending
+        unsubIntent.isPending ||
+        confirmBacklog.isPending
       ) {
         toast('Still confirming your last decision — give it a moment.', 'info');
         return false;
@@ -1058,6 +1083,10 @@ export function TriageScreen({
               invalidateAfterDecision(qc);
               if (currentMailboxRef.current === actionMailboxId) incrementSessionDecided();
               setExpandedRow(null);
+              toast(WS2_COPY.keepUndo.toast.one.replace('{Sender}', row.senderName), 'success', {
+                label: WS2_COPY.undo.button,
+                onClick: () => undoKeep.mutate({ senderId: row.senderId }),
+              });
             },
             onError: (err) => {
               captureFeatureException(err, { surface: 'triage', reason: 'keep_intent' });
@@ -1080,113 +1109,74 @@ export function TriageScreen({
       // backlog" toggle rides the REAL archive pipeline.
       if (verb === 'Unsubscribe') {
         setIntentRowId(row.id);
-        unsubIntent.mutate(
+        const mode = details?.backlogMode
+          ? details.backlogMode
+          : details?.archiveHistoric
+            ? 'archive'
+            : 'unsub_only';
+        confirmBacklog.mutate(
           {
             mailboxId: actionMailboxId,
-            senderId: row.senderId,
-            includesBacklogAction: Boolean(details?.archiveHistoric),
-            // The preview named the protection and its confirm says
-            // "anyway" (D245); without this the send is re-checked.
+            mode,
+            senderIds: [row.senderId],
             ...(row.protectionReason !== null ? { override: true } : {}),
           },
           {
             onSuccess: (res) => {
-              // One decision → one event: the optional backlog archive
-              // below is a follow-on of THIS decision, never a second
-              // `triage_action_taken`. The unsub itself moves no
-              // messages, so 0.
               void track('triage_action_taken', {
                 verb: 'unsubscribe',
                 sender_id: row.senderId,
                 matched_recommendation: row.verdict === 'unsubscribe',
-                requested_messages: 0,
+                requested_messages: res.backlog?.requestedCount ?? 0,
                 source,
               });
-              trackActionConfirmed('unsubscribe', journey);
+              const sent = res.senders.some(
+                (sender) => sender.unsubStatus === 'requested' || sender.unsubStatus === 'manual',
+              );
+              if (sent) trackActionConfirmed('unsubscribe', journey);
               invalidateAfterDecision(qc);
               if (currentMailboxRef.current === actionMailboxId) incrementSessionDecided();
               setExpandedRow(null);
-              if (res.method === 'one_click' && res.executionActionId) {
+              const line = unsubscribeBacklogToast(res);
+              if (line !== '') toast(line, sent ? 'info' : 'warn');
+              const outcome = res.senders[0];
+              if (outcome?.unsubStatus === 'requested' && outcome.executionActionId) {
                 setUnsubWatch({
                   mailboxId: actionMailboxId,
-                  actionId: res.executionActionId,
+                  actionId: outcome.executionActionId,
                   senderName: row.senderName,
                 });
-              } else if (res.method === 'mailto' && res.mailtoUrl) {
+              } else if (outcome?.unsubStatus === 'manual' && outcome.mailtoUrl) {
                 setMailtoFollowup({
                   mailboxId: actionMailboxId,
                   senderId: row.senderId,
                   senderName: row.senderName,
-                  mailtoUrl: res.mailtoUrl,
+                  mailtoUrl: outcome.mailtoUrl,
                 });
               }
-              if (details?.archiveHistoric) {
-                enqueueComposite.mutate(
-                  {
-                    mailboxId: actionMailboxId,
-                    senderId: row.senderId,
-                    primary: { type: 'archive', olderThanDays: null },
-                    // Triage rides the SHARED composite endpoint, which
-                    // answers a protected sender with 409 PROTECTED_SENDER
-                    // unless `override` is set. Triage rows are explicit
-                    // single-sender intent (D245 excludes bulk/automatic,
-                    // not this), and the protection is named in the row
-                    // badge before the user confirms.
-                    ...(row.protectionReason !== null ? { override: true } : {}),
-                  },
-                  {
-                    onSuccess: (res) =>
-                      setActiveAction({
-                        mailboxId: actionMailboxId,
-                        actionId: res.actionId,
-                        rowId: row.id,
-                        senderName: row.senderName,
-                        verb: 'Archive',
-                        // The unsub decision already counted (above) —
-                        // burn-down AND noise payoff.
-                        followOn: true,
-                      }),
-                    onError: (err) => {
-                      // 402 FREE_CAP_REACHED — the upgrade prompt
-                      // (hook-level handler) explains why the backlog
-                      // didn't archive; skip Sentry + generic toast.
-                      if (err instanceof ApiError && err.status === 402) return;
-                      captureFeatureException(err, {
-                        surface: 'triage',
-                        reason: 'enqueue_archive_after_unsub',
-                      });
-                      if (enqueueMayHaveStarted(err)) {
-                        holdUnconfirmed([row.id], 'Archive');
-                        invalidateAfterDecision(qc);
-                      }
-                      toast(
-                        backlogAfterUnsubFailureCopy({
-                          verb: 'Archive',
-                          senderName: row.senderName,
-                          error: err,
-                        }),
-                        'warn',
-                      );
-                    },
-                  },
-                );
+              if (res.backlog) {
+                setActiveAction({
+                  mailboxId: actionMailboxId,
+                  actionId: res.backlog.actionId,
+                  rowId: row.id,
+                  senderName: row.senderName,
+                  verb: res.backlog.verb === 'delete' ? 'Delete' : 'Archive',
+                  followOn: true,
+                });
               }
             },
             onError: (err) => {
-              // Designed refusal — no Sentry, and say plainly nothing was sent.
+              if (err instanceof ApiError && err.status === 402) return;
               if (isUnsubSendDisabled(err)) {
                 toast(UNSUB_SEND_DISABLED_MESSAGE, 'warn');
                 return;
               }
-              // Designed too: one request to this sender is still on its way.
               if (isUnsubscribeInFlight(err)) {
                 toast(unsubscribeInFlightCopy(row.senderName), 'info');
                 invalidateAfterDecision(qc);
                 return;
               }
               captureFeatureException(err, { surface: 'triage', reason: 'record_unsub' });
-              // A 5xx cannot prove nothing started: a second click would send
-              // a second one-way request (D58).
               if (enqueueMayHaveStarted(err)) {
                 holdUnconfirmed([row.id], 'Unsubscribe');
                 invalidateAfterDecision(qc);
@@ -1309,7 +1299,9 @@ export function TriageScreen({
       actionMailboxId,
       enqueueComposite,
       keepIntent,
+      undoKeep,
       unsubIntent,
+      confirmBacklog,
       qc,
       clearPending,
       setExpandedRow,
@@ -1394,12 +1386,19 @@ export function TriageScreen({
         pendingAction.verb === verb
       ) {
         if (inlinePreviewBlocked) return;
-        // Second click on the same verb confirms.
+        const count = typeof previewInboxCount === 'number' ? previewInboxCount : null;
+        const backlogMode =
+          verb === 'Unsubscribe'
+            ? (pendingAction.backlogMode ??
+              (count !== null && count > 0 ? 'archive' : 'unsub_only'))
+            : undefined;
+        // Second click on the same verb confirms the choice on screen.
         dispatchAction(
           verb,
           row,
           {
-            archiveHistoric: false,
+            archiveHistoric: backlogMode === 'archive',
+            ...(backlogMode ? { backlogMode } : {}),
             rememberPreference: true,
             wakeAt: pendingAction.wakeAt,
           },
@@ -1409,7 +1408,7 @@ export function TriageScreen({
       }
       onRowAction(verb, row);
     },
-    [pendingAction, inlinePreviewBlocked, dispatchAction, onRowAction],
+    [pendingAction, previewInboxCount, inlinePreviewBlocked, dispatchAction, onRowAction],
   );
 
   /**
@@ -1433,7 +1432,8 @@ export function TriageScreen({
         enqueueBulk.isPending ||
         enqueueComposite.isPending ||
         keepIntent.isPending ||
-        unsubIntent.isPending
+        unsubIntent.isPending ||
+        confirmBacklog.isPending
       ) {
         toast('Still confirming your last decision — give it a moment.', 'info');
         return;
@@ -1640,7 +1640,7 @@ export function TriageScreen({
         fontFamily: font.sans,
       }}
     >
-      {journey === 'daily' && <EditorialKicker>Clean up / A considered decision</EditorialKicker>}
+      {journey === 'daily' && <EditorialKicker>Cleanup</EditorialKicker>}
       {journey === 'daily' && (
         <div
           style={{
@@ -1654,8 +1654,9 @@ export function TriageScreen({
         >
           <div>
             <h1 style={editorialTitleStyle}>Triage</h1>
+            <FeatureExplainer id="triage-explainer">{WS2_COPY.explain.triage}</FeatureExplainer>
             <p style={{ margin: '6px 0 0', fontSize: text.sm, color: color.fgMuted }}>
-              Today’s review queue · one decision per sender
+              {daySubtitle}
             </p>
           </div>
           {state.kind === 'ready' && hasQueue && (
@@ -1694,6 +1695,8 @@ export function TriageScreen({
           )}
         </div>
       )}
+
+      {journey === 'daily' && <AiInlinePrompt />}
 
       {journey === 'daily' && (
         <ScreenIntro
@@ -1738,7 +1741,9 @@ export function TriageScreen({
           <section aria-label="Nothing to decide">
             <TriageEmptyState
               stats={state.stats}
-              onOpenUpgrade={() => openPricing(state.stats.tier === 'plus' ? 'pro' : 'plus')}
+              onOpenUpgrade={() =>
+                openPricing(state.stats.tier === 'plus' ? 'pro' : 'plus', pricingV2)
+              }
               readiness={mailboxReadiness}
               syncNeedsReconnect={mailboxNeedsReconnect}
               footnote={journey === 'daily' ? <TodayHandledLine /> : undefined}

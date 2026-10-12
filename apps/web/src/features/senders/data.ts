@@ -350,14 +350,10 @@ export type ActionVerb = 'Keep' | 'Archive' | 'Unsubscribe' | 'Later' | 'Protect
 export const VERB_PAST: Record<ActionVerb, string> = {
   Keep: 'Kept',
   Archive: 'Archived',
-  Unsubscribe: 'Requested unsubscribe from',
+  Unsubscribe: 'Unsubscribe requested',
   Later: 'Moved to Later',
   Protect: 'Protected',
-  // Spec v1.2 Decision 1 — Delete = Gmail Trash (recoverable 30 days).
-  // Past-tense surfaces in the receipt strip after the worker completes.
-  // "Deleted", not just "Moved" — every other verb's past-tense label
-  // names its own verb; Delete's dropped it (QA-undo-20260828-04).
-  Delete: 'Deleted to Gmail Trash',
+  Delete: 'Deleted',
 };
 
 /**
@@ -432,6 +428,11 @@ export interface ActionRequest {
     protectedCount: number;
     peopleCount: number;
   };
+  /**
+   * Protected senders from the selection. Unsubscribe confirm includes
+   * them so the result can name the skip. They are not actionable.
+   */
+  protectedSenderIds?: string[];
   /**
    * ELIGIBLE senders before the monthly cleanup quota capped this
    * request — not the selection total. Set only when the cap actually

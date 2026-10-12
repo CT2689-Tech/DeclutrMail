@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { TierGate } from '@/features/billing/tier-gate';
+import { useOnboardingState } from '@/features/onboarding/api/use-onboarding';
 import { useTriageQueue, useTriageStats } from '@/features/triage/api/use-triage-queue';
 import { composeTriageState } from '@/features/triage/compose-state';
 import { TriageScreen } from '@/features/triage/triage-screen';
@@ -38,6 +39,7 @@ export function TriageRoute() {
 
 function TriageExperience() {
   const { me } = useAuth();
+  const onboarding = useOnboardingState();
   const queue = useTriageQueue();
   const stats = useTriageStats();
 
@@ -60,5 +62,5 @@ function TriageExperience() {
       void stats.refetch();
     },
   });
-  return <TriageScreen state={state} />;
+  return <TriageScreen state={state} onboardedAt={onboarding.data?.onboardedAt ?? null} />;
 }

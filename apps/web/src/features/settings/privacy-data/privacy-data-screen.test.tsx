@@ -68,6 +68,8 @@ describe('PrivacyDataView', () => {
     }
     // The banned pre-D228 phrase must appear nowhere (CLAUDE.md §2.1).
     expect(container.innerHTML).not.toMatch(/Bodies read: 0/i);
+    expect(document.getElementById('what-we-store')).not.toBeNull();
+    expect(document.getElementById('shared-with')).not.toBeNull();
   });
 
   it('states the storage boundary once — the badge owns it', () => {

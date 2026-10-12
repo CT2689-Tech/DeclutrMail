@@ -96,7 +96,13 @@ test('isolated browser matrix preserves every suite and its coverage assertion',
   const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const browser = workflow.split('  accessibility:')[1];
   assert.match(browser, /fail-fast: false/);
-  assert.match(browser, /lane: \[accessibility, responsive, hydration-billing, journeys\]/);
+  for (const lane of ['accessibility', 'responsive', 'hydration-billing', 'journeys']) {
+    assert.match(browser, new RegExp(`- lane: ${lane}\\b`));
+  }
+  const journeysAt = browser.indexOf('- lane: journeys');
+  assert.ok(journeysAt > 0);
+  assert.doesNotMatch(browser.slice(0, journeysAt), /pricing_v2: 'true'/);
+  assert.match(browser.slice(journeysAt), /pricing_v2: 'true'/);
   for (const [name, lane, command] of [
     ['Run the shared-component paint specs', 'responsive', 'e2e:render'],
     ['Run the accessibility gate (authenticated + public)', 'accessibility', 'e2e:a11y:wcag'],

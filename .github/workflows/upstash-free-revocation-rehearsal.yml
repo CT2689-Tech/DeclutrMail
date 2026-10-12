@@ -1,0 +1,53 @@
+name: Rehearse Upstash revocation on a free fixture
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/upstash-free-revocation-rehearsal.yml'
+      - 'scripts/upstash-free-revocation-rehearsal*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstash-revocation-provider-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - run: node --test scripts/upstash-free-revocation-rehearsal.test.mjs
+  upstash-free-revocation-rehearse:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: Sandbox
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Create only free fixture, observe reset, and delete owned fixture
+        env:
+          UPSTASH_EMAIL: ${{ secrets.UPSTASH_EMAIL }}
+          UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
+        run: node scripts/upstash-free-revocation-rehearsal.mjs "${{ runner.temp }}/upstash-free-revocation.json"
+      - name: Preserve sanitized observations and cleanup failures
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: upstash-free-revocation
+          path: ${{ runner.temp }}/upstash-free-revocation.json
+          retention-days: 3
+          if-no-files-found: error

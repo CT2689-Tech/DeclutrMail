@@ -2,7 +2,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AiConsentExplanationsState } from '@declutrmail/shared/ai-consent';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
+import { ME_SETTINGS_QUERY_KEY } from '@/features/settings/api/query-options';
 import { useExplainReasons, type ExplainableRead } from './use-explain-reasons';
 
 /**
@@ -39,10 +41,25 @@ function Harness({
 /** A second look far enough out that a test can act between the two. */
 const WIDE = [10, 250];
 
-function renderHarness(reads: ExplainableRead[], enabled?: boolean, settleMs?: number[]) {
+function allowExplanations(
+  client: QueryClient,
+  explanations: AiConsentExplanationsState = 'allowed',
+) {
+  client.setQueryData(ME_SETTINGS_QUERY_KEY, {
+    aiConsent: { explanations, brief: 'unset', reask: false },
+  });
+}
+
+function renderHarness(
+  reads: ExplainableRead[],
+  enabled?: boolean,
+  settleMs?: number[],
+  explanations?: AiConsentExplanationsState,
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  allowExplanations(client, explanations);
   const invalidated = vi.spyOn(client, 'invalidateQueries');
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
@@ -62,6 +79,7 @@ const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function renderHarness2(props: { reads: ExplainableRead[]; showing: ExplainableRead[] }) {
   const client = new QueryClient();
+  allowExplanations(client);
   const invalidated = vi.spyOn(client, 'invalidateQueries');
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
@@ -142,8 +160,19 @@ describe('useExplainReasons', () => {
     expect([...posted[1]!.senderIds].sort()).toEqual(['s-1', 's-2']);
   });
 
+  it.each([
+    ['unset', 'unset'],
+    ['declined', 'off'],
+    ['revoked', 'off'],
+  ] as const)('does not ask when explanations are %s', async (_label, explanations) => {
+    renderHarness([template('s-1')], undefined, undefined, explanations);
+    await tick(40);
+    expect(posted).toHaveLength(0);
+  });
+
   it('re-reads only the exact query when told to — not its children', async () => {
     const client = new QueryClient();
+    allowExplanations(client);
     const invalidated = vi.spyOn(client, 'invalidateQueries');
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
@@ -156,6 +185,7 @@ describe('useExplainReasons', () => {
 
   it('does not ask twice for the same row version — re-render, remount or another surface', async () => {
     const client = new QueryClient();
+    allowExplanations(client);
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
     );

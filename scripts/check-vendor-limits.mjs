@@ -45,7 +45,7 @@ import { budgetStatus } from './gcp-budget-status.mjs';
  *     default GITHUB_REPOSITORY_OWNER)      reported but do not gate)
  *
  * Env vars (thresholds — defaults baked in):
- *   SUPABASE_DB_SIZE_WARN_MB      default 400
+ *   SUPABASE_DB_SIZE_WARN_MB      default 3200
  *   UPSTASH_DAILY_CMD_WARN        default 1000000
  *   UPSTASH_BUDGET_WARN_FRACTION  default 0.8 (of the database's own
  *                                 Upstash budget, gauged against the
@@ -204,7 +204,8 @@ function latestValue(v, field) {
 // ---------------------------------------------------------------- checks
 
 async function checkSupabaseDbSize() {
-  const warnMb = envNum('SUPABASE_DB_SIZE_WARN_MB', 400);
+  // Pro includes 8 GB; warn ~40%, breach (2x) ~78%.
+  const warnMb = envNum('SUPABASE_DB_SIZE_WARN_MB', 3200);
   const base = process.env.SUPABASE_SESSION_DSN;
   const dsn = base + (base.includes('?') ? '&' : '?') + 'sslmode=require';
   const stdout = await new Promise((resolve, reject) => {
@@ -551,8 +552,10 @@ export async function checkSentry() {
   url.searchParams.set('groupBy', 'outcome');
   url.searchParams.append('groupBy', 'reason');
   url.searchParams.set('category', 'error');
-  url.searchParams.set('interval', '1d');
-  url.searchParams.set('statsPeriod', '1d');
+  // `1d` starts at the previous UTC midnight, so interval=1d covers ~42h.
+  // `24h` with hourly buckets is a rolling day; totals still sum the window.
+  url.searchParams.set('interval', '1h');
+  url.searchParams.set('statsPeriod', '24h');
   const res = await httpJson(url.toString(), {
     headers: { Authorization: `Bearer ${process.env.SENTRY_AUTH_TOKEN}` },
   });
@@ -619,7 +622,27 @@ export async function checkSentry() {
   // drop signal ("data being dropped"); this one now does the same.
   // `filtered` is excluded on purpose: that is inbound filters doing
   // what we asked, not a loss.
-  const dropped = sumOutcome('rate_limited', 'abuse', 'cardinality_limited');
+  const dropOutcomes = ['rate_limited', 'abuse', 'cardinality_limited'];
+  const dropped = sumOutcome(...dropOutcomes);
+  // Outcome/reason stays in the cause text (rate_limited/error_usage_exceeded).
+  // Only identifier-shaped reasons: an unknown string must not reach the
+  // public run log, same as the closed usage keys above.
+  const dropParts = [];
+  for (const g of groups) {
+    if (!dropOutcomes.includes(g.by.outcome)) continue;
+    const n = g.totals['sum(quantity)'];
+    if (n === 0) continue;
+    const reason = g.by.reason;
+    const label =
+      typeof reason === 'string' && /^[a-z][a-z0-9_]*$/.test(reason)
+        ? `${g.by.outcome}/${reason}`
+        : g.by.outcome;
+    dropParts.push(`${label} ${fmtInt(n)}`);
+  }
+  const dropText =
+    dropParts.length > 0
+      ? `quota/rate limited (errors being dropped): ${fmtInt(dropped)} in last 24h (${dropParts.join(', ')})`
+      : `quota/rate limited (errors being dropped): ${fmtInt(dropped)} in last 24h`;
   // Client-side and malformed losses are real but are not enforcement,
   // so they warn rather than page.
   const lost = sumOutcome('invalid', 'client_discard');
@@ -630,7 +653,7 @@ export async function checkSentry() {
   const causes = [
     {
       status: dropped > 0 ? 'BREACH' : 'OK',
-      text: `quota/rate limited (errors being dropped): ${fmtInt(dropped)} in last 24h`,
+      text: dropText,
       value: dropped,
     },
     {

@@ -92,6 +92,17 @@ export type NormalizedBillingEvent =
        */
       providerCustomerId: string | null;
       workspaceId: string | null;
+      /** Set on a one-off transaction. Subscription payments leave this unset. */
+      providerTransactionId?: string | null;
+      /** Price ids on a one-off transaction. Empty when the payment is subscription-linked. */
+      oneTimePriceIds?: string[];
+    }
+  | {
+      kind: 'pass_revoked';
+      providerEventId: string;
+      eventType: string;
+      providerTransactionId: string;
+      reason: 'refund' | 'chargeback';
     }
   | {
       kind: 'cancellation_scheduled';

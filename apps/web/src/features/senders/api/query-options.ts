@@ -42,6 +42,7 @@ export function sendersListQueryFromScreen(
     isProtected: scope.compose.protectedFlag,
     unsubIgnored: scope.compose.unsubIgnored || undefined,
     hasInboxMail: scope.compose.hasInboxMail || undefined,
+    mostlyUnread: scope.compose.mostlyUnread || undefined,
   };
 }
 

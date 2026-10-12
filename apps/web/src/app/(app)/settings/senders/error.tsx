@@ -12,7 +12,7 @@ export default function SettingsSectionError({
   return (
     <RouteErrorScreen
       title="Protected senders"
-      kicker="Your workspace / Sender policies"
+      kicker="Settings"
       gap={12}
       error={error}
       reset={reset}

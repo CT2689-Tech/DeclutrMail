@@ -73,14 +73,13 @@ export function PreviewSheet({
   const subtitleId = useId();
   const busy = primary.busyLabel != null;
   const review = layout === 'review';
-  // Focus lands on the action — except a destructive one, where Enter on
-  // open must never be enough; there it lands on Cancel. A loading
-  // primary falls back to Cancel without moving focus again when it loads.
+  // Unsubscribe (warn) and Delete (danger) are irreversible from the
+  // keyboard: Enter on open must land on Cancel, never the action.
+  const irreversible = primary.tone === 'danger' || primary.tone === 'warn';
   const trapRef = useFocusTrap<HTMLDivElement>(true, {
-    initialFocusSelector:
-      primary.tone === 'danger'
-        ? '[data-dm-sheet-cancel] button'
-        : '[data-dm-sheet-primary] button:not([disabled]), [data-dm-sheet-cancel] button:not([disabled])',
+    initialFocusSelector: irreversible
+      ? '[data-dm-sheet-cancel] button'
+      : '[data-dm-sheet-primary] button:not([disabled]), [data-dm-sheet-cancel] button:not([disabled])',
   });
 
   useEffect(() => {
@@ -113,7 +112,7 @@ export function PreviewSheet({
     >
       <div
         ref={trapRef}
-        role="dialog"
+        role={irreversible ? 'alertdialog' : 'dialog'}
         aria-modal="true"
         aria-labelledby={titleId}
         {...(subtitle == null ? {} : { 'aria-describedby': subtitleId })}
@@ -151,7 +150,7 @@ export function PreviewSheet({
           </h2>
 
           {subtitle != null && (
-            <p
+            <div
               id={subtitleId}
               style={{
                 margin: `${space[2]}px 0 0`,
@@ -163,7 +162,7 @@ export function PreviewSheet({
               }}
             >
               {subtitle}
-            </p>
+            </div>
           )}
 
           {children != null && <div style={{ marginTop: space[5], width: '100%' }}>{children}</div>}

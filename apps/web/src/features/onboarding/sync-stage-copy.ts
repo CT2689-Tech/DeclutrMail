@@ -19,14 +19,21 @@ export const SYNC_LEAVE_EMAIL_LINE =
  * until it has a sentence — the gate can never show a label for work
  * the worker is not doing.
  */
-const homeStage = WS2_COPY.home.syncing.stage;
+function deckStage(id: string): string {
+  const line = WS2_COPY.home.syncing.stage.find((entry) => entry.startsWith(`${id}:`));
+  const sentence = line?.slice(id.length + 1).trim();
+  if (sentence === undefined || sentence === '') {
+    throw new Error(`ws2.home.syncing.stage is missing ${id}`);
+  }
+  return sentence;
+}
 
 export const STAGE_SENTENCE: Record<SyncStage, string> = {
   queued: 'Waiting to start.',
-  fetching_metadata: homeStage.fetching_metadata,
-  building_sender_index: homeStage.building_sender_index,
-  computing_recommendations: homeStage.computing_recommendations,
-  finalizing: homeStage.finalizing,
+  fetching_metadata: deckStage('fetching_metadata'),
+  building_sender_index: deckStage('building_sender_index'),
+  computing_recommendations: deckStage('computing_recommendations'),
+  finalizing: deckStage('finalizing'),
   ready: 'Your inbox is ready.',
   failed: 'The scan stopped.',
 };

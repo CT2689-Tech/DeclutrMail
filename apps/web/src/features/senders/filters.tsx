@@ -25,6 +25,7 @@
 
 import { useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { BottomSheet, tokens, useIsAtMost } from '@declutrmail/shared';
+import { WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { WINDOWS } from '@declutrmail/shared/senders';
 import type {
   ActivityBucket,
@@ -62,6 +63,11 @@ export interface ComposeState {
   unsubIgnored: boolean;
   /** Live Inbox membership; optional for saved views created before this axis. */
   hasInboxMail?: boolean;
+  /**
+   * Less than half of the last 90 days is marked read. Optional so saved
+   * views written before this axis still parse.
+   */
+  mostlyUnread?: boolean;
 }
 
 export const EMPTY_COMPOSE: ComposeState = {
@@ -109,7 +115,8 @@ export function hasAnyFilter(s: ComposeState): boolean {
     s.windowDays !== null ||
     s.domain !== null ||
     s.unsubIgnored ||
-    s.hasInboxMail === true
+    s.hasInboxMail === true ||
+    s.mostlyUnread === true
   );
 }
 
@@ -128,7 +135,8 @@ export function isDefaultCompose(c: ComposeState): boolean {
     c.windowDays === DEFAULT_COMPOSE.windowDays &&
     c.domain === DEFAULT_COMPOSE.domain &&
     c.unsubIgnored === DEFAULT_COMPOSE.unsubIgnored &&
-    c.hasInboxMail !== true
+    c.hasInboxMail !== true &&
+    c.mostlyUnread !== true
   );
 }
 
@@ -793,7 +801,7 @@ export function ActiveFilterChips({
 
 /* ─── sort ──────────────────────────────────────────────────────── */
 
-type SortColumn = 'total' | 'last_seen' | 'first_seen' | 'name';
+type SortColumn = 'total' | 'last_seen' | 'first_seen' | 'name' | 'size';
 
 const SORT_OPTIONS: ReadonlyArray<{
   sort: SortColumn;
@@ -801,6 +809,7 @@ const SORT_OPTIONS: ReadonlyArray<{
   label: string;
   group: string;
 }> = [
+  { sort: 'size', direction: 'desc', label: WS5_COPY['f2.sort'], group: 'Size' },
   // Unqualified on purpose. `senders.total_received` converges nightly
   // to COUNT(mail_messages) for the sender, so it is neither "ever" nor
   // a cumulative "seen" — it is what we currently hold.
@@ -832,8 +841,9 @@ export function SortMenu({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
   useDismiss(open, ref, () => setOpen(false));
-  const groups = new Map<string, (typeof SORT_OPTIONS)[number][]>();
-  for (const opt of SORT_OPTIONS) groups.set(opt.group, [...(groups.get(opt.group) ?? []), opt]);
+  const options = SORT_OPTIONS;
+  const groups = new Map<string, (typeof options)[number][]>();
+  for (const opt of options) groups.set(opt.group, [...(groups.get(opt.group) ?? []), opt]);
   return (
     <span ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
       <button

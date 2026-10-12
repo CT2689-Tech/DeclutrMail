@@ -51,20 +51,31 @@ test('guide visitor evaluates privacy and pricing, tries cleanup and undo, then 
   await consent(page);
   await follow(page, '/methodology');
   await follow(page, '/pricing');
-  const monthly = page.getByRole('button', { name: 'Monthly', exact: true });
-  await monthly.click();
-  await expect(monthly).toHaveAttribute('aria-pressed', 'true');
-  const annual = page.getByRole('button', { name: 'Annual — 2 months free', exact: true });
-  await annual.click();
-  await expect(annual).toHaveAttribute('aria-pressed', 'true');
-  await follow(page, '/inbox-simulator');
+  if (process.env.PRICING_V2 === 'true') {
+    const heading =
+      process.env.BILLING_PASS_ENABLED === 'true'
+        ? 'Free to start. Pay once to clear the rest.'
+        : 'Free to start. Upgrade when you want more.';
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(heading);
+    // The feature expander is hidden at the desktop viewport this lane uses.
+    await page.getByRole('link', { name: 'Join the Pro waitlist', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Pro is coming', exact: true })).toBeVisible();
+  } else {
+    const monthly = page.getByRole('button', { name: 'Monthly', exact: true });
+    await monthly.click();
+    await expect(monthly).toHaveAttribute('aria-pressed', 'true');
+    const annual = page.getByRole('button', { name: 'Annual — 2 months free', exact: true });
+    await annual.click();
+    await expect(annual).toHaveAttribute('aria-pressed', 'true');
+  }
+  await follow(page, '/inbox-simulator?workspace=senders');
   await page.getByRole('checkbox', { name: 'Select all visible senders' }).check();
   await page.locator('.dm-senders-demo-selection').getByRole('button', { name: 'Archive' }).click();
   const preview = page.getByRole('dialog');
   await expect(preview).toBeVisible();
   await preview.getByRole('button', { name: /^Archive [\d,]+$/ }).click();
   await expect(preview).toHaveCount(0);
-  const undoButtons = page.getByRole('button', { name: 'Undo mail movement', exact: true });
+  const undoButtons = page.getByRole('button', { name: 'Undo', exact: true });
   const undo = undoButtons.first();
   await expect(undo).toBeVisible();
   const undoableBefore = await undoButtons.count();

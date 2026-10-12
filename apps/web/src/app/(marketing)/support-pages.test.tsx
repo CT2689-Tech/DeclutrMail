@@ -21,15 +21,25 @@
  *      no-fetch proof stays intact.
  */
 
+import { createElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
+import { gatedText } from '@declutrmail/shared/copy/launch';
 import { storeConsent } from '@/lib/cookie-consent';
 
 import HelpPage from './help/page';
 import ContactPage from './contact/page';
 import SecurityPage from './security/page';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+
+/** Async routes resolve launch flags before render; sync pages stay components. */
+async function pageElement(
+  Page: React.ComponentType | (() => Promise<ReactElement>),
+): Promise<ReactElement> {
+  if (Page.constructor.name === 'AsyncFunction') return (Page as () => Promise<ReactElement>)();
+  return createElement(Page as React.ComponentType);
+}
 
 const { trackSpy } = vi.hoisted(() => ({
   trackSpy: vi.fn().mockResolvedValue(undefined),
@@ -56,45 +66,45 @@ afterEach(() => {
 });
 
 describe.each(PAGES)('$name — D219 support surface', ({ Page, heading, page }) => {
-  it('renders without any fetch and without a QueryClient (D134)', () => {
+  it('renders without any fetch and without a QueryClient (D134)', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
-    render(<Page />);
+    render(await pageElement(Page));
     expect(screen.getByRole('heading', { level: 1, name: heading })).toBeInTheDocument();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('emits page_viewed exactly once on mount (D159)', () => {
-    render(<Page />);
+  it('emits page_viewed exactly once on mount (D159)', async () => {
+    render(await pageElement(Page));
     expect(trackSpy.mock.calls).toEqual([['page_viewed', { page, mailbox_id: null }]]);
   });
 
-  it('stamps a last-updated date', () => {
-    render(<Page />);
+  it('stamps a last-updated date', async () => {
+    render(await pageElement(Page));
     expect(screen.getByText(/Last updated: \d{4}-\d{2}-\d{2}/)).toBeInTheDocument();
   });
 
-  it('never uses the banned pre-D228 phrase "Bodies read: 0"', () => {
-    const { container } = render(<Page />);
+  it('never uses the banned pre-D228 phrase "Bodies read: 0"', async () => {
+    const { container } = render(await pageElement(Page));
     expect(container.textContent).not.toMatch(/bod(y|ies) read: 0/i);
   });
 
-  it('carries no "Pending confirmation" marker (D121/D148 confirmed 2026-07-08)', () => {
-    const { container } = render(<Page />);
+  it('carries no "Pending confirmation" marker (D121/D148 confirmed 2026-07-08)', async () => {
+    const { container } = render(await pageElement(Page));
     expect(container.textContent).not.toContain('Pending confirmation');
   });
 });
 
 describe('/help content — D219 + D137', () => {
-  it('quotes the locked trust headline and the full storage allowlist verbatim', () => {
-    const { container } = render(<HelpPage />);
+  it('quotes the locked trust headline and the full storage allowlist verbatim', async () => {
+    const { container } = render(await pageElement(HelpPage));
     expect(container.textContent).toContain(PRIVACY_BADGE_HEADLINE);
     for (const item of PRIVACY_STORAGE_ITEMS) {
       expect(container.textContent).toContain(item);
     }
   });
 
-  it('states the canonical 30-day guarantee and links /refunds for the full terms (D121)', () => {
-    const { container } = render(<HelpPage />);
+  it('states the canonical 30-day guarantee and links /refunds for the full terms (D121)', async () => {
+    const { container } = render(await pageElement(HelpPage));
     expect(container.textContent).toContain('30-day money-back guarantee');
     expect(container.textContent).toMatch(/every paid plan/i);
     // The interim 14-day pro-rata default must not resurface.
@@ -107,22 +117,22 @@ describe('/help content — D219 + D137', () => {
     ).toBe(true);
   });
 
-  it('covers unsubscribe honestly: one-click where available, manual mailto (D230)', () => {
-    const { container } = render(<HelpPage />);
+  it('covers unsubscribe honestly: one-click where available, manual mailto (D230)', async () => {
+    const { container } = render(await pageElement(HelpPage));
     expect(container.textContent).toMatch(/one-click unsubscribe/i);
     expect(container.textContent).toMatch(/you send it yourself/i);
     expect(container.textContent).toMatch(/nothing is auto-sent/i);
   });
 
-  it('deep-links each question with a stable slug (D219)', () => {
-    render(<HelpPage />);
+  it('deep-links each question with a stable slug (D219)', async () => {
+    render(await pageElement(HelpPage));
     for (const id of ['what-we-store', 'unsubscribe-flow', 'undo-windows', 'autopilot-modes']) {
       expect(document.getElementById(id)).toBeInTheDocument();
     }
   });
 
-  it('links the deeper pages: /pricing, /privacy, /contact', () => {
-    const { container } = render(<HelpPage />);
+  it('links the deeper pages: /pricing, /privacy, /contact', async () => {
+    const { container } = render(await pageElement(HelpPage));
     for (const href of ['/pricing', '/privacy', '/contact']) {
       expect(
         container.querySelector(`a[href="${href}"]`),
@@ -131,8 +141,8 @@ describe('/help content — D219 + D137', () => {
     }
   });
 
-  it('states the undo windows and the 7-day account-deletion grace', () => {
-    const { container } = render(<HelpPage />);
+  it('states the undo windows and the 7-day account-deletion grace', async () => {
+    const { container } = render(await pageElement(HelpPage));
     // The undo window is uniform; the split this asserted went false
     // on 2026-08-23. Derived so a future re-tier moves the assertion.
     expect(container.textContent).toMatch(
@@ -142,8 +152,8 @@ describe('/help content — D219 + D137', () => {
     expect(container.textContent).toMatch(/7-day grace period/);
   });
 
-  it('emits FAQPage JSON-LD mirroring the rendered questions', () => {
-    const { container } = render(<HelpPage />);
+  it('emits FAQPage JSON-LD mirroring the rendered questions', async () => {
+    const { container } = render(await pageElement(HelpPage));
     const script = container.querySelector('script[type="application/ld+json"]');
     expect(script).toBeInTheDocument();
     const data = JSON.parse(script!.textContent ?? '{}') as {
@@ -185,6 +195,15 @@ describe('/security content — verified claims only', () => {
     }
   });
 
+  it('renders the gate-on AI lines from the deck', () => {
+    const { container } = render(<SecurityPage />);
+    const text = container.textContent ?? '';
+    expect(text).toContain(gatedText('ws3.security.ai.explanations'));
+    expect(text).toContain(gatedText('ws3.security.ai.brief'));
+    expect(text).toContain(gatedText('ws3.security.ai.control'));
+    expect(text).not.toMatch(/\{[A-Za-z0-9_]+\}/);
+  });
+
   it('names the single Gmail permission and the limited Gmail details used', () => {
     const { container } = render(<SecurityPage />);
     expect(container.textContent).toContain('gmail.modify');
@@ -195,9 +214,8 @@ describe('/security content — verified claims only', () => {
     const { container } = render(<SecurityPage />);
     const text = (container.textContent ?? '').replace(/\s+/g, ' ');
 
-    expect(text).toContain(
-      'full email contents and attachments are never in our systems, they cannot leak from DeclutrMail',
-    );
+    expect(text).toContain('no message body in our systems to leak');
+    expect(text).not.toMatch(/cannot leak/i);
     expect(text).toContain(
       'Subject lines and Gmail preview snippets can still contain sensitive information',
     );
@@ -220,9 +238,9 @@ describe('/security content — verified claims only', () => {
     // certificate, because the artifact is an approval email.
     const { container } = render(<SecurityPage />);
     expect(container.textContent).toMatch(/CASA/);
-    expect(container.textContent).toMatch(/21 April 2026/);
+    expect(container.textContent).toMatch(/April 21, 2026/);
     expect(container.textContent).toMatch(/gmail\.modify/);
-    expect(container.textContent).toMatch(/recertified annually/i);
+    expect(container.textContent).toMatch(/recertified every year/i);
     expect(container.textContent).not.toMatch(/verification letter|certificate|has passed/i);
   });
 

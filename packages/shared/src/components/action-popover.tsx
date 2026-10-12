@@ -164,6 +164,14 @@ export function ActionPopover({
   // problem a viewport-relative clamp can't reach, pre-existing before
   // this change, and out of scope for it.
   const [edgeFix, setEdgeFix] = useState<CSSProperties>({});
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 760px)');
+    const apply = () => setNarrow(media.matches);
+    apply();
+    media.addEventListener('change', apply);
+    return () => media.removeEventListener('change', apply);
+  }, []);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -264,6 +272,18 @@ export function ActionPopover({
           zIndex: 50,
           ...style,
           ...edgeFix,
+          ...(narrow
+            ? {
+                position: 'fixed' as const,
+                left: 8,
+                right: 8,
+                top: 'auto',
+                bottom: 'calc(8px + var(--dm-tabbar-inset, 0px))',
+                width: 'auto',
+                maxHeight: '70vh',
+                zIndex: 160,
+              }
+            : {}),
         }}
       >
         {verbs.map((verbId) => {

@@ -7,30 +7,58 @@ import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
  * (`WS1_COPY`). Report and confirm sentences are read from `WS5_COPY`
  * at render time and stay off the page while that module is empty.
  */
+const HOME_STAGE_KEYS = [
+  'fetching_metadata',
+  'building_sender_index',
+  'computing_recommendations',
+  'finalizing',
+] as const;
+
+type HomeStageKey = (typeof HOME_STAGE_KEYS)[number];
+
+/** The deck stores each stage as `id: sentence`. Home reads the sentence. */
+function homeSyncingStages(lines: readonly string[]): Record<HomeStageKey, string> {
+  const found = new Map<string, string>();
+  for (const line of lines) {
+    const split = line.indexOf(':');
+    if (split <= 0) continue;
+    found.set(line.slice(0, split).trim(), line.slice(split + 1).trim());
+  }
+  const stages = {} as Record<HomeStageKey, string>;
+  for (const key of HOME_STAGE_KEYS) {
+    const sentence = found.get(key);
+    if (sentence === undefined || sentence === '') {
+      throw new Error(`ws2.home.syncing.stage is missing ${key}`);
+    }
+    stages[key] = sentence;
+  }
+  return stages;
+}
+
 export const HOME_DECK = {
   homeTitle: WS2_COPY.names.home,
   nextSteps: WS2_COPY.names.homeNextSteps,
-  retrying: WS2_COPY.home.retrying,
-  reconnect: WS2_COPY.home.reconnect,
+  retrying: WS2_COPY.banners.home.retrying,
+  reconnect: WS2_COPY.banners.home.reconnect,
   compare: WS2_COPY.locked.compare,
   emptyTitle: WS2_COPY.home.empty.title,
   emptyBody: WS2_COPY.home.empty.body,
-  heroOne: WS2_COPY.home.progress.hero.one,
-  heroOther: WS2_COPY.home.progress.hero.other,
-  activityLink: WS2_COPY.home.link.activity,
-  failedEyebrow: WS2_COPY.home.failed.eyebrow,
+  heroOne: WS2_COPY.home.progressHero.one,
+  heroOther: WS2_COPY.home.progressHero.other,
+  activityLink: WS2_COPY.home.linkActivity,
+  failedEyebrow: WS2_COPY.home.failedEyebrow,
   queuedTitle: WS2_COPY.home.queued.title,
   queuedBody: WS2_COPY.home.queued.body,
   syncingTitle: WS2_COPY.home.syncing.title,
   syncingBody: WS2_COPY.home.syncing.body,
-  syncingStage: WS2_COPY.home.syncing.stage,
-  largestTitleOne: WS2_COPY.home.next.largest.title.one,
-  largestTitleOther: WS2_COPY.home.next.largest.title.other,
-  largestBody: WS2_COPY.home.next.largest.body,
-  largestCta: WS2_COPY.home.next.largest.cta,
-  laterTitle: WS2_COPY.home.next.later.title,
-  laterBody: WS2_COPY.home.next.laterDue.body,
-  laterCta: WS2_COPY.home.next.laterDue.cta,
+  syncingStage: homeSyncingStages(WS2_COPY.home.syncing.stage),
+  largestTitleOne: WS2_COPY.home.nextLargest.title.one,
+  largestTitleOther: WS2_COPY.home.nextLargest.title.other,
+  largestBody: WS2_COPY.home.nextLargest.body,
+  largestCta: WS2_COPY.home.nextLargest.cta,
+  laterTitle: WS2_COPY.home.nextLater.title,
+  laterBody: WS2_COPY.home.nextLaterDue.body,
+  laterCta: WS2_COPY.home.nextLaterDue.cta,
   chip: WS1_COPY['meter.chip'],
   chipAria: WS1_COPY['meter.chip.aria'],
   chipEmpty: WS1_COPY['meter.chip.empty'],

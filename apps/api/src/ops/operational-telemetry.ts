@@ -1,7 +1,13 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { cronRuns, outboxEvents, providerSyncState, schema } from '@declutrmail/db';
-import { findStuckMailboxes } from '@declutrmail/workers';
+import {
+  cronRuns,
+  mailboxAccounts,
+  outboxEvents,
+  providerSyncState,
+  schema,
+} from '@declutrmail/db';
+import { findStuckMailboxes, INITIAL_RECOVERY_LIMIT } from '@declutrmail/workers';
 import type { StuckMailbox } from '@declutrmail/workers';
 
 import { readActionOutcomes } from './action-outcomes.js';
@@ -245,6 +251,25 @@ export async function collectOperationalTelemetry(
           incidents: rows.find((row) => row.status === status)?.incidents ?? 0,
           followedBySuccessfulSync: rows.find((row) => row.status === status)?.recovered ?? 0,
         }));
+      }),
+    ),
+    collect('recovery', () =>
+      read(db, async (tx) => {
+        const [row] = await tx
+          .select({ exhausted: sql<number>`count(*)::int` })
+          .from(providerSyncState)
+          .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, providerSyncState.mailboxAccountId))
+          .where(
+            and(
+              eq(providerSyncState.readinessStatus, 'failed'),
+              sql`${providerSyncState.initialRecoveryAttempts} >= ${INITIAL_RECOVERY_LIMIT}`,
+              eq(mailboxAccounts.status, 'active'),
+            ),
+          );
+        const exhausted = Number(row?.exhausted ?? 0);
+        if (!Number.isInteger(exhausted) || exhausted < 0)
+          throw new Error('Invalid recovery count');
+        return [{ kind: 'ops.initial_recovery_exhausted', exhausted }];
       }),
     ),
     ...queues.map((queue) =>

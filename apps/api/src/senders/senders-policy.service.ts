@@ -1,5 +1,5 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, sql } from 'drizzle-orm';
+import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import { activityLog, senderPolicies, senders } from '@declutrmail/db';
 
@@ -168,6 +168,78 @@ export class SendersPolicyService {
       await tx.insert(activityLog).values(auditValues);
 
       return projectResult(senderId, row, true);
+    });
+  }
+
+  /**
+   * Undo a standing Keep. Deletes the policy row when it is keep and
+   * not protected, and marks the unreverted keep audit rows reverted so
+   * Triage can show the sender again. A protected row stays: deleting
+   * it would drop the safety state.
+   */
+  async undoKeep(input: {
+    mailboxAccountId: string;
+    senderId: string;
+  }): Promise<SenderPolicyResult> {
+    const { mailboxAccountId, senderId } = input;
+    const [sender] = await this.db
+      .select({ senderKey: senders.senderKey })
+      .from(senders)
+      .where(and(eq(senders.id, senderId), eq(senders.mailboxAccountId, mailboxAccountId)))
+      .limit(1);
+    if (!sender) {
+      throw new NotFoundException({
+        code: 'SENDER_NOT_FOUND',
+        message: 'Sender not found in the current mailbox.',
+      });
+    }
+    return await this.db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select()
+        .from(senderPolicies)
+        .where(
+          and(
+            eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+            eq(senderPolicies.senderKey, sender.senderKey),
+          ),
+        )
+        .limit(1);
+      if (existing?.policyType === 'keep' && existing.isProtected) {
+        throw new ConflictException({
+          code: 'PROTECTED_SENDER',
+          message: 'Unprotect this sender before undoing Keep.',
+        });
+      }
+      // Triage Keep writes the audit row first and projects the policy
+      // through the outbox. Undo has to revert that row even when the
+      // policy has not landed yet, or the sender stays out of the queue.
+      // A non-keep policy is a later decision — leave it alone.
+      if (existing && existing.policyType !== 'keep') {
+        return projectResult(senderId, existing, false);
+      }
+      if (existing) {
+        await tx
+          .delete(senderPolicies)
+          .where(
+            and(
+              eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+              eq(senderPolicies.senderKey, sender.senderKey),
+            ),
+          );
+      }
+      const reverted = await tx
+        .update(activityLog)
+        .set({ revertedAt: sql`now()` })
+        .where(
+          and(
+            eq(activityLog.mailboxAccountId, mailboxAccountId),
+            eq(activityLog.senderKey, sender.senderKey),
+            eq(activityLog.action, 'keep'),
+            isNull(activityLog.revertedAt),
+          ),
+        )
+        .returning({ id: activityLog.id });
+      return projectResult(senderId, null, existing != null || reverted.length > 0);
     });
   }
 }

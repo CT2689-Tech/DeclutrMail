@@ -1844,6 +1844,18 @@ export class ActionsService {
     idempotencyKey: string;
     /** Separate backlog Archive/Delete will follow this same confirmation. */
     includesBacklogAction?: boolean;
+    /**
+     * The combined unsubscribe-backlog route already charged the backlog
+     * (or is unsub-only, which the launch meter does not charge). Skip
+     * the extra unit assert. Default false so Autopilot and Screener
+     * keep today's charge.
+     */
+    skipCleanupCharge?: boolean;
+    /**
+     * When the backlog row already exists, link this intent to it so the
+     * cleanup meter counts one sender-group, not a second unit.
+     */
+    compositeId?: string;
     /** "Unsubscribe anyway" on a sender shown as Protected (D245). */
     override?: boolean;
   }): Promise<UnsubscribeIntentResult> {
@@ -1852,6 +1864,8 @@ export class ActionsService {
       senderId,
       idempotencyKey,
       includesBacklogAction = false,
+      skipCleanupCharge = false,
+      compositeId,
       override = false,
     } = input;
     // ADR-0008 §3 exception: actions → senders. The single-sender twin of
@@ -2189,7 +2203,7 @@ export class ActionsService {
       // it does not reserve the second unit for the later Archive/Delete
       // request; a durable guarantee would require a reservation ledger.
       // Only the `unsub:*` intent row counts — not `unsubexec-*`.
-      if (method !== 'none') {
+      if (method !== 'none' && !skipCleanupCharge) {
         await this.entitlements.assertCleanupCapacityForWorkspace(
           workspace,
           isMeterV2() ? 0 : includesBacklogAction ? 2 : 1,
@@ -2217,6 +2231,7 @@ export class ActionsService {
           // failed rows. Normal one-click/mailto intent rows are done.
           status: method === 'none' ? 'failed' : 'done',
           idempotencyKey: namespacedKey,
+          ...(compositeId ? { compositeId } : {}),
         })
         .onConflictDoNothing({ target: actionJobs.idempotencyKey })
         .returning({ id: actionJobs.id });
@@ -2746,6 +2761,7 @@ export class ActionsService {
           eq(activityLog.mailboxAccountId, mailboxAccountId),
           eq(activityLog.senderKey, senderKey),
           eq(activityLog.action, 'keep'),
+          isNull(activityLog.revertedAt),
           gte(activityLog.occurredAt, windowStart),
         ),
       )

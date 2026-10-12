@@ -19,7 +19,7 @@ on:
 
 permissions:
   contents: read
-  # Reads the Vercel status an Ignored Build Step posts on a cancelled preview.
+  # Queue previews skip the build; this Vercel status is the required check.
   statuses: read
 
 concurrency:

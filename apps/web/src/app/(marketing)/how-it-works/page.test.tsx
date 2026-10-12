@@ -9,7 +9,10 @@ describe('/how-it-works', () => {
     const copy = container.textContent ?? '';
 
     expect(
-      screen.getByRole('heading', { level: 1, name: 'See the sender. Know what will change.' }),
+      screen.getByRole('heading', {
+        level: 1,
+        name: 'From one sender decision to a Gmail change.',
+      }),
     ).toBeInTheDocument();
     expect(copy).toContain('Gmail remains where you read, reply, compose, and search');
     expect(copy).toContain('companion to Gmail, not a replacement email client');

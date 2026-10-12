@@ -1,6 +1,9 @@
 import Link from 'next/link';
 
+import { fillWs3, WS3_COPY } from '@declutrmail/shared/copy/launch';
+
 import { JsonLd } from '../json-ld';
+import { TrustRow } from '../trust/trust-row';
 import { siteUrl } from '../landing/urls';
 import { ALTERNATIVES_SLUGS, alternativesFor, type AlternativesPage } from './comparison-data';
 import { FinalCta, MethodNote, VerificationStamp } from './comparison-screen';
@@ -53,8 +56,10 @@ export function AlternativesScreen({ page }: { page: AlternativesPage }) {
         </nav>
         <h1>{`${subject.name} alternatives for Gmail cleanup`}</h1>
         <p className="dm-compare-lede">
-          {`Looking past ${subject.name}? If it is not the shape you need, here is what else exists, described by the job each one does, not ranked. DeclutrMail comes last, after the others.`}
+          {fillWs3(WS3_COPY['ws3.vs.alternatives.verdict'], { Competitor: subject.name })}
         </p>
+        <TrustRow />
+        <p>{WS3_COPY['ws3.vs.gmailOnly']}</p>
         <dl className="dm-compare-facts">
           <div>
             <dt>{subject.name} organizes by</dt>

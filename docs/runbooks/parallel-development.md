@@ -154,7 +154,13 @@ remain in the existing GitHub secrets; candidate code is never checked out in
 this workflow. The CI split's first queue candidate passed all GitHub checks
 but received no native Vercel deployment/status; an exact-commit preview was
 needed to restore the missing required producer. Preserve that observation
-when assessing queue reliability.
+when assessing queue reliability. The ignore script skips `gh-readonly-queue/*`
+previews, so Production is the only full build of a merged commit and the
+required Vercel check is the ignore-step success. The helper must not create
+a deployment when that success or a pending `vercel[bot]` status is already
+present, because a second deployment posts pending and the queue waits on it.
+Creating one remains the recovery path when Vercel has posted nothing. CI
+still gates the merge.
 
 Full post-merge CI remains enabled. A queue candidate and a squash commit have
 separate identities, and there is no verified artifact-reuse mechanism yet.

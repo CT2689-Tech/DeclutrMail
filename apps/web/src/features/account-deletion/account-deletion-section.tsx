@@ -189,7 +189,7 @@ function PendingState({
       {!executing && (
         <div>
           <Button tone="default" onClick={onCancel} disabled={isCancelling}>
-            {isCancelling ? 'Cancelling…' : 'Cancel deletion'}
+            {isCancelling ? 'Canceling…' : 'Cancel deletion'}
           </Button>
         </div>
       )}

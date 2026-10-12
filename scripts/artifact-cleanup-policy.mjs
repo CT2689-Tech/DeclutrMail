@@ -387,6 +387,7 @@ export function runCleanup({
     } catch (error) {
       throw new Error(
         `Live requires a reviewed dry run of this exact policy first: ${error.message}`,
+        { cause: error },
       );
     }
     const verdict = providerVerdict({ run, log, since: installedAt(before), servingTags });

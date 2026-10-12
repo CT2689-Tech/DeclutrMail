@@ -2,6 +2,8 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { PreviewSheet, tokens } from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { CONNECTION_TERM_PLURAL } from '@declutrmail/shared/copy/screen-decisions';
 import {
   DELETION_CONFIRM_PHRASE,
   DELETION_WAIVER_PHRASE,
@@ -73,79 +75,52 @@ export function DeleteAccountModal({
 
   const requiredPhrase = mode === 'immediate' ? DELETION_WAIVER_PHRASE : DELETION_CONFIRM_PHRASE;
   const phraseMatches = typed === requiredPhrase;
-  const hasUndo = (projection?.activeUndoCount ?? 0) > 0;
   const undoExtends = projection?.projectedBasis === 'undo-window';
 
-  // The shared confirmation sheet, danger-toned for both steps: focus
-  // lands on "Keep my account", never on the way forward. Escape and a
-  // scrim click cancel (both held while submitting). No Enter-to-confirm
-  // — a typed-confirm deletion must not be completable by a stray key.
+  const deletionDate = projection ? formatDate(projection.projectedEffectiveAt, timeZone) : null;
+  const undoDate =
+    projection?.latestUndoExpiresAt != null
+      ? formatDate(projection.latestUndoExpiresAt, timeZone)
+      : deletionDate;
+  const copy = WS2_COPY.deleteAccount;
+
   return (
     <PreviewSheet
       onClose={onCancel}
       icon={<DangerGlyph />}
-      title="Delete your DeclutrMail account?"
-      subtitle={
-        step === 1 ? (
-          'Deleting your DeclutrMail account does not delete emails in Gmail.'
-        ) : hasUndo ? (
-          <>
-            Deleting your DeclutrMail account permanently removes the data required to undo recent
-            DeclutrMail actions. You have{' '}
-            <strong style={{ color: color.fg }}>
-              {projection!.activeUndoCount} undoable action
-              {projection!.activeUndoCount === 1 ? '' : 's'}
-            </strong>
-            {projection!.latestUndoExpiresAt && (
-              <>
-                , the latest expiring in{' '}
-                <strong style={{ color: color.fg }}>
-                  {daysUntil(projection!.latestUndoExpiresAt)}
-                </strong>
-              </>
-            )}
-            .
-          </>
-        ) : (
-          'Choose when it runs.'
-        )
-      }
-      note={
-        step === 1 ? 'Nothing is deleted yet.' : 'A confirmation email with a cancel link follows.'
-      }
+      title={step === 1 ? copy.title : copy.step2.title}
+      subtitle={step === 1 ? copy.subtitle : undefined}
+      note={step === 1 ? copy.nothingYet : copy.emailNote}
       primary={
         step === 1
           ? {
-              label: 'Review deletion timing',
+              label: copy.next,
               tone: 'danger',
               onClick: () => setStep(2),
               disabled: !acknowledged,
             }
           : {
-              label: mode === 'immediate' ? 'Delete immediately' : 'Schedule deletion',
+              label: mode === 'immediate' ? copy.button.now : copy.button.schedule,
               tone: 'danger',
               onClick: () => onConfirm(typed),
               disabled: !phraseMatches,
               busyLabel: isSubmitting ? 'Submitting…' : undefined,
             }
       }
-      cancelLabel="Keep my account"
+      cancelLabel={copy.keep}
       footer={`Step ${step} of 2`}
     >
       {step === 1 ? (
         <div style={bodyStyle}>
-          <FactList title="What gets permanently deleted">
-            <li>Saved Gmail details (senders, subjects, snippets, labels, dates)</li>
-            <li>Sender decisions and Screener history</li>
-            <li>Automation rules</li>
-            <li>Undo history</li>
-            <li>Your DeclutrMail account and workspace</li>
+          <FactList title={copy.deleted.title}>
+            {copy.deleted.list.map((item) => (
+              <li key={item}>{item.replace('{CONNECTION_TERM_PLURAL}', CONNECTION_TERM_PLURAL)}</li>
+            ))}
           </FactList>
-          <FactList title="What is retained under policy">
-            <li>
-              Narrowly scoped pseudonymous security and deletion evidence, without message bodies or
-              attachments
-            </li>
+          <FactList title={copy.kept.title}>
+            {copy.kept.list.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
           </FactList>
           <label
             style={{
@@ -178,16 +153,14 @@ export function DeleteAccountModal({
                 setTyped('');
               }}
               title={
-                projection
-                  ? `Schedule deletion for ${formatDate(projection.projectedEffectiveAt, timeZone)}`
-                  : 'Schedule deletion'
+                deletionDate
+                  ? copy.schedule.label.replace('{deletionDate}', deletionDate)
+                  : copy.button.schedule
               }
               detail={
-                undoExtends
-                  ? 'Waits for your open undo windows, so it runs ' +
-                    `${formatDate(projection!.latestUndoExpiresAt!, timeZone)} instead of in 7 days. ` +
-                    'Undo keeps working until then, and you can cancel any time.'
-                  : '7-day grace period. You can cancel any time before then.'
+                undoExtends && undoDate
+                  ? copy.schedule.detailUndo.replace('{deletionDate}', undoDate)
+                  : copy.schedule.detail
               }
             />
             <ModeOption
@@ -196,13 +169,8 @@ export function DeleteAccountModal({
                 setMode('immediate');
                 setTyped('');
               }}
-              title="Delete immediately"
-              detail={
-                hasUndo
-                  ? 'No grace period — deletion runs within minutes, and your open undo ' +
-                    'windows end: actions you could still undo become permanent.'
-                  : 'No grace period — deletion runs within minutes.'
-              }
+              title={copy.now.label}
+              detail={copy.now.detail}
               danger
             />
           </div>

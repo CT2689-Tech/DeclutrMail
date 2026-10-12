@@ -105,7 +105,7 @@ async function collectCopySamples(): Promise<CopySample[]> {
     { label: 'faq-content FAQ_ENTRIES', text: JSON.stringify(FAQ_ENTRIES) },
     { label: 'how-to-content HOW_TO_ARTICLES', text: JSON.stringify(HOW_TO_ARTICLES) },
     { label: 'opengraph-image undoWindowCaption', text: undoWindowCaption },
-    { label: 'pricing.md GET() markdown body', text: await pricingMarkdown().text() },
+    { label: 'pricing.md GET() markdown body', text: await (await pricingMarkdown()).text() },
     // Finding 1 (fix-wave): the gap that shipped a live hedge on
     // /how-it-works and /inbox-simulator. Every verb's `copy.description`
     // routes through `staticActionPreviewCopy`, so scanning the whole

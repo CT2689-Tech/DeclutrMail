@@ -29,10 +29,13 @@
     "./hooks/use-local-state": "./src/hooks/use-local-state.ts",
     "./hooks/use-long-press": "./src/hooks/use-long-press.ts",
     "./ids": "./src/ids/branded.ts",
+    "./ai-consent": "./src/ai-consent/index.ts",
+    "./inbox-report": "./src/inbox-report/index.ts",
     "./analytics/product-events": "./src/analytics/product-events.ts",
     "./copy/launch": "./src/copy/launch/index.ts",
     "./copy/legal-entity": "./src/copy/legal-entity.ts",
     "./copy/screen-decisions": "./src/copy/screen-decisions.ts",
+    "./copy/ui-glossary": "./src/copy/ui-glossary.ts",
     "./observability": "./src/observability/index.ts",
     "./senders": "./src/senders/index.ts",
     "./senders/organizational-domain": "./src/senders/organizational-domain.ts",
@@ -52,15 +55,15 @@
   },
   "devDependencies": {
     "@tanstack/react-query": "^5.103.2",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "vite": "^8.3.1",
-    "vitest": "^5.0.1"
+    "vite": "^8.3.3",
+    "vitest": "^5.0.3"
   },
   "dependencies": {
-    "tldts": "^7.4.15",
+    "tldts": "^7.4.18",
     "zod": "^4.6.5",
     "zustand": "^5.0.13"
   }

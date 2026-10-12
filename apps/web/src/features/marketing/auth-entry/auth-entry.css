@@ -97,6 +97,25 @@
   transform: scale(0.99);
 }
 
+.dm-auth-entry-permission {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--dm-line);
+  border-radius: 12px;
+  background: var(--dm-paper);
+}
+
+.dm-auth-entry-permission h2 {
+  margin: 0;
+  font: 650 15px/1.35 var(--dm-font-sans);
+}
+
+.dm-auth-entry-permission p {
+  margin: 8px 0 0;
+  color: var(--dm-fg-soft);
+  font: 400 14px/1.5 var(--dm-font-sans);
+}
+
 .dm-auth-entry-scope {
   margin: 20px 0 0;
   color: var(--dm-fg-soft);

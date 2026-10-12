@@ -128,11 +128,14 @@ describe('Triage preview — verification detail (D226 parity)', () => {
     ).toBeInTheDocument();
   });
 
-  // Matches the server's `includesBacklogAction ? 2 : 1` preflight, and
-  // the senders modal's copy of the same rule.
-  it('counts the backlog verb as a second unit', () => {
+  // The unsubscribe request is free. The mail move still spends one
+  // cleanup action while the email meter is off.
+  it('charges one cleanup action for unsubscribe plus archive while the email meter is off', () => {
     renderPreview({ verb: 'Unsubscribe', archiveHistoric: true, mode: 'inline' });
-    expect(screen.getByText(/Uses 2 of your 34 cleanup actions/)).toBeInTheDocument();
+    expect(screen.queryByText('Unsubscribing is free and doesn’t count.')).toBeNull();
+    expect(screen.getByText(/Uses 1 of your 34 cleanup actions/)).toBeInTheDocument();
+    expect(screen.queryByText(/Uses 2 /)).toBeNull();
+    expect(screen.getByText('Whether their email stops is up to the sender.')).toBeInTheDocument();
   });
 
   it('says nothing about quota on a tier that does not meter it', () => {
@@ -155,8 +158,8 @@ describe('Triage preview — verification detail (D226 parity)', () => {
   it('hides the detail for an Unsubscribe that leaves the backlog alone', () => {
     renderPreview({ verb: 'Unsubscribe', archiveHistoric: false, mode: 'inline' });
     expect(screen.queryByTestId('mail-location-line')).toBeNull();
-    // The cost is still stated — an unsubscribe spends a unit either way.
-    expect(screen.getByText(/Uses 1 of your 34 cleanup actions/)).toBeInTheDocument();
+    expect(screen.queryByText(/cleanup action/)).toBeNull();
+    expect(screen.getByText('Whether their email stops is up to the sender.')).toBeInTheDocument();
   });
 
   it('shows the detail on the inline path too, since D34 lets the sheet be skipped', () => {

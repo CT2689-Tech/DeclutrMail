@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
+import { ME_SETTINGS_QUERY_KEY } from '@/features/settings/api/query-options';
 
 import { TRIAGE_BOOTSTRAP_KEY } from './api/query-options';
 import { type TriageDecisionRow } from './data';
@@ -25,8 +26,12 @@ let explained: Array<{ senderIds: string[] }>;
 let rescored: Array<Record<string, unknown>>;
 
 function renderScreen(rows: TriageDecisionRow[], journey: 'daily' | 'first_relief' = 'daily') {
+  const client = createTestQueryClient();
+  client.setQueryData(ME_SETTINGS_QUERY_KEY, {
+    aiConsent: { explanations: 'allowed', brief: 'unset', reask: false },
+  });
   return render(
-    <QueryWrapper client={createTestQueryClient()}>
+    <QueryWrapper client={client}>
       <TriageScreen
         state={{ kind: 'ready', rows, stats: TRIAGE_SESSION_STATS }}
         journey={journey}
@@ -124,6 +129,9 @@ describe('Triage — picking up the sentence the user is reading', () => {
 
   function renderWithSpy(rows: TriageDecisionRow[]) {
     const client = createTestQueryClient();
+    client.setQueryData(ME_SETTINGS_QUERY_KEY, {
+      aiConsent: { explanations: 'allowed', brief: 'unset', reask: false },
+    });
     const refetched = vi.spyOn(client, 'invalidateQueries');
     render(
       <QueryWrapper client={client}>

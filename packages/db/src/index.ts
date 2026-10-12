@@ -83,6 +83,8 @@ export type {
   FollowupTracker,
   NewFollowupTracker,
 } from './schema/followup-tracker';
+export { inboxReportCache } from './schema/inbox-report-cache';
+export { invalidateInboxReportCache } from './inbox-report-cache';
 export { mailMessages } from './schema/mail-messages';
 export type { MailMessage, NewMailMessage } from './schema/mail-messages';
 export {
@@ -200,6 +202,8 @@ export type {
 } from './schema/triage-decisions';
 export { undoActionKind, undoJournal } from './schema/undo-journal';
 export type { NewUndoJournalEntry, UndoJournalEntry } from './schema/undo-journal';
+export { loadAiConsentForMailbox } from './ai-consent';
+export type { AiConsentColumns } from './ai-consent';
 export { users } from './schema/users';
 export type { NewUser, User } from './schema/users';
 export { waitlist } from './schema/waitlist';

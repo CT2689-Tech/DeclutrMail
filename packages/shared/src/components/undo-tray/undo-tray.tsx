@@ -251,7 +251,7 @@ function UndoTrayBody({
           // See the note on the main tray below: `left: 50%` + translate
           // halves the available width for a shrink-to-fit fixed box.
           position: 'fixed',
-          bottom: 16,
+          bottom: 'calc(16px + var(--dm-tabbar-inset, 0px))',
           left: 16,
           right: 16,
           marginInline: 'auto',
@@ -311,7 +311,7 @@ function UndoTrayBody({
     // is shrink-to-fit against `viewport - left`, so at `left: 50%` it can
     // never exceed half the screen (browser smoke, 2026-07-29).
     position: 'fixed',
-    bottom: 16,
+    bottom: 'calc(16px + var(--dm-tabbar-inset, 0px))',
     left: 16,
     right: 16,
     marginInline: 'auto',

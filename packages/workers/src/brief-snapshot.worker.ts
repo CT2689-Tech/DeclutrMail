@@ -4,6 +4,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import {
   type BriefPayload as PersistedBriefPayload,
   briefRuns,
+  loadAiConsentForMailbox,
   mailMessages,
   mailboxAccounts,
   nonMailRowWhere,
@@ -13,6 +14,7 @@ import {
   users,
   workspaces,
 } from '@declutrmail/db';
+import { briefConsentActive } from '@declutrmail/shared/ai-consent';
 import { type StoredUnsubscribeMethod, unsubscribeCapabilityOf } from '@declutrmail/shared/actions';
 import { parseBriefPrefs, hasBriefEmailConsent } from '@declutrmail/shared/contracts';
 import { hasCapability, TIER_IDS } from '@declutrmail/shared/entitlements';
@@ -75,10 +77,16 @@ function resolveConcurrency(raw: string | undefined): number {
  */
 const BRIEF_TIERS = TIER_IDS.filter((tier) => hasCapability(tier, 'brief'));
 
-/** Cron job payload — same shape as `UndoExpiry` + `FollowupCheck`. */
+/**
+ * Cron job payload — same shape as `UndoExpiry` + `FollowupCheck`.
+ * `consentMailboxAccountId` is set only by Allow on the Brief scope:
+ * regenerate today's snapshot for that mailbox, and no one else's.
+ */
 export interface BriefSnapshotJobData {
   /** ISO-8601 minute boundary, e.g. `2026-05-25T08:00`. D225 cron key. */
   scheduledAtMinute: string;
+  /** One mailbox, when the job was queued from Brief consent. */
+  consentMailboxAccountId?: string;
 }
 
 /** Per-pass metrics — logged on `worker.succeeded`. */
@@ -184,7 +192,9 @@ const FYI_MAX = BRIEF_FYI_MAX;
  *     mail, the heaviest weekday, was the one day nothing ever
  *     summarized (founder decision 2026-08-25).
  *   - For each mailbox, checks whether today's Brief already exists
- *     (D69 frozen-once invariant) and skips if so.
+ *     (D69 frozen-once invariant) and skips if so. A consent job is the
+ *     exception: it may replace today's template narrative with the LLM
+ *     one, and it does not replace a row already marked `llm_haiku`.
  *   - Queries yesterday's INBOUND `mail_messages` metadata.
  *   - Groups by sender, joins sender identity/engagement facts
  *     state + `triage_decisions` for engine verdict.
@@ -265,13 +275,19 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
   }
 
   protected override getIdempotencyKey(payload: BriefSnapshotJobData): string {
+    if (payload.consentMailboxAccountId) {
+      return `${this.workerName}:consent:${payload.consentMailboxAccountId}:${payload.scheduledAtMinute}`;
+    }
     return `${this.workerName}:${payload.scheduledAtMinute}`;
   }
 
   override async processJob(
-    _payload: BriefSnapshotJobData,
+    payload: BriefSnapshotJobData,
     _ctx: WorkerContext,
   ): Promise<BriefSnapshotResult> {
+    if (payload.consentMailboxAccountId) {
+      return this.processConsentMailbox(payload.consentMailboxAccountId);
+    }
     const startedAt = Date.now();
     const now = (this.deps.now ?? (() => new Date()))();
 
@@ -398,11 +414,78 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     };
   }
 
+  /**
+   * Allow on the Brief scope. One mailbox, today's window, even before
+   * the delivery hour. Consent is checked here again before any provider
+   * call. An `llm_haiku` row is left alone.
+   */
+  private async processConsentMailbox(mailboxAccountId: string): Promise<BriefSnapshotResult> {
+    const startedAt = Date.now();
+    const now = (this.deps.now ?? (() => new Date()))();
+    const done = (
+      mailboxesProcessed: number,
+      mailboxesFailed = 0,
+      briefsGenerated = 0,
+      emptyBriefs = 0,
+    ): BriefSnapshotResult => ({
+      mailboxesProcessed,
+      mailboxesFailed,
+      briefsGenerated,
+      emptyBriefs,
+      durationMs: Date.now() - startedAt,
+    });
+
+    const [mb] = await this.deps.db
+      .select({
+        id: mailboxAccounts.id,
+        workspaceId: mailboxAccounts.workspaceId,
+        tier: workspaces.tier,
+        preferences: users.preferences,
+        timezone: users.timezone,
+      })
+      .from(mailboxAccounts)
+      .innerJoin(users, eq(users.id, mailboxAccounts.userId))
+      .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
+      .where(eq(mailboxAccounts.id, mailboxAccountId))
+      .limit(1);
+    if (!mb) return done(0);
+    if (!hasCapability(mb.tier, 'brief')) return done(1);
+    if (!(await this.briefAllowed(mailboxAccountId))) return done(1);
+
+    const localWindow = resolveBriefLocalWindow(
+      now,
+      mb.timezone,
+      parseBriefPrefs(mb.preferences).hour,
+    );
+    try {
+      const generated = await this.snapshotForMailbox(mb.id, mb.workspaceId, now, localWindow, {
+        upgradeTemplate: true,
+      });
+      return done(1, 0, generated ? 1 : 0, generated?.isEmpty ? 1 : 0);
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'brief.mailbox_failed',
+          worker: this.workerName,
+          mailboxAccountId: mb.id,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
+      this.observer.captureBackgroundFailure(err instanceof Error ? err : new Error(String(err)), {
+        kind: 'brief.mailbox_failed',
+        tags: { worker: this.workerName, mailbox_account_id: mb.id },
+      });
+      return done(1, 1);
+    }
+  }
+
   private async snapshotForMailbox(
     mailboxAccountId: string,
     workspaceId: string,
     now: Date,
     localWindow: BriefLocalWindow,
+    options?: { upgradeTemplate?: boolean },
   ): Promise<{ isEmpty: boolean } | null> {
     const { runDateLocal: todayLocal, previousDayStart: yesterdayStart, todayStart } = localWindow;
 
@@ -415,8 +498,13 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     // So an EMPTY run stays replaceable — later ticks rebuild (cheap:
     // a zero-row day short-circuits to template without the LLM) and
     // overwrite it the first time a non-empty payload lands.
+    const upgradeTemplate = options?.upgradeTemplate === true;
     const [existing] = await this.deps.db
-      .select({ id: briefRuns.id, briefPayload: briefRuns.briefPayload })
+      .select({
+        id: briefRuns.id,
+        briefPayload: briefRuns.briefPayload,
+        generatedBy: briefRuns.generatedBy,
+      })
       .from(briefRuns)
       .where(
         and(
@@ -425,7 +513,14 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
         ),
       )
       .limit(1);
-    if (existing && !isEmptyBriefPayload(existing.briefPayload)) return null;
+    // D69: a non-empty brief stays frozen. Consent may replace a template
+    // narrative once; an llm_haiku row is already paid for.
+    const frozenTemplate =
+      upgradeTemplate &&
+      existing != null &&
+      existing.generatedBy === 'template' &&
+      !isEmptyBriefPayload(existing.briefPayload);
+    if (existing && !isEmptyBriefPayload(existing.briefPayload) && !frozenTemplate) return null;
 
     const { payload, generatedBy } = await this.buildPayload(
       mailboxAccountId,
@@ -436,6 +531,9 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     // Existing empty run + still-empty rebuild — nothing new to say;
     // keep the frozen empty row untouched (no churn, no log spam).
     if (existing && isEmptyBriefPayload(payload)) return null;
+    // The provider declined or the day has no mail. Leave the template
+    // row in place so a failed call is not written over itself.
+    if (frozenTemplate && generatedBy !== 'llm_haiku') return null;
 
     // D63 defense-in-depth — Zod validates the EXACT three-section
     // shape (reply/fyi/noise + narrative + caps) right before insert.
@@ -449,7 +547,14 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     // of truth until that separately-owned schema type is cleaned up.
     const persistedPayload = payload as unknown as PersistedBriefPayload;
 
-    if (existing) {
+    if (frozenTemplate) {
+      const updated = await this.deps.db
+        .update(briefRuns)
+        .set({ generatedBy, briefPayload: persistedPayload, generatedAt: now })
+        .where(and(eq(briefRuns.id, existing.id), eq(briefRuns.generatedBy, 'template')))
+        .returning({ id: briefRuns.id });
+      if (updated.length === 0) return null;
+    } else if (existing) {
       // Heal path — replace the frozen EMPTY run with the first
       // non-empty rebuild. Guarded on the row still being empty so a
       // concurrent tick that healed it first wins and this one no-ops.
@@ -782,6 +887,25 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
    *      own (the worker shipped this path first; the LLM is layered
    *      on top).
    */
+  /** Fail closed: no Brief consent or a lookup error stays on the template. */
+  private async briefAllowed(mailboxAccountId: string): Promise<boolean> {
+    try {
+      const row = await loadAiConsentForMailbox(this.deps.db, mailboxAccountId);
+      return briefConsentActive(row);
+    } catch (err) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'ai_consent.lookup_failed',
+          worker: this.workerName,
+          mailboxAccountId,
+          error: err instanceof Error ? err.name : 'Error',
+        }),
+      );
+      return false;
+    }
+  }
+
   private async composeNarrative(input: {
     mailboxAccountId: string;
     reply: readonly BriefItem[];
@@ -789,6 +913,7 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     noise: readonly BriefSenderGroup[];
     snippetBySenderKey: ReadonlyMap<string, string>;
   }): Promise<{ narrative: string; generatedBy: 'llm_haiku' | 'template' }> {
+    const allowBrief = this.deps.llm ? await this.briefAllowed(input.mailboxAccountId) : false;
     if (this.deps.llm?.isBlocked?.()) {
       // The provider refused the account; only the first refusal reached
       // it and logged. Say per mailbox why this Brief has no note.
@@ -800,9 +925,9 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
           mailboxAccountId: input.mailboxAccountId,
         }),
       );
-    } else if (this.deps.llm) {
+    } else if (this.deps.llm && allowBrief) {
       const port = this.deps.llm;
-      const narrativeInput = buildNarrativeInput(input);
+      const narrativeInput = { ...buildNarrativeInput(input), aiConsent: 'granted' as const };
       try {
         const raced = await runWithTimeout(
           () => port.generateNarrative(narrativeInput),

@@ -1,5 +1,6 @@
 import {
   deriveSenderId,
+  invalidateInboxReportCache,
   isNonMail,
   mailboxAccounts,
   mailMessages,
@@ -430,6 +431,32 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       };
     }
 
+    // An initial scan that already ended on a reconnect grant must not
+    // be picked up by a webhook or a leftover incremental job.
+    const [syncRow] = await this.deps.db
+      .select({ readinessStatus: providerSyncState.readinessStatus })
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
+      .limit(1);
+    if (syncRow?.readinessStatus === 'needs_reconnect') {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'incremental_sync.skipped_needs_reconnect',
+          mailboxAccountId,
+        }),
+      );
+      return {
+        recordsProcessed: 0,
+        added: 0,
+        deleted: 0,
+        labelChanges: 0,
+        cursorTooOld: false,
+        advancedToHistoryId: null,
+        needsReconnect: true,
+      };
+    }
+
     // Second worker-entry guard, same chokepoint as the eligibility
     // check above. A revoked grant is permanent until reconnect; without
     // this, every subsequent Gmail Pub/Sub push for a mailbox that keeps
@@ -473,7 +500,7 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     ): Promise<{ events: GmailHistoryRecord[]; lastPageHistoryId: string | null } | null> => {
       const collected: GmailHistoryRecord[] = [];
       let token: string | undefined;
-      let latest: string | null = null;
+      let latest: string | null;
       for (;;) {
         ctx.signal?.throwIfAborted();
         const page = await client.listHistory(cursor, token, ctx.signal);
@@ -992,6 +1019,11 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
             lastIncrementalErrorCode: null,
           })
           .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+
+        // The report cache keys off the last succeeded sync run, which
+        // only the initial sync writes. A finished incremental run has
+        // to drop the row or the report stays frozen.
+        await invalidateInboxReportCache(this.deps.db, mailboxAccountId);
 
         return {
           recordsProcessed: events.length,

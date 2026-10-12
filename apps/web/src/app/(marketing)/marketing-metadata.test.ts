@@ -23,7 +23,10 @@ import { comparisonBySlug } from '@/features/marketing/comparison/comparison-dat
 
 import { metadata as landing } from './page';
 import { metadata as beta } from './beta/page';
-import { metadata as pricing } from './pricing/page';
+import { pricingPageMetadata } from '@/features/marketing/pricing/pricing-metadata';
+
+/** Flag-off metadata. `generateMetadata` returns this unless PRICING_V2 is on. */
+const pricing = pricingPageMetadata(false);
 import { metadata as privacy } from './privacy/page';
 import { metadata as terms } from './terms/page';
 import { metadata as refunds } from './refunds/page';
@@ -36,6 +39,7 @@ import { metadata as howToHub } from './how-to/page';
 import { metadata as answersHub } from './answers/page';
 import { metadata as faq } from './faq/page';
 import { metadata as changelog } from './changelog/page';
+import { metadata as pricingChangelog } from './pricing/changelog/page';
 import { metadata as howItWorks } from './how-it-works/page';
 import { metadata as compare } from './compare/page';
 import { metadata as methodology } from './methodology/page';
@@ -112,6 +116,15 @@ describe('the blog index title — D250 §3.6 row 21', () => {
   });
 });
 
+describe('pricing metadata follows the launch flag', () => {
+  it('keeps today’s description while the flag is off and the deck sub while it is on', () => {
+    expect(pricingPageMetadata(false).description).toBe(pricing.description);
+    expect(pricingPageMetadata(true).description?.length).toBeLessThanOrEqual(160);
+    expect(pricingPageMetadata(true).description).not.toMatch(/\$\d/);
+    expect(pricingPageMetadata(true).alternates?.canonical).toBe('/pricing');
+  });
+});
+
 describe('pricing points answer engines at its machine-readable twin', () => {
   it('links /pricing.md as a text/markdown alternate without moving the canonical', () => {
     expect(pricing.alternates?.canonical).toBe('/pricing');
@@ -181,6 +194,7 @@ describe("meta description length — stays inside Google's display limit", () =
 const STATIC_METADATA = new Map<string, Metadata>([
   ...PAGES.map((page) => [page.path, page.metadata] as const),
   ['/sign-in', signIn],
+  ['/pricing/changelog', pricingChangelog],
   ['/how-to/clean-gmail-by-sender', howToClean],
   ['/how-to/bulk-delete-emails-from-one-sender', howToDelete],
   ['/how-to/gmail-storage-full', howToStorage],
@@ -250,14 +264,14 @@ describe('marketing metadata guards', () => {
 
     const gmail = await metadataForPath('/vs/gmail');
     expect(titleText(gmail)).toBe(
-      "DeclutrMail vs Gmail's built-in cleanup — honest 2026 comparison",
+      "DeclutrMail vs Gmail's built-in cleanup — compared, October 2026",
     );
     expect(gmail.description).toBe(
       "A source-backed comparison of DeclutrMail and Gmail's cleanup tools (Manage subscriptions, bulk search, unsubscribe): preview, recovery and control by sender.",
     );
 
     const muse = await metadataForPath('/vs/meta-muse');
-    expect(titleText(muse)).toBe('DeclutrMail vs Meta Muse — honest 2026 comparison');
+    expect(titleText(muse)).toBe('DeclutrMail vs Meta Muse — compared, October 2026');
     expect(muse.description).toBe(
       'Source-backed: DeclutrMail, a narrow Gmail cleanup tool that never fetches full message contents, vs Meta Muse, a general AI agent that can read and send mail.',
     );
@@ -270,7 +284,7 @@ describe('marketing metadata guards', () => {
       ['/alternatives/trimbox', 'Trimbox'],
     ] as const) {
       const metadata = await metadataForPath(path);
-      expect(titleText(metadata)).toBe(`${name} alternatives, compared honestly`);
+      expect(titleText(metadata)).toBe(`${name} alternatives — DeclutrMail`);
       expect(metadata.description).toBe(
         `Source-backed alternatives to ${name}: what each tool is for, when to stay with ${name}, and where DeclutrMail fits. No rankings, no affiliates.`,
       );

@@ -7,7 +7,7 @@ import type { IncrementalSyncJobData, InitialSyncJobData } from '@declutrmail/wo
 
 interface Row {
   mailboxAccountId: string;
-  readiness: 'ready' | 'failed';
+  readiness: 'ready' | 'failed' | 'needs_reconnect';
   errorCode: string | null;
   lastIncrementalErrorCode: string | null;
   lastIncrementalErrorAt: Date | null;
@@ -74,6 +74,19 @@ describe('SyncService.getNeedsReconnectByMailbox', () => {
     expect(db.select).toHaveBeenCalledTimes(1);
     expect(await svc.getMailboxHealth([])).toEqual(new Map());
     expect(db.select).toHaveBeenCalledTimes(1);
+  });
+
+  it('presents a needs_reconnect row as failed and still needing reconnect', async () => {
+    const { svc } = service([
+      row({
+        mailboxAccountId: 'parked',
+        readiness: 'needs_reconnect',
+        errorCode: 'InvalidGrantError',
+      }),
+    ]);
+    expect(await svc.getMailboxHealth(['parked'])).toEqual(
+      new Map([['parked', { readiness: 'failed', needsReconnect: true }]]),
+    );
   });
 
   it('short-circuits to an empty map without querying for an empty id list', async () => {

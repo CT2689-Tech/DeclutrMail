@@ -97,7 +97,7 @@ export function GracePeriodBanner() {
             });
           }}
         >
-          {cancel.isPending ? 'Cancelling…' : 'Cancel deletion'}
+          {cancel.isPending ? 'Canceling…' : 'Cancel deletion'}
         </Button>
       )}
     </div>

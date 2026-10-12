@@ -15,6 +15,7 @@ import type { Request, Response } from 'express';
 import { ok, type Envelope, type SyncReadiness } from '@declutrmail/shared/contracts';
 import {
   inboxLimitFor,
+  isBillingPassEnabled,
   isMeterV2,
   isPricingV2,
   type TierId,
@@ -83,6 +84,11 @@ export interface MeEnvelope {
   cleanupUsed: number;
   /** Server env `METER_V2`. The browser does not read the env itself. */
   meterV2: boolean;
+  /**
+   * Server env `BILLING_PASS_ENABLED`. Absent on an older API means the
+   * Pass stays hidden. The browser does not read the env itself.
+   */
+  passEnabled: boolean;
   /**
    * First-touch tracked `ref` vs skippable self-report. Never sum them.
    * `promptNeeded` is true until they answer or skip.
@@ -188,6 +194,7 @@ export class AuthController {
       cleanupLimit: quota.limit,
       cleanupUsed: quota.used,
       meterV2: isMeterV2(),
+      passEnabled: isBillingPassEnabled(),
       signupAttribution: {
         ref: user.signupAttributionRef,
         heardFrom: user.signupAttributionHeardFrom,

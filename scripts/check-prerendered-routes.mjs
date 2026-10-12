@@ -39,6 +39,13 @@ const INTENTIONALLY_DYNAMIC = new Map([
   ['/sign-in', 'reads searchParams (return destination)'],
   ['/changelog/rss.xml', 'route handler, not a page'],
   ['/pricing.md', 'route handler, not a page'],
+  ['/vs/[competitor]', 'launch prices come from the public pricing API, not the web build env'],
+  ['/compare', 'launch prices come from the public pricing API, not the web build env'],
+  ['/faq', 'refund answer comes from the public pricing API, not the web build env'],
+  ['/help', 'refund answer comes from the public pricing API, not the web build env'],
+  ['/refunds', 'refund page comes from the public pricing API, not the web build env'],
+  ['/terms', 'plan terms come from the public pricing API, not the web build env'],
+  ['/pricing/changelog', 'the page redirects unless the public pricing API says v2'],
 ]);
 
 /** Every route the `(marketing)` group defines, as URL paths. */

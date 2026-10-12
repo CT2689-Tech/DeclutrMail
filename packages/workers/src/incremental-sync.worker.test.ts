@@ -1,5 +1,6 @@
 import {
   deriveSenderId,
+  inboxReportCache,
   mailboxAccounts,
   mailMessages,
   outboxEvents,
@@ -351,6 +352,30 @@ describe('IncrementalSyncWorker', () => {
    * what the last attempt did. Without the guard, EVERY push for a
    * mailbox that keeps receiving mail re-attempts the token refresh.
    */
+  it('no-ops an initial scan parked on needs_reconnect before Gmail access', async () => {
+    await db
+      .update(providerSyncState)
+      .set({ readinessStatus: 'needs_reconnect', errorCode: 'InvalidGrantError' })
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    const getClient = vi.fn(async () => {
+      throw new Error('needs_reconnect must not request a Gmail client');
+    });
+
+    const result = await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: { getClient },
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+
+    expect(result.needsReconnect).toBe(true);
+    expect(getClient).not.toHaveBeenCalled();
+    expect((await db.select().from(providerSyncState))[0]).toMatchObject({
+      readinessStatus: 'needs_reconnect',
+      lastHistoryId: 1000n,
+    });
+    expect(await db.select().from(mailMessages)).toHaveLength(0);
+  });
+
   it('no-ops a mailbox already awaiting reconnect before Gmail access — the webhook-storm regression', async () => {
     await db
       .update(providerSyncState)
@@ -462,6 +487,24 @@ describe('IncrementalSyncWorker', () => {
     // (the Sync-now completion watch compares this against its
     // pre-click baseline).
     expect(state!.lastSyncedAt).not.toBeNull();
+  });
+
+  it('drops a cached inbox report when incremental sync succeeds', async () => {
+    await db.insert(inboxReportCache).values({
+      mailboxAccountId,
+      payload: { receivedCount: 9 },
+      generatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    const client = new FakeGmailClient(
+      [{ forCursor: '1000', page: { records: [], historyId: '1500' } }],
+      new Map(),
+    );
+    await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+    expect(await db.select().from(inboxReportCache)).toEqual([]);
   });
 
   it('skips drafts and chat lines — no row, no sender, no metadata fetch for labelled ones', async () => {

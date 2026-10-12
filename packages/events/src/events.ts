@@ -49,7 +49,8 @@ const ConfidenceSchema = z.number().min(0).max(1);
  * `sync_complete` sweep, a single-sender `signal_change` /
  * `stale_refresh` / `manual_rescore` run, or a `signal_change` run over
  * the set of senders a Gmail tab recount marked stale (`cron_sweep` is
- * declared but has no producer). Drives the
+ * declared but has no producer), or the sweep queued when the user
+ * allows explanation consent (`consent_grant`). Drives the
  * AutopilotApplyWorker — the apply worker subscribes here and runs
  * preset matchers against the current `triage_decisions` rows.
  */
@@ -63,6 +64,7 @@ export const TriageScoreRunCompletedPayloadSchema = z
       'manual_rescore',
       'stale_refresh',
       'signal_change',
+      'consent_grant',
     ]),
     /** Run wall clock (ms since epoch) — matches the score worker's `producedAtMs`. */
     producedAtMs: z.number().int().nonnegative(),

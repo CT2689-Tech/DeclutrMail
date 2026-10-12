@@ -6,10 +6,16 @@ import { OPS_SUPER_PROPERTIES } from './events/ops';
 import { REPORT_EVENT_NAMES } from './events/report';
 
 /**
- * Names in `events.ts` immediately before the domain split.
- * Every pre-split name must still be present. New names may be appended
- * in a domain file; none of these may be renamed or dropped.
+ * Names in `events.ts` immediately before the domain split. That set
+ * stays a subset. A5 names are an explicit addition — no renames, no drops.
  */
+const A5_EVENT_NAMES = [
+  'upgrade_cta_clicked',
+  'checkout_closed',
+  'free_cap_hit',
+  'pass_selected',
+  'plus_selected',
+] as const;
 const EVENT_NAMES_BEFORE_SPLIT = [
   'onboarding_step_viewed',
   'onboarding_step_completed',
@@ -89,19 +95,30 @@ const OWNERS = {
   ops: 'ops: WS4',
 } as const;
 
+/** Names appended after the split. Drops and renames still fail. */
+const APPENDED_AFTER_SPLIT = [
+  ...A5_EVENT_NAMES,
+  'caught_up_viewed',
+  'empty_state_cta_clicked',
+  'sync_gate_state_viewed',
+  'home_next_step_clicked',
+  'brief_ai_consent_shown',
+  'brief_ai_consent_decided',
+  'brief_ai_consent_revoked',
+  'provider_waitlist_joined',
+] as const;
+
 describe('event registry domain split', () => {
-  it('keeps every pre-split event name and adds report and home events', () => {
+  it('keeps every pre-split name and only the named additions', () => {
     const names = new Set<string>(EVENT_NAMES);
     for (const name of EVENT_NAMES_BEFORE_SPLIT) {
       expect(names.has(name)).toBe(true);
     }
     const before = new Set<string>(EVENT_NAMES_BEFORE_SPLIT);
     const added = [...names].filter((name) => !before.has(name)).sort();
-    const allowed = [
-      ...new Set<string>([...REPORT_EVENT_NAMES, 'home_next_step_clicked', 'caught_up_viewed']),
-    ].sort();
-    expect(added).toEqual(allowed);
-    expect(names.size).toBe(before.size + allowed.length);
+    const expected = [...REPORT_EVENT_NAMES, ...APPENDED_AFTER_SPLIT].sort();
+    expect(added).toEqual(expected);
+    expect(names.size).toBe(EVENT_NAMES_BEFORE_SPLIT.length + expected.length);
   });
 
   it('keeps display_mode off the event-name list', () => {

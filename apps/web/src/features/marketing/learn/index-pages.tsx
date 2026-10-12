@@ -1,10 +1,13 @@
 import Link from 'next/link';
-import { SupportTasks } from './support-tasks';
+
+import { WS3_COPY } from '@declutrmail/shared/copy/launch';
 import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
+import { TrustRow } from '@/features/marketing/trust/trust-row';
+import { SupportTasks } from './support-tasks';
 import { BLOG_ARTICLES, BLOG_SLUGS } from './blog-content';
 import { CHANGELOG_ENTRIES } from './changelog-content';
-import { FAQ_ENTRIES } from './faq-content';
+import { publishedFaqEntries } from './faq-content';
 import { ANSWERS_HUB, HOW_TO_HUB, type LearnHubDefinition } from './hub-content';
 import { formatReadingDate, ReadingCta, ReadingLayout } from './learn-shell';
 import type { LearnArticle } from './types';
@@ -132,17 +135,20 @@ export function BlogIndexPage() {
   );
 }
 
-export function FaqPage() {
+export function FaqPage({ pricingV2 }: { pricingV2?: boolean } = {}) {
+  const entries = publishedFaqEntries(pricingV2);
   return (
     <ReadingLayout
+      variant="faq"
       title="Questions worth answering before Gmail access"
       lede="What is stored, what each action changes, where recovery stops, and how DeclutrMail fits beside Gmail. No universal-undo shorthand."
     >
+      <TrustRow />
       <JsonLd
         data={{
           '@context': 'https://schema.org',
           '@type': 'FAQPage',
-          mainEntity: FAQ_ENTRIES.map((entry) => ({
+          mainEntity: entries.map((entry) => ({
             '@type': 'Question',
             name: entry.question,
             acceptedAnswer: { '@type': 'Answer', text: entry.answer },
@@ -151,7 +157,7 @@ export function FaqPage() {
       />
       <SupportTasks />
       <section className="dm-read-faq" aria-label="Frequently asked questions">
-        {FAQ_ENTRIES.map((entry, index) => (
+        {entries.map((entry, index) => (
           <details key={entry.id} id={entry.id} open={index === 0}>
             <summary>{entry.question}</summary>
             <div className="dm-read-faq-answer">
@@ -164,6 +170,16 @@ export function FaqPage() {
             </div>
           </details>
         ))}
+      </section>
+      <section className="dm-read-closing" aria-label={WS3_COPY['ws3.faq.closing']}>
+        <h2>{WS3_COPY['ws3.faq.closing']}</h2>
+        <p>
+          <Link href="/inbox-simulator?workspace=senders">
+            {WS3_COPY['ws3.faq.closing.links'][0]}
+          </Link>
+          {' · '}
+          <Link href="/contact">{WS3_COPY['ws3.faq.closing.links'][1]}</Link>
+        </p>
       </section>
       <ReadingCta />
     </ReadingLayout>

@@ -31,6 +31,7 @@ const SAMPLE_INPUT: ReasoningInput = {
   ruleLabel: 'the volume and read rate point at archiving',
   facts: { monthlyVolume: 12, readRatePct: 3 },
   gmailCategory: 'promotions',
+  aiConsent: 'granted',
 };
 
 interface MockMessage {
@@ -60,15 +61,15 @@ describe('renderUserPrompt', () => {
     const out = renderUserPrompt({ ...SAMPLE_INPUT, displayName: '   ' });
     // First line should be `Sender: <domain>` rather than empty.
     const senderLine = out.split('\n')[0];
-    expect(senderLine).toBe('Sender: acme.example');
+    expect(senderLine).toBe('Sender: «acme.example»');
   });
 
   it('falls back to "This sender" when displayName + domain both blank', () => {
     const out = renderUserPrompt({ ...SAMPLE_INPUT, displayName: '', domain: '' });
-    expect(out.split('\n')[0]).toBe('Sender: This sender');
+    expect(out.split('\n')[0]).toBe('Sender: «This sender»');
     // Domain row still rendered — defensively shows "(unknown)" so the
     // model can't confuse a blank field with a missing one.
-    expect(out).toContain('Domain: (unknown)');
+    expect(out).toContain('Domain: «(unknown)»');
   });
 
   /**
@@ -143,6 +144,7 @@ describe('AnthropicHaikuAdapter.explain', () => {
     expect(typeof callArg.system).toBe('string');
     expect(callArg.system).toContain('executive assistant');
     expect(callArg.messages).toHaveLength(1);
+    expect(callArg.tools).toBeUndefined();
     expect(callArg.messages[0].role).toBe('user');
     expect(callArg.messages[0].content).toBe(renderUserPrompt(SAMPLE_INPUT));
   });
@@ -412,6 +414,39 @@ describe('AnthropicHaikuAdapter — provider refusals', () => {
     } finally {
       warnSpy.mockRestore();
       errorSpy.mockRestore();
+    }
+  });
+});
+
+describe('AnthropicHaikuAdapter consent gate', () => {
+  it('does not call the provider when consent is missing', async () => {
+    const create = vi.fn();
+    const adapter = new AnthropicHaikuAdapter({
+      client: stubClient(create),
+      breaker: new LlmCircuitBreaker(),
+    });
+    const { aiConsent: _granted, ...without } = SAMPLE_INPUT;
+    expect(await adapter.explain(without)).toBeNull();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('drops a sentence that adds a URL or a click instruction and logs no content', async () => {
+    const create = vi.fn().mockResolvedValue({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: 'Please click here: https://evil.example' }],
+    } satisfies MockMessage);
+    const adapter = new AnthropicHaikuAdapter({
+      client: stubClient(create),
+      breaker: new LlmCircuitBreaker(),
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(await adapter.explain(SAMPLE_INPUT)).toBeNull();
+      const line = String(warn.mock.calls[0]?.[0]);
+      expect(line).toContain('reasoning.output_rejected');
+      expect(line).not.toContain('evil.example');
+    } finally {
+      warn.mockRestore();
     }
   });
 });

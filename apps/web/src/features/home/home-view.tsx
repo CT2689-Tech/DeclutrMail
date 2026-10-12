@@ -41,6 +41,26 @@ import styles from './home-view.module.css';
 
 const BILLING_HREF = '/billing?from=%2Fhome';
 
+/** The shipped card marks the mailbox on its root, not only on an anchor. */
+const REPORT_CARD_MARK = '[data-mailbox]';
+
+function homeNextStepEventKind(
+  kind: HomeFixCandidate['kind'],
+): 'unsubscribe_archive' | 'largest_senders' | 'later_due' {
+  switch (kind) {
+    case 'unsub_archive':
+      return 'unsubscribe_archive';
+    case 'largest':
+      return 'largest_senders';
+    case 'later_due':
+      return 'later_due';
+    default: {
+      const unreachable: never = kind;
+      return unreachable;
+    }
+  }
+}
+
 /** Home v1: report, suggested next steps, progress. No promo and no auto-confirm. */
 export function HomeView({
   state,
@@ -122,7 +142,7 @@ export function HomeView({
         mailboxId={mailboxId}
         previewReport={previewReport}
         onOpenFix={(step) => {
-          void track('home_next_step_clicked', { kind: step.kind });
+          void track('home_next_step_clicked', { kind: homeNextStepEventKind(step.kind) });
           if (step.kind === 'unsub_archive') setPendingFix(step);
         }}
       />
@@ -164,7 +184,7 @@ function PlanLabel({ tier }: { tier: TierId }) {
 function useInboxReportMounted(ref: RefObject<HTMLElement | null>): boolean {
   const [mounted, setMounted] = useState(false);
   useLayoutEffect(() => {
-    setMounted(ref.current?.querySelector('[data-inbox-report], a[data-mailbox]') != null);
+    setMounted(ref.current?.querySelector(`[data-inbox-report], ${REPORT_CARD_MARK}`) != null);
   });
   return mounted;
 }
@@ -348,7 +368,7 @@ function ReportCard({
   // the lead, the size tile, and the trust line outside that link.
   const [cardOwnsIntro, setCardOwnsIntro] = useState(false);
   useLayoutEffect(() => {
-    setCardOwnsIntro(reportRef.current?.querySelector('a[data-mailbox]') != null);
+    setCardOwnsIntro(reportRef.current?.querySelector(REPORT_CARD_MARK) != null);
   });
   if (copy === null) {
     return (
@@ -591,7 +611,7 @@ function LaterCard({ step }: { step: HomeFixCandidate }) {
         href="/later"
         className={`dm-external-link ${styles.cardAction}`}
         onClick={() => {
-          void track('home_next_step_clicked', { kind: 'later_due' });
+          void track('home_next_step_clicked', { kind: homeNextStepEventKind('later_due') });
         }}
       >
         {HOME_DECK.laterCta}

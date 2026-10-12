@@ -518,33 +518,46 @@ describe('BaseDeclutrWorker', () => {
       worker.setObserver(obs);
 
       const callOrder: string[] = [];
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       worker.body = async () => {
         throw invalid;
       };
       // Re-spy onTerminalFailure via the existing vi.fn spy
       worker.onTerminalSpy.mockImplementation(() => callOrder.push('onTerminalFailure'));
-      const originalObs = obs.captureFailure;
-      obs.captureFailure = (e, c) => {
-        callOrder.push('captureFailure');
-        originalObs(e, c);
+      const originalNotice = obs.recordBackgroundNotice;
+      obs.recordBackgroundNotice = (notice) => {
+        callOrder.push('recordBackgroundNotice');
+        originalNotice(notice);
       };
 
       // attemptsMade=0 → first attempt — but InvalidGrantError is
       // non-retryable, so the base must short-circuit retries with
-      // UnrecoverableError.
+      // UnrecoverableError. A revoked grant is a warning notice, not a
+      // Sentry error (DECLUTRMAIL-WEB-2Q).
       const job = fakeJob<TestPayload, { ok: true }>({
         data: { mailboxAccountId: 'mb-2' },
         attemptsMade: 0,
       });
       await expect(worker.run(job)).rejects.toBeInstanceOf(UnrecoverableError);
 
-      expect(callOrder).toEqual(['onTerminalFailure', 'captureFailure']);
-      expect(obs.captures).toHaveLength(1);
-      expect(obs.captures[0]?.error).not.toBe(invalid);
-      expect(obs.captures[0]?.error).toMatchObject({
-        name: 'InvalidGrantError',
-        message: 'Worker job failed',
-      });
+      expect(callOrder).toEqual(['onTerminalFailure', 'recordBackgroundNotice']);
+      expect(obs.captures).toHaveLength(0);
+      expect(obs.notices).toEqual([
+        expect.objectContaining({
+          kind: 'worker.reconnect_required',
+          level: 'warn',
+          tags: expect.objectContaining({
+            error_class: 'InvalidGrantError',
+            worker: 'TestWorker',
+          }),
+        }),
+      ]);
+      expect(lifecycleLines().filter((line) => line.kind === 'worker.failed')).toEqual([
+        expect.objectContaining({ severity: 'WARNING', level: 'warn', error: 'InvalidGrantError' }),
+      ]);
+      expect(errorLines().some((line) => line.kind === 'worker.failure_capture')).toBe(false);
+      expect(warnSpy).toHaveBeenCalled();
+      warnSpy.mockRestore();
       expect(worker.onTerminalSpy).toHaveBeenCalledTimes(1);
     });
 

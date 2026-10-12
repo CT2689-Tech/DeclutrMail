@@ -30,8 +30,8 @@ let mockCleanupRemaining: number | null = 3;
 // from a calendar-month one so the fixture actually exercises the fix
 // rather than coincidentally matching the old "this month" copy.
 const mockCleanupResetsAt: string | null = '2026-09-17T00:00:00.000Z';
-vi.mock('@/features/auth/auth-provider', () => ({
-  useAuth: () => ({
+vi.mock('@/features/auth/auth-provider', () => {
+  const auth = () => ({
     me: {
       user: { id: 'u', email: 'me@example.com', workspaceId: mockWorkspaceId },
       activeMailboxId: 'mb-1',
@@ -48,8 +48,9 @@ vi.mock('@/features/auth/auth-provider', () => ({
       cleanupRemaining: mockCleanupRemaining,
       cleanupResetsAt: mockCleanupResetsAt,
     },
-  }),
-}));
+  });
+  return { useAuth: auth, useOptionalAuth: auth };
+});
 
 // Provider launch is a side-effect seam (Paddle overlay / Razorpay
 // navigation) — stub it; the checkout CONTRACT is asserted on the wire
@@ -62,6 +63,7 @@ vi.mock('@/features/billing/checkout', async (importOriginal) => ({
 vi.mock('@/lib/posthog', () => ({ track: vi.fn(() => Promise.resolve()) }));
 
 import { ERROR_CODES, type BillingSubscription } from '@declutrmail/shared/contracts';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { track } from '@/lib/posthog';
@@ -1298,7 +1300,8 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     const notice = await screen.findByTestId('payment-processing-notice');
-    expect(screen.getByRole('heading', { name: 'Billing', level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Plan & billing', level: 1 })).toBeInTheDocument();
+    expect(screen.getByText(WS2_COPY.liveFix.billing.scope)).toBeInTheDocument();
     expect(within(notice).getByText('What we know')).toBeInTheDocument();
     expect(within(notice).getByText('What happens next')).toBeInTheDocument();
     expect(within(notice).getByRole('link', { name: 'Contact billing support' })).toHaveAttribute(
@@ -4438,6 +4441,34 @@ describe('BillingScreen — one billing story (A6)', () => {
     expect(note).toHaveTextContent('through Dec 31, 2026');
     expect(note).toHaveTextContent('reverts to your paid subscription');
     expect(screen.getByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
+  });
+
+  it('an active Pass is the Pass, not Plus / Complimentary', async () => {
+    mockTier = 'plus';
+    mockCleanupRemaining = null;
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          checkoutSetupComplete: true,
+          tier: 'plus',
+          foundingMember: false,
+          subscription: null,
+          pendingCheckout: null,
+          complimentary: {
+            tier: 'plus',
+            expiresAt: '2026-11-12T00:00:00.000Z',
+            source: 'pass',
+          },
+        },
+      }),
+    );
+    renderScreen();
+
+    const card = await screen.findByTestId('current-plan-card');
+    expect(within(card).getByText('Backlog Pass')).toBeInTheDocument();
+    expect(within(card).getByText('$19 once')).toBeInTheDocument();
+    expect(within(card).queryByText('Complimentary')).not.toBeInTheDocument();
+    expect(within(card).queryByText('Plus')).not.toBeInTheDocument();
   });
 
   it('a non-backing past_due row surfaces its dunning warning and locks new checkouts', async () => {

@@ -136,6 +136,12 @@ export interface ApiRequestOptions {
    * Library callers leave this unset.
    */
   _isRetry?: boolean | undefined;
+  /**
+   * Internal: epoch captured when this call started. A 401 from a
+   * request that began before the latest successful refresh replays
+   * once and does not rotate the session again.
+   */
+  _refreshEpoch?: number | undefined;
 }
 
 /** Joins `?k=v` pairs onto a path. Skips entries whose value is null/undefined. */
@@ -192,12 +198,87 @@ export async function apiDelete<T>(
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+/** One try plus two retries. Enough to ride out a blip, not a hung tab. */
+const NETWORK_ATTEMPTS = 3;
+const NETWORK_BACKOFF_MS = [200, 400] as const;
+
+/**
+ * A fetch that never received a response: the browser is offline, or the
+ * connection dropped. These are TypeErrors ("Failed to fetch", Firefox's
+ * "NetworkError…", Safari's "Load failed"). An abort is a TypeError-shaped
+ * DOMException too, and it is not one of these — the caller cancelled it.
+ */
+export function isPlainNetworkFailure(error: unknown): boolean {
+  if (!(error instanceof TypeError) || error.name === 'AbortError') return false;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+  const message = error.message;
+  return (
+    message === 'Failed to fetch' ||
+    message === 'Load failed' ||
+    message === 'Network request failed' ||
+    message.startsWith('NetworkError')
+  );
+}
+
+function isRetryableFetchFailure(error: unknown): boolean {
+  return error instanceof TypeError && error.name !== 'AbortError';
+}
+
+async function pauseForBackoff(attempt: number, signal: AbortSignal | undefined): Promise<void> {
+  if (signal?.aborted) {
+    throw signal.reason instanceof Error
+      ? signal.reason
+      : new DOMException('The operation was aborted.', 'AbortError');
+  }
+  const ms = process.env.VITEST === 'true' ? 0 : (NETWORK_BACKOFF_MS[attempt] ?? 400);
+  if (ms === 0) return;
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      const reason = signal?.reason;
+      reject(
+        reason instanceof Error
+          ? reason
+          : new DOMException('The operation was aborted.', 'AbortError'),
+      );
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/**
+ * Retry a fetch that threw before a response existed. Idempotent GETs
+ * use several attempts. The session refresh uses one: each receipt
+ * rotates the cookie, and the grace window covers only the previous
+ * generation. Every other mutation uses one too.
+ */
+async function fetchWithNetworkRetry(
+  url: string,
+  init: RequestInit,
+  attempts: number,
+): Promise<Response> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await fetch(url, init);
+    } catch (error) {
+      if (!isRetryableFetchFailure(error) || attempt === attempts - 1) throw error;
+      await pauseForBackoff(attempt, init.signal ?? undefined);
+    }
+  }
+  throw new TypeError('Failed to fetch');
+}
+
 async function apiRequest<T>(
   method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   path: string,
   body: unknown,
   options: ApiRequestOptions,
 ): Promise<Envelope<T, unknown>> {
+  const startedEpoch = options._refreshEpoch ?? refreshEpoch;
   const url = buildUrl(path, options.query);
   const headers: Record<string, string> = {
     Accept: 'application/json',
@@ -219,7 +300,7 @@ async function apiRequest<T>(
     init.body = JSON.stringify(body);
   }
   if (options.signal != null) init.signal = options.signal;
-  const res = await fetch(url, init);
+  const res = await fetchWithNetworkRetry(url, init, method === 'GET' ? NETWORK_ATTEMPTS : 1);
 
   // Read the body once — JSON if possible, raw text otherwise.
   const text = await res.text();
@@ -232,15 +313,30 @@ async function apiRequest<T>(
     }
   }
 
+  if (res.ok && res.status === 204) {
+    return { data: null } as Envelope<T, unknown>;
+  }
+
   if (!res.ok) {
     // 401 → attempt refresh once. If the refresh succeeds the caller's
     // request is replayed. Only an explicitly rejected refresh proves
     // the session dead; temporary refresh errors propagate for recovery.
     if (res.status === 401 && path !== '/api/auth/refresh') {
       if (!options._isRetry) {
+        if (startedEpoch < refreshEpoch) {
+          return apiRequest<T>(method, path, body, {
+            ...options,
+            _isRetry: true,
+            _refreshEpoch: refreshEpoch,
+          });
+        }
         const refreshed = await attemptRefresh();
         if (refreshed) {
-          return apiRequest<T>(method, path, body, { ...options, _isRetry: true });
+          return apiRequest<T>(method, path, body, {
+            ...options,
+            _isRetry: true,
+            _refreshEpoch: refreshEpoch,
+          });
         }
       }
       // Terminal 401: either the refresh itself failed, or (Codex
@@ -282,19 +378,33 @@ async function apiRequest<T>(
  * Single-flight refresh attempt. Concurrent 401s end up sharing one
  * outstanding rotation request — the second caller awaits the same
  * promise instead of racing the BE's rotation lock.
+ *
+ * `refreshEpoch` advances only after a refresh succeeds. A request
+ * that was already in flight with the previous access token can 401
+ * after that rotation; it replays against the new cookies instead of
+ * starting a second rotation that invalidates the session it just got.
  */
 let pendingRefresh: Promise<boolean> | null = null;
+let refreshEpoch = 0;
 
 async function attemptRefresh(): Promise<boolean> {
   if (pendingRefresh) return pendingRefresh;
+  const epochAtStart = refreshEpoch;
   pendingRefresh = (async () => {
     try {
-      const res = await fetch(buildUrl('/api/auth/refresh', undefined), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { Accept: 'application/json' },
-      });
-      if (res.ok) return true;
+      const res = await fetchWithNetworkRetry(
+        buildUrl('/api/auth/refresh', undefined),
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { Accept: 'application/json' },
+        },
+        1,
+      );
+      if (res.ok) {
+        refreshEpoch = epochAtStart + 1;
+        return true;
+      }
       if (res.status === 401) return false;
       // Rate limits, outages, and network errors must not become a
       // terminal 401: AuthProvider would hide the app and OAuth would

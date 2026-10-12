@@ -8,7 +8,13 @@ import {
 } from './billing-copy';
 import type { BillingCycle, BillingProviderId } from '@declutrmail/shared/contracts';
 import { INR_NEW_PURCHASES_PAUSED } from '@declutrmail/shared/contracts/billing-availability';
-import { priceLine as formatLaunchPrice, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+import {
+  fillStory,
+  priceLine as formatLaunchPrice,
+  promoBanner,
+  TIER_MANIFEST,
+} from '@declutrmail/shared/entitlements';
 import type { PricePoint } from '@declutrmail/shared/entitlements';
 import { currencyForPricePoint, formatMoney } from '@/features/marketing/pricing/pricing-model';
 import { GroupTitle } from '@/features/settings/settings-list';
@@ -23,6 +29,7 @@ export function ConfirmPanel({
   provider,
   razorpayOffered,
   pricingV2 = false,
+  offer = null,
   country = null,
   pricePointOverride = null,
   onProviderChange,
@@ -44,6 +51,7 @@ export function ConfirmPanel({
    *  derived by the parent, which also bills with it. */
   razorpayOffered: boolean;
   pricingV2?: boolean;
+  offer?: 'pass_onetime' | null;
   country?: string | null;
   pricePointOverride?: PricePoint | null;
   onProviderChange: (provider: BillingProviderId) => void;
@@ -86,11 +94,19 @@ export function ConfirmPanel({
   // point's provisioning, tick the box, and land on a $129 charge.
   const promoCurrency = tier.promo ? currencyForPricePoint(tier.promo.annual, provider) : currency;
   const checkoutPaused = provider === 'razorpay' && INR_NEW_PURCHASES_PAUSED;
+  const storyLocale = currency === 'INR' ? 'inr' : 'usd';
+  const launchImpact =
+    offer === 'pass_onetime'
+      ? fillStory(WS1_COPY['checkout.pass.summary'], storyLocale)
+      : fillStory(WS1_COPY['checkout.plus.summary'], storyLocale);
   const impact = checkoutPaused
     ? `${amountLabel ? `Reference price: ${amountLabel}${pricingV2 ? '' : `/${cycle === 'annual' ? 'yr' : 'mo'}`}. ` : ''}New INR purchases are temporarily paused. Existing INR subscriptions can still be managed from Billing. Contact support@declutrmail.com for help.`
-    : amountLabel !== null
-      ? `${amountLabel} billed ${cycle === 'annual' ? 'annually' : 'monthly'}, starting today. Renews automatically — cancel anytime.`
-      : `Pricing for the ${cycle} cycle isn't available right now — try the other billing cycle.`;
+    : pricingV2
+      ? launchImpact
+      : amountLabel !== null
+        ? `${amountLabel} billed ${cycle === 'annual' ? 'annually' : 'monthly'}, starting today. Renews automatically — cancel anytime.`
+        : `Pricing for the ${cycle} cycle isn't available right now — try the other billing cycle.`;
+  const promoLive = pricingV2 && promoBanner(new Date(), false) !== null;
 
   return (
     <div
@@ -105,7 +121,9 @@ export function ConfirmPanel({
         borderRadius: radius.md,
       }}
     >
-      <GroupTitle as="div">Preview · before anything changes</GroupTitle>
+      <GroupTitle as="div">
+        {pricingV2 ? fillStory(WS1_COPY['checkout.title']) : 'Preview · before anything changes'}
+      </GroupTitle>
       {!pricingV2 && (razorpayOffered || provider === 'razorpay') ? (
         <fieldset style={{ border: 'none', margin: 0, padding: 0 }}>
           {/* D117 — the provider is the user's explicit regional choice. */}
@@ -165,7 +183,19 @@ export function ConfirmPanel({
       ) : null}
 
       <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>{impact}</p>
-      <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>{CHECKOUT_TOTAL_NOTE}</p>
+      <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
+        {pricingV2 ? fillStory(WS1_COPY['checkout.taxNote']) : CHECKOUT_TOTAL_NOTE}
+      </p>
+      {promoLive ? (
+        <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
+          {fillStory(WS1_COPY['checkout.codeNote'])}
+        </p>
+      ) : null}
+      {pricingV2 && currency === 'INR' ? (
+        <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
+          {fillStory(WS1_COPY['checkout.inr'], 'inr')}
+        </p>
+      ) : null}
       {provider === 'razorpay' && (
         <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
           {RAZORPAY_LIMITATIONS_NOTE}{' '}
@@ -212,11 +242,13 @@ export function ConfirmPanel({
           {checkoutPaused
             ? 'INR checkout paused'
             : isPending
-              ? 'Opening checkout…'
-              : 'Continue to checkout'}
+              ? fillStory(WS1_COPY['checkout.opening'])
+              : pricingV2
+                ? fillStory(WS1_COPY['checkout.continue'])
+                : 'Continue to checkout'}
         </Button>
         <Button tone="default" onClick={onDismiss} disabled={isPending}>
-          Keep current plan
+          {pricingV2 ? fillStory(WS1_COPY['checkout.back']) : 'Keep current plan'}
         </Button>
       </div>
     </div>

@@ -94,7 +94,6 @@ function HelpPopover({ onClose }: { onClose: () => void }) {
     <div
       ref={panelRef}
       role="dialog"
-      aria-modal="true"
       aria-label={`About ${help.title}`}
       style={{
         position: 'absolute',

@@ -2,15 +2,21 @@
 
 ## Preview builds
 
-`apps/web/vercel.json` uses the dependency-free `scripts/vercel-ignore-build.mjs` before a Vercel build of the `declutr-mail` project (root `apps/web`, the only Vercel project reporting on this repository). A preview skips only when its diff since `VERCEL_GIT_PREVIOUS_SHA` (the branch's last successful deployment, fetched if Vercel's shallow clone lacks it) contains no web build input:
+`apps/web/vercel.json` uses the dependency-free `scripts/vercel-ignore-build.mjs` before a Vercel build of the `declutr-mail` project (root `apps/web`, the only Vercel project reporting on this repository). Exit 0 skips the build. Exit 1 builds. A skip cancels the deployment and posts a successful `Vercel` commit status ("Canceled by Ignored Build Step", observed on PRs #925, #927, #938 and #945), so the required check does not stay pending.
+
+Production (`VERCEL_ENV=production`) and the `main` ref always build, including every merge to main. Same-commit redeploys always build, because they may apply changed environment or project settings. Unknown environments, a checkout that does not match the commit, git errors, an unreadable manifest, and a merge-base with `origin/main` that cannot be fetched also build. `VERCEL_FORCE_BUILD=1` forces a build. That variable is the rerun route: an empty commit does not request a preview, and this repository has no commit-message build token.
+
+A preview of `gh-readonly-queue/*` skips. The merge queue used to build that candidate, and Production then built the same commit again. The skip still produces the required Vercel success status, so the queue is not left waiting on a preview build. `scripts/ensure-vercel-queue-preview.mjs` does not create a second deployment when that success, another successful `vercel[bot]` status for this project, or a pending one is already on the commit — a new deployment would post `pending` and the queue would wait. It still creates a deployment when Vercel has posted nothing, which is the recovery path for a missing native check; the ignore script then skips that build too. It accepts a canceled queue preview only when the latest `Vercel` status is that exact `vercel[bot]` success and its target URL names the same `declutr-mail` deployment. CI remains the merge gate.
+
+Other previews diff `merge-base(origin/main, HEAD)..HEAD`, the branch's own changes, not `VERCEL_GIT_PREVIOUS_SHA`. A rebase onto newer main, or a failed deploy that left the previous SHA behind, does not by itself force a build. Shallow clones fetch `origin/main` and deepen until the merge-base exists. The first preview of a branch with no web changes since it left main skips. Web build inputs are:
 
 - `apps/web` and every workspace package it depends on, read transitively from `package.json` `workspace:` dependencies (currently `packages/shared`);
 - every workspace `package.json`, because a manifest without its matching lock importer breaks the frozen workspace install;
 - every root-level file except Markdown (`pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.npmrc`, `.pnpmfile.cjs`, `tsconfig*.json` and any new install configuration), plus `patches/` and the script itself.
 
-There is no `HEAD^` fallback: it would hide web changes in earlier commits that were never built. A missing, invalid or unfetchable previous SHA builds, so first previews and merge-queue candidates always build. Dependabot branches follow the same rules; their dependency bumps change the lockfile and build. Production, the `main` ref, unknown environments, same-commit redeploys, empty commits, a checkout that does not match the commit, git errors and unreadable manifests always build. `VERCEL_FORCE_BUILD=1` forces a build.
+`dependabot/*` previews skip unless a runtime dependency of that closure changes (`dependencies`, `peerDependencies`, or `optionalDependencies` on `apps/web` or a workspace package reached without `devDependencies`). Lockfile-only bumps, devDependency bumps, and non-web files do not build a preview. Weekly grouped updates and `rebase-strategy: disabled` are set in `.github/dependabot.yml`, so those pulls are not rebased onto every main commit. CI still runs on the pull request.
 
-The project root must remain `apps/web` with files outside the root included. An ignored build marks the deployment canceled and posts a successful `Vercel` commit status ("Canceled by Ignored Build Step", observed on PRs #925, #927, #938 and #945), so the required check does not stay pending. `scripts/ensure-vercel-queue-preview.mjs` accepts a canceled queue preview only when the latest `Vercel` status is that exact `vercel[bot]` success and its target URL names the same `declutr-mail` deployment.
+The project root must remain `apps/web` with files outside the root included.
 
 ## Artifact retention
 

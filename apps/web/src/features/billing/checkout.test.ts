@@ -80,6 +80,23 @@ describe('launchCheckout', () => {
     });
   });
 
+  it('drops a FILL_ME discount and forwards a real discount id', async () => {
+    const { open } = stubPaddle();
+    await launchCheckout({ ...PADDLE_SESSION, discountId: 'FILL_ME' });
+    expect(open).toHaveBeenCalledWith({
+      items: [{ priceId: 'pri_123', quantity: 1 }],
+      customData: PADDLE_SESSION.customData,
+    });
+
+    open.mockClear();
+    await launchCheckout({ ...PADDLE_SESSION, discountId: 'dsc_01m4phpp04scdes9ghqn3qps77' });
+    expect(open).toHaveBeenCalledWith({
+      items: [{ priceId: 'pri_123', quantity: 1 }],
+      customData: PADDLE_SESSION.customData,
+      discountId: 'dsc_01m4phpp04scdes9ghqn3qps77',
+    });
+  });
+
   it('paddle: routes checkout.completed / checkout.closed to the caller, nothing else', async () => {
     const { initializePaddle } = stubPaddle();
     const onCompleted = vi.fn();

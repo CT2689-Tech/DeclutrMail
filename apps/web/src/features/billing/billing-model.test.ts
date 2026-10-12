@@ -6,7 +6,7 @@
  * See docs/adr/0027-billing-presentation-state.md.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { BillingSubscription } from '@declutrmail/shared/contracts';
 
@@ -19,8 +19,12 @@ import {
   BillingPayloadError,
   complimentaryNote,
   currentPlanPriceLabel,
+  currentPlanTitle,
   deriveBillingViewState,
   emptyPlanView,
+  formatBillingDate,
+  formatBillingMonthDay,
+  formatProviderAmount,
   nonBackingBlocksNewCheckout,
   type BillingReadSnapshot,
   type NonBackingRecord,
@@ -294,6 +298,44 @@ describe('currentPlanPriceLabel', () => {
     expect(currentPlanPriceLabel(view)).toBe('$19/mo');
   });
 
+  it('shows the 2026-10 Plus annual price a $59 subscriber pays', () => {
+    const sub = {
+      ...SUB,
+      tier: 'plus' as const,
+      cycle: 'annual' as const,
+      providerPriceId: 'pri_01m4phk06hdmmq5cw5b8aa5r2y',
+    };
+    const view = deriveBillingViewState(snapshot({ data: body('plus', sub) }));
+    if (view.kind !== 'plan') throw new Error('expected plan');
+    expect(currentPlanPriceLabel(view)).toBe('$59/yr');
+  });
+
+  it('shows catalog cents when the price id is not the legacy list price', () => {
+    const sub = {
+      ...SUB,
+      tier: 'plus' as const,
+      cycle: 'annual' as const,
+      providerPriceId: 'pri_overlay',
+      chargedUsdCents: 5900,
+    };
+    const view = deriveBillingViewState(snapshot({ data: body('plus', sub) }));
+    if (view.kind !== 'plan') throw new Error('expected plan');
+    expect(currentPlanPriceLabel(view)).toBe('$59/yr');
+  });
+
+  it('keeps a legacy Plus annual subscription at $90', () => {
+    const sub = {
+      ...SUB,
+      tier: 'plus' as const,
+      cycle: 'annual' as const,
+      providerPriceId: 'pri_01ky15axzc9mz8sxw43c0wtn6h',
+      chargedUsdCents: 9000,
+    };
+    const view = deriveBillingViewState(snapshot({ data: body('plus', sub) }));
+    if (view.kind !== 'plan') throw new Error('expected plan');
+    expect(currentPlanPriceLabel(view)).toBe('$90/yr');
+  });
+
   it('renders the founding promo price for a founding annual backing sub', () => {
     const sub = { ...SUB, cycle: 'annual' as const, foundingMember: true };
     const view = deriveBillingViewState(snapshot({ data: body('pro', sub, true) }));
@@ -328,6 +370,18 @@ describe('complimentary comps', () => {
     if (view.kind !== 'plan') throw new Error('expected plan');
     return view;
   }
+
+  it('names an active Pass instead of calling it complimentary', () => {
+    const view = comped('plus', {
+      tier: 'plus',
+      expiresAt: '2026-11-12T00:00:00.000Z',
+      source: 'pass',
+    });
+    expect(currentPlanTitle(view)).toBe('Backlog Pass');
+    expect(currentPlanPriceLabel(view)).toBe('$19 once');
+    expect(currentPlanPriceLabel(view)).not.toBe('Complimentary');
+    expect(complimentaryNote(view)).toContain('Backlog Pass');
+  });
 
   it('names the comp instead of the generic no-price line', () => {
     const view = comped('pro', { tier: 'pro', expiresAt: null });
@@ -500,6 +554,38 @@ describe('past-due scheduled cancellation disclosure', () => {
     expect(note?.text).toMatch(/Payment past due.*Nov 12/);
     expect(note?.text).toContain('complimentary grant may still apply');
     expect(note?.text).not.toContain('switch to Free');
+  });
+});
+
+describe('formatBillingDate', () => {
+  it('uses a fixed UTC calendar so September cannot hydrate as Sept', () => {
+    const DateTimeFormat = Intl.DateTimeFormat;
+    vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(((...args: unknown[]) => {
+      const format = new DateTimeFormat(...(args as ConstructorParameters<typeof DateTimeFormat>));
+      return Object.assign(format, { format: () => 'Sept 15, 2026' });
+    }) as typeof Intl.DateTimeFormat);
+    try {
+      expect(formatBillingDate('2026-09-15T00:00:00.000Z')).toBe('Sep 15, 2026');
+      expect(formatBillingDate('2026-05-01T00:00:00.000Z')).toBe('May 1, 2026');
+      expect(formatBillingMonthDay('2026-10-12T02:00:00.000Z')).toBe('Oct 12');
+      expect(formatBillingDate('not-a-date')).toBeNull();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('normalizes narrow currency spaces', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(Intl.NumberFormat.prototype, 'format');
+    Object.defineProperty(Intl.NumberFormat.prototype, 'format', {
+      configurable: true,
+      writable: true,
+      value: () => '$\u00a019.00',
+    });
+    try {
+      expect(formatProviderAmount('1900', 'USD')).toBe('$19.00');
+    } finally {
+      if (descriptor) Object.defineProperty(Intl.NumberFormat.prototype, 'format', descriptor);
+    }
   });
 });
 

@@ -8,7 +8,7 @@
  * money figure may appear in the document that the manifest cannot produce.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { TIER_MANIFEST, type TierDefinition } from '@declutrmail/shared/entitlements';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
@@ -19,6 +19,7 @@ import {
   formatUsd,
   pricingTiers,
 } from '@/features/marketing/pricing/pricing-model';
+import { installFetchStub } from '@/test/fetch-stub';
 import { GET } from './route';
 import { siteUrl } from '@/features/marketing/landing/urls';
 
@@ -30,14 +31,14 @@ function pricePoints(tier: TierDefinition) {
 }
 
 async function body(): Promise<string> {
-  const response = GET();
+  const response = await GET();
   expect(response.headers.get('Content-Type')).toBe('text/markdown; charset=utf-8');
   return response.text();
 }
 
 describe('/pricing.md — machine-readable pricing', () => {
-  it('keeps the machine-readable alternate crawlable but not separately indexed', () => {
-    const response = GET();
+  it('keeps the machine-readable alternate crawlable but not separately indexed', async () => {
+    const response = await GET();
     expect(response.headers.get('X-Robots-Tag')).toBe('noindex, follow');
     expect(response.headers.get('Link')).toBe(`<${siteUrl()}/pricing>; rel="canonical"`);
   });
@@ -151,4 +152,47 @@ describe('/pricing.md — machine-readable pricing', () => {
       expect(allowedInr.has(found), `${found} is not a manifest price`).toBe(true);
     }
   });
+
+  it('uses the API launch flags when the web env is off', async () => {
+    vi.stubEnv('PRICING_V2', '');
+    vi.stubEnv('BILLING_PASS_ENABLED', '');
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.example.test');
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/pricing/public',
+        respond: () =>
+          Response.json({ data: { pricingV2: true, passEnabled: true, meterV2: true } }),
+      },
+    ]);
+    const markdown = await (await GET()).text();
+    expect(markdown).toContain('## Backlog Pass');
+    expect(markdown).toContain('$59 a year');
+    expect(markdown).toContain('$19 once');
+    expect(markdown).not.toContain('$9/mo');
+    expect(markdown).not.toContain('$90/yr');
+    vi.unstubAllEnvs();
+  });
+
+  it('falls back to the web env when the pricing API is down', async () => {
+    vi.stubEnv('PRICING_V2', '');
+    vi.stubEnv('BILLING_PASS_ENABLED', '');
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.example.test');
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/pricing/public',
+        respond: () => new Response('unavailable', { status: 503 }),
+      },
+    ]);
+    const markdown = await (await GET()).text();
+    expect(markdown).toContain('$9/mo');
+    expect(markdown).toContain('$90/yr');
+    expect(markdown).not.toContain('## Backlog Pass');
+    expect(markdown).not.toContain('$59 a year');
+  });
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });

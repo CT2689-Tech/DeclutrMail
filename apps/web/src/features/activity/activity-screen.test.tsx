@@ -132,6 +132,7 @@ function row(partial: Partial<ActivityRowWire>): ActivityRowWire {
     undoState: partial.undoState ?? { kind: 'unavailable' },
     executionState: partial.executionState ?? null,
     reviewOutcome: partial.reviewOutcome ?? null,
+    ...(partial.combinedUnsubscribe ? { combinedUnsubscribe: true } : {}),
   };
 }
 
@@ -1747,9 +1748,69 @@ describe('ActivityScreen — D58 undo affordances', () => {
       },
     ]);
     renderScreen();
-    await waitFor(() =>
-      expect(screen.getByText(/^Unsubscribe request recorded$/)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText(/^Unsubscribe requested$/)).toBeInTheDocument());
+  });
+
+  it('shows one combined unsubscribe-and-move row and keeps Undo', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                id: 'move-1',
+                action: 'archive',
+                affectedCount: 1,
+                combinedUnsubscribe: true,
+                undoState: {
+                  kind: 'available',
+                  token: 'undo-combined',
+                  expiresAt: '2099-01-01T00:00:00.000Z',
+                },
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    renderScreen();
+    expect(await screen.findByText('Unsubscribe requested · Archived 1 email')).toBeInTheDocument();
+    expect(screen.queryByText('Unsubscribe request recorded')).toBeNull();
+    expect(screen.getByRole('button', { name: /^undo/i })).toBeEnabled();
+  });
+
+  it('uses the plural and delete forms of the combined row', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                id: 'move-n',
+                action: 'archive',
+                affectedCount: 4,
+                combinedUnsubscribe: true,
+              }),
+              row({
+                id: 'move-d',
+                action: 'delete',
+                affectedCount: 1,
+                combinedUnsubscribe: true,
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    renderScreen();
+    expect(
+      await screen.findByText('Unsubscribe requested · Archived 4 emails'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Unsubscribe requested · Deleted 1 email')).toBeInTheDocument();
   });
 
   it('renders UNDO EXPIRED for `expired`', async () => {
@@ -1860,6 +1921,26 @@ describe('ActivityScreen — pure helpers', () => {
     // the day, not the server or browser zone.
     expect(formatExpiry('2026-08-10T20:00:00Z', 'Asia/Kolkata')).toBe('Aug 11');
     expect(formatExpiry('2026-08-10T20:00:00Z', 'UTC')).toBe('Aug 10');
+  });
+
+  it('keeps ASCII Sep and a normal space when Intl would say Sept or insert a narrow space', () => {
+    const date = vi.spyOn(Date.prototype, 'toLocaleDateString').mockReturnValue('Tue, Sept 15');
+    const time = vi
+      .spyOn(Date.prototype, 'toLocaleString')
+      .mockReturnValue('Sep 15, 12:00\u202fPM');
+    try {
+      expect(activityDayLabel('2026-09-15T12:00:00Z', null, 'UTC')).toBe('Tue, Sep 15');
+      expect(activityRowTime('2026-09-15T12:00:00Z', 'UTC', true)).toBe('Sep 15, 12:00 PM');
+      expect(activityRowTime('2026-09-15T12:00:00Z', 'UTC', false)).toBe('12:00 PM');
+      expect(formatExpiry('2026-09-15T12:00:00Z', 'UTC')).toBe('Sep 15');
+      expect(windowToLabel('30d', '2026-09-01T00:00:00.000Z', '2026-09-15T00:00:00.000Z')).toBe(
+        'Sep 1 – Sep 15',
+      );
+      expect(activityRowTime('2026-09-15T12:00:00Z', 'UTC', true)).not.toMatch(/\u202f|Sept/);
+    } finally {
+      date.mockRestore();
+      time.mockRestore();
+    }
   });
 });
 

@@ -12,7 +12,7 @@ export default function SettingsSectionError({
   return (
     <RouteErrorScreen
       title="Help & glossary"
-      kicker="Your workspace / A useful reference"
+      kicker="Settings"
       gap={24}
       error={error}
       reset={reset}

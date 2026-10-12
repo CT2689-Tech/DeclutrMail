@@ -9,6 +9,7 @@ import {
   cronRuns,
   deadLetterJobs,
   followupTracker,
+  inboxReportCache,
   mailboxAccounts,
   mailboxDataDeletionRequests,
   mailboxLabels,
@@ -438,6 +439,10 @@ async function seedMailboxGraph(
     mailboxAccountId: mailboxId,
     runDateLocal: '2026-07-14',
     generatedBy: 'template',
+  });
+  await db.insert(inboxReportCache).values({
+    mailboxAccountId: mailboxId,
+    payload: { variant: 'fallback', receivedCount: 1 },
   });
   await db.insert(followupTracker).values({
     workspaceId,

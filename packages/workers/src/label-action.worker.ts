@@ -5,6 +5,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import {
   actionJobs,
   activityLog,
+  invalidateInboxReportCache,
   mailboxAccounts,
   mailMessages,
   senderActionWhere,
@@ -652,6 +653,8 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
         })
         .where(eq(actionJobs.id, job.id));
 
+      if (ids.length > 0) await invalidateInboxReportCache(tx, mailboxAccountId);
+
       return issued.token;
     });
 
@@ -805,6 +808,8 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
           updatedAt: sql`now()`,
         })
         .where(eq(actionJobs.id, job.id));
+
+      if (ids.length > 0) await invalidateInboxReportCache(tx, mailboxAccountId);
     });
 
     return { affectedCount: ids.length, undoToken: token, alreadyDone: false };

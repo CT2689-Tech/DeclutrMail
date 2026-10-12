@@ -3,6 +3,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, ErrorState, tokens } from '@declutrmail/shared';
+import { FINISH_LABEL } from '@declutrmail/shared/copy/screen-decisions';
 import type { OnboardingCleanupGoal } from '@declutrmail/shared/contracts';
 
 import { useTriageStats } from '@/features/triage/api/use-triage-queue';
@@ -225,7 +226,7 @@ export function StepFirstTriage({
               senders still queued, that reads as navigation rather than
               as finishing. Say that it ends the review. */}
           <Button tone="ghost" onClick={() => finish('stopped')} disabled={completing}>
-            Finish for today
+            {FINISH_LABEL}
           </Button>
           {corner}
         </div>

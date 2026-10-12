@@ -2,7 +2,7 @@ import { act, render, screen } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { RecentMessages } from './recent-messages';
-vi.mock('entities/lib/decode.js', () => {
+vi.mock('entities/decode', () => {
   throw new Error('Synthetic chunk load failure');
 });
 

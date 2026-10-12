@@ -7,8 +7,8 @@
 //
 // This shell also emits the site-wide structured data (D132 SEO
 // batch): one JSON-LD graph with the Organization, the WebSite entity
-// anchor, and the SoftwareApplication (offers derived from the D19 tier
-// manifest — re-pricing there flows through here with no edit).
+// anchor, and the SoftwareApplication (offers from buildOffersJsonLd,
+// empty until pricing v2 lists a plan).
 // Page-specific structured data (e.g. the /faq and /help FAQPage) lives
 // with the page content.
 //
@@ -18,9 +18,9 @@
 // mobile navigation and theme controls, and cookie consent.
 
 import type { ReactNode } from 'react';
-import { TIER_MANIFEST, tokens } from '@declutrmail/shared';
-import { buildOffersJsonLd, isPricingV2 } from '@declutrmail/shared/entitlements';
-import { INR_NEW_PURCHASES_PAUSED } from '@declutrmail/shared/contracts/billing-availability';
+import { tokens } from '@declutrmail/shared';
+import { buildOffersJsonLd } from '@declutrmail/shared/entitlements';
+import { ORGANIZATION_SAME_AS, WS3_COPY } from '@declutrmail/shared/copy/launch';
 
 import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
 import { JsonLd } from '@/features/marketing/json-ld';
@@ -35,82 +35,27 @@ import '@/features/marketing/public-shell/public-shell.css';
 
 const { color, font } = tokens;
 
-/**
- * One schema.org Offer per purchasable tier price point (D19 ladder),
- * in every currency that point can ACTUALLY be bought in (D117).
- *
- * Enumerated rather than region-resolved on purpose. The pages
- * themselves quote the visitor's rail, so a single-currency graph would
- * disagree with the rendered price for half the world — but varying the
- * graph by request IP instead makes the structured data change between
- * crawls. Listing both is the only form that is true from every vantage
- * point, and it is exactly what schema.org's repeatable `offers` is for.
- *
- * INR appears only once `razorpayPlanId` is provisioned for that exact
- * point: advertising a price no checkout can take is the same lie in
- * structured data as it is on the page.
- *
- * The Founding Pro promo is deliberately excluded: it is a
- * limited-redemption price, and structured data has no way to expire
- * with the 250th redemption.
- */
-function tierOffers() {
-  if (isPricingV2()) return buildOffersJsonLd();
-  return Object.values(TIER_MANIFEST)
-    .filter((tier) => tier.purchasable)
-    .flatMap((tier) =>
-      (['monthly', 'annual'] as const).flatMap((cycle) => {
-        const price = tier.prices[cycle];
-        if (!price) return [];
-        const name = price.usdCents === 0 ? tier.name : `${tier.name} — ${cycle}`;
-        const offers = [
-          {
-            '@type': 'Offer',
-            name,
-            price: price.usdCents / 100,
-            priceCurrency: 'USD',
-            priceSpecification: {
-              '@type': 'UnitPriceSpecification',
-              price: price.usdCents / 100,
-              priceCurrency: 'USD',
-              billingDuration: cycle === 'annual' ? 'P1Y' : 'P1M',
-            },
-            url: `${siteUrl()}/pricing`,
-          },
-        ];
-        if (price.razorpayPlanId !== null && !INR_NEW_PURCHASES_PAUSED) {
-          offers.push({
-            '@type': 'Offer',
-            name,
-            price: price.inrPaise / 100,
-            priceCurrency: 'INR',
-            priceSpecification: {
-              '@type': 'UnitPriceSpecification',
-              price: price.inrPaise / 100,
-              priceCurrency: 'INR',
-              billingDuration: cycle === 'annual' ? 'P1Y' : 'P1M',
-            },
-            url: `${siteUrl()}/pricing`,
-          });
-        }
-        return offers;
-      }),
-    );
-}
-
 const ORGANIZATION_ID = `${siteUrl()}/#organization`;
+
+const organization: Record<string, unknown> = {
+  '@type': 'Organization',
+  '@id': ORGANIZATION_ID,
+  name: 'DeclutrMail',
+  url: siteUrl(),
+  logo: `${siteUrl()}/icons/icon-512.png`,
+  email: 'support@declutrmail.com',
+  disambiguatingDescription: WS3_COPY['ws3.jsonld.disambiguatingDescription'],
+  alternateName: [...WS3_COPY['ws3.jsonld.alternateName']],
+};
+
+if (ORGANIZATION_SAME_AS.length > 0) {
+  organization.sameAs = [...ORGANIZATION_SAME_AS];
+}
 
 const SITE_JSON_LD = {
   '@context': 'https://schema.org',
   '@graph': [
-    {
-      '@type': 'Organization',
-      '@id': ORGANIZATION_ID,
-      name: 'DeclutrMail',
-      url: siteUrl(),
-      logo: `${siteUrl()}/icons/icon-512.png`,
-      email: 'support@declutrmail.com',
-    },
+    organization,
     {
       // Entity anchor for the site itself. No SearchAction — there is no
       // /search route, and fabricating one is a structured-data lie.
@@ -135,7 +80,7 @@ const SITE_JSON_LD = {
       description: softwareApplicationDescription,
       applicationCategory: 'UtilitiesApplication',
       operatingSystem: 'Web',
-      offers: tierOffers(),
+      offers: buildOffersJsonLd(),
       publisher: { '@id': ORGANIZATION_ID },
     },
   ],

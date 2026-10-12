@@ -7,7 +7,7 @@ import { useUpgradeReturnTo } from '@/features/billing/use-upgrade-return-to';
 import { Button, tokens } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
-import { planName, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { fillStory, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { useTier } from '@/features/auth/api/use-tier';
 import {
@@ -20,7 +20,12 @@ import {
 import { track } from '@/lib/posthog';
 
 import { billingIntentPath } from './billing-intent';
-import { moneyBackNote, quotedPlanPrice } from './billing-model';
+import {
+  formatBillingMonthDay,
+  launchPlusQuote,
+  moneyBackNote,
+  quotedPlanPrice,
+} from './billing-model';
 import { useRegionProvider } from './billing-currency';
 
 const { color, font, radius, shadow, space, text } = tokens;
@@ -51,12 +56,18 @@ export function UpgradeModal() {
   const hit = useUpgradeGateStore((s) => s.hit);
   const dismiss = useUpgradeGateStore((s) => s.dismiss);
   const applyWindowPreset = useUpgradeGateStore((s) => s.applyWindowPreset);
-  const { tier, pricingV2 } = useTier();
+  const { tier, pricingV2, passEnabled } = useTier();
   const from = useUpgradeReturnTo();
 
   useEffect(() => {
     if (!hit) return;
     void track('upgrade_prompt_shown', { reason: hit.reason, source: 'upgrade_modal' });
+    if (hit.reason === 'free_cap' && typeof hit.details.requested === 'number') {
+      void track('free_cap_hit', {
+        requested: hit.details.requested,
+        remaining: hit.details.remaining,
+      });
+    }
   }, [hit]);
 
   useEffect(() => {
@@ -88,16 +99,30 @@ export function UpgradeModal() {
 
   // ONE checkout path (D117): the CTA deep-links the nudged plan into
   // /billing's confirm step via the same validated intent the pricing
-  // page uses — the copy above quotes monthly prices, so the intent
-  // carries `monthly` (the billing screen's toggle flips it in place).
+  // page uses. Launch pricing sells Plus annual. Flags off still quotes
+  // the monthly price the link buys.
   const targetPlan: 'plus' | 'pro' = hit.reason === 'free_cap' ? 'plus' : (requiredTier ?? 'pro');
+  const checkoutCycle = pricingV2 ? 'annual' : 'monthly';
   const upgradeHref = billingIntentPath({
     plan: targetPlan,
-    cycle: 'monthly',
+    cycle: checkoutCycle,
     ...(from ? { from } : {}),
   });
-  const upgradeLabel = `Upgrade to ${TIER_MANIFEST[targetPlan].name}`;
-  const targetMonthly = quotedPlanPrice(targetPlan, 'monthly', regionProvider);
+  const freeCap = hit.reason === 'free_cap' ? hit.details : null;
+  const meteredCap = freeCap !== null && typeof freeCap.requested === 'number';
+  // The emails-cleared popup already uses deck buttons. This is the
+  // other free-cap confirm, whose old label was not a deck string.
+  const limitConfirmLabel =
+    pricingV2 && freeCap !== null && !meteredCap
+      ? fillStory(passEnabled ? WS1_COPY['cap.pass.button'] : WS1_COPY['cap.plus.button'])
+      : null;
+  const upgradeLabel = limitConfirmLabel ?? `Upgrade to ${TIER_MANIFEST[targetPlan].name}`;
+  const targetQuote =
+    limitConfirmLabel !== null
+      ? null
+      : pricingV2 && targetPlan === 'plus'
+        ? launchPlusQuote(regionProvider)
+        : quotedPlanPrice(targetPlan, 'monthly', regionProvider);
 
   return (
     // The PreviewSheet grammar and classes — a centred dialog on desktop,
@@ -169,8 +194,9 @@ export function UpgradeModal() {
             textWrap: 'pretty',
           }}
         >
-          {hit.reason === 'free_cap' &&
-          typeof hit.details.requested === 'number' ? null : hit.reason === 'free_cap' ? (
+          {hit.reason === 'free_cap' && typeof hit.details.requested === 'number' ? (
+            capBody(hit.details)
+          ) : hit.reason === 'free_cap' ? (
             <>
               {TIER_MANIFEST.plus.name} removes the monthly cap
               {hit.details.resetsAt
@@ -194,6 +220,19 @@ export function UpgradeModal() {
             <>Disconnect an account from the account menu to connect a different one.</>
           )}
         </p>
+        {hit.reason === 'free_cap' && (pricingV2 || meteredCap) ? (
+          <p
+            style={{
+              fontSize: text.md,
+              color: color.fgSoft,
+              margin: `${space[2]}px 0 0`,
+              lineHeight: 1.45,
+              maxWidth: '34ch',
+            }}
+          >
+            {WS1_COPY['cap.free.line']}
+          </p>
+        ) : null}
 
         <div
           style={{
@@ -206,19 +245,61 @@ export function UpgradeModal() {
         >
           {nudge && hit.reason === 'free_cap' && typeof hit.details.requested === 'number' ? (
             <>
-              {typeof hit.details.suggestedPreset === 'number' ? (
-                <Button
-                  tone="default"
-                  size="lg"
+              {pricingV2 && passEnabled ? (
+                <Link
+                  href={billingIntentPath({
+                    plan: 'plus',
+                    cycle: 'annual',
+                    offer: 'pass_onetime',
+                    ...(from ? { from } : {}),
+                  })}
                   onClick={() => {
-                    if (typeof hit.details.suggestedPreset === 'number') {
-                      applyWindowPreset(hit.details.suggestedPreset);
-                    }
+                    void track('upgrade_cta_clicked', { source: 'upgrade_modal', plan: 'pass' });
+                    void track('pass_selected', { source: 'upgrade_modal' });
+                    dismiss();
                   }}
-                  style={{ width: '100%' }}
+                  data-dm-button=""
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    height: 50,
+                    padding: '0 28px',
+                    background: color.primary,
+                    color: color.fgInverse,
+                    borderRadius: radius.pill,
+                    textDecoration: 'none',
+                    fontWeight: 600,
+                  }}
                 >
-                  {WS1_COPY['cap.fit.button']}
-                </Button>
+                  {fillStory(WS1_COPY['cap.pass.button'])}
+                </Link>
+              ) : null}
+              {pricingV2 && passEnabled ? (
+                <span style={{ fontSize: text.sm, color: color.fgMuted }}>
+                  {fillStory(WS1_COPY['cap.pass.sublabel'])}
+                </span>
+              ) : null}
+              {typeof hit.details.suggestedPreset === 'number' ? (
+                <>
+                  <Button
+                    tone="default"
+                    size="lg"
+                    onClick={() => {
+                      if (typeof hit.details.suggestedPreset === 'number') {
+                        applyWindowPreset(hit.details.suggestedPreset);
+                      }
+                    }}
+                    style={{ width: '100%' }}
+                  >
+                    {WS1_COPY['cap.fit.button']}
+                  </Button>
+                  <span style={{ fontSize: text.sm, color: color.fgMuted }}>
+                    {fillStory(WS1_COPY['cap.fit.sublabel.noCount'], 'usd', {
+                      presetDays: hit.details.suggestedPreset,
+                    })}
+                  </span>
+                </>
               ) : null}
               <Link
                 href={billingIntentPath({
@@ -246,8 +327,11 @@ export function UpgradeModal() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                {WS1_COPY['cap.plus.button'].replace('{plusName}', planName('plus'))}
+                {fillStory(WS1_COPY['cap.plus.button'])}
               </Link>
+              <span style={{ fontSize: text.sm, color: color.fgMuted }}>
+                {fillStory(WS1_COPY['cap.plus.sublabel'])}
+              </span>
               <Button tone="ghost" size="lg" onClick={dismiss} style={{ width: '100%' }}>
                 {WS1_COPY['cap.dismiss']}
               </Button>
@@ -277,13 +361,20 @@ export function UpgradeModal() {
                 }}
               >
                 {upgradeLabel}
-                {targetMonthly ? (
+                {targetQuote ? (
                   <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.85 }}>
                     {' '}
-                    {targetMonthly}
+                    {targetQuote}
                   </span>
                 ) : null}
               </Link>
+              {limitConfirmLabel !== null ? (
+                <span style={{ fontSize: text.sm, color: color.fgMuted }}>
+                  {fillStory(
+                    passEnabled ? WS1_COPY['cap.pass.sublabel'] : WS1_COPY['cap.plus.sublabel'],
+                  )}
+                </span>
+              ) : null}
               <Button tone="ghost" size="lg" onClick={dismiss} style={{ width: '100%' }}>
                 Not now
               </Button>
@@ -313,6 +404,22 @@ export function UpgradeModal() {
   );
 }
 
+function capBody(d: FreeCapDetails): string {
+  const resetDate = d.resetsAt
+    ? (formatBillingMonthDay(d.resetsAt) ?? 'your next monthly reset')
+    : 'your next monthly reset';
+  const allowance = d.limit.toLocaleString('en-US');
+  if (d.remaining <= 0) {
+    return fillStory(WS1_COPY['cap.body.zero'], 'usd', { allowance, resetDate });
+  }
+  return fillStory(WS1_COPY['cap.body'], 'usd', {
+    requested: (d.requested ?? d.requiredUnits).toLocaleString('en-US'),
+    remaining: d.remaining.toLocaleString('en-US'),
+    allowance,
+    resetDate,
+  });
+}
+
 function freeCapTitle(d: FreeCapDetails): string {
   return d.requiredUnits > 1 && d.remaining > 0
     ? `That needs ${d.requiredUnits} cleanup actions — only ${d.remaining} of your ${d.limit} are left this month`
@@ -321,10 +428,7 @@ function freeCapTitle(d: FreeCapDetails): string {
 
 /** Short, locale-stable "Aug 27" label for the server's reset instant. */
 function resetDateLabel(iso: string): string {
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime())
-    ? 'your next monthly reset'
-    : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return formatBillingMonthDay(iso) ?? 'your next monthly reset';
 }
 
 function inboxLimitTitle(d: InboxLimitDetails, tierLabel: string): string {

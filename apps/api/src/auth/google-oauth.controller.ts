@@ -574,7 +574,7 @@ export class GoogleOAuthController {
 
     let email: string;
     let refreshToken: string;
-    let providerKind: SignInProviderKind | null = null;
+    let providerKind: SignInProviderKind | null;
     try {
       const exchanged = await this.oauth.exchangeCode(code);
       email = exchanged.email;
@@ -970,7 +970,7 @@ export class GoogleOAuthController {
     userAgent: string | null,
   ): Promise<void> {
     let result: Awaited<ReturnType<AuthSignupOrchestrator['signIn']>>;
-    let providerKind: SignInProviderKind | null = null;
+    let providerKind: SignInProviderKind | null;
     try {
       const exchanged = await this.oauth.exchangeSignInCode(code);
       providerKind = exchanged.providerKind ?? null;

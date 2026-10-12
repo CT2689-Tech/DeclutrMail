@@ -1,0 +1,15 @@
+.segment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  color: var(--dm-fg);
+}
+
+.segment input {
+  accent-color: var(--dm-primary);
+}
+
+.off {
+  color: var(--dm-fg-muted);
+}
