@@ -286,7 +286,7 @@ export default function PrivacyPolicyPage() {
         </p>
       </LegalSection>
 
-      <LegalSection id="ai-processing" title={gatedText('ws3.privacy.ai.title') || 'AI processing'}>
+      <LegalSection id="ai-processing" title={gatedText('ws3.privacy.ai.title')}>
         {gatedText('ws3.privacy.ai.who') ? <p>{gatedText('ws3.privacy.ai.who')}</p> : null}
         {gatedText('ws3.privacy.ai.explanations') ? (
           <p>{gatedText('ws3.privacy.ai.explanations')}</p>
