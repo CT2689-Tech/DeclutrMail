@@ -36,6 +36,7 @@ import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { useTier } from '@/features/auth/api/use-tier';
 import { currencyForProvider, formatMoney } from '@/features/marketing/pricing/pricing-model';
 import { ApiError, apiDelete } from '@/lib/api/client';
+import { useHydrated } from '@/lib/use-hydrated';
 import { track } from '@/lib/posthog';
 
 import {
@@ -222,6 +223,12 @@ export function BillingScreen({
   const queryClient = useQueryClient();
   const [cancelOpen, setCancelOpen] = useState(false);
   const isPhone = useIsAtMost('xs');
+  // A 503 is a designed state, and it is not in the dehydrated snapshot.
+  // The server therefore paints the loading placeholder. The browser can
+  // already have that error before hydration, which would swap in the
+  // dark notice and discard the server tree. Hold the placeholder until
+  // the first client render has matched.
+  const hydrated = useHydrated();
 
   useEffect(() => {
     void track('page_viewed', { page: 'billing', mailbox_id: me.activeMailboxId });
@@ -425,7 +432,7 @@ export function BillingScreen({
       .catch(() => undefined);
   }
 
-  if (view.kind === 'loading') {
+  if (view.kind === 'loading' || (view.kind === 'billing_dark' && !hydrated)) {
     return <LoadingState />;
   }
   // The derive layer already kept a pending money action out of this
