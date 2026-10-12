@@ -62,6 +62,6 @@ describe('Backlog Pass sandbox rehearsal checks', () => {
     expect(caller).toContain("github.event.inputs.rehearsal != 'pass'");
     expect(caller).not.toContain('secrets: inherit');
     expect(caller).not.toContain('workflow_call:');
-    expect(caller).not.toMatch(/^  pass:/m);
+    expect(caller).not.toMatch(/^ {2}pass:/m);
   });
 });
