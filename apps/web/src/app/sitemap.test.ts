@@ -67,10 +67,8 @@ function matchesPattern(route: string, pattern: string): boolean {
 }
 
 /** Sitemap output paths (root URL is the bare origin, i.e. pathname `/`). */
-function sitemapPaths(): string[] {
-  return sitemap()
-    .map((e) => new URL(e.url).pathname)
-    .sort();
+async function sitemapPaths(): Promise<string[]> {
+  return (await sitemap()).map((e) => new URL(e.url).pathname).sort();
 }
 
 describe('sitemap — D134', () => {
@@ -78,7 +76,7 @@ describe('sitemap — D134', () => {
     vi.unstubAllEnvs();
   });
 
-  it('recursively covers every indexable marketing route and dynamic route family', () => {
+  it('recursively covers every indexable marketing route and dynamic route family', async () => {
     const patterns = marketingRoutePatternsFromFs();
     // The pricing changelog page redirects to /pricing while the flag is
     // off, so it is not a crawl target in that build.
@@ -89,7 +87,7 @@ describe('sitemap — D134', () => {
       ...(isPricingV2() ? [] : ['/pricing/changelog']),
     ];
     const indexablePatterns = patterns.filter((pattern) => !excludedFromSitemap.includes(pattern));
-    const routes = sitemapPaths();
+    const routes = await sitemapPaths();
 
     for (const pattern of indexablePatterns) {
       expect(
@@ -105,35 +103,35 @@ describe('sitemap — D134', () => {
     }
   });
 
-  it('lists the root against the canonical origin with no trailing slash', () => {
-    const urls = sitemap().map((e) => e.url);
+  it('lists the root against the canonical origin with no trailing slash', async () => {
+    const urls = (await sitemap()).map((e) => e.url);
     expect(urls).toContain('https://declutrmail.com');
     expect(urls).not.toContain('https://declutrmail.com/');
   });
 
-  it('never lists a robots-disallowed authed path', () => {
-    const urls = sitemap().map((e) => new URL(e.url).pathname);
+  it('never lists a robots-disallowed authed path', async () => {
+    const urls = (await sitemap()).map((e) => new URL(e.url).pathname);
     for (const authedPath of AUTHED_APP_PATHS) {
       expect(urls).not.toContain(authedPath);
     }
   });
 
-  it('omits the stale historical changelog until its entries are curated', () => {
-    expect(sitemapPaths()).not.toContain('/changelog');
+  it('omits the stale historical changelog until its entries are curated', async () => {
+    expect(await sitemapPaths()).not.toContain('/changelog');
   });
 
-  it('omits /pricing/changelog while PRICING_V2 is off', () => {
+  it('omits /pricing/changelog while PRICING_V2 is off', async () => {
     vi.stubEnv('PRICING_V2', '');
-    expect(sitemapPaths()).not.toContain('/pricing/changelog');
+    expect(await sitemapPaths()).not.toContain('/pricing/changelog');
   });
 
-  it('lists /pricing/changelog when PRICING_V2 is on', () => {
+  it('lists /pricing/changelog when PRICING_V2 is on', async () => {
     vi.stubEnv('PRICING_V2', 'true');
-    expect(sitemapPaths()).toContain('/pricing/changelog');
+    expect(await sitemapPaths()).toContain('/pricing/changelog');
   });
 
-  it('omits the noindexed sign-in page', () => {
-    expect(sitemapPaths()).not.toContain('/sign-in');
+  it('omits the noindexed sign-in page', async () => {
+    expect(await sitemapPaths()).not.toContain('/sign-in');
   });
 
   it('robots.txt points crawlers at this sitemap (D132 SEO batch)', () => {
@@ -141,35 +139,37 @@ describe('sitemap — D134', () => {
   });
 
   describe('lastModified', () => {
-    const entryFor = (pathname: string) =>
-      sitemap().find((entry) => new URL(entry.url).pathname === pathname);
+    const entryFor = async (pathname: string) =>
+      (await sitemap()).find((entry) => new URL(entry.url).pathname === pathname);
 
-    it('dates a comparison page from its own verifiedIso', () => {
+    it('dates a comparison page from its own verifiedIso', async () => {
       const unrollMe = COMPARISONS.find((comparison) => comparison.slug === 'unroll-me');
-      expect(entryFor('/vs/unroll-me')?.lastModified).toBe(unrollMe?.verifiedIso);
+      expect((await entryFor('/vs/unroll-me'))?.lastModified).toBe(unrollMe?.verifiedIso);
     });
 
-    it('dates an article from its own updatedAt', () => {
+    it('dates an article from its own updatedAt', async () => {
       const slug = HOW_TO_SLUGS[0]!;
-      expect(entryFor(`/how-to/${slug}`)?.lastModified).toBe(HOW_TO_ARTICLES[slug].updatedAt);
+      expect((await entryFor(`/how-to/${slug}`))?.lastModified).toBe(
+        HOW_TO_ARTICLES[slug].updatedAt,
+      );
     });
 
-    it('dates a hub from its OLDEST child, never its freshest', () => {
+    it('dates a hub from its OLDEST child, never its freshest', async () => {
       const childDates = COMPARISONS.map((comparison) => comparison.verifiedIso);
-      const compare = entryFor('/compare')?.lastModified;
+      const compare = (await entryFor('/compare'))?.lastModified;
       expect(compare).toBe(COMPARISONS_VERIFIED_FLOOR_ISO);
       // A source review can refresh every child on the same day. The
       // minimum remains correct even when the minimum and maximum tie.
       expect(compare).toBe([...childDates].sort()[0]);
     });
 
-    it('dates legal and support pages from their visible Last updated stamp', () => {
+    it('dates legal and support pages from their visible Last updated stamp', async () => {
       for (const [pathname, iso] of Object.entries(PAGE_LAST_UPDATED)) {
-        expect(entryFor(pathname)?.lastModified).toBe(iso);
+        expect((await entryFor(pathname))?.lastModified).toBe(iso);
       }
     });
 
-    it('omits lastModified where no attributable date exists', () => {
+    it('omits lastModified where no attributable date exists', async () => {
       // These pages have no visible Last updated stamp, so they must ship
       // NO <lastmod> rather than a build-time one — an invented date is a
       // claim nothing can back.
@@ -182,8 +182,8 @@ describe('sitemap — D134', () => {
         '/beta',
         '/faq',
       ]) {
-        expect(entryFor(pathname)).toBeDefined();
-        expect(entryFor(pathname)?.lastModified).toBeUndefined();
+        expect(await entryFor(pathname)).toBeDefined();
+        expect((await entryFor(pathname))?.lastModified).toBeUndefined();
       }
     });
   });

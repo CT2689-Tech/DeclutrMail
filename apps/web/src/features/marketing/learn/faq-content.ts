@@ -180,21 +180,21 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
 ];
 
 /** Live refund answer. Flags-off stays the stored D121 sentence. */
-export function refundSupportAnswer(): string {
-  if (!isPricingV2()) return FLAGS_OFF_REFUND_SUPPORT;
+export function refundSupportAnswer(pricingV2 = isPricingV2()): string {
+  if (!pricingV2) return FLAGS_OFF_REFUND_SUPPORT;
   return fillStory(WS1_COPY['pricing.faq.refunds.a']);
 }
 
 /** FAQ entries with the refund answer read at render time. */
-export function publishedFaqEntries(): readonly FaqEntry[] {
+export function publishedFaqEntries(pricingV2 = isPricingV2()): readonly FaqEntry[] {
   return FAQ_ENTRIES.map((entry) =>
-    entry.id === 'refunds-support' ? { ...entry, answer: refundSupportAnswer() } : entry,
+    entry.id === 'refunds-support' ? { ...entry, answer: refundSupportAnswer(pricingV2) } : entry,
   );
 }
 
 /** Help and acquisition FAQ share the same answer for overlapping product questions. */
-export function faqAnswer(id: string): string {
-  if (id === 'refunds-support') return refundSupportAnswer();
+export function faqAnswer(id: string, pricingV2 = isPricingV2()): string {
+  if (id === 'refunds-support') return refundSupportAnswer(pricingV2);
   const entry = FAQ_ENTRIES.find((item) => item.id === id);
   if (!entry) throw new Error(`Unknown public FAQ: ${id}`);
   return entry.answer;

@@ -27,7 +27,7 @@ import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shar
 import { gatedText } from '@declutrmail/shared/copy/launch';
 import { storeConsent } from '@/lib/cookie-consent';
 
-import HelpPage from './help/page';
+import { HelpPage } from './help/help-surface';
 import ContactPage from './contact/page';
 import SecurityPage from './security/page';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';

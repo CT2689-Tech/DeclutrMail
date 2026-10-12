@@ -28,7 +28,10 @@ export const RAZORPAY_COUNTRY = 'IN';
  * only live rail). Region preference and catalog availability are
  * deliberately separate questions.
  */
-export function defaultProviderForCountry(country: string | null | undefined): BillingProviderId {
-  if (isPricingV2() && !RAILS.razorpay.enabled) return 'paddle';
+export function defaultProviderForCountry(
+  country: string | null | undefined,
+  pricingV2 = isPricingV2(),
+): BillingProviderId {
+  if (pricingV2 && !RAILS.razorpay.enabled) return 'paddle';
   return country?.toUpperCase() === RAZORPAY_COUNTRY ? 'razorpay' : 'paddle';
 }

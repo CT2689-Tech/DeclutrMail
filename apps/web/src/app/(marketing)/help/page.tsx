@@ -12,17 +12,12 @@
 // 2026-07-08 (D121): 30-day money-back guarantee on every paid plan;
 // the answer states it and links /refunds for the full terms.
 
-import { faqAnswer } from '@/features/marketing/learn/faq-content';
-import { SupportTasks } from '@/features/marketing/learn/support-tasks';
 import type { Metadata } from 'next';
-import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
 
-import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
-import { PageViewTracker } from '@/features/marketing/page-view-tracker';
-import { PAGE_LAST_UPDATED } from '@/features/marketing/page-dates';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
-import { JsonLd } from '@/features/marketing/json-ld';
-import { siteUrl } from '@/features/marketing/landing/urls';
+import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
+
+import { HelpPage } from './help-surface';
 
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Help & FAQ — DeclutrMail',
@@ -31,150 +26,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/help',
 });
 
-const LAST_UPDATED = PAGE_LAST_UPDATED['/help'];
-
-/**
- * One source for the rendered Q&A and the FAQPage JSON-LD. Answers are
- * plain strings (plus an optional trailing link).
- */
-const FAQS: ReadonlyArray<{
-  id: string;
-  q: string;
-  a: string;
-  link?: { href: string; label: string };
-}> = [
-  {
-    id: 'what-we-store',
-    q: 'What does DeclutrMail store from my Gmail?',
-    a: `${PRIVACY_BADGE_HEADLINE} DeclutrMail stores these Gmail details: ${PRIVACY_STORAGE_ITEMS.join('; ')}. The privacy policy separately explains the account, preference, action, service-provider, and billing records needed to run the service.`,
-    link: { href: '/privacy', label: 'Privacy policy' },
-  },
-  {
-    id: 'unsubscribe-flow',
-    q: 'How does Unsubscribe work?',
-    a: faqAnswer('unsubscribe'),
-  },
-  {
-    id: 'bulk-unsubscribe',
-    q: 'Can I unsubscribe from all my newsletters at once?',
-    a: 'There is no single “unsubscribe from everything” button. DeclutrMail ranks your senders by how much they email you so you can start with the busiest. Every plan lets you review and act on several senders at once; on Free, those actions count toward the monthly limit. One-click requests run separately. When a sender requires an unsubscribe email, DeclutrMail gives you a checklist of prefilled Gmail drafts to open and send. Senders without an unsubscribe option are skipped so you can choose Archive instead.',
-    link: { href: '/pricing', label: 'Compare plans' },
-  },
-  {
-    id: 'actions-in-gmail-terms',
-    q: 'What do Archive, Later, and Delete actually do in Gmail?',
-    a: faqAnswer('action-effects'),
-  },
-  {
-    id: 'undo-windows',
-    q: 'Can every DeclutrMail action be undone, and for how long?',
-    a: faqAnswer('undo'),
-  },
-  {
-    id: 'disconnect-mailbox',
-    q: 'How do I disconnect a mailbox?',
-    a: 'Open the Gmail account menu in the app’s top bar and choose Disconnect for that mailbox. That revokes DeclutrMail’s Google access and stops all syncing and actions for it immediately; your historical activity log is kept so you can reconnect later. You can also revoke access directly from your Google account permissions page.',
-  },
-  {
-    id: 'delete-account',
-    q: 'How do I delete my account?',
-    a: 'Settings → Privacy & Data → Delete account. Deletion has a 7-day grace period during which you can change your mind. If you have actions still inside a longer undo window, deletion is scheduled after the latest window expires — so undo keeps working for its full window.',
-    link: { href: '/privacy', label: 'Data retention and deletion' },
-  },
-  {
-    id: 'autopilot-modes',
-    q: 'What is the difference between Autopilot’s Watch first and Active modes?',
-    a: faqAnswer('autopilot'),
-  },
-  {
-    id: 'pricing-tiers',
-    q: 'What do the plans include?',
-    // Derived from the pricing config (A3) — no plan number is written
-    // here, so retuning the ladder cannot strand this answer.
-    a: faqAnswer('plans'),
-    link: { href: '/pricing', label: 'Pricing' },
-  },
-  {
-    id: 'cleanup-counting',
-    q: 'What counts as a cleanup action, and when does Free reset?',
-    a: faqAnswer('cleanup-counting'),
-  },
-  {
-    id: 'billing-management',
-    q: 'How do I cancel, update my payment method, or get an invoice?',
-    a: faqAnswer('billing-management'),
-  },
-  {
-    id: 'billing-currency',
-    q: 'Can I choose or switch billing currency?',
-    a: faqAnswer('billing-currency'),
-  },
-  {
-    id: 'refunds',
-    q: 'Is there a refund policy?',
-    a: faqAnswer('refunds-support'),
-    link: { href: '/refunds', label: 'See the refund policy for full terms' },
-  },
-  {
-    id: 'contact-support',
-    q: 'How do I reach support?',
-    a: 'Email support@declutrmail.com — we reply within 2 business days. Privacy and data requests go to privacy@declutrmail.com.',
-    link: { href: '/contact', label: 'Contact' },
-  },
-];
-
-/** Refund copy follows `PRICING_V2` at render, so JSON-LD cannot be baked at import. */
-function liveFaqs() {
-  return FAQS.map((faq) =>
-    faq.id === 'refunds' ? { ...faq, a: faqAnswer('refunds-support') } : faq,
-  );
-}
-
-function faqJsonLd(faqs: ReturnType<typeof liveFaqs>) {
-  return {
-    '@context': 'https://schema.org',
-    '@type': 'FAQPage',
-    mainEntity: faqs.map(({ q, a, link }) => ({
-      '@type': 'Question',
-      name: q,
-      acceptedAnswer: {
-        '@type': 'Answer',
-        text: link ? `${a} <a href="${siteUrl()}${link.href}">${link.label}</a>` : a,
-      },
-    })),
-  };
-}
-
-const TOC = FAQS.map(({ id, q }) => ({ id, label: q }));
-
-export default function HelpPage() {
-  const faqs = liveFaqs();
-  return (
-    <LegalPageLayout title="Help with your workspace" lastUpdated={LAST_UPDATED} toc={TOC}>
-      <PageViewTracker page="help" />
-      <SupportTasks />
-      <p>
-        Before you connect? <a href="/faq">Read the product and permission FAQ</a>.
-      </p>
-      <JsonLd data={faqJsonLd(faqs)} />
-      {faqs.map(({ id, q, a, link }) => (
-        <LegalSection key={id} id={id} title={q}>
-          <p>
-            {a}
-            {link ? (
-              <>
-                {' '}
-                <a href={link.href}>{link.label}</a>
-              </>
-            ) : null}
-          </p>
-        </LegalSection>
-      ))}
-      <p>
-        Didn&rsquo;t find your answer? Email{' '}
-        <a href="mailto:support@declutrmail.com">support@declutrmail.com</a> or see the{' '}
-        <a href="/contact">contact page</a>.
-      </p>
-    </LegalPageLayout>
-  );
+export default async function HelpRoute() {
+  const flags = await loadPricingFlags();
+  return <HelpPage pricingV2={flags.pricingV2} />;
 }

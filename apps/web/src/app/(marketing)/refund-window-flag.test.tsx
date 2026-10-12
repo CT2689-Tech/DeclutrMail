@@ -13,10 +13,10 @@ import { renderLlmsTxt } from '@/features/marketing/llms/llms-document';
 import { FaqPage } from '@/features/marketing/learn/index-pages';
 import { installFetchStub } from '@/test/fetch-stub';
 
-import HelpPage from './help/page';
+import { HelpPage } from './help/help-surface';
 import LandingPage from './page';
 import { GET as pricingMarkdown } from './pricing.md/route';
-import RefundPolicyPage from './refunds/page';
+import { RefundPolicyPage } from './refunds/refund-policy-surface';
 
 vi.mock('@/lib/posthog', () => ({ track: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));

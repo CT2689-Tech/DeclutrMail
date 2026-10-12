@@ -8,7 +8,7 @@ import { ProductJourney } from './landing/product-journey';
 import { AuthEntry } from './auth-entry/auth-entry';
 import { permissionEntryUrl } from './landing/urls';
 import { ArticlePage } from './learn/article-page';
-import HelpPage from '@/app/(marketing)/help/page';
+import { HelpPage } from '@/app/(marketing)/help/help-surface';
 import { FAQ_ENTRIES } from './learn/faq-content';
 import { GLOSSARY_TERMS } from '@/features/help/glossary-content';
 import { HOW_TO_ARTICLES } from './learn/how-to-content';

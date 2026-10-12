@@ -8,7 +8,11 @@ import {
   cleanupActionsPerMonthFor,
   isBillingPassEnabled,
   isPricingV2,
+  METER,
+  OFFERS,
+  passAmount,
   planName,
+  plusAmount,
   POLICY,
   priceLine,
   refundLine,
@@ -119,6 +123,29 @@ function pricingCatalogReady(): boolean {
 }
 
 /**
+ * Launch amounts already live on the 2026-10 price points. Callers that
+ * resolved `loadPricingFlags()` pass those booleans so a web process
+ * whose own env is off still fills the existing v2 sentences.
+ */
+function launchTokenOverrides(
+  pricingV2: boolean,
+  passEnabled: boolean,
+): Record<string, string> | undefined {
+  if (!pricingV2) return undefined;
+  return {
+    plusPrice: plusAmount('usd'),
+    allowance: METER.free.limit.toLocaleString('en-US'),
+    refundDays: String(POLICY.refundWindowDays),
+    ...(passEnabled
+      ? {
+          passPrice: passAmount('usd'),
+          passDays: String(OFFERS.backlogPass.durationDays),
+        }
+      : {}),
+  };
+}
+
+/**
  * Days the public `/refunds` page states (D121). The comparison CTA
  * stays blank until this equals `POLICY.refundWindowDays`.
  */
@@ -130,8 +157,8 @@ export const REFUNDS_PAGE_WINDOW_DAYS = 30;
  * `refundLine()`. Otherwise it stays empty while the published page
  * still states a different window.
  */
-export function refundSentence(): string {
-  if (isPricingV2()) return refundLine();
+export function refundSentence(pricingV2 = isPricingV2()): string {
+  if (pricingV2) return refundLine();
   if (ws3Tokens().refundDays === '') return '';
   // Widened: a literal `30 !== 14` is a type error, and the two
   // constants have to be comparable again once they are the same number.
@@ -141,18 +168,19 @@ export function refundSentence(): string {
   return refundLine();
 }
 
-export function declutrPriceSummary(): string {
+export function declutrPriceSummary(passEnabled = passListed(), pricingV2 = isPricingV2()): string {
   if (!pricingCatalogReady()) return '';
-  const template = passListed()
+  const template = passEnabled
     ? WS3_COPY['ws3.vs.declutr.price.summary']
     : WS3_COPY['ws3.vs.declutr.price.summary'].replace(/ or a one-time \{passName\}/, '');
-  return fillComplete(template);
+  return fillComplete(template, launchTokenOverrides(pricingV2, passEnabled));
 }
 
-export function declutrPriceDetail(): string {
+export function declutrPriceDetail(passEnabled = passListed(), pricingV2 = isPricingV2()): string {
   if (!pricingCatalogReady()) return '';
-  if (!passListed()) return fillComplete(WS3_COPY['ws3.vs.faq.price.a.passOff']);
-  return fillComplete(WS3_COPY['ws3.vs.declutr.price.detail']);
+  const extra = launchTokenOverrides(pricingV2, passEnabled);
+  if (!passEnabled) return fillComplete(WS3_COPY['ws3.vs.faq.price.a.passOff'], extra);
+  return fillComplete(WS3_COPY['ws3.vs.declutr.price.detail'], extra);
 }
 
 const PRE_GATE_EXPLANATIONS = WS3_COPY['ws3.privacy.ai.explanations.preGate'];
@@ -195,10 +223,10 @@ export function privacyFaqAnswer(): string {
   return cut.endsWith('.') ? cut : `${cut}.`;
 }
 
-export function priceFaqAnswer(): string {
+export function priceFaqAnswer(passEnabled = passListed(), pricingV2 = isPricingV2()): string {
   if (!pricingCatalogReady()) return '';
-  const key = passListed() ? 'ws3.vs.faq.price.a' : 'ws3.vs.faq.price.a.passOff';
-  return fillComplete(WS3_COPY[key]);
+  const key = passEnabled ? 'ws3.vs.faq.price.a' : 'ws3.vs.faq.price.a.passOff';
+  return fillComplete(WS3_COPY[key], launchTokenOverrides(pricingV2, passEnabled));
 }
 
 export function llmsAutopilotLine(): string {

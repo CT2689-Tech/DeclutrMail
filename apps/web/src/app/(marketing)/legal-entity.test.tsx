@@ -14,11 +14,11 @@ import { PublicFooter } from '@/features/marketing/public-shell/public-shell';
 
 import ContactPage from './contact/page';
 import CookiePreferencesPage from './cookies/page';
-import HelpPage from './help/page';
+import { HelpPage } from './help/help-surface';
 import PrivacyPolicyPage from './privacy/page';
-import RefundPolicyPage from './refunds/page';
+import { RefundPolicyPage } from './refunds/refund-policy-surface';
 import SecurityPage from './security/page';
-import TermsOfServicePage from './terms/page';
+import { TermsOfServicePage } from './terms/terms-surface';
 
 vi.mock('@/lib/posthog', () => ({
   track: vi.fn().mockResolvedValue(undefined),

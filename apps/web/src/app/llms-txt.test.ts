@@ -139,6 +139,9 @@ describe('llms.txt — marketing surface reconciliation', () => {
     expect(body).not.toContain('$9/mo');
     expect(full).toContain(body.trim());
     expect(full).toContain('## Backlog Pass');
+    expect(full).toContain('The Backlog Pass is $19 once for 30 days of Plus');
+    expect(full).not.toContain('$90');
+    expect(full).not.toContain('$9/mo');
   });
 
   it('falls back to the web env when the pricing API is down', async () => {

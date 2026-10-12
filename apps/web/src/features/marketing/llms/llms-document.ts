@@ -18,7 +18,10 @@ import {
 } from '@declutrmail/shared/copy/launch';
 
 import { MONEY_BACK_NOTE } from '@/features/billing/billing-model';
-import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
+import {
+  loadPricingFlags,
+  type PricingFlags,
+} from '@/features/marketing/pricing/load-pricing-flags';
 
 import { COMPARISONS } from '../comparison/comparison-data';
 import { comparisonFaqs } from '../comparison/comparison-faqs';
@@ -129,10 +132,10 @@ function withLaunchLinks(body: string): string {
   return `${body.slice(0, lineEnd)}\n${block}${body.slice(lineEnd)}`;
 }
 
-export async function renderLlmsTxt(): Promise<string> {
+export async function renderLlmsTxt(resolved?: PricingFlags): Promise<string> {
   // Same source as /pricing. The web process env stays off; Cloud Run
   // is where PRICING_V2 and BILLING_PASS_ENABLED are set.
-  const flags = await loadPricingFlags();
+  const flags = resolved ?? (await loadPricingFlags());
   let body = LLMS_SOURCE.replaceAll('LLMS_SECURITY_FACTS', llmsSecurityFacts());
   const autopilot = llmsAutopilotLine();
   if (autopilot) body = body.replace(PREVIOUS_AUTOPILOT, autopilot);
@@ -162,13 +165,14 @@ export async function renderLlmsTxt(): Promise<string> {
 }
 
 export async function renderLlmsFullTxt(): Promise<string> {
+  const flags = await loadPricingFlags();
   const pages = COMPARISONS.map((comparison) => {
-    const faqs = comparisonFaqs(comparison)
+    const faqs = comparisonFaqs(comparison, flags.passEnabled, flags.pricingV2)
       .map((faq) => `### ${faq.q}\n\n${faq.a}`)
       .join('\n\n');
     return `## ${comparison.title}\n\n${comparison.verdict}\n\n${faqs}`;
   }).join('\n\n');
-  return `${await renderLlmsTxt()}\n${pages}\n`;
+  return `${await renderLlmsTxt(flags)}\n${pages}\n`;
 }
 
 export function llmsResponse(body: string): Response {

@@ -24,7 +24,7 @@ import { parseBillingInvoices } from '@/features/billing/api/parse-payload';
 import { getServerBillingSubscription } from '@/features/billing/api/server-billing';
 import { parseBillingIntentParams } from '@/features/billing/parse-billing-intent';
 import { defaultProviderForCountry } from '@/features/billing/billing-region';
-import { isPricingV2 } from '@declutrmail/shared/entitlements';
+import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
 import { hasServerAccessCookie } from '@/features/auth/api/server-me';
 import { ServerApiError, serverGet } from '@/lib/api/server';
 import { ServerQueryHydration } from '@/lib/server-query-hydration';
@@ -46,7 +46,11 @@ export default async function BillingPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const [requestHeaders, params] = await Promise.all([headers(), searchParams]);
+  const [requestHeaders, params, flags] = await Promise.all([
+    headers(),
+    searchParams,
+    loadPricingFlags(),
+  ]);
   const initialIntent = parseBillingIntentParams(params);
   // Geo is resolved at the edge and read HERE (server) so the picker
   // renders the right rail on first paint — a client-side guess would
@@ -101,8 +105,8 @@ export default async function BillingPage({
       <BillingScreen
         initialIntent={initialIntent}
         returnTo={parseUpgradeReturnTo(params.from)}
-        initialProvider={defaultProviderForCountry(country)}
-        pricingV2={isPricingV2()}
+        initialProvider={defaultProviderForCountry(country, flags.pricingV2)}
+        pricingV2={flags.pricingV2}
         country={country}
         invoiceHistory={<BillingInvoiceHistoryGate />}
       />

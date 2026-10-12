@@ -135,8 +135,8 @@ export function BlogIndexPage() {
   );
 }
 
-export function FaqPage() {
-  const entries = publishedFaqEntries();
+export function FaqPage({ pricingV2 }: { pricingV2?: boolean } = {}) {
+  const entries = publishedFaqEntries(pricingV2);
   return (
     <ReadingLayout
       variant="faq"

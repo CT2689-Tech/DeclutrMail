@@ -34,8 +34,8 @@ import { fillStory, POLICY, refundLine } from '@declutrmail/shared/entitlements'
 import { storeConsent } from '@/lib/cookie-consent';
 
 import PrivacyPolicyPage from './privacy/page';
-import TermsOfServicePage from './terms/page';
-import RefundPolicyPage from './refunds/page';
+import { TermsOfServicePage } from './terms/terms-surface';
+import { RefundPolicyPage } from './refunds/refund-policy-surface';
 import CookiePreferencesPage from './cookies/page';
 
 const { trackSpy } = vi.hoisted(() => ({
