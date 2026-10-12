@@ -14,7 +14,11 @@ import {
   SANDBOX_API_ORIGIN,
   withinWindow,
 } from '../../../scripts/helpers/pass-rehearsal-assertions.js';
-import { SANDBOX_CARD_SELECTORS } from '../../../scripts/helpers/sandbox-checkout-pay.js';
+import {
+  isCardPayButton,
+  SANDBOX_CARD_SELECTORS,
+  sandboxCheckoutEvent,
+} from '../../../scripts/helpers/sandbox-checkout-pay.js';
 
 describe('Backlog Pass sandbox rehearsal checks', () => {
   it('accepts a thirty percent discount and a full-price renewal', () => {
@@ -80,7 +84,10 @@ describe('Backlog Pass sandbox rehearsal checks', () => {
     expect(page).toContain('Paddle.Environment.set("sandbox")');
     expect(page).toContain('"test_sandboxtoken"');
     expect(page).toContain(`Paddle.Checkout.open({ transactionId: "${txn}" })`);
+    expect(page).toContain('eventCallback: remember');
+    expect(page).toContain('window.__paddleEvents');
     expect(page).not.toContain('checkout.url');
+    expect(page).not.toContain('4242');
     expect(page).not.toContain('api.paddle.com');
     expect(page).not.toContain('production');
     expect(() => renderSandboxPayPage('live_token', txn)).toThrow('Sandbox client token required');
@@ -138,5 +145,21 @@ describe('Backlog Pass sandbox rehearsal checks', () => {
     expect(caller).not.toContain('secrets: inherit');
     expect(caller).not.toContain('workflow_call:');
     expect(caller).not.toMatch(/^ {2}pass:/m);
+    expect(caller).toContain('pass-sandbox-shots');
+  });
+
+  it('charges the card button and keeps checkout diagnostics free of secrets', () => {
+    expect(isCardPayButton('Pay now')).toBe(true);
+    expect(isCardPayButton('Pay $19.00')).toBe(true);
+    expect(isCardPayButton('Subscribe now')).toBe(true);
+    expect(isCardPayButton('PayPal')).toBe(false);
+    expect(isCardPayButton('Apple Pay')).toBe(false);
+    expect(isCardPayButton('Payment method')).toBe(false);
+    expect(
+      sandboxCheckoutEvent('checkout.error', 'transaction_checkout_url_domain_is_not_approved'),
+    ).toBe('checkout.error:transaction_checkout_url_domain_is_not_approved');
+    expect(sandboxCheckoutEvent('checkout.loaded', '')).toBe('checkout.loaded');
+    expect(sandboxCheckoutEvent('https://secret.example', 'pdl_sdbx_apikey')).toBeNull();
+    expect(sandboxCheckoutEvent('checkout.error', 'https://secret.example')).toBeNull();
   });
 });

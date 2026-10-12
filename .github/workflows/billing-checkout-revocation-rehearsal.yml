@@ -181,6 +181,8 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: pass-sandbox-rehearsal
-          path: ${{ runner.temp }}/pass-sandbox-rehearsal.json
+          path: |
+            ${{ runner.temp }}/pass-sandbox-rehearsal.json
+            ${{ runner.temp }}/pass-sandbox-shots
           retention-days: 1
           if-no-files-found: error

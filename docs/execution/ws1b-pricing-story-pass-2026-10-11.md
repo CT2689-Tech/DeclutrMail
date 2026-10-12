@@ -111,8 +111,15 @@ completed` and `checkoutFrames` empty. Paddle's `checkout.url` was
   create body set `checkout.url` to the new trycloudflare host.
   The create body no longer sends `checkout.url`. `GET /pay` calls
   `Paddle.Checkout.open({ transactionId })` for a transaction this
-  run created. The log line is `rehearsal.provider_code=` plus that
-  code only. The one-time body stays `collection_mode: automatic`
+  run created. Run 38209093625 on `3dc7d65f` opened the overlay,
+  filled a card field, and clicked a button matching `pay`, but the
+  transaction never left unpaid. That matcher also matches PayPal,
+  and the card number could be filled without the expiry and CVC.
+  The card submit now requires all three fields and ignores wallet
+  buttons. The artifact keeps safe checkout events, console lines,
+  frame hosts, and screenshots under `pass-sandbox-shots`. The log
+  line is `rehearsal.provider_code=` plus that code only. The
+  one-time body stays `collection_mode: automatic`
   with quantity 1 and no `billing_cycle`. The token is revoked on
   shutdown. The boundary check is unchanged. The purchase has not
   passed until a later run says so.

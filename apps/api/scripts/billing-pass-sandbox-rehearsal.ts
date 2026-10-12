@@ -3,6 +3,7 @@ import 'reflect-metadata';
 import { createHmac, randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { asc, eq } from 'drizzle-orm';
@@ -403,11 +404,30 @@ function recordFailure(failure: RehearsalFailure) {
   evidence.error = failure;
   evidence.errorPhase = evidence.phase ?? 'unknown';
 }
+const shotsDir = join(dirname(reportPath), 'pass-sandbox-shots');
 function noteUnpaid(unpaid: CheckoutPayFailure) {
   evidence.checkoutFrames = unpaid.frames;
+  evidence.checkoutHosts = unpaid.hosts;
   evidence.checkoutOverlay = unpaid.overlay;
   evidence.checkoutCard = unpaid.card;
   evidence.checkoutPay = unpaid.pay;
+  evidence.checkoutEvents = unpaid.events;
+  evidence.checkoutConsole = unpaid.consoleLines;
+  evidence.checkoutShots = unpaid.shots;
+}
+async function failUnpaid(unpaid: CheckoutPayFailure, id: string): Promise<never> {
+  noteUnpaid(unpaid);
+  try {
+    const status = (await transaction(id)).status;
+    evidence.transactionStatus =
+      typeof status === 'string' &&
+      /^(draft|ready|paid|completed|canceled|past_due|billed)$/.test(status)
+        ? status
+        : 'unread';
+  } catch {
+    evidence.transactionStatus = 'unread';
+  }
+  throw new Error('Sandbox checkout payment was not completed');
 }
 installRehearsalFailureHandlers({
   onFailure: recordFailure,
@@ -531,11 +551,11 @@ try {
     ...passCustomer,
   });
   passTransactionId = first.id;
-  const unpaid = await paySandboxCheckout(first.url, pass.email, () => transactionPaid(first.id));
-  if (unpaid) {
-    noteUnpaid(unpaid);
-    throw new Error('Sandbox checkout payment was not completed');
-  }
+  const unpaid = await paySandboxCheckout(first.url, pass.email, () => transactionPaid(first.id), {
+    shotsDir,
+    label: 'pass-first',
+  });
+  if (unpaid) await failUnpaid(unpaid, first.id);
   await waitUntil(
     'Pass grant did not arrive',
     async () => (await grantsFor(pass.email)).length === 1,
@@ -563,13 +583,13 @@ try {
     workspaceId: pass.workspaceId,
     ...passCustomer,
   });
-  const secondUnpaid = await paySandboxCheckout(second.url, pass.email, () =>
-    transactionPaid(second.id),
+  const secondUnpaid = await paySandboxCheckout(
+    second.url,
+    pass.email,
+    () => transactionPaid(second.id),
+    { shotsDir, label: 'pass-second' },
   );
-  if (secondUnpaid) {
-    noteUnpaid(secondUnpaid);
-    throw new Error('Sandbox checkout payment was not completed');
-  }
+  if (secondUnpaid) await failUnpaid(secondUnpaid, second.id);
   await waitUntil(
     'Pass extension did not arrive',
     async () => (await grantsFor(pass.email)).length === 2,
@@ -616,13 +636,13 @@ try {
     annualTxn.subtotal !== '5900'
   )
     throw new Error('Discount was not thirty percent of the annual price');
-  const annualUnpaid = await paySandboxCheckout(annualTxn.url, annual.email, () =>
-    transactionPaid(annualTxn.id),
+  const annualUnpaid = await paySandboxCheckout(
+    annualTxn.url,
+    annual.email,
+    () => transactionPaid(annualTxn.id),
+    { shotsDir, label: 'annual' },
   );
-  if (annualUnpaid) {
-    noteUnpaid(annualUnpaid);
-    throw new Error('Sandbox checkout payment was not completed');
-  }
+  if (annualUnpaid) await failUnpaid(annualUnpaid, annualTxn.id);
   await waitUntil('Annual payment did not complete', async () => {
     const exact = await transaction(annualTxn.id);
     return exact.status === 'completed' && typeof exact.subscription_id === 'string';
