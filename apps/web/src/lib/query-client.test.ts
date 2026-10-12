@@ -235,6 +235,20 @@ describe('makeQueryClient — global query-failure reporting', () => {
     });
   });
 
+  it('stays silent when the browser never got a response', async () => {
+    await runFailingQuery(new TypeError('Failed to fetch'), ['snoozed', 'recovery']);
+    await runFailingQuery(new TypeError('Load failed'), ['undo', 'in-flight']);
+    const online = Object.getOwnPropertyDescriptor(navigator, 'onLine');
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    try {
+      await runFailingQuery(new TypeError('socket closed'), ['billing', 'subscription']);
+    } finally {
+      if (online) Object.defineProperty(navigator, 'onLine', online);
+      else Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    }
+    expect(captureFeatureException).not.toHaveBeenCalled();
+  });
+
   it('reports a 5xx read failure', async () => {
     await runFailingQuery(new ApiError(503, {}, 'GET /api/senders failed: 503'), ['senders', {}]);
     expect(captureFeatureException).toHaveBeenCalledOnce();

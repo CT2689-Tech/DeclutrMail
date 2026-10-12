@@ -15,7 +15,7 @@ import {
   resetMailboxScopedCache,
 } from '@/features/mailboxes/api/reset-mailbox-cache';
 
-import { ApiError } from './api/client';
+import { ApiError, isPlainNetworkFailure } from './api/client';
 import { retryTransientOnly } from './api/retry';
 import { reportUpgradeGateHit } from './entitlements/upgrade-gate';
 import { captureFeatureException } from './sentry';
@@ -50,9 +50,11 @@ const QUERY_FAILURE_REPORT_WINDOW_MS = 60_000;
  * A 4xx here is a designed state, not a defect: 401 routes to the OAuth
  * redirect, 402 to the upgrade gate, 409 to the mailbox picker / reconnect
  * gate, 404 to an empty surface (CLAUDE.md §8, "a read guard's 4xx is a
- * designed state"). Anything else — a 5xx, a network drop, or an error
- * that isn't an `ApiError` at all — is a real failure the founder should
- * not have to find by hand.
+ * designed state"). A 5xx, or an error that isn't an `ApiError` at all,
+ * is a real failure the founder should not have to find by hand. A fetch
+ * that never left the browser (offline, "Failed to fetch") is not: the
+ * screen already says the network dropped, and reporting it filled Sentry
+ * with the same TypeError from every poll.
  *
  * The non-`ApiError` half is the one that earned this handler. On
  * 2026-08-21 a `useUserTimeZone()` observer left `skipToken` on the shared
@@ -66,6 +68,7 @@ function makeQueryFailureReporter(): (error: unknown, queryKey: readonly unknown
   const lastReportedAt = new Map<string, number>();
   return (error, queryKey) => {
     if (error instanceof ApiError && error.status >= 400 && error.status < 500) return;
+    if (isPlainNetworkFailure(error)) return;
     const scope = queryScope(queryKey);
     const now = Date.now();
     const previous = lastReportedAt.get(scope);
