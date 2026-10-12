@@ -524,6 +524,8 @@ export interface UnsubscribeBacklogSenderResult {
     | 'in_flight'
     | 'not_found'
     | 'protected'
+    | 'mailto_only'
+    | 'method_unknown'
     | null;
 }
 

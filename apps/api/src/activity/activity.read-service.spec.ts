@@ -499,6 +499,78 @@ describe('ActivityReadService', () => {
     },
   );
 
+  it('collapses an unsubscribe-and-move into the archive row and keeps Undo', async () => {
+    const senderKey = 'c'.repeat(64);
+    const senderId = await seedSender(
+      db,
+      mailboxA.mailboxAccountId,
+      senderKey,
+      'news@example.test',
+      'News',
+    );
+    const archiveJob = await seedExecutionAttempt(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      senderId,
+      senderKey,
+      status: 'done',
+      createdAt: new Date(NOW_MS - ONE_DAY_MS),
+    });
+    actionKeySequence += 1;
+    const [unsubJob] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        verb: 'unsubscribe',
+        direction: 'forward',
+        selector: { type: 'sender', senderId, senderKey },
+        resolvedMessageIds: [],
+        requestedCount: 1,
+        status: 'queued',
+        idempotencyKey: `activity-unsub-${actionKeySequence}`,
+        compositeId: archiveJob,
+        createdAt: new Date(NOW_MS - ONE_DAY_MS),
+        updatedAt: new Date(NOW_MS - ONE_DAY_MS),
+      })
+      .returning({ id: actionJobs.id });
+    const token = await seedUndoToken(db, mailboxA.mailboxAccountId, {
+      expiresAt: new Date(NOW_MS + 30 * ONE_DAY_MS),
+    });
+    await seedActivity(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+      source: 'manual',
+      action: 'archive',
+      affectedCount: 1,
+      senderKey,
+      undoToken: token,
+      actionJobId: archiveJob,
+    });
+    await seedActivity(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      occurredAt: new Date(NOW_MS - ONE_DAY_MS + 1000),
+      source: 'manual',
+      action: 'unsubscribe',
+      affectedCount: 0,
+      senderKey,
+      actionJobId: unsubJob!.id,
+    });
+
+    const { rows } = await svc.listActivity({
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      window: '30d',
+      source: null,
+      cursor: null,
+      limit: 25,
+      nowMs: NOW_MS,
+    });
+    expect(rows.map((row) => row.action)).toEqual(['archive']);
+    expect(rows[0]).toMatchObject({
+      combinedUnsubscribe: true,
+      affectedCount: 1,
+      undoState: { kind: 'available', token },
+    });
+  });
+
   it('returns only rows for the requested mailbox (tenant isolation)', async () => {
     await seedActivity(db, {
       mailboxAccountId: mailboxA.mailboxAccountId,

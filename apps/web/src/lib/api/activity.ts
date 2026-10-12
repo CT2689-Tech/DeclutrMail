@@ -130,6 +130,8 @@ export interface ActivityRowWire {
   /** Null for confirmed append-only Activity rows. */
   executionState: ActivityExecutionStateWire | null;
   reviewOutcome: ActivityReviewOutcomeWire | null;
+  /** Archive or delete row that also records the unsubscribe request. */
+  combinedUnsubscribe?: boolean;
 }
 
 export interface ActivityWeeklyReviewWire {

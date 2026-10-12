@@ -42,6 +42,30 @@ describe('launch copy deck snapshots', () => {
     expect(WS5_COPY['f1.toast.mailto']).not.toMatch(/draft/i);
   });
 
+  it('keeps the drop2-r17 toast parts and combined activity rows', () => {
+    expect(WS5_COPY['f1.toast.part.unsub']).toEqual({
+      one: 'Unsubscribe requested from 1 sender',
+      other: 'Unsubscribe requested from {m} senders',
+    });
+    expect(WS5_COPY['f1.toast.part.archived']).toEqual({
+      one: 'Archived 1 email',
+      other: 'Archived {n} emails',
+    });
+    expect(WS5_COPY['f1.toast.part.deleted']).toEqual({
+      one: 'Deleted 1 email',
+      other: 'Deleted {n} emails',
+    });
+    expect(WS5_COPY['f1.activity.row']).toEqual({
+      one: 'Unsubscribe requested · Archived 1 email',
+      other: 'Unsubscribe requested · Archived {n} emails',
+    });
+    expect(WS5_COPY['f1.reason.paused']).toBe('unsubscribe requests are paused right now');
+    expect(WS5_COPY['f1.reason.skipped.notFound']).toBe(
+      'the sender is no longer found, so nothing was sent',
+    );
+    expect(WS5_COPY['f1.protected.leadNoReason']).toBe('{Sender} is Protected.');
+  });
+
   it('keeps the drop2-r13 move, mailto, and skip lines', () => {
     expect(WS5_COPY['f1.toast.bulk.delete']).toEqual({
       one: 'Unsubscribe requested from {m} senders · Deleted 1 email',

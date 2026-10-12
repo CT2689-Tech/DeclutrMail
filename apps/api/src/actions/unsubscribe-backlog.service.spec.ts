@@ -388,6 +388,48 @@ describe('UnsubscribeBacklogService', () => {
     });
   });
 
+  it('keeps mailto and a missing link off the not-found skip', async () => {
+    const [other] = await db
+      .insert(senders)
+      .values({
+        mailboxAccountId: mailboxId,
+        senderKey: 'e'.repeat(64),
+        email: 'hand@shop.example',
+        domain: 'shop.example',
+        gmailCategory: 'promotions',
+        firstSeenAt: new Date('2026-01-01'),
+        lastSeenAt: new Date('2026-05-01'),
+        unsubscribeMethod: 'mailto',
+      })
+      .returning({ id: senders.id });
+    await seedInbox(db, mailboxId, 1);
+    vi.spyOn(actions, 'enqueueBulkComposite').mockResolvedValue({
+      batchId: '22222222-2222-4222-8222-222222222222',
+      status: 'queued',
+      senderCount: 0,
+      requestedTotal: 0,
+      wakeAt: null,
+      skipped: [
+        { senderId, reason: 'mailto' },
+        { senderId: other!.id, reason: 'no_channel' },
+      ],
+    });
+    const result = await svc.confirm({
+      mailboxAccountId: mailboxId,
+      idempotencyKey: 'skip-codes-1',
+      mode: 'archive',
+      senderIds: [senderId, other!.id],
+    });
+    expect(result.senders.find((row) => row.senderId === senderId)).toMatchObject({
+      unsubStatus: 'skipped',
+      reasonCode: 'mailto_only',
+    });
+    expect(result.senders.find((row) => row.senderId === other!.id)).toMatchObject({
+      unsubStatus: 'skipped',
+      reasonCode: 'no_link',
+    });
+  });
+
   it('undo reverses the backlog only', async () => {
     await seedInbox(db, mailboxId, 2);
     const result = await svc.confirm({

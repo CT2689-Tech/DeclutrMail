@@ -151,7 +151,7 @@ describe('SendersSimulator — WS5 sample surfaces', () => {
         .some((node) => node.textContent?.includes('Unsubscribe requested · Archived 111 emails')),
     ).toBe(true);
     const activity = screen.getByRole('region', { name: 'Sample activity' });
-    expect(activity).toHaveTextContent(fillCopy(WS5_COPY['f1.activity.row'], { n: 111 }));
+    expect(activity).toHaveTextContent(pluralCopy(WS5_COPY['f1.activity.row'], 111, { n: 111 }));
     expect(activity).toHaveTextContent('undone from Activity for 30 days');
     expect(within(activity).getByRole('button', { name: 'Undo' })).toBeInTheDocument();
 

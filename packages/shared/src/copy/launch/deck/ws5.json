@@ -16,6 +16,10 @@
     "one": "Unsubscribe and delete 1 email",
     "other": "Unsubscribe and delete {n} emails"
   },
+  "f1.segment.archive.loading": "+ Archive",
+  "f1.segment.archive.loading.aria": "Unsubscribe and archive, counting emails",
+  "f1.segment.delete.loading": "+ Delete",
+  "f1.segment.delete.loading.aria": "Unsubscribe and delete, counting emails",
   "f1.title.unsubOnly": "Unsubscribe from {Sender}?",
   "f1.title.archive": {
     "one": "Unsubscribe from {Sender} and archive 1 email?",
@@ -56,6 +60,11 @@
   "f1.button.unsubOnly": "Unsubscribe",
   "f1.button.archive": "Unsubscribe + Archive",
   "f1.button.delete": "Unsubscribe + Delete",
+  "f1.button.unsubOnly.protected": "Unsubscribe anyway",
+  "f1.button.archive.protected": "Unsubscribe + Archive anyway",
+  "f1.button.delete.protected": "Unsubscribe + Delete anyway",
+  "f1.protected.lead": "{Sender} is Protected because {reason}.",
+  "f1.protected.leadNoReason": "{Sender} is Protected.",
   "f1.button.cancel": "Cancel",
   "f1.meterFree": "Unsubscribing is free and doesn’t count.",
   "f1.toast.both.archive": {
@@ -86,7 +95,11 @@
   "f1.reason.noLink": "no unsubscribe link",
   "f1.reason.senderError": "the sender’s system didn’t respond",
   "f1.reason.generic": "something went wrong",
+  "f1.reason.paused": "unsubscribe requests are paused right now",
+  "f1.reason.inFlight": "an earlier request to this sender is still on its way",
+  "f1.reason.notFound": "this sender is no longer found in your Gmail account",
   "f1.reason.skipped": "the sender is Protected, so nothing was sent",
+  "f1.reason.skipped.notFound": "the sender is no longer found, so nothing was sent",
   "f1.toast.unsub.skipped": {
     "one": "No unsubscribe sent: 1 sender is Protected, so it was left as it is.",
     "other": "No unsubscribe sent: {n} senders are Protected, so they were left as they are."
@@ -95,9 +108,29 @@
     "one": "No unsubscribe sent. That sender was left as it is.",
     "other": "No unsubscribe sent. Those {n} senders were left as they are."
   },
+  "f1.toast.unsub.skipped.notFound": {
+    "one": "No unsubscribe sent: 1 sender is no longer found, so it was left as it is.",
+    "other": "No unsubscribe sent: {n} senders are no longer found, so they were left as they are."
+  },
   "f1.toast.bulkSkipped": {
     "one": "1 Protected sender left as it is",
     "other": "{k} Protected senders left as they are"
+  },
+  "f1.toast.bulkSkipped.notFound": {
+    "one": "1 sender no longer found, left as it is",
+    "other": "{k} senders no longer found, left as they are"
+  },
+  "f1.toast.part.unsub": {
+    "one": "Unsubscribe requested from 1 sender",
+    "other": "Unsubscribe requested from {m} senders"
+  },
+  "f1.toast.part.archived": {
+    "one": "Archived 1 email",
+    "other": "Archived {n} emails"
+  },
+  "f1.toast.part.deleted": {
+    "one": "Deleted 1 email",
+    "other": "Deleted {n} emails"
   },
   "f1.toast.bulk": "Unsubscribe requested from {m} senders · Archived {n} emails",
   "f1.toast.bulk.delete": {
@@ -108,7 +141,10 @@
     "one": "1 unsubscribe failed",
     "other": "{k} unsubscribes failed"
   },
-  "f1.activity.row": "Unsubscribe requested · Archived {n} emails",
+  "f1.activity.row": {
+    "one": "Unsubscribe requested · Archived 1 email",
+    "other": "Unsubscribe requested · Archived {n} emails"
+  },
   "f1.activity.row.delete": {
     "one": "Unsubscribe requested · Deleted 1 email",
     "other": "Unsubscribe requested · Deleted {n} emails"

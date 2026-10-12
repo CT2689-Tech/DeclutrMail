@@ -549,6 +549,7 @@ export class ActivityReadService {
       whereParts.push(or(ilike(senders.displayName, pattern), ilike(senders.email, pattern))!);
     }
     if (cursor) whereParts.push(afterCursor(activityLog.occurredAt, activityLog.id, cursor));
+    whereParts.push(hidePairedUnsubscribeRow());
 
     // ADR-0008 §3 exception: the feed joins the senders-owned `senders`
     // (display name) and the autopilot-owned `automation_rules` (rule name).
@@ -581,6 +582,7 @@ export class ActivityReadService {
             )`
           : sql<'expected' | 'surprising' | null>`NULL`,
         reviewOutcome: reviewOutcomeExpression,
+        combinedUnsubscribe: combinedUnsubscribeExpression(),
       })
       .from(activityLog)
       .leftJoin(
@@ -642,6 +644,7 @@ export class ActivityReadService {
         }),
         executionState: null,
         reviewOutcome: row.reviewOutcome,
+        ...(row.combinedUnsubscribe ? { combinedUnsubscribe: true } : {}),
       };
     });
     const executionRows = projectExecutionRows(executionLineages, {
@@ -1686,6 +1689,53 @@ function feedTime(time: SQLWrapper): SQL {
  * Rows inside the cursor's millisecond continue by id instead. Compared on
  * the raw column, so the window's index still bounds the scan.
  */
+/** Drop the unsubscribe audit row once its move row exists. They share composite_id. */
+function hidePairedUnsubscribeRow(): SQL {
+  return sql`not (
+    ${activityLog.action} = 'unsubscribe'
+    and ${activityLog.actionJobId} is not null
+    and exists (
+      select 1 from action_jobs paired_unsub_hide
+      where paired_unsub_hide.id = ${activityLog.actionJobId}
+        and paired_unsub_hide.composite_id is not null
+        and exists (
+          select 1 from activity_log paired_move_log
+          inner join action_jobs paired_move_job
+            on paired_move_job.id = paired_move_log.action_job_id
+          where paired_move_log.mailbox_account_id = ${activityLog.mailboxAccountId}
+            and paired_move_log.sender_key is not distinct from ${activityLog.senderKey}
+            and paired_move_log.action in ('archive', 'delete')
+            and (
+              paired_move_job.id = paired_unsub_hide.composite_id
+              or paired_move_job.composite_id = paired_unsub_hide.composite_id
+            )
+        )
+    )
+  )`;
+}
+
+/** True when this archive or delete row is the combined unsubscribe-and-move entry. */
+function combinedUnsubscribeExpression(): SQL<boolean> {
+  return sql<boolean>`(
+    ${activityLog.action} in ('archive', 'delete')
+    and ${activityLog.actionJobId} is not null
+    and exists (
+      select 1 from action_jobs paired_unsub_flag
+      where paired_unsub_flag.verb = 'unsubscribe'
+        and paired_unsub_flag.composite_id is not null
+        and paired_unsub_flag.mailbox_account_id = ${activityLog.mailboxAccountId}
+        and paired_unsub_flag.selector->>'senderKey' is not distinct from ${activityLog.senderKey}
+        and (
+          paired_unsub_flag.composite_id = ${activityLog.actionJobId}
+          or paired_unsub_flag.composite_id = (
+            select paired_flag_job.composite_id from action_jobs paired_flag_job
+            where paired_flag_job.id = ${activityLog.actionJobId}
+          )
+        )
+    )
+  )`;
+}
+
 function afterCursor(
   time: SQLWrapper,
   id: SQLWrapper,

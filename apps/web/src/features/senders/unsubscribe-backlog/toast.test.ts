@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { fillCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
 import type { UnsubscribeBacklogResult } from '@/lib/api/actions';
 
@@ -67,7 +67,17 @@ describe('unsubscribeBacklogToast', () => {
     expect(line).not.toMatch(/draft/i);
   });
 
-  it('keeps bulk archive on its deck sentence and does not rewrite it for delete', () => {
+  function bulkParts(m: number, n: number, verb: 'archive' | 'delete' = 'archive'): string {
+    const unsub = pluralCopy(WS5_COPY['f1.toast.part.unsub'], m, { m });
+    const moved = pluralCopy(
+      verb === 'delete' ? WS5_COPY['f1.toast.part.deleted'] : WS5_COPY['f1.toast.part.archived'],
+      n,
+      { n },
+    );
+    return `${unsub} · ${moved}`;
+  }
+
+  it('builds a bulk toast from singular and plural parts and never the retired sentences', () => {
     const senders = [
       {
         senderId: 'a',
@@ -96,7 +106,16 @@ describe('unsubscribeBacklogToast', () => {
           senders,
         }),
       ),
-    ).toBe(fillCopy(WS5_COPY['f1.toast.bulk'], { m: 2, n: 30 }));
+    ).toBe(bulkParts(2, 30));
+    expect(
+      unsubscribeBacklogToast(
+        result({
+          mode: 'archive',
+          backlog: { actionId: 'b', requestedCount: 1, verb: 'archive' },
+          senders: [senders[0]!],
+        }),
+      ),
+    ).toBe(pluralCopy(WS5_COPY['f1.toast.both.archive'], 1, { n: 1 }));
     const deleted = unsubscribeBacklogToast(
       result({
         mode: 'delete',
@@ -104,8 +123,17 @@ describe('unsubscribeBacklogToast', () => {
         senders,
       }),
     );
-    expect(deleted).toBe(pluralCopy(WS5_COPY['f1.toast.bulk.delete'], 30, { m: 2, n: 30 }));
+    expect(deleted).toBe(bulkParts(2, 30, 'delete'));
     expect(deleted).not.toContain('Archived');
+    expect(
+      unsubscribeBacklogToast(
+        result({
+          mode: 'archive',
+          backlog: { actionId: 'b', requestedCount: 1, verb: 'archive' },
+          senders,
+        }),
+      ),
+    ).toBe(bulkParts(2, 1));
     expect(
       unsubscribeBacklogToast(
         result({
@@ -114,7 +142,8 @@ describe('unsubscribeBacklogToast', () => {
           senders,
         }),
       ),
-    ).toBe(pluralCopy(WS5_COPY['f1.toast.bulk.delete'], 1, { m: 2, n: 1 }));
+    ).toBe(bulkParts(2, 1, 'delete'));
+    expect(WS5_COPY['f1.toast.bulk']).not.toBe(bulkParts(2, 30));
   });
 
   it('counts only requested senders and still shows the Send line for mailto', () => {
@@ -144,9 +173,7 @@ describe('unsubscribeBacklogToast', () => {
         ],
       }),
     );
-    expect(line).toBe(
-      `${fillCopy(WS5_COPY['f1.toast.bulk'], { m: 1, n: 30 })} · ${WS5_COPY['f1.toast.mailto']}`,
-    );
+    expect(line).toBe(`${bulkParts(1, 30)} · ${WS5_COPY['f1.toast.mailto']}`);
     expect(line).not.toContain('from 2 senders');
   });
 
@@ -197,7 +224,9 @@ describe('unsubscribeBacklogToast', () => {
         ],
       }),
     );
-    expect(deleted).toBe(pluralCopy(WS5_COPY['f1.toast.mailto.withMove.delete'], 8, { n: 8 }));
+    expect(deleted).toBe(
+      `${WS5_COPY['f1.toast.mailto']} · ${pluralCopy(WS5_COPY['f1.toast.part.deleted'], 8, { n: 8 })}`,
+    );
     expect(deleted).not.toMatch(/requested/i);
   });
 
@@ -337,7 +366,26 @@ describe('unsubscribeBacklogToast', () => {
     ).toBe(pluralCopy(WS5_COPY['f1.toast.unsub.skipped'], 2, { n: 2 }));
   });
 
-  it('uses the plain skip sentence when the reason is not Protected', () => {
+  it('uses the plain skip sentence when the reason is not Protected or missing', () => {
+    expect(
+      unsubscribeBacklogToast(
+        result({
+          mode: 'unsub_only',
+          senders: [skippedSender('a', 'mailto_only'), skippedSender('b', 'method_unknown')],
+        }),
+      ),
+    ).toBe(pluralCopy(WS5_COPY['f1.toast.unsub.skipped.plain'], 2, { n: 2 }));
+  });
+
+  it('names senders that are no longer found, including one and many', () => {
+    expect(
+      unsubscribeBacklogToast(
+        result({
+          mode: 'unsub_only',
+          senders: [skippedSender('a', 'not_found')],
+        }),
+      ),
+    ).toBe(pluralCopy(WS5_COPY['f1.toast.unsub.skipped.notFound'], 1, { n: 1 }));
     expect(
       unsubscribeBacklogToast(
         result({
@@ -345,7 +393,7 @@ describe('unsubscribeBacklogToast', () => {
           senders: [skippedSender('a', 'not_found'), skippedSender('b', 'not_found')],
         }),
       ),
-    ).toBe(pluralCopy(WS5_COPY['f1.toast.unsub.skipped.plain'], 2, { n: 2 }));
+    ).toBe(pluralCopy(WS5_COPY['f1.toast.unsub.skipped.notFound'], 2, { n: 2 }));
   });
 
   it('appends the Protected skip clause after a mixed result', () => {
@@ -368,7 +416,7 @@ describe('unsubscribeBacklogToast', () => {
       }),
     );
     expect(line).toBe(
-      `${fillCopy(WS5_COPY['f1.toast.bulk'], { m: 1, n: 30 })} · ${pluralCopy(WS5_COPY['f1.toast.bulkSkipped'], 1, { k: 1 })}`,
+      `${bulkParts(1, 30)} · ${pluralCopy(WS5_COPY['f1.toast.bulkSkipped'], 1, { k: 1 })}`,
     );
   });
 
@@ -464,6 +512,33 @@ describe('unsubscribeBacklogToast', () => {
 });
 
 describe('unsubscribeBacklogActivityLine', () => {
+  it('uses one combined row for each count form', () => {
+    expect(
+      unsubscribeBacklogActivityLine(
+        result({
+          mode: 'archive',
+          backlog: { actionId: 'b', requestedCount: 1, verb: 'archive' },
+        }),
+      ),
+    ).toBe(pluralCopy(WS5_COPY['f1.activity.row'], 1, { n: 1 }));
+    expect(
+      unsubscribeBacklogActivityLine(
+        result({
+          mode: 'archive',
+          backlog: { actionId: 'b', requestedCount: 12, verb: 'archive' },
+        }),
+      ),
+    ).toBe(pluralCopy(WS5_COPY['f1.activity.row'], 12, { n: 12 }));
+    expect(
+      unsubscribeBacklogActivityLine(
+        result({
+          mode: 'delete',
+          backlog: { actionId: 'b', requestedCount: 1, verb: 'delete' },
+        }),
+      ),
+    ).toBe(pluralCopy(WS5_COPY['f1.activity.row.delete'], 1, { n: 1 }));
+  });
+
   it('uses the delete deck row for a one-click request', () => {
     expect(
       unsubscribeBacklogActivityLine(

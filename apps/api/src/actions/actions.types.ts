@@ -84,7 +84,9 @@ export type UnsubscribeBacklogReasonCode =
   | 'send_disabled'
   | 'in_flight'
   | 'not_found'
-  | 'protected';
+  | 'protected'
+  | 'mailto_only'
+  | 'method_unknown';
 
 export interface UnsubscribeBacklogSenderResult {
   senderId: string;

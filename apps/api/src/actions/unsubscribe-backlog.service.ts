@@ -62,7 +62,7 @@ export class UnsubscribeBacklogService {
     const skippedProtected = rows.filter((row) => !actionable.some((kept) => kept.id === row.id));
 
     let backlog: UnsubscribeBacklogResult['backlog'] = null;
-    let skippedByEnqueue = new Map<string, 'protected' | 'not_found'>();
+    let skippedByEnqueue = new Map<string, MoveSkipReason>();
     const runBacklog = input.mode === 'archive' || input.mode === 'delete';
     if (runBacklog && actionable.length > 0) {
       const emailCount = await this.emailCount(
@@ -244,12 +244,16 @@ function reasonFromRecordError(err: unknown): UnsubscribeBacklogReasonCode {
   return 'generic';
 }
 
+type MoveSkipReason = 'protected' | 'not_found' | 'mailto_only' | 'no_link' | 'method_unknown';
+
 /**
- * A skip is not an error. Protected is the unsubscribe-only filter.
- * The move's own refusal is Protected or no longer found. An in-progress
- * move is not a skip: that sender still records an unsubscribe.
+ * A move skip is not "no longer found" unless the sender row is gone.
+ * Mailto, a missing link, and an unknown method keep their own codes.
+ * Those codes do not reach this path from `enqueueBulkComposite` today
+ * (it only skips protected, not_found, and in_progress). `no_link` does
+ * reach a toast as a failed unsubscribe when the method is `none`.
  */
-function moveSkipReason(reason: BulkSkipReason): 'protected' | 'not_found' | null {
+function moveSkipReason(reason: BulkSkipReason): MoveSkipReason | null {
   switch (reason) {
     case 'in_progress':
       return null;
@@ -258,9 +262,11 @@ function moveSkipReason(reason: BulkSkipReason): 'protected' | 'not_found' | nul
     case 'not_found':
       return 'not_found';
     case 'mailto':
+      return 'mailto_only';
     case 'no_channel':
+      return 'no_link';
     case 'unknown':
-      return 'not_found';
+      return 'method_unknown';
     default: {
       const unreachable: never = reason;
       return unreachable;
@@ -268,10 +274,7 @@ function moveSkipReason(reason: BulkSkipReason): 'protected' | 'not_found' | nul
   }
 }
 
-function skipped(
-  senderId: string,
-  reasonCode: 'protected' | 'not_found',
-): UnsubscribeBacklogSenderResult {
+function skipped(senderId: string, reasonCode: MoveSkipReason): UnsubscribeBacklogSenderResult {
   return {
     senderId,
     method: null,
