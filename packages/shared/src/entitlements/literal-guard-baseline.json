@@ -270,6 +270,11 @@
     "count": 1
   },
   {
+    "file": "apps/web/src/features/triage/meter-copy.test.tsx",
+    "match": "cleanup action",
+    "count": 11
+  },
+  {
     "file": "apps/web/src/features/triage/triage-screen.actions.test.tsx",
     "match": "cleanup action",
     "count": 1
