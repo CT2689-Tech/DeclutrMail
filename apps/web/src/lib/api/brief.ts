@@ -140,10 +140,9 @@ export interface BriefMarkOpenedResultWire {
 
 /**
  * GET /api/briefs/today — the snapshot for today (D69 frozen). No
- * snapshot yet is 404. A 204 or a null body is the same absence: the
- * screen renders "Brief lands soon", and Home keeps the empty Brief
- * signal. The API stays on 404 so a web deploy and an API deploy can
- * land in either order.
+ * snapshot yet is `{ data: null }` with status 200. A 404 or 204 is
+ * the same absence, kept so an older API still renders "Brief lands
+ * soon" instead of an error while Home and the API deploy apart.
  *
  * The server resolves the day from persisted `users.timezone`, the
  * same authority snapshot generation uses. Browser state cannot select

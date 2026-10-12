@@ -1,4 +1,3 @@
-import { HttpException } from '@nestjs/common';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { UsersService } from '../users/users.service.js';
@@ -40,20 +39,16 @@ describe('BriefController.today', () => {
     expect(getForDate).toHaveBeenCalledWith('mailbox-1', '2026-07-07', 'user-1');
   });
 
-  it('returns 404 when today has no Brief', async () => {
+  it('returns an empty envelope when today has no Brief', async () => {
     const getForDate = vi.fn().mockResolvedValue(null);
     const controller = new BriefController(
       { getForDate } as unknown as BriefReadService,
       { findById: vi.fn().mockResolvedValue({ timezone: 'UTC' }) } as unknown as UsersService,
     );
 
-    try {
-      await controller.today({ userId: 'user-1' }, { id: 'mailbox-1' });
-      expect.fail('expected a 404');
-    } catch (err) {
-      expect(err).toBeInstanceOf(HttpException);
-      expect((err as HttpException).getStatus()).toBe(404);
-    }
+    await expect(controller.today({ userId: 'user-1' }, { id: 'mailbox-1' })).resolves.toEqual({
+      data: null,
+    });
   });
 });
 

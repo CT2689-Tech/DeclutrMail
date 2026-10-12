@@ -45,11 +45,11 @@ export class BriefController {
 
   /**
    * GET /api/briefs/today — today's Brief for the caller's mailbox.
-   * No snapshot yet stays 404. The web treats that 404, and a 204 or
-   * null body, as "Brief lands soon". Changing the status here would
-   * break the web that is already in production, because Cloud Run and
-   * Vercel do not ship in the same moment. Mark-opened still 404s for
-   * an unknown id.
+   * No snapshot yet is an empty envelope (`{ data: null }`), not a 404.
+   * Home asks on every load, including before the morning snapshot, and
+   * a missing edition is the ordinary state. The web still treats a 404
+   * or 204 as that same absence so an older API and a newer web can
+   * deploy in either order. Mark-opened still 404s for an unknown id.
    *
    * The day boundary comes from persisted `users.timezone`, exactly
    * like snapshot generation. A browser query param cannot select a
@@ -61,14 +61,11 @@ export class BriefController {
   async today(
     @CurrentUser() principal: { userId: string },
     @CurrentMailbox() mailbox: { id: string },
-  ): Promise<Envelope<Brief>> {
+  ): Promise<Envelope<Brief | null>> {
     const accountId = mailbox.id;
     const user = await this.users.findById(principal.userId);
     const today = resolvePersistedBriefTodayLocal(new Date(), user?.timezone);
     const brief = await this.reads.getForDate(accountId, today, principal.userId);
-    if (!brief) {
-      throw notFound('Brief not found for today.');
-    }
     return ok(brief);
   }
 
