@@ -116,9 +116,9 @@ export function renderSandboxPayPage(clientToken: string, transactionId: string)
 Paddle.Environment.set("sandbox");
 window.__paddleEvents = [];
 function remember(event) {
-  var name = event && /^checkout\\.[a-z.]{1,60}$/.test(event.name) ? event.name : "";
+  var name = event && typeof event.name === "string" && /^checkout\\.[a-z.]{1,60}$/.test(event.name) ? event.name : "";
   if (!name || window.__paddleEvents.length >= 20) return;
-  var code = event && /^[a-z0-9_]{1,64}$/.test(event.code) ? ":" + event.code : "";
+  var code = event && typeof event.code === "string" && /^[a-z0-9_]{1,64}$/.test(event.code) ? ":" + event.code : "";
   window.__paddleEvents.push(name + code);
 }
 var ready = Paddle.Initialize({

@@ -116,8 +116,21 @@ completed` and `checkoutFrames` empty. Paddle's `checkout.url` was
   transaction never left unpaid. That matcher also matches PayPal,
   and the card number could be filled without the expiry and CVC.
   The card submit now requires all three fields and ignores wallet
-  buttons. The artifact keeps safe checkout events, console lines,
-  frame hosts, and screenshots under `pass-sandbox-shots`. The log
+  buttons. Run 38210727233 on `5f5c697e` still left the transaction
+  `ready`. The page shot was blank, the overlay shot was the spinner,
+  and the timeout shot was the one-page form: email, United States,
+  and ZIP `10001` were already set, while Name on card, the card
+  number, MM/YY, and CVV were empty. Pay `$20.69` was on screen.
+  There was no 3DS frame and no Paddle error. `checkoutCard` and
+  `checkoutPay` were `missing`. The finder stopped on the first match
+  and required it to be visible, so it never typed the one-page inputs
+  (`cardNumberInput`, `expiryDateField`, `cardVerificationValueInput`,
+  `cardholderNameInput`). An empty cardholder name fails Paddle's own
+  check. The payer now types those four controls and records
+  `checkoutFields` as absent, hidden, shown, typed, or disabled.
+  Event names no longer append the string `undefined`. The artifact
+  keeps safe checkout events, console lines, frame hosts, and
+  screenshots under `pass-sandbox-shots`. The log
   line is `rehearsal.provider_code=` plus that code only. The
   one-time body stays `collection_mode: automatic`
   with quantity 1 and no `billing_cycle`. The token is revoked on

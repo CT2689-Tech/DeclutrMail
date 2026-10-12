@@ -414,6 +414,7 @@ function noteUnpaid(unpaid: CheckoutPayFailure) {
   evidence.checkoutEvents = unpaid.events;
   evidence.checkoutConsole = unpaid.consoleLines;
   evidence.checkoutShots = unpaid.shots;
+  evidence.checkoutFields = unpaid.fields;
 }
 async function failUnpaid(unpaid: CheckoutPayFailure, id: string): Promise<never> {
   noteUnpaid(unpaid);
