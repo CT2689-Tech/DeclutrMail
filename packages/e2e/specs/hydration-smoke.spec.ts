@@ -1,6 +1,8 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
 
 import { ApiClient, requireLiveStack } from '../helpers/api';
+import { dbConnect } from '../helpers/db';
+import { BILLING_SEED } from '../helpers/seed-billing';
 
 test.use({ locale: 'de-DE', timezoneId: 'Asia/Kolkata' });
 
@@ -113,6 +115,103 @@ async function expectRouteHydrates(page: Page, route: string): Promise<void> {
   ).toHaveCount(0);
   expect(hydrationErrors, `${route} hydration diagnostics`).toEqual([]);
 }
+
+/** Enough repeats to hit the races that showed up in 6 of 18 and 16 of 18 loads. */
+const HYDRATION_LOADS = 6;
+
+async function expectLoadsHydrate(
+  page: Page,
+  route: string,
+  settled: () => Promise<void>,
+): Promise<void> {
+  const hydrationErrors: string[] = [];
+  const onConsole = (message: ConsoleMessage) => {
+    const text = message.text();
+    if (
+      message.type() === 'error' &&
+      (text.includes('Hydration failed') || text.includes('Minified React error #418'))
+    ) {
+      hydrationErrors.push(text);
+    }
+  };
+  const onPageError = (error: Error) => hydrationErrors.push(error.message);
+  page.on('console', onConsole);
+  page.on('pageerror', onPageError);
+  try {
+    for (let load = 1; load <= HYDRATION_LOADS; load += 1) {
+      hydrationErrors.length = 0;
+      const response = await page.goto(route, { waitUntil: 'domcontentloaded' });
+      await page.locator('body').waitFor({ state: 'visible' });
+      await page.waitForTimeout(750);
+      expect(response?.status(), `${route} load ${load}`).toBe(200);
+      expect(hydrationErrors, `${route} load ${load} hydration diagnostics`).toEqual([]);
+      await settled();
+    }
+  } finally {
+    page.off('console', onConsole);
+    page.off('pageerror', onPageError);
+  }
+}
+
+test('Pro Brief with undecided consent hydrates across repeated loads', async ({ page }) => {
+  test.setTimeout(180_000);
+  const sql = dbConnect();
+  const [before] = await sql<{ tier: string }[]>`
+    SELECT tier FROM workspaces WHERE id = ${BILLING_SEED.workspaceId}
+  `;
+  try {
+    await sql`UPDATE workspaces SET tier = 'pro' WHERE id = ${BILLING_SEED.workspaceId}`;
+    await sql`
+      UPDATE users SET
+        ai_consent_version = NULL,
+        ai_explanations_consent_at = NULL,
+        ai_explanations_revoked_at = NULL,
+        ai_consent_scopes = NULL,
+        ai_consent_declined_at = NULL,
+        brief_ai_consent_at = NULL,
+        brief_ai_consent_version = NULL,
+        brief_ai_consent_revoked_at = NULL,
+        brief_ai_declined_at = NULL
+      WHERE id = ${BILLING_SEED.userId}
+    `;
+    await expectLoadsHydrate(page, '/brief', async () => {
+      await expect(
+        page.getByRole('heading', { name: 'Use AI to explain and summarize?' }),
+      ).toBeVisible();
+    });
+  } finally {
+    if (before) {
+      await sql`UPDATE workspaces SET tier = ${before.tier} WHERE id = ${BILLING_SEED.workspaceId}`;
+    }
+    await sql.end();
+  }
+});
+
+test('billing hydrates across repeated loads when the subscription read is disabled', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.context().addCookies([
+    {
+      name: 'dm_e2e_billing_dark',
+      value: '1',
+      url: process.env.E2E_WEB_URL ?? 'http://127.0.0.1:3104',
+    },
+  ]);
+  await page.route('**/api/billing/subscription', (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    return route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: { code: 'BILLING_DISABLED', message: 'Billing is not available yet.' },
+      }),
+    });
+  });
+  await expectLoadsHydrate(page, '/billing', async () => {
+    await expect(page.getByTestId('billing-disabled-notice')).toBeVisible();
+  });
+});
 
 for (const route of HYDRATED_ROUTES) {
   test(`server-hydrated route mounts without recovery: ${route}`, async ({ page }) => {

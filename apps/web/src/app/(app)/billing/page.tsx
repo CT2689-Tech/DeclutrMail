@@ -26,7 +26,7 @@ import { parseBillingIntentParams } from '@/features/billing/parse-billing-inten
 import { defaultProviderForCountry } from '@/features/billing/billing-region';
 import { isPricingV2 } from '@declutrmail/shared/entitlements';
 import { hasServerAccessCookie } from '@/features/auth/api/server-me';
-import { serverGet } from '@/lib/api/server';
+import { ServerApiError, serverGet } from '@/lib/api/server';
 import { ServerQueryHydration } from '@/lib/server-query-hydration';
 import { COUNTRY_HEADER } from '@/middleware';
 
@@ -54,6 +54,12 @@ export default async function BillingPage({
   const country = requestHeaders.get(COUNTRY_HEADER);
   const cookieHeader = requestHeaders.get('cookie') ?? '';
   const eligible = hasServerAccessCookie(cookieHeader);
+  // The hydration smoke sets this cookie so the server paints the loading
+  // placeholder while the browser is handed a 503. Production has no
+  // E2E_ISOLATED, so the cookie does nothing there.
+  const e2eBillingDark =
+    process.env.E2E_ISOLATED === '1' &&
+    cookieHeader.split(';').some((part) => part.trim() === 'dm_e2e_billing_dark=1');
   return (
     <ServerQueryHydration
       surface="billing"
@@ -62,7 +68,17 @@ export default async function BillingPage({
           ? []
           : [
               queryClient.fetchQuery(
-                billingSubscriptionQueryOptions(() => getServerBillingSubscription(cookieHeader)),
+                billingSubscriptionQueryOptions(() =>
+                  e2eBillingDark
+                    ? Promise.reject(
+                        new ServerApiError(
+                          503,
+                          { error: { code: 'BILLING_DISABLED' } },
+                          'Billing is not available yet.',
+                        ),
+                      )
+                    : getServerBillingSubscription(cookieHeader),
+                ),
               ),
             ]
       }
