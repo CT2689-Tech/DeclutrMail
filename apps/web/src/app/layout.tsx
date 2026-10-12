@@ -23,6 +23,12 @@ const fraunces = Fraunces({
   display: 'swap',
 });
 
+/** Public commit marker for post-merge checks. Short SHA only. */
+function buildShaMeta(sha: string | undefined): string {
+  if (typeof sha !== 'string' || !/^[a-f0-9]{7,40}$/.test(sha)) return '';
+  return sha.slice(0, 7);
+}
+
 export const metadata: Metadata = {
   // Site-wide base so per-page relative canonical / og:url values
   // resolve against the canonical origin (D128 — declutrmail.com).
@@ -31,6 +37,8 @@ export const metadata: Metadata = {
   description: 'A Gmail sender-control companion with live previews and Activity undo.',
   // Bing Webmaster Tools site ownership (public token, not a secret).
   verification: { other: { 'msvalidate.01': '9DD83ACF317403960E2CC3F5D9181A78' } },
+  // <meta name="build-sha"> — Vercel's commit, not a secret.
+  other: { 'build-sha': buildShaMeta(process.env.VERCEL_GIT_COMMIT_SHA) },
 };
 
 /**

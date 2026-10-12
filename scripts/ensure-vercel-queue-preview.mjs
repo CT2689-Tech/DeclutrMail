@@ -50,8 +50,6 @@ export async function ensureQueuePreview(env = process.env, fetcher = fetch) {
     const suffix = url.slice(deploymentUrl.length).split(/[?#]/)[0];
     return /^[A-Za-z0-9]+$/.test(suffix) ? `dpl_${suffix}` : '';
   };
-  // The required check is satisfied only if its latest status is Vercel's own
-  // ignore-step success for exactly this deployment of this project.
   const latestVercelStatus = async () => {
     const statuses = await request(
       `https://api.github.com/repos/${repository}/commits/${sha}/statuses?per_page=100`,
@@ -59,16 +57,6 @@ export async function ensureQueuePreview(env = process.env, fetcher = fetch) {
     );
     if (!Array.isArray(statuses)) throw new Error('Queue commit statuses are unavailable');
     return statuses.find((s) => s.context === 'Vercel') ?? null;
-  };
-  const ignoredByVercel = async (id) => {
-    if (!/^dpl_[A-Za-z0-9]+$/.test(id ?? '')) return false;
-    const latest = await latestVercelStatus();
-    return (
-      latest?.state === 'success' &&
-      latest.creator?.login === 'vercel[bot]' &&
-      latest.description === 'Canceled by Ignored Build Step' &&
-      latest.target_url === `${deploymentUrl}${id.slice('dpl_'.length)}`
-    );
   };
   if (!(await current())) return { state: 'stale' };
 
@@ -83,10 +71,17 @@ export async function ensureQueuePreview(env = process.env, fetcher = fetch) {
   );
   if (existing) {
     const state = existing.state ?? existing.readyState;
-    // The Ignored Build Step cancels the deployment yet posts a successful
-    // required check, so there is nothing to recover.
     const id = existing.uid ?? existing.id;
-    if (state === 'CANCELED' && (await ignoredByVercel(id))) return { state: 'ignored', id };
+    // Ignored Build Step cancels the deployment. Vercel posts
+    // "Canceled by Ignored Build Step" on the base SHA, not this queue
+    // SHA (runs 38283948924 and 38290639082), so the queue commit often
+    // has no Vercel status. A cancel with no failure status is that
+    // ignore. A Vercel failure/error status, or any other terminal
+    // state, is a real build failure.
+    if (state === 'CANCELED') {
+      const latest = await latestVercelStatus();
+      if (latest?.state !== 'failure' && latest?.state !== 'error') return { state: 'ignored', id };
+    }
     if (!activeStates.includes(state))
       throw new Error(
         'Existing queue preview failed or was cancelled; diagnose it before retrying',
