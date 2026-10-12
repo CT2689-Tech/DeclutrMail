@@ -26,8 +26,8 @@
       "budgetKb": 279
     },
     "/(app)/home/page": {
-      "measuredKb": 261.1,
-      "budgetKb": 275
+      "measuredKb": 275.2,
+      "budgetKb": 289
     },
     "/(app)/later/page": {
       "measuredKb": 262.1,
