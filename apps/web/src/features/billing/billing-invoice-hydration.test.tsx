@@ -269,6 +269,126 @@ it('keeps the streamed invoice skeleton when the fulfilled payload is already in
   }
 });
 
+it('hydrates invoices deterministically when billing resolves immediately', async () => {
+  // Near-zero latency hits three moments. Resolving before the snapshot
+  // paints the list on both sides. Resolving after the HTML is flushed
+  // keeps the skeleton. Resolving between those two — the read settles
+  // and the server renders again before flush — used to paint the list
+  // over the skeleton the client still hydrates (React #418, about 6%
+  // of instant loads).
+  installMatchMedia();
+  const failures: string[] = [];
+  const modes = ['before-snapshot', 'before-flush', 'after-html'] as const;
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const mode = modes[attempt % modes.length]!;
+    const failure = await hydrateInstantInvoices(mode);
+    if (failure) failures.push(`${mode} #${attempt}: ${failure}`);
+  }
+  expect(failures).toEqual([]);
+});
+
+async function hydrateInstantInvoices(
+  mode: 'before-snapshot' | 'before-flush' | 'after-html',
+): Promise<string | null> {
+  const source = new QueryClient();
+  let resolve!: (value: typeof INVOICES) => void;
+  const created = source.fetchQuery({
+    queryKey: billingKeys.invoices(),
+    queryFn: () =>
+      new Promise<typeof INVOICES>((done) => {
+        resolve = done;
+      }),
+  });
+  void created.catch(() => undefined);
+  if (mode === 'before-snapshot') {
+    resolve(INVOICES);
+    await created;
+  }
+  const state = dehydrate(source, {
+    shouldDehydrateQuery: (query) =>
+      query.state.status === 'success' ||
+      (query.state.status === 'pending' && query.state.fetchStatus === 'fetching'),
+  });
+  const tree = (client: QueryClient, snapshot: DehydratedState) => (
+    <QueryClientProvider client={client}>
+      <QueryHydrationBoundary state={snapshot}>
+        <InvoiceHistory enabled />
+      </QueryHydrationBoundary>
+    </QueryClientProvider>
+  );
+  const server = new QueryClient();
+  let html = renderToString(tree(server, state));
+  if (mode !== 'before-snapshot') {
+    resolve(INVOICES);
+    await created;
+    await server.getQueryCache().find({ queryKey: billingKeys.invoices() })?.promise;
+  }
+  if (mode === 'before-flush') {
+    if (server.getQueryData(billingKeys.invoices()) == null) {
+      source.clear();
+      server.clear();
+      return 'server cache never received the instant invoice payload';
+    }
+    html = renderToString(tree(server, state));
+  }
+  if (mode === 'before-snapshot') {
+    if (!html.includes('View invoice') || html.includes('Loading invoices')) {
+      source.clear();
+      server.clear();
+      return `expected the settled list in the snapshot HTML, got ${html.slice(0, 180)}`;
+    }
+  } else if (!html.includes('Loading invoices') || html.includes('View invoice')) {
+    source.clear();
+    server.clear();
+    return `expected the flushed skeleton, got ${html.slice(0, 180)}`;
+  }
+
+  const clientState: DehydratedState =
+    mode === 'before-snapshot'
+      ? state
+      : {
+          ...state,
+          queries: state.queries.map((query) =>
+            query.queryKey.join('|') === billingKeys.invoices().join('|')
+              ? {
+                  ...query,
+                  promise: {
+                    then(onFulfilled: (value: typeof INVOICES) => unknown) {
+                      onFulfilled(INVOICES);
+                    },
+                  } as unknown as Promise<unknown>,
+                }
+              : query,
+          ),
+        };
+  const client = new QueryClient();
+  const container = document.createElement('div');
+  document.body.append(container);
+  container.innerHTML = html;
+  const errors: unknown[] = [];
+  let root!: ReturnType<typeof hydrateRoot>;
+  try {
+    await act(async () => {
+      root = hydrateRoot(container, tree(client, clientState), {
+        onRecoverableError: (error) => errors.push(error),
+      });
+    });
+    if (errors.length > 0) return errors.map(String).join('\n');
+    await waitFor(() => {
+      if (!container.textContent?.includes('View invoice')) {
+        throw new Error(container.textContent?.slice(0, 180) ?? '');
+      }
+    });
+    return null;
+  } finally {
+    await act(async () => root?.unmount());
+    container.remove();
+    source.clear();
+    server.clear();
+    client.clear();
+  }
+}
+
 it('renders a settled invoice result when the stream was not pending', () => {
   const source = new QueryClient();
   source.setQueryData(billingKeys.invoices(), PROVIDER_UNAVAILABLE);
