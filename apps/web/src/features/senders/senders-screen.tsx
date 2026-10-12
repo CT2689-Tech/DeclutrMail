@@ -1,5 +1,6 @@
 'use client';
 
+import { AiInlinePrompt } from '@/features/ai-consent/ai-inline-prompt';
 import { EditorialKicker } from '@/features/editorial/page';
 
 import { reconcileAction } from '@/lib/api/reconcile-action';
@@ -2750,6 +2751,7 @@ function SendersScreenContent({
             </p>
           </div>
         </header>
+        <AiInlinePrompt />
         <div className={workspaceStyles.listColumn}>
           <section
             aria-label="Sender search and filters"

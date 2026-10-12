@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 
 import { Button, tokens } from '@declutrmail/shared';
@@ -9,7 +8,7 @@ import { consentCard } from '@declutrmail/shared/ai-consent';
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { hasCapability } from '@declutrmail/shared/entitlements';
 
-import { useTier } from '@/features/auth/api/use-tier';
+import { useOptionalAuth } from '@/features/auth/auth-provider';
 import { readMeSettings } from '@/features/settings/api/me-settings-reader';
 import { meSettingsQueryOptions } from '@/features/settings/api/query-options';
 
@@ -32,16 +31,14 @@ export function AiInlineConsentInset({ children }: { children: ReactNode }) {
  * card. Choosing on the card, or two dismissals, ends the nudge.
  */
 export function AiInlinePrompt() {
-  const pathname = usePathname();
-  const onSurface = pathname === '/triage' || pathname === '/senders';
-  const settings = useQuery({ ...meSettingsQueryOptions(readMeSettings), enabled: onSurface });
-  const { tier } = useTier();
+  const settings = useQuery(meSettingsQueryOptions(readMeSettings));
+  const auth = useOptionalAuth();
   const [open, setOpen] = useState(false);
   const [hidden, setHidden] = useState(false);
   const view = settings.data?.aiConsent;
-  if (!onSurface || !view || hidden) return null;
+  if (!view || hidden) return null;
 
-  const briefCapable = hasCapability(tier, 'brief');
+  const briefCapable = hasCapability(auth?.me.tier ?? 'free', 'brief');
   const paused = view.explanations === 'paused' || (briefCapable && view.brief === 'paused');
   if (paused) return null;
 

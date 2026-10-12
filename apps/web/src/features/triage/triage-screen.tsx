@@ -8,6 +8,7 @@ import {
   EditorialKicker,
 } from '@/features/editorial/page';
 
+import { AiInlinePrompt } from '@/features/ai-consent/ai-inline-prompt';
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { useSenderInFlightLock } from '@/features/undo/in-flight';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -1719,6 +1720,8 @@ export function TriageScreen({
           )}
         </div>
       )}
+
+      {journey === 'daily' && <AiInlinePrompt />}
 
       {journey === 'daily' && (
         <ScreenIntro

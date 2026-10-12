@@ -101,6 +101,9 @@ import {
   resetFetchStub,
   type FetchStubHandler,
 } from '@/test/fetch-stub';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+
+import { ME_SETTINGS_QUERY_KEY } from '@/features/settings/api/query-options';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { useSendersStore } from './store';
 import { sendersKeys } from './api/query-keys';
@@ -5223,6 +5226,23 @@ describe('SendersScreen — one list, detail pane, pagination & load more (D202)
       screen.queryByRole('button', { name: /^(grid|table|compact|comfortable)$/i }),
     ).toBeNull();
     expect(screen.getByRole('heading', { level: 1, name: 'Senders' })).toBeInTheDocument();
+  });
+
+  it('places the opened consent card under the Senders title', async () => {
+    installFetchStub([oneSenderHandler()]);
+    const client = createTestQueryClient();
+    lastClient = client;
+    client.setQueryData(ME_SETTINGS_QUERY_KEY, {
+      aiConsent: { explanations: 'review', brief: 'unset', reask: true },
+    });
+    render(
+      <QueryWrapper client={client}>
+        <SendersScreen />
+      </QueryWrapper>,
+    );
+    const heading = await screen.findByRole('heading', { level: 1, name: 'Senders' });
+    const card = await screen.findByRole('region', { name: WS2_COPY.aiConsent.title.all });
+    expect(heading.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   const ROW_B = {

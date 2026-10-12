@@ -7,9 +7,8 @@ import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 
 import { ME_SETTINGS_QUERY_KEY } from '@/features/settings/api/query-options';
 
-vi.mock('next/navigation', () => ({ usePathname: () => '/triage' }));
 vi.mock('@/features/auth/auth-provider', () => ({
-  useAuth: () => ({
+  useOptionalAuth: () => ({
     me: { tier: 'free', mailboxes: [], inboxLimit: 1, pricingV2: false },
   }),
 }));
