@@ -292,6 +292,39 @@ describe('ActionSheet — live-preview confirm gate', () => {
     },
   );
 
+  it('keeps Don’t ask again checked when the live preview resolves', () => {
+    const onConfirm = vi.fn();
+    const { rerender } = render(
+      <ActionSheet
+        open
+        verb="Archive"
+        row={row}
+        inboxCount="loading"
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+      />,
+    );
+    const remember = screen.getByRole('checkbox', { name: 'Don’t ask again for Archive' });
+    fireEvent.click(remember);
+    expect(remember).toBeChecked();
+
+    rerender(
+      <ActionSheet
+        open
+        verb="Archive"
+        row={row}
+        inboxCount={47}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    const still = screen.getByRole('checkbox', { name: 'Don’t ask again for Archive' });
+    expect(still).toBeChecked();
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ rememberPreference: true }));
+  });
+
   it('keeps the match sample and Gmail check on Unsubscribe + Delete', () => {
     render(
       <ActionSheet
