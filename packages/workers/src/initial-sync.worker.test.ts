@@ -309,6 +309,63 @@ describe('InitialSyncWorker', () => {
     });
   });
 
+  it('does not park a mailbox that reconnected while the refusal was being recorded', async () => {
+    await db.insert(providerSyncState).values({
+      mailboxAccountId,
+      readinessStatus: 'failed',
+      errorCode: 'TransientError',
+      progressPct: 5,
+      lastHistoryId: 123n,
+      lastIncrementalErrorCode: 'InvalidGrantError',
+      lastIncrementalErrorAt: new Date('2026-09-05T23:50:49.000Z'),
+    });
+    const originalUpdate = db.update.bind(db);
+    db.update = ((table: Parameters<typeof db.update>[0]) => {
+      const query = originalUpdate(table);
+      const originalSet = query.set.bind(query);
+      query.set = ((values: { readinessStatus?: string }) => {
+        const next = originalSet(values as never);
+        if (values?.readinessStatus !== 'needs_reconnect') return next;
+        const originalWhere = next.where.bind(next);
+        next.where = ((condition: Parameters<typeof next.where>[0]) => {
+          const reconnected = originalUpdate(providerSyncState)
+            .set({
+              readinessStatus: 'queued',
+              currentStage: 'queued',
+              errorCode: null,
+              initialRetryAt: null,
+              initialRecoveryAttempts: 0,
+              lastIncrementalErrorCode: null,
+              lastIncrementalErrorAt: null,
+            })
+            .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+          return reconnected.then(() => originalWhere(condition));
+        }) as typeof next.where;
+        return next;
+      }) as typeof query.set;
+      return query;
+    }) as typeof db.update;
+    try {
+      const getClient = vi.fn();
+      const worker = new InitialSyncWorker({ db, gmailAccess: { getClient } });
+      const result = await worker.processJob({ mailboxAccountId }, CTX);
+      expect(getClient).not.toHaveBeenCalled();
+      expect(result.gmailApiCalls).toBe(0);
+      const [row] = await db.select().from(providerSyncState);
+      expect(row).toMatchObject({
+        readinessStatus: 'queued',
+        currentStage: 'queued',
+        errorCode: null,
+        progressPct: 5,
+        lastHistoryId: 123n,
+        lastIncrementalErrorCode: null,
+        lastIncrementalErrorAt: null,
+      });
+    } finally {
+      db.update = originalUpdate;
+    }
+  });
+
   function rejectNeedsReconnectWrite(makeError: () => Error): void {
     const original = db.transaction.bind(db);
     db.transaction = (async (callback, config) =>

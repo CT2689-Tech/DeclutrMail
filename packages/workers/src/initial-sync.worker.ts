@@ -41,7 +41,7 @@ import {
   type AutomaticProtectionResult,
 } from './automatic-protection.js';
 import { deletionPendingSql, getSyncMailboxEligibility } from './deletion-pause.js';
-import { isAwaitingReconnect } from './mailbox-reconnect.js';
+import { isAwaitingReconnect, notNeedingReconnect } from './mailbox-reconnect.js';
 import {
   markDecisionsStale,
   messageGmailCategory,
@@ -652,6 +652,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
    * `needs_reconnect` without calling Gmail or sending mail. Saved progress
    * stays. If 0087 is not applied yet, `failed` plus `InvalidGrantError`
    * is the same off-recovery state the terminal path uses.
+   *
+   * The unresolved-grant predicate is part of both writes. A reconnect
+   * can commit `queued` and clear that grant after the awaiting read and
+   * before this update; without it, the update would park the new row.
    */
   private async parkKnownReconnect(mailboxAccountId: string): Promise<void> {
     const parked = {
@@ -664,6 +668,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       eq(providerSyncState.mailboxAccountId, mailboxAccountId),
       sql`${providerSyncState.readinessStatus} <> 'ready'`,
       sql`${providerSyncState.readinessStatus}::text <> 'needs_reconnect'`,
+      sql`NOT (${notNeedingReconnect})`,
     );
     try {
       await this.deps.db
