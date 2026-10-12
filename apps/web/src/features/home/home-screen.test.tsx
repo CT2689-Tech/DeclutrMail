@@ -8,6 +8,7 @@ import { makeQueryClient } from '@/lib/query-client';
 import { installFetchStub, jsonOk, jsonServerError } from '@/test/fetch-stub';
 import { createTestQueryClient } from '@/test/query-wrapper';
 
+import { HOME_DECK } from './home-deck-copy';
 import { HomeScreen } from './home-screen';
 
 const authCell: { me: Me } = { me: meFor('pro', 'ready') };
@@ -98,7 +99,12 @@ interface Stub {
 }
 
 function stub({ summary, queueLength = 0, screenerPending = 0, sync, report, snoozed }: Stub = {}) {
-  const calls = { summary: [] as string[], triage: 0, screener: 0 };
+  const calls = {
+    summary: [] as string[],
+    triage: 0,
+    screener: 0,
+    retryMailbox: null as string | null,
+  };
   installFetchStub([
     {
       method: 'POST',
@@ -163,6 +169,14 @@ function stub({ summary, queueLength = 0, screenerPending = 0, sync, report, sno
       method: 'GET',
       path: '/api/snoozed',
       respond: () => (snoozed ? snoozed() : jsonOk({ data: [] })),
+    },
+    {
+      method: 'POST',
+      path: '/api/v1/sync/initial/retry',
+      respond: (req) => {
+        calls.retryMailbox = req.headers.get('X-Active-Mailbox-Id');
+        return jsonOk({ data: { outcome: 'requeued' } });
+      },
     },
   ]);
   return calls;
@@ -357,11 +371,20 @@ describe('HomeScreen', () => {
 
   it('new user whose scan failed: says so and offers a scoped retry', async () => {
     authCell.me = meFor('pro', 'failed');
-    stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }) });
+    const calls = stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }) });
     renderHome();
-    expect(await screen.findByText('Gmail scan failed.')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: HOME_DECK.failedTitle })).toBeInTheDocument();
+    expect(screen.getByText(HOME_DECK.failedBody)).toBeInTheDocument();
     expect(screen.queryByText('Nothing cleared yet.')).toBeNull();
-    expect(await screen.findByRole('button', { name: 'Scan again' })).toBeEnabled();
+    expect(screen.queryByText('Gmail scan failed.')).toBeNull();
+    expect(screen.getByRole('link', { name: HOME_DECK.failedHelp })).toHaveAttribute(
+      'href',
+      '/help',
+    );
+    fireEvent.click(screen.getByRole('button', { name: HOME_DECK.failedRetry }));
+    await waitFor(() => {
+      expect(calls.retryMailbox).toBe('mb-1');
+    });
   });
 
   it('reports a queued scan without claiming a worker has started', async () => {
@@ -400,7 +423,7 @@ describe('HomeScreen', () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(calls).toEqual({ summary: [], triage: 0, screener: 0 });
+    expect(calls).toEqual({ summary: [], triage: 0, screener: 0, retryMailbox: null });
   });
 
   it('server failure: error state, and Try again recovers', async () => {

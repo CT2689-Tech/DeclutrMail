@@ -247,7 +247,7 @@ test('Home retries the displayed inbox and truthfully reports queued recovery', 
       (res) =>
         res.url().endsWith('/api/v1/sync/initial/retry') && res.request().method() === 'POST',
     );
-    await recovery.getByRole('button', { name: 'Scan again', exact: true }).press('Enter');
+    await recovery.getByRole('button', { name: 'Try again', exact: true }).press('Enter');
     const result = await response;
     expect(result.ok()).toBe(true);
     expect(result.request().headers()['x-active-mailbox-id']).toBe(fixture.mailboxId);

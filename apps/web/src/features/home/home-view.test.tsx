@@ -51,7 +51,7 @@ vi.mock('@/features/inbox-report', () => ({
 import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
 import { ApiError } from '@/lib/api/client';
 
-import { fillDeck, HOME_DECK } from './home-deck-copy';
+import { HOME_DECK, fillDeck } from './home-deck-copy';
 import { homeCalmTemplate, homeReportCopy, homeTileCopy } from './home-ws5-copy';
 import { homePreviewReport } from './home-preview-report';
 import type { HomeFixCandidate } from './home-next-steps';
@@ -411,25 +411,30 @@ describe('HomeView', () => {
     expect(screen.queryByRole('link', { name: /Review 2 today/ })).toBeNull();
   });
 
-  it('sync-failed: says the scan failed and links to Gmail accounts — never "Nothing cleared yet"', () => {
+  it('sync-failed: says the scan stopped and offers retry and help', () => {
     render(<HomeView state={{ kind: 'sync-failed', needsReconnect: false }} />);
-    expect(screen.getByText('Gmail scan failed.')).toBeInTheDocument();
-    expect(screen.getByText('Gmail account needs attention')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: HOME_DECK.failedTitle })).toBeInTheDocument();
+    expect(screen.getByText(HOME_DECK.failedBody)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: HOME_DECK.failedRetry })).toBeEnabled();
+    expect(screen.getByRole('link', { name: HOME_DECK.failedHelp })).toHaveAttribute(
+      'href',
+      '/help',
+    );
+    expect(screen.queryByText('Gmail scan failed.')).toBeNull();
     expect(screen.queryByText('Nothing cleared yet.')).toBeNull();
     expect(screen.queryByTestId('home-hero')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Open Settings' })).toBeNull();
+  });
+
+  it('sync-failed reconnect without a mailbox still points at Gmail accounts', () => {
+    render(<HomeView state={{ kind: 'sync-failed', needsReconnect: true }} />);
+    expect(screen.getByRole('heading', { name: HOME_DECK.failedTitle })).toBeInTheDocument();
+    expect(screen.getByText(failedScanSettingsStep(true))).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open Settings' })).toHaveAttribute(
       'href',
       '/settings#mailboxes',
     );
   });
-
-  it.each([false, true])(
-    'sync-failed: says exactly what failedScanSettingsStep says (needsReconnect=%s)',
-    (needsReconnect) => {
-      render(<HomeView state={{ kind: 'sync-failed', needsReconnect }} />);
-      expect(screen.getByText(failedScanSettingsStep(needsReconnect))).toBeInTheDocument();
-    },
-  );
 
   it('loading: a labelled skeleton and no link', () => {
     render(<HomeView state={{ kind: 'loading' }} />);

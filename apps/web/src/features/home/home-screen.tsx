@@ -39,7 +39,7 @@ import { HomeView } from './home-view';
  * |                               | the scoped cache off this error  |
  * | other summary failure         | ErrorState + retry               |
  * | no decisions, still syncing   | title, status, scan bar          |
- * | no decisions, scan failed     | "Gmail scan failed" + Settings   |
+ * | no decisions, scan failed     | "The scan stopped" + retry       |
  * | no decisions                  | "Nothing cleared yet" + button   |
  * | decisions                     | number + label + button          |
  *

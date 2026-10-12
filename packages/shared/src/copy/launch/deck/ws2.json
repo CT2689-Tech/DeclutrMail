@@ -230,6 +230,12 @@
     },
     "linkActivity": "See your activity",
     "failedEyebrow": "Gmail account needs attention",
+    "failed": {
+      "title": "The scan stopped",
+      "body": "Your progress is saved. Try the scan again, and if it keeps stopping, get help.",
+      "retry": "Try again",
+      "help": "Get help"
+    },
     "queued": {
       "title": "Your scan is waiting to start.",
       "body": "It starts on its own and keeps anything already scanned. You don’t need to keep this page open.",

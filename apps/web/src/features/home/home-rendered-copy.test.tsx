@@ -36,14 +36,12 @@ const steps = [
  * allowed to join this list — they have to come from a deck module.
  */
 const ALLOWED = new Set<string>([
-  'Gmail scan failed.',
   'Loading Home',
   "We couldn't load Home",
   'Review senders',
   'Open Settings',
   'Try again',
   'Later',
-  failedScanSettingsStep(false),
   failedScanSettingsStep(true),
   loadErrorDescription(new ApiError(500, null, 'boom')),
   loadErrorDescription(new Error('offline')),

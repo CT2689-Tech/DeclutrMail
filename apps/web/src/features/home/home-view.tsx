@@ -28,7 +28,7 @@ import {
   homeReportNamesSenders,
   homeTileCopy,
 } from './home-ws5-copy';
-import { HomeScanRecovery } from './home-scan-recovery';
+import { HomeScanFailedCopy, HomeScanRecovery } from './home-scan-recovery';
 import {
   homeV1Mode,
   isRetiredReviewCta,
@@ -272,18 +272,16 @@ function HomeBody({
         <>
           <section className={styles.beginning} aria-label={HOME_DECK.failedEyebrow}>
             <span className={styles.eyebrow}>{HOME_DECK.failedEyebrow}</span>
-            <h2>Gmail scan failed.</h2>
+            <h2>{HOME_DECK.failedTitle}</h2>
             {state.mailboxId ? (
               <HomeScanRecovery mailboxId={state.mailboxId} needsReconnect={state.needsReconnect} />
-            ) : (
+            ) : state.needsReconnect ? (
               <>
-                <p>
-                  {state.needsReconnect
-                    ? 'Reconnect it in Settings → Gmail accounts.'
-                    : 'Scan again in Settings → Gmail accounts.'}
-                </p>
+                <p>Reconnect it in Settings → Gmail accounts.</p>
                 <PrimaryLink action={SYNC_FAILED_ACTION} />
               </>
+            ) : (
+              <HomeScanFailedCopy />
             )}
           </section>
           <TrustLine />

@@ -682,6 +682,13 @@
   margin-top: 14px;
 }
 
+.scanActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+}
+
 .primaryAction {
   min-height: 44px;
 }
