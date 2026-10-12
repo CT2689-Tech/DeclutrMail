@@ -16,6 +16,7 @@ import type { SyncStatus } from '@declutrmail/shared/contracts';
 import {
   useSyncStatus,
   syncRefetchInterval,
+  syncStatusQueryOptions,
   SYNC_POLL_MS,
   SYNC_FAILED_POLL_MS,
   SYNC_READY_POLL_MS,
@@ -230,10 +231,9 @@ describe('useSyncStatus', () => {
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
       const baseline = reads;
       expect(baseline).toBeGreaterThan(0);
-      const cached = client
-        .getQueryCache()
-        .find({ queryKey: [...SYNC_STATUS_KEY, 'mailbox-home'] });
-      expect(cached?.options.refetchIntervalInBackground).toBe(false);
+      expect(
+        syncStatusQueryOptions('mailbox-home', async () => SYNCING).refetchIntervalInBackground,
+      ).toBe(false);
 
       setVisibility('hidden');
       await act(async () => {
