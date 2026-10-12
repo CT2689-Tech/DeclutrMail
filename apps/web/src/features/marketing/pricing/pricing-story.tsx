@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
+import { INR_NEW_PURCHASES_PAUSED } from '@declutrmail/shared/contracts/billing-availability';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import {
   fillStory,
@@ -87,6 +88,9 @@ export function PricingStory({
         <h1>{h1}</h1>
         <p>{fillStory(WS1_COPY['pricing.sub'], locale)}</p>
       </header>
+      {locale === 'inr' && INR_NEW_PURCHASES_PAUSED ? (
+        <p className="dm-pricing-oauth">{WS1_COPY['pricing.inrPaused.notice']}</p>
+      ) : null}
       {banner ? (
         <p className="dm-pricing-promo" data-testid="promo-banner">
           {banner}
@@ -156,7 +160,7 @@ export function PricingStory({
         <h2>{fillStory(WS1_COPY['pricing.faq.taxes.q'], locale)}</h2>
         <p>{fillStory(WS1_COPY['pricing.faq.taxes.a'], locale)}</p>
         <h2>{fillStory(WS1_COPY['pricing.faq.india.q'], locale)}</h2>
-        <p>{indiaFaqAnswer(passEnabled, 'inr')}</p>
+        <p>{indiaFaqAnswer(passEnabled, 'inr', INR_NEW_PURCHASES_PAUSED)}</p>
       </section>
       <section data-testid="price-promise">
         <h2>{fillStory(WS1_COPY['pricing.promise.title'], locale)}</h2>

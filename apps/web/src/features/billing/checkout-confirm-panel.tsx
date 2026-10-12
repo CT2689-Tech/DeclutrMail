@@ -100,7 +100,7 @@ export function ConfirmPanel({
       ? fillStory(WS1_COPY['checkout.pass.summary'], storyLocale)
       : fillStory(WS1_COPY['checkout.plus.summary'], storyLocale);
   const impact = checkoutPaused
-    ? `${amountLabel ? `Reference price: ${amountLabel}${pricingV2 ? '' : `/${cycle === 'annual' ? 'yr' : 'mo'}`}. ` : ''}New INR purchases are temporarily paused. Existing INR subscriptions can still be managed from Billing. Contact support@declutrmail.com for help.`
+    ? `${amountLabel ? `Reference price: ${amountLabel}${pricingV2 ? '' : `/${cycle === 'annual' ? 'yr' : 'mo'}`}. ` : ''}${WS1_COPY['pricing.inrPaused.checkout']}`
     : pricingV2
       ? launchImpact
       : amountLabel !== null
@@ -146,7 +146,7 @@ export function ConfirmPanel({
               title="UPI · cards · netbanking (India)"
               detail={
                 INR_NEW_PURCHASES_PAUSED
-                  ? 'New INR purchases temporarily paused'
+                  ? WS1_COPY['pricing.inrPaused.button']
                   : 'INR pricing — secure checkout by Razorpay'
               }
             />
@@ -240,7 +240,7 @@ export function ConfirmPanel({
           disabled={isPending || pricePoint === null || checkoutPaused}
         >
           {checkoutPaused
-            ? 'INR checkout paused'
+            ? WS1_COPY['pricing.inrPaused.button']
             : isPending
               ? fillStory(WS1_COPY['checkout.opening'])
               : pricingV2

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ACTION_SAFETY_SUMMARY, OAUTH_SCOPE_DISCLOSURE } from '@declutrmail/shared';
 import { TIER_MANIFEST, type TierDefinition } from '@declutrmail/shared/entitlements';
 import { INR_NEW_PURCHASES_PAUSED } from '@declutrmail/shared/contracts/billing-availability';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 
 import { useRegionProvider } from '@/features/billing/billing-currency';
 import {
@@ -68,6 +69,7 @@ export function PricingScreen() {
   // the one the tier ladder is designed around — two months free — so
   // opening on monthly quoted the worse number first.
   const [interval, setInterval] = useState<BillingInterval>('annual');
+  const region = useRegionProvider();
 
   useConsentedPageView('pricing');
 
@@ -86,11 +88,8 @@ export function PricingScreen() {
         </p>
       </header>
 
-      {INR_NEW_PURCHASES_PAUSED && (
-        <p className="dm-pricing-oauth">
-          New INR purchases are temporarily paused; INR prices are shown for reference. Existing INR
-          subscriptions can still be managed from Billing.
-        </p>
+      {region === 'razorpay' && INR_NEW_PURCHASES_PAUSED && (
+        <p className="dm-pricing-oauth">{WS1_COPY['pricing.inrPaused.notice']}</p>
       )}
 
       <div className="dm-pricing-toggle-wrap">

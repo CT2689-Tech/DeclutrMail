@@ -549,9 +549,16 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     );
     const panel = await screen.findByTestId('checkout-panel');
     expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeChecked();
-    const paused = within(panel).getByRole('button', { name: 'INR checkout paused' });
+    const paused = within(panel).getByRole('button', { name: 'Paused for now' });
     expect(paused).toBeDisabled();
-    expect(within(panel).getByText(/New INR purchases are temporarily paused/)).toBeInTheDocument();
+    expect(panel).toHaveTextContent(
+      'Buying a plan in rupees is paused for now. Email support@declutrmail.com for help.',
+    );
+    expect(
+      within(panel)
+        .getByLabelText(/UPI · cards · netbanking/)
+        .closest('label'),
+    ).toHaveTextContent('Paused for now');
     expect(within(panel).queryByText(/billed monthly, starting today/)).not.toBeInTheDocument();
     fireEvent.click(paused);
     expect(launchCheckout).not.toHaveBeenCalled();
@@ -2033,8 +2040,7 @@ describe('BillingScreen — checkout funnel events', () => {
     {
       code: 'BILLING_NOT_PROVISIONED',
       reason: 'inr_checkout_paused',
-      message:
-        'New INR purchases are temporarily paused. Contact support@declutrmail.com for help.',
+      message: 'Buying a plan in rupees is paused for now. Email support@declutrmail.com for help.',
     },
   ])(
     'pre-claim $code failure releases the reservation and never creates a session',

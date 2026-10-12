@@ -10,6 +10,7 @@ import {
   CONNECTION_TERM,
 } from '../copy/screen-decisions';
 import { WS1_COPY } from '../copy/launch/ws1';
+import { INR_NEW_PURCHASES_PAUSED } from '../contracts/billing-availability';
 import {
   INBOXES,
   METER,
@@ -378,10 +379,18 @@ export function buildOffersJsonLd(listed?: ListedOfferOverride): object[] {
   return offers;
 }
 
-/** India FAQ with the Pass clause removed. The deck has no separate pass-off key. */
-export function indiaFaqAnswer(passEnabled: boolean, locale: 'usd' | 'inr' = 'inr'): string {
+/** India FAQ with the Pass clause removed. The deck has no separate pass-off key.
+ * The paused line is the India answer only while new INR purchases are paused. */
+export function indiaFaqAnswer(
+  passEnabled: boolean,
+  locale: 'usd' | 'inr' = 'inr',
+  purchasesPaused = INR_NEW_PURCHASES_PAUSED,
+): string {
   const values = storyValues(locale);
-  const full = fill(WS1_COPY['pricing.faq.india.a'], values);
+  const template = purchasesPaused
+    ? WS1_COPY['pricing.faq.india.a.paused']
+    : WS1_COPY['pricing.faq.india.a'];
+  const full = fill(template, values);
   if (passEnabled) return full;
   const clause = ` and ${values.passPrice} once for the ${values.passName}`;
   return full.replace(clause, '');
