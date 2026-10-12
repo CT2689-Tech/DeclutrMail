@@ -148,6 +148,7 @@ describe('Home copy', () => {
       screen.getByRole('heading', { name: sinceLastCount(sinceLast.title, 142) }),
     ).toBeInTheDocument();
     expect(screen.getByText(sinceLastCount(sinceLast.senders, 3))).toBeInTheDocument();
+    expect(screen.queryByText(/previous visit/)).toBeNull();
     expect(renderedCopy(document.body).some((text) => /index/i.test(text))).toBe(false);
     unmount();
 
@@ -166,7 +167,7 @@ describe('Home copy', () => {
   });
 
   it('uses the none line when no new email was scanned', () => {
-    render(
+    const { unmount } = render(
       <HomeArrivalsView
         data={{ ...visit, indexedEmails: 0, indexedSenders: 0 }}
         error={false}
@@ -174,7 +175,21 @@ describe('Home copy', () => {
       />,
     );
     expect(screen.getByRole('heading', { name: sinceLast.none })).toHaveTextContent(sinceLast.none);
-    expect(screen.getByText(sinceLastCount(sinceLast.senders, 0))).toBeInTheDocument();
+    expect(screen.queryByText(sinceLastCount(sinceLast.senders, 0))).toBeNull();
+    expect(screen.queryByText(/previous visit/)).toBeNull();
     expect(renderedCopy(document.body).some((text) => /index/i.test(text))).toBe(false);
+    unmount();
+
+    render(
+      <HomeArrivalsView
+        data={{ ...visit, indexedEmails: 4, indexedSenders: 0 }}
+        error={false}
+        retry={() => undefined}
+      />,
+    );
+    expect(
+      screen.getByRole('heading', { name: sinceLastCount(sinceLast.title, 4) }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/sender/)).toBeNull();
   });
 });

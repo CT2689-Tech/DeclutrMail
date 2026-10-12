@@ -41,14 +41,13 @@ export function HomeArrivalsView({
   if (!data?.since || data.indexedEmails === null || data.indexedSenders === null) return null;
   const title =
     data.indexedEmails === 0 ? sinceLast.none : sinceLastCount(sinceLast.title, data.indexedEmails);
+  const senders =
+    data.indexedSenders === 0 ? null : sinceLastCount(sinceLast.senders, data.indexedSenders);
   return (
     <section className={`${styles.beginning} ${styles.arrivals}`} aria-label={sinceLast.eyebrow}>
       <span className={styles.eyebrow}>{sinceLast.eyebrow}</span>
       <h2>{title}</h2>
-      <p>{sinceLastCount(sinceLast.senders, data.indexedSenders)}</p>
-      <p className={styles.footnote}>
-        From your previous visit until this visit began. Existing review tasks appear below.
-      </p>
+      {senders !== null && <p>{senders}</p>}
     </section>
   );
 }
