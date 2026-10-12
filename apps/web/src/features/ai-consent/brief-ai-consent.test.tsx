@@ -1,4 +1,6 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import { hydrateRoot } from 'react-dom/client';
+import { renderToString } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -27,6 +29,45 @@ function renderBrief() {
     </QueryClientProvider>,
   );
 }
+
+it('shows an undecided Brief card only after hydration', async () => {
+  const title = WS2_COPY.aiConsent.title.withBrief.replaceAll('{BRIEF_NAME}', BRIEF_NAME);
+  const server = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const html = renderToString(
+    <QueryClientProvider client={server}>
+      <BriefAiConsent />
+    </QueryClientProvider>,
+  );
+  expect(html).not.toContain(title);
+
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client.setQueryData(ME_SETTINGS_QUERY_KEY, {
+    aiConsent: { explanations: 'unset', brief: 'unset', reask: false },
+  });
+  const errors: unknown[] = [];
+  const container = document.createElement('div');
+  container.innerHTML = html;
+  document.body.appendChild(container);
+  let root!: ReturnType<typeof hydrateRoot>;
+  try {
+    await act(async () => {
+      root = hydrateRoot(
+        container,
+        <QueryClientProvider client={client}>
+          <BriefAiConsent />
+        </QueryClientProvider>,
+        { onRecoverableError: (error) => errors.push(error) },
+      );
+    });
+    expect(errors).toEqual([]);
+    expect(container.textContent).toContain(title);
+  } finally {
+    await act(async () => root?.unmount());
+    container.remove();
+    server.clear();
+    client.clear();
+  }
+});
 
 describe('BriefAiConsent after a Brief decline', () => {
   it('hides the upgrade card until a recorded re-ask is due', async () => {

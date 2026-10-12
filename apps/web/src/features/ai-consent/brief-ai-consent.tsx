@@ -12,6 +12,7 @@ import { hasCapability } from '@declutrmail/shared/entitlements';
 import { useOptionalAuth } from '@/features/auth/auth-provider';
 import { readMeSettings } from '@/features/settings/api/me-settings-reader';
 import { meSettingsQueryOptions } from '@/features/settings/api/query-options';
+import { useHydrated } from '@/lib/use-hydrated';
 
 import { AiConsentCard } from './ai-consent-card';
 import { AI_PROMPT_CHANGED, briefUpgradeDue } from './ai-prompt-queue';
@@ -28,10 +29,15 @@ function fillBrief(template: string): string {
  * A decline stays on that note until the stored version changes or the
  * 30-day re-ask is due. The re-ask reads localStorage only after mount
  * so the server render and the first client paint agree.
+ *
+ * The card itself waits for that same mount. Settings are not in this
+ * page's server snapshot, and a client cache that already has an
+ * undecided Pro grant would paint the card into HTML that has none.
  */
 export function BriefAiConsent() {
   const settings = useQuery(meSettingsQueryOptions(readMeSettings));
   const auth = useOptionalAuth();
+  const hydrated = useHydrated();
   const tier = auth?.me.tier ?? 'free';
   const view = settings.data?.aiConsent;
   const [upgradeDue, setUpgradeDue] = useState(false);
@@ -43,7 +49,7 @@ export function BriefAiConsent() {
     return () => window.removeEventListener(AI_PROMPT_CHANGED, sync);
   }, []);
 
-  if (!view || !hasCapability(tier, 'brief')) return null;
+  if (!hydrated || !view || !hasCapability(tier, 'brief')) return null;
 
   const gated = consentCard(view, true);
   const reaskUpgrade =
