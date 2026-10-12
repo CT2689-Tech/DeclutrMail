@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import {
+  formatReportSize,
   reportFallback,
   reportGlyph,
   reportHeadline,
@@ -20,6 +21,8 @@ import {
 import { UnsubscribeBacklogDialog } from '@/features/senders/unsubscribe-backlog/unsubscribe-backlog-dialog';
 import type { ActionRequest } from '@/features/senders/data';
 import { useBulkActionPreview, useCompositePreview } from '@/lib/api/use-action';
+
+import type { ReportCelebration } from './seen';
 
 import './report.css';
 
@@ -182,7 +185,7 @@ export function InboxReportPanel({
   onFixConfirmed?: (mode: 'archive' | 'delete' | 'unsub_only') => void;
   onReview?: () => void;
   trustHref?: string;
-  celebration?: { archived: number; senders: number } | null;
+  celebration?: ReportCelebration | null;
   /**
    * Signed-in mailbox. When set, Archive and Delete wait for a live
    * preview count instead of the cached report figure.
@@ -209,6 +212,8 @@ export function InboxReportPanel({
       ? pluralCopy(fixCopy, report.fix.sendersCount, { n: report.fix.sendersCount })
       : '';
   const allowance = TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0;
+  const doneLine = celebration ? celebrationSentence(celebration) : null;
+  const requestLine = celebration ? celebrationRequestLine(celebration) : null;
   const plusPrice = money(TIER_MANIFEST.plus.prices.annual?.usdCents);
 
   return (
@@ -239,48 +244,63 @@ export function InboxReportPanel({
             </div>
           ) : (
             <div>
-              {headline?.figure ? (
-                <ReportCount figure={headline.figure} mailboxId={mailboxId} />
-              ) : null}
-              {headline ? (
-                <p
-                  className="dm-report-sentence"
-                  data-report-sentence
-                  data-reveal
-                  style={{ ['--i' as string]: 1 }}
-                >
-                  {sentenceBesideFigure(headline.sentence, headline.figure)}
-                </p>
-              ) : null}
-              <p className="dm-report-meta" data-report-window>
-                {WS5_COPY['report.window.90d']}
-              </p>
-              {glyph ? (
-                <span data-reveal style={{ ['--i' as string]: 1 }}>
-                  <ReportGlyphs n={glyph.n} label={glyph.label} />
-                </span>
-              ) : null}
-              {support ? (
-                <p data-reveal style={{ ['--i' as string]: 2 }}>
-                  {support}
-                </p>
-              ) : null}
-              {facts.map((insight) => (
-                <p key={insight.id} data-reveal>
-                  {reportHeadline(insight).sentence}
-                </p>
-              ))}
-              {mailboxEmail ? (
-                <p data-report-basis>
-                  {fillCopy(WS5_COPY['report.basis'], {
-                    total: report.receivedCount.toLocaleString('en-US'),
-                    mailboxEmail,
-                  })}
-                </p>
-              ) : null}
-              <p data-report-sizes>{WS5_COPY['report.sizesNote']}</p>
+              <div className="dm-report-grid">
+                <div className="dm-report-lead">
+                  {headline?.figure ? (
+                    <ReportCount figure={headline.figure} mailboxId={mailboxId} />
+                  ) : null}
+                  {headline ? (
+                    <p
+                      className="dm-report-sentence"
+                      data-report-sentence
+                      data-reveal
+                      style={{ ['--i' as string]: 1 }}
+                    >
+                      {sentenceBesideFigure(headline.sentence, headline.figure)}
+                    </p>
+                  ) : null}
+                  <p className="dm-report-meta" data-report-window>
+                    {WS5_COPY['report.window.90d']}
+                  </p>
+                  {glyph ? (
+                    <div
+                      className="dm-report-glyphs-row"
+                      data-reveal
+                      style={{ ['--i' as string]: 1 }}
+                    >
+                      <ReportGlyphs n={glyph.n} label={glyph.label} />
+                      <span className="dm-report-glyph-label">{glyph.label}</span>
+                    </div>
+                  ) : null}
+                  {support ? (
+                    <p data-reveal style={{ ['--i' as string]: 2 }}>
+                      {support}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="dm-report-side">
+                  {facts.map((insight) => (
+                    <p key={insight.id} data-reveal>
+                      {reportHeadline(insight).sentence}
+                    </p>
+                  ))}
+                  <p>
+                    {mailboxEmail ? (
+                      <span data-report-basis>
+                        {fillCopy(WS5_COPY['report.basis'], {
+                          total: report.receivedCount.toLocaleString('en-US'),
+                          mailboxEmail,
+                        })}
+                      </span>
+                    ) : null}
+                    {mailboxEmail ? ' · ' : null}
+                    <span data-report-sizes>{WS5_COPY['report.sizesNote']}</span>
+                  </p>
+                </div>
+              </div>
+              <hr className="dm-report-rule" />
               {report.fix.sendersCount > 0 && !celebration ? (
-                <div data-reveal style={{ ['--i' as string]: 3 }}>
+                <div className="dm-report-actions" data-reveal style={{ ['--i' as string]: 3 }}>
                   <p>
                     {isPluralCopy(WS5_COPY['report.fix.heading'])
                       ? pluralCopy(WS5_COPY['report.fix.heading'], report.fix.sendersCount, {
@@ -312,18 +332,14 @@ export function InboxReportPanel({
                 <div className="dm-report-celebrate" data-celebration>
                   <CelebrationMark mailboxId={mailboxId} />
                   <div>
-                    <p>
-                      {celebration.senders === 1
-                        ? fillCopy(WS5_COPY['report.celebrate.archive.one'], {
-                            X: celebration.archived.toLocaleString('en-US'),
-                          })
-                        : fillCopy(WS5_COPY['report.celebrate.archive'], {
-                            X: celebration.archived.toLocaleString('en-US'),
-                            n: celebration.senders.toLocaleString('en-US'),
-                          })}
-                    </p>
-                    <p>{WS5_COPY['report.celebrate.undo']}</p>
-                    <p>{WS5_COPY['report.storageNote']}</p>
+                    {doneLine ? <p>{doneLine}</p> : null}
+                    {requestLine ? <p>{requestLine}</p> : null}
+                    {celebration.verb === 'delete' || celebration.verb === 'unsub_only' ? null : (
+                      <p>{WS5_COPY['report.celebrate.undo']}</p>
+                    )}
+                    {celebration.verb === 'delete' || celebration.verb === 'unsub_only' ? null : (
+                      <p>{WS5_COPY['report.storageNote']}</p>
+                    )}
                   </div>
                 </div>
               ) : null}
@@ -424,6 +440,7 @@ function ReportFixDialog({
       <UnsubscribeBacklogDialog
         request={request}
         preferredInboxCount={report.fix.inboxEmailCount}
+        preferArchive
         onCancel={onCancel}
         onConfirm={onConfirm}
       />
@@ -458,6 +475,7 @@ function LiveReportFixDialog({
       <UnsubscribeBacklogDialog
         request={request}
         bulkPreview={{ data: bulk.data, loading: bulk.isPending }}
+        preferArchive
         onCancel={onCancel}
         onConfirm={onConfirm}
       />
@@ -468,10 +486,46 @@ function LiveReportFixDialog({
       request={request}
       compositePreview={composite.data}
       compositePreviewLoading={composite.isPending}
+      preferArchive
       onCancel={onCancel}
       onConfirm={onConfirm}
     />
   );
+}
+
+function celebrationSentence(celebration: ReportCelebration): string | null {
+  if (celebration.verb === 'unsub_only') return null;
+  if (celebration.verb === 'delete') {
+    if (typeof celebration.bytes !== 'number') return null;
+    return fillCopy(WS5_COPY['report.celebrate.delete'], {
+      count: celebration.archived.toLocaleString('en-US'),
+      size: formatReportSize(celebration.bytes),
+    });
+  }
+  if (celebration.archived <= 0) return null;
+  return celebration.senders === 1
+    ? fillCopy(WS5_COPY['report.celebrate.archive.one'], {
+        X: celebration.archived.toLocaleString('en-US'),
+      })
+    : fillCopy(WS5_COPY['report.celebrate.archive'], {
+        X: celebration.archived.toLocaleString('en-US'),
+        n: celebration.senders.toLocaleString('en-US'),
+      });
+}
+
+function celebrationRequestLine(celebration: ReportCelebration): string | null {
+  const requested = celebration.requested ?? 0;
+  const manual = celebration.manual ?? 0;
+  const parts: string[] = [];
+  const unsub = WS5_COPY['report.celebrate.unsub'];
+  const handoff = WS5_COPY['report.celebrate.unsubManual'];
+  if (requested > 0 && isPluralCopy(unsub)) {
+    parts.push(pluralCopy(unsub, requested, { m: requested.toLocaleString('en-US') }));
+  }
+  if (manual > 0 && isPluralCopy(handoff)) {
+    parts.push(pluralCopy(handoff, manual, { k: manual.toLocaleString('en-US') }));
+  }
+  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 type InboxReportPanelProps = Parameters<typeof InboxReportPanel>[0];

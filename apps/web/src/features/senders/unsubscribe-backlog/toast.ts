@@ -190,7 +190,10 @@ export function unsubscribeBacklogToast(result: UnsubscribeBacklogResult): strin
 
   if (result.backlog) return withSkipClauses(movedLine(verb, n), skipped);
 
-  if (manual.length > 0) return withSkipClauses(WS5_COPY['f1.toast.mailto'], skipped);
+  // Mailto-only keeps the Send line. A mix still names the requests.
+  if (manual.length > 0 && requested.length === 0) {
+    return withSkipClauses(WS5_COPY['f1.toast.mailto'], skipped);
+  }
 
   // Zero one-click requests is a failure or a skip. Never claim a
   // request that was not made, and never call a skip a failure.
@@ -207,9 +210,11 @@ export function unsubscribeBacklogToast(result: UnsubscribeBacklogResult): strin
   }
 
   const unsub = WS5_COPY['report.celebrate.unsub'];
-  const base = isPluralCopy(unsub)
+  const requestedLine = isPluralCopy(unsub)
     ? pluralCopy(unsub, requested.length, { m: shownCount(requested.length) })
     : WS5_COPY['f1.button.unsubOnly'];
+  const base =
+    manual.length > 0 ? `${requestedLine} · ${WS5_COPY['f1.toast.mailto']}` : requestedLine;
   return withSkipClauses(base, skipped);
 }
 

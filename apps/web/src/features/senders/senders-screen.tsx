@@ -40,7 +40,8 @@ import {
 } from './data';
 import { SenderSearch } from './sender-search';
 import { isFeatureEnabled } from '@/lib/flags';
-import { isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { normalizeProtectionReason, protectionReasonClause } from '@declutrmail/shared/copy';
+import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { senderSizeCell } from './sender-size';
 import {
   ActiveFilterChips,
@@ -247,6 +248,17 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
     return () => clearTimeout(t);
   }, [value, delayMs]);
   return debounced;
+}
+
+/** One Protected sender, before any preview. The deck has no bulk pre-confirm form. */
+function protectedSelectionLead(sender: Sender): string {
+  const clause = protectionReasonClause(
+    normalizeProtectionReason(sender.protectionFlags.protectionReason),
+  );
+  if (clause === 'it is Protected') {
+    return fillCopy(WS5_COPY['f1.protected.leadNoReason'], { Sender: sender.name });
+  }
+  return fillCopy(WS5_COPY['f1.protected.lead'], { Sender: sender.name, reason: clause });
 }
 
 export function SendersScreen() {
@@ -2338,26 +2350,18 @@ function SendersScreenContent({
               .map((sender) => sender.id)
           : [];
       if (eligible.length === 0) {
-        if (
-          verb === 'Unsubscribe' &&
-          selectedSenders.length > 0 &&
-          selectedSenders.every(isStandingProtected) &&
-          isPluralCopy(WS5_COPY['f1.toast.unsub.skipped'])
-        ) {
-          toast(
-            pluralCopy(WS5_COPY['f1.toast.unsub.skipped'], selectedSenders.length, {
-              n: selectedSenders.length,
-            }),
-            'warn',
-          );
-          return;
-        }
         if (selectedSenders.length === 0) return;
         const n = selectedSenders.length;
+        const allProtected = selectedSenders.every(isStandingProtected);
+        if (verb === 'Unsubscribe' && allProtected && n === 1) {
+          toast(protectedSelectionLead(selectedSenders[0]!), 'warn');
+          return;
+        }
         // Standing protection gates every bulk verb; the only other gate
         // is Unsubscribe's people rule (canUnsubscribe), so a non-
         // protected drop here can only mean primary-group senders.
-        const allProtected = selectedSenders.every(isStandingProtected);
+        // The deck has no pre-confirm sentence for more than one Protected
+        // sender, so that case keeps the selection-bar wording below.
         toast(
           allProtected
             ? n === 1

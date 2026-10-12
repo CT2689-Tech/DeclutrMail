@@ -8,6 +8,7 @@ import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/share
 
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import styles from './unsubscribe-backlog-dialog.module.css';
+import { unnamedUnsubscribeTitle } from './preview-copy';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import { track } from '@/lib/posthog';
 import type { CompositeActionPreviewResult } from '@/lib/api/use-action';
@@ -37,6 +38,8 @@ export function UnsubscribeBacklogDialog({
   bulkPreview,
   /** Report fix set: the archive count until the live preview resolves. */
   preferredInboxCount,
+  /** Report CTA already says Archive, so the dialog opens on that choice. */
+  preferArchive = false,
   submitting = false,
   onCancel,
   onConfirm,
@@ -60,6 +63,7 @@ export function UnsubscribeBacklogDialog({
       }
     | undefined;
   preferredInboxCount?: number | undefined;
+  preferArchive?: boolean | undefined;
   submitting?: boolean | undefined;
   onCancel: () => void;
   onConfirm: (opts: {
@@ -91,14 +95,16 @@ export function UnsubscribeBacklogDialog({
     requestSeen.current = requestKey;
     countAtOpen.current = inboxCount;
   }
-  const [mode, setMode] = useState<Mode>(() => openingMode(protectedSingle, inboxCount));
+  const [mode, setMode] = useState<Mode>(() =>
+    openingMode(protectedSingle, inboxCount, preferArchive),
+  );
 
   useEffect(() => {
     armed.current = false;
     // The count often arrives after the dialog is open. Changing the
     // selected option then moves the primary button under the pointer.
-    setMode(openingMode(protectedSingle, countAtOpen.current));
-  }, [requestKey, protectedSingle]);
+    setMode(openingMode(protectedSingle, countAtOpen.current, preferArchive));
+  }, [requestKey, protectedSingle, preferArchive]);
 
   useEffect(() => {
     if (inboxCount === null) return;
@@ -142,10 +148,19 @@ export function UnsubscribeBacklogDialog({
     };
   }, []);
 
+  const countKnown = inboxCount !== null;
   const n = inboxCount ?? 0;
   const backlogOff = inboxCount === null || inboxCount === 0;
   const k = request.senders.length;
   const title = (() => {
+    // A live count of 0 is a real empty set. Null is still loading, and
+    // "archive 0 emails" would be a count we have not read.
+    if (!countKnown && mode !== 'unsub_only') {
+      if (!single) return fillCopy(WS5_COPY['f1.title.bulk.unsubOnly'], { k: shown(k) });
+      const pendingName = request.senders[0]?.name?.trim() ?? '';
+      if (pendingName === '') return unnamedUnsubscribeTitle('unsub_only', 0);
+      return fillCopy(WS5_COPY['f1.title.unsubOnly'], { Sender: pendingName });
+    }
     if (!single) {
       if (mode === 'delete')
         return fillCopy(WS5_COPY['f1.title.bulk.delete'], { k: shown(k), n: shown(n) });
@@ -153,7 +168,8 @@ export function UnsubscribeBacklogDialog({
         return fillCopy(WS5_COPY['f1.title.bulk.archive'], { k: shown(k), n: shown(n) });
       return fillCopy(WS5_COPY['f1.title.bulk.unsubOnly'], { k: shown(k) });
     }
-    const Sender = request.senders[0]?.name ?? '';
+    const Sender = request.senders[0]?.name?.trim() ?? '';
+    if (Sender === '') return unnamedUnsubscribeTitle(mode, n);
     if (mode === 'delete') {
       const forms = WS5_COPY['f1.title.delete'];
       return isPluralCopy(forms) ? pluralCopy(forms, n, { n: shown(n), Sender }) : '';
@@ -235,7 +251,6 @@ export function UnsubscribeBacklogDialog({
     });
   };
 
-  const countKnown = inboxCount !== null;
   // A missing backlog count must not block the future-only request.
   // Archive and Delete stay disabled until that count is known.
   const confirmDisabled = submitting || (mode !== 'unsub_only' && (!countKnown || loading));
@@ -357,8 +372,13 @@ function shown(n: number): string {
   return n.toLocaleString('en-US');
 }
 
-function openingMode(protectedSingle: boolean, inboxCount: number | null): Mode {
+function openingMode(
+  protectedSingle: boolean,
+  inboxCount: number | null,
+  preferArchive: boolean,
+): Mode {
   if (protectedSingle) return 'unsub_only';
+  if (preferArchive && inboxCount !== 0) return 'archive';
   if (inboxCount !== null && inboxCount > 0) return 'archive';
   return 'unsub_only';
 }

@@ -46,6 +46,38 @@ describe('unsubscribeBacklogToast', () => {
     ).toBe(pluralCopy(WS5_COPY['f1.toast.both.delete'], 4, { n: 4 }));
   });
 
+  it('keeps the request count when a mailto sender is in an unsubscribe-only run', () => {
+    const line = unsubscribeBacklogToast(
+      result({
+        mode: 'unsub_only',
+        senders: [
+          {
+            senderId: 'a',
+            method: 'one_click',
+            mailtoUrl: null,
+            executionActionId: null,
+            lifecycleStatus: null,
+            unsubStatus: 'requested',
+            reasonCode: null,
+          },
+          {
+            senderId: 'b',
+            method: 'mailto',
+            mailtoUrl: 'https://mail.google.com/mail/?view=cm',
+            executionActionId: null,
+            lifecycleStatus: null,
+            unsubStatus: 'manual',
+            reasonCode: null,
+          },
+        ],
+      }),
+    );
+    expect(line).toBe(
+      `${pluralCopy(WS5_COPY['report.celebrate.unsub'], 1, { m: 1 })} · ${WS5_COPY['f1.toast.mailto']}`,
+    );
+    expect(line).not.toContain('from 2 senders');
+  });
+
   it('uses the mailto deck line and never calls it a draft', () => {
     const line = unsubscribeBacklogToast(
       result({

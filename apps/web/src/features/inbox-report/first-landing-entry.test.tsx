@@ -32,6 +32,7 @@ const report: InboxReportDto = {
 afterEach(() => {
   resetFetchStub();
   vi.unstubAllEnvs();
+  localStorage.removeItem('dm-inbox-report-celebration:mb-1');
 });
 
 describe('InboxReportFirstLanding', () => {
@@ -148,8 +149,11 @@ describe('InboxReportFirstLanding', () => {
       name: 'Unsubscribe and archive 7 emails',
     });
     expect(archiveChoice).toBeEnabled();
-    expect(archiveChoice).not.toBeChecked();
-    expect(screen.getByRole('dialog')).toHaveTextContent('Unsubscribe from ?');
+    expect(archiveChoice).toBeChecked();
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('Unsubscribe from ?');
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'Unsubscribe from 1 senders and archive 7 emails?',
+    );
     fireEvent.click(archiveChoice);
     const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
     expect(confirm).toBeEnabled();
@@ -163,5 +167,81 @@ describe('InboxReportFirstLanding', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(
       pluralCopy(WS5_COPY['f1.toast.both.archive'], 4, { n: 4 }),
     );
+  });
+
+  it('keeps an unsubscribe-only run done after it succeeds', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mb-1/inbox-report',
+        respond: () => jsonOk({ data: report }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () =>
+          jsonOk({
+            data: {
+              counts: {
+                all: 7,
+                olderThan30d: 0,
+                olderThan90d: 0,
+                olderThan180d: 0,
+                olderThan365d: 0,
+              },
+              recentMessages: {
+                all: [],
+                olderThan30d: [],
+                olderThan90d: [],
+                olderThan180d: [],
+                olderThan365d: [],
+              },
+              unsubAvailable: true,
+              protected: false,
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-backlog',
+        respond: () =>
+          jsonOk({
+            data: {
+              mode: 'unsub_only',
+              backlog: null,
+              senders: [
+                {
+                  senderId: 's1',
+                  method: 'one_click',
+                  mailtoUrl: null,
+                  executionActionId: null,
+                  lifecycleStatus: null,
+                  unsubStatus: 'requested',
+                  reasonCode: null,
+                },
+              ],
+            },
+          }),
+      },
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <ToastHost />
+        <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
+      </QueryWrapper>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
+    fireEvent.click(await screen.findByRole('radio', { name: 'Unsubscribe only' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
+    await waitFor(() =>
+      expect(document.querySelector('[data-celebration]')).toHaveTextContent(
+        'Unsubscribe requested from 1 sender',
+      ),
+    );
+    expect(screen.queryByRole('button', { name: /Unsubscribe \+ archive/ })).toBeNull();
+    expect(localStorage.getItem('dm-inbox-report-celebration:mb-1')).toContain(
+      '"verb":"unsub_only"',
+    );
+    localStorage.removeItem('dm-inbox-report-celebration:mb-1');
   });
 });

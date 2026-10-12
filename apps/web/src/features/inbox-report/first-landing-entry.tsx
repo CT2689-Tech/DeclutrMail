@@ -17,6 +17,7 @@ import {
   readReportCelebration,
   setReportDismissed,
   writeReportCelebration,
+  type ReportCelebration,
 } from './seen';
 
 /** WS2's FirstLandingSlot renders this on the first ready /senders landing. */
@@ -30,9 +31,7 @@ export function InboxReportFirstLanding(props: {
   const [report, setReport] = useState<InboxReportDto | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [celebration, setCelebration] = useState<{ archived: number; senders: number } | null>(
-    null,
-  );
+  const [celebration, setCelebration] = useState<ReportCelebration | null>(null);
 
   useEffect(() => {
     let cancel = false;
@@ -75,13 +74,29 @@ export function InboxReportFirstLanding(props: {
           { mailboxId, mode, senderIds: report.fix.senderKeys },
           {
             onSuccess: (res) => {
-              const sent = res.senders.filter(
-                (sender) => sender.unsubStatus === 'requested' || sender.unsubStatus === 'manual',
-              );
+              const requested = res.senders.filter(
+                (sender) => sender.unsubStatus === 'requested',
+              ).length;
+              const manual = res.senders.filter((sender) => sender.unsubStatus === 'manual').length;
               const line = unsubscribeBacklogToast(res);
-              if (line !== '') toast(line, sent.length > 0 ? 'info' : 'warn');
-              if (res.backlog && res.backlog.requestedCount > 0 && sent.length > 0) {
-                const next = { archived: res.backlog.requestedCount, senders: sent.length };
+              if (line !== '') toast(line, requested + manual > 0 ? 'info' : 'warn');
+              const moved = res.backlog && res.backlog.requestedCount > 0;
+              if (moved || requested > 0 || manual > 0) {
+                const verb = moved
+                  ? res.backlog?.verb === 'delete'
+                    ? 'delete'
+                    : 'archive'
+                  : 'unsub_only';
+                const next: ReportCelebration = {
+                  archived: res.backlog?.requestedCount ?? 0,
+                  senders: requested + manual,
+                  verb,
+                  requested,
+                  manual,
+                  ...(verb === 'delete' && typeof res.backlog?.movedBytes === 'number'
+                    ? { bytes: res.backlog.movedBytes }
+                    : {}),
+                };
                 writeReportCelebration(mailboxId, next);
                 setCelebration(next);
               }

@@ -63,6 +63,9 @@ describe('InboxReportPanel', () => {
     expect(screen.getByText('Last 90 days')).toBeInTheDocument();
     expect(screen.getByText('Based on 1,139 emails in a@example.com')).toBeInTheDocument();
     expect(screen.getByText('Sizes are Gmail’s estimates.')).toBeInTheDocument();
+    expect(screen.getByText('about 9 in 10')).toBeInTheDocument();
+    expect(document.querySelector('.dm-report-grid')).not.toBeNull();
+    expect(document.querySelector('.dm-report-rule')).not.toBeNull();
     expect(document.querySelectorAll('[data-report-glyphs] svg')).toHaveLength(10);
     expect(screen.queryByRole('button', { name: 'Make a share card' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
@@ -134,10 +137,10 @@ describe('InboxReportPanel', () => {
     await waitFor(() =>
       expect(screen.getByRole('radio', { name: 'Unsubscribe and archive 7 emails' })).toBeEnabled(),
     );
-    expect(screen.getByRole('dialog')).toHaveTextContent('Unsubscribe from 2 senders?');
-    expect(
-      screen.getByRole('radio', { name: 'Unsubscribe and archive 7 emails' }),
-    ).not.toBeChecked();
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'Unsubscribe from 2 senders and archive 7 emails?',
+    );
+    expect(screen.getByRole('radio', { name: 'Unsubscribe and archive 7 emails' })).toBeChecked();
   });
 
   it('uses the calm fallback without a fix, a share card, or a celebration', () => {
@@ -188,6 +191,58 @@ describe('InboxReportPanel', () => {
     expect(screen.queryByRole('button', { name: /Unsubscribe \+ archive/ })).toBeNull();
   });
 
+  it('says a Delete moved mail to Trash and does not say it was archived', () => {
+    const { rerender } = render(
+      <InboxReportPanel
+        report={full}
+        onDismiss={() => {}}
+        onReopen={() => {}}
+        celebration={{ archived: 4, senders: 1, verb: 'delete' }}
+      />,
+    );
+    expect(screen.queryByText(/Archived/)).toBeNull();
+    expect(screen.queryByText(/Moved/)).toBeNull();
+    expect(screen.queryByText(/your storage doesn’t change/)).toBeNull();
+    rerender(
+      <InboxReportPanel
+        report={full}
+        onDismiss={() => {}}
+        onReopen={() => {}}
+        celebration={{ archived: 4, senders: 1, verb: 'delete', bytes: 1_500_000 }}
+      />,
+    );
+    expect(screen.getByText('Moved 4 emails (about 1.5 MB) to Gmail Trash.')).toBeInTheDocument();
+    expect(screen.queryByText(/Archived/)).toBeNull();
+    expect(screen.queryByText(/your storage doesn’t change/)).toBeNull();
+  });
+
+  it('states the unsubscribe requests and the emails still to send', () => {
+    const { rerender } = render(
+      <InboxReportPanel
+        report={full}
+        onDismiss={() => {}}
+        onReopen={() => {}}
+        celebration={{ archived: 0, senders: 1, verb: 'unsub_only', requested: 1, manual: 1 }}
+      />,
+    );
+    expect(
+      screen.getByText('Unsubscribe requested from 1 sender · 1 needs you to send an email'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Unsubscribe \+ archive/ })).toBeNull();
+    expect(screen.queryByText(/Undo restores/)).toBeNull();
+    rerender(
+      <InboxReportPanel
+        report={full}
+        onDismiss={() => {}}
+        onReopen={() => {}}
+        celebration={{ archived: 0, senders: 3, verb: 'unsub_only', requested: 2, manual: 3 }}
+      />,
+    );
+    expect(
+      screen.getByText('Unsubscribe requested from 2 senders · 3 need you to send an email'),
+    ).toBeInTheDocument();
+  });
+
   it('marks the primary action and keeps the review link inside the report card', () => {
     render(
       <InboxReportPanel
@@ -216,19 +271,16 @@ describe('InboxReportPanel', () => {
 });
 
 describe('InboxReportCard', () => {
-  it('lays the home surface out as one link with the title, body, and action', () => {
+  it('makes only the home action a link', () => {
     render(<InboxReportCard surface="home" mailboxId="mb" />);
-    const action = screen.getByRole('link', { name: /Your Inbox Report/ });
+    const card = document.querySelector('[data-surface="home"]');
+    expect(card).toHaveAttribute('data-mailbox', 'mb');
+    expect(card?.tagName).toBe('DIV');
+    const action = screen.getByRole('link', { name: 'Open report' });
     expect(action).toHaveAttribute('href', '/senders');
-    expect(action).toHaveAttribute('data-mailbox', 'mb');
-    expect(action.querySelector('.dm-home-report-title')).toHaveTextContent(
-      WS5_COPY['report.home.title'],
-    );
-    expect(action.querySelector('.dm-home-report-body')).toHaveTextContent(
-      WS5_COPY['report.home.body'],
-    );
-    expect(action.querySelector('.dm-home-report-cta')).toHaveTextContent(
-      WS5_COPY['report.home.cta'],
-    );
+    expect(action).toHaveClass('dm-home-report-cta');
+    expect(card).toContainElement(screen.getByText(WS5_COPY['report.home.title']));
+    expect(card).toContainElement(screen.getByText(WS5_COPY['report.home.body']));
+    expect(action.textContent).toBe(WS5_COPY['report.home.cta']);
   });
 });

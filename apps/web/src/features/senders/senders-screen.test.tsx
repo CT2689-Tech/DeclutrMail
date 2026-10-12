@@ -2542,7 +2542,7 @@ describe('SendersScreen — edge states', () => {
     // same wording for mouse users who never see this toast — scope to
     // the toast specifically, since that is what this test covers.
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'No unsubscribe sent: 1 sender is Protected, so it was left as it is.',
+      'Protected Co is Protected because you marked it Protected.',
     );
   });
 

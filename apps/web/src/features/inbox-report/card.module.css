@@ -31,3 +31,9 @@
   line-height: 1.8;
   color: var(--dm-fg-muted);
 }
+
+.cta {
+  color: var(--dm-primary);
+  font-weight: 600;
+  text-decoration: none;
+}

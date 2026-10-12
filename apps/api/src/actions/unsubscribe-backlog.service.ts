@@ -65,18 +65,25 @@ export class UnsubscribeBacklogService {
     let skippedByEnqueue = new Map<string, MoveSkipReason>();
     const runBacklog = input.mode === 'archive' || input.mode === 'delete';
     if (runBacklog && actionable.length > 0) {
-      const emailCount = await this.emailCount(
+      const measured = await this.backlogMail(
         input.mailboxAccountId,
         actionable.map((row) => row.senderKey),
         reach,
         olderThanDays,
       );
-      if (emailCount > 0) {
+      if (measured.count > 0) {
         if (process.env.METER_V2 === 'true') {
-          await this.entitlements.assertCleanupCapacity(input.mailboxAccountId, emailCount);
+          await this.entitlements.assertCleanupCapacity(input.mailboxAccountId, measured.count);
         }
         const enqueued = await this.enqueueBacklog(input, actionable, reach, olderThanDays);
         backlog = enqueued.backlog;
+        if (
+          backlog?.verb === 'delete' &&
+          backlog.requestedCount === measured.count &&
+          Number.isFinite(measured.bytes)
+        ) {
+          backlog = { ...backlog, movedBytes: measured.bytes };
+        }
         skippedByEnqueue = new Map();
         for (const row of enqueued.skipped) {
           const reason = moveSkipReason(row.reason);
@@ -86,6 +93,10 @@ export class UnsubscribeBacklogService {
     }
 
     const sendersOut: UnsubscribeBacklogSenderResult[] = [];
+    const found = new Set(rows.map((row) => row.id));
+    for (const id of senderIds) {
+      if (!found.has(id)) sendersOut.push(skipped(id, 'not_found'));
+    }
     for (const row of skippedProtected) {
       sendersOut.push(skipped(row.id, 'protected'));
     }
@@ -209,15 +220,18 @@ export class UnsubscribeBacklogService {
     return new Set(rows.filter((row) => row.isProtected).map((row) => row.senderKey));
   }
 
-  private async emailCount(
+  private async backlogMail(
     mailboxAccountId: string,
     senderKeys: string[],
     reach: SenderActionReach,
     olderThanDays: number | null,
-  ): Promise<number> {
-    if (senderKeys.length === 0) return 0;
+  ): Promise<{ count: number; bytes: number }> {
+    if (senderKeys.length === 0) return { count: 0, bytes: 0 };
     const [row] = await this.db
-      .select({ n: sql<number>`count(*)::int` })
+      .select({
+        n: sql<number>`count(*)::int`,
+        bytes: sql<string>`coalesce(sum(${mailMessages.sizeBytes}), 0)::text`,
+      })
       .from(mailMessages)
       .where(
         senderActionWhere({
@@ -227,7 +241,8 @@ export class UnsubscribeBacklogService {
           olderThanDays,
         }),
       );
-    return Number(row?.n ?? 0);
+    const bytes = Number(row?.bytes ?? 0);
+    return { count: Number(row?.n ?? 0), bytes: Number.isFinite(bytes) ? bytes : 0 };
   }
 }
 

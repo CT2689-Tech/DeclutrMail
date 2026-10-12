@@ -14,25 +14,60 @@ export function setReportDismissed(mailboxId: string, dismissed: boolean): void 
 
 const celebrationKey = (mailboxId: string) => `dm-inbox-report-celebration:${mailboxId}`;
 
-export function readReportCelebration(
-  mailboxId: string,
-): { archived: number; senders: number } | null {
+/** Stored after a report Fix. Older builds omitted `verb`; those are archive. */
+export interface ReportCelebration {
+  archived: number;
+  senders: number;
+  /** Missing on values stored before the verb was persisted. Those are archive. */
+  verb?: 'archive' | 'delete' | 'unsub_only';
+  /** Gmail size-estimate sum for a Delete. Absent for archive and older rows. */
+  bytes?: number;
+  /** One-click requests in this confirmation. */
+  requested?: number;
+  /** Mailto senders who still need to press Send. */
+  manual?: number;
+}
+
+export function readReportCelebration(mailboxId: string): ReportCelebration | null {
   if (typeof localStorage === 'undefined') return null;
   const raw = localStorage.getItem(celebrationKey(mailboxId));
   if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as { archived?: unknown; senders?: unknown };
+    const parsed = JSON.parse(raw) as {
+      archived?: unknown;
+      senders?: unknown;
+      verb?: unknown;
+      bytes?: unknown;
+      requested?: unknown;
+      manual?: unknown;
+    };
     if (typeof parsed.archived !== 'number' || typeof parsed.senders !== 'number') return null;
-    return { archived: parsed.archived, senders: parsed.senders };
+    const bytes =
+      typeof parsed.bytes === 'number' && Number.isFinite(parsed.bytes) && parsed.bytes >= 0
+        ? parsed.bytes
+        : undefined;
+    const requested =
+      typeof parsed.requested === 'number' && parsed.requested >= 0 ? parsed.requested : undefined;
+    const manual =
+      typeof parsed.manual === 'number' && parsed.manual >= 0 ? parsed.manual : undefined;
+    const verb =
+      parsed.verb === 'delete' || parsed.verb === 'unsub_only' || parsed.verb === 'archive'
+        ? parsed.verb
+        : 'archive';
+    return {
+      archived: parsed.archived,
+      senders: parsed.senders,
+      verb,
+      ...(bytes !== undefined ? { bytes } : {}),
+      ...(requested !== undefined ? { requested } : {}),
+      ...(manual !== undefined ? { manual } : {}),
+    };
   } catch {
     return null;
   }
 }
 
-export function writeReportCelebration(
-  mailboxId: string,
-  celebration: { archived: number; senders: number },
-): void {
+export function writeReportCelebration(mailboxId: string, celebration: ReportCelebration): void {
   if (typeof localStorage === 'undefined') return;
   localStorage.setItem(celebrationKey(mailboxId), JSON.stringify(celebration));
 }

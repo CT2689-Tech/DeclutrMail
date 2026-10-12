@@ -571,6 +571,170 @@ describe('ActivityReadService', () => {
     });
   });
 
+  it('hides a one-click decision whose job is the execution, not the intent', async () => {
+    const senderKey = 'd'.repeat(64);
+    const senderId = await seedSender(
+      db,
+      mailboxA.mailboxAccountId,
+      senderKey,
+      'one@example.test',
+      'One Click',
+    );
+    const when = new Date(NOW_MS - ONE_DAY_MS);
+    const archiveJob = await seedExecutionAttempt(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      senderId,
+      senderKey,
+      status: 'done',
+      createdAt: when,
+    });
+    actionKeySequence += 1;
+    const [executionJob] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        verb: 'unsubscribe',
+        direction: 'forward',
+        selector: { type: 'sender', senderId, senderKey },
+        resolvedMessageIds: [],
+        requestedCount: 1,
+        status: 'queued',
+        idempotencyKey: `activity-exec-${actionKeySequence}`,
+        createdAt: when,
+        updatedAt: when,
+      })
+      .returning({ id: actionJobs.id });
+    const token = await seedUndoToken(db, mailboxA.mailboxAccountId, {
+      expiresAt: new Date(NOW_MS + 30 * ONE_DAY_MS),
+    });
+    await seedActivity(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      occurredAt: when,
+      source: 'manual',
+      action: 'archive',
+      affectedCount: 4,
+      senderKey,
+      undoToken: token,
+      actionJobId: archiveJob,
+    });
+    const unsubId = await seedActivity(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      occurredAt: new Date(when.getTime() + 1000),
+      source: 'manual',
+      action: 'unsubscribe',
+      affectedCount: 0,
+      senderKey,
+      actionJobId: executionJob!.id,
+    });
+    actionKeySequence += 1;
+    await db.insert(actionJobs).values({
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      verb: 'unsubscribe',
+      direction: 'forward',
+      selector: { type: 'sender', senderId, senderKey },
+      resolvedMessageIds: [unsubId],
+      requestedCount: 0,
+      status: 'done',
+      idempotencyKey: `activity-intent-${actionKeySequence}`,
+      compositeId: archiveJob,
+      createdAt: when,
+      updatedAt: when,
+    });
+
+    const { rows } = await svc.listActivity({
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      window: '30d',
+      source: null,
+      verbs: ['unsubscribe'],
+      cursor: null,
+      limit: 25,
+      nowMs: NOW_MS,
+    });
+    expect(rows.map((row) => row.action)).toEqual(['archive']);
+    expect(rows[0]).toMatchObject({
+      combinedUnsubscribe: true,
+      undoState: { kind: 'available', token },
+    });
+  });
+
+  it('hides a mailto decision and its action-required row behind the move', async () => {
+    const senderKey = 'e'.repeat(64);
+    const senderId = await seedSender(
+      db,
+      mailboxA.mailboxAccountId,
+      senderKey,
+      'mail@example.test',
+      'Mailto',
+    );
+    const when = new Date(NOW_MS - ONE_DAY_MS);
+    const archiveJob = await seedExecutionAttempt(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      senderId,
+      senderKey,
+      status: 'done',
+      createdAt: when,
+    });
+    const token = await seedUndoToken(db, mailboxA.mailboxAccountId, {
+      expiresAt: new Date(NOW_MS + 30 * ONE_DAY_MS),
+    });
+    await seedActivity(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      occurredAt: when,
+      source: 'manual',
+      action: 'archive',
+      affectedCount: 2,
+      senderKey,
+      undoToken: token,
+      actionJobId: archiveJob,
+    });
+    const decisionAt = new Date(when.getTime() + 1000);
+    const unsubId = await seedActivity(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      occurredAt: decisionAt,
+      source: 'manual',
+      action: 'unsubscribe',
+      affectedCount: 0,
+      senderKey,
+    });
+    await seedActivity(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      occurredAt: decisionAt,
+      source: 'manual',
+      action: 'unsubscribe_action_required',
+      affectedCount: 0,
+      senderKey,
+    });
+    actionKeySequence += 1;
+    await db.insert(actionJobs).values({
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      verb: 'unsubscribe',
+      direction: 'forward',
+      selector: { type: 'sender', senderId, senderKey },
+      resolvedMessageIds: [unsubId],
+      requestedCount: 0,
+      status: 'done',
+      idempotencyKey: `activity-mailto-${actionKeySequence}`,
+      compositeId: archiveJob,
+      createdAt: when,
+      updatedAt: when,
+    });
+
+    const { rows } = await svc.listActivity({
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      window: '30d',
+      source: null,
+      verbs: ['unsubscribe'],
+      cursor: null,
+      limit: 25,
+      nowMs: NOW_MS,
+    });
+    expect(rows.map((row) => row.action)).toEqual(['archive']);
+    expect(rows[0]).toMatchObject({
+      combinedUnsubscribe: true,
+      undoState: { kind: 'available', token },
+    });
+  });
+
   it('returns only rows for the requested mailbox (tenant isolation)', async () => {
     await seedActivity(db, {
       mailboxAccountId: mailboxA.mailboxAccountId,

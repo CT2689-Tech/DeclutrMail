@@ -148,6 +148,7 @@ describe('UnsubscribeBacklogService', () => {
 
     expect(events).toEqual(['enqueue', 'unsub']);
     expect(result.backlog?.requestedCount).toBe(4);
+    expect(result.backlog).not.toHaveProperty('movedBytes');
     expect(labelQueue.count).toBe(1);
     expect(unsubQueue.count).toBe(1);
     const [unsub] = await db
@@ -256,6 +257,55 @@ describe('UnsubscribeBacklogService', () => {
 
     expect(result.senders.find((row) => row.senderId === other!.id)?.unsubStatus).toBe('requested');
     expect(unsubQueue.count).toBe(2);
+  });
+
+  it('reports a requested sender id that is no longer in the table', async () => {
+    const missingId = '11111111-1111-4111-8111-111111111111';
+    const mixed = await svc.confirm({
+      mailboxAccountId: mailboxId,
+      idempotencyKey: 'gone-row-1',
+      mode: 'unsub_only',
+      senderIds: [senderId, missingId],
+    });
+    expect(mixed.senders.find((row) => row.senderId === missingId)).toMatchObject({
+      unsubStatus: 'skipped',
+      reasonCode: 'not_found',
+    });
+    expect(mixed.senders.find((row) => row.senderId === senderId)?.unsubStatus).toBe('requested');
+
+    const onlyMissing = await svc.confirm({
+      mailboxAccountId: mailboxId,
+      idempotencyKey: 'gone-row-2',
+      mode: 'unsub_only',
+      senderIds: ['22222222-2222-4222-8222-222222222222'],
+    });
+    expect(onlyMissing.backlog).toBeNull();
+    expect(onlyMissing.senders).toEqual([
+      expect.objectContaining({
+        senderId: '22222222-2222-4222-8222-222222222222',
+        unsubStatus: 'skipped',
+        reasonCode: 'not_found',
+      }),
+    ]);
+  });
+
+  it('returns the size-estimate sum when a Delete moves every counted message', async () => {
+    await seedInbox(db, mailboxId, 4);
+    await db
+      .update(mailMessages)
+      .set({ sizeBytes: 250_000 })
+      .where(eq(mailMessages.mailboxAccountId, mailboxId));
+    const result = await svc.confirm({
+      mailboxAccountId: mailboxId,
+      idempotencyKey: 'size-key-1',
+      mode: 'delete',
+      senderIds: [senderId],
+    });
+    expect(result.backlog).toMatchObject({
+      verb: 'delete',
+      requestedCount: 4,
+      movedBytes: 1_000_000,
+    });
   });
 
   it('maps an in-flight unsubscribe and a missing sender', async () => {

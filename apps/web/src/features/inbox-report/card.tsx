@@ -10,12 +10,14 @@ import styles from './card.module.css';
 export function InboxReportCard(props: { surface: 'home'; mailboxId: string }): JSX.Element | null {
   if (props.surface !== 'home') return null;
   return (
-    <a className={styles.card} href="/senders" data-surface="home" data-mailbox={props.mailboxId}>
+    <div className={styles.card} data-surface="home" data-mailbox={props.mailboxId}>
       <strong className={`${styles.title} dm-home-report-title`}>
         {WS5_COPY['report.home.title']}
       </strong>
       <span className={`${styles.body} dm-home-report-body`}>{WS5_COPY['report.home.body']}</span>
-      <span className="dm-home-report-cta">{WS5_COPY['report.home.cta']}</span>
-    </a>
+      <a className={`${styles.cta} dm-home-report-cta`} href="/senders">
+        {WS5_COPY['report.home.cta']}
+      </a>
+    </div>
   );
 }

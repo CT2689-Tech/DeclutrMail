@@ -20,11 +20,24 @@ export function backlogMailLine(mode: UnsubscribeBacklogMode, n: number): string
   return WS5_COPY['f1.preview.backlog.unsubOnly'];
 }
 
+/**
+ * Count titles do not need a sender name. The bulk strings have no `one`
+ * form, so a single unnamed sender reads "{k} senders".
+ */
+export function unnamedUnsubscribeTitle(mode: UnsubscribeBacklogMode, emailCount: number): string {
+  const k = (1).toLocaleString('en-US');
+  const n = emailCount.toLocaleString('en-US');
+  if (mode === 'delete') return fillCopy(WS5_COPY['f1.title.bulk.delete'], { k, n });
+  if (mode === 'archive') return fillCopy(WS5_COPY['f1.title.bulk.archive'], { k, n });
+  return fillCopy(WS5_COPY['f1.title.bulk.unsubOnly'], { k });
+}
+
 export function unsubscribeTitle(
   mode: UnsubscribeBacklogMode,
   senderName: string,
   n: number,
 ): string {
+  if (senderName.trim() === '') return unnamedUnsubscribeTitle(mode, n);
   if (mode === 'archive' && isPluralCopy(WS5_COPY['f1.title.archive'])) {
     return pluralCopy(WS5_COPY['f1.title.archive'], n, { n, Sender: senderName });
   }

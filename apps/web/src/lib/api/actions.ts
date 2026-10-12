@@ -535,6 +535,8 @@ export interface UnsubscribeBacklogResult {
     actionId: string;
     requestedCount: number;
     verb: 'archive' | 'delete';
+    /** Sum of Gmail size estimates when it matches `requestedCount`. */
+    movedBytes?: number;
   } | null;
   senders: UnsubscribeBacklogSenderResult[];
 }

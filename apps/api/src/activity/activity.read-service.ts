@@ -542,7 +542,7 @@ export class ActivityReadService {
     if (dateTo) whereParts.push(lt(activityLog.occurredAt, dateTo));
     if (snapshotCreatedAt) whereParts.push(lte(activityLog.createdAt, snapshotCreatedAt));
     if (source) whereParts.push(eq(activityLog.source, source));
-    if (verbs.length > 0) whereParts.push(inArray(activityLog.action, verbs));
+    if (verbs.length > 0) whereParts.push(activityVerbFilter(verbs));
     if (outcomes.length > 0) whereParts.push(inArray(reviewOutcomeExpression, outcomes));
     if (senderQuery.length > 0) {
       const pattern = `%${escapeIlikeWildcards(senderQuery)}%`;
@@ -1689,15 +1689,52 @@ function feedTime(time: SQLWrapper): SQL {
  * Rows inside the cursor's millisecond continue by id instead. Compared on
  * the raw column, so the window's index still bounds the scan.
  */
-/** Drop the unsubscribe audit row once its move row exists. They share composite_id. */
+/**
+ * Verb chips. Unsubscribe also keeps the combined archive/delete row:
+ * the raw unsubscribe row is hidden once that move row exists, so a
+ * filter of only `unsubscribe` would otherwise drop the pair.
+ */
+function activityVerbFilter(verbs: readonly ActivityLogEntry['action'][]): SQL {
+  const selected = inArray(activityLog.action, [...verbs]);
+  if (!verbs.includes('unsubscribe')) return selected;
+  return or(
+    selected,
+    and(inArray(activityLog.action, ['archive', 'delete']), combinedUnsubscribeExpression()),
+  )!;
+}
+
+/**
+ * Drop the unsubscribe decision once its move row exists.
+ * Production stores composite_id on the intent job and the activity id
+ * in that job's resolved_message_ids. The activity row's action_job_id
+ * points at the one-click execution job, which has no composite_id.
+ * Mailto has no execution job and also writes unsubscribe_action_required
+ * in the same transaction, so those companions share occurred_at.
+ */
 function hidePairedUnsubscribeRow(): SQL {
   return sql`not (
-    ${activityLog.action} = 'unsubscribe'
-    and ${activityLog.actionJobId} is not null
+    ${activityLog.action} in ('unsubscribe', 'unsubscribe_action_required')
     and exists (
       select 1 from action_jobs paired_unsub_hide
-      where paired_unsub_hide.id = ${activityLog.actionJobId}
+      where paired_unsub_hide.mailbox_account_id = ${activityLog.mailboxAccountId}
+        and paired_unsub_hide.verb = 'unsubscribe'
         and paired_unsub_hide.composite_id is not null
+        and paired_unsub_hide.selector->>'senderKey' is not distinct from ${activityLog.senderKey}
+        and (
+          paired_unsub_hide.id = ${activityLog.actionJobId}
+          or ${activityLog.id}::text = any(paired_unsub_hide.resolved_message_ids)
+          or (
+            ${activityLog.action} = 'unsubscribe_action_required'
+            and exists (
+              select 1 from activity_log paired_unsub_decision
+              where paired_unsub_decision.mailbox_account_id = ${activityLog.mailboxAccountId}
+                and paired_unsub_decision.sender_key is not distinct from ${activityLog.senderKey}
+                and paired_unsub_decision.action = 'unsubscribe'
+                and paired_unsub_decision.occurred_at = ${activityLog.occurredAt}
+                and paired_unsub_decision.id::text = any(paired_unsub_hide.resolved_message_ids)
+            )
+          )
+        )
         and exists (
           select 1 from activity_log paired_move_log
           inner join action_jobs paired_move_job

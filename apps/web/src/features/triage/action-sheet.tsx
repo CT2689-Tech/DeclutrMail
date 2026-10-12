@@ -5,6 +5,7 @@ import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Avatar, Button, PreviewSheet, SheetSegmented, tokens } from '@declutrmail/shared';
 import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { unnamedUnsubscribeTitle } from '@/features/senders/unsubscribe-backlog/preview-copy';
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import type { ActionReach } from '@declutrmail/shared/contracts';
@@ -620,6 +621,7 @@ function unsubscribeTitle(
   senderName: string,
   n: number,
 ): string {
+  if (senderName.trim() === '') return unnamedUnsubscribeTitle(mode, n);
   if (mode === 'archive' && isPluralCopy(WS5_COPY['f1.title.archive'])) {
     return pluralCopy(WS5_COPY['f1.title.archive'], n, { n, Sender: senderName });
   }
