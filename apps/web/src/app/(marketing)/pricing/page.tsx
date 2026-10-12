@@ -39,7 +39,7 @@ export default async function PricingPage() {
   const flags = await loadPricingFlags();
   const locale = country === 'IN' ? 'inr' : 'usd';
   return (
-    <BillingCurrencyProvider provider={defaultProviderForCountry(country)}>
+    <BillingCurrencyProvider provider={defaultProviderForCountry(country, flags.pricingV2)}>
       {flags.pricingV2 ? (
         <PricingStory
           passEnabled={flags.passEnabled}

@@ -45,12 +45,12 @@ describe('refund window with PRICING_V2 on', () => {
     expect(moneyBackNote(true)).toBe(refundLine());
     expect(refundSentence()).toBe(refundLine());
     assertLaunchWindow(priceFaqAnswer());
-    assertLaunchWindow(renderLlmsTxt());
+    assertLaunchWindow(await renderLlmsTxt());
 
-    const markdown = await pricingMarkdown().text();
+    const markdown = await (await pricingMarkdown()).text();
     assertLaunchWindow(markdown);
 
-    const help = render(<HelpPage />);
+    const help = render(await HelpPage());
     const helpText = help.container.textContent ?? '';
     expect(helpText).not.toMatch(legacyRefundPattern());
     expect(helpText).toContain(`within ${days} days`);
@@ -62,7 +62,7 @@ describe('refund window with PRICING_V2 on', () => {
     expect(faqText).toContain(`within ${days} days`);
     faq.unmount();
 
-    const refunds = render(<RefundPolicyPage />);
+    const refunds = render(await RefundPolicyPage());
     assertLaunchWindow(refunds.container.textContent ?? '');
     expect(refunds.container.textContent).toContain(`within ${days} days`);
     refunds.unmount();

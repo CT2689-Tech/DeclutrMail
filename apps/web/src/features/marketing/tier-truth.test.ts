@@ -66,7 +66,7 @@ const CORPUS: readonly string[] = [
   // behaviours moved to Plus — a false sentence on the pricing page that
   // this file, scoped to the learn/comparison modules, could not see.
   // Crawler guidance is current product copy too, not a historical record.
-  ...renderLlmsTxt().split('\n').filter(Boolean),
+  ...(await renderLlmsTxt()).split('\n').filter(Boolean),
   ACTION_SAFETY_SUMMARY,
   ...Object.values(TIER_JOBS),
   // Content modules come from the shared registry (2026-08-27). Naming

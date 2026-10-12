@@ -7,6 +7,7 @@ import {
   VS_FAQ_Q2_STYLE,
   WS3_COPY,
 } from '@declutrmail/shared/copy/launch';
+import { isPricingV2 } from '@declutrmail/shared/entitlements';
 
 import type { ComparisonDefinition, ComparisonSlug } from './comparison-data';
 
@@ -24,7 +25,7 @@ const USE_CASE: Record<ComparisonSlug, string> = {
   mailmop: WS3_COPY['ws3.vs.mailmop.useCase'],
 };
 
-const FAQ_ANSWER: Record<ComparisonSlug, string> = {
+const FAQ_ANSWER: Record<Exclude<ComparisonSlug, 'inboxpurge'>, string> = {
   'clean-email': WS3_COPY['ws3.vs.clean-email.faqAnswer'],
   trimbox: WS3_COPY['ws3.vs.trimbox.faqAnswer'],
   sanebox: WS3_COPY['ws3.vs.sanebox.faqAnswer'],
@@ -34,11 +35,17 @@ const FAQ_ANSWER: Record<ComparisonSlug, string> = {
   gmail: WS3_COPY['ws3.vs.gmail.faqAnswer'],
   'meta-muse': WS3_COPY['ws3.vs.meta-muse.faqAnswer'],
   mailstrom: WS3_COPY['ws3.vs.mailstrom.faqAnswer'],
-  inboxpurge: passListed()
-    ? WS3_COPY['ws3.vs.inboxpurge.faqAnswer']
-    : WS3_COPY['ws3.vs.inboxpurge.faqAnswer.passOff'],
   mailmop: WS3_COPY['ws3.vs.mailmop.faqAnswer'],
 };
+
+function useCaseAnswer(slug: ComparisonSlug, passEnabled: boolean): string {
+  if (slug === 'inboxpurge') {
+    return passEnabled
+      ? WS3_COPY['ws3.vs.inboxpurge.faqAnswer']
+      : WS3_COPY['ws3.vs.inboxpurge.faqAnswer.passOff'];
+  }
+  return FAQ_ANSWER[slug];
+}
 
 const VERDICT: Record<ComparisonSlug, string> = {
   'clean-email': WS3_COPY['ws3.vs.clean-email.verdict'],
@@ -60,6 +67,8 @@ export function deckVerdict(slug: ComparisonSlug): string {
 
 export function comparisonFaqs(
   comparison: ComparisonDefinition,
+  passEnabled = passListed(),
+  pricingV2 = isPricingV2(),
 ): readonly { q: string; a: string }[] {
   const competitor = comparison.name;
   const useCase = USE_CASE[comparison.slug];
@@ -69,17 +78,21 @@ export function comparisonFaqs(
       ? 'Does DeclutrMail read my emails?'
       : WS3_COPY['ws3.vs.faq.privacy.q'];
   return [
-    { q: question, a: fillComplete(FAQ_ANSWER[comparison.slug]) },
+    { q: question, a: fillComplete(useCaseAnswer(comparison.slug, passEnabled)) },
     { q: privacyQuestion, a: privacyFaqAnswer() },
-    { q: WS3_COPY['ws3.vs.faq.price.q'], a: priceFaqAnswer() },
+    { q: WS3_COPY['ws3.vs.faq.price.q'], a: priceFaqAnswer(passEnabled, pricingV2) },
   ].filter((faq) => faq.a !== '');
 }
 
-export function comparisonFaqJsonLd(comparison: ComparisonDefinition) {
+export function comparisonFaqJsonLd(
+  comparison: ComparisonDefinition,
+  passEnabled = passListed(),
+  pricingV2 = isPricingV2(),
+) {
   return {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
-    mainEntity: comparisonFaqs(comparison).map((faq) => ({
+    mainEntity: comparisonFaqs(comparison, passEnabled, pricingV2).map((faq) => ({
       '@type': 'Question',
       name: faq.q,
       acceptedAnswer: { '@type': 'Answer', text: faq.a },

@@ -56,7 +56,7 @@
       "file": "apps/web/src/app/(marketing)/support-pages.test.tsx",
       "hits": [
         "*      \"Bodies read: 0\" must not appear.",
-        "it('never uses the banned pre-D228 phrase \"Bodies read: 0\"', () => {"
+        "it('never uses the banned pre-D228 phrase \"Bodies read: 0\"', async () => {"
       ],
       "reason": "Test asserting the banned trust copy is absent from rendered output; the quote is the assertion, not copy."
     },

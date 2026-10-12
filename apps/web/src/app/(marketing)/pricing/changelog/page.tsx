@@ -3,9 +3,10 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
-import { fillStory, isPricingV2, PRICING_VERSION } from '@declutrmail/shared/entitlements';
+import { fillStory, PRICING_VERSION } from '@declutrmail/shared/entitlements';
 
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
+import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
 
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Pricing changelog — DeclutrMail',
@@ -22,8 +23,9 @@ function launchDateLabel(): string {
   }).format(new Date(`${PRICING_VERSION}T00:00:00Z`));
 }
 
-export default function PricingChangelogPage() {
-  if (!isPricingV2()) redirect('/pricing');
+export default async function PricingChangelogPage() {
+  const flags = await loadPricingFlags();
+  if (!flags.pricingV2) redirect('/pricing');
   return (
     <div className="dm-pricing" data-testid="pricing-changelog">
       <h1>{fillStory(WS1_COPY['pricing.changelog.h1'])}</h1>

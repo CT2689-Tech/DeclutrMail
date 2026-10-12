@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { METER, plusAmount, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import {
   formatReportSize,
   reportFallback,
@@ -150,9 +150,44 @@ function ReportGlyphs({ n, label }: { n: number; label: string }) {
   );
 }
 
-function passEnabled(): boolean {
+function envPassEnabled(): boolean {
   const raw = process.env.NEXT_PUBLIC_BILLING_PASS_ENABLED ?? process.env.BILLING_PASS_ENABLED;
   return raw === 'true' || raw === '1';
+}
+
+/** Same public endpoint as `loadPricingFlags`. This panel is a client island. */
+function useCatalogFlags(): { pricingV2: boolean; passEnabled: boolean } {
+  const [flags, setFlags] = useState({
+    pricingV2: process.env.PRICING_V2 === 'true',
+    passEnabled: envPassEnabled(),
+  });
+  useEffect(() => {
+    const apiBase = process.env.NEXT_PUBLIC_API_URL;
+    if (!apiBase) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1500);
+    void fetch(`${apiBase}/api/pricing/public`, { cache: 'no-store', signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const body: unknown = await response.json();
+        const data =
+          typeof body === 'object' && body !== null && 'data' in body
+            ? (body as { data?: unknown }).data
+            : body;
+        if (typeof data !== 'object' || data === null) return;
+        const record = data as { pricingV2?: unknown; passEnabled?: unknown };
+        setFlags({
+          pricingV2: record.pricingV2 === true,
+          passEnabled: record.passEnabled === true,
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, []);
+  return flags;
 }
 
 function money(cents: number | null | undefined): string {
@@ -201,6 +236,7 @@ export function InboxReportPanel({
     Record<string, { name: string; unsubscribeMethod?: 'one_click' | 'mailto' | 'none' | null }>
   >;
 }) {
+  const catalog = useCatalogFlags();
   const [fixOpen, setFixOpen] = useState(false);
   const calm = report.variant === 'fallback';
   const headline = calm ? null : report.insights[0] ? reportHeadline(report.insights[0]) : null;
@@ -216,10 +252,14 @@ export function InboxReportPanel({
     !calm && isPluralCopy(fixCopy)
       ? pluralCopy(fixCopy, report.fix.sendersCount, { n: report.fix.sendersCount })
       : '';
-  const allowance = TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0;
+  const allowance = catalog.pricingV2
+    ? METER.free.limit.toLocaleString('en-US')
+    : (TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0);
   const doneLine = celebration ? celebrationSentence(celebration) : null;
   const requestLine = celebration ? celebrationRequestLine(celebration) : null;
-  const plusPrice = money(TIER_MANIFEST.plus.prices.annual?.usdCents);
+  const plusPrice = catalog.pricingV2
+    ? plusAmount('usd')
+    : money(TIER_MANIFEST.plus.prices.annual?.usdCents);
 
   return (
     <section
@@ -362,7 +402,7 @@ export function InboxReportPanel({
           )}
           {!calm && resetDate ? (
             <div>
-              {passEnabled() ? (
+              {catalog.passEnabled ? (
                 <p>{fillCopy(WS5_COPY['report.upgrade.pass'], { passName: BACKLOG_PASS_NAME })}</p>
               ) : (
                 <p>

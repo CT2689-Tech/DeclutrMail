@@ -27,6 +27,7 @@ import { headers } from 'next/headers';
 
 import { BillingCurrencyProvider } from '@/features/billing/billing-currency';
 import { defaultProviderForCountry } from '@/features/billing/billing-region';
+import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
 import { ServerAppBoundary } from '@/features/auth/server-app-boundary';
 import { ThemeScript } from '@/features/theme/theme-script';
 import { COUNTRY_HEADER } from '@/middleware';
@@ -49,9 +50,12 @@ function crossOriginApi(): string | null {
 }
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
-  const requestHeaders = await headers();
+  const [requestHeaders, flags] = await Promise.all([headers(), loadPricingFlags()]);
   const nonce = requestHeaders.get('x-nonce') ?? undefined;
-  const regionProvider = defaultProviderForCountry(requestHeaders.get(COUNTRY_HEADER));
+  const regionProvider = defaultProviderForCountry(
+    requestHeaders.get(COUNTRY_HEADER),
+    flags.pricingV2,
+  );
   const apiOrigin = crossOriginApi();
   const cookieHeader = requestHeaders.get('cookie') ?? '';
 

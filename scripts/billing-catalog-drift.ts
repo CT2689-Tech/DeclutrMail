@@ -2,8 +2,8 @@
  * Read-only Paddle catalog drift check.
  *
  * Compares live or sandbox prices and the PH30 discount to the manifest.
- * Missing PADDLE_READONLY_API_KEY exits UNVERIFIED (non-zero). Never
- * writes to Paddle. Never prints the key.
+ * An empty PADDLE_READONLY_API_KEY skips the comparison and exits 0.
+ * Never writes to Paddle. Never prints the key.
  *
  *   PADDLE_ENV=sandbox PADDLE_READONLY_API_KEY=... pnpm tsx scripts/billing-catalog-drift.ts
  */
@@ -24,23 +24,17 @@ import {
   type ManifestPriceCheck,
 } from '../packages/shared/src/entitlements/catalog-drift.js';
 
-const key = process.env.PADDLE_READONLY_API_KEY;
-if (!key) {
-  console.error('UNVERIFIED: PADDLE_READONLY_API_KEY is unset');
-  process.exit(1);
-}
-
 const base =
   process.env.PADDLE_ENV === 'sandbox'
     ? 'https://sandbox-api.paddle.com'
     : 'https://api.paddle.com';
 
-async function paddleGet<T>(path: string): Promise<T[]> {
+async function paddleGet<T>(apiKey: string, path: string): Promise<T[]> {
   const rows: T[] = [];
   let url: string | null = `${base}${path}`;
   while (url) {
     const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${key}` },
+      headers: { Authorization: `Bearer ${apiKey}` },
     });
     if (!response.ok) {
       console.error(`UNVERIFIED: Paddle ${path} returned ${response.status}`);
@@ -122,53 +116,74 @@ function manifestPrices(): ManifestPriceCheck[] {
   return rows;
 }
 
-const prices = await paddleGet<PaddlePrice>('/prices?per_page=200');
-const discounts = await paddleGet<PaddleDiscount>('/discounts?per_page=200');
-const discountId = promoDiscountId();
-const rawDiscount = discounts.find((row) => row.id === discountId);
-const discount: DriftDiscount | null = rawDiscount?.id
-  ? {
-      id: rawDiscount.id,
-      status: rawDiscount.status ?? 'unknown',
-      percent: rawDiscount.type === 'percentage' ? Number(rawDiscount.amount) : Number.NaN,
-      restrictedPriceIds: rawDiscount.restrict_to ?? [],
-      expiresAt: rawDiscount.expires_at ?? null,
-    }
-  : null;
-
-const paddlePrices: DriftPrice[] = prices.flatMap((row) => {
-  if (!row.id || !row.unit_price?.amount || !row.unit_price.currency_code) return [];
-  const inr = row.unit_price_overrides?.find((override) => override.country_codes?.includes('IN'));
-  return [
-    {
-      id: row.id,
-      status: row.status ?? 'unknown',
-      amount: row.unit_price.amount,
-      currencyCode: row.unit_price.currency_code,
-      inrAmount: inr?.unit_price?.amount ?? null,
-      taxInclusive: row.tax_mode === 'internal',
-    },
-  ];
-});
-
 function promoId(id: string | null): string {
   return usablePriceId(id) ?? id ?? 'FILL_ME';
 }
 
-const sandboxCatalog = process.env.PADDLE_ENV === 'sandbox';
-const report = checkCatalogDrift({
-  manifest: manifestPrices(),
-  paddlePrices,
-  discount,
-  discountId,
-  promoPriceIds: sandboxCatalog
-    ? [SANDBOX_PRICE_IDS.plus_annual, SANDBOX_PRICE_IDS.pass_onetime]
-    : [promoId(PLUS_ANNUAL_2026_10.paddlePriceId), promoId(OFFERS.backlogPass.price.paddlePriceId)],
-  expectedExpiresAt: promoExpiresAt(),
-});
+async function main(): Promise<void> {
+  const key = process.env.PADDLE_READONLY_API_KEY?.trim() ?? '';
+  if (key.length === 0) {
+    console.log(
+      'SKIP: PADDLE_READONLY_API_KEY is empty, so the catalog was not compared to Paddle.',
+    );
+    return;
+  }
 
-if (!report.ok) {
-  for (const failure of report.failures) console.error(failure);
-  process.exit(1);
+  const prices = await paddleGet<PaddlePrice>(key, '/prices?per_page=200');
+  const discounts = await paddleGet<PaddleDiscount>(key, '/discounts?per_page=200');
+  const discountId = promoDiscountId();
+  const rawDiscount = discounts.find((row) => row.id === discountId);
+  const discount: DriftDiscount | null = rawDiscount?.id
+    ? {
+        id: rawDiscount.id,
+        status: rawDiscount.status ?? 'unknown',
+        percent: rawDiscount.type === 'percentage' ? Number(rawDiscount.amount) : Number.NaN,
+        restrictedPriceIds: rawDiscount.restrict_to ?? [],
+        expiresAt: rawDiscount.expires_at ?? null,
+      }
+    : null;
+
+  const paddlePrices: DriftPrice[] = prices.flatMap((row) => {
+    if (!row.id || !row.unit_price?.amount || !row.unit_price.currency_code) return [];
+    const inr = row.unit_price_overrides?.find((override) =>
+      override.country_codes?.includes('IN'),
+    );
+    return [
+      {
+        id: row.id,
+        status: row.status ?? 'unknown',
+        amount: row.unit_price.amount,
+        currencyCode: row.unit_price.currency_code,
+        inrAmount: inr?.unit_price?.amount ?? null,
+        taxInclusive: row.tax_mode === 'internal',
+      },
+    ];
+  });
+
+  const sandboxCatalog = process.env.PADDLE_ENV === 'sandbox';
+  const report = checkCatalogDrift({
+    manifest: manifestPrices(),
+    paddlePrices,
+    discount,
+    discountId,
+    promoPriceIds: sandboxCatalog
+      ? [SANDBOX_PRICE_IDS.plus_annual, SANDBOX_PRICE_IDS.pass_onetime]
+      : [
+          promoId(PLUS_ANNUAL_2026_10.paddlePriceId),
+          promoId(OFFERS.backlogPass.price.paddlePriceId),
+        ],
+    expectedExpiresAt: promoExpiresAt(),
+  });
+
+  if (!report.ok) {
+    for (const failure of report.failures) console.error(failure);
+    process.exit(1);
+  }
+  console.log(`catalog drift check passed (${paddlePrices.length} prices)`);
 }
-console.log(`catalog drift check passed (${paddlePrices.length} prices)`);
+
+// Wrapped rather than top-level await: tsx emits CJS for this package.
+void main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : error);
+  process.exit(1);
+});

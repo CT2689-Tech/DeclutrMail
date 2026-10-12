@@ -11,19 +11,14 @@
 // the interim 14-day pro-rata default.
 
 import type { Metadata } from 'next';
+
 import { isPricingV2 } from '@declutrmail/shared/entitlements';
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { RefundsV2 } from '@/features/marketing/pricing/refunds-v2';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 import { PAGE_LAST_UPDATED } from '@/features/marketing/page-dates';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
-
-export const metadata: Metadata = marketingPageMetadata({
-  title: 'Refund Policy — DeclutrMail',
-  description:
-    'How refunds and cancellations work for DeclutrMail subscriptions, whether you purchased through Paddle (global) or Razorpay (India).',
-  path: '/refunds',
-});
+import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
 
 // Full purchase/renewal refunds end subscription access when confirmed.
 // Upgrade-only refunds preserve the previously paid plan (ADR-0044).
@@ -39,8 +34,8 @@ const TOC = [
   { id: 'how-to-request', label: 'How to request a refund' },
 ] as const;
 
-export default function RefundPolicyPage() {
-  if (isPricingV2()) return <RefundsV2 />;
+function RefundPolicyPage({ pricingV2 = isPricingV2() }: { pricingV2?: boolean } = {}) {
+  if (pricingV2) return <RefundsV2 />;
   return (
     <LegalPageLayout title="Refund Policy" lastUpdated={LAST_UPDATED} toc={TOC}>
       <PageViewTracker page="refunds" />
@@ -156,4 +151,16 @@ export default function RefundPolicyPage() {
       </LegalSection>
     </LegalPageLayout>
   );
+}
+
+export const metadata: Metadata = marketingPageMetadata({
+  title: 'Refund Policy — DeclutrMail',
+  description:
+    'How refunds and cancellations work for DeclutrMail subscriptions, whether you purchased through Paddle (global) or Razorpay (India).',
+  path: '/refunds',
+});
+
+export default async function RefundPolicyRoute() {
+  const flags = await loadPricingFlags();
+  return <RefundPolicyPage pricingV2={flags.pricingV2} />;
 }

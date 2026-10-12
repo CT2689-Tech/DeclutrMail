@@ -77,9 +77,9 @@ describe('empty WS1 fillers', () => {
     expect(JSON.stringify(comparisonFaqJsonLd(filters!))).not.toContain('{plusName}');
   });
 
-  it('keeps llms.txt and llms-full.txt free of empty fillers and false verification', () => {
-    const llms = renderLlmsTxt();
-    const full = renderLlmsFullTxt();
+  it('keeps llms.txt and llms-full.txt free of empty fillers and false verification', async () => {
+    const llms = await renderLlmsTxt();
+    const full = await renderLlmsFullTxt();
     expectClean(llms, 'llms.txt');
     expectClean(full, 'llms-full.txt');
     expect(llms).toContain('Google OAuth verification for gmail.modify approved April 21, 2026');

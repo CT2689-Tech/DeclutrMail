@@ -5,6 +5,7 @@
  * an empty legal-entity element, or a broken "operated by" sentence.
  */
 
+import { createElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { hasPostalAddress } from '@declutrmail/shared/copy';
@@ -19,6 +20,14 @@ import PrivacyPolicyPage from './privacy/page';
 import RefundPolicyPage from './refunds/page';
 import SecurityPage from './security/page';
 import TermsOfServicePage from './terms/page';
+
+/** Async routes resolve launch flags before render; sync pages stay components. */
+async function pageElement(
+  Page: React.ComponentType | (() => Promise<ReactElement>),
+): Promise<ReactElement> {
+  if (Page.constructor.name === 'AsyncFunction') return (Page as () => Promise<ReactElement>)();
+  return createElement(Page as React.ComponentType);
+}
 
 vi.mock('@/lib/posthog', () => ({
   track: vi.fn().mockResolvedValue(undefined),
@@ -71,8 +80,11 @@ function assertNoPlaceholder(container: HTMLElement) {
 }
 
 describe('legal entity omission', () => {
-  it.each(PAGES)('%s renders no placeholder and no empty legal-entity element', (_name, Page) => {
-    const { container } = render(<Page />);
-    assertNoPlaceholder(container);
-  });
+  it.each(PAGES)(
+    '%s renders no placeholder and no empty legal-entity element',
+    async (_name, Page) => {
+      const { container } = render(await pageElement(Page));
+      assertNoPlaceholder(container);
+    },
+  );
 });

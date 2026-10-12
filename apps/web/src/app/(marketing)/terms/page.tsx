@@ -6,6 +6,7 @@
 // the D146 validation threshold.
 
 import type { Metadata } from 'next';
+
 import { isPricingV2 } from '@declutrmail/shared/entitlements';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import { TermsPlansV2 } from '@/features/marketing/pricing/terms-v2';
@@ -14,13 +15,7 @@ import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 import { PAGE_LAST_UPDATED } from '@/features/marketing/page-dates';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
-
-export const metadata: Metadata = marketingPageMetadata({
-  title: 'Terms of Service — DeclutrMail',
-  description:
-    'The terms that govern your use of DeclutrMail: service description, Gmail account requirement, plans and billing, acceptable use, and liability.',
-  path: '/terms',
-});
+import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
 
 const LAST_UPDATED = PAGE_LAST_UPDATED['/terms'];
 
@@ -39,7 +34,7 @@ const TOC = [
   { id: 'contact', label: 'Contact' },
 ] as const;
 
-export default function TermsOfServicePage() {
+function TermsOfServicePage({ pricingV2 = isPricingV2() }: { pricingV2?: boolean } = {}) {
   return (
     <LegalPageLayout title="Terms of Service" lastUpdated={LAST_UPDATED} toc={TOC}>
       <PageViewTracker page="terms" />
@@ -90,7 +85,7 @@ export default function TermsOfServicePage() {
         </p>
       </LegalSection>
 
-      {isPricingV2() ? (
+      {pricingV2 ? (
         <TermsPlansV2 />
       ) : (
         <LegalSection id="plans-billing" title="4. Plans and billing">
@@ -218,4 +213,16 @@ export default function TermsOfServicePage() {
       </LegalSection>
     </LegalPageLayout>
   );
+}
+
+export const metadata: Metadata = marketingPageMetadata({
+  title: 'Terms of Service — DeclutrMail',
+  description:
+    'The terms that govern your use of DeclutrMail: service description, Gmail account requirement, plans and billing, acceptable use, and liability.',
+  path: '/terms',
+});
+
+export default async function TermsOfServiceRoute() {
+  const flags = await loadPricingFlags();
+  return <TermsOfServicePage pricingV2={flags.pricingV2} />;
 }

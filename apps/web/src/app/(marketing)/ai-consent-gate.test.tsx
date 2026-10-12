@@ -36,12 +36,12 @@ function textOf(node: Element): string {
 }
 
 describe('AI consent gate on the public pages', () => {
-  it('renders the deck consent step on /privacy, /security, /methodology and /llms.txt', () => {
+  it('renders the deck consent step on /privacy, /security, /methodology and /llms.txt', async () => {
     const privacy = render(<PrivacyPolicyPage />);
     const security = render(<SecurityPage />);
     const methodology = render(<MethodologyPage />);
-    const llms = renderLlmsTxt();
-    const llmsFull = renderLlmsFullTxt();
+    const llms = await renderLlmsTxt();
+    const llmsFull = await renderLlmsFullTxt();
 
     const privacyAi = privacy.container.querySelector('#ai-processing');
     const securityAi = security.container.querySelector('#ai-processing');
