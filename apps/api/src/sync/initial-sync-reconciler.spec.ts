@@ -159,6 +159,40 @@ describe('reconcileInitialSyncs', () => {
       expect(schedule).not.toHaveBeenCalled();
     },
   );
+  it('parks a retryable failure whose grant was already refused instead of scanning again', async () => {
+    const id = await seedSyncState('revoked-transient@x.test', 'failed', STALE);
+    await db
+      .update(providerSyncState)
+      .set({
+        errorCode: 'TransientError',
+        progressPct: 5,
+        lastHistoryId: 123n,
+        lastIncrementalErrorCode: 'InvalidGrantError',
+        lastIncrementalErrorAt: new Date(NOW.getTime() - 60_000),
+        initialRetryAt: new Date(NOW.getTime() - 1),
+      })
+      .where(eq(providerSyncState.mailboxAccountId, id));
+    const schedule = vi.fn();
+    await reconcileInitialSyncs({
+      db: db as never,
+      schedule,
+      isShuttingDown: () => false,
+      now: () => new Date(NOW.getTime() + 20 * 60_000),
+    });
+    expect(schedule).not.toHaveBeenCalled();
+    const [row] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, id));
+    expect(row).toMatchObject({
+      readinessStatus: 'needs_reconnect',
+      errorCode: 'InvalidGrantError',
+      progressPct: 5,
+      lastHistoryId: 123n,
+      initialRetryAt: null,
+    });
+  });
+
   it('does not requeue a mailbox parked on needs_reconnect', async () => {
     const id = await seedSyncState('reconnect@x.test', 'needs_reconnect', STALE);
     await db

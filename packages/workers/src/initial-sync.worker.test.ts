@@ -284,6 +284,31 @@ describe('InitialSyncWorker', () => {
     },
   );
 
+  it('does not call Gmail again when a retryable first scan already has a refused grant', async () => {
+    await db.insert(providerSyncState).values({
+      mailboxAccountId,
+      readinessStatus: 'failed',
+      errorCode: 'TransientError',
+      progressPct: 5,
+      lastHistoryId: 123n,
+      lastIncrementalErrorCode: 'InvalidGrantError',
+      lastIncrementalErrorAt: new Date('2026-09-05T23:50:49.000Z'),
+    });
+    const getClient = vi.fn();
+    const worker = new InitialSyncWorker({ db, gmailAccess: { getClient } });
+    const result = await worker.processJob({ mailboxAccountId }, CTX);
+    expect(getClient).not.toHaveBeenCalled();
+    expect(result.gmailApiCalls).toBe(0);
+    const [row] = await db.select().from(providerSyncState);
+    expect(row).toMatchObject({
+      readinessStatus: 'needs_reconnect',
+      errorCode: 'InvalidGrantError',
+      progressPct: 5,
+      lastHistoryId: 123n,
+      initialRetryAt: null,
+    });
+  });
+
   function rejectNeedsReconnectWrite(makeError: () => Error): void {
     const original = db.transaction.bind(db);
     db.transaction = (async (callback, config) =>

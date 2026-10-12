@@ -1,4 +1,5 @@
 export { BaseDeclutrWorker } from './base-declutr-worker.js';
+export { isNeedsReconnectEnumMissing } from './initial-sync.worker.js';
 export type { WorkerContext } from './worker-context.js';
 export { NOOP_WORKER_OBSERVER } from './worker-observer.js';
 export type {

@@ -1120,6 +1120,29 @@ describe('scrubSentryLog', () => {
     });
   });
 
+  it('keeps a reconnect notice as a warning and drops anything else on that kind', () => {
+    const out = scrubSentryLog({
+      level: 'warn',
+      message: 'Gmail grant lacks required permissions — reconnect required',
+      attributes: {
+        kind: 'worker.reconnect_required',
+        worker: 'InitialSyncWorker',
+        policy: 'perMailboxPolicy',
+        error_class: 'InvalidGrantError',
+        job_id: 'ref_9906812f2a111b480ad475f1',
+        mailbox_account_id: 'ref_111111111111111111111111',
+      },
+    });
+    expect(out?.message).toBe('worker.reconnect_required');
+    expect(out?.level).toBe('warn');
+    expect(out?.attributes).toMatchObject({
+      kind: 'worker.reconnect_required',
+      worker: 'InitialSyncWorker',
+      error_class: 'InvalidGrantError',
+    });
+    expect(JSON.stringify(out)).not.toContain('permissions');
+  });
+
   it('keeps the postal-refusal attributes that the event channel had been dropping', () => {
     const out = scrubSentryLog({
       level: 'warn',

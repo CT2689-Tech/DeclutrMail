@@ -128,7 +128,12 @@ const SENTRY_LOG_LEVELS = new Set(['trace', 'debug', 'info', 'warn', 'error', 'f
  * `SENTRY_SERVER_TAG_ALLOWLIST` — it must be a closed enum, never a
  * caller-supplied string.
  */
-const SENTRY_LOG_KINDS = new Set(['dead_letter.parked', 'email.refused_no_postal_address']);
+const SENTRY_LOG_KINDS = new Set([
+  'dead_letter.parked',
+  'email.refused_no_postal_address',
+  // A Gmail grant the user has to reconnect. Warning log, never an error.
+  'worker.reconnect_required',
+]);
 /**
  * The only `captureMessage` text the server profile may send. Exact
  * match, never a prefix: a message is the same leak as `Error.message`.
