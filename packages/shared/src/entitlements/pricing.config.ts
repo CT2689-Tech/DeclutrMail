@@ -446,14 +446,14 @@ export function usableDiscountId(id: string | null | undefined): string | null {
 /** PH30 id for this price, or null while live is FILL_ME or the price is outside the offer. */
 export function checkoutDiscountId(
   env: NodeJS.ProcessEnv = process.env,
-  priceId?: string,
+  priceId?: string | null,
 ): string | null {
   const sandbox = env.PADDLE_ENV === 'sandbox';
   const id = usableDiscountId(sandbox ? PROMO_DISCOUNT_IDS.sandbox : PROMO_DISCOUNT_IDS.live);
   if (!id) return null;
   if (priceId === undefined) return id;
-  const allowed: readonly string[] = sandbox
+  const allowed = sandbox
     ? [SANDBOX_PRICE_IDS.plus_annual, SANDBOX_PRICE_IDS.pass_onetime]
     : [PLUS_ANNUAL_2026_10.paddlePriceId, OFFERS.backlogPass.price.paddlePriceId];
-  return allowed.includes(priceId) ? id : null;
+  return allowed.some((candidate) => candidate === priceId) ? id : null;
 }
