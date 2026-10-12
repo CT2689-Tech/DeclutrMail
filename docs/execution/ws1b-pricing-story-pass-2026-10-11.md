@@ -95,15 +95,24 @@ write was made.
   `0094`. None are applied by this PR.
 - The Pass purchase proof is the `rehearse` job in
   `.github/workflows/billing-checkout-revocation-rehearsal.yml`,
-  dispatched with `rehearsal=pass`. Run 38190128825 logged
-  `boundary REHEARSAL_OPERATOR_KEY=absent`. `PADDLE_API_KEY`,
-  `DATABASE_URL`, `BILLING_REHEARSAL`, and `PADDLE_ENV` were ok. The
-  checkout step in that job was skipped by its `if`. The main checkout
-  step has no `if` and logs the operator key as set (run 38120969543).
-  An unconditional step now loads the same secret, and the pass steps
-  inherit it. The boundary check is unchanged. The shape step writes
-  the status report with no values. This environment still has no
-  Paddle key, so the proof is that workflow run.
+  dispatched with `rehearsal=pass`. Run 38204738293 on `25113eef`
+  passed every boundary check, including `REHEARSAL_OPERATOR_KEY=ok`.
+  Catalog read succeeded: Pass `pri_01m4phkr8yhydb76dz11b74br8` is
+  active at `1900` USD with no billing cycle, Plus annual
+  `pri_01m4phk06hdmmq5cw5b8aa5r2y` is active at `5900` USD per year,
+  and PH30 `dsc_01m4phpp04scdes9ghqn3qps77` is active at 30% on those
+  two prices. Nothing is missing from the sandbox catalog. Payment
+  then failed at `pass_first` with `Sandbox checkout payment was not
+completed` and `checkoutFrames` empty. Paddle's `checkout.url` was
+  the account default payment link plus `_ptxn`, and that page does
+  not load Paddle.js, so the card form never opened. The rehearsal
+  now creates a disposable `test_` client token, serves `GET /pay`
+  with sandbox Paddle.js, and sets `checkout.url` to that page. It
+  rejects a returned link whose origin, path, or `_ptxn` is not that
+  page. The one-time body stays `collection_mode: automatic` with
+  quantity 1 and no `billing_cycle`. The token is revoked on
+  shutdown. The boundary check is unchanged. The purchase has not
+  passed until a later run says so.
 - The launch refund window is 14 days. `POLICY.refundWindowDays` is 14.
   Flags-on `/refunds` renders `RefundsV2`. Every window sentence is a
   deck template (`refunds.toc.window`, `refunds.summary`,
