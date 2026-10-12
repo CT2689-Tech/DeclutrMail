@@ -5564,7 +5564,7 @@ describe('SendersScreen — one list, detail pane, pagination & load more (D202)
     class FakeIO {
       cb: IntersectionObserverCallback;
       observed: Element[] = [];
-      constructor(cb: IntersectionObserverCallback) {
+      constructor(cb: IntersectionObserverCallback, _options?: IntersectionObserverInit) {
         this.cb = cb;
         observers.push(this);
       }

@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
+import type { schema } from '@declutrmail/db';
 import {
   inboxReportCache,
   invalidateInboxReportCache,
   mailMessages,
   mailboxAccounts,
-  schema,
   senders,
   syncRuns,
   users,

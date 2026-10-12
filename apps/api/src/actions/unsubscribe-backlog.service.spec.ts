@@ -1,8 +1,8 @@
+import type { schema } from '@declutrmail/db';
 import {
   actionJobs,
   mailMessages,
   mailboxAccounts,
-  schema,
   senderPolicies,
   senders,
   undoJournal,
