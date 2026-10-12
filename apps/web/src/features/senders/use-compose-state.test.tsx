@@ -131,6 +131,26 @@ describe('useComposeState — shareable Senders scope', () => {
     expect(url.searchParams.get('direction')).toBe('asc');
   });
 
+  it('restores a size sort instead of falling back to Most received', () => {
+    setParams('sort=name&direction=asc');
+    const { result } = renderHook(() => useComposeState());
+
+    act(() =>
+      result.current.applySavedScope({
+        compose: { ...EMPTY_COMPOSE },
+        sort: 'size',
+        direction: 'desc',
+      }),
+    );
+
+    const url = lastReplacement();
+    expect(result.current.sort).toBe('size');
+    expect(result.current.direction).toBe('desc');
+    expect(useSendersStore.getState()).toMatchObject({ sort: 'size', direction: 'desc' });
+    expect(url.searchParams.get('sort')).toBe('size');
+    expect(url.searchParams.get('direction')).toBe('desc');
+  });
+
   it('responds to browser history changes and keeps zero-result recovery atomic', async () => {
     setParams('q=first&activity=quiet');
     const { result, rerender } = renderHook(() => useComposeState());

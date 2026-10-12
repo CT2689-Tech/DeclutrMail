@@ -5874,4 +5874,59 @@ describe('SendersScreen — a saved view keeps a size sort', () => {
       }),
     ]);
   });
+
+  it('restores Largest senders when a size-sorted view is applied', async () => {
+    useSendersStore.setState({ sort: 'total', direction: 'desc' });
+    let settingsSeen = false;
+    let saved: { views?: Array<{ name: string; sort: string; direction: string }> } | null = null;
+    installFetchStub([
+      oneSenderHandler(),
+      {
+        method: 'GET',
+        path: '/api/me/settings',
+        respond: () => {
+          settingsSeen = true;
+          return jsonOk({ data: { senderViews: saved?.views ?? [] } });
+        },
+      },
+      {
+        method: 'PATCH',
+        path: '/api/me/sender-views',
+        respond: async (req) => {
+          saved = (await req.json()) as NonNullable<typeof saved>;
+          return jsonOk({ data: { senderViews: saved.views } });
+        },
+      },
+    ]);
+
+    renderScreen();
+    await screen.findAllByText(/Sender A/);
+    await waitFor(() => expect(settingsSeen).toBe(true));
+    fireEvent.click(screen.getByRole('button', { name: 'Mail in Inbox' }));
+    fireEvent.click(screen.getByRole('button', { name: /sort/i }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Largest senders' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /sort/i })).toHaveTextContent(/largest senders/i),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^filter/i }));
+    const dialog = await screen.findByRole('dialog', { name: 'Filters' });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'New view name' }), {
+      target: { value: 'Big mail' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(saved?.views?.[0]?.sort).toBe('size'));
+    await screen.findByRole('button', { name: 'Big mail' });
+
+    fireEvent.click(screen.getByRole('button', { name: /sort/i }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Most received' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /sort/i })).toHaveTextContent(/most received/i),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Big mail' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /sort/i })).toHaveTextContent(/largest senders/i),
+    );
+    expect(useSendersStore.getState().sort).toBe('size');
+  });
 });
