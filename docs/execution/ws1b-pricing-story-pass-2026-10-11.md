@@ -175,14 +175,15 @@ None of these migrations has been applied to a live database. #985 takes
   calls `returnAfterUpgrade`. It does not reopen a Senders or Triage
   confirm. That confirm is WS2.
 
-## Next rebase, #997
+## Rebase onto #997
 
-#997 (llms.txt H1-first order, deck r12) is expected to merge before this
-PR. Do not rebase until it has merged. On that rebase, keep the H1-first
-order. Do not restore disambiguation-first. Apply `withPricingChangelog()`
-to the body before `withOpeningFacts`. `llms-txt.test.ts` should expect
+#997 merged as `68b7e2bc` (`fix(web): order llms.txt from drop2-r12`).
+This branch is rebased onto that main. Main's H1-first `llms.txt` and
+deck stay canonical. `withPricingChangelog()` runs on the body before
+`withOpeningFacts`. `llms-txt.test.ts` expects
 `startsWith('# DeclutrMail\n')`. `## Pricing` still goes last when
-`PRICING_V2` is on.
+`PRICING_V2` is on. The changelog line is present only while that flag
+is on.
 
 ## Rebase onto #978
 
