@@ -3,9 +3,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { screenerCountQueryOptions } from '@/features/screener/api/query-options';
 import { laterRecoveryQueryOptions } from '@/features/snoozed/api/query-options';
 
+import { billingSubscriptionQueryOptions } from '@/features/billing/api/query-options';
+
 import { ApiError } from './client';
 import { backgroundPollPaused, backgroundRefetchInterval } from './background-poll';
-import { retryTransientOnly } from './retry';
+import { retryDroppedFetch, retryTransientOnly } from './retry';
 
 const originalVisibility = Object.getOwnPropertyDescriptor(document, 'visibilityState');
 const originalOnline = Object.getOwnPropertyDescriptor(navigator, 'onLine');
@@ -72,5 +74,19 @@ describe('screener count and Later recovery polls', () => {
     setOnline(false);
     expect(intervalOf(screener)).toBe(false);
     expect(intervalOf(later)).toBe(false);
+  });
+
+  it('retries a dropped billing read and does not retry a 503', () => {
+    const billing = billingSubscriptionQueryOptions((async () => {
+      throw new Error('not called');
+    }) as never);
+    expect(billing.retry).toBe(retryDroppedFetch);
+    expect(billing.retryOnMount).toBe(false);
+    expect(retryDroppedFetch(1, new TypeError('Failed to fetch'))).toBe(true);
+    expect(retryDroppedFetch(3, new TypeError('Failed to fetch'))).toBe(false);
+    expect(retryDroppedFetch(0, new ApiError(503, {}, 'billing disabled'))).toBe(false);
+    expect(retryDroppedFetch(0, new DOMException('The operation was aborted.', 'AbortError'))).toBe(
+      false,
+    );
   });
 });
