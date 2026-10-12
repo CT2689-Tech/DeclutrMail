@@ -5,16 +5,18 @@ import { hydrateRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
 import {
   dehydrate,
+  hydrate,
   QueryClient,
   QueryClientProvider,
   type DehydratedState,
 } from '@tanstack/react-query';
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { QueryHydrationBoundary } from '@/lib/query-hydration-boundary';
+import { QueryHydrationBoundary, SERVER_STREAM_PLACEHOLDER } from '@/lib/query-hydration-boundary';
 
 import { billingKeys } from './api/query-keys';
 import { BillingInvoiceHistoryGate } from './billing-invoice-history-gate';
+import { InvoiceHistory } from './invoice-history';
 
 vi.mock('@/lib/api/client', () => ({
   apiGet: vi.fn(),
@@ -193,4 +195,92 @@ it('hydrates a settled invoice list without a recoverable error', async () => {
     server.clear();
     client.clear();
   }
+});
+
+const PROVIDER_UNAVAILABLE = {
+  invoices: [],
+  unavailableProviders: ['paddle' as const],
+  omittedRows: 0,
+  truncated: false,
+};
+
+function installMatchMedia(): void {
+  window.matchMedia = vi.fn().mockImplementation(() => ({
+    matches: false,
+    media: '',
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }));
+}
+
+it('keeps the streamed invoice skeleton when the fulfilled payload is already in the cache', async () => {
+  // The server flushed "Loading invoices" while the stream was pending.
+  // Next then delivers the resolved payload before the client hydrates, so
+  // the cache can already hold the provider result. The first render still
+  // has to be the skeleton.
+  installMatchMedia();
+  const source = new QueryClient();
+  source.setQueryData(billingKeys.invoices(), PROVIDER_UNAVAILABLE);
+  const state = dehydrate(source);
+  const streamed = state.queries[0];
+  if (!streamed) throw new Error('missing invoice query');
+  streamed.meta = { [SERVER_STREAM_PLACEHOLDER]: true };
+  const server = new QueryClient();
+  hydrate(server, state);
+
+  const html = renderToString(
+    <QueryClientProvider client={server}>
+      <InvoiceHistory enabled />
+    </QueryClientProvider>,
+  );
+  expect(html).toContain('Loading invoices');
+  expect(html).not.toContain('Try again');
+
+  const client = new QueryClient();
+  hydrate(client, state);
+  const container = document.createElement('div');
+  document.body.append(container);
+  container.innerHTML = html;
+  const errors: unknown[] = [];
+  let root!: ReturnType<typeof hydrateRoot>;
+  try {
+    await act(async () => {
+      root = hydrateRoot(
+        container,
+        <QueryClientProvider client={client}>
+          <InvoiceHistory enabled />
+        </QueryClientProvider>,
+        { onRecoverableError: (error) => errors.push(error) },
+      );
+    });
+    expect(errors).toEqual([]);
+    expect(container.textContent).toContain('Try again');
+    expect(container.textContent).toContain('return your invoices');
+  } finally {
+    await act(async () => root?.unmount());
+    container.remove();
+    source.clear();
+    server.clear();
+    client.clear();
+  }
+});
+
+it('renders a settled invoice result when the stream was not pending', () => {
+  const source = new QueryClient();
+  source.setQueryData(billingKeys.invoices(), PROVIDER_UNAVAILABLE);
+  const client = new QueryClient();
+  hydrate(client, dehydrate(source));
+  const html = renderToString(
+    <QueryClientProvider client={client}>
+      <InvoiceHistory enabled />
+    </QueryClientProvider>,
+  );
+  expect(html).toContain('Try again');
+  expect(html).not.toContain('Loading invoices');
+  source.clear();
+  client.clear();
 });

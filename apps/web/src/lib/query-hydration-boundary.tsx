@@ -3,6 +3,15 @@
 import { useMemo, type ReactNode } from 'react';
 import { HydrationBoundary, useQueryClient, type DehydratedState } from '@tanstack/react-query';
 
+/**
+ * Set on a query dehydrated while its read was still in flight. Next can
+ * hand the client the resolved value before hydration, and a synchronous
+ * Flight `then` promotes that query before children render. Consumers that
+ * painted a loading placeholder on the server keep it for the hydration
+ * render, then reveal the resolved value after mount.
+ */
+export const SERVER_STREAM_PLACEHOLDER = 'serverPlaceholder';
+
 /** Preserve the pending server snapshot on the first client render. */
 export function QueryHydrationBoundary({
   state,
@@ -21,7 +30,11 @@ export function QueryHydrationBoundary({
       // preserving the snapshot while still adopting the same server read.
       const promise = Promise.resolve(query.promise);
       void promise.catch(() => undefined);
-      return { ...query, promise };
+      return {
+        ...query,
+        promise,
+        meta: { ...query.meta, [SERVER_STREAM_PLACEHOLDER]: true },
+      };
     });
 
     // HydrationBoundary applies a query that already exists only in an

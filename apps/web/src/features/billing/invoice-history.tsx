@@ -22,7 +22,8 @@ import linkStyles from './billing-links.module.css';
  *     open this page after leaving is to fetch last year's receipts.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import {
   Button,
@@ -33,7 +34,10 @@ import {
 } from '@declutrmail/shared';
 import type { BillingInvoice } from '@declutrmail/shared/contracts';
 
+import { SERVER_STREAM_PLACEHOLDER } from '@/lib/query-hydration-boundary';
+
 import { formatProviderAmount, formatBillingDate } from './billing-model';
+import { billingKeys } from './api/query-keys';
 import { useInvoiceDocument, useInvoices } from './api/use-invoices';
 import { GroupTitle } from '@/features/settings/settings-list';
 
@@ -76,6 +80,22 @@ const STATUS_LABEL: Record<BillingInvoice['status'], string | null> = {
 };
 
 export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
+  const queryClient = useQueryClient();
+  // Read before useInvoices: mounting the observer replaces query options
+  // and drops this meta. The flag means the server flushed the skeleton
+  // while the invoice read was still streaming. The resolved payload can
+  // already be in the cache at hydration, and painting it then is a
+  // different tree from that skeleton (React #418).
+  const [holdStreamPlaceholder] = useState(
+    () =>
+      queryClient.getQueryCache().find({ queryKey: billingKeys.invoices() })?.meta?.[
+        SERVER_STREAM_PLACEHOLDER
+      ] === true,
+  );
+  const [streamRevealed, setStreamRevealed] = useState(false);
+  useEffect(() => {
+    setStreamRevealed(true);
+  }, []);
   const invoices = useInvoices({ enabled });
   const mint = useInvoiceDocument();
   const isPhone = useIsAtMost('xs');
@@ -85,7 +105,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
 
   if (!enabled) return null;
 
-  if (invoices.isLoading) {
+  if ((holdStreamPlaceholder && !streamRevealed) || invoices.isLoading) {
     return (
       <section aria-label="Invoices" data-testid="invoice-history" style={SECTION_STYLE}>
         <GroupTitle as="div">Invoices</GroupTitle>
