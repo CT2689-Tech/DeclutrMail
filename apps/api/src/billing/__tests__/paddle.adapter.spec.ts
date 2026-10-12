@@ -211,6 +211,38 @@ describe('PaddleAdapter.mapWebhookEvent', () => {
     });
   });
 
+  it('matches the subscription and the Pass on the price id when price custom_data is null', () => {
+    const annual = paddleSubscriptionActivated({
+      priceId: 'pri_01m4qk99878y7jynh1h00jfhy8',
+      priceCustomData: null,
+    });
+    expect(adapter.mapWebhookEvent(annual)).toMatchObject({
+      kind: 'subscription',
+      subscription: { providerPriceId: 'pri_01m4qk99878y7jynh1h00jfhy8' },
+    });
+
+    const lying = paddleSubscriptionActivated({
+      eventId: 'evt_lying_plan_code',
+      priceId: 'pri_01m4qk99878y7jynh1h00jfhy8',
+      priceCustomData: { plan_code: 'plus_monthly', version: 'legacy' },
+    });
+    expect(adapter.mapWebhookEvent(lying)).toMatchObject({
+      kind: 'subscription',
+      subscription: { providerPriceId: 'pri_01m4qk99878y7jynh1h00jfhy8' },
+    });
+
+    const pass = paddleTransactionCompleted({
+      subscriptionId: null,
+      priceIds: ['pri_01m4qkayqz3t54gdh9jq5b8ypq'],
+      priceCustomData: null,
+    });
+    expect(adapter.mapWebhookEvent(pass)).toMatchObject({
+      kind: 'payment',
+      providerSubscriptionId: null,
+      oneTimePriceIds: ['pri_01m4qkayqz3t54gdh9jq5b8ypq'],
+    });
+  });
+
   it('maps transaction.completed / payment_failed to payment effects', () => {
     expect(adapter.mapWebhookEvent(paddleTransactionCompleted({}))).toMatchObject({
       kind: 'payment',
@@ -426,6 +458,7 @@ describe('PaddleAdapter checkout + cancel', () => {
     });
     expect(JSON.stringify(session)).not.toContain('FILL_ME');
     expect(session).not.toHaveProperty('discountId');
+    expect(session).not.toHaveProperty('plan_code');
   });
 
   it('attaches the sandbox PH30 discount only to a launch price', async () => {

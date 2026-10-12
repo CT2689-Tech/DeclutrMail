@@ -1325,6 +1325,48 @@ describe('BillingWebhookService.process', () => {
     });
   });
 
+  it('grants the catalog plan for the price id when price custom_data is null', async () => {
+    const missing = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_null_price_custom_data',
+      subscriptionId: 'sub_null_custom',
+      priceId: TEST_PRICE_IDS.paddle.plus_monthly,
+      priceCustomData: null,
+    });
+    expect(await service.process('paddle', paddle.mapWebhookEvent(missing), missing)).toEqual({
+      kind: 'processed',
+      effect: 'subscription:active',
+    });
+    const [row] = await db.select().from(subscriptions);
+    expect(row).toMatchObject({
+      tier: 'plus',
+      billingCycle: 'monthly',
+      providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+    });
+  });
+
+  it('grants the catalog plan for the price id when price custom_data names another plan', async () => {
+    const lying = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_lying_price_custom_data',
+      subscriptionId: 'sub_lying_custom',
+      priceId: TEST_PRICE_IDS.paddle.pro_annual,
+      priceCustomData: { plan_code: 'plus_annual', version: '2026-10' },
+    });
+    expect(await service.process('paddle', paddle.mapWebhookEvent(lying), lying)).toEqual({
+      kind: 'processed',
+      effect: 'subscription:active',
+    });
+    const [row] = await db.select().from(subscriptions);
+    expect(row).toMatchObject({
+      tier: 'pro',
+      billingCycle: 'annual',
+      providerPriceId: TEST_PRICE_IDS.paddle.pro_annual,
+    });
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('pro');
+  });
+
   it('payment events are observability-only; unknown price ids are recorded but never flip', async () => {
     const txn = paddleTransactionCompleted({});
     const txnOutcome = await service.process('paddle', paddle.mapWebhookEvent(txn), txn);

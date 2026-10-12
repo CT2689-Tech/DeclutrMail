@@ -202,7 +202,7 @@ export class BillingCatalog {
     return usablePriceId(id);
   }
 
-  /** Reverse: webhook's provider price id → catalog entry or null. */
+  /** Reverse: webhook price id → catalog entry. Price custom_data is not an input. */
   resolveByPriceId(provider: BillingProviderId, providerPriceId: string): CatalogEntry | null {
     return (
       this.entries.find((e) =>

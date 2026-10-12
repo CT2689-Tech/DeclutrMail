@@ -328,6 +328,7 @@ function endsSubscription(adjustment: PaddleAdjustment): boolean {
   return !(adjustment.items ?? []).some((i) => i?.type === 'partial');
 }
 
+/** Price ids only. A null or contradictory price `custom_data` does not change the match. */
 function transactionPriceIds(data: PaddleTransaction | undefined): string[] {
   const fromItems = (data?.items ?? [])
     .map((item) => item.price?.id)
@@ -407,6 +408,7 @@ function toNormalizedSubscription(
   sub: PaddleSubscription,
   webhookSecret: string | undefined,
 ): NormalizedSubscription | null {
+  // Plan identity is the price id. Price `custom_data` is not a plan code.
   const priceId = sub.items?.[0]?.price?.id;
   if (!sub.id || !priceId) {
     throw new Error('Paddle subscription payload missing id or items[0].price.id');

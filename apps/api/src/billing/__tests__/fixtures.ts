@@ -61,6 +61,8 @@ export function paddleSubscriptionActivated(args: {
    * `workspaceId` alone hardcodes the reader's shape and cannot.
    */
   customData?: Record<string, unknown>;
+  /** Price-object `custom_data`. Null is what the live 2026-10 prices carry. */
+  priceCustomData?: Record<string, unknown> | null;
   status?: string;
   customerId?: string;
   scheduledChange?: { action: string; effective_at: string } | null;
@@ -108,6 +110,7 @@ export function paddleSubscriptionActivated(args: {
             product_id: 'pro_01paddle000001',
             description: 'Plus monthly',
             unit_price: { amount: '900', currency_code: 'USD' },
+            ...(args.priceCustomData !== undefined ? { custom_data: args.priceCustomData } : {}),
           },
         },
       ],
@@ -125,6 +128,8 @@ export function paddleTransactionCompleted(args: {
   workspaceId?: string;
   transactionId?: string;
   priceIds?: string[];
+  /** Price-object `custom_data`. Identity stays `price.id`. */
+  priceCustomData?: Record<string, unknown> | null;
 }): Record<string, unknown> {
   return {
     event_id: args.eventId ?? 'evt_01paddle_txn_000001',
@@ -139,7 +144,17 @@ export function paddleTransactionCompleted(args: {
       currency_code: 'USD',
       details: { totals: { grand_total: '900' } },
       ...(args.priceIds
-        ? { items: args.priceIds.map((id) => ({ price: { id }, quantity: 1 })) }
+        ? {
+            items: args.priceIds.map((id) => ({
+              price: {
+                id,
+                ...(args.priceCustomData !== undefined
+                  ? { custom_data: args.priceCustomData }
+                  : {}),
+              },
+              quantity: 1,
+            })),
+          }
         : {}),
       ...(args.workspaceId ? { custom_data: signedCustomData(args.workspaceId) } : {}),
     },

@@ -102,6 +102,38 @@ describe('Backlog Pass grants', () => {
     expect(extended!.expiresAt!.getTime()).toBeGreaterThan(before[0]!.expiresAt!.getTime());
   });
 
+  it('grants from the price id when price custom_data is null', async () => {
+    const fixture = paddleTransactionCompleted({
+      eventId: 'evt_null_price_custom_data',
+      subscriptionId: null,
+      workspaceId,
+      transactionId: 'txn_null_custom',
+      priceIds: [PASS_PRICE],
+      priceCustomData: null,
+    });
+    expect(await service.process('paddle', paddle.mapWebhookEvent(fixture), fixture)).toEqual({
+      kind: 'processed',
+      effect: 'pass:granted',
+    });
+    expect(await db.select().from(entitlementGrants)).toHaveLength(1);
+  });
+
+  it('does not grant from price custom_data when the price id is not the Pass', async () => {
+    const fixture = paddleTransactionCompleted({
+      eventId: 'evt_custom_data_is_not_the_pass',
+      subscriptionId: null,
+      workspaceId,
+      transactionId: 'txn_custom_data_only',
+      priceIds: ['pri_not_in_catalog'],
+      priceCustomData: { plan_code: 'pass_onetime', version: '2026-10' },
+    });
+    expect(await service.process('paddle', paddle.mapWebhookEvent(fixture), fixture)).toEqual({
+      kind: 'unresolved',
+      reason: 'unknown_price',
+    });
+    expect(await db.select().from(entitlementGrants)).toHaveLength(0);
+  });
+
   it('leaves an unknown one-off price unprocessed', async () => {
     const fixture = completed('txn_unknown', 'pri_not_in_catalog');
     const event = paddle.mapWebhookEvent(fixture);
