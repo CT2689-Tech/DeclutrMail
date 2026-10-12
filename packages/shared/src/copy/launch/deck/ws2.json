@@ -446,7 +446,7 @@
     "staleClaim": "No email arrived from this sender in the last 90 days, so there’s nothing to measure as marked read yet."
   },
   "aiPrompt": {
-    "_notShipping": ["frequency"],
+    "_notShipping": ["text", "review", "dismiss", "dismissAria", "frequency"],
     "text": "Want AI to explain each suggestion?",
     "review": "Learn more",
     "dismiss": "No thanks",

@@ -119,10 +119,10 @@ function sentenceBesideFigure(sentence: string, figure: string | null): string {
   return sentence.startsWith(prefix) ? sentence.slice(prefix.length) : sentence;
 }
 
-function ReportGlyphs({ n, label }: { n: number; label: string }) {
+function ReportGlyphs({ n }: { n: number }) {
   const filled = Math.max(0, Math.min(10, n));
   return (
-    <p className="dm-report-glyphs" role="img" aria-label={label} data-report-glyphs>
+    <p className="dm-report-glyphs" aria-hidden="true" data-report-glyphs>
       {Array.from({ length: 10 }, (_, index) => (
         <svg key={index} viewBox="0 0 18 14" aria-hidden="true" data-filled={index < filled}>
           <rect
@@ -273,8 +273,7 @@ export function InboxReportPanel({
                       data-reveal
                       style={{ ['--i' as string]: 1 }}
                     >
-                      <ReportGlyphs n={glyph.n} label={glyph.label} />
-                      <span className="dm-report-glyph-label">{glyph.label}</span>
+                      <ReportGlyphs n={glyph.n} />
                     </div>
                   ) : null}
                   {support ? (

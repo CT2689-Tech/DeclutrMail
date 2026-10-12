@@ -116,12 +116,23 @@ describe('the blog index title — D250 §3.6 row 21', () => {
   });
 });
 
+const PRICING_META_PASS_OFF =
+  'Free is $0 with 1,000 emails cleared a month and unlimited unsubscribes. Plus is $59 a year. 30-day Undo on every plan.';
+const PRICING_META_PASS_ON =
+  'Free is $0 with 1,000 emails cleared a month and unlimited unsubscribes. The Backlog Pass is $19 once. Plus is $59 a year. 30-day Undo on every plan.';
+
 describe('pricing metadata follows the launch flag', () => {
-  it('keeps today’s description while the flag is off and the deck sub while it is on', () => {
+  it('keeps today’s description while the flag is off and the deck meta description while it is on', () => {
     expect(pricingPageMetadata(false).description).toBe(pricing.description);
-    expect(pricingPageMetadata(true).description?.length).toBeLessThanOrEqual(160);
-    expect(pricingPageMetadata(true).description).not.toMatch(/\$\d/);
-    expect(pricingPageMetadata(true).alternates?.canonical).toBe('/pricing');
+    const passOff = pricingPageMetadata(true, false);
+    const passOn = pricingPageMetadata(true, true);
+    expect(passOff.description).toBe(PRICING_META_PASS_OFF);
+    expect(passOn.description).toBe(PRICING_META_PASS_ON);
+    expect(passOff.description).not.toContain('Backlog Pass');
+    expect(passOn.openGraph).toMatchObject({ description: PRICING_META_PASS_ON });
+    expect(passOff.openGraph).toMatchObject({ description: PRICING_META_PASS_OFF });
+    expect(passOn.twitter).toMatchObject({ description: PRICING_META_PASS_ON });
+    expect(pricingPageMetadata(true, true).alternates?.canonical).toBe('/pricing');
   });
 });
 

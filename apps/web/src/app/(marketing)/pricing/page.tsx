@@ -23,7 +23,7 @@ const PricingStory = dynamic(() =>
 
 export async function generateMetadata(): Promise<Metadata> {
   const flags = await loadPricingFlags();
-  return pricingPageMetadata(flags.pricingV2);
+  return pricingPageMetadata(flags.pricingV2, flags.passEnabled);
 }
 
 /**

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatReportSize, reportFallback, reportGlyph, reportHeadline } from './present';
+import {
+  formatReportSize,
+  reportFallback,
+  reportGlyph,
+  reportHeadline,
+  reportSupport,
+} from './present';
 import type { InboxReportInsight } from './types';
 
 describe('report presentation', () => {
@@ -11,7 +17,24 @@ describe('report presentation', () => {
 
   it('hides the glyph row under 40% and rounds to the nearest tenth', () => {
     expect(reportGlyph(39)).toBeNull();
-    expect(reportGlyph(91)?.label).toBe('about 9 in 10');
+    expect(reportGlyph(91)).toEqual({ n: 9 });
+  });
+
+  it('fills the mostly-unread support line with the sender count', () => {
+    const one: InboxReportInsight = {
+      id: 'mostly_unread_share',
+      pct: 91,
+      senderCount: 1,
+      sweeperExcluded: 0,
+      window: '90d',
+    };
+    expect(reportSupport(one)).toBe(
+      'That sender had less than 10% of its email marked read in Gmail in that time.',
+    );
+    const many: InboxReportInsight = { ...one, senderCount: 1200 };
+    expect(reportSupport(many)).toBe(
+      'Each of those 1,200 senders had less than 10% of its email marked read in Gmail in that time.',
+    );
   });
 
   it('uses the deck headline for mostly-unread senders', () => {

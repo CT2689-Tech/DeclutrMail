@@ -58,10 +58,16 @@ export function AiConsentCard({
   view,
   card,
   onDone,
+  onNotNow,
 }: {
   view: AiConsentView;
   card: CardKind;
   onDone?: () => void;
+  /**
+   * When set, Not now runs this instead of storing a decline.
+   * The inline nudge uses it for the two-dismissal queue.
+   */
+  onNotNow?: () => void;
 }) {
   const decide = useDecideAiConsent();
   const inflight = useRef(false);
@@ -129,7 +135,17 @@ export function AiConsentCard({
         <Button tone="primary" disabled={decide.isPending} onClick={() => void choose('allow')}>
           {copy.allow}
         </Button>
-        <Button tone="default" disabled={decide.isPending} onClick={() => void choose('not_now')}>
+        <Button
+          tone="default"
+          disabled={decide.isPending}
+          onClick={() => {
+            if (onNotNow) {
+              onNotNow();
+              return;
+            }
+            void choose('not_now');
+          }}
+        >
           {copy.notNow}
         </Button>
       </div>
