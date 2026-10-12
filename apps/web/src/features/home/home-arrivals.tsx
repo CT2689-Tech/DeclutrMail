@@ -32,7 +32,10 @@ export function HomeArrivalsView({
     );
   if (!data?.since || data.indexedEmails === null || data.indexedSenders === null) return null;
   return (
-    <section className={styles.beginning} aria-label="Since your previous visit">
+    <section
+      className={`${styles.beginning} ${styles.arrivals}`}
+      aria-label="Since your previous visit"
+    >
       <span className={styles.eyebrow}>Since your previous visit</span>
       <h2>
         {data.indexedEmails.toLocaleString('en-US')} {data.indexedEmails === 1 ? 'email' : 'emails'}{' '}

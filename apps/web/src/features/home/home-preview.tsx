@@ -106,7 +106,9 @@ function fixture(state: HomePreviewState): Parameters<typeof HomeView>[0] {
     case 'queued':
       return { state: { kind: 'empty', syncing: true, queued: true, action } };
     case 'failed':
-      return { state: { kind: 'sync-failed', needsReconnect: false } };
+      return {
+        state: { kind: 'sync-failed', needsReconnect: false, mailboxId: 'mb-preview' },
+      };
     case 'reconnect':
       return { state: { kind: 'sync-failed', needsReconnect: true } };
     case 'loading':

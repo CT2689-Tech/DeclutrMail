@@ -13,7 +13,11 @@ const authCell: { me: Me } = { me: meFor('syncing') };
 
 vi.mock('@/features/auth/auth-provider', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
-  return { ...actual, useAuth: () => ({ me: authCell.me }) };
+  return {
+    ...actual,
+    useAuth: () => ({ me: authCell.me }),
+    useOptionalAuth: () => ({ me: authCell.me }),
+  };
 });
 vi.mock('@/features/mailboxes/no-active-mailbox', () => ({
   NoActiveMailbox: () => <div data-testid="no-active-mailbox" />,

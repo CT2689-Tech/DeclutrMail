@@ -33,7 +33,10 @@ export interface InitialSyncRetryResponse {
  * On success the sync-status query is invalidated so the gate flips
  * from the failure screen to live progress without a reload.
  */
-export function useRetryInitialSync(mailboxId: string | null | undefined) {
+export function useRetryInitialSync(
+  mailboxId: string | null | undefined,
+  options?: { suppressAuthRedirect?: boolean },
+) {
   const qc = useQueryClient();
   return useMutation<InitialSyncRetryResponse, Error, void>({
     mutationFn: async () => {
@@ -58,7 +61,10 @@ export function useRetryInitialSync(mailboxId: string | null | undefined) {
       const envelope = await apiPost<InitialSyncRetryResponse>(
         '/api/v1/sync/initial/retry',
         undefined,
-        { mailboxId },
+        {
+          mailboxId,
+          ...(options?.suppressAuthRedirect === true ? { suppressAuthRedirect: true } : {}),
+        },
       );
       return envelope.data;
     },

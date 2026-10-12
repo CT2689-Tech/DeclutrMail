@@ -1,29 +1,47 @@
 'use client';
 
 import { useLayoutEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   reportHeadline,
   reportSupport,
   type InboxReportDto,
 } from '@declutrmail/shared/inbox-report';
 
+import { activityKeys } from '@/features/activity/api/query-keys';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useTier } from '@/features/auth/api/use-tier';
+import {
+  celebrationFromUnsubscribeBacklog,
+  toastUnsubscribeBacklog,
+  toastUnsubscribeBacklogFailure,
+} from '@/features/inbox-report/backlog-outcome';
+import { writeReportCelebration } from '@/features/inbox-report/seen';
 import { isMailboxScopeConflict } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { NoActiveMailbox } from '@/features/mailboxes/no-active-mailbox';
+import { undoKeys } from '@/features/undo/query-keys';
 
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import { useSyncStatus } from '@/features/onboarding/api/use-sync-status';
 import { inProgressStageSentence } from '@/features/onboarding/sync-stage-copy';
 import { apiGet } from '@/lib/api/client';
+import {
+  useActionStatus,
+  useBatchStatus,
+  useConfirmUnsubscribeBacklog,
+} from '@/lib/api/use-action';
 import { fetchSnoozed } from '@/lib/api/snoozed';
 import { snoozedListQueryOptions } from '@/features/snoozed/api/query-options';
 
 import { homeInboxReportQueryOptions } from './api/query-options';
 import { useHomeSummary } from './api/use-home-summary';
 import { HomeArrivals } from './home-arrivals';
-import { homeCandidatesFromReport, homeLaterCandidate, rankHomeNextSteps } from './home-next-steps';
+import {
+  homeCandidatesFromReport,
+  homeLaterCandidate,
+  rankHomeNextSteps,
+  type HomeFixCandidate,
+} from './home-next-steps';
 import { composeHomeNumbers, type HomeState } from './home-state';
 import { HomeView } from './home-view';
 
@@ -49,10 +67,27 @@ import { HomeView } from './home-view';
 /** F2's size field is not on main, so the Largest card stays off. */
 const SENDER_SIZE_VIEW = false;
 
+interface ArchiveMove {
+  id: string;
+  handle: 'action' | 'batch';
+}
+
+/** Poll the archive Home just confirmed so the tray can offer Undo. */
+function useHomeArchiveUndo(mailboxId: string | null, move: ArchiveMove | null) {
+  const batch = move?.handle === 'batch';
+  const scoped = mailboxId !== null ? mailboxId : undefined;
+  useActionStatus(move && !batch ? move.id : null, scoped);
+  useBatchStatus(move && batch ? move.id : null, scoped);
+}
+
 export function HomeScreen() {
   const { me } = useAuth();
   const { tier } = useTier();
+  const queryClient = useQueryClient();
+  const confirmBacklog = useConfirmUnsubscribeBacklog();
+  const [archiveMove, setArchiveMove] = useState<ArchiveMove | null>(null);
   const hasActiveMailbox = me.activeMailboxId != null;
+  useHomeArchiveUndo(me.activeMailboxId, archiveMove);
 
   const summary = useHomeSummary({ enabled: hasActiveMailbox });
   const sync = useSyncStatus(me.activeMailboxId ?? undefined, { enabled: hasActiveMailbox });
@@ -90,6 +125,30 @@ export function HomeScreen() {
   const readiness = activeMailbox?.readiness;
   const syncing = readiness === 'queued' || readiness === 'syncing';
 
+  function confirmHomeFix(step: HomeFixCandidate) {
+    if (step.kind !== 'unsub_archive') return;
+    const mailbox = activeMailbox?.id;
+    if (!mailbox || step.senderIds.length === 0) return;
+    confirmBacklog.mutate(
+      { mailboxId: mailbox, mode: 'archive', senderIds: [...step.senderIds] },
+      {
+        onSuccess: (result) => {
+          toastUnsubscribeBacklog(result);
+          const next = celebrationFromUnsubscribeBacklog(result);
+          if (next) {
+            writeReportCelebration(mailbox, next);
+            if (next.actionId && next.actionHandle) {
+              setArchiveMove({ id: next.actionId, handle: next.actionHandle });
+            }
+          }
+          void queryClient.invalidateQueries({ queryKey: activityKeys.all });
+          void queryClient.invalidateQueries({ queryKey: undoKeys.all });
+        },
+        onError: toastUnsubscribeBacklogFailure,
+      },
+    );
+  }
+
   // The active mailbox could not be resolved — the same takeover the app
   // chrome renders once `me` agrees.
   if (!hasActiveMailbox || isMailboxScopeConflict(summary.error)) return <NoActiveMailbox />;
@@ -106,6 +165,7 @@ export function HomeScreen() {
       mailboxId={activeMailbox?.id ?? ''}
       reportLead={presentation.lead}
       supportText={presentation.support}
+      onConfirmFix={(step) => confirmHomeFix(step)}
     />
   );
 

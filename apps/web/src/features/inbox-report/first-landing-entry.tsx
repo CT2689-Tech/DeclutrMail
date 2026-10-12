@@ -7,15 +7,19 @@ import { toast } from '@declutrmail/shared';
 import type { InboxReportDto } from '@declutrmail/shared/inbox-report';
 
 import { getActionFailureCopy } from '@/lib/action-error-copy';
-import { ApiError, apiGet } from '@/lib/api/client';
+import { apiGet } from '@/lib/api/client';
 import {
   useActionStatus,
   useBatchStatus,
   useConfirmUnsubscribeBacklog,
   useRevertUndo,
 } from '@/lib/api/use-action';
-import { unsubscribeBacklogToast } from '@/features/senders/unsubscribe-backlog/toast';
 
+import {
+  celebrationFromUnsubscribeBacklog,
+  toastUnsubscribeBacklog,
+  toastUnsubscribeBacklogFailure,
+} from './backlog-outcome';
 import { InboxReportPanel } from './panel';
 import {
   isReportDismissed,
@@ -101,50 +105,13 @@ export function InboxReportFirstLanding(props: {
           { mailboxId, mode, senderIds: report.fix.senderKeys },
           {
             onSuccess: (res) => {
-              const requested = res.senders.filter(
-                (sender) => sender.unsubStatus === 'requested',
-              ).length;
-              const manual = res.senders.filter((sender) => sender.unsubStatus === 'manual').length;
-              const line = unsubscribeBacklogToast(res);
-              if (line !== '') toast(line, requested + manual > 0 ? 'info' : 'warn');
-              const moved = res.backlog && res.backlog.requestedCount > 0;
-              if (moved || requested > 0 || manual > 0) {
-                const verb = moved
-                  ? res.backlog?.verb === 'delete'
-                    ? 'delete'
-                    : 'archive'
-                  : 'unsub_only';
-                const handle = res.backlog?.handle;
-                const next: ReportCelebration = {
-                  archived: res.backlog?.requestedCount ?? 0,
-                  senders: requested + manual,
-                  verb,
-                  requested,
-                  manual,
-                  ...(verb === 'delete' && typeof res.backlog?.movedBytes === 'number'
-                    ? { bytes: res.backlog.movedBytes }
-                    : {}),
-                  ...(verb === 'archive' &&
-                  res.backlog?.actionId &&
-                  (handle === 'action' || handle === 'batch')
-                    ? { actionId: res.backlog.actionId, actionHandle: handle }
-                    : {}),
-                };
-                writeReportCelebration(mailboxId, next);
-                setCelebration(next);
-              }
+              toastUnsubscribeBacklog(res);
+              const next = celebrationFromUnsubscribeBacklog(res);
+              if (next === null) return;
+              writeReportCelebration(mailboxId, next);
+              setCelebration(next);
             },
-            onError: (err) => {
-              if (err instanceof ApiError && err.status === 402) return;
-              toast(
-                getActionFailureCopy('enqueue', {
-                  action: 'Unsubscribe',
-                  outcome: 'no request was sent',
-                  error: err,
-                }),
-                'warn',
-              );
-            },
+            onError: toastUnsubscribeBacklogFailure,
           },
         );
       }}

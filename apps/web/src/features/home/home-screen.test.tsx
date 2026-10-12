@@ -1,3 +1,5 @@
+import { ToastHost } from '@declutrmail/shared';
+import { pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
@@ -5,17 +7,22 @@ import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import type { Me } from '@/features/auth/api/me-contract';
 import { resetMailboxScopedCache } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { makeQueryClient } from '@/lib/query-client';
-import { installFetchStub, jsonOk, jsonServerError } from '@/test/fetch-stub';
+import { addFetchHandlers, installFetchStub, jsonOk, jsonServerError } from '@/test/fetch-stub';
 import { createTestQueryClient } from '@/test/query-wrapper';
 
 import { HOME_DECK } from './home-deck-copy';
+import { homeFixCopy } from './home-ws5-copy';
 import { HomeScreen } from './home-screen';
 
 const authCell: { me: Me } = { me: meFor('pro', 'ready') };
 
 vi.mock('@/features/auth/auth-provider', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
-  return { ...actual, useAuth: () => ({ me: authCell.me }) };
+  return {
+    ...actual,
+    useAuth: () => ({ me: authCell.me }),
+    useOptionalAuth: () => ({ me: authCell.me }),
+  };
 });
 vi.mock('@/features/mailboxes/no-active-mailbox', () => ({
   NoActiveMailbox: () => <div data-testid="no-active-mailbox" />,
@@ -182,9 +189,10 @@ function stub({ summary, queueLength = 0, screenerPending = 0, sync, report, sno
   return calls;
 }
 
-function renderHome(client: QueryClient = createTestQueryClient()) {
+function renderHome(client: QueryClient = createTestQueryClient(), withToast = false) {
   render(
     <QueryClientProvider client={client}>
+      {withToast ? <ToastHost /> : null}
       <HomeScreen />
     </QueryClientProvider>,
   );
@@ -235,6 +243,105 @@ describe('HomeScreen', () => {
     expect(await screen.findByRole('alertdialog')).toHaveTextContent(
       'Unsubscribe from 2 senders and archive 40 emails?',
     );
+  });
+
+  it('confirming Unsubscribe + Archive sends the request and shows the toast', async () => {
+    const posts: { body: unknown; mailbox: string | null }[] = [];
+    const statusReads: string[] = [];
+    stub({ report: () => jsonOk({ data: REPORT_WITH_FIX }) });
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-backlog',
+        respond: async (req) => {
+          posts.push({
+            body: await req.json(),
+            mailbox: req.headers.get('X-Active-Mailbox-Id'),
+          });
+          return jsonOk({
+            data: {
+              mode: 'archive',
+              backlog: {
+                actionId: 'act-1',
+                handle: 'action',
+                requestedCount: 40,
+                verb: 'archive',
+              },
+              senders: [
+                {
+                  senderId: 's1',
+                  method: 'one_click',
+                  mailtoUrl: null,
+                  executionActionId: null,
+                  lifecycleStatus: null,
+                  unsubStatus: 'requested',
+                  reasonCode: null,
+                },
+                {
+                  senderId: 's2',
+                  method: 'one_click',
+                  mailtoUrl: null,
+                  executionActionId: null,
+                  lifecycleStatus: null,
+                  unsubStatus: 'requested',
+                  reasonCode: null,
+                },
+              ],
+            },
+          });
+        },
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/act-1',
+        respond: () => {
+          statusReads.push('/api/actions/act-1');
+          return jsonOk({
+            data: {
+              actionId: 'act-1',
+              verb: 'archive',
+              direction: 'forward',
+              status: 'done',
+              requestedCount: 40,
+              affectedCount: 40,
+              wakeAt: null,
+              undoToken: 'undo-1',
+              undoExpiresAt: '2026-11-11T00:00:00.000Z',
+              undoExecutedAt: null,
+              undoRevertedAt: null,
+              errorCode: null,
+            },
+          });
+        },
+      },
+    ]);
+    renderHome(createTestQueryClient(), true);
+    const copy = homeFixCopy();
+    expect(copy).not.toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: copy!.cancel }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(posts).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
+    fireEvent.click(await screen.findByRole('button', { name: copy!.button }));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]).toEqual({
+      body: { mode: 'archive', senderIds: ['s1', 's2'] },
+      mailbox: 'mb-1',
+    });
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      [
+        pluralCopy(WS5_COPY['f1.toast.part.unsub'], 2, { m: '2' }),
+        pluralCopy(WS5_COPY['f1.toast.part.archived'], 40, { n: '40' }),
+      ].join(' · '),
+    );
+    expect(localStorage.getItem('dm-inbox-report-celebration:mb-1')).toContain(
+      '"actionId":"act-1"',
+    );
+    await waitFor(() => expect(statusReads).toContain('/api/actions/act-1'));
+    localStorage.removeItem('dm-inbox-report-celebration:mb-1');
   });
 
   it('shows the all-time cleared total without a Review today button', async () => {

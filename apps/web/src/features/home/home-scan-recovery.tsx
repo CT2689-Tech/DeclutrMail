@@ -7,7 +7,7 @@ import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import type { SyncStatus } from '@declutrmail/shared/contracts';
 import { Button, ErrorState } from '@declutrmail/shared';
 import { initialSyncRecovery } from '@declutrmail/shared/contracts';
-import { useAuth } from '@/features/auth/auth-provider';
+import { useOptionalAuth } from '@/features/auth/auth-provider';
 import { useSyncStatus } from '@/features/onboarding/api/use-sync-status';
 import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync';
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
@@ -22,8 +22,13 @@ export function HomeScanRecovery({
   mailboxId: string;
   needsReconnect: boolean;
 }) {
-  const status = useSyncStatus(mailboxId);
-  const retry = useRetryInitialSync(mailboxId);
+  const auth = useOptionalAuth();
+  // The preview fixture names a mailbox and has no session. Polling status
+  // there 401s and the client would leave the page for sign-in.
+  const status = useSyncStatus(mailboxId, { enabled: auth !== null });
+  const retry = useRetryInitialSync(mailboxId, {
+    ...(auth === null ? { suppressAuthRedirect: true } : {}),
+  });
   const now = useNow(30_000);
   // Scan status can already be in the client cache while the server HTML
   // was rendered without it. Hold it until after mount so the first paint
@@ -32,8 +37,7 @@ export function HomeScanRecovery({
   useLayoutEffect(() => {
     setStatusReady(true);
   }, []);
-  const { me } = useAuth();
-  const timeZone = me.user.timezone ?? 'UTC';
+  const timeZone = auth?.me.user.timezone ?? 'UTC';
   const scheduled = status.data?.next_retry_at;
   const retryingLabel =
     scheduled != null
@@ -45,8 +49,8 @@ export function HomeScanRecovery({
   }, [qc, status.data?.is_ready_for_triage]);
   return (
     <HomeScanRecoveryView
-      data={statusReady ? status.data : undefined}
-      error={statusReady && status.isError}
+      data={statusReady && auth !== null ? status.data : undefined}
+      error={statusReady && auth !== null && status.isError}
       pending={retry.isPending}
       needsReconnect={needsReconnect}
       now={now}

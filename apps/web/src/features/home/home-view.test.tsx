@@ -2,8 +2,12 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ReactNode } from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+
+import { installFetchStub, jsonOk } from '@/test/fetch-stub';
+import { createTestQueryClient } from '@/test/query-wrapper';
 
 const cardGate = vi.hoisted(() => ({ shape: 'none' as 'none' | 'anchor' | 'shell' }));
 
@@ -55,6 +59,7 @@ import { HOME_DECK, fillDeck } from './home-deck-copy';
 import { homeCalmTemplate, homeReportCopy, homeTileCopy } from './home-ws5-copy';
 import { homePreviewReport } from './home-preview-report';
 import type { HomeFixCandidate } from './home-next-steps';
+import { HomePreview } from './home-preview';
 import { HomeView } from './home-view';
 
 const action = { label: 'Review senders', href: '/senders' };
@@ -231,6 +236,9 @@ describe('HomeView', () => {
     expect(home).toContain('padding: 12px 16px var(--dm-tabbar-inset)');
     expect(home).toContain('min-height: 28px');
     expect(home).toMatch(/\.fixActions\s*\{[^}]*margin-top:\s*8px/);
+    expect(home).toMatch(/\.arrivals\s*\{[^}]*padding:\s*6px 10px/);
+    expect(home).toContain('.page:has(.arrivals) .header');
+    expect(home).toContain('.page:has(.arrivals) .leadFigure');
     expect(card).toMatch(/\.card\s*\{[^}]*padding:\s*16px/);
     expect(card).toMatch(/\.body\s*\{[^}]*margin:\s*8px 0 12px/);
   });
@@ -449,5 +457,31 @@ describe('HomeView', () => {
     expect(screen.getByText(/server returned an error/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /try again/i }));
     expect(retry).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Home preview failed fixture', () => {
+  it('names a mailbox so Try again restarts that scan', async () => {
+    const mailboxes: string[] = [];
+    installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/v1/sync/initial/retry',
+        respond: (req) => {
+          mailboxes.push(req.headers.get('X-Active-Mailbox-Id') ?? '');
+          return jsonOk({ data: { outcome: 'requeued' } });
+        },
+      },
+    ]);
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <HomePreview state="failed" />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText(HOME_DECK.failedBody)).toBeInTheDocument();
+    expect(screen.queryByText('We couldn’t load scan recovery')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: HOME_DECK.failedRetry }));
+    await waitFor(() => expect(mailboxes).toEqual(['mb-preview']));
+    expect(screen.getByText(HOME_DECK.failedBody)).toBeInTheDocument();
   });
 });
