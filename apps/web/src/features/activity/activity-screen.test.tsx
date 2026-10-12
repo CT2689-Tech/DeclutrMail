@@ -1922,6 +1922,26 @@ describe('ActivityScreen — pure helpers', () => {
     expect(formatExpiry('2026-08-10T20:00:00Z', 'Asia/Kolkata')).toBe('Aug 11');
     expect(formatExpiry('2026-08-10T20:00:00Z', 'UTC')).toBe('Aug 10');
   });
+
+  it('keeps ASCII Sep and a normal space when Intl would say Sept or insert a narrow space', () => {
+    const date = vi.spyOn(Date.prototype, 'toLocaleDateString').mockReturnValue('Tue, Sept 15');
+    const time = vi
+      .spyOn(Date.prototype, 'toLocaleString')
+      .mockReturnValue('Sep 15, 12:00\u202fPM');
+    try {
+      expect(activityDayLabel('2026-09-15T12:00:00Z', null, 'UTC')).toBe('Tue, Sep 15');
+      expect(activityRowTime('2026-09-15T12:00:00Z', 'UTC', true)).toBe('Sep 15, 12:00 PM');
+      expect(activityRowTime('2026-09-15T12:00:00Z', 'UTC', false)).toBe('12:00 PM');
+      expect(formatExpiry('2026-09-15T12:00:00Z', 'UTC')).toBe('Sep 15');
+      expect(windowToLabel('30d', '2026-09-01T00:00:00.000Z', '2026-09-15T00:00:00.000Z')).toBe(
+        'Sep 1 – Sep 15',
+      );
+      expect(activityRowTime('2026-09-15T12:00:00Z', 'UTC', true)).not.toMatch(/\u202f|Sept/);
+    } finally {
+      date.mockRestore();
+      time.mockRestore();
+    }
+  });
 });
 
 // ── B-track Activity power-options ───────────────────────────────────

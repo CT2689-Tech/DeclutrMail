@@ -185,10 +185,17 @@ export function ActionSheet({
         ? 'archive'
         : 'unsub_only',
     );
+    setInitializedActionKey(actionKey);
+  }, [open, verb, actionKey, inboxCount]);
+
+  // Remember and the Later date belong to the action, not the preview.
+  // `inboxCount` arrives after the sheet opens; resetting on that change
+  // cleared a toggle the user had already checked.
+  useEffect(() => {
+    if (!open || actionKey === null) return;
     setRememberPreference(false);
     setSelectedWakeAt(verb === 'Later' ? wakeAt : null);
-    setInitializedActionKey(actionKey);
-  }, [open, verb, wakeAt, actionKey, inboxCount]);
+  }, [open, verb, wakeAt, actionKey]);
 
   useEffect(() => {
     if (!open) return;

@@ -621,11 +621,70 @@ function dayKey(ms: number, timeZone: string): string {
   }).format(ms);
 }
 
+const ACTIVITY_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+const ACTIVITY_MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
+
+function zonedCalendar(
+  ms: number,
+  timeZone: string,
+): { year: number; month: number; day: number; hour: number; minute: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    hourCycle: 'h23',
+  }).formatToParts(ms);
+  const read = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value ?? '');
+  let hour = read('hour');
+  if (hour === 24) hour = 0;
+  return {
+    year: read('year'),
+    month: read('month'),
+    day: read('day'),
+    hour,
+    minute: read('minute'),
+  };
+}
+
+function activityWeekday(year: number, month: number, day: number): string {
+  return ACTIVITY_WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()] ?? '';
+}
+
+function activityMonthDay(month: number, day: number): string {
+  return `${ACTIVITY_MONTHS[month - 1] ?? ''} ${day}`;
+}
+
+function activityClock(hour: number, minute: number): string {
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${String(minute).padStart(2, '0')} ${period}`;
+}
+
 /**
  * "Today" / "Yesterday" / "Mon, Sep 15". `nowMs` is null on the server and
  * the first client render (`useNow`), where the absolute form is the only
  * one both can agree on; the relative words arrive after mount. Exported
  * for the exact-string unit test.
+ *
+ * Month and weekday names come from fixed tables. `toLocaleDateString`
+ * hydrates "Sep" on one runtime and "Sept" on another (React #418).
  */
 export function activityDayLabel(iso: string, nowMs: number | null, timeZone: string): string {
   const then = new Date(iso).getTime();
@@ -636,13 +695,9 @@ export function activityDayLabel(iso: string, nowMs: number | null, timeZone: st
     if (key === dayKey(nowMs - 24 * 60 * 60 * 1000, timeZone)) return 'Yesterday';
   }
   const sameYear = nowMs === null || key.slice(0, 4) === dayKey(nowMs, timeZone).slice(0, 4);
-  return new Date(then).toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    ...(sameYear ? {} : { year: 'numeric' }),
-    timeZone,
-  });
+  const cal = zonedCalendar(then, timeZone);
+  const label = `${activityWeekday(cal.year, cal.month, cal.day)}, ${activityMonthDay(cal.month, cal.day)}`;
+  return sameYear ? label : `${label}, ${cal.year}`;
 }
 
 /** Consecutive rows that share a calendar day, in the order they arrived. */
@@ -1844,19 +1899,17 @@ export function activityResultColor(row: ActivityRowWire): string {
 
 /**
  * Clock time for a row under a day header; date + time inside a sender
- * group, where rows from many days share one list. Locale + user zone
- * pinned — this is server-rendered (React #418). Exported for the
- * exact-string unit test.
+ * group, where rows from many days share one list. Assembled from
+ * numeric zone parts so server HTML and the browser agree (React #418):
+ * ICU "Sept" and a narrow no-break space before AM/PM are different text.
+ * Exported for the exact-string unit test.
  */
 export function activityRowTime(iso: string, timeZone: string, withDate: boolean): string {
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return '';
-  return d.toLocaleString('en-US', {
-    ...(withDate ? { month: 'short', day: 'numeric' } : {}),
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone,
-  });
+  const cal = zonedCalendar(d.getTime(), timeZone);
+  const clock = activityClock(cal.hour, cal.minute);
+  return withDate ? `${activityMonthDay(cal.month, cal.day)}, ${clock}` : clock;
 }
 
 function ActivityRow({
@@ -2855,12 +2908,10 @@ export function windowToLabel(
   dateTo: string | null,
 ): string {
   if (dateFrom || dateTo) {
-    const dayLabel = (iso: string) =>
-      new Date(iso).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        timeZone: 'UTC',
-      });
+    const dayLabel = (iso: string) => {
+      const cal = zonedCalendar(new Date(iso).getTime(), 'UTC');
+      return activityMonthDay(cal.month, cal.day);
+    };
     const fromStr = dateFrom ? dayLabel(dateFrom) : '…';
     const toStr = dateTo ? dayLabel(dateTo) : '…';
     return `${fromStr} – ${toStr}`;
@@ -2908,5 +2959,6 @@ export function absoluteTime(iso: string, timeZone?: string): string {
 export function formatExpiry(iso: string, timeZone: string): string {
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return iso;
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone });
+  const cal = zonedCalendar(d.getTime(), timeZone);
+  return activityMonthDay(cal.month, cal.day);
 }

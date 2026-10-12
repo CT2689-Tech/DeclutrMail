@@ -325,6 +325,17 @@ describe('Home primary task hierarchy', () => {
     expect(primary.compareDocumentPosition(stamp) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(container.firstElementChild).toHaveAttribute('data-home-priority', 'review');
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('A little room');
+    const h1 = screen.getByRole('heading', { level: 1 });
+    const room = [...h1.childNodes].find(
+      (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.includes('room'),
+    );
+    expect(room?.textContent).toBe('A little room ');
+    expect(h1).toHaveAccessibleName('A little room for a clearer day.');
+    const h2 = screen.getByRole('heading', { level: 2, name: 'More space. Less second-guessing.' });
+    const space = [...h2.childNodes].find(
+      (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.includes('More space'),
+    );
+    expect(space?.textContent).toBe('More space. ');
   });
   it('keeps calm introductory framing when no review task is waiting', () => {
     const { container } = render(

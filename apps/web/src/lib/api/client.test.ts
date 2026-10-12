@@ -415,6 +415,89 @@ describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', (
     expect(assign).toHaveBeenCalledOnce();
     expect(String(assign.mock.calls[0]?.[0])).toContain('/sign-in?returning=1');
   });
+
+  it('replays a 401 that was already in flight when refresh succeeded, without rotating again', async () => {
+    let releaseRefresh: () => void = () => {};
+    let releaseLate: () => void = () => {};
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    const lateGate = new Promise<void>((resolve) => {
+      releaseLate = resolve;
+    });
+    let refreshes = 0;
+    let lateReads = 0;
+    let freshReads = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/a',
+        respond: (() => {
+          let reads = 0;
+          return () => {
+            reads += 1;
+            return reads === 1
+              ? new Response(null, { status: 401 })
+              : jsonOk({ data: { ok: true } });
+          };
+        })(),
+      },
+      {
+        method: 'GET',
+        path: '/api/late',
+        respond: async () => {
+          lateReads += 1;
+          if (lateReads === 1) {
+            await lateGate;
+            return new Response(null, { status: 401 });
+          }
+          return jsonOk({ data: { ok: true } });
+        },
+      },
+      {
+        method: 'GET',
+        path: '/api/fresh',
+        respond: () => {
+          freshReads += 1;
+          return freshReads === 1
+            ? new Response(null, { status: 401 })
+            : jsonOk({ data: { ok: true } });
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/auth/refresh',
+        respond: async () => {
+          refreshes += 1;
+          if (refreshes === 1) await refreshGate;
+          return jsonOk({ data: {} });
+        },
+      },
+    ]);
+
+    const assign = vi.fn();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...window.location, assign },
+    });
+
+    const { apiGet: freshApiGet } = await import('./client');
+    const first = freshApiGet('/api/a');
+    const late = freshApiGet('/api/late');
+    await vi.waitFor(() => {
+      expect(refreshes).toBe(1);
+      expect(lateReads).toBe(1);
+    });
+    releaseRefresh();
+    await expect(first).resolves.toEqual({ data: { ok: true } });
+    releaseLate();
+    await expect(late).resolves.toEqual({ data: { ok: true } });
+    expect(refreshes).toBe(1);
+    expect(assign).not.toHaveBeenCalled();
+
+    await expect(freshApiGet('/api/fresh')).resolves.toEqual({ data: { ok: true } });
+    expect(refreshes).toBe(2);
+  });
 });
 
 describe('apiGet — empty success', () => {

@@ -136,6 +136,12 @@ export interface ApiRequestOptions {
    * Library callers leave this unset.
    */
   _isRetry?: boolean | undefined;
+  /**
+   * Internal: epoch captured when this call started. A 401 from a
+   * request that began before the latest successful refresh replays
+   * once and does not rotate the session again.
+   */
+  _refreshEpoch?: number | undefined;
 }
 
 /** Joins `?k=v` pairs onto a path. Skips entries whose value is null/undefined. */
@@ -198,6 +204,7 @@ async function apiRequest<T>(
   body: unknown,
   options: ApiRequestOptions,
 ): Promise<Envelope<T, unknown>> {
+  const startedEpoch = options._refreshEpoch ?? refreshEpoch;
   const url = buildUrl(path, options.query);
   const headers: Record<string, string> = {
     Accept: 'application/json',
@@ -242,9 +249,20 @@ async function apiRequest<T>(
     // the session dead; temporary refresh errors propagate for recovery.
     if (res.status === 401 && path !== '/api/auth/refresh') {
       if (!options._isRetry) {
+        if (startedEpoch < refreshEpoch) {
+          return apiRequest<T>(method, path, body, {
+            ...options,
+            _isRetry: true,
+            _refreshEpoch: refreshEpoch,
+          });
+        }
         const refreshed = await attemptRefresh();
         if (refreshed) {
-          return apiRequest<T>(method, path, body, { ...options, _isRetry: true });
+          return apiRequest<T>(method, path, body, {
+            ...options,
+            _isRetry: true,
+            _refreshEpoch: refreshEpoch,
+          });
         }
       }
       // Terminal 401: either the refresh itself failed, or (Codex
@@ -286,11 +304,18 @@ async function apiRequest<T>(
  * Single-flight refresh attempt. Concurrent 401s end up sharing one
  * outstanding rotation request — the second caller awaits the same
  * promise instead of racing the BE's rotation lock.
+ *
+ * `refreshEpoch` advances only after a refresh succeeds. A request
+ * that was already in flight with the previous access token can 401
+ * after that rotation; it replays against the new cookies instead of
+ * starting a second rotation that invalidates the session it just got.
  */
 let pendingRefresh: Promise<boolean> | null = null;
+let refreshEpoch = 0;
 
 async function attemptRefresh(): Promise<boolean> {
   if (pendingRefresh) return pendingRefresh;
+  const epochAtStart = refreshEpoch;
   pendingRefresh = (async () => {
     try {
       const res = await fetch(buildUrl('/api/auth/refresh', undefined), {
@@ -298,7 +323,10 @@ async function attemptRefresh(): Promise<boolean> {
         credentials: 'include',
         headers: { Accept: 'application/json' },
       });
-      if (res.ok) return true;
+      if (res.ok) {
+        refreshEpoch = epochAtStart + 1;
+        return true;
+      }
       if (res.status === 401) return false;
       // Rate limits, outages, and network errors must not become a
       // terminal 401: AuthProvider would hide the app and OAuth would

@@ -27,6 +27,52 @@ describe('report presentation', () => {
     );
   });
 
+  it('formats the Unroll.me headline and a large-mail count with thousands separators', () => {
+    const thirdParty: InboxReportInsight = {
+      id: 'third_party_labels',
+      count: 20950,
+      bytes: 1_200_000_000,
+      recent90: 400,
+      vendorKey: 'unroll_me',
+    };
+    expect(reportHeadline(thirdParty).sentence).toBe(
+      '20,950 emails (about 1.2 GB) are filed under Unroll.me labels in your Gmail.',
+    );
+    const large: InboxReportInsight = {
+      id: 'large_mail',
+      count: 12481,
+      bytes: 2_400_000_000,
+      top10Bytes: 1_000_000_000,
+    };
+    expect(reportHeadline(large).sentence).toContain('12,481');
+    expect(reportHeadline(large).sentence).not.toContain('12481');
+  });
+
+  it('keeps a one-email Unroll.me sentence on the singular deck line', () => {
+    const insight: InboxReportInsight = {
+      id: 'third_party_labels',
+      count: 1,
+      bytes: 1_500_000,
+      recent90: 1,
+      vendorKey: 'unroll_me',
+    };
+    expect(reportHeadline(insight).sentence).toBe(
+      '1 email (about 1.5 MB) is filed under a Unroll.me label in your Gmail.',
+    );
+  });
+
+  it('formats fallback totals without changing the one-sender sentence', () => {
+    expect(reportFallback({ receivedCount: 20950, fallbackSenderCount: 1200 }).body).toContain(
+      '20,950 emails',
+    );
+    expect(reportFallback({ receivedCount: 20950, fallbackSenderCount: 1200 }).body).toContain(
+      '1,200 senders',
+    );
+    expect(reportFallback({ receivedCount: 12, fallbackSenderCount: 1 }).body).toContain(
+      '12 emails',
+    );
+  });
+
   it('gives the calm fallback a different sentence for 2, 1, and 0 senders', () => {
     expect(reportFallback({ receivedCount: 12, fallbackSenderCount: 2 }).cta).toBe(
       'Show those 2 senders',
