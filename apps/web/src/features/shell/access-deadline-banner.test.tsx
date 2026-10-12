@@ -1,10 +1,14 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { billingKeys } from '@/features/billing/api/query-keys';
 
 const useTier = vi.fn();
 const useBillingSubscription = vi.fn();
 const mutate = vi.fn();
+const pathname = { current: '/senders' };
 
 vi.mock('@/features/auth/api/use-tier', () => ({
   useTier: () => useTier(),
@@ -14,6 +18,9 @@ vi.mock('@/features/billing/api/use-billing-subscription', () => ({
 }));
 vi.mock('@/features/billing/api/use-payment-method', () => ({
   usePaymentMethodSession: () => ({ mutate, isPending: false }),
+}));
+vi.mock('next/navigation', () => ({
+  usePathname: () => pathname.current,
 }));
 
 import { AccessDeadlineBanner } from './access-deadline-banner';
@@ -50,6 +57,7 @@ beforeEach(() => {
   useBillingSubscription.mockReset();
   mutate.mockReset();
   sessionStorage.clear();
+  pathname.current = '/senders';
   useTier.mockReturnValue({ tier: 'plus' });
   useBillingSubscription.mockReturnValue(billing('active'));
 });
@@ -72,6 +80,22 @@ describe('AccessDeadlineBanner', () => {
     useBillingSubscription.mockReturnValue(billing('past_due'));
     rerender(<AccessDeadlineBanner />);
     expect(screen.queryByTestId('access-deadline-banner')).toBeNull();
+  });
+
+  it('reads the billing page cache without starting another subscription read', async () => {
+    pathname.current = '/billing';
+    const client = new QueryClient();
+    client.setQueryData(billingKeys.subscription(), billing('past_due').data);
+    render(
+      <QueryClientProvider client={client}>
+        <AccessDeadlineBanner />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByTestId('access-deadline-banner')).toHaveTextContent(
+      'November 3, 2026',
+    );
+    expect(useBillingSubscription).not.toHaveBeenCalled();
+    client.clear();
   });
 
   it('dismisses for this session and returns when that session store is cleared', async () => {
