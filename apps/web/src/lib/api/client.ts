@@ -251,9 +251,10 @@ async function pauseForBackoff(attempt: number, signal: AbortSignal | undefined)
 }
 
 /**
- * Retry a fetch that threw before a response existed. GET and the session
- * refresh use this. A mutating request does not: replaying it can apply
- * the action twice.
+ * Retry a fetch that threw before a response existed. Idempotent GETs
+ * use several attempts. The session refresh uses one: each receipt
+ * rotates the cookie, and the grace window covers only the previous
+ * generation. Every other mutation uses one too.
  */
 async function fetchWithNetworkRetry(
   url: string,
@@ -398,7 +399,7 @@ async function attemptRefresh(): Promise<boolean> {
           credentials: 'include',
           headers: { Accept: 'application/json' },
         },
-        NETWORK_ATTEMPTS,
+        1,
       );
       if (res.ok) {
         refreshEpoch = epochAtStart + 1;

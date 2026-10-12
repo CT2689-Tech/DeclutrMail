@@ -310,7 +310,7 @@ describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', (
     expect(writes).toBe(1);
   });
 
-  it('retries the session refresh after a dropped connection', async () => {
+  it('does not retry the session refresh after a dropped connection', async () => {
     let reads = 0;
     let refreshes = 0;
     installFetchStub([
@@ -319,7 +319,7 @@ describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', (
         path: '/api/a',
         respond: () => {
           reads += 1;
-          return reads === 1 ? new Response(null, { status: 401 }) : jsonOk({ data: { ok: true } });
+          return new Response(null, { status: 401 });
         },
       },
       {
@@ -327,8 +327,7 @@ describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', (
         path: '/api/auth/refresh',
         respond: () => {
           refreshes += 1;
-          if (refreshes === 1) throw new TypeError('Failed to fetch');
-          return jsonOk({ data: { ok: true } });
+          throw new TypeError('Failed to fetch');
         },
       },
     ]);
@@ -338,9 +337,10 @@ describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', (
       value: { ...window.location, assign },
     });
     const fresh = await import('./client');
-    await expect(fresh.apiGet('/api/a')).resolves.toMatchObject({ data: { ok: true } });
+    await expect(fresh.apiGet('/api/a')).rejects.toThrow('Failed to fetch');
     expect(assign).not.toHaveBeenCalled();
-    expect(refreshes).toBe(2);
+    expect(reads).toBe(1);
+    expect(refreshes).toBe(1);
   });
 
   it('preserves a network failure and allows the next refresh to succeed', async () => {
@@ -357,7 +357,7 @@ describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', (
         method: 'POST',
         path: '/api/auth/refresh',
         respond: () => {
-          if (++refreshes <= 3) throw new TypeError('Network unavailable');
+          if (++refreshes <= 1) throw new TypeError('Network unavailable');
           return jsonOk({ data: { ok: true } });
         },
       },
@@ -370,9 +370,9 @@ describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', (
     const fresh = await import('./client');
     await expect(fresh.apiGet('/api/a')).rejects.toThrow('Network unavailable');
     expect(assign).not.toHaveBeenCalled();
-    expect(refreshes).toBe(3);
+    expect(refreshes).toBe(1);
     await expect(fresh.apiGet('/api/a')).resolves.toMatchObject({ data: { ok: true } });
-    expect(refreshes).toBe(4);
+    expect(refreshes).toBe(2);
   });
 
   it.each([
