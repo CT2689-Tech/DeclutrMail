@@ -55,7 +55,7 @@ function cardTitle(card: CardKind): string {
  * Long deck keys stay in the JSON for imports and are not rendered.
  */
 export function AiConsentCard({
-  view: _view,
+  view,
   card,
   onDone,
 }: {
@@ -82,7 +82,11 @@ export function AiConsentCard({
       void track('brief_ai_consent_decided', { decision: action });
       if (action === 'allow') {
         const toastCopy =
-          card === 'all' ? copy.allowed.toast.all : fillBrief(copy.allowed.toast.withBrief);
+          card === 'upgrade'
+            ? fillBrief(copy.brief.allowed)
+            : card === 'all'
+              ? copy.allowed.toast.all
+              : fillBrief(copy.allowed.toast.withBrief);
         toast(toastCopy, 'info');
       }
       onDone?.();
@@ -111,6 +115,7 @@ export function AiConsentCard({
       <h2 id="ai-consent-title" style={{ fontSize: text.lg, margin: 0, color: color.fg }}>
         {cardTitle(card)}
       </h2>
+      {view.reask ? <p style={{ margin: 0, color: color.fgSoft }}>{copy.reask}</p> : null}
       {body && <p style={{ margin: 0, color: color.fgSoft }}>{body}</p>}
       <Link className="dm-external-link" href="/privacy#ai-processing">
         {copy.link}

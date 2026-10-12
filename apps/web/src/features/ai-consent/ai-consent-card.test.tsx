@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
 import type { AiConsentCard as CardKind } from '@declutrmail/shared/ai-consent';
+import { ToastHost } from '@declutrmail/shared';
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { BRIEF_NAME } from '@declutrmail/shared/copy/screen-decisions';
 
@@ -61,7 +62,9 @@ describe('AiConsentCard', () => {
     expect(banned).toContain(WS2_COPY.aiConsent.noFetch);
     expect(banned).toContain(WS2_COPY.aiConsent.explain.sends);
     expect(banned).toContain(fillBrief(WS2_COPY.aiConsent.brief.sends));
-    expect(banned).toContain(WS2_COPY.aiConsent.reask);
+    expect(banned).not.toContain(WS2_COPY.aiConsent.reask);
+    expect(banned).toContain(fillBrief(WS2_COPY.aiConsent.settings.help.withBrief));
+    expect(banned).toContain(fillBrief(WS2_COPY.aiConsent.revoked.toast.withBrief));
     expect(banned).toContain(fillBrief(WS2_COPY.aiConsent.upgrade.decline));
     expect(banned).toContain(WS2_COPY.aiPrompt.frequency);
     expect(WS2_COPY.aiConsent._notShipping).not.toContain('intro');
@@ -102,6 +105,7 @@ describe('AiConsentCard', () => {
         WS2_COPY.aiConsent.notNow,
       ].join('');
       expect(compact(text)).toBe(compact(expected));
+      expect(text).not.toContain(WS2_COPY.aiConsent.reask);
       for (const phrase of banned) {
         if (expected.includes(phrase)) continue;
         expect(text).not.toContain(phrase);
@@ -136,5 +140,47 @@ describe('AiConsentCard', () => {
     } finally {
       resetFetchStub();
     }
+  });
+
+  it('toasts the Brief-only allowed line from the upgrade card', async () => {
+    installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/me/ai-consent',
+        respond: () =>
+          jsonOk({
+            data: { aiConsent: { explanations: 'off', brief: 'allowed', reask: false } },
+            meta: {},
+          }),
+      },
+    ]);
+    try {
+      render(
+        <QueryWrapper client={createTestQueryClient()}>
+          <>
+            <AiConsentCard view={view} card="upgrade" />
+            <ToastHost />
+          </>
+        </QueryWrapper>,
+      );
+      await userEvent.click(screen.getByRole('button', { name: WS2_COPY.aiConsent.allow }));
+      expect(
+        await screen.findByText(fillBrief(WS2_COPY.aiConsent.brief.allowed)),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(fillBrief(WS2_COPY.aiConsent.allowed.toast.withBrief)),
+      ).not.toBeInTheDocument();
+    } finally {
+      resetFetchStub();
+    }
+  });
+
+  it('shows Updated when the stored version asks again', () => {
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <AiConsentCard view={{ ...view, reask: true }} card="all" />
+      </QueryWrapper>,
+    );
+    expect(screen.getByText(WS2_COPY.aiConsent.reask)).toBeInTheDocument();
   });
 });

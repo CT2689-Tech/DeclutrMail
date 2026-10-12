@@ -325,10 +325,10 @@
       "training",
       "decline",
       "change",
-      "reask",
       "upgrade.decline",
-      "settings.help",
-      "settings.label.withBrief"
+      "settings.label.withBrief",
+      "settings.help.withBrief",
+      "revoked.toast.withBrief"
     ],
     "title": {
       "all": "Use AI to explain suggestions?",
@@ -344,7 +344,9 @@
     },
     "brief": {
       "heading": "{BRIEF_NAME}",
-      "sends": "To write your {BRIEF_NAME}, DeclutrMail can send Anthropic the sender, subject line, and Gmail’s short preview snippet. It never sends the full contents of an email."
+      "sends": "To write your {BRIEF_NAME}, DeclutrMail can send Anthropic the sender, subject line, and Gmail’s short preview snippet. It never sends the full contents of an email.",
+      "allowed": "AI for your {BRIEF_NAME} is on.",
+      "revoked": "AI for your {BRIEF_NAME} is off."
     },
     "never": "Anthropic never receives the full contents of an email, attachments or images.",
     "noFetch": "We never fetch or store full email contents.",
@@ -383,6 +385,10 @@
       "label": {
         "all": "Use AI to explain suggestions",
         "withBrief": "Use AI for explanations and my {BRIEF_NAME}"
+      },
+      "brief": {
+        "label": "Use AI to write my {BRIEF_NAME}",
+        "help": "Anthropic’s AI writes your {BRIEF_NAME}. We never fetch or store full email contents."
       },
       "help": {
         "all": "Anthropic’s AI writes each explanation. We never fetch or store full email contents.",
@@ -498,6 +504,9 @@
     },
     "mailbox": {
       "updated": "Updated {age}"
+    },
+    "settingsPrivacy": {
+      "casa": "DeclutrMail’s Gmail access goes through Google’s CASA security assessment. Google OAuth verification approved {OAUTH_DATE}. The approval covers the one restricted permission we request, gmail.modify, and is recertified every year."
     }
   }
 }

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
+import Link from 'next/link';
 
 import { toast, tokens } from '@declutrmail/shared';
 import type { AiConsentCard as CardKind, AiConsentView } from '@declutrmail/shared/ai-consent';
@@ -18,6 +19,18 @@ const copy = WS2_COPY.aiConsent;
 
 function fillBrief(template: string): string {
   return template.replaceAll('{BRIEF_NAME}', BRIEF_NAME);
+}
+
+function SwitchHelp({ text, note }: { text: string; note?: string }): ReactNode {
+  return (
+    <>
+      {note ? <span style={{ display: 'block' }}>{note}</span> : null}
+      <span>{text} </span>
+      <Link className="dm-external-link" href="/privacy#ai-processing">
+        {copy.link}
+      </Link>
+    </>
+  );
 }
 
 /**
@@ -40,19 +53,25 @@ export function AiSettingsSection({
   const explanationsOn = !explanationsPaused && view.explanations === 'allowed';
   const briefOn = !briefPaused && view.brief === 'allowed';
   const explanationsLabel = copy.settings.label.all;
-  const briefLabel = fillBrief(copy.brief.heading);
-  const explanationsDetail = explanationsPaused
+  const briefLabel = fillBrief(copy.settings.brief.label);
+  const stateNote = explanationsPaused
     ? copy.settings.state.paused
     : view.explanations === 'review' || (view.reask && !explanationsOn)
       ? copy.settings.state.review
       : undefined;
+  const explanationsNote =
+    [view.reask ? copy.reask : null, stateNote].filter((part) => part != null).join(' ') ||
+    undefined;
 
   async function revoke(scope: 'explanations' | 'brief'): Promise<void> {
     setFailed(false);
     try {
       await decide.mutateAsync({ action: 'revoke', scope });
       void track('brief_ai_consent_revoked', {});
-      if (scope === 'explanations') toast(copy.revoked.toast.all, 'info');
+      toast(
+        scope === 'explanations' ? copy.revoked.toast.all : fillBrief(copy.brief.revoked),
+        'info',
+      );
       setAsking(null);
     } catch {
       setFailed(true);
@@ -61,7 +80,10 @@ export function AiSettingsSection({
 
   return (
     <SettingsGroup id="ai" title="AI" focusable>
-      <SettingsRow label={explanationsLabel} detail={explanationsDetail}>
+      <SettingsRow
+        label={explanationsLabel}
+        detail={<SwitchHelp text={copy.settings.help.all} note={explanationsNote} />}
+      >
         <SettingsSwitch
           ariaLabel={explanationsLabel}
           on={explanationsOn}
@@ -77,7 +99,12 @@ export function AiSettingsSection({
       {briefCapable && (
         <SettingsRow
           label={briefLabel}
-          detail={briefPaused ? fillBrief(copy.killSwitch) : undefined}
+          detail={
+            <SwitchHelp
+              text={fillBrief(copy.settings.brief.help)}
+              note={briefPaused ? fillBrief(copy.killSwitch) : undefined}
+            />
+          }
         >
           <SettingsSwitch
             ariaLabel={briefLabel}
