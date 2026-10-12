@@ -184,9 +184,8 @@ const KEEP: Pick<
 };
 
 /**
- * Scopes this Allow card showed. A later card must not drop a scope it
- * leaves in place: explanations-only keeps an existing Brief grant, and
- * the Brief upgrade keeps an existing explanations grant.
+ * Scopes this Allow card showed. The Brief upgrade keeps an existing
+ * explanations grant. The explanations-only card does not write Brief.
  */
 function scopesAgreedOnCard(card: AiConsentCard): readonly string[] {
   switch (card) {
@@ -206,7 +205,6 @@ function scopesAgreedOnCard(card: AiConsentCard): readonly string[] {
 function allowScopes(card: AiConsentCard, previous: readonly string[] | null): string[] {
   const kept = new Set(scopesAgreedOnCard(card));
   const prior = previous ?? [];
-  if (card === 'all' && prior.includes('brief')) kept.add('brief');
   if (card === 'upgrade' && prior.includes('explanations')) kept.add('explanations');
   return ['explanations', 'brief'].filter((scope) => kept.has(scope));
 }
@@ -269,8 +267,6 @@ export function aiConsentPatch(
       ...KEEP,
       aiConsentVersion: version,
       aiExplanationsConsentAt: 'keep',
-      aiExplanationsRevokedAt: null,
-      aiConsentDeclinedAt: null,
       aiConsentScopes: allowScopes(decision.card, previousScopes),
       briefAiConsentAt: 'now',
       briefAiConsentVersion: version,

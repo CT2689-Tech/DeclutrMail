@@ -167,7 +167,8 @@ describe('AI consent gate', () => {
       briefAiConsentAt: 'now',
       aiConsentScopes: ['brief'],
       aiExplanationsConsentAt: 'keep',
-      aiExplanationsRevokedAt: null,
+      aiExplanationsRevokedAt: 'keep',
+      aiConsentDeclinedAt: 'keep',
     });
     expect(
       aiConsentPatch({ action: 'allow', card: 'upgrade' }, VERSION, ['explanations'])
@@ -175,6 +176,32 @@ describe('AI consent gate', () => {
     ).toEqual(['explanations', 'brief']);
     expect(
       aiConsentPatch({ action: 'allow', card: 'all' }, VERSION, ['brief']).aiConsentScopes,
-    ).toEqual(['explanations', 'brief']);
+    ).toEqual(['explanations']);
+  });
+
+  it('keeps explanations off when Allow on the Brief card follows a revoke', () => {
+    const revoked = row({
+      ...allowedExplanations,
+      aiExplanationsRevokedAt: '2026-10-03T00:00:00.000Z',
+    });
+    const patch = aiConsentPatch(
+      { action: 'allow', card: 'upgrade' },
+      VERSION,
+      revoked.aiConsentScopes,
+    );
+    expect(patch.aiExplanationsRevokedAt).toBe('keep');
+    expect(patch.aiConsentDeclinedAt).toBe('keep');
+    const after = row({
+      ...revoked,
+      aiConsentScopes:
+        patch.aiConsentScopes === 'keep' ? revoked.aiConsentScopes : patch.aiConsentScopes,
+      briefAiConsentAt: '2026-10-04T00:00:00.000Z',
+      briefAiConsentVersion: VERSION,
+    });
+    expect(explanationsConsentActive(after)).toBe(false);
+    expect(briefConsentActive(after)).toBe(true);
+    const view = aiConsentView(after);
+    expect(view.explanations).toBe('off');
+    expect(view.brief).toBe('allowed');
   });
 });
