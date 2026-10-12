@@ -11,11 +11,13 @@ export function InboxReportCard(props: { surface: 'home'; mailboxId: string }): 
   if (props.surface !== 'home') return null;
   return (
     <div className={styles.card} data-surface="home" data-mailbox={props.mailboxId}>
-      <strong className={`${styles.title} dm-home-report-title`}>
-        {WS5_COPY['report.home.title']}
-      </strong>
+      <h2 className={`${styles.title} dm-home-report-title`}>{WS5_COPY['report.home.title']}</h2>
       <span className={`${styles.body} dm-home-report-body`}>{WS5_COPY['report.home.body']}</span>
-      <a className={`${styles.cta} dm-home-report-cta`} href="/senders">
+      <a
+        className={`${styles.cta} dm-home-report-cta dm-button-link`}
+        data-dm-button=""
+        href="/senders"
+      >
         {WS5_COPY['report.home.cta']}
       </a>
     </div>

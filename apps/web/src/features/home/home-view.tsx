@@ -64,7 +64,7 @@ export function HomeView({
         </div>
       </header>
       {mailboxId ? (
-        <div className="dm-home-report-card" data-home-report-card>
+        <div className={`${styles.reportSlot} dm-home-report-card`} data-home-report-card>
           <InboxReportCard surface="home" mailboxId={mailboxId} />
         </div>
       ) : null}

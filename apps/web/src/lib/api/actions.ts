@@ -533,6 +533,8 @@ export interface UnsubscribeBacklogResult {
   mode: UnsubscribeBacklogMode;
   backlog: {
     actionId: string;
+    /** Absent on an API that predates the field. `batch` is a batch id. */
+    handle?: 'action' | 'batch';
     requestedCount: number;
     verb: 'archive' | 'delete';
     /** Sum of Gmail size estimates when it matches `requestedCount`. */
@@ -609,7 +611,12 @@ async function confirmUnsubscribeBacklogFallback(
         ...(input.override === true ? { override: true } : {}),
         ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
       });
-      backlog = { actionId: enqueued.actionId, requestedCount: enqueued.primaryCount, verb };
+      backlog = {
+        actionId: enqueued.actionId,
+        handle: 'action',
+        requestedCount: enqueued.primaryCount,
+        verb,
+      };
     } else {
       const enqueued = await enqueueBulkAction({
         senderIds: input.senderIds,
@@ -619,6 +626,7 @@ async function confirmUnsubscribeBacklogFallback(
       });
       backlog = {
         actionId: enqueued.batchId,
+        handle: 'batch',
         requestedCount: enqueued.requestedTotal,
         verb,
       };

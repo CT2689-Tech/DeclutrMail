@@ -246,7 +246,7 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
   await expect(sendersSheet).toContainText('Whether their email stops is up to the sender.');
   await sendersSheet.getByRole('radio', { name: /Unsubscribe and delete/ }).click();
   await expect(sendersSheet).toContainText(
-    'Gmail keeps Trash for up to 30 days unless you empty it.',
+    'Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash.',
   );
   await expect(sendersSheet).toContainText('Unsubscribing is free and doesn’t count.');
   const sendersPost = page.waitForResponse(

@@ -152,14 +152,15 @@ export function UnsubscribeBacklogDialog({
   const n = inboxCount ?? 0;
   const backlogOff = inboxCount === null || inboxCount === 0;
   const k = request.senders.length;
+  const singleName =
+    request.senders[0]?.name?.trim() || compositePreview?.sender.name?.trim() || '';
   const title = (() => {
     // A live count of 0 is a real empty set. Null is still loading, and
     // "archive 0 emails" would be a count we have not read.
     if (!countKnown && mode !== 'unsub_only') {
       if (!single) return fillCopy(WS5_COPY['f1.title.bulk.unsubOnly'], { k: shown(k) });
-      const pendingName = request.senders[0]?.name?.trim() ?? '';
-      if (pendingName === '') return unnamedUnsubscribeTitle('unsub_only', 0);
-      return fillCopy(WS5_COPY['f1.title.unsubOnly'], { Sender: pendingName });
+      if (singleName === '') return unnamedUnsubscribeTitle('unsub_only', 0);
+      return fillCopy(WS5_COPY['f1.title.unsubOnly'], { Sender: singleName });
     }
     if (!single) {
       if (mode === 'delete')
@@ -168,7 +169,7 @@ export function UnsubscribeBacklogDialog({
         return fillCopy(WS5_COPY['f1.title.bulk.archive'], { k: shown(k), n: shown(n) });
       return fillCopy(WS5_COPY['f1.title.bulk.unsubOnly'], { k: shown(k) });
     }
-    const Sender = request.senders[0]?.name?.trim() ?? '';
+    const Sender = singleName;
     if (Sender === '') return unnamedUnsubscribeTitle(mode, n);
     if (mode === 'delete') {
       const forms = WS5_COPY['f1.title.delete'];
@@ -215,7 +216,9 @@ export function UnsubscribeBacklogDialog({
       );
     }
   }
-  if (mode === 'archive' && isPluralCopy(WS5_COPY['f1.preview.backlog.archive'])) {
+  if ((mode === 'archive' || mode === 'delete') && !countKnown) {
+    previewLines.push(<p key="backlog">{WS5_COPY['f1.preview.backlog.loading']}</p>);
+  } else if (mode === 'archive' && isPluralCopy(WS5_COPY['f1.preview.backlog.archive'])) {
     previewLines.push(
       <p key="backlog">{pluralCopy(WS5_COPY['f1.preview.backlog.archive'], n, { n: shown(n) })}</p>,
     );

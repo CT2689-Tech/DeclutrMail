@@ -62,7 +62,8 @@ export function HeardFromPrompt() {
   }, []);
 
   useLayoutEffect(() => {
-    const sync = () => setSheetOpen(document.querySelector('[role="dialog"]') !== null);
+    const sync = () =>
+      setSheetOpen(document.querySelector('[role="dialog"], [role="alertdialog"]') !== null);
     sync();
     const observer = new MutationObserver(sync);
     observer.observe(document.body, {

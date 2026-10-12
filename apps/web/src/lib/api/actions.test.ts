@@ -529,7 +529,7 @@ describe('confirmUnsubscribeBacklog when the new route is not deployed', () => {
     expect(calls).toEqual(['move', 'unsub']);
     expect(result).toMatchObject({
       mode: 'archive',
-      backlog: { actionId: 'act-1', requestedCount: 3, verb: 'archive' },
+      backlog: { actionId: 'act-1', handle: 'action', requestedCount: 3, verb: 'archive' },
       senders: [{ senderId: 's1', unsubStatus: 'requested', executionActionId: 'exec-1' }],
     });
 

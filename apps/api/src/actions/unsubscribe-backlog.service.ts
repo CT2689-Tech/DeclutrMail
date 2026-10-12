@@ -139,6 +139,7 @@ export class UnsubscribeBacklogService {
       return {
         backlog: {
           actionId: result.actionId,
+          handle: 'action',
           requestedCount: result.primaryCount,
           verb,
         },
@@ -154,6 +155,7 @@ export class UnsubscribeBacklogService {
     return {
       backlog: {
         actionId: result.batchId,
+        handle: 'batch',
         requestedCount: result.requestedTotal,
         verb,
       },

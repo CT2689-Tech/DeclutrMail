@@ -8,7 +8,12 @@ import type { InboxReportDto } from '@declutrmail/shared/inbox-report';
 
 import { getActionFailureCopy } from '@/lib/action-error-copy';
 import { ApiError, apiGet } from '@/lib/api/client';
-import { useConfirmUnsubscribeBacklog } from '@/lib/api/use-action';
+import {
+  useActionStatus,
+  useBatchStatus,
+  useConfirmUnsubscribeBacklog,
+  useRevertUndo,
+} from '@/lib/api/use-action';
 import { unsubscribeBacklogToast } from '@/features/senders/unsubscribe-backlog/toast';
 
 import { InboxReportPanel } from './panel';
@@ -24,14 +29,18 @@ import {
 export function InboxReportFirstLanding(props: {
   mailboxId: string;
   mailboxEmail?: string;
+  senderNames?: Readonly<Record<string, { name: string }>>;
   onResolved(shown: boolean): void;
 }): JSX.Element | null {
-  const { mailboxId, mailboxEmail, onResolved } = props;
+  const { mailboxId, mailboxEmail, senderNames, onResolved } = props;
   const confirmBacklog = useConfirmUnsubscribeBacklog();
+  const revertUndo = useRevertUndo();
   const [report, setReport] = useState<InboxReportDto | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [failed, setFailed] = useState(false);
   const [celebration, setCelebration] = useState<ReportCelebration | null>(null);
+  const [undoHidden, setUndoHidden] = useState(false);
+  const undoToken = useCelebrationUndoToken(mailboxId, undoHidden ? null : celebration);
 
   useEffect(() => {
     let cancel = false;
@@ -53,14 +62,32 @@ export function InboxReportFirstLanding(props: {
     };
   }, [mailboxId, onResolved]);
 
+  useEffect(() => {
+    setUndoHidden(false);
+  }, [celebration?.actionId]);
+
+  const undoArchive = (token: string) => {
+    revertUndo.mutate(
+      { token, mailboxId },
+      {
+        onSuccess: () => setUndoHidden(true),
+        onError: (err) => {
+          toast(getActionFailureCopy('revert-enqueue', { error: err }), 'warn');
+        },
+      },
+    );
+  };
+
   if (!report || failed) return null;
   return (
     <InboxReportPanel
       report={report}
       mailboxId={mailboxId}
       mailboxEmail={mailboxEmail}
+      {...(senderNames ? { senderNames } : {})}
       dismissed={dismissed}
       celebration={celebration}
+      {...(undoToken ? { undoToken, onUndo: () => undoArchive(undoToken) } : {})}
       onDismiss={() => {
         setReportDismissed(mailboxId, true);
         setDismissed(true);
@@ -87,6 +114,7 @@ export function InboxReportFirstLanding(props: {
                     ? 'delete'
                     : 'archive'
                   : 'unsub_only';
+                const handle = res.backlog?.handle;
                 const next: ReportCelebration = {
                   archived: res.backlog?.requestedCount ?? 0,
                   senders: requested + manual,
@@ -95,6 +123,11 @@ export function InboxReportFirstLanding(props: {
                   manual,
                   ...(verb === 'delete' && typeof res.backlog?.movedBytes === 'number'
                     ? { bytes: res.backlog.movedBytes }
+                    : {}),
+                  ...(verb === 'archive' &&
+                  res.backlog?.actionId &&
+                  (handle === 'action' || handle === 'batch')
+                    ? { actionId: res.backlog.actionId, actionHandle: handle }
                     : {}),
                 };
                 writeReportCelebration(mailboxId, next);
@@ -117,4 +150,20 @@ export function InboxReportFirstLanding(props: {
       }}
     />
   );
+}
+
+/** Poll the move that this celebration recorded. No token, no button. */
+function useCelebrationUndoToken(
+  mailboxId: string,
+  celebration: ReportCelebration | null,
+): string | null {
+  const archive =
+    celebration != null && celebration.verb !== 'delete' && celebration.verb !== 'unsub_only';
+  const id = archive ? (celebration?.actionId ?? null) : null;
+  const batch = archive && celebration?.actionHandle === 'batch';
+  const action = useActionStatus(batch ? null : id, mailboxId);
+  const batchStatus = useBatchStatus(batch ? id : null, mailboxId);
+  const snap = batch ? batchStatus.data : action.data;
+  if (!snap?.undoToken || snap.undoRevertedAt) return null;
+  return snap.undoToken;
 }

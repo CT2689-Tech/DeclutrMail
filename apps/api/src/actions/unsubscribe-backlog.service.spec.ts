@@ -148,6 +148,7 @@ describe('UnsubscribeBacklogService', () => {
 
     expect(events).toEqual(['enqueue', 'unsub']);
     expect(result.backlog?.requestedCount).toBe(4);
+    expect(result.backlog?.handle).toBe('action');
     expect(result.backlog).not.toHaveProperty('movedBytes');
     expect(labelQueue.count).toBe(1);
     expect(unsubQueue.count).toBe(1);
@@ -432,6 +433,10 @@ describe('UnsubscribeBacklogService', () => {
       senderIds: [senderId, other!.id],
     });
 
+    expect(result.backlog).toMatchObject({
+      handle: 'batch',
+      actionId: '11111111-1111-4111-8111-111111111111',
+    });
     expect(result.senders.find((row) => row.senderId === other!.id)).toMatchObject({
       unsubStatus: 'skipped',
       reasonCode: 'not_found',

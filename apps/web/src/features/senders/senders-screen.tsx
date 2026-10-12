@@ -726,6 +726,14 @@ function SendersScreenContent({
     () => mergePinnedRows(serverSenders, pinnedSenders) as Sender[],
     [serverSenders, pinnedSenders],
   );
+  const reportSenderNames = useMemo(() => {
+    const names: Record<string, { name: string }> = {};
+    for (const row of senders) {
+      const name = row.name.trim();
+      if (name !== '') names[row.id] = { name };
+    }
+    return names;
+  }, [senders]);
   const activeMailbox = me.mailboxes.find((m) => m.id === me.activeMailboxId);
   // Codex round-1 review of QA-senders-filtering-20260901-01: the server
   // never sees a whitespace-only search box (the request debounces off
@@ -2619,6 +2627,16 @@ function SendersScreenContent({
           </div>
         </header>
         <AiInlinePrompt />
+        {actionMailboxId && activeMailbox?.readiness === 'ready' ? (
+          <div className={workspaceStyles.reportBand}>
+            <InboxReportFirstLanding
+              mailboxId={actionMailboxId}
+              {...(activeMailbox.email ? { mailboxEmail: activeMailbox.email } : {})}
+              senderNames={reportSenderNames}
+              onResolved={noteReportResolved}
+            />
+          </div>
+        ) : null}
         <div className={workspaceStyles.listColumn}>
           {activeMailbox?.readiness === 'ready' && actionMailboxId ? (
             <InboxReportFirstLanding
@@ -2751,13 +2769,6 @@ function SendersScreenContent({
             </div>
           )}
 
-          {actionMailboxId && activeMailbox?.readiness === 'ready' ? (
-            <InboxReportFirstLanding
-              mailboxId={actionMailboxId}
-              {...(activeMailbox.email ? { mailboxEmail: activeMailbox.email } : {})}
-              onResolved={noteReportResolved}
-            />
-          ) : null}
           <FirstLandingSlot
             candidates={[
               {

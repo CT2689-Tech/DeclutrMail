@@ -26,6 +26,10 @@ export interface ReportCelebration {
   requested?: number;
   /** Mailto senders who still need to press Send. */
   manual?: number;
+  /** Move job whose Activity row can carry an undo token. */
+  actionId?: string;
+  /** Which status route `actionId` belongs to. */
+  actionHandle?: 'action' | 'batch';
 }
 
 export function readReportCelebration(mailboxId: string): ReportCelebration | null {
@@ -40,6 +44,8 @@ export function readReportCelebration(mailboxId: string): ReportCelebration | nu
       bytes?: unknown;
       requested?: unknown;
       manual?: unknown;
+      actionId?: unknown;
+      actionHandle?: unknown;
     };
     if (typeof parsed.archived !== 'number' || typeof parsed.senders !== 'number') return null;
     const bytes =
@@ -54,6 +60,12 @@ export function readReportCelebration(mailboxId: string): ReportCelebration | nu
       parsed.verb === 'delete' || parsed.verb === 'unsub_only' || parsed.verb === 'archive'
         ? parsed.verb
         : 'archive';
+    const actionId =
+      typeof parsed.actionId === 'string' && parsed.actionId !== '' ? parsed.actionId : undefined;
+    const actionHandle =
+      parsed.actionHandle === 'action' || parsed.actionHandle === 'batch'
+        ? parsed.actionHandle
+        : undefined;
     return {
       archived: parsed.archived,
       senders: parsed.senders,
@@ -61,6 +73,7 @@ export function readReportCelebration(mailboxId: string): ReportCelebration | nu
       ...(bytes !== undefined ? { bytes } : {}),
       ...(requested !== undefined ? { requested } : {}),
       ...(manual !== undefined ? { manual } : {}),
+      ...(actionId !== undefined && actionHandle !== undefined ? { actionId, actionHandle } : {}),
     };
   } catch {
     return null;

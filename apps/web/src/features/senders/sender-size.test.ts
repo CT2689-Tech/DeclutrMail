@@ -7,7 +7,7 @@ describe('sender size copy', () => {
     expect(senderSizeCell(1_500_000)).toBe('≈ 1.5 MB');
     expect(senderSizeDetail('Acme', 1_500_000)).toEqual({
       detail: 'Email from Acme takes up about 1.5 MB in your Gmail.',
-      note: 'Deleted email keeps using Gmail storage until Trash is emptied. Gmail empties it after 30 days.',
+      note: 'Deleted email sits in Gmail Trash and keeps using Google storage until it leaves. Gmail deletes it for good after 30 days, or sooner if you empty Trash.',
       estimates: 'Sizes are Gmail’s estimates.',
     });
   });

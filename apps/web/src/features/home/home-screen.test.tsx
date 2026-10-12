@@ -9,6 +9,7 @@ import { installFetchStub, jsonOk, jsonServerError } from '@/test/fetch-stub';
 import { createTestQueryClient } from '@/test/query-wrapper';
 
 import { HomeScreen } from './home-screen';
+import homeStyles from './home-view.module.css';
 
 const authCell: { me: Me } = { me: meFor('pro', 'ready') };
 
@@ -245,6 +246,11 @@ describe('HomeScreen', () => {
     );
     const report = screen.getByRole('link', { name: /Open report/ });
     expect(report).toHaveAttribute('href', '/senders');
+    expect(report).toHaveAttribute('data-dm-button', '');
+    expect(screen.getByRole('heading', { name: 'Your Inbox Report' })).toBeInTheDocument();
+    const reportSlot = homeStyles.reportSlot;
+    if (!reportSlot) throw new Error('Home report slot class is missing');
+    expect(document.querySelector('[data-home-report-card]')).toHaveClass(reportSlot);
     const title = screen.getByRole('heading', { level: 1 });
     const column = title.closest('[data-home-priority]');
     const card = document.querySelector('[data-home-report-card]');

@@ -36,6 +36,77 @@ afterEach(() => {
 });
 
 describe('InboxReportFirstLanding', () => {
+  it('undoes the latest archive when Activity has a token', async () => {
+    const undoPosts: string[] = [];
+    localStorage.setItem(
+      'dm-inbox-report-celebration:mb-1',
+      JSON.stringify({
+        archived: 4,
+        senders: 1,
+        verb: 'archive',
+        actionId: 'act-1',
+        actionHandle: 'action',
+      }),
+    );
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mb-1/inbox-report',
+        respond: () => jsonOk({ data: report }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/act-1',
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: 'act-1',
+              verb: 'archive',
+              direction: 'forward',
+              status: 'done',
+              requestedCount: 4,
+              affectedCount: 4,
+              wakeAt: null,
+              undoToken: 'undo-1',
+              undoExpiresAt: '2026-11-11T00:00:00.000Z',
+              undoExecutedAt: null,
+              undoRevertedAt: null,
+              errorCode: null,
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/undo/undo-1',
+        respond: async (req) => {
+          undoPosts.push(new URL(req.url, 'http://localhost').pathname);
+          return jsonOk({
+            data: {
+              token: 'undo-1',
+              actionKind: 'archive',
+              reverted: false,
+              expired: false,
+              revertedAt: null,
+              actionId: 'rev-1',
+            },
+          });
+        },
+      },
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
+      </QueryWrapper>,
+    );
+    const undo = await screen.findByRole('button', { name: WS5_COPY['report.celebrate.undo'] });
+    fireEvent.click(undo);
+    await waitFor(() => expect(undoPosts).toEqual(['/api/undo/undo-1']));
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: WS5_COPY['report.celebrate.undo'] })).toBeNull(),
+    );
+    expect(screen.getByText(WS5_COPY['report.celebrate.undo'])).toBeInTheDocument();
+  });
+
   it('keeps the done state after a reload and does not offer the action again', async () => {
     localStorage.setItem(
       'dm-inbox-report-celebration:mb-1',
@@ -129,9 +200,18 @@ describe('InboxReportFirstLanding', () => {
       screen.getByRole('radio', { name: 'Unsubscribe and delete, counting emails' }),
     ).toBeDisabled();
     expect(screen.getByRole('dialog')).not.toHaveTextContent('archive 4 emails');
+    expect(screen.getByRole('dialog')).toHaveTextContent(WS5_COPY['f1.preview.backlog.loading']);
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('0 emails you already have');
     releasePreview(
       jsonOk({
         data: {
+          sender: {
+            id: 's1',
+            name: 'Acme',
+            domain: 'acme.example',
+            lastSeenDays: 1,
+            wroteToCount: 0,
+          },
           counts: { all: 7, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 },
           recentMessages: {
             all: [],
@@ -151,8 +231,15 @@ describe('InboxReportFirstLanding', () => {
     expect(archiveChoice).toBeEnabled();
     expect(archiveChoice).toBeChecked();
     expect(screen.getByRole('dialog')).not.toHaveTextContent('Unsubscribe from ?');
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('1 senders');
+    expect(screen.getByRole('dialog')).not.toHaveTextContent(
+      WS5_COPY['f1.preview.backlog.loading'],
+    );
     expect(screen.getByRole('dialog')).toHaveTextContent(
-      'Unsubscribe from 1 senders and archive 7 emails?',
+      'Unsubscribe from Acme and archive 7 emails?',
+    );
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      '7 emails you already have: moved out of Inbox (Archive)',
     );
     fireEvent.click(archiveChoice);
     const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });

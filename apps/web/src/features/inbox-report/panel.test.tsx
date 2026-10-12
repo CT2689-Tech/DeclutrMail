@@ -100,6 +100,8 @@ describe('InboxReportPanel', () => {
     ).toBeDisabled();
     expect(screen.getByRole('dialog')).not.toHaveTextContent('archive 10 emails');
     expect(screen.getByRole('dialog')).not.toHaveTextContent('Archive 0');
+    expect(screen.getByRole('dialog')).toHaveTextContent(WS5_COPY['f1.preview.backlog.loading']);
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('0 emails you already have');
     releasePreview(
       jsonOk({
         data: {
@@ -202,6 +204,7 @@ describe('InboxReportPanel', () => {
     );
     expect(screen.queryByText(/Archived/)).toBeNull();
     expect(screen.queryByText(/Moved/)).toBeNull();
+    expect(screen.queryByText(WS5_COPY['report.celebrate.delete.note'])).toBeNull();
     expect(screen.queryByText(/your storage doesn’t change/)).toBeNull();
     rerender(
       <InboxReportPanel
@@ -212,8 +215,64 @@ describe('InboxReportPanel', () => {
       />,
     );
     expect(screen.getByText('Moved 4 emails (about 1.5 MB) to Gmail Trash.')).toBeInTheDocument();
+    expect(screen.getByText(WS5_COPY['report.celebrate.delete.note'])).toBeInTheDocument();
     expect(screen.queryByText(/Archived/)).toBeNull();
     expect(screen.queryByText(/your storage doesn’t change/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /Undo restores/ })).toBeNull();
+  });
+
+  it('replaces the previous done state', () => {
+    const { rerender } = render(
+      <InboxReportPanel
+        report={full}
+        onDismiss={() => {}}
+        onReopen={() => {}}
+        celebration={{ archived: 10, senders: 2, verb: 'archive' }}
+      />,
+    );
+    expect(screen.getByText('Archived 10 emails from 2 senders.')).toBeInTheDocument();
+    rerender(
+      <InboxReportPanel
+        report={full}
+        onDismiss={() => {}}
+        onReopen={() => {}}
+        celebration={{ archived: 4, senders: 1, verb: 'delete', bytes: 1_500_000 }}
+      />,
+    );
+    expect(screen.queryByText('Archived 10 emails from 2 senders.')).toBeNull();
+    expect(screen.getByText('Moved 4 emails (about 1.5 MB) to Gmail Trash.')).toBeInTheDocument();
+  });
+
+  it('turns the Undo sentence into a button when an Activity token exists', () => {
+    const onUndo = vi.fn();
+    render(
+      <InboxReportPanel
+        report={full}
+        onDismiss={() => {}}
+        onReopen={() => {}}
+        celebration={{ archived: 10, senders: 2, verb: 'archive' }}
+        undoToken="undo-1"
+        onUndo={onUndo}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: WS5_COPY['report.celebrate.undo'] }));
+    expect(onUndo).toHaveBeenCalledOnce();
+  });
+
+  it('uses the loaded sender name for a one-sender fix title', () => {
+    render(
+      <InboxReportPanel
+        report={{ ...full, fix: { senderKeys: ['s1'], sendersCount: 1, inboxEmailCount: 4 } }}
+        senderNames={{ s1: { name: 'Acme' } }}
+        onDismiss={() => {}}
+        onReopen={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'Unsubscribe from Acme and archive 4 emails?',
+    );
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('1 senders');
   });
 
   it('states the unsubscribe requests and the emails still to send', () => {
@@ -278,7 +337,11 @@ describe('InboxReportCard', () => {
     expect(card?.tagName).toBe('DIV');
     const action = screen.getByRole('link', { name: 'Open report' });
     expect(action).toHaveAttribute('href', '/senders');
-    expect(action).toHaveClass('dm-home-report-cta');
+    expect(action).toHaveAttribute('data-dm-button', '');
+    expect(action).toHaveClass('dm-home-report-cta', 'dm-button-link');
+    expect(
+      screen.getByRole('heading', { name: WS5_COPY['report.home.title'] }),
+    ).toBeInTheDocument();
     expect(card).toContainElement(screen.getByText(WS5_COPY['report.home.title']));
     expect(card).toContainElement(screen.getByText(WS5_COPY['report.home.body']));
     expect(action.textContent).toBe(WS5_COPY['report.home.cta']);

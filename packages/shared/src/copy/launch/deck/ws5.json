@@ -43,6 +43,7 @@
     "one": "1 email you already have: moved to Gmail Trash (Delete)",
     "other": "{n} emails you already have: moved to Gmail Trash (Delete)"
   },
+  "f1.preview.backlog.loading": "Counting the email you already have…",
   "f1.preview.backlog.unsubOnly": "Email you already have stays where it is.",
   "f1.preview.bulkMore": {
     "one": "and 1 more sender",
@@ -56,7 +57,7 @@
   "f1.honesty.delete": "The unsubscribe request can’t be recalled once delivered. The delete can be undone from Activity for 30 days.",
   "f1.honesty.unsubOnly": "Once the request is delivered, it can’t be recalled.",
   "f1.footer": "Whether their email stops is up to the sender.",
-  "f1.deleteNote": "Gmail keeps Trash for up to 30 days unless you empty it.",
+  "f1.deleteNote": "Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash.",
   "f1.button.unsubOnly": "Unsubscribe",
   "f1.button.archive": "Unsubscribe + Archive",
   "f1.button.delete": "Unsubscribe + Delete",
@@ -183,7 +184,7 @@
   "report.thirdParty.recent": "{recent} arrived in the last 90 days.",
   "report.yearsDeep": "Your email goes back to {year}. {pct}% of it is more than 3 years old.",
   "report.top10": "{pct}% of your email comes from just 10 senders.",
-  "report.trash": "About {size} is in Gmail Trash. It still counts toward your Google storage until Gmail removes it, 30 days after each email was deleted.",
+  "report.trash": "About {size} is in Gmail Trash. It still counts toward your Google storage until it leaves Trash: Gmail deletes it for good after 30 days, or sooner if you empty Trash.",
   "report.fallback": {
     "one": "Your inbox is in good shape. {total} emails, and 1 sender that might be worth a look.",
     "other": "Your inbox is in good shape. {total} emails, and {k} senders that might be worth a look."
@@ -212,6 +213,7 @@
   "report.celebrate.archive": "Archived {X} emails from {n} senders.",
   "report.celebrate.archive.one": "Archived {X} emails from 1 sender.",
   "report.celebrate.delete": "Moved {count} emails (about {size}) to Gmail Trash.",
+  "report.celebrate.delete.note": "It still counts toward your Google storage until it leaves Trash. Gmail deletes it for good after 30 days, or sooner if you empty Trash.",
   "report.celebrate.unsub": {
     "one": "Unsubscribe requested from 1 sender",
     "other": "Unsubscribe requested from {m} senders"
@@ -242,7 +244,7 @@
   "f2.sort": "Largest senders",
   "f2.cell": "≈ {size}",
   "f2.detail": "Email from {Sender} takes up about {size} in your Gmail.",
-  "f2.note": "Deleted email keeps using Gmail storage until Trash is emptied. Gmail empties it after 30 days.",
+  "f2.note": "Deleted email sits in Gmail Trash and keeps using Google storage until it leaves. Gmail deletes it for good after 30 days, or sooner if you empty Trash.",
   "f2.estimates": "Sizes are Gmail’s estimates.",
   "f2.homeTile.value": "≈ {size}",
   "f2.homeTile.label": "of email in your Gmail",

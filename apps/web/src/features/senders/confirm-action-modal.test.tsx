@@ -1378,7 +1378,9 @@ describe('ConfirmActionModal — unsubscribe has no reach or age window', () => 
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Gmail keeps Trash for up to 30 days unless you empty it\./),
+      screen.getByText(
+        /Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash\./,
+      ),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Delete' }));
     expect(onConfirm).toHaveBeenCalledWith({

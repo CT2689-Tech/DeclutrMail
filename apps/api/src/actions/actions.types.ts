@@ -103,6 +103,8 @@ export interface UnsubscribeBacklogResult {
   mode: 'unsub_only' | 'archive' | 'delete';
   backlog: {
     actionId: string;
+    /** `action` is polled at `/api/actions/:id`; `batch` at `/api/actions/batch/:id`. */
+    handle: 'action' | 'batch';
     requestedCount: number;
     verb: 'archive' | 'delete';
     /**

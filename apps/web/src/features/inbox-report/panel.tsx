@@ -169,6 +169,8 @@ export function InboxReportPanel({
   onReopen,
   onFixConfirmed,
   celebration = null,
+  undoToken,
+  onUndo,
   mailboxId,
   senderNames,
   /** In-demo review. The signed-in app keeps the senders link. */
@@ -186,6 +188,9 @@ export function InboxReportPanel({
   onReview?: () => void;
   trustHref?: string;
   celebration?: ReportCelebration | null;
+  /** Activity undo token for the latest archive. The button uses the deck sentence. */
+  undoToken?: string;
+  onUndo?: () => void;
   /**
    * Signed-in mailbox. When set, Archive and Delete wait for a live
    * preview count instead of the cached report figure.
@@ -333,8 +338,16 @@ export function InboxReportPanel({
                   <CelebrationMark mailboxId={mailboxId} />
                   <div>
                     {doneLine ? <p>{doneLine}</p> : null}
+                    {celebration.verb === 'delete' && doneLine ? (
+                      <p>{WS5_COPY['report.celebrate.delete.note']}</p>
+                    ) : null}
                     {requestLine ? <p>{requestLine}</p> : null}
-                    {celebration.verb === 'delete' || celebration.verb === 'unsub_only' ? null : (
+                    {celebration.verb === 'delete' ||
+                    celebration.verb === 'unsub_only' ? null : undoToken ? (
+                      <button type="button" onClick={onUndo}>
+                        {WS5_COPY['report.celebrate.undo']}
+                      </button>
+                    ) : (
                       <p>{WS5_COPY['report.celebrate.undo']}</p>
                     )}
                     {celebration.verb === 'delete' || celebration.verb === 'unsub_only' ? null : (
