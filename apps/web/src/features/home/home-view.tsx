@@ -54,7 +54,7 @@ export function HomeView({
         <div>
           <EditorialKicker>Home</EditorialKicker>
           <h1>
-            A little room
+            {'A little room '}
             <br />
             for a <em>clearer day.</em>
           </h1>
@@ -279,7 +279,7 @@ function HomeBody({
             >
               <span className={styles.eyebrow}>Small decisions add up</span>
               <h2>
-                More space.
+                {'More space. '}
                 <br />
                 Less second-guessing.
               </h2>
