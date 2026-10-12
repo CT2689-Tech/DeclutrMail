@@ -11,7 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { focusManager } from '@tanstack/react-query';
+import { focusManager, onlineManager } from '@tanstack/react-query';
 import type { SyncStatus } from '@declutrmail/shared/contracts';
 import {
   useSyncStatus,
@@ -200,5 +200,64 @@ describe('useSyncStatus', () => {
     });
     unmount();
     client.clear();
+  });
+
+  it('pauses the Home scan poll while the tab is hidden and resumes on the next tick', async () => {
+    let reads = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/v1/sync/status',
+        respond: () => {
+          reads += 1;
+          return jsonOk({ data: SYNCING });
+        },
+      },
+    ]);
+    const originalVisibility = Object.getOwnPropertyDescriptor(document, 'visibilityState');
+    const setVisibility = (value: DocumentVisibilityState) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value });
+    };
+    focusManager.setFocused(undefined);
+    onlineManager.setOnline(true);
+    setVisibility('visible');
+    const client = createTestQueryClient();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { result, unmount } = renderHook(() => useSyncStatus('mailbox-home'), {
+        wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+      });
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      const baseline = reads;
+      expect(baseline).toBeGreaterThan(0);
+      const cached = client
+        .getQueryCache()
+        .find({ queryKey: [...SYNC_STATUS_KEY, 'mailbox-home'] });
+      expect(cached?.options.refetchIntervalInBackground).toBe(false);
+
+      setVisibility('hidden');
+      await act(async () => {
+        client.setQueryData(
+          [...SYNC_STATUS_KEY, 'mailbox-home'],
+          (current: SyncStatus | undefined) => (current === undefined ? current : { ...current }),
+        );
+        await vi.advanceTimersByTimeAsync(SYNC_POLL_MS);
+      });
+      expect(reads).toBe(baseline);
+
+      setVisibility('visible');
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(SYNC_POLL_MS);
+      });
+      expect(reads).toBe(baseline + 1);
+      unmount();
+      client.clear();
+    } finally {
+      vi.useRealTimers();
+      focusManager.setFocused(undefined);
+      onlineManager.setOnline(true);
+      if (originalVisibility)
+        Object.defineProperty(document, 'visibilityState', originalVisibility);
+    }
   });
 });
