@@ -1,5 +1,5 @@
 import { llmsResponse, renderLlmsFullTxt } from '@/features/marketing/llms/llms-document';
 
-export function GET(): Response {
-  return llmsResponse(renderLlmsFullTxt());
+export async function GET(): Promise<Response> {
+  return llmsResponse(await renderLlmsFullTxt());
 }

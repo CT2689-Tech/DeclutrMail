@@ -173,6 +173,24 @@ describe('/pricing.md — machine-readable pricing', () => {
     expect(markdown).not.toContain('$90/yr');
     vi.unstubAllEnvs();
   });
+
+  it('falls back to the web env when the pricing API is down', async () => {
+    vi.stubEnv('PRICING_V2', '');
+    vi.stubEnv('BILLING_PASS_ENABLED', '');
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.example.test');
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/pricing/public',
+        respond: () => new Response('unavailable', { status: 503 }),
+      },
+    ]);
+    const markdown = await (await GET()).text();
+    expect(markdown).toContain('$9/mo');
+    expect(markdown).toContain('$90/yr');
+    expect(markdown).not.toContain('## Backlog Pass');
+    expect(markdown).not.toContain('$59 a year');
+  });
 });
 
 afterEach(() => {

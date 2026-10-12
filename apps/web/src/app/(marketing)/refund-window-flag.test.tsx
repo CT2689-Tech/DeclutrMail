@@ -45,7 +45,7 @@ describe('refund window with PRICING_V2 on', () => {
     expect(moneyBackNote(true)).toBe(refundLine());
     expect(refundSentence()).toBe(refundLine());
     assertLaunchWindow(priceFaqAnswer());
-    assertLaunchWindow(renderLlmsTxt());
+    assertLaunchWindow(await renderLlmsTxt());
 
     const markdown = await (await pricingMarkdown()).text();
     assertLaunchWindow(markdown);

@@ -6,6 +6,7 @@
 import { GMAIL_DATA_PROCESSORS } from '../../contracts/gmail-data-inventory';
 import {
   cleanupActionsPerMonthFor,
+  isBillingPassEnabled,
   isPricingV2,
   planName,
   POLICY,
@@ -205,12 +206,15 @@ export function llmsAutopilotLine(): string {
   return fillComplete(WS3_COPY['ws3.llms.fix.autopilot']);
 }
 
-export function llmsPricingLine(): string {
+export function llmsPricingLine(passEnabled = passListed(), pricingV2 = isPricingV2()): string {
   if (!pricingCatalogReady()) return '';
-  const template = passListed()
+  const template = passEnabled
     ? WS3_COPY['ws3.llms.fix.pricingLink']
     : WS3_COPY['ws3.llms.fix.pricingLink'].replace(' and the one-time {passName}', '');
-  return fillComplete(template);
+  return fillComplete(
+    template,
+    pricingV2 ? { refundDays: String(POLICY.refundWindowDays) } : undefined,
+  );
 }
 
 export function llmsBetaLine(): string {
@@ -230,14 +234,17 @@ export function llmsStorageAiLine(): string {
   return filled.includes('{') ? '' : filled;
 }
 
-export function llmsKeyFacts(): readonly string[] {
+export function llmsKeyFacts(
+  passEnabled = isBillingPassEnabled(),
+  pricingV2 = isPricingV2(),
+): readonly string[] {
   const facts = WS3_COPY['ws3.llms.keyFacts'];
   return facts.flatMap((fact, index) => {
     if (index === 3 && !AI_CONSENT_GATE_LIVE) return [LLMS_AI_BEFORE_GATE];
     // The deck points at the generated pricing section. Omit the pointer
     // while that section is empty so the file does not describe a heading
     // that is not there.
-    if (index === 5 && renderPricingMarkdown().trim() === '') return [];
+    if (index === 5 && renderPricingMarkdown(passEnabled, pricingV2).trim() === '') return [];
     if (index === 6) {
       return [fillWs3(fact, { factsCheckedDate: 'October 11, 2026' })];
     }

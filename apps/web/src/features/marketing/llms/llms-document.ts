@@ -18,6 +18,7 @@ import {
 } from '@declutrmail/shared/copy/launch';
 
 import { MONEY_BACK_NOTE } from '@/features/billing/billing-model';
+import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
 
 import { COMPARISONS } from '../comparison/comparison-data';
 import { comparisonFaqs } from '../comparison/comparison-faqs';
@@ -94,9 +95,9 @@ function withOpeningFacts(body: string, facts: string): string {
 const CHANGELOG_LINE =
   '- [Pricing changelog](https://declutrmail.com/pricing/changelog): dated record of pricing changes';
 
-/** The changelog page redirects while `PRICING_V2` is off, so crawlers see it only then. */
-function withPricingChangelog(body: string): string {
-  if (!isPricingV2()) return body;
+/** The changelog page redirects while pricing v2 is off, so crawlers see it only then. */
+function withPricingChangelog(body: string, pricingV2 = isPricingV2()): string {
+  if (!pricingV2) return body;
   const marker = '- [Pricing](https://declutrmail.com/pricing):';
   const at = body.indexOf(marker);
   if (at === -1) return `${body}\n${CHANGELOG_LINE}\n`;
@@ -128,12 +129,18 @@ function withLaunchLinks(body: string): string {
   return `${body.slice(0, lineEnd)}\n${block}${body.slice(lineEnd)}`;
 }
 
-export function renderLlmsTxt(): string {
+export async function renderLlmsTxt(): Promise<string> {
+  // Same source as /pricing. The web process env stays off; Cloud Run
+  // is where PRICING_V2 and BILLING_PASS_ENABLED are set.
+  const flags = await loadPricingFlags();
   let body = LLMS_SOURCE.replaceAll('LLMS_SECURITY_FACTS', llmsSecurityFacts());
   const autopilot = llmsAutopilotLine();
   if (autopilot) body = body.replace(PREVIOUS_AUTOPILOT, autopilot);
   body = applyDeckFixes(body);
-  const pricingLine = llmsPricingLine().replace(/^Pricing:\s*/, '');
+  const pricingLine = llmsPricingLine(flags.passEnabled, flags.pricingV2).replace(
+    /^Pricing:\s*/,
+    '',
+  );
   if (pricingLine)
     body = body.replace(
       PREVIOUS_PRICING,
@@ -145,23 +152,23 @@ export function renderLlmsTxt(): string {
       `- [Get started](https://declutrmail.com/beta): ${llmsBetaLine().replace(/^Get started: /, '')}`,
     );
   }
-  body = withPricingChangelog(withLaunchLinks(body));
-  const facts = llmsKeyFacts()
+  body = withPricingChangelog(withLaunchLinks(body), flags.pricingV2);
+  const facts = llmsKeyFacts(flags.passEnabled, flags.pricingV2)
     .map((fact) => `- ${fact}`)
     .join('\n');
-  const pricing = renderPricingMarkdown().trim();
+  const pricing = renderPricingMarkdown(flags.passEnabled, flags.pricingV2).trim();
   const pricingSection = pricing === '' ? '\n' : `\n\n## Pricing\n\n${pricing}\n`;
   return `${withOpeningFacts(body.trim(), facts)}${pricingSection}`;
 }
 
-export function renderLlmsFullTxt(): string {
+export async function renderLlmsFullTxt(): Promise<string> {
   const pages = COMPARISONS.map((comparison) => {
     const faqs = comparisonFaqs(comparison)
       .map((faq) => `### ${faq.q}\n\n${faq.a}`)
       .join('\n\n');
     return `## ${comparison.title}\n\n${comparison.verdict}\n\n${faqs}`;
   }).join('\n\n');
-  return `${renderLlmsTxt()}\n${pages}\n`;
+  return `${await renderLlmsTxt()}\n${pages}\n`;
 }
 
 export function llmsResponse(body: string): Response {
