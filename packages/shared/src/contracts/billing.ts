@@ -46,6 +46,10 @@ export type PurchasableTier = z.infer<typeof PurchasableTierSchema>;
  * `users.billing_region` rather than re-deriving it from IP at
  * checkout time.
  *
+ * `country` is the edge country the billing page already resolved.
+ * It does not choose the provider. While new rupee purchases are
+ * paused, an India visitor quoted INR on Paddle is refused.
+ *
  * `promo: 'foundingPro'` requires `tierId: 'pro'` + `cycle: 'annual'`
  * (the promo is an annual-only Pro price point, D126) — enforced by
  * the `superRefine` below so a malformed combination fails validation
@@ -59,6 +63,11 @@ export const CheckoutRequestSchema = z
     promo: z.literal('foundingPro').optional(),
     /** Backlog Pass. Requires Plus annual on Paddle. Not a subscription tier. */
     offer: z.literal('pass_onetime').optional(),
+    /** ISO 3166-1 alpha-2 edge country. Omitted when the page has none. */
+    country: z
+      .string()
+      .regex(/^[A-Za-z]{2}$/)
+      .optional(),
   })
   .superRefine((val, ctx) => {
     if (val.promo === 'foundingPro' && (val.tierId !== 'pro' || val.cycle !== 'annual')) {

@@ -13,6 +13,7 @@ import {
   isErrorCode,
   INR_NEW_PURCHASES_PAUSED,
   INR_CHECKOUT_PAUSED_MESSAGE,
+  inrNewPurchasePaused,
 } from '@declutrmail/shared/contracts';
 import type {
   BillingCycle,
@@ -460,11 +461,26 @@ export function PlanPicker({
     // ATOMICALLY (Web Locks mutex) and RESERVED (`checkout_intent`)
     // before any payment surface can open. A second tab's claim now
     // finds the reservation and stands down.
+    const panelProvider: BillingProviderId = passSelected || pricingV2 ? 'paddle' : provider;
+    const tier = TIER_MANIFEST[target];
+    const manifestPoint = cycle === 'annual' ? tier.prices.annual : tier.prices.monthly;
+    const foundingPoint =
+      !passSelected && foundingEligible && claimFounding && tier.promo ? tier.promo.annual : null;
+    const quotedPoint = passSelected
+      ? OFFERS.backlogPass.price
+      : (foundingPoint ??
+        (pricingV2 && target === 'plus' && cycle === 'annual'
+          ? PLUS_ANNUAL_2026_10
+          : manifestPoint));
+    const quotedCurrency = quotedPoint
+      ? currencyForPricePoint(quotedPoint, panelProvider, { pricingV2, country })
+      : 'USD';
     if (
       disabled ||
       checkout.isPending ||
       confirmInFlight.current ||
-      (!pricingV2 && provider === 'razorpay' && INR_NEW_PURCHASES_PAUSED)
+      (!pricingV2 && provider === 'razorpay' && INR_NEW_PURCHASES_PAUSED) ||
+      inrNewPurchasePaused(panelProvider, quotedCurrency)
     )
       return;
     confirmInFlight.current = true;
@@ -491,6 +507,7 @@ export function PlanPicker({
         provider: effectiveProvider,
         ...(founding ? { promo: 'foundingPro' as const } : {}),
         ...(passSelected ? { offer: 'pass_onetime' as const } : {}),
+        ...(country && /^[A-Za-z]{2}$/.test(country) ? { country: country.toUpperCase() } : {}),
       },
       {
         onSuccess: (session) => {

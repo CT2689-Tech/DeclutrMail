@@ -411,6 +411,75 @@ describe('BillingService', () => {
     expect(razorpayCheckout).not.toHaveBeenCalled();
   });
 
+  it('refuses an INR-quoted Paddle checkout while new rupee purchases are paused', async () => {
+    const previous = process.env.PRICING_V2;
+    process.env.PRICING_V2 = 'true';
+    try {
+      const before = await db.select().from(users).where(eq(users.id, principal.userId));
+      const previousPass = process.env.BILLING_PASS_ENABLED;
+      process.env.BILLING_PASS_ENABLED = 'true';
+      try {
+        for (const dto of [
+          {
+            tierId: 'plus' as const,
+            cycle: 'annual' as const,
+            provider: 'paddle' as const,
+            country: 'IN',
+          },
+          {
+            tierId: 'plus' as const,
+            cycle: 'annual' as const,
+            provider: 'paddle' as const,
+            country: 'IN',
+            offer: 'pass_onetime' as const,
+          },
+        ])
+          await expect(service.createCheckout(principal, dto)).rejects.toMatchObject({
+            code: 'BILLING_NOT_PROVISIONED',
+            message:
+              'Buying a plan in rupees is paused for now. Email support@declutrmail.com for help.',
+            details: { reason: 'inr_checkout_paused' },
+          });
+      } finally {
+        if (previousPass === undefined) delete process.env.BILLING_PASS_ENABLED;
+        else process.env.BILLING_PASS_ENABLED = previousPass;
+      }
+      expect(await db.select().from(pendingCheckouts)).toHaveLength(0);
+      expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
+      expect(await db.select().from(users).where(eq(users.id, principal.userId))).toEqual(before);
+      expect(paddleCheckout).not.toHaveBeenCalled();
+      expect(razorpayCheckout).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.PRICING_V2;
+      else process.env.PRICING_V2 = previous;
+    }
+  });
+
+  it('still opens a USD Paddle checkout while rupee purchases are paused', async () => {
+    const previous = process.env.PRICING_V2;
+    process.env.PRICING_V2 = 'true';
+    try {
+      await service.createCheckout(principal, {
+        tierId: 'plus',
+        cycle: 'annual',
+        provider: 'paddle',
+        country: 'US',
+      });
+      expect(paddleCheckout).toHaveBeenCalledTimes(1);
+      await service.releasePendingCheckout(principal.workspaceId);
+      await service.createCheckout(principal, {
+        tierId: 'plus',
+        cycle: 'annual',
+        provider: 'paddle',
+      });
+      expect(paddleCheckout).toHaveBeenCalledTimes(2);
+      expect(razorpayCheckout).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.PRICING_V2;
+      else process.env.PRICING_V2 = previous;
+    }
+  });
+
   it('keeps existing INR cancellation available while new purchases are paused', async () => {
     await db.insert(subscriptions).values({
       workspaceId: principal.workspaceId,

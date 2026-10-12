@@ -56,6 +56,8 @@ import {
   fillStory,
   isBillingPassEnabled,
   isPricingV2,
+  OFFERS,
+  PLUS_ANNUAL_2026_10,
   proNotPurchasableMessage,
   RAILS,
 } from '@declutrmail/shared/entitlements';
@@ -71,13 +73,36 @@ import { PaddleAdapter } from './paddle.adapter.js';
 import { RazorpayAdapter } from './razorpay.adapter.js';
 import { hasUnresolvedUpgrade } from './upgrade-intents.js';
 import { BillingUpgradeRefundService } from './billing-upgrade-refund.service.js';
-import {
-  INR_NEW_PURCHASES_PAUSED,
-  INR_CHECKOUT_PAUSED_MESSAGE,
-} from '@declutrmail/shared/contracts';
+import { INR_CHECKOUT_PAUSED_MESSAGE, inrNewPurchasePaused } from '@declutrmail/shared/contracts';
 
 /** 0051 — pending-checkout display/lock horizon. */
 const PENDING_CHECKOUT_TTL_MS = 30 * 60 * 1000;
+
+/** Paise on the price this checkout would quote. Zero means the quote stays USD. */
+function quotedInrPaise(dto: CheckoutRequest): number {
+  const point =
+    dto.offer === 'pass_onetime'
+      ? OFFERS.backlogPass.price
+      : dto.tierId === 'plus' && dto.cycle === 'annual' && isPricingV2()
+        ? PLUS_ANNUAL_2026_10
+        : null;
+  if (!point) return 0;
+  return point.inr?.paise ?? point.inrPaise ?? 0;
+}
+
+/**
+ * Paddle quotes INR for an India visitor while pricing v2 has the
+ * Razorpay rail off and the price carries a rupee amount. Every other
+ * Paddle checkout stays USD.
+ */
+function paddleQuotesInr(dto: CheckoutRequest): boolean {
+  return (
+    isPricingV2() &&
+    !RAILS.razorpay.enabled &&
+    dto.country?.toUpperCase() === 'IN' &&
+    quotedInrPaise(dto) > 0
+  );
+}
 
 /** D118 — the pause offer's fixed length ("Pause for 30 days"). */
 const PAUSE_DAYS = 30;
@@ -210,7 +235,10 @@ export class BillingService {
     }
 
     // Refuse before region updates, claims, provider artifacts or notification side effects.
-    if (dto.provider === 'razorpay' && INR_NEW_PURCHASES_PAUSED)
+    // Razorpay is always a rupee purchase. Paddle is one when this page
+    // quoted INR (pricing v2, India, rupee amount on the price).
+    const quotedCurrency = dto.provider === 'paddle' && paddleQuotesInr(dto) ? 'INR' : 'USD';
+    if (inrNewPurchasePaused(dto.provider, quotedCurrency))
       throw new AppException({
         // Existing clients already release a local reservation for this pre-claim refusal.
         code: 'BILLING_NOT_PROVISIONED',
