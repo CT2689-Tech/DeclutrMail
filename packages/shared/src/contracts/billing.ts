@@ -109,6 +109,11 @@ export const PaddleCheckoutSessionSchema = z.object({
     // webhook discards any blob whose signature does not verify.
     sig: z.string().min(1),
   }),
+  /**
+   * PH30 discount, when that environment has a real Paddle id.
+   * Absent while live is `FILL_ME`: the overlay opens at full price.
+   */
+  discountId: z.string().min(1).optional(),
 });
 export type PaddleCheckoutSession = z.infer<typeof PaddleCheckoutSessionSchema>;
 

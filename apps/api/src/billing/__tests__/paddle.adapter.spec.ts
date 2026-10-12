@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto';
 
 import { Logger } from '@nestjs/common';
+import { PROMO_DISCOUNT_IDS, SANDBOX_PRICE_IDS } from '@declutrmail/shared/entitlements';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { PaddleAdapter } from '../paddle.adapter.js';
@@ -404,6 +405,39 @@ describe('PaddleAdapter checkout + cancel', () => {
       customData: { workspace_id: WORKSPACE, sig: expect.any(String) },
     });
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('omits the launch discount while the live id is still FILL_ME', async () => {
+    const adapter = makeAdapter({ PADDLE_CLIENT_TOKEN: 'test_abc', PADDLE_ENV: 'production' });
+    const session = await adapter.createCheckout({
+      workspaceId: WORKSPACE,
+      userEmail: 'user@example.com',
+      tierId: 'plus',
+      cycle: 'annual',
+      providerPriceId: 'pri_01m4qk99878y7jynh1h00jfhy8',
+    });
+    expect(session).toEqual({
+      provider: 'paddle',
+      kind: 'overlay',
+      priceId: 'pri_01m4qk99878y7jynh1h00jfhy8',
+      clientToken: 'test_abc',
+      environment: 'production',
+      customData: { workspace_id: WORKSPACE, sig: expect.any(String) },
+    });
+    expect(JSON.stringify(session)).not.toContain('FILL_ME');
+    expect(session).not.toHaveProperty('discountId');
+  });
+
+  it('attaches the sandbox PH30 discount only to a launch price', async () => {
+    const adapter = makeAdapter({ PADDLE_CLIENT_TOKEN: 'test_abc', PADDLE_ENV: 'sandbox' });
+    const session = await adapter.createCheckout({
+      workspaceId: WORKSPACE,
+      userEmail: 'user@example.com',
+      tierId: 'plus',
+      cycle: 'annual',
+      providerPriceId: SANDBOX_PRICE_IDS.plus_annual,
+    });
+    expect(session).toMatchObject({ discountId: PROMO_DISCOUNT_IDS.sandbox });
   });
 
   // Regression (2026-07-20): the writer emitted `workspaceId` while the

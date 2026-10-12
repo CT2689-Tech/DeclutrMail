@@ -22,6 +22,8 @@ export {
   SELECTOR_CAPS,
   SELECTOR_TIERS,
   TIER_MANIFEST,
+  checkoutDiscountId,
+  usableDiscountId,
   usablePriceId,
 } from './pricing.config';
 export type { LegacyPrice } from './pricing.config';

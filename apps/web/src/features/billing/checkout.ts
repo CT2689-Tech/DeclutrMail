@@ -53,6 +53,7 @@ import type {
   PaddleCheckoutSession,
   RazorpayCheckoutSession,
 } from '@declutrmail/shared/contracts';
+import { usableDiscountId } from '@declutrmail/shared/entitlements';
 
 type PaddleModule = typeof PaddleJs;
 import {
@@ -233,10 +234,13 @@ async function openPaddleOverlay(
   }
   if (!mayOpen()) throw new CheckoutLaunchError(false);
   activeEvents = events;
+  const discountId = usableDiscountId(session.discountId);
   paddleInstance.Checkout.open({
     items: [{ priceId: session.priceId, quantity: 1 }],
     // Verbatim pass-through — webhook workspace attribution (D117).
     customData: session.customData,
+    // A FILL_ME placeholder is dropped so checkout opens at full price.
+    ...(discountId ? { discountId } : {}),
   });
 }
 

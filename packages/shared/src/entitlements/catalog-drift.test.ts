@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { PROMO, PROMO_DISCOUNT_IDS, SANDBOX_PROMO_EXPIRES_AT } from './pricing.config';
+import {
+  PROMO,
+  PROMO_DISCOUNT_IDS,
+  SANDBOX_PROMO_EXPIRES_AT,
+  checkoutDiscountId,
+} from './pricing.config';
 import {
   checkCatalogDrift,
   promoDiscountId,
@@ -114,6 +119,11 @@ describe('checkCatalogDrift', () => {
     );
     expect(promoDiscountId({ PADDLE_ENV: 'production' } as NodeJS.ProcessEnv)).toBe('FILL_ME');
     expect(promoDiscountId({} as NodeJS.ProcessEnv)).toBe('FILL_ME');
+    expect(checkoutDiscountId({ PADDLE_ENV: 'production' } as NodeJS.ProcessEnv)).toBeNull();
+    expect(checkoutDiscountId({} as NodeJS.ProcessEnv)).toBeNull();
+    expect(checkoutDiscountId({ PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv)).toBe(
+      PROMO_DISCOUNT_IDS.sandbox,
+    );
     expect(promoExpiresAt({ PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv)).toBe(
       SANDBOX_PROMO_EXPIRES_AT,
     );

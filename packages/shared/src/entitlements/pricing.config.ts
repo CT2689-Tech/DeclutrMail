@@ -299,7 +299,8 @@ export const PROMO = {
 
 /**
  * Paddle discount ids for PH30. Sandbox is provisioned. Live stays
- * empty until the launch discount exists.
+ * `FILL_ME` until the launch discount is created. Checkout omits that
+ * placeholder and charges the price with no discount.
  * Sandbox expiry is 2026-10-19 23:59 UTC. Live uses `PROMO.endsAt`.
  */
 export const PROMO_DISCOUNT_IDS = {
@@ -321,11 +322,11 @@ export const SANDBOX_PRICE_IDS = {
 
 const UNPROVISIONED_PRICE_ID = 'FILL_ME';
 
-function launchPrice(usdCents: number, paise: number): PricePoint {
+function launchPrice(usdCents: number, paise: number, paddlePriceId: string): PricePoint {
   return {
     usdCents,
     inrPaise: paise,
-    paddlePriceId: UNPROVISIONED_PRICE_ID,
+    paddlePriceId,
     razorpayPlanId: null,
     listed: false,
     version: '2026-10',
@@ -333,13 +334,10 @@ function launchPrice(usdCents: number, paise: number): PricePoint {
   };
 }
 
-/** Plus annual 2026-10 ($59 / ₹1,999). Unlisted until the Paddle id exists. */
-export const PLUS_ANNUAL_2026_10 = launchPrice(5900, 199_900);
+/** Plus annual 2026-10 ($59 / ₹1,999). */
+export const PLUS_ANNUAL_2026_10 = launchPrice(5900, 199_900, 'pri_01m4qk99878y7jynh1h00jfhy8');
 
-/**
- * Backlog Pass config. Checkout and grants land in WS1b.
- * Unlisted while the Paddle id is still FILL_ME.
- */
+/** Backlog Pass config. `listed` stays false; JSON-LD does not follow the price id. */
 export const OFFERS = {
   backlogPass: {
     kind: 'one_time',
@@ -347,7 +345,7 @@ export const OFFERS = {
     durationDays: 30,
     stacks: 'extend',
     enabledFlag: 'BILLING_PASS_ENABLED',
-    price: launchPrice(1900, 79_900),
+    price: launchPrice(1900, 79_900, 'pri_01m4qkayqz3t54gdh9jq5b8ypq'),
   },
 } as const;
 
@@ -437,4 +435,25 @@ export const LEGACY_PRICE_IDS: Readonly<Record<string, LegacyPrice>> = {
 export function usablePriceId(id: string | null | undefined): string | null {
   if (!id || id === UNPROVISIONED_PRICE_ID) return null;
   return id;
+}
+
+/** A placeholder discount id is omitted. Checkout then charges full price. */
+export function usableDiscountId(id: string | null | undefined): string | null {
+  if (!id || id === UNPROVISIONED_PRICE_ID) return null;
+  return id;
+}
+
+/** PH30 id for this price, or null while live is FILL_ME or the price is outside the offer. */
+export function checkoutDiscountId(
+  env: NodeJS.ProcessEnv = process.env,
+  priceId?: string,
+): string | null {
+  const sandbox = env.PADDLE_ENV === 'sandbox';
+  const id = usableDiscountId(sandbox ? PROMO_DISCOUNT_IDS.sandbox : PROMO_DISCOUNT_IDS.live);
+  if (!id) return null;
+  if (priceId === undefined) return id;
+  const allowed: readonly string[] = sandbox
+    ? [SANDBOX_PRICE_IDS.plus_annual, SANDBOX_PRICE_IDS.pass_onetime]
+    : [PLUS_ANNUAL_2026_10.paddlePriceId, OFFERS.backlogPass.price.paddlePriceId];
+  return allowed.includes(priceId) ? id : null;
 }

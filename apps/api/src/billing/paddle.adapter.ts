@@ -25,6 +25,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import { Logger } from '@nestjs/common';
 import type { CheckoutSession, SubscriptionStatus } from '@declutrmail/shared/contracts';
+import { checkoutDiscountId } from '@declutrmail/shared/entitlements';
 
 import { AppException } from '../common/app-exception.js';
 import type {
@@ -461,6 +462,7 @@ export class PaddleAdapter implements BillingProvider {
     if (!clientToken || !webhookSecret) {
       throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
     }
+    const discountId = checkoutDiscountId(this.env, input.providerPriceId);
     return {
       provider: 'paddle',
       kind: 'overlay',
@@ -472,6 +474,8 @@ export class PaddleAdapter implements BillingProvider {
         workspace_id: input.workspaceId,
         sig: attributionSignature(input.workspaceId, webhookSecret),
       },
+      // FILL_ME is null here, so the overlay opens with no discount.
+      ...(discountId ? { discountId } : {}),
     };
   }
 
