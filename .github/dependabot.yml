@@ -17,8 +17,10 @@
 # Schedule: Monday 06:00 UTC — early enough for a same-day morning
 # review across most timezones; clear of the weekend code-freeze.
 #
-# Launch quiet period: no automatic rebases. restore after 2026-11-03.
-# Each ecosystem still opens one version-update pull request (limit 1).
+# Rebases stay disabled. A rebase onto every main commit rebuilt the same
+# Dependabot preview (approved 2026-10-12). Do not restore rebases after
+# the launch quiet period. Each ecosystem still opens one weekly
+# version-update pull request (limit 1), grouped across all update types.
 #
 # Why no Snyk here:
 #   Snyk free tier requires an account + a SNYK_TOKEN secret + a
