@@ -89,10 +89,110 @@ export function mailboxFactsQuery(mailboxId: string, sinceIso: string, threeYear
   `;
 }
 
+/**
+ * A forward archive/delete row is reverted once its Undo succeeds.
+ * The journal row is pruned after the window; the activity copy remains.
+ */
+function actionReverted(alias: 'move'): SQL {
+  return sql.raw(`(
+    exists (
+      select 1 from undo_journal uj
+      where uj.token = ${alias}.undo_token
+        and uj.reverted_at is not null
+    )
+    or exists (
+      select 1 from activity_log al
+      where al.action_job_id = ${alias}.id
+        and al.reverted_at is not null
+    )
+  )`);
+}
+
+/**
+ * Sender ids with a standing unsubscribe-backlog decision.
+ *
+ * Archive and delete count only when this backlog linked an unsubscribe
+ * intent to that decision. The intent counts on its own for unsubscribe
+ * without a move. A reverted move retires both, so Undo puts the sender
+ * back. Queued, executing, and done-but-not-reverted stay out, including
+ * while the Undo window is still open.
+ */
+function backlogHandledSenders(mailboxId: string): SQL {
+  return sql`
+    select move.selector->>'senderId' as sender_id
+    from action_jobs move
+    where move.mailbox_account_id = ${mailboxId}
+      and move.direction = 'forward'
+      and move.verb in ('archive', 'delete')
+      and move.status in ('queued', 'executing', 'done')
+      and move.selector->>'type' = 'sender'
+      and not ${actionReverted('move')}
+      and exists (
+        select 1 from action_jobs unsub
+        where unsub.mailbox_account_id = move.mailbox_account_id
+          and unsub.direction = 'forward'
+          and unsub.verb = 'unsubscribe'
+          and unsub.status in ('queued', 'executing', 'done')
+          and unsub.idempotency_key like 'unsub:%'
+          and unsub.composite_id = coalesce(move.composite_id, move.id)
+      )
+    union
+    select unsub.selector->>'senderId' as sender_id
+    from action_jobs unsub
+    where unsub.mailbox_account_id = ${mailboxId}
+      and unsub.direction = 'forward'
+      and unsub.verb = 'unsubscribe'
+      and unsub.status in ('queued', 'executing', 'done')
+      and unsub.idempotency_key like 'unsub:%'
+      and unsub.selector->>'type' = 'sender'
+      and not exists (
+        select 1 from action_jobs move
+        where move.mailbox_account_id = unsub.mailbox_account_id
+          and move.direction = 'forward'
+          and move.verb in ('archive', 'delete')
+          and move.status in ('queued', 'executing', 'done')
+          and move.selector->>'senderId' = unsub.selector->>'senderId'
+          and coalesce(move.composite_id, move.id) = coalesce(unsub.composite_id, unsub.id)
+          and ${actionReverted('move')}
+      )
+  `;
+}
+
+/**
+ * True when a backlog decision or its Undo landed after the cached report.
+ * Sync id alone does not move for confirm or revert.
+ */
+export function backlogChangedSinceQuery(mailboxId: string, generatedAtIso: string): SQL {
+  return sql`
+    select 1 as hit
+    from action_jobs aj
+    where aj.mailbox_account_id = ${mailboxId}
+      and aj.verb in ('archive', 'delete', 'unsubscribe')
+      and aj.updated_at > ${generatedAtIso}::timestamptz
+    union all
+    select 1
+    from undo_journal uj
+    where uj.mailbox_account_id = ${mailboxId}
+      and uj.action_kind in ('archive', 'delete', 'unsubscribe')
+      and uj.reverted_at > ${generatedAtIso}::timestamptz
+    union all
+    select 1
+    from activity_log al
+    where al.mailbox_account_id = ${mailboxId}
+      and al.action in ('archive', 'delete', 'unsubscribe')
+      and al.reverted_at > ${generatedAtIso}::timestamptz
+    limit 1
+  `;
+}
+
 /** Per-sender window stats the fix set and the mostly-unread insight rank from. */
 export function senderFactsQuery(mailboxId: string, sinceIso: string): SQL {
   const notSweeper = readStateNotSweeperMarked(mailboxId, 'm');
+  const handled = backlogHandledSenders(mailboxId);
   return sql`
+    with backlog_handled as (
+      ${handled}
+    )
     select
       s.id as sender_id,
       s.wrote_to_count,
@@ -120,7 +220,8 @@ export function senderFactsQuery(mailboxId: string, sinceIso: string): SQL {
           and inbox.is_outbound = false
           and 'INBOX' = any(coalesce(inbox.label_ids, '{}'))
           and not ('TRASH' = any(coalesce(inbox.label_ids, '{}')))
-      ) as inbox_count
+      ) as inbox_count,
+      (s.id::text in (select sender_id from backlog_handled)) as backlog_handled
     from senders s
     left join mail_messages m
       on m.mailbox_account_id = s.mailbox_account_id

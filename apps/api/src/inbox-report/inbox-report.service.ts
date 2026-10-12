@@ -11,7 +11,12 @@ import {
 } from '@declutrmail/shared/inbox-report';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import { mailboxFactsQuery, senderFactsQuery, vendorQuery } from './inbox-report.queries.js';
+import {
+  backlogChangedSinceQuery,
+  mailboxFactsQuery,
+  senderFactsQuery,
+  vendorQuery,
+} from './inbox-report.queries.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -58,7 +63,12 @@ export class InboxReportService {
       .from(inboxReportCache)
       .where(eq(inboxReportCache.mailboxAccountId, mailboxId))
       .limit(1);
-    if (cached && (cached.sourceSyncRunId ?? null) === syncId && isReportDto(cached.payload)) {
+    if (
+      cached &&
+      (cached.sourceSyncRunId ?? null) === syncId &&
+      isReportDto(cached.payload) &&
+      !(await this.backlogChangedSince(mailboxId, cached.generatedAt))
+    ) {
       return cached.payload;
     }
 
@@ -92,6 +102,18 @@ export class InboxReportService {
     if (!row) throw new NotFoundException();
   }
 
+  /**
+   * The cache key is the latest succeeded sync. Unsubscribe-backlog confirm
+   * and Undo do not write one, so a newer decision or a finished revert
+   * has to miss the cache or a reload offers the senders again.
+   */
+  private async backlogChangedSince(mailboxId: string, generatedAt: Date): Promise<boolean> {
+    const result = await this.db.execute(
+      backlogChangedSinceQuery(mailboxId, generatedAt.toISOString()),
+    );
+    return rowsOf(result).length > 0;
+  }
+
   private async latestSucceededSyncId(mailboxId: string): Promise<string | null> {
     const [row] = await this.db
       .select({ id: syncRuns.id })
@@ -123,6 +145,7 @@ export class InboxReportService {
       wroteToCount: num(row.wrote_to_count),
       isProtected: flag(row.is_protected),
       isKeep: flag(row.is_keep),
+      handledByBacklog: flag(row.backlog_handled),
       inboxCount: num(row.inbox_count),
     }));
     const oldest = mailbox.oldest_year;

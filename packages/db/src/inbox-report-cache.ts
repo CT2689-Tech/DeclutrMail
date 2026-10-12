@@ -5,7 +5,8 @@ import { sql } from 'drizzle-orm';
  *
  * The cache row is replaced on the next read. Incremental sync does not
  * write a succeeded `sync_runs` row, and archive/delete change mail
- * without one, so those writers delete the row themselves.
+ * without one, so those writers delete the row themselves. Confirming
+ * unsubscribe-backlog deletes it too, before the worker has moved mail.
  */
 export async function invalidateInboxReportCache(
   db: { execute: (query: ReturnType<typeof sql>) => Promise<unknown> },
