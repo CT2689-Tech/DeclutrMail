@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { hydrateRoot } from 'react-dom/client';
+import { renderToStaticMarkup, renderToString } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -53,5 +54,31 @@ describe('AiInlinePrompt', () => {
     expect(renderToStaticMarkup(<AiInlineConsentInset>card</AiInlineConsentInset>)).toContain(
       'padding:0 clamp(16px, 3vw, 40px)',
     );
+  });
+
+  it('does not paint the suggestion into server HTML', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(ME_SETTINGS_QUERY_KEY, {
+      aiConsent: { explanations: 'unset', brief: 'unset', reask: false },
+    });
+    const html = renderToString(
+      <QueryClientProvider client={client}>
+        <AiInlinePrompt />
+      </QueryClientProvider>,
+    );
+    expect(html).not.toContain(WS2_COPY.aiPrompt.text);
+    const errors: unknown[] = [];
+    const container = document.createElement('div');
+    container.innerHTML = html;
+    document.body.appendChild(container);
+    hydrateRoot(
+      container,
+      <QueryClientProvider client={client}>
+        <AiInlinePrompt />
+      </QueryClientProvider>,
+      { onRecoverableError: (error) => errors.push(error) },
+    );
+    expect(errors).toEqual([]);
+    container.remove();
   });
 });

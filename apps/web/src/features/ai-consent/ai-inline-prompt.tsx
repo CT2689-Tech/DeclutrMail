@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { Button, tokens } from '@declutrmail/shared';
@@ -35,6 +35,12 @@ export function AiInlinePrompt() {
   const auth = useOptionalAuth();
   const [open, setOpen] = useState(false);
   const [hidden, setHidden] = useState(false);
+  // The suggestion reads localStorage. The server has no record, so it
+  // must not paint that row into HTML the browser then disagrees with.
+  const [promptReady, setPromptReady] = useState(false);
+  useEffect(() => {
+    setPromptReady(true);
+  }, []);
   const view = settings.data?.aiConsent;
   if (!view || hidden) return null;
 
@@ -54,7 +60,7 @@ export function AiInlinePrompt() {
     );
   }
 
-  if (view.explanations !== 'unset' || !aiPromptDue(Date.now())) return null;
+  if (!promptReady || view.explanations !== 'unset' || !aiPromptDue(Date.now())) return null;
 
   const prompt = WS2_COPY.aiPrompt;
   return (
