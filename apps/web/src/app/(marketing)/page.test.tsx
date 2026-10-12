@@ -7,8 +7,8 @@
  * probe, stubbed here to the anonymous-visitor 401.
  */
 
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
 import { cleanupActionsPerMonthFor, MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
@@ -39,6 +39,9 @@ async function renderLanding() {
 }
 
 describe('landing page — D134', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
   it('renders the launch headline as the page h1', async () => {
     await renderLanding();
     const h1 = screen.getByRole('heading', { level: 1 });
@@ -113,6 +116,45 @@ describe('landing page — D134', () => {
     const foot = container.querySelector('.dm-mkt-pricing-foot');
     expect(foot?.textContent).toContain('30-day money-back guarantee');
     expect(foot?.textContent).toContain('every paid plan');
+  });
+
+  it('renders the launch teaser when the public pricing API says v2', async () => {
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.example.test');
+    vi.stubEnv('PRICING_V2', '');
+    vi.stubEnv('BILLING_PASS_ENABLED', '');
+    // The server read is the first call. A later client refetch that
+    // fails must keep that paint, which is what a blocked browser sees.
+    let pricingReads = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/auth/me',
+        respond: () => new Response(JSON.stringify({ error: 'unauthenticated' }), { status: 401 }),
+      },
+      {
+        method: 'GET',
+        path: '/api/pricing/public',
+        respond: () => {
+          pricingReads += 1;
+          if (pricingReads > 1) return new Response('missing', { status: 404 });
+          return new Response(
+            JSON.stringify({ data: { pricingV2: true, passEnabled: true, meterV2: true } }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        },
+      },
+    ]);
+    const { container } = render(await LandingPage());
+    const plans = await waitFor(() => {
+      const section = container.querySelector('#plans');
+      expect(section).not.toBeNull();
+      return section;
+    });
+    const text = plans?.textContent ?? '';
+    expect(text).toContain('$59');
+    expect(text).not.toMatch(/\$9\s*\/\s*month/);
+    expect(text).not.toContain('$129');
+    expect(text).not.toContain('30-day');
   });
 
   it('keeps the complete data list available without making it the first trust message', async () => {
