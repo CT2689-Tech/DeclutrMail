@@ -60,6 +60,7 @@ describe('LaterReturnAlert', () => {
     // on every app route, so the label must be identical on the server
     // and in any browser locale/zone (React #418; e2e hydration-smoke).
     expect(screen.getByRole('alert')).toHaveTextContent('Last tried Jul 14, 2026, 3:31 PM.');
+    expect(screen.getByRole('alert').textContent).not.toMatch(/[\u00a0\u202f]/);
     fireEvent.click(screen.getByRole('button', { name: 'Try return now' }));
     expect(mutate).toHaveBeenCalledWith({ senderId: 'sender-1' });
   });
