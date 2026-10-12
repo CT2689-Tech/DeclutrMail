@@ -24,6 +24,11 @@ export function reportGlyph(pct: number): { n: number; label: string } | null {
   return { n, label: fillCopy(WS5_COPY['report.glyph'], { n }) };
 }
 
+/** Deck strings stay as written. Counts are formatted before they fill `{count}`, `{n}`, `{k}`, or `{total}`. */
+function reportCount(n: number): string {
+  return n.toLocaleString('en-US');
+}
+
 export function reportHeadline(insight: InboxReportInsight): ReportHeadline {
   switch (insight.id) {
     case 'mostly_unread_share': {
@@ -31,13 +36,16 @@ export function reportHeadline(insight: InboxReportInsight): ReportHeadline {
         return {
           figure: null,
           sentence: fillCopy(WS5_COPY['report.mostlyUnread.headline.all'], {
-            n: insight.senderCount,
+            n: reportCount(insight.senderCount),
           }),
         };
       }
       const copy = WS5_COPY['report.mostlyUnread.headline'];
       const sentence = isPluralCopy(copy)
-        ? pluralCopy(copy, insight.senderCount, { pct: insight.pct, n: insight.senderCount })
+        ? pluralCopy(copy, insight.senderCount, {
+            pct: insight.pct,
+            n: reportCount(insight.senderCount),
+          })
         : '';
       const figure = `${insight.pct}%`;
       return { figure, sentence };
@@ -52,7 +60,7 @@ export function reportHeadline(insight: InboxReportInsight): ReportHeadline {
       const sentence = isPluralCopy(copy)
         ? pluralCopy(copy, insight.count, {
             size: formatReportSize(insight.bytes),
-            count: insight.count,
+            count: reportCount(insight.count),
           })
         : '';
       return { figure: null, sentence };
@@ -61,7 +69,7 @@ export function reportHeadline(insight: InboxReportInsight): ReportHeadline {
       const copy = WS5_COPY['report.thirdParty'];
       const sentence = isPluralCopy(copy)
         ? pluralCopy(copy, insight.count, {
-            count: insight.count,
+            count: reportCount(insight.count),
             size: formatReportSize(insight.bytes),
             Vendor: sweeperDisplayName(insight.vendorKey),
           })
@@ -109,7 +117,9 @@ export function reportFallback(
 } {
   if (report.fallbackSenderCount === 0) {
     return {
-      body: fillCopy(WS5_COPY['report.fallback.zero'], { total: report.receivedCount }),
+      body: fillCopy(WS5_COPY['report.fallback.zero'], {
+        total: reportCount(report.receivedCount),
+      }),
       cta: null,
     };
   }
@@ -118,12 +128,14 @@ export function reportFallback(
   return {
     body: isPluralCopy(bodyCopy)
       ? pluralCopy(bodyCopy, report.fallbackSenderCount, {
-          total: report.receivedCount,
-          k: report.fallbackSenderCount,
+          total: reportCount(report.receivedCount),
+          k: reportCount(report.fallbackSenderCount),
         })
       : '',
     cta: isPluralCopy(ctaCopy)
-      ? pluralCopy(ctaCopy, report.fallbackSenderCount, { k: report.fallbackSenderCount })
+      ? pluralCopy(ctaCopy, report.fallbackSenderCount, {
+          k: reportCount(report.fallbackSenderCount),
+        })
       : null,
   };
 }
