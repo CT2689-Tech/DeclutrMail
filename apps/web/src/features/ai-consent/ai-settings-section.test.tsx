@@ -36,6 +36,19 @@ function expectHelpLinks(): void {
 }
 
 describe('AiSettingsSection', () => {
+  it('titles the group from the deck', () => {
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <AiSettingsSection view={declinedBrief} briefCapable={false} />
+      </QueryWrapper>,
+    );
+
+    expect(screen.getByRole('heading', { level: 2, name: copy.settings.title })).toHaveTextContent(
+      copy.settings.title,
+    );
+    expect(screen.getByRole('region', { name: copy.settings.title })).toBeInTheDocument();
+  });
+
   it('shows explanations On when Brief is declined, and revokes explanations only', async () => {
     const bodies: unknown[] = [];
     installFetchStub([

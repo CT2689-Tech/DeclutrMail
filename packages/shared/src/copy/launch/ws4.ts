@@ -79,7 +79,7 @@ export const WS4_COPY = {
         other: '{n} new senders are waiting in Screener for your review.',
       },
       trust:
-        'Nothing was deleted permanently. Delete moves email to Gmail Trash, where Gmail keeps it for up to 30 days unless you empty it.',
+        'Nothing was deleted permanently. Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash.',
       button: 'Go to Home',
       detail: 'See the detail',
       footer: 'You turned on this weekly email in Settings.',

@@ -1,14 +1,13 @@
 /**
- * Public AI copy with the consent gate on.
+ * Public AI copy with the consent gate on (drop2-r18).
  *
- * These four surfaces already read the deck. The test checks that the
- * gate-on sentences render whole: no leftover `{token}`, no blank AI
- * section, and the consent step in the words the deck uses (the in-app
- * consent card, and Settings → AI).
+ * Privacy, security, and methodology read the deck. The Brief lines open
+ * with "{BRIEF_NAME} (part of {proName}; waitlist only for new accounts)",
+ * and the consent step on those pages is "in the app".
  *
- * #997 wired the Brief paragraph on /methodology and the storage
- * paragraph in /llms.txt through the same gate, so those sentences are
- * the deck's gate-on lines too.
+ * /llms.txt and /llms-full.txt do not render those six keys. They still
+ * use ws3.llms.keyFacts and ws3.llms.storageAi.gate, which r18 left on
+ * "in-app consent card".
  */
 
 import { render } from '@testing-library/react';
@@ -21,8 +20,10 @@ import {
   llmsStorageAiLine,
   WS3_COPY,
 } from '@declutrmail/shared/copy/launch';
+import { BRIEF_NAME } from '@declutrmail/shared/copy/screen-decisions';
+import { planName } from '@declutrmail/shared/entitlements';
 
-import { renderLlmsTxt } from '@/features/marketing/llms/llms-document';
+import { renderLlmsFullTxt, renderLlmsTxt } from '@/features/marketing/llms/llms-document';
 
 import MethodologyPage from './methodology/page';
 import PrivacyPolicyPage from './privacy/page';
@@ -40,6 +41,7 @@ describe('AI consent gate on the public pages', () => {
     const security = render(<SecurityPage />);
     const methodology = render(<MethodologyPage />);
     const llms = renderLlmsTxt();
+    const llmsFull = renderLlmsFullTxt();
 
     const privacyAi = privacy.container.querySelector('#ai-processing');
     const securityAi = security.container.querySelector('#ai-processing');
@@ -58,7 +60,7 @@ describe('AI consent gate on the public pages', () => {
     const explanationsText = textOf(explanations!);
     const briefText = textOf(brief!);
 
-    for (const block of [privacyText, securityText, methodologyText, llms]) {
+    for (const block of [privacyText, securityText, methodologyText, llms, llmsFull]) {
       expect(block).not.toMatch(PLACEHOLDER);
     }
     for (const block of [privacyAiText, securityAiText, explanationsText, briefText]) {
@@ -88,14 +90,34 @@ describe('AI consent gate on the public pages', () => {
     expect(llms).toContain(llmsStorageAiLine());
     expect(llms).not.toContain(fillWs3(WS3_COPY['ws3.llms.storageAi']));
 
-    const consentStep = [privacyExplanations, privacyBrief, methodologyExplanations, aiFact];
-    for (const sentence of consentStep) {
-      expect(sentence).toMatch(/consent card/);
-      expect(sentence).toMatch(/Settings → AI/);
+    const briefOpen = `${BRIEF_NAME} (part of ${planName('pro')}; waitlist only for new accounts)`;
+    expect(privacyBrief.startsWith(`${briefOpen}.`)).toBe(true);
+    expect(securityBrief.startsWith(`${briefOpen}:`)).toBe(true);
+    expect(privacyBrief).toContain('Only after you allow it in the app');
+    expect(securityBrief).toContain('only after you allow it in the app');
+    expect(privacyExplanations).toContain('allow AI in the app');
+    expect(securityExplanations).toContain('allow it in the app');
+    expect(methodologyExplanations).toContain('allow AI in the app');
+    const briefBody = gatedText('ws3.methodology.briefBody');
+    expect(briefBody.startsWith('Only after you allow it in the app,')).toBe(true);
+    for (const sentence of [
+      privacyExplanations,
+      privacyBrief,
+      securityExplanations,
+      securityBrief,
+      methodologyExplanations,
+      briefBody,
+    ]) {
+      expect(sentence).not.toMatch(/consent card/);
+      expect(sentence).not.toMatch(PLACEHOLDER);
+    }
+    for (const sentence of [privacyBrief, securityBrief, briefBody]) {
+      expect(sentence).toContain(BRIEF_NAME);
     }
     expect(securityControl).toMatch(/Settings → AI/);
-    expect(securityExplanations).toMatch(/AI consent card/);
-    expect(securityBrief).toMatch(/AI consent card/);
     expect(aiFact).toBe(fillWs3(WS3_COPY['ws3.llms.keyFacts'][3]));
+    expect(aiFact).toContain('in-app consent card');
+    expect(llmsFull).toContain(aiFact);
+    expect(llmsFull).toContain(llmsStorageAiLine());
   });
 });
