@@ -255,10 +255,12 @@ async function withBillingFixture(
     await sql`DELETE FROM subscriptions WHERE workspace_id = ${BILLING_SEED.workspaceId}`;
     if (setup === 'complimentary-pro') {
       await sql`UPDATE workspaces SET tier = 'pro' WHERE id = ${BILLING_SEED.workspaceId}`;
+      // Comp uniqueness is partial on source = 'comp'. A bare
+      // ON CONFLICT (email) does not match that index.
       await sql`
-        INSERT INTO entitlement_grants (email, tier, reason, granted_by)
-        VALUES (${BILLING_SEED.email}, 'pro', 'hydration smoke', 'e2e')
-        ON CONFLICT (email) DO UPDATE
+        INSERT INTO entitlement_grants (email, tier, reason, granted_by, source)
+        VALUES (${BILLING_SEED.email}, 'pro', 'hydration smoke', 'e2e', 'comp')
+        ON CONFLICT (email) WHERE source = 'comp' DO UPDATE
         SET tier = 'pro', reason = 'hydration smoke', granted_by = 'e2e',
             expires_at = NULL, revoked_at = NULL, updated_at = now()
       `;
