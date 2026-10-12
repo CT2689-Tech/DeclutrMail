@@ -36,6 +36,7 @@ import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { useTier } from '@/features/auth/api/use-tier';
 import { currencyForProvider, formatMoney } from '@/features/marketing/pricing/pricing-model';
 import { ApiError, apiDelete } from '@/lib/api/client';
+import { backgroundPollPaused } from '@/lib/api/background-poll';
 import { useHydrated } from '@/lib/use-hydrated';
 import { track } from '@/lib/posthog';
 
@@ -120,6 +121,11 @@ const PAYMENT_PROCESSING_SLOW_AFTER_MS = 90_000;
  */
 const PAYMENT_UNCONFIRMED_AFTER_MS = 15 * 60_000;
 const PAYMENT_UNCONFIRMED_POLL_MS = 30_000;
+
+function billingPollInterval(intervalMs: number | false): number | false {
+  if (intervalMs === false || backgroundPollPaused()) return false;
+  return intervalMs;
+}
 
 /** How far along the webhook wait is — drives the notice + poll pace. */
 type ProcessingPhase = 'fresh' | 'slow' | 'unconfirmed';
@@ -209,16 +215,22 @@ export function BillingScreen({
     refetchInterval:
       pending === null
         ? pauseConfirming
-          ? PAYMENT_PROCESSING_POLL_MS
+          ? () => billingPollInterval(PAYMENT_PROCESSING_POLL_MS)
           : // The settling window polls itself back to life. Read off the
             // query's own data rather than the derived view, which does
             // not exist yet at this line — and the promise the notice
             // makes ("we'll switch this back on automatically") is only
-            // true because of this.
-            (query) => (isRefundSettling(query.state.data) ? REFUND_SETTLING_POLL_MS : false)
-        : processingPhase === 'unconfirmed'
-          ? PAYMENT_UNCONFIRMED_POLL_MS
-          : PAYMENT_PROCESSING_POLL_MS,
+            // true because of this. Hidden and offline tabs do not poll.
+            (query) =>
+              billingPollInterval(
+                isRefundSettling(query.state.data) ? REFUND_SETTLING_POLL_MS : false,
+              )
+        : () =>
+            billingPollInterval(
+              processingPhase === 'unconfirmed'
+                ? PAYMENT_UNCONFIRMED_POLL_MS
+                : PAYMENT_PROCESSING_POLL_MS,
+            ),
   });
   const cancel = useCancelSubscription();
   const resumeCancellation = useResumeCancellation();

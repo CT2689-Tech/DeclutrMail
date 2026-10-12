@@ -1,5 +1,8 @@
 import { queryOptions } from '@tanstack/react-query';
 
+import { backgroundRefetchInterval } from '@/lib/api/background-poll';
+import { retryTransientOnly } from '@/lib/api/retry';
+
 import type { ScreenerQueueRow } from '../data';
 import { SCREENER_ALL_KEY, SCREENER_QUEUE_KEY } from './query-keys';
 
@@ -22,7 +25,11 @@ export function screenerCountQueryOptions(reader: ScreenerReader<{ pending: numb
     queryKey: SCREENER_COUNT_KEY,
     queryFn: ({ signal }) => reader(signal),
     staleTime: 30_000,
-    refetchInterval: SCREENER_COUNT_POLL_MS,
-    retry: false,
+    refetchInterval: () => backgroundRefetchInterval(SCREENER_COUNT_POLL_MS),
+    refetchIntervalInBackground: false,
+    // A 4xx is a designed state (guard 409 / tier 402). A dropped fetch
+    // is not — retry it, and stop entirely while the tab is hidden or
+    // the browser is offline.
+    retry: retryTransientOnly,
   });
 }

@@ -1,6 +1,8 @@
 import { queryOptions } from '@tanstack/react-query';
 import type { Envelope, LaterReturnRecoverySummary } from '@declutrmail/shared/contracts';
 
+import { backgroundRefetchInterval } from '@/lib/api/background-poll';
+import { retryTransientOnly } from '@/lib/api/retry';
 import type { SnoozedSenderRow } from '@/lib/api/snoozed';
 import { snoozedKeys } from './query-keys';
 
@@ -21,8 +23,9 @@ export function laterRecoveryQueryOptions(
   return queryOptions({
     queryKey: snoozedKeys.recovery(),
     queryFn: ({ signal }) => reader(signal),
-    retry: false,
-    refetchInterval: 60_000,
+    retry: retryTransientOnly,
+    refetchInterval: () => backgroundRefetchInterval(60_000),
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
 }
