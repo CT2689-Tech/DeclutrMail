@@ -21,8 +21,11 @@ export function laterRecoveryQueryOptions(
   return queryOptions({
     queryKey: snoozedKeys.recovery(),
     queryFn: ({ signal }) => reader(signal),
+    // Off so a dropped fetch is not retried again on top of the client's
+    // GET retries. The interval stays a number so a hidden tab resumes.
     retry: false,
     refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
 }

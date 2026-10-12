@@ -14,5 +14,6 @@ export function quietHoursQueryOptions(mailboxId: string, reader: QuietHoursRead
     // invalidates this key) — without a poll, an open tab keeps showing a
     // window as active, and its count as current, long after it ended.
     refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
   });
 }

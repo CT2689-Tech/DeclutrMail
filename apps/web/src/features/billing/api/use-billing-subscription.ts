@@ -5,7 +5,7 @@
  *
  * The endpoint 503s with `BILLING_DISABLED` until the founder flips
  * `BILLING_ENABLED=true` (F-queue step). That is a DESIGNED state, not
- * a failure: `retry: false` so the 503 surfaces immediately, and
+ * a failure: a 503 is not retried, so it surfaces immediately, and
  * `billingDisabledFrom` lets the screen branch to the honest
  * "billing isn't live yet" card instead of an error toast.
  */

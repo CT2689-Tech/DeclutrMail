@@ -19,7 +19,7 @@ import type * as CheckoutModule from './checkout';
  * helpers the screen uses — a manifest re-price re-prices this file.
  */
 
-import { focusManager } from '@tanstack/react-query';
+import { focusManager, onlineManager } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -979,6 +979,88 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     } finally {
       vi.useRealTimers();
       focusManager.setFocused(undefined);
+    }
+  });
+
+  it('a payment poll resumes after the tab is shown again and after the browser is online again', async () => {
+    let reads = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => {
+          reads += 1;
+          return jsonOk({ data: FREE_BODY });
+        },
+      },
+    ]);
+    writePendingCheckout('w', 'checkout', 'free', null, 'plus', 'monthly');
+    const client = createTestQueryClient();
+    const originalVisibility = Object.getOwnPropertyDescriptor(document, 'visibilityState');
+    const originalOnline = Object.getOwnPropertyDescriptor(navigator, 'onLine');
+    const setVisibility = (value: DocumentVisibilityState) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value });
+    };
+    const setNavigatorOnline = (value: boolean) => {
+      Object.defineProperty(navigator, 'onLine', { configurable: true, value });
+    };
+    // A query update while hidden recomputes refetchInterval. Returning
+    // false there deletes the timer; focus and online do not bring it back.
+    const recomputeInterval = () => {
+      client.setQueryData(billingKeys.subscription(), (current: unknown) =>
+        current === undefined ? current : { ...(current as object) },
+      );
+    };
+    focusManager.setFocused(undefined);
+    onlineManager.setOnline(true);
+    setVisibility('visible');
+    setNavigatorOnline(true);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(
+        <QueryWrapper client={client}>
+          <BillingScreen />
+        </QueryWrapper>,
+      );
+      expect(await screen.findByTestId('payment-processing-notice')).toBeInTheDocument();
+      const baseline = reads;
+      expect(baseline).toBeGreaterThan(0);
+
+      setVisibility('hidden');
+      await act(async () => {
+        recomputeInterval();
+        await vi.advanceTimersByTimeAsync(4_000);
+      });
+      expect(reads).toBe(baseline);
+
+      setVisibility('visible');
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4_000);
+      });
+      expect(reads).toBe(baseline + 1);
+
+      onlineManager.setOnline(false);
+      setNavigatorOnline(false);
+      await act(async () => {
+        recomputeInterval();
+        await vi.advanceTimersByTimeAsync(4_000);
+      });
+      expect(reads).toBe(baseline + 1);
+
+      const parked = reads;
+      onlineManager.setOnline(true);
+      setNavigatorOnline(true);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4_000);
+      });
+      expect(reads).toBeGreaterThan(parked);
+    } finally {
+      vi.useRealTimers();
+      focusManager.setFocused(undefined);
+      onlineManager.setOnline(true);
+      if (originalVisibility)
+        Object.defineProperty(document, 'visibilityState', originalVisibility);
+      if (originalOnline) Object.defineProperty(navigator, 'onLine', originalOnline);
     }
   });
 

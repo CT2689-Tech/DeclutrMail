@@ -27,7 +27,13 @@
  *      hit an endpoint the server would 402.
  */
 
-import { dehydrate, HydrationBoundary } from '@tanstack/react-query';
+import {
+  dehydrate,
+  focusManager,
+  HydrationBoundary,
+  onlineManager,
+  QueryClient,
+} from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { toast as sharedToast } from '@declutrmail/shared';
@@ -94,6 +100,8 @@ vi.mock('@/features/triage/triage-undo-tray', () => ({
   },
 }));
 
+import { SCREENER_COUNT_POLL_MS } from '@/features/screener/api/use-screener';
+
 import { AppChromeLayout as AppLayout } from './app-chrome-layout';
 import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 
@@ -114,8 +122,7 @@ afterEach(() => {
   searchParamsRef.current = '';
 });
 
-function renderLayout() {
-  const client = createTestQueryClient();
+function renderLayout(client = createTestQueryClient()) {
   const layout = () => (
     <QueryWrapper client={client}>
       <AppLayout>
@@ -744,6 +751,78 @@ describe('(app) layout — screener badge tier gating (D74/D77)', () => {
     expect(
       await screen.findByLabelText('3 senders awaiting a first review in Screener'),
     ).toBeInTheDocument();
+  });
+
+  it('polls the Screener count again after the tab is hidden and shown while online', async () => {
+    let reads = 0;
+    installFetchStub([
+      ...authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z', tier: 'pro' }),
+      {
+        method: 'GET',
+        path: '/api/screener/count',
+        respond: () => {
+          reads += 1;
+          return ok({ data: { pending: reads === 1 ? 3 : 4 } });
+        },
+      },
+    ]);
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          staleTime: 0,
+          gcTime: 60_000,
+          // Production turns focus refetch off. Resume has to be the
+          // interval tick, or a hidden tab that cleared the timer never
+          // polls again.
+          refetchOnWindowFocus: false,
+        },
+        mutations: { retry: false },
+      },
+    });
+    const originalVisibility = Object.getOwnPropertyDescriptor(document, 'visibilityState');
+    const setVisibility = (value: DocumentVisibilityState) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value });
+    };
+    focusManager.setFocused(undefined);
+    onlineManager.setOnline(true);
+    setVisibility('visible');
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { client: mounted } = renderLayout(client);
+      expect(
+        await screen.findByLabelText('3 senders awaiting a first review in Screener'),
+      ).toBeInTheDocument();
+      const baseline = reads;
+      expect(baseline).toBeGreaterThan(0);
+
+      setVisibility('hidden');
+      await act(async () => {
+        mounted.setQueryData(['screener', 'count'], (current: unknown) =>
+          current === undefined ? current : { ...(current as object) },
+        );
+        await vi.advanceTimersByTimeAsync(SCREENER_COUNT_POLL_MS);
+      });
+      expect(reads).toBe(baseline);
+      expect(
+        screen.getByLabelText('3 senders awaiting a first review in Screener'),
+      ).toBeInTheDocument();
+
+      setVisibility('visible');
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(SCREENER_COUNT_POLL_MS);
+      });
+      expect(reads).toBe(baseline + 1);
+      expect(
+        await screen.findByLabelText('4 senders awaiting a first review in Screener'),
+      ).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+      focusManager.setFocused(undefined);
+      onlineManager.setOnline(true);
+      if (originalVisibility)
+        Object.defineProperty(document, 'visibilityState', originalVisibility);
+    }
   });
 
   it('renders no badge at zero pending — a calm sidebar is the resting state', async () => {
