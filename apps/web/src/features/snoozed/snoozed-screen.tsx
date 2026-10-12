@@ -14,10 +14,12 @@ import {
   Button,
   EmptyState,
   ErrorState,
+  FeatureExplainer,
   ScreenIntro,
   tokens,
   useIsAtMost,
 } from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import type { EventPayloads } from '@declutrmail/shared/observability';
 
 import { useOptionalAuth } from '@/features/auth/auth-provider';
@@ -172,8 +174,9 @@ function SnoozedScreenContents({ initialNow }: { initialNow: number | undefined 
         gap: 32,
       }}
     >
-      <EditorialKicker>Catch up / Coming back to you</EditorialKicker>
+      <EditorialKicker>Catch up</EditorialKicker>
       <h1 style={editorialTitleStyle}>Later</h1>
+      <FeatureExplainer id="later-explainer">{WS2_COPY.explain.later}</FeatureExplainer>
       <EditorialDescription>Return times for the active inbox · {timeZone}</EditorialDescription>
       <ScreenIntro
         id="snoozed"

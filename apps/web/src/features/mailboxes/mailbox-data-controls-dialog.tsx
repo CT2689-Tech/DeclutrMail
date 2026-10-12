@@ -59,7 +59,9 @@ export function MailboxDataControlsDialog({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, busy, onCancel]);
 
-  const trapRef = useFocusTrap<HTMLDivElement>(open);
+  const trapRef = useFocusTrap<HTMLDivElement>(open, {
+    initialFocusSelector: '#dm-mailbox-data-cancel',
+  });
   if (!mailbox) return null;
 
   const requiredPhrase = mailboxDataDeletionConfirmPhrase(mailbox.email);
@@ -87,7 +89,7 @@ export function MailboxDataControlsDialog({
     >
       <div
         ref={trapRef}
-        role="dialog"
+        role="alertdialog"
         aria-modal="true"
         aria-labelledby="dm-mailbox-data-controls-title"
         aria-describedby="dm-mailbox-data-controls-lead"
@@ -263,7 +265,13 @@ export function MailboxDataControlsDialog({
             padding: '12px 28px 28px',
           }}
         >
-          <Button tone="default" size="lg" onClick={onCancel} disabled={busy}>
+          <Button
+            id="dm-mailbox-data-cancel"
+            tone="default"
+            size="lg"
+            onClick={onCancel}
+            disabled={busy}
+          >
             Keep current setup
           </Button>
         </div>

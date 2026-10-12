@@ -27,6 +27,7 @@ import {
   Button,
   EmptyState,
   ErrorState as RecoverableErrorState,
+  FeatureExplainer,
   Pill,
   ScreenIntro,
   TechnicalDetails,
@@ -34,6 +35,7 @@ import {
   tokens,
   useIsAtMost,
 } from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import Link from 'next/link';
 import {
   ACTIVITY_REVIEW_OUTCOME_ROW_LABELS,
@@ -423,11 +425,14 @@ export function ActivityScreen() {
 
   return (
     <div style={screenColumnStyle}>
-      <EditorialKicker>Your history / Every outcome in view</EditorialKicker>
+      <EditorialKicker>Activity</EditorialKicker>
       <ScreenIntro id="activity" title="Activity" body={activityUndoRecoveryHelp} />
 
       <header style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-        <h1 style={{ ...editorialTitleStyle, marginRight: 'auto' }}>Activity</h1>
+        <div style={{ marginRight: 'auto', minWidth: 0 }}>
+          <h1 style={editorialTitleStyle}>Activity</h1>
+          <FeatureExplainer id="activity-explainer">{WS2_COPY.explain.activity}</FeatureExplainer>
+        </div>
         <div style={isMobile ? { order: 3, flexBasis: '100%' } : undefined}>
           <SenderSearchInput
             value={filters.senderQuery ?? ''}
@@ -2720,7 +2725,7 @@ function ActivityEmptyState({ scope, window }: { scope: EmptyScope; window: Acti
       <EmptyState
         headingLevel={2}
         title="No activity yet."
-        description="Actions you, Autopilot, or your rules take will be recorded here."
+        description={WS2_COPY.explain.activityEmpty}
       />
     );
   }

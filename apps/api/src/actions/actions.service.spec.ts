@@ -3588,6 +3588,21 @@ describe('ActionsService', () => {
       expect(events).toHaveLength(1);
     });
 
+    it('a reverted keep inside the window is a fresh decision, not a replay', async () => {
+      const first = await svc.recordKeepIntent({ mailboxAccountId: mailboxId, senderId });
+      await db
+        .update(activityLog)
+        .set({ revertedAt: sql`now()` })
+        .where(eq(activityLog.id, first.activityLogId));
+      const second = await svc.recordKeepIntent({ mailboxAccountId: mailboxId, senderId });
+      expect(second.activityLogId).not.toBe(first.activityLogId);
+      const acts = await db
+        .select()
+        .from(activityLog)
+        .where(eq(activityLog.mailboxAccountId, mailboxId));
+      expect(acts).toHaveLength(2);
+    });
+
     it('a keep decision OLDER than the window is a fresh decision, not a replay', async () => {
       await db.insert(activityLog).values({
         mailboxAccountId: mailboxId,

@@ -361,11 +361,11 @@ describe('(app) layout integration mounts — U-NAV', () => {
     expect(sendersSpy).not.toHaveBeenCalled();
     await vi.waitFor(() => {
       const nav = within(screen.getByRole('navigation', { name: 'Product navigation' }));
-      expect(nav.getByRole('button', { name: 'Clean up' })).toHaveAttribute(
+      expect(nav.getByRole('button', { name: 'Cleanup' })).toHaveAttribute(
         'aria-description',
         expect.stringContaining('Senders: 1'),
       );
-      const section = within(screen.getByRole('navigation', { name: 'Clean up views' }));
+      const section = within(screen.getByRole('navigation', { name: 'Cleanup views' }));
       expect(section.getByRole('button', { name: /Senders/ })).toHaveTextContent('1');
     });
   });
@@ -523,14 +523,14 @@ describe('(app) layout integration mounts — U-NAV', () => {
     const nav = within(screen.getByRole('navigation', { name: 'Product navigation' }));
     expect(nav.getAllByRole('button').map((row) => row.getAttribute('aria-label'))).toEqual([
       'Home',
-      'Clean up',
+      'Cleanup',
       'Automations',
       'Catch up',
       'Activity',
     ]);
-    expect(nav.getByRole('button', { name: 'Clean up' })).toHaveAttribute('aria-current', 'page');
+    expect(nav.getByRole('button', { name: 'Cleanup' })).toHaveAttribute('aria-current', 'page');
     expect(screen.queryByRole('button', { name: /expand sidebar|collapse sidebar/i })).toBeNull();
-    const section = within(screen.getByRole('navigation', { name: 'Clean up views' }));
+    const section = within(screen.getByRole('navigation', { name: 'Cleanup views' }));
     expect(section.getByRole('button', { name: /Senders/ })).toHaveAttribute(
       'aria-current',
       'page',
@@ -541,7 +541,7 @@ describe('(app) layout integration mounts — U-NAV', () => {
     const primary = within(screen.getByRole('navigation', { name: 'Primary' }));
     expect(primary.getAllByRole('button').map((row) => row.getAttribute('aria-label'))).toEqual([
       'Home',
-      'Clean up',
+      'Cleanup',
       'Automations',
       'Catch up',
       'Activity',
@@ -567,7 +567,7 @@ describe('(app) layout integration mounts — U-NAV', () => {
     const groups = [
       { label: 'Home', route: '/home', destinations: [] },
       {
-        label: 'Clean up',
+        label: 'Cleanup',
         route: '/senders',
         destinations: [
           ['Senders', '/senders'],
@@ -587,7 +587,7 @@ describe('(app) layout integration mounts — U-NAV', () => {
         label: 'Catch up',
         route: '/brief',
         destinations: [
-          ['Daily brief', '/brief'],
+          ['Daily Brief', '/brief'],
           ['Follow-ups', '/followups'],
           ['Later', '/later'],
         ],
@@ -623,7 +623,7 @@ describe('(app) layout integration mounts — U-NAV', () => {
     for (const [label, route] of [
       ['Manage Gmail accounts', '/settings#mailboxes'],
       ['Settings', '/settings'],
-      ['Billing', '/billing'],
+      ['Plan & billing', '/billing'],
       ['Help & glossary', '/settings/help'],
     ]) {
       const dialog = await openUtilityNavigation();
@@ -669,7 +669,7 @@ describe('(app) layout integration mounts — U-NAV', () => {
     const user = userEvent.setup();
     renderLayout();
 
-    const nav = await screen.findByRole('navigation', { name: 'Clean up views' });
+    const nav = await screen.findByRole('navigation', { name: 'Cleanup views' });
     const triageNav = within(nav).getByRole('button', { name: 'Triage' });
     await user.hover(triageNav);
 
@@ -722,7 +722,7 @@ describe('(app) layout — screener badge tier gating (D74/D77)', () => {
       client.setQueryData(['screener', 'count'], { pending: 3 });
     });
     const nav = within(screen.getByRole('navigation', { name: 'Product navigation' }));
-    expect(nav.getByRole('button', { name: 'Clean up' })).toHaveAttribute(
+    expect(nav.getByRole('button', { name: 'Cleanup' })).toHaveAttribute(
       'aria-description',
       expect.stringContaining('3 senders awaiting a first review in Screener'),
     );
@@ -903,9 +903,10 @@ describe('(app) layout — one banner slot', () => {
 
 describe('(app) layout — banner priority order', () => {
   // The slot shows the FIRST banner that renders, so child order in
-  // `AppChromeLayout` IS the priority order. All five are made active at
-  // once and the order is read off the DOM: account deletion, sync error,
-  // mailbox reconnect, Later return, heard-from.
+  // `AppChromeLayout` IS the priority order. The access-deadline banner
+  // sits after deletion and renders nothing in this fixture. The other
+  // five are made active at once: account deletion, sync error, mailbox
+  // reconnect, Later return, heard-from.
   it('orders the five app banners: deletion, sync error, reconnect, later return, heard-from', async () => {
     window.localStorage.setItem('dm-cookie-consent', 'essential');
     const handlers = authedHandlers({
@@ -991,10 +992,18 @@ describe('(app) layout — banner priority order', () => {
 
       const items = Array.from(document.querySelectorAll('.dm-banner-item'));
       expect(banners.map((el) => items.indexOf(el.closest('.dm-banner-item')!))).toEqual([
-        0, 1, 2, 3, 4,
+        0, 2, 3, 4, 5,
       ]);
       // Only index 0 — the account-deletion banner — holds the slot.
-      expect(items.map((el) => el.hasAttribute('hidden'))).toEqual([false, true, true, true, true]);
+      // Index 1 is the access-deadline banner, inactive in this fixture.
+      expect(items.map((el) => el.hasAttribute('hidden'))).toEqual([
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+      ]);
     } finally {
       window.localStorage.removeItem('dm-cookie-consent');
     }
@@ -1398,7 +1407,7 @@ describe('nav plan chips after D251 (design-gate B1)', () => {
     const { rerenderAt } = renderLayout();
     await screen.findByText('authed app body');
     // Entitlement chips live beside their actual destination in contextual navigation.
-    const screener = within(screen.getByRole('navigation', { name: 'Clean up views' })).getByRole(
+    const screener = within(screen.getByRole('navigation', { name: 'Cleanup views' })).getByRole(
       'button',
       { name: /^Screener/ },
     );
@@ -1413,7 +1422,7 @@ describe('nav plan chips after D251 (design-gate B1)', () => {
     rerenderAt('/brief');
     const brief = within(screen.getByRole('navigation', { name: 'Catch up views' })).getByRole(
       'button',
-      { name: /^Daily brief/ },
+      { name: /^Daily Brief/ },
     );
     expect(within(brief).getByLabelText('Pro feature')).toBeInTheDocument();
   });

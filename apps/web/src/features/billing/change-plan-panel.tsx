@@ -92,8 +92,7 @@ export function ChangePlanPanel({
         previewData?.kind === 'deferred' &&
         previewData.effectiveAt === currentPeriodEnd
       : quotedCharge !== null) &&
-    preview.dataUpdatedAt > expiredQuote &&
-    Date.now() - preview.dataUpdatedAt < 30_000;
+    preview.dataUpdatedAt > expiredQuote;
   const nextBilledDate =
     previewData?.kind === 'immediate' && previewData.nextBilledAt
       ? formatBillingDate(previewData.nextBilledAt)

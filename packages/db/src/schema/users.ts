@@ -93,6 +93,33 @@ export const users = pgTable(
     signupAttributionUtmCampaign: text('signup_attribution_utm_campaign'),
     /** Pathname of the first attributed landing. No query string. */
     signupAttributionLandingPath: text('signup_attribution_landing_path'),
+    /**
+     * AI processing consent (launch). Null until the user chooses.
+     * Active explanations: version matches, consent_at set, revoked_at
+     * null, and `explanations` is in scopes. Brief is the same shape on
+     * its own columns. A version mismatch re-asks and is not active.
+     */
+    aiConsentVersion: text('ai_consent_version'),
+    aiExplanationsConsentAt: timestamp('ai_explanations_consent_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    aiExplanationsRevokedAt: timestamp('ai_explanations_revoked_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    aiConsentScopes: text('ai_consent_scopes').array(),
+    aiConsentDeclinedAt: timestamp('ai_consent_declined_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    briefAiConsentAt: timestamp('brief_ai_consent_at', { withTimezone: true, mode: 'date' }),
+    briefAiConsentVersion: text('brief_ai_consent_version'),
+    briefAiConsentRevokedAt: timestamp('brief_ai_consent_revoked_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    briefAiDeclinedAt: timestamp('brief_ai_declined_at', { withTimezone: true, mode: 'date' }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),

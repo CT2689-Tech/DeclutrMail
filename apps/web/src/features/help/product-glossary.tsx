@@ -31,7 +31,7 @@ export function ProductGlossary() {
       className={`dm-settings-page ${styles.page}`}
       style={{ ...editorialColumnStyle, display: 'flex', flexDirection: 'column', gap: 24 }}
     >
-      <EditorialKicker>Your workspace / A useful reference</EditorialKicker>
+      <EditorialKicker>Settings</EditorialKicker>
       <PageHeader title="Help & glossary" backToSettings />
       <EditorialContents
         label="Help destinations"

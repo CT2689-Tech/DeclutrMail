@@ -10,6 +10,7 @@ import {
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { TOPICS } from '@declutrmail/events';
+import { grantedAiConsentInsert } from '@declutrmail/shared/ai-consent';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { materializeAutopilotSignals } from './autopilot-signals.js';
@@ -45,7 +46,7 @@ describe('Gmail tab recount → re-score', () => {
     const [ws] = await db.insert(workspaces).values({ name: 'W' }).returning({ id: workspaces.id });
     const [user] = await db
       .insert(users)
-      .values({ workspaceId: ws!.id, email: 'o@ex.com' })
+      .values({ workspaceId: ws!.id, email: 'o@ex.com', ...grantedAiConsentInsert() })
       .returning({ id: users.id });
     const [mb] = await db
       .insert(mailboxAccounts)

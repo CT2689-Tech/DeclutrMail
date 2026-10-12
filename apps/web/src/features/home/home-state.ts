@@ -16,6 +16,8 @@
  * decided, and no decisions at all is the `empty` state.
  */
 
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+
 import type { HomeSenderPreview } from './api/use-home-pending';
 import type { HomeSummary } from './api/use-home-summary';
 
@@ -119,7 +121,10 @@ export function composeHomeNumbers(
       });
     }
     return {
-      hero: { label: plural(cleared, 'email cleared', 'emails cleared'), value: cleared },
+      hero: {
+        label: plural(cleared, WS2_COPY.home.progressHero.one, WS2_COPY.home.progressHero.other),
+        value: cleared,
+      },
       secondary,
     };
   }

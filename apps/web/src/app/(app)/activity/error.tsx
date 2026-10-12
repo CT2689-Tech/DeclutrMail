@@ -18,7 +18,7 @@ export default function ActivityError({
     <RouteErrorScreen
       gap={20}
       title="Activity"
-      kicker="Your history / Every outcome in view"
+      kicker="Activity"
       error={error}
       reset={reset}
       boundary="activity"

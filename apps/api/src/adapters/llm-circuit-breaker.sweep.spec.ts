@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { mailboxAccounts, senders, users, workspaces } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
+import { grantedAiConsentInsert } from '@declutrmail/shared/ai-consent';
 import { ScoreWorker, type ScoreWorkerDeps } from '@declutrmail/workers';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -27,7 +28,11 @@ async function seedMailbox(
     .returning({ id: workspaces.id });
   const [user] = await db
     .insert(users)
-    .values({ workspaceId: ws!.id, email: 'sweep@example.com' })
+    .values({
+      workspaceId: ws!.id,
+      email: 'sweep@example.com',
+      ...grantedAiConsentInsert(),
+    })
     .returning({ id: users.id });
   const [mb] = await db
     .insert(mailboxAccounts)

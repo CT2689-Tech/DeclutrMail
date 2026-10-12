@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { renderPricingMarkdown } from '@declutrmail/shared/entitlements';
-import { fillWs3, WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { fillWs3, llmsStorageAiLine, WS3_COPY } from '@declutrmail/shared/copy/launch';
 
 import { renderLlmsFullTxt, renderLlmsTxt } from '@/features/marketing/llms/llms-document';
 
@@ -81,7 +81,9 @@ describe('llms.txt — marketing surface reconciliation', () => {
     const pricing = renderPricingMarkdown().trim();
     expect(headings).toEqual(pricing ? [...sections, '## Pricing'] : sections);
 
-    expect(LLMS_TXT).toContain(fillWs3(WS3_COPY['ws3.llms.storageAi']));
+    expect(LLMS_TXT).toContain(llmsStorageAiLine());
+    expect(LLMS_TXT).toContain(fillWs3(WS3_COPY['ws3.llms.storageAi.gate']));
+    expect(LLMS_TXT).not.toContain(fillWs3(WS3_COPY['ws3.llms.storageAi']));
     expect(LLMS_TXT).toContain(fillWs3(WS3_COPY['ws3.llms.fix.describe']));
     expect(LLMS_TXT).toContain(fillWs3(WS3_COPY['ws3.llms.fix.notAutomatic']));
     expect(LLMS_TXT).toContain(fillWs3(WS3_COPY['ws3.llms.fix.howItWorks']));

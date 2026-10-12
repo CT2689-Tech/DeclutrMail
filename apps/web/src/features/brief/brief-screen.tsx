@@ -34,6 +34,8 @@ import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-pro
 import { InlineFeedback } from '@/features/feedback/inline-feedback';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 
+import { BriefAiConsent } from '@/features/ai-consent/brief-ai-consent';
+
 import { shiftLocalDate, useBriefHistory } from './api/use-brief-history';
 import { useBriefToday } from './api/use-brief-today';
 import { useMarkBriefOpened } from './api/use-mark-brief-opened';
@@ -197,9 +199,7 @@ export function BriefScreen() {
 
   const brief = query.data ?? savedEdition;
   if (!brief) {
-    // Defensive: success + no data shouldn't happen (envelope contract
-    // guarantees data on 2xx), but render the not-yet branch rather
-    // than crashing if it does.
+    // 404, 204, and a null body all mean there is no Brief today.
     return (
       <NotYetState
         historyLoading={history.isFetching}
@@ -318,7 +318,7 @@ function BriefBody({
 
   return (
     <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 24 }}>
-      <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
+      <EditorialKicker>Catch up</EditorialKicker>
       <div
         style={{
           display: 'flex',
@@ -336,6 +336,7 @@ function BriefBody({
           onSelectRunDate={onSelectRunDate}
         />
       </div>
+      <BriefAiConsent />
       <ScreenIntro
         id="brief"
         title="Daily brief"
@@ -1382,7 +1383,7 @@ function LoadingState() {
       aria-live="polite"
       style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 24 }}
     >
-      <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
+      <EditorialKicker>Catch up</EditorialKicker>
       <h1 style={H1_STYLE}>Daily brief</h1>
       {[0, 1, 2, 3, 4].map((i) => (
         <div
@@ -1399,7 +1400,7 @@ function LoadingState() {
 function BriefErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   return (
     <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 24 }}>
-      <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
+      <EditorialKicker>Catch up</EditorialKicker>
       <h1 style={H1_STYLE}>Daily brief</h1>
       <RetryableErrorState
         headingLevel={2}
@@ -1429,8 +1430,9 @@ function NotYetState({
 }) {
   return (
     <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 24 }}>
-      <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
+      <EditorialKicker>Catch up</EditorialKicker>
       <h1 style={H1_STYLE}>Daily brief</h1>
+      <BriefAiConsent />
       <EmptyState
         headingLevel={2}
         title="Your Brief is not available yet"
@@ -1468,11 +1470,6 @@ function QuietInboxState() {
 // ── Helpers ───────────────────────────────────────────────────────────
 
 /**
- * Format a YYYY-MM-DD run-date into a friendly "Mon, May 28" label.
- * Local-date arithmetic only — no timezone conversion (the BE already
- * resolved the local-date semantic for the user).
- */
-/**
  * The local calendar date a Brief actually covers.
  *
  * `run_date_local` is the date the snapshot was GENERATED; the worker
@@ -1489,23 +1486,40 @@ export function coveredDateOf(runDateLocal: string): string {
   return shiftLocalDate(runDateLocal, -1);
 }
 
+const RUN_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+const RUN_MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
+
 export function formatRunDate(runDateLocal: string): string {
   const match = runDateLocal.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return runDateLocal;
-  const [, yStr, mStr, dStr] = match;
-  // Construct using UTC to skip the locale-dependent timezone shift —
-  // we only want the calendar fields, not a moment in time.
-  const utc = new Date(Date.UTC(Number(yStr), Number(mStr) - 1, Number(dStr)));
-  if (!Number.isFinite(utc.getTime())) return runDateLocal;
-  // Locale pinned: this label is server-rendered into hydrated HTML, so
-  // a runtime-default locale mismatches on any non-en-US browser and
-  // React discards the server tree (error #418; e2e hydration-smoke).
-  return utc.toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  });
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return runDateLocal;
+  // Calendar fields only. A locale date string hydrates "Sep" on one
+  // runtime and "Sept" on another (React #418 on /brief).
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  if (
+    utc.getUTCFullYear() !== year ||
+    utc.getUTCMonth() !== month - 1 ||
+    utc.getUTCDate() !== day
+  ) {
+    return runDateLocal;
+  }
+  return `${RUN_WEEKDAYS[utc.getUTCDay()]}, ${RUN_MONTHS[month - 1]} ${day}`;
 }
 
 /** Trailing-ellipsis truncate; collapses trailing whitespace. */

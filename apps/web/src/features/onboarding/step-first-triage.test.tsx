@@ -205,7 +205,7 @@ describe('StepFirstTriage', () => {
     render(
       <StepFirstTriage onComplete={onComplete} completing={false} goal="clear_old_promotions" />,
     );
-    fireEvent.click(screen.getByRole('button', { name: /Finish for today/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Finish review/i }));
 
     expect(analytics.track).toHaveBeenCalledWith('first_relief_session_completed', {
       goal: 'clear_old_promotions',
@@ -228,7 +228,7 @@ describe('StepFirstTriage', () => {
 
     render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);
 
-    expect(screen.getByRole('button', { name: /Finish for today/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Finish review/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Open workspace/i })).not.toBeInTheDocument();
   });
 

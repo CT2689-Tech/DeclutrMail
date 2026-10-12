@@ -118,10 +118,11 @@ const notDecidedRecently = (now: Date) => sql`NOT EXISTS (
     AND al.sender_key = triage_decisions.sender_key
     AND al.action IN ('keep', 'archive', 'unsubscribe', 'later', 'delete')
     AND al.occurred_at >= ${now.toISOString()}::timestamptz - make_interval(days => ${TRIAGE_DECIDED_WINDOW_DAYS})
-    /* Same journal-based reversal read as the Triage queue's decided
-       exclusion (triageNotDecidedRecently in @declutrmail/db), safe for
-       the same reason: 30-day undo windows outlast this 7-day window, so
-       the journal row cannot have been pruned yet. */
+    /* Same reversal read as the Triage queue's decided exclusion
+       (triageNotDecidedRecently). Keep has no undo journal, so its
+       undo writes al.reverted_at. Archive/Later/Delete still use the
+       journal, which outlasts this 7-day window. */
+    AND al.reverted_at IS NULL
     AND (al.undo_token IS NULL OR uj.reverted_at IS NULL)
 )`;
 

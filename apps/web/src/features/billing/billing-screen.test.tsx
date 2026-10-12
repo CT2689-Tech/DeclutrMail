@@ -62,6 +62,7 @@ vi.mock('@/features/billing/checkout', async (importOriginal) => ({
 vi.mock('@/lib/posthog', () => ({ track: vi.fn(() => Promise.resolve()) }));
 
 import { ERROR_CODES, type BillingSubscription } from '@declutrmail/shared/contracts';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { track } from '@/lib/posthog';
@@ -1298,7 +1299,8 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     const notice = await screen.findByTestId('payment-processing-notice');
-    expect(screen.getByRole('heading', { name: 'Billing', level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Plan & billing', level: 1 })).toBeInTheDocument();
+    expect(screen.getByText(WS2_COPY.liveFix.billing.scope)).toBeInTheDocument();
     expect(within(notice).getByText('What we know')).toBeInTheDocument();
     expect(within(notice).getByText('What happens next')).toBeInTheDocument();
     expect(within(notice).getByRole('link', { name: 'Contact billing support' })).toHaveAttribute(

@@ -90,14 +90,35 @@ describe('<PreviewSheet />', () => {
     expect(screen.getByRole('button', { name: 'Archive 3' })).toHaveFocus();
     safe.unmount();
 
+    const onConfirm = vi.fn();
     render(
       <PreviewSheet
         onClose={() => {}}
         title="Delete 3 emails?"
-        primary={{ label: 'Delete 3', onClick: () => {}, tone: 'danger' }}
+        primary={{ label: 'Delete 3', onClick: onConfirm, tone: 'danger' }}
       />,
     );
-    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus();
+    expect(screen.getByRole('alertdialog', { name: 'Delete 3 emails?' })).toBeInTheDocument();
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    expect(cancel).toHaveFocus();
+    fireEvent.keyDown(cancel, { key: 'Enter' });
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('focuses Cancel for Unsubscribe and Enter there does not run the action', () => {
+    const onConfirm = vi.fn();
+    render(
+      <PreviewSheet
+        onClose={() => {}}
+        title="Unsubscribe from Ada?"
+        primary={{ label: 'Unsubscribe', onClick: onConfirm, tone: 'warn' }}
+      />,
+    );
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(cancel).toHaveFocus();
+    fireEvent.keyDown(cancel, { key: 'Enter' });
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 
   it('announces status through a live region that exists before the first message', () => {

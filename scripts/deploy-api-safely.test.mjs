@@ -196,6 +196,8 @@ test('production deploys serialize across triggers and reject non-main dispatche
     workflow.indexOf('  build-and-deploy:'),
   );
   assert.match(ciGate, /if: github\.ref == 'refs\/heads\/main'/);
+  assert.match(ciGate, /packages\/db\/migrations/);
+  assert.match(ciGate, /migration-apply\.yml/);
   const deployJob = workflow.slice(workflow.indexOf('  build-and-deploy:'));
   assert.match(deployJob, /^ {2}build-and-deploy:\s*\n {4}needs: await-ci/);
 });

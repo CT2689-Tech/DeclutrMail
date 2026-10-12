@@ -3,8 +3,8 @@
  * Recommended deck strings ship now. Alternates stay behind these constants.
  */
 
-/** Flips the 16 consent-tagged strings. Off until WS2a's AI consent gate is live. */
-export const AI_CONSENT_GATE_LIVE = false; // DECISION: Chintan
+/** Flips the 16 consent-tagged strings. On since Chintan approved it with #985. */
+export const AI_CONSENT_GATE_LIVE = true; // DECISION: Chintan
 
 /** `ga` drops the footer "Open beta" link. `/beta` stays reachable. */
 export const LAUNCH_STAGE = 'ga' as 'ga' | 'beta'; // DECISION: Chintan

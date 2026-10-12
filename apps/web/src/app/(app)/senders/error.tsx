@@ -17,7 +17,7 @@ export default function SendersError({
   return (
     <RouteErrorScreen
       title="Senders"
-      kicker="Your inbox, by sender"
+      kicker="Cleanup"
       maxWidth={1480}
       error={error}
       reset={reset}

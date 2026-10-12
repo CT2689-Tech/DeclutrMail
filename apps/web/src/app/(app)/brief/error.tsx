@@ -16,8 +16,8 @@ export default function BriefError({
 }) {
   return (
     <RouteErrorScreen
-      title="Daily brief"
-      kicker="Catch up / Your daily edition"
+      title="Daily Brief"
+      kicker="Catch up"
       error={error}
       reset={reset}
       boundary="brief"

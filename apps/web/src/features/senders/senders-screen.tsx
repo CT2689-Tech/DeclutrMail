@@ -1,5 +1,6 @@
 'use client';
 
+import { AiInlinePrompt } from '@/features/ai-consent/ai-inline-prompt';
 import { EditorialKicker } from '@/features/editorial/page';
 
 import { reconcileAction } from '@/lib/api/reconcile-action';
@@ -13,6 +14,7 @@ import {
   Button,
   EmptyState,
   ErrorState as RecoverableErrorState,
+  FirstLandingSlot,
   ScreenIntro,
   tokens,
   toast,
@@ -66,7 +68,8 @@ import {
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
 } from '@/lib/api/use-action';
-import { useSetSenderPolicy } from './api/use-sender-policy';
+import { useSetSenderPolicy, useUndoSenderKeep } from './api/use-sender-policy';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { sendersKeys } from './api/query-keys';
 import {
   actionLabel,
@@ -129,6 +132,9 @@ import {
 } from './row-activity';
 import { SendersLoadingState } from './senders-loading-state';
 import { shouldShowFirstCleanupNudge } from './first-cleanup-nudge-policy';
+import { InboxReportFirstLanding } from '@/features/inbox-report/first-landing-entry';
+import { firstBacklogHeader } from './first-backlog-header';
+import { LaunchFilterRow } from './launch-filter-row';
 // This optional recommendation appears only after the mailbox summary and
 // stored sender list arrive. Its read/render code need not load at app entry.
 const UnavailableBacklogNudge = () => null;
@@ -543,7 +549,8 @@ function describeNarrowedFilters(compose: ComposeState): string {
     compose.windowDays !== null ||
     compose.domain !== null ||
     compose.unsubIgnored ||
-    compose.hasInboxMail === true;
+    compose.hasInboxMail === true ||
+    compose.mostlyUnread === true;
   if (compose.activity && !compose.activityNegate && !hasOtherFilters) return compose.activity;
   // QA-senders-20260901-09: 'matching' collided with the template's own
   // "senders match" a few words later ("No matching senders match ...").
@@ -727,6 +734,7 @@ function SendersScreenContent({
   // readiness value it didn't enumerate.
   const mailboxSyncFailed = activeMailbox?.readiness === 'failed';
   const mailboxNeedsReconnect = activeMailbox?.needsReconnect === true;
+  const [reportShown, setReportShown] = useState(false);
   const showFirstCleanupNudge = shouldShowFirstCleanupNudge({
     mailboxReady: activeMailbox?.readiness === 'ready',
     hasCompletedCleanup,
@@ -756,6 +764,7 @@ function SendersScreenContent({
   // D40 — Keep is a standing-policy write (`policy_type='keep'`), not a
   // Gmail mutation. The hook owns the senders/activity invalidation.
   const setPolicy = useSetSenderPolicy();
+  const undoKeep = useUndoSenderKeep();
   // D51 — saved filter views (users.preferences.senderViews). One
   // full-replace mutation covers save + delete; apply is client-side
   // (write the compose URL state + sort store).
@@ -1863,20 +1872,36 @@ function SendersScreenContent({
             const failed = failures.length;
             const succeeded = results.length - failed;
             if (succeeded > 0) trackActionConfirmed('keep');
+            const keptIds = senderRefs
+              .filter((_, index) => results[index]?.status === 'fulfilled')
+              .map((sender) => sender.id);
+            const undoAction =
+              keptIds.length === 0
+                ? undefined
+                : {
+                    label: WS2_COPY.undo.button,
+                    onClick: () => {
+                      for (const senderId of keptIds) void undoKeep.mutate({ senderId });
+                    },
+                  };
             if (!isBulk) {
               toast(
-                failed ? `Couldn't keep ${senderRefs[0]!.name}` : `Kept ${senderRefs[0]!.name}`,
+                failed
+                  ? `Couldn't keep ${senderRefs[0]!.name}`
+                  : WS2_COPY.keepUndo.toast.one.replace('{Sender}', senderRefs[0]!.name),
                 failed ? 'warn' : 'success',
+                failed ? undefined : undoAction,
               );
               return;
             }
             toast(
               succeeded === 0
                 ? `Couldn't keep ${failed} senders — try again`
-                : `Kept ${succeeded} sender${succeeded === 1 ? '' : 's'}${
+                : `${WS2_COPY.keepUndo.toast.other.replace('{n}', String(succeeded))}${
                     failed ? ` · ${failed} failed, try again` : ''
                   }`,
               failed > 0 ? 'warn' : 'success',
+              undoAction,
             );
           })
           .finally(() => {
@@ -2719,13 +2744,14 @@ function SendersScreenContent({
       <div className={workspaceStyles.workspace} data-split={canSplit || undefined}>
         <header className={workspaceStyles.heading}>
           <div>
-            <EditorialKicker>Your inbox, by sender</EditorialKicker>
+            <EditorialKicker>Cleanup</EditorialKicker>
             <h1 className={workspaceStyles.title}>Senders</h1>
             <p className={workspaceStyles.subtitle}>
               See the pattern. Decide what deserves a place.
             </p>
           </div>
         </header>
+        <AiInlinePrompt />
         <div className={workspaceStyles.listColumn}>
           <section
             aria-label="Sender search and filters"
@@ -2822,6 +2848,7 @@ function SendersScreenContent({
               needsReconnect={mailboxNeedsReconnect}
             />
 
+            <LaunchFilterRow mailboxId={me.activeMailboxId} onApply={setCompose} />
             <ActiveFilterChips state={compose} onChange={setCompose} onClear={clearCompose} />
           </section>
           <ScreenIntro
@@ -2842,7 +2869,26 @@ function SendersScreenContent({
             </div>
           )}
 
-          {showFirstCleanupNudge && senders[0] !== undefined && <FirstBacklogNudge />}
+          {me.activeMailboxId && (
+            <InboxReportFirstLanding mailboxId={me.activeMailboxId} onResolved={setReportShown} />
+          )}
+          <FirstLandingSlot
+            candidates={[
+              { id: 'inbox_report', ready: reportShown, node: null },
+              {
+                id: 'first_backlog_header',
+                // The list payload has no exact backlog count paired with an
+                // inbox share, so the sentence stays omitted.
+                ready: firstBacklogHeader(null, null) !== null,
+                node: null,
+              },
+              {
+                id: 'first_cleanup_nudge',
+                ready: showFirstCleanupNudge && senders[0] !== undefined,
+                node: <FirstBacklogNudge />,
+              },
+            ]}
+          />
 
           {/* D248 — multi-sender unsubscribe result. Its own surface: three
             terminal outcomes, no Undo (a delivered request is one-way). */}

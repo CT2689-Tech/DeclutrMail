@@ -28,7 +28,7 @@ import {
   PRIVACY_STORAGE_ITEMS,
   PRIVACY_NEVER_ITEMS,
 } from '@declutrmail/shared';
-import { fillWs3, REFUNDS_PAGE_WINDOW_DAYS, WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { gatedText, REFUNDS_PAGE_WINDOW_DAYS } from '@declutrmail/shared/copy/launch';
 import { storeConsent } from '@/lib/cookie-consent';
 
 import PrivacyPolicyPage from './privacy/page';
@@ -219,16 +219,14 @@ describe('/privacy content — D7 + D228 posture', () => {
     expect(text).not.toMatch(/export your data \([^)]*preferences/i);
   });
 
-  it('renders the pre-gate AI lines from the deck', () => {
+  it('renders the gate-on AI lines from the deck', () => {
     const { container } = render(<PrivacyPolicyPage />);
     const text = container.textContent ?? '';
-    const explanations = fillWs3(WS3_COPY['ws3.privacy.ai.explanations.preGate']);
-    const brief = fillWs3(WS3_COPY['ws3.privacy.ai.brief.preGate']);
-    expect(text).toContain(fillWs3(WS3_COPY['ws3.privacy.ai.who.preGate']));
-    expect(text).toContain(explanations);
-    expect(text).toContain(brief);
-    expect(text).toContain(fillWs3(WS3_COPY['ws3.privacy.subprocessors.anthropic.preGate']));
-    expect(text).toContain(`${explanations} ${brief}`);
+    expect(text).toContain(gatedText('ws3.privacy.ai.who'));
+    expect(text).toContain(gatedText('ws3.privacy.ai.explanations'));
+    expect(text).toContain(gatedText('ws3.privacy.ai.brief'));
+    expect(text).toContain(gatedText('ws3.privacy.subprocessors.anthropic'));
+    expect(text).toContain(gatedText('ws3.privacy.aiDisclosureConst'));
     expect(text).not.toMatch(/\{[A-Za-z0-9_]+\}/);
   });
 

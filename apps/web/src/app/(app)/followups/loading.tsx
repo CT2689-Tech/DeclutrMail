@@ -4,7 +4,7 @@ export default function Loading() {
   return (
     <RouteLoading
       gap={32}
-      kicker="Catch up / Conversations"
+      kicker="Catch up"
       title="Follow-ups"
       label="Loading follow-ups"
       rows={4}

@@ -69,7 +69,10 @@ import {
   WINDOWS,
 } from '@declutrmail/shared/senders';
 
-import { currentTriageReasoning } from '../common/triage-reasoning.js';
+import { plainVolumeExplanation } from '@declutrmail/shared/ai-consent';
+
+import { showStoredExplanations } from '../common/show-stored-explanations.js';
+import { projectReasoning } from '../common/triage-reasoning.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
   ActivityFilter,
@@ -291,6 +294,31 @@ interface InboxStats {
 }
 
 /** Shared live Archive scope for list rows and sender details. */
+/**
+ * Less than half of inbound mail in the engine window is marked read,
+ * excluding sweeper marks from the numerator. Same facts as `readRate`.
+ */
+function mostlyUnread90Predicate(mailboxAccountId: string) {
+  const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
+  const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
+  const engine = sql`${mailMessages.internalDate} >= now() - (${WINDOWS.ENGINE_WINDOW_DAYS} || ' days')::interval`;
+  const scope = sql`${mailMessages.mailboxAccountId} = ${outerMailboxId}
+    AND ${mailMessages.senderKey} = ${outerSenderKey}
+    AND ${engine}
+    AND ${mailMessages.isOutbound} = false`;
+  const readCount = sql`(
+    SELECT COUNT(*)::int FROM ${mailMessages}
+    WHERE ${scope}
+      AND ${mailMessages.isUnread} = false
+      AND ${readStateNotSweeperMarked(mailboxAccountId, getTableName(mailMessages))}
+  )`;
+  const volume = sql`(
+    SELECT COUNT(*)::int FROM ${mailMessages}
+    WHERE ${scope}
+  )`;
+  return sql`${volume} > 0 AND ${readCount} * 2 < ${volume}`;
+}
+
 function buildArchivedCountSubquery() {
   const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
   const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
@@ -522,6 +550,12 @@ export class SendersReadService {
      */
     unsubIgnored?: boolean | null;
     /**
+     * Less than half of the last 90 days of inbound mail is marked read.
+     * Same engine window and sweeper exclusion as the displayed read rate
+     * (ADR-0037). Senders with no mail in that window are left out.
+     */
+    mostlyUnread?: boolean | null;
+    /**
      * Anchor for "current month" used by the volume-trend bucket.
      * Injectable for tests; defaults to `new Date()` in production so
      * controllers don't have to thread the clock through.
@@ -630,6 +664,9 @@ export class SendersReadService {
         sql`${senderPolicies.policyType} = 'unsubscribe' AND ${senders.lastSeenAt} > ${senderPolicies.updatedAt}`,
       );
     }
+    if (args.mostlyUnread === true) {
+      conditions.push(mostlyUnread90Predicate(args.mailboxAccountId));
+    }
     if (typeof args.quietForDays === 'number' && args.quietForDays > 0) {
       conditions.push(
         sql`${senders.lastSeenAt} < now() - (${args.quietForDays} || ' days')::interval`,
@@ -707,6 +744,7 @@ export class SendersReadService {
     )
       ? await this.mailboxHasOutboundIndexed(args.mailboxAccountId)
       : false;
+    const showStoredAi = await showStoredExplanations(this.db, args.mailboxAccountId);
 
     return rows.map((row) => {
       // Scalar `sql<number | string>` subqueries (last30dMsgs,
@@ -783,7 +821,7 @@ export class SendersReadService {
         lastReview: buildLastReview(
           row.lastDecision?.producedAt ?? null,
           row.lastDecision?.verdict ?? null,
-          row.lastDecision?.generatedBy ?? null,
+          visibleGeneratedBy(row.lastDecision?.generatedBy ?? null, showStoredAi),
           row.lastDecision?.confidence ?? null,
         ),
         protectionFlags: {
@@ -920,6 +958,8 @@ export class SendersReadService {
     wroteTo?: TriStateFilter;
     /** D51 — "unsub'd, still emailing" (see `listSenders` doc). */
     unsubIgnored?: boolean | null;
+    /** ADR-0037 — less than half marked read in the last 90 days. */
+    mostlyUnread?: boolean | null;
   }): Promise<SenderListQueryMeta> {
     const { mailboxAccountId, category, isProtected } = args;
 
@@ -958,6 +998,9 @@ export class SendersReadService {
       totalMatchingConditions.push(
         sql`${senderPolicies.policyType} = 'unsubscribe' AND ${senders.lastSeenAt} > ${senderPolicies.updatedAt}`,
       );
+    }
+    if (args.mostlyUnread === true) {
+      totalMatchingConditions.push(mostlyUnread90Predicate(args.mailboxAccountId));
     }
     if (typeof args.quietForDays === 'number' && args.quietForDays > 0) {
       totalMatchingConditions.push(
@@ -1669,6 +1712,23 @@ export class SendersReadService {
       'senders.baselineMsgs',
     );
     const readRate = computeReadRate(last90dMsgs, last90dReadCount);
+    const showStoredAi = await showStoredExplanations(this.db, mailboxAccountId);
+    const storedReasoning = row.lastDecision?.reasoning ?? null;
+    const storedGeneratedBy = row.lastDecision?.generatedBy ?? null;
+    const projected =
+      storedReasoning && storedGeneratedBy
+        ? projectReasoning({
+            stored: storedReasoning,
+            generatedBy: storedGeneratedBy,
+            readRate,
+            showStoredAi,
+            plain: plainVolumeExplanation({
+              name: row.displayName,
+              last90Count: last90dMsgs,
+              readRate,
+            }),
+          })
+        : null;
 
     return {
       id: row.id,
@@ -1714,15 +1774,15 @@ export class SendersReadService {
       lastReview: buildLastReview(
         row.lastDecision?.producedAt ?? null,
         row.lastDecision?.verdict ?? null,
-        row.lastDecision?.generatedBy ?? null,
+        visibleGeneratedBy(row.lastDecision?.generatedBy ?? null, showStoredAi),
         row.lastDecision?.confidence ?? null,
       ),
       recommendation: buildRecommendation(
         row.lastDecision?.producedAt ?? null,
         row.lastDecision?.verdict ?? null,
-        row.lastDecision?.generatedBy ?? null,
+        projected?.generatedBy ?? row.lastDecision?.generatedBy ?? null,
         row.lastDecision?.confidence ?? null,
-        row.lastDecision?.reasoning ?? null,
+        projected?.reasoning ?? row.lastDecision?.reasoning ?? null,
         row.lastDecision?.expiresAt ?? null,
         readRate,
         now,
@@ -2125,7 +2185,7 @@ function buildRecommendation(
   return {
     verdict,
     confidence: confidenceNum,
-    reasoning: currentTriageReasoning({ stored: reasoning, generatedBy, readRate }),
+    reasoning,
     generatedBy,
     scoredAt: (at instanceof Date ? at : new Date(at)).toISOString(),
     // A row with no expiry cannot be proven stale, so it isn't called
@@ -2133,6 +2193,14 @@ function buildRecommendation(
     // a fact we don't have would be guessing.
     stale: expiry !== null && expiry.getTime() <= now.getTime(),
   };
+}
+
+function visibleGeneratedBy(
+  generatedBy: TriageReasoningSource | null,
+  showStoredAi: boolean,
+): TriageReasoningSource | null {
+  if (!showStoredAi && generatedBy === 'llm_haiku') return 'template';
+  return generatedBy;
 }
 
 function buildLastReview(

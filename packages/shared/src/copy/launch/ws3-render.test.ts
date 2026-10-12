@@ -87,28 +87,38 @@ describe('WS3 token fill', () => {
     expect(autopilot).not.toMatch(/on\s+handle/);
   });
 
-  it('keeps the consent gate off and lists the strings that wait for it', () => {
-    expect(AI_CONSENT_GATE_LIVE).toBe(false);
-    expect(gateOpen()).toBe(false);
+  it('opens the consent gate and uses the deck consent sentences', () => {
+    expect(AI_CONSENT_GATE_LIVE).toBe(true);
+    expect(gateOpen()).toBe(true);
     expect(AI_CONSENT_GATE_KEYS).toHaveLength(16);
-    expect(privacyFaqAnswer()).not.toMatch(/If you allow AI/);
-    expect(glanceLines().some((line) => /Anthropic/.test(line))).toBe(false);
-    expect(llmsKeyFacts()[3]).toBe(fillWs3(WS3_COPY['ws3.llms.keyFacts.aiPreGate']));
-    expect(llmsKeyFacts()[3]).not.toMatch(/consent card/);
-    expect(llmsStorageAiLine()).toBe(fillWs3(WS3_COPY['ws3.llms.storageAi']));
-    expect(llmsStorageAiLine()).not.toMatch(/consent card/);
-    const explanations = fillWs3(WS3_COPY['ws3.privacy.ai.explanations.preGate']);
-    const brief = fillWs3(WS3_COPY['ws3.privacy.ai.brief.preGate']);
-    expect(gatedText('ws3.privacy.ai.explanations')).toBe(explanations);
-    expect(gatedText('ws3.security.ai.explanations')).toBe(explanations);
-    expect(gatedText('ws3.privacy.ai.brief')).toBe(brief);
-    expect(gatedText('ws3.security.ai.brief')).toBe(brief);
-    expect(gatedText('ws3.privacy.aiDisclosureConst')).toBe(`${explanations} ${brief}`);
-    expect(gatedText('ws3.privacy.ai.who')).toBe(fillWs3(WS3_COPY['ws3.privacy.ai.who.preGate']));
+    expect(privacyFaqAnswer()).toMatch(/If you allow AI/);
+    expect(glanceLines().some((line) => line.includes('If you allow AI'))).toBe(true);
+    const aiFact = llmsKeyFacts()[3];
+    expect(aiFact).toBe(fillWs3(WS3_COPY['ws3.llms.keyFacts'][3]));
+    expect(aiFact).toContain('in-app consent card');
+    expect(aiFact).toContain('Settings → AI');
+    expect(aiFact).not.toContain('Pro Brief');
+    expect(llmsStorageAiLine()).toBe(fillWs3(WS3_COPY['ws3.llms.storageAi.gate']));
+    expect(llmsStorageAiLine()).toContain('in-app consent card');
+    expect(gatedText('ws3.privacy.ai.explanations')).toBe(
+      fillWs3(WS3_COPY['ws3.privacy.ai.explanations']),
+    );
+    expect(gatedText('ws3.security.ai.explanations')).toBe(
+      fillWs3(WS3_COPY['ws3.security.ai.explanations']),
+    );
+    expect(gatedText('ws3.privacy.ai.brief')).toBe(fillWs3(WS3_COPY['ws3.privacy.ai.brief']));
+    expect(gatedText('ws3.security.ai.brief')).toBe(fillWs3(WS3_COPY['ws3.security.ai.brief']));
+    expect(gatedText('ws3.privacy.aiDisclosureConst')).toBe(
+      fillWs3(WS3_COPY['ws3.privacy.aiDisclosureConst']),
+    );
+    expect(gatedText('ws3.privacy.ai.who')).toBe(fillWs3(WS3_COPY['ws3.privacy.ai.who']));
     expect(gatedText('ws3.privacy.subprocessors.anthropic')).toBe(
-      fillWs3(WS3_COPY['ws3.privacy.subprocessors.anthropic.preGate']),
+      fillWs3(WS3_COPY['ws3.privacy.subprocessors.anthropic']),
     );
     expect(gatedText('ws3.methodology.briefBody')).toBe(
+      fillWs3(WS3_COPY['ws3.methodology.briefBody']),
+    );
+    expect(gatedText('ws3.methodology.briefBody')).not.toBe(
       fillWs3(WS3_COPY['ws3.methodology.briefBody.preGate']),
     );
   });

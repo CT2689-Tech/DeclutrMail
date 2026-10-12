@@ -37,10 +37,17 @@ describe('SyncGate failed — first-run escape hatch', () => {
       </QueryWrapper>,
     );
     expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings');
-    expect(screen.getByRole('link', { name: 'Billing' })).toHaveAttribute('href', '/billing');
+    expect(screen.getByRole('link', { name: 'Plan & billing' })).toHaveAttribute(
+      'href',
+      '/billing',
+    );
     expect(screen.getByRole('link', { name: 'Get help' })).toHaveAttribute(
       'href',
       '/settings/help',
+    );
+    expect(screen.getByRole('link', { name: 'Delete account and data' })).toHaveAttribute(
+      'href',
+      '/settings#account',
     );
   });
 

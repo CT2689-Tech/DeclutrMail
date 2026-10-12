@@ -45,8 +45,11 @@ export class BriefController {
 
   /**
    * GET /api/briefs/today — today's Brief for the caller's mailbox.
-   * Returns 404 if the snapshot worker hasn't fired yet (FE refetches
-   * after the cron tick).
+   * No snapshot yet stays 404. The web treats that 404, and a 204 or
+   * null body, as "Brief lands soon". Changing the status here would
+   * break the web that is already in production, because Cloud Run and
+   * Vercel do not ship in the same moment. Mark-opened still 404s for
+   * an unknown id.
    *
    * The day boundary comes from persisted `users.timezone`, exactly
    * like snapshot generation. A browser query param cannot select a

@@ -525,7 +525,7 @@ export function AccountMenu() {
               onClick={() => setOpen(false)}
               style={menuItemStyle()}
             >
-              Billing
+              Plan & billing
             </Link>
             <button
               type="button"

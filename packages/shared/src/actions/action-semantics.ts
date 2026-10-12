@@ -171,7 +171,7 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
       kind: 'reversible-or-changeable',
       summary: 'This saved decision can be changed.',
     },
-    resultLabel: 'Keep decision saved',
+    resultLabel: 'Kept',
   },
   archive: {
     verb: 'archive',
@@ -256,7 +256,7 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
       kind: 'delivered-request-cannot-be-recalled',
       summary: 'After delivery, the unsubscribe request cannot be recalled.',
     },
-    resultLabel: 'Unsubscribe request recorded',
+    resultLabel: 'Unsubscribe requested',
   },
   unarchive: {
     verb: 'unarchive',
@@ -325,7 +325,7 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
     // Delete's had dropped it across all 6 surfaces this string feeds
     // (button, banner, toast, Activity row, tile, filter chip) —
     // QA-undo-20260828-04.
-    resultLabel: 'Deleted to Gmail Trash',
+    resultLabel: 'Deleted',
   },
 };
 

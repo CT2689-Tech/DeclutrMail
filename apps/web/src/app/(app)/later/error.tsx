@@ -15,7 +15,7 @@ export default function LaterError({
     <RouteErrorScreen
       gap={32}
       title="Later"
-      kicker="Catch up / Coming back to you"
+      kicker="Catch up"
       error={error}
       reset={reset}
       boundary="snoozed"

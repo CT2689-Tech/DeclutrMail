@@ -179,11 +179,11 @@ export function fixtureToDecisionHistoryRows(s: SenderFixture): DecisionHistoryR
   // fixtures has always silently dropped. Fixed alongside the two
   // instances this diff was already touching.
   const actionMap: Record<string, DecisionHistoryRowDto['action']> = {
-    'Keep decision saved': 'keep',
+    Kept: 'keep',
     Archived: 'archive',
-    'Unsubscribe request recorded': 'unsubscribe',
+    'Unsubscribe requested': 'unsubscribe',
     'Moved to Later': 'later',
-    'Deleted to Gmail Trash': 'delete',
+    Deleted: 'delete',
     Protected: 'marked_protected',
     Unprotected: 'unmarked_protected',
   };

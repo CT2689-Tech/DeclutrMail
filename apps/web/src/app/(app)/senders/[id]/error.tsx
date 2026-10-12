@@ -18,7 +18,7 @@ export default function SenderDetailError({
   return (
     <RouteErrorScreen
       title="Sender details"
-      kicker="Clean up / Your sender"
+      kicker="Cleanup"
       error={error}
       reset={reset}
       boundary="senders-detail"

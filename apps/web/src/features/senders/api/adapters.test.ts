@@ -63,11 +63,11 @@ describe('adaptDecisionHistoryRow — actions that actually happened', () => {
 
   it('maps every wire action to its past-tense label', () => {
     const cases: Array<[DecisionHistoryRowDto['action'], string]> = [
-      ['keep', 'Keep decision saved'],
+      ['keep', 'Kept'],
       ['archive', 'Archived'],
-      ['unsubscribe', 'Unsubscribe request recorded'],
+      ['unsubscribe', 'Unsubscribe requested'],
       ['later', 'Moved to Later'],
-      ['delete', 'Deleted to Gmail Trash'],
+      ['delete', 'Deleted'],
       ['marked_protected', 'Protected'],
       ['unmarked_protected', 'Unprotected'],
     ];
@@ -346,6 +346,6 @@ describe('adaptSenderDetail — honest wire composition', () => {
     });
     expect(detail.recentMessages[0]?.threadId).toBe('thread-m1');
     expect(detail.timeseries[0]?.opens).toBe(2);
-    expect(detail.history[0]?.action).toBe('Unsubscribe request recorded');
+    expect(detail.history[0]?.action).toBe('Unsubscribe requested');
   });
 });

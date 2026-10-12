@@ -32,10 +32,11 @@ export function CheckoutRecovery({
   const busy = useRef(false);
   const mounted = useRef(true);
   const [opening, setOpening] = useState(false);
-  const [expired, setExpired] = useState(Date.now() >= held.expiresAt);
+  const [expired, setExpired] = useState(false);
   const [error, setError] = useState(false);
   useEffect(() => {
     mounted.current = true;
+    if (Date.now() >= held.expiresAt) setExpired(true);
     const timer = setTimeout(() => setExpired(true), Math.max(0, held.expiresAt - Date.now()));
     return () => {
       mounted.current = false;

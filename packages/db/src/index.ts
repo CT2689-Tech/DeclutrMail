@@ -200,6 +200,8 @@ export type {
 } from './schema/triage-decisions';
 export { undoActionKind, undoJournal } from './schema/undo-journal';
 export type { NewUndoJournalEntry, UndoJournalEntry } from './schema/undo-journal';
+export { loadAiConsentForMailbox } from './ai-consent';
+export type { AiConsentColumns } from './ai-consent';
 export { users } from './schema/users';
 export type { NewUser, User } from './schema/users';
 export { waitlist } from './schema/waitlist';

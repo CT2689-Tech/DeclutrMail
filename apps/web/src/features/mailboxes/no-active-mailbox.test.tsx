@@ -130,7 +130,7 @@ describe('NoActiveMailboxView', () => {
     render(<NoActiveMailboxView {...viewProps()} />);
 
     const manageAccount = screen.getByRole('link', { name: /manage account/i });
-    const billing = screen.getByRole('link', { name: 'Billing' });
+    const billing = screen.getByRole('link', { name: 'Plan & billing' });
     expect(manageAccount).toHaveAttribute('href', '/settings#account');
     expect(billing).toHaveAttribute('href', '/billing');
     expect(manageAccount).toHaveStyle({ minHeight: '44px' });

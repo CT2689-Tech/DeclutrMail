@@ -38,12 +38,12 @@ describe('HomeView', () => {
     // Anchored: the Quiet tile's own detail text now says "...Autopilot
     // holds its actions", so an unanchored /Autopilot/ matches both tiles.
     expect(screen.getByRole('link', { name: /^Autopilot/ })).toHaveAttribute('href', '/autopilot');
-    expect(screen.getByRole('link', { name: /Daily brief Included with Pro/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /Daily Brief Included with Pro/ })).toHaveAttribute(
       'href',
       '/brief',
     );
     rerender(<HomeView state={ready} tier="pro" />);
-    expect(screen.getByRole('link', { name: /Daily brief/ })).toHaveAttribute('href', '/brief');
+    expect(screen.getByRole('link', { name: /Daily Brief/ })).toHaveAttribute('href', '/brief');
     expect(screen.getByRole('link', { name: /Follow-ups/ })).toHaveAttribute('href', '/followups');
     expect(screen.getByRole('link', { name: /Later/ })).toHaveAttribute('href', '/later');
     expect(screen.getByRole('link', { name: /Quiet hours/ })).toHaveAttribute('href', '/quiet');
@@ -95,7 +95,7 @@ describe('HomeView', () => {
         }}
       />,
     );
-    expect(screen.getByRole('link', { name: /Daily brief 3 replies to consider/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /Daily Brief 3 replies to consider/ })).toHaveAttribute(
       'href',
       '/brief',
     );
@@ -106,6 +106,25 @@ describe('HomeView', () => {
       screen.getByRole('link', { name: /Autopilot 50\+ suggestions to review/ }),
     ).toHaveAttribute('href', '/autopilot');
     expect(screen.getByRole('link', { name: /Review 4 today/ })).toHaveAttribute('href', '/triage');
+  });
+
+  it('shows the empty Daily Brief signal when today has no edition', () => {
+    render(
+      <HomeView
+        tier="pro"
+        workflows={{ brief: null, followups: null, suggestions: null }}
+        state={{
+          kind: 'ready',
+          hero: { label: 'emails cleared', value: 100 },
+          since: null,
+          secondary: [],
+          action,
+        }}
+      />,
+    );
+    expect(
+      screen.getByRole('link', { name: /Daily Brief Open the latest edition/ }),
+    ).toHaveAttribute('href', '/brief');
   });
 
   it.each([1, 2])('uses matching grammar for %i Autopilot suggestions', (suggestions) => {

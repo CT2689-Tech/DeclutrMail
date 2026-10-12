@@ -144,6 +144,9 @@ export class TriageController {
     ) {
       throw new BadRequestException(`senderIds must be 1–${EXPLAIN_BATCH_MAX} sender ids.`);
     }
+    if (!(await this.reads.explanationsAllowed(mailbox.id))) {
+      return ok({ queued: [] });
+    }
     const result = await this.triage.explainSenders({
       mailboxAccountId: mailbox.id,
       senderIds: [...new Set(raw as string[])],

@@ -52,6 +52,13 @@ export const APP_EVENT_NAMES = [
   'brief_hour_changed',
   'data_export_requested',
   'support_request_submitted',
+  'caught_up_viewed',
+  'empty_state_cta_clicked',
+  'sync_gate_state_viewed',
+  'home_next_step_clicked',
+  'brief_ai_consent_shown',
+  'brief_ai_consent_decided',
+  'brief_ai_consent_revoked',
 ] as const;
 
 export type AppEventName = (typeof APP_EVENT_NAMES)[number];
@@ -171,6 +178,8 @@ export interface AppEventPayloads {
     /** Number of axes active AFTER this change (multi-axis support). */
     active_axes: number;
     mailbox_id: string;
+    /** Saved launch filter, when the change came from one. */
+    filter_id?: 'mostly_unread_90' | 'has_unsubscribe';
   };
 
   bulk_select_in_filter: {
@@ -391,4 +400,32 @@ export interface AppEventPayloads {
     /** Success means complete blob handed to the browser, not proof of a saved file. */
     outcome: 'success' | 'failed';
   };
+
+  caught_up_viewed: {
+    surface: 'senders' | 'triage' | 'home' | 'screener';
+  };
+
+  empty_state_cta_clicked: {
+    surface: 'senders' | 'triage' | 'home' | 'screener' | 'activity';
+    state: 'caught_up' | 'empty' | 'resting';
+  };
+
+  sync_gate_state_viewed: {
+    state:
+      | 'progress'
+      | 'ready'
+      | 'insufficient_scopes'
+      | 'invalid_grant'
+      | 'reconnect_required'
+      | 'rate_limit'
+      | 'stuck'
+      | 'unknown';
+  };
+
+  home_next_step_clicked: {
+    kind: 'unsubscribe_archive' | 'largest_senders' | 'later_due' | 'triage';
+  };
+  brief_ai_consent_shown: Record<string, never>;
+  brief_ai_consent_decided: { decision: 'allow' | 'not_now' };
+  brief_ai_consent_revoked: Record<string, never>;
 }

@@ -115,17 +115,37 @@ export function isDeferredDowngrade(
   );
 }
 
-/** "Jun 1, 2026" — en-US to match the D119 mock. Null-safe. */
+const BILLING_MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
+
+/**
+ * "Jun 1, 2026" in UTC. Month names are fixed so Node and the browser
+ * cannot disagree on "Sep" versus "Sept" during hydration.
+ */
 export function formatBillingDate(iso: string | null): string | null {
   if (!iso) return null;
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
+  return `${BILLING_MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}, ${date.getUTCFullYear()}`;
+}
+
+/** "Aug 27" in UTC. Invalid instants return null so the caller can fall back. */
+export function formatBillingMonthDay(iso: string): string | null {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return `${BILLING_MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}`;
 }
 
 /**
@@ -141,7 +161,10 @@ export function formatProviderAmount(amount: string, currencyCode: string): stri
   try {
     const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: currencyCode });
     const digits = fmt.resolvedOptions().maximumFractionDigits ?? 2;
-    return fmt.format(n / 10 ** digits);
+    // Node often inserts a NBSP between "$" and the digits; Chrome often
+    // does not. Replacing that NBSP with a normal space still hydrated as
+    // a different text node (React #418 on /billing). Drop the gap.
+    return fmt.format(n / 10 ** digits).replace(/\s+/g, '');
   } catch {
     return null;
   }

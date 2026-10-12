@@ -224,7 +224,7 @@ describe('SettingsScreen', () => {
 
     for (const name of [
       'Gmail accounts',
-      'Action previews',
+      'Preview layout',
       'Notifications',
       'Policies and help',
       'Account',
@@ -972,7 +972,7 @@ describe('SettingsScreen', () => {
     },
     {
       result: 'cancelled',
-      message: 'Gmail reconnect was cancelled.',
+      message: 'Gmail reconnect was canceled.',
       tone: 'info',
       liveRole: 'status',
     },

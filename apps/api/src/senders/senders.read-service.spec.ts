@@ -15,6 +15,11 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
+import {
+  grantedAiConsentInsert,
+  PLAIN_STALE_CLAIM,
+  plainVolumeExplanation,
+} from '@declutrmail/shared/ai-consent';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -48,7 +53,11 @@ async function seedMailbox(db: Db, label: string): Promise<string> {
     });
   const [user] = await db
     .insert(users)
-    .values({ workspaceId: ws!.id, email: `${label}@declutrmail.ai` })
+    .values({
+      workspaceId: ws!.id,
+      email: `${label}@declutrmail.ai`,
+      ...grantedAiConsentInsert(),
+    })
     .returning({ id: users.id });
   const [mailbox] = await db
     .insert(mailboxAccounts)
@@ -214,10 +223,22 @@ describe('SendersReadService', () => {
     const select = vi.spyOn(db, 'select');
     const detail = await svc.getSenderDetail(mailboxId, sender.id);
     expect(detail?.protectionFlags.protectionEvidenceCurrent).toBe(true);
-    expect(select).toHaveBeenCalledTimes(1);
+    // Detail is one sender query plus the consent lookup. The extra select
+    // is the user's consent row, not an outbound-mail probe.
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(
+      select.mock.calls.filter(
+        (args) =>
+          args[0] !== undefined &&
+          typeof args[0] === 'object' &&
+          args[0] !== null &&
+          'aiConsentVersion' in args[0],
+      ),
+    ).toHaveLength(1);
     select.mockClear();
     await svc.listSenders({ mailboxAccountId: mailboxId, category: null, cursor: null, limit: 10 });
-    expect(select).toHaveBeenCalledTimes(1);
+    // List is one sender query plus the same consent lookup as detail.
+    expect(select).toHaveBeenCalledTimes(2);
     select.mockRestore();
   });
 
@@ -654,8 +675,10 @@ describe('SendersReadService', () => {
       expect(archivedDetail!.unreadInboxCount).toBe(0);
       // The actual list/detail SQL should scan the positive Inbox set
       // once for both exact counts, instead of revisiting its unread subset.
-      expect(queries).toHaveLength(3);
-      for (const query of queries)
+      // Detail also reads the consent row; that query is not an inbox scan.
+      const inboxScans = queries.filter((query) => query.includes("AND 'INBOX' = ANY("));
+      expect(inboxScans).toHaveLength(3);
+      for (const query of inboxScans)
         expect([...query.matchAll(/AND 'INBOX' = ANY\(/g)].length).toBe(1);
 
       // Cleanup changes labels immediately, before the received counter's recount.
@@ -1571,6 +1594,33 @@ describe('SendersReadService', () => {
         });
       });
 
+      it('does not return model provenance on the list before explanations consent', async () => {
+        const a = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'reviewed-revoked@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        await seedTriageDecision(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          verdict: 'archive',
+          generatedBy: 'llm_haiku',
+          producedAt: new Date('2026-05-10T15:30:00Z'),
+        });
+        await db
+          .update(users)
+          .set({ aiExplanationsRevokedAt: new Date('2026-10-11T12:00:00Z') })
+          .where(eq(users.email, 'a@declutrmail.ai'));
+
+        const rows = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          cursor: null,
+          limit: 10,
+        });
+        expect(rows[0]!.lastReview?.generatedBy).toBe('template');
+      });
+
       it('does not leak a decision from another mailbox when sender_key collides', async () => {
         // Cross-mailbox safety — the lastReview subqueries use the
         // same outer-scope qualification as the timeseries reads.
@@ -1837,6 +1887,38 @@ describe('SendersReadService', () => {
           scoredAt: producedAt.toISOString(),
           stale: false,
         });
+        expect(detail!.lastReview?.generatedBy).toBe('llm_haiku');
+      });
+
+      it('replaces stored model prose on the next read after explanations are revoked', async () => {
+        const model = 'You read every message from this sender.';
+        const a = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'revoked-prose@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        await db.insert(triageDecisions).values({
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          verdict: 'keep',
+          confidence: '0.88',
+          reasoning: model,
+          generatedBy: 'llm_haiku',
+          producedAt: new Date('2026-05-20T10:00:00Z'),
+          expiresAt: new Date('2026-05-27T10:00:00Z'),
+        });
+        await db
+          .update(users)
+          .set({ aiExplanationsRevokedAt: new Date('2026-10-11T12:00:00Z') })
+          .where(eq(users.email, 'a@declutrmail.ai'));
+
+        const detail = await svc.getSenderDetail(mailboxId, a.id);
+        expect(detail!.recommendation?.generatedBy).toBe('template');
+        expect(detail!.lastReview?.generatedBy).toBe('template');
+        expect(detail!.recommendation?.reasoning).not.toBe(model);
+        expect(detail!.recommendation?.reasoning).toBe(
+          plainVolumeExplanation({ name: 'This sender', last90Count: 0, readRate: null }),
+        );
       });
 
       it('does not pair an old measured rate claim with a currently unknown read rate', async () => {
@@ -1857,9 +1939,7 @@ describe('SendersReadService', () => {
         const detail = await svc.getSenderDetail(mailboxId, a.id);
 
         expect(detail?.readRate).toBeNull();
-        expect(detail?.recommendation?.reasoning).toBe(
-          'No mail arrived from this sender in the last 90 days, so marked-read activity is not measurable yet.',
-        );
+        expect(detail?.recommendation?.reasoning).toBe(PLAIN_STALE_CLAIM);
       });
 
       /**
