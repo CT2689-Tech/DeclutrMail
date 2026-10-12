@@ -1,8 +1,7 @@
 # Read-only Paddle catalog drift (WS1b A5).
 #
-# A missing PADDLE_READONLY_API_KEY fails closed (UNVERIFIED). A failed
-# run uses the same GitHub failed-workflow notification channel as the
-# cron-stale watchdog. This workflow never writes to Paddle.
+# An empty PADDLE_READONLY_API_KEY skips the comparison and exits 0.
+# A real mismatch still fails the run. This workflow never writes to Paddle.
 
 name: Billing catalog drift
 
