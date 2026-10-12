@@ -26,11 +26,17 @@ describe('PricingStory', () => {
     expect(plusCard).toHaveTextContent('a year');
     expect(plusCard?.textContent).not.toMatch(/a year a year/);
 
-    const feature = within(passCard!).getByText('No monthly limit for 30 days');
-    expect(
-      within(passCard!).getByText('The Screener and Autopilot while it lasts'),
-    ).toBeInTheDocument();
-    expect(feature.closest('li')?.querySelector('svg')).not.toBeNull();
+    const passLines = [
+      'No monthly limit for 30 days',
+      'The Screener and Autopilot while it lasts',
+      'Buy again any time to add 30 more days',
+      'Then you’re back on Free. Email you cleared stays where you put it.',
+    ];
+    const items = within(passCard!).getAllByRole('listitem');
+    expect(items.map((item) => item.textContent)).toEqual(passLines);
+    expect(passCard?.textContent).not.toContain('{passDays}');
+    expect(passCard?.textContent).not.toContain('{freeName}');
+    expect(items[0]?.querySelector('svg')).not.toBeNull();
 
     const promise = screen.getByTestId('price-promise');
     const refunds = within(promise).getAllByText(/14-day money-back on any purchase/);

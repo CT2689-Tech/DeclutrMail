@@ -16,6 +16,7 @@ import {
   suggestedWindowPreset,
   termsPastDue,
 } from './copy';
+import { WS1_COPY } from '../copy/launch';
 import { POLICY } from './pricing.config';
 
 describe('isPricingV2', () => {
@@ -129,8 +130,30 @@ describe('pricing story builders', () => {
     const markdown = renderPricingMarkdown(true);
     expect(markdown).toContain('1,000 emails cleared a month');
     expect(markdown).toContain('Backlog Pass');
-    expect(markdown).toContain('No monthly limit for 30 days');
-    expect(markdown).toContain('The Screener and Autopilot while it lasts');
+    expect(WS1_COPY['pricing.pass.features']).toEqual([
+      'No monthly limit for 30 days',
+      'The Screener and Autopilot while it lasts',
+      'Buy again any time to add {passDays} more days',
+      'Then you’re back on {freeName}. Email you cleared stays where you put it.',
+    ]);
+    const passBlock = markdown.slice(
+      markdown.indexOf('## Backlog Pass'),
+      markdown.indexOf('## Plus'),
+    );
+    const passLines = [
+      '- No monthly limit for 30 days',
+      '- The Screener and Autopilot while it lasts',
+      '- Buy again any time to add 30 more days',
+      '- Then you’re back on Free. Email you cleared stays where you put it.',
+    ];
+    let cursor = -1;
+    for (const line of passLines) {
+      const at = passBlock.indexOf(line);
+      expect(at).toBeGreaterThan(cursor);
+      cursor = at;
+    }
+    expect(passBlock).not.toContain('{passDays}');
+    expect(passBlock).not.toContain('{freeName}');
     expect(markdown).not.toContain('No monthly limit while it lasts');
     expect(markdown).not.toContain('Autopilot and Autopilot');
     expect(renderPricingMarkdown(false)).not.toContain('## Backlog Pass');

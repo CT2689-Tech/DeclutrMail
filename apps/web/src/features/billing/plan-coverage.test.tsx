@@ -78,8 +78,20 @@ describe('PlanCoverage', () => {
     auth.me.pricingV2 = true;
     render(<PlanCoverage tier="plus" pass />);
     const coverage = screen.getByRole('region', { name: 'Your plan includes' });
-    expect(coverage).toHaveTextContent('No monthly limit for 30 days');
-    expect(coverage).toHaveTextContent('The Screener and Autopilot while it lasts');
+    const passLines = [
+      'No monthly limit for 30 days',
+      'The Screener and Autopilot while it lasts',
+      'Buy again any time to add 30 more days',
+      'Then you’re back on Free. Email you cleared stays where you put it.',
+    ];
+    let cursor = -1;
+    for (const line of passLines) {
+      const at = coverage.textContent?.indexOf(line) ?? -1;
+      expect(at).toBeGreaterThan(cursor);
+      cursor = at;
+    }
+    expect(coverage.textContent).not.toContain('{passDays}');
+    expect(coverage.textContent).not.toContain('{freeName}');
     expect(coverage.textContent).not.toContain('Unlimited cleanup');
   });
 });

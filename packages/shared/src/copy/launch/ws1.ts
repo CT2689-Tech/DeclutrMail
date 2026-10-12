@@ -39,6 +39,8 @@ export const WS1_COPY = {
   'pricing.pass.features': [
     'No monthly limit for 30 days',
     'The Screener and Autopilot while it lasts',
+    'Buy again any time to add {passDays} more days',
+    'Then you\u2019re back on {freeName}. Email you cleared stays where you put it.',
   ],
   'pricing.pass.cta': 'Get {passName}',
   'pricing.plus.name': '{plusName}',
