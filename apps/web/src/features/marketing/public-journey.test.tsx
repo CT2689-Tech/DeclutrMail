@@ -8,7 +8,7 @@ import { ProductJourney } from './landing/product-journey';
 import { AuthEntry } from './auth-entry/auth-entry';
 import { permissionEntryUrl } from './landing/urls';
 import { ArticlePage } from './learn/article-page';
-import { HelpPage } from '@/app/(marketing)/help/help-surface';
+import HelpPage from '@/app/(marketing)/help/page';
 import { FAQ_ENTRIES } from './learn/faq-content';
 import { GLOSSARY_TERMS } from '@/features/help/glossary-content';
 import { HOW_TO_ARTICLES } from './learn/how-to-content';
@@ -149,8 +149,8 @@ describe('truthful Watch first activation guidance', () => {
     expect(guide).not.toMatch(/Every preset begins in|After seven days, you review/);
   });
 
-  it('uses the same visible mode name in Help, FAQ, articles and the stable glossary anchor', () => {
-    const help = text(renderToStaticMarkup(<HelpPage />));
+  it('uses the same visible mode name in Help, FAQ, articles and the stable glossary anchor', async () => {
+    const help = text(renderToStaticMarkup(await HelpPage()));
     expect(help).toContain('Watch first and Active');
     const content = JSON.stringify([FAQ_ENTRIES, HOW_TO_ARTICLES, ANSWER_ARTICLES, BLOG_ARTICLES]);
     expect(content).not.toMatch(/Observe (?:mode|only|before)|in Observe|begins in Observe/);

@@ -21,6 +21,7 @@
  *      and NO page still shows a "Pending confirmation" marker.
  */
 
+import { createElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import {
@@ -34,9 +35,17 @@ import { fillStory, POLICY, refundLine } from '@declutrmail/shared/entitlements'
 import { storeConsent } from '@/lib/cookie-consent';
 
 import PrivacyPolicyPage from './privacy/page';
-import { TermsOfServicePage } from './terms/terms-surface';
-import { RefundPolicyPage } from './refunds/refund-policy-surface';
+import TermsOfServicePage from './terms/page';
+import RefundPolicyPage from './refunds/page';
 import CookiePreferencesPage from './cookies/page';
+
+/** Async routes resolve launch flags before render; sync pages stay components. */
+async function pageElement(
+  Page: React.ComponentType | (() => Promise<ReactElement>),
+): Promise<ReactElement> {
+  if (Page.constructor.name === 'AsyncFunction') return (Page as () => Promise<ReactElement>)();
+  return createElement(Page as React.ComponentType);
+}
 
 const { trackSpy } = vi.hoisted(() => ({
   trackSpy: vi.fn().mockResolvedValue(undefined),
@@ -70,32 +79,32 @@ afterEach(() => {
 });
 
 describe.each(PAGES)('$name — D146', ({ Page, heading, page }) => {
-  it('renders without any fetch and without a QueryClient (D134)', () => {
+  it('renders without any fetch and without a QueryClient (D134)', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
-    render(<Page />);
+    render(await pageElement(Page));
     expect(screen.getByRole('heading', { level: 1, name: heading })).toBeInTheDocument();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('emits page_viewed exactly once on mount (D159)', () => {
-    render(<Page />);
+  it('emits page_viewed exactly once on mount (D159)', async () => {
+    render(await pageElement(Page));
     expect(trackSpy.mock.calls).toEqual([['page_viewed', { page, mailbox_id: null }]]);
   });
 
-  it('stamps a last-updated date', () => {
-    render(<Page />);
+  it('stamps a last-updated date', async () => {
+    render(await pageElement(Page));
     expect(screen.getByText(/Last updated: \d{4}-\d{2}-\d{2}/)).toBeInTheDocument();
   });
 
-  it('carries no "Pending confirmation" marker (D121/D148 confirmed 2026-07-08)', () => {
-    const { container } = render(<Page />);
+  it('carries no "Pending confirmation" marker (D121/D148 confirmed 2026-07-08)', async () => {
+    const { container } = render(await pageElement(Page));
     expect(container.textContent).not.toContain('Pending confirmation');
   });
 });
 
 describe('/refunds content — D121 canonical refund terms', () => {
-  it('states the 30-day money-back guarantee on every paid plan, refunded in full', () => {
-    const { container } = render(<RefundPolicyPage />);
+  it('states the 30-day money-back guarantee on every paid plan, refunded in full', async () => {
+    const { container } = render(await pageElement(RefundPolicyPage));
     const text = container.textContent ?? '';
     expect(text).toContain('30-day money-back guarantee');
     expect(text).toContain(`${REFUNDS_PAGE_WINDOW_DAYS}-day money-back guarantee`);
@@ -106,33 +115,33 @@ describe('/refunds content — D121 canonical refund terms', () => {
     expect(text).not.toMatch(/pro[- ]rata/i);
   });
 
-  it('carries the fair-use terms: once per customer, bulk-consume decline, statutory rights intact', () => {
-    const { container } = render(<RefundPolicyPage />);
+  it('carries the fair-use terms: once per customer, bulk-consume decline, statutory rights intact', async () => {
+    const { container } = render(await pageElement(RefundPolicyPage));
     const text = container.textContent ?? '';
     expect(text).toContain('once per customer');
     expect(text).toMatch(/consumed in bulk/);
     expect(text).toMatch(/Statutory refund rights/);
   });
 
-  it('routes refunds through the original payment provider (Paddle / Razorpay)', () => {
-    const { container } = render(<RefundPolicyPage />);
+  it('routes refunds through the original payment provider (Paddle / Razorpay)', async () => {
+    const { container } = render(await pageElement(RefundPolicyPage));
     const text = container.textContent ?? '';
     expect(text).toContain('Paddle');
     expect(text).toContain('Razorpay');
     expect(text).toMatch(/original payment method/);
   });
 
-  it('keeps the flags-off spelling in the refund-versus-cancel sentence', () => {
+  it('keeps the flags-off spelling in the refund-versus-cancel sentence', async () => {
     vi.stubEnv('PRICING_V2', '');
-    const { container } = render(<RefundPolicyPage />);
+    const { container } = render(await pageElement(RefundPolicyPage));
     expect(container.textContent).toContain('differs from cancelling');
   });
 });
 
 describe('/refunds content — launch window', () => {
-  it('fills every window sentence from POLICY.refundWindowDays', () => {
+  it('fills every window sentence from POLICY.refundWindowDays', async () => {
     vi.stubEnv('PRICING_V2', 'true');
-    const { container } = render(<RefundPolicyPage />);
+    const { container } = render(await pageElement(RefundPolicyPage));
     const text = (container.textContent ?? '').replace(/\s+/g, ' ');
     const days = POLICY.refundWindowDays;
     const windowLabel = fillStory(WS1_COPY['refunds.toc.window']);
@@ -150,15 +159,15 @@ describe('/refunds content — launch window', () => {
 });
 
 describe('/terms content — D121 governing law confirmed', () => {
-  it('keeps anchored section headings below the sticky public header', () => {
-    render(<TermsOfServicePage />);
+  it('keeps anchored section headings below the sticky public header', async () => {
+    render(await pageElement(TermsOfServicePage));
     expect(
       screen.getByRole('heading', { level: 2, name: '1. The service' }).closest('section'),
     ).toHaveStyle({ scrollMarginTop: '88px' });
   });
 
-  it('states India governing law with exclusive jurisdiction of the Mumbai courts', () => {
-    const { container } = render(<TermsOfServicePage />);
+  it('states India governing law with exclusive jurisdiction of the Mumbai courts', async () => {
+    const { container } = render(await pageElement(TermsOfServicePage));
     const text = container.textContent ?? '';
     expect(text).toContain('governed by the laws of India');
     expect(text).toContain('Mumbai');

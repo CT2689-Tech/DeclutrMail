@@ -13,10 +13,10 @@ import { renderLlmsTxt } from '@/features/marketing/llms/llms-document';
 import { FaqPage } from '@/features/marketing/learn/index-pages';
 import { installFetchStub } from '@/test/fetch-stub';
 
-import { HelpPage } from './help/help-surface';
+import HelpPage from './help/page';
 import LandingPage from './page';
 import { GET as pricingMarkdown } from './pricing.md/route';
-import { RefundPolicyPage } from './refunds/refund-policy-surface';
+import RefundPolicyPage from './refunds/page';
 
 vi.mock('@/lib/posthog', () => ({ track: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
@@ -50,7 +50,7 @@ describe('refund window with PRICING_V2 on', () => {
     const markdown = await (await pricingMarkdown()).text();
     assertLaunchWindow(markdown);
 
-    const help = render(<HelpPage />);
+    const help = render(await HelpPage());
     const helpText = help.container.textContent ?? '';
     expect(helpText).not.toMatch(legacyRefundPattern());
     expect(helpText).toContain(`within ${days} days`);
@@ -62,7 +62,7 @@ describe('refund window with PRICING_V2 on', () => {
     expect(faqText).toContain(`within ${days} days`);
     faq.unmount();
 
-    const refunds = render(<RefundPolicyPage />);
+    const refunds = render(await RefundPolicyPage());
     assertLaunchWindow(refunds.container.textContent ?? '');
     expect(refunds.container.textContent).toContain(`within ${days} days`);
     refunds.unmount();
