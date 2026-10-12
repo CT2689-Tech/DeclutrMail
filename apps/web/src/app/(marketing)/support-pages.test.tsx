@@ -24,7 +24,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
-import { fillWs3, gatedText, WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { gatedText } from '@declutrmail/shared/copy/launch';
 import { storeConsent } from '@/lib/cookie-consent';
 
 import HelpPage from './help/page';

@@ -28,12 +28,7 @@ import {
   PRIVACY_STORAGE_ITEMS,
   PRIVACY_NEVER_ITEMS,
 } from '@declutrmail/shared';
-import {
-  fillWs3,
-  gatedText,
-  REFUNDS_PAGE_WINDOW_DAYS,
-  WS3_COPY,
-} from '@declutrmail/shared/copy/launch';
+import { gatedText, REFUNDS_PAGE_WINDOW_DAYS } from '@declutrmail/shared/copy/launch';
 import { storeConsent } from '@/lib/cookie-consent';
 
 import PrivacyPolicyPage from './privacy/page';
