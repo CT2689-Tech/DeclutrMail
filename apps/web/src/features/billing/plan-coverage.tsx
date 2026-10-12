@@ -45,11 +45,17 @@ export function PlanCoverage({ tier }: { tier: TierId }) {
         </p>
       ) : null}
       <div>
-        {meteredFree
-          ? fillStory(WS1_COPY['meter.freeAllowanceLine'])
-          : plan.cleanupActionsPerMonth === null
-            ? 'Unlimited cleanup. One cleanup action counts one sender acted on, not one email. Keep and Unarchive do not use this allowance.'
-            : `${plan.cleanupActionsPerMonth} cleanup actions per month. One cleanup action counts one sender acted on, not one email. Keep and Unarchive do not use this allowance.`}
+        {meteredFree ? (
+          fillStory(WS1_COPY['meter.freeAllowanceLine'])
+        ) : (
+          <>
+            {plan.cleanupActionsPerMonth === null
+              ? 'Unlimited cleanup'
+              : `${plan.cleanupActionsPerMonth} cleanup actions per month`}
+            . One cleanup action counts one sender acted on, not one email. Keep and Unarchive do
+            not use this allowance.
+          </>
+        )}
       </div>
       <nav
         aria-label="Included tools"
