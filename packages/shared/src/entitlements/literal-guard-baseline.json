@@ -232,17 +232,17 @@
   {
     "file": "apps/web/src/features/triage/action-preview-detail.test.tsx",
     "match": "cleanup action",
-    "count": 6
+    "count": 8
   },
   {
     "file": "apps/web/src/features/triage/action-preview-presentation.tsx",
     "match": "cleanup action",
-    "count": 2
+    "count": 3
   },
   {
     "file": "apps/web/src/features/triage/action-sheet.test.tsx",
     "match": "cleanup action",
-    "count": 6
+    "count": 8
   },
   {
     "file": "apps/web/src/features/triage/action-sheet.tsx",
@@ -283,6 +283,11 @@
     "file": "apps/web/src/features/triage/triage-screen.test.tsx",
     "match": "cleanup action",
     "count": 1
+  },
+  {
+    "file": "apps/web/src/features/triage/unsubscribe-meter.test.tsx",
+    "match": "cleanup action",
+    "count": 2
   },
   {
     "file": "apps/web/src/lib/bulk-action-copy.ts",
