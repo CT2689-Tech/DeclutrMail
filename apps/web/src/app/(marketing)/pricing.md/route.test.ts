@@ -47,6 +47,7 @@ describe('/pricing.md — machine-readable pricing', () => {
     const markdown = await body();
     expect(markdown).toContain('published base plan prices');
     expect(markdown).toContain('not a confirmed renewal charge');
+    expect(markdown).not.toContain('You can pay with UPI');
     expect(markdown).toMatch(/INR prices appear only for price points\s+provisioned/);
     expect(markdown).not.toMatch(/amounts checkout charges|India visitor is quoted and charged/);
   });
@@ -171,6 +172,7 @@ describe('/pricing.md — machine-readable pricing', () => {
     expect(markdown).toContain('$19 once');
     expect(markdown).not.toContain('$9/mo');
     expect(markdown).not.toContain('$90/yr');
+    expect(markdown).not.toContain('You can pay with UPI');
     vi.unstubAllEnvs();
   });
 
