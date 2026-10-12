@@ -1,8 +1,8 @@
-/** WS3 copy. Values equal deck/ws3.json (drop2-r15). */
+/** WS3 copy. Values equal deck/ws3.json (drop2-r18). */
 export const WS3_COPY = {
   _meta: {
-    revision: 'drop2-r15',
-    issued: '2026-10-11T17:01:00-07:00',
+    revision: 'drop2-r18',
+    issued: '2026-10-11T21:04:00-07:00',
     section: 'ws3',
   },
   'ws3.home.title': 'Clean up Gmail, one sender at a time — DeclutrMail',
@@ -303,11 +303,11 @@ export const WS3_COPY = {
   'ws3.security.ai.intro':
     'DeclutrMail uses Anthropic, an AI company, in two places. Neither one receives full email contents or attachments.',
   'ws3.security.ai.explanations':
-    'Suggestion explanations, on every plan including {freeName}: only after you allow it on the AI consent card, DeclutrMail can send Anthropic the sender’s name and email domain, the suggested choice and the rule behind it, how much they email you and how much of it is marked read, and their Gmail category, to write a one- or two-sentence reason for a suggestion. It never includes subject lines, preview snippets or email contents. Until you allow it, or if you turn it off, explanations are written from our rules without AI.',
+    'Suggestion explanations, on every plan including {freeName}: only after you allow it in the app, DeclutrMail can send Anthropic the sender’s name and email domain, the suggested choice and the rule behind it, how much they email you and how much of it is marked read, and their Gmail category, to write a one- or two-sentence reason for a suggestion. It never includes subject lines, preview snippets or email contents. Until you allow it, or if you turn it off, explanations are written from our rules without AI.',
   'ws3.security.ai.control':
     'You can turn AI off any time in Settings → AI. Explanations then go back to our rules, and the {BRIEF_NAME} to its basic version.',
   'ws3.security.ai.brief':
-    '{BRIEF_NAME} (coming with {proName}): to write your summary, DeclutrMail can send Anthropic the sender, subject line and Gmail’s preview snippet of each email it covers, only after you allow it on the same AI consent card. If you don’t allow it, you get a basic version written without AI.',
+    '{BRIEF_NAME} (part of {proName}; waitlist only for new accounts): to write your summary, DeclutrMail can send Anthropic the sender, subject line and Gmail’s preview snippet of each email it covers, only after you allow it in the app. If you don’t allow it, you get a basic version written without AI.',
   'ws3.security.ai.training':
     'We don’t use your email to train AI models. Anthropic sets its own retention and training terms: {anthropicRetention}',
   'ws3.security.ai.limitedUse':
@@ -322,17 +322,17 @@ export const WS3_COPY = {
   'ws3.methodology.briefBody.preGate':
     'For existing {proName} accounts, DeclutrMail can send the sender, subject line, and Gmail preview snippet to Anthropic to draft the {BRIEF_NAME}. Full email contents, attachments, embedded images, and raw email source are not sent. If Anthropic is unavailable, DeclutrMail uses a standard summary.',
   'ws3.methodology.briefBody':
-    'Only after you allow it on the AI consent card, DeclutrMail can send the sender, subject line, and Gmail preview snippet to Anthropic to draft your {BRIEF_NAME}. Full email contents, attachments, embedded images, and raw email source are not sent. If you don’t allow it, turn it off in Settings → AI, or Anthropic is unavailable, DeclutrMail uses a standard summary written without AI.',
+    'Only after you allow it in the app, DeclutrMail can send the sender, subject line, and Gmail preview snippet to Anthropic to draft your {BRIEF_NAME}. Full email contents, attachments, embedded images, and raw email source are not sent. If you don’t allow it, turn it off in Settings → AI, or Anthropic is unavailable, DeclutrMail uses a standard summary written without AI.',
   'ws3.methodology.briefCaption': 'What the {BRIEF_NAME} sends to Anthropic',
   'ws3.methodology.explanations':
-    'On every plan, if you allow AI on the consent card, Anthropic may turn the selected sender facts into a short explanation. It receives the sender’s name and domain, the suggested choice and the rule behind it, and the facts behind it, including their Gmail category. It does not receive subject lines, preview snippets, or full email contents for this explanation. Until you allow it, if you turn it off in Settings → AI, or if Anthropic is unavailable, DeclutrMail shows an explanation written from its rules.',
+    'On every plan, if you allow AI in the app, Anthropic may turn the selected sender facts into a short explanation. It receives the sender’s name and domain, the suggested choice and the rule behind it, and the facts behind it, including their Gmail category. It does not receive subject lines, preview snippets, or full email contents for this explanation. Until you allow it, if you turn it off in Settings → AI, or if Anthropic is unavailable, DeclutrMail shows an explanation written from its rules.',
   'ws3.privacy.ai.title': 'AI processing',
   'ws3.privacy.ai.who':
     'We use Anthropic, PBC to generate short pieces of text in two features. Anthropic processes this data on our instructions to provide those features.',
   'ws3.privacy.ai.explanations':
-    'Suggestion explanations (every plan, including {freeName}). We may send the sender’s display name and email domain, the suggested choice and how confident the rule is, the rule’s name, the numbers behind it (monthly email volume and the share you marked read), and the Gmail category. We send these only after you allow AI on the consent card in the app, and you can turn it off in Settings → AI; until then, explanations are written from our rules. We never send subject lines, preview snippets, email contents or attachments for this feature.',
+    'Suggestion explanations (every plan, including {freeName}). We may send the sender’s display name and email domain, the suggested choice and how confident the rule is, the rule’s name, the numbers behind it (monthly email volume and the share you marked read), and the Gmail category. We send these only after you allow AI in the app, and you can turn it off in Settings → AI; until then, explanations are written from our rules. We never send subject lines, preview snippets, email contents or attachments for this feature.',
   'ws3.privacy.ai.brief':
-    '{BRIEF_NAME} (part of {proName}). Only after you allow it on the same AI consent card, we may send the sender, subject line and Gmail preview snippet of each email the {BRIEF_NAME} covers, plus the counts needed to write it. We never send full email contents, email HTML, attachments, embedded images or raw email source. If you don’t allow it, or you turn it off later in Settings → AI, your {BRIEF_NAME} is written without AI.',
+    '{BRIEF_NAME} (part of {proName}; waitlist only for new accounts). Only after you allow it in the app, we may send the sender, subject line and Gmail preview snippet of each email the {BRIEF_NAME} covers, plus the counts needed to write it. We never send full email contents, email HTML, attachments, embedded images or raw email source. If you don’t allow it, or you turn it off later in Settings → AI, your {BRIEF_NAME} is written without AI.',
   'ws3.privacy.ai.retention': '{anthropicRetention}',
   'ws3.privacy.ai.training':
     'We do not use Gmail data to train generalized artificial-intelligence or machine-learning models. Anthropic sets its own retention and training terms.',

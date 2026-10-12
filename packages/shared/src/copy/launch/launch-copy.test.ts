@@ -17,4 +17,16 @@ describe('launch copy deck snapshots', () => {
   it('fails when a module drifts from the deck section', () => {
     expect(() => expectMatchesDeck('ws1', { extra: 'not in the deck' })).toThrow();
   });
+
+  it('pins the drop2-r18 trash sentences', () => {
+    expect(WS2_COPY.dialog.delete.footer).toBe(
+      'Undo from Activity for 30 days. Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash.',
+    );
+    expect(WS2_COPY.home.nextLargest.body).toBe(
+      'About {size} of email (Gmail’s estimates). Archiving doesn’t change storage. Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash.',
+    );
+    expect(WS4_COPY.email.weekly.trust).toBe(
+      'Nothing was deleted permanently. Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash.',
+    );
+  });
 });

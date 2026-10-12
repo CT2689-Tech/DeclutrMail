@@ -94,7 +94,7 @@
       },
       "titleBulk": "Delete {n} emails from {k} senders?",
       "lead": "They move to Gmail Trash. Future email is unchanged.",
-      "footer": "Undo from Activity for 30 days. Gmail keeps Trash for up to 30 days unless you empty it.",
+      "footer": "Undo from Activity for 30 days. Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash.",
       "button": {
         "one": "Delete 1 email",
         "other": "Delete {n} emails"
@@ -240,7 +240,7 @@
         "one": "Your largest sender",
         "other": "Your {k} largest senders"
       },
-      "body": "About {size} of email (Gmail’s estimates). Archiving doesn’t change storage. Deleting moves email to Gmail Trash, which Gmail empties after 30 days.",
+      "body": "About {size} of email (Gmail’s estimates). Archiving doesn’t change storage. Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash.",
       "cta": "See largest senders"
     },
     "nextLaterDue": {
@@ -382,6 +382,7 @@
     },
     "reask": "Updated",
     "settings": {
+      "title": "AI",
       "label": {
         "all": "Use AI to explain suggestions",
         "withBrief": "Use AI for explanations and my {BRIEF_NAME}"

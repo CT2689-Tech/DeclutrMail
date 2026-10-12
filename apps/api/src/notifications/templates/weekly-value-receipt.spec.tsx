@@ -1,3 +1,4 @@
+import { WS4_COPY } from '@declutrmail/shared/copy/launch';
 import type { WeeklyValueReceiptFacts } from '@declutrmail/workers';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -43,9 +44,10 @@ describe('weekly-value-receipt', () => {
     // D189's load-bearing trust line, stated as the checkable guarantee
     // it is: Delete adds Gmail's TRASH label and nothing calls Gmail's
     // permanent messages.delete.
-    expect(email.text).toContain(
-      'Nothing was deleted permanently. Delete moves email to Gmail Trash, where Gmail keeps it for up to 30 days unless you empty it.',
+    expect(WS4_COPY.email.weekly.trust).toBe(
+      'Nothing was deleted permanently. Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash.',
     );
+    expect(email.text).toContain(WS4_COPY.email.weekly.trust);
     expect(email.text).toContain('Go to Home: https://app.declutrmail.com/home?');
     expect(email.text).toContain('from=weekly');
     expect(email.text).toContain('See the detail: https://app.declutrmail.com/activity?');

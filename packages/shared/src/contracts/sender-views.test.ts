@@ -19,6 +19,7 @@ const VIEW: SavedSenderView = {
     domain: null,
     unsubIgnored: false,
     hasInboxMail: false,
+    mostlyUnread: false,
   },
   sort: 'total',
   direction: 'desc',
@@ -38,6 +39,16 @@ describe('parseSenderViews', () => {
     const inboxView = { ...VIEW, compose: { ...VIEW.compose, hasInboxMail: true } };
     expect(SenderViewsPutSchema.safeParse({ views: [inboxView] }).success).toBe(true);
     expect(parseSenderViews({ senderViews: [inboxView] })).toEqual([inboxView]);
+  });
+
+  it('accepts the mostly-unread filter and defaults it off', () => {
+    const on = { ...VIEW, compose: { ...VIEW.compose, mostlyUnread: true } };
+    expect(SenderViewsPutSchema.safeParse({ views: [on] }).success).toBe(true);
+    expect(parseSenderViews({ senderViews: [on] })).toEqual([on]);
+    const { mostlyUnread: _removed, ...older } = on.compose;
+    expect(parseSenderViews({ senderViews: [{ ...VIEW, compose: older }] })).toEqual([
+      { ...on, compose: { ...older, mostlyUnread: false } },
+    ]);
   });
 
   it('degrades a missing / malformed key to [] without throwing', () => {
