@@ -54,6 +54,8 @@ import {
   backingStatusNote,
   complimentaryNote,
   currentPlanPriceLabel,
+  currentPlanTitle,
+  passCoversPlan,
   deriveBillingViewState,
   emptyPlanView,
   formatBillingDate,
@@ -865,7 +867,7 @@ export function BillingScreen({
           the picker. Withheld while a money action is unresolved — the
           portal can start a payment, and arming two money paths at once
           is the double-charge case this screen is built around. */}
-      <PlanCoverage tier={plan.entitlementTier} />
+      <PlanCoverage tier={plan.entitlementTier} pass={passCoversPlan(plan)} />
 
       {!billingDark && paymentMethodSub && paymentMethodSub.status !== 'past_due' ? (
         <PaymentMethodCard
@@ -1549,7 +1551,7 @@ function CurrentPlanCard({
               color: color.fg,
             }}
           >
-            {manifest.name}
+            {currentPlanTitle(plan)}
           </span>
           <span
             style={{

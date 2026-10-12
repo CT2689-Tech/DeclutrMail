@@ -74,7 +74,7 @@ export function quotedPlanPrice(
  */
 export function launchPlusQuote(provider: BillingProviderId = 'paddle'): string {
   if (provider === 'razorpay') return priceLine(PLUS_ANNUAL_2026_10, 'inr');
-  return `${plusAmount('usd')}/yr`;
+  return fillStory(WS1_COPY['price.plusLine']);
 }
 
 /**
@@ -482,6 +482,9 @@ export function currentPlanPriceLabel(view: BillingPlanView): string {
     );
   }
   if (view.entitlementTier === 'free') return formatUsd(0);
+  // A Backlog Pass is a paid grant, not a complimentary one. The deck
+  // names it and prices it once; "Complimentary" is only a comp.
+  if (passCoversPlan(view)) return fillStory(WS1_COPY['price.passLine']);
   // A comp is the reason there is no price, so say so instead of the
   // generic line. Only when the grant reaches the tier being named: a
   // comped Plus sitting on a paid-but-non-backing Pro row is not a
@@ -491,6 +494,19 @@ export function currentPlanPriceLabel(view: BillingPlanView): string {
     return 'Complimentary';
   }
   return 'Included with your account';
+}
+
+/** Headline plan name. A Pass that is the plan is the Pass, not Plus. */
+export function currentPlanTitle(view: BillingPlanView): string {
+  if (passCoversPlan(view)) return fillStory(WS1_COPY['planName.pass']);
+  return TIER_MANIFEST[view.entitlementTier].name;
+}
+
+/** The live grant is a Backlog Pass and it is the plan on the card. */
+export function passCoversPlan(view: BillingPlanView): boolean {
+  const grant = view.complimentary;
+  if (grant?.source !== 'pass' || view.backing.state !== 'none') return false;
+  return TIER_RANK[grant.tier] >= tierRank(view);
 }
 
 function tierRank(view: BillingPlanView): number {

@@ -19,6 +19,7 @@ const auth = vi.hoisted(() => ({
     cleanupResetsAt: '2026-11-09T00:00:00.000Z',
     cleanupLimit: null as number | null,
     meterV2: false,
+    pricingV2: false,
   },
 }));
 
@@ -35,6 +36,7 @@ describe('PlanCoverage', () => {
   beforeEach(() => {
     auth.me.tier = 'free';
     auth.me.meterV2 = false;
+    auth.me.pricingV2 = false;
     auth.me.cleanupLimit = null;
     auth.me.cleanupRemaining = 1000;
   });
@@ -58,14 +60,26 @@ describe('PlanCoverage', () => {
     expect(coverage.textContent).not.toContain(UNIT);
   });
 
-  it('keeps unlimited cleanup on Plus while the email meter is on', () => {
+  it('uses the r19 unlimited line on Plus when launch pricing is on', () => {
     auth.me.tier = 'plus';
     auth.me.meterV2 = true;
+    auth.me.pricingV2 = true;
     auth.me.cleanupLimit = null;
     auth.me.cleanupRemaining = null;
     render(<PlanCoverage tier="plus" />);
     const coverage = screen.getByRole('region', { name: 'Your plan includes' });
-    expect(coverage).toHaveTextContent(`Unlimited cleanup. One ${UNIT} counts one sender acted on`);
-    expect(coverage.textContent?.match(new RegExp(UNIT, 'g'))).toHaveLength(1);
+    expect(coverage).toHaveTextContent('No monthly limit');
+    expect(coverage.textContent).not.toContain(UNIT);
+    expect(coverage.textContent).not.toContain('Unlimited cleanup');
+  });
+
+  it('uses the r19 Pass lines when the Pass is the plan', () => {
+    auth.me.tier = 'plus';
+    auth.me.pricingV2 = true;
+    render(<PlanCoverage tier="plus" pass />);
+    const coverage = screen.getByRole('region', { name: 'Your plan includes' });
+    expect(coverage).toHaveTextContent('No monthly limit for 30 days');
+    expect(coverage).toHaveTextContent('The Screener and Autopilot while it lasts');
+    expect(coverage.textContent).not.toContain('Unlimited cleanup');
   });
 });

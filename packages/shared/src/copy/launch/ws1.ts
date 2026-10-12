@@ -1,6 +1,6 @@
 /**
- * WS1 copy from the launch deck. Promo lines use the r19 wording
- * ("Launch offer"). Tokens stay in the string; formatters fill them.
+ * WS1 copy from the launch deck. Promo lines and the Pass feature
+ * list use the r19 wording. Tokens stay in the string; formatters fill them.
  */
 export const WS1_COPY = {
   'meter.noun.one': '1 email',
@@ -37,10 +37,8 @@ export const WS1_COPY = {
   'pricing.pass.priceSuffix': 'once',
   'pricing.pass.renewal': 'Never renews',
   'pricing.pass.features': [
-    'Everything in {plusName} for {passDays} days',
-    'No monthly limit while it lasts',
-    'Buy again any time to add {passDays} more days',
-    'Then you\u2019re back on {freeName}. Email you cleared stays where you put it.',
+    'No monthly limit for 30 days',
+    'The Screener and Autopilot while it lasts',
   ],
   'pricing.pass.cta': 'Get {passName}',
   'pricing.plus.name': '{plusName}',

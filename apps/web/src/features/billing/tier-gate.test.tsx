@@ -103,7 +103,7 @@ describe('TierGate', () => {
     mockTier = 'free';
     mockPricingV2 = true;
     renderGate('screener');
-    expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$59\/yr$/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$59 a year$/ })).toHaveAttribute(
       'href',
       `/billing?plan=plus&cycle=annual&${RETURN_TO}`,
     );

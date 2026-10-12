@@ -26,7 +26,10 @@ describe('PricingStory', () => {
     expect(plusCard).toHaveTextContent('a year');
     expect(plusCard?.textContent).not.toMatch(/a year a year/);
 
-    const feature = within(passCard!).getByText('Everything in Plus for 30 days');
+    const feature = within(passCard!).getByText('No monthly limit for 30 days');
+    expect(
+      within(passCard!).getByText('The Screener and Autopilot while it lasts'),
+    ).toBeInTheDocument();
     expect(feature.closest('li')?.querySelector('svg')).not.toBeNull();
 
     const promise = screen.getByTestId('price-promise');

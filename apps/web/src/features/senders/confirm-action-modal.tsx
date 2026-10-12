@@ -1495,7 +1495,16 @@ export function ConfirmActionModal({
             ? // Swap confirm for a truthful upgrade action when the quota
               // cannot cover this click — routed through the same upgrade
               // gate the server's 402 uses.
-              { label: 'Upgrade for unlimited cleanup', onClick: reportQuotaShort }
+              {
+                label: emailMeter
+                  ? fillStory(
+                      auth?.me.passEnabled === true
+                        ? WS1_COPY['cap.pass.button']
+                        : WS1_COPY['cap.plus.button'],
+                    )
+                  : 'Upgrade for unlimited cleanup',
+                onClick: reportQuotaShort,
+              }
             : {
                 // Not `busyLabel`: PreviewSheet locks Cancel, Esc and the
                 // backdrop while busy, and this sheet must keep them LIVE

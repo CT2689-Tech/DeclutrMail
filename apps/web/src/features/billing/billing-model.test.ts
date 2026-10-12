@@ -19,6 +19,7 @@ import {
   BillingPayloadError,
   complimentaryNote,
   currentPlanPriceLabel,
+  currentPlanTitle,
   deriveBillingViewState,
   emptyPlanView,
   formatBillingDate,
@@ -369,6 +370,18 @@ describe('complimentary comps', () => {
     if (view.kind !== 'plan') throw new Error('expected plan');
     return view;
   }
+
+  it('names an active Pass instead of calling it complimentary', () => {
+    const view = comped('plus', {
+      tier: 'plus',
+      expiresAt: '2026-11-12T00:00:00.000Z',
+      source: 'pass',
+    });
+    expect(currentPlanTitle(view)).toBe('Backlog Pass');
+    expect(currentPlanPriceLabel(view)).toBe('$19 once');
+    expect(currentPlanPriceLabel(view)).not.toBe('Complimentary');
+    expect(complimentaryNote(view)).toContain('Backlog Pass');
+  });
 
   it('names the comp instead of the generic no-price line', () => {
     const view = comped('pro', { tier: 'pro', expiresAt: null });

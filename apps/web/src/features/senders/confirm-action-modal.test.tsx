@@ -293,6 +293,29 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     meterSummary.current = undefined;
   });
 
+  it('uses the deck confirm when the email meter cannot cover the clear', () => {
+    meterSummary.current = {
+      metered: true,
+      limit: 1000,
+      used: 999,
+      remaining: 1,
+      resetAt: '2026-11-09T00:00:00.000Z',
+    };
+    render(
+      <ConfirmActionModal
+        request={request('Archive')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Get Plus' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Upgrade for unlimited cleanup/ }),
+    ).not.toBeInTheDocument();
+    meterSummary.current = undefined;
+  });
+
   it('states quota usage when the action fits, from server-supplied numbers (A3)', () => {
     render(
       <ConfirmActionModal

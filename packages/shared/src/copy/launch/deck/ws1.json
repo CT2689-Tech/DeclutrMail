@@ -31,10 +31,8 @@
   "pricing.pass.priceSuffix": "once",
   "pricing.pass.renewal": "Never renews",
   "pricing.pass.features": [
-    "Everything in {plusName} for {passDays} days",
-    "No monthly limit while it lasts",
-    "Buy again any time to add {passDays} more days",
-    "Then you’re back on {freeName}. Email you cleared stays where you put it."
+    "No monthly limit for 30 days",
+    "The Screener and Autopilot while it lasts"
   ],
   "pricing.pass.cta": "Get {passName}",
   "pricing.plus.name": "{plusName}",

@@ -157,7 +157,7 @@ describe('AutopilotEntitlementSurface — safe pre-upgrade value', () => {
       </QueryClientProvider>,
     );
     expect(
-      await screen.findByRole('link', { name: /upgrade to plus · \$59\/yr/i }),
+      await screen.findByRole('link', { name: /upgrade to plus · \$59 a year/i }),
     ).toHaveAttribute('href', '/billing?plan=plus&cycle=annual');
     expect(screen.queryByRole('link', { name: /\$9\/mo/i })).not.toBeInTheDocument();
   });

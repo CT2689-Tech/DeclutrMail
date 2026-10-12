@@ -181,10 +181,12 @@ describe('UpgradeModal', () => {
       screen.getAllByText(/14-day money-back on any purchase, once per customer/),
     ).toHaveLength(1);
     expect(screen.queryByText(/30-day money-back guarantee/)).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$59\/yr$/ })).toHaveAttribute(
+    expect(screen.getByText('Unsubscribe, Keep, Later and Undo stay free.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Get Plus' })).toHaveAttribute(
       'href',
       '/billing?plan=plus&cycle=annual&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
     );
+    expect(screen.getByText('$59 a year · no monthly limit')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /\$9\/mo/ })).not.toBeInTheDocument();
   });
 
@@ -196,7 +198,7 @@ describe('UpgradeModal', () => {
     });
     render(<UpgradeModal />);
 
-    expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$59\/yr$/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$59 a year$/ })).toHaveAttribute(
       'href',
       '/billing?plan=plus&cycle=annual&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
     );
@@ -244,6 +246,7 @@ describe('UpgradeModal', () => {
       screen.getByText('Only emails older than 30 days, within your free total'),
     ).toBeInTheDocument();
     expect(screen.getByText('$59 a year · no monthly limit')).toBeInTheDocument();
+    expect(screen.getByText('Unsubscribe, Keep, Later and Undo stay free.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Get Plus' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Clear what fits free' }));
     expect(useUpgradeGateStore.getState().pendingWindowPreset).toBe(30);

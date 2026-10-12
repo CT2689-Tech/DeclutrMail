@@ -108,11 +108,21 @@ export function UpgradeModal() {
     cycle: checkoutCycle,
     ...(from ? { from } : {}),
   });
-  const upgradeLabel = `Upgrade to ${TIER_MANIFEST[targetPlan].name}`;
+  const freeCap = hit.reason === 'free_cap' ? hit.details : null;
+  const meteredCap = freeCap !== null && typeof freeCap.requested === 'number';
+  // The emails-cleared popup already uses deck buttons. This is the
+  // other free-cap confirm, whose old label was not a deck string.
+  const limitConfirmLabel =
+    pricingV2 && freeCap !== null && !meteredCap
+      ? fillStory(passEnabled ? WS1_COPY['cap.pass.button'] : WS1_COPY['cap.plus.button'])
+      : null;
+  const upgradeLabel = limitConfirmLabel ?? `Upgrade to ${TIER_MANIFEST[targetPlan].name}`;
   const targetQuote =
-    pricingV2 && targetPlan === 'plus'
-      ? launchPlusQuote(regionProvider)
-      : quotedPlanPrice(targetPlan, 'monthly', regionProvider);
+    limitConfirmLabel !== null
+      ? null
+      : pricingV2 && targetPlan === 'plus'
+        ? launchPlusQuote(regionProvider)
+        : quotedPlanPrice(targetPlan, 'monthly', regionProvider);
 
   return (
     // The PreviewSheet grammar and classes — a centred dialog on desktop,
@@ -210,6 +220,19 @@ export function UpgradeModal() {
             <>Disconnect an account from the account menu to connect a different one.</>
           )}
         </p>
+        {hit.reason === 'free_cap' && (pricingV2 || meteredCap) ? (
+          <p
+            style={{
+              fontSize: text.md,
+              color: color.fgSoft,
+              margin: `${space[2]}px 0 0`,
+              lineHeight: 1.45,
+              maxWidth: '34ch',
+            }}
+          >
+            {WS1_COPY['cap.free.line']}
+          </p>
+        ) : null}
 
         <div
           style={{
@@ -345,6 +368,13 @@ export function UpgradeModal() {
                   </span>
                 ) : null}
               </Link>
+              {limitConfirmLabel !== null ? (
+                <span style={{ fontSize: text.sm, color: color.fgMuted }}>
+                  {fillStory(
+                    passEnabled ? WS1_COPY['cap.pass.sublabel'] : WS1_COPY['cap.plus.sublabel'],
+                  )}
+                </span>
+              ) : null}
               <Button tone="ghost" size="lg" onClick={dismiss} style={{ width: '100%' }}>
                 Not now
               </Button>

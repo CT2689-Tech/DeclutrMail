@@ -5,7 +5,12 @@ import linkStyles from './billing-links.module.css';
 import Link from 'next/link';
 import { tokens } from '@declutrmail/shared';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
-import { fillStory, TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
+import {
+  fillStory,
+  fillStoryList,
+  TIER_MANIFEST,
+  type TierId,
+} from '@declutrmail/shared/entitlements';
 import { useOptionalAuth } from '@/features/auth/auth-provider';
 import { useTier } from '@/features/auth/api/use-tier';
 import { useCleanupSummary } from './use-cleanup-summary';
@@ -21,8 +26,8 @@ const tools = [
   ['followups', '/followups', 'Follow-ups'],
 ] as const;
 
-export function PlanCoverage({ tier }: { tier: TierId }) {
-  const { connectedInboxes } = useTier();
+export function PlanCoverage({ tier, pass = false }: { tier: TierId; pass?: boolean }) {
+  const { connectedInboxes, pricingV2 } = useTier();
   const cleanupSummary = useCleanupSummary();
   const plan = TIER_MANIFEST[tier];
   const meteredFree = tier === 'free' && cleanupSummary.data?.metered === true;
@@ -47,6 +52,12 @@ export function PlanCoverage({ tier }: { tier: TierId }) {
       <div>
         {meteredFree ? (
           fillStory(WS1_COPY['meter.freeAllowanceLine'])
+        ) : pricingV2 && pass ? (
+          fillStoryList(WS1_COPY['pricing.pass.features']).map((line) => (
+            <div key={line}>{line}</div>
+          ))
+        ) : pricingV2 && plan.cleanupActionsPerMonth === null ? (
+          WS1_COPY['pricing.plus.features'][0]
         ) : (
           <>
             {plan.cleanupActionsPerMonth === null

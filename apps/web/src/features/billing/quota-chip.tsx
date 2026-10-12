@@ -39,6 +39,7 @@ export function QuotaChip(props: {
       >
         {line.text}
       </span>
+      {' \u00b7 '}
       <a
         href={`/billing?from=${encodeURIComponent(from)}`}
         onClick={() => {
