@@ -170,6 +170,11 @@ const { color, font, motion, text } = tokens;
  */
 export const ACTION_OVERDUE_MS = 120_000;
 
+/** The report card does not take the first-landing slot. */
+function noteReportResolved(shown: boolean) {
+  void shown;
+}
+
 /**
  * FE verb labels → PostHog closed-union verb tokens. Keeps the
  * 'bulk_action_taken' event's `verb` field schema-aligned with the
@@ -747,7 +752,6 @@ function SendersScreenContent({
   // readiness value it didn't enumerate.
   const mailboxSyncFailed = activeMailbox?.readiness === 'failed';
   const mailboxNeedsReconnect = activeMailbox?.needsReconnect === true;
-  const [reportShown, setReportShown] = useState(false);
   const showFirstCleanupNudge = shouldShowFirstCleanupNudge({
     mailboxReady: activeMailbox?.readiness === 'ready',
     hasCompletedCleanup,
@@ -2747,12 +2751,22 @@ function SendersScreenContent({
             </div>
           )}
 
-          {me.activeMailboxId && (
-            <InboxReportFirstLanding mailboxId={me.activeMailboxId} onResolved={setReportShown} />
-          )}
+          {actionMailboxId && activeMailbox?.readiness === 'ready' ? (
+            <InboxReportFirstLanding
+              mailboxId={actionMailboxId}
+              {...(activeMailbox.email ? { mailboxEmail: activeMailbox.email } : {})}
+              onResolved={noteReportResolved}
+            />
+          ) : null}
           <FirstLandingSlot
             candidates={[
-              { id: 'inbox_report', ready: reportShown, node: null },
+              {
+                id: 'inbox_report',
+                // The report is the card above this slot. A ready null node
+                // would hide the first-cleanup nudge without rendering anything.
+                ready: false,
+                node: null,
+              },
               {
                 id: 'first_backlog_header',
                 // The list payload has no exact backlog count paired with an

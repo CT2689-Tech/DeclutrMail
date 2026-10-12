@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import type postgres from 'postgres';
 
 import { expectScreenMounted } from '../helpers/screen-ready';
@@ -24,6 +24,11 @@ const NO_LINK_SENDER = {
   key: 'd4ee'.repeat(16),
   name: 'No Link Digest',
 } as const;
+
+/** Warn and danger confirms are alertdialogs. Archive confirms stay dialogs. */
+function confirmSheet(page: Page) {
+  return page.getByRole('dialog').or(page.getByRole('alertdialog'));
+}
 
 const ARCHIVE_TOAST =
   /Unsubscribe requested · Archived \d+ emails?|Archived \d+ emails? · Unsubscribe failed:/;
@@ -143,7 +148,7 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
     .getByRole('button', { name: 'Unsubscribe (U)' })
     .click();
 
-  const triageSheet = page.getByRole('dialog');
+  const triageSheet = confirmSheet(page);
   await expect(triageSheet).toBeVisible();
   await expect(triageSheet).toContainText('Whether their email stops is up to the sender.');
   await expect(triageSheet).toContainText(/Future emails:/);
@@ -236,7 +241,7 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
   await expect(card).toBeVisible({ timeout: 30_000 });
   await card.getByRole('button', { name: 'More actions' }).click();
   await card.getByRole('menuitem', { name: 'Unsubscribe', exact: true }).click();
-  const sendersSheet = page.getByRole('dialog');
+  const sendersSheet = confirmSheet(page);
   await expect(sendersSheet).toBeVisible();
   await expect(sendersSheet).toContainText('Whether their email stops is up to the sender.');
   await sendersSheet.getByRole('radio', { name: /Unsubscribe and delete/ }).click();
@@ -266,7 +271,7 @@ test('an email-only sender opens the mailto handoff and does not claim a draft',
   await expect(card).toBeVisible({ timeout: 30_000 });
   await card.getByRole('button', { name: 'More actions' }).click();
   await card.getByRole('menuitem', { name: 'Unsubscribe', exact: true }).click();
-  const sheet = page.getByRole('dialog');
+  const sheet = confirmSheet(page);
   await expect(sheet).toContainText('prefilled email');
   await expect(sheet).not.toContainText(/Gmail draft/i);
   await sheet.getByRole('radio', { name: 'Unsubscribe only' }).click();
@@ -305,7 +310,7 @@ test('a sender with no unsubscribe link reports the failure', async ({ page }) =
   await expect(item).toBeVisible();
   await expect(item).toContainText('No unsubscribe channel found');
   await expect(item).toHaveAttribute('aria-disabled', 'true');
-  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(confirmSheet(page)).toHaveCount(0);
   expect(posts).toEqual([]);
 });
 
@@ -335,7 +340,7 @@ test('a spent monthly allowance refuses the mail move before any unsubscribe', a
     await expect(card).toBeVisible({ timeout: 30_000 });
     await card.getByRole('button', { name: 'More actions' }).click();
     await card.getByRole('menuitem', { name: 'Unsubscribe', exact: true }).click();
-    const sheet = page.getByRole('dialog');
+    const sheet = confirmSheet(page);
     const archive = sheet.getByRole('radio', { name: /Unsubscribe and archive \d+/ });
     await expect(archive).toBeEnabled();
     await archive.click();
