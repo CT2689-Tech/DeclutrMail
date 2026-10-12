@@ -45,6 +45,7 @@ import {
   type VerbTone,
 } from '@declutrmail/shared/actions';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
+import { isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
 import { InlineFeedback } from '@/features/feedback/inline-feedback';
 import { ApiError } from '@/lib/api/client';
@@ -1979,7 +1980,7 @@ function ActivityRow({
         <span data-row-result style={{ color: resultColor }}>
           {verbLabel}
         </span>
-        {row.affectedCount > 0 && (
+        {row.affectedCount > 0 && !row.combinedUnsubscribe && (
           <span
             style={{
               ...numeralStyle,
@@ -2816,6 +2817,15 @@ function activityRowActionLabel(row: ActivityRowWire): string {
   // (QA-activity-20260918-06).
   if (row.reviewOutcome === 'skipped' || row.reviewOutcome === 'protected') {
     return ACTIVITY_REVIEW_OUTCOME_ROW_LABELS[row.reviewOutcome];
+  }
+  if (row.combinedUnsubscribe && (row.action === 'archive' || row.action === 'delete')) {
+    const forms =
+      row.action === 'delete' ? WS5_COPY['f1.activity.row.delete'] : WS5_COPY['f1.activity.row'];
+    if (isPluralCopy(forms)) {
+      return pluralCopy(forms, row.affectedCount, {
+        n: row.affectedCount.toLocaleString('en-US'),
+      });
+    }
   }
   return sharedActivityActionLabel(row.action, row.executionState);
 }

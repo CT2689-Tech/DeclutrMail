@@ -75,6 +75,28 @@ describe('HeardFromPrompt', () => {
     expect(await screen.findByTestId('heard-from-prompt')).toBeInTheDocument();
   });
 
+  it('hides while a delete confirmation is open', async () => {
+    storeConsent('all');
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'alertdialog');
+    document.body.appendChild(dialog);
+    renderPrompt();
+    expect(screen.queryByTestId('heard-from-prompt')).not.toBeInTheDocument();
+    dialog.remove();
+    expect(await screen.findByTestId('heard-from-prompt')).toBeInTheDocument();
+  });
+
+  it('hides while an unsubscribe sheet is open', async () => {
+    storeConsent('all');
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    document.body.appendChild(dialog);
+    renderPrompt();
+    expect(screen.queryByTestId('heard-from-prompt')).not.toBeInTheDocument();
+    dialog.remove();
+    expect(await screen.findByTestId('heard-from-prompt')).toBeInTheDocument();
+  });
+
   it('does not ask a user who already answered', () => {
     storeConsent('all');
     me.current = meWithPrompt(false);

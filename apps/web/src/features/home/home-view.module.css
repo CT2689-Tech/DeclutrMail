@@ -115,6 +115,9 @@
   padding: 28px clamp(16px, 3vw, 40px) 40px;
   font-family: var(--dm-font-sans);
 }
+.reportSlot {
+  margin-bottom: 24px;
+}
 .header {
   display: flex;
   justify-content: space-between;

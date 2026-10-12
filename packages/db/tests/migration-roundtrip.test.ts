@@ -111,6 +111,7 @@ describe('migration round-trip', () => {
       'table:domain_icons',
       'table:entitlement_grants',
       'table:followup_tracker',
+      'table:inbox_report_cache',
       'table:mail_messages',
       'table:mailbox_accounts',
       'table:mailbox_data_deletion_requests',

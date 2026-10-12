@@ -49,18 +49,21 @@ export function HomeScreen() {
   if (!hasActiveMailbox || isMailboxScopeConflict(summary.error)) return <NoActiveMailbox />;
 
   return (
-    <HomeView
-      state={resolve()}
-      tier={tier}
-      workflows={workflows}
-      timeZone={me.user.timezone ?? 'UTC'}
-      visitSummary={<HomeArrivals />}
-      quota={
-        cleanupRemaining !== null
-          ? `${cleanupRemaining.toLocaleString('en-US')} cleanup actions left${cleanupResetsAt ? ` · resets ${new Date(cleanupResetsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: me.user.timezone ?? 'UTC' })}` : ''}`
-          : undefined
-      }
-    />
+    <>
+      <HomeView
+        state={resolve()}
+        tier={tier}
+        workflows={workflows}
+        timeZone={me.user.timezone ?? 'UTC'}
+        mailboxId={me.activeMailboxId}
+        visitSummary={<HomeArrivals />}
+        quota={
+          cleanupRemaining !== null
+            ? `${cleanupRemaining.toLocaleString('en-US')} cleanup actions left${cleanupResetsAt ? ` · resets ${new Date(cleanupResetsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: me.user.timezone ?? 'UTC' })}` : ''}`
+            : undefined
+        }
+      />
+    </>
   );
 
   function resolve(): HomeState {

@@ -30,6 +30,7 @@
     "./hooks/use-long-press": "./src/hooks/use-long-press.ts",
     "./ids": "./src/ids/branded.ts",
     "./ai-consent": "./src/ai-consent/index.ts",
+    "./inbox-report": "./src/inbox-report/index.ts",
     "./analytics/product-events": "./src/analytics/product-events.ts",
     "./copy/launch": "./src/copy/launch/index.ts",
     "./copy/legal-entity": "./src/copy/legal-entity.ts",

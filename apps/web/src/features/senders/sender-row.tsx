@@ -32,6 +32,7 @@ import { useCallback, useRef, useState, type MouseEvent } from 'react';
 import type * as React from 'react';
 import Link from 'next/link';
 import { Avatar, Pill, tokens } from '@declutrmail/shared';
+import { senderSizeCell } from './sender-size';
 import { derivePrimaryVerbId, legacyVerbFromId, SenderActionRow } from './action-row';
 import { isStandingProtected, senderAddressLine, type ActionRequest, type Sender } from './data';
 import { RowCheckbox } from './row-checkbox';
@@ -189,6 +190,7 @@ export function SenderRow({
   const activity = useRowActivity(s.id);
   const busy = isRowBusy(activity);
   const addressLine = senderAddressLine(s);
+  const sizeCell = senderSizeCell(s.sizeBytes);
   const unsub =
     s.policyType === 'unsubscribe'
       ? unsubscribeStatusCopy(s.unsubStatus, s.unsubscribeMethod)
@@ -329,6 +331,11 @@ export function SenderRow({
         >
           {addressLine}
         </span>
+        {sizeCell && (
+          <span data-testid="sender-size-cell" style={{ fontSize: text.sm, color: color.fgMuted }}>
+            {sizeCell}
+          </span>
+        )}
         {!compact && evidence}
       </div>
 

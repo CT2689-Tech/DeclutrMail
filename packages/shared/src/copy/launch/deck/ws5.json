@@ -1,1 +1,288 @@
-{}
+{
+  "f1.segment.unsubOnly": "Unsubscribe only",
+  "f1.segment.archive": {
+    "one": "+ Archive 1",
+    "other": "+ Archive {n}"
+  },
+  "f1.segment.archive.aria": {
+    "one": "Unsubscribe and archive 1 email",
+    "other": "Unsubscribe and archive {n} emails"
+  },
+  "f1.segment.delete": {
+    "one": "+ Delete 1",
+    "other": "+ Delete {n}"
+  },
+  "f1.segment.delete.aria": {
+    "one": "Unsubscribe and delete 1 email",
+    "other": "Unsubscribe and delete {n} emails"
+  },
+  "f1.segment.archive.loading": "+ Archive",
+  "f1.segment.archive.loading.aria": "Unsubscribe and archive, counting emails",
+  "f1.segment.delete.loading": "+ Delete",
+  "f1.segment.delete.loading.aria": "Unsubscribe and delete, counting emails",
+  "f1.title.unsubOnly": "Unsubscribe from {Sender}?",
+  "f1.title.archive": {
+    "one": "Unsubscribe from {Sender} and archive 1 email?",
+    "other": "Unsubscribe from {Sender} and archive {n} emails?"
+  },
+  "f1.title.delete": {
+    "one": "Unsubscribe from {Sender} and delete 1 email?",
+    "other": "Unsubscribe from {Sender} and delete {n} emails?"
+  },
+  "f1.title.bulk.unsubOnly": {
+    "one": "Unsubscribe from 1 sender?",
+    "other": "Unsubscribe from {k} senders?"
+  },
+  "f1.title.bulk.archive": {
+    "one": "Unsubscribe from 1 sender and archive {emailCount}?",
+    "other": "Unsubscribe from {k} senders and archive {emailCount}?"
+  },
+  "f1.title.bulk.delete": {
+    "one": "Unsubscribe from 1 sender and delete {emailCount}?",
+    "other": "Unsubscribe from {k} senders and delete {emailCount}?"
+  },
+  "f1.part.emails": {
+    "one": "1 email",
+    "other": "{n} emails"
+  },
+  "f1.selection.allProtected": {
+    "one": "{Sender} is Protected. Remove its Protected status to include it.",
+    "other": "All {k} selected senders are Protected. Remove their Protected status to include them."
+  },
+  "f1.selection.someProtected": {
+    "one": "1 selected sender is Protected and will be left as it is.",
+    "other": "{k} selected senders are Protected and will be left as they are."
+  },
+  "f1.preview.future": "Future emails: we’ll send {Sender} a one-click unsubscribe request.",
+  "f1.preview.future.mailto": "Future emails: we’ll open a prefilled email in Gmail for you to send to {Sender}.",
+  "f1.preview.future.none": "Future emails: {Sender} has no unsubscribe link, so we can’t send a request.",
+  "f1.preview.backlog.archive": {
+    "one": "1 email you already have: moved out of Inbox (Archive)",
+    "other": "{n} emails you already have: moved out of Inbox (Archive)"
+  },
+  "f1.preview.backlog.delete": {
+    "one": "1 email you already have: moved to Gmail Trash (Delete)",
+    "other": "{n} emails you already have: moved to Gmail Trash (Delete)"
+  },
+  "f1.preview.backlog.loading": "Counting the email you already have…",
+  "f1.preview.backlog.unsubOnly": "Email you already have stays where it is.",
+  "f1.preview.bulkMore": {
+    "one": "and 1 more sender",
+    "other": "and {k} more senders"
+  },
+  "f1.preview.bulkRow": {
+    "one": "{Sender}: 1 email",
+    "other": "{Sender}: {n} emails"
+  },
+  "f1.honesty.archive": "The unsubscribe request can’t be recalled once delivered. The archive can be undone from Activity for 30 days.",
+  "f1.honesty.delete": "The unsubscribe request can’t be recalled once delivered. The delete can be undone from Activity for 30 days.",
+  "f1.honesty.unsubOnly": "Once the request is delivered, it can’t be recalled.",
+  "f1.footer": "Whether their email stops is up to the sender.",
+  "f1.deleteNote": "Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash.",
+  "f1.button.unsubOnly": "Unsubscribe",
+  "f1.button.archive": "Unsubscribe + Archive",
+  "f1.button.delete": "Unsubscribe + Delete",
+  "f1.button.unsubOnly.protected": "Unsubscribe anyway",
+  "f1.button.archive.protected": "Unsubscribe + Archive anyway",
+  "f1.button.delete.protected": "Unsubscribe + Delete anyway",
+  "f1.protected.lead": "{Sender} is Protected because {reason}.",
+  "f1.protected.leadNoReason": "{Sender} is Protected.",
+  "f1.button.cancel": "Cancel",
+  "f1.meterFree": "Unsubscribing is free and doesn’t count.",
+  "f1.toast.both.archive": {
+    "one": "Unsubscribe requested · Archived 1 email",
+    "other": "Unsubscribe requested · Archived {n} emails"
+  },
+  "f1.toast.both.delete": {
+    "one": "Unsubscribe requested · Deleted 1 email",
+    "other": "Unsubscribe requested · Deleted {n} emails"
+  },
+  "f1.toast.unsubFailed.archive": {
+    "one": "Archived 1 email · Unsubscribe failed: {reason}",
+    "other": "Archived {n} emails · Unsubscribe failed: {reason}"
+  },
+  "f1.toast.unsubFailed.delete": {
+    "one": "Deleted 1 email · Unsubscribe failed: {reason}",
+    "other": "Deleted {n} emails · Unsubscribe failed: {reason}"
+  },
+  "f1.toast.mailto": "The email is ready in Gmail. Press Send there to finish.",
+  "f1.toast.mailto.withMove.archive": {
+    "one": "Archived 1 email. To finish unsubscribing, press Send on the email that’s ready in Gmail.",
+    "other": "Archived {n} emails. To finish unsubscribing, press Send on the email that’s ready in Gmail."
+  },
+  "f1.toast.mailto.withMove.delete": {
+    "one": "Deleted 1 email. To finish unsubscribing, press Send on the email that’s ready in Gmail.",
+    "other": "Deleted {n} emails. To finish unsubscribing, press Send on the email that’s ready in Gmail."
+  },
+  "f1.reason.noLink": "no unsubscribe link",
+  "f1.reason.senderError": "the sender’s system didn’t respond",
+  "f1.reason.generic": "something went wrong",
+  "f1.reason.paused": "unsubscribe requests are paused right now",
+  "f1.reason.inFlight": "an earlier request to this sender is still on its way",
+  "f1.reason.notFound": "this sender is no longer found in your Gmail account",
+  "f1.reason.skipped": "the sender is Protected, so nothing was sent",
+  "f1.reason.skipped.notFound": "the sender is no longer found, so nothing was sent",
+  "f1.toast.unsub.skipped": {
+    "one": "No unsubscribe sent: 1 sender is Protected, so it was left as it is.",
+    "other": "No unsubscribe sent: {n} senders are Protected, so they were left as they are."
+  },
+  "f1.toast.unsub.skipped.plain": {
+    "one": "No unsubscribe sent. That sender was left as it is.",
+    "other": "No unsubscribe sent. Those {n} senders were left as they are."
+  },
+  "f1.toast.unsub.skipped.notFound": {
+    "one": "No unsubscribe sent: 1 sender is no longer found, so it was left as it is.",
+    "other": "No unsubscribe sent: {n} senders are no longer found, so they were left as they are."
+  },
+  "f1.toast.bulkSkipped": {
+    "one": "1 Protected sender left as it is",
+    "other": "{k} Protected senders left as they are"
+  },
+  "f1.toast.bulkSkipped.notFound": {
+    "one": "1 sender no longer found, left as it is",
+    "other": "{k} senders no longer found, left as they are"
+  },
+  "f1.toast.part.unsub": {
+    "one": "Unsubscribe requested from 1 sender",
+    "other": "Unsubscribe requested from {m} senders"
+  },
+  "f1.toast.part.archived": {
+    "one": "Archived 1 email",
+    "other": "Archived {n} emails"
+  },
+  "f1.toast.part.deleted": {
+    "one": "Deleted 1 email",
+    "other": "Deleted {n} emails"
+  },
+  "f1.toast.bulk": "Unsubscribe requested from {m} senders · Archived {n} emails",
+  "f1.toast.bulk.delete": {
+    "one": "Unsubscribe requested from {m} senders · Deleted 1 email",
+    "other": "Unsubscribe requested from {m} senders · Deleted {n} emails"
+  },
+  "f1.toast.bulkFailed": {
+    "one": "1 unsubscribe failed",
+    "other": "{k} unsubscribes failed"
+  },
+  "f1.activity.row": {
+    "one": "Unsubscribe requested · Archived 1 email",
+    "other": "Unsubscribe requested · Archived {n} emails"
+  },
+  "f1.activity.row.delete": {
+    "one": "Unsubscribe requested · Deleted 1 email",
+    "other": "Unsubscribe requested · Deleted {n} emails"
+  },
+  "report.eyebrow": "Your Inbox Report",
+  "report.basis": "Based on {total} emails in {mailboxEmail}",
+  "report.window.90d": "Last 90 days",
+  "report.window.all": "All your email",
+  "report.window.trash": "In Gmail Trash now",
+  "report.mostlyUnread.headline": {
+    "one": "{pct}% of the email you got in the last 90 days came from 1 sender you mostly leave unread.",
+    "other": "{pct}% of the email you got in the last 90 days came from {n} senders you mostly leave unread."
+  },
+  "report.mostlyUnread.headline.all": "All of the email you got in the last 90 days came from {n} senders you mostly leave unread.",
+  "report.mostlyUnread.support": {
+    "one": "It had less than 10% of its email marked read in Gmail in that time.",
+    "other": "Each had less than 10% of its email marked read in Gmail in that time."
+  },
+  "report.mostlyUnread.sweeper": {
+    "one": "1 email marked read by another tool isn’t counted as read.",
+    "other": "{k} emails marked read by another tool aren’t counted as read."
+  },
+  "report.glyph": "about {n} in 10",
+  "report.people": "{pct}% of your email comes from people you’ve written to.",
+  "report.largeMail": {
+    "one": "About {size} of your email is in 1 message over 5 MB.",
+    "other": "About {size} of your email is in {count} messages over 5 MB."
+  },
+  "report.largeMail.top10": "Your 10 largest senders take up about {size} of your email.",
+  "report.sizesNote": "Sizes are Gmail’s estimates.",
+  "report.thirdParty": {
+    "one": "1 email (about {size}) is filed under a {Vendor} label in your Gmail.",
+    "other": "{count} emails (about {size}) are filed under {Vendor} labels in your Gmail."
+  },
+  "report.thirdParty.detail": "{Vendor} created these labels. The email is still in your Gmail and still counts toward your Google storage. Email it marked read isn’t counted as read in this report.",
+  "report.thirdParty.recent": "{recent} arrived in the last 90 days.",
+  "report.yearsDeep": "Your email goes back to {year}. {pct}% of it is more than 3 years old.",
+  "report.top10": "{pct}% of your email comes from just 10 senders.",
+  "report.trash": "About {size} is in Gmail Trash. It still counts toward your Google storage until it leaves Trash: Gmail deletes it for good after 30 days, or sooner if you empty Trash.",
+  "report.fallback": {
+    "one": "Your inbox is in good shape. {total} emails, and 1 sender that might be worth a look.",
+    "other": "Your inbox is in good shape. {total} emails, and {k} senders that might be worth a look."
+  },
+  "report.fallback.zero": "Your inbox is in good shape. {total} emails, and nothing stands out yet.",
+  "report.fallback.cta": {
+    "one": "Show that sender",
+    "other": "Show those {k} senders"
+  },
+  "report.trust": "This report uses only the sender, date, size, labels and read/unread status of your email, plus who you’ve emailed. We never fetch or store full email contents.",
+  "report.trust.link": "What we store and share",
+  "report.fix.heading": {
+    "one": "1 of these senders includes an unsubscribe link.",
+    "other": "{n} of these senders include an unsubscribe link."
+  },
+  "report.fix.primary": {
+    "one": "Unsubscribe + archive 1 sender",
+    "other": "Unsubscribe + archive {n} senders"
+  },
+  "report.fix.review": "Review them first",
+  "report.fix.notNow": "Not now",
+  "report.fix.cost": {
+    "one": "Archiving 1 email uses 1 of your {remaining} free emails left this month. Unsubscribing is free.",
+    "other": "Archiving {count} emails uses {count} of your {remaining} free emails left this month. Unsubscribing is free."
+  },
+  "report.celebrate.archive": "Archived {X} emails from {n} senders.",
+  "report.celebrate.archive.one": "Archived {X} emails from 1 sender.",
+  "report.celebrate.delete": "Moved {count} emails (about {size}) to Gmail Trash.",
+  "report.celebrate.delete.note": "It still counts toward your Google storage until it leaves Trash. Gmail deletes it for good after 30 days, or sooner if you empty Trash.",
+  "report.celebrate.unsub": {
+    "one": "Unsubscribe requested from 1 sender",
+    "other": "Unsubscribe requested from {m} senders"
+  },
+  "report.celebrate.unsubManual": {
+    "one": "1 needs you to send an email",
+    "other": "{k} need you to send an email"
+  },
+  "report.celebrate.undo": "Undo restores the archived email for 30 days. Unsubscribe requests can’t be recalled.",
+  "report.celebrate.undo.button": "Undo",
+  "report.storageNote": "Archived email stays in Gmail, so your storage doesn’t change. To free space, delete instead.",
+  "report.upgrade.lead": "{remaining_backlog} more emails from these senders are still in your inbox. {freeName} covers {allowance} emails a month.",
+  "report.upgrade.lead.zero": "You’ve used this month’s {allowance} free emails.",
+  "report.upgrade.pass": "Get {passName}",
+  "report.upgrade.pass.sub": "{passPrice} once · {passDays} days of {plusName} to clear older email · doesn’t renew",
+  "report.upgrade.plusLink": "Or {plusName}, {plusPrice} a year: no monthly limit, up to {plusInboxes} {CONNECTION_TERM_PLURAL}, and the Screener collects new senders for review.",
+  "report.upgrade.plus.passOff": "Get {plusName}",
+  "report.upgrade.plus.passOff.sub": "{plusPrice} a year · no monthly limit · up to {plusInboxes} {CONNECTION_TERM_PLURAL}",
+  "report.upgrade.free": "Or keep going on {freeName}: {allowance} more on {resetDate}. Unsubscribe stays free and unlimited.",
+  "report.upgrade.refund": "{refundDays}-day money-back on any purchase, once per customer.",
+  "report.close.aria": "Close Inbox Report",
+  "report.reopen.strip": "Your Inbox Report",
+  "report.reopen.button": "Reopen",
+  "report.home.title": "Your Inbox Report",
+  "report.home.body": "A quick look at who sends you the most, what you leave unread and what takes up space.",
+  "report.home.cta": "Open report",
+  "report.error": "Couldn’t load your Inbox Report. Try again in a moment.",
+  "report.loading": "Putting your Inbox Report together…",
+  "f2.sort": "Largest senders",
+  "f2.cell": "≈ {size}",
+  "f2.detail": "Email from {Sender} takes up about {size} in your Gmail.",
+  "f2.note": "Deleted email sits in Gmail Trash and keeps using Google storage until it leaves. Gmail deletes it for good after 30 days, or sooner if you empty Trash.",
+  "f2.estimates": "Sizes are Gmail’s estimates.",
+  "f2.homeTile.value": "≈ {size}",
+  "f2.homeTile.label": "of email in your Gmail",
+  "share.title": "My Gmail, by the numbers",
+  "share.line.emails": "~{emailsRounded} emails, going back to {year}",
+  "share.line.unread": "{pct}% of my last 90 days came from senders I mostly leave unread",
+  "share.line.people": "Only {pct}% of my email is from people I’ve written to",
+  "share.line.size": "≈ {size} of email",
+  "share.line.archived": "~{archivedRounded} archived in one go",
+  "share.footer": "Made with DeclutrMail · declutrmail.com",
+  "share.trust": "We never fetch or store full email contents.",
+  "share.intent": "Get the same report for your Gmail at declutrmail.com",
+  "share.button": "Make a share card",
+  "share.sheet.title": "Your share card",
+  "share.sheet.sub": "Rounded numbers only. No names, senders or email contents.",
+  "share.actions": ["Download image", "Copy image", "Share", "Share on X", "Share on LinkedIn"],
+  "share.theme": ["Light", "Dark"],
+  "share.copied": "Image copied"
+}

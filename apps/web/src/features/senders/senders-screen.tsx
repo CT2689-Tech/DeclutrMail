@@ -40,6 +40,10 @@ import {
 } from './data';
 import { SenderSearch } from './sender-search';
 import { isFeatureEnabled } from '@/lib/flags';
+import { normalizeProtectionReason, protectionReasonClause } from '@declutrmail/shared/copy';
+import { fillCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { allProtectedSelectionCopy } from './unsubscribe-backlog/preview-copy';
+import { senderSizeCell } from './sender-size';
 import {
   ActiveFilterChips,
   EMPTY_COMPOSE,
@@ -66,10 +70,10 @@ import {
   useCompositePreview,
   useEnqueueBulkAction,
   useEnqueueComposite,
+  useConfirmUnsubscribeBacklog,
   useRecordUnsubscribeIntent,
 } from '@/lib/api/use-action';
 import { useSetSenderPolicy, useUndoSenderKeep } from './api/use-sender-policy';
-import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { sendersKeys } from './api/query-keys';
 import {
   actionLabel,
@@ -77,11 +81,7 @@ import {
   getActionFailureCopy,
   stillRunningCopy,
 } from '@/lib/action-error-copy';
-import {
-  backlogAfterUnsubFailureCopy,
-  NO_ACTIONABLE_SENDERS_COPY,
-  skippedAtClickCopy,
-} from '@/lib/bulk-action-copy';
+import { NO_ACTIONABLE_SENDERS_COPY, skippedAtClickCopy } from '@/lib/bulk-action-copy';
 import {
   isUnsubscribeInFlight,
   unsubscribeInFlightCopy,
@@ -149,6 +149,7 @@ import type { SenderListDirection, SenderListSort } from '@/lib/api/senders';
 import { useSaveSenderViews, useSenderViews } from './api/use-sender-views';
 import { SENDER_VIEWS_CAP, type SavedSenderView } from '@declutrmail/shared/contracts';
 import { trackActionConfirmed } from '@/lib/action-analytics';
+import { unsubscribeBacklogToast } from './unsubscribe-backlog/toast';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 import type { Verb } from '@declutrmail/shared/observability';
@@ -167,6 +168,11 @@ const { color, font, motion, text } = tokens;
  * stays usable.
  */
 export const ACTION_OVERDUE_MS = 120_000;
+
+/** The report card does not take the first-landing slot. */
+function noteReportResolved(shown: boolean) {
+  void shown;
+}
 
 /**
  * FE verb labels → PostHog closed-union verb tokens. Keeps the
@@ -246,6 +252,17 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
     return () => clearTimeout(t);
   }, [value, delayMs]);
   return debounced;
+}
+
+/** One Protected Unsubscribe, before any preview. Names the reason. */
+function protectedSelectionLead(sender: Sender): string {
+  const clause = protectionReasonClause(
+    normalizeProtectionReason(sender.protectionFlags.protectionReason),
+  );
+  if (clause === 'it is Protected') {
+    return fillCopy(WS5_COPY['f1.protected.leadNoReason'], { Sender: sender.name });
+  }
+  return fillCopy(WS5_COPY['f1.protected.lead'], { Sender: sender.name, reason: clause });
 }
 
 export function SendersScreen() {
@@ -708,6 +725,14 @@ function SendersScreenContent({
     () => mergePinnedRows(serverSenders, pinnedSenders) as Sender[],
     [serverSenders, pinnedSenders],
   );
+  const reportSenderNames = useMemo(() => {
+    const names: Record<string, { name: string }> = {};
+    for (const row of senders) {
+      const name = row.name.trim();
+      if (name !== '') names[row.id] = { name };
+    }
+    return names;
+  }, [senders]);
   const activeMailbox = me.mailboxes.find((m) => m.id === me.activeMailboxId);
   // Codex round-1 review of QA-senders-filtering-20260901-01: the server
   // never sees a whitespace-only search box (the request debounces off
@@ -734,7 +759,6 @@ function SendersScreenContent({
   // readiness value it didn't enumerate.
   const mailboxSyncFailed = activeMailbox?.readiness === 'failed';
   const mailboxNeedsReconnect = activeMailbox?.needsReconnect === true;
-  const [reportShown, setReportShown] = useState(false);
   const showFirstCleanupNudge = shouldShowFirstCleanupNudge({
     mailboxReady: activeMailbox?.readiness === 'ready',
     hasCompletedCleanup,
@@ -742,6 +766,8 @@ function SendersScreenContent({
   });
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [pendingAction, setPendingAction] = useState<ActionRequest | null>(null);
+  const pendingActionRef = useRef(pendingAction);
+  pendingActionRef.current = pendingAction;
   const [receipt, setReceipt] = useState<
     (ActionReceipt & { mailboxId: string | undefined }) | null
   >(null);
@@ -761,6 +787,7 @@ function SendersScreenContent({
   // (per-sender failure isolation); the FE polls ONE batch handle.
   const enqueueBulk = useEnqueueBulkAction();
   const recordUnsubIntent = useRecordUnsubscribeIntent();
+  const confirmBacklog = useConfirmUnsubscribeBacklog();
   // D40 — Keep is a standing-policy write (`policy_type='keep'`), not a
   // Gmail mutation. The hook owns the senders/activity invalidation.
   const setPolicy = useSetSenderPolicy();
@@ -1304,7 +1331,12 @@ function SendersScreenContent({
       // One enqueue at a time. The confirm stays cancellable while a
       // request is out, so a second confirm must not start a second one
       // (same guard the sender detail page has).
-      if (enqueueComposite.isPending || enqueueBulk.isPending || recordUnsubIntent.isPending) {
+      if (
+        enqueueComposite.isPending ||
+        enqueueBulk.isPending ||
+        recordUnsubIntent.isPending ||
+        confirmBacklog.isPending
+      ) {
         return;
       }
 
@@ -1494,10 +1526,7 @@ function SendersScreenContent({
       // never auto-sends an opt-out). No undo token exists for a
       // network unsub (D58) — only a paired archive is reversible.
       if (verb === 'Unsubscribe') {
-        // Guard against rapid double-confirmation. While a previous
-        // recordUnsubIntent.mutate is in-flight we drop the click (the
-        // modal is still up on "Submitting…", its confirm disabled).
-        if (recordUnsubIntent.isPending) return;
+        if (recordUnsubIntent.isPending || confirmBacklog.isPending) return;
         setSubmitting(true);
         setSelected(new Set());
         setBulkMailtoFollowups([]);
@@ -1505,305 +1534,130 @@ function SendersScreenContent({
           id: s.id,
           name: s.name,
           domain: s.domain,
-          // D248 — carried so the receipt can state the four-state split
-          // of what the user selected, not just what the batch sent.
           unsubscribeMethod: s.unsubscribeMethod,
         }));
         const isBulk = senderRefs.length > 1;
-        // The "Also act on past emails" chip from the D226 preview
-        // (ConfirmOptions.secondary). The unsub intent has no composite
-        // primary on the BE, so the historic action enqueues as its own
-        // composite/bulk whose primary IS the secondary verb — exactly
-        // the triage pattern (triage-screen.tsx archive-after-unsub).
-        const secondary = opts?.secondary ?? null;
-
-        if (!isBulk) {
-          const sref = senderRefs[0]!;
-          recordUnsubIntent.mutate(
-            {
-              mailboxId: actionMailboxId,
-              senderId: sref.id,
-              includesBacklogAction: secondary != null,
-              ...(opts?.override === true ? { override: true } : {}),
-            },
-            {
-              onSuccess: (res) => {
-                closeSubmitted();
-                trackActionConfirmed('unsubscribe');
-                void qc.invalidateQueries({ queryKey: sendersKeys.all });
-                void qc.invalidateQueries({ queryKey: activityKeys.all });
-                if (res.method === 'one_click' && res.executionActionId) {
-                  toast(`Unsubscribe requested — confirming with ${sref.domain}…`, 'info');
-                  setActiveUnsub({
-                    mailboxId: actionMailboxId,
-                    actionId: res.executionActionId,
-                    senderName: sref.name,
-                    domain: sref.domain,
-                  });
-                } else if (res.method === 'mailto' && res.mailtoUrl) {
-                  // The callout is the feedback — it carries the manual
-                  // step the toast can't (a compose link).
-                  setMailtoFollowup({
-                    mailboxId: actionMailboxId,
-                    senderId: sref.id,
-                    senderName: sref.name,
-                    mailtoUrl: res.mailtoUrl,
-                  });
-                } else {
-                  toast(
-                    `${sref.name} offers no unsubscribe channel — Archive is the reliable fallback`,
-                    'info',
-                  );
-                }
-                // Secondary historic action (Archive/Delete the backlog).
-                // Fires only after the intent recorded — the preview
-                // already showed the per-window counts (D226); the polled
-                // `activeAction` lifecycle below surfaces the real
-                // receipt + undo token for the paired archive/delete.
-                if (secondary) {
-                  enqueueComposite.mutate(
-                    {
-                      mailboxId: actionMailboxId,
-                      senderId: sref.id,
-                      primary: {
-                        type: secondary.type,
-                        olderThanDays: secondary.olderThanDays ?? null,
-                        // ADR-0028 — this call's primary IS the "Delete
-                        // them" secondary, so the reach the user picked
-                        // in the modal travels the same way it would on
-                        // a direct single-sender Delete.
-                        ...(secondary.type === 'delete' && opts?.reach === 'all_mail'
-                          ? { reach: opts.reach }
-                          : {}),
-                      },
-                      // The SAME acknowledgement the preview collected.
-                      // The intent above is never refused at the click, so
-                      // it lands — one-click sends a real,
-                      // one-way request (D58). Dropping the override here
-                      // 409s the backlog half AFTER that, leaving the user
-                      // unsubscribed with their mail untouched: a partial
-                      // execution whose first half cannot be undone.
-                      ...(opts?.override === true ? { override: true } : {}),
-                    },
-                    {
-                      onSuccess: (cres) =>
-                        setActiveAction({
-                          mailboxId: actionMailboxId,
-                          actionId: cres.actionId,
-                          senderId: sref.id,
-                          senderName: sref.name,
-                          verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
-                        }),
-                      onError: (err) => {
-                        // 402 FREE_CAP_REACHED — the upgrade prompt
-                        // explains why the backlog didn't enqueue.
-                        if (err instanceof ApiError && err.status === 402) return;
-                        captureFeatureException(err, {
-                          surface: 'senders',
-                          reason: `enqueue_${secondary.type}_after_unsub`,
-                        });
-                        if (enqueueMayHaveStarted(err)) {
-                          settleRowsRef.current([sref.id], {
-                            phase: 'unconfirmed',
-                            verb: secondary.type,
-                          });
-                          void qc.invalidateQueries({ queryKey: undoKeys.all });
-                        }
-                        toast(
-                          backlogAfterUnsubFailureCopy({
-                            verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
-                            senderName: sref.name,
-                            error: err,
-                          }),
-                          'warn',
-                        );
-                      },
-                    },
-                  );
-                }
-              },
-              onError: (err) => {
-                closeSubmitted();
-                // Sending is off in this environment. A DESIGNED state, not a
-                // failure: the API refused before writing anything, so there
-                // is no half-finished action behind it and nothing to retry —
-                // and no Sentry event, because nothing broke. Says "nothing
-                // was sent" outright, since whether their address reached a
-                // list processor is the one thing a user must not be unsure of.
-                if (isUnsubSendDisabled(err)) {
-                  toast(UNSUB_SEND_DISABLED_MESSAGE, 'warn');
-                  return;
-                }
-                // Designed too: one request to this sender is still on its way.
-                if (isUnsubscribeInFlight(err)) {
-                  toast(unsubscribeInFlightCopy(sref.name), 'info');
-                  void qc.invalidateQueries({ queryKey: sendersKeys.all });
-                  return;
-                }
-                captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
-                // A 5xx cannot prove nothing started: show what the server has.
-                if (enqueueMayHaveStarted(err)) {
-                  void qc.invalidateQueries({ queryKey: sendersKeys.all });
-                }
-                toast(
-                  getActionFailureCopy('enqueue', {
-                    action: `Unsubscribe for ${sref.name}`,
-                    outcome: 'no request was sent',
-                    error: err,
-                  }),
-                  'warn',
-                );
-              },
-            },
-          );
-          return;
-        }
-
-        // D248 — ONE POST fans the selection out SERVER-side through the
-        // shared batch pipeline (the old client loop issued a request per
-        // sender, so a 1,000-sender selection meant 1,000 parallel POSTs).
-        // Only one-click senders execute; the response names every sender
-        // it did not send for and why — mailto stays user-sent (D230) and
-        // comes back with its compose address, `none` has nothing to
-        // send, `unknown` has not been checked yet.
-        enqueueBulk.mutate(
+        const mode =
+          opts?.secondary?.type === 'delete'
+            ? 'delete'
+            : opts?.secondary?.type === 'archive' || opts?.archiveHistoric
+              ? 'archive'
+              : 'unsub_only';
+        confirmBacklog.mutate(
           {
             mailboxId: actionMailboxId,
-            senderIds: senderRefs.map((sref) => sref.id),
-            primary: { type: 'unsubscribe' },
+            mode,
+            senderIds: [
+              ...new Set([
+                ...senderRefs.map((sref) => sref.id),
+                ...(pendingActionRef.current?.protectedSenderIds ?? []),
+              ]),
+            ],
+            olderThanDays: opts?.secondary?.olderThanDays ?? opts?.olderThanDays ?? null,
+            ...(mode === 'delete' && opts?.reach === 'all_mail' ? { reach: opts.reach } : {}),
+            // Override rides only the dialog's explicit "anyway" click.
+            ...(opts?.override === true ? { override: true } : {}),
           },
           {
             onSuccess: (res) => {
               closeSubmitted();
-              if (res.senderCount > 0) trackActionConfirmed('unsubscribe');
-              const nameById = new Map(senderRefs.map((sref) => [sref.id, sref.name] as const));
-              setBulkMailtoFollowups(
-                res.skipped.flatMap((skip) =>
-                  skip.reason === 'mailto' && skip.mailtoUrl
-                    ? [
-                        {
-                          mailboxId: actionMailboxId,
-                          senderName: nameById.get(skip.senderId) ?? 'This sender',
-                          mailtoUrl: skip.mailtoUrl,
-                        },
-                      ]
-                    : [],
-                ),
+              const sent = res.senders.some(
+                (sender) => sender.unsubStatus === 'requested' || sender.unsubStatus === 'manual',
               );
-              // The SERVER's skip list, verbatim — the partition the
-              // batch actually used. Deriving it from the local rows
-              // would drop server-side `protected` / `not_found` skips
-              // and let a stale list narrate a split that never happened.
-              const skipped = res.skipped.map((skip) => ({ reason: skip.reason }));
-              setActiveUnsubBatch({
-                mailboxId: actionMailboxId,
-                batchId: res.batchId,
-                senderIds: acceptedIds(
-                  senderRefs.map((sref) => sref.id),
-                  res.skipped,
-                ),
-                senderCount: res.senderCount,
-                skipped,
-              });
-              // In-flight receipt: it names how many requests are going
-              // out and claims NO outcome. The polled effect below fills
-              // in the terminal outcomes when the worker reports.
-              setUnsubBatchReceipt({
-                senderCount: res.senderCount,
-                skipped,
-                outcomes: null,
-                pending: res.senderCount,
-              });
+              if (sent) trackActionConfirmed('unsubscribe');
               void qc.invalidateQueries({ queryKey: sendersKeys.all });
               void qc.invalidateQueries({ queryKey: activityKeys.all });
-              // The preview's secondary chip (D226 — counts already
-              // shown): the backlog is its own bulk batch over the SAME
-              // selection, because "also archive the past" is a decision
-              // about the mail, not about the unsubscribe channel.
-              if (!secondary) return;
-              enqueueBulk.mutate(
-                {
-                  mailboxId: actionMailboxId,
-                  senderIds: senderRefs.map((sref) => sref.id),
-                  primary: {
-                    type: secondary.type,
-                    olderThanDays: secondary.olderThanDays ?? null,
-                    // ADR-0028 — the reach the user picked for "Delete
-                    // them" rides the backlog batch, never an Archive.
-                    ...(secondary.type === 'delete' && opts?.reach === 'all_mail'
-                      ? { reach: opts.reach }
-                      : {}),
-                  },
-                },
-                {
-                  onSuccess: (bres) =>
-                    setActiveBatch({
-                      mailboxId: actionMailboxId,
-                      batchId: bres.batchId,
-                      verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
-                      senderIds: acceptedIds(
-                        senderRefs.map((sref) => sref.id),
-                        bres.skipped,
-                      ),
-                      senderCount: bres.senderCount,
-                      selectedCount: senderRefs.length,
-                      skippedCount: bres.skipped.length,
-                      wakeAt: null,
-                    }),
-                  onError: (err) => {
-                    // 402 FREE_CAP_REACHED — upgrade prompt is the surface.
-                    if (err instanceof ApiError && err.status === 402) return;
-                    if (!(err instanceof ApiError && err.status === 409)) {
-                      captureFeatureException(err, {
-                        surface: 'senders',
-                        reason: `enqueue_bulk_${secondary.type}_after_unsub`,
-                      });
-                    }
-                    if (enqueueMayHaveStarted(err)) {
-                      settleRowsRef.current(
-                        senderRefs.map((sref) => sref.id),
-                        { phase: 'unconfirmed', verb: secondary.type },
-                      );
-                      void qc.invalidateQueries({ queryKey: undoKeys.all });
-                    }
-                    toast(
-                      backlogAfterUnsubFailureCopy({
-                        verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
-                        error: err,
-                      }),
-                      'warn',
-                    );
-                  },
-                },
-              );
+              const line = unsubscribeBacklogToast(res);
+              if (line !== '') toast(line, sent ? 'info' : 'warn');
+              const nameById = new Map(senderRefs.map((sref) => [sref.id, sref] as const));
+              if (!isBulk) {
+                const sref = senderRefs[0]!;
+                const outcome = res.senders.find((sender) => sender.senderId === sref.id);
+                if (outcome?.unsubStatus === 'requested' && outcome.executionActionId) {
+                  setActiveUnsub({
+                    mailboxId: actionMailboxId,
+                    actionId: outcome.executionActionId,
+                    senderName: sref.name,
+                    domain: sref.domain,
+                  });
+                } else if (outcome?.unsubStatus === 'manual' && outcome.mailtoUrl) {
+                  setMailtoFollowup({
+                    mailboxId: actionMailboxId,
+                    senderId: sref.id,
+                    senderName: sref.name,
+                    mailtoUrl: outcome.mailtoUrl,
+                  });
+                }
+                if (res.backlog) {
+                  setActiveAction({
+                    mailboxId: actionMailboxId,
+                    actionId: res.backlog.actionId,
+                    senderId: sref.id,
+                    senderName: sref.name,
+                    verb: res.backlog.verb === 'delete' ? 'Delete' : 'Archive',
+                  });
+                }
+              } else {
+                setBulkMailtoFollowups(
+                  res.senders.flatMap((sender) =>
+                    sender.unsubStatus === 'manual' && sender.mailtoUrl
+                      ? [
+                          {
+                            mailboxId: actionMailboxId,
+                            senderName: nameById.get(sender.senderId)?.name ?? 'This sender',
+                            mailtoUrl: sender.mailtoUrl,
+                          },
+                        ]
+                      : [],
+                  ),
+                );
+                if (res.backlog) {
+                  const skipped = res.senders.filter(
+                    (sender) => sender.unsubStatus === 'skipped',
+                  ).length;
+                  setActiveBatch({
+                    mailboxId: actionMailboxId,
+                    batchId: res.backlog.actionId,
+                    verb: res.backlog.verb === 'delete' ? 'Delete' : 'Archive',
+                    senderIds: res.senders
+                      .filter((sender) => sender.unsubStatus !== 'skipped')
+                      .map((sender) => sender.senderId),
+                    senderCount: Math.max(1, senderRefs.length - skipped),
+                    selectedCount: senderRefs.length,
+                    skippedCount: skipped,
+                    wakeAt: null,
+                  });
+                }
+              }
             },
             onError: (err) => {
               closeSubmitted();
-              // 402 FREE_CAP_REACHED — the upgrade prompt is the surface.
               if (err instanceof ApiError && err.status === 402) return;
-              // Sending is off: refused before anything was written, as on
-              // the single-sender path above.
               if (isUnsubSendDisabled(err)) {
                 toast(UNSUB_SEND_DISABLED_MESSAGE, 'warn');
                 return;
               }
-              // A 409 is a designed state, but the status names no cause:
-              // NO_ACTIONABLE_SENDERS (every sender Protected, gone, or
-              // without a one-click channel) shares it with the mailbox
-              // guard. The copy reads the code.
-              const conflict = err instanceof ApiError && err.status === 409;
-              if (!conflict) {
-                captureFeatureException(err, { surface: 'senders', reason: 'bulk_unsub' });
+              if (!isBulk && isUnsubscribeInFlight(err)) {
+                toast(unsubscribeInFlightCopy(senderRefs[0]!.name), 'info');
+                void qc.invalidateQueries({ queryKey: sendersKeys.all });
+                return;
               }
-              void qc.invalidateQueries({ queryKey: sendersKeys.all });
+              captureFeatureException(err, {
+                surface: 'senders',
+                reason: isBulk ? 'bulk_unsub' : 'record_unsub',
+              });
+              if (enqueueMayHaveStarted(err)) {
+                void qc.invalidateQueries({ queryKey: sendersKeys.all });
+                void qc.invalidateQueries({ queryKey: undoKeys.all });
+              }
               toast(
-                apiErrorCode(err) === 'NO_ACTIONABLE_SENDERS'
-                  ? 'No unsubscribe requests sent — open each sender for its options.'
-                  : getActionFailureCopy('enqueue', {
-                      action: `Unsubscribe for ${senderRefs.length} senders`,
-                      outcome: 'no request was sent',
-                      error: err,
-                    }),
+                getActionFailureCopy('enqueue', {
+                  action: isBulk
+                    ? `Unsubscribe for ${senderRefs.length} senders`
+                    : `Unsubscribe for ${senderRefs[0]!.name}`,
+                  outcome: 'no request was sent',
+                  error: err,
+                }),
                 'warn',
               );
             },
@@ -2026,7 +1880,7 @@ function SendersScreenContent({
       // bucket. Protect stays a standing-policy toggle on Sender
       // Detail; no Senders-screen surface emits it as a verb.
     },
-    [enqueueBulk, lockedSenderIds, anythingParked, actionMailboxId, unsettleRows],
+    [enqueueBulk, confirmBacklog, lockedSenderIds, anythingParked, actionMailboxId, unsettleRows],
   );
 
   // P6 — drive the Archive lifecycle off the polled status. On `done`,
@@ -2500,18 +2354,28 @@ function SendersScreenContent({
         return;
       }
       const eligible = selectedSenders.filter(ELIGIBLE[verb]);
+      const protectedSenderIds =
+        verb === 'Unsubscribe'
+          ? selectedSenders
+              .filter((sender) => isStandingProtected(sender))
+              .map((sender) => sender.id)
+          : [];
       if (eligible.length === 0) {
         if (selectedSenders.length === 0) return;
         const n = selectedSenders.length;
+        const allProtected = selectedSenders.every(isStandingProtected);
+        if (verb === 'Unsubscribe' && allProtected && n === 1) {
+          toast(protectedSelectionLead(selectedSenders[0]!), 'warn');
+          return;
+        }
         // Standing protection gates every bulk verb; the only other gate
         // is Unsubscribe's people rule (canUnsubscribe), so a non-
         // protected drop here can only mean primary-group senders.
-        const allProtected = selectedSenders.every(isStandingProtected);
+        // All-Protected uses the deck sentence. A mixed selection still
+        // opens the preview, which says the Protected senders are left.
         toast(
           allProtected
-            ? n === 1
-              ? `${selectedSenders[0]!.name} is protected — unprotect it first`
-              : `All ${n} selected senders are protected — unprotect to include them`
+            ? allProtectedSelectionCopy(n, selectedSenders[0]?.name ?? '')
             : n === 1
               ? `${selectedSenders[0]!.name} is a person — Unsubscribe doesn't apply`
               : 'Nothing to unsubscribe — these senders are protected or people',
@@ -2566,6 +2430,7 @@ function SendersScreenContent({
             selectedCount: selectedSenders.length,
             actionableCount: remaining,
             quotaCappedFrom: eligible.length,
+            ...(protectedSenderIds.length > 0 ? { protectedSenderIds } : {}),
           });
           return;
         }
@@ -2574,6 +2439,7 @@ function SendersScreenContent({
           senders: eligible,
           selectedCount: selectedSenders.length,
           actionableCount: eligible.length,
+          ...(protectedSenderIds.length > 0 ? { protectedSenderIds } : {}),
         });
         return;
       }
@@ -2599,6 +2465,7 @@ function SendersScreenContent({
           actionableCount: remainingWithSkips,
           quotaCappedFrom: eligible.length,
           skipped: { protectedCount, peopleCount: skippedTotal - protectedCount },
+          ...(protectedSenderIds.length > 0 ? { protectedSenderIds } : {}),
         });
         return;
       }
@@ -2611,6 +2478,7 @@ function SendersScreenContent({
         selectedCount: selectedSenders.length,
         actionableCount: eligible.length,
         skipped: { protectedCount, peopleCount: skippedTotal - protectedCount },
+        ...(protectedSenderIds.length > 0 ? { protectedSenderIds } : {}),
       });
     },
     [selectedSenders, requestAction, resultsReadOnly, tier, me.cleanupRemaining],
@@ -2654,13 +2522,13 @@ function SendersScreenContent({
   const saveCurrentView = useCallback(
     (name: string) => {
       // The store can only hold a BE-supported sort (unsupported ones
-      // 400 at the list endpoint), but narrow defensively — the saved
-      // contract admits only the four Slice-1 columns.
+      // 400 at the list endpoint). Narrow to the saved-view contract.
       const sort =
         sortCol === 'total' ||
         sortCol === 'last_seen' ||
         sortCol === 'first_seen' ||
-        sortCol === 'name'
+        sortCol === 'name' ||
+        sortCol === 'size'
           ? sortCol
           : 'total';
       const next: SavedSenderView[] = [
@@ -2756,6 +2624,16 @@ function SendersScreenContent({
           </div>
         </header>
         <AiInlinePrompt />
+        {actionMailboxId && activeMailbox?.readiness === 'ready' ? (
+          <div className={workspaceStyles.reportBand}>
+            <InboxReportFirstLanding
+              mailboxId={actionMailboxId}
+              {...(activeMailbox.email ? { mailboxEmail: activeMailbox.email } : {})}
+              senderNames={reportSenderNames}
+              onResolved={noteReportResolved}
+            />
+          </div>
+        ) : null}
         <div className={workspaceStyles.listColumn}>
           <section
             aria-label="Sender search and filters"
@@ -2798,6 +2676,14 @@ function SendersScreenContent({
               />
               <SortMenu sort={sortCol} direction={sortDirection} onChange={setSort} />
             </div>
+            {senders.some((row) => senderSizeCell(row.sizeBytes)) && (
+              <p
+                data-testid="sender-size-note"
+                style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}
+              >
+                {WS5_COPY['f2.note']} {WS5_COPY['f2.estimates']}
+              </p>
+            )}
 
             {/* Hero — the screen's one big number: senders matching the
             active filters, mailbox-wide (BE-honest). On the untouched
@@ -2873,12 +2759,15 @@ function SendersScreenContent({
             </div>
           )}
 
-          {me.activeMailboxId && (
-            <InboxReportFirstLanding mailboxId={me.activeMailboxId} onResolved={setReportShown} />
-          )}
           <FirstLandingSlot
             candidates={[
-              { id: 'inbox_report', ready: reportShown, node: null },
+              {
+                id: 'inbox_report',
+                // The report is the card above this slot. A ready null node
+                // would hide the first-cleanup nudge without rendering anything.
+                ready: false,
+                node: null,
+              },
               {
                 id: 'first_backlog_header',
                 // The list payload has no exact backlog count paired with an

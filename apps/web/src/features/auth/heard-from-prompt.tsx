@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, tokens } from '@declutrmail/shared';
@@ -51,6 +51,7 @@ export function HeardFromPrompt() {
   const [dismissed, setDismissed] = useState(false);
   const [failed, setFailed] = useState(false);
   const [consentSettled, setConsentSettled] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [promptTick, setPromptTick] = useState(0);
 
   useEffect(() => {
@@ -58,6 +59,20 @@ export function HeardFromPrompt() {
     sync();
     window.addEventListener(CONSENT_CHANGE_EVENT, sync);
     return () => window.removeEventListener(CONSENT_CHANGE_EVENT, sync);
+  }, []);
+
+  useLayoutEffect(() => {
+    const sync = () =>
+      setSheetOpen(document.querySelector('[role="dialog"], [role="alertdialog"]') !== null);
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['role'],
+    });
+    return () => observer.disconnect();
   }, []);
 
   const onAiSurface = pathname === '/brief' || pathname === '/triage' || pathname === '/senders';
@@ -72,7 +87,9 @@ export function HeardFromPrompt() {
     return () => window.removeEventListener(AI_PROMPT_CHANGED, sync);
   }, []);
 
-  if (!consentSettled || dismissed || me.signupAttribution?.promptNeeded !== true) return null;
+  if (!consentSettled || dismissed || sheetOpen || me.signupAttribution?.promptNeeded !== true) {
+    return null;
+  }
   if (pathname === '/settings' || pathname.startsWith('/settings/')) return null;
   // Phone width makes this card as wide as the page. Billing leaves the
   // plan controls clear.

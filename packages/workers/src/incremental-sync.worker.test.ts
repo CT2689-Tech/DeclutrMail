@@ -1,5 +1,6 @@
 import {
   deriveSenderId,
+  inboxReportCache,
   mailboxAccounts,
   mailMessages,
   outboxEvents,
@@ -486,6 +487,24 @@ describe('IncrementalSyncWorker', () => {
     // (the Sync-now completion watch compares this against its
     // pre-click baseline).
     expect(state!.lastSyncedAt).not.toBeNull();
+  });
+
+  it('drops a cached inbox report when incremental sync succeeds', async () => {
+    await db.insert(inboxReportCache).values({
+      mailboxAccountId,
+      payload: { receivedCount: 9 },
+      generatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    const client = new FakeGmailClient(
+      [{ forCursor: '1000', page: { records: [], historyId: '1500' } }],
+      new Map(),
+    );
+    await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+    expect(await db.select().from(inboxReportCache)).toEqual([]);
   });
 
   it('skips drafts and chat lines — no row, no sender, no metadata fetch for labelled ones', async () => {

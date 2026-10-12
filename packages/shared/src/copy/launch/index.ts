@@ -47,4 +47,5 @@ export {
   fillWs4,
   pluralWs4,
 } from './ws4-fill.js';
-export { WS5_COPY } from './ws5.js';
+export { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from './ws5.js';
+export type { PluralCopy } from './ws5.js';

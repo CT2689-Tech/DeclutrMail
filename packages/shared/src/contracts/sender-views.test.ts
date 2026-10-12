@@ -30,6 +30,12 @@ describe('parseSenderViews', () => {
     expect(parseSenderViews({ senderViews: [VIEW] })).toEqual([VIEW]);
   });
 
+  it('keeps a size sort', () => {
+    const sized = { ...VIEW, name: 'Largest', sort: 'size' as const };
+    expect(parseSenderViews({ senderViews: [sized] })).toEqual([sized]);
+    expect(SenderViewsPutSchema.safeParse({ views: [sized] }).success).toBe(true);
+  });
+
   it('keeps older saved views usable and defaults the Inbox filter off', () => {
     const { hasInboxMail: _removed, ...oldCompose } = VIEW.compose;
     expect(parseSenderViews({ senderViews: [{ ...VIEW, compose: oldCompose }] })).toEqual([VIEW]);

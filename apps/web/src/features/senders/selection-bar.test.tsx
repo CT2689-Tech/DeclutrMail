@@ -84,7 +84,10 @@ describe('<SelectionBar /> — all-Protected selection (QA-senders-20260901-08)'
       />,
     );
 
-    expect(html).toContain('All 2 are protected — unprotect to include them');
+    expect(html).toContain(
+      'All 2 selected senders are Protected. Remove their Protected status to include them.',
+    );
+    expect(html).not.toContain('unprotect to include');
   });
 
   it('states the reason visibly on the mobile sheet too', () => {
@@ -98,7 +101,35 @@ describe('<SelectionBar /> — all-Protected selection (QA-senders-20260901-08)'
       />,
     );
 
-    expect(html).toContain('Acme Updates is protected — unprotect it first');
+    expect(html).toContain('Acme Updates is Protected. Remove its Protected status to include it.');
+    expect(html).not.toContain('unprotect it first');
+  });
+
+  it('says Protected senders in a mixed selection are left as they are', () => {
+    const html = renderToStaticMarkup(
+      <SelectionBar
+        senders={[PROTECTED_SENDER, SENDER]}
+        onClear={() => undefined}
+        onAct={() => undefined}
+        tier="pro"
+      />,
+    );
+
+    expect(html).toContain('1 selected sender is Protected and will be left as it is.');
+    expect(html).not.toContain('Remove its Protected status');
+  });
+
+  it('counts every Protected sender when more than one is left out', () => {
+    const html = renderToStaticMarkup(
+      <SelectionBar
+        senders={[PROTECTED_SENDER, { ...PROTECTED_SENDER, id: 'sender-2' }, SENDER]}
+        onClear={() => undefined}
+        onAct={() => undefined}
+        tier="pro"
+      />,
+    );
+
+    expect(html).toContain('2 selected senders are Protected and will be left as they are.');
   });
 
   it('says nothing extra for a normal, unprotected selection', () => {

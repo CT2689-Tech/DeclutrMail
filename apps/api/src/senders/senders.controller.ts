@@ -87,7 +87,13 @@ const CATEGORIES = new Set<GmailCategory>([
  * return 400 directly so the wire never sees a 5xx for a known-
  * unimplemented sort.
  */
-const SUPPORTED_SORTS = new Set<SenderListSort>(['total', 'last_seen', 'first_seen', 'name']);
+const SUPPORTED_SORTS = new Set<SenderListSort>([
+  'total',
+  'last_seen',
+  'first_seen',
+  'name',
+  'size',
+]);
 const SORT_DIRECTIONS = new Set<SenderListDirection>(['asc', 'desc']);
 
 /**
@@ -717,6 +723,8 @@ function encodeCursorKey(sort: SenderListSort, row: SenderFacts): string {
       const trimmed = row.displayName.trim();
       return (trimmed === '' ? row.email : trimmed).toLowerCase();
     }
+    case 'size':
+      return row.sizeBytes == null ? '' : String(row.sizeBytes);
     case 'read':
     case 'recommended':
       // Filtered upstream by SUPPORTED_SORTS; defense in depth.

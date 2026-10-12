@@ -43,8 +43,8 @@ export const SavedSenderViewSchema = z
     /** Display name — unique per user (enforced at the PATCH route). */
     name: z.string().trim().min(1).max(40),
     compose: SenderViewComposeSchema,
-    /** Sort snapshot — the Slice-1 sortable columns only. */
-    sort: z.enum(['total', 'last_seen', 'first_seen', 'name']),
+    /** Sort snapshot — the columns the senders list can order by. */
+    sort: z.enum(['total', 'last_seen', 'first_seen', 'name', 'size']),
     direction: z.enum(['asc', 'desc']),
   })
   .strict();
