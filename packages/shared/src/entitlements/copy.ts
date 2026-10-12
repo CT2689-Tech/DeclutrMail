@@ -50,8 +50,56 @@ function fill(template: string, values: Record<string, string | number>): string
   });
 }
 
+const SHORT_MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
+
+/** Western thousands separators. en-US grouping is a comma on every runtime. */
+function groupWestern(digits: string): string {
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+/** Indian grouping: last three digits, then pairs. ₹1,09,999, not ₹109,999. */
+function groupIndian(digits: string): string {
+  if (digits.length <= 3) return digits;
+  const head = digits.slice(0, -3);
+  const tail = digits.slice(-3);
+  return `${head.replace(/\B(?=(\d{2})+(?!\d))/g, ',')},${tail}`;
+}
+
 function grouped(n: number): string {
-  return new Intl.NumberFormat('en-US').format(n);
+  const rounded = Math.round(n);
+  const body = groupWestern(String(Math.abs(rounded)));
+  return rounded < 0 ? `-${body}` : body;
+}
+
+/**
+ * Whole currency units with a pinned symbol. Intl's currency format puts a
+ * NBSP or narrow NBSP between the symbol and the digits on one runtime and
+ * nothing on the other, which is a different text node (React #418).
+ */
+function stableCurrency(minor: number, locale: 'usd' | 'inr'): string {
+  const rounded = Math.round(minor / 100);
+  const body = (locale === 'inr' ? groupIndian : groupWestern)(String(Math.abs(rounded)));
+  const symbol = locale === 'inr' ? '₹' : '$';
+  return `${rounded < 0 ? '-' : ''}${symbol}${body}`;
+}
+
+function utcMonthDay(iso: string): string | null {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return `${SHORT_MONTHS[parsed.getUTCMonth()]} ${parsed.getUTCDate()}`;
 }
 
 export function connectionTerm(count: number): string {
@@ -79,11 +127,7 @@ export function planName(tier: TierId | 'pass'): string {
 
 /** Amount only. The INR tax suffix stays on `priceLine`, not in sentence tokens. */
 export function moneyAmount(minor: number, locale: 'usd' | 'inr'): string {
-  return new Intl.NumberFormat(locale === 'inr' ? 'en-IN' : 'en-US', {
-    style: 'currency',
-    currency: locale === 'inr' ? 'INR' : 'USD',
-    maximumFractionDigits: 0,
-  }).format(minor / 100);
+  return stableCurrency(minor, locale);
 }
 
 export function plusAmount(locale: 'usd' | 'inr'): string {
@@ -101,27 +145,45 @@ export function passAmount(locale: 'usd' | 'inr'): string {
 }
 
 /** "Nov 3, 11:59 PM PT". The zone label is always PT, never PST or PDT. */
-export function promoEndLabel(endsAt: string = PROMO.endsAt): string {
-  const formatted = new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
+function zonedClock(iso: string, timeZone: string): string | null {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
     hour: 'numeric',
     minute: '2-digit',
-    hour12: true,
-    timeZone: 'America/Los_Angeles',
-    timeZoneName: 'short',
-  }).format(new Date(endsAt));
-  return formatted.replace(/\bP[DS]T\b/, 'PT');
+    hourCycle: 'h12',
+  }).formatToParts(parsed);
+  const read = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value;
+  const month = Number(read('month'));
+  const day = Number(read('day'));
+  const minute = read('minute');
+  let hour = Number(read('hour'));
+  const period = (read('dayPeriod') ?? '').replace(/\./g, '').toUpperCase();
+  if (
+    !SHORT_MONTHS[month - 1] ||
+    !minute ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    (period !== 'AM' && period !== 'PM')
+  ) {
+    return null;
+  }
+  if (hour === 0) hour = 12;
+  // No year: the existing label is "Nov 3, 11:59 PM PT".
+  return `${SHORT_MONTHS[month - 1]} ${day}, ${hour}:${minute.padStart(2, '0')} ${period}`;
+}
+
+export function promoEndLabel(endsAt: string = PROMO.endsAt): string {
+  return `${zonedClock(endsAt, 'America/Los_Angeles') ?? endsAt} PT`;
 }
 
 export function passEndLabel(iso: string): string {
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) return iso;
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  }).format(parsed);
+  return utcMonthDay(iso) ?? iso;
 }
 
 export function storyValues(locale: 'usd' | 'inr'): Record<string, string | number> {
@@ -162,28 +224,13 @@ export function fillStoryList(lines: readonly string[], locale: 'usd' | 'inr' = 
 export function priceLine(price: PricePoint, locale: 'usd' | 'inr'): string {
   if (locale === 'inr') {
     const paise = price.inr?.paise ?? price.inrPaise;
-    const amount = new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0,
-    }).format(paise / 100);
-    return `${amount} ${WS1_COPY['price.inrSuffix']}`;
+    return `${stableCurrency(paise, 'inr')} ${WS1_COPY['price.inrSuffix']}`;
   }
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(price.usdCents / 100);
+  return stableCurrency(price.usdCents, 'usd');
 }
 
 function resetDate(resetAt: string): string {
-  const parsed = new Date(resetAt);
-  if (Number.isNaN(parsed.getTime())) return resetAt;
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  }).format(parsed);
+  return utcMonthDay(resetAt) ?? resetAt;
 }
 
 export const WINDOW_PRESET_DAYS = [30, 90, 180, 365] as const;

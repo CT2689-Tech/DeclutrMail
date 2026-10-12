@@ -9,6 +9,9 @@ import {
   isPricingV2,
   meterChipLine,
   meterPreviewText,
+  moneyAmount,
+  passEndLabel,
+  priceLine,
   promoBanner,
   promoEndLabel,
   quotaUnitsForEnqueue,
@@ -16,6 +19,7 @@ import {
   suggestedWindowPreset,
   termsPastDue,
 } from './copy';
+import { OFFERS, PLUS_ANNUAL_2026_10 } from './pricing.config';
 import { WS1_COPY } from '../copy/launch';
 import { POLICY } from './pricing.config';
 
@@ -63,6 +67,26 @@ describe('emails-cleared meter helpers', () => {
     expect(suggestedWindowPreset(100, { 30: 80, 90: 400, 180: 1200, 365: 2708 })).toBe(30);
     expect(suggestedWindowPreset(500, { 30: 80, 90: 400, 180: 1200, 365: 2708 })).toBe(90);
     expect(suggestedWindowPreset(10, { 30: 80, 90: 0 })).toBeNull();
+  });
+
+  it('keeps September and currency text identical on every runtime', () => {
+    expect(passEndLabel('2026-09-15T00:00:00.000Z')).toBe('Sep 15');
+    expect(
+      meterChipLine({ remaining: 640, limit: 1000, resetAt: '2026-09-15T00:00:00.000Z' }).text,
+    ).toContain('resets Sep 15');
+    expect(moneyAmount(PLUS_ANNUAL_2026_10.usdCents, 'usd')).toBe('$59');
+    expect(moneyAmount(PLUS_ANNUAL_2026_10.inrPaise, 'inr')).toBe('₹1,999');
+    expect(priceLine(OFFERS.backlogPass.price, 'usd')).toBe('$19');
+    expect(priceLine(PLUS_ANNUAL_2026_10, 'inr')).toBe('₹1,999 incl. GST');
+    expect(promoEndLabel()).toBe('Nov 3, 11:59 PM PT');
+    for (const value of [
+      moneyAmount(5900, 'usd'),
+      passEndLabel('2026-09-15T00:00:00.000Z'),
+      promoEndLabel(),
+    ]) {
+      expect(value).not.toMatch(/[\u00a0\u202f]/);
+      expect(value).not.toContain('Sept');
+    }
   });
 
   it('fills the chip and preview from the deck', () => {

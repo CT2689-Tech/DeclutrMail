@@ -113,8 +113,55 @@ export function laterReturnIssueCopy({
  * ServerAppBoundary), so both halves must be deterministic (React
  * #418; e2e hydration-smoke). Exported for the exact-string unit test.
  */
+const ATTEMPT_MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
+
 export function formatAttempt(iso: string, timeZone: string): string {
   const attemptedAt = new Date(iso);
   if (Number.isNaN(attemptedAt.getTime())) return 'at an unknown time';
-  return attemptedAt.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short', timeZone });
+  // Numeric parts only. `toLocaleString` inserts a narrow no-break space
+  // before "PM" in Chrome and a normal space in Node, and short months
+  // disagree on "Sep" versus "Sept" (React #418 on every app route,
+  // including /billing where this banner is in the shell).
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+    hourCycle: 'h12',
+  }).formatToParts(attemptedAt);
+  const read = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value;
+  const month = Number(read('month'));
+  const day = Number(read('day'));
+  const year = read('year');
+  const minute = read('minute');
+  let hour = Number(read('hour'));
+  const period = (read('dayPeriod') ?? '').replace(/\./g, '').toUpperCase();
+  if (
+    !ATTEMPT_MONTHS[month - 1] ||
+    !year ||
+    !minute ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    (period !== 'AM' && period !== 'PM')
+  ) {
+    return 'at an unknown time';
+  }
+  if (hour === 0) hour = 12;
+  return `${ATTEMPT_MONTHS[month - 1]} ${day}, ${year}, ${hour}:${minute.padStart(2, '0')} ${period}`;
 }
