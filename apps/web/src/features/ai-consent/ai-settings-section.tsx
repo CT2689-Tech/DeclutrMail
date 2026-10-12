@@ -23,13 +23,17 @@ function fillBrief(template: string): string {
 
 function SwitchHelp({ text, note }: { text: string; note?: string | undefined }): ReactNode {
   return (
-    <>
+    <span style={{ display: 'block', lineHeight: 1.45 }}>
       {note ? <span style={{ display: 'block' }}>{note}</span> : null}
-      <span>{text} </span>
-      <Link className="dm-external-link" href="/privacy#ai-processing">
+      {text}{' '}
+      <Link
+        className="dm-external-link"
+        href="/privacy#ai-processing"
+        style={{ display: 'inline', minHeight: 0, lineHeight: 'inherit' }}
+      >
         {copy.link}
       </Link>
-    </>
+    </span>
   );
 }
 

@@ -36,7 +36,7 @@ describe('AiInlinePrompt', () => {
     expect(screen.queryByText(WS2_COPY.aiPrompt.frequency)).not.toBeInTheDocument();
   });
 
-  it('insets the opened consent card by the page margin', () => {
+  it('keeps the opened consent card at the column width', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     client.setQueryData(ME_SETTINGS_QUERY_KEY, {
       aiConsent: { explanations: 'review', brief: 'unset', reask: true },
@@ -51,8 +51,8 @@ describe('AiInlinePrompt', () => {
     expect(screen.getByTestId('ai-inline-consent')).toContainElement(
       screen.getByRole('button', { name: WS2_COPY.aiConsent.allow }),
     );
-    expect(renderToStaticMarkup(<AiInlineConsentInset>card</AiInlineConsentInset>)).toContain(
-      'padding:0 clamp(16px, 3vw, 40px)',
+    expect(renderToStaticMarkup(<AiInlineConsentInset>card</AiInlineConsentInset>)).not.toContain(
+      'padding',
     );
   });
 

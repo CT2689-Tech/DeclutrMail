@@ -17,13 +17,9 @@ import { aiPromptDue, dismissAiPrompt } from './ai-prompt-queue';
 
 const { color, font, text, radius } = tokens;
 
-/** Same horizontal inset as the editorial page column, so the card is not edge to edge. */
+/** The page column already insets the card. A second inset makes it narrower than the title. */
 export function AiInlineConsentInset({ children }: { children: ReactNode }) {
-  return (
-    <div data-testid="ai-inline-consent" style={{ padding: '0 clamp(16px, 3vw, 40px)' }}>
-      {children}
-    </div>
-  );
+  return <div data-testid="ai-inline-consent">{children}</div>;
 }
 
 /**
