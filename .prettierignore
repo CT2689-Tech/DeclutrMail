@@ -11,6 +11,9 @@ pnpm-lock.yaml
 *.min.css
 docs/execution/Implementation-Plan.md
 
+# Byte-identical copy of the drop2-r24 checker. Formatting would change the file.
+scripts/check-no-index-copy.mjs
+
 # Drizzle-generated migration metadata + SQL.
 # meta/*.json must be byte-identical to drizzle-kit's output (used as the
 # round-trip snapshot). The SQL files are also drizzle-emitted and should

@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { Button, EmptyState, tokens } from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 
 import { useAuth } from '@/features/auth/auth-provider';
 import type { MeMailbox } from '@/features/auth/api/use-me';
@@ -117,7 +118,7 @@ export function NoActiveMailboxView({
                 </span>
                 <span style={{ display: 'block', marginTop: 4 }}>
                   {onlyDisconnected.indexedDataState === 'deleted'
-                    ? 'Reconnect to build a new index from Gmail. Deleted history does not return.'
+                    ? WS2_COPY.liveFix.mailboxes.deletedReconnect
                     : 'Reconnect to pick up where you left off. Your sender history is preserved.'}
                 </span>
               </>

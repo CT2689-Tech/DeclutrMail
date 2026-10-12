@@ -394,4 +394,11 @@ export const WS3_COPY = {
   'ws3.liveFix.simulator.manualClaim':
     'Archive and Later change the inbox email that matches what you approved, as it stands when they run. Delete can also include archived email if you choose that. Archive, Later and Delete you start yourself don’t create rules for future email. Autopilot handles future email separately: you preview a rule before turning it on, then choose Watch first (it asks you) or Act now (it acts without asking).',
   'ws3.liveFix.simulator.noMatch': 'No sample email matched the older email you chose.',
+  'ws3.liveFix.learn.checklistDelete':
+    'Can you disconnect a Gmail account, export your data, and delete the saved email details?',
+  'ws3.liveFix.learn.deleteSaved':
+    'Can the user delete the saved email details without deleting email in Gmail?',
+  'ws3.liveFix.learn.firstScanStep': 'Connect and let the first scan finish',
+  'ws3.liveFix.learn.deletePreview':
+    'The preview names the sender and how many emails it found so far.',
 } as const;

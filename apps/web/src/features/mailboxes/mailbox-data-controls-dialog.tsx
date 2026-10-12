@@ -9,6 +9,7 @@ import {
   mailboxDataDeletionConfirmPhrase,
   tokens,
 } from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import type { MeMailbox } from '@/features/auth/api/use-me';
 
@@ -171,8 +172,8 @@ export function MailboxDataControlsDialog({
               {alreadyDisconnected
                 ? 'Permanently deletes this mailbox’s saved email details and related data from DeclutrMail.'
                 : 'Removes the saved Google credential, stops access, then permanently deletes this mailbox’s saved email details and related data from DeclutrMail.'}{' '}
-              Your DeclutrMail account, other mailboxes, and this disconnected Gmail address remain.
-              Reconnecting starts a new index.
+              Your DeclutrMail account, other mailboxes, and this disconnected Gmail address remain.{' '}
+              {WS2_COPY.liveFix.mailboxes.deleteReconnect}
             </p>
             <InventoryList
               title="Deleted from DeclutrMail"

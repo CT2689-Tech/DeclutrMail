@@ -47,7 +47,7 @@ it('preserves unmatched reason formats instead of assigning invented metrics', (
   expect(screen.getByRole('columnheader', { name: 'In inbox' })).toBeInTheDocument();
   expect(screen.getByText(dormant.reason)).toBeInTheDocument();
   expect(
-    screen.getByText('At matching: first seen 3 days earlier · 1 indexed email'),
+    screen.getByText('At matching: first seen 3 days earlier · 1 email from this sender'),
   ).toBeInTheDocument();
 });
 
