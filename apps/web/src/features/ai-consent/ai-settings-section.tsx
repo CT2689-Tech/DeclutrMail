@@ -83,7 +83,7 @@ export function AiSettingsSection({
   }
 
   return (
-    <SettingsGroup id="ai" title="AI" focusable>
+    <SettingsGroup id="ai" title={copy.settings.title} focusable>
       <SettingsRow
         label={explanationsLabel}
         detail={<SwitchHelp text={copy.settings.help.all} note={explanationsNote} />}
