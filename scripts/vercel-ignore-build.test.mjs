@@ -613,8 +613,13 @@ test('native previews are reused, obsolete refs skipped and failed previews neve
     const f = queueFixture();
     const preview = { ...f.preview, state };
     const g = queueFixture({ deployments: [preview] });
-    if (['ERROR', 'CANCELED'].includes(state))
+    if (state === 'ERROR')
       await assert.rejects(ensureQueuePreview(g.env, g.fetcher), /diagnose it before retrying/);
+    else if (state === 'CANCELED')
+      assert.deepEqual(await ensureQueuePreview(g.env, g.fetcher), {
+        state: 'ignored',
+        id: preview.id,
+      });
     else assert.equal((await ensureQueuePreview(g.env, g.fetcher)).state, 'existing');
     assert.equal(
       g.calls.some((c) => c.method === 'POST'),
@@ -631,7 +636,7 @@ test('native previews are reused, obsolete refs skipped and failed previews neve
   }
 });
 
-test("a cancelled queue preview counts only with Vercel's ignore status for that deployment", async () => {
+test('a canceled queue preview with no Vercel failure status is ignored', async () => {
   const base = queueFixture();
   const id = 'dpl_ignored123';
   const target = 'https://vercel.com/chintanathakkar-gmailcoms-projects/declutr-mail/ignored123';
@@ -643,42 +648,108 @@ test("a cancelled queue preview counts only with Vercel's ignore status for that
     creator: { login: 'vercel[bot]' },
     target_url: target,
   };
-  const run = (statuses, deployment = cancelled) => {
-    const f = queueFixture({ deployments: [deployment], statuses });
-    return { f, result: ensureQueuePreview(f.env, f.fetcher) };
-  };
-  const ok = run([ignored, { ...ignored, state: 'pending' }, { context: 'CI', state: 'failure' }]);
-  assert.deepEqual(await ok.result, { state: 'ignored', id });
-  assert.equal(
-    ok.f.calls.some((c) => c.method === 'POST'),
-    false,
-  );
-
   for (const [label, statuses, deployment] of [
-    ['no status', []],
-    ['pending is latest', [{ ...ignored, state: 'pending' }, ignored]],
-    ['failure', [{ ...ignored, state: 'failure' }]],
-    ['generic success description', [{ ...ignored, description: 'Deployment has completed' }]],
-    ['wrong creator', [{ ...ignored, creator: { login: 'someone' } }]],
-    ['no creator', [{ ...ignored, creator: undefined }]],
-    ['other deployment', [{ ...ignored, target_url: `${target}x` }]],
+    ['no status on the queue SHA', [], cancelled],
     [
-      'other project',
-      [{ ...ignored, target_url: target.replace('declutr-mail', 'declutr-front-zen') }],
+      'ignore success still counts',
+      [ignored, { ...ignored, state: 'pending' }, { context: 'CI', state: 'failure' }],
+      cancelled,
     ],
-    ['other context', [{ ...ignored, context: 'Vercel – declutr-front-zen' }]],
+    ['pending is not a failure', [{ ...ignored, state: 'pending' }, ignored], cancelled],
+    [
+      'generic success is not a failure',
+      [{ ...ignored, description: 'Deployment has completed' }],
+      cancelled,
+    ],
+    ['wrong creator is not a failure', [{ ...ignored, creator: { login: 'someone' } }], cancelled],
+    ['no creator is not a failure', [{ ...ignored, creator: undefined }], cancelled],
+    [
+      'another deployment URL is not a failure',
+      [{ ...ignored, target_url: `${target}x` }],
+      cancelled,
+    ],
+    [
+      'another project URL is not a failure',
+      [{ ...ignored, target_url: target.replace('declutr-mail', 'declutr-front-zen') }],
+      cancelled,
+    ],
+    [
+      'a non-Vercel failure is not a Vercel failure',
+      [{ ...ignored, context: 'Vercel – declutr-front-zen', state: 'failure' }],
+      cancelled,
+    ],
+    [
+      'a newer success supersedes an older Vercel failure',
+      [ignored, { ...ignored, state: 'failure', description: 'Deployment failed' }],
+      cancelled,
+    ],
     ['deployment without id', [ignored], { ...cancelled, uid: undefined, id: undefined }],
-    ['errored deployment', [ignored], { ...cancelled, state: 'ERROR' }],
   ]) {
-    const { f, result } = run(statuses, deployment);
-    await assert.rejects(result, /diagnose it before retrying/, label);
+    const f = queueFixture({ deployments: [deployment], statuses });
+    assert.deepEqual(
+      await ensureQueuePreview(f.env, f.fetcher),
+      {
+        state: 'ignored',
+        id: deployment.uid ?? deployment.id,
+      },
+      label,
+    );
     assert.equal(
       f.calls.some((c) => c.method === 'POST'),
       false,
       label,
     );
   }
-  await assert.rejects(run({}).result, /statuses are unavailable/);
+});
+
+test('a real queue preview failure is not treated as ignored', async () => {
+  const base = queueFixture();
+  const id = 'dpl_ignored123';
+  const target = 'https://vercel.com/chintanathakkar-gmailcoms-projects/declutr-mail/ignored123';
+  const cancelled = { ...base.preview, uid: id, state: 'CANCELED' };
+  const ignored = {
+    context: 'Vercel',
+    state: 'success',
+    description: 'Canceled by Ignored Build Step',
+    creator: { login: 'vercel[bot]' },
+    target_url: target,
+  };
+  for (const [label, statuses, deployment] of [
+    [
+      'Vercel failure status',
+      [{ ...ignored, state: 'failure', description: 'Deployment failed' }],
+      cancelled,
+    ],
+    [
+      'Vercel error status',
+      [{ ...ignored, state: 'error', description: 'Deployment failed' }],
+      cancelled,
+    ],
+    [
+      'a newer failure hides an older ignore success',
+      [{ ...ignored, state: 'failure', description: 'Deployment failed' }, ignored],
+      cancelled,
+    ],
+    ['errored deployment', [ignored], { ...cancelled, state: 'ERROR' }],
+    ['errored deployment with no status', [], { ...cancelled, state: 'ERROR' }],
+  ]) {
+    const f = queueFixture({ deployments: [deployment], statuses });
+    await assert.rejects(
+      ensureQueuePreview(f.env, f.fetcher),
+      /diagnose it before retrying/,
+      label,
+    );
+    assert.equal(
+      f.calls.some((c) => c.method === 'POST'),
+      false,
+      label,
+    );
+  }
+  const unavailable = queueFixture({ deployments: [cancelled], statuses: {} });
+  await assert.rejects(
+    ensureQueuePreview(unavailable.env, unavailable.fetcher),
+    /statuses are unavailable/,
+  );
 });
 
 test('bad inputs, provider failures and incorrect created identity fail closed', async () => {

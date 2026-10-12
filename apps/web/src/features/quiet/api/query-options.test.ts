@@ -8,6 +8,9 @@ import { quietHoursQueryOptions } from './query-options';
  * invalidates this key. Without a poll, an open tab keeps showing a
  * quiet window as active, and its held count as current, long after
  * the window actually ended (design-system review, PR #808).
+ *
+ * The interval stays a number. Returning false while the tab is hidden
+ * would clear TanStack's timer, and focus would not start it again.
  */
 describe('quietHoursQueryOptions — self-refreshing', () => {
   const reader = async () => {
@@ -15,7 +18,9 @@ describe('quietHoursQueryOptions — self-refreshing', () => {
   };
 
   it('polls, so an open tab does not hold a stale "Quiet now" indefinitely', () => {
-    expect(quietHoursQueryOptions('mb-1', reader).refetchInterval).toBeTypeOf('number');
-    expect(quietHoursQueryOptions('mb-1', reader).refetchInterval as number).toBeGreaterThan(0);
+    const options = quietHoursQueryOptions('mb-1', reader);
+    expect(options.refetchInterval).toBeTypeOf('number');
+    expect(options.refetchInterval).toBeGreaterThan(0);
+    expect(options.refetchIntervalInBackground).toBe(false);
   });
 });

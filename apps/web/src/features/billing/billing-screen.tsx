@@ -206,19 +206,27 @@ export function BillingScreen({
   const subscriptionQuery = useBillingSubscription({
     // Three waits, and the pending-payment one outranks: it is measured
     // in seconds and its lock hides the other notices anyway.
+    // A number, including while the tab is hidden or the browser is
+    // offline. Returning false here clears TanStack's timer, and focus
+    // or online does not start it again. The default
+    // refetchIntervalInBackground skips the tick while hidden, and the
+    // default online network mode pauses the fetch while offline; the
+    // next tick after the tab is back runs the read.
     refetchInterval:
       pending === null
         ? pauseConfirming
-          ? PAYMENT_PROCESSING_POLL_MS
+          ? () => PAYMENT_PROCESSING_POLL_MS
           : // The settling window polls itself back to life. Read off the
             // query's own data rather than the derived view, which does
             // not exist yet at this line — and the promise the notice
             // makes ("we'll switch this back on automatically") is only
-            // true because of this.
+            // true because of this. A settled subscription returns false
+            // and the timer stops, which is the end of the wait.
             (query) => (isRefundSettling(query.state.data) ? REFUND_SETTLING_POLL_MS : false)
-        : processingPhase === 'unconfirmed'
-          ? PAYMENT_UNCONFIRMED_POLL_MS
-          : PAYMENT_PROCESSING_POLL_MS,
+        : () =>
+            processingPhase === 'unconfirmed'
+              ? PAYMENT_UNCONFIRMED_POLL_MS
+              : PAYMENT_PROCESSING_POLL_MS,
   });
   const cancel = useCancelSubscription();
   const resumeCancellation = useResumeCancellation();

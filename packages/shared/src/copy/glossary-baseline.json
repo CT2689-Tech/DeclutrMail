@@ -2176,5 +2176,17 @@
     "id": "price_literal",
     "line": 99,
     "text": "{freeName} is $0 and lets you clear {allowance} emails a month; Unsubscribe, Keep, Later, previews and Undo are unlimited. {plusName} is {plusPrice} a year with no monthly limit. {refundDays}-day money-back on any purchase, once per customer."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws1.ts",
+    "id": "allowance_word",
+    "line": 24,
+    "text": "Free is $0 with {allowance} emails cleared a month and unlimited unsubscribes. The {passName} is {passPrice} once. {plusName} is {plusPrice} a year. 30-day Undo on every plan."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws1.ts",
+    "id": "price_literal",
+    "line": 24,
+    "text": "Free is $0 with {allowance} emails cleared a month and unlimited unsubscribes. The {passName} is {passPrice} once. {plusName} is {plusPrice} a year. 30-day Undo on every plan."
   }
 ]
