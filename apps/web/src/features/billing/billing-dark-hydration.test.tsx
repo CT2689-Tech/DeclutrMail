@@ -9,8 +9,8 @@ import { ApiError } from '@/lib/api/client';
 import { billingSubscriptionQueryOptions } from './api/query-options';
 import { BillingScreen } from './billing-screen';
 
-vi.mock('@/features/auth/auth-provider', () => ({
-  useAuth: () => ({
+vi.mock('@/features/auth/auth-provider', () => {
+  const auth = () => ({
     me: {
       user: { id: 'u', email: 'me@example.com', workspaceId: 'w' },
       activeMailboxId: 'mb-1',
@@ -19,8 +19,9 @@ vi.mock('@/features/auth/auth-provider', () => ({
       cleanupRemaining: 3,
       cleanupResetsAt: null,
     },
-  }),
-}));
+  });
+  return { useAuth: auth, useOptionalAuth: auth };
+});
 
 vi.mock('@/lib/posthog', () => ({ track: vi.fn(() => Promise.resolve()) }));
 

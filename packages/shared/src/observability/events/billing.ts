@@ -15,6 +15,11 @@ export const BILLING_EVENT_NAMES = [
   'plan_change_started',
   'pricing_plan_selected',
   'waitlist_joined',
+  'upgrade_cta_clicked',
+  'checkout_closed',
+  'free_cap_hit',
+  'pass_selected',
+  'plus_selected',
 ] as const;
 
 export type BillingEventName = (typeof BILLING_EVENT_NAMES)[number];
@@ -34,7 +39,7 @@ export interface BillingEventPayloads {
     /** Which entitlement gate triggered the prompt (D19/D77/D81). */
     reason: 'free_cap' | 'inbox_limit' | 'action_tier' | 'feature_tier' | 'pro_feature';
     /** The surface that rendered it. */
-    source: 'actions_402' | 'account_menu' | 'triage_empty_state' | 'upgrade_modal' | 'tier_gate';
+    source: 'account_menu' | 'upgrade_modal' | 'tier_gate';
   };
 
   // — Billing surface (D119/D120, U13) —
@@ -130,6 +135,24 @@ export interface BillingEventPayloads {
      */
     tier_interest: 'free' | 'plus' | 'pro' | 'team' | 'enterprise' | null;
     /** App-chosen attribution slug (`pricing`, `landing`, …) — NEVER the email. */
+    source: string;
+  };
+
+  upgrade_cta_clicked: {
+    source: string;
+    plan: 'plus' | 'pass' | 'pro';
+  };
+  checkout_closed: {
+    plan: 'plus' | 'pass' | 'pro';
+  };
+  free_cap_hit: {
+    requested: number;
+    remaining: number;
+  };
+  pass_selected: {
+    source: string;
+  };
+  plus_selected: {
     source: string;
   };
 }

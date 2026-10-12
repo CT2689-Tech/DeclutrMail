@@ -28,8 +28,8 @@ import type {
   BillingSubscription,
   CancelRequest,
 } from '@declutrmail/shared/contracts';
-import { WS2_COPY } from '@declutrmail/shared/copy/launch';
-import { TIER_MANIFEST, TIER_RANK, type TierId } from '@declutrmail/shared/entitlements';
+import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory, TIER_MANIFEST, TIER_RANK, type TierId } from '@declutrmail/shared/entitlements';
 
 import { useAuth } from '@/features/auth/auth-provider';
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
@@ -54,6 +54,8 @@ import {
   backingStatusNote,
   complimentaryNote,
   currentPlanPriceLabel,
+  currentPlanTitle,
+  passCoversPlan,
   deriveBillingViewState,
   emptyPlanView,
   formatBillingDate,
@@ -78,6 +80,8 @@ import {
   type PendingKind,
 } from './pending-checkout';
 import { PlanCoverage } from './plan-coverage';
+import { QuotaChip } from './quota-chip';
+import { useCleanupSummary } from './use-cleanup-summary';
 import { PlanPicker } from './plan-picker';
 import { GroupTitle } from '@/features/settings/settings-list';
 
@@ -170,7 +174,7 @@ export function BillingScreen({
   invoiceHistory?: ReactNode;
 }) {
   const { me } = useAuth();
-  const { tier: meTier, cleanupRemaining, cleanupResetsAt } = useTier();
+  const { tier: meTier, cleanupRemaining, cleanupResetsAt, passEnabled } = useTier();
   const workspaceId = me.user.workspaceId;
   const currentOwner = useRef(workspaceId);
   currentOwner.current = workspaceId;
@@ -383,6 +387,22 @@ export function BillingScreen({
     returnTo,
     initialIntent?.from,
   ]);
+
+  useEffect(() => {
+    if (data?.complimentary?.source !== 'pass') return;
+    let pendingPass: boolean;
+    try {
+      pendingPass = window.sessionStorage.getItem('dm.pass.checkout') === '1';
+      if (pendingPass) window.sessionStorage.removeItem('dm.pass.checkout');
+    } catch {
+      return;
+    }
+    if (!pendingPass) return;
+    toast(fillStory(WS1_COPY['cap.resumed']), 'success');
+    void import('./return-after-upgrade')
+      .then(({ returnAfterUpgrade }) => returnAfterUpgrade(returnTo ?? initialIntent?.from))
+      .catch(() => undefined);
+  }, [data?.complimentary?.source, returnTo, initialIntent?.from]);
 
   // "Usually within a minute" needs a state for when it isn't (§8 —
   // every promise in copy gets its elapsed branch). Elapsed counts
@@ -847,7 +867,7 @@ export function BillingScreen({
           the picker. Withheld while a money action is unresolved — the
           portal can start a payment, and arming two money paths at once
           is the double-charge case this screen is built around. */}
-      <PlanCoverage tier={plan.entitlementTier} />
+      <PlanCoverage tier={plan.entitlementTier} pass={passCoversPlan(plan)} />
 
       {!billingDark && paymentMethodSub && paymentMethodSub.status !== 'past_due' ? (
         <PaymentMethodCard
@@ -893,6 +913,7 @@ export function BillingScreen({
         initialIntent={initialIntent}
         initialProvider={initialProvider}
         pricingV2={pricingV2}
+        passEnabled={passEnabled}
         country={country}
         onRequestCancel={() => setCancelOpen(true)}
         onPaymentCompleted={(target, cycle, attemptId) =>
@@ -1468,6 +1489,7 @@ function CurrentPlanCard({
   resumeCancellationError: string | null;
 }) {
   const manifest = TIER_MANIFEST[plan.entitlementTier];
+  const cleanupSummary = useCleanupSummary();
   const { backing } = plan;
   // Two-step (matrix E3): the button arms an inline confirm that states
   // the renewal date and price before anything is sent. Same
@@ -1529,7 +1551,7 @@ function CurrentPlanCard({
               color: color.fg,
             }}
           >
-            {manifest.name}
+            {currentPlanTitle(plan)}
           </span>
           <span
             style={{
@@ -1566,7 +1588,11 @@ function CurrentPlanCard({
         </p>
       ) : null}
 
-      {plan.entitlementTier === 'free' && cleanupRemaining !== null ? (
+      {plan.entitlementTier === 'free' && cleanupSummary.data?.metered ? (
+        <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
+          <QuotaChip summary={cleanupSummary.data} />
+        </p>
+      ) : plan.entitlementTier === 'free' && cleanupRemaining !== null ? (
         <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
           <strong style={{ fontWeight: 600, color: color.fg }}>
             {cleanupRemaining} of {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions left

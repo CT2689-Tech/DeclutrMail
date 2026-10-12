@@ -7,7 +7,7 @@ import { TrustRow } from '@/features/marketing/trust/trust-row';
 import { SupportTasks } from './support-tasks';
 import { BLOG_ARTICLES, BLOG_SLUGS } from './blog-content';
 import { CHANGELOG_ENTRIES } from './changelog-content';
-import { FAQ_ENTRIES } from './faq-content';
+import { publishedFaqEntries } from './faq-content';
 import { ANSWERS_HUB, HOW_TO_HUB, type LearnHubDefinition } from './hub-content';
 import { formatReadingDate, ReadingCta, ReadingLayout } from './learn-shell';
 import type { LearnArticle } from './types';
@@ -136,6 +136,7 @@ export function BlogIndexPage() {
 }
 
 export function FaqPage() {
+  const entries = publishedFaqEntries();
   return (
     <ReadingLayout
       variant="faq"
@@ -147,7 +148,7 @@ export function FaqPage() {
         data={{
           '@context': 'https://schema.org',
           '@type': 'FAQPage',
-          mainEntity: FAQ_ENTRIES.map((entry) => ({
+          mainEntity: entries.map((entry) => ({
             '@type': 'Question',
             name: entry.question,
             acceptedAnswer: { '@type': 'Answer', text: entry.answer },
@@ -156,7 +157,7 @@ export function FaqPage() {
       />
       <SupportTasks />
       <section className="dm-read-faq" aria-label="Frequently asked questions">
-        {FAQ_ENTRIES.map((entry, index) => (
+        {entries.map((entry, index) => (
           <details key={entry.id} id={entry.id} open={index === 0}>
             <summary>{entry.question}</summary>
             <div className="dm-read-faq-answer">

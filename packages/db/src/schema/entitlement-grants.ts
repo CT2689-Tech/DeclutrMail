@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { index, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { check, index, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
 import { citext } from './_custom-types';
 import { workspaceTier } from './workspaces';
@@ -55,6 +55,19 @@ export const entitlementGrants = pgTable(
     reason: text('reason').notNull(),
     /** Who granted it — a founder/operator identifier, not an app principal. */
     grantedBy: text('granted_by').notNull(),
+    /**
+     * `comp` is a founder grant. `pass` is a Backlog Pass purchase.
+     * `promo` is reserved. Existing rows default to `comp`.
+     */
+    source: text('source').notNull().default('comp'),
+    /** Set for a purchased grant (`paddle`). Null on a comp. */
+    provider: text('provider'),
+    /**
+     * Provider transaction id for a purchased grant. Unique so a
+     * replayed webhook cannot insert a second row. Multiple nulls are
+     * allowed (comps have no transaction).
+     */
+    providerTransactionId: text('provider_transaction_id'),
     /** Null = permanent. Past = stopped granting; the row is kept as trail. */
     expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }),
     /** Set to revoke before expiry without deleting the record. */
@@ -67,14 +80,20 @@ export const entitlementGrants = pgTable(
       .default(sql`now()`),
   },
   (table) => ({
+    sourceCheck: check(
+      'entitlement_grants_source_check',
+      sql`${table.source} in ('comp', 'pass', 'promo')`,
+    ),
     /**
-     * One grant per email. Re-granting an email UPDATES the existing
-     * row (tier, reason, expiry) rather than stacking a second one —
-     * two live grants for one identity would make "which comp is this
-     * person on" unanswerable, and the max-rank resolve would quietly
-     * pick the higher without anyone deciding.
+     * One complimentary grant per email. A Pass can share the address:
+     * the full unique(email) was replaced by this partial index.
      */
-    emailUniq: uniqueIndex('entitlement_grants_email_uniq').on(table.email),
+    compEmailUniq: uniqueIndex('entitlement_grants_comp_email_uniq')
+      .on(table.email)
+      .where(sql`${table.source} = 'comp'`),
+    providerTransactionUniq: uniqueIndex('entitlement_grants_provider_transaction_uniq').on(
+      table.providerTransactionId,
+    ),
     /**
      * Mirrors migration 0077 — the sweep's expiry scan. Permanent comps
      * (`expires_at IS NULL`) can never expire, so they are left out.

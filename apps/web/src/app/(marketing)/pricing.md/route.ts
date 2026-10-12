@@ -13,7 +13,12 @@
  * `llms.txt` and the `text/markdown` alternate on `/pricing`.
  */
 
-import { isPricingV2, RAILS, type PricePoint } from '@declutrmail/shared/entitlements';
+import {
+  isPricingV2,
+  RAILS,
+  renderPricingMarkdown,
+  type PricePoint,
+} from '@declutrmail/shared/entitlements';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
@@ -124,6 +129,16 @@ function comparisonTable(): string {
 
 export function GET() {
   const origin = siteUrl();
+  if (isPricingV2()) {
+    return new Response(renderPricingMarkdown(), {
+      headers: {
+        'Content-Type': 'text/markdown; charset=utf-8',
+        'Cache-Control': 'public, max-age=300, s-maxage=3600',
+        'X-Robots-Tag': 'noindex, follow',
+        Link: `<${origin}/pricing>; rel="canonical"`,
+      },
+    });
+  }
 
   const markdown = `# DeclutrMail pricing
 

@@ -21,8 +21,8 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as Entitlements from '@declutrmail/shared/entitlements';
 
-vi.mock('@/features/auth/auth-provider', () => ({
-  useAuth: () => ({
+vi.mock('@/features/auth/auth-provider', () => {
+  const auth = () => ({
     me: {
       user: { id: 'u', email: 'me@example.com', workspaceId: 'w' },
       activeMailboxId: 'mb-1',
@@ -38,8 +38,9 @@ vi.mock('@/features/auth/auth-provider', () => ({
       tier: 'free',
       cleanupRemaining: 3,
     },
-  }),
-}));
+  });
+  return { useAuth: auth, useOptionalAuth: auth };
+});
 
 vi.mock('@/features/billing/checkout', () => ({
   launchCheckout: vi.fn(() => Promise.resolve()),

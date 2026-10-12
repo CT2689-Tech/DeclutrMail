@@ -35,7 +35,10 @@ import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-pro
 import { mailLocationValue } from '@/features/triage/action-preview-detail';
 import { afterLead } from '@/lib/copy/after-lead';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
+import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import { useUpgradeGateStore } from '@/lib/entitlements/upgrade-gate';
 import type {
   BulkActionPreviewResult,
@@ -296,6 +299,7 @@ export function ConfirmActionModal({
   // Per-sender breakdown expand state (D52 — "Per-sender breakdown"
   // expandable list for verification on bulk flows).
   const [showAllSenders, setShowAllSenders] = useState(false);
+  const cleanupSummary = useCleanupSummary();
 
   useEffect(() => {
     if (!request) return;
@@ -624,7 +628,16 @@ export function ConfirmActionModal({
   //
   // A no-channel Unsubscribe consumes nothing (`method !== 'none'`
   // guards the assert), so it must not claim a unit either.
-  const quotaRemaining = cleanupQuota?.remaining ?? null;
+  const emailMeter = cleanupSummary.data?.metered === true ? cleanupSummary.data : null;
+  const meterCounts =
+    isArchiveVerb ||
+    isDeleteVerb ||
+    (hasSecondaryAction && (secondaryVerb === 'archive' || secondaryVerb === 'delete'));
+  const emailsRequested =
+    emailMeter && meterCounts && livePreviewReady && typeof compositeCount === 'number'
+      ? compositeCount
+      : null;
+  const quotaRemaining = emailMeter ? emailMeter.remaining : (cleanupQuota?.remaining ?? null);
   const unitsPerSender =
     (isUnsubVerb && unsubscribeChannel === 'none' ? 0 : 1) + (hasSecondaryAction ? 1 : 0);
   // The live bulk preview's actionable (non-Protected) sender count —
@@ -655,13 +668,17 @@ export function ConfirmActionModal({
           return !s.protected && original?.unsubscribeMethod === 'one_click';
         }).length
       : null;
-  const unitsNeeded = unitsPerSender * (bulkActionableSenderCount ?? 1);
+  const unitsNeeded = emailMeter
+    ? (emailsRequested ?? 0)
+    : unitsPerSender * (bulkActionableSenderCount ?? 1);
   // Set when `requestAction` already trimmed this request to what the
   // allowance covers. The senders here ARE the ones that will run, so the
   // preview above is truthful as-is; all this changes is the copy, which
   // has to say the selection was larger.
   const quotaCappedFrom = request?.quotaCappedFrom ?? null;
-  const quotaShort = quotaRemaining !== null && unitsNeeded > quotaRemaining;
+  const quotaShort = emailMeter
+    ? emailsRequested !== null && emailsRequested > emailMeter.remaining
+    : quotaRemaining !== null && unitsNeeded > quotaRemaining;
 
   // `nothingToActOn` already carries its own verb test — repeating a
   // narrower one here would silently re-exclude Later.
@@ -695,6 +712,21 @@ export function ConfirmActionModal({
   // cover this click — routed through the same upgrade-gate store the
   // server's 402 uses, so both paths land on one UpgradeModal.
   const reportQuotaShort = () => {
+    if (emailMeter && emailsRequested !== null) {
+      useUpgradeGateStore.getState().report({
+        reason: 'free_cap',
+        details: {
+          remaining: emailMeter.remaining,
+          limit: emailMeter.limit,
+          used: emailMeter.used,
+          requiredUnits: emailsRequested,
+          requested: emailsRequested,
+          resetsAt: emailMeter.resetAt,
+        },
+      });
+      onCancel();
+      return;
+    }
     const limit = TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0;
     useUpgradeGateStore.getState().report({
       reason: 'free_cap',
@@ -1154,7 +1186,7 @@ export function ConfirmActionModal({
   // A no-op spends no cleanup action, and a sheet that cannot run has
   // nothing to charge — the status line above is the reason.
   const quotaLine =
-    previewStateCopy !== null || nothingActionableBulk || nothingToActOn
+    emailMeter || previewStateCopy !== null || nothingActionableBulk || nothingToActOn
       ? null
       : quotaCappedFrom
         ? `${unitsNeeded} of ${quotaCappedFrom} eligible senders — all you have left this month.`
@@ -1463,7 +1495,16 @@ export function ConfirmActionModal({
             ? // Swap confirm for a truthful upgrade action when the quota
               // cannot cover this click — routed through the same upgrade
               // gate the server's 402 uses.
-              { label: 'Upgrade for unlimited cleanup', onClick: reportQuotaShort }
+              {
+                label: emailMeter
+                  ? fillStory(
+                      auth?.me.passEnabled === true
+                        ? WS1_COPY['cap.pass.button']
+                        : WS1_COPY['cap.plus.button'],
+                    )
+                  : 'Upgrade for unlimited cleanup',
+                onClick: reportQuotaShort,
+              }
             : {
                 // Not `busyLabel`: PreviewSheet locks Cancel, Esc and the
                 // backdrop while busy, and this sheet must keep them LIVE
@@ -1479,7 +1520,20 @@ export function ConfirmActionModal({
               }
         }
         status={status ?? undefined}
-        footer={quotaLine === null ? undefined : <span>{quotaLine}</span>}
+        footer={
+          emailMeter &&
+          previewStateCopy === null &&
+          !nothingActionableBulk &&
+          !nothingToActOn &&
+          isUnsubVerb &&
+          !meterCounts ? (
+            <span>{fillStory(WS1_COPY['meter.preview.free'])}</span>
+          ) : emailMeter && emailsRequested !== null && emailsRequested > 0 ? (
+            <MeterPreviewLine requested={emailsRequested} summary={emailMeter} />
+          ) : quotaLine === null ? undefined : (
+            <span>{quotaLine}</span>
+          )
+        }
       >
         {selectionSummary || controls.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: space[3] }}>

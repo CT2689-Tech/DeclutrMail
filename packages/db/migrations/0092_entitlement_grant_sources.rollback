@@ -1,0 +1,11 @@
+ALTER TABLE "pending_checkouts" DROP COLUMN IF EXISTS "offer";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "entitlement_grants_provider_transaction_uniq";
+--> statement-breakpoint
+ALTER TABLE "entitlement_grants" DROP CONSTRAINT IF EXISTS "entitlement_grants_source_check";
+--> statement-breakpoint
+ALTER TABLE "entitlement_grants" DROP COLUMN IF EXISTS "provider_transaction_id";
+--> statement-breakpoint
+ALTER TABLE "entitlement_grants" DROP COLUMN IF EXISTS "provider";
+--> statement-breakpoint
+ALTER TABLE "entitlement_grants" DROP COLUMN IF EXISTS "source";

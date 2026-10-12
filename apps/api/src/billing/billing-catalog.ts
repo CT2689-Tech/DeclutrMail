@@ -8,8 +8,10 @@
 //
 // SANDBOX OVERRIDE: sandbox catalog ids are DIFFERENT objects from the
 // live ones (Paddle sandbox + Razorpay test mode have their own id
-// space), and the manifest can only hold one set. `BILLING_CATALOG_JSON`
-// overlays provider ids per plan code for non-production environments:
+// space), and the manifest can only hold one set. When
+// `PADDLE_ENV=sandbox`, the 2026-10 Plus annual and the Pass fall back
+// to `SANDBOX_PRICE_IDS`. `BILLING_CATALOG_JSON` still overlays provider
+// ids per plan code and wins over that map:
 //
 //   BILLING_CATALOG_JSON='{"paddle":{"plus_monthly":"pri_…"},"razorpay":{"pro_annual":"plan_…"}}'
 //
@@ -22,7 +24,9 @@
 
 import {
   LEGACY_PRICE_IDS,
+  OFFERS,
   PLUS_ANNUAL_2026_10,
+  SANDBOX_PRICE_IDS,
   TIER_MANIFEST,
   usablePriceId,
 } from '@declutrmail/shared/entitlements';
@@ -113,34 +117,44 @@ function buildCurrentCatalog(env: NodeJS.ProcessEnv): CatalogEntry[] {
 }
 
 /**
- * Launch catalog. Plus annual is the 2026-10 price. Plus monthly and
- * the previous annual stay resolvable and unlisted. Pro is not sold.
+ * Launch catalog. New checkouts are Plus annual at the 2026-10 price.
+ * Plus monthly ($9) and the previous $90 annual stay resolvable through
+ * `LEGACY_PRICE_IDS` for subscribers who already have them. They are not
+ * new-checkout SKUs, and a catalog overlay cannot put monthly back.
+ * Pro is not sold.
  */
 function buildV2Catalog(env: NodeJS.ProcessEnv): CatalogEntry[] {
   const overrides = parseOverrides(env.BILLING_CATALOG_JSON);
-  const monthly = TIER_MANIFEST.plus.prices.monthly;
-  const entries: CatalogEntry[] = [];
-  if (monthly) {
-    entries.push({
-      planCode: 'plus_monthly',
+  return [
+    {
+      planCode: 'plus_annual',
       tierId: 'plus',
-      cycle: 'monthly',
+      cycle: 'annual',
       founding: false,
-      usdCents: monthly.usdCents,
-      paddlePriceId: overrides.paddle?.plus_monthly ?? monthly.paddlePriceId,
-      razorpayPlanId: overrides.razorpay?.plus_monthly ?? monthly.razorpayPlanId,
-    });
+      usdCents: PLUS_ANNUAL_2026_10.usdCents,
+      paddlePriceId:
+        overrides.paddle?.plus_annual ??
+        (env.PADDLE_ENV === 'sandbox'
+          ? SANDBOX_PRICE_IDS.plus_annual
+          : PLUS_ANNUAL_2026_10.paddlePriceId),
+      razorpayPlanId: null,
+    },
+  ];
+}
+
+/** Pass stays out of `buildCatalog()` so the flag-on subscription snapshot is unchanged. */
+export function passPriceFromEnv(env: NodeJS.ProcessEnv = process.env): string | null {
+  let overlay: string | undefined;
+  const raw = env.BILLING_CATALOG_JSON;
+  if (raw && raw.trim() !== '') {
+    const parsed = JSON.parse(raw) as { paddle?: { pass_onetime?: unknown } };
+    if (typeof parsed.paddle?.pass_onetime === 'string') overlay = parsed.paddle.pass_onetime;
   }
-  entries.push({
-    planCode: 'plus_annual',
-    tierId: 'plus',
-    cycle: 'annual',
-    founding: false,
-    usdCents: PLUS_ANNUAL_2026_10.usdCents,
-    paddlePriceId: overrides.paddle?.plus_annual ?? PLUS_ANNUAL_2026_10.paddlePriceId,
-    razorpayPlanId: null,
-  });
-  return entries;
+  const fallback =
+    env.PADDLE_ENV === 'sandbox'
+      ? SANDBOX_PRICE_IDS.pass_onetime
+      : OFFERS.backlogPass.price.paddlePriceId;
+  return usablePriceId(overlay ?? fallback);
 }
 
 function legacyEntry(provider: BillingProviderId, providerPriceId: string): CatalogEntry | null {
@@ -160,11 +174,18 @@ function legacyEntry(provider: BillingProviderId, providerPriceId: string): Cata
 
 /** The catalog read API the billing services consume. */
 export class BillingCatalog {
+  /** Usable Paddle price id for the Backlog Pass, or null while it is FILL_ME. */
+  readonly passPaddlePriceId: string | null;
+
   constructor(
     private readonly entries: CatalogEntry[] = buildCatalog(),
     /** D126 cap — injectable so tests can exercise the counter cheaply. */
     readonly foundingMaxRedemptions: number = TIER_MANIFEST.pro.promo?.maxRedemptions ?? 0,
-  ) {}
+    passPriceId?: string | null,
+  ) {
+    this.passPaddlePriceId =
+      passPriceId === undefined ? passPriceFromEnv() : usablePriceId(passPriceId);
+  }
 
   /** Forward: (tier, cycle, founding?) → provider price id or null. */
   resolvePriceId(
@@ -181,7 +202,7 @@ export class BillingCatalog {
     return usablePriceId(id);
   }
 
-  /** Reverse: webhook's provider price id → catalog entry or null. */
+  /** Reverse: webhook price id → catalog entry. Price custom_data is not an input. */
   resolveByPriceId(provider: BillingProviderId, providerPriceId: string): CatalogEntry | null {
     return (
       this.entries.find((e) =>

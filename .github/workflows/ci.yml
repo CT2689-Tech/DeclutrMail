@@ -498,6 +498,12 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.web == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # Production web build. These are not NEXT_PUBLIC_*; static pages
+    # still bake whatever value is present during `next build`.
+    env:
+      PRICING_V2: 'true'
+      METER_V2: 'true'
+      BILLING_PASS_ENABLED: 'true'
     permissions:
       contents: read
       # Reads main's `web-bundle-sizes` artifact for the growth warning.
@@ -847,7 +853,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: [accessibility, responsive, hydration-billing, journeys]
+        include:
+          - lane: accessibility
+            pricing_v2: 'false'
+            meter_v2: 'false'
+            billing_pass: 'false'
+          - lane: responsive
+            pricing_v2: 'false'
+            meter_v2: 'false'
+            billing_pass: 'false'
+          - lane: hydration-billing
+            pricing_v2: 'false'
+            meter_v2: 'false'
+            billing_pass: 'false'
+          # Journeys exercise the launch pricing UI. The money-path lane
+          # stays on today's Pro catalog, so these flags stay off there.
+          - lane: journeys
+            pricing_v2: 'true'
+            meter_v2: 'true'
+            billing_pass: 'true'
     services:
       postgres:
         image: postgres:16-alpine
@@ -898,6 +922,9 @@ jobs:
       PADDLE_WEBHOOK_SECRET: e2e_local_paddle_webhook_secret
       E2E_PADDLE_WEBHOOK_SECRET: e2e_local_paddle_webhook_secret
       BILLING_CATALOG_JSON: '{"paddle":{"pro_monthly":"pri_e2e_pro_monthly"}}'
+      PRICING_V2: ${{ matrix.pricing_v2 }}
+      METER_V2: ${{ matrix.meter_v2 }}
+      BILLING_PASS_ENABLED: ${{ matrix.billing_pass }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6

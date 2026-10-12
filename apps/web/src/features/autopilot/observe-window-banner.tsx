@@ -5,7 +5,9 @@ import Link from 'next/link';
 import { Button, tokens } from '@declutrmail/shared';
 import { TIER_MANIFEST, minimumTierForCapability } from '@declutrmail/shared/entitlements';
 
+import { useOptionalAuth } from '@/features/auth/auth-provider';
 import { billingIntentPath } from '@/features/billing/billing-intent';
+import { launchPlusQuote } from '@/features/billing/billing-model';
 import type { AutopilotRuleDto } from '@/lib/api/autopilot';
 import { bannerSurface } from './autopilot-banner-stack';
 import { observeDigestSummary } from './observe-digest';
@@ -73,7 +75,12 @@ export function ObserveWindowBanner({
   const actTier = minimumTierForCapability('autopilot-active');
   const actPlan = actTier === 'pro' ? ('pro' as const) : ('plus' as const);
   const actName = TIER_MANIFEST[actTier].name;
-  const upgradeHref = billingIntentPath({ plan: actPlan, cycle: 'monthly' });
+  const pricingV2 = useOptionalAuth()?.me.pricingV2 === true;
+  const upgradeHref = billingIntentPath({
+    plan: actPlan,
+    cycle: pricingV2 ? 'annual' : 'monthly',
+  });
+  const upgradePrice = pricingV2 && actPlan === 'plus' ? launchPlusQuote() : null;
   if (rules.length === 0) return null;
 
   return (
@@ -154,6 +161,7 @@ export function ObserveWindowBanner({
                     aria-label={`Run rule ${name} without asking — requires ${actName}`}
                   >
                     Run without asking → {actName}
+                    {upgradePrice ? ` · ${upgradePrice}` : ''}
                   </Link>
                 )}
               </div>

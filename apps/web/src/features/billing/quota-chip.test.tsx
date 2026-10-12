@@ -21,10 +21,11 @@ describe('QuotaChip', () => {
   });
 
   it('shows the remaining allowance and turns amber at 80%', () => {
-    render(<QuotaChip summary={METERED} />);
+    const { container } = render(<QuotaChip summary={METERED} />);
     expect(screen.getByTestId('quota-chip')).toHaveTextContent(
       '640 of 1,000 free emails left · resets Nov 9',
     );
+    expect(container.textContent).toContain('resets Nov 9 · See plans');
     expect(screen.getByTestId('quota-chip')).toHaveAttribute('data-tone', 'default');
 
     render(<QuotaChip summary={{ ...METERED, used: 800, remaining: 200 }} />);

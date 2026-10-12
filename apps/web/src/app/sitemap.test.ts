@@ -16,7 +16,8 @@ import { readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { isPricingV2 } from '@declutrmail/shared/entitlements';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import sitemap from './sitemap';
 import robots, { AUTHED_APP_PATHS } from './robots';
@@ -73,9 +74,20 @@ function sitemapPaths(): string[] {
 }
 
 describe('sitemap — D134', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('recursively covers every indexable marketing route and dynamic route family', () => {
     const patterns = marketingRoutePatternsFromFs();
-    const excludedFromSitemap = ['/demo', '/changelog', '/sign-in'];
+    // The pricing changelog page redirects to /pricing while the flag is
+    // off, so it is not a crawl target in that build.
+    const excludedFromSitemap = [
+      '/demo',
+      '/changelog',
+      '/sign-in',
+      ...(isPricingV2() ? [] : ['/pricing/changelog']),
+    ];
     const indexablePatterns = patterns.filter((pattern) => !excludedFromSitemap.includes(pattern));
     const routes = sitemapPaths();
 
@@ -108,6 +120,16 @@ describe('sitemap — D134', () => {
 
   it('omits the stale historical changelog until its entries are curated', () => {
     expect(sitemapPaths()).not.toContain('/changelog');
+  });
+
+  it('omits /pricing/changelog while PRICING_V2 is off', () => {
+    vi.stubEnv('PRICING_V2', '');
+    expect(sitemapPaths()).not.toContain('/pricing/changelog');
+  });
+
+  it('lists /pricing/changelog when PRICING_V2 is on', () => {
+    vi.stubEnv('PRICING_V2', 'true');
+    expect(sitemapPaths()).toContain('/pricing/changelog');
   });
 
   it('omits the noindexed sign-in page', () => {

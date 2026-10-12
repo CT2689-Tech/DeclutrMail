@@ -4,7 +4,7 @@ import {
   CASA_VERIFICATION_APPROVED_ON,
   formatVerificationDate,
 } from '@declutrmail/shared';
-import { renderPricingMarkdown } from '@declutrmail/shared/entitlements';
+import { isPricingV2, renderPricingMarkdown } from '@declutrmail/shared/entitlements';
 import {
   fillWs3,
   LAUNCH_STAGE,
@@ -17,6 +17,8 @@ import {
   WS3_COPY,
 } from '@declutrmail/shared/copy/launch';
 
+import { MONEY_BACK_NOTE } from '@/features/billing/billing-model';
+
 import { COMPARISONS } from '../comparison/comparison-data';
 import { comparisonFaqs } from '../comparison/comparison-faqs';
 import { LLMS_SOURCE } from './llms-source';
@@ -26,8 +28,7 @@ const LAUNCH_SLUGS = ['mailstrom', 'inboxpurge', 'mailmop'] as const;
 const PREVIOUS_AUTOPILOT =
   'Autopilot rules on Plus and Pro find future matches. Both plans support Observe, which waits for batch approval, and Active, which acts on future matches only after you preview and deliberately turn on a rule.';
 
-const PREVIOUS_PRICING =
-  '- [Pricing](https://declutrmail.com/pricing): Free, Plus, and Pro plans; paid plans carry a 30-day money-back guarantee — see the refund policy for terms';
+const PREVIOUS_PRICING = `- [Pricing](https://declutrmail.com/pricing): Free, Plus, and Pro plans; paid plans carry a ${MONEY_BACK_NOTE} — see the refund policy for terms`;
 
 const PREVIOUS_DESCRIBE =
   '- Preferred one-line description: Gmail cleanup by sender: preview the matching emails and planned changes before confirming manual Archive, Later, or Delete; opt into ongoing Autopilot rules on Plus or Pro.';
@@ -90,6 +91,20 @@ function withOpeningFacts(body: string, facts: string): string {
   return rest ? `${prose}\n\n${keyFacts}\n\n${rest}` : `${prose}\n\n${keyFacts}`;
 }
 
+const CHANGELOG_LINE =
+  '- [Pricing changelog](https://declutrmail.com/pricing/changelog): dated record of pricing changes';
+
+/** The changelog page redirects while `PRICING_V2` is off, so crawlers see it only then. */
+function withPricingChangelog(body: string): string {
+  if (!isPricingV2()) return body;
+  const marker = '- [Pricing](https://declutrmail.com/pricing):';
+  const at = body.indexOf(marker);
+  if (at === -1) return `${body}\n${CHANGELOG_LINE}\n`;
+  const lineEnd = body.indexOf('\n', at);
+  if (lineEnd === -1) return `${body}\n${CHANGELOG_LINE}`;
+  return `${body.slice(0, lineEnd + 1)}${CHANGELOG_LINE}\n${body.slice(lineEnd + 1)}`;
+}
+
 /** OAuth approval, brand verification, and the CASA letter are three facts. */
 export function llmsSecurityFacts(): string {
   return [
@@ -130,7 +145,7 @@ export function renderLlmsTxt(): string {
       `- [Get started](https://declutrmail.com/beta): ${llmsBetaLine().replace(/^Get started: /, '')}`,
     );
   }
-  body = withLaunchLinks(body);
+  body = withPricingChangelog(withLaunchLinks(body));
   const facts = llmsKeyFacts()
     .map((fact) => `- ${fact}`)
     .join('\n');

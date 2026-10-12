@@ -174,6 +174,12 @@ export const ERROR_CODES = {
     retryable: false,
     message: 'Pro is coming, with room for more. It isn\u2019t available to buy yet.',
   },
+  PASS_INCLUDED_IN_PLUS: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Already included in Plus.',
+  },
   // A verified webhook we could not yet resolve to a workspace or a
   // catalog entry. NEVER 200: a 2xx tells the provider the event is
   // delivered and retries stop, which strands a real payment with no

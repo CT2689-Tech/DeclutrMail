@@ -16,7 +16,7 @@ import { useTier } from '@/features/auth/api/use-tier';
 import { track } from '@/lib/posthog';
 
 import { billingIntentPath } from './billing-intent';
-import { moneyBackNote, quotedPlanPrice } from './billing-model';
+import { launchPlusQuote, moneyBackNote, quotedPlanPrice } from './billing-model';
 import { useRegionProvider } from './billing-currency';
 
 const { color, font, motion, radius, shadow, text } = tokens;
@@ -72,16 +72,24 @@ export function TierGate({
   if (granted) return <>{children}</>;
 
   // Quote the rail this visitor will actually be charged on — the CTA
-  // below deep-links straight into checkout (D117).
-  const requiredMonthly = quotedPlanPrice(requiredTierId, 'monthly', regionProvider);
+  // below deep-links straight into checkout (D117). Launch pricing
+  // sells Plus annual; the flag-off catalog still quotes monthly.
+  const checkoutCycle = pricingV2 ? 'annual' : 'monthly';
+  const quotedPrice =
+    pricingV2 && requiredTierId === 'plus'
+      ? launchPlusQuote(regionProvider)
+      : quotedPlanPrice(requiredTierId, 'monthly', regionProvider);
   const requiredTier = TIER_MANIFEST[requiredTierId].name;
   // ONE checkout path (D117): deep-link the required plan into
   // /billing's confirm step via the validated intent — same funnel as
-  // the pricing page and the 402 UpgradeModal. Monthly matches the
-  // quoted price; the billing screen's toggle flips it in place.
+  // the pricing page and the 402 UpgradeModal.
   const upgradeHref =
     requiredTierId === 'plus' || requiredTierId === 'pro'
-      ? billingIntentPath({ plan: requiredTierId, cycle: 'monthly', ...(from ? { from } : {}) })
+      ? billingIntentPath({
+          plan: requiredTierId,
+          cycle: checkoutCycle,
+          ...(from ? { from } : {}),
+        })
       : '/billing';
 
   return (
@@ -156,6 +164,12 @@ export function TierGate({
       <Link
         href={upgradeHref}
         className="dm-gate-cta"
+        onClick={() => {
+          void track('upgrade_cta_clicked', {
+            source: 'tier_gate',
+            plan: requiredTierId === 'pro' ? 'pro' : 'plus',
+          });
+        }}
         style={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -176,10 +190,8 @@ export function TierGate({
         }}
       >
         Upgrade to {requiredTier}
-        {requiredMonthly ? (
-          <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.85 }}>
-            {requiredMonthly}
-          </span>
+        {quotedPrice ? (
+          <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.85 }}>{quotedPrice}</span>
         ) : null}
       </Link>
 

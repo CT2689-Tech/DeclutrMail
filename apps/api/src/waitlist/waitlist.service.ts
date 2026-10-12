@@ -1,10 +1,11 @@
 // apps/api/src/waitlist/waitlist.service.ts — waitlist capture writes
 // (D19 pricing page Team row + marketing forms).
 //
-// One job: idempotent insert into `waitlist`. Dedupe rides the citext
-// unique index on `email` via `ON CONFLICT DO NOTHING`, so a duplicate
-// submit is indistinguishable from a fresh one at the HTTP layer (no
-// email-exists oracle — the controller returns the same 202 either way).
+// One job: idempotent insert into `waitlist`. Dedupe is
+// `ON CONFLICT DO NOTHING` with no target, so it matches whichever
+// unique constraint is present. A duplicate submit is indistinguishable
+// from a fresh one at the HTTP layer (no email-exists oracle — the
+// controller returns the same 202 either way).
 
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
@@ -35,7 +36,7 @@ export class WaitlistService {
         tierInterest: input.tierInterest ?? null,
         source: input.source,
       })
-      .onConflictDoNothing({ target: waitlist.email })
+      .onConflictDoNothing()
       .returning({ id: waitlist.id });
 
     // Privacy (D7): never log the address — attribution + outcome only.
@@ -139,10 +140,8 @@ export class WaitlistService {
   }
 
   /**
-   * unique(email) still allows only one row per address. When that row
-   * has no launch tier or provider yet, record them. A second kind for
-   * an address that already has one stays `already_joined` until that
-   * unique index is dropped.
+   * A unique violation on the composite key means this kind is already
+   * stored. An older empty row (no tier, no provider) can still be filled.
    */
   private async fillEmptyLaunchRow(
     email: string,

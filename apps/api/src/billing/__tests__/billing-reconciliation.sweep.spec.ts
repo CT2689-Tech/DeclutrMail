@@ -349,6 +349,44 @@ describe('runBillingReconciliationSweep', () => {
     expect(ws!.tier).toBe('pro');
   });
 
+  it('a live Pass floors the tier and an expired Pass does not', async () => {
+    const live = await seedWorkspace(db, 'free');
+    const expired = await seedWorkspace(db, 'plus');
+    await db.insert(users).values([
+      { workspaceId: live, email: 'pass-live@example.test' },
+      { workspaceId: expired, email: 'pass-ended@example.test' },
+    ]);
+    await db.insert(entitlementGrants).values([
+      {
+        email: 'pass-live@example.test',
+        tier: 'plus',
+        reason: 'backlog pass',
+        grantedBy: 'paddle',
+        source: 'pass',
+        provider: 'paddle',
+        providerTransactionId: 'txn_live_pass',
+        expiresAt: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
+      },
+      {
+        email: 'pass-ended@example.test',
+        tier: 'plus',
+        reason: 'backlog pass',
+        grantedBy: 'paddle',
+        source: 'pass',
+        provider: 'paddle',
+        providerTransactionId: 'txn_ended_pass',
+        expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      },
+    ]);
+
+    await runBillingReconciliationSweep(db, autopilot);
+
+    const [liveWs] = await db.select().from(workspaces).where(eq(workspaces.id, live));
+    const [endedWs] = await db.select().from(workspaces).where(eq(workspaces.id, expired));
+    expect(liveWs!.tier).toBe('plus');
+    expect(endedWs!.tier).toBe('free');
+  });
+
   it('an EXPIRED comp falls back to the paid tier, not to free', async () => {
     // The composition claim the whole floor design rests on. An
     // overwrite-style grant would strand this workspace on Free while

@@ -1,3 +1,5 @@
+import { MONEY_BACK_NOTE } from '@/features/billing/billing-model';
+
 /** Non-pricing llms.txt body. Pricing is appended from renderPricingMarkdown(). */
 export const LLMS_SOURCE = `# DeclutrMail
 
@@ -30,7 +32,7 @@ Please do not describe DeclutrMail as:
 - [How it works](https://declutrmail.com/how-it-works): Gmail remains the reading/reply surface; manual actions affect the previewed messages; Autopilot presets (Plus and Pro) handle future matches, unattended only after deliberately activating a rule on either plan
 - [Interactive inbox simulator](https://declutrmail.com/inbox-simulator): try Triage and action previews with made-up senders; no Gmail connection required
 - [Privacy & control](https://declutrmail.com/methodology): what DeclutrMail stores, how suggestions are made, what changes before confirmation, and when automation can run
-- [Pricing](https://declutrmail.com/pricing): Free, Plus, and Pro plans; paid plans carry a 30-day money-back guarantee — see the refund policy for terms
+- [Pricing](https://declutrmail.com/pricing): Free, Plus, and Pro plans; paid plans carry a ${MONEY_BACK_NOTE} — see the refund policy for terms
 - [Sign in](https://declutrmail.com/sign-in): the Gmail permission DeclutrMail needs, what data it uses, what to expect during the first scan, and how to connect
 - [Open beta](https://declutrmail.com/beta): sign in with Google and review senders, no invite or waitlist needed
 - [FAQ](https://declutrmail.com/faq): concise public questions about Gmail access, action scope, recovery, and automation

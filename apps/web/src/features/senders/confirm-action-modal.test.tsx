@@ -5,8 +5,24 @@ import { ConfirmActionModal } from './confirm-action-modal';
 import type { ActionRequest } from './data';
 import { makeSender } from './testing/make-sender';
 
-const { track } = vi.hoisted(() => ({ track: vi.fn() }));
+const { track, meterSummary } = vi.hoisted(() => ({
+  track: vi.fn(),
+  meterSummary: {
+    current: undefined as
+      | {
+          metered: true;
+          limit: number;
+          used: number;
+          remaining: number;
+          resetAt: string;
+        }
+      | undefined,
+  },
+}));
 vi.mock('@/lib/posthog', () => ({ track }));
+vi.mock('@/features/billing/use-cleanup-summary', () => ({
+  useCleanupSummary: () => ({ isLoading: false, data: meterSummary.current }),
+}));
 
 const sender = makeSender();
 const buckets = {
@@ -251,6 +267,53 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     expect(screen.queryByText('⌘⏎')).toBeNull();
     expect(screen.getByRole('button', { name: /Cancel/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Archive/ })).toBeInTheDocument();
+  });
+
+  it('counts emails, not senders, while the emails-cleared meter is on', () => {
+    meterSummary.current = {
+      metered: true,
+      limit: 1000,
+      used: 100,
+      remaining: 900,
+      resetAt: '2026-11-09T00:00:00.000Z',
+    };
+    render(
+      <ConfirmActionModal
+        request={request('Archive')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+        cleanupQuota={{ remaining: 12, resetsAt: '2026-08-27T10:00:00.000Z' }}
+      />,
+    );
+    expect(screen.getByTestId('meter-preview-line')).toHaveTextContent(
+      'This clears 4 emails. You have 900 free this month.',
+    );
+    expect(screen.queryByText(/cleanup action/)).not.toBeInTheDocument();
+    meterSummary.current = undefined;
+  });
+
+  it('uses the deck confirm when the email meter cannot cover the clear', () => {
+    meterSummary.current = {
+      metered: true,
+      limit: 1000,
+      used: 999,
+      remaining: 1,
+      resetAt: '2026-11-09T00:00:00.000Z',
+    };
+    render(
+      <ConfirmActionModal
+        request={request('Archive')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Get Plus' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Upgrade for unlimited cleanup/ }),
+    ).not.toBeInTheDocument();
+    meterSummary.current = undefined;
   });
 
   it('states quota usage when the action fits, from server-supplied numbers (A3)', () => {

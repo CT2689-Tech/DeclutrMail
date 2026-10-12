@@ -5,6 +5,7 @@
 // this list aligned with every indexable route in the marketing group.
 
 import type { MetadataRoute } from 'next';
+import { isPricingV2 } from '@declutrmail/shared/entitlements';
 
 import {
   ALTERNATIVES_SLUGS,
@@ -84,9 +85,24 @@ const LAST_MODIFIED = new Map<string, string>([
   ...Object.entries(PAGE_LAST_UPDATED),
 ]);
 
+/**
+ * `/pricing/changelog` exists as a page, and while `PRICING_V2` is off it
+ * redirects to `/pricing`. Crawlers should see the URL only when the page
+ * actually renders.
+ */
+function indexableMarketingPaths(): readonly string[] {
+  if (!isPricingV2()) return MARKETING_PATHS;
+  const pricingAt = MARKETING_PATHS.indexOf('/pricing');
+  return [
+    ...MARKETING_PATHS.slice(0, pricingAt + 1),
+    '/pricing/changelog',
+    ...MARKETING_PATHS.slice(pricingAt + 1),
+  ];
+}
+
 export default function sitemap(): MetadataRoute.Sitemap {
   const base = siteUrl();
-  return MARKETING_PATHS.map((path) => {
+  return indexableMarketingPaths().map((path) => {
     const lastModified = LAST_MODIFIED.get(path);
     return {
       url: `${base}${path === '/' ? '' : path}`,

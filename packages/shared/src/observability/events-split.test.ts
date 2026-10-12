@@ -6,9 +6,16 @@ import { OPS_SUPER_PROPERTIES } from './events/ops';
 import { REPORT_EVENT_NAMES } from './events/report';
 
 /**
- * Names in `events.ts` immediately before the domain split. The union
- * after the split must match this set exactly — no renames, no drops.
+ * Names in `events.ts` immediately before the domain split. That set
+ * stays a subset. A5 names are an explicit addition — no renames, no drops.
  */
+const A5_EVENT_NAMES = [
+  'upgrade_cta_clicked',
+  'checkout_closed',
+  'free_cap_hit',
+  'pass_selected',
+  'plus_selected',
+] as const;
 const EVENT_NAMES_BEFORE_SPLIT = [
   'onboarding_step_viewed',
   'onboarding_step_completed',
@@ -90,6 +97,7 @@ const OWNERS = {
 
 /** Names appended after the split. Drops and renames still fail. */
 const APPENDED_AFTER_SPLIT = [
+  ...A5_EVENT_NAMES,
   'caught_up_viewed',
   'empty_state_cta_clicked',
   'sync_gate_state_viewed',

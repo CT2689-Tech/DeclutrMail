@@ -152,6 +152,12 @@ test('workflow gates worker boot through HTTP, preserves production OAuth identi
     workflow.indexOf('- name: Deploy declutrmail-api'),
   );
   assert.doesNotMatch(worker, /--no-traffic|--tag=/);
+  const api = workflow.slice(workflow.indexOf('gcloud run deploy declutrmail-api'));
+  for (const block of [worker, api]) {
+    assert.match(block, /PRICING_V2=true/);
+    assert.match(block, /METER_V2=true/);
+    assert.match(block, /BILLING_PASS_ENABLED=true/);
+  }
 });
 
 test('missing candidate identity fails closed without promotion', async () => {

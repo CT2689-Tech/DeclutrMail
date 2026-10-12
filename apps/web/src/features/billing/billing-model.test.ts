@@ -19,6 +19,7 @@ import {
   BillingPayloadError,
   complimentaryNote,
   currentPlanPriceLabel,
+  currentPlanTitle,
   deriveBillingViewState,
   emptyPlanView,
   formatBillingDate,
@@ -297,6 +298,44 @@ describe('currentPlanPriceLabel', () => {
     expect(currentPlanPriceLabel(view)).toBe('$19/mo');
   });
 
+  it('shows the 2026-10 Plus annual price a $59 subscriber pays', () => {
+    const sub = {
+      ...SUB,
+      tier: 'plus' as const,
+      cycle: 'annual' as const,
+      providerPriceId: 'pri_01m4phk06hdmmq5cw5b8aa5r2y',
+    };
+    const view = deriveBillingViewState(snapshot({ data: body('plus', sub) }));
+    if (view.kind !== 'plan') throw new Error('expected plan');
+    expect(currentPlanPriceLabel(view)).toBe('$59/yr');
+  });
+
+  it('shows catalog cents when the price id is not the legacy list price', () => {
+    const sub = {
+      ...SUB,
+      tier: 'plus' as const,
+      cycle: 'annual' as const,
+      providerPriceId: 'pri_overlay',
+      chargedUsdCents: 5900,
+    };
+    const view = deriveBillingViewState(snapshot({ data: body('plus', sub) }));
+    if (view.kind !== 'plan') throw new Error('expected plan');
+    expect(currentPlanPriceLabel(view)).toBe('$59/yr');
+  });
+
+  it('keeps a legacy Plus annual subscription at $90', () => {
+    const sub = {
+      ...SUB,
+      tier: 'plus' as const,
+      cycle: 'annual' as const,
+      providerPriceId: 'pri_01ky15axzc9mz8sxw43c0wtn6h',
+      chargedUsdCents: 9000,
+    };
+    const view = deriveBillingViewState(snapshot({ data: body('plus', sub) }));
+    if (view.kind !== 'plan') throw new Error('expected plan');
+    expect(currentPlanPriceLabel(view)).toBe('$90/yr');
+  });
+
   it('renders the founding promo price for a founding annual backing sub', () => {
     const sub = { ...SUB, cycle: 'annual' as const, foundingMember: true };
     const view = deriveBillingViewState(snapshot({ data: body('pro', sub, true) }));
@@ -331,6 +370,18 @@ describe('complimentary comps', () => {
     if (view.kind !== 'plan') throw new Error('expected plan');
     return view;
   }
+
+  it('names an active Pass instead of calling it complimentary', () => {
+    const view = comped('plus', {
+      tier: 'plus',
+      expiresAt: '2026-11-12T00:00:00.000Z',
+      source: 'pass',
+    });
+    expect(currentPlanTitle(view)).toBe('Backlog Pass');
+    expect(currentPlanPriceLabel(view)).toBe('$19 once');
+    expect(currentPlanPriceLabel(view)).not.toBe('Complimentary');
+    expect(complimentaryNote(view)).toContain('Backlog Pass');
+  });
 
   it('names the comp instead of the generic no-price line', () => {
     const view = comped('pro', { tier: 'pro', expiresAt: null });

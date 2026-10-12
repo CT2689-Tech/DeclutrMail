@@ -137,6 +137,7 @@ describe('AccountMenu Gmail reconnect health', () => {
       cleanupResetsAt: null,
       inboxLimit: 2,
       pricingV2: false,
+      passEnabled: false,
       connectedInboxes: 2,
       atInboxLimit: true,
     };

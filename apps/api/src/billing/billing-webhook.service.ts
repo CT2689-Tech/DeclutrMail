@@ -74,6 +74,7 @@ import type {
   NormalizedSubscription,
 } from './billing-provider.interface.js';
 import { BillingCatalog } from './billing-catalog.js';
+import { grantPassFromTransaction, revokePassByTransaction } from './pass-grant.js';
 import { lockSubscription } from './subscription-lock.js';
 import { BillingUpgradeRefundService } from './billing-upgrade-refund.service.js';
 import type { UpgradeRefundPolicy } from './upgrade-refund.types.js';
@@ -241,6 +242,15 @@ export function projectWebhookPayload(
     case 'payment':
       projected.outcome = event.outcome;
       projected.provider_subscription_id = event.providerSubscriptionId;
+      if (event.providerTransactionId)
+        projected.provider_transaction_id = event.providerTransactionId;
+      if (event.oneTimePriceIds && event.oneTimePriceIds.length > 0) {
+        projected.price_ids = event.oneTimePriceIds;
+      }
+      break;
+    case 'pass_revoked':
+      projected.provider_transaction_id = event.providerTransactionId;
+      projected.reason = event.reason;
       break;
     case 'cancellation_scheduled':
       projected.provider_subscription_id = event.providerSubscriptionId;
@@ -255,6 +265,10 @@ export function projectWebhookPayload(
       break;
     case 'ignored':
       break;
+    default: {
+      const _exhaustive: never = event;
+      return _exhaustive;
+    }
   }
   if ('refundReference' in event && event.refundReference) {
     projected.adjustment_id = event.refundReference.adjustmentId;
@@ -428,12 +442,18 @@ export class BillingWebhookService {
         if (provider === 'paddle' && event.providerSubscriptionId)
           await this.upgradeRefunds.observeCompletedTransaction(event.providerSubscriptionId);
         return this.applyPayment(provider, event, eventRowId);
+      case 'pass_revoked':
+        return this.applyPassRevoked(event, eventRowId);
       case 'ignored':
         await this.markProcessed(eventRowId);
         this.logger.log(
           `billing.webhook.ignored provider=${provider} type=${event.eventType} event=${event.providerEventId}`,
         );
         return { kind: 'ignored' };
+      default: {
+        const _exhaustive: never = event;
+        return _exhaustive;
+      }
     }
   }
 
@@ -1402,11 +1422,37 @@ export class BillingWebhookService {
     });
   }
 
+  private async applyPassRevoked(
+    event: Extract<NormalizedBillingEvent, { kind: 'pass_revoked' }>,
+    eventRowId: string,
+  ): Promise<WebhookProcessOutcome> {
+    const revoked = await revokePassByTransaction(this.db, event.providerTransactionId);
+    if (revoked.status === 'missing') {
+      this.logger.error(
+        `billing.webhook.pass_revoke_missing txn=${event.providerTransactionId} event=${event.providerEventId}`,
+      );
+      return { kind: 'unresolved', reason: 'unattributable' };
+    }
+    for (const workspaceId of revoked.workspaceIds) {
+      await this.recomputeWorkspaceTier(this.db, workspaceId);
+    }
+    await this.markProcessed(eventRowId);
+    return { kind: 'processed', effect: `pass_revoked:${event.reason}` };
+  }
+
   private async applyPayment(
     provider: BillingProviderId,
     event: Extract<NormalizedBillingEvent, { kind: 'payment' }>,
     eventRowId: string,
   ): Promise<WebhookProcessOutcome> {
+    if (
+      event.outcome === 'succeeded' &&
+      !event.providerSubscriptionId &&
+      event.oneTimePriceIds &&
+      event.oneTimePriceIds.length > 0
+    ) {
+      return this.applyOneTimePayment(event, eventRowId);
+    }
     // Seed `billing_customers` from the payment's own attribution.
     // Subscription state still arrives via subscription.* events, but
     // those may reach us with no usable attribution (the provider does
@@ -1465,6 +1511,46 @@ export class BillingWebhookService {
       recordProductEvent(this.productEvents, 'purchase_confirmed', { plan: tier }, userId);
     }
     return { kind: 'processed', effect: `payment:${event.outcome}` };
+  }
+
+  private async applyOneTimePayment(
+    event: Extract<NormalizedBillingEvent, { kind: 'payment' }>,
+    eventRowId: string,
+  ): Promise<WebhookProcessOutcome> {
+    const passId = this.catalog.passPaddlePriceId;
+    const priceIds = event.oneTimePriceIds ?? [];
+    if (!passId || !priceIds.includes(passId)) {
+      this.logger.error(
+        `billing.webhook.unknown_price provider=paddle price=${priceIds.join(',')} event=${event.providerEventId}`,
+      );
+      return { kind: 'unresolved', reason: 'unknown_price' };
+    }
+    if (!event.workspaceId || !event.providerTransactionId) {
+      this.logger.error(
+        `billing.webhook.unattributable provider=paddle event=${event.providerEventId}`,
+      );
+      return { kind: 'unresolved', reason: 'unattributable' };
+    }
+    const granted = await grantPassFromTransaction(this.db, {
+      workspaceId: event.workspaceId,
+      providerTransactionId: event.providerTransactionId,
+    });
+    if (granted.status === 'no_email') {
+      this.logger.error(
+        `billing.webhook.unattributable provider=paddle event=${event.providerEventId}`,
+      );
+      return { kind: 'unresolved', reason: 'unattributable' };
+    }
+    await this.recomputeWorkspaceTier(this.db, event.workspaceId);
+    await this.db
+      .delete(pendingCheckouts)
+      .where(eq(pendingCheckouts.workspaceId, event.workspaceId));
+    await this.markProcessed(eventRowId);
+    recordProductEvent(this.productEvents, 'purchase_confirmed', { plan: 'pass' });
+    this.logger.log(
+      `billing.webhook.pass_${granted.status} workspace=${event.workspaceId} txn=${event.providerTransactionId}`,
+    );
+    return { kind: 'processed', effect: `pass:${granted.status}` };
   }
 
   /**

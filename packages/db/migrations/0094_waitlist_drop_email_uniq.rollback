@@ -1,0 +1,15 @@
+-- Restoring unique(email) is unsafe once one address has two rows.
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM "waitlist"
+    GROUP BY "email"
+    HAVING count(*) > 1
+  ) THEN
+    RAISE EXCEPTION 'duplicate waitlist emails; cannot restore waitlist_email_uniq';
+  END IF;
+END $$;
+--> statement-breakpoint
+CREATE UNIQUE INDEX "waitlist_email_uniq" ON "waitlist" ("email");

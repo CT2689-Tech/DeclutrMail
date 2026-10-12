@@ -23,7 +23,10 @@ import { comparisonBySlug } from '@/features/marketing/comparison/comparison-dat
 
 import { metadata as landing } from './page';
 import { metadata as beta } from './beta/page';
-import { metadata as pricing } from './pricing/page';
+import { pricingPageMetadata } from '@/features/marketing/pricing/pricing-metadata';
+
+/** Flag-off metadata. `generateMetadata` returns this unless PRICING_V2 is on. */
+const pricing = pricingPageMetadata(false);
 import { metadata as privacy } from './privacy/page';
 import { metadata as terms } from './terms/page';
 import { metadata as refunds } from './refunds/page';
@@ -36,6 +39,7 @@ import { metadata as howToHub } from './how-to/page';
 import { metadata as answersHub } from './answers/page';
 import { metadata as faq } from './faq/page';
 import { metadata as changelog } from './changelog/page';
+import { metadata as pricingChangelog } from './pricing/changelog/page';
 import { metadata as howItWorks } from './how-it-works/page';
 import { metadata as compare } from './compare/page';
 import { metadata as methodology } from './methodology/page';
@@ -112,6 +116,15 @@ describe('the blog index title — D250 §3.6 row 21', () => {
   });
 });
 
+describe('pricing metadata follows the launch flag', () => {
+  it('keeps today’s description while the flag is off and the deck sub while it is on', () => {
+    expect(pricingPageMetadata(false).description).toBe(pricing.description);
+    expect(pricingPageMetadata(true).description?.length).toBeLessThanOrEqual(160);
+    expect(pricingPageMetadata(true).description).not.toMatch(/\$\d/);
+    expect(pricingPageMetadata(true).alternates?.canonical).toBe('/pricing');
+  });
+});
+
 describe('pricing points answer engines at its machine-readable twin', () => {
   it('links /pricing.md as a text/markdown alternate without moving the canonical', () => {
     expect(pricing.alternates?.canonical).toBe('/pricing');
@@ -181,6 +194,7 @@ describe("meta description length — stays inside Google's display limit", () =
 const STATIC_METADATA = new Map<string, Metadata>([
   ...PAGES.map((page) => [page.path, page.metadata] as const),
   ['/sign-in', signIn],
+  ['/pricing/changelog', pricingChangelog],
   ['/how-to/clean-gmail-by-sender', howToClean],
   ['/how-to/bulk-delete-emails-from-one-sender', howToDelete],
   ['/how-to/gmail-storage-full', howToStorage],
