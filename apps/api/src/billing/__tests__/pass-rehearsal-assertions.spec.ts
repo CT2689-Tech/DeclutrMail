@@ -57,9 +57,11 @@ describe('Backlog Pass sandbox rehearsal checks', () => {
     expect(caller).toContain('PADDLE_ENV: sandbox');
     expect(caller).not.toContain('PADDLE_ENV: production');
     expect(caller).toContain('scripts/billing-pass-sandbox-rehearsal.ts');
+    expect(caller).toContain('Name the sandbox boundary shape');
     expect(caller).toContain("github.event.inputs.rehearsal == 'pass'");
     expect(caller).toContain("github.event.inputs.rehearsal != 'pass'");
     expect(caller).not.toContain('secrets: inherit');
     expect(caller).not.toContain('workflow_call:');
+    expect(caller).not.toMatch(/^  pass:/m);
   });
 });

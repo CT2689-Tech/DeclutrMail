@@ -21,8 +21,10 @@ concurrency:
 
 jobs:
   rehearse:
-    # The Pass file is not on main yet, so this input runs it from the selected ref.
-    if: github.ref == 'refs/heads/main' && github.event.inputs.rehearsal != 'pass'
+    # Pass stays in this job. Run 38186077360 added a new job id and
+    # received an empty REHEARSAL_OPERATOR_KEY; the main rehearse job
+    # receives it. Drop the feature-branch clause after the branch is gone.
+    if: github.ref == 'refs/heads/main' || (github.event.inputs.rehearsal == 'pass' && github.ref == 'refs/heads/codex/ws1b-pricing-story-pass')
     runs-on: ubuntu-latest
     timeout-minutes: 55
     environment: Sandbox
@@ -53,8 +55,42 @@ jobs:
             psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$migration"
           done
       - name: Boundary verification
+        if: github.event.inputs.rehearsal != 'pass'
         run: pnpm --filter @declutrmail/api test src/billing/__tests__/sandbox-rehearsal-boundary.spec.ts src/billing/__tests__/sandbox-rehearsal-failure.spec.ts src/billing/__tests__/sandbox-checkout-revocation.spec.ts src/billing/__tests__/sandbox-checkout-proof.spec.ts src/billing/__tests__/sandbox-checkout-cleanup.spec.ts
+      - name: Boundary verification
+        if: github.event.inputs.rehearsal == 'pass'
+        run: pnpm --filter @declutrmail/api test src/billing/__tests__/pass-rehearsal-assertions.spec.ts src/billing/__tests__/sandbox-rehearsal-boundary.spec.ts src/billing/__tests__/sandbox-rehearsal-failure.spec.ts
+      - name: Install the checkout browser
+        if: github.event.inputs.rehearsal == 'pass'
+        run: pnpm --filter @declutrmail/e2e exec playwright install --with-deps chromium
+      - name: Name the sandbox boundary shape
+        if: github.event.inputs.rehearsal == 'pass'
+        env:
+          BILLING_REHEARSAL: sandbox
+          PADDLE_ENV: sandbox
+          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
+          REHEARSAL_OPERATOR_KEY: ${{ secrets.BILLING_REHEARSAL_OPERATOR_KEY }}
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/refund_fixture
+          REHEARSAL_REPORT_PATH: ${{ runner.temp }}/pass-sandbox-rehearsal.json
+        run: |
+          fail=0
+          shape() {
+            if [ -z "$2" ]; then echo "boundary $1=absent"; return 1; fi
+            if printf '%s' "$2" | grep -Eq "$3"; then echo "boundary $1=ok"; return 0; fi
+            echo "boundary $1=mismatch"
+            return 1
+          }
+          shape GITHUB_ACTIONS "$GITHUB_ACTIONS" '^true$' || fail=1
+          shape GITHUB_RUN_ID "$GITHUB_RUN_ID" '^[0-9]+$' || fail=1
+          shape GITHUB_RUN_ATTEMPT "$GITHUB_RUN_ATTEMPT" '^[0-9]+$' || fail=1
+          shape REHEARSAL_OPERATOR_KEY "$REHEARSAL_OPERATOR_KEY" '^[a-f0-9]{64}$' || fail=1
+          shape BILLING_REHEARSAL "$BILLING_REHEARSAL" '^sandbox$' || fail=1
+          shape PADDLE_ENV "$PADDLE_ENV" '^sandbox$' || fail=1
+          shape PADDLE_API_KEY "$PADDLE_API_KEY" '^pdl_sdbx_apikey_[a-z0-9]{26}_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{3}$' || fail=1
+          shape DATABASE_URL "$DATABASE_URL" '^postgres://postgres:postgres@127\.0\.0\.1:5432/refund_fixture$' || fail=1
+          exit "$fail"
       - name: Start isolated synthetic UI and signed webhook receiver
+        if: github.event.inputs.rehearsal != 'pass'
         env:
           BILLING_REHEARSAL: sandbox
           PADDLE_ENV: sandbox
@@ -78,55 +114,15 @@ jobs:
           export REHEARSAL_PUBLIC_URL="$fixture_url"
           cd apps/api && node --import @swc-node/register/esm-register scripts/billing-checkout-revocation-rehearsal.ts
       - name: Retain only sanitized proof and cleanup outcomes
-        if: always()
+        if: always() && github.event.inputs.rehearsal != 'pass'
         uses: actions/upload-artifact@v7
         with:
           name: checkout-revocation-rehearsal
           path: ${{ runner.temp }}/checkout-revocation-rehearsal.json
           retention-days: 1
           if-no-files-found: error
-  pass:
-    name: Rehearse Backlog Pass
-    # A called workflow that sets environment: Sandbox keeps that
-    # environment's secrets and drops inherited repository secrets.
-    # Run 38185414914 received an empty operator key. This job matches
-    # the checkout rehearsal, which sees both secrets. Drop the
-    # feature-branch clause after the branch is gone.
-    if: github.event.inputs.rehearsal == 'pass' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/ws1b-pricing-story-pass')
-    runs-on: ubuntu-latest
-    timeout-minutes: 55
-    environment: Sandbox
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: refund_fixture
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U postgres -d refund_fixture"
-          --health-interval 5s --health-timeout 5s --health-retries 10
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Migrate the disposable fixture database
-        env:
-          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/refund_fixture
-        run: |
-          for migration in packages/db/migrations/*.sql; do
-            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$migration"
-          done
-      - name: Boundary verification
-        run: pnpm --filter @declutrmail/api test src/billing/__tests__/pass-rehearsal-assertions.spec.ts src/billing/__tests__/sandbox-rehearsal-boundary.spec.ts src/billing/__tests__/sandbox-rehearsal-failure.spec.ts
-      - name: Install the checkout browser
-        run: pnpm --filter @declutrmail/e2e exec playwright install --with-deps chromium
       - name: Pay the sandbox Pass and annual prices
+        if: github.event.inputs.rehearsal == 'pass'
         env:
           BILLING_REHEARSAL: sandbox
           PADDLE_ENV: sandbox
@@ -146,11 +142,17 @@ jobs:
             if [ -n "$fixture_url" ]; then break; fi
             sleep 1
           done
-          if [ -z "$fixture_url" ]; then exit 1; fi
+          if [ -z "$fixture_url" ]; then echo 'boundary REHEARSAL_PUBLIC_URL=absent'; exit 1; fi
           export REHEARSAL_PUBLIC_URL="$fixture_url"
+          if printf '%s' "$REHEARSAL_PUBLIC_URL" | grep -Eq '^https://[a-z0-9-]+\.trycloudflare\.com$'; then
+            echo 'boundary REHEARSAL_PUBLIC_URL=ok'
+          else
+            echo 'boundary REHEARSAL_PUBLIC_URL=mismatch'
+            exit 1
+          fi
           cd apps/api && node --import @swc-node/register/esm-register scripts/billing-pass-sandbox-rehearsal.ts
       - name: Retain only sanitized proof and cleanup outcomes
-        if: always()
+        if: always() && github.event.inputs.rehearsal == 'pass'
         uses: actions/upload-artifact@v7
         with:
           name: pass-sandbox-rehearsal

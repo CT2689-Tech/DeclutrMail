@@ -29,7 +29,12 @@ import {
   PRIVACY_NEVER_ITEMS,
 } from '@declutrmail/shared';
 import { MONEY_BACK_NOTE } from '@/features/billing/billing-model';
-import { fillWs3, REFUNDS_PAGE_WINDOW_DAYS, WS1_COPY, WS3_COPY } from '@declutrmail/shared/copy/launch';
+import {
+  fillWs3,
+  REFUNDS_PAGE_WINDOW_DAYS,
+  WS1_COPY,
+  WS3_COPY,
+} from '@declutrmail/shared/copy/launch';
 import { fillStory, POLICY, refundLine } from '@declutrmail/shared/entitlements';
 import { storeConsent } from '@/lib/cookie-consent';
 

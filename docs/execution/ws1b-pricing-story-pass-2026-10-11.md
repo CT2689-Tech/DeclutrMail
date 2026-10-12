@@ -10,11 +10,11 @@ D19, D117, and D126.
 Chintan approved applying the comp-unique swap and the waitlist unique
 drop on Oct 11 at 9:31 AM PT. This PR still does not apply them.
 
-1. Destructive migration `0090_entitlement_grants_comp_email_uniq` replaces
+1. Destructive migration `0093_entitlement_grants_comp_email_uniq` replaces
    `entitlement_grants_email_uniq` with a partial unique index on
    `(email) where source = 'comp'`. It refuses to run if any email has two
    `source='comp'` rows. No columns are dropped. Comp rows are not updated.
-2. Destructive migration `0091_waitlist_drop_email_uniq` drops
+2. Destructive migration `0094_waitlist_drop_email_uniq` drops
    `waitlist_email_uniq`. WS1a left that index in place on purpose.
    Rollback recreates it and refuses if duplicate emails exist.
 3. Plus annual 2026-10, the Backlog Pass, and PH30 are still `FILL_ME` and
@@ -26,7 +26,7 @@ drop on Oct 11 at 9:31 AM PT. This PR still does not apply them.
    `BILLING_PASS_ENABLED=true`. Do not paste live price IDs or set
    `listed: true` in this PR. Merging while the Pass and Plus annual
    2026-10 ids are `FILL_ME` shows the offers and then checkout returns
-   `BILLING_NOT_PROVISIONED`. Migration `0089` must be applied before
+   `BILLING_NOT_PROVISIONED`. Migration `0092` must be applied before
    the new API serves checkouts, because every checkout writes
    `pending_checkouts.offer`.
 5. Add the repo secret `PADDLE_READONLY_API_KEY`. Until it exists, the
@@ -76,7 +76,7 @@ write was made.
   `OFFERS.backlogPass.price.paddlePriceId` stays `FILL_ME`. The grant
   code is `grantPassFromTransaction` on `transaction.completed` with no
   subscription id, and `revokePassByTransaction` on a one-off
-  `adjustment.created`. Both need migration `0089` applied first.
+  `adjustment.created`. Both need migration `0092` applied first.
 - PH30 sandbox discount is `PROMO_DISCOUNT_IDS.sandbox`
   (`dsc_01m4phpp04scdes9ghqn3qps77`), 30%, code PH30, first payment
   only, restricted to those two sandbox prices, expires
@@ -90,21 +90,18 @@ write was made.
   subscriptions still resolve through `LEGACY_PRICE_IDS`. Creating a
   Razorpay plan for the new prices would be a live Razorpay change and
   is not required to keep the rail hidden.
-- Migrations `0089` (required before the new API writes
-  `pending_checkouts.offer`), then approved destructive `0090` and
-  `0091`. None are applied by this PR.
-- The Pass purchase proof is the `pass` job in
+- Migrations `0092` (required before the new API writes
+  `pending_checkouts.offer`), then approved destructive `0093` and
+  `0094`. None are applied by this PR.
+- The Pass purchase proof is the `rehearse` job in
   `.github/workflows/billing-checkout-revocation-rehearsal.yml`,
-  dispatched with `rehearsal=pass`. It is a normal job, same shape as
-  the checkout rehearsal, because a reusable workflow that sets
-  `environment: Sandbox` keeps that environment's secrets and drops
-  inherited repository secrets. Run 38185414914 had `PADDLE_API_KEY`
-  and an empty `REHEARSAL_OPERATOR_KEY`, so it exited before any
-  purchase or cleanup. The job uses the Sandbox `PADDLE_API_KEY` and
-  the repository operator key, pays the Pass price twice and the
-  annual price once with PH30, and cancels what it creates. This
-  environment still has no Paddle key, so the proof is that workflow
-  run, not a local checkout.
+  dispatched with `rehearsal=pass`. Run 38186077360 used a new job id
+  and logged `REHEARSAL_OPERATOR_KEY` empty while `PADDLE_API_KEY`,
+  `BILLING_REHEARSAL`, and `PADDLE_ENV` were set. The main checkout
+  job (run 38120969543) logs the operator key as set. Pass steps now
+  stay in that `rehearse` job. A step prints `boundary NAME=ok`,
+  `absent`, or `mismatch` and does not print values. This environment
+  still has no Paddle key, so the proof is that workflow run.
 - The launch refund window is 14 days. `POLICY.refundWindowDays` is 14.
   Flags-on `/refunds` renders `RefundsV2`. Every window sentence is a
   deck template (`refunds.toc.window`, `refunds.summary`,
@@ -147,19 +144,15 @@ unprocessed.
 
 | File                                          | Kind                    | What                                                                                                           |
 | --------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `0089_entitlement_grant_sources.sql`          | additive                | `source` default `comp`, `provider`, `provider_transaction_id` unique, source check, `pending_checkouts.offer` |
-| `0090_entitlement_grants_comp_email_uniq.sql` | destructive, own commit | drop full email unique, add partial unique for comps                                                           |
-| `0091_waitlist_drop_email_uniq.sql`           | destructive, own commit | drop `waitlist_email_uniq`                                                                                     |
+| `0092_entitlement_grant_sources.sql`          | additive                | `source` default `comp`, `provider`, `provider_transaction_id` unique, source check, `pending_checkouts.offer` |
+| `0093_entitlement_grants_comp_email_uniq.sql` | destructive, own commit | drop full email unique, add partial unique for comps                                                           |
+| `0094_waitlist_drop_email_uniq.sql`           | destructive, own commit | drop `waitlist_email_uniq`                                                                                     |
 
 `atlas.sum` was produced by Atlas community v1.3.0 (`atlas migrate hash`).
-None of these migrations has been applied to a live database. Merge
-order ahead of this PR is #985 (`0089`) → #981 (`0090_inbox_report_cache`
-and `0091` concurrent `mail_messages` index) → #983 → #980. These files
-stay `0089`/`0090`/`0091` until #981 has merged. They then become
-`0092_entitlement_grant_sources`, `0093_entitlement_grants_comp_email_uniq`,
-and `0094_waitlist_drop_email_uniq`. Do not renumber before that. The
-grant-sources migration, whatever number it lands on, is the one that
-must apply before the new API serves checkouts.
+None of these migrations has been applied to a live database. #985 takes
+`0089` and #981 takes `0090_inbox_report_cache` plus `0091` (concurrent
+`mail_messages` index), so these files are `0092`, `0093`, and `0094`.
+`0092` must apply before the new API serves checkouts.
 
 ## Decisions assumed
 
