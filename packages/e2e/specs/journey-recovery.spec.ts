@@ -157,16 +157,14 @@ test('intentional sign-out keeps its confirmation instead of a stale-session red
 test(homeVisitTitle, async ({ page }) => {
   const sql = dbConnect();
   try {
-    const summary = page.getByRole('region', { name: 'Since your previous visit' });
-    await expect(summary.getByRole('heading', { name: '3 emails newly indexed' })).toBeVisible();
-    await expect(
-      summary.getByText('2 senders added to this inbox’s index.', { exact: true }),
-    ).toBeVisible();
+    const summary = page.getByRole('region', { name: 'Since your last visit' });
+    await expect(summary.getByRole('heading', { name: '3 new emails scanned' })).toBeVisible();
+    await expect(summary.getByText('2 new senders', { exact: true })).toBeVisible();
     await sql`UPDATE mail_messages SET created_at = now() + interval '1 day' WHERE mailbox_account_id = ${fixture.mailboxId}`;
     await page.goto('/senders');
     await page.goto('/home');
     await page.reload();
-    await expect(summary.getByRole('heading', { name: '3 emails newly indexed' })).toBeVisible();
+    await expect(summary.getByRole('heading', { name: '3 new emails scanned' })).toBeVisible();
   } finally {
     await sql`UPDATE mail_messages SET created_at = now() WHERE mailbox_account_id = ${fixture.mailboxId}`;
     await sql`UPDATE users SET preferences = preferences - 'mailboxVisits' WHERE id = ${fixture.userId}`;
@@ -213,7 +211,7 @@ test('failed scan preview is read-only and the first backlog nudge excludes Prot
     await sql`UPDATE users SET onboarded_at = NULL WHERE id = ${fixture.userId}`;
     await sql`UPDATE provider_sync_state SET readiness_status = 'failed', current_stage = 'failed', error_code = 'TransientError' WHERE mailbox_account_id = ${fixture.mailboxId}`;
     await page.goto('/onboarding');
-    await page.getByRole('button', { name: 'Preview indexed senders', exact: true }).click();
+    await page.getByRole('button', { name: 'Preview senders found so far', exact: true }).click();
     await expect(
       page.getByRole('region', { name: 'Scan preview' }).getByText(/Fresh Finds Weekly/),
     ).toBeVisible();

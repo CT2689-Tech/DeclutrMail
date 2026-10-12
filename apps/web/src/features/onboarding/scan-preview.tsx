@@ -3,7 +3,10 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@declutrmail/shared';
+import { pluralCopy, WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { apiGet } from '@/lib/api/client';
+
+const previewCopy = WS2_COPY.liveFix.onboarding.preview;
 
 export interface ScanPreviewSender {
   name: string;
@@ -48,14 +51,11 @@ export function ScanPreviewView({
   return (
     <section aria-label="Scan preview" style={{ marginTop: 24, width: '100%' }}>
       <Button tone="ghost" aria-expanded={open} onClick={toggle}>
-        {open ? 'Hide preview' : 'Preview indexed senders'}
+        {open ? 'Hide preview' : previewCopy.toggle}
       </Button>
       {open && (
         <>
-          <p>
-            Read-only preview. Counts cover email indexed so far and may change when scanning
-            resumes.
-          </p>
+          <p>{previewCopy.intro}</p>
           {state === 'loading' ? (
             <p role="status">Loading available senders…</p>
           ) : state === 'error' ? (
@@ -69,8 +69,10 @@ export function ScanPreviewView({
             <ul style={{ paddingLeft: 20, textAlign: 'left' }}>
               {data.map((sender, index) => (
                 <li key={index}>
-                  {sender.name} — {sender.indexedEmails.toLocaleString('en-US')} indexed{' '}
-                  {sender.indexedEmails === 1 ? 'email' : 'emails'}
+                  {pluralCopy(previewCopy.row, sender.indexedEmails, {
+                    name: sender.name,
+                    n: sender.indexedEmails.toLocaleString('en-US'),
+                  })}
                 </li>
               ))}
             </ul>

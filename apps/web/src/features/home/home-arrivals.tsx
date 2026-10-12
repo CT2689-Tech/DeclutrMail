@@ -2,8 +2,15 @@
 
 import { Button } from '@declutrmail/shared';
 import type { HomeVisitSummary } from '@declutrmail/shared/contracts/home-visit';
+import { pluralCopy, WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { useHomeVisit } from './api/use-home-visit';
 import styles from './home-view.module.css';
+
+const sinceLast = WS2_COPY.liveFix.home.sinceLast;
+
+function counted(copy: { readonly one: string; readonly other: string }, n: number): string {
+  return pluralCopy(copy, n, { n: n.toLocaleString('en-US') });
+}
 
 export function HomeArrivals() {
   const visit = useHomeVisit();
@@ -32,20 +39,12 @@ export function HomeArrivalsView({
     );
   if (!data?.since || data.indexedEmails === null || data.indexedSenders === null) return null;
   return (
-    <section className={styles.beginning} aria-label="Since your previous visit">
-      <span className={styles.eyebrow}>Since your previous visit</span>
+    <section className={styles.beginning} aria-label={sinceLast.eyebrow}>
+      <span className={styles.eyebrow}>{sinceLast.eyebrow}</span>
       <h2>
-        {data.indexedEmails.toLocaleString('en-US')} {data.indexedEmails === 1 ? 'email' : 'emails'}{' '}
-        newly indexed
+        {data.indexedEmails === 0 ? sinceLast.none : counted(sinceLast.title, data.indexedEmails)}
       </h2>
-      <p>
-        {data.indexedSenders.toLocaleString('en-US')}{' '}
-        {data.indexedSenders === 1 ? 'sender' : 'senders'} added to this inbox’s index.
-      </p>
-      <p className={styles.footnote}>
-        From your previous visit until this visit began. Counts cover the retained index. Existing
-        review tasks appear below.
-      </p>
+      {data.indexedSenders > 0 ? <p>{counted(sinceLast.senders, data.indexedSenders)}</p> : null}
     </section>
   );
 }

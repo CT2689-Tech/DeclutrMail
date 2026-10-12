@@ -18,6 +18,7 @@ import {
   tokens,
   useIsAtMost,
 } from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 
 import type { FollowupRow } from '@/lib/api/followups';
 import { ApiError } from '@/lib/api/client';
@@ -32,6 +33,8 @@ import { followupsKeys } from './api/query-keys';
 import { flatRowCss } from '@/features/settings/flat-list';
 
 const { color, font, motion, radius, text } = tokens;
+const [followupCheckedLead, followupCheckedTail] =
+  WS2_COPY.liveFix.followups.checked.split('{when}');
 
 /**
  * Followups screen (D90, D91).
@@ -514,10 +517,11 @@ export function FollowupListItem({
           <p style={{ margin: '4px 0 0' }}>
             {evaluationKnown ? (
               <>
+                {followupCheckedLead}
                 <time dateTime={row.lastEvaluatedAt!}>
-                  Evaluated {relativeTime(row.lastEvaluatedAt!, now!)}
-                </time>{' '}
-                from indexed mail.
+                  {relativeTime(row.lastEvaluatedAt!, now!)}
+                </time>
+                {followupCheckedTail}
               </>
             ) : (
               'Evaluation time unavailable.'

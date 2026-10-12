@@ -78,14 +78,14 @@ describe('Followups evaluation clock', () => {
       </QueryWrapper>
     );
     const { rerender } = render(view(row));
-    expect(screen.getByText('Evaluated 5m ago')).toBeInTheDocument();
+    expect(screen.getByText('5m ago')).toBeInTheDocument();
     act(() => vi.advanceTimersByTime(60_000));
-    expect(screen.getByText('Evaluated 6m ago')).toBeInTheDocument();
+    expect(screen.getByText('6m ago')).toBeInTheDocument();
     // Arrives between interval ticks, newer than the previous display clock.
     vi.setSystemTime(NOW + 90_000);
     rerender(view({ ...row, lastEvaluatedAt: new Date(NOW + 89_000).toISOString() }));
     expect(screen.queryByText('Evaluation time unavailable.')).not.toBeInTheDocument();
-    expect(screen.getByText(/Evaluated/)).toHaveAttribute(
+    expect(screen.getByText('just now')).toHaveAttribute(
       'datetime',
       new Date(NOW + 89_000).toISOString(),
     );
@@ -103,11 +103,13 @@ describe('FollowupsScreen — edge states', () => {
       },
     ]);
     renderScreen();
-    const evaluated = await screen.findByText(/Evaluated .*ago/);
+    const evaluated = await screen.findByText(
+      (_, element) => element?.tagName === 'TIME' && element.getAttribute('datetime') === stamp,
+    );
     expect(evaluated).toHaveAttribute('datetime', stamp);
     expect(evaluated.closest('details')).not.toHaveAttribute('open');
     expect(evaluated.closest('p')).toHaveTextContent(
-      'from indexed mail. New replies may still be syncing.',
+      'Checked 5m ago against the email scanned so far. New replies may still be syncing.',
     );
     expect(screen.getByText(/Counts cover shown conversations, up to 100/)).toBeInTheDocument();
     expect(screen.queryByText(/Gmail checked|synced .*ago/i)).not.toBeInTheDocument();
@@ -125,7 +127,7 @@ describe('FollowupsScreen — edge states', () => {
       ]);
       renderScreen();
       expect(await screen.findByText(/Evaluation time unavailable/)).toBeInTheDocument();
-      expect(screen.queryByText(/Evaluated .*ago/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/against the email scanned so far/)).not.toBeInTheDocument();
     },
   );
   beforeEach(() => installFetchStub([]));

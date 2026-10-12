@@ -54,7 +54,7 @@ export const GMAIL_DATA_PROCESSORS = {
     privacyUrl: 'https://resend.com/security/gdpr',
   },
   DeclutrMail: {
-    purpose: 'Index the listed Gmail data and provide the product features the user requests.',
+    purpose: 'Scan the listed Gmail details and provide the features you ask for.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
     privacyUrl: '/privacy',
   },
@@ -387,7 +387,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
   {
     id: 'mailbox-visit-summary',
     category: 'derived',
-    label: 'Mailbox visit times and indexed-arrival counts',
+    label: 'Mailbox visit times and counts of newly scanned email',
     fetchedFrom: ['sender-profile-and-stats', 'message-identifiers'],
     storageRefs: ['users.preferences.mailboxVisits'],
     derived: true,
@@ -468,7 +468,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     purpose:
       'Notify you that this inbox’s Brief is ready, with section counts and an owned-inbox link only. The queue stores identifiers; counts are read at delivery.',
     retention:
-      'Delivery status stays until this inbox’s saved data or the account is deleted. Completed queue jobs expire after seven days; failed jobs stay until resolved or removed by indexed-data/account purge. If Redis is unavailable, identifier-only residue is removed by bounded sweeps when it recovers; this does not delay database deletion. Delivered email and provider retention are separate.',
+      'Delivery status stays until this inbox’s saved data or the account is deleted. Completed queue jobs expire after seven days; failed jobs stay until resolved or removed when this inbox’s saved data or the account is deleted. If Redis is unavailable, identifier-only residue is removed by bounded sweeps when it recovers; this does not delay database deletion. Delivered email and provider retention are separate.',
     removalTrigger: 'delete-indexed-data',
     exportedIn: ['json'],
     transmittedTo: ['DeclutrMail', 'Resend'],
@@ -512,7 +512,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     storageRefs: ['redis:declutr:autopilot-preview:{mailboxAccountId}:{ruleId}:{previewId}'],
     derived: true,
     purpose:
-      'Keep the actionable sender set and match facts consistent while paging through a rule preview. Cached rows contain hashed sender keys and match facts; names and addresses are read from the sender index per page.',
+      'Keep the actionable sender set and match facts consistent while paging through a rule preview. Cached rows contain hashed sender keys and match facts; names and addresses come from the saved sender list, one page at a time.',
     retention: 'Automatically removed within five minutes of creating the preview.',
     removalTrigger: 'retention-policy',
     exportedIn: [],

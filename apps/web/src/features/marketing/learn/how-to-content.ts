@@ -1,3 +1,4 @@
+import { WS3_COPY } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import { comparisonBySlug } from '../comparison/comparison-data';
@@ -102,7 +103,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
         ],
         steps: [
           {
-            name: 'Connect and let the index finish',
+            name: WS3_COPY['ws3.liveFix.learn.firstScanStep'],
             text: 'DeclutrMail needs the first Gmail scan to finish before it can show reliable volume and read-rate information. It remains a companion to Gmail, not a second inbox.',
           },
           {
@@ -225,7 +226,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
         title: 'Delete by sender in DeclutrMail',
         paragraphs: [
           'DeclutrMail groups the saved Gmail details by sender. Delete is an explicit action with a confirmation preview because its recovery model differs from Archive and Later.',
-          'The preview names the sender and affected count available from the current index. The action moves matching email to Gmail Trash and removes it from Inbox. It does not install a future sender rule.',
+          `${WS3_COPY['ws3.liveFix.learn.deletePreview']} The action moves matching email to Gmail Trash and removes it from Inbox. It does not install a future sender rule.`,
         ],
         steps: [
           {

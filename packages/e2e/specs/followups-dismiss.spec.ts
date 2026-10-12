@@ -87,7 +87,9 @@ test('Mark resolved dismisses the row, audits it, and survives reload', async ({
   if (await essential.isVisible()) await essential.click();
   await row.getByText('Evaluation', { exact: true }).click();
   await expect(row.locator(`time[datetime="${evaluatedAt}"]`)).toBeVisible();
-  await expect(row).toContainText('from indexed mail. New replies may still be syncing.');
+  await expect(row).toContainText(
+    'against the email scanned so far. New replies may still be syncing.',
+  );
 
   // ---- Dismiss via the D88 affordance. The label says WHERE it is
   // resolved (D88 / D245) — a dismissal here is not an observed reply.
