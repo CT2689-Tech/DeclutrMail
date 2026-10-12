@@ -531,7 +531,7 @@ describe('formatBillingDate', () => {
       value: () => '$\u00a019.00',
     });
     try {
-      expect(formatProviderAmount('1900', 'USD')).toBe('$ 19.00');
+      expect(formatProviderAmount('1900', 'USD')).toBe('$19.00');
     } finally {
       if (descriptor) Object.defineProperty(Intl.NumberFormat.prototype, 'format', descriptor);
     }

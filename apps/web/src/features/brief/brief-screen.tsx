@@ -1470,11 +1470,6 @@ function QuietInboxState() {
 // ── Helpers ───────────────────────────────────────────────────────────
 
 /**
- * Format a YYYY-MM-DD run-date into a friendly "Mon, May 28" label.
- * Local-date arithmetic only — no timezone conversion (the BE already
- * resolved the local-date semantic for the user).
- */
-/**
  * The local calendar date a Brief actually covers.
  *
  * `run_date_local` is the date the snapshot was GENERATED; the worker
@@ -1491,23 +1486,40 @@ export function coveredDateOf(runDateLocal: string): string {
   return shiftLocalDate(runDateLocal, -1);
 }
 
+const RUN_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+const RUN_MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
+
 export function formatRunDate(runDateLocal: string): string {
   const match = runDateLocal.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return runDateLocal;
-  const [, yStr, mStr, dStr] = match;
-  // Construct using UTC to skip the locale-dependent timezone shift —
-  // we only want the calendar fields, not a moment in time.
-  const utc = new Date(Date.UTC(Number(yStr), Number(mStr) - 1, Number(dStr)));
-  if (!Number.isFinite(utc.getTime())) return runDateLocal;
-  // Locale pinned: this label is server-rendered into hydrated HTML, so
-  // a runtime-default locale mismatches on any non-en-US browser and
-  // React discards the server tree (error #418; e2e hydration-smoke).
-  return utc.toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  });
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return runDateLocal;
+  // Calendar fields only. A locale date string hydrates "Sep" on one
+  // runtime and "Sept" on another (React #418 on /brief).
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  if (
+    utc.getUTCFullYear() !== year ||
+    utc.getUTCMonth() !== month - 1 ||
+    utc.getUTCDate() !== day
+  ) {
+    return runDateLocal;
+  }
+  return `${RUN_WEEKDAYS[utc.getUTCDay()]}, ${RUN_MONTHS[month - 1]} ${day}`;
 }
 
 /** Trailing-ellipsis truncate; collapses trailing whitespace. */

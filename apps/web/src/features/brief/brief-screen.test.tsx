@@ -15,6 +15,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { hydrateRoot } from 'react-dom/client';
+import { renderToString } from 'react-dom/server';
 import userEvent from '@testing-library/user-event';
 import { useUiStore } from '@declutrmail/shared';
 
@@ -957,6 +959,38 @@ describe('BriefScreen — pure helpers', () => {
     // into hydrated HTML: it must not vary with the runtime locale or
     // React discards the server tree (error #418; e2e hydration-smoke).
     expect(formatRunDate('2026-05-24')).toBe('Sun, May 24');
+  });
+
+  it('formats September as Sep even when the runtime would say Sept', () => {
+    const spy = vi.spyOn(Date.prototype, 'toLocaleDateString').mockReturnValue('Tue, Sept 15');
+    try {
+      expect(formatRunDate('2026-09-15')).toBe('Tue, Sep 15');
+      expect(formatRunDate('2026-09-15')).not.toContain('Sept');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('hydrates a September Brief date without a recoverable error', async () => {
+    const ui = <time>{formatRunDate('2026-09-15')}</time>;
+    const html = renderToString(ui);
+    expect(html).toContain('Tue, Sep 15');
+    const container = document.createElement('div');
+    document.body.append(container);
+    container.innerHTML = html;
+    const errors: unknown[] = [];
+    let root: ReturnType<typeof hydrateRoot> | undefined;
+    try {
+      await act(async () => {
+        root = hydrateRoot(container, ui, {
+          onRecoverableError: (error) => errors.push(error),
+        });
+      });
+      expect(errors).toEqual([]);
+      expect(container.textContent).toBe('Tue, Sep 15');
+    } finally {
+      await act(async () => root?.unmount());
+    }
   });
 
   it('coveredDateOf steps back to the day the Brief actually covers', () => {

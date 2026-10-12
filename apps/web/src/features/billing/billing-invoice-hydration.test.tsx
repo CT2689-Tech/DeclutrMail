@@ -90,8 +90,11 @@ it('keeps the invoice loading markup when the stream fulfills before hydration',
   resolve(INVOICES);
   await source.getQueryCache().find({ queryKey: billingKeys.invoices() })?.promise;
   const fulfilled = {
-    then: (onFulfilled: (value: typeof INVOICES) => unknown) =>
-      Promise.resolve(onFulfilled(INVOICES)),
+    status: 'fulfilled' as const,
+    value: INVOICES,
+    then(onFulfilled: (value: typeof INVOICES) => unknown) {
+      onFulfilled(INVOICES);
+    },
   } as unknown as Promise<unknown>;
   const clientState: DehydratedState = {
     ...state,
@@ -122,6 +125,68 @@ it('keeps the invoice loading markup when the stream fulfills before hydration',
     });
     await waitFor(() => expect(container.textContent).toContain('View invoice'));
     expect(errors).toEqual([]);
+  } finally {
+    await act(async () => root?.unmount());
+    source.clear();
+    server.clear();
+    client.clear();
+  }
+});
+
+it('hydrates a settled invoice list without a recoverable error', async () => {
+  window.matchMedia = vi.fn().mockImplementation(() => ({
+    matches: false,
+    media: '',
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }));
+
+  const september = {
+    ...INVOICES,
+    invoices: [{ ...INVOICES.invoices[0]!, issuedAt: '2026-09-15T00:00:00.000Z' }],
+  };
+  const source = new QueryClient();
+  source.setQueryData(billingKeys.subscription(), { subscription: { id: 'sub_1' } });
+  source.setQueryData(billingKeys.invoices(), september);
+  const state = dehydrate(source);
+  const server = new QueryClient();
+  const html = renderToString(
+    <QueryClientProvider client={server}>
+      <QueryHydrationBoundary state={state}>
+        <BillingInvoiceHistoryGate />
+      </QueryHydrationBoundary>
+    </QueryClientProvider>,
+  );
+  expect(html).toContain('Sep 15, 2026');
+  expect(html).toContain('$19.00');
+  expect(html).not.toContain('Sept');
+  expect(html).not.toContain('$ 19.00');
+
+  const client = new QueryClient();
+  const container = document.createElement('div');
+  document.body.append(container);
+  container.innerHTML = html;
+  const errors: unknown[] = [];
+  let root!: ReturnType<typeof hydrateRoot>;
+  try {
+    await act(async () => {
+      root = hydrateRoot(
+        container,
+        <QueryClientProvider client={client}>
+          <QueryHydrationBoundary state={state}>
+            <BillingInvoiceHistoryGate />
+          </QueryHydrationBoundary>
+        </QueryClientProvider>,
+        { onRecoverableError: (error) => errors.push(error) },
+      );
+    });
+    expect(errors).toEqual([]);
+    expect(container.textContent).toContain('Sep 15, 2026');
+    expect(container.textContent).toContain('$19.00');
   } finally {
     await act(async () => root?.unmount());
     source.clear();

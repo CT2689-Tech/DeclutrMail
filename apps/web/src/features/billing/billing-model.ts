@@ -161,7 +161,10 @@ export function formatProviderAmount(amount: string, currencyCode: string): stri
   try {
     const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: currencyCode });
     const digits = fmt.resolvedOptions().maximumFractionDigits ?? 2;
-    return fmt.format(n / 10 ** digits).replace(/[\u00a0\u202f]/g, ' ');
+    // Node often inserts a NBSP between "$" and the digits; Chrome often
+    // does not. Replacing that NBSP with a normal space still hydrated as
+    // a different text node (React #418 on /billing). Drop the gap.
+    return fmt.format(n / 10 ** digits).replace(/\s+/g, '');
   } catch {
     return null;
   }
