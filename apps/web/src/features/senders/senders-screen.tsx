@@ -149,7 +149,6 @@ import type { SenderListDirection, SenderListSort } from '@/lib/api/senders';
 import { useSaveSenderViews, useSenderViews } from './api/use-sender-views';
 import { SENDER_VIEWS_CAP, type SavedSenderView } from '@declutrmail/shared/contracts';
 import { trackActionConfirmed } from '@/lib/action-analytics';
-import { InboxReportFirstLanding } from '@/features/inbox-report';
 import { unsubscribeBacklogToast } from './unsubscribe-backlog/toast';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
@@ -2636,13 +2635,6 @@ function SendersScreenContent({
           </div>
         ) : null}
         <div className={workspaceStyles.listColumn}>
-          {activeMailbox?.readiness === 'ready' && actionMailboxId ? (
-            <InboxReportFirstLanding
-              mailboxId={actionMailboxId}
-              mailboxEmail={activeMailbox?.email}
-              onResolved={() => {}}
-            />
-          ) : null}
           <section
             aria-label="Sender search and filters"
             style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
