@@ -70,6 +70,21 @@ describe('fetchBriefToday', () => {
 });
 
 describe('fetchRecentBriefs', () => {
+  it('treats 404 as an empty list', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/recent',
+        respond: () =>
+          new Response(JSON.stringify({ message: 'No recent Briefs.' }), {
+            status: 404,
+            headers: { 'content-type': 'application/json' },
+          }),
+      },
+    ]);
+    await expect(fetchRecentBriefs()).resolves.toEqual({ data: [] });
+  });
+
   it('treats 204 as an empty list', async () => {
     installFetchStub([
       {

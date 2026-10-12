@@ -189,14 +189,19 @@ export async function fetchBriefHistory(
 export async function fetchRecentBriefs(
   signal?: AbortSignal,
 ): Promise<Envelope<BriefWire[], unknown>> {
-  const envelope = await apiGet<BriefWire[] | null>('/api/briefs/recent', { signal });
-  // 204 and a null body are an empty list, the same absence
-  // `fetchBriefToday` treats as no edition. Mapping null throws.
-  const rows = Array.isArray(envelope.data) ? envelope.data : [];
-  return {
-    ...envelope,
-    data: rows.map((row) => ({ ...row, noiseSenders: toNoiseSenders(row) })),
-  };
+  try {
+    const envelope = await apiGet<BriefWire[] | null>('/api/briefs/recent', { signal });
+    // 204, 404, and a null body are an empty list, the same absence
+    // `fetchBriefToday` treats as no edition. Mapping null throws.
+    const rows = Array.isArray(envelope.data) ? envelope.data : [];
+    return {
+      ...envelope,
+      data: rows.map((row) => ({ ...row, noiseSenders: toNoiseSenders(row) })),
+    };
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return { data: [] };
+    throw error;
+  }
 }
 
 /**
