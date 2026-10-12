@@ -1,13 +1,13 @@
 /**
- * Public AI copy with the consent gate on (drop2-r18).
+ * Public AI copy with the consent gate on (drop2-r19).
  *
- * Privacy, security, and methodology read the deck. The Brief lines open
- * with "{BRIEF_NAME} (part of {proName}; waitlist only for new accounts)",
- * and the consent step on those pages is "in the app".
+ * Privacy, security, and methodology read the deck. The Brief lines,
+ * including the methodology body, open with "{BRIEF_NAME} (part of
+ * {proName}; waitlist only for new accounts)". The consent step is
+ * "in the app".
  *
- * /llms.txt and /llms-full.txt do not render those six keys. They still
- * use ws3.llms.keyFacts and ws3.llms.storageAi.gate, which r18 left on
- * "in-app consent card".
+ * /llms.txt and /llms-full.txt render the same step from
+ * ws3.llms.keyFacts and ws3.llms.storageAi.gate.
  */
 
 import { render } from '@testing-library/react';
@@ -99,7 +99,7 @@ describe('AI consent gate on the public pages', () => {
     expect(securityExplanations).toContain('allow it in the app');
     expect(methodologyExplanations).toContain('allow AI in the app');
     const briefBody = gatedText('ws3.methodology.briefBody');
-    expect(briefBody.startsWith('Only after you allow it in the app,')).toBe(true);
+    expect(briefBody.startsWith(`${briefOpen}: only after you allow it in the app,`)).toBe(true);
     for (const sentence of [
       privacyExplanations,
       privacyBrief,
@@ -115,9 +115,15 @@ describe('AI consent gate on the public pages', () => {
       expect(sentence).toContain(BRIEF_NAME);
     }
     expect(securityControl).toMatch(/Settings → AI/);
+    const storageAi = llmsStorageAiLine();
     expect(aiFact).toBe(fillWs3(WS3_COPY['ws3.llms.keyFacts'][3]));
-    expect(aiFact).toContain('in-app consent card');
+    expect(aiFact).toContain('allows it in the app');
+    expect(aiFact).not.toMatch(/consent card/);
+    expect(storageAi).toContain('allows AI in the app');
+    expect(storageAi).not.toMatch(/consent card/);
+    expect(llms).not.toMatch(/consent card/);
     expect(llmsFull).toContain(aiFact);
-    expect(llmsFull).toContain(llmsStorageAiLine());
+    expect(llmsFull).toContain(storageAi);
+    expect(llmsFull).not.toMatch(/consent card/);
   });
 });
