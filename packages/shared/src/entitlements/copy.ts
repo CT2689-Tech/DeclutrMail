@@ -345,9 +345,16 @@ export function termsPastDue(): string {
   return WS1_COPY['terms.pastDue'].replace(/\b14\b/, String(POLICY.dunningDays));
 }
 
-/** Shared by `/pricing.md` and WS3's `/llms.txt`. */
-export function renderPricingMarkdown(passEnabled = isBillingPassEnabled()): string {
-  if (!isPricingV2()) return '';
+/**
+ * Shared by `/pricing.md` and WS3's `/llms.txt`.
+ * `pricingV2` defaults to this process's env. A route that already
+ * resolved the public API flags passes that boolean instead.
+ */
+export function renderPricingMarkdown(
+  passEnabled = isBillingPassEnabled(),
+  pricingV2 = isPricingV2(),
+): string {
+  if (!pricingV2) return '';
   const locale = 'usd' as const;
   const values = storyValues(locale);
   const features = (lines: readonly string[]) =>

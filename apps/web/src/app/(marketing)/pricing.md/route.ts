@@ -41,6 +41,7 @@ import {
   RAZORPAY_LIMITATIONS_NOTE,
 } from '@/features/billing/billing-copy';
 import { siteUrl } from '@/features/marketing/landing/urls';
+import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
 
 /** D245: derived so this machine-readable doc can't hedge a uniform ladder. */
 function activityUndoWindowClause(): string {
@@ -127,10 +128,13 @@ function comparisonTable(): string {
   return [header, divider, ...rows].join('\n');
 }
 
-export function GET() {
+export async function GET() {
   const origin = siteUrl();
-  if (isPricingV2()) {
-    return new Response(renderPricingMarkdown(), {
+  // Same source as /pricing. The web process env stays off; Cloud Run
+  // is where PRICING_V2 and BILLING_PASS_ENABLED are set.
+  const flags = await loadPricingFlags();
+  if (flags.pricingV2) {
+    return new Response(renderPricingMarkdown(flags.passEnabled, true), {
       headers: {
         'Content-Type': 'text/markdown; charset=utf-8',
         'Cache-Control': 'public, max-age=300, s-maxage=3600',

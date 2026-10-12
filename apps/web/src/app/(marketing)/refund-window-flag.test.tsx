@@ -47,7 +47,7 @@ describe('refund window with PRICING_V2 on', () => {
     assertLaunchWindow(priceFaqAnswer());
     assertLaunchWindow(renderLlmsTxt());
 
-    const markdown = await pricingMarkdown().text();
+    const markdown = await (await pricingMarkdown()).text();
     assertLaunchWindow(markdown);
 
     const help = render(<HelpPage />);

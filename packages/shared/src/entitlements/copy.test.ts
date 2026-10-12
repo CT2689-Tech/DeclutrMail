@@ -159,6 +159,17 @@ describe('pricing story builders', () => {
     expect(renderPricingMarkdown(false)).not.toContain('## Backlog Pass');
   });
 
+  it('renders launch markdown from an explicit flag when the env is off', () => {
+    vi.stubEnv('PRICING_V2', '');
+    vi.stubEnv('BILLING_PASS_ENABLED', '');
+    const markdown = renderPricingMarkdown(true, true);
+    expect(markdown).toContain('## Backlog Pass');
+    expect(markdown).toContain('$59 a year');
+    expect(markdown).toContain('$19 once');
+    expect(markdown).not.toContain('$9/mo');
+    expect(renderPricingMarkdown(true, false)).toBe('');
+  });
+
   it('derives the India pass-off answer and the dunning window', () => {
     expect(indiaFaqAnswer(false)).not.toContain('Backlog Pass');
     expect(indiaFaqAnswer(true)).toContain('Backlog Pass');
