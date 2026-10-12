@@ -1,4 +1,4 @@
-import deck from './deck/ws5.json';
+import deck from './deck/ws5.json' with { type: 'json' };
 
 /**
  * WS5 copy. The object is the checked-in deck section, word for word.

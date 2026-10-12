@@ -377,7 +377,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     storageRefs: ['inbox_report_cache.payload'],
     derived: true,
     purpose:
-      'Remember the latest Inbox Report aggregates until the next sync, so the first look does not recompute them.',
+      'Remember the latest Inbox Report aggregates until mail is updated again, so the first look does not recompute them.',
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
