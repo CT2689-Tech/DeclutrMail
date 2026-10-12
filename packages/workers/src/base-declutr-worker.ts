@@ -330,26 +330,60 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
    * The single failure-capture point (D203 — "Sentry once per failure";
    * D159 — observability seam).
    *
-   * Always emits a structured error log so failures remain greppable in
-   * Cloud Logging even with no observer configured. Then forwards to the
+   * Always emits a structured log so failures remain greppable in Cloud
+   * Logging even with no observer configured. A revoked grant is a warning
+   * notice; every other terminal failure is an error forwarded to the
    * injected observer (Sentry in prod, no-op otherwise). Observer-level
    * failures are themselves logged but never rethrown: losing one Sentry
    * event must not block the dead-letter path (silent-failure-hunter).
    */
   private captureFailure(error: Error, ctx: WorkerContext): void {
     const errorReason = providerErrorReason(error);
-    console.error(
+    const errorKind = safeWorkerErrorKind(error);
+    // A revoked or scope-less Gmail grant is a terminal user action, already
+    // parked on `needs_reconnect`. It is not a worker fault, so it must not
+    // consume the Sentry error quota (DECLUTRMAIL-WEB-2Q).
+    const reconnectGrant = errorKind === 'InvalidGrantError';
+    const log = reconnectGrant ? console.warn : console.error;
+    log(
       JSON.stringify({
-        level: 'error',
+        level: reconnectGrant ? 'warn' : 'error',
         kind: 'worker.failure_capture',
         worker: ctx.workerName,
         jobRef: telemetryReference(ctx.jobId),
         ...(ctx.mailboxAccountId ? { mailboxRef: telemetryReference(ctx.mailboxAccountId) } : {}),
         attempt: ctx.attempt,
-        error: safeWorkerErrorKind(error),
+        error: errorKind,
         ...(errorReason ? { errorReason } : {}),
       }),
     );
+    if (reconnectGrant) {
+      try {
+        this.observer.recordBackgroundNotice({
+          kind: 'worker.reconnect_required',
+          level: 'warn',
+          tags: {
+            worker: ctx.workerName,
+            policy: ctx.policy,
+            job_id: telemetryReference(ctx.jobId),
+            ...(ctx.mailboxAccountId
+              ? { mailbox_account_id: telemetryReference(ctx.mailboxAccountId) }
+              : {}),
+            error_class: 'InvalidGrantError',
+          },
+        });
+      } catch (observerErr) {
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            kind: 'worker.observer_failed',
+            worker: ctx.workerName,
+            error: safeWorkerErrorKind(observerErr),
+          }),
+        );
+      }
+      return;
+    }
     const observerCtx: WorkerFailureContext = {
       workerName: ctx.workerName,
       jobId: telemetryReference(ctx.jobId),
@@ -437,20 +471,20 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
 
   /** Structured lifecycle log line. */
   private emit(event: WorkerEvent, ctx: WorkerContext, extra?: Record<string, unknown>): void {
+    const terminal = event === 'worker.failed' || event === 'worker.dead_lettered';
+    // Same class as captureFailure: a grant the user must reconnect is a
+    // warning, including the lifecycle lines that bracket that capture.
+    const reconnectGrant = extra?.error === 'InvalidGrantError';
+    const level =
+      terminal && !reconnectGrant
+        ? 'error'
+        : event === 'worker.retried' || reconnectGrant
+          ? 'warn'
+          : 'info';
     console.log(
       JSON.stringify({
-        severity:
-          event === 'worker.failed' || event === 'worker.dead_lettered'
-            ? 'ERROR'
-            : event === 'worker.retried'
-              ? 'WARNING'
-              : 'INFO',
-        level:
-          event === 'worker.failed' || event === 'worker.dead_lettered'
-            ? 'error'
-            : event === 'worker.retried'
-              ? 'warn'
-              : 'info',
+        severity: level === 'error' ? 'ERROR' : level === 'warn' ? 'WARNING' : 'INFO',
+        level,
         kind: event,
         worker: ctx.workerName,
         jobRef: telemetryReference(ctx.jobId),

@@ -49,6 +49,8 @@ import {
   INITIAL_RECOVERY_LIMIT,
   INITIAL_RECOVERY_BASE_MS,
   INITIAL_RECOVERY_ERROR_CODES,
+  isNeedsReconnectEnumMissing,
+  notNeedingReconnect,
 } from '@declutrmail/workers';
 import { STALE_INITIAL_SYNC_MS } from '@declutrmail/shared/contracts';
 import { and, eq, inArray, lt, sql } from 'drizzle-orm';
@@ -129,12 +131,46 @@ export async function reconcileInitialSyncs(deps: ReconcileDeps): Promise<Reconc
     )
     .limit(batchSize);
 
+  // A first scan can still say TransientError after Gmail already refused
+  // the grant (insufficient scope was retryable until that 403 was
+  // classified). Scheduling it calls Gmail again and reports a worker
+  // error. Park the same needs_reconnect state a fresh refusal writes.
+  const awaitingGrant = and(
+    eq(providerSyncState.readinessStatus, 'failed'),
+    sql`NOT (${notNeedingReconnect})`,
+    sql`EXISTS (SELECT 1 FROM ${mailboxAccounts} WHERE ${mailboxAccounts.id} = ${providerSyncState.mailboxAccountId} AND ${eligible})`,
+  );
+  try {
+    await db
+      .update(providerSyncState)
+      .set({
+        readinessStatus: 'needs_reconnect',
+        currentStage: 'failed',
+        errorCode: 'InvalidGrantError',
+        initialRetryAt: null,
+        updatedAt: sql`now()`,
+      })
+      .where(awaitingGrant);
+  } catch (err) {
+    if (!isNeedsReconnectEnumMissing(err)) throw err;
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        kind: 'sync.needs_reconnect_enum_missing',
+        worker: 'initial-sync-reconciler',
+      }),
+    );
+  }
+
   // Classify before LIMIT and claim before publishing. A queue outage leaves
   // queued intent; competing sweep/manual/reconnect writes cannot claim it twice.
   // Legacy failed rows have no deadline; their last heartbeat supplies cooldown.
+  // `notNeedingReconnect` is the same guard as the park above: a tick that
+  // could not write the new label must still not requeue the dead grant.
   const recoverable = and(
     eq(providerSyncState.readinessStatus, 'failed'),
     inArray(providerSyncState.errorCode, [...INITIAL_RECOVERY_ERROR_CODES]),
+    sql`(${notNeedingReconnect})`,
     lt(providerSyncState.initialRecoveryAttempts, INITIAL_RECOVERY_LIMIT),
     sql`COALESCE(${providerSyncState.initialRetryAt}, ${providerSyncState.updatedAt} + ${INITIAL_RECOVERY_BASE_MS} * interval '1 millisecond') <= ${tickNow.toISOString()}::timestamptz`,
     sql`EXISTS (SELECT 1 FROM ${mailboxAccounts} WHERE ${mailboxAccounts.id} = ${providerSyncState.mailboxAccountId} AND ${eligible})`,

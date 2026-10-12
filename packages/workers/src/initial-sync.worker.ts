@@ -41,6 +41,7 @@ import {
   type AutomaticProtectionResult,
 } from './automatic-protection.js';
 import { deletionPendingSql, getSyncMailboxEligibility } from './deletion-pause.js';
+import { isAwaitingReconnect, notNeedingReconnect } from './mailbox-reconnect.js';
 import {
   markDecisionsStale,
   messageGmailCategory,
@@ -435,6 +436,26 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         stageTimings,
       };
     }
+    // A grant already refused (incremental InvalidGrant, often while the
+    // first-scan error is still the older retryable TransientError) must
+    // not be sent to Gmail again. Park it on the same needs_reconnect
+    // status a fresh refusal would write, then return.
+    if (
+      syncRow &&
+      syncRow.readinessStatus !== 'ready' &&
+      (await isAwaitingReconnect(this.deps.db, mailboxAccountId))
+    ) {
+      await this.parkKnownReconnect(mailboxAccountId);
+      initialSyncLog('skipped_needs_reconnect', mailboxAccountId);
+      return {
+        messagesSynced: 0,
+        unreadable: 0,
+        sendersIndexed: 0,
+        gmailApiCalls: 0,
+        durationMs: Date.now() - startedAt,
+        stageTimings,
+      };
+    }
     if (syncRow?.initialRetryAt && syncRow.initialRetryAt.getTime() > Date.now()) {
       initialSyncLog('skipped_recovery_cooldown', mailboxAccountId);
       return {
@@ -624,6 +645,43 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       attempts,
       finalAttemptDurationMs: durationMs,
     });
+  }
+
+  /**
+   * A sweep already proved this grant is dead. Move a non-ready row onto
+   * `needs_reconnect` without calling Gmail or sending mail. Saved progress
+   * stays. If 0087 is not applied yet, `failed` plus `InvalidGrantError`
+   * is the same off-recovery state the terminal path uses.
+   *
+   * The unresolved-grant predicate is part of both writes. A reconnect
+   * can commit `queued` and clear that grant after the awaiting read and
+   * before this update; without it, the update would park the new row.
+   */
+  private async parkKnownReconnect(mailboxAccountId: string): Promise<void> {
+    const parked = {
+      currentStage: 'failed' as const,
+      errorCode: 'InvalidGrantError',
+      initialRetryAt: null,
+      updatedAt: sql`now()`,
+    };
+    const where = and(
+      eq(providerSyncState.mailboxAccountId, mailboxAccountId),
+      sql`${providerSyncState.readinessStatus} <> 'ready'`,
+      sql`${providerSyncState.readinessStatus}::text <> 'needs_reconnect'`,
+      sql`NOT (${notNeedingReconnect})`,
+    );
+    try {
+      await this.deps.db
+        .update(providerSyncState)
+        .set({ ...parked, readinessStatus: 'needs_reconnect' })
+        .where(where);
+    } catch (err) {
+      if (!isNeedsReconnectEnumMissing(err)) throw err;
+      await this.deps.db
+        .update(providerSyncState)
+        .set({ ...parked, readinessStatus: 'failed' })
+        .where(where);
+    }
   }
 
   /**
