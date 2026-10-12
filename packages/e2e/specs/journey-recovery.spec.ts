@@ -1,4 +1,7 @@
 import { expect, test } from '@playwright/test';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { BRIEF_NAME } from '@declutrmail/shared/copy/screen-decisions';
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { dbConnect } from '../helpers/db';
 import { applyJourneySeed } from '../helpers/seed-journeys';
 import { BILLING_SEED } from '../helpers/seed-billing';
@@ -57,9 +60,7 @@ test.afterEach(async () => {
   }
 });
 
-test('Free Brief upgrade retains its origin and opens the selected plan without buying', async ({
-  page,
-}) => {
+test('Free Brief shows Coming with Pro and does not open checkout', async ({ page }) => {
   const sql = dbConnect();
   try {
     await sql`UPDATE workspaces SET tier = 'free' WHERE id = ${fixture.workspaceId}`;
@@ -67,27 +68,26 @@ test('Free Brief upgrade retains its origin and opens the selected plan without 
     await sql.end();
   }
   await page.goto('/brief');
-  const upgrade = page.getByRole('link', { name: 'Upgrade to Pro $19/mo', exact: true });
-  await expect(upgrade).toHaveAttribute('href', '/billing?plan=pro&cycle=monthly&from=%2Fbrief');
-  await upgrade.click({ noWaitAfter: true });
-  await expect(page).toHaveURL(/\/billing\?plan=pro&cycle=monthly&from=%2Fbrief$/);
-  if (process.env.PRICING_V2 === 'true') {
-    await expect(
-      page.getByRole('button', { name: 'Join the Pro waitlist', exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole('button', { name: 'Continue to checkout', exact: true }),
-    ).toHaveCount(0);
-  } else {
-    await expect(
-      page.getByRole('button', { name: 'Continue to checkout', exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByText('$19 billed monthly, starting today. Renews automatically — cancel anytime.', {
-        exact: true,
-      }),
-    ).toBeVisible();
-  }
+  const proName = TIER_MANIFEST.pro.name;
+  const fill = (template: string) => template.replaceAll('{proName}', proName);
+  const gate = page.getByRole('region', { name: fill(WS2_COPY.pro.badge), exact: true });
+  await expect(gate).toBeVisible();
+  await expect(
+    gate.getByRole('heading', {
+      name: WS2_COPY.pro.brief.title.replaceAll('{BRIEF_NAME}', BRIEF_NAME),
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(gate.getByText(fill(WS2_COPY.pro.status), { exact: true })).toBeVisible();
+  await expect(
+    gate.getByRole('button', { name: fill(WS2_COPY.pro.cta), exact: true }),
+  ).toBeVisible();
+  await expect(
+    gate.getByRole('link', { name: WS2_COPY.pro.secondary, exact: true }),
+  ).toHaveAttribute('href', '/later');
+  await expect(page.getByRole('link', { name: 'Upgrade to Pro $19/mo', exact: true })).toHaveCount(
+    0,
+  );
 });
 
 test('failed first scan exposes account controls while mailbox routes stay gated, then finish opens backlog', async ({
@@ -242,7 +242,7 @@ test('Home retries the displayed inbox and truthfully reports queued recovery', 
   try {
     await sql`UPDATE provider_sync_state SET readiness_status='failed', current_stage='failed', error_code='TransientError', initial_recovery_attempts=5, initial_retry_at=NULL, initial_attempt_id=NULL, last_history_id=987654321 WHERE mailbox_account_id=${fixture.mailboxId}`;
     await page.reload();
-    const recovery = page.getByRole('region', { name: 'Mailbox needs attention' });
+    const recovery = page.getByRole('region', { name: 'Gmail account needs attention' });
     const response = page.waitForResponse(
       (res) =>
         res.url().endsWith('/api/v1/sync/initial/retry') && res.request().method() === 'POST',
@@ -251,7 +251,7 @@ test('Home retries the displayed inbox and truthfully reports queued recovery', 
     const result = await response;
     expect(result.ok()).toBe(true);
     expect(result.request().headers()['x-active-mailbox-id']).toBe(fixture.mailboxId);
-    await expect(page.getByText('Your scan is queued.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Your scan is waiting to start.', { exact: true })).toBeVisible();
     const [state] =
       await sql`SELECT readiness_status, last_history_id::text AS cursor FROM provider_sync_state WHERE mailbox_account_id=${fixture.mailboxId}`;
     expect(state).toMatchObject({ readiness_status: 'queued', cursor: '987654321' });

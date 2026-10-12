@@ -57,8 +57,14 @@ const REASONING_INPUT: ReasoningInput = {
   ruleLabel: 'rarely marked read',
   facts: { monthlyVolume: 12, readRatePct: 3 },
   gmailCategory: 'promotions',
+  aiConsent: 'granted',
 };
-const BRIEF_INPUT: BriefNarrativeInput = { reply: [], fyi: [], noise: [] };
+const BRIEF_INPUT: BriefNarrativeInput = {
+  reply: [],
+  fyi: [],
+  noise: [],
+  aiConsent: 'granted',
+};
 
 function providerError(status: number, type: string, message: string, headers = {}) {
   return Anthropic.APIError.generate(

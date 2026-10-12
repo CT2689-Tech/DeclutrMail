@@ -62,6 +62,11 @@ export interface ComposeState {
   unsubIgnored: boolean;
   /** Live Inbox membership; optional for saved views created before this axis. */
   hasInboxMail?: boolean;
+  /**
+   * Less than half of the last 90 days is marked read. Optional so saved
+   * views written before this axis still parse.
+   */
+  mostlyUnread?: boolean;
 }
 
 export const EMPTY_COMPOSE: ComposeState = {
@@ -109,7 +114,8 @@ export function hasAnyFilter(s: ComposeState): boolean {
     s.windowDays !== null ||
     s.domain !== null ||
     s.unsubIgnored ||
-    s.hasInboxMail === true
+    s.hasInboxMail === true ||
+    s.mostlyUnread === true
   );
 }
 
@@ -128,7 +134,8 @@ export function isDefaultCompose(c: ComposeState): boolean {
     c.windowDays === DEFAULT_COMPOSE.windowDays &&
     c.domain === DEFAULT_COMPOSE.domain &&
     c.unsubIgnored === DEFAULT_COMPOSE.unsubIgnored &&
-    c.hasInboxMail !== true
+    c.hasInboxMail !== true &&
+    c.mostlyUnread !== true
   );
 }
 

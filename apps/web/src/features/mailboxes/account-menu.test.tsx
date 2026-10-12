@@ -448,7 +448,7 @@ describe('AccountMenu Gmail reconnect health', () => {
       'href',
       '/settings',
     );
-    const billing = within(dialog).getByRole('link', { name: 'Billing' });
+    const billing = within(dialog).getByRole('link', { name: 'Plan & billing' });
     expect(billing).toHaveAttribute('href', '/billing');
 
     await user.click(billing);

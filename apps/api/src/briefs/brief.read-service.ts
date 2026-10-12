@@ -3,7 +3,9 @@
 //
 // Owns the SELECTs against `brief_runs` plus the `opened_at` first-
 // view tracker (D61). D69 frozen-once means the read service never
-// touches `brief_payload` — only the open-tracker column flips.
+// writes `brief_payload` — only the open-tracker column flips. A
+// stored model narrative is replaced in the response when Brief
+// consent is not current, so a revoke is visible on the next GET.
 //
 // PRIVACY (D7, D228): metadata only. Read returns whatever the
 // snapshot worker wrote — sender identity, subject, Gmail message
@@ -15,7 +17,9 @@ import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 
 import { briefRuns, productFeedback, senderPolicies, senders } from '@declutrmail/db';
+import { renderBriefTemplateNarrative } from '@declutrmail/workers';
 
+import { showStoredBrief } from '../common/show-stored-explanations.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type { Brief, BriefMarkOpenedResult, BriefNoiseSender } from './brief.types.js';
 
@@ -67,6 +71,7 @@ export class BriefReadService {
       .limit(1);
     if (!row) return null;
     const brief = projectBrief(row.brief, row.feedbackRating);
+    await this.projectStoredNarratives(mailboxAccountId, [brief]);
     await this.attachNoiseSenders(mailboxAccountId, [brief]);
     return brief;
   }
@@ -116,8 +121,29 @@ export class BriefReadService {
       .orderBy(desc(briefRuns.runDateLocal), desc(briefRuns.id))
       .limit(PAGE_SIZE);
     const briefs = rows.map((row) => projectBrief(row.brief, row.feedbackRating));
+    await this.projectStoredNarratives(mailboxAccountId, briefs);
     await this.attachNoiseSenders(mailboxAccountId, briefs);
     return briefs;
+  }
+
+  /**
+   * Stored model prose leaves the response the moment consent is
+   * missing, revoked, or the wrong version. The frozen row stays as
+   * written; the template is what the
+   * next worker would have stored.
+   */
+  private async projectStoredNarratives(mailboxAccountId: string, briefs: Brief[]): Promise<void> {
+    if (!briefs.some((brief) => brief.generatedBy === 'llm_haiku')) return;
+    const show = await showStoredBrief(this.db, mailboxAccountId);
+    if (show) return;
+    for (const brief of briefs) {
+      if (brief.generatedBy !== 'llm_haiku') continue;
+      brief.generatedBy = 'template';
+      brief.briefPayload = {
+        ...brief.briefPayload,
+        narrative: renderBriefTemplateNarrative(brief.briefPayload),
+      };
+    }
   }
 
   /**

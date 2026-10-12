@@ -150,11 +150,14 @@ unprocessed.
 | `0093_entitlement_grants_comp_email_uniq.sql` | destructive, own commit | drop full email unique, add partial unique for comps                                                           |
 | `0094_waitlist_drop_email_uniq.sql`           | destructive, own commit | drop `waitlist_email_uniq`                                                                                     |
 
-`atlas.sum` was produced by Atlas community v1.3.0 (`atlas migrate hash`).
-None of these migrations has been applied to a live database. #985 takes
-`0089` and #981 takes `0090_inbox_report_cache` plus `0091` (concurrent
-`mail_messages` index), so these files are `0092`, `0093`, and `0094`.
-`0092` must apply before the new API serves checkouts.
+`atlas.sum` was produced by Atlas community v1.3.0 (`atlas migrate hash`)
+after #985 merged `0089_ai_consent_columns`. The 0092-0094 SQL is
+unchanged. Their sum lines were rehashed because 0089 now sits ahead of
+them. `atlas migrate validate` accepts the directory. None of these
+migrations has been applied to a live database. #981 still takes
+`0090_inbox_report_cache` plus `0091` (concurrent `mail_messages`
+index), so these files stay `0092`, `0093`, and `0094`. `0092` must
+apply before the new API serves checkouts.
 
 ## Decisions assumed
 

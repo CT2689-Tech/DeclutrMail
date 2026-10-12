@@ -59,49 +59,54 @@ export function PrivacyDataContent() {
         style={{ border: 'none', borderRadius: radius.xl, boxShadow: shadow.card }}
       />
 
-      <SettingsGroup id="privacy-gmail-data-inventory" title="Gmail data inventory">
-        <InventoryGroup
-          title="Access granted"
-          items={GMAIL_OAUTH_ACCESS.map((item) => ({
-            id: item.scope,
-            label: item.label,
-            detail: item.usedFor,
-          }))}
-        />
-        <InventoryGroup
-          title="Connection and sync data"
-          items={GMAIL_CONNECTION_DATA_INVENTORY.map(inventoryDisplayItem)}
-        />
-        <InventoryGroup
-          title="Message data"
-          items={GMAIL_MESSAGE_DATA_INVENTORY.map(inventoryDisplayItem)}
-        />
-        <InventoryGroup
-          title="Derived product data"
-          items={GMAIL_DERIVED_DATA_INVENTORY.map(inventoryDisplayItem)}
-        />
-        <InventoryGroup
-          title="Records we keep to investigate problems"
-          items={GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY.map(inventoryDisplayItem)}
-        />
-        <p className="dm-settings-row" style={{ ...bodyTextStyle, padding: '14px 16px 0' }}>
-          Anthropic only ever sees the items marked above for Brief summaries or optional sender
-          explanations. {GMAIL_DATA_PROCESSORS.Anthropic.retention}
-        </p>
-        <p style={{ ...bodyTextStyle, padding: '8px 16px 14px' }}>
-          Brandfetch receives a sender&rsquo;s email domain and nothing else about you — never your
-          address, your account, or any message. {GMAIL_DATA_PROCESSORS.Brandfetch.retention}{' '}
-          <a
-            href={GMAIL_DATA_PROCESSORS.Brandfetch.privacyUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: color.primary }}
-          >
-            Brandfetch&rsquo;s privacy policy
-          </a>
-          .
-        </p>
-      </SettingsGroup>
+      <div id="what-we-store" style={{ scrollMarginTop: 24 }}>
+        <SettingsGroup id="privacy-gmail-data-inventory" title="Gmail data inventory">
+          <InventoryGroup
+            title="Access granted"
+            items={GMAIL_OAUTH_ACCESS.map((item) => ({
+              id: item.scope,
+              label: item.label,
+              detail: item.usedFor,
+            }))}
+          />
+          <InventoryGroup
+            title="Connection and sync data"
+            items={GMAIL_CONNECTION_DATA_INVENTORY.map(inventoryDisplayItem)}
+          />
+          <InventoryGroup
+            title="Message data"
+            items={GMAIL_MESSAGE_DATA_INVENTORY.map(inventoryDisplayItem)}
+          />
+          <InventoryGroup
+            title="Derived product data"
+            items={GMAIL_DERIVED_DATA_INVENTORY.map(inventoryDisplayItem)}
+          />
+          <InventoryGroup
+            title="Records we keep to investigate problems"
+            items={GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY.map(inventoryDisplayItem)}
+          />
+          <div id="shared-with" style={{ scrollMarginTop: 24 }}>
+            <p className="dm-settings-row" style={{ ...bodyTextStyle, padding: '14px 16px 0' }}>
+              Anthropic only ever sees the items marked above for Brief summaries or optional sender
+              explanations. {GMAIL_DATA_PROCESSORS.Anthropic.retention}
+            </p>
+            <p style={{ ...bodyTextStyle, padding: '8px 16px 14px' }}>
+              Brandfetch receives a sender&rsquo;s email domain and nothing else about you — never
+              your address, your account, or any message.{' '}
+              {GMAIL_DATA_PROCESSORS.Brandfetch.retention}{' '}
+              <a
+                href={GMAIL_DATA_PROCESSORS.Brandfetch.privacyUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: color.primary }}
+              >
+                Brandfetch&rsquo;s privacy policy
+              </a>
+              .
+            </p>
+          </div>
+        </SettingsGroup>
+      </div>
     </>
   );
 }

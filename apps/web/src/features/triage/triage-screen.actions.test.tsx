@@ -1217,7 +1217,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     // only the backlog archive did not.
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        expect.stringMatching(/Unsubscribe request recorded.*wasn't archived — Archive it/),
+        expect.stringMatching(/Unsubscribe requested.*wasn't archived — Archive it/),
         'warn',
       ),
     );
@@ -1243,7 +1243,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `Unsubscribe request recorded, but can't tell if Archive started for older email from ${LINKEDIN.senderName} — check Activity before retrying.`,
+        `Unsubscribe requested, but can't tell if Archive started for older email from ${LINKEDIN.senderName} — check Activity before retrying.`,
         'warn',
       ),
     );
@@ -1699,7 +1699,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     await confirmUnsubWithoutBacklog();
 
     await waitFor(() => expect(screen.getByTestId('unsub-mailto-callout')).toBeDefined());
-    const link = screen.getByRole('link', { name: 'Open Gmail draft' });
+    const link = screen.getByRole('link', { name: 'Open email in Gmail' });
     expect(link.getAttribute('href')).toBe(
       'https://mail.google.com/mail/?authuser=owner%40gmail.com&view=cm&fs=1&to=unsubscribe%40linkedin.example&su=Remove+me',
     );

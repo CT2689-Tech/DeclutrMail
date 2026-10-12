@@ -10,10 +10,11 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
+import { grantedAiConsentInsert } from '@declutrmail/shared/ai-consent';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { BadRequestException } from '@nestjs/common';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BriefReadService } from './brief.read-service.js';
 import type { BriefPayload } from './brief.types.js';
@@ -76,7 +77,11 @@ async function seedBrief(
   workspaceId: string,
   mailboxAccountId: string,
   runDateLocal: string,
-  opts: { openedAt?: Date | null; payload?: BriefPayload } = {},
+  opts: {
+    openedAt?: Date | null;
+    payload?: BriefPayload;
+    generatedBy?: 'template' | 'llm_haiku';
+  } = {},
 ): Promise<string> {
   const [row] = await db
     .insert(briefRuns)
@@ -84,7 +89,7 @@ async function seedBrief(
       workspaceId,
       mailboxAccountId,
       runDateLocal,
-      generatedBy: 'template',
+      generatedBy: opts.generatedBy ?? 'template',
       briefPayload: (opts.payload ?? SAMPLE_PAYLOAD) as unknown as PersistedBriefPayload,
       ...(opts.openedAt !== undefined ? { openedAt: opts.openedAt } : {}),
     })
@@ -446,5 +451,96 @@ describe('BriefReadService', () => {
         { senderKey: KEY_NEWS, senderId: newsId, isProtected: false },
       ]);
     });
+  });
+});
+
+const MODEL_NARRATIVE = 'Boss needs a reply before noon, and the rest can wait.';
+
+describe('BriefReadService — stored model narrative without current consent', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  async function seedModelBrief(consent: 'none' | 'current' | 'revoked' | 'old' = 'none') {
+    const db = await freshDb();
+    const mailbox = await seedMailbox(db, 'brief-consent@example.com');
+    if (consent !== 'none') {
+      const grant = grantedAiConsentInsert();
+      await db
+        .update(users)
+        .set(
+          consent === 'old'
+            ? { ...grant, briefAiConsentVersion: '2026-09' }
+            : consent === 'revoked'
+              ? { ...grant, briefAiConsentRevokedAt: new Date('2026-10-02T00:00:00Z') }
+              : grant,
+        )
+        .where(eq(users.id, mailbox.userId));
+    }
+    await seedBrief(db, mailbox.workspaceId, mailbox.mailboxAccountId, '2026-10-11', {
+      generatedBy: 'llm_haiku',
+      payload: { ...SAMPLE_PAYLOAD, narrative: MODEL_NARRATIVE },
+    });
+    return { db, mailbox };
+  }
+
+  it('serves the template on the next read when consent was never granted', async () => {
+    const { db, mailbox } = await seedModelBrief('none');
+    const brief = await new BriefReadService(db as never).getForDate(
+      mailbox.mailboxAccountId,
+      '2026-10-11',
+    );
+    expect(brief!.generatedBy).toBe('template');
+    expect(brief!.briefPayload.narrative).toBe('');
+    expect(brief!.briefPayload.narrative).not.toContain(MODEL_NARRATIVE);
+    const [stored] = await db
+      .select({ generatedBy: briefRuns.generatedBy, briefPayload: briefRuns.briefPayload })
+      .from(briefRuns);
+    expect(stored!.generatedBy).toBe('llm_haiku');
+    expect(stored!.briefPayload.narrative).toBe(MODEL_NARRATIVE);
+  });
+
+  it('stops serving the model narrative on the read after a revoke', async () => {
+    const { db, mailbox } = await seedModelBrief('current');
+    const service = new BriefReadService(db as never);
+    const allowed = await service.getForDate(mailbox.mailboxAccountId, '2026-10-11');
+    expect(allowed!.briefPayload.narrative).toBe(MODEL_NARRATIVE);
+    expect(allowed!.generatedBy).toBe('llm_haiku');
+
+    await db
+      .update(users)
+      .set({ briefAiConsentRevokedAt: new Date('2026-10-11T12:00:00Z') })
+      .where(eq(users.id, mailbox.userId));
+
+    const withdrawn = await service.getForDate(mailbox.mailboxAccountId, '2026-10-11');
+    expect(withdrawn!.generatedBy).toBe('template');
+    expect(withdrawn!.briefPayload.narrative).toBe('');
+    const history = await service.listByRange(mailbox.mailboxAccountId, '2026-10-01', '2026-10-31');
+    expect(history[0]!.briefPayload.narrative).toBe('');
+  });
+
+  it.each(['old', 'revoked'] as const)(
+    'hides the model narrative when Brief consent is %s',
+    async (consent) => {
+      const { db, mailbox } = await seedModelBrief(consent);
+      const brief = await new BriefReadService(db as never).getForDate(
+        mailbox.mailboxAccountId,
+        '2026-10-11',
+      );
+      expect(brief!.generatedBy).toBe('template');
+      expect(brief!.briefPayload.narrative).not.toBe(MODEL_NARRATIVE);
+    },
+  );
+
+  it('leaves a template Brief untouched when the user has not consented', async () => {
+    const db = await freshDb();
+    const mailbox = await seedMailbox(db, 'template-only@example.com');
+    await seedBrief(db, mailbox.workspaceId, mailbox.mailboxAccountId, '2026-10-11');
+    const brief = await new BriefReadService(db as never).getForDate(
+      mailbox.mailboxAccountId,
+      '2026-10-11',
+    );
+    expect(brief!.generatedBy).toBe('template');
+    expect(brief!.briefPayload.narrative).toBe(SAMPLE_PAYLOAD.narrative);
   });
 });

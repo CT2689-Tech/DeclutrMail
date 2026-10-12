@@ -14,7 +14,11 @@
 //     no multi-select bar).
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render as renderClient, screen } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+
+import { ME_SETTINGS_QUERY_KEY } from '@/features/settings/api/query-options';
 import type { ReactElement } from 'react';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import type { Me } from '@/features/auth/api/me-contract';
@@ -103,6 +107,21 @@ describe('TriageScreen — populated queue', () => {
     expect(html).toContain(`>${TRIAGE_QUEUE.length} in queue<`);
     expect(html).not.toContain('Reviewing 1 of');
     expect(html).not.toContain('decisions waiting');
+  });
+
+  it('places the opened consent card under the Triage title', () => {
+    const client = createTestQueryClient();
+    client.setQueryData(ME_SETTINGS_QUERY_KEY, {
+      aiConsent: { explanations: 'review', brief: 'unset', reask: true },
+    });
+    renderClient(
+      <QueryWrapper client={client}>
+        <TriageScreen state={{ kind: 'empty', stats: TRIAGE_SESSION_STATS_QUIET }} />
+      </QueryWrapper>,
+    );
+    const heading = screen.getByRole('heading', { level: 1, name: 'Triage' });
+    const card = screen.getByRole('region', { name: WS2_COPY.aiConsent.title.all });
+    expect(heading.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('carries no eyebrow, mailbox address or Today strip above the queue', () => {

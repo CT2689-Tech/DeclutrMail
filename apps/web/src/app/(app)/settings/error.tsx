@@ -17,7 +17,7 @@ export default function SettingsError({
     <RouteErrorScreen
       gap={32}
       title="Settings"
-      kicker="Your workspace / Preferences"
+      kicker="Settings"
       error={error}
       reset={reset}
       boundary="settings"

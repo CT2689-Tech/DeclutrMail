@@ -54,7 +54,7 @@ function renderModal(
 
 function advanceToStep2() {
   fireEvent.click(screen.getByRole('checkbox'));
-  fireEvent.click(screen.getByRole('button', { name: /review deletion timing/i }));
+  fireEvent.click(screen.getByRole('button', { name: /choose timing/i }));
 }
 
 // ─── matchMedia stub (mirrors triage-row.test.tsx) ──────────────────
@@ -84,26 +84,33 @@ describe('DeleteAccountModal', () => {
   it('renders as a bottom sheet at phone width, both steps still reachable', () => {
     setViewportWidth(375);
     renderModal();
-    const dialog = screen.getByRole('dialog');
+    const dialog = screen.getByRole('alertdialog');
     // Phone layout is pure CSS (the shared sheet's ≤520px rule).
     expect(dialog).toHaveClass('dm-sheet-panel');
-    expect(screen.getByText(/what gets permanently deleted/i)).toBeInTheDocument();
+    expect(screen.getByText(/what gets deleted/i)).toBeInTheDocument();
     advanceToStep2();
     expect(
       screen.getByRole('button', { name: /schedule deletion/i, hidden: false }),
     ).toBeDisabled();
   });
 
+  it('opens on Keep my account, and Enter does not delete', () => {
+    const onConfirm = renderModal();
+    const cancel = screen.getByRole('button', { name: /keep my account/i });
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(cancel).toHaveFocus();
+    fireEvent.keyDown(cancel, { key: 'Enter' });
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
   it('step 1 gates Continue behind the acknowledgment checkbox', () => {
     renderModal();
-    expect(screen.getByText(/what gets permanently deleted/i)).toBeInTheDocument();
-    expect(screen.getByText(/does not delete emails in Gmail/i)).toBeInTheDocument();
-    expect(screen.getByText(/what is retained under policy/i)).toBeInTheDocument();
-    expect(
-      screen.getAllByText(/pseudonymous security and deletion evidence/i).length,
-    ).toBeGreaterThan(0);
+    expect(screen.getByText(/what gets deleted/i)).toBeInTheDocument();
+    expect(screen.getByText(/your email in Gmail stays as it is/i)).toBeInTheDocument();
+    expect(screen.getByText(/what we keep/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/minimal security record/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/deletes everything/i)).not.toBeInTheDocument();
-    const cont = screen.getByRole('button', { name: /review deletion timing/i });
+    const cont = screen.getByRole('button', { name: /choose timing/i });
     expect(cont).toBeDisabled();
     fireEvent.click(screen.getByRole('checkbox'));
     expect(cont).toBeEnabled();
@@ -132,31 +139,28 @@ describe('DeleteAccountModal', () => {
     const input = screen.getByLabelText(/type/i);
     fireEvent.change(input, { target: { value: 'DELETE' } });
 
-    fireEvent.click(screen.getByRole('radio', { name: /delete immediately/i }));
-    const confirm = screen.getByRole('button', { name: /delete immediately/i, hidden: false });
+    fireEvent.click(screen.getByRole('radio', { name: /delete now/i }));
+    const confirm = screen.getByRole('button', { name: /^delete now$/i, hidden: false });
     // Prior typing was reset AND no longer matches the waiver phrase.
     expect(confirm).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText(/type/i), {
       target: { value: 'DELETE AND WAIVE UNDO' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /delete immediately/i, hidden: false }));
+    fireEvent.click(screen.getByRole('button', { name: /^delete now$/i, hidden: false }));
     expect(onConfirm).toHaveBeenCalledWith('DELETE AND WAIVE UNDO');
   });
 
-  it('surfaces the D232 undo copy: count, latest expiry, and the extended date', () => {
+  it('surfaces the undo-window date on the scheduled option', () => {
     renderModal({ projection: UNDO_PROJECTION });
     advanceToStep2();
 
-    expect(screen.getByText(/3 undoable actions/i)).toBeInTheDocument();
-    expect(screen.getByText(/undo windows end/i)).toBeInTheDocument();
-    // Three facts (copy-tokens.md §3): why the date is later than 7
-    // days, that undo keeps working, and that you can cancel.
     expect(
-      screen.getByText(/open undo windows, so it runs .* instead of in 7 days/i),
+      screen.getByText(/when your last undo window closes \(up to 30 days\)/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/undo keeps working until then/i)).toBeInTheDocument();
     expect(screen.getByText(/you can cancel any time/i)).toBeInTheDocument();
+    expect(screen.getByText(/ends your open undo windows/i)).toBeInTheDocument();
   });
 
   it('shows the submit error and keeps the modal open', () => {

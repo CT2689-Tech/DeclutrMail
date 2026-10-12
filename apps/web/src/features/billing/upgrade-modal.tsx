@@ -20,7 +20,7 @@ import {
 import { track } from '@/lib/posthog';
 
 import { billingIntentPath } from './billing-intent';
-import { moneyBackNote, quotedPlanPrice } from './billing-model';
+import { formatBillingMonthDay, moneyBackNote, quotedPlanPrice } from './billing-model';
 import { useRegionProvider } from './billing-currency';
 
 const { color, font, radius, shadow, space, text } = tokens;
@@ -357,10 +357,7 @@ function freeCapTitle(d: FreeCapDetails): string {
 
 /** Short, locale-stable "Aug 27" label for the server's reset instant. */
 function resetDateLabel(iso: string): string {
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime())
-    ? 'your next monthly reset'
-    : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return formatBillingMonthDay(iso) ?? 'your next monthly reset';
 }
 
 function inboxLimitTitle(d: InboxLimitDetails, tierLabel: string): string {

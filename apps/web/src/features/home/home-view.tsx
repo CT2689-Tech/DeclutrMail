@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { Avatar, ErrorState, ScreenIntro, Skeleton } from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import {
   hasCapability,
   minimumTierForCapability,
@@ -48,7 +49,7 @@ export function HomeView({
       />
       <header className={styles.header}>
         <div>
-          <EditorialKicker>Your workspace / Home</EditorialKicker>
+          <EditorialKicker>Home</EditorialKicker>
           <h1>
             A little room
             <br />
@@ -128,19 +129,21 @@ function HomeBody({
             </span>
             <h2>
               {state.queued
-                ? 'Your scan is queued.'
+                ? WS2_COPY.home.queued.title
                 : state.syncing
                   ? 'Reading your Gmail.'
                   : state.senders?.length
                     ? 'Your first review is ready.'
-                    : 'Nothing cleared yet.'}
+                    : WS2_COPY.home.empty.title}
             </h2>
             <p>
               {state.queued
-                ? 'Your progress is saved. We’ll resume scanning when your turn starts.'
+                ? WS2_COPY.home.queued.body
                 : state.syncing
                   ? 'Your first scan is in progress. Available senders are ready to explore as the picture comes together.'
-                  : 'Start with the senders in your inbox. See their activity, then decide what deserves a place.'}
+                  : state.senders?.length
+                    ? 'Start with the senders in your inbox. See their activity, then decide what deserves a place.'
+                    : WS2_COPY.home.empty.body}
             </p>
             <PrimaryLink action={state.action} />
             <span className={styles.footnote}>You’ll see a preview before email is moved.</span>
@@ -157,8 +160,8 @@ function HomeBody({
       // Google error or a response it could not process. The step names
       // reconnect only when the grant is what failed.
       return (
-        <section className={styles.beginning} aria-label="Mailbox needs attention">
-          <span className={styles.eyebrow}>Mailbox needs attention</span>
+        <section className={styles.beginning} aria-label={WS2_COPY.home.failedEyebrow}>
+          <span className={styles.eyebrow}>{WS2_COPY.home.failedEyebrow}</span>
           <h2>Gmail scan failed.</h2>
           {state.mailboxId ? (
             <HomeScanRecovery mailboxId={state.mailboxId} needsReconnect={state.needsReconnect} />
@@ -277,7 +280,7 @@ function HomeBody({
                 actions.
               </p>
               <Link href="/activity">
-                See your activity <span aria-hidden="true">↗</span>
+                {WS2_COPY.home.linkActivity} <span aria-hidden="true">↗</span>
               </Link>
             </div>
           </section>
@@ -334,7 +337,7 @@ function WorkspaceOverview({
           <h3>Catch up</h3>
           <WorkflowLink
             href="/brief"
-            title="Daily brief"
+            title="Daily Brief"
             detail={briefStatus}
             locked={access('brief')}
           />

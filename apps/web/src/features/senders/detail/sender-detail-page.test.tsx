@@ -209,8 +209,13 @@ function installHappyPath(
 
 let lastClient: ReturnType<typeof createTestQueryClient>;
 
-function renderDetail(id = 'linkedin') {
+function renderDetail(id = 'linkedin', explanations?: 'allowed') {
   const client = createTestQueryClient();
+  if (explanations === 'allowed') {
+    client.setQueryData(['me-settings'], {
+      aiConsent: { explanations: 'allowed', brief: 'unset', reask: false },
+    });
+  }
   lastClient = client;
   return render(
     <QueryWrapper client={client}>
@@ -723,12 +728,7 @@ describe('SenderDetailRoute', () => {
     renderDetail();
 
     await waitFor(() => expect(screen.getByText(/Nothing decided yet/i)).toBeInTheDocument());
-    for (const claim of [
-      'Keep decision saved',
-      'Archived',
-      'Unsubscribe request recorded',
-      'Moved to Later',
-    ]) {
+    for (const claim of ['Kept', 'Archived', 'Unsubscribe requested', 'Moved to Later']) {
       expect(
         within(screen.getByRole('region', { name: 'Decision timeline' })).queryByText(claim),
       ).not.toBeInTheDocument();
@@ -1408,7 +1408,11 @@ describe('SenderDetailRoute', () => {
 
       await waitFor(() => expect(capturedBody).toEqual({ policyType: 'keep' }));
       await waitFor(() => expect(h.dismissToast).toHaveBeenCalledOnce());
-      expect(h.toast).toHaveBeenCalledWith('Kept LinkedIn', 'success');
+      expect(h.toast).toHaveBeenCalledWith(
+        'Kept LinkedIn',
+        'success',
+        expect.objectContaining({ label: 'Undo' }),
+      );
     });
   });
 
@@ -2431,7 +2435,7 @@ describe('SenderDetailRoute — explaining a template reason on open (D24)', () 
 
   it('asks for the sentence behind a template reason when the sender is opened', async () => {
     stubWithRecommendation(TEMPLATE_READ);
-    renderDetail();
+    renderDetail('linkedin', 'allowed');
     // Guard the guard: the page must have LOADED before a POST is judged.
     await screen.findByRole('group', { name: /Optional suggestion/ });
     await waitFor(() => expect(explained).toHaveLength(1));
@@ -2515,7 +2519,7 @@ describe('SenderDetailRoute — explaining a template reason on open (D24)', () 
           },
         },
       ]);
-      renderDetail();
+      renderDetail('linkedin', 'allowed');
       await screen.findByRole('group', { name: /Optional suggestion/ });
       expect(screen.getByText(TEMPLATE_READ.reasoning)).toBeInTheDocument();
       await waitFor(() => expect(explained).toHaveLength(1));

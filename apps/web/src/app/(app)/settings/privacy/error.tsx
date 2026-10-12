@@ -12,7 +12,7 @@ export default function SettingsSectionError({
   return (
     <RouteErrorScreen
       title="Privacy & data"
-      kicker="Your workspace / Privacy & data"
+      kicker="Settings"
       gap={32}
       error={error}
       reset={reset}

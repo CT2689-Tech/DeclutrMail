@@ -1,4 +1,5 @@
 import {
+  activityLog,
   automationRules,
   followupTracker,
   mailboxAccounts,
@@ -237,6 +238,38 @@ describe('OutboxConsumerRouter — D204 senders projection', () => {
     expect(rows[0]!.policyType).toBe('keep');
     // Keep ≠ Protect (manifest keep docstring) — modifiers untouched.
     expect(rows[0]!.isProtected).toBe(false);
+  });
+
+  it('does not re-apply keep after that audit row was undone', async () => {
+    await db.insert(activityLog).values({
+      mailboxAccountId: mailboxId,
+      senderKey: SENDER_KEY_A,
+      source: 'manual',
+      action: 'keep',
+      affectedCount: 0,
+      undoToken: null,
+      revertedAt: new Date(),
+    });
+    await consume({
+      id: 'evt-keep-undone',
+      topic: TOPICS.TRIAGE_VERDICT_APPLIED,
+      aggregateId: '00000000-0000-4000-8000-000000000015',
+      payload: {
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_KEY_A,
+        verdict: 'keep',
+        source: 'manual',
+        undoToken: null,
+        affectedCount: 0,
+      },
+      attempts: 1,
+      createdAt: new Date(),
+    });
+    const rows = await db
+      .select()
+      .from(senderPolicies)
+      .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+    expect(rows).toHaveLength(0);
   });
 
   it('a non-keep verdict event is valid but projects nothing', async () => {

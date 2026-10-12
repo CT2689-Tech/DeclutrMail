@@ -46,6 +46,7 @@ const SAMPLE_INPUT: BriefNarrativeInput = {
     { senderName: 'Promo Co', messageCount: 3 },
     { senderName: 'News Daily', messageCount: 2 },
   ],
+  aiConsent: 'granted',
 };
 
 interface MockMessage {
@@ -76,8 +77,8 @@ describe('renderBriefUserPrompt', () => {
     expect(out).toContain('Can we move the Q4 sync to Thursday?');
     expect(out).toContain('Bank');
     expect(out).toContain('Statement available');
-    expect(out).toContain('Promo Co (3 messages)');
-    expect(out).toContain('News Daily (2 messages)');
+    expect(out).toContain('«Promo Co» (3 messages)');
+    expect(out).toContain('«News Daily» (2 messages)');
   });
 
   it("states the day's word budget to the model", () => {
@@ -145,7 +146,7 @@ describe('renderBriefUserPrompt', () => {
       fyi: [],
       noise: [],
     });
-    expect(out).toContain('boss@example.com: s');
+    expect(out).toContain('«boss@example.com»: «s»');
   });
 
   it('renders (no subject) when the subject is blank', () => {
@@ -207,6 +208,7 @@ describe('BriefLlmAnthropicAdapter.generateNarrative', () => {
     expect(typeof callArg.system).toBe('string');
     expect(callArg.system).toContain('executive assistant');
     expect(callArg.messages).toHaveLength(1);
+    expect(callArg.tools).toBeUndefined();
     expect(callArg.messages[0].role).toBe('user');
     expect(callArg.messages[0].content).toBe(renderBriefUserPrompt(SAMPLE_INPUT));
   });
@@ -368,6 +370,7 @@ describe('BriefLlmAnthropicAdapter — provider refusals', () => {
         ruleLabel: 'rarely marked read',
         facts: { monthlyVolume: 10, readRatePct: 2 },
         gmailCategory: 'promotions',
+        aiConsent: 'granted',
       });
       expect(await brief.generateNarrative(SAMPLE_INPUT)).toBeNull();
       expect(briefCreate).not.toHaveBeenCalled();
@@ -425,6 +428,19 @@ describe('BriefLlmAnthropicAdapter — provider refusals', () => {
       warnSpy.mockRestore();
       errorSpy.mockRestore();
     }
+  });
+});
+
+describe('BriefLlmAnthropicAdapter consent gate', () => {
+  it('does not call the provider when consent is missing', async () => {
+    const create = vi.fn();
+    const adapter = new BriefLlmAnthropicAdapter({
+      client: stubClient(create),
+      breaker: new LlmCircuitBreaker(),
+    });
+    const { aiConsent: _granted, ...without } = SAMPLE_INPUT;
+    expect(await adapter.generateNarrative(without)).toBeNull();
+    expect(create).not.toHaveBeenCalled();
   });
 });
 

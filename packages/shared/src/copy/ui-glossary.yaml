@@ -1,0 +1,109 @@
+# House-rule glossary for the WS2 UI lint.
+# The attached drop2-r6 deck did not include Content section P.5.
+# Patterns below are the house rules the WS2 prompt names.
+# defs match features/help/glossary-content.ts.
+version: 1
+allowed_names:
+  - 'Home'
+  - 'Cleanup'
+  - 'Automations'
+  - 'Auto'
+  - 'Senders'
+  - 'Triage'
+  - 'Screener'
+  - 'Autopilot'
+  - 'Later'
+  - 'Activity'
+  - 'Quiet hours'
+  - 'Catch up'
+  - 'Daily Brief'
+  - 'Follow-ups'
+  - 'Plan & billing'
+  - 'Gmail account'
+  - 'Gmail accounts'
+  - 'Preview layout'
+  - 'Suggested next steps'
+  - 'Finish review'
+  - 'Backlog Pass'
+  - 'Settings'
+  - 'Protected'
+  - 'Help'
+  - 'Free'
+  - 'Plus'
+  - 'Pro'
+banned:
+  - id: clean_verb
+    pattern: "\\bclean(?:ing|ed|s)?\\b"
+    flags: i
+    scope: all
+  - id: action_word
+    pattern: "\\bactions?\\b"
+    flags: i
+    scope: all
+  - id: sync_word
+    pattern: "\\bsync(?:ing|ed|s)?\\b"
+    flags: i
+    scope: all
+  - id: metadata_word
+    pattern: "\\bmetadata\\b"
+    flags: i
+    scope: all
+  - id: workspace_word
+    pattern: "\\bworkspace\\b"
+    flags: i
+    scope: all
+  - id: quota_word
+    pattern: "\\bquota\\b"
+    flags: i
+    scope: all
+  - id: allowance_word
+    pattern: "\\ballowance\\b"
+    flags: i
+    scope: all
+  - id: storage_claim
+    pattern: "\\b(?:free up|reclaim|save \\d)"
+    flags: i
+    scope: all
+  - id: certification_claim
+    pattern: "\\b(?:certified|audited)\\b"
+    flags: i
+    scope: all
+  - id: opened_claim
+    pattern: "\\bopened\\b|\\bopen rate\\b"
+    flags: i
+    scope: all
+  - id: body_counterclaim
+    pattern: "never reads your email|metadata-only|headers only|Bodies read:\\s*0"
+    flags: i
+    scope: all
+  - id: superlative
+    pattern: "\\bbest\\b|#1"
+    flags: i
+    scope: all
+  - id: price_literal
+    pattern: "\\$\\d"
+    scope: all
+  - id: contact_promise
+    pattern: "we['\\u2019]ll (?:email|notify|let) you"
+    flags: i
+    scope: all
+  - id: rarely_word
+    pattern: "\\b(?:barely|rarely)\\b"
+    flags: i
+    scope: report
+allow_exact:
+  - id: clean_verb
+    text: 'Cleanup'
+defs:
+  'Sender': 'A person or service identified by its From address. DeclutrMail groups matching email by sender so one decision can cover that sender’s email.'
+  'Gmail preview snippet': 'The short text Gmail already shows in your inbox list. DeclutrMail stores it to give you context without fetching the full email.'
+  'Decision': 'What you want for a sender. DeclutrMail records it; Gmail changes only when an action is confirmed or an Active rule applies.'
+  'Action': 'One specific result, such as Archive, Later, Unsubscribe, Delete, or recording Keep. DeclutrMail shows the result in Activity.'
+  'Suggestion': 'A recommended decision based on the sender facts DeclutrMail lists. A suggestion never changes Gmail on its own.'
+  'Rule': 'An instruction for future matching email. Watch first only suggests; Active can perform the rule’s action automatically.'
+  'Protected': 'A standing safety policy that recommends Keep and excludes the sender from bulk and automatic cleanup. You can still choose a single-sender action after acknowledging the override.'
+  'Watch first': 'An optional Autopilot mode that records what a rule would do without changing Gmail. You review and approve its suggestions yourself. It never switches to Active automatically.'
+  'Active': 'An Autopilot rule applies its action automatically to new matching email. Active execution depends on your plan and can be paused.'
+  'Gmail Trash recovery': 'Gmail’s separate recovery path for email moved to Trash. It lasts up to 30 days and is not the same as DeclutrMail’s Activity Undo window.'
+  'Later': 'Moves matching email currently in Inbox to the DeclutrMail/Later label until the return time you choose. Future email from the sender is unchanged.'
+  'Activity Undo': "DeclutrMail's 30-day window for reversing an eligible Archive, Later, or Delete action. Activity shows the deadline and any available Undo control."

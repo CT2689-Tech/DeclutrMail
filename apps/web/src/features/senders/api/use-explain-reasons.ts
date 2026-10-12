@@ -40,9 +40,11 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { EXPLAIN_BATCH_MAX } from '@declutrmail/shared/contracts';
 import { requestExplanations } from '@/lib/api/senders';
+import { readMeSettings } from '@/features/settings/api/me-settings-reader';
+import { meSettingsQueryOptions } from '@/features/settings/api/query-options';
 
 /**
  * When to look again, measured from the ask. The last look sits past the
@@ -107,13 +109,19 @@ export function useExplainReasons(
   },
 ): void {
   const queryClient = useQueryClient();
+  const settings = useQuery(meSettingsQueryOptions(readMeSettings));
   const { enabled = true, exact = false, settleMs = EXPLAIN_SETTLE_MS } = options;
   // Held in a ref, not a dep — a caller building the key inline hands us a
   // fresh array every render. Read at settle time, so the latest is right.
   const invalidateRef = useRef(options.invalidate);
   invalidateRef.current = options.invalidate;
-  const askKey = enabled ? templateVersions(reads) : '';
-  const showKey = enabled ? templateVersions(options.showing ?? reads) : '';
+  // Fail closed. Unset, declined, revoked, review, and a settings read
+  // that has not landed yet are all "not allowed" — no POST until the
+  // stored choice is the current grant.
+  const explanationsAllowed = settings.data?.aiConsent?.explanations === 'allowed';
+  const mayAsk = enabled && explanationsAllowed;
+  const askKey = mayAsk ? templateVersions(reads) : '';
+  const showKey = mayAsk ? templateVersions(options.showing ?? reads) : '';
   const schedule = settleMs.join(',');
 
   // Ask. Declared first, so the ask time exists before the look reads it.

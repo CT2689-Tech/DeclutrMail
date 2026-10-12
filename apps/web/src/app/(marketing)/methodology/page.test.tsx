@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { PRIVACY_NEVER_ITEMS, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
-import { fillWs3, WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { fillWs3, gatedText, WS3_COPY } from '@declutrmail/shared/copy/launch';
 import { describe, expect, it } from 'vitest';
 
 import MethodologyPage, { metadata } from './page';
@@ -27,14 +27,15 @@ describe('/methodology', () => {
     expect(copy).toContain(
       'does not receive subject lines, preview snippets, or full email contents',
     );
-    expect(copy).toContain('DeclutrMail shows a standard explanation');
+    expect(copy).toContain('DeclutrMail shows an explanation written from its rules');
   });
 
-  it('renders the pre-gate Brief lines from the deck', () => {
+  it('renders the gate-on Brief lines from the deck', () => {
     const { container } = render(<MethodologyPage />);
     const copy = container.textContent ?? '';
     const caption = fillWs3(WS3_COPY['ws3.methodology.briefCaption']);
-    expect(copy).toContain(fillWs3(WS3_COPY['ws3.methodology.briefBody.preGate']));
+    expect(copy).toContain(gatedText('ws3.methodology.briefBody'));
+    expect(copy).not.toContain(fillWs3(WS3_COPY['ws3.methodology.briefBody.preGate']));
     expect(copy).toContain(caption);
     expect(screen.getByRole('region', { name: caption })).toBeInTheDocument();
     expect(copy).not.toMatch(/\{[A-Za-z0-9_]+\}/);

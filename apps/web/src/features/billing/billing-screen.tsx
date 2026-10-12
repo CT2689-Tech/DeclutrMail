@@ -28,7 +28,7 @@ import type {
   BillingSubscription,
   CancelRequest,
 } from '@declutrmail/shared/contracts';
-import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { fillStory, TIER_MANIFEST, TIER_RANK, type TierId } from '@declutrmail/shared/entitlements';
 
 import { useAuth } from '@/features/auth/auth-provider';
@@ -36,6 +36,7 @@ import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { useTier } from '@/features/auth/api/use-tier';
 import { currencyForProvider, formatMoney } from '@/features/marketing/pricing/pricing-model';
 import { ApiError, apiDelete } from '@/lib/api/client';
+import { useHydrated } from '@/lib/use-hydrated';
 import { track } from '@/lib/posthog';
 
 import {
@@ -222,6 +223,12 @@ export function BillingScreen({
   const queryClient = useQueryClient();
   const [cancelOpen, setCancelOpen] = useState(false);
   const isPhone = useIsAtMost('xs');
+  // A 503 is a designed state, and it is not in the dehydrated snapshot.
+  // The server therefore paints the loading placeholder. The browser can
+  // already have that error before hydration, which would swap in the
+  // dark notice and discard the server tree. Hold the placeholder until
+  // the first client render has matched.
+  const hydrated = useHydrated();
 
   useEffect(() => {
     void track('page_viewed', { page: 'billing', mailbox_id: me.activeMailboxId });
@@ -441,7 +448,7 @@ export function BillingScreen({
       .catch(() => undefined);
   }
 
-  if (view.kind === 'loading') {
+  if (view.kind === 'loading' || (view.kind === 'billing_dark' && !hydrated)) {
     return <LoadingState />;
   }
   // The derive layer already kept a pending money action out of this
@@ -790,14 +797,12 @@ export function BillingScreen({
         gap: 20,
       }}
     >
-      <EditorialKicker>Your workspace / Billing</EditorialKicker>
-      <h1 style={editorialTitleStyle}>Billing</h1>
-      <p style={{ margin: 0, color: color.fgSoft }}>
-        Applies to this workspace and its connected inboxes.
-      </p>
+      <EditorialKicker>Plan & billing</EditorialKicker>
+      <h1 style={editorialTitleStyle}>Plan & billing</h1>
+      <p style={{ margin: 0, color: color.fgSoft }}>{WS2_COPY.liveFix.billing.scope}</p>
       <ScreenIntro
         id="billing"
-        title="Billing"
+        title="Plan & billing"
         body="Upgrades start today; downgrades and cancellations take effect after the period you've paid for."
       />
 

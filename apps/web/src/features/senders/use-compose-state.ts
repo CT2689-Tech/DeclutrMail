@@ -77,6 +77,7 @@ function writeScope(params: URLSearchParams, scope: SenderScope): void {
     'domain',
     'unsub_ignored',
     'has_inbox_mail',
+    'mostly_unread',
     'q',
     'sort',
     'direction',
@@ -103,6 +104,7 @@ function writeScope(params: URLSearchParams, scope: SenderScope): void {
   if (compose.domain) params.set('domain', compose.domain);
   if (compose.unsubIgnored) params.set('unsub_ignored', 'true');
   if (compose.hasInboxMail) params.set('has_inbox_mail', 'true');
+  if (compose.mostlyUnread) params.set('mostly_unread', 'true');
 
   const trimmedQuery = scope.query.trim();
   if (trimmedQuery) params.set('q', trimmedQuery);

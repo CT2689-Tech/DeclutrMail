@@ -46,7 +46,8 @@ import {
   useRecordUnsubscribeIntent,
   useActionStatus,
 } from '@/lib/api/use-action';
-import { useSetSenderPolicy } from '../api/use-sender-policy';
+import { useSetSenderPolicy, useUndoSenderKeep } from '../api/use-sender-policy';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { sendersKeys } from '../api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { isProtectedSkip, isTerminalStatus } from '@/lib/api/actions';
@@ -525,6 +526,7 @@ function ReadyState({
   const enqueueComposite = useEnqueueComposite();
   const recordUnsubIntent = useRecordUnsubscribeIntent();
   const setPolicy = useSetSenderPolicy();
+  const undoKeep = useUndoSenderKeep();
   const [activeAction, setActiveAction] = useState<{
     mailboxId: string | undefined;
     actionId: string;
@@ -768,7 +770,10 @@ function ReadyState({
               setDetail((d) => ({ ...d, policyType: 'keep' }));
               setSettled({ phase: 'done', verb: 'keep', affectedCount: null });
               trackActionConfirmed('keep');
-              toast(`Kept ${sender.name}`, 'success');
+              toast(WS2_COPY.keepUndo.toast.one.replace('{Sender}', sender.name), 'success', {
+                label: WS2_COPY.undo.button,
+                onClick: () => void undoKeep.mutate({ senderId: sender.id }),
+              });
             },
             onError: (err) => {
               dismissPendingKeep();

@@ -2746,6 +2746,7 @@ export class ActionsService {
           eq(activityLog.mailboxAccountId, mailboxAccountId),
           eq(activityLog.senderKey, senderKey),
           eq(activityLog.action, 'keep'),
+          isNull(activityLog.revertedAt),
           gte(activityLog.occurredAt, windowStart),
         ),
       )

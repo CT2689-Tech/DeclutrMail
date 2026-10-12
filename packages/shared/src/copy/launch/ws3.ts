@@ -1,8 +1,8 @@
-/** WS3 copy. Values equal deck/ws3.json (drop2-r14). */
+/** WS3 copy. Values equal deck/ws3.json (drop2-r15). */
 export const WS3_COPY = {
   _meta: {
-    revision: 'drop2-r14',
-    issued: '2026-10-11T16:16:00-07:00',
+    revision: 'drop2-r15',
+    issued: '2026-10-11T17:01:00-07:00',
     section: 'ws3',
   },
   'ws3.home.title': 'Clean up Gmail, one sender at a time — DeclutrMail',

@@ -128,7 +128,7 @@ describe('AccountDeletionSection', () => {
       );
       fireEvent.click(await screen.findByRole('button', { name: 'Delete account' }));
       expect(await screen.findByRole('dialog')).toBeInTheDocument();
-      const continueButton = screen.getByRole('button', { name: /review deletion timing/i });
+      const continueButton = screen.getByRole('button', { name: /choose timing/i });
       expect(continueButton).toBeDisabled();
       fireEvent.click(screen.getByRole('checkbox'));
       fireEvent.click(continueButton);

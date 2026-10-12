@@ -114,7 +114,7 @@ export function FollowupsScreen() {
         gap: 32,
       }}
     >
-      <EditorialKicker>Catch up / Conversations</EditorialKicker>
+      <EditorialKicker>Catch up</EditorialKicker>
       <h1 style={editorialTitleStyle}>Follow-ups</h1>
       <ScreenIntro
         id="followups"

@@ -3,13 +3,18 @@ import { and, count, desc, eq, getTableName, inArray, sql, type SQL } from 'driz
 
 import {
   mailMessages,
+  readStateNotSweeperMarked,
   screenerAwaitingWhere,
   screenerQuarantine,
   senderPolicies,
   senders,
   triageDecisions,
 } from '@declutrmail/db';
+import { plainVolumeExplanation } from '@declutrmail/shared/ai-consent';
+import { engagementWindowStart } from '@declutrmail/shared/contracts';
 
+import { showStoredExplanations } from '../common/show-stored-explanations.js';
+import { projectReasoning } from '../common/triage-reasoning.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type { ScreenerCountResult, ScreenerQueueFacts } from './screener.types.js';
 
@@ -196,45 +201,99 @@ export class ScreenerReadService {
     // was — two rows disagreeing about staleness within a single render
     // is the kind of small incoherence the queue can't explain.
     const now = Date.now();
-    return rows.map((r) => ({
-      id: r.id,
-      senderId: r.senderId,
-      senderKey: r.senderKey,
-      senderName: r.senderName || r.senderEmail,
-      senderEmail: r.senderEmail,
-      senderDomain: r.senderDomain,
-      firstSeenAt: r.firstSeenAt.toISOString(),
-      queuedAt: r.queuedAt.toISOString(),
-      messageCount: r.totalReceived,
-      inboxCount: Number(r.inboxCount),
-      sampleSubject: subjectBySender.get(r.senderKey) ?? '',
-      unsubscribeMethod: r.unsubscribeMethod,
-      // No policy row ⇒ never protected. Keep reason and flag in
-      // agreement so the FE never renders "Protected" with no reason.
-      isProtected: r.isProtected ?? false,
-      protectionReason: r.isProtected === true ? r.protectionReason : null,
-      // `producedAt` / `expiresAt` join the guard rather than being
-      // asserted: they are NOT NULL on the decision row, so a non-null
-      // verdict implies both — but this is a LEFT join, and narrowing
-      // on what the row actually carries beats trusting that implication
-      // through a `!`.
-      recommendation:
-        r.verdict != null &&
-        r.confidence != null &&
-        r.reasoning != null &&
-        r.generatedBy != null &&
-        r.producedAt != null &&
-        r.expiresAt != null
-          ? {
-              verdict: r.verdict,
-              confidence: Number(r.confidence),
-              reasoning: r.reasoning,
+    const showStoredAi = await showStoredExplanations(this.db, input.mailboxAccountId);
+    const llmKeys = rows.filter((r) => r.generatedBy === 'llm_haiku').map((r) => r.senderKey);
+    const volumeBySender =
+      llmKeys.length > 0 ? await this.plainVolumeBySender(input.mailboxAccountId, llmKeys) : null;
+    return rows.map((r) => {
+      const volume = volumeBySender?.get(r.senderKey) ?? { last90: 0, readRate: null };
+      const projected =
+        r.reasoning != null && r.generatedBy != null
+          ? projectReasoning({
+              stored: r.reasoning,
               generatedBy: r.generatedBy,
-              scoredAt: r.producedAt.toISOString(),
-              stale: r.expiresAt.getTime() <= now,
-            }
-          : null,
-    }));
+              readRate: volume.readRate,
+              showStoredAi,
+              plain: plainVolumeExplanation({
+                name: r.senderName || r.senderEmail,
+                last90Count: volume.last90,
+                readRate: volume.readRate,
+              }),
+            })
+          : null;
+      return {
+        id: r.id,
+        senderId: r.senderId,
+        senderKey: r.senderKey,
+        senderName: r.senderName || r.senderEmail,
+        senderEmail: r.senderEmail,
+        senderDomain: r.senderDomain,
+        firstSeenAt: r.firstSeenAt.toISOString(),
+        queuedAt: r.queuedAt.toISOString(),
+        messageCount: r.totalReceived,
+        inboxCount: Number(r.inboxCount),
+        sampleSubject: subjectBySender.get(r.senderKey) ?? '',
+        unsubscribeMethod: r.unsubscribeMethod,
+        // No policy row ⇒ never protected. Keep reason and flag in
+        // agreement so the FE never renders "Protected" with no reason.
+        isProtected: r.isProtected ?? false,
+        protectionReason: r.isProtected === true ? r.protectionReason : null,
+        // `producedAt` / `expiresAt` join the guard rather than being
+        // asserted: they are NOT NULL on the decision row, so a non-null
+        // verdict implies both — but this is a LEFT join, and narrowing
+        // on what the row actually carries beats trusting that implication
+        // through a `!`.
+        recommendation:
+          r.verdict != null &&
+          r.confidence != null &&
+          r.reasoning != null &&
+          r.generatedBy != null &&
+          r.producedAt != null &&
+          r.expiresAt != null
+            ? {
+                verdict: r.verdict,
+                confidence: Number(r.confidence),
+                reasoning: projected?.reasoning ?? r.reasoning,
+                generatedBy: projected?.generatedBy ?? r.generatedBy,
+                scoredAt: r.producedAt.toISOString(),
+                stale: r.expiresAt.getTime() <= now,
+              }
+            : null,
+      };
+    });
+  }
+
+  /**
+   * 90-day volume for the plain explanation that replaces stored model
+   * prose. Same window and sweeper-excluded numerator as Triage, so a
+   * sender does not grow a different sentence by moving to the Screener.
+   */
+  private async plainVolumeBySender(
+    mailboxAccountId: string,
+    senderKeys: string[],
+  ): Promise<Map<string, { last90: number; readRate: number | null }>> {
+    const ninetyDaysAgoIso = engagementWindowStart(new Date()).toISOString();
+    const rows = await this.db
+      .select({
+        senderKey: mailMessages.senderKey,
+        last90Total: sql<number>`SUM(CASE WHEN ${mailMessages.isOutbound} = false AND ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz THEN 1 ELSE 0 END)`,
+        last90Read: sql<number>`SUM(CASE WHEN ${mailMessages.isOutbound} = false AND ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz AND NOT ${mailMessages.isUnread} AND ${readStateNotSweeperMarked(mailboxAccountId, getTableName(mailMessages))} THEN 1 ELSE 0 END)`,
+      })
+      .from(mailMessages)
+      .where(
+        and(
+          eq(mailMessages.mailboxAccountId, mailboxAccountId),
+          inArray(mailMessages.senderKey, senderKeys),
+        ),
+      )
+      .groupBy(mailMessages.senderKey);
+    return new Map(
+      rows.map((row) => {
+        const last90 = Number(row.last90Total);
+        const read = Number(row.last90Read);
+        return [row.senderKey, { last90, readRate: last90 > 0 ? read / last90 : null }] as const;
+      }),
+    );
   }
 
   /** Pending count for the sidebar badge (D74) — one indexed COUNT. */

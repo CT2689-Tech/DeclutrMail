@@ -30,6 +30,7 @@ import {
   HttpStatus,
   Param,
   Patch,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -171,6 +172,7 @@ export class SendersController {
     @Query('unsub_ignored') rawUnsubIgnored: string | undefined,
     @Query('current_mail_only') rawCurrentMailOnly?: string,
     @Query('has_inbox_mail') rawHasInboxMail?: string,
+    @Query('mostly_unread') rawMostlyUnread?: string,
   ): Promise<SenderListEnvelope> {
     const accountId = mailbox.id;
     const category = parseCategory(rawCategory);
@@ -190,6 +192,7 @@ export class SendersController {
     const unsubIgnored = rawUnsubIgnored === 'true' ? true : null;
     const currentMailOnly = parseTriState(rawCurrentMailOnly) === true;
     const hasInboxMail = parseTriState(rawHasInboxMail) === true;
+    const mostlyUnread = rawMostlyUnread === 'true' ? true : null;
 
     const cursorRaw = decodeCursor(rawCursor);
     if (rawCursor && cursorRaw === null) {
@@ -237,6 +240,7 @@ export class SendersController {
         quietForDays,
         domain,
         unsubIgnored,
+        mostlyUnread,
       }),
     );
     const queryRead = isFirstPage
@@ -254,6 +258,7 @@ export class SendersController {
             quietForDays,
             domain,
             unsubIgnored,
+            mostlyUnread,
           }),
         )
       : Promise.resolve(null);
@@ -449,6 +454,23 @@ export class SendersController {
    *   - 400 INVALID_REQUEST (bad body) / non-UUID id
    *   - 404 SENDER_NOT_FOUND (ownership mismatch collapses to 404)
    */
+  @RateLimit({ bucket: 'gmail-action' })
+  @Post(':id/keep/undo')
+  @UseGuards(CsrfGuard)
+  async undoKeep(
+    @CurrentMailbox() mailbox: { id: string },
+    @Param('id') id: string,
+  ): Promise<Envelope<SenderPolicyResult>> {
+    if (!isUuid(id)) {
+      throw new BadRequestException('Sender id must be a UUID.');
+    }
+    const result = await this.policies.undoKeep({
+      mailboxAccountId: mailbox.id,
+      senderId: id,
+    });
+    return ok(result);
+  }
+
   @RateLimit({ bucket: 'gmail-action' })
   @Patch(':id/policy')
   @UseGuards(CsrfGuard)

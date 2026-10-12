@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { AiConsentFollowup } from './ai-consent-followup.js';
 import { MeSettingsController } from './me-settings.controller.js';
 import type { SessionPrincipal } from '../auth/sessions.service.js';
 import type { UsersService } from '../users/users.service.js';
@@ -28,9 +29,20 @@ function makeController(preferences: Record<string, unknown> = {}) {
       detail: null,
       alreadySet: false,
     }),
+    applyAiConsent: vi.fn().mockResolvedValue({
+      explanations: 'allowed',
+      brief: 'unset',
+      reask: false,
+    }),
   };
-  const controller = new MeSettingsController(users as unknown as UsersService);
-  return { controller, users };
+  const followup = {
+    afterCommittedGrant: vi.fn().mockResolvedValue(undefined),
+  };
+  const controller = new MeSettingsController(
+    users as unknown as UsersService,
+    followup as unknown as AiConsentFollowup,
+  );
+  return { controller, users, followup };
 }
 
 describe('MeSettingsController — PATCH /api/me/timezone (D246)', () => {
@@ -73,6 +85,7 @@ describe('MeSettingsController — GET /api/me/settings', () => {
       actionSheetPrefs: { archive: false, unsubscribe: false, later: false },
       briefPrefs: { hour: 8 },
       senderViews: [],
+      aiConsent: { explanations: 'unset', brief: 'unset', reask: false },
     });
   });
 
@@ -98,6 +111,7 @@ describe('MeSettingsController — GET /api/me/settings', () => {
       actionSheetPrefs: { archive: true, unsubscribe: false, later: true },
       briefPrefs: { hour: 17 },
       senderViews: [VIEW],
+      aiConsent: { explanations: 'unset', brief: 'unset', reask: false },
     });
   });
 
@@ -113,7 +127,62 @@ describe('MeSettingsController — GET /api/me/settings', () => {
       actionSheetPrefs: { archive: false, unsubscribe: false, later: false },
       briefPrefs: { hour: 8 },
       senderViews: [],
+      aiConsent: { explanations: 'unset', brief: 'unset', reask: false },
     });
+  });
+});
+
+describe('MeSettingsController — POST /api/me/ai-consent', () => {
+  it('records an Allow decision and echoes the view', async () => {
+    const { controller, users, followup } = makeController({});
+    const order: string[] = [];
+    users.applyAiConsent.mockImplementation(async () => {
+      order.push('commit');
+      return { explanations: 'allowed', brief: 'unset', reask: false };
+    });
+    followup.afterCommittedGrant.mockImplementation(async () => {
+      order.push('enqueue');
+    });
+
+    const result = await controller.decideAiConsent(USER, { action: 'allow', card: 'all' });
+
+    expect(result.data).toEqual({
+      aiConsent: { explanations: 'allowed', brief: 'unset', reask: false },
+    });
+    expect(users.applyAiConsent).toHaveBeenCalledWith('u1', { action: 'allow', card: 'all' });
+    expect(order).toEqual(['commit', 'enqueue']);
+    expect(followup.afterCommittedGrant).toHaveBeenCalledWith('u1', {
+      action: 'allow',
+      card: 'all',
+    });
+  });
+
+  it('does not enqueue when the consent write fails', async () => {
+    const { controller, users, followup } = makeController({});
+    users.applyAiConsent.mockRejectedValue(new Error('write failed'));
+    await expect(
+      controller.decideAiConsent(USER, { action: 'allow', card: 'withBrief' }),
+    ).rejects.toThrow('write failed');
+    expect(followup.afterCommittedGrant).not.toHaveBeenCalled();
+  });
+
+  it('still returns the saved view when enqueueing throws', async () => {
+    const { controller, followup } = makeController({});
+    followup.afterCommittedGrant.mockRejectedValue(new Error('redis down'));
+    const result = await controller.decideAiConsent(USER, { action: 'revoke' });
+    expect(result.data.aiConsent).toEqual({
+      explanations: 'allowed',
+      brief: 'unset',
+      reask: false,
+    });
+  });
+
+  it('rejects an unknown decision', async () => {
+    const { controller, users } = makeController({});
+    await expect(controller.decideAiConsent(USER, { action: 'allow' })).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(users.applyAiConsent).not.toHaveBeenCalled();
   });
 });
 

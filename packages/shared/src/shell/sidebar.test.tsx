@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { CATCH_UP_LATER_FIRST } from '../copy/screen-decisions';
 import { NAV, Sidebar, SectionNavigation, WORKSPACE_NAV, workspaceSection } from './sidebar';
 
 const routes = [
@@ -21,12 +22,12 @@ const labels = [
   'Screener',
   'Autopilot',
   'Quiet hours',
-  'Daily brief',
+  'Daily Brief',
   'Follow-ups',
   'Later',
   'Activity',
 ];
-const groups = ['Home', 'Clean up', 'Automations', 'Catch up', 'Activity'];
+const groups = ['Home', 'Cleanup', 'Automations', 'Catch up', 'Activity'];
 const render = (props: Partial<Parameters<typeof Sidebar>[0]> = {}) =>
   renderToStaticMarkup(<Sidebar active="senders" onNavigate={() => {}} collapsed {...props} />);
 
@@ -48,7 +49,17 @@ describe('Sidebar — approved workspace rail', () => {
 
   it('assigns every real feature to exactly one group without dropping routes', () => {
     expect(NAV.map((item) => item.id)).toEqual(routes);
-    expect(WORKSPACE_NAV.flatMap((item) => [...item.members])).toEqual(routes);
+    const grouped = [...routes];
+    if (CATCH_UP_LATER_FIRST) {
+      const briefAt = grouped.indexOf('brief');
+      grouped.splice(briefAt, 3, 'snoozed', 'brief', 'followups');
+    }
+    expect(WORKSPACE_NAV.flatMap((item) => [...item.members])).toEqual(grouped);
+    expect(WORKSPACE_NAV.find((item) => item.id === 'senders')?.members[0]).toBe('senders');
+    expect(WORKSPACE_NAV.find((item) => item.id === 'autopilot')?.members[0]).toBe('autopilot');
+    expect(WORKSPACE_NAV.find((item) => item.id === 'brief')?.members[0]).toBe(
+      CATCH_UP_LATER_FIRST ? 'snoozed' : 'brief',
+    );
     for (const route of routes) {
       const html = render({ active: route });
       expect(html.match(/aria-current="page"/g)).toHaveLength(1);
@@ -64,10 +75,12 @@ describe('Sidebar — approved workspace rail', () => {
       locks: { brief: 'Pro' },
     });
     expect(html).toContain(
-      'aria-label="Clean up" aria-description="Senders: 0 · 7 new senders waiting in Screener"',
+      'aria-label="Cleanup" aria-description="Senders: 0 · 7 new senders waiting in Screener"',
     );
     expect(html).toContain('data-testid="nav-dot-senders"');
-    expect(html).toContain('aria-label="Catch up" aria-description="Daily brief: Pro feature"');
+    expect(html).toContain(
+      'aria-label="Catch up" aria-describedby="nav-catchup-hint" aria-description="Daily Brief: Pro feature"',
+    );
     expect(html).not.toContain('data-testid="nav-dot-brief"');
     expect(render({ counts: { senders: 0, triage: '0' } })).not.toContain('nav-dot-senders');
   });
@@ -87,9 +100,15 @@ describe('Sidebar — approved workspace rail', () => {
 
 describe('SectionNavigation', () => {
   it.each([
-    ['screener', 'Clean up views', ['Senders', 'Triage', 'Screener']],
+    ['screener', 'Cleanup views', ['Senders', 'Triage', 'Screener']],
     ['quiet', 'Automations views', ['Autopilot', 'Quiet hours']],
-    ['snoozed', 'Catch up views', ['Daily brief', 'Follow-ups', 'Later']],
+    [
+      'snoozed',
+      'Catch up views',
+      CATCH_UP_LATER_FIRST
+        ? ['Later', 'Daily Brief', 'Follow-ups']
+        : ['Daily Brief', 'Follow-ups', 'Later'],
+    ],
   ])('exposes the complete contextual group for %s', (active, name, expectedLabels) => {
     const html = renderToStaticMarkup(
       <SectionNavigation active={active as string} onNavigate={() => {}} />,

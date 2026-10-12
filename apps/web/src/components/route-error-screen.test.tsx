@@ -17,24 +17,24 @@ import TriageError from '@/app/(app)/triage/error';
 
 describe('RouteErrorScreen', () => {
   it.each([
-    { View: LaterError, title: 'Later', kicker: 'Catch up / Coming back to you', gap: 32 },
-    { View: SettingsError, title: 'Settings', kicker: 'Your workspace / Preferences', gap: 32 },
+    { View: LaterError, title: 'Later', kicker: 'Catch up', gap: 32 },
+    { View: SettingsError, title: 'Settings', kicker: 'Settings', gap: 32 },
     {
       View: PrivacyError,
       title: 'Privacy & data',
-      kicker: 'Your workspace / Privacy & data',
+      kicker: 'Settings',
       gap: 32,
     },
     {
       View: ProtectedError,
       title: 'Protected senders',
-      kicker: 'Your workspace / Sender policies',
+      kicker: 'Settings',
       gap: 12,
     },
     {
       View: HelpError,
       title: 'Help & glossary',
-      kicker: 'Your workspace / A useful reference',
+      kicker: 'Settings',
       gap: 24,
     },
   ])(
@@ -43,7 +43,7 @@ describe('RouteErrorScreen', () => {
       const reset = vi.fn();
       render(<View error={new Error('private backend value')} reset={reset} />);
       expect(screen.getByRole('heading', { level: 1, name: title })).toBeInTheDocument();
-      expect(screen.getByText(kicker)).toBeInTheDocument();
+      expect(screen.getAllByText(kicker)).toHaveLength(kicker === title ? 2 : 1);
       expect(screen.getByRole('heading', { level: 2, name: /couldn't load/i })).toBeInTheDocument();
       expect(screen.getByRole('region')).toHaveStyle({ maxWidth: '1480px', gap: `${gap}px` });
       expect(document.body).not.toHaveTextContent('private backend value');

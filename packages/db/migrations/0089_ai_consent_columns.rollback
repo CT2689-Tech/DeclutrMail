@@ -1,0 +1,19 @@
+-- Rollback for 0089_ai_consent_columns.sql
+
+ALTER TABLE "users" DROP COLUMN "brief_ai_declined_at";
+--> statement-breakpoint
+ALTER TABLE "users" DROP COLUMN "brief_ai_consent_revoked_at";
+--> statement-breakpoint
+ALTER TABLE "users" DROP COLUMN "brief_ai_consent_version";
+--> statement-breakpoint
+ALTER TABLE "users" DROP COLUMN "brief_ai_consent_at";
+--> statement-breakpoint
+ALTER TABLE "users" DROP COLUMN "ai_consent_declined_at";
+--> statement-breakpoint
+ALTER TABLE "users" DROP COLUMN "ai_consent_scopes";
+--> statement-breakpoint
+ALTER TABLE "users" DROP COLUMN "ai_explanations_revoked_at";
+--> statement-breakpoint
+ALTER TABLE "users" DROP COLUMN "ai_explanations_consent_at";
+--> statement-breakpoint
+ALTER TABLE "users" DROP COLUMN "ai_consent_version";

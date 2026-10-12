@@ -4,6 +4,15 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import { users, workspaces } from '@declutrmail/db';
 import {
+  aiConsentFromPartial,
+  aiConsentPatch,
+  aiConsentView,
+  type AiConsentDecision,
+  type AiConsentPatch,
+  type AiConsentView,
+  type ConsentMark,
+} from '@declutrmail/shared/ai-consent';
+import {
   EMAIL_OPT_OUT_REVISION_PATTERN,
   INITIAL_EMAIL_OPT_OUT_REVISION,
   type SignupAttributionRef,
@@ -315,6 +324,61 @@ export class UsersService {
       alreadySet: current.signupAttributionHeardFrom !== null,
     };
   }
+
+  /** Record an Allow / Not now / revoke decision. Returns the view the client renders. */
+  async applyAiConsent(userId: string, decision: AiConsentDecision): Promise<AiConsentView> {
+    const current = decision.action === 'allow' ? await this.findById(userId) : null;
+    const patch = aiConsentPatch(decision, undefined, current?.aiConsentScopes ?? null);
+    await this.db
+      .update(users)
+      .set({
+        ...textWrite('aiConsentVersion', patch.aiConsentVersion),
+        ...timeWrite('aiExplanationsConsentAt', patch.aiExplanationsConsentAt),
+        ...timeWrite('aiExplanationsRevokedAt', patch.aiExplanationsRevokedAt),
+        ...scopesWrite(patch.aiConsentScopes),
+        ...timeWrite('aiConsentDeclinedAt', patch.aiConsentDeclinedAt),
+        ...timeWrite('briefAiConsentAt', patch.briefAiConsentAt),
+        ...textWrite('briefAiConsentVersion', patch.briefAiConsentVersion),
+        ...timeWrite('briefAiConsentRevokedAt', patch.briefAiConsentRevokedAt),
+        ...timeWrite('briefAiDeclinedAt', patch.briefAiDeclinedAt),
+      })
+      .where(eq(users.id, userId));
+    const row = await this.findById(userId);
+    return currentAiConsentView(row);
+  }
+}
+
+function textWrite(
+  key: 'aiConsentVersion' | 'briefAiConsentVersion',
+  value: string | null | 'keep',
+): Partial<Pick<AiConsentPatch, 'aiConsentVersion' | 'briefAiConsentVersion'>> {
+  if (value === 'keep') return {};
+  return { [key]: value };
+}
+
+function timeWrite(
+  key:
+    | 'aiExplanationsConsentAt'
+    | 'aiExplanationsRevokedAt'
+    | 'aiConsentDeclinedAt'
+    | 'briefAiConsentAt'
+    | 'briefAiConsentRevokedAt'
+    | 'briefAiDeclinedAt',
+  value: ConsentMark,
+): Record<string, unknown> {
+  if (value === 'keep') return {};
+  return { [key]: value === 'now' ? sql`now()` : null };
+}
+
+function scopesWrite(value: AiConsentPatch['aiConsentScopes']): Record<string, unknown> {
+  if (value === 'keep') return {};
+  return { aiConsentScopes: value };
+}
+
+export function currentAiConsentView(
+  row: Parameters<typeof aiConsentFromPartial>[0],
+): AiConsentView {
+  return aiConsentView(aiConsentFromPartial(row));
 }
 
 function signupCampaignColumns(campaign: SignupCampaign | undefined): {

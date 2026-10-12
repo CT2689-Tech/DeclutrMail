@@ -33,6 +33,7 @@ import type { EventProps } from '@declutrmail/shared/observability';
 
 import {
   patchSenderPolicy,
+  undoSenderKeep,
   type SenderPolicyPatch,
   type SenderPolicyResultDto,
 } from '@/lib/api/senders';
@@ -88,6 +89,25 @@ export function useSetSenderPolicy() {
       if (variables.patch.isProtected === false && variables.unprotect) {
         void track('sender_unprotected', variables.unprotect);
       }
+    },
+  });
+}
+
+export function useUndoSenderKeep() {
+  const qc = useQueryClient();
+  return useMutation<SenderPolicyResultDto, Error, { senderId: string }>({
+    mutationFn: async ({ senderId }) => {
+      const env = await undoSenderKeep(senderId);
+      return env.data;
+    },
+    onSuccess: (_data, variables) => {
+      void qc.invalidateQueries({ queryKey: ['senders', 'list'] });
+      void qc.invalidateQueries({ queryKey: ['senders', 'summary'] });
+      void qc.invalidateQueries({ queryKey: sendersKeys.detail(variables.senderId), exact: true });
+      void qc.invalidateQueries({ queryKey: sendersKeys.history(variables.senderId) });
+      void qc.invalidateQueries({ queryKey: activityKeys.all });
+      void qc.invalidateQueries({ queryKey: TRIAGE_BOOTSTRAP_KEY });
+      void qc.invalidateQueries({ queryKey: SCREENER_QUEUE_KEY });
     },
   });
 }

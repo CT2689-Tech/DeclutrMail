@@ -1,4 +1,4 @@
-h1:OV5uu96NbhPmMyVkHz7uSCaVAIl5OU+XAXgBVtf+YNE=
+h1:ocyPVIkLrAdcssxqNGtazUZFpl9PyxDviCDMXWlzSss=
 0000_foundation_workspaces_users_mailboxes.sql h1:mvQjReZmzp+ne3ncQX3NsLph9Tlec0HLa4e0k636MV4=
 0001_messages_senders_schema.sql h1:1hE97u6u+JGGjHXjH50rrMA0K/i4UlPvqrkuN2Qs6Uk=
 0002_mailbox_oauth_tokens.sql h1:+w05bo7XzLJhpjftjhpIwna1kU+1MFYMWq6QJH0HZgg=
@@ -86,6 +86,7 @@ h1:OV5uu96NbhPmMyVkHz7uSCaVAIl5OU+XAXgBVtf+YNE=
 0086_product_events.sql h1:23HgpEeRTjifh6GueNFbZayFmL512BX4VScSIeRW7mk=
 0087_sync_readiness_needs_reconnect.sql h1:eOJVO3YWDbUUMnyKmTiDpWz3Dm6G6ld+kZ8AOM0e52U=
 0088_backfill_needs_reconnect.sql h1:90Akfcbj6seVTT2924LO2xpJKe5vh0kt6evtMHbDMfY=
-0092_entitlement_grant_sources.sql h1:LSh79+wEV+y8JgRNciDU/HwiuBQ3ppzoeOUa2UuU9Ys=
-0093_entitlement_grants_comp_email_uniq.sql h1:6mb2B9lqZjqGf3BBL2f/UyaglntS6VEUW6FXOna8xDw=
-0094_waitlist_drop_email_uniq.sql h1:7BYsIPHTt7KVi9Y7n1THYjDZ/Dfty5JaruDoX3pOfHc=
+0089_ai_consent_columns.sql h1:MbbbJFXLhogFZjq0QOhtn2x/s5iQXKV9Da+0k/4uV0s=
+0092_entitlement_grant_sources.sql h1:/iMUPERpVoILCxYp1U/6b8OAu/4DG7sSYICBdNe1rGE=
+0093_entitlement_grants_comp_email_uniq.sql h1:tJoZoI+d8VmmDIU+fJwQ8T3GC20UMoCVQjHfKtZ+QDo=
+0094_waitlist_drop_email_uniq.sql h1:um6zGfVB5VV6Xtpb05frPHKuBlWnfYGHQbCQKGB0/fU=

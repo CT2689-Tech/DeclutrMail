@@ -162,6 +162,19 @@ jobs:
             echo "deploy=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # Drizzle reads every users column. Consent columns added in the
+          # same push 500 GET /api/me/settings (and every other user read)
+          # with undefined_column until Atlas has applied them. This job
+          # and migration-apply.yml start together and do not depend on
+          # each other, so wait for that apply before the image ships.
+          if ! migration_count=$(gh api "repos/${REPO}/commits/${SHA}" --jq '[.files[].filename | select(startswith("packages/db/migrations/"))] | length'); then
+            echo "::error::Could not read commit files for $SHA — refusing to deploy."
+            exit 1
+          fi
+          migration_ok=false
+          if [ "$migration_count" = "0" ]; then
+            migration_ok=true
+          fi
           deadline=$(( SECONDS + 40 * 60 ))
           while (( SECONDS < deadline )); do
             # Do not spend another build/deploy on an intermediate commit when
@@ -178,23 +191,58 @@ jobs:
                      --jq '.[0] | "\(.status)|\(.conclusion // "")"' 2>/dev/null || true)
             status=${info%%|*}
             conclusion=${info#*|}
+            if [ "$migration_ok" != true ]; then
+              minfo=$(gh run list --repo "$REPO" --workflow migration-apply.yml --commit "$SHA" --event push --branch main \
+                       --limit 1 --json status,conclusion \
+                       --jq '.[0] | "\(.status)|\(.conclusion // "")"' 2>/dev/null || true)
+              mstatus=${minfo%%|*}
+              mconclusion=${minfo#*|}
+              if [ "$mstatus" = completed ]; then
+                if [ "$mconclusion" = success ]; then
+                  migration_ok=true
+                  echo "Migration apply succeeded for $SHA."
+                else
+                  echo "::error::Migration apply concluded '$mconclusion' for $SHA — refusing to deploy."
+                  exit 1
+                fi
+              fi
+            fi
             if [ "$status" = completed ]; then
               if [ "$conclusion" = success ]; then
-                echo "deploy=true" >> "$GITHUB_OUTPUT"
-                echo "CI is green for $SHA — proceeding with the deploy."
-                exit 0
+                if [ "$migration_count" = "0" ]; then
+                  # A later commit can ship the new columns without listing
+                  # the migration in its own file list. Do not deploy while
+                  # an earlier apply is still running.
+                  active=$(gh run list --repo "$REPO" --workflow migration-apply.yml --branch main --limit 10 --json status \
+                    --jq '[.[] | select(.status != "completed")] | length' 2>/dev/null || echo "unknown")
+                  if [ "$active" != "0" ]; then
+                    echo "A migration apply is still running on main; waiting…"
+                    sleep 20
+                    continue
+                  fi
+                fi
+                if [ "$migration_ok" = true ]; then
+                  echo "deploy=true" >> "$GITHUB_OUTPUT"
+                  echo "CI is green for $SHA — proceeding with the deploy."
+                  exit 0
+                fi
+                echo "CI is green for $SHA; waiting for Migration apply…"
+              else
+                echo "::error::CI concluded '$conclusion' for $SHA — refusing to deploy."
+                exit 1
               fi
-              echo "::error::CI concluded '$conclusion' for $SHA — refusing to deploy."
-              exit 1
-            fi
-            if [ -z "$status" ]; then
+            elif [ -z "$status" ]; then
               echo "No CI run registered for $SHA yet; waiting…"
             else
               echo "CI is '$status' for $SHA; waiting…"
             fi
             sleep 20
           done
-          echo "::error::Timed out waiting for the CI run for $SHA."
+          if [ "$migration_ok" != true ]; then
+            echo "::error::Timed out waiting for Migration apply for $SHA."
+          else
+            echo "::error::Timed out waiting for the CI run for $SHA."
+          fi
           exit 1
 
   build-and-deploy:

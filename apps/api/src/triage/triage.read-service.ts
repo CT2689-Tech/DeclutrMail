@@ -33,7 +33,10 @@ import {
 } from '@declutrmail/shared/copy';
 
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
-import { currentTriageReasoning } from '../common/triage-reasoning.js';
+import { plainVolumeExplanation } from '@declutrmail/shared/ai-consent';
+
+import { showStoredExplanations } from '../common/show-stored-explanations.js';
+import { projectReasoning } from '../common/triage-reasoning.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 
 /**
@@ -463,6 +466,11 @@ export class TriageReadService {
    * verbs first so the user makes the highest-impact decisions while
    * attention is fresh.
    */
+  /** On-demand explain refuses before it queues when this is false. */
+  async explanationsAllowed(mailboxAccountId: string): Promise<boolean> {
+    return showStoredExplanations(this.db, mailboxAccountId);
+  }
+
   async listQueue(input: {
     mailboxAccountId: string;
     limit: number;
@@ -716,6 +724,7 @@ export class TriageReadService {
     for (const a of aggRows) aggBySender.set(a.senderKey, a);
 
     const now = Date.now();
+    const showStoredAi = await showStoredExplanations(this.db, input.mailboxAccountId);
     return rows.map((r) => {
       const agg = aggBySender.get(r.senderKey);
       const total = Number(agg?.total ?? 0);
@@ -754,11 +763,18 @@ export class TriageReadService {
         receivedCount: Number(r.totalReceived ?? 0),
         mailboxHasOutbound,
       });
-      const reasoning = currentTriageReasoning({
+      const projected = projectReasoning({
         stored: r.reasoning,
         generatedBy: r.generatedBy,
         readRate,
+        showStoredAi,
+        plain: plainVolumeExplanation({
+          name: r.senderName || r.senderEmail,
+          last90Count: last90Total,
+          readRate,
+        }),
       });
+      const reasoning = projected.reasoning;
 
       return {
         id: r.decisionId,
@@ -775,7 +791,7 @@ export class TriageReadService {
           isProtected && r.verdict !== 'keep'
             ? `This sender is protected (${protectionReason}), so Keep is recommended. Without protection the engine would suggest: ${r.verdict}. ${reasoning}`.trimEnd()
             : reasoning,
-        generatedBy: r.generatedBy,
+        generatedBy: projected.generatedBy,
         scoredAt: r.producedAt.toISOString(),
         // Same rule as `buildRecommendation` on Sender Detail: past the
         // TTL is stale, and `expires_at` is NOT NULL so there is no

@@ -243,7 +243,7 @@ export function NoActiveMailboxView({
           ·
         </span>
         <Link href="/billing" style={gateLinkStyle}>
-          Billing
+          Plan & billing
         </Link>
       </p>
 

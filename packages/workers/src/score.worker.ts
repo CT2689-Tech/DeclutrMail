@@ -6,6 +6,7 @@ import type { Redis } from 'ioredis';
 
 import {
   activityLog,
+  loadAiConsentForMailbox,
   mailMessages,
   readStateNotSweeperMarked,
   screenerQuarantine,
@@ -15,6 +16,7 @@ import {
   triageNotDecidedRecently,
   triageQueueOrder,
 } from '@declutrmail/db';
+import { explanationsConsentActive } from '@declutrmail/shared/ai-consent';
 import type { schema, TriageVerdict } from '@declutrmail/db';
 import { TOPICS, TriageScoreRunCompletedPayloadSchema } from '@declutrmail/events';
 
@@ -150,6 +152,16 @@ export type ScoreTrigger =
    */
   | 'stale_refresh'
   | 'cron_sweep'
+  /**
+   * The user just allowed explanation consent. One mailbox sweep, same
+   * spend as `sync_complete` (`first_view`): verdicts for every sender,
+   * a sentence only for the rows they see first. The BullMQ id is stable
+   * per mailbox (`consentRescoreJobId`) so a second Allow does not queue
+   * another run. The job re-checks consent before it scores; a revoke
+   * that lands first is a no-op, so stored prose stays. Consent is the
+   * only gate.
+   */
+  | 'consent_grant'
   /**
    * Someone is about to read this sender's reason and it is still the
    * template (founder decision 2026-09-25): write the LLM sentence for the
@@ -403,10 +415,15 @@ function explainPolicy(trigger: Exclude<ScoreTrigger, 'explain'>): ExplainPolicy
     case 'stale_refresh':
       return 'always';
     case 'sync_complete':
+    case 'consent_grant':
       return 'first_view';
     case 'signal_change':
     case 'cron_sweep':
       return 'never';
+    default: {
+      const unreachable: never = trigger;
+      throw new Error(`Unhandled score trigger: ${String(unreachable)}`);
+    }
   }
 }
 
@@ -419,7 +436,13 @@ interface ExplainTarget {
 
 /** Why an explanation was not bought — logged, and counted in `explainSkipped`. */
 type ExplainSkip =
-  'no_llm' | 'no_decision' | 'no_sender' | 'rescored' | 'already_explained' | 'verdict_moved';
+  | 'no_llm'
+  | 'no_consent'
+  | 'no_decision'
+  | 'no_sender'
+  | 'rescored'
+  | 'already_explained'
+  | 'verdict_moved';
 
 type ExplainOutcome =
   | { kind: 'skipped'; reason: ExplainSkip }
@@ -638,6 +661,31 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     // through to the whole mailbox would re-buy every explanation.
     if (payload.senderKeys && payload.senderKeys.length === 0) {
       throw new ValidationError('score job names an empty senderKeys set');
+    }
+
+    if (
+      payload.trigger === 'consent_grant' &&
+      !(await this.explanationsAllowed(payload.mailboxAccountId))
+    ) {
+      // Allow already committed. A revoke that landed before this job
+      // runs buys nothing and does not rewrite the rows the read path
+      // is already hiding.
+      return {
+        decisionsWritten: 0,
+        llmExplanations: 0,
+        templateExplanations: 0,
+        llmTimeouts: 0,
+        llmCalls: 0,
+        llmReused: 0,
+        llmBlocked: 0,
+        explainCandidates: 0,
+        explainSkipped: 0,
+        explainFailed: 0,
+        explanationsNotRequested: 0,
+        screenerFlagged: 0,
+        sendersFailed: 0,
+        chunksFailed: 0,
+      };
     }
 
     if (payload.trigger === 'explain') {
@@ -1123,6 +1171,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     };
     const port = this.deps.llm;
     if (!port) return skip('no_llm');
+    if (!(await this.explanationsAllowed(mailboxAccountId))) return skip('no_consent');
     const existing = batch.existingDecisions.get(target.senderKey);
     if (!existing) return skip('no_decision');
     if (existing.producedAt.getTime() !== target.producedAt.getTime()) return skip('rescored');
@@ -1144,6 +1193,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       signals,
       result,
     );
+    if (prose.withheld) return skip('no_consent');
     if (prose.blocked) return { kind: 'blocked' };
     if (prose.reasoning === null) {
       return { kind: 'called', written: false, timedOut: prose.timedOut };
@@ -1195,6 +1245,29 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
    * upsert `triage_decisions`. Returns `null` when no `senders` row
    * exists yet (the sync stage hasn't materialized it).
    */
+  /**
+   * Fail closed: a missing row or a lookup error buys no sentence.
+   * Not cached. A revoke during a running sweep must be visible to the
+   * next sender, and again immediately before that sender's provider call.
+   */
+  private async explanationsAllowed(mailboxAccountId: string): Promise<boolean> {
+    try {
+      const row = await loadAiConsentForMailbox(this.deps.db, mailboxAccountId);
+      return explanationsConsentActive(row);
+    } catch (err) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'ai_consent.lookup_failed',
+          worker: this.workerName,
+          mailboxAccountId,
+          error: err instanceof Error ? err.name : 'Error',
+        }),
+      );
+      return false;
+    }
+  }
+
   private async scoreOne(
     mailboxAccountId: string,
     senderKey: string,
@@ -1226,7 +1299,8 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     let reused = false;
     let called = false;
     let blocked = false;
-    if (this.deps.llm) {
+    const allowLlm = this.deps.llm ? await this.explanationsAllowed(mailboxAccountId) : false;
+    if (this.deps.llm && allowLlm) {
       const port = this.deps.llm;
       // Reuse before re-billing (2026-07-10): a re-score sweep calls
       // explain() for EVERY sender, including ones whose verdict did
@@ -1266,7 +1340,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         const prose = await this.generateProse(port, mailboxAccountId, senderKey, signals, result);
         if (prose.blocked) {
           blocked = true;
-        } else {
+        } else if (!prose.withheld) {
           called = true;
           reasoning = prose.reasoning;
           timedOut = prose.timedOut;
@@ -1410,7 +1484,13 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     senderKey: string,
     signals: { signals: SenderSignals; displayName: string; domain: string; email: string },
     result: CascadeResult,
-  ): Promise<{ reasoning: string | null; timedOut: boolean; blocked: boolean }> {
+  ): Promise<{
+    reasoning: string | null;
+    timedOut: boolean;
+    blocked: boolean;
+    /** Consent was withdrawn before this call. The provider was not asked. */
+    withheld?: boolean;
+  }> {
     if (port.isBlocked?.() || !(await this.waitForSlot(port))) {
       // The provider refused the account (credit, spend limit, key),
       // before this row's turn or while it waited for it: this call
@@ -1419,6 +1499,13 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       // of them in 431 s for one mailbox.
       return { reasoning: null, timedOut: false, blocked: true };
     }
+    // After the rate-limit wait, and before the provider. A revoke that
+    // landed while an earlier sender in this job was in flight must not
+    // be sent on this one. `aiConsent: 'granted'` is only passed once
+    // this read says the scope is still active.
+    if (!(await this.explanationsAllowed(mailboxAccountId))) {
+      return { reasoning: null, timedOut: false, blocked: false, withheld: true };
+    }
     const raced = await runWithTimeout(
       () =>
         port.explain({
@@ -1426,6 +1513,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
           domain: signals.domain,
           verdict: result.verdict,
           confidence: result.confidence,
+          aiConsent: 'granted',
           // The PHRASE, never the id. Handing the model
           // `high_read_rate` is how "the high_read_rate engine rule"
           // ended up in user-facing copy.
@@ -1942,6 +2030,18 @@ export function scoreJobId(
   }
   const scope = job.senderKey ?? (job.senderKeys ? 'subset' : '*');
   return `${job.mailboxAccountId}:${scope}:${job.producedAtMs}`;
+}
+
+/**
+ * BullMQ id for the rescore queued when explanation consent is allowed.
+ * Stable per mailbox — a repeated Allow while this job still exists is
+ * a duplicate, not a second sweep. Hyphens only: BullMQ rejects `:`.
+ */
+export function consentRescoreJobId(mailboxAccountId: string): string {
+  if (mailboxAccountId.includes(':')) {
+    throw new Error('consentRescoreJobId: mailboxAccountId must not contain ":"');
+  }
+  return `ai-consent-rescore-${mailboxAccountId}`;
 }
 
 /**

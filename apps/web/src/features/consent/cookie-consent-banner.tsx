@@ -59,7 +59,7 @@ export function CookieConsentBanner() {
       data-testid="cookie-consent-banner"
       style={{
         position: 'fixed',
-        bottom: 16,
+        bottom: 'calc(16px + var(--dm-tabbar-inset, 0px))',
         right: 16,
         // Below ToastHost (200): an in-flight undo toast outranks
         // chrome. Above page content and the marketing masthead.

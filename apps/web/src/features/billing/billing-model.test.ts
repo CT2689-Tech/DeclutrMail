@@ -6,7 +6,7 @@
  * See docs/adr/0027-billing-presentation-state.md.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { BillingSubscription } from '@declutrmail/shared/contracts';
 
@@ -21,6 +21,9 @@ import {
   currentPlanPriceLabel,
   deriveBillingViewState,
   emptyPlanView,
+  formatBillingDate,
+  formatBillingMonthDay,
+  formatProviderAmount,
   nonBackingBlocksNewCheckout,
   type BillingReadSnapshot,
   type NonBackingRecord,
@@ -500,6 +503,38 @@ describe('past-due scheduled cancellation disclosure', () => {
     expect(note?.text).toMatch(/Payment past due.*Nov 12/);
     expect(note?.text).toContain('complimentary grant may still apply');
     expect(note?.text).not.toContain('switch to Free');
+  });
+});
+
+describe('formatBillingDate', () => {
+  it('uses a fixed UTC calendar so September cannot hydrate as Sept', () => {
+    const DateTimeFormat = Intl.DateTimeFormat;
+    vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(((...args: unknown[]) => {
+      const format = new DateTimeFormat(...(args as ConstructorParameters<typeof DateTimeFormat>));
+      return Object.assign(format, { format: () => 'Sept 15, 2026' });
+    }) as typeof Intl.DateTimeFormat);
+    try {
+      expect(formatBillingDate('2026-09-15T00:00:00.000Z')).toBe('Sep 15, 2026');
+      expect(formatBillingDate('2026-05-01T00:00:00.000Z')).toBe('May 1, 2026');
+      expect(formatBillingMonthDay('2026-10-12T02:00:00.000Z')).toBe('Oct 12');
+      expect(formatBillingDate('not-a-date')).toBeNull();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('normalizes narrow currency spaces', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(Intl.NumberFormat.prototype, 'format');
+    Object.defineProperty(Intl.NumberFormat.prototype, 'format', {
+      configurable: true,
+      writable: true,
+      value: () => '$\u00a019.00',
+    });
+    try {
+      expect(formatProviderAmount('1900', 'USD')).toBe('$19.00');
+    } finally {
+      if (descriptor) Object.defineProperty(Intl.NumberFormat.prototype, 'format', descriptor);
+    }
   });
 });
 

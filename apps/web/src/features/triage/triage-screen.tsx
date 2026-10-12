@@ -8,12 +8,22 @@ import {
   EditorialKicker,
 } from '@/features/editorial/page';
 
+import { AiInlinePrompt } from '@/features/ai-consent/ai-inline-prompt';
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { useSenderInFlightLock } from '@/features/undo/in-flight';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button, ErrorState, ScreenIntro, tokens, toast, useIsAtMost } from '@declutrmail/shared';
+import {
+  Button,
+  ErrorState,
+  FeatureExplainer,
+  ScreenIntro,
+  tokens,
+  toast,
+  useIsAtMost,
+} from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { useLocalState } from '@declutrmail/shared/hooks/use-local-state';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { ActionReach } from '@declutrmail/shared/contracts';
@@ -50,6 +60,8 @@ import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { trackActionConfirmed } from '@/lib/action-analytics';
 import { track } from '@/lib/posthog';
+import { useNow } from '@/lib/use-now';
+import { triageDaySubtitle } from './day-subtitle';
 import { captureFeatureException } from '@/lib/sentry';
 // Cross-feature component import per ADR-0007's second-consumer rule —
 // the senders feature owns unsubscribe; D220's allowlist gates a
@@ -70,11 +82,12 @@ import {
   VERB_TO_WIRE,
 } from '@/features/settings/api/use-me-settings';
 
+import { useUndoSenderKeep } from '@/features/senders/api/use-sender-policy';
+import { useRefreshStaleRead } from '@/features/senders/api/use-refresh-stale-read';
+import { useExplainReasons } from '@/features/senders/api/use-explain-reasons';
 import { useKeepIntent } from './api/use-triage-actions';
 import { invalidateAfterDecision } from './api/invalidate';
 import { TRIAGE_BOOTSTRAP_KEY } from './api/query-options';
-import { useRefreshStaleRead } from '@/features/senders/api/use-refresh-stale-read';
-import { useExplainReasons } from '@/features/senders/api/use-explain-reasons';
 import { UnprotectButton } from './unprotect-button';
 import type { PreviewCount } from './action-preview';
 import { type TriageDecisionRow, type TriageScreenState } from './data';
@@ -219,9 +232,12 @@ export function TriageScreen({
   state,
   journey = 'daily',
   offerUnprotect = false,
+  onboardedAt = null,
 }: {
   state: TriageScreenState;
   journey?: 'daily' | 'first_relief';
+  /** When the user finished onboarding. Day one is the first 24 hours. */
+  onboardedAt?: string | null;
   /**
    * Show a direct Unprotect control on Protected rows (D245). Set by
    * the onboarding protection review, whose subject IS the protection —
@@ -243,6 +259,9 @@ export function TriageScreen({
   const mailboxReadiness = activeMailbox?.readiness;
   const mailboxNeedsReconnect = activeMailbox?.needsReconnect === true;
   const pendingAction = useTriageStore((s) => s.pendingAction);
+  const nowMs = useNow();
+  const daySubtitle =
+    nowMs == null ? 'Today’s senders · one choice each' : triageDaySubtitle(onboardedAt, nowMs);
   // ADR-0028 — the Delete preview's reach. Form state, local on purpose.
   // Stored WITH the pending action it was chosen for, so a wider
   // destructive scope can never be read for a different sender or verb —
@@ -303,6 +322,7 @@ export function TriageScreen({
   );
 
   const keepIntent = useKeepIntent();
+  const undoKeep = useUndoSenderKeep();
   const unsubIntent = useRecordUnsubscribeIntent();
   const enqueueComposite = useEnqueueComposite();
 
@@ -1058,6 +1078,10 @@ export function TriageScreen({
               invalidateAfterDecision(qc);
               if (currentMailboxRef.current === actionMailboxId) incrementSessionDecided();
               setExpandedRow(null);
+              toast(WS2_COPY.keepUndo.toast.one.replace('{Sender}', row.senderName), 'success', {
+                label: WS2_COPY.undo.button,
+                onClick: () => undoKeep.mutate({ senderId: row.senderId }),
+              });
             },
             onError: (err) => {
               captureFeatureException(err, { surface: 'triage', reason: 'keep_intent' });
@@ -1309,6 +1333,7 @@ export function TriageScreen({
       actionMailboxId,
       enqueueComposite,
       keepIntent,
+      undoKeep,
       unsubIntent,
       qc,
       clearPending,
@@ -1640,7 +1665,7 @@ export function TriageScreen({
         fontFamily: font.sans,
       }}
     >
-      {journey === 'daily' && <EditorialKicker>Clean up / A considered decision</EditorialKicker>}
+      {journey === 'daily' && <EditorialKicker>Cleanup</EditorialKicker>}
       {journey === 'daily' && (
         <div
           style={{
@@ -1654,8 +1679,9 @@ export function TriageScreen({
         >
           <div>
             <h1 style={editorialTitleStyle}>Triage</h1>
+            <FeatureExplainer id="triage-explainer">{WS2_COPY.explain.triage}</FeatureExplainer>
             <p style={{ margin: '6px 0 0', fontSize: text.sm, color: color.fgMuted }}>
-              Today’s review queue · one decision per sender
+              {daySubtitle}
             </p>
           </div>
           {state.kind === 'ready' && hasQueue && (
@@ -1694,6 +1720,8 @@ export function TriageScreen({
           )}
         </div>
       )}
+
+      {journey === 'daily' && <AiInlinePrompt />}
 
       {journey === 'daily' && (
         <ScreenIntro

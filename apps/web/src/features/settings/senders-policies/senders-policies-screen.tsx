@@ -28,11 +28,13 @@ import {
   Button,
   EmptyState,
   ErrorState as RecoverableErrorState,
+  FeatureExplainer,
   toast,
   tokens,
   useIsAtMost,
 } from '@declutrmail/shared';
 import { normalizeProtectionReason, protectionReasonLabel } from '@declutrmail/shared/copy';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { useSenders } from '@/features/senders/api/use-senders';
 import { useSetSenderPolicy } from '@/features/senders/api/use-sender-policy';
 import { useUserTimeZone } from '@/features/auth/api/use-me';
@@ -110,7 +112,7 @@ export function SendersPoliciesScreen() {
       }}
     >
       <style>{POLICY_ROW_CSS}</style>
-      <EditorialKicker>Your workspace / Sender policies</EditorialKicker>
+      <EditorialKicker>Settings</EditorialKicker>
       <PageHeader title="Protected senders" backToSettings>
         <span
           style={{ fontSize: text.sm, color: color.fgMuted, fontVariantNumeric: 'tabular-nums' }}
@@ -132,6 +134,7 @@ export function SendersPoliciesScreen() {
                       }`}
         </span>
       </PageHeader>
+      <FeatureExplainer id="protected-explainer">{WS2_COPY.explain.protected}</FeatureExplainer>
       {/* Describe the GUARD, never an outcome we do not control:
           protection stops OUR bulk and automatic actions
           (actions.service.ts), it is not a delivery guarantee, and a

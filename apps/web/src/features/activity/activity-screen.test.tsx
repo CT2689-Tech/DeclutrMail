@@ -1747,9 +1747,7 @@ describe('ActivityScreen — D58 undo affordances', () => {
       },
     ]);
     renderScreen();
-    await waitFor(() =>
-      expect(screen.getByText(/^Unsubscribe request recorded$/)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText(/^Unsubscribe requested$/)).toBeInTheDocument());
   });
 
   it('renders UNDO EXPIRED for `expired`', async () => {

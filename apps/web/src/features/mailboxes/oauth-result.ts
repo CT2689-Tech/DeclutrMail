@@ -52,7 +52,7 @@ export const RECONNECT_RESULT_COPY: Record<ReconnectResult, OAuthResultCopy> = {
     liveRole: 'alert',
   },
   cancelled: {
-    message: 'Gmail reconnect was cancelled.',
+    message: 'Gmail reconnect was canceled.',
     tone: 'info',
     liveRole: 'status',
   },
