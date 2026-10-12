@@ -91,15 +91,16 @@ export type CheckoutRequest = z.infer<typeof CheckoutRequestSchema>;
 
 /**
  * Paddle checkout session. While new rupee purchases are paused the
- * session is a server-created transaction whose `currency_code` is
- * USD, and `priceId` is omitted so the overlay cannot localize that
- * price. `transactionId` is the only value `Checkout.open` may receive.
- * `priceId` remains for a checkout opened after the pause lifts.
+ * session is a server-created USD transaction. The response carries
+ * that transaction id and the client token, and omits `priceId` and
+ * `customData`: both would let a client open a price overlay that
+ * Paddle can localize to INR. The signed attribution blob is stored
+ * on the transaction before the overlay opens. `priceId` and
+ * `customData` remain for a checkout opened after the pause lifts.
  * `clientToken` is Paddle's publishable client-side token (safe to
  * expose to an authed user by design, like a Stripe publishable key).
  * On a price overlay, `customData` is passed through to
- * `Paddle.Checkout.open({ customData })` verbatim. On a transaction,
- * the same blob is stored on the transaction before the overlay opens.
+ * `Paddle.Checkout.open({ customData })` verbatim.
  */
 export const PaddleCheckoutSessionSchema = z.object({
   provider: z.literal('paddle'),
@@ -117,14 +118,17 @@ export const PaddleCheckoutSessionSchema = z.object({
   // read back off the webhook as `custom_data.workspace_id`. A camelCase
   // key here makes every first purchase unattributable (the webhook has
   // no subscription or billing_customers row to fall back to yet).
-  customData: z.object({
-    workspace_id: z.uuid(),
-    // Server-issued HMAC over the workspace id. `custom_data` reaches
-    // Paddle through the BROWSER, so an unsigned id would let a client
-    // attribute a paid subscription onto someone else's workspace; the
-    // webhook discards any blob whose signature does not verify.
-    sig: z.string().min(1),
-  }),
+  // Omitted while the session is a currency-locked transaction.
+  customData: z
+    .object({
+      workspace_id: z.uuid(),
+      // Server-issued HMAC over the workspace id. `custom_data` reaches
+      // Paddle through the BROWSER, so an unsigned id would let a client
+      // attribute a paid subscription onto someone else's workspace; the
+      // webhook discards any blob whose signature does not verify.
+      sig: z.string().min(1),
+    })
+    .optional(),
   /**
    * PH30 discount, when that environment has a real Paddle id.
    * Absent while live is `FILL_ME`: the overlay opens at full price.

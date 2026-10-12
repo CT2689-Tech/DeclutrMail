@@ -325,13 +325,16 @@ export class BillingService {
         cycle: dto.cycle,
         providerPriceId: priceId,
       });
-      // A price id is enough to open a checkout Paddle localizes from the
-      // buyer location, including to an INR override. While the pause is
-      // on, only a transaction id may leave this method.
+      // A price id or the signed attribution blob is enough to open a
+      // checkout Paddle localizes from the buyer location, including to
+      // an INR override. While the pause is on, only a transaction id
+      // may leave this method.
       if (
         INR_NEW_PURCHASES_PAUSED &&
         session.provider === 'paddle' &&
-        (session.priceId !== undefined || session.transactionId === undefined)
+        (session.priceId !== undefined ||
+          session.customData !== undefined ||
+          session.transactionId === undefined)
       ) {
         throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
       }

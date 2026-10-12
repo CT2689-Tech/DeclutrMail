@@ -250,7 +250,7 @@ async function openPaddleOverlay(
   paddleInstance.Checkout.open({
     items: [{ priceId: session.priceId, quantity: 1 }],
     // Verbatim pass-through — webhook workspace attribution (D117).
-    customData: session.customData,
+    ...(session.customData ? { customData: session.customData } : {}),
     // A FILL_ME placeholder is dropped so checkout opens at full price.
     ...(discountId ? { discountId } : {}),
   });

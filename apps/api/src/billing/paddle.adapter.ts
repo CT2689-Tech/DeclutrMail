@@ -455,10 +455,11 @@ export class PaddleAdapter implements BillingProvider {
 
   /**
    * While rupee purchases are paused, create a transaction with
-   * `currency_code: USD` and return that id only. A price-id overlay
-   * lets Paddle apply an INR unit-price override from the buyer
-   * location. There is no fallback to that overlay: a missing key or a
-   * transaction that is not USD fails closed.
+   * `currency_code: USD` and return that id only. The signed
+   * `customData` stays on the transaction. Returning it, or a price
+   * id, would let a client open an overlay Paddle can localize to an
+   * INR override. There is no fallback to that overlay: a missing key
+   * or a transaction that is not USD fails closed.
    *
    * After the pause lifts, the session is again the price id. The
    * customer record is created provider-side at checkout completion
@@ -503,7 +504,6 @@ export class PaddleAdapter implements BillingProvider {
         transactionId: created.id,
         clientToken,
         environment,
-        customData,
       };
     }
     return {

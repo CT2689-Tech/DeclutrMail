@@ -123,7 +123,6 @@ describe('BillingService', () => {
       transactionId: 'txn_01ky067arw41802a6ssessknxh',
       clientToken: 'test_tok',
       environment: 'sandbox',
-      customData: { workspace_id: 'set-below', sig: 'test-sig' },
     });
     paddleCancel = vi.fn().mockResolvedValue(undefined);
     paddleChangePlan = vi.fn().mockResolvedValue({
@@ -452,6 +451,21 @@ describe('BillingService', () => {
         });
         await service.releasePendingCheckout(principal.workspaceId);
       }
+      paddleCheckout.mockResolvedValue({
+        provider: 'paddle',
+        kind: 'overlay',
+        transactionId: 'txn_01ky067arw41802a6ssessknxh',
+        clientToken: 'test_tok',
+        environment: 'sandbox',
+        customData: { workspace_id: 'set-below', sig: 'test-sig' },
+      });
+      await expect(
+        service.createCheckout(principal, {
+          tierId: 'plus',
+          cycle: 'annual',
+          provider: 'paddle',
+        }),
+      ).rejects.toMatchObject({ code: 'BILLING_PROVIDER_ERROR' });
       expect(razorpayCheckout).not.toHaveBeenCalled();
     } finally {
       if (previousPass === undefined) delete process.env.BILLING_PASS_ENABLED;
@@ -472,7 +486,6 @@ describe('BillingService', () => {
       transactionId: 'txn_01ky067arw41802a6ssessknxh',
       clientToken: 'test_tok',
       environment: 'sandbox' as const,
-      customData: { workspace_id: 'set-below', sig: 'test-sig' },
     };
     paddleCheckout.mockResolvedValue(locked);
     try {
@@ -500,6 +513,7 @@ describe('BillingService', () => {
         const session = await service.createCheckout(principal, dto);
         expect(session).toEqual(locked);
         expect(session).not.toHaveProperty('priceId');
+        expect(session).not.toHaveProperty('customData');
         await service.releasePendingCheckout(principal.workspaceId);
       }
       expect(razorpayCheckout).not.toHaveBeenCalled();
