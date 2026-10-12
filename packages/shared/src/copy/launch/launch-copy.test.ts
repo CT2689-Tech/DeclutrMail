@@ -18,6 +18,25 @@ describe('launch copy deck snapshots', () => {
     expect(() => expectMatchesDeck('ws1', { extra: 'not in the deck' })).toThrow();
   });
 
+  it('pins the drop2-r20 inbox report support line and pricing meta description', () => {
+    expect(WS5_COPY['report.mostlyUnread.support']).toEqual({
+      one: 'That sender had less than 10% of its email marked read in Gmail in that time.',
+      other:
+        'Each of those {n} senders had less than 10% of its email marked read in Gmail in that time.',
+    });
+    expect(WS5_COPY['report.glyph']).toBe('about {n} in 10');
+    expect(WS1_COPY['pricing.meta.description']).toBe(
+      'Free is $0 with {allowance} emails cleared a month and unlimited unsubscribes. The {passName} is {passPrice} once. {plusName} is {plusPrice} a year. 30-day Undo on every plan.',
+    );
+    expect(WS2_COPY.aiPrompt._notShipping).toEqual([
+      'text',
+      'review',
+      'dismiss',
+      'dismissAria',
+      'frequency',
+    ]);
+  });
+
   it('pins the drop2-r18 trash sentences', () => {
     expect(WS2_COPY.dialog.delete.footer).toBe(
       'Undo from Activity for 30 days. Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash.',

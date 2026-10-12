@@ -63,7 +63,11 @@ describe('InboxReportPanel', () => {
     expect(screen.getByText('Last 90 days')).toBeInTheDocument();
     expect(screen.getByText('Based on 1,139 emails in a@example.com')).toBeInTheDocument();
     expect(screen.getByText('Sizes are Gmail’s estimates.')).toBeInTheDocument();
-    expect(screen.getByText('about 9 in 10')).toBeInTheDocument();
+    expect(screen.queryByText('about 9 in 10')).not.toBeInTheDocument();
+    expect(screen.getByText(/Each of those 2 senders had less than 10%/)).toBeInTheDocument();
+    const glyphs = document.querySelector('[data-report-glyphs]');
+    expect(glyphs).toHaveAttribute('aria-hidden', 'true');
+    expect(glyphs).not.toHaveAttribute('aria-label');
     expect(document.querySelector('.dm-report-grid')).not.toBeNull();
     expect(document.querySelector('.dm-report-rule')).not.toBeNull();
     expect(document.querySelectorAll('[data-report-glyphs] svg')).toHaveLength(10);

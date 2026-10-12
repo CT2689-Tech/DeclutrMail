@@ -182,8 +182,8 @@
   },
   "report.mostlyUnread.headline.all": "All of the email you got in the last 90 days came from {n} senders you mostly leave unread.",
   "report.mostlyUnread.support": {
-    "one": "It had less than 10% of its email marked read in Gmail in that time.",
-    "other": "Each had less than 10% of its email marked read in Gmail in that time."
+    "one": "That sender had less than 10% of its email marked read in Gmail in that time.",
+    "other": "Each of those {n} senders had less than 10% of its email marked read in Gmail in that time."
   },
   "report.mostlyUnread.sweeper": {
     "one": "1 email marked read by another tool isn’t counted as read.",

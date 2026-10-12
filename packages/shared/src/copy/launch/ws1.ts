@@ -20,6 +20,8 @@ export const WS1_COPY = {
   'pricing.h1.passOn': 'Free to start. Pay once to clear the rest.',
   'pricing.h1.passOff': 'Free to start. Upgrade when you want more.',
   'pricing.sub': 'Unsubscribe, previews, Keep, Later and 30-day Undo are free and unlimited.',
+  'pricing.meta.description':
+    'Free is $0 with {allowance} emails cleared a month and unlimited unsubscribes. The {passName} is {passPrice} once. {plusName} is {plusPrice} a year. 30-day Undo on every plan.',
   'pricing.free.name': '{freeName}',
   'pricing.free.tagline': 'For getting started and light upkeep',
   'pricing.free.renewal': 'No card required',

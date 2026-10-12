@@ -18,10 +18,10 @@ export function formatReportSize(bytes: number): string {
   return `${gb} GB`;
 }
 
-export function reportGlyph(pct: number): { n: number; label: string } | null {
+/** Filled-icon count. The "about {n} in 10" caption is not shipping. */
+export function reportGlyph(pct: number): { n: number } | null {
   if (pct < 40) return null;
-  const n = Math.round(pct / 10);
-  return { n, label: fillCopy(WS5_COPY['report.glyph'], { n }) };
+  return { n: Math.round(pct / 10) };
 }
 
 /** Deck strings stay as written. Counts are formatted before they fill `{count}`, `{n}`, `{k}`, or `{total}`. */
@@ -104,7 +104,9 @@ export function reportHeadline(insight: InboxReportInsight): ReportHeadline {
 export function reportSupport(insight: InboxReportInsight): string | null {
   if (insight.id === 'mostly_unread_share') {
     const copy = WS5_COPY['report.mostlyUnread.support'];
-    return isPluralCopy(copy) ? pluralCopy(copy, insight.senderCount) : null;
+    return isPluralCopy(copy)
+      ? pluralCopy(copy, insight.senderCount, { n: reportCount(insight.senderCount) })
+      : null;
   }
   return null;
 }
