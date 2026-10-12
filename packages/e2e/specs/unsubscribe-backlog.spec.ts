@@ -336,6 +336,9 @@ test('a spent monthly allowance refuses the mail move before any unsubscribe', a
     await card.getByRole('button', { name: 'More actions' }).click();
     await card.getByRole('menuitem', { name: 'Unsubscribe', exact: true }).click();
     const sheet = page.getByRole('dialog');
+    const archive = sheet.getByRole('radio', { name: /Unsubscribe and archive \d+/ });
+    await expect(archive).toBeEnabled();
+    await archive.click();
     const confirm = sheet.getByRole('button', { name: 'Unsubscribe + Archive' });
     await expect(confirm).toBeEnabled();
     const post = page.waitForResponse(

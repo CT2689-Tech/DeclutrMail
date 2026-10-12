@@ -2534,7 +2534,7 @@ describe('SendersScreen — edge states', () => {
     // same wording for mouse users who never see this toast — scope to
     // the toast specifically, since that is what this test covers.
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      /protected co is protected — unprotect it first/i,
+      'No unsubscribe sent: 1 sender is Protected, so it was left as it is.',
     );
   });
 
@@ -4423,7 +4423,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     ]);
     await confirmBulkUnsubscribe();
     const toast = await screen.findByText(
-      'Unsubscribe requested from 1 sender · Archived 30 emails · 1 Protected sender left as it is',
+      'Unsubscribe requested from 1 sender · Archived 30 emails · No unsubscribe sent. That sender was left as it is.',
     );
     expect(toast.textContent?.toLowerCase()).not.toMatch(/failed|not sent|unsubscribed/);
     expect(screen.queryByText(/Not sent: 1 Protected sender/)).toBeNull();
