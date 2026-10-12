@@ -128,7 +128,23 @@ completed` and `checkoutFrames` empty. Paddle's `checkout.url` was
   `cardholderNameInput`). An empty cardholder name fails Paddle's own
   check. The payer now types those four controls and records
   `checkoutFields` as absent, hidden, shown, typed, or disabled.
-  Event names no longer append the string `undefined`. The artifact
+  Event names no longer append the string `undefined`. Run 38213130251
+  on `f94fc118` still left the transaction `ready`. The artifact said
+  all four controls were `typed` and the pay button was `shown`, and
+  `checkoutPay` was `clicked`. Screenshots of the card, the pay click,
+  and the timeout were the same one-page form: name, card number,
+  MM/YY, and CVV empty, with "Enter a valid cardholder name" and
+  "All fields required". Events stopped at `checkout.payment.selected`.
+  There was no `checkout.payment.initiated` and no 3DS frame. Hosts
+  were the tunnel and `sandbox-buy.paddle.com`. Two frames were titled
+  Paddle Checkout. `typed` only meant the keystrokes did not throw.
+  `checkout.loaded` and `checkout.customer.created` each fired twice:
+  Initialize already opens the `_ptxn` on the page, and the page
+  called Checkout.open again, so two overlays were stacked. The page
+  now initializes once and does not open a second checkout. The payer
+  types the visible control, follows a nested card iframe when the
+  field sits in one, and reports `typed` only when the value reads
+  back. Pay is not clicked while those values are empty. The artifact
   keeps safe checkout events, console lines, frame hosts, and
   screenshots under `pass-sandbox-shots`. The log
   line is `rehearsal.provider_code=` plus that code only. The

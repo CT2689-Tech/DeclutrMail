@@ -100,7 +100,7 @@ function rehearsalCheckoutLink(publicUrl: string, checkoutUrl: string): boolean 
   }
 }
 
-/** Sandbox Paddle.js page. Opens the known transaction. No `checkout.url`. */
+/** Sandbox Paddle.js page. Initialize opens the `_ptxn` on this URL. No `checkout.url`. */
 export function renderSandboxPayPage(clientToken: string, transactionId: string): string {
   if (!CLIENT_TOKEN.test(clientToken)) throw new Error('Sandbox client token required');
   if (!TXN_ID.test(transactionId)) throw new Error('Sandbox transaction required');
@@ -121,16 +121,11 @@ function remember(event) {
   var code = event && typeof event.code === "string" && /^[a-z0-9_]{1,64}$/.test(event.code) ? ":" + event.code : "";
   window.__paddleEvents.push(name + code);
 }
-var ready = Paddle.Initialize({
+Paddle.Initialize({
   token: ${JSON.stringify(clientToken)},
   eventCallback: remember,
   checkout: { settings: { displayMode: "overlay", variant: "one-page" } }
 });
-function openCheckout() {
-  Paddle.Checkout.open({ transactionId: ${JSON.stringify(transactionId)} });
-}
-if (ready && typeof ready.then === "function") ready.then(openCheckout);
-else openCheckout();
 </script>
 </body>
 </html>`;

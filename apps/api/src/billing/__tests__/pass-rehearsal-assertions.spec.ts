@@ -19,6 +19,8 @@ import {
   SANDBOX_CARD_SELECTORS,
   sandboxCheckoutEvent,
   sandboxFieldToken,
+  sandboxFrameToken,
+  sandboxTypedValue,
 } from '../../../scripts/helpers/sandbox-checkout-pay.js';
 
 describe('Backlog Pass sandbox rehearsal checks', () => {
@@ -84,7 +86,8 @@ describe('Backlog Pass sandbox rehearsal checks', () => {
     expect(page).toContain('https://cdn.paddle.com/paddle/v2/paddle.js');
     expect(page).toContain('Paddle.Environment.set("sandbox")');
     expect(page).toContain('"test_sandboxtoken"');
-    expect(page).toContain(`Paddle.Checkout.open({ transactionId: "${txn}" })`);
+    expect(page).not.toContain('Paddle.Checkout.open');
+    expect(page).toContain('variant: "one-page"');
     expect(page).toContain('eventCallback: remember');
     expect(page).toContain('typeof event.code === "string"');
     expect(page).toContain('window.__paddleEvents');
@@ -165,6 +168,25 @@ describe('Backlog Pass sandbox rehearsal checks', () => {
     );
     expect(sandboxFieldToken('cardNumberInput', '4242424242424242')).toBeNull();
     expect(sandboxFieldToken('https://secret.example', 'shown')).toBeNull();
+    expect(sandboxTypedValue('number', '')).toBe(false);
+    expect(sandboxTypedValue('number', '4242 4242 4242 4242')).toBe(true);
+    expect(sandboxTypedValue('expiry', '12 / 30')).toBe(true);
+    expect(sandboxTypedValue('cvc', '100')).toBe(true);
+    expect(sandboxTypedValue('name', '')).toBe(false);
+    expect(sandboxTypedValue('name', 'Synthetic Fixture')).toBe(true);
+    expect(sandboxFrameToken('nested')).toBe('cardFrame:nested');
+    expect(sandboxFrameToken('overlay')).toBe('cardFrame:overlay');
+    expect(sandboxFrameToken('https://sandbox-buy.paddle.com')).toBeNull();
+    const payer = readFileSync(
+      resolve(import.meta.dirname, '../../../scripts/helpers/sandbox-checkout-pay.ts'),
+      'utf8',
+    );
+    expect(payer).toContain("'beforeinput'");
+    expect(payer).toContain("'insertText'");
+    expect(payer).toContain('inputValue');
+    expect(payer).toContain('pressSequentially');
+    expect(payer).toContain('spreedly\\.com');
+    expect(payer).toContain('contentFrame');
     expect(
       sandboxCheckoutEvent('checkout.error', 'transaction_checkout_url_domain_is_not_approved'),
     ).toBe('checkout.error:transaction_checkout_url_domain_is_not_approved');

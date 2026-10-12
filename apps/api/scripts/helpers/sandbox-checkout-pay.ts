@@ -14,7 +14,8 @@ const NAME = 'Synthetic Fixture';
 const CHECKOUT_EVENT = /^checkout\.[a-z.]{1,60}(?::[a-z0-9_]{1,64})?$/;
 const SAFE_LINE = /^[A-Za-z][A-Za-z ,'-]{0,159}$/;
 const SHOT_NAME = /^[a-z]+(?:-[a-z]+)*-[0-9]{2}-[a-z]+\.png$/;
-const HOST = /^(?:cdn\.paddle\.com|(?:[a-z0-9-]+\.)?paddle\.com|[a-z0-9-]+\.trycloudflare\.com)$/;
+const HOST =
+  /^(?:cdn\.paddle\.com|(?:[a-z0-9-]+\.)?paddle\.com|(?:[a-z0-9-]+\.)*spreedly\.com|[a-z0-9-]+\.trycloudflare\.com)$/;
 
 export interface CheckoutPayFailure {
   frames: string[];
@@ -92,6 +93,37 @@ export function sandboxFieldToken(id: unknown, state: unknown): string | null {
   return `${id}:${state}`;
 }
 
+/**
+ * True only when the visible control holds the sandbox value.
+ * Mask spaces and slashes are ignored. The card number is never returned.
+ */
+export function sandboxTypedValue(
+  kind: 'number' | 'expiry' | 'cvc' | 'name',
+  actual: string,
+): boolean {
+  const digits = actual.replace(/\D/g, '');
+  switch (kind) {
+    case 'number':
+      return digits === CARD;
+    case 'expiry':
+      return digits === EXPIRY;
+    case 'cvc':
+      return digits === CVC;
+    case 'name':
+      return actual.trim() === NAME;
+    default: {
+      const unreachable: never = kind;
+      return unreachable;
+    }
+  }
+}
+
+/** Where the card number control lives. No host, url, or frame title. */
+export function sandboxFrameToken(depth: unknown): string | null {
+  if (depth !== 'overlay' && depth !== 'nested' && depth !== 'absent') return null;
+  return `cardFrame:${depth}`;
+}
+
 /** Card submit only. A wallet button such as PayPal matches "pay" and does not charge the card. */
 export function isCardPayButton(name: string): boolean {
   const label = name.replace(/\s+/g, ' ').trim();
@@ -120,7 +152,11 @@ interface Locator {
   press(key: string): Promise<void>;
   pressSequentially(value: string, options?: { delay?: number }): Promise<void>;
   innerText(): Promise<string>;
+  inputValue(): Promise<string>;
   isDisabled(): Promise<boolean>;
+  locator(selector: string): Locator;
+  contentFrame(): { locator(selector: string): Locator };
+  evaluate(fn: (element: unknown, text: string) => string, text: string): Promise<string>;
   selectOption(value: string | { label: string }): Promise<unknown>;
 }
 
@@ -129,6 +165,7 @@ interface Frame {
   getByRole(role: 'button' | 'checkbox' | 'textbox', options: { name: RegExp }): Locator;
   title(): Promise<string>;
   url(): string;
+  parentFrame(): Frame | null;
 }
 
 interface ConsoleMessage {
@@ -171,16 +208,99 @@ async function pick(locator: Locator): Promise<Locator | null> {
   return hidden;
 }
 
-async function typeInto(target: Locator, value: string): Promise<boolean> {
+async function readValue(target: Locator): Promise<string | null> {
   try {
-    await target.click({ force: true, timeout: 2_000 });
-    await target.press('Control+a');
-    await target.pressSequentially(value, { delay: 25 });
-    await target.press('Tab').catch(() => undefined);
-    return true;
+    return await target.inputValue();
   } catch {
-    return false;
+    return null;
   }
+}
+
+/**
+ * Keyboard events from the parent page do not change inputs inside Paddle's
+ * overlay frame. Insert each character in that frame so Maskito's beforeinput
+ * handler and React's onChange both see it, then read the value back.
+ */
+export async function commitText(target: Locator, value: string): Promise<string> {
+  await target
+    .click({ timeout: 2_000 })
+    .catch(() => target.click({ force: true, timeout: 2_000 }).catch(() => undefined));
+  const written = await target
+    .evaluate((element: unknown, text: string) => {
+      type Field = {
+        nodeName?: string;
+        value?: string;
+        selectionStart?: number | null;
+        selectionEnd?: number | null;
+        focus?: () => void;
+        setSelectionRange?: (start: number, end: number) => void;
+        dispatchEvent?: (event: Event) => boolean;
+        querySelector?: (selector: string) => unknown;
+        _valueTracker?: { setValue: (next: string) => void };
+      };
+      const root = element as Field;
+      const nested = root.querySelector?.('input,textarea');
+      const input = (
+        root.nodeName === 'INPUT' || root.nodeName === 'TEXTAREA' ? root : nested
+      ) as Field | null;
+      if (!input || (input.nodeName !== 'INPUT' && input.nodeName !== 'TEXTAREA')) return '';
+      input.focus?.();
+      const proto = Object.getPrototypeOf(input) as object;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      const write = (next: string, previous: string) => {
+        if (setter) setter.call(input, next);
+        else input.value = next;
+        input._valueTracker?.setValue(previous);
+      };
+      const fire = (type: string, inputType: string, data: string | null, cancelable: boolean) => {
+        const Ctor = (globalThis as { InputEvent?: new (name: string, init: object) => Event })
+          .InputEvent;
+        const event = Ctor
+          ? new Ctor(type, { bubbles: true, cancelable, inputType, data })
+          : new Event(type, { bubbles: true, cancelable });
+        return input.dispatchEvent?.(event) !== false;
+      };
+      const current = input.value ?? '';
+      if (current) {
+        input.setSelectionRange?.(0, current.length);
+        fire('beforeinput', 'deleteContentBackward', null, true);
+        write('', current);
+        fire('input', 'deleteContentBackward', null, false);
+      }
+      for (const ch of text) {
+        const start = input.selectionStart ?? (input.value ?? '').length;
+        const end = input.selectionEnd ?? start;
+        const previous = input.value ?? '';
+        if (!fire('beforeinput', 'insertText', ch, true)) continue;
+        write(previous.slice(0, start) + ch + previous.slice(end), previous);
+        input.setSelectionRange?.(start + ch.length, start + ch.length);
+        fire('input', 'insertText', ch, false);
+      }
+      input.dispatchEvent?.(new Event('change', { bubbles: true }));
+      return input.value ?? '';
+    }, value)
+    .catch(() => '');
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  return (await readValue(target)) ?? written;
+}
+
+async function typeInto(
+  target: Locator,
+  value: string,
+  accept: (actual: string) => boolean,
+): Promise<boolean> {
+  const existing = await readValue(target);
+  if (existing !== null && accept(existing)) return true;
+  try {
+    await target.click({ timeout: 2_000 });
+    await target.pressSequentially(value, { delay: 25 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const typed = await readValue(target);
+    if (typed !== null && accept(typed)) return true;
+  } catch {
+    /* A nested card frame can ignore keyboard events. */
+  }
+  return accept(await commitText(target, value));
 }
 
 async function fillAny(page: Page, selectors: readonly string[], value: string): Promise<boolean> {
@@ -192,21 +312,101 @@ async function fillAny(page: Page, selectors: readonly string[], value: string):
         await target.fill(value);
         return true;
       } catch {
-        if (await typeInto(target, value)) return true;
+        if (await typeInto(target, value, (actual) => actual.trim() === value)) return true;
       }
     }
   }
   return false;
 }
 
-async function findField(page: Page, selectors: readonly string[]): Promise<Locator | null> {
-  for (const frame of page.frames()) {
+function frameDepth(frame: Frame): number {
+  let depth = 0;
+  let current = frame.parentFrame();
+  while (current && depth < 6) {
+    depth += 1;
+    current = current.parentFrame();
+  }
+  return depth;
+}
+
+async function nestedCardInput(
+  target: Locator,
+  selectors: readonly string[],
+): Promise<Locator | null> {
+  const frames = target.locator('iframe');
+  const count = await frames.count().catch(() => 0);
+  for (let i = 0; i < count && i < 4; i += 1) {
+    const inner = frames.nth(i).contentFrame();
     for (const selector of selectors) {
-      const target = await pick(frame.locator(selector));
-      if (target) return target;
+      const picked = await pick(inner.locator(selector));
+      if (picked && (await picked.isVisible().catch(() => false))) return picked;
+    }
+    const lone = inner.locator('input');
+    if ((await lone.count().catch(() => 0)) === 1) {
+      const picked = await pick(lone);
+      if (picked && (await picked.isVisible().catch(() => false))) return picked;
     }
   }
   return null;
+}
+
+async function directInput(target: Locator): Promise<Locator | null> {
+  const kind = await target
+    .evaluate((element: unknown) => {
+      const node = element as { nodeName?: string; querySelector?: (selector: string) => unknown };
+      if (node.nodeName === 'INPUT' || node.nodeName === 'TEXTAREA') return 'input';
+      if (node.querySelector?.('input,textarea')) return 'wrap';
+      return 'other';
+    }, '')
+    .catch(() => 'other');
+  if (kind === 'input') return target;
+  if (kind === 'wrap') return pick(target.locator('input, textarea'));
+  return null;
+}
+
+interface FoundField {
+  target: Locator;
+  depth: number;
+  index: number;
+}
+
+/** Deepest visible match wins, so a card iframe under the overlay is preferred. */
+async function visibleFields(page: Page, selectors: readonly string[]): Promise<FoundField[]> {
+  const found: FoundField[] = [];
+  let index = 0;
+  for (const frame of page.frames()) {
+    const depth = frameDepth(frame);
+    for (const selector of selectors) {
+      const locator = frame.locator(selector);
+      const count = await locator.count().catch(() => 0);
+      for (let i = 0; i < count && i < 4; i += 1) {
+        const target = locator.nth(i);
+        if (!(await target.isVisible().catch(() => false))) continue;
+        index += 1;
+        const nested = await nestedCardInput(target, selectors);
+        if (nested) {
+          found.push({ target: nested, depth: depth + 1, index });
+          continue;
+        }
+        const input = await directInput(target);
+        if (input) found.push({ target: input, depth, index });
+      }
+    }
+  }
+  found.sort((left, right) => right.depth - left.depth || right.index - left.index);
+  return found;
+}
+
+async function fieldHolds(
+  page: Page,
+  selectors: readonly string[],
+  accept: (actual: string) => boolean,
+): Promise<boolean> {
+  for (const { target } of await visibleFields(page, selectors)) {
+    const live = await readValue(target);
+    if (live !== null && accept(live)) return true;
+  }
+  return false;
 }
 
 async function loneField(page: Page, pattern: RegExp): Promise<Locator | null> {
@@ -235,13 +435,33 @@ async function ensureField(
   loneTitle: RegExp,
   role: RegExp | null,
   value: string,
+  accept: (actual: string) => boolean,
   done: boolean,
 ): Promise<boolean> {
   if (done) return true;
-  const labeled = (await findField(page, selectors)) ?? (role ? await roleField(page, role) : null);
-  if (labeled && (await typeInto(labeled, value))) return true;
+  for (const { target } of await visibleFields(page, selectors)) {
+    if (await typeInto(target, value, accept)) return true;
+  }
+  if (role) {
+    const labeled = await roleField(page, role);
+    if (labeled && (await typeInto(labeled, value, accept))) return true;
+  }
   const lone = await loneField(page, loneTitle);
-  return lone !== null && (await typeInto(lone, value));
+  return lone !== null && (await typeInto(lone, value, accept));
+}
+
+async function holdField(
+  page: Page,
+  selectors: readonly string[],
+  loneTitle: RegExp,
+  role: RegExp | null,
+  value: string,
+  kind: 'number' | 'expiry' | 'cvc' | 'name',
+): Promise<boolean> {
+  const accept = (actual: string) => sandboxTypedValue(kind, actual);
+  if (await fieldHolds(page, selectors, accept)) return true;
+  await ensureField(page, selectors, loneTitle, role, value, accept, false);
+  return fieldHolds(page, selectors, accept);
 }
 
 async function clickCardPay(page: Page): Promise<boolean> {
@@ -461,9 +681,9 @@ export async function paySandboxCheckout(
     await shot(page, pictures, `${label}-01-page.png`, shots);
     const deadline = Date.now() + 180_000;
     let lastClick = 0;
-    const fields = { number: false, expiry: false, cvc: false, name: false };
     let payClicked = false;
     let sawOverlay = false;
+    let cardFrame: 'absent' | 'overlay' | 'nested' = 'absent';
     while (Date.now() < deadline) {
       if (await paid().catch(() => false)) return null;
       const hosts = frameHosts(page);
@@ -488,46 +708,48 @@ export async function paySandboxCheckout(
         ],
         '10001',
       );
-      if (!fields.number && Date.now() - lastClick > 8_000) {
+      const numberFields = await visibleFields(page, SANDBOX_CARD_SELECTORS);
+      if (numberFields[0]) cardFrame = numberFields[0].depth >= 2 ? 'nested' : 'overlay';
+      if (!numberFields.length && Date.now() - lastClick > 8_000) {
         const seen = await probeFields(page);
         if (seen.includes('cardNumberInput:absent')) {
           await chooseCard(page);
           lastClick = Date.now();
         }
       }
-      fields.name = await ensureField(
+      const nameOk = await holdField(
         page,
         NAME_SELECTORS,
         /card holder|name on card/,
         /card holder|name on card/i,
         NAME,
-        fields.name,
+        'name',
       );
-      fields.number = await ensureField(
+      const numberOk = await holdField(
         page,
         SANDBOX_CARD_SELECTORS,
         /card number|^number$/,
         /^card number$/i,
         CARD,
-        fields.number,
+        'number',
       );
-      fields.expiry = await ensureField(
+      const expiryOk = await holdField(
         page,
         EXPIRY_SELECTORS,
         /expir|^mm/,
         /^expiry$/i,
         EXPIRY,
-        fields.expiry,
+        'expiry',
       );
-      fields.cvc = await ensureField(
+      const cvcOk = await holdField(
         page,
         CVC_SELECTORS,
         /cvc|cvv|security|card code/,
         /^cvv$/i,
         CVC,
-        fields.cvc,
+        'cvc',
       );
-      const ready = fields.number && fields.expiry && fields.cvc && fields.name;
+      const ready = numberOk && expiryOk && cvcOk && nameOk;
       if (ready) await shot(page, pictures, `${label}-03-card.png`, shots);
       const due = Date.now() - lastClick > 8_000;
       if (ready && due) {
@@ -544,21 +766,37 @@ export async function paySandboxCheckout(
     }
     await shot(page, pictures, `${label}-05-timeout.png`, shots);
     const hosts = frameHosts(page);
+    const held = {
+      cardNumberInput: await fieldHolds(page, SANDBOX_CARD_SELECTORS, (actual) =>
+        sandboxTypedValue('number', actual),
+      ),
+      expiryDateField: await fieldHolds(page, EXPIRY_SELECTORS, (actual) =>
+        sandboxTypedValue('expiry', actual),
+      ),
+      cardVerificationValueInput: await fieldHolds(page, CVC_SELECTORS, (actual) =>
+        sandboxTypedValue('cvc', actual),
+      ),
+      cardholderNameInput: await fieldHolds(page, NAME_SELECTORS, (actual) =>
+        sandboxTypedValue('name', actual),
+      ),
+    };
+    const frameToken = sandboxFrameToken(cardFrame);
     return {
       frames: await frameTitles(page),
       hosts,
       overlay: overlayPresent(hosts) ? 'present' : 'absent',
-      card: fields.number && fields.expiry && fields.cvc && fields.name ? 'filled' : 'missing',
+      card:
+        held.cardNumberInput &&
+        held.expiryDateField &&
+        held.cardVerificationValueInput &&
+        held.cardholderNameInput
+          ? 'filled'
+          : 'missing',
       pay: payClicked ? 'clicked' : 'missing',
       events: await readEvents(page),
       consoleLines,
       shots,
-      fields: notedFields(await probeFields(page), {
-        cardNumberInput: fields.number,
-        expiryDateField: fields.expiry,
-        cardVerificationValueInput: fields.cvc,
-        cardholderNameInput: fields.name,
-      }),
+      fields: [...notedFields(await probeFields(page), held), ...(frameToken ? [frameToken] : [])],
     };
   } finally {
     await browser.close();
