@@ -74,6 +74,9 @@ export function HeardFromPrompt() {
 
   if (!consentSettled || dismissed || me.signupAttribution?.promptNeeded !== true) return null;
   if (pathname === '/settings' || pathname.startsWith('/settings/')) return null;
+  // Phone width makes this card as wide as the page. Billing leaves the
+  // plan controls clear.
+  if (pathname === '/billing') return null;
 
   // `promptTick` is the same-tab dismissal signal. The read below sees
   // the localStorage write only because that event re-rendered us.
