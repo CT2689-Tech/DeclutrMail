@@ -275,6 +275,74 @@ describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', (
     },
   );
 
+  it('retries a dropped GET and then stops', async () => {
+    let reads = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/a',
+        respond: () => {
+          reads += 1;
+          if (reads < 3) throw new TypeError('Failed to fetch');
+          return jsonOk({ data: { ok: true } });
+        },
+      },
+    ]);
+    const fresh = await import('./client');
+    await expect(fresh.apiGet('/api/a')).resolves.toMatchObject({ data: { ok: true } });
+    expect(reads).toBe(3);
+  });
+
+  it('does not replay a mutating request after the network drops', async () => {
+    let writes = 0;
+    installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/a',
+        respond: () => {
+          writes += 1;
+          throw new TypeError('Failed to fetch');
+        },
+      },
+    ]);
+    const fresh = await import('./client');
+    await expect(fresh.apiPost('/api/a', { ok: true })).rejects.toThrow('Failed to fetch');
+    expect(writes).toBe(1);
+  });
+
+  it('does not retry the session refresh after a dropped connection', async () => {
+    let reads = 0;
+    let refreshes = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/a',
+        respond: () => {
+          reads += 1;
+          return new Response(null, { status: 401 });
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/auth/refresh',
+        respond: () => {
+          refreshes += 1;
+          throw new TypeError('Failed to fetch');
+        },
+      },
+    ]);
+    const assign = vi.fn();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...window.location, assign },
+    });
+    const fresh = await import('./client');
+    await expect(fresh.apiGet('/api/a')).rejects.toThrow('Failed to fetch');
+    expect(assign).not.toHaveBeenCalled();
+    expect(reads).toBe(1);
+    expect(refreshes).toBe(1);
+  });
+
   it('preserves a network failure and allows the next refresh to succeed', async () => {
     let reads = 0;
     let refreshes = 0;
@@ -289,7 +357,7 @@ describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', (
         method: 'POST',
         path: '/api/auth/refresh',
         respond: () => {
-          if (++refreshes === 1) throw new TypeError('Network unavailable');
+          if (++refreshes <= 1) throw new TypeError('Network unavailable');
           return jsonOk({ data: { ok: true } });
         },
       },
@@ -302,6 +370,7 @@ describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', (
     const fresh = await import('./client');
     await expect(fresh.apiGet('/api/a')).rejects.toThrow('Network unavailable');
     expect(assign).not.toHaveBeenCalled();
+    expect(refreshes).toBe(1);
     await expect(fresh.apiGet('/api/a')).resolves.toMatchObject({ data: { ok: true } });
     expect(refreshes).toBe(2);
   });
