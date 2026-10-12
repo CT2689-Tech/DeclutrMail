@@ -185,7 +185,8 @@ const KEEP: Pick<
 
 /**
  * Scopes this Allow card showed. The Brief upgrade keeps an existing
- * explanations grant. The explanations-only card does not write Brief.
+ * explanations grant. The explanations-only card keeps a prior Brief
+ * scope and does not grant Brief when previous has none.
  */
 function scopesAgreedOnCard(card: AiConsentCard): readonly string[] {
   switch (card) {
@@ -206,6 +207,7 @@ function allowScopes(card: AiConsentCard, previous: readonly string[] | null): s
   const kept = new Set(scopesAgreedOnCard(card));
   const prior = previous ?? [];
   if (card === 'upgrade' && prior.includes('explanations')) kept.add('explanations');
+  if (card === 'all' && prior.includes('brief')) kept.add('brief');
   return ['explanations', 'brief'].filter((scope) => kept.has(scope));
 }
 

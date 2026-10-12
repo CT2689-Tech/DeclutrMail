@@ -176,7 +176,50 @@ describe('AI consent gate', () => {
     ).toEqual(['explanations', 'brief']);
     expect(
       aiConsentPatch({ action: 'allow', card: 'all' }, VERSION, ['brief']).aiConsentScopes,
-    ).toEqual(['explanations']);
+    ).toEqual(['explanations', 'brief']);
+  });
+
+  it('keeps Brief allowed when explanations are turned back on', () => {
+    const both = row({
+      aiConsentVersion: VERSION,
+      aiExplanationsConsentAt: '2026-10-02T00:00:00.000Z',
+      aiConsentScopes: ['explanations', 'brief'],
+      briefAiConsentAt: '2026-10-02T00:00:00.000Z',
+      briefAiConsentVersion: VERSION,
+    });
+    const revoke = aiConsentPatch({ action: 'revoke', scope: 'explanations' });
+    const revoked = row({
+      ...both,
+      aiExplanationsRevokedAt: '2026-10-03T00:00:00.000Z',
+      aiConsentScopes:
+        revoke.aiConsentScopes === 'keep' ? both.aiConsentScopes : revoke.aiConsentScopes,
+    });
+    expect(explanationsConsentActive(revoked)).toBe(false);
+    expect(briefConsentActive(revoked)).toBe(true);
+
+    const allow = aiConsentPatch(
+      { action: 'allow', card: 'all' },
+      VERSION,
+      revoked.aiConsentScopes,
+    );
+    expect(allow.aiConsentScopes).toEqual(['explanations', 'brief']);
+    expect(allow.aiExplanationsConsentAt).toBe('now');
+    expect(allow.aiExplanationsRevokedAt).toBe(null);
+    expect(allow.briefAiConsentAt).toBe('keep');
+    expect(allow.briefAiConsentRevokedAt).toBe('keep');
+    const after = row({
+      ...revoked,
+      aiConsentScopes:
+        allow.aiConsentScopes === 'keep' ? revoked.aiConsentScopes : allow.aiConsentScopes,
+      aiExplanationsConsentAt: '2026-10-04T00:00:00.000Z',
+      aiExplanationsRevokedAt: null,
+      aiConsentDeclinedAt: null,
+    });
+    expect(explanationsConsentActive(after)).toBe(true);
+    expect(briefConsentActive(after)).toBe(true);
+    const view = aiConsentView(after);
+    expect(view.explanations).toBe('allowed');
+    expect(view.brief).toBe('allowed');
   });
 
   it('keeps explanations off when Allow on the Brief card follows a revoke', () => {
