@@ -120,10 +120,9 @@ describe('BillingService', () => {
     paddleCheckout = vi.fn().mockResolvedValue({
       provider: 'paddle',
       kind: 'overlay',
-      priceId: 'pri_plus_m',
+      transactionId: 'txn_01ky067arw41802a6ssessknxh',
       clientToken: 'test_tok',
       environment: 'sandbox',
-      customData: { workspace_id: 'set-below', sig: 'test-sig' },
     });
     paddleCancel = vi.fn().mockResolvedValue(undefined);
     paddleChangePlan = vi.fn().mockResolvedValue({
@@ -409,6 +408,121 @@ describe('BillingService', () => {
     expect(await db.select().from(users).where(eq(users.id, principal.userId))).toEqual(before);
     expect(paddleCheckout).not.toHaveBeenCalled();
     expect(razorpayCheckout).not.toHaveBeenCalled();
+  });
+
+  it('never returns a localizable Paddle price for an omitted, US, or IN country', async () => {
+    const previous = process.env.PRICING_V2;
+    process.env.PRICING_V2 = 'true';
+    const previousPass = process.env.BILLING_PASS_ENABLED;
+    process.env.BILLING_PASS_ENABLED = 'true';
+    paddleCheckout.mockResolvedValue({
+      provider: 'paddle',
+      kind: 'overlay',
+      priceId: 'pri_plus_annual',
+      clientToken: 'test_tok',
+      environment: 'sandbox',
+      customData: { workspace_id: 'set-below', sig: 'test-sig' },
+    });
+    try {
+      for (const dto of [
+        { tierId: 'plus' as const, cycle: 'annual' as const, provider: 'paddle' as const },
+        {
+          tierId: 'plus' as const,
+          cycle: 'annual' as const,
+          provider: 'paddle' as const,
+          country: 'US' as const,
+        },
+        {
+          tierId: 'plus' as const,
+          cycle: 'annual' as const,
+          provider: 'paddle' as const,
+          country: 'IN' as const,
+        },
+        {
+          tierId: 'plus' as const,
+          cycle: 'annual' as const,
+          provider: 'paddle' as const,
+          country: 'IN' as const,
+          offer: 'pass_onetime' as const,
+        },
+      ]) {
+        await expect(service.createCheckout(principal, dto)).rejects.toMatchObject({
+          code: 'BILLING_PROVIDER_ERROR',
+        });
+        await service.releasePendingCheckout(principal.workspaceId);
+      }
+      paddleCheckout.mockResolvedValue({
+        provider: 'paddle',
+        kind: 'overlay',
+        transactionId: 'txn_01ky067arw41802a6ssessknxh',
+        clientToken: 'test_tok',
+        environment: 'sandbox',
+        customData: { workspace_id: 'set-below', sig: 'test-sig' },
+      });
+      await expect(
+        service.createCheckout(principal, {
+          tierId: 'plus',
+          cycle: 'annual',
+          provider: 'paddle',
+        }),
+      ).rejects.toMatchObject({ code: 'BILLING_PROVIDER_ERROR' });
+      expect(razorpayCheckout).not.toHaveBeenCalled();
+    } finally {
+      if (previousPass === undefined) delete process.env.BILLING_PASS_ENABLED;
+      else process.env.BILLING_PASS_ENABLED = previousPass;
+      if (previous === undefined) delete process.env.PRICING_V2;
+      else process.env.PRICING_V2 = previous;
+    }
+  });
+
+  it('opens a USD-locked Paddle transaction for an omitted, US, or IN country', async () => {
+    const previous = process.env.PRICING_V2;
+    process.env.PRICING_V2 = 'true';
+    const previousPass = process.env.BILLING_PASS_ENABLED;
+    process.env.BILLING_PASS_ENABLED = 'true';
+    const locked = {
+      provider: 'paddle' as const,
+      kind: 'overlay' as const,
+      transactionId: 'txn_01ky067arw41802a6ssessknxh',
+      clientToken: 'test_tok',
+      environment: 'sandbox' as const,
+    };
+    paddleCheckout.mockResolvedValue(locked);
+    try {
+      for (const dto of [
+        { tierId: 'plus' as const, cycle: 'annual' as const, provider: 'paddle' as const },
+        {
+          tierId: 'plus' as const,
+          cycle: 'annual' as const,
+          provider: 'paddle' as const,
+          country: 'US' as const,
+        },
+        {
+          tierId: 'plus' as const,
+          cycle: 'annual' as const,
+          provider: 'paddle' as const,
+          country: 'IN' as const,
+        },
+        {
+          tierId: 'plus' as const,
+          cycle: 'annual' as const,
+          provider: 'paddle' as const,
+          offer: 'pass_onetime' as const,
+        },
+      ]) {
+        const session = await service.createCheckout(principal, dto);
+        expect(session).toEqual(locked);
+        expect(session).not.toHaveProperty('priceId');
+        expect(session).not.toHaveProperty('customData');
+        await service.releasePendingCheckout(principal.workspaceId);
+      }
+      expect(razorpayCheckout).not.toHaveBeenCalled();
+    } finally {
+      if (previousPass === undefined) delete process.env.BILLING_PASS_ENABLED;
+      else process.env.BILLING_PASS_ENABLED = previousPass;
+      if (previous === undefined) delete process.env.PRICING_V2;
+      else process.env.PRICING_V2 = previous;
+    }
   });
 
   it('keeps existing INR cancellation available while new purchases are paused', async () => {

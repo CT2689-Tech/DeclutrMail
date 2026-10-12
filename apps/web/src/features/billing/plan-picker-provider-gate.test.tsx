@@ -148,7 +148,7 @@ describe('checkout provider gate (D117)', () => {
     expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeInTheDocument();
 
     fireEvent.click(within(panel).getByLabelText(/UPI · cards · netbanking/));
-    const paused = within(panel).getByRole('button', { name: 'INR checkout paused' });
+    const paused = within(panel).getByRole('button', { name: 'Paused for now' });
     expect(paused).toBeDisabled();
     fireEvent.click(paused);
     expect(checkoutBody).toBeNull();
@@ -168,7 +168,7 @@ describe('checkout provider gate (D117)', () => {
     fireEvent.click(within(panel).getByRole('checkbox'));
     expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeChecked();
     expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeDisabled();
-    expect(within(panel).getByRole('button', { name: 'INR checkout paused' })).toBeDisabled();
+    expect(within(panel).getByRole('button', { name: 'Paused for now' })).toBeDisabled();
     expect(checkoutBody).toBeNull();
     fireEvent.click(within(panel).getByLabelText(/Card · PayPal · Apple Pay/));
 

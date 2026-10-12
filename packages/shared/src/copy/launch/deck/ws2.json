@@ -514,6 +514,47 @@
     },
     "settingsPrivacy": {
       "casa": "DeclutrMail’s Gmail access goes through Google’s CASA security assessment. Google OAuth verification approved {OAUTH_DATE}. The approval covers the one restricted permission we request, gmail.modify, and is recertified every year."
+    },
+    "onboarding": {
+      "preview": {
+        "toggle": "Preview senders found so far",
+        "intro": "Read-only preview. Counts cover the email scanned so far and may change when the scan resumes.",
+        "row": {
+          "one": "{name} — 1 email",
+          "other": "{name} — {n} emails"
+        }
+      }
+    },
+    "autopilot": {
+      "match": {
+        "dormant": {
+          "one": "At matching: 1 email from this sender; last seen {ago}.",
+          "other": "At matching: {n} emails from this sender; last seen {ago}."
+        },
+        "daysEarlier": {
+          "one": "1 day earlier",
+          "other": "{n} days earlier"
+        },
+        "newSenderCount": {
+          "one": "1 email from this sender",
+          "other": "{n} emails from this sender"
+        }
+      }
+    },
+    "followups": {
+      "checked": "Checked {when} against the email scanned so far."
+    },
+    "mailboxes": {
+      "deleteReconnect": "If you reconnect, DeclutrMail scans this Gmail account again from the start.",
+      "deletedReconnect": "Reconnect to scan this Gmail account again from the start. Deleted history doesn’t come back."
+    },
+    "privacy": {
+      "inventory": {
+        "purpose": "Scan the listed Gmail details and provide the features you ask for.",
+        "visitLabel": "Mailbox visit times and counts of newly scanned email",
+        "purgeClause": "failed jobs stay until resolved or removed when this inbox’s saved data or the account is deleted",
+        "senderListClause": "names and addresses come from the saved sender list, one page at a time"
+      }
     }
   }
 }

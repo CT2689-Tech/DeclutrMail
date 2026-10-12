@@ -7,7 +7,10 @@ import {
   RAZORPAY_LIMITATIONS_NOTE,
 } from './billing-copy';
 import type { BillingCycle, BillingProviderId } from '@declutrmail/shared/contracts';
-import { INR_NEW_PURCHASES_PAUSED } from '@declutrmail/shared/contracts/billing-availability';
+import {
+  INR_NEW_PURCHASES_PAUSED,
+  inrNewPurchasePaused,
+} from '@declutrmail/shared/contracts/billing-availability';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import {
   fillStory,
@@ -72,11 +75,9 @@ export function ConfirmPanel({
   // paid tiers carry both cycles); guards future tier edits.
   const pricePoint = founding ? founding.annual : (pricePointOverride ?? point ?? null);
   // D226 makes this preview the truthful "here is exactly what
-  // happens" step, so it must quote the currency the SELECTED provider
-  // actually charges: Razorpay settles INR, Paddle USD, and the
-  // manifest carries both as independently chosen prices. Quoting $129
-  // and then charging ₹10,999 is the preview lying about the one number
-  // it exists to state.
+  // happens" step, so it must quote the currency this checkout would
+  // charge. Razorpay settles INR. Under pricing v2 the India rail is
+  // off, and an India visitor on Paddle is still quoted INR.
   const currency = pricePoint
     ? currencyForPricePoint(pricePoint, provider, { pricingV2, country })
     : 'USD';
@@ -93,14 +94,14 @@ export function ConfirmPanel({
   // visitor read "Claim Founding Pro — ₹10,999/yr" off the standard
   // point's provisioning, tick the box, and land on a $129 charge.
   const promoCurrency = tier.promo ? currencyForPricePoint(tier.promo.annual, provider) : currency;
-  const checkoutPaused = provider === 'razorpay' && INR_NEW_PURCHASES_PAUSED;
+  const checkoutPaused = inrNewPurchasePaused(provider, currency);
   const storyLocale = currency === 'INR' ? 'inr' : 'usd';
   const launchImpact =
     offer === 'pass_onetime'
       ? fillStory(WS1_COPY['checkout.pass.summary'], storyLocale)
       : fillStory(WS1_COPY['checkout.plus.summary'], storyLocale);
   const impact = checkoutPaused
-    ? `${amountLabel ? `Reference price: ${amountLabel}${pricingV2 ? '' : `/${cycle === 'annual' ? 'yr' : 'mo'}`}. ` : ''}New INR purchases are temporarily paused. Existing INR subscriptions can still be managed from Billing. Contact support@declutrmail.com for help.`
+    ? `${amountLabel ? `Reference price: ${amountLabel}${pricingV2 ? '' : `/${cycle === 'annual' ? 'yr' : 'mo'}`}. ` : ''}${WS1_COPY['pricing.inrPaused.checkout']}`
     : pricingV2
       ? launchImpact
       : amountLabel !== null
@@ -146,7 +147,7 @@ export function ConfirmPanel({
               title="UPI · cards · netbanking (India)"
               detail={
                 INR_NEW_PURCHASES_PAUSED
-                  ? 'New INR purchases temporarily paused'
+                  ? WS1_COPY['pricing.inrPaused.button']
                   : 'INR pricing — secure checkout by Razorpay'
               }
             />
@@ -240,7 +241,7 @@ export function ConfirmPanel({
           disabled={isPending || pricePoint === null || checkoutPaused}
         >
           {checkoutPaused
-            ? 'INR checkout paused'
+            ? WS1_COPY['pricing.inrPaused.button']
             : isPending
               ? fillStory(WS1_COPY['checkout.opening'])
               : pricingV2

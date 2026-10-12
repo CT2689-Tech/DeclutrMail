@@ -15,6 +15,9 @@ docs/execution/Implementation-Plan.md
 # would reflow them and they would no longer match the source files.
 docs/design/screens/
 
+# Byte-identical copy of the drop2-r24 checker. Formatting would change the file.
+scripts/check-no-index-copy.mjs
+
 # Drizzle-generated migration metadata + SQL.
 # meta/*.json must be byte-identical to drizzle-kit's output (used as the
 # round-trip snapshot). The SQL files are also drizzle-emitted and should

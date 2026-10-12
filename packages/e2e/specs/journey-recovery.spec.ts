@@ -218,7 +218,7 @@ test('failed scan preview is read-only and the first backlog nudge excludes Prot
     await sql`UPDATE users SET onboarded_at = NULL WHERE id = ${fixture.userId}`;
     await sql`UPDATE provider_sync_state SET readiness_status = 'failed', current_stage = 'failed', error_code = 'TransientError' WHERE mailbox_account_id = ${fixture.mailboxId}`;
     await page.goto('/onboarding');
-    await page.getByRole('button', { name: 'Preview indexed senders', exact: true }).click();
+    await page.getByRole('button', { name: 'Preview senders found so far', exact: true }).click();
     await expect(
       page.getByRole('region', { name: 'Scan preview' }).getByText(/Fresh Finds Weekly/),
     ).toBeVisible();

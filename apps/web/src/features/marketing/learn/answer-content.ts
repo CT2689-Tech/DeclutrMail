@@ -1,4 +1,5 @@
 import { PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
+import { WS3_COPY } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import type { LearnArticle } from './types';
 
@@ -42,7 +43,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
           'Does the app fetch full email contents, or only a clearly listed set of Gmail details?',
           'Are OAuth tokens encrypted, excluded from the browser, and revocable?',
           'Can you see which email is affected and what will change before email moves, including which effects cannot be undone?',
-          'Can you disconnect an inbox, export your data, and delete the stored index?',
+          WS3_COPY['ws3.liveFix.learn.checklistDelete'],
         ],
       },
       {
@@ -184,7 +185,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
           'Which derived aggregates are retained, and for how long?',
           'Does any feature send subjects or snippets to an external processor?',
           'Are logs, error reports, analytics, and exports barred from containing those fields?',
-          'Can the user delete the index without deleting email in Gmail?',
+          WS3_COPY['ws3.liveFix.learn.deleteSaved'],
         ],
       },
       {

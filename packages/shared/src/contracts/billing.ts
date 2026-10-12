@@ -46,6 +46,9 @@ export type PurchasableTier = z.infer<typeof PurchasableTierSchema>;
  * `users.billing_region` rather than re-deriving it from IP at
  * checkout time.
  *
+ * `country` is accepted and ignored. It does not choose the provider
+ * or the checkout currency.
+ *
  * `promo: 'foundingPro'` requires `tierId: 'pro'` + `cycle: 'annual'`
  * (the promo is an annual-only Pro price point, D126) — enforced by
  * the `superRefine` below so a malformed combination fails validation
@@ -59,6 +62,11 @@ export const CheckoutRequestSchema = z
     promo: z.literal('foundingPro').optional(),
     /** Backlog Pass. Requires Plus annual on Paddle. Not a subscription tier. */
     offer: z.literal('pass_onetime').optional(),
+    /** Ignored. Present so an older client that still sends it does not fail validation. */
+    country: z
+      .string()
+      .regex(/^[A-Za-z]{2}$/)
+      .optional(),
   })
   .superRefine((val, ctx) => {
     if (val.promo === 'foundingPro' && (val.tierId !== 'pro' || val.cycle !== 'annual')) {
@@ -82,33 +90,45 @@ export const CheckoutRequestSchema = z
 export type CheckoutRequest = z.infer<typeof CheckoutRequestSchema>;
 
 /**
- * Paddle checkout session — the FE opens the Paddle.js OVERLAY with
- * these values (Paddle Billing has no server-created hosted session
- * for overlay checkouts; the price id + client-side token ARE the
- * session). `clientToken` is Paddle's publishable client-side token
- * (safe to expose to an authed user by design, like a Stripe
- * publishable key). `customData` MUST be passed through to
- * `Paddle.Checkout.open({ customData })` verbatim — the webhook
- * resolves the workspace from it on first contact.
+ * Paddle checkout session. While new rupee purchases are paused the
+ * session is a server-created USD transaction. The response carries
+ * that transaction id and the client token, and omits `priceId` and
+ * `customData`: both would let a client open a price overlay that
+ * Paddle can localize to INR. The signed attribution blob is stored
+ * on the transaction before the overlay opens. `priceId` and
+ * `customData` remain for a checkout opened after the pause lifts.
+ * `clientToken` is Paddle's publishable client-side token (safe to
+ * expose to an authed user by design, like a Stripe publishable key).
+ * On a price overlay, `customData` is passed through to
+ * `Paddle.Checkout.open({ customData })` verbatim.
  */
 export const PaddleCheckoutSessionSchema = z.object({
   provider: z.literal('paddle'),
   kind: z.literal('overlay'),
-  priceId: z.string().min(1),
+  /** Omitted while the session is a currency-locked transaction. */
+  priceId: z.string().min(1).optional(),
+  /** Server-created transaction. Opening it does not send `items`. */
+  transactionId: z
+    .string()
+    .regex(/^txn_[a-z\d]{26}$/)
+    .optional(),
   clientToken: z.string().min(1),
   environment: z.enum(['sandbox', 'production']),
   // snake_case ON PURPOSE: this object is stored verbatim by Paddle and
   // read back off the webhook as `custom_data.workspace_id`. A camelCase
   // key here makes every first purchase unattributable (the webhook has
   // no subscription or billing_customers row to fall back to yet).
-  customData: z.object({
-    workspace_id: z.uuid(),
-    // Server-issued HMAC over the workspace id. `custom_data` reaches
-    // Paddle through the BROWSER, so an unsigned id would let a client
-    // attribute a paid subscription onto someone else's workspace; the
-    // webhook discards any blob whose signature does not verify.
-    sig: z.string().min(1),
-  }),
+  // Omitted while the session is a currency-locked transaction.
+  customData: z
+    .object({
+      workspace_id: z.uuid(),
+      // Server-issued HMAC over the workspace id. `custom_data` reaches
+      // Paddle through the BROWSER, so an unsigned id would let a client
+      // attribute a paid subscription onto someone else's workspace; the
+      // webhook discards any blob whose signature does not verify.
+      sig: z.string().min(1),
+    })
+    .optional(),
   /**
    * PH30 discount, when that environment has a real Paddle id.
    * Absent while live is `FILL_ME`: the overlay opens at full price.

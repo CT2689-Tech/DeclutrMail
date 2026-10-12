@@ -1,3 +1,7 @@
+import { pluralCopy, WS2_COPY } from '@declutrmail/shared/copy/launch';
+
+const matchCopy = WS2_COPY.liveFix.autopilot.match;
+
 /** Display-only translations of the exact preset strings in autopilot-presets.ts. */
 export function describeMatchReason(reason: string): { label: string; technical: string | null } {
   const verdict =
@@ -21,7 +25,9 @@ export function describeMatchReason(reason: string): { label: string; technical:
     const [rate, messages, days] = dormant.slice(1).map(Number);
     if (rate! <= 100 && messages! > 0 && [rate, messages, days].every(Number.isSafeInteger)) {
       return {
-        label: `At matching: ${messages} indexed ${plural(messages!, 'email')}; last seen ${days} ${plural(days!, 'day')} earlier.`,
+        label: pluralCopy(matchCopy.dormant, messages!, {
+          ago: pluralCopy(matchCopy.daysEarlier, days!),
+        }),
         technical: reason,
       };
     }
@@ -37,7 +43,7 @@ export function describeMatchReason(reason: string): { label: string; technical:
           'At matching: ' +
           [
             ...(days === null ? [] : [`first seen ${days} ${plural(days, 'day')} earlier`]),
-            ...(messages === null ? [] : [`${messages} indexed ${plural(messages, 'email')}`]),
+            ...(messages === null ? [] : [pluralCopy(matchCopy.newSenderCount, messages)]),
           ].join(' · '),
         technical: null,
       };

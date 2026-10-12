@@ -412,15 +412,43 @@ describe('PaddleAdapter.mapWebhookEvent', () => {
   });
 });
 
+const LOCKED_TXN = 'txn_01ky067arw41802a6ssessknxh';
+
+function stubTransaction(currency = 'USD', id: string | null = LOCKED_TXN) {
+  const fetchSpy = vi.fn().mockImplementation(() =>
+    Promise.resolve(
+      new Response(
+        JSON.stringify({
+          data: { ...(id === null ? {} : { id }), currency_code: currency },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    ),
+  );
+  vi.stubGlobal('fetch', fetchSpy);
+  return fetchSpy;
+}
+
+function postedTransaction(fetchSpy: ReturnType<typeof vi.fn>): {
+  url: string;
+  body: Record<string, unknown>;
+} {
+  const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+  return { url, body: JSON.parse(String(init.body)) as Record<string, unknown> };
+}
+
 describe('PaddleAdapter checkout + cancel', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('createCheckout returns the overlay payload without any API call', async () => {
-    const fetchSpy = vi.fn();
-    vi.stubGlobal('fetch', fetchSpy);
-    const adapter = makeAdapter({ PADDLE_CLIENT_TOKEN: 'test_abc', PADDLE_ENV: 'sandbox' });
+  it('createCheckout posts a USD transaction and returns no price id', async () => {
+    const fetchSpy = stubTransaction();
+    const adapter = makeAdapter({
+      PADDLE_CLIENT_TOKEN: 'test_abc',
+      PADDLE_API_KEY: 'pdl_test_key',
+      PADDLE_ENV: 'sandbox',
+    });
     const session = await adapter.createCheckout({
       workspaceId: WORKSPACE,
       userEmail: 'user@example.com',
@@ -428,19 +456,34 @@ describe('PaddleAdapter checkout + cancel', () => {
       cycle: 'monthly',
       providerPriceId: 'pri_x',
     });
+    const { url, body } = postedTransaction(fetchSpy);
+    expect(url).toBe('https://sandbox-api.paddle.com/transactions');
+    expect(body).toMatchObject({
+      collection_mode: 'automatic',
+      currency_code: 'USD',
+      items: [{ price_id: 'pri_x', quantity: 1 }],
+      custom_data: { workspace_id: WORKSPACE, sig: expect.any(String) },
+    });
+    expect(body).not.toHaveProperty('discount_id');
+    expect(JSON.stringify(body)).not.toContain('user@example.com');
     expect(session).toEqual({
       provider: 'paddle',
       kind: 'overlay',
-      priceId: 'pri_x',
+      transactionId: LOCKED_TXN,
       clientToken: 'test_abc',
       environment: 'sandbox',
-      customData: { workspace_id: WORKSPACE, sig: expect.any(String) },
     });
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(session).not.toHaveProperty('priceId');
+    expect(session).not.toHaveProperty('customData');
   });
 
   it('omits the launch discount while the live id is still FILL_ME', async () => {
-    const adapter = makeAdapter({ PADDLE_CLIENT_TOKEN: 'test_abc', PADDLE_ENV: 'production' });
+    const fetchSpy = stubTransaction();
+    const adapter = makeAdapter({
+      PADDLE_CLIENT_TOKEN: 'test_abc',
+      PADDLE_API_KEY: 'pdl_live_key',
+      PADDLE_ENV: 'production',
+    });
     const session = await adapter.createCheckout({
       workspaceId: WORKSPACE,
       userEmail: 'user@example.com',
@@ -448,21 +491,31 @@ describe('PaddleAdapter checkout + cancel', () => {
       cycle: 'annual',
       providerPriceId: 'pri_01m4qk99878y7jynh1h00jfhy8',
     });
+    const { url, body } = postedTransaction(fetchSpy);
+    expect(url).toBe('https://api.paddle.com/transactions');
+    expect(body.currency_code).toBe('USD');
+    expect(body).not.toHaveProperty('discount_id');
     expect(session).toEqual({
       provider: 'paddle',
       kind: 'overlay',
-      priceId: 'pri_01m4qk99878y7jynh1h00jfhy8',
+      transactionId: LOCKED_TXN,
       clientToken: 'test_abc',
       environment: 'production',
-      customData: { workspace_id: WORKSPACE, sig: expect.any(String) },
     });
     expect(JSON.stringify(session)).not.toContain('FILL_ME');
     expect(session).not.toHaveProperty('discountId');
+    expect(session).not.toHaveProperty('priceId');
+    expect(session).not.toHaveProperty('customData');
     expect(session).not.toHaveProperty('plan_code');
   });
 
-  it('attaches the sandbox PH30 discount only to a launch price', async () => {
-    const adapter = makeAdapter({ PADDLE_CLIENT_TOKEN: 'test_abc', PADDLE_ENV: 'sandbox' });
+  it('puts the sandbox PH30 discount on a launch-price transaction only', async () => {
+    const fetchSpy = stubTransaction();
+    const adapter = makeAdapter({
+      PADDLE_CLIENT_TOKEN: 'test_abc',
+      PADDLE_API_KEY: 'pdl_test_key',
+      PADDLE_ENV: 'sandbox',
+    });
     const session = await adapter.createCheckout({
       workspaceId: WORKSPACE,
       userEmail: 'user@example.com',
@@ -470,7 +523,101 @@ describe('PaddleAdapter checkout + cancel', () => {
       cycle: 'annual',
       providerPriceId: SANDBOX_PRICE_IDS.plus_annual,
     });
-    expect(session).toMatchObject({ discountId: PROMO_DISCOUNT_IDS.sandbox });
+    expect(postedTransaction(fetchSpy).body.discount_id).toBe(PROMO_DISCOUNT_IDS.sandbox);
+    expect(postedTransaction(fetchSpy).body.currency_code).toBe('USD');
+    expect(session).not.toHaveProperty('discountId');
+    expect(session).not.toHaveProperty('priceId');
+    expect(session).not.toHaveProperty('customData');
+
+    fetchSpy.mockClear();
+    await adapter.createCheckout({
+      workspaceId: WORKSPACE,
+      userEmail: 'user@example.com',
+      tierId: 'plus',
+      cycle: 'monthly',
+      providerPriceId: 'pri_x',
+    });
+    expect(postedTransaction(fetchSpy).body).not.toHaveProperty('discount_id');
+  });
+
+  it('puts PH30 on the Pass transaction and does not return it to the client', async () => {
+    const fetchSpy = stubTransaction();
+    const adapter = makeAdapter({
+      PADDLE_CLIENT_TOKEN: 'test_abc',
+      PADDLE_API_KEY: 'pdl_test_key',
+      PADDLE_ENV: 'sandbox',
+    });
+    const session = await adapter.createCheckout({
+      workspaceId: WORKSPACE,
+      userEmail: 'user@example.com',
+      tierId: 'plus',
+      cycle: 'annual',
+      providerPriceId: SANDBOX_PRICE_IDS.pass_onetime,
+    });
+    const { body } = postedTransaction(fetchSpy);
+    expect(body.currency_code).toBe('USD');
+    expect(body.discount_id).toBe(PROMO_DISCOUNT_IDS.sandbox);
+    expect(body.items).toEqual([{ price_id: SANDBOX_PRICE_IDS.pass_onetime, quantity: 1 }]);
+    expect(session).toEqual({
+      provider: 'paddle',
+      kind: 'overlay',
+      transactionId: LOCKED_TXN,
+      clientToken: 'test_abc',
+      environment: 'sandbox',
+    });
+    expect(session).not.toHaveProperty('discountId');
+    expect(session).not.toHaveProperty('priceId');
+    expect(session).not.toHaveProperty('customData');
+  });
+
+  it('refuses an INR transaction and does not fall back to a price overlay', async () => {
+    stubTransaction('INR');
+    const adapter = makeAdapter({
+      PADDLE_CLIENT_TOKEN: 'test_abc',
+      PADDLE_API_KEY: 'pdl_test_key',
+    });
+    await expect(
+      adapter.createCheckout({
+        workspaceId: WORKSPACE,
+        userEmail: 'user@example.com',
+        tierId: 'plus',
+        cycle: 'monthly',
+        providerPriceId: 'pri_x',
+      }),
+    ).rejects.toMatchObject({ code: 'BILLING_PROVIDER_ERROR' });
+  });
+
+  it('refuses a transaction id Paddle did not return', async () => {
+    stubTransaction('USD', null);
+    const adapter = makeAdapter({
+      PADDLE_CLIENT_TOKEN: 'test_abc',
+      PADDLE_API_KEY: 'pdl_test_key',
+    });
+    await expect(
+      adapter.createCheckout({
+        workspaceId: WORKSPACE,
+        userEmail: 'user@example.com',
+        tierId: 'plus',
+        cycle: 'monthly',
+        providerPriceId: 'pri_x',
+      }),
+    ).rejects.toMatchObject({ code: 'BILLING_PROVIDER_ERROR' });
+  });
+
+  it('fails closed without an API key and does not return a price overlay', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const adapter = makeAdapter({ PADDLE_CLIENT_TOKEN: 'test_abc' });
+    await expect(
+      adapter.createCheckout({
+        workspaceId: WORKSPACE,
+        userEmail: 'user@example.com',
+        tierId: 'plus',
+        cycle: 'monthly',
+        providerPriceId: 'pri_x',
+      }),
+    ).rejects.toMatchObject({ code: 'BILLING_NOT_PROVISIONED' });
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   // Regression (2026-07-20): the writer emitted `workspaceId` while the
@@ -480,7 +627,11 @@ describe('PaddleAdapter checkout + cancel', () => {
   // the reader catches it. Paddle stores custom_data verbatim, so this
   // round-trip mirrors production exactly.
   it('createCheckout customData round-trips through the webhook reader', async () => {
-    const adapter = makeAdapter({ PADDLE_CLIENT_TOKEN: 'test_abc' });
+    const fetchSpy = stubTransaction();
+    const adapter = makeAdapter({
+      PADDLE_CLIENT_TOKEN: 'test_abc',
+      PADDLE_API_KEY: 'pdl_test_key',
+    });
     const session = await adapter.createCheckout({
       workspaceId: WORKSPACE,
       userEmail: 'user@example.com',
@@ -490,9 +641,14 @@ describe('PaddleAdapter checkout + cancel', () => {
     });
 
     if (session.provider !== 'paddle') throw new Error('expected a paddle session');
+    const posted = postedTransaction(fetchSpy).body.custom_data;
+    expect(posted).toEqual({ workspace_id: WORKSPACE, sig: expect.any(String) });
+    expect(session).not.toHaveProperty('customData');
 
-    // Paddle echoes customData back on the subscription as `custom_data`.
-    const echoed = paddleSubscriptionActivated({ customData: session.customData });
+    // Paddle echoes the transaction's custom_data back on the subscription.
+    const echoed = paddleSubscriptionActivated({
+      customData: posted as Record<string, unknown>,
+    });
     const event = adapter.mapWebhookEvent(echoed);
 
     if (event.kind !== 'subscription') throw new Error('expected a subscription event');

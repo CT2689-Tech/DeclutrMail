@@ -1,11 +1,11 @@
 // apps/api/src/billing/paddle.adapter.ts — Paddle Billing (API v2)
 // adapter behind the D117 `BillingProvider` seam.
 //
-// Paddle is merchant-of-record for non-India users (D117). Checkout is
-// Paddle.js OVERLAY-style: there is no server-created session — the FE
-// initializes Paddle.js with the publishable client-side token and
-// opens the overlay with the price id + customData. The webhook is the
-// only authoritative state channel.
+// Paddle is merchant-of-record (D117). While new rupee purchases are
+// paused, checkout is a server-created transaction with currency_code
+// USD; the overlay opens with that transaction id and no price id, so
+// Paddle cannot localize the charge to an INR price override. The
+// webhook is the only authoritative state channel.
 //
 // SIGNATURE (D180, built to the D229 bar): `Paddle-Signature` header
 // carries `ts=<unix-seconds>;h1=<hex hmac>` (multiple `h1` blocks
@@ -24,7 +24,11 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import { Logger } from '@nestjs/common';
-import type { CheckoutSession, SubscriptionStatus } from '@declutrmail/shared/contracts';
+import {
+  INR_NEW_PURCHASES_PAUSED,
+  type CheckoutSession,
+  type SubscriptionStatus,
+} from '@declutrmail/shared/contracts';
 import { checkoutDiscountId } from '@declutrmail/shared/entitlements';
 
 import { AppException } from '../common/app-exception.js';
@@ -450,7 +454,14 @@ export class PaddleAdapter implements BillingProvider {
   }
 
   /**
-   * Overlay checkout — pure payload assembly, no Paddle API call. The
+   * While rupee purchases are paused, create a transaction with
+   * `currency_code: USD` and return that id only. The signed
+   * `customData` stays on the transaction. Returning it, or a price
+   * id, would let a client open an overlay Paddle can localize to an
+   * INR override. There is no fallback to that overlay: a missing key
+   * or a transaction that is not USD fails closed.
+   *
+   * After the pause lifts, the session is again the price id. The
    * customer record is created provider-side at checkout completion
    * and lands in `billing_customers` via the subscription webhook.
    */
@@ -465,20 +476,98 @@ export class PaddleAdapter implements BillingProvider {
       throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
     }
     const discountId = checkoutDiscountId(this.env, input.providerPriceId);
+    const customData = {
+      workspace_id: input.workspaceId,
+      sig: attributionSignature(input.workspaceId, webhookSecret),
+    };
+    const environment = this.env.PADDLE_ENV === 'production' ? 'production' : 'sandbox';
+    if (INR_NEW_PURCHASES_PAUSED) {
+      const apiKey = this.env.PADDLE_API_KEY;
+      if (!apiKey) throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+      const created = await this.createUsdTransaction(apiKey, {
+        collection_mode: 'automatic',
+        currency_code: 'USD',
+        items: [{ price_id: input.providerPriceId, quantity: 1 }],
+        custom_data: customData,
+        ...(discountId ? { discount_id: discountId } : {}),
+      });
+      if (
+        created.currency_code !== 'USD' ||
+        typeof created.id !== 'string' ||
+        !/^txn_[a-z\d]{26}$/.test(created.id)
+      ) {
+        throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+      }
+      return {
+        provider: 'paddle',
+        kind: 'overlay',
+        transactionId: created.id,
+        clientToken,
+        environment,
+      };
+    }
     return {
       provider: 'paddle',
       kind: 'overlay',
       priceId: input.providerPriceId,
       clientToken,
-      environment: this.env.PADDLE_ENV === 'production' ? 'production' : 'sandbox',
+      environment,
       // Key must match the webhook reader (`custom_data.workspace_id`).
-      customData: {
-        workspace_id: input.workspaceId,
-        sig: attributionSignature(input.workspaceId, webhookSecret),
-      },
+      customData,
       // FILL_ME is null here, so the overlay opens with no discount.
       ...(discountId ? { discountId } : {}),
     };
+  }
+
+  /** POST /transactions with the currency fixed. Never logs the body. */
+  private async createUsdTransaction(
+    apiKey: string,
+    body: {
+      collection_mode: 'automatic';
+      currency_code: 'USD';
+      items: [{ price_id: string; quantity: 1 }];
+      custom_data: { workspace_id: string; sig: string };
+      discount_id?: string;
+    },
+  ): Promise<{ id?: unknown; currency_code?: unknown }> {
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}/transactions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'Paddle-Version': '1',
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(API_TIMEOUT_MS),
+      });
+    } catch (err) {
+      this.logger.error(
+        `paddle.checkout.network_error err=${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    if (!res.ok) {
+      this.logger.error(
+        `paddle.checkout.failed status=${res.status} body=${await providerErrorBody(res)}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    let parsed: unknown;
+    try {
+      parsed = await res.json();
+    } catch {
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    if (typeof parsed !== 'object' || parsed === null || !('data' in parsed)) {
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    const data = parsed.data;
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    return data as { id?: unknown; currency_code?: unknown };
   }
 
   private sandboxCheckoutBoundary(identity: SandboxCheckoutIdentity): void {

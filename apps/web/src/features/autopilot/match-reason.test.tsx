@@ -8,15 +8,18 @@ import { AUTO_ARCHIVE_LOW_ENGAGEMENT, PENDING_SUGGESTIONS, RULE_PREVIEW_RESULT }
 describe('recorded Autopilot match explanations', () => {
   it('does not reinterpret adjusted historical rates as raw READ flags', () => {
     const copy = describeMatchReason('Read rate 0% across all 51 messages, last seen 105d ago');
-    expect(copy.label).toBe('At matching: 51 indexed emails; last seen 105 days earlier.');
+    expect(copy.label).toBe('At matching: 51 emails from this sender; last seen 105 days earlier.');
     expect(copy.technical).toBe('Read rate 0% across all 51 messages, last seen 105d ago');
     expect(copy.label).not.toMatch(/marked read|90 days|unread/);
   });
 
   it.each([
-    ['New sender (1d old, 1 msgs)', 'At matching: first seen 1 day earlier · 1 indexed email'],
+    [
+      'New sender (1d old, 1 msgs)',
+      'At matching: first seen 1 day earlier · 1 email from this sender',
+    ],
     ['New sender (0d old)', 'At matching: first seen 0 days earlier'],
-    ['New sender (2 msgs)', 'At matching: 2 indexed emails'],
+    ['New sender (2 msgs)', 'At matching: 2 emails from this sender'],
   ])('retains the actual branch evidence: %s', (reason, label) => {
     expect(describeMatchReason(reason)).toEqual({ label, technical: null });
   });
@@ -106,7 +109,7 @@ describe('recorded Autopilot match explanations', () => {
       />,
     );
     expect(
-      screen.getByText('At matching: 25 indexed emails; last seen 181 days earlier.'),
+      screen.getByText('At matching: 25 emails from this sender; last seen 181 days earlier.'),
     ).toBeVisible();
     expect(screen.getByText('Show recorded match details')).toBeVisible();
     expect(

@@ -210,7 +210,7 @@ function stubSubscription(respond: () => Response | Promise<Response>) {
 function renderScreen(
   initialIntent: BillingIntent | null = null,
   returnTo?: string,
-  options?: { pricingV2?: boolean },
+  options?: { pricingV2?: boolean; country?: string | null },
 ) {
   const client = createTestQueryClient();
   return render(
@@ -219,6 +219,7 @@ function renderScreen(
         initialIntent={initialIntent}
         returnTo={returnTo}
         {...(options?.pricingV2 ? { pricingV2: true } : {})}
+        {...(options?.country !== undefined ? { country: options.country } : {})}
       />
     </QueryWrapper>,
   );
@@ -549,9 +550,16 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     );
     const panel = await screen.findByTestId('checkout-panel');
     expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeChecked();
-    const paused = within(panel).getByRole('button', { name: 'INR checkout paused' });
+    const paused = within(panel).getByRole('button', { name: 'Paused for now' });
     expect(paused).toBeDisabled();
-    expect(within(panel).getByText(/New INR purchases are temporarily paused/)).toBeInTheDocument();
+    expect(panel).toHaveTextContent(
+      'Buying a plan in rupees is paused for now. Email support@declutrmail.com for help.',
+    );
+    expect(
+      within(panel)
+        .getByLabelText(/UPI · cards · netbanking/)
+        .closest('label'),
+    ).toHaveTextContent('Paused for now');
     expect(within(panel).queryByText(/billed monthly, starting today/)).not.toBeInTheDocument();
     fireEvent.click(paused);
     expect(launchCheckout).not.toHaveBeenCalled();
@@ -2033,8 +2041,7 @@ describe('BillingScreen — checkout funnel events', () => {
     {
       code: 'BILLING_NOT_PROVISIONED',
       reason: 'inr_checkout_paused',
-      message:
-        'New INR purchases are temporarily paused. Contact support@declutrmail.com for help.',
+      message: 'Buying a plan in rupees is paused for now. Email support@declutrmail.com for help.',
     },
   ])(
     'pre-claim $code failure releases the reservation and never creates a session',
@@ -2220,6 +2227,71 @@ describe('BillingScreen — paid subscriber', () => {
     expect(within(panel).queryByText('30-day money-back guarantee')).not.toBeInTheDocument();
     expect(within(panel).queryByRole('checkbox')).not.toBeInTheDocument();
     expect(within(panel).queryByText(/Claim Founding Pro/)).not.toBeInTheDocument();
+  });
+
+  it('PRICING_V2 pauses an India Paddle checkout on /billing', async () => {
+    let checkoutPosts = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: () => {
+          checkoutPosts += 1;
+          return jsonOk({ data: {} });
+        },
+      },
+    ]);
+    renderScreen(null, undefined, { pricingV2: true, country: 'IN' });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
+    const panel = await screen.findByTestId('checkout-panel');
+    expect(panel).toHaveTextContent(
+      'Buying a plan in rupees is paused for now. Email support@declutrmail.com for help.',
+    );
+    expect(panel).not.toHaveTextContent(/billed yearly/);
+    const paused = within(panel).getByRole('button', { name: 'Paused for now' });
+    expect(paused).toBeDisabled();
+    fireEvent.click(paused);
+    expect(checkoutPosts).toBe(0);
+    expect(launchCheckout).not.toHaveBeenCalled();
+  });
+
+  it('PRICING_V2 leaves a US Paddle checkout open on /billing', async () => {
+    let checkoutBody: unknown = null;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: async (req) => {
+          checkoutBody = await req.json();
+          return paddleSessionOk();
+        },
+      },
+    ]);
+    renderScreen(null, undefined, { pricingV2: true, country: 'US' });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
+    const panel = await screen.findByTestId('checkout-panel');
+    expect(panel).toHaveTextContent(/\$59 billed yearly/);
+    expect(panel).not.toHaveTextContent(/paused for now/i);
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    await waitFor(() =>
+      expect(checkoutBody).toEqual({
+        tierId: 'plus',
+        cycle: 'annual',
+        provider: 'paddle',
+      }),
+    );
   });
 
   it('PRICING_V2 hides the founding member sales banner', async () => {
