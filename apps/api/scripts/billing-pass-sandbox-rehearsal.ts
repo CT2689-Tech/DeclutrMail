@@ -26,8 +26,9 @@ import {
 import {
   discountMatchesPercent,
   discountPriceIds,
+  paddleProviderCode,
   passTransactionCreateBody,
-  rehearsalCheckoutLink,
+  rehearsalPayUrl,
   renderSandboxPayPage,
   renewalIsFullPrice,
   SANDBOX_API_ORIGIN,
@@ -108,15 +109,16 @@ async function api(path: string, method = 'GET', body?: unknown) {
     signal: AbortSignal.timeout(20_000),
   });
   if (!response.ok) {
-    let providerCode = '';
+    let providerCode: string | null;
     try {
-      const parsed = (await response.json()) as { error?: { code?: unknown } };
-      if (typeof parsed.error?.code === 'string' && /^[a-z0-9_]{1,64}$/.test(parsed.error.code))
-        providerCode = parsed.error.code;
+      providerCode = paddleProviderCode(await response.json());
     } catch {
-      providerCode = '';
+      providerCode = null;
     }
-    evidence.providerCode = providerCode || evidence.providerCode;
+    if (providerCode) {
+      evidence.providerCode = providerCode;
+      console.error(`rehearsal.provider_code=${providerCode}`);
+    }
     throw new Error(`sandbox_http_${response.status}`);
   }
   if (response.status === 204) return { data: {} as Record<string, unknown> };
@@ -181,12 +183,18 @@ const server = createServer((req, res) => {
         await webhook(req, res);
         return;
       }
-      if (req.method === 'GET' && url.pathname === '/pay' && clientToken) {
+      const txn = url.searchParams.get('_ptxn') ?? '';
+      if (
+        req.method === 'GET' &&
+        url.pathname === '/pay' &&
+        clientToken &&
+        transactionIds.has(txn)
+      ) {
         res.writeHead(200, {
           'Content-Type': 'text/html; charset=utf-8',
           'Cache-Control': 'no-store',
         });
-        res.end(renderSandboxPayPage(clientToken));
+        res.end(renderSandboxPayPage(clientToken, txn));
         return;
       }
       json(res, 403, { error: 'private' });
@@ -236,35 +244,15 @@ async function openTransaction(input: {
     'POST',
     passTransactionCreateBody({
       ...input,
-      checkoutUrl: `${publicUrl}/pay`,
       signature: signWorkspace(input.workspaceId),
     }),
   );
   const id = String(created.data.id);
   if (!/^txn_[a-z\d]{26}$/.test(id)) throw new Error('Sandbox transaction was not created');
   transactionIds.add(id);
-  const url = await checkoutUrl(id, created.data);
-  if (!rehearsalCheckoutLink(publicUrl, url))
-    throw new Error('Checkout link was not the rehearsal page');
+  const url = rehearsalPayUrl(publicUrl, id);
   const money = moneyOf(created.data);
   return { id, url, ...money };
-}
-
-async function checkoutUrl(id: string, data: Record<string, unknown>): Promise<string> {
-  const read = (row: Record<string, unknown>) => {
-    const checkout = row.checkout as { url?: unknown } | null;
-    return typeof checkout?.url === 'string' && checkout.url.startsWith('https://')
-      ? checkout.url
-      : '';
-  };
-  let url = read(data);
-  const deadline = Date.now() + 20_000;
-  while (!url && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    url = read(await transaction(id));
-  }
-  if (!url) throw new Error('Sandbox checkout link was missing');
-  return url;
 }
 
 function moneyOf(data: Record<string, unknown>): { subtotal: string; discount: string } {

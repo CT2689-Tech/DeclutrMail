@@ -46,43 +46,50 @@ export function withinWindow(actual: Date, expectedMs: number, toleranceMs: numb
 const REHEARSAL_HOST = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/;
 const CLIENT_TOKEN = /^test_[A-Za-z0-9_]{8,200}$/;
 const TXN_ID = /^txn_[a-z\d]{26}$/;
+const PROVIDER_CODE = /^[a-z0-9_]{1,64}$/;
+
+/**
+ * Paddle's `error.code` only. Detail, URLs, and tokens stay out of the log.
+ * Run 38206813935 returned `transaction_checkout_url_domain_is_not_approved`.
+ */
+export function paddleProviderCode(body: unknown): string | null {
+  const code = (body as { error?: { code?: unknown } } | null)?.error?.code;
+  return typeof code === 'string' && PROVIDER_CODE.test(code) ? code : null;
+}
 
 /**
  * One-time and annual transactions both use automatic collection.
- * `checkout.url` must be our page. Paddle's default payment link does not
- * load Paddle.js, so a browser that opens it never reaches a card form.
+ * `checkout.url` is omitted. Paddle rejects an unapproved domain there,
+ * and each tunnel host is new. The page opens the transaction itself.
  */
 export function passTransactionCreateBody(input: {
   priceId: string;
   workspaceId: string;
   customerId: string;
   addressId: string;
-  checkoutUrl: string;
   signature: string;
   discountId?: string;
 }): Record<string, unknown> {
-  let origin: string;
-  try {
-    origin = new URL(input.checkoutUrl).origin;
-  } catch {
-    origin = '';
-  }
-  if (!REHEARSAL_HOST.test(origin) || !input.checkoutUrl.endsWith('/pay'))
-    throw new Error('Checkout page was not the rehearsal host');
   return {
     items: [{ price_id: input.priceId, quantity: 1 }],
     customer_id: input.customerId,
     address_id: input.addressId,
     currency_code: 'USD',
     collection_mode: 'automatic',
-    checkout: { url: input.checkoutUrl },
     custom_data: { workspace_id: input.workspaceId, sig: input.signature },
     ...(input.discountId ? { discount_id: input.discountId } : {}),
   };
 }
 
-/** The returned link is our page plus Paddle's `_ptxn`, never the default payment link. */
-export function rehearsalCheckoutLink(publicUrl: string, checkoutUrl: string): boolean {
+/** Our page plus the transaction id. This is not Paddle's checkout link. */
+export function rehearsalPayUrl(publicUrl: string, transactionId: string): string {
+  const url = `${publicUrl}/pay?_ptxn=${transactionId}`;
+  if (!rehearsalCheckoutLink(publicUrl, url))
+    throw new Error('Checkout page was not the rehearsal host');
+  return url;
+}
+
+function rehearsalCheckoutLink(publicUrl: string, checkoutUrl: string): boolean {
   if (!REHEARSAL_HOST.test(publicUrl)) return false;
   try {
     const url = new URL(checkoutUrl);
@@ -93,9 +100,10 @@ export function rehearsalCheckoutLink(publicUrl: string, checkoutUrl: string): b
   }
 }
 
-/** Sandbox Paddle.js page. Initialize reads `_ptxn` from the location and opens checkout. */
-export function renderSandboxPayPage(clientToken: string): string {
+/** Sandbox Paddle.js page. Opens the known transaction. No `checkout.url`. */
+export function renderSandboxPayPage(clientToken: string, transactionId: string): string {
   if (!CLIENT_TOKEN.test(clientToken)) throw new Error('Sandbox client token required');
+  if (!TXN_ID.test(transactionId)) throw new Error('Sandbox transaction required');
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -106,10 +114,15 @@ export function renderSandboxPayPage(clientToken: string): string {
 <body>
 <script>
 Paddle.Environment.set("sandbox");
-Paddle.Initialize({
+var ready = Paddle.Initialize({
   token: ${JSON.stringify(clientToken)},
   checkout: { settings: { displayMode: "overlay", variant: "one-page" } }
 });
+function openCheckout() {
+  Paddle.Checkout.open({ transactionId: ${JSON.stringify(transactionId)} });
+}
+if (ready && typeof ready.then === "function") ready.then(openCheckout);
+else openCheckout();
 </script>
 </body>
 </html>`;

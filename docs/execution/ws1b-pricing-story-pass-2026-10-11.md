@@ -105,12 +105,15 @@ write was made.
   then failed at `pass_first` with `Sandbox checkout payment was not
 completed` and `checkoutFrames` empty. Paddle's `checkout.url` was
   the account default payment link plus `_ptxn`, and that page does
-  not load Paddle.js, so the card form never opened. The rehearsal
-  now creates a disposable `test_` client token, serves `GET /pay`
-  with sandbox Paddle.js, and sets `checkout.url` to that page. It
-  rejects a returned link whose origin, path, or `_ptxn` is not that
-  page. The one-time body stays `collection_mode: automatic` with
-  quantity 1 and no `billing_cycle`. The token is revoked on
+  not load Paddle.js, so the card form never opened. Run 38206813935
+  on `8103e8e6` then returned HTTP 400
+  `transaction_checkout_url_domain_is_not_approved` because the
+  create body set `checkout.url` to the new trycloudflare host.
+  The create body no longer sends `checkout.url`. `GET /pay` calls
+  `Paddle.Checkout.open({ transactionId })` for a transaction this
+  run created. The log line is `rehearsal.provider_code=` plus that
+  code only. The one-time body stays `collection_mode: automatic`
+  with quantity 1 and no `billing_cycle`. The token is revoked on
   shutdown. The boundary check is unchanged. The purchase has not
   passed until a later run says so.
 - The launch refund window is 14 days. `POLICY.refundWindowDays` is 14.

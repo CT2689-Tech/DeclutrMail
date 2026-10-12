@@ -6,8 +6,9 @@ import { describe, expect, it } from 'vitest';
 import {
   discountMatchesPercent,
   discountPriceIds,
+  paddleProviderCode,
   passTransactionCreateBody,
-  rehearsalCheckoutLink,
+  rehearsalPayUrl,
   renderSandboxPayPage,
   renewalIsFullPrice,
   SANDBOX_API_ORIGIN,
@@ -42,18 +43,18 @@ describe('Backlog Pass sandbox rehearsal checks', () => {
     ).toBe(false);
   });
 
-  it('opens checkout on the rehearsal page instead of the default payment link', () => {
+  it('opens the transaction on our page without checkout.url', () => {
     const host = 'https://fixture-host.trycloudflare.com';
+    const txn = 'txn_0123456789abcdefghijklmnop';
     const body = passTransactionCreateBody({
       priceId: 'pri_01m4phkr8yhydb76dz11b74br8',
       workspaceId: 'ws',
       customerId: 'ctm_0123456789abcdefghijklmnop',
       addressId: 'add_0123456789abcdefghijklmnop',
-      checkoutUrl: `${host}/pay`,
       signature: 'sig',
     });
     expect(body.collection_mode).toBe('automatic');
-    expect(body.checkout).toEqual({ url: `${host}/pay` });
+    expect(body).not.toHaveProperty('checkout');
     expect(body).not.toHaveProperty('billing_cycle');
     expect(body.items).toEqual([{ price_id: 'pri_01m4phkr8yhydb76dz11b74br8', quantity: 1 }]);
     expect(body).not.toHaveProperty('discount_id');
@@ -63,32 +64,45 @@ describe('Backlog Pass sandbox rehearsal checks', () => {
         workspaceId: 'ws',
         customerId: 'ctm_0123456789abcdefghijklmnop',
         addressId: 'add_0123456789abcdefghijklmnop',
-        checkoutUrl: `${host}/pay`,
         signature: 'sig',
         discountId: 'dsc_01m4phpp04scdes9ghqn3qps77',
       }).discount_id,
     ).toBe('dsc_01m4phpp04scdes9ghqn3qps77');
-    expect(() =>
-      passTransactionCreateBody({
-        priceId: 'pri_01m4phkr8yhydb76dz11b74br8',
-        workspaceId: 'ws',
-        customerId: 'ctm',
-        addressId: 'add',
-        checkoutUrl: 'https://declutrmail.com/pricing',
-        signature: 'sig',
-      }),
-    ).toThrow('Checkout page was not the rehearsal host');
-    const txn = 'txn_0123456789abcdefghijklmnop';
-    expect(rehearsalCheckoutLink(host, `${host}/pay?_ptxn=${txn}`)).toBe(true);
-    expect(rehearsalCheckoutLink(host, `https://buy.paddle.com/pay?_ptxn=${txn}`)).toBe(false);
-    expect(rehearsalCheckoutLink(host, `${host}/?_ptxn=${txn}`)).toBe(false);
-    const page = renderSandboxPayPage('test_sandboxtoken');
+    expect(rehearsalPayUrl(host, txn)).toBe(`${host}/pay?_ptxn=${txn}`);
+    expect(() => rehearsalPayUrl('https://declutrmail.com', txn)).toThrow(
+      'Checkout page was not the rehearsal host',
+    );
+    expect(() => rehearsalPayUrl(host, 'txn_short')).toThrow(
+      'Checkout page was not the rehearsal host',
+    );
+    const page = renderSandboxPayPage('test_sandboxtoken', txn);
     expect(page).toContain('https://cdn.paddle.com/paddle/v2/paddle.js');
     expect(page).toContain('Paddle.Environment.set("sandbox")');
     expect(page).toContain('"test_sandboxtoken"');
+    expect(page).toContain(`Paddle.Checkout.open({ transactionId: "${txn}" })`);
+    expect(page).not.toContain('checkout.url');
     expect(page).not.toContain('api.paddle.com');
     expect(page).not.toContain('production');
-    expect(() => renderSandboxPayPage('live_token')).toThrow('Sandbox client token required');
+    expect(() => renderSandboxPayPage('live_token', txn)).toThrow('Sandbox client token required');
+    expect(() => renderSandboxPayPage('test_sandboxtoken', 'not-a-transaction')).toThrow(
+      'Sandbox transaction required',
+    );
+    expect(
+      paddleProviderCode({
+        error: {
+          code: 'transaction_checkout_url_domain_is_not_approved',
+          detail: 'https://secret.example/key',
+        },
+      }),
+    ).toBe('transaction_checkout_url_domain_is_not_approved');
+    expect(paddleProviderCode({ error: { code: 'https://secret.example' } })).toBeNull();
+    expect(paddleProviderCode({ error: { detail: 'pdl_sdbx_apikey_secret' } })).toBeNull();
+    const source = readFileSync(
+      resolve(import.meta.dirname, '../../../scripts/billing-pass-sandbox-rehearsal.ts'),
+      'utf8',
+    );
+    expect(source).not.toMatch(/checkout:\s*\{\s*url/);
+    expect(source).toContain('rehearsal.provider_code=');
     expect(SANDBOX_CARD_SELECTORS).toEqual(
       expect.arrayContaining([
         'input[name="cardnumber"]',
