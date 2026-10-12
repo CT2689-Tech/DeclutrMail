@@ -322,10 +322,20 @@ describe('SortMenu', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 
-  it('offers only sorts the API implements', async () => {
+  it('offers the sorts the API implements', async () => {
     const user = userEvent.setup();
     render(<SortMenu sort="total" direction="desc" onChange={vi.fn()} />);
     await user.click(screen.getByRole('button', { name: /sort/i }));
     expect(screen.queryByRole('menuitemradio', { name: /recommended/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('menuitemradio', { name: 'Largest senders' })).toBeInTheDocument();
+  });
+
+  it('sorts by largest senders', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<SortMenu sort="total" direction="desc" onChange={onChange} />);
+    await user.click(screen.getByRole('button', { name: /sort/i }));
+    await user.click(screen.getByRole('menuitemradio', { name: 'Largest senders' }));
+    expect(onChange).toHaveBeenCalledWith({ sort: 'size', direction: 'desc' });
   });
 });

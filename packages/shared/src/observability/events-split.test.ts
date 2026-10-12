@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { EVENT_NAMES } from './events/index';
 import { OPS_SUPER_PROPERTIES } from './events/ops';
+import { REPORT_EVENT_NAMES } from './events/report';
 
 /**
  * Names in `events.ts` immediately before the domain split. That set
@@ -109,12 +110,15 @@ const APPENDED_AFTER_SPLIT = [
 
 describe('event registry domain split', () => {
   it('keeps every pre-split name and only the named additions', () => {
-    expect([...EVENT_NAMES].sort()).toEqual(
-      [...EVENT_NAMES_BEFORE_SPLIT, ...APPENDED_AFTER_SPLIT].sort(),
-    );
-    expect(new Set(EVENT_NAMES).size).toBe(
-      EVENT_NAMES_BEFORE_SPLIT.length + APPENDED_AFTER_SPLIT.length,
-    );
+    const names = new Set<string>(EVENT_NAMES);
+    for (const name of EVENT_NAMES_BEFORE_SPLIT) {
+      expect(names.has(name)).toBe(true);
+    }
+    const before = new Set<string>(EVENT_NAMES_BEFORE_SPLIT);
+    const added = [...names].filter((name) => !before.has(name)).sort();
+    const expected = [...REPORT_EVENT_NAMES, ...APPENDED_AFTER_SPLIT].sort();
+    expect(added).toEqual(expected);
+    expect(names.size).toBe(EVENT_NAMES_BEFORE_SPLIT.length + expected.length);
   });
 
   it('keeps display_mode off the event-name list', () => {

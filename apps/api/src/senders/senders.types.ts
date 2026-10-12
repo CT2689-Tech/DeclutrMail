@@ -151,6 +151,12 @@ export interface SenderListRow {
    */
   totalReceived: number;
   /**
+   * Sum of Gmail size estimates for inbound mail from this sender,
+   * including Trash. Null when every stored estimate for the sender is
+   * null. The UI must not invent a size from null.
+   */
+  sizeBytes?: number | null;
+  /**
    * Messages currently carrying INBOX for this sender — the set every
    * inbox-scoped verb can act on. Live correlated count (not a
    * maintained counter — label membership changes on every action and
@@ -462,7 +468,8 @@ export interface SenderPolicyResult {
  * recommendation-engine integration that does not exist yet. Sending
  * either today returns a 400 from the controller.
  */
-export type SenderListSort = 'total' | 'last_seen' | 'first_seen' | 'name' | 'read' | 'recommended';
+export type SenderListSort =
+  'total' | 'last_seen' | 'first_seen' | 'name' | 'size' | 'read' | 'recommended';
 
 /** Sort direction — server applies a sane default per `sort` if omitted. */
 export type SenderListDirection = 'asc' | 'desc';

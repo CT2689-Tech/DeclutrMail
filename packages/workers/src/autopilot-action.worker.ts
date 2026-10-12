@@ -5,6 +5,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import {
   actionJobs,
   activityLog,
+  invalidateInboxReportCache,
   AUTOPILOT_CLAIM_KEY_PREFIXES,
   AUTOPILOT_PRESET_KEYS,
   type AutopilotPresetKey,
@@ -1730,6 +1731,8 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
         .update(ruleMatchLog)
         .set({ intentApplied: true, intentToken: issued.token, resolvedAt: now })
         .where(and(eq(ruleMatchLog.id, match.matchId), eq(ruleMatchLog.intentApplied, false)));
+
+      if (ids.length > 0) await invalidateInboxReportCache(tx, mailboxAccountId);
     });
     return 'executed';
   }

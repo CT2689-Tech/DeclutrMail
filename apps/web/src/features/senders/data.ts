@@ -429,6 +429,11 @@ export interface ActionRequest {
     peopleCount: number;
   };
   /**
+   * Protected senders from the selection. Unsubscribe confirm includes
+   * them so the result can name the skip. They are not actionable.
+   */
+  protectedSenderIds?: string[];
+  /**
    * ELIGIBLE senders before the monthly cleanup quota capped this
    * request — not the selection total. Set only when the cap actually
    * bit, and paired with copy that says "eligible": on a selection that

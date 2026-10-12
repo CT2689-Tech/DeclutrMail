@@ -17,12 +17,14 @@ import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbo
 import { RateLimit } from '../common/rate-limit/index.js';
 import { ActionRecoveryService } from './action-recovery.service.js';
 import { ActionsService } from './actions.service.js';
+import { UnsubscribeBacklogService } from './unsubscribe-backlog.service.js';
 import {
   actionRecoveryConfirmRequestSchema,
   bulkPreviewRequestSchema,
   compositeActionRequestSchema,
   keepIntentRequestSchema,
   unsubscribeIntentRequestSchema,
+  unsubscribeBacklogRequestSchema,
   unsubscribeManualStatusRequestSchema,
   type ActionRecoveryEnqueueResult,
   type ActionRecoveryPreviewResult,
@@ -35,6 +37,7 @@ import {
   type CompositeActionPreviewResult,
   type KeepIntentResult,
   type UnsubscribeIntentResult,
+  type UnsubscribeBacklogResult,
   type UnsubscribeManualStatusResult,
 } from './actions.types.js';
 
@@ -62,6 +65,7 @@ export class ActionsController {
   constructor(
     private readonly actions: ActionsService,
     private readonly recovery: ActionRecoveryService,
+    private readonly unsubscribeBacklog: UnsubscribeBacklogService,
   ) {}
 
   /**
@@ -222,6 +226,47 @@ export class ActionsController {
       senderId: parsed.data.senderId,
       idempotencyKey: idempotencyKey.trim(),
       includesBacklogAction: parsed.data.includesBacklogAction,
+      override: parsed.data.override,
+    });
+    return ok(result);
+  }
+
+  /**
+   * POST /api/actions/unsubscribe-backlog — one confirmation for
+   * unsubscribe plus an optional Archive or Delete of mail already here.
+   *
+   * The backlog job is enqueued first. A 402 leaves zero unsubscribe
+   * intents and zero unsubscribe queue jobs. Undo reverses the backlog
+   * only; a delivered unsubscribe request is not recalled.
+   */
+  @RateLimit({ bucket: 'gmail-action' })
+  @Post('unsubscribe-backlog')
+  @UseGuards(CsrfGuard)
+  async unsubscribeBacklogConfirm(
+    @CurrentMailbox() mailbox: { id: string },
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Body() body: unknown,
+  ): Promise<Envelope<UnsubscribeBacklogResult>> {
+    if (!idempotencyKey || idempotencyKey.trim().length < 8) {
+      throw new BadRequestException({
+        code: 'IDEMPOTENCY_KEY_REQUIRED',
+        message: 'An Idempotency-Key header (≥8 chars) is required for actions.',
+      });
+    }
+    const parsed = unsubscribeBacklogRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: 'INVALID_REQUEST',
+        message: parsed.error.issues[0]?.message ?? 'Invalid unsubscribe-backlog request.',
+      });
+    }
+    const result = await this.unsubscribeBacklog.confirm({
+      mailboxAccountId: mailbox.id,
+      idempotencyKey: idempotencyKey.trim(),
+      mode: parsed.data.mode,
+      senderIds: parsed.data.senderIds,
+      olderThanDays: parsed.data.olderThanDays ?? null,
+      ...(parsed.data.reach ? { reach: parsed.data.reach } : {}),
       override: parsed.data.override,
     });
     return ok(result);

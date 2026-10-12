@@ -371,7 +371,7 @@ describe('InboxSimulatorScreen', () => {
     expect(screen.getByText('2 of 4 decisions complete')).toBeInTheDocument();
   });
 
-  it('offers the historic-archive option on Unsubscribe, off by default', () => {
+  it('archives existing inbox mail by default on Unsubscribe', () => {
     render(<InboxSimulatorScreen />);
     fireEvent.click(screen.getByRole('button', { name: `Explore ${TRIAGE_QUEUE.length} senders` }));
     const unsubscribableRow = TRIAGE_QUEUE.find((row) => row.unsubscribeMethod !== 'none')!;
@@ -383,10 +383,10 @@ describe('InboxSimulatorScreen', () => {
       within(header.parentElement!).getByRole('button', { name: /Unsubscribe \(U\)/ }),
     );
 
-    const toggle = screen.getByRole('checkbox', {
-      name: /Also archive the .* already in the inbox/i,
-    });
-    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('radio', { name: 'Unsubscribe only' })).not.toBeChecked();
+    expect(within(dialog).getByRole('radio', { name: /\+ Archive/ })).toBeChecked();
+    expect(within(dialog).getAllByText('Unsubscribe only')).toHaveLength(1);
   });
 
   it('reflects a ticked historic-archive toggle in the recorded outcome, and the count survives persistence', async () => {
@@ -408,13 +408,8 @@ describe('InboxSimulatorScreen', () => {
       within(header.parentElement!).getByRole('button', { name: /Unsubscribe \(U\)/ }),
     );
 
-    const toggle = screen.getByRole('checkbox', {
-      name: /Also archive the .* already in the inbox/i,
-    });
-    fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute('aria-checked', 'true');
-
     const dialog = sheetFor(unsubscribableRow.senderName);
+    expect(within(dialog).getByRole('radio', { name: /\+ Archive/ })).toBeChecked();
     fireEvent.click(within(dialog).getByRole('button', { name: /^Unsubscribe/ }));
 
     const expectedCount = syntheticInboxCount(unsubscribableRow);
@@ -527,9 +522,11 @@ describe('InboxSimulatorScreen', () => {
     const archiveBatch = findDomainBatches(TRIAGE_QUEUE).find(
       (batch) => batch.domain === 'amazon.com',
     )!;
+    const linkedin = TRIAGE_QUEUE.find((row) => row.id === 't-linkedin')!;
     const inboxRemoved =
       archiveBatch.eligibleRows.reduce((total, row) => total + syntheticInboxCount(row), 0) +
-      syntheticInboxCount(deletedRow);
+      syntheticInboxCount(deletedRow) +
+      syntheticInboxCount(linkedin);
     const expectInboxOutcome = () => {
       const outcome = screen.getByLabelText('Sample outcome');
       expect(within(outcome).getByText('Cleared from Inbox').nextElementSibling).toHaveTextContent(

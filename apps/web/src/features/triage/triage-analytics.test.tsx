@@ -283,20 +283,26 @@ describe('triage_action_taken (D159)', () => {
     addFetchHandlers([
       {
         method: 'POST',
-        path: '/api/actions/unsubscribe-intent',
+        path: '/api/actions/unsubscribe-backlog',
         respond: () =>
           jsonOk({
             data: {
-              senderId: LINKEDIN.senderId,
-              recordedAt: new Date().toISOString(),
-              activityLogId: '77777777-7777-4777-8777-777777777777',
-              method: 'none',
-              executionActionId: null,
-              mailtoUrl: null,
+              mode: 'archive',
+              backlog: { actionId: ACTION_ID, requestedCount: 47, verb: 'archive' },
+              senders: [
+                {
+                  senderId: LINKEDIN.senderId,
+                  method: 'one_click',
+                  mailtoUrl: null,
+                  executionActionId: null,
+                  lifecycleStatus: null,
+                  unsubStatus: 'requested',
+                  reasonCode: null,
+                },
+              ],
             },
           }),
       },
-      enqueueOkHandler,
       statusDoneHandler,
     ]);
     renderScreen();
@@ -304,8 +310,6 @@ describe('triage_action_taken (D159)', () => {
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    // Backlog is a separate Gmail mutation, so opt in explicitly.
-    fireEvent.click(screen.getByRole('checkbox', { name: /Also archive the/i }));
     await confirmOpenSheet('Unsubscribe');
 
     await waitFor(() => expect(actionTakenCalls()).toHaveLength(1));
@@ -313,7 +317,7 @@ describe('triage_action_taken (D159)', () => {
       verb: 'unsubscribe',
       sender_id: LINKEDIN.senderId,
       matched_recommendation: true,
-      requested_messages: 0,
+      requested_messages: 47,
       source: 'sheet',
     });
     // Let the backlog enqueue + poll settle — still one event.

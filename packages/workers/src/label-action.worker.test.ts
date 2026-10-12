@@ -2,6 +2,7 @@ import type { schema } from '@declutrmail/db';
 import {
   actionJobs,
   activityLog,
+  inboxReportCache,
   mailMessages,
   mailboxAccounts,
   outboxEvents,
@@ -225,6 +226,11 @@ describe('LabelActionWorker', () => {
     });
 
     it('resolves inbox-only, mutates, and writes the full terminal tx', async () => {
+      await db.insert(inboxReportCache).values({
+        mailboxAccountId: mailboxId,
+        payload: { receivedCount: 2 },
+        generatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      });
       const [job] = await db
         .insert(actionJobs)
         .values({
@@ -288,6 +294,7 @@ describe('LabelActionWorker', () => {
       expect(byId['m1']).not.toContain('INBOX');
       expect(byId['m2']).not.toContain('INBOX');
       expect(byId['m3']).toContain('CATEGORY_PROMOTIONS');
+      expect(await db.select().from(inboxReportCache)).toEqual([]);
     });
 
     // COVERAGE NOTE. The windows are DERIVED now, not the literals
@@ -1336,6 +1343,11 @@ describe('LabelActionWorker', () => {
     });
 
     it('skips a job whose sender became Protected: nothing changed, recorded, or announced', async () => {
+      await db.insert(inboxReportCache).values({
+        mailboxAccountId: mailboxId,
+        payload: { receivedCount: 2 },
+        generatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      });
       const job = await forwardJob();
       await protect();
 
@@ -1378,6 +1390,7 @@ describe('LabelActionWorker', () => {
       expect(await db.select().from(activityLog)).toEqual([]);
       expect(await db.select().from(outboxEvents)).toEqual([]);
       expect(await db.select().from(undoJournal)).toEqual([]);
+      expect(await db.select().from(inboxReportCache)).toHaveLength(1);
     });
 
     it('a skipped Later never schedules a wake time', async () => {

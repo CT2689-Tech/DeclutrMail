@@ -108,11 +108,13 @@ describe('WS3 token fill', () => {
     expect(glanceLines().some((line) => line.includes('If you allow AI'))).toBe(true);
     const aiFact = llmsKeyFacts()[3];
     expect(aiFact).toBe(fillWs3(WS3_COPY['ws3.llms.keyFacts'][3]));
-    expect(aiFact).toContain('in-app consent card');
+    expect(aiFact).toContain('allows it in the app');
+    expect(aiFact).not.toMatch(/consent card/);
     expect(aiFact).toContain('Settings → AI');
     expect(aiFact).not.toContain('Pro Brief');
     expect(llmsStorageAiLine()).toBe(fillWs3(WS3_COPY['ws3.llms.storageAi.gate']));
-    expect(llmsStorageAiLine()).toContain('in-app consent card');
+    expect(llmsStorageAiLine()).toContain('allows AI in the app');
+    expect(llmsStorageAiLine()).not.toMatch(/consent card/);
     expect(gatedText('ws3.privacy.ai.explanations')).toBe(
       fillWs3(WS3_COPY['ws3.privacy.ai.explanations']),
     );

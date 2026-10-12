@@ -13,6 +13,7 @@ export * from './dead-letter-jobs';
 export * from './domain-icons';
 export * from './entitlement-grants';
 export * from './followup-tracker';
+export * from './inbox-report-cache';
 export * from './mail-messages';
 export * from './mailbox-accounts';
 export * from './mailbox-labels';

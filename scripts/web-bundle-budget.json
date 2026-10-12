@@ -26,8 +26,8 @@
       "budgetKb": 279
     },
     "/(app)/home/page": {
-      "measuredKb": 259.3,
-      "budgetKb": 273
+      "measuredKb": 261.1,
+      "budgetKb": 275
     },
     "/(app)/later/page": {
       "measuredKb": 262.1,
@@ -46,8 +46,8 @@
       "budgetKb": 305
     },
     "/(app)/senders/page": {
-      "measuredKb": 306.1,
-      "budgetKb": 322
+      "measuredKb": 309.1,
+      "budgetKb": 325
     },
     "/(app)/settings/help/page": {
       "measuredKb": 270.1,

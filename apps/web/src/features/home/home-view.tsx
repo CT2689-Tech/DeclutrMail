@@ -11,6 +11,7 @@ import {
   type TierId,
 } from '@declutrmail/shared/entitlements';
 import { EditorialKicker } from '@/features/editorial/page';
+import { InboxReportCard } from '@/features/inbox-report';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { HomeScanRecovery } from './home-scan-recovery';
 import { SYNC_FAILED_ACTION, type HomeAction, type HomeStat, type HomeState } from './home-state';
@@ -26,10 +27,12 @@ export function HomeView({
   timeZone = 'UTC',
   visitSummary,
   quota,
+  mailboxId = null,
 }: {
   state: HomeState;
   visitSummary?: ReactNode;
   quota?: string | undefined;
+  mailboxId?: string | null;
   tier?: TierId;
   workflows?: HomeWorkflows | undefined;
   timeZone?: string;
@@ -60,6 +63,11 @@ export function HomeView({
           </p>
         </div>
       </header>
+      {mailboxId ? (
+        <div className={`${styles.reportSlot} dm-home-report-card`} data-home-report-card>
+          <InboxReportCard surface="home" mailboxId={mailboxId} />
+        </div>
+      ) : null}
       {quota && <p className={styles.subtitle}>{quota}</p>}
       {visitSummary}
       <HomeBody state={state} tier={tier} workflows={workflows} timeZone={timeZone} />

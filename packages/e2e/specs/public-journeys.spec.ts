@@ -75,7 +75,7 @@ test('guide visitor evaluates privacy and pricing, tries cleanup and undo, then 
   await expect(preview).toBeVisible();
   await preview.getByRole('button', { name: /^Archive [\d,]+$/ }).click();
   await expect(preview).toHaveCount(0);
-  const undoButtons = page.getByRole('button', { name: 'Undo mail movement', exact: true });
+  const undoButtons = page.getByRole('button', { name: 'Undo', exact: true });
   const undo = undoButtons.first();
   await expect(undo).toBeVisible();
   const undoableBefore = await undoButtons.count();

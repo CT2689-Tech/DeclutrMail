@@ -11,6 +11,10 @@
 .workspace[data-split] {
   grid-template-columns: var(--sender-workspace-columns);
 }
+.reportBand {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
 .listColumn {
   display: flex;
   flex-direction: column;

@@ -74,6 +74,12 @@ export interface ActivityRow {
   executionState: ActivityExecutionState | null;
   /** D246 review bucket, also used by exact evidence links. */
   reviewOutcome: ActivityReviewOutcome | null;
+  /**
+   * This archive or delete row is the one Activity entry for an
+   * unsubscribe-and-move that shares its correlation id. The separate
+   * unsubscribe row is omitted. Undo stays on this row.
+   */
+  combinedUnsubscribe?: boolean;
 }
 
 /** Exact seven-day counts shown by the in-app weekly review. */
