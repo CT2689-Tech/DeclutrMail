@@ -70,7 +70,10 @@ export interface HomeFixCopy {
   supportOther: string;
   titleOne: string;
   titleOther: string;
-  titleBulk: string;
+  titleBulkOne: string;
+  titleBulkOther: string;
+  emailsOne: string;
+  emailsOther: string;
   button: string;
   cancel: string;
   honesty: string;
@@ -87,7 +90,8 @@ export function homeFixCopy(): HomeFixCopy | null {
   const support = ws5Plural('report.mostlyUnread.support');
   const title = ws5Plural('f1.title.archive');
   const review = ws5Text('report.fix.review');
-  const titleBulk = ws5Text('f1.title.bulk.archive');
+  const titleBulk = ws5Plural('f1.title.bulk.archive');
+  const emails = ws5Plural('f1.part.emails');
   const button = ws5Text('f1.button.archive');
   const cancel = ws5Text('f1.button.cancel');
   const honesty = ws5Text('f1.honesty.archive');
@@ -98,6 +102,7 @@ export function homeFixCopy(): HomeFixCopy | null {
     title === null ||
     review === null ||
     titleBulk === null ||
+    emails === null ||
     button === null ||
     cancel === null ||
     honesty === null ||
@@ -115,7 +120,10 @@ export function homeFixCopy(): HomeFixCopy | null {
     supportOther: support.other,
     titleOne: title.one,
     titleOther: title.other,
-    titleBulk,
+    titleBulkOne: titleBulk.one,
+    titleBulkOther: titleBulk.other,
+    emailsOne: emails.one,
+    emailsOther: emails.other,
     button,
     cancel,
     honesty,

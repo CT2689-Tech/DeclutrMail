@@ -42,7 +42,14 @@ vi.mock('@declutrmail/shared/copy/launch', async () => {
         one: 'Unsubscribe from {Sender} and archive 1 email?',
         other: 'Unsubscribe from {Sender} and archive {n} emails?',
       },
-      'f1.title.bulk.archive': 'Unsubscribe from {k} senders and archive {n} emails?',
+      'f1.title.bulk.archive': {
+        one: 'Unsubscribe from 1 sender and archive {emailCount}?',
+        other: 'Unsubscribe from {k} senders and archive {emailCount}?',
+      },
+      'f1.part.emails': {
+        one: '1 email',
+        other: '{n} emails',
+      },
       'f1.button.archive': 'Unsubscribe + Archive',
       'f1.button.cancel': 'Cancel',
       'f1.honesty.archive':
@@ -138,6 +145,7 @@ describe('HomeFixDialog focus trap', () => {
     await user.click(open);
 
     const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent('Unsubscribe from 158 senders and archive 1,200 emails?');
     const cancel = screen.getByRole('button', { name: 'Cancel' });
     const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
     await waitFor(() => expect(cancel).toHaveFocus());

@@ -60,14 +60,44 @@ function mailboxConflict(code: string): Response {
   });
 }
 
+const EMPTY_REPORT = {
+  generatedAt: '2026-10-01T00:00:00.000Z',
+  mailboxSizeBucket: 'under_1gb',
+  insights: [],
+  fix: { senderKeys: [], sendersCount: 0, inboxEmailCount: 0 },
+  fallbackSenderCount: 0,
+  receivedCount: 0,
+  totalBytes: 0,
+  variant: 'fallback',
+};
+
+const REPORT_WITH_FIX = {
+  ...EMPTY_REPORT,
+  variant: 'full',
+  insights: [
+    {
+      id: 'mostly_unread_share',
+      pct: 85,
+      senderCount: 29,
+      sweeperExcluded: 0,
+      window: '90d',
+    },
+  ],
+  fix: { senderKeys: ['s1', 's2'], sendersCount: 2, inboxEmailCount: 40 },
+  fallbackSenderCount: 2,
+  receivedCount: 80,
+};
+
 interface Stub {
   summary?: () => Response;
   queueLength?: number;
   screenerPending?: number;
   sync?: Record<string, unknown>;
+  report?: () => Response;
+  snoozed?: () => Response;
 }
 
-function stub({ summary, queueLength = 0, screenerPending = 0, sync }: Stub = {}) {
+function stub({ summary, queueLength = 0, screenerPending = 0, sync, report, snoozed }: Stub = {}) {
   const calls = { summary: [] as string[], triage: 0, screener: 0 };
   installFetchStub([
     {
@@ -124,6 +154,16 @@ function stub({ summary, queueLength = 0, screenerPending = 0, sync }: Stub = {}
         return jsonOk({ data: { pending: screenerPending } });
       },
     },
+    {
+      method: 'GET',
+      path: '/api/mailboxes/mb-1/inbox-report',
+      respond: () => (report ? report() : jsonOk({ data: EMPTY_REPORT })),
+    },
+    {
+      method: 'GET',
+      path: '/api/snoozed',
+      respond: () => (snoozed ? snoozed() : jsonOk({ data: [] })),
+    },
   ]);
   return calls;
 }
@@ -143,6 +183,46 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('HomeScreen', () => {
+  it('shows the unsubscribe step and the Later card from the mailbox reads', async () => {
+    stub({
+      report: () => jsonOk({ data: REPORT_WITH_FIX }),
+      snoozed: () =>
+        jsonOk({
+          data: [
+            {
+              senderId: 'later-1',
+              displayName: 'Ada',
+              email: 'ada@example.com',
+              domain: 'example.com',
+              laterCount: 2,
+              snoozedUntil: '2026-10-13T00:00:00.000Z',
+              snoozedAt: '2026-10-01T00:00:00.000Z',
+              reason: null,
+              returnStatus: 'scheduled',
+              lastReturnAttemptAt: null,
+              returnFailureKind: null,
+            },
+          ],
+        }),
+    });
+    renderHome();
+    const unsubscribe = await screen.findByRole('button', {
+      name: 'Unsubscribe + archive 2 senders',
+    });
+    expect(screen.getByRole('region', { name: 'Suggested next steps' })).toBeInTheDocument();
+    expect(screen.getByText(/Each of those 29 senders had less than 10%/)).toBeInTheDocument();
+    const lead = screen.getByText('85%');
+    expect(lead.closest('[data-surface="home"]')).not.toBeNull();
+    expect(lead.closest('a')).toBeNull();
+    const laterCard = screen.getByRole('link', { name: 'Open Later' }).closest('article');
+    expect(laterCard).toHaveTextContent('Later');
+    expect(laterCard).not.toHaveTextContent('1 sender');
+    fireEvent.click(unsubscribe);
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent(
+      'Unsubscribe from 2 senders and archive 40 emails?',
+    );
+  });
+
   it('shows the all-time cleared total without a Review today button', async () => {
     const calls = stub({ queueLength: 2, screenerPending: 4 });
     renderHome();
@@ -197,6 +277,12 @@ describe('HomeScreen', () => {
         path: '/api/screener/count',
         respond: () => jsonOk({ data: { pending: 0 } }),
       },
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mb-1/inbox-report',
+        respond: () => jsonOk({ data: EMPTY_REPORT }),
+      },
+      { method: 'GET', path: '/api/snoozed', respond: () => jsonOk({ data: [] }) },
     ]);
     renderHome();
     try {

@@ -1,5 +1,13 @@
 'use client';
 
+import { useLayoutEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import {
+  reportHeadline,
+  reportSupport,
+  type InboxReportDto,
+} from '@declutrmail/shared/inbox-report';
+
 import { useAuth } from '@/features/auth/auth-provider';
 import { useTier } from '@/features/auth/api/use-tier';
 import { isMailboxScopeConflict } from '@/features/mailboxes/api/reset-mailbox-cache';
@@ -8,10 +16,14 @@ import { NoActiveMailbox } from '@/features/mailboxes/no-active-mailbox';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import { useSyncStatus } from '@/features/onboarding/api/use-sync-status';
 import { inProgressStageSentence } from '@/features/onboarding/sync-stage-copy';
+import { apiGet } from '@/lib/api/client';
+import { fetchSnoozed } from '@/lib/api/snoozed';
+import { snoozedListQueryOptions } from '@/features/snoozed/api/query-options';
 
+import { homeInboxReportQueryOptions } from './api/query-options';
 import { useHomeSummary } from './api/use-home-summary';
 import { HomeArrivals } from './home-arrivals';
-import { homeCandidatesFromReport, rankHomeNextSteps } from './home-next-steps';
+import { homeCandidatesFromReport, homeLaterCandidate, rankHomeNextSteps } from './home-next-steps';
 import { composeHomeNumbers, type HomeState } from './home-state';
 import { HomeView } from './home-view';
 
@@ -45,10 +57,34 @@ export function HomeScreen() {
   const summary = useHomeSummary({ enabled: hasActiveMailbox });
   const sync = useSyncStatus(me.activeMailboxId ?? undefined, { enabled: hasActiveMailbox });
   const cleanup = useCleanupSummary();
-  // No report read on this screen until WS5's inbox report is the source.
-  const nextSteps = rankHomeNextSteps(homeCandidatesFromReport(null), {
-    senderSizeView: SENDER_SIZE_VIEW,
+  const mailboxId = me.activeMailboxId;
+  const report = useQuery({
+    ...homeInboxReportQueryOptions(mailboxId, async (signal) => {
+      const envelope = await apiGet<InboxReportDto>(`/api/mailboxes/${mailboxId}/inbox-report`, {
+        signal,
+      });
+      return envelope.data;
+    }),
+    enabled: hasActiveMailbox && mailboxId != null,
   });
+  const later = useQuery({
+    ...snoozedListQueryOptions((signal) => fetchSnoozed(signal)),
+    select: (envelope) => envelope.data,
+    enabled: hasActiveMailbox,
+    staleTime: 30_000,
+  });
+  const presentation = homeReportPresentation(report.data);
+  const laterStep = homeLaterCandidate(later.data ?? []);
+  const nextSteps = rankHomeNextSteps(
+    [...homeCandidatesFromReport(report.data ?? null), ...(laterStep !== null ? [laterStep] : [])],
+    { senderSizeView: SENDER_SIZE_VIEW },
+  );
+  // The stage sentence comes from a client poll. The server document has
+  // only the leave line, so the first client render must match that.
+  const [stageMounted, setStageMounted] = useState(false);
+  useLayoutEffect(() => {
+    setStageMounted(true);
+  }, []);
 
   const activeMailbox = me.mailboxes.find((m) => m.id === me.activeMailboxId);
   const readiness = activeMailbox?.readiness;
@@ -68,6 +104,8 @@ export function HomeScreen() {
       nextSteps={nextSteps}
       senderSizeView={SENDER_SIZE_VIEW}
       mailboxId={activeMailbox?.id ?? ''}
+      reportLead={presentation.lead}
+      supportText={presentation.support}
     />
   );
 
@@ -90,7 +128,9 @@ export function HomeScreen() {
     if (numbers === null) {
       // A failed scan is not a healthy empty mailbox — never "Nothing cleared yet".
       const stageSentence =
-        readiness === 'syncing' ? (inProgressStageSentence(sync.data) ?? undefined) : undefined;
+        stageMounted && readiness === 'syncing'
+          ? (inProgressStageSentence(sync.data) ?? undefined)
+          : undefined;
       return {
         kind: 'empty',
         syncing,
@@ -106,4 +146,18 @@ export function HomeScreen() {
       action,
     };
   }
+}
+
+/** Lead and support from the same insight the Inbox Report puts first. */
+function homeReportPresentation(report: InboxReportDto | undefined): {
+  lead: string | null;
+  support: string | null;
+} {
+  if (report === undefined || report.variant !== 'full') return { lead: null, support: null };
+  const insight = report.insights[0];
+  if (insight === undefined) return { lead: null, support: null };
+  return {
+    lead: reportHeadline(insight).sentence,
+    support: reportSupport(insight),
+  };
 }

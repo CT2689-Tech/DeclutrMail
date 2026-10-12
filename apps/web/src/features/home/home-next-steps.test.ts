@@ -8,6 +8,7 @@ import type { getFixSet } from '@/features/inbox-report';
 
 import {
   homeCandidatesFromReport,
+  homeLaterCandidate,
   homeV1Mode,
   rankHomeNextSteps,
   type HomeFixCandidate,
@@ -44,6 +45,20 @@ describe('rankHomeNextSteps', () => {
         (step) => step.kind,
       ),
     ).toEqual(['unsub_archive', 'later_due']);
+  });
+});
+
+describe('homeLaterCandidate', () => {
+  it('returns no card for an empty Later list', () => {
+    expect(homeLaterCandidate([])).toBeNull();
+  });
+
+  it('counts the Later rows and does not invent a sentence', () => {
+    expect(homeLaterCandidate([{ senderId: 's1' }, { senderId: 's2' }])).toEqual({
+      kind: 'later_due',
+      senderCount: 2,
+      senderIds: ['s1', 's2'],
+    });
   });
 });
 

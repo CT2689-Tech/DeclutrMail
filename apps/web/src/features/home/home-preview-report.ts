@@ -1,10 +1,11 @@
+import { fillCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
+
 import type { HomeFixCopy } from './home-ws5-copy';
 import type { HomePreviewState } from './home-preview-state';
 
 /**
  * Preview-only Inbox Report sentences. They are the WS5 deck strings, with
- * sample counts filled in, so a full Home can be checked before that deck
- * is on this branch. Production Home does not read this module.
+ * sample counts filled in. Production Home does not read this module.
  */
 export interface HomePreviewReport {
   title: string;
@@ -20,21 +21,26 @@ export interface HomePreviewReport {
   fix: HomeFixCopy;
 }
 
+/** The unread set in the sample headline. The unsubscribe step counts a subset. */
+const UNREAD_SENDERS = 195;
+
 const FIX: HomeFixCopy = {
-  headingOne: '1 of these senders includes an unsubscribe link.',
-  headingOther: '{n} of these senders include an unsubscribe link.',
-  primaryOne: 'Unsubscribe + archive 1 sender',
-  primaryOther: 'Unsubscribe + archive {n} senders',
-  review: 'Review them first',
-  supportOne: 'It had less than 10% of its email marked read in Gmail in that time.',
-  supportOther: 'Each had less than 10% of its email marked read in Gmail in that time.',
-  titleOne: 'Unsubscribe from {Sender} and archive 1 email?',
-  titleOther: 'Unsubscribe from {Sender} and archive {n} emails?',
-  titleBulk: 'Unsubscribe from {k} senders and archive {n} emails?',
-  button: 'Unsubscribe + Archive',
-  cancel: 'Cancel',
-  honesty:
-    'The unsubscribe request can\u2019t be recalled once delivered. The archive can be undone from Activity for 30 days.',
+  headingOne: WS5_COPY['report.fix.heading'].one,
+  headingOther: WS5_COPY['report.fix.heading'].other,
+  primaryOne: WS5_COPY['report.fix.primary'].one,
+  primaryOther: WS5_COPY['report.fix.primary'].other,
+  review: WS5_COPY['report.fix.review'],
+  supportOne: pluralCopy(WS5_COPY['report.mostlyUnread.support'], 1),
+  supportOther: pluralCopy(WS5_COPY['report.mostlyUnread.support'], UNREAD_SENDERS),
+  titleOne: WS5_COPY['f1.title.archive'].one,
+  titleOther: WS5_COPY['f1.title.archive'].other,
+  titleBulkOne: WS5_COPY['f1.title.bulk.archive'].one,
+  titleBulkOther: WS5_COPY['f1.title.bulk.archive'].other,
+  emailsOne: WS5_COPY['f1.part.emails'].one,
+  emailsOther: WS5_COPY['f1.part.emails'].other,
+  button: WS5_COPY['f1.button.archive'],
+  cancel: WS5_COPY['f1.button.cancel'],
+  honesty: WS5_COPY['f1.honesty.archive'],
 };
 
 /** Full, no-size, and caught-up. Other preview states leave the report off. */
@@ -42,21 +48,20 @@ export function homePreviewReport(state: HomePreviewState): HomePreviewReport | 
   if (state !== 'full' && state !== 'no-size' && state !== 'caught-up') return null;
   const sized = state !== 'caught-up';
   return {
-    title: 'Your Inbox Report',
-    body: 'A quick look at who sends you the most, what you leave unread and what takes up space.',
-    cta: 'Open report',
-    headline:
-      '91% of the email you got in the last 90 days came from 195 senders you mostly leave unread.',
-    trust:
-      'This report uses only the sender, date, size, labels and read/unread status of your email, plus who you\u2019ve emailed. We never fetch or store full email contents.',
-    trustLink: 'What we store and share',
+    title: WS5_COPY['report.home.title'],
+    body: WS5_COPY['report.home.body'],
+    cta: WS5_COPY['report.home.cta'],
+    headline: pluralCopy(WS5_COPY['report.mostlyUnread.headline'], UNREAD_SENDERS, {
+      pct: 91,
+      n: UNREAD_SENDERS.toLocaleString('en-US'),
+    }),
+    trust: WS5_COPY['report.trust'],
+    trustLink: WS5_COPY['report.trust.link'],
     calm:
-      state === 'caught-up'
-        ? 'Your inbox is in good shape. 47 emails, and nothing stands out yet.'
-        : null,
-    tileValue: sized ? '\u2248 7.7 GB' : null,
-    tileLabel: sized ? 'of email in your Gmail' : null,
-    tileNote: sized ? 'Sizes are Gmail\u2019s estimates.' : null,
+      state === 'caught-up' ? fillCopy(WS5_COPY['report.fallback.zero'], { total: '47' }) : null,
+    tileValue: sized ? fillCopy(WS5_COPY['f2.homeTile.value'], { size: '7.7 GB' }) : null,
+    tileLabel: sized ? WS5_COPY['f2.homeTile.label'] : null,
+    tileNote: sized ? WS5_COPY['report.sizesNote'] : null,
     fix: FIX,
   };
 }

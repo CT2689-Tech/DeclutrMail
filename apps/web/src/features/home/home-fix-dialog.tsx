@@ -8,6 +8,11 @@ import type { HomeFixCandidate } from './home-next-steps';
 import { homeFixCopy, type HomeFixCopy } from './home-ws5-copy';
 import styles from './home-view.module.css';
 
+function archivedEmails(count: number, copy: HomeFixCopy): string | null {
+  const template = count === 1 ? copy.emailsOne : copy.emailsOther;
+  return fillDeck(template, { n: formatCount(count) });
+}
+
 function dialogTitle(step: HomeFixCandidate, copy: HomeFixCopy): string | null {
   const emails = step.emailCount;
   if (emails === undefined || emails <= 0) return null;
@@ -15,9 +20,12 @@ function dialogTitle(step: HomeFixCandidate, copy: HomeFixCopy): string | null {
     const template = emails === 1 ? copy.titleOne : copy.titleOther;
     return fillDeck(template, { Sender: step.senderName, n: formatCount(emails) });
   }
-  return fillDeck(copy.titleBulk, {
+  const emailCount = archivedEmails(emails, copy);
+  if (emailCount === null) return null;
+  const template = step.senderCount === 1 ? copy.titleBulkOne : copy.titleBulkOther;
+  return fillDeck(template, {
     k: formatCount(step.senderCount),
-    n: formatCount(emails),
+    emailCount,
   });
 }
 

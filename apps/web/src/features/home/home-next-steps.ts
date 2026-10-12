@@ -38,6 +38,16 @@ export function rankHomeNextSteps(
     .slice(0, 3);
 }
 
+/** Later card from the Later list. Empty means no card. The report does not carry Later. */
+export function homeLaterCandidate(rows: readonly { senderId: string }[]): HomeFixCandidate | null {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  return {
+    kind: 'later_due',
+    senderCount: rows.length,
+    senderIds: rows.map((row) => row.senderId),
+  };
+}
+
 /** Unsubscribe step from a report. No report means no step. Later is not in this set. */
 export function homeCandidatesFromReport(
   report: Parameters<typeof getFixSet>[0] | null,

@@ -518,9 +518,8 @@
   padding: 0;
 }
 
-/* Slot for InboxReportCard surface="home". The card's anchor is the direct
-   child: strong (title), span (body), span (action). Home stacks that link.
-   Lead, tile, and trust stay in .reportFacts and are not hidden. */
+/* Slot for InboxReportCard surface="home". The card brings its own shell.
+   The lead is the card's first child. Tile and trust stay in .reportFacts. */
 .reportCard:not(:has(a)) {
   display: none;
 }
@@ -814,7 +813,33 @@
 
 @media (max-width: 760px) {
   .page {
-    padding-bottom: var(--dm-tabbar-inset);
+    padding: 12px 16px var(--dm-tabbar-inset);
+  }
+
+  .header {
+    padding-bottom: 16px;
+  }
+
+  .steps {
+    margin-top: 12px;
+  }
+
+  .previewNav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 0 16px;
+  }
+
+  .previewNav a {
+    min-height: 28px;
+  }
+
+  .fixCard p {
+    margin: 8px 0 0;
+  }
+
+  .fixActions {
+    margin-top: 8px;
   }
 
   .stepGrid {

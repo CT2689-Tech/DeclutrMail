@@ -1,24 +1,32 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const cardGate = vi.hoisted(() => ({ shape: 'none' as 'none' | 'anchor' | 'shell' }));
 
 vi.mock('@/features/inbox-report', () => ({
-  InboxReportCard: (props: { mailboxId: string }) => {
+  InboxReportCard: (props: { mailboxId: string; lead?: ReactNode }) => {
     if (cardGate.shape === 'anchor') {
       return (
-        <a href="/senders" data-mailbox={props.mailboxId}>
-          <strong>Your Inbox Report</strong>
-          <span>
-            A quick look at who sends you the most, what you leave unread and what takes up space.
-          </span>
-          <span>Open report</span>
-        </a>
+        <>
+          {props.lead}
+          <a href="/senders" data-mailbox={props.mailboxId}>
+            <strong>Your Inbox Report</strong>
+            <span>
+              A quick look at who sends you the most, what you leave unread and what takes up space.
+            </span>
+            <span>Open report</span>
+          </a>
+        </>
       );
     }
     if (cardGate.shape === 'shell') {
       return (
         <div data-surface="home" data-mailbox={props.mailboxId}>
+          {props.lead}
           <h2 className="dm-home-report-title">Your Inbox Report</h2>
           <span className="dm-home-report-body">
             A quick look at who sends you the most, what you leave unread and what takes up space.
@@ -29,7 +37,7 @@ vi.mock('@/features/inbox-report', () => ({
         </div>
       );
     }
-    return null;
+    return <>{props.lead}</>;
   },
   getFixSet: (report: {
     fix: { senderKeys: readonly string[]; sendersCount: number; inboxEmailCount: number };
@@ -179,7 +187,7 @@ describe('HomeView', () => {
     expect(document.querySelector('[data-sender-size-view="off"]')).not.toBeNull();
   });
 
-  it('preview full state shows the fixture report and a count-free Later card', () => {
+  it('preview full state shows the fixture report and a count-free Later card', async () => {
     render(
       <HomeView
         state={ready}
@@ -192,17 +200,39 @@ describe('HomeView', () => {
     expect(screen.getByRole('link', { name: 'Open report' })).toHaveAttribute('href', '/senders');
     expect(screen.getByText('91%')).toBeInTheDocument();
     expect(screen.getByText(/195 senders you mostly leave unread/)).toBeInTheDocument();
+    expect(screen.getByText(/Each of those 195 senders had less than 10%/)).toBeInTheDocument();
+    expect(screen.queryByText(/Each had less than 10%/)).toBeNull();
+    expect(screen.queryByText(/It had less than 10%/)).toBeNull();
+    expect(homePreviewReport('full')?.fix.supportOne).toMatch(/^That sender had less than 10%/);
     expect(screen.getByText('≈ 7.7 GB')).toBeInTheDocument();
     expect(screen.getByText(/We never fetch or store full email contents/)).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Unsubscribe + archive 158 senders' }),
-    ).toBeInTheDocument();
+    const unsubscribe = screen.getByRole('button', { name: 'Unsubscribe + archive 158 senders' });
+    const tile = screen.getByText('≈ 7.7 GB');
+    expect(unsubscribe.compareDocumentPosition(tile) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    fireEvent.click(unsubscribe);
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent(
+      'Unsubscribe from 158 senders and archive 1,200 emails?',
+    );
     const laterCard = screen.getByRole('link', { name: 'Open Later' }).closest('article');
     expect(laterCard).toHaveTextContent(HOME_DECK.laterBody);
     expect(laterCard).not.toHaveTextContent('3');
     expect(homePreviewReport('caught-up')?.calm).toMatch(/47 emails/);
     expect(homePreviewReport('syncing')).toBeNull();
     expect(homePreviewReport('empty')).toBeNull();
+  });
+
+  it('reserves the narrow page inset so the primary action stays above the tab bar', () => {
+    const narrow = (css: string) => css.slice(css.lastIndexOf('@media (max-width: 760px)'));
+    const dir = dirname(fileURLToPath(import.meta.url));
+    const home = narrow(readFileSync(join(dir, 'home-view.module.css'), 'utf8'));
+    const card = narrow(readFileSync(join(dir, '../inbox-report/card.module.css'), 'utf8'));
+    expect(home).toContain('padding: 12px 16px var(--dm-tabbar-inset)');
+    expect(home).toContain('min-height: 28px');
+    expect(home).toMatch(/\.fixActions\s*\{[^}]*margin-top:\s*8px/);
+    expect(card).toMatch(/\.card\s*\{[^}]*padding:\s*16px/);
+    expect(card).toMatch(/\.body\s*\{[^}]*margin:\s*8px 0 12px/);
   });
 
   it('keeps the lead, size tile, and trust line when the home card link is present', async () => {
@@ -242,14 +272,21 @@ describe('HomeView', () => {
       />,
     );
     const lead = await screen.findByText('91%');
+    const shell = lead.closest('[data-surface="home"]');
     expect(lead.closest('[data-report-lead]')).not.toBeNull();
-    expect(lead.closest('[data-home-report-card]')).toBeNull();
+    expect(lead.closest('[data-home-report-card]')).not.toBeNull();
+    expect(lead.closest('a')).toBeNull();
     expect(lead.closest('[hidden]')).toBeNull();
+    expect(shell).not.toBeNull();
+    const title = shell?.querySelector('h2');
+    expect(title).not.toBeNull();
+    expect(lead.compareDocumentPosition(title!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
     expect(screen.getByText('≈ 7.7 GB').closest('[data-report-tile]')).not.toBeNull();
     expect(
       screen.getByText(/We never fetch or store full email contents/).closest('[hidden]'),
     ).toBeNull();
-    const shell = document.querySelector('[data-home-report-card] [data-surface="home"]');
     expect(shell?.querySelector('h2')).toHaveTextContent('Your Inbox Report');
     expect(shell?.querySelector('.dm-home-report-body')).not.toBeNull();
     expect(shell?.querySelector('a')).toHaveTextContent('Open report');

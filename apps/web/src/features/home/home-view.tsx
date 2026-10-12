@@ -74,6 +74,8 @@ export function HomeView({
   indexedEmailCount = null,
   mailboxId = '',
   previewReport = null,
+  reportLead = null,
+  supportText = null,
   onConfirmFix,
 }: {
   state: HomeState;
@@ -91,6 +93,10 @@ export function HomeView({
   mailboxId?: string;
   /** Preview route only. Production Home leaves this null. */
   previewReport?: HomePreviewReport | null;
+  /** Filled report headline. Preview uses `previewReport.headline` instead. */
+  reportLead?: string | null;
+  /** Filled mostly-unread support. Preview uses its own deck sample. */
+  supportText?: string | null;
   onConfirmFix?: (step: HomeFixCandidate) => void;
 }) {
   const steps = rankHomeNextSteps(nextSteps, { senderSizeView });
@@ -141,6 +147,8 @@ export function HomeView({
         indexedEmailCount={indexedEmailCount}
         mailboxId={mailboxId}
         previewReport={previewReport}
+        reportLead={reportLead}
+        supportText={previewReport === null ? supportText : null}
         onOpenFix={(step) => {
           void track('home_next_step_clicked', { kind: homeNextStepEventKind(step.kind) });
           if (step.kind === 'unsub_archive') setPendingFix(step);
@@ -200,6 +208,8 @@ function HomeBody({
   indexedEmailCount,
   mailboxId,
   previewReport,
+  reportLead,
+  supportText,
   onOpenFix,
 }: {
   state: HomeState;
@@ -212,8 +222,20 @@ function HomeBody({
   indexedEmailCount: number | null;
   mailboxId: string;
   previewReport: HomePreviewReport | null;
+  reportLead: string | null;
+  supportText: string | null;
   onOpenFix: (step: HomeFixCandidate) => void;
 }) {
+  const afterCard =
+    state.kind === 'ready' && steps.length > 0 ? (
+      <NextSteps
+        steps={steps}
+        reportMounted={reportMounted}
+        previewReport={previewReport}
+        supportText={supportText}
+        onOpenFix={onOpenFix}
+      />
+    ) : null;
   const report = (
     <ReportCard
       reportRef={reportRef}
@@ -222,6 +244,8 @@ function HomeBody({
       indexedEmailCount={indexedEmailCount}
       mailboxId={mailboxId}
       previewReport={previewReport}
+      reportLead={reportLead}
+      afterCard={afterCard}
     />
   );
   switch (state.kind) {
@@ -269,14 +293,6 @@ function HomeBody({
       return (
         <>
           {report}
-          {steps.length > 0 && (
-            <NextSteps
-              steps={steps}
-              reportMounted={reportMounted}
-              previewReport={previewReport}
-              onOpenFix={onOpenFix}
-            />
-          )}
           <Progress state={state} timeZone={timeZone} />
         </>
       );
@@ -319,6 +335,8 @@ function ReportCard({
   indexedEmailCount,
   mailboxId,
   previewReport,
+  reportLead,
+  afterCard,
 }: {
   reportRef: RefObject<HTMLDivElement | null>;
   mode: HomeV1Mode;
@@ -326,6 +344,8 @@ function ReportCard({
   indexedEmailCount: number | null;
   mailboxId: string;
   previewReport: HomePreviewReport | null;
+  reportLead: string | null;
+  afterCard: ReactNode;
 }) {
   const deck = homeReportCopy();
   const copy = previewReport ?? deck;
@@ -363,9 +383,11 @@ function ReportCard({
       : deckTile;
   const trust = previewReport?.trust ?? deck?.trust ?? null;
   const trustLink = previewReport?.trustLink ?? deck?.trustLink ?? null;
-  const headline = previewReport?.headline ?? null;
-  // The card link owns title, body, and the Open report action. Home keeps
-  // the lead, the size tile, and the trust line outside that link.
+  const headline = previewReport?.headline ?? reportLead;
+  const lead = headline !== null && headline !== '' ? <LeadLine headline={headline} /> : null;
+  // The card link owns title, body, and the Open report action. The lead
+  // sits at the top of that card, outside the link. Tile and trust follow
+  // the suggested step so the primary action stays above the tab bar.
   const [cardOwnsIntro, setCardOwnsIntro] = useState(false);
   useLayoutEffect(() => {
     setCardOwnsIntro(reportRef.current?.querySelector(REPORT_CARD_MARK) != null);
@@ -373,14 +395,14 @@ function ReportCard({
   if (copy === null) {
     return (
       <div ref={reportRef} hidden>
-        <InboxReportCard surface="home" mailboxId={mailboxId} />
+        <InboxReportCard surface="home" mailboxId={mailboxId} lead={lead} />
       </div>
     );
   }
   return (
     <section ref={reportRef} className={styles.report} aria-label={copy.title}>
       <div className={`${styles.reportCard} dm-home-report-card`} data-home-report-card="">
-        <InboxReportCard surface="home" mailboxId={mailboxId} />
+        <InboxReportCard surface="home" mailboxId={mailboxId} lead={lead} />
       </div>
       {!cardOwnsIntro && (
         <div className={styles.reportIntro} data-report-intro="">
@@ -398,12 +420,12 @@ function ReportCard({
           )}
         </div>
       )}
+      {afterCard}
       <div
         className={styles.reportFacts}
         data-report-facts=""
-        {...(headline !== null ? { 'data-inbox-report': '' } : {})}
+        {...(lead !== null ? { 'data-inbox-report': '' } : {})}
       >
-        {headline !== null && <LeadLine headline={headline} />}
         {calm !== null && <p data-testid="home-calm">{calm}</p>}
         {tile !== null && (
           <div className={styles.storageTile} data-report-tile="">
@@ -426,6 +448,13 @@ function ReportCard({
       </div>
     </section>
   );
+}
+
+/** A template that still has `{n}` is not a sentence. Preview copy is already filled. */
+function supportLine(template: string, filled: string | null): string | null {
+  if (filled !== null && filled !== '') return filled;
+  if (template.includes('{')) return null;
+  return template;
 }
 
 function LeadLine({ headline }: { headline: string }) {
@@ -461,11 +490,13 @@ function NextSteps({
   steps,
   reportMounted,
   previewReport,
+  supportText,
   onOpenFix,
 }: {
   steps: readonly HomeFixCandidate[];
   reportMounted: boolean;
   previewReport: HomePreviewReport | null;
+  supportText: string | null;
   onOpenFix: (step: HomeFixCandidate) => void;
 }) {
   const fixCopy = previewReport?.fix ?? homeFixCopy();
@@ -484,6 +515,7 @@ function NextSteps({
           primary
           reportMounted={reportMounted}
           previewReport={previewReport}
+          supportText={supportText}
           onOpenFix={onOpenFix}
         />
         {secondary.map((step) => (
@@ -493,6 +525,7 @@ function NextSteps({
             primary={false}
             reportMounted={reportMounted}
             previewReport={previewReport}
+            supportText={supportText}
             onOpenFix={onOpenFix}
           />
         ))}
@@ -506,12 +539,14 @@ function FixCard({
   primary,
   reportMounted,
   previewReport,
+  supportText,
   onOpenFix,
 }: {
   step: HomeFixCandidate;
   primary: boolean;
   reportMounted: boolean;
   previewReport: HomePreviewReport | null;
+  supportText: string | null;
   onOpenFix: (step: HomeFixCandidate) => void;
 }) {
   if (step.kind === 'unsub_archive') {
@@ -528,12 +563,13 @@ function FixCard({
       step.senderCount === 1
         ? copy.primaryOne
         : fillDeck(copy.primaryOther, { n: formatCount(step.senderCount) });
-    const support = step.senderCount === 1 ? copy.supportOne : copy.supportOther;
+    const supportTemplate = step.senderCount === 1 ? copy.supportOne : copy.supportOther;
+    const support = supportLine(supportTemplate, supportText);
     if (heading === null || label === null) return null;
     return (
       <article className={primary ? styles.fixCard : styles.secondaryCard} data-step={step.kind}>
         <h3>{heading}</h3>
-        <p>{support}</p>
+        {support !== null && <p>{support}</p>}
         {primary ? (
           <div className={styles.fixActions}>
             <button
