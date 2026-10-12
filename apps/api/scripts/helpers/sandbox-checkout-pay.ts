@@ -158,10 +158,8 @@ async function frameTitles(page: Page): Promise<string[]> {
 
 function overlayPresent(page: Page): boolean {
   for (const frame of page.frames()) {
-    let raw = '';
     try {
-      raw = frame.url();
-      const host = new URL(raw).hostname;
+      const host = new URL(frame.url()).hostname;
       if (host === 'cdn.paddle.com' || host.endsWith('.paddle.com')) return true;
     } catch {
       /* about:blank and empty frames are not the overlay. */

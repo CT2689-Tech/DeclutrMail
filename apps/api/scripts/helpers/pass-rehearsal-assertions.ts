@@ -61,7 +61,7 @@ export function passTransactionCreateBody(input: {
   signature: string;
   discountId?: string;
 }): Record<string, unknown> {
-  let origin = '';
+  let origin: string;
   try {
     origin = new URL(input.checkoutUrl).origin;
   } catch {
