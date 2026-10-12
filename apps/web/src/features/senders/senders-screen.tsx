@@ -41,7 +41,8 @@ import {
 import { SenderSearch } from './sender-search';
 import { isFeatureEnabled } from '@/lib/flags';
 import { normalizeProtectionReason, protectionReasonClause } from '@declutrmail/shared/copy';
-import { fillCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { fillCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { allProtectedSelectionCopy } from './unsubscribe-backlog/preview-copy';
 import { senderSizeCell } from './sender-size';
 import {
   ActiveFilterChips,
@@ -73,7 +74,6 @@ import {
   useRecordUnsubscribeIntent,
 } from '@/lib/api/use-action';
 import { useSetSenderPolicy, useUndoSenderKeep } from './api/use-sender-policy';
-import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { sendersKeys } from './api/query-keys';
 import {
   actionLabel,
@@ -255,7 +255,7 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   return debounced;
 }
 
-/** One Protected sender, before any preview. The deck has no bulk pre-confirm form. */
+/** One Protected Unsubscribe, before any preview. Names the reason. */
 function protectedSelectionLead(sender: Sender): string {
   const clause = protectionReasonClause(
     normalizeProtectionReason(sender.protectionFlags.protectionReason),
@@ -2372,13 +2372,11 @@ function SendersScreenContent({
         // Standing protection gates every bulk verb; the only other gate
         // is Unsubscribe's people rule (canUnsubscribe), so a non-
         // protected drop here can only mean primary-group senders.
-        // The deck has no pre-confirm sentence for more than one Protected
-        // sender, so that case keeps the selection-bar wording below.
+        // All-Protected uses the deck sentence. A mixed selection still
+        // opens the preview, which says the Protected senders are left.
         toast(
           allProtected
-            ? n === 1
-              ? `${selectedSenders[0]!.name} is protected — unprotect it first`
-              : `All ${n} selected senders are protected — unprotect to include them`
+            ? allProtectedSelectionCopy(n, selectedSenders[0]?.name ?? '')
             : n === 1
               ? `${selectedSenders[0]!.name} is a person — Unsubscribe doesn't apply`
               : 'Nothing to unsubscribe — these senders are protected or people',

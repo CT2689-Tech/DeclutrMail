@@ -7,6 +7,10 @@ import type { TierId } from '@declutrmail/shared/entitlements';
 import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
 
 import {
+  allProtectedSelectionCopy,
+  someProtectedSelectionCopy,
+} from './unsubscribe-backlog/preview-copy';
+import {
   canUseActionSelector,
   canBulkArchive,
   canBulkDelete,
@@ -109,9 +113,9 @@ export function SelectionBar({
   // together (Unsubscribe alone can also drop to 0 for non-protected
   // "people" senders — canUnsubscribe's own rule — so it's excluded from
   // this check).
-  const allProtected = senders.every(isStandingProtected);
+  const protectedCount = senders.filter(isStandingProtected).length;
   const protectedLockNote = (dark: boolean) =>
-    allProtected ? (
+    protectedCount > 0 ? (
       <span
         role="note"
         style={{
@@ -121,9 +125,9 @@ export function SelectionBar({
           whiteSpace: dark ? 'nowrap' : undefined,
         }}
       >
-        {senders.length === 1
-          ? `${senders[0]!.name} is protected — unprotect it first`
-          : `All ${senders.length} are protected — unprotect to include them`}
+        {protectedCount === senders.length
+          ? allProtectedSelectionCopy(senders.length, senders[0]?.name ?? '')
+          : someProtectedSelectionCopy(protectedCount)}
       </span>
     ) : null;
 

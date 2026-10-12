@@ -4,6 +4,7 @@ import { useActionPreviewAnalytics } from '@/lib/use-action-preview-analytics';
 import type { Verb } from '@declutrmail/shared/observability';
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 import { UnsubscribeBacklogDialog } from './unsubscribe-backlog/unsubscribe-backlog-dialog';
+import { someProtectedSelectionCopy } from './unsubscribe-backlog/preview-copy';
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import {
@@ -1274,7 +1275,10 @@ export function ConfirmActionModal({
     </div>
   ) : null;
   if (protectedSkipped > 0) {
-    facts.push({ label: 'Protected', value: 'Unprotect a sender to include it' });
+    facts.push({
+      label: 'Protected',
+      value: someProtectedSelectionCopy(protectedSkipped),
+    });
   }
   if (peopleSkipped > 0) {
     facts.push({ label: 'People', value: 'Unsubscribe doesn’t apply to people' });

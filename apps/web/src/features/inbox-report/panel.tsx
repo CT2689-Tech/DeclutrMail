@@ -342,13 +342,15 @@ export function InboxReportPanel({
                       <p>{WS5_COPY['report.celebrate.delete.note']}</p>
                     ) : null}
                     {requestLine ? <p>{requestLine}</p> : null}
-                    {celebration.verb === 'delete' ||
-                    celebration.verb === 'unsub_only' ? null : undoToken ? (
-                      <button type="button" onClick={onUndo}>
-                        {WS5_COPY['report.celebrate.undo']}
-                      </button>
-                    ) : (
-                      <p>{WS5_COPY['report.celebrate.undo']}</p>
+                    {celebration.verb === 'delete' || celebration.verb === 'unsub_only' ? null : (
+                      <>
+                        {undoToken ? (
+                          <button type="button" onClick={onUndo}>
+                            {WS5_COPY['report.celebrate.undo.button']}
+                          </button>
+                        ) : null}
+                        <p>{WS5_COPY['report.celebrate.undo']}</p>
+                      </>
                     )}
                     {celebration.verb === 'delete' || celebration.verb === 'unsub_only' ? null : (
                       <p>{WS5_COPY['report.storageNote']}</p>

@@ -98,11 +98,16 @@ describe('InboxReportFirstLanding', () => {
         <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
       </QueryWrapper>,
     );
-    const undo = await screen.findByRole('button', { name: WS5_COPY['report.celebrate.undo'] });
+    const undo = await screen.findByRole('button', {
+      name: WS5_COPY['report.celebrate.undo.button'],
+    });
+    expect(screen.getByText(WS5_COPY['report.celebrate.undo'])).toBeInTheDocument();
     fireEvent.click(undo);
     await waitFor(() => expect(undoPosts).toEqual(['/api/undo/undo-1']));
     await waitFor(() =>
-      expect(screen.queryByRole('button', { name: WS5_COPY['report.celebrate.undo'] })).toBeNull(),
+      expect(
+        screen.queryByRole('button', { name: WS5_COPY['report.celebrate.undo.button'] }),
+      ).toBeNull(),
     );
     expect(screen.getByText(WS5_COPY['report.celebrate.undo'])).toBeInTheDocument();
   });

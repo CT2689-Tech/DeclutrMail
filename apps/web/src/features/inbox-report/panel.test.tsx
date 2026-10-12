@@ -218,7 +218,8 @@ describe('InboxReportPanel', () => {
     expect(screen.getByText(WS5_COPY['report.celebrate.delete.note'])).toBeInTheDocument();
     expect(screen.queryByText(/Archived/)).toBeNull();
     expect(screen.queryByText(/your storage doesn’t change/)).toBeNull();
-    expect(screen.queryByRole('button', { name: /Undo restores/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+    expect(screen.queryByText(WS5_COPY['report.celebrate.undo'])).toBeNull();
   });
 
   it('replaces the previous done state', () => {
@@ -255,8 +256,10 @@ describe('InboxReportPanel', () => {
         onUndo={onUndo}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: WS5_COPY['report.celebrate.undo'] }));
+    fireEvent.click(screen.getByRole('button', { name: WS5_COPY['report.celebrate.undo.button'] }));
     expect(onUndo).toHaveBeenCalledOnce();
+    expect(screen.getByText(WS5_COPY['report.celebrate.undo'])).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Undo' })).toHaveAccessibleName('Undo');
   });
 
   it('uses the loaded sender name for a one-sender fix title', () => {
@@ -271,6 +274,21 @@ describe('InboxReportPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
     expect(screen.getByRole('dialog')).toHaveTextContent(
       'Unsubscribe from Acme and archive 4 emails?',
+    );
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('1 senders');
+  });
+
+  it('uses the singular bulk title when a one-sender fix has no name', () => {
+    render(
+      <InboxReportPanel
+        report={{ ...full, fix: { senderKeys: ['s1'], sendersCount: 1, inboxEmailCount: 4 } }}
+        onDismiss={() => {}}
+        onReopen={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'Unsubscribe from 1 sender and archive 4 emails?',
     );
     expect(screen.getByRole('dialog')).not.toHaveTextContent('1 senders');
   });

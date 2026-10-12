@@ -29,9 +29,30 @@
     "one": "Unsubscribe from {Sender} and delete 1 email?",
     "other": "Unsubscribe from {Sender} and delete {n} emails?"
   },
-  "f1.title.bulk.unsubOnly": "Unsubscribe from {k} senders?",
-  "f1.title.bulk.archive": "Unsubscribe from {k} senders and archive {n} emails?",
-  "f1.title.bulk.delete": "Unsubscribe from {k} senders and delete {n} emails?",
+  "f1.title.bulk.unsubOnly": {
+    "one": "Unsubscribe from 1 sender?",
+    "other": "Unsubscribe from {k} senders?"
+  },
+  "f1.title.bulk.archive": {
+    "one": "Unsubscribe from 1 sender and archive {emailCount}?",
+    "other": "Unsubscribe from {k} senders and archive {emailCount}?"
+  },
+  "f1.title.bulk.delete": {
+    "one": "Unsubscribe from 1 sender and delete {emailCount}?",
+    "other": "Unsubscribe from {k} senders and delete {emailCount}?"
+  },
+  "f1.part.emails": {
+    "one": "1 email",
+    "other": "{n} emails"
+  },
+  "f1.selection.allProtected": {
+    "one": "{Sender} is Protected. Remove its Protected status to include it.",
+    "other": "All {k} selected senders are Protected. Remove their Protected status to include them."
+  },
+  "f1.selection.someProtected": {
+    "one": "1 selected sender is Protected and will be left as it is.",
+    "other": "{k} selected senders are Protected and will be left as they are."
+  },
   "f1.preview.future": "Future emails: we’ll send {Sender} a one-click unsubscribe request.",
   "f1.preview.future.mailto": "Future emails: we’ll open a prefilled email in Gmail for you to send to {Sender}.",
   "f1.preview.future.none": "Future emails: {Sender} has no unsubscribe link, so we can’t send a request.",
@@ -223,6 +244,7 @@
     "other": "{k} need you to send an email"
   },
   "report.celebrate.undo": "Undo restores the archived email for 30 days. Unsubscribe requests can’t be recalled.",
+  "report.celebrate.undo.button": "Undo",
   "report.storageNote": "Archived email stays in Gmail, so your storage doesn’t change. To free space, delete instead.",
   "report.upgrade.lead": "{remaining_backlog} more emails from these senders are still in your inbox. {freeName} covers {allowance} emails a month.",
   "report.upgrade.lead.zero": "You’ve used this month’s {allowance} free emails.",

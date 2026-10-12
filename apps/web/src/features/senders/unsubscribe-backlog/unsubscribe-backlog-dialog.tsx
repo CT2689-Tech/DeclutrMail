@@ -8,7 +8,7 @@ import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/share
 
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import styles from './unsubscribe-backlog-dialog.module.css';
-import { unnamedUnsubscribeTitle } from './preview-copy';
+import { bulkUnsubscribeTitle, unnamedUnsubscribeTitle } from './preview-copy';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import { track } from '@/lib/posthog';
 import type { CompositeActionPreviewResult } from '@/lib/api/use-action';
@@ -158,17 +158,11 @@ export function UnsubscribeBacklogDialog({
     // A live count of 0 is a real empty set. Null is still loading, and
     // "archive 0 emails" would be a count we have not read.
     if (!countKnown && mode !== 'unsub_only') {
-      if (!single) return fillCopy(WS5_COPY['f1.title.bulk.unsubOnly'], { k: shown(k) });
+      if (!single) return bulkUnsubscribeTitle('unsub_only', k, 0);
       if (singleName === '') return unnamedUnsubscribeTitle('unsub_only', 0);
       return fillCopy(WS5_COPY['f1.title.unsubOnly'], { Sender: singleName });
     }
-    if (!single) {
-      if (mode === 'delete')
-        return fillCopy(WS5_COPY['f1.title.bulk.delete'], { k: shown(k), n: shown(n) });
-      if (mode === 'archive')
-        return fillCopy(WS5_COPY['f1.title.bulk.archive'], { k: shown(k), n: shown(n) });
-      return fillCopy(WS5_COPY['f1.title.bulk.unsubOnly'], { k: shown(k) });
-    }
+    if (!single) return bulkUnsubscribeTitle(mode, k, n);
     const Sender = singleName;
     if (Sender === '') return unnamedUnsubscribeTitle(mode, n);
     if (mode === 'delete') {

@@ -20,16 +20,57 @@ export function backlogMailLine(mode: UnsubscribeBacklogMode, n: number): string
   return WS5_COPY['f1.preview.backlog.unsubOnly'];
 }
 
+/** "{n} emails" / "1 email", for the bulk title's {emailCount} token. */
+function emailCountPhrase(emailCount: number): string {
+  const forms = WS5_COPY['f1.part.emails'];
+  if (!isPluralCopy(forms)) return '';
+  return pluralCopy(forms, emailCount, { n: emailCount.toLocaleString('en-US') });
+}
+
 /**
- * Count titles do not need a sender name. The bulk strings have no `one`
- * form, so a single unnamed sender reads "{k} senders".
+ * Bulk titles pick `one` from the sender count, so one sender never reads
+ * "1 senders". Archive and delete fill {emailCount} from `f1.part.emails`.
  */
+export function bulkUnsubscribeTitle(
+  mode: UnsubscribeBacklogMode,
+  senderCount: number,
+  emailCount: number,
+): string {
+  const k = senderCount.toLocaleString('en-US');
+  const emailCountLabel = emailCountPhrase(emailCount);
+  if (mode === 'delete') {
+    const forms = WS5_COPY['f1.title.bulk.delete'];
+    return isPluralCopy(forms)
+      ? pluralCopy(forms, senderCount, { k, emailCount: emailCountLabel })
+      : '';
+  }
+  if (mode === 'archive') {
+    const forms = WS5_COPY['f1.title.bulk.archive'];
+    return isPluralCopy(forms)
+      ? pluralCopy(forms, senderCount, { k, emailCount: emailCountLabel })
+      : '';
+  }
+  const forms = WS5_COPY['f1.title.bulk.unsubOnly'];
+  return isPluralCopy(forms) ? pluralCopy(forms, senderCount, { k }) : '';
+}
+
+/** Count titles do not need a sender name. One unnamed sender uses the `one` form. */
 export function unnamedUnsubscribeTitle(mode: UnsubscribeBacklogMode, emailCount: number): string {
-  const k = (1).toLocaleString('en-US');
-  const n = emailCount.toLocaleString('en-US');
-  if (mode === 'delete') return fillCopy(WS5_COPY['f1.title.bulk.delete'], { k, n });
-  if (mode === 'archive') return fillCopy(WS5_COPY['f1.title.bulk.archive'], { k, n });
-  return fillCopy(WS5_COPY['f1.title.bulk.unsubOnly'], { k });
+  return bulkUnsubscribeTitle(mode, 1, emailCount);
+}
+
+/** Every selected sender is Protected. `one` names {Sender}. */
+export function allProtectedSelectionCopy(count: number, senderName: string): string {
+  const forms = WS5_COPY['f1.selection.allProtected'];
+  if (!isPluralCopy(forms)) return '';
+  return pluralCopy(forms, count, { k: count.toLocaleString('en-US'), Sender: senderName });
+}
+
+/** Some, not all, of the selection is Protected. The bulk path leaves them. */
+export function someProtectedSelectionCopy(protectedCount: number): string {
+  const forms = WS5_COPY['f1.selection.someProtected'];
+  if (!isPluralCopy(forms)) return '';
+  return pluralCopy(forms, protectedCount, { k: protectedCount.toLocaleString('en-US') });
 }
 
 export function unsubscribeTitle(

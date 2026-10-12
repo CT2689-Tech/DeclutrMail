@@ -3139,7 +3139,9 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     );
     // Said once, in the note; the way to include it sits in Details.
     expect(within(dialog).getByText(/1 Protected sender is skipped\./)).toBeInTheDocument();
-    expect(within(dialog).getByText(/Unprotect a sender to include it/)).toBeInTheDocument();
+    expect(
+      within(dialog).getByText('1 selected sender is Protected and will be left as it is.'),
+    ).toBeInTheDocument();
     expect(within(dialog).getByText(/1 of 2 eligible senders/)).toBeVisible();
   });
 
@@ -5108,7 +5110,9 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     // The preview covers the 1 eligible sender AND says what it dropped.
     await screen.findByRole('heading', { name: 'Archive 12 emails from 1 sender?' });
     expect(screen.getByText(/1 Protected sender is skipped\./)).toBeInTheDocument();
-    expect(screen.getByText(/Unprotect a sender to include it/)).toBeInTheDocument();
+    expect(
+      screen.getByText('1 selected sender is Protected and will be left as it is.'),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText('Senders included in this bulk action')).toHaveTextContent(
       '2 selected · 1 in this preview · 1 Protected excluded',
     );
@@ -5146,11 +5150,13 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: /select shielded b/i }));
     fireEvent.keyDown(document.body, { key: 'a' });
 
-    // No (empty) preview opens; the toast explains the no-op.
+    // No (empty) preview opens. The selection bar and the toast both say why.
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(
-      await screen.findByText(/all 2 selected senders are protected — unprotect to include them/i),
-    ).toBeInTheDocument();
+      await screen.findAllByText(
+        'All 2 selected senders are Protected. Remove their Protected status to include them.',
+      ),
+    ).toHaveLength(2);
   });
 });
 
