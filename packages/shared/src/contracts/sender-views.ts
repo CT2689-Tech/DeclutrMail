@@ -33,6 +33,8 @@ const SenderViewComposeSchema = z
     unsubIgnored: z.boolean(),
     /** Existing saved views predate this filter; omitted means off. */
     hasInboxMail: z.boolean().default(false),
+    /** Existing saved views predate this filter; omitted means off. */
+    mostlyUnread: z.boolean().default(false),
   })
   .strict();
 

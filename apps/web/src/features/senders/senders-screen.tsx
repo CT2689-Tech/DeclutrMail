@@ -2667,7 +2667,11 @@ function SendersScreenContent({
         ...savedViews.filter((v) => v.name !== name),
         {
           name,
-          compose: { ...compose, hasInboxMail: compose.hasInboxMail === true },
+          compose: {
+            ...compose,
+            hasInboxMail: compose.hasInboxMail === true,
+            mostlyUnread: compose.mostlyUnread === true,
+          },
           sort,
           direction: sortDirection,
         },
