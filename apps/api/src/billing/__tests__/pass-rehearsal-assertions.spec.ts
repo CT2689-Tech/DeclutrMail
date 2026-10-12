@@ -6,10 +6,14 @@ import { describe, expect, it } from 'vitest';
 import {
   discountMatchesPercent,
   discountPriceIds,
+  passTransactionCreateBody,
+  rehearsalCheckoutLink,
+  renderSandboxPayPage,
   renewalIsFullPrice,
   SANDBOX_API_ORIGIN,
   withinWindow,
 } from '../../../scripts/helpers/pass-rehearsal-assertions.js';
+import { SANDBOX_CARD_SELECTORS } from '../../../scripts/helpers/sandbox-checkout-pay.js';
 
 describe('Backlog Pass sandbox rehearsal checks', () => {
   it('accepts a thirty percent discount and a full-price renewal', () => {
@@ -36,6 +40,62 @@ describe('Backlog Pass sandbox rehearsal checks', () => {
     expect(
       withinWindow(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), Date.now() + day, 60_000),
     ).toBe(false);
+  });
+
+  it('opens checkout on the rehearsal page instead of the default payment link', () => {
+    const host = 'https://fixture-host.trycloudflare.com';
+    const body = passTransactionCreateBody({
+      priceId: 'pri_01m4phkr8yhydb76dz11b74br8',
+      workspaceId: 'ws',
+      customerId: 'ctm_0123456789abcdefghijklmnop',
+      addressId: 'add_0123456789abcdefghijklmnop',
+      checkoutUrl: `${host}/pay`,
+      signature: 'sig',
+    });
+    expect(body.collection_mode).toBe('automatic');
+    expect(body.checkout).toEqual({ url: `${host}/pay` });
+    expect(body).not.toHaveProperty('billing_cycle');
+    expect(body.items).toEqual([{ price_id: 'pri_01m4phkr8yhydb76dz11b74br8', quantity: 1 }]);
+    expect(body).not.toHaveProperty('discount_id');
+    expect(
+      passTransactionCreateBody({
+        priceId: 'pri_01m4phk06hdmmq5cw5b8aa5r2y',
+        workspaceId: 'ws',
+        customerId: 'ctm_0123456789abcdefghijklmnop',
+        addressId: 'add_0123456789abcdefghijklmnop',
+        checkoutUrl: `${host}/pay`,
+        signature: 'sig',
+        discountId: 'dsc_01m4phpp04scdes9ghqn3qps77',
+      }).discount_id,
+    ).toBe('dsc_01m4phpp04scdes9ghqn3qps77');
+    expect(() =>
+      passTransactionCreateBody({
+        priceId: 'pri_01m4phkr8yhydb76dz11b74br8',
+        workspaceId: 'ws',
+        customerId: 'ctm',
+        addressId: 'add',
+        checkoutUrl: 'https://declutrmail.com/pricing',
+        signature: 'sig',
+      }),
+    ).toThrow('Checkout page was not the rehearsal host');
+    const txn = 'txn_0123456789abcdefghijklmnop';
+    expect(rehearsalCheckoutLink(host, `${host}/pay?_ptxn=${txn}`)).toBe(true);
+    expect(rehearsalCheckoutLink(host, `https://buy.paddle.com/pay?_ptxn=${txn}`)).toBe(false);
+    expect(rehearsalCheckoutLink(host, `${host}/?_ptxn=${txn}`)).toBe(false);
+    const page = renderSandboxPayPage('test_sandboxtoken');
+    expect(page).toContain('https://cdn.paddle.com/paddle/v2/paddle.js');
+    expect(page).toContain('Paddle.Environment.set("sandbox")');
+    expect(page).toContain('"test_sandboxtoken"');
+    expect(page).not.toContain('api.paddle.com');
+    expect(page).not.toContain('production');
+    expect(() => renderSandboxPayPage('live_token')).toThrow('Sandbox client token required');
+    expect(SANDBOX_CARD_SELECTORS).toEqual(
+      expect.arrayContaining([
+        'input[name="cardnumber"]',
+        'input[autocomplete="cc-number"]',
+        'input[placeholder*="1234" i]',
+      ]),
+    );
   });
 
   it('talks only to the sandbox API', () => {

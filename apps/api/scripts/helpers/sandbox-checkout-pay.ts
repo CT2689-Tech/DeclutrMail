@@ -13,7 +13,19 @@ const NAME = 'Synthetic Fixture';
 
 export interface CheckoutPayFailure {
   frames: string[];
+  overlay: 'present' | 'absent';
+  card: 'filled' | 'missing';
+  pay: 'clicked' | 'missing';
 }
+
+/** Names Paddle's card iframes use. A page without these never completes a sandbox payment. */
+export const SANDBOX_CARD_SELECTORS = [
+  'input[name="cardNumber"]',
+  'input[name="cardnumber"]',
+  'input[autocomplete="cc-number"]',
+  'input[aria-label*="Card number" i]',
+  'input[placeholder*="1234" i]',
+] as const;
 
 interface Locator {
   count(): Promise<number>;
@@ -21,6 +33,7 @@ interface Locator {
   fill(value: string): Promise<void>;
   isVisible(): Promise<boolean>;
   click(): Promise<void>;
+  pressSequentially(value: string, options?: { delay?: number }): Promise<void>;
   selectOption(value: string | { label: string }): Promise<unknown>;
 }
 
@@ -28,6 +41,7 @@ interface Frame {
   locator(selector: string): Locator;
   getByRole(role: 'button', options: { name: RegExp }): Locator;
   title(): Promise<string>;
+  url(): string;
 }
 
 interface Page {
@@ -56,17 +70,27 @@ async function visible(locator: Locator): Promise<Locator | null> {
   return target;
 }
 
-async function fillAny(page: Page, selectors: string[], value: string): Promise<boolean> {
+async function typeInto(target: Locator, value: string): Promise<boolean> {
+  try {
+    await target.fill(value);
+    return true;
+  } catch {
+    try {
+      await target.click();
+      await target.pressSequentially(value, { delay: 20 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+async function fillAny(page: Page, selectors: readonly string[], value: string): Promise<boolean> {
   for (const frame of page.frames()) {
     for (const selector of selectors) {
       const target = await visible(frame.locator(selector));
       if (!target) continue;
-      try {
-        await target.fill(value);
-      } catch {
-        continue;
-      }
-      return true;
+      if (await typeInto(target, value)) return true;
     }
   }
   return false;
@@ -116,14 +140,11 @@ async function fillLoneCardFrames(page: Page): Promise<boolean> {
   const expiry = pick(/expir|^mm/, 1);
   const cvc = pick(/cvc|cvv|security|card code/, 2);
   if (!number || !expiry || !cvc || new Set([number, expiry, cvc]).size < 3) return false;
-  try {
-    await number.target.fill(CARD);
-    await expiry.target.fill(EXPIRY);
-    await cvc.target.fill(CVC);
-  } catch {
-    return false;
-  }
-  return true;
+  return (
+    (await typeInto(number.target, CARD)) &&
+    (await typeInto(expiry.target, EXPIRY)) &&
+    (await typeInto(cvc.target, CVC))
+  );
 }
 
 async function frameTitles(page: Page): Promise<string[]> {
@@ -135,6 +156,20 @@ async function frameTitles(page: Page): Promise<string[]> {
   return titles.slice(0, 12);
 }
 
+function overlayPresent(page: Page): boolean {
+  for (const frame of page.frames()) {
+    let raw = '';
+    try {
+      raw = frame.url();
+      const host = new URL(raw).hostname;
+      if (host === 'cdn.paddle.com' || host.endsWith('.paddle.com')) return true;
+    } catch {
+      /* about:blank and empty frames are not the overlay. */
+    }
+  }
+  return false;
+}
+
 /**
  * Keeps the hosted checkout open until `paid` is true.
  * Returns null when the provider transaction is paid. Frames are safe titles only.
@@ -144,8 +179,14 @@ export async function paySandboxCheckout(
   email: string,
   paid: () => Promise<boolean>,
 ): Promise<CheckoutPayFailure | null> {
+  const miss = (overlay: CheckoutPayFailure['overlay']): CheckoutPayFailure => ({
+    frames: [],
+    overlay,
+    card: 'missing',
+    pay: 'missing',
+  });
   if (!checkoutUrl.startsWith('https://') || !email.endsWith('@example.test'))
-    return { frames: [] };
+    return miss('absent');
   const browser = await playwright().chromium.launch({ headless: true });
   try {
     const page = await browser.newPage();
@@ -153,6 +194,8 @@ export async function paySandboxCheckout(
     await page.goto(checkoutUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     const deadline = Date.now() + 180_000;
     let lastClick = 0;
+    let cardFilled = false;
+    let payClicked = false;
     while (Date.now() < deadline) {
       if (await paid().catch(() => false)) return null;
       await fillAny(
@@ -172,18 +215,9 @@ export async function paySandboxCheckout(
         ],
         '10001',
       );
-      const labeled = await fillAny(
-        page,
-        [
-          'input[name="cardNumber"]',
-          'input[name="cardnumber"]',
-          'input[autocomplete="cc-number"]',
-          'input[aria-label*="Card number" i]',
-          'input[placeholder*="1234" i]',
-        ],
-        CARD,
-      );
+      const labeled = await fillAny(page, SANDBOX_CARD_SELECTORS, CARD);
       const card = labeled || (await fillLoneCardFrames(page));
+      if (card) cardFilled = true;
       const due = Date.now() - lastClick > 8_000;
       if (card && due) {
         if (labeled) {
@@ -191,6 +225,7 @@ export async function paySandboxCheckout(
             page,
             [
               'input[name="expiry"]',
+              'input[name="exp-date"]',
               'input[autocomplete="cc-exp"]',
               'input[aria-label*="Expir" i]',
               'input[placeholder*="MM" i]',
@@ -218,13 +253,21 @@ export async function paySandboxCheckout(
           ],
           NAME,
         );
-        if (await clickAny(page, /pay now|subscribe|buy now|confirm|pay/i)) lastClick = Date.now();
+        if (await clickAny(page, /pay now|subscribe|buy now|confirm|pay/i)) {
+          payClicked = true;
+          lastClick = Date.now();
+        }
       } else if (!card && due && (await clickAny(page, /continue|next/i))) {
         lastClick = Date.now();
       }
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
-    return { frames: await frameTitles(page) };
+    return {
+      frames: await frameTitles(page),
+      overlay: overlayPresent(page) ? 'present' : 'absent',
+      card: cardFilled ? 'filled' : 'missing',
+      pay: payClicked ? 'clicked' : 'missing',
+    };
   } finally {
     await browser.close();
   }

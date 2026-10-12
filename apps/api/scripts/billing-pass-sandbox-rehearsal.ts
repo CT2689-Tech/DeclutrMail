@@ -26,6 +26,9 @@ import {
 import {
   discountMatchesPercent,
   discountPriceIds,
+  passTransactionCreateBody,
+  rehearsalCheckoutLink,
+  renderSandboxPayPage,
   renewalIsFullPrice,
   SANDBOX_API_ORIGIN,
   withinWindow,
@@ -34,7 +37,7 @@ import {
   assertSandboxRehearsalEnvironment,
   listenRehearsalServer,
 } from './helpers/sandbox-rehearsal-boundary.js';
-import { paySandboxCheckout } from './helpers/sandbox-checkout-pay.js';
+import { paySandboxCheckout, type CheckoutPayFailure } from './helpers/sandbox-checkout-pay.js';
 
 assertSandboxRehearsalEnvironment(process.env);
 const publicUrl = process.env.REHEARSAL_PUBLIC_URL!;
@@ -60,6 +63,8 @@ const workspaceIds = new Set<string>();
 let destinationId = '';
 let endpointSecret = '';
 let destinationAttempted = false;
+let clientToken = '';
+let tokenId = '';
 let stopping = false;
 let finished = false;
 let paddle: PaddleAdapter | undefined;
@@ -176,6 +181,14 @@ const server = createServer((req, res) => {
         await webhook(req, res);
         return;
       }
+      if (req.method === 'GET' && url.pathname === '/pay' && clientToken) {
+        res.writeHead(200, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store',
+        });
+        res.end(renderSandboxPayPage(clientToken));
+        return;
+      }
       json(res, 403, { error: 'private' });
     } catch {
       if (!res.headersSent) json(res, 500, { error: 'fixture' });
@@ -218,19 +231,21 @@ async function openTransaction(input: {
   addressId: string;
   discountId?: string;
 }): Promise<{ id: string; url: string; subtotal: string; discount: string }> {
-  const created = await api('/transactions', 'POST', {
-    items: [{ price_id: input.priceId, quantity: 1 }],
-    customer_id: input.customerId,
-    address_id: input.addressId,
-    currency_code: 'USD',
-    collection_mode: 'automatic',
-    custom_data: { workspace_id: input.workspaceId, sig: signWorkspace(input.workspaceId) },
-    ...(input.discountId ? { discount_id: input.discountId } : {}),
-  });
+  const created = await api(
+    '/transactions',
+    'POST',
+    passTransactionCreateBody({
+      ...input,
+      checkoutUrl: `${publicUrl}/pay`,
+      signature: signWorkspace(input.workspaceId),
+    }),
+  );
   const id = String(created.data.id);
   if (!/^txn_[a-z\d]{26}$/.test(id)) throw new Error('Sandbox transaction was not created');
   transactionIds.add(id);
   const url = await checkoutUrl(id, created.data);
+  if (!rehearsalCheckoutLink(publicUrl, url))
+    throw new Error('Checkout link was not the rehearsal page');
   const money = moneyOf(created.data);
   return { id, url, ...money };
 }
@@ -379,6 +394,14 @@ async function shutdown() {
     }
   }
   if (customerIds.size > 0 && archived === customerIds.size) cleanup.customersArchived = true;
+  if (tokenId) {
+    try {
+      await api(`/client-tokens/${tokenId}`, 'PATCH', { status: 'revoked' });
+      cleanup.tokenRevoked = (await api(`/client-tokens/${tokenId}`)).data.status === 'revoked';
+    } catch {
+      cleanup.tokenRevoked = false;
+    }
+  }
   if (Object.values(cleanup).some((value) => value === false)) process.exitCode = 1;
   evidence.completed = finished && process.exitCode !== 1;
   await record();
@@ -391,6 +414,12 @@ function recordFailure(failure: RehearsalFailure) {
   if (evidence.error) return;
   evidence.error = failure;
   evidence.errorPhase = evidence.phase ?? 'unknown';
+}
+function noteUnpaid(unpaid: CheckoutPayFailure) {
+  evidence.checkoutFrames = unpaid.frames;
+  evidence.checkoutOverlay = unpaid.overlay;
+  evidence.checkoutCard = unpaid.card;
+  evidence.checkoutPay = unpaid.pay;
 }
 installRehearsalFailureHandlers({
   onFailure: recordFailure,
@@ -487,6 +516,20 @@ try {
     new AutopilotReadService(db),
     new BillingUpgradeRefundService(db, catalog, paddle),
   );
+  const token = await api('/client-tokens', 'POST', {
+    name: resourceName,
+    description: 'Disposable backlog pass checkout',
+  });
+  if (
+    typeof token.data.id !== 'string' ||
+    typeof token.data.token !== 'string' ||
+    !/^test_[A-Za-z0-9_]{8,200}$/.test(token.data.token)
+  )
+    throw new Error('Sandbox client token required');
+  tokenId = token.data.id;
+  clientToken = token.data.token;
+  console.log(`::add-mask::${clientToken}`);
+  evidence.clientTokenCreated = true;
   await listenRehearsalServer(server);
   if ((await fetch('http://127.0.0.1:4049/state')).status !== 403)
     throw new Error('Operator gate unconfirmed');
@@ -502,7 +545,7 @@ try {
   passTransactionId = first.id;
   const unpaid = await paySandboxCheckout(first.url, pass.email, () => transactionPaid(first.id));
   if (unpaid) {
-    evidence.checkoutFrames = unpaid.frames;
+    noteUnpaid(unpaid);
     throw new Error('Sandbox checkout payment was not completed');
   }
   await waitUntil(
@@ -536,7 +579,7 @@ try {
     transactionPaid(second.id),
   );
   if (secondUnpaid) {
-    evidence.checkoutFrames = secondUnpaid.frames;
+    noteUnpaid(secondUnpaid);
     throw new Error('Sandbox checkout payment was not completed');
   }
   await waitUntil(
@@ -589,7 +632,7 @@ try {
     transactionPaid(annualTxn.id),
   );
   if (annualUnpaid) {
-    evidence.checkoutFrames = annualUnpaid.frames;
+    noteUnpaid(annualUnpaid);
     throw new Error('Sandbox checkout payment was not completed');
   }
   await waitUntil('Annual payment did not complete', async () => {
