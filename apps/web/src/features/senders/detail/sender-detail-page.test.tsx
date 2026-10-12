@@ -1976,9 +1976,14 @@ describe('SenderDetailRoute', () => {
         fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
         const dialog = await screen.findByRole('dialog');
         expect(
-          await within(dialog).findByText(/^Protected — you marked it Protected\.$/),
+          await within(dialog).findByText(/is Protected because you marked it Protected\./),
         ).toBeInTheDocument();
         expect(within(dialog).queryByRole('button', { name: 'Unsubscribe + Archive' })).toBeNull();
+        const archiveChoice = await within(dialog).findByRole('radio', {
+          name: /Unsubscribe and archive \d+ emails/,
+        });
+        await waitFor(() => expect(archiveChoice).toBeEnabled());
+        fireEvent.click(archiveChoice);
         const confirm = await within(dialog).findByRole('button', {
           name: 'Unsubscribe + Archive anyway',
         });
@@ -2006,6 +2011,11 @@ describe('SenderDetailRoute', () => {
         renderDetail();
         fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
         const dialog = await screen.findByRole('dialog');
+        const archiveChoice = await within(dialog).findByRole('radio', {
+          name: /Unsubscribe and archive \d+ emails/,
+        });
+        await waitFor(() => expect(archiveChoice).toBeEnabled());
+        fireEvent.click(archiveChoice);
         const confirm = await within(dialog).findByRole('button', {
           name: 'Unsubscribe + Archive',
         });
@@ -2099,6 +2109,9 @@ describe('SenderDetailRoute', () => {
         await waitFor(() => expect(pill('done')).not.toBeNull());
         fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe (U)' }));
         const dialog = await screen.findByRole('dialog');
+        fireEvent.click(
+          await within(dialog).findByRole('radio', { name: /Unsubscribe and archive \d+/ }),
+        );
         const confirm = await within(dialog).findByRole('button', {
           name: 'Unsubscribe + Archive',
         });

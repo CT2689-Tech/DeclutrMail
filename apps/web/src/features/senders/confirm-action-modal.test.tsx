@@ -461,8 +461,12 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     expect(confirm).toBeEnabled();
     // The preview never resolved, so Archive and Delete stay off and
     // do not claim a zero count.
-    expect(screen.getByRole('radio', { name: 'Unsubscribe and archive' })).toBeDisabled();
-    expect(screen.getByRole('radio', { name: 'Unsubscribe and delete' })).toBeDisabled();
+    expect(
+      screen.getByRole('radio', { name: 'Unsubscribe and archive, counting emails' }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('radio', { name: 'Unsubscribe and delete, counting emails' }),
+    ).toBeDisabled();
     expect(screen.queryByRole('radio', { name: /0 emails/ })).toBeNull();
     expect(screen.queryByRole('combobox', { name: /How far back/i })).toBeNull();
     fireEvent.click(confirm);
@@ -2427,7 +2431,9 @@ describe('ConfirmActionModal — the title names the verb and the count (QA-arch
         bulkPreview={{ data: undefined, loading: true, error: false }}
       />,
     );
-    expect(screen.getByRole('radio', { name: 'Unsubscribe and archive' })).toBeDisabled();
+    expect(
+      screen.getByRole('radio', { name: 'Unsubscribe and archive, counting emails' }),
+    ).toBeDisabled();
     expect(screen.queryByRole('radio', { name: /0 emails/ })).toBeNull();
     expect(screen.queryByText(/Loading preview/i)).toBeNull();
     const confirm = screen.getByRole('button', { name: 'Unsubscribe' });

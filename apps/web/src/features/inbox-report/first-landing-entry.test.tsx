@@ -99,8 +99,12 @@ describe('InboxReportFirstLanding', () => {
     expect(await screen.findByText(/mostly leave unread/)).toBeInTheDocument();
     await waitFor(() => expect(onResolved).toHaveBeenCalledWith(true));
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
-    expect(screen.getByRole('radio', { name: 'Unsubscribe and archive' })).toBeDisabled();
-    expect(screen.getByRole('radio', { name: 'Unsubscribe and delete' })).toBeDisabled();
+    expect(
+      screen.getByRole('radio', { name: 'Unsubscribe and archive, counting emails' }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('radio', { name: 'Unsubscribe and delete, counting emails' }),
+    ).toBeDisabled();
     expect(screen.getByRole('dialog')).not.toHaveTextContent('archive 4 emails');
     releasePreview(
       jsonOk({
@@ -118,7 +122,14 @@ describe('InboxReportFirstLanding', () => {
         },
       }),
     );
-    const confirm = await screen.findByRole('button', { name: 'Unsubscribe + Archive' });
+    const archiveChoice = await screen.findByRole('radio', {
+      name: 'Unsubscribe and archive 7 emails',
+    });
+    expect(archiveChoice).toBeEnabled();
+    expect(archiveChoice).not.toBeChecked();
+    expect(screen.getByRole('dialog')).toHaveTextContent('Unsubscribe from ?');
+    fireEvent.click(archiveChoice);
+    const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
     expect(confirm).toBeEnabled();
     expect(screen.getByRole('dialog')).toHaveTextContent('archive 7 emails');
     fireEvent.click(confirm);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
@@ -22,6 +22,130 @@ import type { ActionRequest } from '@/features/senders/data';
 import { useBulkActionPreview, useCompositePreview } from '@/lib/api/use-action';
 
 import './report.css';
+
+const BURST = Array.from({ length: 12 }, (_, index) => ({
+  a: `${index * 30}deg`,
+  d: `${12 + (index % 5) * 2}px`,
+}));
+
+function ReportCount({ figure, mailboxId }: { figure: string; mailboxId?: string | undefined }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    const root = el?.closest('.dm-report');
+    const target = Number.parseInt(figure, 10);
+    if (!el || !root || !mailboxId || !Number.isFinite(target)) return;
+    const suffix = figure.slice(String(target).length);
+    const key = `reportRevealSeen:${mailboxId}`;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce || localStorage.getItem(key) || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        io.disconnect();
+        localStorage.setItem(key, '1');
+        const started = performance.now();
+        let last = started;
+        const tick = (now: number) => {
+          if (now <= last && now > started) {
+            el.textContent = figure;
+            return;
+          }
+          last = now;
+          const p = Math.min(1, (now - started) / 700);
+          const eased = 1 - (1 - p) ** 3;
+          el.textContent = `${Math.round(target * eased)}${suffix}`;
+          if (p < 1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      },
+      { threshold: 0.5 },
+    );
+    io.observe(root);
+    return () => io.disconnect();
+  }, [figure, mailboxId]);
+  return (
+    <span ref={ref} className="dm-display-xl" data-report-figure aria-label={figure}>
+      {figure}
+    </span>
+  );
+}
+
+function CelebrationMark({ mailboxId }: { mailboxId?: string | undefined }) {
+  const key = mailboxId ? `reportBurstSeen:${mailboxId}` : null;
+  const [play, setPlay] = useState(false);
+  useEffect(() => {
+    if (!key || localStorage.getItem(key) === '1') return;
+    setPlay(true);
+    localStorage.setItem(key, '1');
+  }, [key]);
+  return (
+    <div className="dm-check" aria-hidden="true" data-report-check>
+      <svg viewBox="0 0 56 56">
+        <circle
+          cx="28"
+          cy="28"
+          r="26"
+          fill="var(--dm-primary-soft)"
+          stroke="var(--dm-primary)"
+          strokeWidth="2"
+        />
+        <path
+          d="M17 29.5l7 7 15-16"
+          fill="none"
+          stroke="var(--dm-primary)"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      {play ? (
+        <span className="dm-burst">
+          {BURST.map((dot) => (
+            <i key={dot.a} style={{ ['--a' as string]: dot.a, ['--d' as string]: dot.d }} />
+          ))}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function sentenceBesideFigure(sentence: string, figure: string | null): string {
+  if (!figure) return sentence;
+  const prefix = `${figure} `;
+  return sentence.startsWith(prefix) ? sentence.slice(prefix.length) : sentence;
+}
+
+function ReportGlyphs({ n, label }: { n: number; label: string }) {
+  const filled = Math.max(0, Math.min(10, n));
+  return (
+    <p className="dm-report-glyphs" role="img" aria-label={label} data-report-glyphs>
+      {Array.from({ length: 10 }, (_, index) => (
+        <svg key={index} viewBox="0 0 18 14" aria-hidden="true" data-filled={index < filled}>
+          <rect
+            x="1"
+            y="1"
+            width="16"
+            height="12"
+            rx="2.5"
+            fill={index < filled ? 'var(--dm-primary)' : 'transparent'}
+            stroke="var(--dm-primary)"
+            strokeWidth="1.4"
+            opacity={index < filled ? 1 : 0.28}
+          />
+          <path
+            d="M2.6 2.8 9 7.8l6.4-5"
+            fill="none"
+            stroke={index < filled ? 'var(--dm-card)' : 'var(--dm-primary)'}
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      ))}
+    </p>
+  );
+}
 
 function passEnabled(): boolean {
   const raw = process.env.NEXT_PUBLIC_BILLING_PASS_ENABLED ?? process.env.BILLING_PASS_ENABLED;
@@ -50,7 +174,7 @@ export function InboxReportPanel({
   trustHref = '/settings/privacy',
 }: {
   report: InboxReportDto;
-  mailboxEmail?: string;
+  mailboxEmail?: string | undefined;
   dismissed?: boolean;
   resetDate?: string;
   onDismiss: () => void;
@@ -115,15 +239,29 @@ export function InboxReportPanel({
             </div>
           ) : (
             <div>
-              {headline?.figure ? <span className="dm-display-xl">{headline.figure}</span> : null}
-              <p>{headline?.sentence}</p>
-              {glyph ? (
-                <p role="img" aria-label={glyph.label}>
-                  {glyph.label}
+              {headline?.figure ? (
+                <ReportCount figure={headline.figure} mailboxId={mailboxId} />
+              ) : null}
+              {headline ? (
+                <p
+                  className="dm-report-sentence"
+                  data-report-sentence
+                  data-reveal
+                  style={{ ['--i' as string]: 1 }}
+                >
+                  {sentenceBesideFigure(headline.sentence, headline.figure)}
                 </p>
               ) : null}
+              <p className="dm-report-meta" data-report-window>
+                {WS5_COPY['report.window.90d']}
+              </p>
+              {glyph ? (
+                <span data-reveal style={{ ['--i' as string]: 1 }}>
+                  <ReportGlyphs n={glyph.n} label={glyph.label} />
+                </span>
+              ) : null}
               {support ? (
-                <p data-reveal style={{ ['--i' as string]: 1 }}>
+                <p data-reveal style={{ ['--i' as string]: 2 }}>
                   {support}
                 </p>
               ) : null}
@@ -133,16 +271,16 @@ export function InboxReportPanel({
                 </p>
               ))}
               {mailboxEmail ? (
-                <p>
+                <p data-report-basis>
                   {fillCopy(WS5_COPY['report.basis'], {
-                    total: report.receivedCount,
+                    total: report.receivedCount.toLocaleString('en-US'),
                     mailboxEmail,
-                  })}{' '}
-                  {WS5_COPY['report.sizesNote']}
+                  })}
                 </p>
               ) : null}
-              {report.fix.sendersCount > 0 ? (
-                <div>
+              <p data-report-sizes>{WS5_COPY['report.sizesNote']}</p>
+              {report.fix.sendersCount > 0 && !celebration ? (
+                <div data-reveal style={{ ['--i' as string]: 3 }}>
                   <p>
                     {isPluralCopy(WS5_COPY['report.fix.heading'])
                       ? pluralCopy(WS5_COPY['report.fix.heading'], report.fix.sendersCount, {
@@ -150,7 +288,7 @@ export function InboxReportPanel({
                         })
                       : ''}
                   </p>
-                  <button type="button" onClick={() => setFixOpen(true)}>
+                  <button type="button" data-report-fix onClick={() => setFixOpen(true)}>
                     {fixLabel}
                   </button>
                   {onReview ? (
@@ -171,19 +309,22 @@ export function InboxReportPanel({
                 {WS5_COPY['report.trust']} <a href={trustHref}>{WS5_COPY['report.trust.link']}</a>
               </p>
               {celebration ? (
-                <div data-celebration>
-                  <p>
-                    {celebration.senders === 1
-                      ? fillCopy(WS5_COPY['report.celebrate.archive.one'], {
-                          X: celebration.archived,
-                        })
-                      : fillCopy(WS5_COPY['report.celebrate.archive'], {
-                          X: celebration.archived,
-                          n: celebration.senders,
-                        })}
-                  </p>
-                  <p>{WS5_COPY['report.celebrate.undo']}</p>
-                  <p>{WS5_COPY['report.storageNote']}</p>
+                <div className="dm-report-celebrate" data-celebration>
+                  <CelebrationMark mailboxId={mailboxId} />
+                  <div>
+                    <p>
+                      {celebration.senders === 1
+                        ? fillCopy(WS5_COPY['report.celebrate.archive.one'], {
+                            X: celebration.archived,
+                          })
+                        : fillCopy(WS5_COPY['report.celebrate.archive'], {
+                            X: celebration.archived,
+                            n: celebration.senders,
+                          })}
+                    </p>
+                    <p>{WS5_COPY['report.celebrate.undo']}</p>
+                    <p>{WS5_COPY['report.storageNote']}</p>
+                  </div>
                 </div>
               ) : null}
             </div>

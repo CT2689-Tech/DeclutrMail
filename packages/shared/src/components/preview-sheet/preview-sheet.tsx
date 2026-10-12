@@ -150,7 +150,7 @@ export function PreviewSheet({
           </h2>
 
           {subtitle != null && (
-            <p
+            <div
               id={subtitleId}
               style={{
                 margin: `${space[2]}px 0 0`,
@@ -162,7 +162,7 @@ export function PreviewSheet({
               }}
             >
               {subtitle}
-            </p>
+            </div>
           )}
 
           {children != null && <div style={{ marginTop: space[5], width: '100%' }}>{children}</div>}

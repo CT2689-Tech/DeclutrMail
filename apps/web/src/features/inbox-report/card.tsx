@@ -11,19 +11,18 @@ export function InboxReportCard(props: { surface: 'home'; mailboxId: string }): 
   if (props.surface !== 'home') return null;
   const titleId = `inbox-report-home-title-${props.mailboxId}`;
   return (
-    <section
+    <a
       className={styles.card}
+      href="/senders"
       data-surface="home"
       data-mailbox={props.mailboxId}
       aria-labelledby={titleId}
     >
-      <h2 id={titleId} className={styles.title}>
+      <strong id={titleId} className={`${styles.title} dm-home-report-title`}>
         {WS5_COPY['report.home.title']}
-      </h2>
-      <p className={styles.body}>{WS5_COPY['report.home.body']}</p>
-      <a href="/senders" data-dm-button="" className="dm-button-link">
-        {WS5_COPY['report.home.cta']}
-      </a>
-    </section>
+      </strong>
+      <span className={`${styles.body} dm-home-report-body`}>{WS5_COPY['report.home.body']}</span>
+      <span className="dm-home-report-cta">{WS5_COPY['report.home.cta']}</span>
+    </a>
   );
 }

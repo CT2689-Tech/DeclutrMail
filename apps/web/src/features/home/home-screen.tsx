@@ -9,7 +9,6 @@ import { useHomePending } from './api/use-home-pending';
 import { useHomeSummary } from './api/use-home-summary';
 import { useHomeWorkflows } from './api/use-home-workflows';
 import { composeHomeAction, composeHomeNumbers, type HomeState } from './home-state';
-import { InboxReportCard } from '@/features/inbox-report';
 import { HomeArrivals } from './home-arrivals';
 import { HomeView } from './home-view';
 
@@ -51,14 +50,12 @@ export function HomeScreen() {
 
   return (
     <>
-      {me.activeMailboxId ? (
-        <InboxReportCard surface="home" mailboxId={me.activeMailboxId} />
-      ) : null}
       <HomeView
         state={resolve()}
         tier={tier}
         workflows={workflows}
         timeZone={me.user.timezone ?? 'UTC'}
+        mailboxId={me.activeMailboxId}
         visitSummary={<HomeArrivals />}
         quota={
           cleanupRemaining !== null

@@ -7,6 +7,7 @@ import { normalizeProtectionReason, protectionReasonClause } from '@declutrmail/
 import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
+import styles from './unsubscribe-backlog-dialog.module.css';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import { track } from '@/lib/posthog';
 import type { CompositeActionPreviewResult } from '@/lib/api/use-action';
@@ -81,15 +82,23 @@ export function UnsubscribeBacklogDialog({
       ? bulkRows.reduce((sum, row) => sum + row.counts.all, 0)
       : (preferredInboxCount ?? null);
   const loading = single ? compositePreviewLoading : (bulkPreview?.loading ?? false);
-  const [mode, setMode] = useState<Mode>('unsub_only');
   const armed = useRef(false);
   const summary = useCleanupSummary();
   const requestKey = request.senders.map((sender) => sender.id).join(',');
+  const countAtOpen = useRef(inboxCount);
+  const requestSeen = useRef(requestKey);
+  if (requestSeen.current !== requestKey) {
+    requestSeen.current = requestKey;
+    countAtOpen.current = inboxCount;
+  }
+  const [mode, setMode] = useState<Mode>(() => openingMode(protectedSingle, inboxCount));
 
   useEffect(() => {
     armed.current = false;
-    setMode(inboxCount !== null && inboxCount > 0 ? 'archive' : 'unsub_only');
-  }, [requestKey, inboxCount]);
+    // The count often arrives after the dialog is open. Changing the
+    // selected option then moves the primary button under the pointer.
+    setMode(openingMode(protectedSingle, countAtOpen.current));
+  }, [requestKey, protectedSingle]);
 
   useEffect(() => {
     if (inboxCount === null) return;
@@ -138,18 +147,20 @@ export function UnsubscribeBacklogDialog({
   const k = request.senders.length;
   const title = (() => {
     if (!single) {
-      if (mode === 'delete') return fillCopy(WS5_COPY['f1.title.bulk.delete'], { k, n });
-      if (mode === 'archive') return fillCopy(WS5_COPY['f1.title.bulk.archive'], { k, n });
-      return fillCopy(WS5_COPY['f1.title.bulk.unsubOnly'], { k });
+      if (mode === 'delete')
+        return fillCopy(WS5_COPY['f1.title.bulk.delete'], { k: shown(k), n: shown(n) });
+      if (mode === 'archive')
+        return fillCopy(WS5_COPY['f1.title.bulk.archive'], { k: shown(k), n: shown(n) });
+      return fillCopy(WS5_COPY['f1.title.bulk.unsubOnly'], { k: shown(k) });
     }
     const Sender = request.senders[0]?.name ?? '';
     if (mode === 'delete') {
       const forms = WS5_COPY['f1.title.delete'];
-      return isPluralCopy(forms) ? pluralCopy(forms, n, { n, Sender }) : '';
+      return isPluralCopy(forms) ? pluralCopy(forms, n, { n: shown(n), Sender }) : '';
     }
     if (mode === 'archive') {
       const forms = WS5_COPY['f1.title.archive'];
-      return isPluralCopy(forms) ? pluralCopy(forms, n, { n, Sender }) : '';
+      return isPluralCopy(forms) ? pluralCopy(forms, n, { n: shown(n), Sender }) : '';
     }
     return fillCopy(WS5_COPY['f1.title.unsubOnly'], { Sender });
   })();
@@ -177,7 +188,7 @@ export function UnsubscribeBacklogDialog({
         <p key={row.senderId}>
           {future ? `${future} ` : ''}
           {isPluralCopy(rowCopy)
-            ? pluralCopy(rowCopy, row.counts.all, { n: row.counts.all, Sender: row.name })
+            ? pluralCopy(rowCopy, row.counts.all, { n: shown(row.counts.all), Sender: row.name })
             : row.name}
         </p>,
       );
@@ -190,11 +201,11 @@ export function UnsubscribeBacklogDialog({
   }
   if (mode === 'archive' && isPluralCopy(WS5_COPY['f1.preview.backlog.archive'])) {
     previewLines.push(
-      <p key="backlog">{pluralCopy(WS5_COPY['f1.preview.backlog.archive'], n, { n })}</p>,
+      <p key="backlog">{pluralCopy(WS5_COPY['f1.preview.backlog.archive'], n, { n: shown(n) })}</p>,
     );
   } else if (mode === 'delete' && isPluralCopy(WS5_COPY['f1.preview.backlog.delete'])) {
     previewLines.push(
-      <p key="backlog">{pluralCopy(WS5_COPY['f1.preview.backlog.delete'], n, { n })}</p>,
+      <p key="backlog">{pluralCopy(WS5_COPY['f1.preview.backlog.delete'], n, { n: shown(n) })}</p>,
     );
   } else {
     previewLines.push(<p key="stay">{WS5_COPY['f1.preview.backlog.unsubOnly']}</p>);
@@ -206,13 +217,7 @@ export function UnsubscribeBacklogDialog({
       : mode === 'archive'
         ? WS5_COPY['f1.honesty.archive']
         : WS5_COPY['f1.honesty.unsubOnly'];
-  const buttonLabel =
-    mode === 'delete'
-      ? WS5_COPY['f1.button.delete']
-      : mode === 'archive'
-        ? WS5_COPY['f1.button.archive']
-        : WS5_COPY['f1.button.unsubOnly'];
-  const button = protectedSingle ? `${buttonLabel} anyway` : buttonLabel;
+  const button = protectedButton(mode, protectedSingle);
 
   const confirm = () => {
     const secondary = mode === 'unsub_only' ? null : mode;
@@ -256,18 +261,12 @@ export function UnsubscribeBacklogDialog({
         primary={{
           label: button,
           onClick: confirm,
-          tone: mode === 'delete' ? 'danger' : mode === 'archive' ? 'warn' : 'primary',
+          tone: mode === 'delete' ? 'danger' : 'primary',
           disabled: confirmDisabled,
           ...(submitting ? { busyLabel: button } : {}),
         }}
       >
-        {protectedSingle ? (
-          <p>
-            {protectedReason !== null
-              ? `Protected — ${protectionReasonClause(protectedReason)}.`
-              : 'Protected.'}
-          </p>
-        ) : null}
+        {protectedSingle ? <p>{protectedLead(onlySender?.name ?? '', protectedReason)}</p> : null}
         <div role="radiogroup" aria-label={WS5_COPY['f1.segment.unsubOnly']}>
           <Segment
             checked={mode === 'unsub_only'}
@@ -279,16 +278,16 @@ export function UnsubscribeBacklogDialog({
             disabled={backlogOff}
             label={
               inboxCount === null
-                ? 'Archive'
+                ? WS5_COPY['f1.segment.archive.loading']
                 : isPluralCopy(archiveLabel)
-                  ? pluralCopy(archiveLabel, n, { n })
+                  ? pluralCopy(archiveLabel, n, { n: shown(n) })
                   : ''
             }
             ariaLabel={
               inboxCount === null
-                ? 'Unsubscribe and archive'
+                ? WS5_COPY['f1.segment.archive.loading.aria']
                 : isPluralCopy(archiveAria)
-                  ? pluralCopy(archiveAria, n, { n })
+                  ? pluralCopy(archiveAria, n, { n: shown(n) })
                   : labelFallback(archiveAria)
             }
             onSelect={() => setMode('archive')}
@@ -298,16 +297,16 @@ export function UnsubscribeBacklogDialog({
             disabled={backlogOff}
             label={
               inboxCount === null
-                ? 'Delete'
+                ? WS5_COPY['f1.segment.delete.loading']
                 : isPluralCopy(deleteLabel)
-                  ? pluralCopy(deleteLabel, n, { n })
+                  ? pluralCopy(deleteLabel, n, { n: shown(n) })
                   : ''
             }
             ariaLabel={
               inboxCount === null
-                ? 'Unsubscribe and delete'
+                ? WS5_COPY['f1.segment.delete.loading.aria']
                 : isPluralCopy(deleteAria)
-                  ? pluralCopy(deleteAria, n, { n })
+                  ? pluralCopy(deleteAria, n, { n: shown(n) })
                   : ''
             }
             onSelect={() => setMode('delete')}
@@ -336,7 +335,7 @@ function Segment({
   onSelect: () => void;
 }) {
   return (
-    <label>
+    <label className={disabled ? `${styles.segment} ${styles.off}` : styles.segment}>
       <input
         type="radio"
         name="unsubscribe-backlog"
@@ -352,4 +351,39 @@ function Segment({
 
 function labelFallback(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+function shown(n: number): string {
+  return n.toLocaleString('en-US');
+}
+
+function openingMode(protectedSingle: boolean, inboxCount: number | null): Mode {
+  if (protectedSingle) return 'unsub_only';
+  if (inboxCount !== null && inboxCount > 0) return 'archive';
+  return 'unsub_only';
+}
+
+function protectedButton(mode: Mode, protectedSingle: boolean): string {
+  if (mode === 'delete') {
+    return protectedSingle ? WS5_COPY['f1.button.delete.protected'] : WS5_COPY['f1.button.delete'];
+  }
+  if (mode === 'archive') {
+    return protectedSingle
+      ? WS5_COPY['f1.button.archive.protected']
+      : WS5_COPY['f1.button.archive'];
+  }
+  return protectedSingle
+    ? WS5_COPY['f1.button.unsubOnly.protected']
+    : WS5_COPY['f1.button.unsubOnly'];
+}
+
+function protectedLead(
+  sender: string,
+  reason: ReturnType<typeof normalizeProtectionReason>,
+): string {
+  const clause = protectionReasonClause(reason);
+  if (clause === 'it is Protected') {
+    return fillCopy(WS5_COPY['f1.protected.leadNoReason'], { Sender: sender });
+  }
+  return fillCopy(WS5_COPY['f1.protected.lead'], { Sender: sender, reason: clause });
 }

@@ -2112,7 +2112,14 @@ describe('SendersScreen — edge states', () => {
     expect(
       within(dialog).queryByRole('radio', { name: /Leave alone|Archive them|Delete them/i }),
     ).toBeNull();
-    expect(within(dialog).getByRole('button', { name: 'Unsubscribe + Archive' })).toBeEnabled();
+    expect(
+      within(dialog).getByRole('radio', { name: 'Unsubscribe and archive 3 emails' }),
+    ).not.toBeChecked();
+    expect(within(dialog).getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
+    expect(within(dialog).queryByText('Unsubscribing is free and doesn’t count.')).toBeNull();
+    fireEvent.click(
+      within(dialog).getByRole('radio', { name: 'Unsubscribe and archive 3 emails' }),
+    );
     expect(
       within(dialog).getByText('Unsubscribing is free and doesn’t count.'),
     ).toBeInTheDocument();
@@ -2185,6 +2192,9 @@ describe('SendersScreen — edge states', () => {
       }),
     );
     const dialog = await screen.findByRole('dialog');
+    fireEvent.click(
+      await within(dialog).findByRole('radio', { name: /Unsubscribe and archive \d+/ }),
+    );
     const confirm = await within(dialog).findByRole('button', { name: 'Unsubscribe + Archive' });
     expect(
       within(dialog).getByText('Unsubscribing is free and doesn’t count.'),
@@ -2288,7 +2298,9 @@ describe('SendersScreen — edge states', () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(50);
       });
-      const confirm = within(screen.getByRole('dialog')).getByRole('button', {
+      const dialog = screen.getByRole('dialog');
+      fireEvent.click(within(dialog).getByRole('radio', { name: /Unsubscribe and archive \d+/ }));
+      const confirm = within(dialog).getByRole('button', {
         name: 'Unsubscribe + Archive',
       });
       expect(confirm).toBeEnabled();
@@ -3473,7 +3485,11 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       renderScreenWithToasts();
       await selectBothAndPress('u');
       await screen.findByText(/unsubscribe from 2 senders/i);
-      const confirm = await within(screen.getByRole('dialog')).findByRole('button', {
+      const dialog = screen.getByRole('dialog');
+      fireEvent.click(
+        await within(dialog).findByRole('radio', { name: /Unsubscribe and archive \d+/ }),
+      );
+      const confirm = await within(dialog).findByRole('button', {
         name: 'Unsubscribe + Archive',
       });
       await waitFor(() => expect(confirm).toBeEnabled());
@@ -3549,6 +3565,9 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       renderScreenWithToasts();
       await selectBothAndPress('u');
       const dialog = await screen.findByRole('dialog');
+      fireEvent.click(
+        await within(dialog).findByRole('radio', { name: /Unsubscribe and archive \d+/ }),
+      );
       const confirm = await within(dialog).findByRole('button', { name: 'Unsubscribe + Archive' });
       await waitFor(() => expect(confirm).toBeEnabled());
       fireEvent.click(confirm);
@@ -3996,7 +4015,11 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       renderScreen();
       await selectBothAndPress('u');
       await screen.findByText(/unsubscribe from 2 senders/i);
-      const confirm = await within(screen.getByRole('dialog')).findByRole('button', {
+      const dialog = screen.getByRole('dialog');
+      fireEvent.click(
+        await within(dialog).findByRole('radio', { name: /Unsubscribe and archive \d+/ }),
+      );
+      const confirm = await within(dialog).findByRole('button', {
         name: 'Unsubscribe + Archive',
       });
       await waitFor(() => expect(confirm).toBeEnabled());
@@ -4246,10 +4269,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
         within(dialog).queryByRole('radio', { name: /Archive them|Delete them|Leave alone/i }),
       ).toBeNull();
       expect(within(dialog).queryByText(/rechecked when it runs/i)).toBeNull();
-      await within(dialog).findByRole('button', { name: 'Unsubscribe + Archive' });
-      if (mode === 'delete') {
-        fireEvent.click(within(dialog).getByRole('radio', { name: radioName }));
-      }
+      fireEvent.click(await within(dialog).findByRole('radio', { name: radioName }));
       const confirm = within(dialog).getByRole('button', { name: buttonName });
       await waitFor(() => expect(confirm).toBeEnabled());
       fireEvent.click(confirm);
@@ -4272,6 +4292,9 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     renderScreenWithToasts();
     await selectBothAndPress('u');
     const dialog = await screen.findByRole('dialog');
+    fireEvent.click(
+      await within(dialog).findByRole('radio', { name: /Unsubscribe and archive \d+/ }),
+    );
     const confirm = await within(dialog).findByRole('button', { name: 'Unsubscribe + Archive' });
     await waitFor(() => expect(confirm).toBeEnabled());
     fireEvent.click(confirm);
@@ -4317,7 +4340,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
     await confirmBulkUnsubscribe();
     const toast = await screen.findByText(
-      'Unsubscribe requested from 1 senders · Archived 30 emails · 1 unsubscribe failed',
+      'Unsubscribe requested from 1 sender · Archived 30 emails · 1 unsubscribe failed',
     );
     expect(toast.textContent?.toLowerCase()).not.toContain('unsubscribed');
     expect(screen.queryByText(/1 request accepted/i)).toBeNull();
@@ -4354,7 +4377,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       await screen.findByRole('region', { name: 'Email unsubscribe drafts' }),
     ).toHaveTextContent('1 email unsubscribe draft still needs you');
     const manualToast =
-      'Archived 30 emails. To finish unsubscribing, press Send on the email that’s ready in Gmail. · 1 unsubscribe failed';
+      'The email is ready in Gmail. Press Send there to finish. · Archived 30 emails · 1 unsubscribe failed';
     expect(await screen.findByText(manualToast)).toHaveTextContent(manualToast);
     expect(manualToast).not.toMatch(/requested/i);
     expect(screen.queryByText(/2 unsubscribes failed/)).toBeNull();
@@ -4400,7 +4423,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     ]);
     await confirmBulkUnsubscribe();
     const toast = await screen.findByText(
-      'Unsubscribe requested from 1 senders · Archived 30 emails · 1 Protected sender left as it is',
+      'Unsubscribe requested from 1 sender · Archived 30 emails · 1 Protected sender left as it is',
     );
     expect(toast.textContent?.toLowerCase()).not.toMatch(/failed|not sent|unsubscribed/);
     expect(screen.queryByText(/Not sent: 1 Protected sender/)).toBeNull();
@@ -5659,9 +5682,16 @@ describe('SendersScreen — a Protected sender names the reason before override'
     );
     const confirmName = protectedRow ? 'Unsubscribe + Archive anyway' : 'Unsubscribe + Archive';
     if (protectedRow) {
-      expect(await screen.findByText(/^Protected — you starred a message\.$/)).toBeInTheDocument();
+      expect(
+        await screen.findByText('Sender A is Protected because you starred a message.'),
+      ).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Unsubscribe + Archive' })).toBeNull();
     }
+    const archiveChoice = await screen.findByRole('radio', {
+      name: /Unsubscribe and archive \d+ emails/,
+    });
+    await waitFor(() => expect(archiveChoice).toBeEnabled());
+    fireEvent.click(archiveChoice);
     const confirm = await screen.findByRole('button', { name: confirmName });
     // Wait for the live preview — confirming before the count arrives
     // would post unsub_only, and a missing override would pass for the

@@ -40,7 +40,7 @@ import {
 } from './data';
 import { SenderSearch } from './sender-search';
 import { isFeatureEnabled } from '@/lib/flags';
-import { WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { senderSizeCell } from './sender-size';
 import {
   ActiveFilterChips,
@@ -743,6 +743,8 @@ function SendersScreenContent({
   });
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [pendingAction, setPendingAction] = useState<ActionRequest | null>(null);
+  const pendingActionRef = useRef(pendingAction);
+  pendingActionRef.current = pendingAction;
   const [receipt, setReceipt] = useState<
     (ActionReceipt & { mailboxId: string | undefined }) | null
   >(null);
@@ -1522,7 +1524,12 @@ function SendersScreenContent({
           {
             mailboxId: actionMailboxId,
             mode,
-            senderIds: senderRefs.map((sref) => sref.id),
+            senderIds: [
+              ...new Set([
+                ...senderRefs.map((sref) => sref.id),
+                ...(pendingActionRef.current?.protectedSenderIds ?? []),
+              ]),
+            ],
             olderThanDays: opts?.secondary?.olderThanDays ?? opts?.olderThanDays ?? null,
             ...(mode === 'delete' && opts?.reach === 'all_mail' ? { reach: opts.reach } : {}),
             // Override rides only the dialog's explicit "anyway" click.
@@ -2324,7 +2331,27 @@ function SendersScreenContent({
         return;
       }
       const eligible = selectedSenders.filter(ELIGIBLE[verb]);
+      const protectedSenderIds =
+        verb === 'Unsubscribe'
+          ? selectedSenders
+              .filter((sender) => isStandingProtected(sender))
+              .map((sender) => sender.id)
+          : [];
       if (eligible.length === 0) {
+        if (
+          verb === 'Unsubscribe' &&
+          selectedSenders.length > 0 &&
+          selectedSenders.every(isStandingProtected) &&
+          isPluralCopy(WS5_COPY['f1.toast.unsub.skipped'])
+        ) {
+          toast(
+            pluralCopy(WS5_COPY['f1.toast.unsub.skipped'], selectedSenders.length, {
+              n: selectedSenders.length,
+            }),
+            'warn',
+          );
+          return;
+        }
         if (selectedSenders.length === 0) return;
         const n = selectedSenders.length;
         // Standing protection gates every bulk verb; the only other gate
@@ -2390,6 +2417,7 @@ function SendersScreenContent({
             selectedCount: selectedSenders.length,
             actionableCount: remaining,
             quotaCappedFrom: eligible.length,
+            ...(protectedSenderIds.length > 0 ? { protectedSenderIds } : {}),
           });
           return;
         }
@@ -2398,6 +2426,7 @@ function SendersScreenContent({
           senders: eligible,
           selectedCount: selectedSenders.length,
           actionableCount: eligible.length,
+          ...(protectedSenderIds.length > 0 ? { protectedSenderIds } : {}),
         });
         return;
       }
@@ -2423,6 +2452,7 @@ function SendersScreenContent({
           actionableCount: remainingWithSkips,
           quotaCappedFrom: eligible.length,
           skipped: { protectedCount, peopleCount: skippedTotal - protectedCount },
+          ...(protectedSenderIds.length > 0 ? { protectedSenderIds } : {}),
         });
         return;
       }
@@ -2435,6 +2465,7 @@ function SendersScreenContent({
         selectedCount: selectedSenders.length,
         actionableCount: eligible.length,
         skipped: { protectedCount, peopleCount: skippedTotal - protectedCount },
+        ...(protectedSenderIds.length > 0 ? { protectedSenderIds } : {}),
       });
     },
     [selectedSenders, requestAction, resultsReadOnly, tier, me.cleanupRemaining],
@@ -2582,7 +2613,11 @@ function SendersScreenContent({
         <AiInlinePrompt />
         <div className={workspaceStyles.listColumn}>
           {activeMailbox?.readiness === 'ready' && actionMailboxId ? (
-            <InboxReportFirstLanding mailboxId={actionMailboxId} onResolved={() => {}} />
+            <InboxReportFirstLanding
+              mailboxId={actionMailboxId}
+              mailboxEmail={activeMailbox?.email}
+              onResolved={() => {}}
+            />
           ) : null}
           <section
             aria-label="Sender search and filters"
