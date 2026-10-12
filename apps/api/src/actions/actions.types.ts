@@ -62,6 +62,60 @@ export const unsubscribeIntentRequestSchema = z
   .strict();
 export type UnsubscribeIntentRequest = z.infer<typeof unsubscribeIntentRequestSchema>;
 
+/**
+ * Combined unsubscribe + backlog. The server archives or deletes FIRST,
+ * then records unsubscribe intents. A 402 on the backlog sends nothing.
+ */
+export const unsubscribeBacklogRequestSchema = z
+  .object({
+    mode: z.enum(['unsub_only', 'archive', 'delete']),
+    senderIds: z.array(z.string().uuid()).min(1).max(1000),
+    olderThanDays: z.number().int().min(1).max(3650).nullable().optional(),
+    reach: z.enum(['inbox_only', 'all_mail']).optional(),
+    override: z.boolean().default(false),
+  })
+  .strict();
+export type UnsubscribeBacklogRequest = z.infer<typeof unsubscribeBacklogRequestSchema>;
+
+export type UnsubscribeBacklogReasonCode =
+  | 'no_link'
+  | 'sender_error'
+  | 'generic'
+  | 'send_disabled'
+  | 'in_flight'
+  | 'not_found'
+  | 'protected'
+  | 'mailto_only'
+  | 'method_unknown';
+
+export interface UnsubscribeBacklogSenderResult {
+  senderId: string;
+  method: 'one_click' | 'mailto' | 'none' | null;
+  mailtoUrl: string | null;
+  executionActionId: string | null;
+  lifecycleStatus: UnsubscribeLifecycleStatus | null;
+  /** requested = a send was queued or a mailto draft is the user's step. */
+  unsubStatus: 'requested' | 'manual' | 'failed' | 'skipped';
+  reasonCode: UnsubscribeBacklogReasonCode | null;
+}
+
+export interface UnsubscribeBacklogResult {
+  mode: 'unsub_only' | 'archive' | 'delete';
+  backlog: {
+    actionId: string;
+    /** `action` is polled at `/api/actions/:id`; `batch` at `/api/actions/batch/:id`. */
+    handle: 'action' | 'batch';
+    requestedCount: number;
+    verb: 'archive' | 'delete';
+    /**
+     * Sum of Gmail size estimates for the messages this Delete moves.
+     * Present only when that sum is the same set as `requestedCount`.
+     */
+    movedBytes?: number;
+  } | null;
+  senders: UnsubscribeBacklogSenderResult[];
+}
+
 /** Explicit progress update for the manual mailto unsubscribe path. */
 export const unsubscribeManualStatusRequestSchema = UnsubscribeManualStatusRequestSchema;
 export type { UnsubscribeManualStatusRequest };

@@ -26,7 +26,7 @@ interface SenderScope {
 
 export interface SavedSenderScope {
   compose: ComposeState;
-  sort: Extract<SenderListSort, 'total' | 'last_seen' | 'first_seen' | 'name'>;
+  sort: Extract<SenderListSort, 'total' | 'last_seen' | 'first_seen' | 'name' | 'size'>;
   direction: SenderListDirection;
 }
 
@@ -52,7 +52,8 @@ function parseSort(raw: string | null): SenderListSort {
     raw === 'first_seen' ||
     raw === 'name' ||
     raw === 'read' ||
-    raw === 'recommended'
+    raw === 'recommended' ||
+    raw === 'size'
     ? raw
     : 'total';
 }
@@ -209,7 +210,7 @@ export function useComposeState(): {
       commit({
         compose: { ...next.compose },
         query: '',
-        sort: next.sort,
+        sort: parseSort(next.sort),
         direction: next.direction,
       }),
     [commit],

@@ -75,7 +75,8 @@ function parseSort(raw: string | null): SenderListSort {
     raw === 'first_seen' ||
     raw === 'name' ||
     raw === 'read' ||
-    raw === 'recommended'
+    raw === 'recommended' ||
+    raw === 'size'
     ? raw
     : 'total';
 }

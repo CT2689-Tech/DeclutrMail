@@ -12,6 +12,7 @@ import {
   cronRuns,
   deadLetterJobs,
   followupTracker,
+  inboxReportCache,
   mailboxAccounts,
   mailboxDataDeletionRequests,
   mailboxLabels,
@@ -184,6 +185,7 @@ export const MAILBOX_PURGE_DIRECT_CHILD_TABLES = [
   'automation_rules',
   'brief_runs',
   'followup_tracker',
+  'inbox_report_cache',
   'mail_messages',
   'mailbox_labels',
   'product_feedback',
@@ -586,6 +588,9 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
           .where(eq(undoJournal.mailboxAccountId, request.mailboxAccountId));
 
         await tx.delete(briefRuns).where(eq(briefRuns.mailboxAccountId, request.mailboxAccountId));
+        await tx
+          .delete(inboxReportCache)
+          .where(eq(inboxReportCache.mailboxAccountId, request.mailboxAccountId));
         await tx
           .delete(followupTracker)
           .where(eq(followupTracker.mailboxAccountId, request.mailboxAccountId));

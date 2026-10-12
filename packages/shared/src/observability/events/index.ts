@@ -52,7 +52,7 @@ export type EventProps<E extends EventName> = E extends keyof EventPayloads
   ? EventPayloads[E]
   : Record<string, never>;
 
-/** Runtime list of every event name. The split test pins this to the pre-split union. */
+/** Runtime list of every event name. The split test requires every pre-split name plus report and growth additions. */
 export const EVENT_NAMES = [
   ...BILLING_EVENT_NAMES,
   ...APP_EVENT_NAMES,

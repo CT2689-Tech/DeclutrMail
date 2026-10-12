@@ -17,6 +17,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { fillCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { installFetchStub, resetFetchStub } from '@/test/fetch-stub';
@@ -291,6 +292,38 @@ describe('ActionSheet — live-preview confirm gate', () => {
     },
   );
 
+  it('keeps the match sample and Gmail check on Unsubscribe + Delete', () => {
+    render(
+      <ActionSheet
+        open
+        verb="Unsubscribe"
+        row={row}
+        inboxCount={4}
+        mailboxEmail="active@gmail.com"
+        detail={{
+          matchSample: {
+            rows: [{ subject: 'Weekly deals', date: 'May 1' }],
+            total: 4,
+          },
+          verifyInGmailUrl: 'https://mail.google.com/mail/u/0/#search/from%3Agroupon.com',
+        }}
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Weekly deals')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Check in Gmail/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+    expect(screen.getByText('Weekly deals')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Check in Gmail/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole('note', { name: 'Gmail account: active@gmail.com' }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
+    expect(screen.queryByText('Weekly deals')).toBeNull();
+    expect(screen.queryByRole('link', { name: /Check in Gmail/ })).toBeNull();
+  });
+
   it('keeps a pure unsubscribe request confirmable when the backlog move is off', () => {
     const onConfirm = vi.fn();
     const { rerender } = render(
@@ -311,15 +344,15 @@ describe('ActionSheet — live-preview confirm gate', () => {
     expect(onConfirm).toHaveBeenCalledTimes(2);
     expect(onConfirm).toHaveBeenLastCalledWith({
       archiveHistoric: false,
+      backlogMode: 'unsub_only',
       rememberPreference: false,
       wakeAt: null,
     });
 
-    fireEvent.click(screen.getByRole('checkbox', { name: /Also archive the/i }));
-    expect(confirm).toBeDisabled();
-    fireEvent.click(confirm);
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
-    expect(onConfirm).toHaveBeenCalledTimes(2);
+    const archiveWhileUnknown = screen.getByRole('radio', { name: /\+ Archive/ });
+    expect(archiveWhileUnknown).toBeDisabled();
+    fireEvent.click(archiveWhileUnknown);
+    expect(confirm).toBeEnabled();
 
     rerender(
       <ActionSheet
@@ -332,14 +365,20 @@ describe('ActionSheet — live-preview confirm gate', () => {
       />,
     );
 
-    expect(confirm).toBeEnabled();
-    fireEvent.click(confirm);
+    const archiveConfirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
+    expect(archiveConfirm).toBeEnabled();
+    fireEvent.click(archiveConfirm);
     expect(onConfirm).toHaveBeenLastCalledWith({
       archiveHistoric: true,
+      backlogMode: 'archive',
       rememberPreference: false,
       wakeAt: null,
     });
-    expect(screen.getByText(/uses a second cleanup action/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'The unsubscribe request can’t be recalled once delivered. The archive can be undone from Activity for 30 days.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('labels a resolved count as current and warns that execution re-checks Gmail', () => {
@@ -362,7 +401,7 @@ describe('ActionSheet — live-preview confirm gate', () => {
 });
 
 describe('ActionSheet — toggle a11y and checked parity (2026-08-12)', () => {
-  // Unsubscribe is the one verb that renders BOTH toggles.
+  // Unsubscribe renders a three-way backlog choice plus the remember toggle.
   function renderUnsubSheet() {
     return render(
       <ActionSheet
@@ -376,13 +415,14 @@ describe('ActionSheet — toggle a11y and checked parity (2026-08-12)', () => {
     );
   }
 
-  it('exposes both toggles as checkboxes whose aria-checked tracks state', () => {
+  it('exposes the backlog choice as radios and remember as a checkbox', () => {
     renderUnsubSheet();
 
-    const backlog = screen.getByRole('checkbox', { name: /Also archive the/i });
-    expect(backlog).toHaveAttribute('aria-checked', 'false');
-    fireEvent.click(backlog);
-    expect(backlog).toHaveAttribute('aria-checked', 'true');
+    const archive = screen.getByRole('radio', { name: '+ Archive 2' });
+    expect(archive).toBeChecked();
+    fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
+    expect(archive).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Unsubscribe only' })).toBeChecked();
 
     const remember = screen.getByRole('checkbox', {
       name: 'Don’t ask again for Unsubscribe',
@@ -392,23 +432,14 @@ describe('ActionSheet — toggle a11y and checked parity (2026-08-12)', () => {
     expect(remember).toHaveAttribute('aria-checked', 'true');
   });
 
-  it('a checked remember toggle fills like the checked backlog toggle', () => {
-    // The remember toggle used to stay visually mute when checked while
-    // the backlog toggle above it filled — a checked choice that reads
-    // as unselected. Pin the parity on the checked treatment.
+  it('a checked remember toggle fills', () => {
     renderUnsubSheet();
-    const backlog = screen.getByRole('checkbox', { name: /Also archive the/i });
     const remember = screen.getByRole('checkbox', {
       name: 'Don’t ask again for Unsubscribe',
     });
-    fireEvent.click(backlog);
     fireEvent.click(remember);
-    // The checked treatment is the glyph; the footer row itself is quiet
-    // (no well) by design, so parity is pinned on the glyph both share.
     const glyph = (el: HTMLElement) => el.querySelector<HTMLElement>('span[aria-hidden="true"]')!;
     expect(glyph(remember).style.background).not.toBe('transparent');
-    expect(glyph(remember).style.background).toBe(glyph(backlog).style.background);
-    expect(glyph(remember).style.boxShadow).toBe(glyph(backlog).style.boxShadow);
   });
 });
 
@@ -562,6 +593,8 @@ describe('ActionSheet — Protected acknowledgement (D245/D42)', () => {
     // Unsubscribe stops future delivery rather than moving the backlog,
     // so what the protection keeps shielding is whatever still arrives.
     expect(notice()).toHaveTextContent(/keep skipping whatever still arrives/i);
+    expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /anyway/i })).toBeNull();
   });
 
   it('says nothing about protection for an unprotected row', () => {
@@ -776,7 +809,7 @@ describe('ActionSheet — Later return-time picker', () => {
 // the preview, so it never had a reason to wait.
 describe('ActionSheet — the cleanup cost is stated whenever it can be spent', () => {
   it.each(['loading', 'unavailable'] as const)(
-    'states the cost on an Unsubscribe whose preview is %s and whose confirm is armed',
+    'does not charge an Unsubscribe whose preview is %s and whose confirm is armed',
     (inboxCount) => {
       render(
         <ActionSheet
@@ -789,13 +822,43 @@ describe('ActionSheet — the cleanup cost is stated whenever it can be spent', 
           onConfirm={() => {}}
         />,
       );
-      // The bypass: this confirm is armed without a resolved preview.
-      expect(screen.getByRole('button', { name: /^Unsubscribe/ })).toBeEnabled();
-      expect(
-        screen.getByText(/Uses 1 of your 34 cleanup actions left this month/),
-      ).toBeInTheDocument();
+      // Future-only unsubscribe is armed without a resolved mail count,
+      // and it does not spend a cleanup unit.
+      expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
+      expect(screen.getByText(WS5_COPY['f1.footer'])).toBeInTheDocument();
+      expect(screen.queryByText(/cleanup action/)).toBeNull();
     },
   );
+
+  it('states one cleanup action when the backlog moves and the email meter is off', () => {
+    render(
+      <ActionSheet
+        open={true}
+        verb="Unsubscribe"
+        row={row}
+        inboxCount={12}
+        quotaRemaining={34}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+    expect(screen.queryByText(WS5_COPY['f1.meterFree'])).toBeNull();
+    expect(screen.getByText(WS5_COPY['f1.footer'])).toBeInTheDocument();
+    expect(
+      screen.getByText(fillCopy(WS5_COPY['f1.preview.future'], { Sender: 'Groupon' }), {
+        exact: false,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Uses 1 of your 34 cleanup actions left this month/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Uses 2 /)).toBeNull();
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 12' }));
+    expect(screen.getByText(WS5_COPY['f1.deleteNote'], { exact: false })).toBeInTheDocument();
+    expect(
+      screen.getByText(/Uses 1 of your 34 cleanup actions left this month/),
+    ).toBeInTheDocument();
+  });
 
   it('still states the cost once the preview resolves', () => {
     render(

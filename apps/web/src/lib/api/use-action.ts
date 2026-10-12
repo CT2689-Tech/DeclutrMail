@@ -26,6 +26,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 
 import {
+  confirmUnsubscribeBacklog,
   enqueueBulkAction,
   enqueueCompositeAction,
   getActionStatus,
@@ -50,6 +51,8 @@ import {
   type CompositeSecondaryVerb,
   type LabelCompositePrimaryVerb,
   type UndoRevertResult,
+  type UnsubscribeBacklogMode,
+  type UnsubscribeBacklogResult,
   type UnsubscribeIntentResult,
   type UnsubscribeManualStatusResult,
 } from './actions';
@@ -336,6 +339,34 @@ export function useRecordUnsubscribeIntent() {
         ...(includesBacklogAction !== undefined ? { includesBacklogAction } : {}),
         ...(override === true ? { override: true } : {}),
       }),
+  });
+}
+
+/** Unsubscribe plus an optional backlog Archive or Delete, as one request. */
+export function useConfirmUnsubscribeBacklog() {
+  return useMutation<
+    UnsubscribeBacklogResult,
+    Error,
+    {
+      mailboxId?: string | undefined;
+      mode: UnsubscribeBacklogMode;
+      senderIds: string[];
+      olderThanDays?: number | null;
+      reach?: 'inbox_only' | 'all_mail';
+      override?: boolean;
+    }
+  >({
+    mutationFn: ({ mailboxId, mode, senderIds, olderThanDays, reach, override }) =>
+      confirmUnsubscribeBacklog(
+        {
+          mode,
+          senderIds,
+          ...(olderThanDays !== undefined ? { olderThanDays } : {}),
+          ...(reach ? { reach } : {}),
+          ...(override === true ? { override: true } : {}),
+        },
+        { ...(mailboxId ? { mailboxId } : {}) },
+      ),
   });
 }
 

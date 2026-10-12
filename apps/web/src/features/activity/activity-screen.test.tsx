@@ -132,6 +132,7 @@ function row(partial: Partial<ActivityRowWire>): ActivityRowWire {
     undoState: partial.undoState ?? { kind: 'unavailable' },
     executionState: partial.executionState ?? null,
     reviewOutcome: partial.reviewOutcome ?? null,
+    ...(partial.combinedUnsubscribe ? { combinedUnsubscribe: true } : {}),
   };
 }
 
@@ -1748,6 +1749,68 @@ describe('ActivityScreen — D58 undo affordances', () => {
     ]);
     renderScreen();
     await waitFor(() => expect(screen.getByText(/^Unsubscribe requested$/)).toBeInTheDocument());
+  });
+
+  it('shows one combined unsubscribe-and-move row and keeps Undo', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                id: 'move-1',
+                action: 'archive',
+                affectedCount: 1,
+                combinedUnsubscribe: true,
+                undoState: {
+                  kind: 'available',
+                  token: 'undo-combined',
+                  expiresAt: '2099-01-01T00:00:00.000Z',
+                },
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    renderScreen();
+    expect(await screen.findByText('Unsubscribe requested · Archived 1 email')).toBeInTheDocument();
+    expect(screen.queryByText('Unsubscribe request recorded')).toBeNull();
+    expect(screen.getByRole('button', { name: /^undo/i })).toBeEnabled();
+  });
+
+  it('uses the plural and delete forms of the combined row', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                id: 'move-n',
+                action: 'archive',
+                affectedCount: 4,
+                combinedUnsubscribe: true,
+              }),
+              row({
+                id: 'move-d',
+                action: 'delete',
+                affectedCount: 1,
+                combinedUnsubscribe: true,
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    renderScreen();
+    expect(
+      await screen.findByText('Unsubscribe requested · Archived 4 emails'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Unsubscribe requested · Deleted 1 email')).toBeInTheDocument();
   });
 
   it('renders UNDO EXPIRED for `expired`', async () => {

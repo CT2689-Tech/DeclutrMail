@@ -3,6 +3,8 @@
 import { useActionPreviewAnalytics } from '@/lib/use-action-preview-analytics';
 import type { Verb } from '@declutrmail/shared/observability';
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
+import { UnsubscribeBacklogDialog } from './unsubscribe-backlog/unsubscribe-backlog-dialog';
+import { someProtectedSelectionCopy } from './unsubscribe-backlog/preview-copy';
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import {
@@ -737,7 +739,7 @@ export function ConfirmActionModal({
   // `PreviewSheet` — which keeps Cancel and Esc LIVE while submitting,
   // because this sheet never hands it a `busyLabel` (see `primary` below).
   useEffect(() => {
-    if (!request) return;
+    if (!request || request.verb === 'Unsubscribe') return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
         e.preventDefault();
@@ -767,6 +769,19 @@ export function ConfirmActionModal({
   ]);
 
   const auth = useOptionalAuth();
+  if (request?.verb === 'Unsubscribe') {
+    return (
+      <UnsubscribeBacklogDialog
+        request={request}
+        compositePreview={compositePreview}
+        compositePreviewLoading={compositePreviewLoading}
+        bulkPreview={bulkPreview}
+        submitting={submitting}
+        onCancel={onCancel}
+        onConfirm={onConfirm}
+      />
+    );
+  }
 
   if (!request) return null;
 
@@ -1260,7 +1275,10 @@ export function ConfirmActionModal({
     </div>
   ) : null;
   if (protectedSkipped > 0) {
-    facts.push({ label: 'Protected', value: 'Unprotect a sender to include it' });
+    facts.push({
+      label: 'Protected',
+      value: someProtectedSelectionCopy(protectedSkipped),
+    });
   }
   if (peopleSkipped > 0) {
     facts.push({ label: 'People', value: 'Unsubscribe doesn’t apply to people' });

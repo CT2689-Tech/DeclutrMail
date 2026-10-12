@@ -83,6 +83,8 @@ export type {
   FollowupTracker,
   NewFollowupTracker,
 } from './schema/followup-tracker';
+export { inboxReportCache } from './schema/inbox-report-cache';
+export { invalidateInboxReportCache } from './inbox-report-cache';
 export { mailMessages } from './schema/mail-messages';
 export type { MailMessage, NewMailMessage } from './schema/mail-messages';
 export {

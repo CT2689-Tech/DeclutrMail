@@ -42,6 +42,7 @@ import { useSenderTimeseries } from '../api/use-sender-timeseries';
 import { useSenderHistory } from '../api/use-sender-history';
 import {
   useCompositePreview,
+  useConfirmUnsubscribeBacklog,
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
   useActionStatus,
@@ -66,7 +67,9 @@ import {
 } from '@/features/triage/unsub-send-disabled';
 import { formatReadRatePct } from '../fact-language';
 import { relTime } from './data';
+import { senderSizeDetail } from '../sender-size';
 import { trackActionConfirmed } from '@/lib/action-analytics';
+import { unsubscribeBacklogToast } from '../unsubscribe-backlog/toast';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 import {
@@ -75,7 +78,6 @@ import {
   getActionFailureCopy,
   stillRunningCopy,
 } from '@/lib/action-error-copy';
-import { backlogAfterUnsubFailureCopy } from '@/lib/bulk-action-copy';
 import {
   isUnsubscribeInFlight,
   unsubscribeInFlightCopy,
@@ -525,6 +527,7 @@ function ReadyState({
   const qc = useQueryClient();
   const enqueueComposite = useEnqueueComposite();
   const recordUnsubIntent = useRecordUnsubscribeIntent();
+  const confirmBacklog = useConfirmUnsubscribeBacklog();
   const setPolicy = useSetSenderPolicy();
   const undoKeep = useUndoSenderKeep();
   const [activeAction, setActiveAction] = useState<{
@@ -656,6 +659,7 @@ function ReadyState({
   }, [initial, setPolicy.isPending]);
 
   const { sender, recommendation, stats } = detail;
+  const sizeCopy = senderSizeDetail(sender.name, sender.sizeBytes);
   // Secondary reads have no optimistic local edits. Render their current
   // query snapshot directly, without one effect-frame of previous data.
   const { recentMessages, timeseries, history } = initial;
@@ -917,134 +921,81 @@ function ReadyState({
       // sender-wide `sharedLock` check above already covers "busy from a
       // different verb, surface or tab" for this branch too.
       if (verb === 'Unsubscribe') {
-        if (recordUnsubIntent.isPending || activeUnsub != null) {
-          // Visible deferral, never a silent swallow — same voice as the
-          // destructive-branch guard above.
+        if (recordUnsubIntent.isPending || confirmBacklog.isPending || activeUnsub != null) {
           toast('Still confirming your last action — give it a moment.', 'info');
           return;
         }
         setSubmitting(true);
         setSettled(null);
-        // The "Also act on past emails" chip from the D226 preview.
-        // Captured before the async hop so the historic action fires
-        // with exactly what the user confirmed.
-        const secondary = opts?.secondary ?? null;
-        recordUnsubIntent.mutate(
+        const mode =
+          opts?.secondary?.type === 'delete'
+            ? 'delete'
+            : opts?.secondary?.type === 'archive' || opts?.archiveHistoric
+              ? 'archive'
+              : 'unsub_only';
+        confirmBacklog.mutate(
           {
             mailboxId: actionMailboxId,
-            senderId: sender.id,
-            includesBacklogAction: secondary != null,
+            mode,
+            senderIds: [sender.id],
+            olderThanDays: opts?.secondary?.olderThanDays ?? null,
+            ...(mode === 'delete' && opts?.reach === 'all_mail' ? { reach: opts.reach } : {}),
+            // Override rides only the dialog's explicit "anyway" click.
             ...(opts?.override === true ? { override: true } : {}),
           },
           {
             onSuccess: (res) => {
               closeSubmitted();
-              trackActionConfirmed('unsubscribe');
+              const sent = res.senders.some(
+                (row) => row.unsubStatus === 'requested' || row.unsubStatus === 'manual',
+              );
+              if (sent) trackActionConfirmed('unsubscribe');
               void qc.invalidateQueries({ queryKey: sendersKeys.all });
               void qc.invalidateQueries({ queryKey: activityKeys.all });
-              if (res.method === 'one_click' && res.executionActionId) {
-                toast(`Unsubscribe requested — confirming with ${sender.domain}…`, 'info');
+              const line = unsubscribeBacklogToast(res);
+              if (line !== '') toast(line, sent ? 'info' : 'warn');
+              const outcome = res.senders[0];
+              if (outcome?.unsubStatus === 'requested' && outcome.executionActionId) {
                 setActiveUnsub({
                   mailboxId: actionMailboxId,
-                  actionId: res.executionActionId,
+                  actionId: outcome.executionActionId,
                   senderName: sender.name,
                 });
-              } else if (res.method === 'mailto' && res.mailtoUrl) {
-                // The callout (rendered below the toolbar) is the
-                // feedback — it carries the compose link a toast can't.
+              } else if (outcome?.unsubStatus === 'manual' && outcome.mailtoUrl) {
                 setMailtoFollowup({
                   mailboxId: actionMailboxId,
                   senderId: sender.id,
                   senderName: sender.name,
-                  mailtoUrl: res.mailtoUrl,
+                  mailtoUrl: outcome.mailtoUrl,
                 });
-              } else {
-                toast(`${sender.name} has no unsubscribe link — Archive still works.`, 'info');
               }
-              // Secondary historic action (Archive/Delete the backlog) —
-              // the unsub intent has no composite primary on the BE, so
-              // the backlog enqueues as its own composite whose primary
-              // IS the secondary verb (triage archive-after-unsub
-              // pattern). The polled `activeAction` lifecycle surfaces
-              // the real receipt + undo token.
-              if (secondary) {
-                enqueueComposite.mutate(
-                  {
-                    mailboxId: actionMailboxId,
-                    senderId: sender.id,
-                    primary: {
-                      type: secondary.type,
-                      olderThanDays: secondary.olderThanDays ?? null,
-                      // ADR-0028 — this call's primary IS the "Delete
-                      // them" secondary, so the reach the user picked
-                      // in the modal travels the same way it would on
-                      // a direct single-sender Delete.
-                      ...(secondary.type === 'delete' && opts?.reach === 'all_mail'
-                        ? { reach: opts.reach }
-                        : {}),
-                    },
-                    // The SAME acknowledgement the preview collected.
-                    // The intent above is never refused at the click, so
-                    // it lands — one-click sends a real,
-                    // one-way request (D58). Dropping the override here
-                    // 409s the backlog half AFTER that, leaving the user
-                    // unsubscribed with their mail untouched: a partial
-                    // execution whose first half cannot be undone.
-                    ...(opts?.override === true ? { override: true } : {}),
-                  },
-                  {
-                    onSuccess: (cres) =>
-                      setActiveAction({
-                        mailboxId: actionMailboxId,
-                        actionId: cres.actionId,
-                        senderName: sender.name,
-                        verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
-                      }),
-                    onError: (err) => {
-                      // 402 FREE_CAP_REACHED — the upgrade prompt
-                      // explains why the backlog didn't enqueue.
-                      if (err instanceof ApiError && err.status === 402) return;
-                      // The job may still run: its outcome is not known.
-                      const unconfirmed = enqueueMayHaveStarted(err);
-                      setSettled({
-                        phase: unconfirmed ? 'unconfirmed' : 'failed',
-                        verb: secondary.type,
-                      });
-                      if (unconfirmed) void qc.invalidateQueries({ queryKey: undoKeys.all });
-                      captureFeatureException(err, {
-                        surface: 'senders',
-                        reason: `enqueue_${secondary.type}_after_unsub`,
-                      });
-                      toast(
-                        backlogAfterUnsubFailureCopy({
-                          verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
-                          senderName: sender.name,
-                          error: err,
-                        }),
-                        'warn',
-                      );
-                    },
-                  },
-                );
+              if (res.backlog) {
+                setActiveAction({
+                  mailboxId: actionMailboxId,
+                  actionId: res.backlog.actionId,
+                  senderName: sender.name,
+                  verb: res.backlog.verb === 'delete' ? 'Delete' : 'Archive',
+                });
               }
             },
             onError: (err) => {
               closeSubmitted();
+              if (err instanceof ApiError && err.status === 402) return;
               if (isUnsubSendDisabled(err)) {
                 toast(UNSUB_SEND_DISABLED_MESSAGE, 'warn');
                 return;
               }
-              // Designed too: one request to this sender is still on its way.
               if (isUnsubscribeInFlight(err)) {
                 toast(unsubscribeInFlightCopy(sender.name), 'info');
                 void qc.invalidateQueries({ queryKey: sendersKeys.all });
                 return;
               }
-              captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
-              // A 5xx cannot prove nothing started: show what the server has.
-              if (enqueueMayHaveStarted(err)) {
-                void qc.invalidateQueries({ queryKey: sendersKeys.all });
+              const unconfirmed = enqueueMayHaveStarted(err);
+              if (unconfirmed && mode !== 'unsub_only') {
+                setSettled({ phase: 'unconfirmed', verb: mode });
+                void qc.invalidateQueries({ queryKey: undoKeys.all });
               }
+              captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
               toast(
                 getActionFailureCopy('enqueue', {
                   action: `Unsubscribe for ${sender.name}`,
@@ -1061,6 +1012,7 @@ function ReadyState({
     },
     [
       enqueueComposite,
+      confirmBacklog,
       recordUnsubIntent,
       setPolicy,
       qc,
@@ -1566,6 +1518,13 @@ function ReadyState({
                 {sender.monthlyVolume === 1 ? 'email' : 'emails'} in the last 90 days ·{' '}
                 {sender.totalReceived.toLocaleString('en-US')} received · all time
               </p>
+            </div>
+          )}
+          {sizeCopy && (
+            <div data-testid="sender-size">
+              <p>{sizeCopy.detail}</p>
+              <p>{sizeCopy.note}</p>
+              <p>{sizeCopy.estimates}</p>
             </div>
           )}
           <dl aria-label="Sender stats" className={styles.statsGrid}>

@@ -1886,7 +1886,7 @@ describe('SenderDetailRoute', () => {
           detailPreviewHandler(),
           {
             method: 'POST',
-            path: '/api/actions/unsubscribe-intent',
+            path: '/api/actions/unsubscribe-backlog',
             respond: () =>
               new Response(JSON.stringify({ error: { code: 'UNSUB_SEND_DISABLED' } }), {
                 status: 409,
@@ -1912,7 +1912,7 @@ describe('SenderDetailRoute', () => {
           detailPreviewHandler(),
           {
             method: 'POST',
-            path: '/api/actions/unsubscribe-intent',
+            path: '/api/actions/unsubscribe-backlog',
             respond: () =>
               new Response(JSON.stringify({ error: { code: 'UNSUBSCRIBE_IN_FLIGHT' } }), {
                 status: 409,
@@ -1935,7 +1935,7 @@ describe('SenderDetailRoute', () => {
         expect(captureFeatureExceptionMock).not.toHaveBeenCalled();
       });
 
-      it('carries the "…anyway" confirm on a Protected sender\'s unsubscribe (D245)', async () => {
+      it('names Protected and sends override only after anyway (D245)', async () => {
         installHappyPath(MESSAGE, undefined, undefined, {
           ...DETAIL,
           protectionFlags: {
@@ -1949,17 +1949,24 @@ describe('SenderDetailRoute', () => {
           detailPreviewHandler(),
           {
             method: 'POST',
-            path: '/api/actions/unsubscribe-intent',
+            path: '/api/actions/unsubscribe-backlog',
             respond: async (req) => {
               intents.push(await req.json());
               return jsonOk({
                 data: {
-                  senderId: 'linkedin',
-                  recordedAt: '2026-07-12T12:00:00.000Z',
-                  activityLogId: 'activity-a',
-                  method: 'none',
-                  executionActionId: null,
-                  mailtoUrl: null,
+                  mode: 'archive',
+                  backlog: null,
+                  senders: [
+                    {
+                      senderId: 'linkedin',
+                      method: 'mailto',
+                      mailtoUrl: null,
+                      executionActionId: null,
+                      lifecycleStatus: null,
+                      unsubStatus: 'requested',
+                      reasonCode: null,
+                    },
+                  ],
                 },
               });
             },
@@ -1968,38 +1975,50 @@ describe('SenderDetailRoute', () => {
         renderDetail();
         fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
         const dialog = await screen.findByRole('dialog');
-        const confirm = await within(dialog).findByRole('button', { name: 'Unsubscribe anyway' });
+        expect(
+          await within(dialog).findByText(/is Protected because you marked it Protected\./),
+        ).toBeInTheDocument();
+        expect(within(dialog).queryByRole('button', { name: 'Unsubscribe + Archive' })).toBeNull();
+        const archiveChoice = await within(dialog).findByRole('radio', {
+          name: /Unsubscribe and archive \d+ emails/,
+        });
+        await waitFor(() => expect(archiveChoice).toBeEnabled());
+        fireEvent.click(archiveChoice);
+        const confirm = await within(dialog).findByRole('button', {
+          name: 'Unsubscribe + Archive anyway',
+        });
         await waitFor(() => expect(confirm).toBeEnabled());
+        expect(intents).toEqual([]);
         fireEvent.click(confirm);
-        await waitFor(() => expect(intents).toEqual([expect.objectContaining({ override: true })]));
+        await waitFor(() =>
+          expect(intents).toEqual([
+            {
+              mode: 'archive',
+              senderIds: ['linkedin'],
+              olderThanDays: null,
+              override: true,
+            },
+          ]),
+        );
       });
 
       async function unsubscribeThenBacklog(backlog: () => Response) {
         installHappyPath();
         addFetchHandlers([
           detailPreviewHandler(),
-          {
-            method: 'POST',
-            path: '/api/actions/unsubscribe-intent',
-            respond: () =>
-              jsonOk({
-                data: {
-                  senderId: 'linkedin',
-                  recordedAt: '2026-07-12T12:00:00.000Z',
-                  activityLogId: 'activity-a',
-                  method: 'none',
-                  executionActionId: null,
-                  mailtoUrl: null,
-                },
-              }),
-          },
-          { method: 'POST', path: '/api/actions', respond: backlog },
+          { method: 'POST', path: '/api/actions/unsubscribe-backlog', respond: backlog },
         ]);
         renderDetail();
         fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
-        await screen.findByRole('radiogroup', { name: /also act on past emails/i });
-        fireEvent.click(screen.getByRole('radio', { name: 'Archive them' }));
-        const confirm = screen.getByRole('button', { name: /Unsubscribe.*Archive/i });
+        const dialog = await screen.findByRole('dialog');
+        const archiveChoice = await within(dialog).findByRole('radio', {
+          name: /Unsubscribe and archive \d+ emails/,
+        });
+        await waitFor(() => expect(archiveChoice).toBeEnabled());
+        fireEvent.click(archiveChoice);
+        const confirm = await within(dialog).findByRole('button', {
+          name: 'Unsubscribe + Archive',
+        });
         await waitFor(() => expect(confirm).toBeEnabled());
         fireEvent.click(confirm);
       }
@@ -2048,16 +2067,27 @@ describe('SenderDetailRoute', () => {
         );
       });
 
-      it('marks the past-email half as failed when it never enqueues after an unsubscribe', async () => {
+      it('leaves no failed pill when the unsubscribe-backlog request is refused', async () => {
         await unsubscribeThenBacklog(apiFailure(400, 'VALIDATION_FAILED'));
-        await waitFor(() => expect(pill('failed')).toHaveTextContent('Archive failed'));
+        await waitFor(() =>
+          expect(h.toast).toHaveBeenCalledWith(
+            "Couldn't start Unsubscribe for LinkedIn — no request was sent.",
+            'warn',
+          ),
+        );
+        expect(pill('failed')).toBeNull();
+        expect(captureFeatureExceptionMock).toHaveBeenCalled();
       });
 
       // The queue did not confirm the add: the archive may still run.
-      it('marks the past-email half unconfirmed when its start is unconfirmed', async () => {
+      it('marks the archive half unconfirmed when the backlog start is unconfirmed', async () => {
         await unsubscribeThenBacklog(apiFailure(503, 'ENQUEUE_FAILED'));
         await waitFor(() => expect(pill('unconfirmed')).toHaveTextContent('Archive: unknown'));
         expect(pill('failed')).toBeNull();
+        expect(h.toast).toHaveBeenCalledWith(
+          "Can't tell if Unsubscribe for LinkedIn started — check Activity before retrying.",
+          'warn',
+        );
       });
 
       it('drops the last mark when a new Unsubscribe starts', async () => {
@@ -2069,7 +2099,7 @@ describe('SenderDetailRoute', () => {
         addFetchHandlers([
           {
             method: 'POST',
-            path: '/api/actions/unsubscribe-intent',
+            path: '/api/actions/unsubscribe-backlog',
             respond: async () => {
               await held;
               return jsonServerError();
@@ -2079,11 +2109,18 @@ describe('SenderDetailRoute', () => {
         await waitFor(() => expect(pill('done')).not.toBeNull());
         fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe (U)' }));
         const dialog = await screen.findByRole('dialog');
-        const confirm = await within(dialog).findByRole('button', { name: /Unsubscribe/ });
+        fireEvent.click(
+          await within(dialog).findByRole('radio', { name: /Unsubscribe and archive \d+/ }),
+        );
+        const confirm = await within(dialog).findByRole('button', {
+          name: 'Unsubscribe + Archive',
+        });
         await waitFor(() => expect(confirm).toBeEnabled());
         fireEvent.click(confirm);
-        // Mid-request: "Archived" no longer sits beside an unsubscribe in flight.
-        await within(dialog).findByRole('button', { name: /Submitting…/ });
+        // Mid-request: the last Archive mark clears, and the button stays
+        // labeled while it is busy — there is no "Submitting…" label.
+        await waitFor(() => expect(confirm).toBeDisabled());
+        expect(within(dialog).queryByRole('button', { name: /Submitting…/ })).toBeNull();
         expect(pill('done')).toBeNull();
         release();
       });

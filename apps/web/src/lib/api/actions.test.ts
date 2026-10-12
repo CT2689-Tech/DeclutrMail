@@ -6,9 +6,10 @@
  * helpers (`newIdempotencyKey`, `isTerminalStatus`).
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  confirmUnsubscribeBacklog,
   defaultLaterWakeAt,
   enqueueCompositeAction,
   getActionStatus,
@@ -466,5 +467,186 @@ describe('enqueueCompositeAction — ADR-0028 reach on the wire', () => {
       idempotencyKey: 'k-2',
     });
     expect('reach' in body.primary).toBe(false);
+  });
+});
+
+describe('confirmUnsubscribeBacklog when the new route is not deployed', () => {
+  beforeEach(() => installFetchStub([]));
+  afterEach(() => resetFetchStub());
+
+  function notFound(): Response {
+    return new Response(JSON.stringify({ error: { code: 'NOT_FOUND' } }), {
+      status: 404,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  it('falls back to archive then unsubscribe, and a 402 sends nothing', async () => {
+    const calls: string[] = [];
+    installFetchStub([
+      { method: 'POST', path: '/api/actions/unsubscribe-backlog', respond: () => notFound() },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          calls.push('move');
+          const body = (await req.json()) as { selector: { type: string; senderId: string } };
+          expect(body.selector).toEqual({ type: 'sender', senderId: 's1' });
+          return jsonOk({
+            data: {
+              actionId: 'act-1',
+              compositeId: 'act-1',
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 3,
+              secondaryCount: null,
+              wakeAt: null,
+            },
+          });
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-intent',
+        respond: async () => {
+          calls.push('unsub');
+          return jsonOk({
+            data: {
+              senderId: 's1',
+              recordedAt: '2026-10-11T00:00:00.000Z',
+              activityLogId: 'log-1',
+              lifecycleStatus: 'requested',
+              method: 'one_click',
+              executionActionId: 'exec-1',
+              mailtoUrl: null,
+            },
+          });
+        },
+      },
+    ]);
+
+    const result = await confirmUnsubscribeBacklog({ mode: 'archive', senderIds: ['s1'] });
+    expect(calls).toEqual(['move', 'unsub']);
+    expect(result).toMatchObject({
+      mode: 'archive',
+      backlog: { actionId: 'act-1', handle: 'action', requestedCount: 3, verb: 'archive' },
+      senders: [{ senderId: 's1', unsubStatus: 'requested', executionActionId: 'exec-1' }],
+    });
+
+    const unsub = vi.fn();
+    installFetchStub([
+      { method: 'POST', path: '/api/actions/unsubscribe-backlog', respond: () => notFound() },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          new Response(JSON.stringify({ error: { code: 'FREE_CAP_REACHED' } }), {
+            status: 402,
+            headers: { 'content-type': 'application/json' },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-intent',
+        respond: () => {
+          unsub();
+          return jsonOk({ data: {} });
+        },
+      },
+    ]);
+    await expect(
+      confirmUnsubscribeBacklog({ mode: 'delete', senderIds: ['s1'] }),
+    ).rejects.toMatchObject({ status: 402 });
+    expect(unsub).not.toHaveBeenCalled();
+  });
+
+  it('does not post a move when unsubscribe-only falls back from a 404', async () => {
+    const calls: string[] = [];
+    installFetchStub([
+      { method: 'POST', path: '/api/actions/unsubscribe-backlog', respond: () => notFound() },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => {
+          calls.push('move');
+          return jsonOk({ data: {} });
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-intent',
+        respond: () => {
+          calls.push('unsub');
+          return jsonOk({
+            data: {
+              senderId: 's1',
+              recordedAt: '2026-10-11T00:00:00.000Z',
+              activityLogId: 'log-1',
+              lifecycleStatus: 'requested',
+              method: 'one_click',
+              executionActionId: 'exec-1',
+              mailtoUrl: null,
+            },
+          });
+        },
+      },
+    ]);
+
+    const result = await confirmUnsubscribeBacklog({ mode: 'unsub_only', senderIds: ['s1'] });
+    expect(calls).toEqual(['unsub']);
+    expect(result.backlog).toBeNull();
+    expect(result.senders).toEqual([
+      expect.objectContaining({ senderId: 's1', unsubStatus: 'requested' }),
+    ]);
+  });
+
+  it('does not call the old move or unsubscribe after the new route succeeds', async () => {
+    const calls: string[] = [];
+    installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-backlog',
+        respond: () => {
+          calls.push('backlog');
+          return jsonOk({
+            data: {
+              mode: 'archive',
+              backlog: { actionId: 'act-1', requestedCount: 3, verb: 'archive' },
+              senders: [
+                {
+                  senderId: 's1',
+                  method: 'one_click',
+                  mailtoUrl: null,
+                  executionActionId: 'exec-1',
+                  lifecycleStatus: 'requested',
+                  unsubStatus: 'requested',
+                  reasonCode: null,
+                },
+              ],
+            },
+          });
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => {
+          calls.push('move');
+          return jsonOk({ data: {} });
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-intent',
+        respond: () => {
+          calls.push('unsub');
+          return jsonOk({ data: {} });
+        },
+      },
+    ]);
+
+    const result = await confirmUnsubscribeBacklog({ mode: 'archive', senderIds: ['s1'] });
+    expect(calls).toEqual(['backlog']);
+    expect(result.backlog?.actionId).toBe('act-1');
   });
 });

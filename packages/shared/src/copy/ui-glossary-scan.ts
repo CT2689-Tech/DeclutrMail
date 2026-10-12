@@ -7,12 +7,21 @@ import { glossaryHits, loadUiGlossary, type UiGlossary } from './ui-glossary';
 
 interface TsNode {
   text?: string;
+  kind: number;
+  parent?: TsNode;
+  expression?: TsNode;
   getStart(source: TsFile): number;
 }
 interface TsFile {
   getLineAndCharacterOfPosition(pos: number): { line: number };
 }
 interface TsApi {
+  SyntaxKind: {
+    ImportDeclaration: number;
+    ExportDeclaration: number;
+    CallExpression: number;
+    ImportKeyword: number;
+  };
   ScriptKind: { TS: number; TSX: number };
   ScriptTarget: { Latest: number };
   createSourceFile(
@@ -77,7 +86,10 @@ function collect(path: string, glossary: UiGlossary, hits: BaselineEntry[]) {
   const visit = (node: TsNode) => {
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
       const text = node.text;
-      if (text)
+      // Module paths are not copy. The same `@/lib/api/use-action` import is
+      // already in the baseline for older files; a new file must not fail
+      // the shrink-only check for that path.
+      if (text && !isModuleSpecifier(node))
         for (const hit of glossaryHits(text, glossary, scope)) {
           const line = file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1;
           hits.push({
@@ -91,6 +103,21 @@ function collect(path: string, glossary: UiGlossary, hits: BaselineEntry[]) {
     ts.forEachChild(node, visit);
   };
   visit(file);
+}
+
+function isModuleSpecifier(node: TsNode): boolean {
+  const parent = node.parent;
+  if (!parent) return false;
+  if (
+    parent.kind === ts.SyntaxKind.ImportDeclaration ||
+    parent.kind === ts.SyntaxKind.ExportDeclaration
+  ) {
+    return true;
+  }
+  return (
+    parent.kind === ts.SyntaxKind.CallExpression &&
+    parent.expression?.kind === ts.SyntaxKind.ImportKeyword
+  );
 }
 
 export function baselineKey(entry: BaselineEntry): string {

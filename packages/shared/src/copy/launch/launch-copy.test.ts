@@ -29,4 +29,74 @@ describe('launch copy deck snapshots', () => {
       'Nothing was deleted permanently. Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash.',
     );
   });
+
+  it('keeps the drop2-r7 unsubscribe lines', () => {
+    expect(WS5_COPY['f1.footer']).toBe('Whether their email stops is up to the sender.');
+    expect(WS5_COPY['f1.preview.future.mailto']).toBe(
+      'Future emails: we’ll open a prefilled email in Gmail for you to send to {Sender}.',
+    );
+    expect(WS5_COPY['f1.toast.mailto']).toBe(
+      'The email is ready in Gmail. Press Send there to finish.',
+    );
+    expect(WS5_COPY['f1.preview.future.mailto']).not.toMatch(/draft/i);
+    expect(WS5_COPY['f1.toast.mailto']).not.toMatch(/draft/i);
+  });
+
+  it('keeps the drop2-r17 toast parts and combined activity rows', () => {
+    expect(WS5_COPY['f1.toast.part.unsub']).toEqual({
+      one: 'Unsubscribe requested from 1 sender',
+      other: 'Unsubscribe requested from {m} senders',
+    });
+    expect(WS5_COPY['f1.toast.part.archived']).toEqual({
+      one: 'Archived 1 email',
+      other: 'Archived {n} emails',
+    });
+    expect(WS5_COPY['f1.toast.part.deleted']).toEqual({
+      one: 'Deleted 1 email',
+      other: 'Deleted {n} emails',
+    });
+    expect(WS5_COPY['f1.activity.row']).toEqual({
+      one: 'Unsubscribe requested · Archived 1 email',
+      other: 'Unsubscribe requested · Archived {n} emails',
+    });
+    expect(WS5_COPY['f1.reason.paused']).toBe('unsubscribe requests are paused right now');
+    expect(WS5_COPY['f1.reason.skipped.notFound']).toBe(
+      'the sender is no longer found, so nothing was sent',
+    );
+    expect(WS5_COPY['f1.protected.leadNoReason']).toBe('{Sender} is Protected.');
+  });
+
+  it('keeps the drop2-r13 move, mailto, and skip lines', () => {
+    expect(WS5_COPY['f1.toast.bulk.delete']).toEqual({
+      one: 'Unsubscribe requested from {m} senders · Deleted 1 email',
+      other: 'Unsubscribe requested from {m} senders · Deleted {n} emails',
+    });
+    expect(WS5_COPY['f1.activity.row.delete']).toEqual({
+      one: 'Unsubscribe requested · Deleted 1 email',
+      other: 'Unsubscribe requested · Deleted {n} emails',
+    });
+    expect(WS5_COPY['f1.toast.mailto.withMove.archive']).toEqual({
+      one: 'Archived 1 email. To finish unsubscribing, press Send on the email that’s ready in Gmail.',
+      other:
+        'Archived {n} emails. To finish unsubscribing, press Send on the email that’s ready in Gmail.',
+    });
+    expect(WS5_COPY['f1.toast.mailto.withMove.delete']).toEqual({
+      one: 'Deleted 1 email. To finish unsubscribing, press Send on the email that’s ready in Gmail.',
+      other:
+        'Deleted {n} emails. To finish unsubscribing, press Send on the email that’s ready in Gmail.',
+    });
+    expect(WS5_COPY['f1.reason.skipped']).toBe('the sender is Protected, so nothing was sent');
+    expect(WS5_COPY['f1.toast.unsub.skipped']).toEqual({
+      one: 'No unsubscribe sent: 1 sender is Protected, so it was left as it is.',
+      other: 'No unsubscribe sent: {n} senders are Protected, so they were left as they are.',
+    });
+    expect(WS5_COPY['f1.toast.unsub.skipped.plain']).toEqual({
+      one: 'No unsubscribe sent. That sender was left as it is.',
+      other: 'No unsubscribe sent. Those {n} senders were left as they are.',
+    });
+    expect(WS5_COPY['f1.toast.bulkSkipped']).toEqual({
+      one: '1 Protected sender left as it is',
+      other: '{k} Protected senders left as they are',
+    });
+  });
 });

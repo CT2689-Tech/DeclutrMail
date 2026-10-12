@@ -41,6 +41,7 @@
 
 import { create } from 'zustand';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
+import type { UnsubscribeBacklogMode } from '@/features/senders/unsubscribe-backlog/preview-copy';
 import type { ActionVerb } from './types';
 
 /** Destructive verbs that use the mandatory preview sheet. */
@@ -61,6 +62,11 @@ export interface PendingAction {
    * remember-preference path. `null` after `clearPending`.
    */
   surface: 'sheet' | 'inline';
+  /**
+   * Skip-sheet unsubscribe choice. Null until the reader picks one;
+   * the inline preview defaults to Archive when the inbox count is above zero.
+   */
+  backlogMode?: UnsubscribeBacklogMode | null;
 }
 
 export interface TriageState {
@@ -107,6 +113,8 @@ export interface TriageActions {
   toggleExpandedRow: (id: string) => void;
   /** Open the pending-action surface for `verb` on `rowId`. */
   openPending: (verb: ActionVerb, rowId: string, surface: 'sheet' | 'inline') => void;
+  /** Record the skip-sheet unsubscribe choice. */
+  setPendingBacklogMode: (mode: UnsubscribeBacklogMode) => void;
   /** Clear any pending action (cancel or post-confirm). */
   clearPending: () => void;
   /** Bump the session count by `by` confirmed decisions (default 1). */
@@ -151,8 +159,14 @@ export const useTriageStore = create<TriageState & TriageActions>((set) => ({
         rowId,
         surface,
         wakeAt: verb === 'Later' ? defaultLaterWakeAtIso() : null,
+        backlogMode: null,
       },
     }),
+
+  setPendingBacklogMode: (mode) =>
+    set((s) =>
+      s.pendingAction ? { pendingAction: { ...s.pendingAction, backlogMode: mode } } : s,
+    ),
 
   clearPending: () => set({ pendingAction: null }),
 
