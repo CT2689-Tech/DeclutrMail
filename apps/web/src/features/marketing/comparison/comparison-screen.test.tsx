@@ -129,8 +129,35 @@ describe('ComparisonDetailScreen', () => {
           source.url,
         );
       }
+      expect(document.body.textContent).not.toMatch(/You can pay with UPI/);
 
       unmount();
+    },
+  );
+
+  it.each([
+    [false, false],
+    [true, false],
+    [true, true],
+  ] as const)(
+    'omits the UPI pay line when pricingV2 is %s and the pass is %s',
+    (pricingV2, passEnabled) => {
+      const index = render(
+        <ComparisonIndexScreen pricingV2={pricingV2} passEnabled={passEnabled} />,
+      );
+      expect(index.container.textContent).not.toMatch(/You can pay with UPI/);
+      index.unmount();
+      for (const comparison of COMPARISONS) {
+        const view = render(
+          <ComparisonDetailScreen
+            comparison={comparison}
+            pricingV2={pricingV2}
+            passEnabled={passEnabled}
+          />,
+        );
+        expect(view.container.textContent, comparison.slug).not.toMatch(/You can pay with UPI/);
+        view.unmount();
+      }
     },
   );
 

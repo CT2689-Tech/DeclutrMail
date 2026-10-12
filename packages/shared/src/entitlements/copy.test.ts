@@ -197,6 +197,11 @@ describe('pricing story builders', () => {
   it('derives the India pass-off answer and the dunning window', () => {
     expect(indiaFaqAnswer(false)).not.toContain('Backlog Pass');
     expect(indiaFaqAnswer(true)).toContain('Backlog Pass');
+    for (const passEnabled of [false, true]) {
+      for (const locale of ['usd', 'inr'] as const) {
+        expect(indiaFaqAnswer(passEnabled, locale)).not.toContain('You can pay with UPI');
+      }
+    }
     expect(termsPastDue()).toContain(`${POLICY.dunningDays} days`);
   });
 

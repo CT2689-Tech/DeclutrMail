@@ -113,6 +113,8 @@ describe('llms.txt — marketing surface reconciliation', () => {
     expect(LLMS_TXT).not.toContain('Observe');
     expect(LLMS_TXT).not.toContain('Plus and Pro');
     expect(LLMS_TXT).not.toContain('Pro Brief');
+    expect(LLMS_TXT).not.toContain('You can pay with UPI');
+    expect(await renderLlmsFullTxt()).not.toContain('You can pay with UPI');
   });
 
   it('uses the API launch flags when the web env is off', async () => {
@@ -142,6 +144,8 @@ describe('llms.txt — marketing surface reconciliation', () => {
     expect(full).toContain('The Backlog Pass is $19 once for 30 days of Plus');
     expect(full).not.toContain('$90');
     expect(full).not.toContain('$9/mo');
+    expect(body).not.toContain('You can pay with UPI');
+    expect(full).not.toContain('You can pay with UPI');
   });
 
   it('falls back to the web env when the pricing API is down', async () => {

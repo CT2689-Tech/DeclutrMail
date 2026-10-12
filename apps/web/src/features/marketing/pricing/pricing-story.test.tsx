@@ -43,4 +43,19 @@ describe('PricingStory', () => {
     expect(refunds).toHaveLength(1);
     expect(screen.getByText(/^Launch offer:/)).toBeInTheDocument();
   });
+
+  it.each(['usd', 'inr'] as const)(
+    'keeps India prices and omits the UPI pay line for %s visitors',
+    (locale) => {
+      for (const passEnabled of [true, false]) {
+        const view = render(<PricingStory passEnabled={passEnabled} locale={locale} now={NOW} />);
+        expect(
+          screen.getByRole('heading', { name: 'What do you charge in India?' }),
+        ).toBeInTheDocument();
+        expect(view.container.textContent).toMatch(/rupees and include GST/);
+        expect(view.container.textContent).not.toMatch(/You can pay with UPI/);
+        view.unmount();
+      }
+    },
+  );
 });

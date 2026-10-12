@@ -90,7 +90,7 @@ export const WS1_COPY = {
     'Paddle is our merchant of record, so it calculates and collects any sales tax or VAT at checkout. You see the final amount before you pay.',
   'pricing.faq.india.q': 'What do you charge in India?',
   'pricing.faq.india.a':
-    'In India, prices are in rupees and include GST: {plusPrice} a year for {plusName} and {passPrice} once for the {passName}. You can pay with UPI.',
+    'In India, prices are in rupees and include GST: {plusPrice} a year for {plusName} and {passPrice} once for the {passName}.',
   'pricing.promise.title': 'Our price promise',
   'pricing.promise.keep':
     'If we change prices, existing subscribers keep their price for as long as they stay subscribed. If we lower a price, you get the lower price at your next renewal.',
