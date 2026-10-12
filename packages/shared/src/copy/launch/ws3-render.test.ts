@@ -12,12 +12,14 @@ import {
   fillComplete,
   fillWs3,
   gateOpen,
+  gatedText,
   glanceLines,
   llmsKeyFacts,
   declutrPriceDetail,
   declutrPriceSummary,
   llmsAutopilotLine,
   llmsPricingLine,
+  llmsStorageAiLine,
   priceFaqAnswer,
   privacyFaqAnswer,
   REFUNDS_PAGE_WINDOW_DAYS,
@@ -96,5 +98,28 @@ describe('WS3 token fill', () => {
     expect(aiFact).toContain('in-app consent card');
     expect(aiFact).toContain('Settings → AI');
     expect(aiFact).not.toContain('Pro Brief');
+    expect(llmsStorageAiLine()).toBe(fillWs3(WS3_COPY['ws3.llms.storageAi.gate']));
+    expect(llmsStorageAiLine()).toContain('in-app consent card');
+    expect(gatedText('ws3.privacy.ai.explanations')).toBe(
+      fillWs3(WS3_COPY['ws3.privacy.ai.explanations']),
+    );
+    expect(gatedText('ws3.security.ai.explanations')).toBe(
+      fillWs3(WS3_COPY['ws3.security.ai.explanations']),
+    );
+    expect(gatedText('ws3.privacy.ai.brief')).toBe(fillWs3(WS3_COPY['ws3.privacy.ai.brief']));
+    expect(gatedText('ws3.security.ai.brief')).toBe(fillWs3(WS3_COPY['ws3.security.ai.brief']));
+    expect(gatedText('ws3.privacy.aiDisclosureConst')).toBe(
+      fillWs3(WS3_COPY['ws3.privacy.aiDisclosureConst']),
+    );
+    expect(gatedText('ws3.privacy.ai.who')).toBe(fillWs3(WS3_COPY['ws3.privacy.ai.who']));
+    expect(gatedText('ws3.privacy.subprocessors.anthropic')).toBe(
+      fillWs3(WS3_COPY['ws3.privacy.subprocessors.anthropic']),
+    );
+    expect(gatedText('ws3.methodology.briefBody')).toBe(
+      fillWs3(WS3_COPY['ws3.methodology.briefBody']),
+    );
+    expect(gatedText('ws3.methodology.briefBody')).not.toBe(
+      fillWs3(WS3_COPY['ws3.methodology.briefBody.preGate']),
+    );
   });
 });

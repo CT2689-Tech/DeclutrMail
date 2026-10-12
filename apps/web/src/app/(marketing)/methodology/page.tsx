@@ -33,6 +33,7 @@ const TOC = [
 ] as const;
 
 export default function MethodologyPage() {
+  const briefCaption = fillWs3(WS3_COPY['ws3.methodology.briefCaption']);
   return (
     <DocPage
       title="What DeclutrMail can see and change."
@@ -90,19 +91,10 @@ export default function MethodologyPage() {
       </DocSection>
 
       <DocSection id="brief-boundary" title={fillWs3(WS3_COPY['ws3.methodology.briefHeading'])}>
-        <p>
-          DeclutrMail can send the sender, subject line, and Gmail preview snippet to Anthropic to
-          draft a Pro Brief. Full email contents, attachments, embedded images, and raw email source
-          are not sent. If Anthropic is unavailable, DeclutrMail uses a standard summary.
-        </p>
-        <div
-          className="dm-story-table-wrap"
-          role="region"
-          tabIndex={0}
-          aria-label="What the Pro Brief sends to Anthropic"
-        >
+        <p>{gatedText('ws3.methodology.briefBody')}</p>
+        <div className="dm-story-table-wrap" role="region" tabIndex={0} aria-label={briefCaption}>
           <table className="dm-story-table">
-            <caption className="dm-story-sr-only">What the Pro Brief sends to Anthropic</caption>
+            <caption className="dm-story-sr-only">{briefCaption}</caption>
             <tbody>
               <tr>
                 <th scope="row">Sent for the Brief</th>

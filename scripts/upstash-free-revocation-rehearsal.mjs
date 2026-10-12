@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 const API = 'https://api.upstash.com/v2/redis';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const OBSERVATIONS_MS = [0, 1000, 5000, 15000, 30000, 60000];
+export const PAID_TEST_CONFIRMATION = 'APPROVED_ONE_TEST_USD20_CAP';
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 class Refusal extends Error {}
 const refuse = (code) => {
@@ -39,6 +40,13 @@ function inventory(value) {
   // Existing provider IDs may use other UUID versions; they are never mutation targets.
   if (ids.some((id) => typeof id !== 'string') || new Set(ids).size !== ids.length)
     refuse('inventory_invalid');
+  // List responses can carry passwords and tokens. Keep the id and name used
+  // for ownership checks; drop every other field before the rows are retained.
+  for (const row of value) {
+    for (const key of Object.keys(row)) {
+      if (key !== 'database_id' && key !== 'database_name') delete row[key];
+    }
+  }
   return value;
 }
 
@@ -61,6 +69,22 @@ export function assertFree(row) {
     refuse('free_fixture_contract_refused');
   if (row.eviction !== false || row.prod_pack_enabled === true)
     refuse('free_fixture_contract_refused');
+}
+
+export function assertCappedPayg(row) {
+  // The provider documents legacy `paid` responses for explicit payg creation.
+  if (
+    !['payg', 'paid'].includes(row.type) ||
+    row.budget !== 20 ||
+    row.auto_upgrade !== false ||
+    row.tls !== true ||
+    row.eviction !== false ||
+    row.prod_pack_enabled !== false ||
+    row.primary_region !== 'us-east-1' ||
+    !Array.isArray(row.read_regions) ||
+    row.read_regions.length !== 0
+  )
+    refuse('capped_payg_fixture_contract_refused');
 }
 
 export function normalizeHost(endpoint) {
@@ -132,12 +156,17 @@ export async function rehearse({
   now = Date.now,
   nonce = randomUUID(),
   sampleTimes = OBSERVATIONS_MS,
+  mode = 'free',
+  paidConfirmation,
 } = {}) {
+  const paid = mode === 'capped-payg';
   const report = {
-    schema: 'upstash-free-revocation-v1',
-    scope: 'one owned free synthetic fixture only',
+    schema: paid ? 'upstash-capped-payg-revocation-v1' : 'upstash-free-revocation-v1',
+    scope: paid
+      ? 'one owned capped payg synthetic fixture only'
+      : 'one owned free synthetic fixture only',
     startedAt: new Date(now()).toISOString(),
-    requestedPlan: 'free',
+    requestedPlan: paid ? 'payg' : 'free',
     authorizedCostUsd: 0,
     productionRetirementCertified: false,
     fixtureCreated: false,
@@ -146,6 +175,20 @@ export async function rehearse({
     baselineIdsPresent: false,
     observations: [],
   };
+  if (mode !== 'free' && !paid)
+    return { ...report, result: 'refused', reason: 'fixture_mode_invalid' };
+  // This is an operator attestation, not independent proof of founder approval.
+  // The separate paid entrypoint/workflow must only run after explicit spending approval.
+  if (paid && paidConfirmation !== PAID_TEST_CONFIRMATION)
+    return { ...report, result: 'refused', reason: 'paid_test_confirmation_missing' };
+  if (paid) {
+    report.authorizedCostUsd = 20;
+    report.operatorConfirmedPaidTest = true;
+    report.requestedMonthlyBudgetUsd = 20;
+    report.budgetVerifiedBeforeCommands = false;
+    if (JSON.stringify(sampleTimes) !== JSON.stringify(OBSERVATIONS_MS))
+      return { ...report, result: 'refused', reason: 'paid_observation_schedule_invalid' };
+  }
   if (!env.UPSTASH_EMAIL || !env.UPSTASH_API_KEY || !UUID.test(nonce))
     return { ...report, result: 'refused', reason: 'credentials_or_nonce_missing' };
   const authorization = `Basic ${Buffer.from(`${env.UPSTASH_EMAIL}:${env.UPSTASH_API_KEY}`).toString('base64')}`;
@@ -156,6 +199,7 @@ export async function rehearse({
   let baselineRows;
   let createAttempted = false;
   const clients = [];
+  const assertPlan = paid ? assertCappedPayg : assertFree;
   async function api(method, path, body) {
     let response;
     try {
@@ -228,12 +272,20 @@ export async function rehearse({
     }
   }
   try {
-    baselineRows = inventory(await api('GET', '/databases'));
-    ownership.baseline = new Set(baselineRows.map((row) => row.database_id));
+    const listed = inventory(await api('GET', '/databases'));
+    const nameTaken = listed.some((row) => row.database_name === name);
+    // Keep only ids. The name check above is the last use of any other field.
+    baselineRows = [];
+    for (const row of listed) {
+      baselineRows.push(row.database_id);
+      for (const key of Object.keys(row)) {
+        if (key !== 'database_id') delete row[key];
+      }
+    }
+    ownership.baseline = new Set(baselineRows);
     // Upstash documents additional database-count charges beyond ten resources.
     if (baselineRows.length >= 10) refuse('zero_cost_database_count_unproven');
-    if (baselineRows.some((row) => row.database_name === name))
-      refuse('fixture_name_already_exists');
+    if (nameTaken) refuse('fixture_name_already_exists');
     createAttempted = true;
     report.creationOutcome = 'unconfirmed';
     let created;
@@ -243,7 +295,8 @@ export async function rehearse({
         platform: 'aws',
         primary_region: 'us-east-1',
         read_regions: [],
-        plan: 'free',
+        plan: paid ? 'payg' : 'free',
+        ...(paid ? { budget: 20 } : {}),
         tls: true,
         eviction: false,
       });
@@ -261,9 +314,13 @@ export async function rehearse({
     assertOwned(created, ownership);
     report.fixtureCreated = true;
     report.fixtureId = ownership.id;
-    assertFree(created);
+    assertPlan(created);
     const before = await ownedRead();
-    assertFree(before);
+    assertPlan(before);
+    if (paid) {
+      report.budgetVerifiedBeforeCommands = true;
+      report.observedMonthlyBudgetUsd = before.budget;
+    }
     const oldCredential = credentials(before);
     const first = open(oldCredential);
     const second = open(oldCredential);
@@ -277,13 +334,13 @@ export async function rehearse({
     ];
     if (control.some((outcome) => outcome !== 'acknowledged')) refuse('pre_reset_control_failed');
     // Re-check the owned resource immediately before the only credential mutation.
-    assertFree(await ownedRead());
+    assertPlan(await ownedRead());
     report.resetSubmitted = true;
     await api('POST', `/reset-password/${ownership.id}`);
     const resetAcknowledgedAt = now();
     report.resetAcknowledgedAt = new Date(resetAcknowledgedAt).toISOString();
     const after = await ownedRead();
-    assertFree(after);
+    assertPlan(after);
     const newCredential = credentials(after);
     if (oldCredential.password === newCredential.password) refuse('password_change_unproven');
     report.restTokenChanged = oldCredential.token !== newCredential.token;
@@ -381,6 +438,21 @@ export async function rehearse({
   return report;
 }
 
+// An expected $0 plan refusal is a completed check when nothing was created and
+// cleanup still proves the baseline. Every other refusal stays a failure.
+export function cliExitCode(report) {
+  const expectedZeroCostRefusal =
+    report.fixtureCreated === false &&
+    report.cleanupVerified === true &&
+    report.baselineIdsPresent === true &&
+    (report.creationRefusalCategory === 'free_plan_unavailable' ||
+      report.creationRefusalCategory === 'paid_plan_required');
+  if (expectedZeroCostRefusal) return 0;
+  if (!report.cleanupVerified || !report.baselineIdsPresent || report.result === 'refused')
+    return 1;
+  return 0;
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const output = process.argv[2];
   if (!output || process.argv.length !== 3) {
@@ -394,7 +466,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     });
     await writeFile(output, JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
     console.log(JSON.stringify(report));
-    if (!report.cleanupVerified || !report.baselineIdsPresent || report.result === 'refused')
-      process.exitCode = 1;
+    process.exitCode = cliExitCode(report);
   }
 }

@@ -24,6 +24,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
+import { fillWs3, gatedText, WS3_COPY } from '@declutrmail/shared/copy/launch';
 import { storeConsent } from '@/lib/cookie-consent';
 
 import HelpPage from './help/page';
@@ -183,6 +184,15 @@ describe('/security content — verified claims only', () => {
     for (const item of PRIVACY_STORAGE_ITEMS) {
       expect(container.textContent).toContain(item);
     }
+  });
+
+  it('renders the gate-on AI lines from the deck', () => {
+    const { container } = render(<SecurityPage />);
+    const text = container.textContent ?? '';
+    expect(text).toContain(gatedText('ws3.security.ai.explanations'));
+    expect(text).toContain(gatedText('ws3.security.ai.brief'));
+    expect(text).toContain(gatedText('ws3.security.ai.control'));
+    expect(text).not.toMatch(/\{[A-Za-z0-9_]+\}/);
   });
 
   it('names the single Gmail permission and the limited Gmail details used', () => {

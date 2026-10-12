@@ -6,16 +6,21 @@
  * section, and the consent step in the words the deck uses (the in-app
  * consent card, and Settings → AI).
  *
- * Still the previous hardcoded sentences, so they do not pick up the
- * gate-on deck lines: the Brief paragraph on /methodology
- * (`ws3.methodology.briefBody`) and the storage paragraph in /llms.txt
- * (`ws3.llms.storageAi.gate`).
+ * #997 wired the Brief paragraph on /methodology and the storage
+ * paragraph in /llms.txt through the same gate, so those sentences are
+ * the deck's gate-on lines too.
  */
 
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { fillWs3, gatedText, llmsKeyFacts, WS3_COPY } from '@declutrmail/shared/copy/launch';
+import {
+  fillWs3,
+  gatedText,
+  llmsKeyFacts,
+  llmsStorageAiLine,
+  WS3_COPY,
+} from '@declutrmail/shared/copy/launch';
 
 import { renderLlmsTxt } from '@/features/marketing/llms/llms-document';
 
@@ -77,7 +82,11 @@ describe('AI consent gate on the public pages', () => {
     expect(securityAiText).toContain(securityControl);
     expect(securityText).toContain('If you allow AI, some email details go to Anthropic');
     expect(explanationsText).toContain(methodologyExplanations);
+    expect(briefText).toContain(gatedText('ws3.methodology.briefBody'));
+    expect(briefText).not.toContain(fillWs3(WS3_COPY['ws3.methodology.briefBody.preGate']));
     expect(llms).toContain(aiFact);
+    expect(llms).toContain(llmsStorageAiLine());
+    expect(llms).not.toContain(fillWs3(WS3_COPY['ws3.llms.storageAi']));
 
     const consentStep = [privacyExplanations, privacyBrief, methodologyExplanations, aiFact];
     for (const sentence of consentStep) {

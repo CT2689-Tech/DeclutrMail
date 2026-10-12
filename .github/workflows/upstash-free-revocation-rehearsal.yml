@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: upstash-free-revocation-${{ github.event_name }}-${{ github.ref }}
+  group: upstash-revocation-provider-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -24,11 +24,12 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: node --test scripts/upstash-free-revocation-rehearsal.test.mjs
-  rehearse:
+  upstash-free-revocation-rehearse:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     needs: contracts
     runs-on: ubuntu-latest
     timeout-minutes: 8
+    environment: Sandbox
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
