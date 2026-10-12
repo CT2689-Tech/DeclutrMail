@@ -2,8 +2,16 @@
 
 import { Button } from '@declutrmail/shared';
 import type { HomeVisitSummary } from '@declutrmail/shared/contracts/home-visit';
+import { pluralCopy, WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { useHomeVisit } from './api/use-home-visit';
+import { formatCount } from './home-deck-copy';
 import styles from './home-view.module.css';
+
+const sinceLast = WS2_COPY.liveFix.home.sinceLast;
+
+function sinceLastCount(forms: { readonly one: string; readonly other: string }, count: number) {
+  return pluralCopy(forms, count, { n: formatCount(count) });
+}
 
 export function HomeArrivals() {
   const visit = useHomeVisit();
@@ -31,23 +39,15 @@ export function HomeArrivalsView({
       </p>
     );
   if (!data?.since || data.indexedEmails === null || data.indexedSenders === null) return null;
+  const title =
+    data.indexedEmails === 0 ? sinceLast.none : sinceLastCount(sinceLast.title, data.indexedEmails);
   return (
-    <section
-      className={`${styles.beginning} ${styles.arrivals}`}
-      aria-label="Since your previous visit"
-    >
-      <span className={styles.eyebrow}>Since your previous visit</span>
-      <h2>
-        {data.indexedEmails.toLocaleString('en-US')} {data.indexedEmails === 1 ? 'email' : 'emails'}{' '}
-        newly indexed
-      </h2>
-      <p>
-        {data.indexedSenders.toLocaleString('en-US')}{' '}
-        {data.indexedSenders === 1 ? 'sender' : 'senders'} added to this inbox’s index.
-      </p>
+    <section className={`${styles.beginning} ${styles.arrivals}`} aria-label={sinceLast.eyebrow}>
+      <span className={styles.eyebrow}>{sinceLast.eyebrow}</span>
+      <h2>{title}</h2>
+      <p>{sinceLastCount(sinceLast.senders, data.indexedSenders)}</p>
       <p className={styles.footnote}>
-        From your previous visit until this visit began. Counts cover the retained index. Existing
-        review tasks appear below.
+        From your previous visit until this visit began. Existing review tasks appear below.
       </p>
     </section>
   );

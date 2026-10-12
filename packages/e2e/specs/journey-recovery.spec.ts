@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { pluralCopy, WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { BRIEF_NAME } from '@declutrmail/shared/copy/screen-decisions';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { dbConnect } from '../helpers/db';
@@ -157,16 +157,21 @@ test('intentional sign-out keeps its confirmation instead of a stale-session red
 test(homeVisitTitle, async ({ page }) => {
   const sql = dbConnect();
   try {
-    const summary = page.getByRole('region', { name: 'Since your previous visit' });
-    await expect(summary.getByRole('heading', { name: '3 emails newly indexed' })).toBeVisible();
+    const sinceLast = WS2_COPY.liveFix.home.sinceLast;
+    const summary = page.getByRole('region', { name: sinceLast.eyebrow });
     await expect(
-      summary.getByText('2 senders added to this inbox’s index.', { exact: true }),
+      summary.getByRole('heading', { name: pluralCopy(sinceLast.title, 3, { n: '3' }) }),
+    ).toBeVisible();
+    await expect(
+      summary.getByText(pluralCopy(sinceLast.senders, 2, { n: '2' }), { exact: true }),
     ).toBeVisible();
     await sql`UPDATE mail_messages SET created_at = now() + interval '1 day' WHERE mailbox_account_id = ${fixture.mailboxId}`;
     await page.goto('/senders');
     await page.goto('/home');
     await page.reload();
-    await expect(summary.getByRole('heading', { name: '3 emails newly indexed' })).toBeVisible();
+    await expect(
+      summary.getByRole('heading', { name: pluralCopy(sinceLast.title, 3, { n: '3' }) }),
+    ).toBeVisible();
   } finally {
     await sql`UPDATE mail_messages SET created_at = now() WHERE mailbox_account_id = ${fixture.mailboxId}`;
     await sql`UPDATE users SET preferences = preferences - 'mailboxVisits' WHERE id = ${fixture.userId}`;
