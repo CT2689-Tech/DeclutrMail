@@ -1,11 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { usePathname } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { BannerSlot } from '@declutrmail/shared';
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+import type { BillingSubscription } from '@declutrmail/shared/contracts';
 
 import { useTier } from '@/features/auth/api/use-tier';
 import { useBillingSubscription } from '@/features/billing/api/use-billing-subscription';
+import { billingKeys } from '@/features/billing/api/query-keys';
 import { usePaymentMethodSession } from '@/features/billing/api/use-payment-method';
 
 import { accessDeadlineCopy, accessDeadlineDismissKey } from './access-deadline-copy';
@@ -29,23 +33,45 @@ function rememberDismissed(key: string): void {
 /**
  * App-chrome billing banner. One slot, session-dismissed, server date only.
  *
- * The subscription read stays off until after mount. This banner sits in
- * the shell, outside each page's hydration boundary, so subscribing during
- * the first render seeds the shared billing query as pending and the
- * page then hydrates against that instead of its server snapshot.
+ * The subscription read stays off until after mount, and off entirely on
+ * /billing. This banner sits in the shell, outside the page hydration
+ * boundary. billing/loading.tsx lets that shell commit and run effects
+ * while the page is still streaming, so a fetch started here creates the
+ * shared billing query as pending. The page then hydrates against that
+ * empty read instead of its server snapshot.
  */
 export function AccessDeadlineBanner() {
   const [mounted, setMounted] = useState(false);
+  const pathname = usePathname();
   useEffect(() => setMounted(true), []);
   if (!mounted) return null;
+  if (pathname === '/billing') return <AccessDeadlineFromCache />;
   return <AccessDeadlineBannerLive />;
 }
 
+function AccessDeadlineFromCache() {
+  const client = useQueryClient();
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => client.getQueryCache().subscribe(() => onStoreChange()),
+    [client],
+  );
+  const data = useSyncExternalStore(
+    subscribe,
+    () => client.getQueryData<BillingSubscription>(billingKeys.subscription()),
+    () => undefined,
+  );
+  return <AccessDeadlineBody subscription={data} />;
+}
+
 function AccessDeadlineBannerLive() {
-  const { tier } = useTier();
   const billing = useBillingSubscription();
+  return <AccessDeadlineBody subscription={billing.data} />;
+}
+
+function AccessDeadlineBody({ subscription }: { subscription: BillingSubscription | undefined }) {
+  const { tier } = useTier();
   const paymentMethod = usePaymentMethodSession();
-  const banner = accessDeadlineCopy(tier, billing.data?.subscription ?? null);
+  const banner = accessDeadlineCopy(tier, subscription?.subscription ?? null);
   const dismissKey = banner === null ? null : accessDeadlineDismissKey(banner);
   const [dismissed, setDismissed] = useState(false);
 

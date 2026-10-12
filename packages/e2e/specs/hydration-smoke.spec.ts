@@ -1,5 +1,7 @@
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
 
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+
 import { ApiClient, requireLiveStack } from '../helpers/api';
 import { dbConnect } from '../helpers/db';
 import { BILLING_SEED } from '../helpers/seed-billing';
@@ -210,6 +212,131 @@ test('billing hydrates across repeated loads when the subscription read is disab
   });
   await expectLoadsHydrate(page, '/billing', async () => {
     await expect(page.getByTestId('billing-disabled-notice')).toBeVisible();
+  });
+});
+
+function usd(cents: number): string {
+  const dollars = cents / 100;
+  return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
+}
+
+function manifestPrice(tier: 'plus' | 'pro', cycle: 'monthly' | 'annual'): string {
+  const point = TIER_MANIFEST[tier].prices[cycle];
+  if (!point) throw new Error(`missing ${cycle} price for ${tier}`);
+  return `${usd(point.usdCents)}${cycle === 'annual' ? '/yr' : '/mo'}`;
+}
+
+/**
+ * Live complimentary Pro, then a normal paid Plus plan. Both restore the
+ * synthetic workspace. The grant and the paid row belong to this spec.
+ */
+async function withBillingFixture(
+  setup: 'complimentary-pro' | 'paid-plus',
+  run: () => Promise<void>,
+): Promise<void> {
+  const sql = dbConnect();
+  const [workspace] = await sql<{ tier: string }[]>`
+    SELECT tier FROM workspaces WHERE id = ${BILLING_SEED.workspaceId}
+  `;
+  const [grant] = await sql<
+    {
+      tier: string;
+      reason: string;
+      granted_by: string;
+      expires_at: Date | null;
+      revoked_at: Date | null;
+    }[]
+  >`
+    SELECT tier, reason, granted_by, expires_at, revoked_at
+    FROM entitlement_grants
+    WHERE email = ${BILLING_SEED.email}
+  `;
+  try {
+    await sql`DELETE FROM subscriptions WHERE workspace_id = ${BILLING_SEED.workspaceId}`;
+    if (setup === 'complimentary-pro') {
+      await sql`UPDATE workspaces SET tier = 'pro' WHERE id = ${BILLING_SEED.workspaceId}`;
+      await sql`
+        INSERT INTO entitlement_grants (email, tier, reason, granted_by)
+        VALUES (${BILLING_SEED.email}, 'pro', 'hydration smoke', 'e2e')
+        ON CONFLICT (email) DO UPDATE
+        SET tier = 'pro', reason = 'hydration smoke', granted_by = 'e2e',
+            expires_at = NULL, revoked_at = NULL, updated_at = now()
+      `;
+    } else {
+      await sql`DELETE FROM entitlement_grants WHERE email = ${BILLING_SEED.email}`;
+      await sql`UPDATE workspaces SET tier = 'plus' WHERE id = ${BILLING_SEED.workspaceId}`;
+      await sql`
+        INSERT INTO subscriptions (
+          workspace_id, provider, provider_subscription_id, tier, status,
+          provider_price_id, billing_cycle, current_period_end
+        ) VALUES (
+          ${BILLING_SEED.workspaceId}, 'paddle', 'sub_e2e_hydration_paid', 'plus', 'active',
+          'pri_e2e_hydration', 'monthly', now() + interval '30 days'
+        )
+      `;
+    }
+    await run();
+  } finally {
+    await sql`DELETE FROM subscriptions WHERE workspace_id = ${BILLING_SEED.workspaceId} AND provider_subscription_id = 'sub_e2e_hydration_paid'`;
+    if (workspace) {
+      await sql`UPDATE workspaces SET tier = ${workspace.tier} WHERE id = ${BILLING_SEED.workspaceId}`;
+    }
+    if (grant) {
+      await sql`
+        UPDATE entitlement_grants
+        SET tier = ${grant.tier},
+            reason = ${grant.reason},
+            granted_by = ${grant.granted_by},
+            expires_at = ${grant.expires_at},
+            revoked_at = ${grant.revoked_at}
+        WHERE email = ${BILLING_SEED.email}
+      `;
+    } else {
+      await sql`DELETE FROM entitlement_grants WHERE email = ${BILLING_SEED.email}`;
+    }
+    await sql.end();
+  }
+}
+
+test('live Pro complimentary billing hydrates on annual across repeated loads', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await withBillingFixture('complimentary-pro', async () => {
+    await expectLoadsHydrate(page, '/billing', async () => {
+      await expect(page.getByTestId('complimentary-note')).toContainText(
+        'Pro is complimentary on this account',
+      );
+      await expect(page.getByRole('button', { name: /^Annual/, pressed: true })).toBeVisible();
+      await expect(page.getByText(manifestPrice('plus', 'annual')).first()).toBeVisible();
+      await expect(page.getByText(manifestPrice('pro', 'annual')).first()).toBeVisible();
+    });
+  });
+});
+
+test('live Pro complimentary billing hydrates with the monthly toggle selected', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await withBillingFixture('complimentary-pro', async () => {
+    await expectLoadsHydrate(page, '/billing?plan=plus&cycle=monthly', async () => {
+      await expect(page.getByTestId('complimentary-note')).toContainText(
+        'Pro is complimentary on this account',
+      );
+      await expect(page.getByRole('button', { name: 'Monthly', pressed: true })).toBeVisible();
+      await expect(page.getByText(manifestPrice('plus', 'monthly')).first()).toBeVisible();
+    });
+  });
+});
+
+test('a normal paid plan hydrates across repeated loads', async ({ page }) => {
+  test.setTimeout(180_000);
+  await withBillingFixture('paid-plus', async () => {
+    await expectLoadsHydrate(page, '/billing', async () => {
+      await expect(page.getByTestId('complimentary-note')).toHaveCount(0);
+      await expect(page.getByText(manifestPrice('plus', 'monthly')).first()).toBeVisible();
+      await expect(page.getByTestId('current-plan-card')).toContainText('Plus');
+    });
   });
 });
 
