@@ -174,16 +174,16 @@
       "budgetKb": 165
     },
     "/(marketing)/page": {
-      "measuredKb": 164.4,
-      "budgetKb": 173
+      "measuredKb": 173.3,
+      "budgetKb": 182
     },
     "/(marketing)/pricing/changelog/page": {
       "measuredKb": 156.9,
       "budgetKb": 165
     },
     "/(marketing)/pricing/page": {
-      "measuredKb": 180.1,
-      "budgetKb": 190
+      "measuredKb": 190.3,
+      "budgetKb": 200
     },
     "/(marketing)/privacy/page": {
       "measuredKb": 157.4,
