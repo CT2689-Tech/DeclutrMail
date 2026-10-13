@@ -618,12 +618,6 @@
     "text": "The secure checkout window could not be opened."
   },
   {
-    "file": "apps/web/src/features/billing/plan-picker.tsx",
-    "line": 498,
-    "id": "opened_claim",
-    "text": "The secure checkout window could not be opened. Your checkout remains reserved."
-  },
-  {
     "file": "apps/web/src/features/brief/api/use-noise-archive.ts",
     "line": 59,
     "id": "action_word",

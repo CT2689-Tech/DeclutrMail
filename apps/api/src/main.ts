@@ -7,6 +7,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 
 import { AppModule } from './app.module.js';
 import { AllExceptionsFilter } from './common/all-exceptions.filter.js';
+import { CORS_ALLOWED_HEADERS } from './common/cors-allowed-headers.js';
 import { correlationMiddleware } from './common/correlation.middleware.js';
 import { requestTimingMiddleware } from './common/request-timing.middleware.js';
 import { securityHeadersMiddleware } from './common/security-headers.middleware.js';
@@ -156,20 +157,15 @@ async function bootstrap(): Promise<void> {
   // fresh URL hash; a single exact string would only match one deploy.
   // D155 cookie-auth requires `credentials: true` so the browser
   // sends the HttpOnly access cookie cross-origin. The allowed headers
-  // include `X-CSRF-Token` for the double-submit CSRF pattern. The
-  // legacy `x-mailbox-account-id` header is gone — mailbox identity
-  // now comes from the session + `users.preferences.activeMailboxId`.
+  // live in `CORS_ALLOWED_HEADERS` (CSRF, mailbox override, idempotency,
+  // and `x-declutr-checkout-geo` — #1020; omitting that name fails
+  // India checkout as TypeError / DECLUTRMAIL-WEB-2V). The legacy
+  // `x-mailbox-account-id` header is gone — mailbox identity now comes
+  // from the session + `users.preferences.activeMailboxId`.
   app.enableCors({
     origin: parseCorsOrigin(process.env.CORS_ORIGIN),
     credentials: true,
-    allowedHeaders: [
-      'Content-Type',
-      'X-CSRF-Token',
-      // Per-request mailbox override (CurrentMailboxGuard, D155 + D205).
-      // The web client stamps it whenever a hook passes `mailboxId`.
-      'X-Active-Mailbox-Id',
-      'Idempotency-Key',
-    ],
+    allowedHeaders: [...CORS_ALLOWED_HEADERS],
   });
   app.setGlobalPrefix('api');
   // Correlation IDs (D168) must be stamped before any handler or the

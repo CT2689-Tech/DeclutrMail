@@ -32,6 +32,7 @@ import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
 import {
   fillStory,
   meterChipLine,
+  passEndLabel,
   TIER_MANIFEST,
   TIER_RANK,
   type TierId,
@@ -41,6 +42,7 @@ import { useAuth } from '@/features/auth/auth-provider';
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { useTier } from '@/features/auth/api/use-tier';
 import { currencyForProvider, formatMoney } from '@/features/marketing/pricing/pricing-model';
+import { visitorPriceLocale } from '@/features/marketing/pricing/visitor-pricing-locale';
 import { ApiError, apiDelete } from '@/lib/api/client';
 import { useHydrated } from '@/lib/use-hydrated';
 import { track } from '@/lib/posthog';
@@ -103,6 +105,17 @@ const CheckoutRecovery = dynamic(
 );
 
 const { color, font, radius, text } = tokens;
+
+/** One-account plans use the approved planIncludes line. Plus keeps scope. */
+function billingAccountScope(plan: BillingPlanView): string {
+  const oneAccount = passCoversPlan(plan) || TIER_MANIFEST[plan.entitlementTier].inboxLimit === 1;
+  if (!oneAccount) return WS2_COPY.liveFix.billing.scope;
+  return fillStory(WS2_COPY.liveFix.billing.planIncludes.one, 'usd', {
+    name: passCoversPlan(plan)
+      ? fillStory(WS1_COPY['planName.pass'])
+      : TIER_MANIFEST[plan.entitlementTier].name,
+  });
+}
 
 /**
  * Post-checkout poll cadence — how often the screen re-reads the
@@ -187,6 +200,7 @@ export function BillingScreen({
 }) {
   const { me } = useAuth();
   const { tier: meTier, cleanupRemaining, cleanupResetsAt, passEnabled } = useTier();
+  const visitorLocale = visitorPriceLocale({ country, indiaCheckoutOpen });
   const workspaceId = me.user.workspaceId;
   const currentOwner = useRef(workspaceId);
   currentOwner.current = workspaceId;
@@ -823,7 +837,7 @@ export function BillingScreen({
     >
       <EditorialKicker>Plan & billing</EditorialKicker>
       <h1 style={editorialTitleStyle}>Plan & billing</h1>
-      <p style={{ margin: 0, color: color.fgSoft }}>{WS2_COPY.liveFix.billing.scope}</p>
+      <p style={{ margin: 0, color: color.fgSoft }}>{billingAccountScope(plan)}</p>
       <ScreenIntro
         id="billing"
         title="Plan & billing"
@@ -856,6 +870,7 @@ export function BillingScreen({
 
       <CurrentPlanCard
         plan={plan}
+        locale={visitorLocale}
         cleanupRemaining={cleanupRemaining}
         cleanupResetsAt={cleanupResetsAt}
         billingDark={billingDark}
@@ -945,7 +960,15 @@ export function BillingScreen({
           startPending('checkout', target, cycle, attemptId)
         }
         onCheckoutAttempt={(target, cycle) => attemptClaim('checkout_intent', target, cycle)}
-        onCheckoutAbandoned={releaseAttemptLock}
+        onCheckoutAbandoned={(attemptId) => {
+          releaseAttemptLock(attemptId);
+          // Overlay never opened (or the server refused before a
+          // claim). Clear the server slot so a retry is not
+          // CHECKOUT_IN_FLIGHT. Best-effort: TTL is the fallback.
+          void apiDelete<{ released: true }>('/api/billing/checkout/pending').catch(
+            () => undefined,
+          );
+        }}
         onCheckoutClosed={surfaceAttemptLock}
         ownsCheckout={() => mounted.current && currentOwner.current === workspaceId}
         mayOpenCheckout={(attemptId) => {
@@ -958,22 +981,6 @@ export function BillingScreen({
             record.attemptId === attemptId &&
             Date.now() < record.at + 30 * 60 * 1000
           );
-        }}
-        onCheckoutBlocked={(session, target, cycle, attemptId) => {
-          const record = readPendingCheckout(workspaceId);
-          if (
-            mounted.current &&
-            currentOwner.current === workspaceId &&
-            record?.attemptId === attemptId
-          )
-            setHeldCheckout({
-              workspaceId,
-              session,
-              target,
-              cycle,
-              attemptId,
-              expiresAt: record.at + 30 * 60 * 1000,
-            });
         }}
         onPlanChangeAttempt={(target, cycle) => attemptClaim('change_unconfirmed', target, cycle)}
         onPlanChangeFailedKnown={releaseAttemptLock}
@@ -1496,6 +1503,7 @@ function freeEmailsLeftLine(remaining: number, resetAt: string | null): string {
 
 function CurrentPlanCard({
   plan,
+  locale = 'usd',
   cleanupRemaining,
   cleanupResetsAt,
   billingDark,
@@ -1507,6 +1515,7 @@ function CurrentPlanCard({
   resumeCancellationError,
 }: {
   plan: BillingPlanView;
+  locale?: 'usd' | 'inr';
   cleanupRemaining: number | null;
   cleanupResetsAt: string | null;
   billingDark: boolean;
@@ -1543,7 +1552,7 @@ function CurrentPlanCard({
   // paid tier makes no price claim at all — nobody is charged one.
   const note = backingStatusNote(backing);
   const compNote = complimentaryNote(plan);
-  const priceLabel = currentPlanPriceLabel(plan);
+  const priceLabel = currentPlanPriceLabel(plan, locale);
   // "Next renewal <date>" claims THIS plan, at THIS price, renews then.
   // With a scheduled change that is false: on Pro annual with a
   // downgrade booked, the card read "Pro · $190/yr · Next renewal Jul
@@ -1621,6 +1630,16 @@ function CurrentPlanCard({
           style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}
         >
           {compNote}
+        </p>
+      ) : null}
+      {passCoversPlan(plan) && plan.complimentary?.expiresAt ? (
+        <p
+          data-testid="pass-status-detail"
+          style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}
+        >
+          {fillStory(WS1_COPY['billing.pass.statusDetail'], locale, {
+            passEndDate: passEndLabel(plan.complimentary.expiresAt),
+          })}
         </p>
       ) : null}
 
@@ -1719,8 +1738,7 @@ function CurrentPlanCard({
                 {formatBillingDate(backing.sub.currentPeriodEnd)
                   ? ` — next charge ${formatBillingDate(backing.sub.currentPeriodEnd)}`
                   : ' on its normal schedule'}
-                {currentPlanPriceLabel(plan) ? ` at ${currentPlanPriceLabel(plan)}` : ''}. You can
-                cancel again at any time.
+                {priceLabel ? ` at ${priceLabel}` : ''}. You can cancel again at any time.
               </p>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <Button

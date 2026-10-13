@@ -44,6 +44,7 @@ export {
   isBillingPassEnabled,
   isMeterV2,
   isPricingV2,
+  launchPriceDisplay,
   meterChipLine,
   meterNoun,
   meterPreviewText,

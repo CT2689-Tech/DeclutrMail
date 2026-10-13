@@ -38,6 +38,7 @@ vi.mock('@/features/auth/auth-provider', () => ({
 
 import { useUpgradeGateStore } from '@/lib/entitlements/upgrade-gate';
 
+import { BillingCurrencyProvider } from './billing-currency';
 import { UpgradeModal } from './upgrade-modal';
 import { UpgradeModalHost } from './upgrade-modal-host';
 
@@ -188,6 +189,23 @@ describe('UpgradeModal', () => {
     );
     expect(screen.getByText('$59 a year · no monthly limit')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /\$9\/mo/ })).not.toBeInTheDocument();
+  });
+
+  it('PRICING_V2 quotes INR chips for a trusted India locale', () => {
+    mockPricingV2 = true;
+    useUpgradeGateStore.getState().report({
+      reason: 'free_cap',
+      details: { remaining: 0, limit: 50, used: 50, requiredUnits: 1, resetsAt: null },
+    });
+    render(
+      <BillingCurrencyProvider provider="paddle" locale="inr">
+        <UpgradeModal />
+      </BillingCurrencyProvider>,
+    );
+
+    expect(screen.getByText('₹1,999 a year · no monthly limit')).toBeInTheDocument();
+    expect(screen.queryByText('$59 a year · no monthly limit')).not.toBeInTheDocument();
+    expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
   });
 
   it('PRICING_V2 points a Plus feature gate at annual', () => {

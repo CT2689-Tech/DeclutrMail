@@ -199,7 +199,7 @@ export const WS1_COPY = {
   'checkout.refund': '{refundDays}-day money-back on any purchase, once per customer.',
   'billing.pass.status': '{passName} \u00b7 ends {passEndDate}',
   'billing.pass.statusDetail':
-    'You have everything in {plusName} until {passEndDate}. Then you\u2019re back on {freeName}. Nothing renews.',
+    'No monthly limit on one {CONNECTION_TERM}, plus the Screener and Autopilot, until {passEndDate}. Then you\u2019re back on {freeName}. Nothing renews.',
   'billing.pass.purchased': 'Your {passName} is active until {passEndDate}.',
   'billing.pass.extended': 'Your {passName} now ends {passEndDate}.',
   'billing.plus.status': '{plusName} \u00b7 renews {periodEnd}',

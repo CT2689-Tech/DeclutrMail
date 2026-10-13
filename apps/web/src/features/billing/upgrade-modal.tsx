@@ -26,7 +26,7 @@ import {
   moneyBackNote,
   quotedPlanPrice,
 } from './billing-model';
-import { useRegionProvider } from './billing-currency';
+import { useRegionProvider, useVisitorPriceLocale } from './billing-currency';
 
 const { color, font, radius, shadow, space, text } = tokens;
 
@@ -84,6 +84,7 @@ export function UpgradeModal() {
   // `if (!hit) return null` fired a hook-order violation the moment a
   // 402 flipped `hit` on a mounted modal (billing audit 2026-07-28).
   const regionProvider = useRegionProvider();
+  const visitorLocale = useVisitorPriceLocale();
 
   if (!hit) return null;
 
@@ -114,14 +115,17 @@ export function UpgradeModal() {
   // other free-cap confirm, whose old label was not a deck string.
   const limitConfirmLabel =
     pricingV2 && freeCap !== null && !meteredCap
-      ? fillStory(passEnabled ? WS1_COPY['cap.pass.button'] : WS1_COPY['cap.plus.button'])
+      ? fillStory(
+          passEnabled ? WS1_COPY['cap.pass.button'] : WS1_COPY['cap.plus.button'],
+          visitorLocale,
+        )
       : null;
   const upgradeLabel = limitConfirmLabel ?? `Upgrade to ${TIER_MANIFEST[targetPlan].name}`;
   const targetQuote =
     limitConfirmLabel !== null
       ? null
       : pricingV2 && targetPlan === 'plus'
-        ? launchPlusQuote(regionProvider)
+        ? launchPlusQuote(regionProvider, visitorLocale)
         : quotedPlanPrice(targetPlan, 'monthly', regionProvider);
 
   return (
@@ -270,12 +274,12 @@ export function UpgradeModal() {
                     fontWeight: 600,
                   }}
                 >
-                  {fillStory(WS1_COPY['cap.pass.button'])}
+                  {fillStory(WS1_COPY['cap.pass.button'], visitorLocale)}
                 </Link>
               ) : null}
               {pricingV2 && passEnabled ? (
                 <span style={{ fontSize: text.sm, color: color.fgMuted }}>
-                  {fillStory(WS1_COPY['cap.pass.sublabel'])}
+                  {fillStory(WS1_COPY['cap.pass.sublabel'], visitorLocale)}
                 </span>
               ) : null}
               {typeof hit.details.suggestedPreset === 'number' ? (
@@ -325,10 +329,10 @@ export function UpgradeModal() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                {fillStory(WS1_COPY['cap.plus.button'])}
+                {fillStory(WS1_COPY['cap.plus.button'], visitorLocale)}
               </Link>
               <span style={{ fontSize: text.sm, color: color.fgMuted }}>
-                {fillStory(WS1_COPY['cap.plus.sublabel'])}
+                {fillStory(WS1_COPY['cap.plus.sublabel'], visitorLocale)}
               </span>
               <Button tone="ghost" size="lg" onClick={dismiss} style={{ width: '100%' }}>
                 {WS1_COPY['cap.dismiss']}
@@ -370,6 +374,7 @@ export function UpgradeModal() {
                 <span style={{ fontSize: text.sm, color: color.fgMuted }}>
                   {fillStory(
                     passEnabled ? WS1_COPY['cap.pass.sublabel'] : WS1_COPY['cap.plus.sublabel'],
+                    visitorLocale,
                   )}
                 </span>
               ) : null}

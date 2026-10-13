@@ -230,6 +230,25 @@ export function priceLine(price: PricePoint, locale: 'usd' | 'inr'): string {
   return stableCurrency(price.usdCents, 'usd');
 }
 
+/**
+ * One locale-aware launch catalog. Cards, chips, and teasers read this
+ * instead of assembling `$` / `₹` themselves. Cadence tokens are the
+ * ones already on the deck (`/yr`, `price.plusLine`, `price.passLine`).
+ */
+export function launchPriceDisplay(locale: 'usd' | 'inr'): {
+  free: { amount: string; per: string };
+  plus: { amount: string; per: string };
+  plusLine: string;
+  passLine: string;
+} {
+  return {
+    free: { amount: moneyAmount(0, locale), per: '' },
+    plus: { amount: plusAmount(locale), per: '/yr' },
+    plusLine: fillStory(WS1_COPY['price.plusLine'], locale),
+    passLine: fillStory(WS1_COPY['price.passLine'], locale),
+  };
+}
+
 function resetDate(resetAt: string): string {
   return utcMonthDay(resetAt) ?? resetAt;
 }

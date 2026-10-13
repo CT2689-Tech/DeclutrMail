@@ -359,6 +359,8 @@ describe('currentPlanPriceLabel', () => {
 
   it('free with no backing record is $0', () => {
     expect(currentPlanPriceLabel(emptyPlanView('free'))).toBe('$0');
+    expect(currentPlanPriceLabel(emptyPlanView('free'), 'usd')).toBe('$0');
+    expect(currentPlanPriceLabel(emptyPlanView('free'), 'inr')).toBe('₹0');
   });
 
   it('a paid tier with NO backing record makes no price claim', () => {
@@ -393,6 +395,7 @@ describe('complimentary comps', () => {
     });
     expect(currentPlanTitle(view)).toBe('Backlog Pass');
     expect(currentPlanPriceLabel(view)).toBe('$19 once');
+    expect(currentPlanPriceLabel(view, 'inr')).toBe('₹799 once');
     expect(currentPlanPriceLabel(view)).not.toBe('Complimentary');
     expect(complimentaryNote(view)).toContain('Backlog Pass');
   });

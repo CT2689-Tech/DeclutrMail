@@ -28,7 +28,7 @@ import { BillingScreen } from './billing-screen';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { installFetchStub, jsonOk } from '@/test/fetch-stub';
 import { clearPendingCheckout, readPendingCheckout } from './pending-checkout';
-it('a failed optional recovery chunk leaves payment reconciliation and its reservation accessible', async () => {
+it('a failed optional recovery chunk still leaves a failed overlay retryable', async () => {
   clearPendingCheckout('chunk-fixture');
   installFetchStub([
     {
@@ -74,12 +74,11 @@ it('a failed optional recovery chunk leaves payment reconciliation and its reser
   );
   const panel = await screen.findByTestId('checkout-panel');
   fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
-  const notice = await screen.findByTestId('payment-processing-notice');
-  expect(notice).toHaveTextContent('Checkout started');
   expect(
-    await screen.findByRole('button', { name: /Check payment status|Check again/i }),
+    await screen.findByText('The secure checkout window could not be opened.'),
   ).toBeInTheDocument();
-  expect(readPendingCheckout('chunk-fixture')?.kind).toBe('checkout_intent');
-  expect(screen.queryByRole('button', { name: 'Upgrade to Pro' })).not.toBeInTheDocument();
+  expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+  expect(readPendingCheckout('chunk-fixture')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Continue to checkout' })).toBeEnabled();
   clearPendingCheckout('chunk-fixture');
 });

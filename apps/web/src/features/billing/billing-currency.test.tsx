@@ -177,5 +177,12 @@ describe('a founding subscription is billed the promo point (D126)', () => {
     expect(currencyForPricePoint({ razorpayPlanId: 'plan_x', inrPaise: 199900 }, 'paddle')).toBe(
       'USD',
     );
+    expect(
+      currencyForPricePoint({ razorpayPlanId: null, inrPaise: 0, usdCents: 0 }, 'paddle', {
+        pricingV2: true,
+        country: 'IN',
+        indiaCheckoutOpen: true,
+      }),
+    ).toBe('INR');
   });
 });

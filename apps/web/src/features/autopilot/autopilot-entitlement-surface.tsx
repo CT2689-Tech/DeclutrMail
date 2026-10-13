@@ -10,7 +10,7 @@ import {
 } from '@declutrmail/shared/entitlements';
 
 import { useTier } from '@/features/auth/api/use-tier';
-import { useRegionProvider } from '@/features/billing/billing-currency';
+import { useRegionProvider, useVisitorPriceLocale } from '@/features/billing/billing-currency';
 import { billingIntentPath } from '@/features/billing/billing-intent';
 import { launchPlusQuote, moneyBackNote } from '@/features/billing/billing-model';
 import { currencyForPricePoint, formatMoney } from '@/features/marketing/pricing/pricing-model';
@@ -59,10 +59,11 @@ export function AutopilotObservePreview() {
   // here and was charged ₹1,599 at the checkout this nudge leads to.
   // Launch pricing sells Plus annual at $59. Flags off still quote monthly.
   const regionProvider = useRegionProvider();
+  const visitorLocale = useVisitorPriceLocale();
   const checkoutCycle = pricingV2 ? 'annual' : 'monthly';
   const price = pricingV2
     ? grantingPlan === 'plus'
-      ? launchPlusQuote(regionProvider)
+      ? launchPlusQuote(regionProvider, visitorLocale)
       : null
     : monthly == null
       ? null

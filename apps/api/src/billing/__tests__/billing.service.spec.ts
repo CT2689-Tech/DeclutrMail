@@ -382,6 +382,29 @@ describe('BillingService', () => {
     }
   });
 
+  it('forwards India Pass checkout as pass_onetime with the verified IN country', async () => {
+    vi.stubEnv('PRICING_V2', 'true');
+    vi.stubEnv('BILLING_PASS_ENABLED', 'true');
+    vi.stubEnv('PADDLE_ENV', 'production');
+    vi.stubEnv('PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID', 'pri_india_plus');
+    vi.stubEnv('PADDLE_LIVE_INDIA_PASS_PRICE_ID', 'pri_01m4ss18n1c9r5s9p973tef9v2');
+    try {
+      await service.createCheckout(
+        principal,
+        { tierId: 'plus', cycle: 'annual', provider: 'paddle', offer: 'pass_onetime' },
+        'IN',
+      );
+      expect(paddleCheckout).toHaveBeenCalledWith(
+        expect.objectContaining({
+          trustedCountry: 'IN',
+          checkoutCode: 'pass_onetime',
+        }),
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('refuses a SECOND checkout while an unexpired claim exists — atomic, cross-device (CHECKOUT_IN_FLIGHT)', async () => {
     // The race the 0051 index only made LOUD: two devices opening
     // checkout inside the read window both reached the provider and
