@@ -47,15 +47,51 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
     const preferred = initialFocusSelector
       ? node.querySelector<HTMLElement>(initialFocusSelector)
       : null;
-    (preferred ?? focusable()[0])?.focus();
+    let addedTabIndex = false;
+    const focusPanel = () => {
+      if (!node.hasAttribute('tabindex')) {
+        node.tabIndex = -1;
+        addedTabIndex = true;
+      }
+      node.focus();
+    };
+    const initialItems = focusable();
+    const initialTarget =
+      preferred && initialItems.includes(preferred) ? preferred : initialItems[0];
+    if (initialTarget) initialTarget.focus();
+    else focusPanel();
+
+    // Disabling the last control can return focus to the page. Keep a
+    // busy dialog focused without taking focus from another open surface.
+    const observer = new MutationObserver(() => {
+      if (
+        focusable().length === 0 &&
+        (document.activeElement === document.body || node.contains(document.activeElement))
+      ) {
+        focusPanel();
+      }
+    });
+    observer.observe(node, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['disabled', 'hidden', 'open', 'tabindex'],
+    });
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Tab') return;
       const items = focusable();
-      if (items.length === 0) return;
+      if (items.length === 0) {
+        e.preventDefault();
+        focusPanel();
+        return;
+      }
       const first = items[0]!;
       const last = items[items.length - 1]!;
-      if (e.shiftKey && document.activeElement === first) {
+      if (!items.includes(document.activeElement as HTMLElement)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
         last.focus();
       } else if (!e.shiftKey && document.activeElement === last) {
@@ -67,6 +103,8 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
     node.addEventListener('keydown', onKey);
     return () => {
       node.removeEventListener('keydown', onKey);
+      observer.disconnect();
+      if (addedTabIndex) node.removeAttribute('tabindex');
       restoreTo?.focus?.();
     };
   }, [active, initialFocusSelector]);

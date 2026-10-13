@@ -336,12 +336,16 @@ describe('verb tooltips (D38)', () => {
 });
 
 describe('ActionToolbar — dialog keyboard ownership', () => {
-  it.each([true, false])('suspends decisions while an aria-modal=%s dialog owns focus', (modal) => {
+  it.each([
+    ['dialog', true],
+    ['dialog', false],
+    ['alertdialog', true],
+  ] as const)('suspends decisions while a %s with aria-modal=%s owns focus', (role, modal) => {
     const onAction = vi.fn();
     const view = render(
       <>
         <ActionToolbar row={rowById('t-groupon')} onAction={onAction} />
-        <div role="dialog" aria-modal={modal} aria-label="Help">
+        <div role={role} aria-modal={modal} aria-label="Help">
           <button>Close help</button>
         </div>
       </>,

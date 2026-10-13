@@ -66,6 +66,7 @@ export function BottomSheet({
           boxSizing: 'border-box',
           maxHeight: `${maxHeightVh}vh`,
           overflow: 'auto',
+          overscrollBehavior: 'contain',
           background: color.card,
           borderRadius: `${radius['2xl']}px ${radius['2xl']}px 0 0`,
           boxShadow: shadow.modal,

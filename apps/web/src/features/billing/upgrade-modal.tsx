@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import Link from 'next/link';
 import { useUpgradeReturnTo } from '@/features/billing/use-upgrade-return-to';
 
-import { Button, tokens } from '@declutrmail/shared';
+import { Button, DialogFrame, tokens } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import { fillStory, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
@@ -28,7 +28,7 @@ import {
 } from './billing-model';
 import { useRegionProvider, useVisitorPriceLocale } from './billing-currency';
 
-const { color, font, radius, shadow, space, text } = tokens;
+const { color, radius, shadow, space, text } = tokens;
 
 /**
  * UpgradeModal (D19/D77/D81 — the U13 modal-grade upgrade flow).
@@ -131,65 +131,94 @@ export function UpgradeModal() {
         : quotedPlanPrice(targetPlan, 'monthly', regionProvider);
 
   return (
-    // The PreviewSheet grammar and classes — a centred dialog on desktop,
-    // a bottom sheet on phones (pure CSS) — but its own markup: the one
-    // action here is a LINK into /billing, not a button.
-    <div
-      className="dm-scrim dm-sheet-layer"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) dismiss();
-      }}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 150,
+    <DialogFrame
+      panelRef={trapRef}
+      titleId="dm-upgrade-title"
+      testId="upgrade-modal"
+      onDismiss={dismiss}
+      maxWidth={440}
+      bodyStyle={{
         display: 'flex',
-        justifyContent: 'center',
-        padding: space[4],
-        overflowY: 'auto',
+        flexDirection: 'column',
+        alignItems: 'center',
+        textAlign: 'center',
       }}
-    >
-      <div
-        ref={trapRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="dm-upgrade-title"
-        data-testid="upgrade-modal"
-        className="dm-sheet dm-sheet-panel"
-        style={{
-          width: '100%',
-          maxWidth: 440,
-          background: color.card,
-          boxShadow: shadow.modal,
-          fontFamily: font.sans,
-          color: color.fg,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          textAlign: 'center',
-          padding: `${space[8]}px ${space[6]}px ${space[6]}px`,
-        }}
-      >
-        <h2
-          id="dm-upgrade-title"
-          style={{
-            ...tokens.typography.dialogTitle,
-            letterSpacing: '-0.022em',
-            lineHeight: 1.2,
-            margin: 0,
-            textWrap: 'balance',
-          }}
+      footer={
+        <Button
+          tone={nudge || isPassSecondAccount ? 'ghost' : 'default'}
+          size="lg"
+          onClick={dismiss}
+          style={{ width: '100%' }}
         >
           {isPassSecondAccount
-            ? fillStory(WS1_COPY['cap.pass.secondAccount.title'], visitorLocale)
-            : hit.reason === 'free_cap'
-              ? WS1_COPY['cap.title']
-              : hit.reason === 'action_tier'
-                ? actionTierTitle(hit.details)
-                : hit.reason === 'pro_feature'
-                  ? proFeatureTitle(hit.details)
-                  : inboxLimitTitle(hit.details, tierName(tier))}
-        </h2>
+            ? WS1_COPY['cap.pass.secondAccount.dismiss']
+            : nudge
+              ? hit.reason === 'free_cap' && typeof hit.details.requested === 'number'
+                ? WS1_COPY['cap.dismiss']
+                : 'Not now'
+              : 'Keep current inboxes'}
+        </Button>
+      }
+    >
+      <h2
+        id="dm-upgrade-title"
+        style={{
+          ...tokens.typography.dialogTitle,
+          letterSpacing: '-0.022em',
+          lineHeight: 1.2,
+          margin: 0,
+          textWrap: 'balance',
+        }}
+      >
+        {isPassSecondAccount
+          ? fillStory(WS1_COPY['cap.pass.secondAccount.title'], visitorLocale)
+          : hit.reason === 'free_cap'
+            ? WS1_COPY['cap.title']
+            : hit.reason === 'action_tier'
+              ? actionTierTitle(hit.details)
+              : hit.reason === 'pro_feature'
+                ? proFeatureTitle(hit.details)
+                : inboxLimitTitle(hit.details, tierName(tier))}
+      </h2>
+      <p
+        style={{
+          fontSize: text.md,
+          color: color.fgSoft,
+          margin: `${space[2]}px 0 0`,
+          lineHeight: 1.45,
+          maxWidth: '34ch',
+          textWrap: 'pretty',
+        }}
+      >
+        {isPassSecondAccount ? (
+          fillStory(WS1_COPY['cap.pass.secondAccount.body'], visitorLocale)
+        ) : hit.reason === 'free_cap' && typeof hit.details.requested === 'number' ? (
+          capBody(hit.details)
+        ) : hit.reason === 'free_cap' ? (
+          <>
+            {TIER_MANIFEST.plus.name} removes the monthly cap
+            {hit.details.resetsAt
+              ? `; otherwise your quota resets on ${resetDateLabel(hit.details.resetsAt)}`
+              : ''}
+            .
+          </>
+        ) : hit.reason === 'action_tier' ? (
+          <>
+            {requiredTierName} unlocks{' '}
+            {hit.details.selector === 'sender-filter' ? 'all-matching cleanup' : 'this workflow'}.
+          </>
+        ) : hit.reason === 'pro_feature' ? (
+          <>{requiredTierName} unlocks this feature.</>
+        ) : nudge ? (
+          <>
+            {TIER_MANIFEST.pro.name} raises the limit to {TIER_MANIFEST.pro.inboxLimit} connected
+            Gmail accounts.
+          </>
+        ) : (
+          <>Disconnect an account from the account menu to connect a different one.</>
+        )}
+      </p>
+      {hit.reason === 'free_cap' && (pricingV2 || meteredCap) ? (
         <p
           style={{
             fontSize: text.md,
@@ -197,66 +226,59 @@ export function UpgradeModal() {
             margin: `${space[2]}px 0 0`,
             lineHeight: 1.45,
             maxWidth: '34ch',
-            textWrap: 'pretty',
           }}
         >
-          {isPassSecondAccount ? (
-            fillStory(WS1_COPY['cap.pass.secondAccount.body'], visitorLocale)
-          ) : hit.reason === 'free_cap' && typeof hit.details.requested === 'number' ? (
-            capBody(hit.details)
-          ) : hit.reason === 'free_cap' ? (
-            <>
-              {TIER_MANIFEST.plus.name} removes the monthly cap
-              {hit.details.resetsAt
-                ? `; otherwise your quota resets on ${resetDateLabel(hit.details.resetsAt)}`
-                : ''}
-              .
-            </>
-          ) : hit.reason === 'action_tier' ? (
-            <>
-              {requiredTierName} unlocks{' '}
-              {hit.details.selector === 'sender-filter' ? 'all-matching cleanup' : 'this workflow'}.
-            </>
-          ) : hit.reason === 'pro_feature' ? (
-            <>{requiredTierName} unlocks this feature.</>
-          ) : nudge ? (
-            <>
-              {TIER_MANIFEST.pro.name} raises the limit to {TIER_MANIFEST.pro.inboxLimit} connected
-              Gmail accounts.
-            </>
-          ) : (
-            <>Disconnect an account from the account menu to connect a different one.</>
-          )}
+          {WS1_COPY['cap.free.line']}
         </p>
-        {hit.reason === 'free_cap' && (pricingV2 || meteredCap) ? (
-          <p
-            style={{
-              fontSize: text.md,
-              color: color.fgSoft,
-              margin: `${space[2]}px 0 0`,
-              lineHeight: 1.45,
-              maxWidth: '34ch',
-            }}
-          >
-            {WS1_COPY['cap.free.line']}
-          </p>
-        ) : null}
+      ) : null}
 
-        <div
-          style={{
-            marginTop: space[6],
-            width: '100%',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: space[2],
-          }}
-        >
-          {isPassSecondAccount ? (
-            <>
+      <div
+        style={{
+          marginTop: space[6],
+          width: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: space[2],
+        }}
+      >
+        {isPassSecondAccount ? (
+          <>
+            <Link
+              href={upgradeHref}
+              onClick={() => {
+                void track('upgrade_cta_clicked', { source: 'upgrade_modal', plan: 'plus' });
+                dismiss();
+              }}
+              data-dm-button=""
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: 50,
+                padding: '10px 20px',
+                background: color.primary,
+                color: color.fgInverse,
+                borderRadius: radius.pill,
+                textDecoration: 'none',
+                fontWeight: 600,
+              }}
+            >
+              {fillStory(WS1_COPY['cap.pass.secondAccount.cta'], visitorLocale)}
+            </Link>
+          </>
+        ) : nudge && hit.reason === 'free_cap' && typeof hit.details.requested === 'number' ? (
+          <>
+            {pricingV2 && passEnabled ? (
               <Link
-                href={upgradeHref}
+                href={billingIntentPath({
+                  plan: 'plus',
+                  cycle: 'annual',
+                  offer: 'pass_onetime',
+                  ...(from ? { from } : {}),
+                })}
                 onClick={() => {
-                  void track('upgrade_cta_clicked', { source: 'upgrade_modal', plan: 'plus' });
+                  void track('upgrade_cta_clicked', { source: 'upgrade_modal', plan: 'pass' });
+                  void track('pass_selected', { source: 'upgrade_modal' });
                   dismiss();
                 }}
                 data-dm-button=""
@@ -264,8 +286,8 @@ export function UpgradeModal() {
                   display: 'inline-flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  height: 50,
-                  padding: '0 28px',
+                  minHeight: 50,
+                  padding: '10px 20px',
                   background: color.primary,
                   color: color.fgInverse,
                   borderRadius: radius.pill,
@@ -273,171 +295,125 @@ export function UpgradeModal() {
                   fontWeight: 600,
                 }}
               >
-                {fillStory(WS1_COPY['cap.pass.secondAccount.cta'], visitorLocale)}
+                {fillStory(WS1_COPY['cap.pass.button'], visitorLocale)}
               </Link>
-              <Button tone="ghost" size="lg" onClick={dismiss} style={{ width: '100%' }}>
-                {WS1_COPY['cap.pass.secondAccount.dismiss']}
-              </Button>
-            </>
-          ) : nudge && hit.reason === 'free_cap' && typeof hit.details.requested === 'number' ? (
-            <>
-              {pricingV2 && passEnabled ? (
-                <Link
-                  href={billingIntentPath({
-                    plan: 'plus',
-                    cycle: 'annual',
-                    offer: 'pass_onetime',
-                    ...(from ? { from } : {}),
-                  })}
-                  onClick={() => {
-                    void track('upgrade_cta_clicked', { source: 'upgrade_modal', plan: 'pass' });
-                    void track('pass_selected', { source: 'upgrade_modal' });
-                    dismiss();
-                  }}
-                  data-dm-button=""
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    height: 50,
-                    padding: '0 28px',
-                    background: color.primary,
-                    color: color.fgInverse,
-                    borderRadius: radius.pill,
-                    textDecoration: 'none',
-                    fontWeight: 600,
-                  }}
-                >
-                  {fillStory(WS1_COPY['cap.pass.button'], visitorLocale)}
-                </Link>
-              ) : null}
-              {pricingV2 && passEnabled ? (
-                <span style={{ fontSize: text.sm, color: color.fgMuted }}>
-                  {fillStory(WS1_COPY['cap.pass.sublabel'], visitorLocale)}
-                </span>
-              ) : null}
-              {typeof hit.details.suggestedPreset === 'number' ? (
-                <>
-                  <Button
-                    tone="default"
-                    size="lg"
-                    onClick={() => {
-                      if (typeof hit.details.suggestedPreset === 'number') {
-                        applyWindowPreset(hit.details.suggestedPreset);
-                      }
-                    }}
-                    style={{ width: '100%' }}
-                  >
-                    {WS1_COPY['cap.fit.button']}
-                  </Button>
-                  <span style={{ fontSize: text.sm, color: color.fgMuted }}>
-                    {fillStory(WS1_COPY['cap.fit.sublabel.noCount'], 'usd', {
-                      presetDays: hit.details.suggestedPreset,
-                    })}
-                  </span>
-                </>
-              ) : null}
-              <Link
-                href={billingIntentPath({
-                  plan: 'plus',
-                  cycle: 'annual',
-                  ...(from ? { from } : {}),
-                })}
-                onClick={dismiss}
-                data-dm-button=""
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 8,
-                  height: 50,
-                  padding: '0 28px',
-                  background: color.primary,
-                  color: color.fgInverse,
-                  borderRadius: radius.pill,
-                  boxShadow: shadow.button,
-                  fontSize: text.lg,
-                  fontWeight: 600,
-                  letterSpacing: '-0.006em',
-                  textDecoration: 'none',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {fillStory(WS1_COPY['cap.plus.button'], visitorLocale)}
-              </Link>
+            ) : null}
+            {pricingV2 && passEnabled ? (
               <span style={{ fontSize: text.sm, color: color.fgMuted }}>
-                {fillStory(WS1_COPY['cap.plus.sublabel'], visitorLocale)}
+                {fillStory(WS1_COPY['cap.pass.sublabel'], visitorLocale)}
               </span>
-              <Button tone="ghost" size="lg" onClick={dismiss} style={{ width: '100%' }}>
-                {WS1_COPY['cap.dismiss']}
-              </Button>
-            </>
-          ) : nudge ? (
-            <>
-              <Link
-                href={upgradeHref}
-                onClick={dismiss}
-                data-dm-button=""
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 8,
-                  height: 50,
-                  padding: '0 28px',
-                  background: color.primary,
-                  color: color.fgInverse,
-                  borderRadius: radius.pill,
-                  boxShadow: shadow.button,
-                  fontSize: text.lg,
-                  fontWeight: 600,
-                  letterSpacing: '-0.006em',
-                  textDecoration: 'none',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {upgradeLabel}
-                {targetQuote ? (
-                  <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.85 }}>
-                    {' '}
-                    {targetQuote}
-                  </span>
-                ) : null}
-              </Link>
-              {limitConfirmLabel !== null ? (
+            ) : null}
+            {typeof hit.details.suggestedPreset === 'number' ? (
+              <>
+                <Button
+                  tone="default"
+                  size="lg"
+                  onClick={() => {
+                    if (typeof hit.details.suggestedPreset === 'number') {
+                      applyWindowPreset(hit.details.suggestedPreset);
+                    }
+                  }}
+                  style={{ width: '100%' }}
+                >
+                  {WS1_COPY['cap.fit.button']}
+                </Button>
                 <span style={{ fontSize: text.sm, color: color.fgMuted }}>
-                  {fillStory(
-                    passEnabled ? WS1_COPY['cap.pass.sublabel'] : WS1_COPY['cap.plus.sublabel'],
-                    visitorLocale,
-                  )}
+                  {fillStory(WS1_COPY['cap.fit.sublabel.noCount'], 'usd', {
+                    presetDays: hit.details.suggestedPreset,
+                  })}
+                </span>
+              </>
+            ) : null}
+            <Link
+              href={billingIntentPath({
+                plan: 'plus',
+                cycle: 'annual',
+                ...(from ? { from } : {}),
+              })}
+              onClick={dismiss}
+              data-dm-button=""
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                minHeight: 50,
+                padding: '10px 20px',
+                background: color.primary,
+                color: color.fgInverse,
+                borderRadius: radius.pill,
+                boxShadow: shadow.button,
+                fontSize: text.lg,
+                fontWeight: 600,
+                letterSpacing: '-0.006em',
+                textDecoration: 'none',
+                whiteSpace: 'normal',
+              }}
+            >
+              {fillStory(WS1_COPY['cap.plus.button'], visitorLocale)}
+            </Link>
+            <span style={{ fontSize: text.sm, color: color.fgMuted }}>
+              {fillStory(WS1_COPY['cap.plus.sublabel'], visitorLocale)}
+            </span>
+          </>
+        ) : nudge ? (
+          <>
+            <Link
+              href={upgradeHref}
+              onClick={dismiss}
+              data-dm-button=""
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                minHeight: 50,
+                padding: '10px 20px',
+                background: color.primary,
+                color: color.fgInverse,
+                borderRadius: radius.pill,
+                boxShadow: shadow.button,
+                fontSize: text.lg,
+                fontWeight: 600,
+                letterSpacing: '-0.006em',
+                textDecoration: 'none',
+                whiteSpace: 'normal',
+              }}
+            >
+              {upgradeLabel}
+              {targetQuote ? (
+                <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.85 }}>
+                  {' '}
+                  {targetQuote}
                 </span>
               ) : null}
-              <Button tone="ghost" size="lg" onClick={dismiss} style={{ width: '100%' }}>
-                Not now
-              </Button>
-            </>
-          ) : (
-            <Button tone="default" size="xl" onClick={dismiss} style={{ width: '100%' }}>
-              Keep current inboxes
-            </Button>
-          )}
-        </div>
-
-        {/* The money-back note and the plan comparison — once, quiet. */}
-        {nudge && !isPassSecondAccount ? (
-          <p style={{ margin: `${space[3]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
-            {moneyBackNote(pricingV2)} ·{' '}
-            <Link
-              href={`/billing${from ? `?${new URLSearchParams({ from })}` : ''}`}
-              onClick={dismiss}
-              style={{ color: color.fgMuted }}
-            >
-              Compare plans
             </Link>
-          </p>
+            {limitConfirmLabel !== null ? (
+              <span style={{ fontSize: text.sm, color: color.fgMuted }}>
+                {fillStory(
+                  passEnabled ? WS1_COPY['cap.pass.sublabel'] : WS1_COPY['cap.plus.sublabel'],
+                  visitorLocale,
+                )}
+              </span>
+            ) : null}
+          </>
         ) : null}
       </div>
-    </div>
+
+      {/* The money-back note and the plan comparison — once, quiet. */}
+      {nudge && !isPassSecondAccount ? (
+        <p style={{ margin: `${space[3]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
+          {moneyBackNote(pricingV2)} ·{' '}
+          <Link
+            href={`/billing${from ? `?${new URLSearchParams({ from })}` : ''}`}
+            onClick={dismiss}
+            style={{ color: color.fgMuted }}
+          >
+            Compare plans
+          </Link>
+        </p>
+      ) : null}
+    </DialogFrame>
   );
 }
 

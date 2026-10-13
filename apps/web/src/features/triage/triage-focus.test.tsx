@@ -443,10 +443,10 @@ describe('focus mode — Skip', () => {
     expect(cardTitle()).toBe(GROUPON.senderName);
   });
 
-  it('keeps the current sender while a nonmodal account dialog owns Skip', () => {
+  it.each(['dialog', 'alertdialog'])('keeps the current sender while a %s owns Skip', (role) => {
     renderScreen(ready([GROUPON, LINKEDIN]));
     const accountDialog = document.createElement('div');
-    accountDialog.setAttribute('role', 'dialog');
+    accountDialog.setAttribute('role', role);
     accountDialog.setAttribute('aria-label', 'Gmail accounts');
     document.body.append(accountDialog);
     try {

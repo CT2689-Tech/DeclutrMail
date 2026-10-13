@@ -111,11 +111,11 @@ function expandFirstRow() {
 }
 
 describe('Screener keyboard handler (#220, D226)', () => {
-  it('does not open a decision behind a nonmodal account dialog', () => {
+  it.each(['dialog', 'alertdialog'])('does not open a decision behind a %s', (role) => {
     renderReady();
     expandFirstRow();
     const accountDialog = document.createElement('div');
-    accountDialog.setAttribute('role', 'dialog');
+    accountDialog.setAttribute('role', role);
     accountDialog.setAttribute('aria-label', 'Gmail accounts');
     document.body.append(accountDialog);
     try {
@@ -129,38 +129,47 @@ describe('Screener keyboard handler (#220, D226)', () => {
     }
   });
 
-  it('preserves an inline decision and makes no write while an account dialog owns Enter/Escape', async () => {
-    const writes = vi.fn();
-    installFetchStub([
-      {
-        method: 'POST',
-        path: '/api/screener/decide',
-        respond: () => {
-          writes();
-          return jsonServerError('must_not_run');
+  it.each(['dialog', 'alertdialog'])(
+    'preserves an inline decision and makes no write while a %s owns Details Enter/Escape',
+    async (role) => {
+      const writes = vi.fn();
+      installFetchStub([
+        {
+          method: 'POST',
+          path: '/api/screener/decide',
+          respond: () => {
+            writes();
+            return jsonServerError('must_not_run');
+          },
         },
-      },
-    ]);
-    renderReady();
-    expandFirstRow();
-    fireEvent.keyDown(window, { key: 'k' });
-    const accountDialog = document.createElement('div');
-    accountDialog.setAttribute('role', 'dialog');
-    accountDialog.setAttribute('aria-label', 'Gmail accounts');
-    document.body.append(accountDialog);
-    try {
-      fireEvent.keyDown(accountDialog, { key: 'Enter' });
-      fireEvent.keyDown(accountDialog, { key: 'Escape' });
-      await Promise.resolve();
-      expect(writes).not.toHaveBeenCalled();
-      expect(previewRegion(PREVIEW_KEEP)).toBeInTheDocument();
-      accountDialog.remove();
-      fireEvent.keyDown(window, { key: 'Escape' });
-      expect(previewRegion(PREVIEW_KEEP)).not.toBeInTheDocument();
-    } finally {
-      accountDialog.remove();
-    }
-  });
+      ]);
+      renderReady();
+      expandFirstRow();
+      fireEvent.keyDown(window, { key: 'k' });
+      const accountDialog = document.createElement('div');
+      accountDialog.setAttribute('role', role);
+      accountDialog.setAttribute('aria-label', 'Gmail accounts');
+      const details = document.createElement('details');
+      const summary = document.createElement('summary');
+      summary.textContent = 'Details';
+      details.append(summary);
+      accountDialog.append(details);
+      document.body.append(accountDialog);
+      try {
+        summary.focus();
+        fireEvent.keyDown(summary, { key: 'Enter' });
+        fireEvent.keyDown(summary, { key: 'Escape' });
+        await Promise.resolve();
+        expect(writes).not.toHaveBeenCalled();
+        expect(previewRegion(PREVIEW_KEEP)).toBeInTheDocument();
+        accountDialog.remove();
+        fireEvent.keyDown(window, { key: 'Escape' });
+        expect(previewRegion(PREVIEW_KEEP)).not.toBeInTheDocument();
+      } finally {
+        accountDialog.remove();
+      }
+    },
+  );
 
   it('K on the EXPANDED row opens the mandatory preview (never a direct mutation)', () => {
     renderReady();

@@ -1231,7 +1231,7 @@ function SendersScreenContent({
       // The DOM check alone is not enough: that layer listens on `document`,
       // and React can unmount its dialog before this `window` listener runs.
       if (e.defaultPrevented) return;
-      if (document.querySelector('[role="dialog"], [role="menu"]')) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"]')) return;
       closePane();
     };
     window.addEventListener('keydown', onKey);
@@ -2599,7 +2599,7 @@ function SendersScreenContent({
       // acting on a checkbox selection elsewhere in the list would preview
       // something other than what is on screen.
       if (paneSenderId !== null) return;
-      if (document.querySelector('[role="dialog"]')) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
       // ADR-0019 + silent-failure-hunter 2026-06-03 — when an
       // ActionPopover is open on any card, its window-level keydown
       // listener also fires shortcut picks. Without this guard

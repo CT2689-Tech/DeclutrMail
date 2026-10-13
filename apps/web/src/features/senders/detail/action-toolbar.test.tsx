@@ -154,17 +154,20 @@ describe('ActionToolbar — K/A/U/L/D keys', () => {
     expect(onAction).not.toHaveBeenCalled();
   });
 
-  it('stays inert while a modal is open, so a key never acts behind the preview', () => {
-    const onAction = vi.fn();
-    render(
-      <>
-        <div role="dialog" aria-modal="true" />
-        <ActionToolbar sender={sender()} onAction={onAction} shortcuts />
-      </>,
-    );
-    fireEvent.keyDown(window, { key: 'a' });
-    expect(onAction).not.toHaveBeenCalled();
-  });
+  it.each(['dialog', 'alertdialog'])(
+    'stays inert while a %s is open, so a key never acts behind the preview',
+    (role) => {
+      const onAction = vi.fn();
+      render(
+        <>
+          <div role={role} aria-modal="true" />
+          <ActionToolbar sender={sender()} onAction={onAction} shortcuts />
+        </>,
+      );
+      fireEvent.keyDown(window, { key: 'a' });
+      expect(onAction).not.toHaveBeenCalled();
+    },
+  );
 
   it('binds nothing and advertises no key when shortcuts are off (the side pane)', () => {
     const onAction = vi.fn();

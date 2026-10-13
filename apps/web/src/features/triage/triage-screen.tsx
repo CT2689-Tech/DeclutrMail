@@ -1590,7 +1590,7 @@ export function TriageScreen({
     if (pendingAction == null || pendingAction.surface !== 'inline') return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
-      if (document.querySelector('[role="dialog"]')) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
       // Don't hijack Escape inside inputs / textareas / contentEditable
       // (same convention as the toolbar's verb shortcuts).
       const target = e.target as HTMLElement | null;

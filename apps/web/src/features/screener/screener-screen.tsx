@@ -727,7 +727,7 @@ export function ScreenerScreen({
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
       // Account/help dialogs own keys even when this row has an inline preview.
-      if (document.querySelector('[role="dialog"], [role="menu"]')) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"]')) return;
       const target = e.target instanceof HTMLElement ? e.target : null;
       if (target) {
         const tag = target.tagName;

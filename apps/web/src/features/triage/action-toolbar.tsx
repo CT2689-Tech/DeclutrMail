@@ -89,7 +89,7 @@ export function ActionToolbar({
     if (!keyboardEnabled || disabled) return;
     const onKey = (e: KeyboardEvent) => {
       // Dialogs own their keyboard, including nonmodal account controls.
-      if (document.querySelector('[role="dialog"]')) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
       // Don't hijack typing in inputs / textareas / contentEditable.
       const target = e.target as HTMLElement | null;
       if (target) {

@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 
-import { color, font, radius, text } from '../tokens/tokens';
+import { Disclosure } from './disclosure';
 
 /**
  * Reusable progressive disclosure for protocol names, identifiers, and
@@ -20,42 +20,8 @@ export function TechnicalDetails({
   style?: CSSProperties;
 }) {
   return (
-    <details
-      data-dm-technical-details
-      open={defaultOpen || undefined}
-      style={{
-        width: '100%',
-        border: `1px solid ${color.lineSoft}`,
-        borderRadius: radius.md,
-        background: color.paper,
-        color: color.fg,
-        fontFamily: font.sans,
-        ...style,
-      }}
-    >
-      <summary
-        style={{
-          cursor: 'pointer',
-          padding: '9px 11px',
-          color: color.primary,
-          fontSize: text.base,
-          fontWeight: 600,
-          lineHeight: 1.4,
-        }}
-      >
-        {summary}
-      </summary>
-      <div
-        style={{
-          padding: '0 11px 11px',
-          color: color.fgMuted,
-          fontSize: text.sm,
-          lineHeight: 1.55,
-          overflowWrap: 'anywhere',
-        }}
-      >
-        {children}
-      </div>
-    </details>
+    <Disclosure data-dm-technical-details summary={summary} defaultOpen={defaultOpen} style={style}>
+      {children}
+    </Disclosure>
   );
 }

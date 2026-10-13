@@ -12,8 +12,23 @@ import { describe, expect, it } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 
 import { KeyboardCheatsheet, CheatsheetPanel } from './keyboard-cheatsheet';
+import { TriageKeyboardHelp } from '../triage/keyboard-help';
 
 describe('KeyboardCheatsheet', () => {
+  it.each([
+    ['Senders', KeyboardCheatsheet],
+    ['Triage', TriageKeyboardHelp],
+  ] as const)('does not open help over an active confirmation alertdialog (%s)', (_name, Help) => {
+    render(
+      <>
+        <div role="alertdialog" aria-label="Delete confirmation" />
+        <Help />
+      </>,
+    );
+    fireEvent.keyDown(document.body, { key: '?' });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+  });
   it('is closed until `?` is pressed, then reveals the registry shortcuts', () => {
     render(<KeyboardCheatsheet />);
     expect(screen.queryByRole('dialog')).toBeNull();

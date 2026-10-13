@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-import { Button, TechnicalDetails, tokens } from '@declutrmail/shared';
+import { Button, DialogFrame, TechnicalDetails, tokens } from '@declutrmail/shared';
 import {
   normalizeProtectionReason,
   protectionReasonClause,
@@ -25,7 +25,7 @@ import { numeralStyle } from './activity-filter-fields';
  * /activity first-load bundle.
  */
 
-const { color, font, radius, shadow, text } = tokens;
+const { color, font, radius, text } = tokens;
 
 /**
  * What the reader confirmed. `senderProtected` is true only when the
@@ -103,151 +103,16 @@ export function ActionRecoveryDialog({
     (confirmError == null || enqueueMayHaveStarted(confirmError));
 
   return (
-    <>
-      <div
-        onClick={onClose}
-        className="dm-scrim"
-        style={{ position: 'fixed', inset: 0, zIndex: 170 }}
-      />
-      <div
-        ref={trapRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="action-recovery-title"
-        data-testid="action-recovery-dialog"
-        className="dm-sheet"
-        style={{
-          position: 'fixed',
-          top: '12vh',
-          left: 0,
-          right: 0,
-          margin: '0 auto',
-          width: 'min(520px, calc(100vw - 32px))',
-          maxHeight: '78vh',
-          overflow: 'auto',
-          background: color.card,
-          borderRadius: radius['2xl'],
-          boxShadow: shadow.modal,
-          zIndex: 171,
-          fontFamily: font.sans,
-        }}
-      >
-        <div style={{ padding: '28px 28px 12px' }}>
-          {mailboxEmail && (
-            <div style={{ marginBottom: tokens.space[3] }}>
-              <MailboxActionContextView mailboxEmail={mailboxEmail} />
-            </div>
-          )}
-          <h2
-            id="action-recovery-title"
-            style={{
-              ...tokens.typography.dialogTitle,
-              margin: 0,
-              color: color.fg,
-            }}
-          >
-            Review this failed {failedActionNoun(row.action)}
-          </h2>
-          <p
-            style={{ margin: '8px 0 0', color: color.fgSoft, fontSize: text.base, lineHeight: 1.5 }}
-          >
-            We check Gmail first, so nothing changes until you confirm.
-          </p>
-        </div>
-
-        <div style={{ padding: '12px 28px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <RecoveryPreviewBody
-            preview={preview}
-            isStarting={isStarting}
-            startError={startError}
-            onRetryVerification={onRetryVerification}
-            onReconnect={onReconnect}
-          />
-
-          {ready && preview && (
-            <>
-              <RecoveryConsequence
-                preview={preview}
-                protectedLine={
-                  protectedNow
-                    ? protectedSenderLine(
-                        senderName,
-                        normalizeProtectionReason(preview.protectionReason),
-                      )
-                    : null
-                }
-              />
-              {preview.requiresNewWakeAt ? (
-                <label
-                  style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: text.base }}
-                >
-                  <span style={{ color: color.fgMuted }}>New return time</span>
-                  <input
-                    type="datetime-local"
-                    value={wakeAtLocal}
-                    min={toLocalDateTimeInput(new Date(Date.now() + 60_000))}
-                    onChange={(event) => setWakeAtLocal(event.target.value)}
-                    style={{
-                      border: 'none',
-                      borderRadius: radius.md,
-                      background: color.fill,
-                      color: color.fg,
-                      fontFamily: font.sans,
-                      fontSize: tokens.field.fontSize,
-                      minHeight: 40,
-                      padding: '0 12px',
-                    }}
-                  />
-                  {!wakeAtValid && (
-                    <span role="alert" style={{ color: color.dangerText, fontSize: text.sm }}>
-                      Choose a future return time.
-                    </span>
-                  )}
-                </label>
-              ) : preview.verb === 'later' && preview.wakeAt ? (
-                <p style={{ margin: 0, color: color.fgMuted, fontSize: text.base }}>
-                  Return time: {formatRecoveryDate(preview.wakeAt)}
-                </p>
-              ) : null}
-            </>
-          )}
-
-          {confirmError && (
-            <div
-              role="alert"
-              style={{
-                borderRadius: radius.lg,
-                background: color.dangerBg,
-                color: color.dangerText,
-                fontSize: text.base,
-                lineHeight: 1.45,
-                padding: '12px 14px',
-              }}
-            >
-              {recoveryConfirmErrorMessage(confirmError, senderName)}
-              {confirmNeedsRecheck && (
-                <div style={{ marginTop: 8 }}>
-                  <Button tone="default" onClick={onRetryVerification}>
-                    Check Gmail again
-                  </Button>
-                </div>
-              )}
-              <TechnicalDetails summary="Show support details" style={{ marginTop: 6 }}>
-                {technicalErrorDetails(confirmError)}
-              </TechnicalDetails>
-            </div>
-          )}
-        </div>
-
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: 8,
-            padding: '16px 28px 28px',
-          }}
-        >
-          <Button tone="default" onClick={onClose} disabled={isConfirming}>
+    <DialogFrame
+      panelRef={trapRef}
+      titleId="action-recovery-title"
+      testId="action-recovery-dialog"
+      backdropTestId="action-recovery-backdrop"
+      onDismiss={isConfirming ? undefined : onClose}
+      zIndex={170}
+      footer={
+        <>
+          <Button tone="ghost" onClick={onClose} disabled={isConfirming}>
             Close
           </Button>
           {ready && preview && (
@@ -274,9 +139,114 @@ export function ActionRecoveryDialog({
                       : `${failedActionNoun(preview.verb)} ${preview.remainingCount.toLocaleString('en-US')}`}
             </Button>
           )}
-        </div>
+        </>
+      }
+    >
+      <div>
+        {mailboxEmail && (
+          <div style={{ marginBottom: tokens.space[3] }}>
+            <MailboxActionContextView mailboxEmail={mailboxEmail} />
+          </div>
+        )}
+        <h2
+          id="action-recovery-title"
+          style={{
+            ...tokens.typography.dialogTitle,
+            margin: 0,
+            color: color.fg,
+          }}
+        >
+          Review this failed {failedActionNoun(row.action)}
+        </h2>
+        <p style={{ margin: '8px 0 0', color: color.fgSoft, fontSize: text.base, lineHeight: 1.5 }}>
+          We check Gmail first, so nothing changes until you confirm.
+        </p>
       </div>
-    </>
+
+      <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <RecoveryPreviewBody
+          preview={preview}
+          isStarting={isStarting}
+          startError={startError}
+          onRetryVerification={onRetryVerification}
+          onReconnect={onReconnect}
+        />
+
+        {ready && preview && (
+          <>
+            <RecoveryConsequence
+              preview={preview}
+              protectedLine={
+                protectedNow
+                  ? protectedSenderLine(
+                      senderName,
+                      normalizeProtectionReason(preview.protectionReason),
+                    )
+                  : null
+              }
+            />
+            {preview.requiresNewWakeAt ? (
+              <label
+                style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: text.base }}
+              >
+                <span style={{ color: color.fgMuted }}>New return time</span>
+                <input
+                  type="datetime-local"
+                  value={wakeAtLocal}
+                  min={toLocalDateTimeInput(new Date(Date.now() + 60_000))}
+                  onChange={(event) => setWakeAtLocal(event.target.value)}
+                  style={{
+                    border: 'none',
+                    borderRadius: radius.md,
+                    background: color.fill,
+                    color: color.fg,
+                    fontFamily: font.sans,
+                    fontSize: tokens.field.fontSize,
+                    minHeight: 40,
+                    padding: '0 12px',
+                  }}
+                />
+                {!wakeAtValid && (
+                  <span role="alert" style={{ color: color.dangerText, fontSize: text.sm }}>
+                    Choose a future return time.
+                  </span>
+                )}
+              </label>
+            ) : preview.verb === 'later' && preview.wakeAt ? (
+              <p style={{ margin: 0, color: color.fgMuted, fontSize: text.base }}>
+                Return time: {formatRecoveryDate(preview.wakeAt)}
+              </p>
+            ) : null}
+          </>
+        )}
+
+        {confirmError && (
+          <div
+            role="alert"
+            style={{
+              borderRadius: radius.lg,
+              background: color.dangerBg,
+              color: color.dangerText,
+              fontSize: text.base,
+              lineHeight: 1.45,
+              padding: '12px 14px',
+            }}
+          >
+            {recoveryConfirmErrorMessage(confirmError, senderName)}
+            {confirmNeedsRecheck && (
+              <div style={{ marginTop: 8 }}>
+                <Button tone="default" onClick={onRetryVerification}>
+                  Check Gmail again
+                </Button>
+              </div>
+            )}
+            <TechnicalDetails summary="Show support details" style={{ marginTop: 6 }}>
+              {technicalErrorDetails(confirmError)}
+            </TechnicalDetails>
+          </div>
+        )}
+      </div>
+    </DialogFrame>
   );
 }
 

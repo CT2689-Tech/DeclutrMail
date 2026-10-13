@@ -98,7 +98,7 @@ export function ActionToolbar({
       if (isTypingTarget(e.target)) return;
       // Inert while the preview (or any other dialog / menu) is open —
       // same guards as the Senders list's selection shortcuts.
-      if (document.querySelector('[role="dialog"], [role="menu"]')) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"]')) return;
       const entry = VERBS.find((v) => v.shortcut.toLowerCase() === e.key.toLowerCase());
       if (!entry) return;
       const { sender: s, onAction: act, busy: isBusy } = live.current;
