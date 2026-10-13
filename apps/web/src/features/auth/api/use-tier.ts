@@ -20,6 +20,8 @@ export interface TierEntitlements {
   cleanupResetsAt: string | null;
   /** Connected-Gmail-account ceiling for the tier (D19 manifest). */
   inboxLimit: number;
+  /** Present when a live Backlog Pass is what set the one-account ceiling. */
+  inboxLimitReason?: 'pass';
   /** Launch pricing flag, from `/api/auth/me`. */
   pricingV2: boolean;
   /** Backlog Pass checkout flag, from `/api/auth/me`. Absent means hidden. */
@@ -58,6 +60,7 @@ export function useTier(): TierEntitlements {
     cleanupRemaining: me.cleanupRemaining ?? null,
     cleanupResetsAt: me.cleanupResetsAt ?? null,
     inboxLimit,
+    ...(me.inboxLimitReason === 'pass' ? { inboxLimitReason: 'pass' as const } : {}),
     pricingV2,
     passEnabled,
     connectedInboxes,

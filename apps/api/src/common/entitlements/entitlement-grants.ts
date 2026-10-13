@@ -25,9 +25,9 @@
 // has ever signed up. A workspace inherits the highest live grant held
 // by any of its users.
 
-import { TIER_RANK, type TierId } from '@declutrmail/shared/entitlements';
+import { inboxLimitFor, TIER_RANK, type TierId } from '@declutrmail/shared/entitlements';
 import { entitlementGrants, subscriptions, users } from '@declutrmail/db';
-import { and, eq, inArray, isNull, or, gt, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, lte, or, gt, sql, type SQL } from 'drizzle-orm';
 
 import type { DrizzleDb } from '../../db/db.module.js';
 
@@ -183,15 +183,64 @@ export async function isPassOnlyWorkspace(
 ): Promise<boolean> {
   const grant = await highestLiveGrantForWorkspace(db, workspaceId);
   if (grant?.source !== 'pass') return false;
-  return !(await workspaceHasGrantingPaidPlan(db, workspaceId));
+  return (await grantingPaidTierForWorkspace(db, workspaceId)) == null;
 }
 
-async function workspaceHasGrantingPaidPlan(
+/** Closed reason `/me` and the inbox-limit 402 attach for Pass-only. */
+export type InboxLimitReason = 'pass';
+
+/**
+ * Inbox ceiling from the live entitlement: granting paid Plus/Pro,
+ * then a live grant, then the stored workspace tier. An expired Pass
+ * leaves `workspaces.tier` at Plus until the grant-ageing sweep — that
+ * cached Plus is not a paid plan, so the ceiling is Free's.
+ */
+export async function inboxEntitlementForWorkspace(
+  db: Pick<DrizzleDb, 'select'>,
+  workspaceId: string,
+  storedTier: TierId = 'free',
+): Promise<{ limit: number; reason?: InboxLimitReason }> {
+  const grant = await highestLiveGrantForWorkspace(db, workspaceId);
+  const paidTier = await grantingPaidTierForWorkspace(db, workspaceId);
+  if (grant?.source === 'pass' && paidTier == null) {
+    return { limit: 1, reason: 'pass' };
+  }
+  if (paidTier == null && grant == null && (await hasLapsedPassGrant(db, workspaceId))) {
+    return { limit: inboxLimitFor('free') };
+  }
+  return {
+    limit: inboxLimitFor(applyGrantFloor(paidTier ?? storedTier, grant?.tier ?? null)),
+  };
+}
+
+async function hasLapsedPassGrant(
   db: Pick<DrizzleDb, 'select'>,
   workspaceId: string,
 ): Promise<boolean> {
   const [row] = await db
-    .select({ id: subscriptions.id })
+    .select({ id: entitlementGrants.id })
+    .from(entitlementGrants)
+    .innerJoin(users, eq(users.email, entitlementGrants.email))
+    .where(
+      and(
+        eq(users.workspaceId, workspaceId),
+        eq(entitlementGrants.source, 'pass'),
+        or(
+          isNotNull(entitlementGrants.revokedAt),
+          and(isNotNull(entitlementGrants.expiresAt), lte(entitlementGrants.expiresAt, new Date())),
+        ),
+      ),
+    )
+    .limit(1);
+  return row != null;
+}
+
+async function grantingPaidTierForWorkspace(
+  db: Pick<DrizzleDb, 'select'>,
+  workspaceId: string,
+): Promise<TierId | null> {
+  const rows = await db
+    .select({ tier: subscriptions.tier })
     .from(subscriptions)
     .where(
       and(
@@ -203,7 +252,6 @@ async function workspaceHasGrantingPaidPlan(
           gt(subscriptions.entitlementEndsAt, new Date()),
         ),
       ),
-    )
-    .limit(1);
-  return row != null;
+    );
+  return highestTier(rows.map((row) => row.tier));
 }

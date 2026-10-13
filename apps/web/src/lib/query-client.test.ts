@@ -67,6 +67,22 @@ describe('makeQueryClient — global entitlement-402 handler', () => {
     expect(useUpgradeGateStore.getState().hit?.reason).toBe('inbox_limit');
   });
 
+  it('routes a Pass-only INBOX_LIMIT_REACHED 402 into the Pass second-account hit', async () => {
+    await runFailingMutation(
+      new ApiError(
+        402,
+        {
+          error: {
+            code: 'INBOX_LIMIT_REACHED',
+            details: { limit: 1, connected: 1, tier: 'plus', reason: 'pass' },
+          },
+        },
+        'POST /api/auth/google/connect failed: 402',
+      ),
+    );
+    expect(useUpgradeGateStore.getState().hit?.reason).toBe('pass_second_account');
+  });
+
   it('routes an ACTION_TIER_REQUIRED 402 into the upgrade-gate store', async () => {
     await runFailingMutation(
       new ApiError(

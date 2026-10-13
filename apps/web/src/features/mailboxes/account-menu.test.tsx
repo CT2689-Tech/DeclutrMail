@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import type { Me, MeMailbox } from '@/features/auth/api/use-me';
 import type { TierEntitlements } from '@/features/auth/api/use-tier';
 import type { MailboxHealth } from '@/features/settings/api/use-mailbox-health';
+import { useUpgradeGateStore } from '@/lib/entitlements/upgrade-gate';
 import { AccountMenu } from './account-menu';
 import { ActionToolbar } from '@/features/senders/detail/action-toolbar';
 import { KeyboardCheatsheet } from '@/features/senders/keyboard-cheatsheet';
@@ -141,6 +142,7 @@ describe('AccountMenu Gmail reconnect health', () => {
       connectedInboxes: 2,
       atInboxLimit: true,
     };
+    useUpgradeGateStore.getState().dismiss();
     loadDialogSpy.mockClear();
     startMailboxConnectSpy.mockClear();
     startMailboxReactivationSpy.mockClear();
@@ -366,6 +368,27 @@ describe('AccountMenu Gmail reconnect health', () => {
     );
     expect(startMailboxConnectSpy).not.toHaveBeenCalled();
     expect(startMailboxReactivationSpy).not.toHaveBeenCalled();
+  });
+
+  it('opens the Pass second-account gate instead of the Plus waitlist', async () => {
+    me = makeMe([MAILBOX_A]);
+    entitlements = {
+      ...entitlements,
+      tier: 'plus',
+      inboxLimit: 1,
+      inboxLimitReason: 'pass',
+      connectedInboxes: 1,
+      atInboxLimit: true,
+      pricingV2: true,
+    };
+    const { user } = await renderOpenMenu();
+    await user.click(screen.getByRole('button', { name: 'Add Gmail account' }));
+    expect(startMailboxConnectSpy).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('inbox-limit-gate')).not.toBeInTheDocument();
+    expect(useUpgradeGateStore.getState().hit).toEqual({
+      reason: 'pass_second_account',
+      details: { limit: 1, connected: 1, reason: 'pass' },
+    });
   });
 
   it('keeps healthy state, targeted reactivation, and normal connect distinct under the limit', async () => {

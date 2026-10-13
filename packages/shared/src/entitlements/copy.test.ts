@@ -9,10 +9,15 @@ import {
   indiaFaqAnswer,
   isBillingPassEnabled,
   isPricingV2,
+  passSecondAccountCta,
+  passSecondAccountMessage,
+  passSecondAccountTitle,
+  planName,
   meterChipLine,
   meterPreviewText,
   moneyAmount,
   passEndLabel,
+  plusAmount,
   priceLine,
   promoBanner,
   promoEndLabel,
@@ -21,7 +26,12 @@ import {
   suggestedWindowPreset,
   termsPastDue,
 } from './copy';
-import { OFFERS, PLUS_ANNUAL_2026_10, indiaPaddlePricesConfigured } from './pricing.config';
+import {
+  INBOXES,
+  OFFERS,
+  PLUS_ANNUAL_2026_10,
+  indiaPaddlePricesConfigured,
+} from './pricing.config';
 import { WS1_COPY } from '../copy/launch';
 import { POLICY } from './pricing.config';
 
@@ -223,6 +233,19 @@ describe('pricing story builders', () => {
     expect(indiaFaqAnswer(false, 'inr', false)).not.toContain('You can pay with UPI');
     expect(indiaFaqAnswer(true)).toBe(indiaFaqAnswer(true, 'inr', !indiaPaddlePricesConfigured()));
     expect(INR_CHECKOUT_PAUSED_MESSAGE).toBe(WS1_COPY['pricing.inrPaused.checkout']);
+  });
+
+  it('fills the r37 Pass second-account lines from live pricing, never literals', () => {
+    expect(passSecondAccountTitle()).toBe('The Backlog Pass covers one Gmail account');
+    expect(passSecondAccountTitle()).toBe(fillStory(WS1_COPY['cap.pass.secondAccount.title']));
+    expect(passSecondAccountMessage()).toBe(
+      `To connect another Gmail account, get ${planName('plus')}. It covers up to ${INBOXES.plus} Gmail accounts for ${plusAmount('usd')} a year.`,
+    );
+    expect(passSecondAccountMessage('inr')).toBe(
+      `To connect another Gmail account, get ${planName('plus')}. It covers up to ${INBOXES.plus} Gmail accounts for ${plusAmount('inr')} a year.`,
+    );
+    expect(passSecondAccountCta()).toBe(`Get ${planName('plus')}`);
+    expect(WS1_COPY['cap.pass.secondAccount.dismiss']).toBe('Not now');
   });
 
   it('reads BILLING_PASS_ENABLED only as the string true', () => {

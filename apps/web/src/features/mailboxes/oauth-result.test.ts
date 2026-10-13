@@ -12,6 +12,13 @@ describe('oauthResultIn', () => {
     });
   });
 
+  it('reads the Pass second-account start result', () => {
+    expect(oauthResultIn('?connect_start_result=pass_second_account')).toMatchObject({
+      param: 'connect_start_result',
+      value: 'pass_second_account',
+    });
+  });
+
   it('drops a reconnect or start result it does not know', () => {
     expect(oauthResultIn('?reconnect_result=not-a-result')).toBeNull();
     expect(oauthResultIn('?connect_start_result=not-a-result')).toBeNull();

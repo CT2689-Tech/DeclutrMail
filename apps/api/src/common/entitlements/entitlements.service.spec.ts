@@ -25,6 +25,7 @@ import {
   TIER_MANIFEST,
   hasCapability,
   inboxLimitReachedMessage,
+  passSecondAccountMessage,
   quotaExceededMessage,
   type TierId,
 } from '@declutrmail/shared/entitlements';
@@ -657,12 +658,21 @@ describe('EntitlementsService — inbox limit (D19/D81)', () => {
       const { workspaceId } = await seedWorkspace(db, 'plus');
       await seedPassGrant(db, 'o-plus@declutrmail.ai', 'txn-pass-only-second');
       expect(await svc.inboxLimitForWorkspace(workspaceId)).toBe(1);
+      expect(await svc.inboxEntitlementForWorkspace(workspaceId)).toEqual({
+        limit: 1,
+        reason: 'pass',
+      });
       const err = await svc.assertCanConnectMailbox(workspaceId).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(AppException);
       expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
       expect((err as AppException).getStatus()).toBe(402);
-      expect((err as AppException).message).toBe(inboxLimitReachedMessage('free'));
-      expect((err as AppException).details).toEqual({ limit: 1, connected: 1, tier: 'plus' });
+      expect((err as AppException).message).toBe(passSecondAccountMessage());
+      expect((err as AppException).details).toEqual({
+        limit: 1,
+        connected: 1,
+        tier: 'plus',
+        reason: 'pass',
+      });
       await expect(
         db.select({ id: mailboxAccounts.id }).from(mailboxAccounts),
       ).resolves.toHaveLength(1);
@@ -689,7 +699,12 @@ describe('EntitlementsService — inbox limit (D19/D81)', () => {
       const err = await svc.assertCanConnectMailbox(workspaceId).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(AppException);
       expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
-      expect((err as AppException).details).toEqual({ limit: 1, connected: 2, tier: 'plus' });
+      expect((err as AppException).details).toEqual({
+        limit: 1,
+        connected: 2,
+        tier: 'plus',
+        reason: 'pass',
+      });
       const remaining = await db
         .select({ id: mailboxAccounts.id, status: mailboxAccounts.status })
         .from(mailboxAccounts)
@@ -701,6 +716,32 @@ describe('EntitlementsService — inbox limit (D19/D81)', () => {
         ]),
       );
       expect(remaining).toHaveLength(2);
+    } finally {
+      delete process.env.PRICING_V2;
+    }
+  });
+
+  it('expired Pass with stale workspaces.tier plus uses the Free inbox ceiling', async () => {
+    process.env.PRICING_V2 = 'true';
+    try {
+      const { workspaceId } = await seedWorkspace(db, 'plus');
+      await db.insert(entitlementGrants).values({
+        email: 'o-plus@declutrmail.ai',
+        tier: 'plus',
+        reason: 'Backlog Pass',
+        grantedBy: 'paddle',
+        source: 'pass',
+        provider: 'paddle',
+        providerTransactionId: 'txn-pass-expired-ceiling',
+        expiresAt: new Date(Date.now() - 60_000),
+      });
+      expect(await svc.inboxLimitForWorkspace(workspaceId)).toBe(1);
+      expect(await svc.inboxEntitlementForWorkspace(workspaceId)).toEqual({ limit: 1 });
+      const err = await svc.assertCanConnectMailbox(workspaceId).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(AppException);
+      expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
+      expect((err as AppException).message).toBe(inboxLimitReachedMessage('free'));
+      expect((err as AppException).details).toEqual({ limit: 1, connected: 1, tier: 'plus' });
     } finally {
       delete process.env.PRICING_V2;
     }

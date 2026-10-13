@@ -101,7 +101,10 @@ export function UpgradeModal() {
   // /billing's confirm step via the same validated intent the pricing
   // page uses. Launch pricing sells Plus annual. Flags off still quotes
   // the monthly price the link buys.
-  const targetPlan: 'plus' | 'pro' = hit.reason === 'free_cap' ? 'plus' : (requiredTier ?? 'pro');
+  const isPassSecondAccount = hit.reason === 'pass_second_account';
+  const storyLocale = regionProvider === 'razorpay' ? 'inr' : 'usd';
+  const targetPlan: 'plus' | 'pro' =
+    hit.reason === 'free_cap' || isPassSecondAccount ? 'plus' : (requiredTier ?? 'pro');
   const checkoutCycle = pricingV2 ? 'annual' : 'monthly';
   const upgradeHref = billingIntentPath({
     plan: targetPlan,
@@ -174,15 +177,17 @@ export function UpgradeModal() {
             textWrap: 'balance',
           }}
         >
-          {hit.reason === 'free_cap'
-            ? typeof hit.details.requested === 'number'
-              ? WS1_COPY['cap.title']
-              : freeCapTitle(hit.details)
-            : hit.reason === 'action_tier'
-              ? actionTierTitle(hit.details)
-              : hit.reason === 'pro_feature'
-                ? proFeatureTitle(hit.details)
-                : inboxLimitTitle(hit.details, tierName(tier))}
+          {isPassSecondAccount
+            ? fillStory(WS1_COPY['cap.pass.secondAccount.title'], storyLocale)
+            : hit.reason === 'free_cap'
+              ? typeof hit.details.requested === 'number'
+                ? WS1_COPY['cap.title']
+                : freeCapTitle(hit.details)
+              : hit.reason === 'action_tier'
+                ? actionTierTitle(hit.details)
+                : hit.reason === 'pro_feature'
+                  ? proFeatureTitle(hit.details)
+                  : inboxLimitTitle(hit.details, tierName(tier))}
         </h2>
         <p
           style={{
@@ -194,7 +199,9 @@ export function UpgradeModal() {
             textWrap: 'pretty',
           }}
         >
-          {hit.reason === 'free_cap' && typeof hit.details.requested === 'number' ? (
+          {isPassSecondAccount ? (
+            fillStory(WS1_COPY['cap.pass.secondAccount.body'], storyLocale)
+          ) : hit.reason === 'free_cap' && typeof hit.details.requested === 'number' ? (
             capBody(hit.details)
           ) : hit.reason === 'free_cap' ? (
             <>
@@ -243,7 +250,35 @@ export function UpgradeModal() {
             gap: space[2],
           }}
         >
-          {nudge && hit.reason === 'free_cap' && typeof hit.details.requested === 'number' ? (
+          {isPassSecondAccount ? (
+            <>
+              <Link
+                href={upgradeHref}
+                onClick={() => {
+                  void track('upgrade_cta_clicked', { source: 'upgrade_modal', plan: 'plus' });
+                  dismiss();
+                }}
+                data-dm-button=""
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: 50,
+                  padding: '0 28px',
+                  background: color.primary,
+                  color: color.fgInverse,
+                  borderRadius: radius.pill,
+                  textDecoration: 'none',
+                  fontWeight: 600,
+                }}
+              >
+                {fillStory(WS1_COPY['cap.pass.secondAccount.cta'], storyLocale)}
+              </Link>
+              <Button tone="ghost" size="lg" onClick={dismiss} style={{ width: '100%' }}>
+                {WS1_COPY['cap.pass.secondAccount.dismiss']}
+              </Button>
+            </>
+          ) : nudge && hit.reason === 'free_cap' && typeof hit.details.requested === 'number' ? (
             <>
               {pricingV2 && passEnabled ? (
                 <Link
@@ -387,7 +422,7 @@ export function UpgradeModal() {
         </div>
 
         {/* The money-back note and the plan comparison — once, quiet. */}
-        {nudge ? (
+        {nudge && !isPassSecondAccount ? (
           <p style={{ margin: `${space[3]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
             {moneyBackNote(pricingV2)} ·{' '}
             <Link

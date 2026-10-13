@@ -88,7 +88,7 @@ describe('AuthController me', () => {
         remaining: 42,
         resetsAt: new Date('2026-10-01T00:00:00.000Z'),
       }),
-      inboxLimitForWorkspace: vi.fn().mockResolvedValue(1),
+      inboxEntitlementForWorkspace: vi.fn().mockResolvedValue({ limit: 1 }),
     };
     const controller = new AuthController(
       ...([{}, {}, {}, users, mailboxes, sync, entitlements] as unknown as ConstructorParameters<
@@ -118,7 +118,8 @@ describe('AuthController me', () => {
     expect(data.cleanupRemaining).toBe(42);
     expect(data.cleanupResetsAt).toBe('2026-10-01T00:00:00.000Z');
     expect(data.inboxLimit).toBe(1);
-    expect(h.entitlements.inboxLimitForWorkspace).toHaveBeenCalledWith('ws-1');
+    expect(data.inboxLimitReason).toBeUndefined();
+    expect(h.entitlements.inboxEntitlementForWorkspace).toHaveBeenCalledWith('ws-1');
     expect(data.activeMailboxId).toBe('mb-1');
     expect(data.mailboxes[0]).toMatchObject({ readiness: 'ready', needsReconnect: false });
   });
@@ -132,12 +133,16 @@ describe('AuthController me', () => {
       remaining: null,
       resetsAt: null,
     });
-    h.entitlements.inboxLimitForWorkspace.mockResolvedValue(1);
+    h.entitlements.inboxEntitlementForWorkspace.mockResolvedValue({
+      limit: 1,
+      reason: 'pass',
+    });
     const pending = h.controller.me(h.principal);
     h.release([{ id: 'mb-1', email: 'a@example.com', status: 'active', connectedAt: null }]);
     const { data } = await pending;
     expect(data.tier).toBe('plus');
     expect(data.inboxLimit).toBe(1);
+    expect(data.inboxLimitReason).toBe('pass');
   });
 
   it('starts sync health when user and mailboxes resolve even while quota is pending', async () => {

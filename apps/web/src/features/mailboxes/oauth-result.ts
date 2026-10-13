@@ -30,6 +30,7 @@ export type ReconnectResult =
 export type ConnectStartResult =
   | 'target_invalid'
   | 'inbox_limit'
+  | 'pass_second_account'
   | 'session_retry'
   | 'rate_limited'
   | 'failed'
@@ -75,6 +76,11 @@ export const CONNECT_START_RESULT_COPY: Record<ConnectStartResult, OAuthResultCo
     liveRole: 'alert',
   },
   inbox_limit: {
+    message: 'Your plan’s Gmail limit is in use, so nothing was connected.',
+    tone: 'warn',
+    liveRole: 'status',
+  },
+  pass_second_account: {
     message: 'Your plan’s Gmail limit is in use, so nothing was connected.',
     tone: 'warn',
     liveRole: 'status',
@@ -144,6 +150,7 @@ export function connectStartResultOf(value: string | null): ConnectStartResult |
   switch (value) {
     case 'target_invalid':
     case 'inbox_limit':
+    case 'pass_second_account':
     case 'session_retry':
     case 'rate_limited':
     case 'failed':
