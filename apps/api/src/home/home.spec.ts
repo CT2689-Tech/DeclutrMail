@@ -163,6 +163,16 @@ describe('returning visit and scan discovery', () => {
       (executor) => mailboxes.assertVisitEligible(userId, inboxA, executor),
       finish,
     );
+    const unknown = await visits.peekMailboxVisit(
+      userId,
+      inboxA,
+      '10000000-0000-4000-8000-000000000099',
+      reads.indexedArrivals.bind(reads, inboxA),
+      (executor) => mailboxes.assertVisitEligible(userId, inboxA, executor),
+      finish,
+    );
+    expect(unknown.visitId).toBe('10000000-0000-4000-8000-000000000099');
+    expect(unknown.since).toBe(next.until);
     expect(open.since).toBe(next.until);
     expect(
       ((await visits.findById(userId))!.preferences as { mailboxVisits: Record<string, unknown> })
