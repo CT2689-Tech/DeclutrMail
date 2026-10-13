@@ -1,3 +1,4 @@
+import { signCheckoutGeo } from '@declutrmail/shared/billing/checkout-geo';
 import { parseUpgradeReturnTo } from '@declutrmail/shared/contracts/app-navigation';
 // /billing — current plan + plan comparison + change/cancel flows
 // (D119, D120, D121; tiers per D17–D21, gating context D77/D81).
@@ -24,7 +25,10 @@ import { parseBillingInvoices } from '@/features/billing/api/parse-payload';
 import { getServerBillingSubscription } from '@/features/billing/api/server-billing';
 import { parseBillingIntentParams } from '@/features/billing/parse-billing-intent';
 import { defaultProviderForCountry } from '@/features/billing/billing-region';
-import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
+import {
+  indiaCheckoutReady,
+  loadPricingFlags,
+} from '@/features/marketing/pricing/load-pricing-flags';
 import { hasServerAccessCookie } from '@/features/auth/api/server-me';
 import { ServerApiError, serverGet } from '@/lib/api/server';
 import { ServerQueryHydration } from '@/lib/server-query-hydration';
@@ -56,6 +60,10 @@ export default async function BillingPage({
   // renders the right rail on first paint — a client-side guess would
   // flash the wrong currency before correcting itself.
   const country = requestHeaders.get(COUNTRY_HEADER);
+  const checkoutGeoToken = signCheckoutGeo(country, process.env.BILLING_GEO_HMAC_SECRET);
+  const indiaCheckoutOpen =
+    country === 'IN' &&
+    indiaCheckoutReady(flags.indiaCheckoutOpen, process.env.BILLING_GEO_HMAC_SECRET);
   const cookieHeader = requestHeaders.get('cookie') ?? '';
   const eligible = hasServerAccessCookie(cookieHeader);
   // The hydration smoke sets this cookie so the server paints the loading
@@ -108,6 +116,8 @@ export default async function BillingPage({
         initialProvider={defaultProviderForCountry(country, flags.pricingV2)}
         pricingV2={flags.pricingV2}
         country={country}
+        indiaCheckoutOpen={indiaCheckoutOpen}
+        checkoutGeoToken={checkoutGeoToken}
         invoiceHistory={<BillingInvoiceHistoryGate />}
       />
     </ServerQueryHydration>

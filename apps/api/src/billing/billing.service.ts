@@ -54,10 +54,12 @@ import type { ProductEventsPort } from '@declutrmail/shared/analytics/product-ev
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import {
   fillStory,
+  indiaPaddlePriceId,
   isBillingPassEnabled,
   isPricingV2,
   proNotPurchasableMessage,
   RAILS,
+  type PaddleCheckoutCode,
 } from '@declutrmail/shared/entitlements';
 
 import { PRODUCT_EVENTS, recordProductEvent } from '../analytics/product-events.port.js';
@@ -71,11 +73,7 @@ import { PaddleAdapter } from './paddle.adapter.js';
 import { RazorpayAdapter } from './razorpay.adapter.js';
 import { hasUnresolvedUpgrade } from './upgrade-intents.js';
 import { BillingUpgradeRefundService } from './billing-upgrade-refund.service.js';
-import {
-  INR_CHECKOUT_PAUSED_MESSAGE,
-  INR_NEW_PURCHASES_PAUSED,
-  inrNewPurchasePaused,
-} from '@declutrmail/shared/contracts';
+import { INR_CHECKOUT_PAUSED_MESSAGE, inrNewPurchasePaused } from '@declutrmail/shared/contracts';
 
 /** 0051 — pending-checkout display/lock horizon. */
 const PENDING_CHECKOUT_TTL_MS = 30 * 60 * 1000;
@@ -118,6 +116,7 @@ export class BillingService {
   async createCheckout(
     principal: { userId: string; workspaceId: string },
     dto: CheckoutRequest,
+    trustedCountry: string | null = null,
   ): Promise<CheckoutSession> {
     if (isPricingV2() && (dto.tierId === 'pro' || dto.promo === 'foundingPro')) {
       throw new AppException({
@@ -210,9 +209,9 @@ export class BillingService {
       });
     }
 
-    // Razorpay is a rupee purchase on every country. Paddle's currency is
-    // not decided here: the adapter creates a USD transaction, and a
-    // price-id session is rejected below. The client country is ignored.
+    // Razorpay stays closed for new purchases. Paddle's currency is
+    // chosen in the adapter from `trustedCountry`, which is the verified
+    // geo token. `dto.country` is ignored.
     if (dto.provider === 'razorpay' && inrNewPurchasePaused(dto.provider, 'INR'))
       throw new AppException({
         // Existing clients already release a local reservation for this pre-claim refusal.
@@ -316,6 +315,15 @@ export class BillingService {
       throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
     }
 
+    const checkoutCode: PaddleCheckoutCode =
+      dto.provider !== 'paddle'
+        ? 'other'
+        : pass
+          ? 'pass_onetime'
+          : isPricingV2() && dto.tierId === 'plus' && dto.cycle === 'annual' && !founding
+            ? 'plus_annual'
+            : 'other';
+
     let session: CheckoutSession;
     try {
       session = await this.adapterFor(dto.provider).createCheckout({
@@ -324,13 +332,13 @@ export class BillingService {
         tierId: dto.tierId,
         cycle: dto.cycle,
         providerPriceId: priceId,
+        trustedCountry,
+        checkoutCode,
       });
       // A price id or the signed attribution blob is enough to open a
-      // checkout Paddle localizes from the buyer location, including to
-      // an INR override. While the pause is on, only a transaction id
-      // may leave this method.
+      // checkout Paddle localizes from the buyer location. Only a
+      // transaction id may leave this method.
       if (
-        INR_NEW_PURCHASES_PAUSED &&
         session.provider === 'paddle' &&
         (session.priceId !== undefined ||
           session.customData !== undefined ||
@@ -504,6 +512,9 @@ export class BillingService {
       )
     ).some(Boolean);
     const charged = sub ? this.catalog.resolveByPriceId(sub.provider, sub.providerPriceId) : null;
+    const indiaPlusId =
+      sub?.provider === 'paddle' ? indiaPaddlePriceId(process.env, 'plus_annual') : null;
+    const chargedInIndia = indiaPlusId != null && sub?.providerPriceId === indiaPlusId;
     return {
       checkoutSetupComplete: await this.checkoutSetupComplete(workspaceId),
       ...(billingReviewPending ? { billingReviewPending: true } : {}),
@@ -527,6 +538,7 @@ export class BillingService {
               cycle: sub.billingCycle,
               providerPriceId: sub.providerPriceId,
               ...(charged ? { chargedUsdCents: charged.usdCents } : {}),
+              ...(chargedInIndia ? { chargedCurrency: 'INR' as const } : {}),
               currentPeriodEnd: sub.currentPeriodEnd?.toISOString() ?? null,
               entitlementEndsAt: sub.entitlementEndsAt?.toISOString() ?? null,
               cancelAtPeriodEnd: sub.cancelAtPeriodEnd,

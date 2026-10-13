@@ -129,5 +129,53 @@ describe('checkCatalogDrift', () => {
     );
     expect(promoExpiresAt({ PADDLE_ENV: 'production' } as NodeJS.ProcessEnv)).toBe(PROMO.endsAt);
     expect(PROMO_DISCOUNT_IDS.live).toBe('FILL_ME');
+    expect(
+      checkoutDiscountId(
+        {
+          PADDLE_ENV: 'sandbox',
+          PADDLE_SANDBOX_INDIA_PLUS_ANNUAL_PRICE_ID: 'pri_india_plus',
+          PADDLE_SANDBOX_INDIA_PASS_PRICE_ID: 'pri_india_pass',
+        } as NodeJS.ProcessEnv,
+        'pri_india_plus',
+      ),
+    ).toBe(PROMO_DISCOUNT_IDS.sandbox);
+    expect(
+      checkoutDiscountId(
+        {
+          PADDLE_ENV: 'sandbox',
+          PADDLE_SANDBOX_INDIA_PLUS_ANNUAL_PRICE_ID: 'pri_india_plus',
+          PADDLE_SANDBOX_INDIA_PASS_PRICE_ID: 'pri_india_pass',
+        } as NodeJS.ProcessEnv,
+        'pri_india_pass',
+      ),
+    ).toBe(PROMO_DISCOUNT_IDS.sandbox);
+  });
+
+  it('fails an INR-native price that is still quoted in USD', () => {
+    const report = checkCatalogDrift({
+      manifest: [
+        {
+          id: 'pri_in',
+          usdCents: 5900,
+          inrPaise: 199900,
+          taxInclusive: true,
+          nativeCurrency: 'INR',
+        },
+      ],
+      paddlePrices: [
+        {
+          id: 'pri_in',
+          status: 'active',
+          amount: '5900',
+          currencyCode: 'USD',
+          taxInclusive: true,
+        },
+      ],
+      discount: null,
+      discountId: 'FILL_ME',
+      promoPriceIds: [],
+    });
+    expect(report.failures.some((line) => line.includes('amount mismatch'))).toBe(true);
+    expect(report.ok).toBe(false);
   });
 });

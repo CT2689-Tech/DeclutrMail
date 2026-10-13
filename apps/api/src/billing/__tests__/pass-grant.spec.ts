@@ -1,7 +1,7 @@
 import { entitlementGrants, users, workspaces } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AutopilotReadService } from '../../autopilot/autopilot.read-service.js';
 import type { DrizzleDb } from '../../db/db.module.js';
@@ -72,6 +72,20 @@ describe('Backlog Pass grants', () => {
     expect(grants).toHaveLength(1);
     expect(grants[0]).toMatchObject({ source: 'pass', provider: 'paddle', tier: 'plus' });
     expect(grants[0]!.expiresAt).not.toBeNull();
+  });
+
+  it('grants Plus from the India Pass price id', async () => {
+    vi.stubEnv('PADDLE_LIVE_INDIA_PASS_PRICE_ID', 'pri_india_pass');
+    vi.stubEnv('PADDLE_SANDBOX_INDIA_PASS_PRICE_ID', 'pri_india_pass');
+    try {
+      const fixture = completed('txn_pass_in', 'pri_india_pass');
+      expect(await service.process('paddle', paddle.mapWebhookEvent(fixture), fixture)).toEqual({
+        kind: 'processed',
+        effect: 'pass:granted',
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('extends a live Pass and leaves a comp row alone', async () => {

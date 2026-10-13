@@ -570,6 +570,80 @@ describe('PaddleAdapter checkout + cancel', () => {
     expect(session).not.toHaveProperty('customData');
   });
 
+  it('charges the India price in INR only for a trusted IN country', async () => {
+    const indiaPlus = 'pri_india_plus_annual_test';
+    const indiaPass = 'pri_india_pass_onetime_test';
+    const fetchSpy = stubTransaction('INR');
+    const adapter = makeAdapter({
+      PADDLE_CLIENT_TOKEN: 'test_abc',
+      PADDLE_API_KEY: 'pdl_test_key',
+      PADDLE_ENV: 'sandbox',
+      PADDLE_SANDBOX_INDIA_PLUS_ANNUAL_PRICE_ID: indiaPlus,
+      PADDLE_SANDBOX_INDIA_PASS_PRICE_ID: indiaPass,
+    });
+    await adapter.createCheckout({
+      workspaceId: WORKSPACE,
+      userEmail: 'user@example.com',
+      tierId: 'plus',
+      cycle: 'annual',
+      providerPriceId: SANDBOX_PRICE_IDS.plus_annual,
+      trustedCountry: 'IN',
+      checkoutCode: 'plus_annual',
+    });
+    const india = postedTransaction(fetchSpy).body;
+    expect(india.currency_code).toBe('INR');
+    expect(india.items).toEqual([{ price_id: indiaPlus, quantity: 1 }]);
+    expect(india.discount_id).toBe(PROMO_DISCOUNT_IDS.sandbox);
+
+    const usdSpy = stubTransaction('USD');
+    await adapter.createCheckout({
+      workspaceId: WORKSPACE,
+      userEmail: 'user@example.com',
+      tierId: 'plus',
+      cycle: 'annual',
+      providerPriceId: SANDBOX_PRICE_IDS.plus_annual,
+      trustedCountry: 'US',
+      checkoutCode: 'plus_annual',
+    });
+    const us = postedTransaction(usdSpy).body;
+    expect(us.currency_code).toBe('USD');
+    expect(us.items).toEqual([{ price_id: SANDBOX_PRICE_IDS.plus_annual, quantity: 1 }]);
+  });
+
+  it('falls back to the USD price when the India id is missing or the country is unsigned', async () => {
+    const fetchSpy = stubTransaction();
+    const adapter = makeAdapter({
+      PADDLE_CLIENT_TOKEN: 'test_abc',
+      PADDLE_API_KEY: 'pdl_test_key',
+      PADDLE_ENV: 'production',
+    });
+    await adapter.createCheckout({
+      workspaceId: WORKSPACE,
+      userEmail: 'user@example.com',
+      tierId: 'plus',
+      cycle: 'annual',
+      providerPriceId: 'pri_01m4qk99878y7jynh1h00jfhy8',
+      trustedCountry: 'IN',
+      checkoutCode: 'plus_annual',
+    });
+    expect(postedTransaction(fetchSpy).body).toMatchObject({
+      currency_code: 'USD',
+      items: [{ price_id: 'pri_01m4qk99878y7jynh1h00jfhy8', quantity: 1 }],
+    });
+
+    fetchSpy.mockClear();
+    await adapter.createCheckout({
+      workspaceId: WORKSPACE,
+      userEmail: 'user@example.com',
+      tierId: 'plus',
+      cycle: 'annual',
+      providerPriceId: 'pri_01m4qk99878y7jynh1h00jfhy8',
+      trustedCountry: null,
+      checkoutCode: 'plus_annual',
+    });
+    expect(postedTransaction(fetchSpy).body.currency_code).toBe('USD');
+  });
+
   it('refuses an INR transaction and does not fall back to a price overlay', async () => {
     stubTransaction('INR');
     const adapter = makeAdapter({

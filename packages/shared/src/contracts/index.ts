@@ -272,11 +272,7 @@ export {
   RazorpayCheckoutSessionSchema,
   SubscriptionStatusSchema,
 } from './billing';
-export {
-  INR_NEW_PURCHASES_PAUSED,
-  INR_CHECKOUT_PAUSED_MESSAGE,
-  inrNewPurchasePaused,
-} from './billing-availability';
+export { INR_CHECKOUT_PAUSED_MESSAGE, inrNewPurchasePaused } from './billing-availability';
 export type {
   BillingCycle,
   BillingInvoice,

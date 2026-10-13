@@ -323,6 +323,20 @@ describe('currentPlanPriceLabel', () => {
     expect(currentPlanPriceLabel(view)).toBe('$59/yr');
   });
 
+  it('shows the India Plus price when the subscription billed INR', () => {
+    const sub = {
+      ...SUB,
+      tier: 'plus' as const,
+      cycle: 'annual' as const,
+      providerPriceId: 'pri_india_plus',
+      chargedUsdCents: 5900,
+      chargedCurrency: 'INR' as const,
+    };
+    const view = deriveBillingViewState(snapshot({ data: body('plus', sub) }));
+    if (view.kind !== 'plan') throw new Error('expected plan');
+    expect(currentPlanPriceLabel(view)).toBe('₹1,999/yr');
+  });
+
   it('keeps a legacy Plus annual subscription at $90', () => {
     const sub = {
       ...SUB,

@@ -160,6 +160,8 @@ export function BillingScreen({
   initialProvider = 'paddle',
   pricingV2 = false,
   country = null,
+  indiaCheckoutOpen = false,
+  checkoutGeoToken = null,
   invoiceHistory,
   returnTo,
 }: {
@@ -170,6 +172,10 @@ export function BillingScreen({
   /** Server-read launch flag. Absent means off, so an older shell still renders. */
   pricingV2?: boolean;
   country?: string | null;
+  /** Server-derived. Absent keeps rupee checkout paused. */
+  indiaCheckoutOpen?: boolean;
+  /** Signed on the server from the edge country. Null when unsigned. */
+  checkoutGeoToken?: string | null;
   /** Optional server-streamed invoice section; stories retain the local fallback. */
   invoiceHistory?: ReactNode;
 }) {
@@ -923,6 +929,8 @@ export function BillingScreen({
         pricingV2={pricingV2}
         passEnabled={passEnabled}
         country={country}
+        indiaCheckoutOpen={indiaCheckoutOpen}
+        checkoutGeoToken={checkoutGeoToken}
         onRequestCancel={() => setCancelOpen(true)}
         onPaymentCompleted={(target, cycle, attemptId) =>
           // Own-id transition over this checkout's reservation: the

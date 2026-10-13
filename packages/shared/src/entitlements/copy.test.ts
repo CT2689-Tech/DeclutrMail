@@ -2,10 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  INR_CHECKOUT_PAUSED_MESSAGE,
-  INR_NEW_PURCHASES_PAUSED,
-} from '../contracts/billing-availability';
+import { INR_CHECKOUT_PAUSED_MESSAGE } from '../contracts/billing-availability';
 import {
   buildOffersJsonLd,
   fillStory,
@@ -24,7 +21,7 @@ import {
   suggestedWindowPreset,
   termsPastDue,
 } from './copy';
-import { OFFERS, PLUS_ANNUAL_2026_10 } from './pricing.config';
+import { OFFERS, PLUS_ANNUAL_2026_10, indiaPaddlePricesConfigured } from './pricing.config';
 import { WS1_COPY } from '../copy/launch';
 import { POLICY } from './pricing.config';
 
@@ -224,7 +221,7 @@ describe('pricing story builders', () => {
     expect(indiaFaqAnswer(false, 'inr', false)).not.toContain('Backlog Pass');
     expect(indiaFaqAnswer(false, 'inr', false)).not.toContain('paused for now');
     expect(indiaFaqAnswer(false, 'inr', false)).not.toContain('You can pay with UPI');
-    expect(indiaFaqAnswer(true)).toBe(indiaFaqAnswer(true, 'inr', INR_NEW_PURCHASES_PAUSED));
+    expect(indiaFaqAnswer(true)).toBe(indiaFaqAnswer(true, 'inr', !indiaPaddlePricesConfigured()));
     expect(INR_CHECKOUT_PAUSED_MESSAGE).toBe(WS1_COPY['pricing.inrPaused.checkout']);
   });
 

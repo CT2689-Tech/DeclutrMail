@@ -210,7 +210,12 @@ function stubSubscription(respond: () => Response | Promise<Response>) {
 function renderScreen(
   initialIntent: BillingIntent | null = null,
   returnTo?: string,
-  options?: { pricingV2?: boolean; country?: string | null },
+  options?: {
+    pricingV2?: boolean;
+    country?: string | null;
+    indiaCheckoutOpen?: boolean;
+    checkoutGeoToken?: string | null;
+  },
 ) {
   const client = createTestQueryClient();
   return render(
@@ -220,6 +225,8 @@ function renderScreen(
         returnTo={returnTo}
         {...(options?.pricingV2 ? { pricingV2: true } : {})}
         {...(options?.country !== undefined ? { country: options.country } : {})}
+        {...(options?.indiaCheckoutOpen ? { indiaCheckoutOpen: true } : {})}
+        {...(options?.checkoutGeoToken ? { checkoutGeoToken: options.checkoutGeoToken } : {})}
       />
     </QueryWrapper>,
   );
@@ -2292,6 +2299,46 @@ describe('BillingScreen — paid subscriber', () => {
         provider: 'paddle',
       }),
     );
+  });
+
+  it('sends the signed geo header for an open India checkout and leaves country out of the body', async () => {
+    let checkoutBody: unknown = null;
+    let geoHeader: string | null = null;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: async (req) => {
+          checkoutBody = await req.json();
+          geoHeader = req.headers.get('x-declutr-checkout-geo');
+          return paddleSessionOk();
+        },
+      },
+    ]);
+    renderScreen(null, undefined, {
+      pricingV2: true,
+      country: 'IN',
+      indiaCheckoutOpen: true,
+      checkoutGeoToken: 'v1.IN.signed',
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
+    const panel = await screen.findByTestId('checkout-panel');
+    expect(panel).toHaveTextContent(/₹1,999 billed yearly/);
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    await waitFor(() =>
+      expect(checkoutBody).toEqual({
+        tierId: 'plus',
+        cycle: 'annual',
+        provider: 'paddle',
+      }),
+    );
+    expect(geoHeader).toBe('v1.IN.signed');
   });
 
   it('PRICING_V2 hides the founding member sales banner', async () => {

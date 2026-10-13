@@ -5,7 +5,6 @@ import Link from 'next/link';
 
 import { ACTION_SAFETY_SUMMARY, OAUTH_SCOPE_DISCLOSURE } from '@declutrmail/shared';
 import { TIER_MANIFEST, type TierDefinition } from '@declutrmail/shared/entitlements';
-import { INR_NEW_PURCHASES_PAUSED } from '@declutrmail/shared/contracts/billing-availability';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 
 import { useRegionProvider } from '@/features/billing/billing-currency';
@@ -88,7 +87,7 @@ export function PricingScreen() {
         </p>
       </header>
 
-      {region === 'razorpay' && INR_NEW_PURCHASES_PAUSED && (
+      {region === 'razorpay' && (
         <p className="dm-pricing-oauth">{WS1_COPY['pricing.inrPaused.notice']}</p>
       )}
 

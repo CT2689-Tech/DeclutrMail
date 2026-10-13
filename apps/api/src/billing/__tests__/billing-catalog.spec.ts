@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   LEGACY_PRICE_IDS,
@@ -208,5 +208,29 @@ describe('BillingCatalog resolution', () => {
 
   it('carries the D126 founding cap', () => {
     expect(new BillingCatalog().foundingMaxRedemptions).toBe(250);
+  });
+
+  it('resolves the India Plus price to the 2026-10 Plus annual entry', () => {
+    vi.stubEnv('PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID', 'pri_india_plus');
+    vi.stubEnv('PADDLE_LIVE_INDIA_PASS_PRICE_ID', 'pri_india_pass');
+    vi.stubEnv('PADDLE_SANDBOX_INDIA_PLUS_ANNUAL_PRICE_ID', 'pri_india_plus');
+    vi.stubEnv('PADDLE_SANDBOX_INDIA_PASS_PRICE_ID', 'pri_india_pass');
+    try {
+      const catalog = new BillingCatalog(
+        buildCatalog({ PRICING_V2: 'true', PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv),
+      );
+      expect(catalog.resolveByPriceId('paddle', 'pri_india_plus')).toMatchObject({
+        planCode: 'plus_annual',
+        usdCents: 5900,
+        tierId: 'plus',
+      });
+      expect(catalog.resolveByPriceId('paddle', SANDBOX_PRICE_IDS.plus_annual)?.usdCents).toBe(
+        5900,
+      );
+      expect(catalog.isPassPrice('pri_india_pass')).toBe(true);
+      expect(catalog.isPassPrice('pri_not_a_pass')).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

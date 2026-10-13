@@ -16,6 +16,7 @@ import type {
   PurchasableTier,
   SubscriptionStatus,
 } from '@declutrmail/shared/contracts';
+import type { PaddleCheckoutCode } from '@declutrmail/shared/entitlements';
 
 /** Input to `createCheckout` — already catalog-resolved by BillingService. */
 export interface CreateCheckoutInput {
@@ -26,6 +27,13 @@ export interface CreateCheckoutInput {
   cycle: BillingCycle;
   /** Provider-side catalog id (Paddle `pri_…` / Razorpay `plan_…`). */
   providerPriceId: string;
+  /**
+   * Country from the verified checkout-geo token. Null unless that
+   * token checked out. Never the request body.
+   */
+  trustedCountry?: string | null;
+  /** Launch Plus annual or Pass can select an India price. Anything else stays USD. */
+  checkoutCode?: PaddleCheckoutCode;
 }
 
 export type PlanChangeTiming =

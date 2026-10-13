@@ -309,9 +309,41 @@ describe('BillingService', () => {
       tierId: 'plus',
       cycle: 'monthly',
       providerPriceId: 'pri_plus_m',
+      trustedCountry: null,
+      checkoutCode: 'other',
     });
     const [user] = await db.select().from(users).where(eq(users.id, principal.userId));
     expect(user!.billingRegion).toBe('international');
+  });
+
+  it('ignores a client country and forwards only the verified country', async () => {
+    await service.createCheckout(
+      principal,
+      { tierId: 'plus', cycle: 'monthly', provider: 'paddle', country: 'IN' },
+      null,
+    );
+    expect(paddleCheckout).toHaveBeenCalledWith(
+      expect.objectContaining({ trustedCountry: null, checkoutCode: 'other' }),
+    );
+
+    vi.stubEnv('PRICING_V2', 'true');
+    try {
+      await service.releasePendingCheckout(principal.workspaceId);
+      await service.createCheckout(
+        principal,
+        { tierId: 'plus', cycle: 'annual', provider: 'paddle', country: 'US' },
+        'IN',
+      );
+      expect(paddleCheckout).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          trustedCountry: 'IN',
+          checkoutCode: 'plus_annual',
+          providerPriceId: 'pri_plus_a',
+        }),
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('refuses a SECOND checkout while an unexpired claim exists — atomic, cross-device (CHECKOUT_IN_FLIGHT)', async () => {

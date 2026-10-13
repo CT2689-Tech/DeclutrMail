@@ -7,10 +7,7 @@ import {
   RAZORPAY_LIMITATIONS_NOTE,
 } from './billing-copy';
 import type { BillingCycle, BillingProviderId } from '@declutrmail/shared/contracts';
-import {
-  INR_NEW_PURCHASES_PAUSED,
-  inrNewPurchasePaused,
-} from '@declutrmail/shared/contracts/billing-availability';
+import { inrNewPurchasePaused } from '@declutrmail/shared/contracts/billing-availability';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import {
   fillStory,
@@ -34,6 +31,7 @@ export function ConfirmPanel({
   pricingV2 = false,
   offer = null,
   country = null,
+  indiaCheckoutOpen = false,
   pricePointOverride = null,
   onProviderChange,
   foundingEligible,
@@ -56,6 +54,8 @@ export function ConfirmPanel({
   pricingV2?: boolean;
   offer?: 'pass_onetime' | null;
   country?: string | null;
+  /** Public flag: both India Paddle price ids exist and geo can be signed. */
+  indiaCheckoutOpen?: boolean;
   pricePointOverride?: PricePoint | null;
   onProviderChange: (provider: BillingProviderId) => void;
   foundingEligible: boolean;
@@ -94,7 +94,7 @@ export function ConfirmPanel({
   // visitor read "Claim Founding Pro — ₹10,999/yr" off the standard
   // point's provisioning, tick the box, and land on a $129 charge.
   const promoCurrency = tier.promo ? currencyForPricePoint(tier.promo.annual, provider) : currency;
-  const checkoutPaused = inrNewPurchasePaused(provider, currency);
+  const checkoutPaused = inrNewPurchasePaused(provider, currency, indiaCheckoutOpen);
   const storyLocale = currency === 'INR' ? 'inr' : 'usd';
   const launchImpact =
     offer === 'pass_onetime'
@@ -145,11 +145,7 @@ export function ConfirmPanel({
               checked={provider === 'razorpay'}
               onChange={onProviderChange}
               title="UPI · cards · netbanking (India)"
-              detail={
-                INR_NEW_PURCHASES_PAUSED
-                  ? WS1_COPY['pricing.inrPaused.button']
-                  : 'INR pricing — secure checkout by Razorpay'
-              }
+              detail={WS1_COPY['pricing.inrPaused.button']}
             />
           </div>
         </fieldset>

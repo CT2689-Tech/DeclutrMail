@@ -27,6 +27,8 @@ export interface ManifestPriceCheck {
   usdCents: number;
   inrPaise: number | null;
   taxInclusive: boolean;
+  /** INR-native prices compare amount to paise. Omitted prices stay USD with an optional INR override. */
+  nativeCurrency?: 'USD' | 'INR';
 }
 
 export interface DriftReport {
@@ -65,6 +67,17 @@ export function checkCatalogDrift(input: {
     const live = byId.get(expected.id);
     if (!live || live.status === 'archived') {
       failures.push(`missing or archived price ${expected.id}`);
+      continue;
+    }
+    if (expected.nativeCurrency === 'INR') {
+      if (live.amount !== String(expected.inrPaise) || live.currencyCode !== 'INR') {
+        failures.push(
+          `amount mismatch ${expected.id}: paddle ${live.amount} ${live.currencyCode}, manifest ${expected.inrPaise} INR`,
+        );
+      }
+      if (expected.taxInclusive && live.taxInclusive === false) {
+        failures.push(`tax mode mismatch ${expected.id}: expected tax inclusive`);
+      }
       continue;
     }
     if (live.amount !== String(expected.usdCents) || live.currencyCode !== 'USD') {

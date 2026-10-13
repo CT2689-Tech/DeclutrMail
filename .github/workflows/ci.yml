@@ -144,6 +144,7 @@ jobs:
               - 'packages/shared/package.json'
               - 'packages/shared/tsconfig.json'
               - 'packages/shared/src/actions/**'
+              - 'packages/shared/src/billing/**'
               - 'packages/shared/src/contracts/**'
               - 'packages/shared/src/copy/**'
               - 'packages/shared/src/entitlements/**'

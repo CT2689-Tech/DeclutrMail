@@ -30,10 +30,15 @@ async function readLaunchFlags(signal: AbortSignal): Promise<PricingFlags | null
       ? (body as { data?: unknown }).data
       : body;
   if (typeof data !== 'object' || data === null) return null;
-  const record = data as { pricingV2?: unknown; passEnabled?: unknown };
+  const record = data as {
+    pricingV2?: unknown;
+    passEnabled?: unknown;
+    indiaCheckoutOpen?: unknown;
+  };
   return {
     pricingV2: record.pricingV2 === true,
     passEnabled: record.passEnabled === true,
+    indiaCheckoutOpen: record.indiaCheckoutOpen === true,
   };
 }
 
@@ -45,7 +50,7 @@ export function PricingTeaserGate({
   passEnabled?: boolean;
 } = {}) {
   const [flags, setFlags] = useState<PricingFlags | null>(
-    pricingV2 ? { pricingV2: true, passEnabled } : null,
+    pricingV2 ? { pricingV2: true, passEnabled, indiaCheckoutOpen: false } : null,
   );
   useEffect(() => {
     const controller = new AbortController();

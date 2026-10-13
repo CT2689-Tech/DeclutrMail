@@ -11,7 +11,6 @@ import { Button, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
 import {
   ERROR_CODES,
   isErrorCode,
-  INR_NEW_PURCHASES_PAUSED,
   INR_CHECKOUT_PAUSED_MESSAGE,
   inrNewPurchasePaused,
 } from '@declutrmail/shared/contracts';
@@ -208,6 +207,8 @@ export function PlanPicker({
   pricingV2 = false,
   passEnabled = false,
   country = null,
+  indiaCheckoutOpen = false,
+  checkoutGeoToken = null,
   onRequestCancel,
   onPaymentCompleted,
   onCheckoutAttempt,
@@ -242,6 +243,10 @@ export function PlanPicker({
   /** From `/api/auth/me`. Hidden when false. */
   passEnabled?: boolean;
   country?: string | null;
+  /** From the server. Absent means rupee checkout stays paused. */
+  indiaCheckoutOpen?: boolean;
+  /** Server-signed geo. Stripped into a header before the checkout POST. */
+  checkoutGeoToken?: string | null;
   /** Route to the cancel confirm (the downgrade-to-free path, D120). */
   onRequestCancel: () => void;
   /** Paddle overlay reported `checkout.completed` — payment made, tier
@@ -479,8 +484,7 @@ export function PlanPicker({
       disabled ||
       checkout.isPending ||
       confirmInFlight.current ||
-      (!pricingV2 && provider === 'razorpay' && INR_NEW_PURCHASES_PAUSED) ||
-      inrNewPurchasePaused(panelProvider, quotedCurrency)
+      inrNewPurchasePaused(panelProvider, quotedCurrency, indiaCheckoutOpen)
     )
       return;
     confirmInFlight.current = true;
@@ -507,6 +511,7 @@ export function PlanPicker({
         provider: effectiveProvider,
         ...(founding ? { promo: 'foundingPro' as const } : {}),
         ...(passSelected ? { offer: 'pass_onetime' as const } : {}),
+        ...(checkoutGeoToken ? { checkoutGeoToken } : {}),
       },
       {
         onSuccess: (session) => {
@@ -780,6 +785,7 @@ export function PlanPicker({
           razorpayOffered={false}
           pricingV2={pricingV2}
           country={country}
+          indiaCheckoutOpen={indiaCheckoutOpen}
           pricePointOverride={OFFERS.backlogPass.price}
           onProviderChange={setProvider}
           foundingEligible={false}
@@ -833,6 +839,7 @@ export function PlanPicker({
             razorpayOffered={razorpayOffered}
             pricingV2={pricingV2}
             country={country}
+            indiaCheckoutOpen={indiaCheckoutOpen}
             pricePointOverride={
               pricingV2 && selected === 'plus' && cycle === 'annual' ? PLUS_ANNUAL_2026_10 : null
             }

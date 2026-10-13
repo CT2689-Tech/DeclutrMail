@@ -13,17 +13,22 @@
  */
 
 import { useMutation } from '@tanstack/react-query';
+import { CHECKOUT_GEO_HEADER } from '@declutrmail/shared/billing/checkout-geo-header';
 import type { CheckoutRequest, CheckoutSession } from '@declutrmail/shared/contracts';
 
 import { apiPost } from '@/lib/api/client';
 
 import { billingMutationFailure } from './mutation-failure';
 
+type CheckoutMutationInput = CheckoutRequest & { checkoutGeoToken?: string };
+
 export function useCheckout() {
-  return useMutation<CheckoutSession, Error, CheckoutRequest>({
+  return useMutation<CheckoutSession, Error, CheckoutMutationInput>({
     onError: billingMutationFailure('checkout'),
-    mutationFn: async (body) => {
-      const envelope = await apiPost<CheckoutSession>('/api/billing/checkout', body);
+    mutationFn: async ({ checkoutGeoToken, ...body }) => {
+      const envelope = await apiPost<CheckoutSession>('/api/billing/checkout', body, {
+        headers: checkoutGeoToken ? { [CHECKOUT_GEO_HEADER]: checkoutGeoToken } : undefined,
+      });
       return envelope.data;
     },
   });

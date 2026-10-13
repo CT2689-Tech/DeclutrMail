@@ -11,7 +11,10 @@ import { headers } from 'next/headers';
 
 import { BillingCurrencyProvider } from '@/features/billing/billing-currency';
 import { defaultProviderForCountry } from '@/features/billing/billing-region';
-import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
+import {
+  indiaCheckoutReady,
+  loadPricingFlags,
+} from '@/features/marketing/pricing/load-pricing-flags';
 import { pricingPageMetadata } from '@/features/marketing/pricing/pricing-metadata';
 import { PricingScreen } from '@/features/marketing/pricing/pricing-screen';
 import '@/features/marketing/pricing/pricing.css';
@@ -45,6 +48,10 @@ export default async function PricingPage() {
           passEnabled={flags.passEnabled}
           locale={locale}
           now={new Date().toISOString()}
+          rupeePurchasesOpen={indiaCheckoutReady(
+            flags.indiaCheckoutOpen,
+            process.env.BILLING_GEO_HMAC_SECRET,
+          )}
         />
       ) : (
         <PricingScreen />

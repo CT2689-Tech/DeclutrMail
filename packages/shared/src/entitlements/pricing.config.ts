@@ -302,6 +302,14 @@ export const PROMO = {
  * `FILL_ME` until the launch discount is created. Checkout omits that
  * placeholder and charges the price with no discount.
  * Sandbox expiry is 2026-10-19 23:59 UTC. Live uses `PROMO.endsAt`.
+ *
+ * PH30 has to allow every launch price that checkout can send:
+ * USD Plus, USD Pass, India Plus, and India Pass. The India ids are
+ * env-specific (`indiaPaddlePriceId`). Paddle's discount `restrict_to`
+ * must list those ids or a transaction that includes `discount_id`
+ * fails. Sandbox discount `dsc_01m4phpp04scdes9ghqn3qps77` currently
+ * lists only the two sandbox USD prices. Live stays `FILL_ME` until
+ * that discount is created with all four live ids.
  */
 export const PROMO_DISCOUNT_IDS = {
   sandbox: 'dsc_01m4phpp04scdes9ghqn3qps77',
@@ -437,6 +445,74 @@ export function usablePriceId(id: string | null | undefined): string | null {
   return id;
 }
 
+/** India Paddle prices are separate ids from the USD Plus and Pass prices. */
+export type IndiaPriceCode = 'plus_annual' | 'pass_onetime';
+
+const INDIA_PRICE_ENV = {
+  sandbox: {
+    plus_annual: 'PADDLE_SANDBOX_INDIA_PLUS_ANNUAL_PRICE_ID',
+    pass_onetime: 'PADDLE_SANDBOX_INDIA_PASS_PRICE_ID',
+  },
+  live: {
+    plus_annual: 'PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID',
+    pass_onetime: 'PADDLE_LIVE_INDIA_PASS_PRICE_ID',
+  },
+} as const;
+
+/**
+ * India price id for this process's Paddle environment, or null while
+ * that env var is unset or still `FILL_ME`. Sandbox and live are
+ * different Paddle prices. A missing id falls back to the USD price.
+ */
+export function indiaPaddlePriceId(
+  env: NodeJS.ProcessEnv = process.env,
+  code: IndiaPriceCode,
+): string | null {
+  const slot = env.PADDLE_ENV === 'sandbox' ? 'sandbox' : 'live';
+  return usablePriceId(env[INDIA_PRICE_ENV[slot][code]]?.trim());
+}
+
+/** Both India prices must be set before a rupee checkout is offered. */
+export function indiaPaddlePricesConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
+  return (
+    indiaPaddlePriceId(env, 'plus_annual') != null &&
+    indiaPaddlePriceId(env, 'pass_onetime') != null
+  );
+}
+
+export type PaddleCheckoutCode = IndiaPriceCode | 'other';
+
+/**
+ * USD price unless the trusted country is exactly `IN` and this
+ * checkout is a launch price with an India id configured. Customer
+ * country is not an input.
+ */
+export function selectPaddleCheckoutPrice(
+  env: NodeJS.ProcessEnv,
+  input: {
+    usdPriceId: string;
+    code: PaddleCheckoutCode;
+    trustedCountry: string | null;
+  },
+): { priceId: string; currency: 'USD' | 'INR' } {
+  if (input.trustedCountry !== 'IN' || input.code === 'other') {
+    return { priceId: input.usdPriceId, currency: 'USD' };
+  }
+  const india = indiaPaddlePriceId(env, input.code);
+  if (!india) return { priceId: input.usdPriceId, currency: 'USD' };
+  return { priceId: india, currency: 'INR' };
+}
+
+/** USD launch prices plus any India ids configured for this Paddle environment. */
+export function ph30PriceIds(env: NodeJS.ProcessEnv = process.env): string[] {
+  const sandbox = env.PADDLE_ENV === 'sandbox';
+  const base = sandbox
+    ? [SANDBOX_PRICE_IDS.plus_annual, SANDBOX_PRICE_IDS.pass_onetime]
+    : [PLUS_ANNUAL_2026_10.paddlePriceId, OFFERS.backlogPass.price.paddlePriceId];
+  const india = [indiaPaddlePriceId(env, 'plus_annual'), indiaPaddlePriceId(env, 'pass_onetime')];
+  return [...base, ...india].filter((id): id is string => id != null);
+}
+
 /** A placeholder discount id is omitted. Checkout then charges full price. */
 export function usableDiscountId(id: string | null | undefined): string | null {
   if (!id || id === UNPROVISIONED_PRICE_ID) return null;
@@ -452,8 +528,5 @@ export function checkoutDiscountId(
   const id = usableDiscountId(sandbox ? PROMO_DISCOUNT_IDS.sandbox : PROMO_DISCOUNT_IDS.live);
   if (!id) return null;
   if (priceId === undefined) return id;
-  const allowed = sandbox
-    ? [SANDBOX_PRICE_IDS.plus_annual, SANDBOX_PRICE_IDS.pass_onetime]
-    : [PLUS_ANNUAL_2026_10.paddlePriceId, OFFERS.backlogPass.price.paddlePriceId];
-  return allowed.some((candidate) => candidate === priceId) ? id : null;
+  return ph30PriceIds(env).some((candidate) => candidate === priceId) ? id : null;
 }

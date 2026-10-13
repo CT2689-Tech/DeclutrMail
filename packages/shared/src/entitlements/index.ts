@@ -23,10 +23,14 @@ export {
   SELECTOR_TIERS,
   TIER_MANIFEST,
   checkoutDiscountId,
+  indiaPaddlePriceId,
+  indiaPaddlePricesConfigured,
+  ph30PriceIds,
+  selectPaddleCheckoutPrice,
   usableDiscountId,
   usablePriceId,
 } from './pricing.config';
-export type { LegacyPrice } from './pricing.config';
+export type { IndiaPriceCode, LegacyPrice, PaddleCheckoutCode } from './pricing.config';
 export {
   buildOffersJsonLd,
   connectionTerm,
