@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
-import { METER, plusAmount, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { launchPriceDisplay, METER, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import {
   formatReportSize,
   reportFallback,
@@ -18,6 +18,7 @@ import {
   SCREENER_NAME,
 } from '@declutrmail/shared/copy/screen-decisions';
 
+import { useVisitorPriceLocale } from '@/features/billing/billing-currency';
 import { UnsubscribeBacklogDialog } from '@/features/senders/unsubscribe-backlog/unsubscribe-backlog-dialog';
 import type { ActionRequest } from '@/features/senders/data';
 import { useBulkActionPreview, useCompositePreview } from '@/lib/api/use-action';
@@ -237,6 +238,7 @@ export function InboxReportPanel({
   >;
 }) {
   const catalog = useCatalogFlags();
+  const visitorLocale = useVisitorPriceLocale();
   const [fixOpen, setFixOpen] = useState(false);
   const calm = report.variant === 'fallback';
   const headline = calm ? null : report.insights[0] ? reportHeadline(report.insights[0]) : null;
@@ -258,7 +260,7 @@ export function InboxReportPanel({
   const doneLine = celebration ? celebrationSentence(celebration) : null;
   const requestLine = celebration ? celebrationRequestLine(celebration) : null;
   const plusPrice = catalog.pricingV2
-    ? plusAmount('usd')
+    ? launchPriceDisplay(visitorLocale).plus.amount
     : money(TIER_MANIFEST.plus.prices.annual?.usdCents);
 
   return (

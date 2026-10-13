@@ -9,9 +9,8 @@ import {
   fillStory,
   fillStoryList,
   indiaFaqAnswer,
-  moneyAmount,
+  launchPriceDisplay,
   passAmount,
-  plusAmount,
   pricePromiseLines,
   promoBanner,
   refundLine,
@@ -43,13 +42,14 @@ export function PricingStory({
   const router = useRouter();
   const push = (path: string) => router.push(path);
   const banner = promoBanner(new Date(now), passEnabled);
+  const prices = launchPriceDisplay(locale);
   const h1 = fillStory(WS1_COPY[passEnabled ? 'pricing.h1.passOn' : 'pricing.h1.passOff'], locale);
   const cards = [
     {
       id: 'free' as const,
       name: fillStory(WS1_COPY['pricing.free.name'], locale),
       tagline: fillStory(WS1_COPY['pricing.free.tagline'], locale),
-      price: moneyAmount(0, locale),
+      price: prices.free.amount,
       suffix: '',
       renewal: fillStory(WS1_COPY['pricing.free.renewal'], locale),
       features: fillStoryList(WS1_COPY['pricing.free.features'], locale),
@@ -77,7 +77,7 @@ export function PricingStory({
       id: 'plus' as const,
       name: fillStory(WS1_COPY['pricing.plus.name'], locale),
       tagline: fillStory(WS1_COPY['pricing.plus.tagline'], locale),
-      price: plusAmount(locale),
+      price: prices.plus.amount,
       suffix: fillStory(WS1_COPY['pricing.plus.priceSuffix'], locale),
       renewal: fillStory(WS1_COPY['pricing.plus.renewal'], locale),
       features: fillStoryList(WS1_COPY['pricing.plus.features'], locale),

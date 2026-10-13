@@ -6,7 +6,19 @@ export function visitorPricingLocale(input: {
   indiaCheckoutOpen: boolean;
   geoSecret: string | undefined;
 }): 'inr' | 'usd' {
-  return input.country === 'IN' && indiaCheckoutReady(input.indiaCheckoutOpen, input.geoSecret)
-    ? 'inr'
-    : 'usd';
+  return visitorPriceLocale({
+    country: input.country,
+    indiaCheckoutOpen: indiaCheckoutReady(input.indiaCheckoutOpen, input.geoSecret),
+  });
+}
+
+/**
+ * Display locale after India checkout has already been resolved
+ * (secret applied, or the billing page already ANDed country + ready).
+ */
+export function visitorPriceLocale(input: {
+  country?: string | null;
+  indiaCheckoutOpen?: boolean;
+}): 'usd' | 'inr' {
+  return input.country === 'IN' && input.indiaCheckoutOpen === true ? 'inr' : 'usd';
 }

@@ -25,6 +25,7 @@ describe('PricingStory', () => {
     expect(plusCard).toHaveTextContent('$59');
     expect(plusCard).toHaveTextContent('a year');
     expect(plusCard?.textContent).not.toMatch(/a year a year/);
+    expect(screen.getByTestId('pricing-story').textContent).toContain('$0');
 
     const passLines = [
       'No monthly limit for 30 days',
@@ -54,6 +55,11 @@ describe('PricingStory', () => {
         ).toBeInTheDocument();
         expect(view.container.textContent).toMatch(/rupees and include GST/);
         expect(view.container.textContent).not.toMatch(/You can pay with UPI/);
+        if (locale === 'inr') {
+          expect(view.container.textContent).not.toContain('$');
+          expect(view.container.textContent).toContain('₹1,999');
+          expect(view.container.textContent).toMatch(/a year/);
+        }
         view.unmount();
       }
     },

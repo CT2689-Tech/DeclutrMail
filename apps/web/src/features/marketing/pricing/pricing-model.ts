@@ -106,15 +106,22 @@ export function currencyForProvider(provider: 'paddle' | 'razorpay'): Currency {
  * point is purchasable on Razorpay.
  */
 export function currencyForPricePoint(
-  point: { razorpayPlanId: string | null; inrPaise?: number; inr?: { paise: number } },
+  point: {
+    razorpayPlanId: string | null;
+    inrPaise?: number;
+    inr?: { paise: number };
+    usdCents?: number;
+  },
   provider: 'paddle' | 'razorpay',
   geo?: { pricingV2?: boolean; country?: string | null; indiaCheckoutOpen?: boolean },
 ): Currency {
   if (geo?.pricingV2 === true && !RAILS.razorpay.enabled) {
+    if (geo.country?.toUpperCase() !== 'IN' || geo.indiaCheckoutOpen !== true) return 'USD';
     const paise = point.inr?.paise ?? point.inrPaise ?? 0;
-    return geo.country?.toUpperCase() === 'IN' && geo.indiaCheckoutOpen === true && paise > 0
-      ? 'INR'
-      : 'USD';
+    const usd = point.usdCents ?? 0;
+    // Free is 0/0 — follow the visitor locale. A paid USD-only point
+    // (usd > 0, no INR amount) stays USD so we never quote ₹0 for a charge.
+    return paise > 0 || usd === 0 ? 'INR' : 'USD';
   }
   return provider === 'razorpay' && point.razorpayPlanId !== null ? 'INR' : 'USD';
 }

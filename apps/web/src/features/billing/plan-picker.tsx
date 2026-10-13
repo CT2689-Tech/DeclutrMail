@@ -22,9 +22,9 @@ import type {
 } from '@declutrmail/shared/contracts';
 import {
   fillStory,
+  launchPriceDisplay,
   OFFERS,
   PLUS_ANNUAL_2026_10,
-  priceLine as formatLaunchPrice,
   proNotPurchasableMessage,
   proWaitlistCta,
   proWaitlistJoined,
@@ -41,6 +41,7 @@ import {
   priceLineFor,
   TIER_JOBS,
 } from '@/features/marketing/pricing/pricing-model';
+import { visitorPriceLocale } from '@/features/marketing/pricing/visitor-pricing-locale';
 import { track } from '@/lib/posthog';
 
 import { apiErrorCode, apiErrorDetail } from './api/use-billing-subscription';
@@ -717,6 +718,7 @@ export function PlanPicker({
 
       {pricingV2 && passEnabled ? (
         <PassOfferCard
+          locale={visitorPriceLocale({ country, indiaCheckoutOpen })}
           included={
             grantingSub !== null && (grantingSub.tier === 'plus' || grantingSub.tier === 'pro')
           }
@@ -993,13 +995,7 @@ function launchPlusLine(
   country: string | null,
   indiaCheckoutOpen: boolean,
 ): { amount: string; per: string; note?: string } {
-  const currency = currencyForPricePoint(PLUS_ANNUAL_2026_10, 'paddle', {
-    pricingV2: true,
-    country,
-    indiaCheckoutOpen,
-  });
-  if (currency === 'INR') return { amount: formatLaunchPrice(PLUS_ANNUAL_2026_10, 'inr'), per: '' };
-  return { amount: formatLaunchPrice(PLUS_ANNUAL_2026_10, 'usd'), per: '/yr' };
+  return launchPriceDisplay(visitorPriceLocale({ country, indiaCheckoutOpen })).plus;
 }
 
 function ProWaitlistCard({ disabled }: { disabled: boolean }) {
@@ -1335,11 +1331,13 @@ function DowngradePanel({
 }
 
 function PassOfferCard({
+  locale = 'usd',
   included,
   selected,
   disabled,
   onSelect,
 }: {
+  locale?: 'usd' | 'inr';
   included: boolean;
   selected: boolean;
   disabled: boolean;
@@ -1357,7 +1355,7 @@ function PassOfferCard({
     >
       <div style={{ fontWeight: 600 }}>{fillStory(WS1_COPY['pricing.pass.name'])}</div>
       <div style={{ color: color.fgMuted, marginTop: 4 }}>
-        {fillStory(WS1_COPY['price.passLine'])}
+        {launchPriceDisplay(locale).passLine}
       </div>
       <Button
         tone="default"

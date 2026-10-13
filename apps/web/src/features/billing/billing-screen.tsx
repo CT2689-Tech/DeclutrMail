@@ -35,6 +35,7 @@ import { useAuth } from '@/features/auth/auth-provider';
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { useTier } from '@/features/auth/api/use-tier';
 import { currencyForProvider, formatMoney } from '@/features/marketing/pricing/pricing-model';
+import { visitorPriceLocale } from '@/features/marketing/pricing/visitor-pricing-locale';
 import { ApiError, apiDelete } from '@/lib/api/client';
 import { useHydrated } from '@/lib/use-hydrated';
 import { track } from '@/lib/posthog';
@@ -181,6 +182,7 @@ export function BillingScreen({
 }) {
   const { me } = useAuth();
   const { tier: meTier, cleanupRemaining, cleanupResetsAt, passEnabled } = useTier();
+  const visitorLocale = visitorPriceLocale({ country, indiaCheckoutOpen });
   const workspaceId = me.user.workspaceId;
   const currentOwner = useRef(workspaceId);
   currentOwner.current = workspaceId;
@@ -850,6 +852,7 @@ export function BillingScreen({
 
       <CurrentPlanCard
         plan={plan}
+        locale={visitorLocale}
         cleanupRemaining={cleanupRemaining}
         cleanupResetsAt={cleanupResetsAt}
         billingDark={billingDark}
@@ -1476,6 +1479,7 @@ export function PaymentProcessingNotice({
 
 function CurrentPlanCard({
   plan,
+  locale = 'usd',
   cleanupRemaining,
   cleanupResetsAt,
   billingDark,
@@ -1487,6 +1491,7 @@ function CurrentPlanCard({
   resumeCancellationError,
 }: {
   plan: BillingPlanView;
+  locale?: 'usd' | 'inr';
   cleanupRemaining: number | null;
   cleanupResetsAt: string | null;
   billingDark: boolean;
@@ -1523,7 +1528,7 @@ function CurrentPlanCard({
   // paid tier makes no price claim at all — nobody is charged one.
   const note = backingStatusNote(backing);
   const compNote = complimentaryNote(plan);
-  const priceLabel = currentPlanPriceLabel(plan);
+  const priceLabel = currentPlanPriceLabel(plan, locale);
   // "Next renewal <date>" claims THIS plan, at THIS price, renews then.
   // With a scheduled change that is false: on Pro annual with a
   // downgrade booked, the card read "Pro · $190/yr · Next renewal Jul
@@ -1704,8 +1709,7 @@ function CurrentPlanCard({
                 {formatBillingDate(backing.sub.currentPeriodEnd)
                   ? ` — next charge ${formatBillingDate(backing.sub.currentPeriodEnd)}`
                   : ' on its normal schedule'}
-                {currentPlanPriceLabel(plan) ? ` at ${currentPlanPriceLabel(plan)}` : ''}. You can
-                cancel again at any time.
+                {priceLabel ? ` at ${priceLabel}` : ''}. You can cancel again at any time.
               </p>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <Button

@@ -13,6 +13,7 @@ import {
   meterPreviewText,
   moneyAmount,
   passEndLabel,
+  launchPriceDisplay,
   priceLine,
   promoBanner,
   promoEndLabel,
@@ -80,6 +81,19 @@ describe('emails-cleared meter helpers', () => {
     expect(moneyAmount(PLUS_ANNUAL_2026_10.inrPaise, 'inr')).toBe('₹1,999');
     expect(priceLine(OFFERS.backlogPass.price, 'usd')).toBe('$19');
     expect(priceLine(PLUS_ANNUAL_2026_10, 'inr')).toBe('₹1,999 incl. GST');
+    expect(launchPriceDisplay('usd')).toEqual({
+      free: { amount: '$0', per: '' },
+      plus: { amount: '$59', per: '/yr' },
+      plusLine: '$59 a year',
+      passLine: '$19 once',
+    });
+    expect(launchPriceDisplay('inr')).toEqual({
+      free: { amount: '₹0', per: '' },
+      plus: { amount: '₹1,999', per: '/yr' },
+      plusLine: '₹1,999 a year',
+      passLine: '₹799 once',
+    });
+    expect(JSON.stringify(launchPriceDisplay('inr'))).not.toContain('$');
     expect(promoEndLabel()).toBe('Nov 3, 11:59 PM PT');
     for (const value of [
       moneyAmount(5900, 'usd'),

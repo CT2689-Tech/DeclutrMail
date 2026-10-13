@@ -9,6 +9,7 @@
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import {
   fillStory,
+  launchPriceDisplay,
   passEndLabel,
   PLUS_ANNUAL_2026_10,
   plusAmount,
@@ -72,9 +73,13 @@ export function quotedPlanPrice(
  * The only Plus price a new launch checkout sells. INR uses the launch
  * price line; USD is the annual amount. This is not the legacy $9 or $90.
  */
-export function launchPlusQuote(provider: BillingProviderId = 'paddle'): string {
+export function launchPlusQuote(
+  provider: BillingProviderId = 'paddle',
+  locale: 'usd' | 'inr' = 'usd',
+): string {
+  if (locale === 'inr') return launchPriceDisplay('inr').plusLine;
   if (provider === 'razorpay') return priceLine(PLUS_ANNUAL_2026_10, 'inr');
-  return fillStory(WS1_COPY['price.plusLine']);
+  return launchPriceDisplay('usd').plusLine;
 }
 
 /**
@@ -471,7 +476,10 @@ export function deriveBillingViewState(read: BillingReadSnapshot): BillingViewSt
  * (nobody is charged one); the old quotedPlanPrice headline printed a
  * price for a plan nobody was paying for (A6).
  */
-export function currentPlanPriceLabel(view: BillingPlanView): string {
+export function currentPlanPriceLabel(
+  view: BillingPlanView,
+  locale: 'usd' | 'inr' = 'usd',
+): string {
   if (view.backing.state !== 'none') {
     const { sub } = view.backing;
     return (
@@ -486,10 +494,10 @@ export function currentPlanPriceLabel(view: BillingPlanView): string {
       ) ?? ''
     );
   }
-  if (view.entitlementTier === 'free') return formatUsd(0);
+  if (view.entitlementTier === 'free') return launchPriceDisplay(locale).free.amount;
   // A Backlog Pass is a paid grant, not a complimentary one. The deck
   // names it and prices it once; "Complimentary" is only a comp.
-  if (passCoversPlan(view)) return fillStory(WS1_COPY['price.passLine']);
+  if (passCoversPlan(view)) return launchPriceDisplay(locale).passLine;
   // A comp is the reason there is no price, so say so instead of the
   // generic line. Only when the grant reaches the tier being named: a
   // comped Plus sitting on a paid-but-non-backing Pro row is not a
