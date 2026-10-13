@@ -328,8 +328,8 @@ export default function PrivacyPolicyPage() {
               <td>Web application hosting; cookieless page-view counts on public website pages</td>
             </tr>
             <tr>
-              <td>Upstash</td>
-              <td>Redis — job queues and rate limiting</td>
+              <td>Upstash Redis</td>
+              <td>runs background tasks, like scanning your Gmail.</td>
             </tr>
             <tr>
               <td>Sentry</td>

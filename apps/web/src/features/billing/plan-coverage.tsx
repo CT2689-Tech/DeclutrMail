@@ -34,7 +34,7 @@ export function PlanCoverage({ tier, pass = false }: { tier: TierId; pass?: bool
     >
       <h2 style={{ ...tokens.typography.sectionTitle, margin: 0 }}>Your plan includes</h2>
       <div>
-        {connectedInboxes ?? 0} of {plan.inboxLimit} connected inboxes ·{' '}
+        {connectedInboxes ?? 0} of {plan.inboxLimit} connected Gmail accounts ·{' '}
         <Link className={`${linkStyles.link} dm-tap-target`} href="/settings">
           Manage inboxes
         </Link>

@@ -260,6 +260,8 @@ describe('public learning content registry', () => {
     expect(copy).toMatch(/Gmail(?:’s)? (?:short )?(?:generated )?preview snippet/i);
     expect(copy).toMatch(/does store Gmail preview snippets/i);
     expect(copy).toMatch(/Daily Brief.{0,140}Anthropic/i);
+    expect(copy).toContain('our system logs');
+    expect(copy).not.toContain('worker logs');
   });
 
   it('states the undo-window truth on the FAQ answer instead of a false plan-dependency claim (D245)', () => {

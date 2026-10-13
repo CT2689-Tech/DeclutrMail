@@ -162,7 +162,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         title: 'Derived facts need their own threat model',
         paragraphs: [
           'A system can avoid bodies and still accumulate a revealing behavioral graph. Sender frequency, read rate, who you write back to, last-seen dates, Protected status, decisions, and activity history describe relationships and habits. Data minimization must therefore cover retention, access, logs, exports, and deletion for derived records as well as raw API fields.',
-          'DeclutrMail’s product needs those aggregates to rank senders and explain recommendations. Observability payloads, worker logs, and error reports are separately barred from carrying email addresses, subjects, snippets, bodies, or OAuth tokens. The principle is containment: a field belongs only in the narrow path that needs it.',
+          'DeclutrMail’s product needs those aggregates to rank senders and explain recommendations. Observability payloads, our system logs, and error reports are separately barred from carrying email addresses, subjects, snippets, bodies, or OAuth tokens. The principle is containment: a field belongs only in the narrow path that needs it.',
           'Exports similarly separate datasets. A sender decision export should not quietly become a second message-content archive.',
         ],
       },
