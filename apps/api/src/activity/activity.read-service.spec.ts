@@ -75,6 +75,23 @@ async function seedMailbox(db: Db, email: string) {
   return { workspaceId: ws!.id, userId: user!.id, mailboxAccountId: mb!.id };
 }
 
+async function seedIndexedMessage(
+  db: Db,
+  mailboxAccountId: string,
+  senderKey: string,
+  providerMessageId: string,
+): Promise<void> {
+  await db.insert(mailMessages).values({
+    mailboxAccountId,
+    providerMessageId,
+    providerThreadId: `t-${providerMessageId}`,
+    senderKey,
+    internalDate: new Date(NOW_MS - 2 * ONE_DAY_MS),
+    isUnread: false,
+    labelIds: ['INBOX'],
+  });
+}
+
 async function seedSender(
   db: Db,
   mailboxAccountId: string,
@@ -197,6 +214,9 @@ async function seedExecutionAttempt(
     rootActionId?: string | null;
     retryOfActionId?: string | null;
     recoveryAttempt?: number;
+    affectedCount?: number;
+    resolvedMessageIds?: string[];
+    updatedAt?: Date;
   },
 ): Promise<string> {
   actionKeySequence += 1;
@@ -208,13 +228,14 @@ async function seedExecutionAttempt(
       verb,
       direction: 'forward',
       selector: { type: 'sender', senderId: args.senderId, senderKey: args.senderKey },
-      resolvedMessageIds: [`message-${actionKeySequence}`],
+      resolvedMessageIds: args.resolvedMessageIds ?? [`message-${actionKeySequence}`],
+      affectedCount: args.affectedCount ?? 0,
       requestedCount: args.requestedCount ?? 1,
       status: args.status,
       idempotencyKey: `activity-execution-${actionKeySequence}`,
       errorCode: args.errorCode ?? null,
       createdAt: args.createdAt,
-      updatedAt: args.createdAt,
+      updatedAt: args.updatedAt ?? args.createdAt,
       rootActionId: args.rootActionId ?? null,
       retryOfActionId: args.retryOfActionId ?? null,
       recoveryAttempt: args.recoveryAttempt ?? 0,
@@ -1139,6 +1160,359 @@ describe('ActivityReadService', () => {
       expect(failedOnly.stats.needsAttention).toBe(failedOnly.rows.length);
     });
 
+    /**
+     * Dogfood 30-day shape: five unsubscribe failures plus three
+     * zero-effect Delete lineages. One failure has a later acceptance,
+     * one sender is gone with no indexed messages, and each Delete was
+     * followed by a Delete that landed. 8 becomes 3, on the badge and
+     * on the failed list.
+     */
+    it('drops settled failures from the count and the failed list', async () => {
+      const mailboxId = mailboxA.mailboxAccountId;
+      const openUnconfirmed = 'a'.repeat(64);
+      const acceptedAfterFailure = 'b'.repeat(64);
+      const goneSender = 'c'.repeat(64);
+      const openFailed = 'd'.repeat(64);
+      const openUnconfirmedLater = 'e'.repeat(64);
+      const deleted = ['f', 'g', 'h'].map((letter) => letter.repeat(64));
+
+      await seedSender(db, mailboxId, openUnconfirmed, 'open-a@example.com', 'Open A');
+      await seedIndexedMessage(db, mailboxId, openUnconfirmed, 'msg-open-a');
+      await seedSender(db, mailboxId, acceptedAfterFailure, 'later@example.com', 'Later Ok');
+      await seedIndexedMessage(db, mailboxId, acceptedAfterFailure, 'msg-later');
+      await seedSender(db, mailboxId, openFailed, 'open-d@example.com', 'Open D');
+      await seedIndexedMessage(db, mailboxId, openFailed, 'msg-open-d');
+      await seedSender(db, mailboxId, openUnconfirmedLater, 'open-e@example.com', 'Open E');
+      await seedIndexedMessage(db, mailboxId, openUnconfirmedLater, 'msg-open-e');
+
+      const openIds = [
+        await seedActivity(db, {
+          mailboxAccountId: mailboxId,
+          occurredAt: new Date(NOW_MS - 10 * ONE_DAY_MS),
+          source: 'manual',
+          action: 'unsubscribe_unconfirmed',
+          affectedCount: 0,
+          senderKey: openUnconfirmed,
+        }),
+        await seedActivity(db, {
+          mailboxAccountId: mailboxId,
+          occurredAt: new Date(NOW_MS - 3 * ONE_DAY_MS),
+          source: 'manual',
+          action: 'unsubscribe_failed',
+          affectedCount: 0,
+          senderKey: openFailed,
+        }),
+        await seedActivity(db, {
+          mailboxAccountId: mailboxId,
+          occurredAt: new Date(NOW_MS - 3 * ONE_DAY_MS + 1000),
+          source: 'manual',
+          action: 'unsubscribe_unconfirmed',
+          affectedCount: 0,
+          senderKey: openUnconfirmedLater,
+        }),
+      ];
+      await seedActivity(db, {
+        mailboxAccountId: mailboxId,
+        occurredAt: new Date(NOW_MS - 9 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe_failed',
+        affectedCount: 0,
+        senderKey: acceptedAfterFailure,
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxId,
+        occurredAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe_endpoint_accepted',
+        affectedCount: 0,
+        senderKey: acceptedAfterFailure,
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxId,
+        occurredAt: new Date(NOW_MS - 8 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe_unconfirmed',
+        affectedCount: 0,
+        senderKey: goneSender,
+      });
+
+      for (const senderKey of deleted) {
+        const senderId = await seedSender(
+          db,
+          mailboxId,
+          senderKey,
+          `${senderKey.slice(0, 1)}@example.com`,
+          `Deleted ${senderKey.slice(0, 1)}`,
+        );
+        await seedExecutionAttempt(db, {
+          mailboxAccountId: mailboxId,
+          senderId,
+          senderKey,
+          verb: 'delete',
+          status: 'failed',
+          errorCode: 'PostgresError',
+          affectedCount: 0,
+          resolvedMessageIds: [],
+          createdAt: new Date(NOW_MS - 9 * ONE_DAY_MS),
+        });
+        await seedActivity(db, {
+          mailboxAccountId: mailboxId,
+          occurredAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+          source: 'manual',
+          action: 'delete',
+          affectedCount: 4,
+          senderKey,
+        });
+      }
+
+      const failedOnly = await svc.listActivity({
+        mailboxAccountId: mailboxId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+        outcomes: ['failed'],
+      });
+      expect(failedOnly.stats.needsAttention).toBe(3);
+      expect(failedOnly.allTimeStats.needsAttention).toBe(3);
+      expect(failedOnly.rows.map((row) => row.id).sort()).toEqual([...openIds].sort());
+    });
+
+    it('keeps real open failures and settles each resolution kind', async () => {
+      const mailboxId = mailboxA.mailboxAccountId;
+      const kept: string[] = [];
+
+      const confirmedKey = 'u1'.padEnd(64, '1');
+      const markedSentKey = 'u2'.padEnd(64, '2');
+      const revertedKey = 'u3'.padEnd(64, '3');
+      const earlierKey = 'u4'.padEnd(64, '4');
+      const senderStaysKey = 'u5'.padEnd(64, '5');
+      const messagesStayKey = 'u6'.padEnd(64, '6');
+      const otherMailboxKey = 'u7'.padEnd(64, '7');
+      const archiveKey = 'a1'.padEnd(64, 'a');
+      const laterKey = 'l1'.padEnd(64, 'l');
+      const otherVerbKey = 'd1'.padEnd(64, 'd');
+      const namedMessagesKey = 'd2'.padEnd(64, 'e');
+      const affectedKey = 'd3'.padEnd(64, 'f');
+
+      const senderIds = new Map<string, string>();
+      for (const [key, email] of [
+        [confirmedKey, 'confirmed@example.com'],
+        [markedSentKey, 'marked@example.com'],
+        [revertedKey, 'reverted@example.com'],
+        [earlierKey, 'earlier@example.com'],
+        [senderStaysKey, 'stays@example.com'],
+        [otherMailboxKey, 'cross@example.com'],
+        [archiveKey, 'archive@example.com'],
+        [laterKey, 'later@example.com'],
+        [otherVerbKey, 'other-verb@example.com'],
+        [namedMessagesKey, 'named@example.com'],
+        [affectedKey, 'affected@example.com'],
+      ] as const) {
+        senderIds.set(key, await seedSender(db, mailboxId, key, email, email));
+      }
+
+      await seedActivity(db, {
+        mailboxAccountId: mailboxId,
+        occurredAt: new Date(NOW_MS - 6 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe_unavailable',
+        affectedCount: 0,
+        senderKey: confirmedKey,
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe_confirmed',
+        affectedCount: 0,
+        senderKey: confirmedKey,
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxId,
+        occurredAt: new Date(NOW_MS - 6 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe_unconfirmed',
+        affectedCount: 0,
+        senderKey: markedSentKey,
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe_user_marked_sent',
+        affectedCount: 0,
+        senderKey: markedSentKey,
+      });
+
+      kept.push(
+        await seedActivity(db, {
+          mailboxAccountId: mailboxId,
+          occurredAt: new Date(NOW_MS - 6 * ONE_DAY_MS),
+          source: 'manual',
+          action: 'unsubscribe_failed',
+          affectedCount: 0,
+          senderKey: revertedKey,
+        }),
+      );
+      await seedActivity(db, {
+        mailboxAccountId: mailboxId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe_endpoint_accepted',
+        affectedCount: 0,
+        senderKey: revertedKey,
+        revertedAt: new Date(NOW_MS - 12 * 60 * 60 * 1000),
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxId,
+        occurredAt: new Date(NOW_MS - 10 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe_endpoint_accepted',
+        affectedCount: 0,
+        senderKey: earlierKey,
+      });
+      kept.push(
+        await seedActivity(db, {
+          mailboxAccountId: mailboxId,
+          occurredAt: new Date(NOW_MS - 4 * ONE_DAY_MS),
+          source: 'manual',
+          action: 'unsubscribe_failed',
+          affectedCount: 0,
+          senderKey: earlierKey,
+        }),
+      );
+      kept.push(
+        await seedActivity(db, {
+          mailboxAccountId: mailboxId,
+          occurredAt: new Date(NOW_MS - 4 * ONE_DAY_MS),
+          source: 'manual',
+          action: 'unsubscribe_unconfirmed',
+          affectedCount: 0,
+          senderKey: senderStaysKey,
+        }),
+      );
+      await seedIndexedMessage(db, mailboxId, messagesStayKey, 'msg-gone-sender');
+      kept.push(
+        await seedActivity(db, {
+          mailboxAccountId: mailboxId,
+          occurredAt: new Date(NOW_MS - 4 * ONE_DAY_MS),
+          source: 'manual',
+          action: 'unsubscribe_failed',
+          affectedCount: 0,
+          senderKey: messagesStayKey,
+        }),
+      );
+      kept.push(
+        await seedActivity(db, {
+          mailboxAccountId: mailboxId,
+          occurredAt: new Date(NOW_MS - 4 * ONE_DAY_MS),
+          source: 'manual',
+          action: 'unsubscribe_failed',
+          affectedCount: 0,
+          senderKey: otherMailboxKey,
+        }),
+      );
+      await seedActivity(db, {
+        mailboxAccountId: mailboxB.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe_endpoint_accepted',
+        affectedCount: 0,
+        senderKey: otherMailboxKey,
+      });
+
+      const failureAt = new Date(NOW_MS - 5 * ONE_DAY_MS);
+      const landedAt = new Date(NOW_MS - ONE_DAY_MS);
+      await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxId,
+        senderId: senderIds.get(archiveKey)!,
+        senderKey: archiveKey,
+        verb: 'archive',
+        status: 'failed',
+        affectedCount: 0,
+        resolvedMessageIds: [],
+        createdAt: failureAt,
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxId,
+        occurredAt: landedAt,
+        source: 'manual',
+        action: 'archive',
+        senderKey: archiveKey,
+      });
+      await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxId,
+        senderId: senderIds.get(laterKey)!,
+        senderKey: laterKey,
+        verb: 'later',
+        status: 'failed',
+        affectedCount: 0,
+        resolvedMessageIds: [],
+        createdAt: failureAt,
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxId,
+        occurredAt: landedAt,
+        source: 'manual',
+        action: 'later',
+        senderKey: laterKey,
+      });
+
+      for (const [senderKey, verb, extra] of [
+        [otherVerbKey, 'delete', { resolvedMessageIds: [] as string[], affectedCount: 0 }],
+        [namedMessagesKey, 'delete', { resolvedMessageIds: ['named-message'], affectedCount: 0 }],
+        [affectedKey, 'delete', { resolvedMessageIds: [] as string[], affectedCount: 3 }],
+      ] as const) {
+        kept.push(
+          await seedExecutionAttempt(db, {
+            mailboxAccountId: mailboxId,
+            senderId: senderIds.get(senderKey)!,
+            senderKey,
+            verb,
+            status: 'failed',
+            affectedCount: extra.affectedCount,
+            resolvedMessageIds: [...extra.resolvedMessageIds],
+            createdAt: failureAt,
+          }),
+        );
+      }
+      await seedActivity(db, {
+        mailboxAccountId: mailboxId,
+        occurredAt: landedAt,
+        source: 'manual',
+        action: 'archive',
+        senderKey: otherVerbKey,
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxId,
+        occurredAt: landedAt,
+        source: 'manual',
+        action: 'delete',
+        senderKey: namedMessagesKey,
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxId,
+        occurredAt: landedAt,
+        source: 'manual',
+        action: 'delete',
+        senderKey: affectedKey,
+      });
+
+      const failedOnly = await svc.listActivity({
+        mailboxAccountId: mailboxId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+        outcomes: ['failed'],
+      });
+      expect(failedOnly.stats.needsAttention).toBe(kept.length);
+      expect(failedOnly.rows.map((row) => row.id).sort()).toEqual([...kept].sort());
+    });
+
     it('preserves tenant, source, verb, sender, window, and cursor semantics', async () => {
       const senderKey = 'execution-filtered';
       const senderId = await seedSender(
@@ -1787,16 +2161,18 @@ describe('ActivityReadService', () => {
       expect(result.allTimeStats.noisePreventedPerMonth).toBe(3);
     });
 
-    it('starts all three statistics reads before the grouped read completes', async () => {
+    it('starts the statistics reads before the grouped read completes', async () => {
       let release!: (rows: { action: string; n: number }[]) => void;
       const grouped = new Promise<{ action: string; n: number }[]>((resolve) => {
         release = resolve;
       });
       const impactRead = vi.fn(() => Promise.resolve([{ deflectedSenders: 1, last90Total: 9 }]));
+      const openUnsubRead = vi.fn(() => Promise.resolve([{ n: 0 }]));
       const select = vi
         .fn()
         .mockReturnValueOnce({ from: () => ({ where: () => ({ groupBy: () => grouped }) }) })
-        .mockReturnValueOnce({ from: () => ({ leftJoin: impactRead }) });
+        .mockReturnValueOnce({ from: () => ({ leftJoin: impactRead }) })
+        .mockReturnValueOnce({ from: () => ({ where: openUnsubRead }) });
       const fakeDb = {
         select,
         selectDistinct: () => ({
@@ -1822,6 +2198,7 @@ describe('ActivityReadService', () => {
       });
       try {
         expect(impactRead).toHaveBeenCalledOnce();
+        expect(openUnsubRead).toHaveBeenCalledOnce();
         expect(failures).toHaveBeenCalledOnce();
       } finally {
         release([{ action: 'archive', n: 1 }]);
@@ -1929,6 +2306,7 @@ describe('ActivityReadService', () => {
 
     it('surfaces failed/unconfirmed unsubscribe outcomes as needing attention', async () => {
       const senderKey = 'f'.repeat(64);
+      await seedSender(db, mailboxA.mailboxAccountId, senderKey, 'failed@example.com', 'Failed');
       for (const [action, daysAgo] of [
         ['unsubscribe', 3],
         ['unsubscribe_failed', 2],
