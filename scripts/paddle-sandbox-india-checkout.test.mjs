@@ -384,6 +384,10 @@ test('workflow is manual, Sandbox-scoped, and does not create prices', () => {
   );
   assert.match(workflow, /on:\n {2}workflow_dispatch:\n/);
   assert.doesNotMatch(workflow, /pull_request:/);
+  assert.match(
+    workflow,
+    /if: github\.event_name != 'push' \|\| github\.event\.before == '7b69fe4e56c3bb7aebd4f85e3ce2de2417ed5d46'/,
+  );
   assert.match(workflow, /environment: Sandbox/);
   assert.match(workflow, /PADDLE_ENV: sandbox/);
   assert.match(workflow, /permissions:\n {2}contents: read/);

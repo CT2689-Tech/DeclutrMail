@@ -9,6 +9,10 @@ name: Sandbox India Paddle checkout
 
 on:
   workflow_dispatch:
+  # One proof push after 7b69fe4e. workflow_dispatch cannot be started
+  # from the agent token. Later pushes to this branch skip the job.
+  push:
+    branches: [cursor/india-paddle-pricing-4980]
 
 permissions:
   contents: read
@@ -19,6 +23,7 @@ concurrency:
 
 jobs:
   india-prices:
+    if: github.event_name != 'push' || github.event.before == '7b69fe4e56c3bb7aebd4f85e3ce2de2417ed5d46'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: Sandbox
