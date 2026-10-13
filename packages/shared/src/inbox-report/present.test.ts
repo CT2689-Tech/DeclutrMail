@@ -59,7 +59,7 @@ describe('report presentation', () => {
       vendorKey: 'unroll_me',
     };
     expect(reportHeadline(thirdParty).sentence).toBe(
-      '20,950 emails (about 1.2 GB) are filed under Unroll.me labels in your Gmail.',
+      '20,950 emails (about 1.2 GB) are filed under labels from other apps in your Gmail.',
     );
     const large: InboxReportInsight = {
       id: 'large_mail',

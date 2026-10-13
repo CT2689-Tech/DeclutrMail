@@ -199,7 +199,7 @@
   "report.sizesNote": "Sizes are Gmail’s estimates.",
   "report.thirdParty": {
     "one": "1 email (about {size}) is filed under a {Vendor} label in your Gmail.",
-    "other": "{count} emails (about {size}) are filed under {Vendor} labels in your Gmail."
+    "other": "{count} emails (about {size}) are filed under labels from other apps in your Gmail."
   },
   "report.thirdParty.detail": "{Vendor} created these labels. The email is still in your Gmail and still counts toward your Google storage. Email it marked read isn’t counted as read in this report.",
   "report.thirdParty.recent": "{recent} arrived in the last 90 days.",

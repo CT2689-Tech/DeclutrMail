@@ -56,7 +56,7 @@ describe('PublicHeader auth entry', () => {
         '/home',
       );
       expect(screen.queryByRole('link', { name: 'Sign in' })).not.toBeInTheDocument();
-      fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
       const mobile = within(screen.getByRole('navigation', { name: 'Mobile navigation' }));
       expect(mobile.getByRole('link', { name: 'Open DeclutrMail' })).toHaveAttribute(
         'href',
@@ -87,7 +87,7 @@ describe('PublicHeader auth entry', () => {
     for (const label of ['How it works', 'Pricing', 'Demo', 'Compare', 'Privacy & control']) {
       expect(desktop.getByRole('link', { name: label })).toBeInTheDocument();
     }
-    fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
     const mobile = within(screen.getByRole('navigation', { name: 'Mobile navigation' }));
     for (const label of ['How it works', 'Pricing', 'Demo', 'Compare', 'Privacy & control']) {
       expect(mobile.getByRole('link', { name: label })).toBeInTheDocument();
