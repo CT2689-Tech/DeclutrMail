@@ -44,6 +44,54 @@ process.stdout.write(
                 Newsletter
               </a>
             </div>
+            <div role="group" aria-label="Saved filters" style={{ display: 'flex', gap: 8 }}>
+              <button type="button" className="dm-tap-44">
+                Mostly unread (90 days)
+              </button>
+              <button type="button" className="dm-tap-44">
+                Has unsubscribe link
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button type="button" className="dm-tap-44 dm-fixed-40">
+                Mail in Inbox
+              </button>
+              <button type="button" className="dm-tap-44 dm-fixed-40">
+                Filter
+              </button>
+              <button type="button" className="dm-tap-44 dm-fixed-40">
+                Sort: Most received
+              </button>
+            </div>
+            <p style={{ fontSize: 13, margin: 0 }}>
+              <a className="dm-tap-target" href="/billing">
+                See plans
+              </a>
+            </p>
+            <section className="dm-report" aria-label="Your Inbox Report">
+              <header>
+                <span>Report</span>
+                <button type="button" className="dm-tap-44" aria-label="Close Inbox Report">
+                  ×
+                </button>
+              </header>
+              <p style={{ fontSize: 13, margin: 0 }}>
+                <a className="dm-tap-target" href="/settings/privacy">
+                  What we store and share
+                </a>
+              </p>
+            </section>
+            <a className="dm-external-link dm-tap-target" href="/privacy#ai-processing">
+              How we use AI
+            </a>
+            <button
+              type="button"
+              className="dm-tap-44"
+              aria-label="More actions for Newsletter"
+              style={{ width: 32, height: 32, padding: 0 }}
+            >
+              ⋯
+            </button>
             <div style={{ height: 1400 }} />
             <div id="shell-end" style={{ height: 48, background: '#c45c26' }}>
               End of page

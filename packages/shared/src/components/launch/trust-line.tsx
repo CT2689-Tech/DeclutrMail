@@ -8,7 +8,7 @@ export function TrustLine() {
   return (
     <p>
       {PRIVACY_BADGE_HEADLINE}{' '}
-      <a href="/settings/privacy#what-we-store">
+      <a className="dm-tap-target" href="/settings/privacy#what-we-store">
         What we store and share <span aria-hidden="true">→</span>
       </a>
     </p>

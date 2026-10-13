@@ -53,6 +53,10 @@ describe('InboxReportPanel', () => {
         onFixConfirmed={onFixConfirmed}
       />,
     );
+    expect(screen.getByRole('button', { name: 'Close Inbox Report' })).toHaveClass('dm-tap-44');
+    expect(screen.getByRole('link', { name: 'What we store and share' })).toHaveClass(
+      'dm-tap-target',
+    );
     expect(screen.getByText('91%')).toBeInTheDocument();
     expect(
       screen.getByText(

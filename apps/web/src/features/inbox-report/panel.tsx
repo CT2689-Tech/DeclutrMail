@@ -280,7 +280,12 @@ export function InboxReportPanel({
         <>
           <header>
             <span>{WS5_COPY['report.eyebrow']}</span>
-            <button type="button" aria-label={WS5_COPY['report.close.aria']} onClick={onDismiss}>
+            <button
+              type="button"
+              className="dm-tap-44"
+              aria-label={WS5_COPY['report.close.aria']}
+              onClick={onDismiss}
+            >
               ×
             </button>
           </header>
@@ -372,7 +377,10 @@ export function InboxReportPanel({
                 </div>
               ) : null}
               <p>
-                {WS5_COPY['report.trust']} <a href={trustHref}>{WS5_COPY['report.trust.link']}</a>
+                {WS5_COPY['report.trust']}{' '}
+                <a className="dm-tap-target" href={trustHref}>
+                  {WS5_COPY['report.trust.link']}
+                </a>
               </p>
               {celebration ? (
                 <div className="dm-report-celebrate" data-celebration>
