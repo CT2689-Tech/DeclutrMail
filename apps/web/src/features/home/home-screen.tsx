@@ -134,7 +134,10 @@ export function HomeScreen() {
       {
         onSuccess: (result) => {
           toastUnsubscribeBacklog(result);
-          const next = celebrationFromUnsubscribeBacklog(result);
+          const next = celebrationFromUnsubscribeBacklog(result, {
+            senderKeys: step.senderIds,
+            generatedAt: report.data?.generatedAt,
+          });
           if (next) {
             writeReportCelebration(mailbox, next);
             if (next.actionId && next.actionHandle) {

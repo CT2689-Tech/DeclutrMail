@@ -340,6 +340,9 @@ describe('HomeScreen', () => {
     expect(localStorage.getItem('dm-inbox-report-celebration:mb-1')).toContain(
       '"actionId":"act-1"',
     );
+    expect(localStorage.getItem('dm-inbox-report-celebration:mb-1')).toContain(
+      '"senderKeys":["s1","s2"]',
+    );
     await waitFor(() => expect(statusReads).toContain('/api/actions/act-1'));
     localStorage.removeItem('dm-inbox-report-celebration:mb-1');
   });

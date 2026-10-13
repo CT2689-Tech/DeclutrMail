@@ -30,6 +30,13 @@ export interface ReportCelebration {
   actionId?: string;
   /** Which status route `actionId` belongs to. */
   actionHandle?: 'action' | 'batch';
+  /**
+   * Fix-set sender ids this result closed. Absent on rows stored before
+   * the field existed; those stay until Undo clears them.
+   */
+  senderKeys?: string[];
+  /** `generatedAt` of the report this result was confirmed against. */
+  fixGeneratedAt?: string;
 }
 
 export function readReportCelebration(mailboxId: string): ReportCelebration | null {
@@ -46,6 +53,8 @@ export function readReportCelebration(mailboxId: string): ReportCelebration | nu
       manual?: unknown;
       actionId?: unknown;
       actionHandle?: unknown;
+      senderKeys?: unknown;
+      fixGeneratedAt?: unknown;
     };
     if (typeof parsed.archived !== 'number' || typeof parsed.senders !== 'number') return null;
     const bytes =
@@ -66,6 +75,13 @@ export function readReportCelebration(mailboxId: string): ReportCelebration | nu
       parsed.actionHandle === 'action' || parsed.actionHandle === 'batch'
         ? parsed.actionHandle
         : undefined;
+    const senderKeys = Array.isArray(parsed.senderKeys)
+      ? parsed.senderKeys.filter((id): id is string => typeof id === 'string' && id !== '')
+      : undefined;
+    const fixGeneratedAt =
+      typeof parsed.fixGeneratedAt === 'string' && parsed.fixGeneratedAt !== ''
+        ? parsed.fixGeneratedAt
+        : undefined;
     return {
       archived: parsed.archived,
       senders: parsed.senders,
@@ -74,6 +90,8 @@ export function readReportCelebration(mailboxId: string): ReportCelebration | nu
       ...(requested !== undefined ? { requested } : {}),
       ...(manual !== undefined ? { manual } : {}),
       ...(actionId !== undefined && actionHandle !== undefined ? { actionId, actionHandle } : {}),
+      ...(senderKeys !== undefined && senderKeys.length > 0 ? { senderKeys } : {}),
+      ...(fixGeneratedAt !== undefined ? { fixGeneratedAt } : {}),
     };
   } catch {
     return null;
@@ -83,4 +101,30 @@ export function readReportCelebration(mailboxId: string): ReportCelebration | nu
 export function writeReportCelebration(mailboxId: string, celebration: ReportCelebration): void {
   if (typeof localStorage === 'undefined') return;
   localStorage.setItem(celebrationKey(mailboxId), JSON.stringify(celebration));
+}
+
+/** Drop the stored result. The banner lives in localStorage; the same key is removed from sessionStorage. */
+export function clearReportCelebration(mailboxId: string): void {
+  const key = celebrationKey(mailboxId);
+  if (typeof localStorage !== 'undefined') localStorage.removeItem(key);
+  if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(key);
+}
+
+/**
+ * A stored result still describes this report when it recorded no fix set,
+ * when this is the snapshot it was confirmed against, or when every sender
+ * it closed is still out of the fix set. A later report that lists one of
+ * those senders again does not match.
+ */
+export function reportCelebrationMatchesFix(
+  celebration: ReportCelebration,
+  fix: { senderKeys: readonly string[]; generatedAt: string },
+): boolean {
+  const stored = celebration.senderKeys;
+  if (stored === undefined || stored.length === 0) return true;
+  if (celebration.fixGeneratedAt !== undefined && celebration.fixGeneratedAt === fix.generatedAt) {
+    return true;
+  }
+  const open = new Set(fix.senderKeys);
+  return stored.every((id) => !open.has(id));
 }
