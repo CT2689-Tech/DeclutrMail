@@ -21,7 +21,7 @@
  */
 
 import { queryOptions, useQuery } from '@tanstack/react-query';
-import { apiGet, ApiError } from '@/lib/api/client';
+import { apiGet, ApiError, isBenignTransportError } from '@/lib/api/client';
 import type { SyncStatus } from '@declutrmail/shared/contracts';
 
 export const SYNC_STATUS_KEY = ['sync', 'status'] as const;
@@ -34,6 +34,53 @@ export const SYNC_FAILED_POLL_MS = 10_000;
 
 /** Low-frequency health refresh after initial sync has completed. */
 export const SYNC_READY_POLL_MS = 60_000;
+
+/** Ceiling for the error backoff. A dead network must not poll every 10s all night. */
+export const SYNC_ERROR_BACKOFF_CAP_MS = 5 * 60_000;
+
+/**
+ * Delay before the next status read after a failure. Step 1 is the
+ * existing 10s probe; each later failure doubles it up to five minutes.
+ */
+export function syncErrorBackoffMs(failureStep: number): number {
+  const exponent = Math.min(Math.max(failureStep, 1) - 1, 5);
+  return Math.min(SYNC_FAILED_POLL_MS * 2 ** exponent, SYNC_ERROR_BACKOFF_CAP_MS);
+}
+
+const failureSteps = new Map<string, { errorUpdateCount: number; step: number }>();
+
+/**
+ * Consecutive failures for one status query. `errorUpdateCount` only
+ * moves when a fetch actually fails, so recomputing the interval for
+ * the same error does not climb the backoff. A success clears the step.
+ *
+ * A refetch of a failed read with no cached payload passes through
+ * `pending` and drops `error` for the duration of that attempt. That
+ * phase must keep the current step; treating it as "no error" reset
+ * the backoff on every poll.
+ */
+export function syncFailureStep(
+  queryKey: readonly unknown[],
+  errorUpdateCount: number,
+  phase: 'pending' | 'error' | 'success',
+): number {
+  const key = JSON.stringify(queryKey);
+  const previous = failureSteps.get(key);
+  if (phase === 'success') {
+    failureSteps.set(key, { errorUpdateCount, step: 0 });
+    return 0;
+  }
+  if (phase === 'pending') return previous?.step ?? 0;
+  if (previous && previous.errorUpdateCount === errorUpdateCount) return previous.step;
+  const step = (previous?.step ?? 0) + 1;
+  failureSteps.set(key, { errorUpdateCount, step });
+  return step;
+}
+
+/** Test isolation. The map is process-lifetime state. */
+export function resetSyncFailureSteps(): void {
+  failureSteps.clear();
+}
 
 /**
  * Freshness window for a cached status reading. Long enough that DevTools
@@ -62,11 +109,13 @@ export const SYNC_STATUS_STALE_TIME_MS = 30_000;
 export function syncRefetchInterval(
   data: SyncStatus | undefined,
   error: unknown = null,
+  failureStep = 1,
 ): number | false {
-  // Authorization/scope errors must not create a permanent 4xx poll storm.
-  // Network and server failures still need a slow probe: exhausting query
-  // retries must not freeze onboarding until the user changes tabs.
+  // Authorization and other permanent client errors must not create a
+  // 4xx poll storm. A timeout or dropped socket backs off instead: the
+  // read will be tried again, just not immediately. Auth failures stop.
   if (error) {
+    if (isBenignTransportError(error)) return syncErrorBackoffMs(failureStep);
     if (
       error instanceof ApiError &&
       error.status >= 400 &&
@@ -75,7 +124,7 @@ export function syncRefetchInterval(
     ) {
       return false;
     }
-    return SYNC_FAILED_POLL_MS;
+    return syncErrorBackoffMs(failureStep);
   }
   if (!data) return SYNC_POLL_MS;
   if (data.is_ready_for_triage) return SYNC_READY_POLL_MS;
@@ -94,11 +143,21 @@ export function syncStatusQueryOptions(mailboxId: string | undefined, reader: Sy
     queryKey: syncStatusQueryKey(mailboxId),
     queryFn: ({ signal }) => reader(signal),
     staleTime: SYNC_STATUS_STALE_TIME_MS,
-    refetchInterval: (query) =>
-      syncRefetchInterval(
-        query.state.data,
-        query.state.status === 'error' ? query.state.error : null,
-      ),
+    // The interval is the recovery. A fast query retry would turn one
+    // timed-out poll into several `ERR_TIMED_OUT` lines before the
+    // backoff above ever runs.
+    retry: false,
+    refetchInterval: (query) => {
+      const phase = query.state.status;
+      const step = syncFailureStep(query.queryKey, query.state.errorUpdateCount, phase);
+      if (phase === 'error') {
+        return syncRefetchInterval(query.state.data, query.state.error, step);
+      }
+      // The in-flight retry has no error object. Keep the backoff that
+      // was already earned instead of dropping back to the 3s cadence.
+      if (phase === 'pending' && step > 0) return syncErrorBackoffMs(step);
+      return syncRefetchInterval(query.state.data);
+    },
     // Home and the scan gate share this poll. Keep the interval while the
     // tab is hidden or offline; TanStack skips the tick and runs it again
     // when the tab returns. Returning false here would clear that timer.
@@ -115,7 +174,11 @@ export function syncStatusQueryOptions(mailboxId: string | undefined, reader: Sy
 export function useSyncStatus(mailboxId?: string, opts: { enabled?: boolean } = {}) {
   return useQuery({
     ...syncStatusQueryOptions(mailboxId, async (signal) => {
-      const envelope = await apiGet<SyncStatus>('/api/v1/sync/status', { signal, mailboxId });
+      const envelope = await apiGet<SyncStatus>('/api/v1/sync/status', {
+        signal,
+        mailboxId,
+        networkAttempts: 1,
+      });
       return envelope.data;
     }),
     // `enabled: false` lets the onboarding step machine hold the poll
