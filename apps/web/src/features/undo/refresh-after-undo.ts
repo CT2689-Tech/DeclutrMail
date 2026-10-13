@@ -82,9 +82,21 @@ function jobsRunning(qc: QueryClient): boolean {
     .some(([, groups]) => (groups ?? []).some(isRunning));
 }
 
-function sleep(ms: number): Promise<void> {
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
-    setTimeout(resolve, ms);
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 
@@ -97,17 +109,28 @@ function sleep(ms: number): Promise<void> {
  * The returned promise is the tray latch: the spent row stays hidden until
  * this settles.
  */
-export async function refreshAfterUndo(qc: QueryClient, mailboxId?: string): Promise<void> {
+export async function refreshAfterUndo(
+  qc: QueryClient,
+  mailboxId?: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (signal?.aborted) return;
   await invalidateUndoSurfaces(qc, mailboxId);
+  if (signal?.aborted) return;
   if (!hasActiveReport(qc) && !jobsRunning(qc)) return;
 
   let previous = reportCountSnapshot(qc);
   for (let attempt = 0; attempt < REBUILD_POLL_CAP; attempt += 1) {
+    if (signal?.aborted) return;
     // A tick that starts while jobs are still running cannot confirm the
     // count: the report rebuild often lands on the read after they stop.
     const idleBefore = !jobsRunning(qc);
-    await sleep(REBUILD_POLL_MS);
+    await sleep(REBUILD_POLL_MS, signal);
+    // Unmount and mailbox switch abort this wait. A tick that already
+    // started must not refetch a report the screen is no longer showing.
+    if (signal?.aborted) return;
     await invalidateUndoSurfaces(qc, mailboxId);
+    if (signal?.aborted) return;
     const next = reportCountSnapshot(qc);
     if (idleBefore && next === previous && !jobsRunning(qc)) return;
     previous = next;

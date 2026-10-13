@@ -4716,6 +4716,64 @@ describe('BillingScreen — one billing story (A6)', () => {
     ).toBeInTheDocument();
   });
 
+  it('keeps a Pass checkout_intent while an active Plus annual row has no Pass grant', async () => {
+    mockTier = 'plus';
+    mockCleanupRemaining = null;
+    const pending = writePendingCheckout(
+      'w',
+      'checkout_intent',
+      'free',
+      null,
+      'plus',
+      'annual',
+      'pass-attempt',
+      'pass_onetime',
+    );
+    let granted = false;
+    stubSubscription(() =>
+      jsonOk({
+        data: granted
+          ? {
+              checkoutSetupComplete: true,
+              tier: 'plus',
+              foundingMember: false,
+              subscription: null,
+              pendingCheckout: null,
+              complimentary: {
+                tier: 'plus',
+                expiresAt: '2026-11-12T00:00:00.000Z',
+                source: 'pass',
+              },
+            }
+          : {
+              ...PLUS_SUB,
+              checkoutSetupComplete: true,
+              subscription: { ...PLUS_SUB.subscription, cycle: 'annual' },
+            },
+      }),
+    );
+    renderScreen();
+
+    const notice = await screen.findByTestId('payment-processing-notice');
+    expect(notice).toHaveTextContent('confirming your plan');
+    // The unlock effect has a settled read here. Falling through to the
+    // Plus matcher would already have cleared this lock.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toEqual(pending);
+    expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+
+    granted = true;
+    await waitFor(
+      () => {
+        expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
+        expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+      },
+      { timeout: 8_000 },
+    );
+  });
+
   it('a reload keeps the stored Pass offer, so the grant clears the checkout notice', async () => {
     mockTier = 'plus';
     mockCleanupRemaining = null;

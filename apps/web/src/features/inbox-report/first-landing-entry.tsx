@@ -71,6 +71,13 @@ export function InboxReportFirstLanding(props: {
   const undoTokenRef = useRef<string | null>(null);
   undoTokenRef.current = undoToken;
   const releaseRef = useRef<() => void>(() => {});
+  const refreshAbort = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    refreshAbort.current = controller;
+    return () => controller.abort();
+  }, [mailboxId]);
 
   releaseRef.current = () => {
     clearReportCelebration(mailboxId);
@@ -79,7 +86,8 @@ export function InboxReportFirstLanding(props: {
     setRevertActionId(null);
     // The undo POST can resolve before the report rebuild. Refresh again
     // until the count settles, or Home and this panel keep the mid-rebuild read.
-    void refreshAfterUndo(queryClient, mailboxId);
+    // Unmount and a mailbox switch abort the wait.
+    void refreshAfterUndo(queryClient, mailboxId, refreshAbort.current?.signal);
   };
 
   useEffect(() => {

@@ -39,10 +39,15 @@ import { useTriageStore } from './store';
  * pill also calls this when a decision stops, and a Screener decision
  * leaves its queue only once its job lands, so the Screener is re-read too.
  */
-export function invalidateAfterUndo(qc: QueryClient, mailboxId?: string): Promise<void> {
+export function invalidateAfterUndo(
+  qc: QueryClient,
+  mailboxId?: string,
+  signal?: AbortSignal,
+): Promise<void> {
   // The promise is the tray latch: the revert slot stays taken until the
   // refreshed list lands, and until a following rebuild read agrees.
-  return refreshAfterUndo(qc, mailboxId);
+  // `signal` aborts that wait on unmount or a mailbox switch.
+  return refreshAfterUndo(qc, mailboxId, signal);
 }
 
 /** How long a neutral "nothing to do" note stays on the pill. */
@@ -164,6 +169,24 @@ export function ProductUndoTray({
    * that was just earned (flow gate 2026-09-20).
    */
   const [sessionGroups, setSessionGroups] = useState<ReadonlySet<string>>(new Set());
+  const refreshAbort = useRef<AbortController | null>(null);
+
+  // A capability from mailbox A must never stay hidden/polling after the
+  // chrome switches to mailbox B. Onboarding intentionally omits the prop;
+  // its single-mailbox mount therefore retains the original behavior.
+  // Declared before the job-stop effect: that effect reads this controller,
+  // and a switch must install the next one before the new mailbox refreshes.
+  useEffect(() => {
+    const controller = new AbortController();
+    refreshAbort.current = controller;
+    mailboxGeneration.current += 1;
+    setInFlight(null);
+    setOutcomes([]);
+    return () => {
+      mailboxGeneration.current += 1;
+      controller.abort();
+    };
+  }, [mailboxId]);
 
   useEffect(() => {
     const groups = inFlightQuery.data;
@@ -190,7 +213,7 @@ export function ProductUndoTray({
     if (stopped.length === 0) return;
     for (const g of stopped) reported.current.add(g.groupId);
     // Whatever it changed, every list that shows mail or undo is stale now.
-    void invalidateAfterUndo(qc, mailboxId);
+    void invalidateAfterUndo(qc, mailboxId, refreshAbort.current?.signal);
     // …and so is the cleanup allowance: a skip as Protected gives a Free
     // unit back, and a start we could not confirm may have spent one.
     void qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
@@ -214,18 +237,6 @@ export function ProductUndoTray({
     }
   }, [inFlightQuery.data, inFlightQuery.isError, mailboxId, qc]);
 
-  // A capability from mailbox A must never stay hidden/polling after the
-  // chrome switches to mailbox B. Onboarding intentionally omits the prop;
-  // its single-mailbox mount therefore retains the original behavior.
-  useEffect(() => {
-    mailboxGeneration.current += 1;
-    setInFlight(null);
-    setOutcomes([]);
-    return () => {
-      mailboxGeneration.current += 1;
-    };
-  }, [mailboxId]);
-
   /**
    * After a CONFIRMED undo, free the revert slot only once the refreshed
    * list has landed. Until then the cached rows still carry the token
@@ -242,7 +253,7 @@ export function ProductUndoTray({
       // tray never mounts that panel's own release path, so clear it here.
       if (mailboxId) clearReportCelebration(mailboxId);
       setInFlight((current) => (current ? { ...current, actionId: null } : current));
-      void invalidateAfterUndo(qc, mailboxId).finally(() => {
+      void invalidateAfterUndo(qc, mailboxId, refreshAbort.current?.signal).finally(() => {
         if (mailboxGeneration.current === generation) setInFlight(null);
       });
     },

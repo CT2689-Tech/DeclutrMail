@@ -373,15 +373,18 @@ export function BillingScreen({
       subscriptionQuery.isFetching
     )
       return;
-    if (
-      (pending.kind === 'checkout' || pending.kind === 'checkout_intent') &&
-      pending.offer === 'pass_onetime' &&
-      livePassGrant(data.complimentary)
-    ) {
-      clearPendingCheckout(workspaceId);
-      setPending(null);
-      void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
-      void queryClient.invalidateQueries();
+    // A Pass lock is only the grant. Returning here — granted or not —
+    // keeps an already-active Plus annual row from clearing it.
+    if (pending.offer === 'pass_onetime') {
+      if (
+        (pending.kind === 'checkout' || pending.kind === 'checkout_intent') &&
+        livePassGrant(data.complimentary)
+      ) {
+        clearPendingCheckout(workspaceId);
+        setPending(null);
+        void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
+        void queryClient.invalidateQueries();
+      }
       return;
     }
     const paid = data.subscription;
