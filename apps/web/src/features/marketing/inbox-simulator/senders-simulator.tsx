@@ -197,6 +197,16 @@ function totalCount(senders: readonly SampleSender[], reach: Reach, days: number
   return senders.reduce((total, sender) => total + actionCount(sender, reach, days), 0);
 }
 
+function previewBuckets(senders: readonly SampleSender[], reach: Reach) {
+  return {
+    all: totalCount(senders, reach, null),
+    olderThan30d: totalCount(senders, reach, 30),
+    olderThan90d: totalCount(senders, reach, 90),
+    olderThan180d: totalCount(senders, reach, 180),
+    olderThan365d: totalCount(senders, reach, 365),
+  };
+}
+
 function moveMail(
   sender: SampleSender,
   verb: 'archive' | 'delete' | 'later',
@@ -362,16 +372,19 @@ export function SendersSimulator() {
     targets: readonly SampleSender[],
     mode: 'archive' | 'delete' | 'unsub_only',
     requestedReach: Reach = 'inbox_only',
+    requestedWindow: number | null = null,
   ) => {
     if (targets.length === 0) return;
     const ids = new Set(targets.map((sender) => sender.id));
     const scope = mode === 'delete' ? requestedReach : 'inbox_only';
-    const n = totalCount(targets, scope, null);
+    const n = totalCount(targets, scope, requestedWindow);
     setSenders((current) =>
       current.map((sender) => {
         if (!ids.has(sender.id)) return sender;
         const moved =
-          mode === 'archive' || mode === 'delete' ? moveMail(sender, mode, scope, null) : sender;
+          mode === 'archive' || mode === 'delete'
+            ? moveMail(sender, mode, scope, requestedWindow)
+            : sender;
         return { ...moved, unsubRequested: true };
       }),
     );
@@ -514,6 +527,16 @@ export function SendersSimulator() {
         mailboxEmail="you@example.com"
         dismissed={reportDismissed}
         senderNames={senderNames}
+        fixPreviewCounts={{
+          inbox: previewBuckets(
+            senders.filter((s) => report.fix.senderKeys.includes(s.id)),
+            'inbox_only',
+          ),
+          allMail: previewBuckets(
+            senders.filter((s) => report.fix.senderKeys.includes(s.id)),
+            'all_mail',
+          ),
+        }}
         celebration={celebration}
         onDismiss={() => setReportDismissed(true)}
         onReopen={() => setReportDismissed(false)}
@@ -524,11 +547,12 @@ export function SendersSimulator() {
           setSelected(ids);
         }}
         trustHref="/privacy"
-        onFixConfirmed={(mode, scope) => {
+        onFixConfirmed={(mode, scope, days) => {
           applyUnsubscribe(
             senders.filter((sender) => report.fix.senderKeys.includes(sender.id)),
             mode,
             scope,
+            days,
           );
         }}
       />
@@ -786,11 +810,10 @@ export function SendersSimulator() {
               })),
             } as ActionRequest
           }
-          preferredInboxCount={pendingSenders.reduce(
-            (sum, sender) => sum + count(sender, 'inbox', null),
-            0,
-          )}
-          preferredAllMailCount={totalCount(pendingSenders, 'all_mail', null)}
+          preferredCounts={{
+            inbox: previewBuckets(pendingSenders, 'inbox_only'),
+            allMail: previewBuckets(pendingSenders, 'all_mail'),
+          }}
           {...(pendingSenders.length > 1
             ? {
                 bulkPreview: {
@@ -800,8 +823,8 @@ export function SendersSimulator() {
                       senderId: sender.id,
                       name: sender.name,
                       protected: false,
-                      counts: { all: count(sender, 'inbox', null) },
-                      allMailCounts: { all: actionCount(sender, 'all_mail', null) },
+                      counts: previewBuckets([sender], 'inbox_only'),
+                      allMailCounts: previewBuckets([sender], 'all_mail'),
                     })),
                   },
                 },
@@ -813,6 +836,7 @@ export function SendersSimulator() {
               pendingSenders,
               opts.secondary?.type ?? 'unsub_only',
               opts.reach ?? 'inbox_only',
+              opts.secondary?.olderThanDays ?? null,
             );
           }}
         />

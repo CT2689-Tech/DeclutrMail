@@ -10,11 +10,45 @@
 
 import { describe, expect, it } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { KeyboardCheatsheet, CheatsheetPanel } from './keyboard-cheatsheet';
 import { TriageKeyboardHelp } from '../triage/keyboard-help';
 
 describe('KeyboardCheatsheet', () => {
+  it.each([
+    ['Senders', KeyboardCheatsheet],
+    ['Triage', TriageKeyboardHelp],
+  ] as const)(
+    'cycles both dismissal controls and restores the entry point (%s)',
+    async (_name, Help) => {
+      const user = userEvent.setup();
+      render(
+        <>
+          <button>Outside</button>
+          <Help />
+        </>,
+      );
+      const trigger = screen.getByRole('button', { name: 'Outside' });
+      trigger.focus();
+      await user.keyboard('?');
+      const dialog = screen.getByRole('dialog', { name: 'Keyboard shortcuts' });
+      const close = within(dialog).getByRole('button', { name: 'Close shortcuts' });
+      const footerClose = within(dialog).getByRole('button', { name: 'Close' });
+      expect(close).toHaveFocus();
+      await user.tab();
+      expect(footerClose).toHaveFocus();
+      await user.tab();
+      expect(close).toHaveFocus();
+      await user.tab({ shift: true });
+      expect(footerClose).toHaveFocus();
+      await user.tab({ shift: true });
+      expect(close).toHaveFocus();
+      await user.keyboard('{Escape}');
+      expect(trigger).toHaveFocus();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    },
+  );
   it.each([
     ['Senders', KeyboardCheatsheet],
     ['Triage', TriageKeyboardHelp],

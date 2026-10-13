@@ -159,10 +159,15 @@ test('keyboard shortcut dialog traps and restores focus', async ({ page }) => {
   const close = dialog.getByRole('button', { name: 'Close shortcuts' });
   await expect(close).toBeFocused();
 
-  // This dialog has one interactive element. Both directions must cycle
-  // inside it instead of moving focus into the obscured application.
+  // Header and persistent-footer dismissal controls both belong to the
+  // dialog. Traverse each one, then wrap in both directions.
+  const footerClose = dialog.getByRole('button', { name: 'Close', exact: true });
+  await page.keyboard.press('Tab');
+  await expect(footerClose).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(close).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(footerClose).toBeFocused();
   await page.keyboard.press('Shift+Tab');
   await expect(close).toBeFocused();
 

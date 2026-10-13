@@ -211,24 +211,33 @@ export const Pane: Story<typeof SenderDetailPage> = {
     },
     layout: 'pane',
   },
-  render: (args: PageArgs) =>
-    frame(
-      <div
-        style={{
-          width: 440,
-          maxWidth: '100%',
-          height: 'min(760px, calc(100vh - 24px))',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          background: color.card,
-          border: `1px solid ${color.line}`,
-          borderRadius: 12,
-        }}
-      >
-        <SenderDetailPage {...args} />
-      </div>,
-    ),
+  render: (args: PageArgs) => paneFrame(args, 'min(760px, calc(100vh - 24px))'),
+};
+
+function paneFrame(args: PageArgs, height: string | number) {
+  return frame(
+    <div
+      style={{
+        width: 440,
+        maxWidth: '100%',
+        height,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        background: color.card,
+        border: `1px solid ${color.line}`,
+        borderRadius: 12,
+      }}
+    >
+      <SenderDetailPage {...args} />
+    </div>,
+  );
+}
+
+/** A short desktop inspector still gives its content the full scroll area. */
+export const PaneShortScreen: Story<typeof SenderDetailPage> = {
+  ...Pane,
+  render: (args: PageArgs) => paneFrame(args, 300),
 };
 
 /** Explicit deploy-skew/unknown count variant; never invent an empty inbox. */

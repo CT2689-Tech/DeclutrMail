@@ -35,6 +35,178 @@ describe('Unsubscribe uses the action preview contract', () => {
     allMail: { counts: { ...counts, all: 9 }, recentMessages: preview.recentMessages },
   };
 
+  it.each(['archive', 'delete'] as const)(
+    'previews the selected age and confirms the same %s cleanup range',
+    (mode) => {
+      const onConfirm = vi.fn();
+      render(
+        <ConfirmActionModal
+          request={request}
+          compositePreview={{
+            ...widePreview,
+            allMail: { ...widePreview.allMail, counts: { ...counts, all: 9, olderThan180d: 3 } },
+          }}
+          onCancel={vi.fn()}
+          onConfirm={onConfirm}
+        />,
+      );
+      if (mode === 'delete') {
+        fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+        fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+      }
+      const window = screen.getByRole('combobox', { name: 'How far back to act on' });
+      expect(window).toHaveValue('all');
+      fireEvent.change(window, { target: { value: '180' } });
+      expect(window).toHaveValue('180');
+      expect(screen.getByRole('heading')).toHaveTextContent(
+        mode === 'delete' ? 'delete 3 emails' : 'archive 1 email',
+      );
+      // Archive's inbox bucket is smaller than the widened Delete bucket.
+      if (mode === 'archive') {
+        expect(screen.getByRole('option', { name: '6 months+ · 1' })).toBeInTheDocument();
+      } else {
+        expect(screen.getByRole('option', { name: '6 months+ · 3' })).toBeInTheDocument();
+        expect(screen.getByRole('radio', { name: /^Inbox only 1/ })).toBeInTheDocument();
+        expect(screen.getByRole('radio', { name: /^Inbox \+ archived 3/ })).toBeChecked();
+      }
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: `Unsubscribe + ${mode === 'delete' ? 'Delete' : 'Archive'}`,
+        }),
+      );
+      expect(onConfirm).toHaveBeenCalledWith({
+        secondary: { type: mode, olderThanDays: 180 },
+        archiveHistoric: mode === 'archive',
+        ...(mode === 'delete' ? { reach: 'all_mail' } : {}),
+      });
+    },
+  );
+
+  it('keeps an empty range changeable and hides age for future-only unsubscribe', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={request}
+        compositePreview={preview}
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    );
+    fireEvent.change(screen.getByRole('combobox', { name: 'How far back to act on' }), {
+      target: { value: '365' },
+    });
+    expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeDisabled();
+    expect(screen.getByText(/No existing email matches this range/)).toBeVisible();
+    fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
+    expect(onConfirm).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
+    expect(screen.queryByRole('combobox', { name: 'How far back to act on' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
+    expect(onConfirm).toHaveBeenCalledWith({ secondary: null, archiveHistoric: false });
+    fireEvent.click(screen.getByRole('radio', { name: '+ Archive 0' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'How far back to act on' }), {
+      target: { value: 'all' },
+    });
+    expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeEnabled();
+  });
+
+  it('does not invent a missing age bucket or reuse a date range for another sender', () => {
+    const onConfirm = vi.fn();
+    const props = { request, onCancel: vi.fn(), onConfirm };
+    const { rerender } = render(<ConfirmActionModal {...props} compositePreview={preview} />);
+    fireEvent.change(screen.getByRole('combobox', { name: 'How far back to act on' }), {
+      target: { value: '90' },
+    });
+    rerender(
+      <ConfirmActionModal
+        {...props}
+        compositePreview={{ ...preview, counts: { all: 4 } as typeof counts }}
+      />,
+    );
+    expect(screen.getByRole('option', { name: '3 months+ · unavailable' })).toBeDisabled();
+    expect(screen.getByRole('heading')).not.toHaveTextContent('archive 0');
+    expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeDisabled();
+    fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
+    expect(onConfirm).not.toHaveBeenCalled();
+    rerender(
+      <ConfirmActionModal
+        {...props}
+        request={{ verb: 'Unsubscribe', senders: [makeSender({ id: 'another' })] }}
+        compositePreview={preview}
+      />,
+    );
+    expect(screen.getByRole('combobox', { name: 'How far back to act on' })).toHaveValue('all');
+    expect(screen.getByRole('heading')).toHaveTextContent('archive 4 emails');
+  });
+
+  it('uses eligible bulk age buckets for the title and each Details row, then locks on incomplete coverage', () => {
+    const second = makeSender({
+      id: 'second',
+      name: 'Second sample',
+      unsubscribeMethod: 'one_click',
+    });
+    const protectedSender = makeSender({ id: 'protected', name: 'Protected sample' });
+    const data = {
+      senders: [
+        { senderId: sender.id, name: sender.name, counts, protected: false },
+        {
+          senderId: second.id,
+          name: second.name,
+          counts: { ...counts, olderThan90d: 3 },
+          protected: false,
+        },
+        {
+          senderId: protectedSender.id,
+          name: protectedSender.name,
+          counts: { ...counts, olderThan90d: 500 },
+          protected: true,
+        },
+      ],
+      totals: { ...counts, all: 8, olderThan90d: 5 },
+      protectedCount: 1,
+    };
+    const props = {
+      request: { verb: 'Unsubscribe' as const, senders: [sender, second, protectedSender] },
+      onCancel: vi.fn(),
+      onConfirm: vi.fn(),
+    };
+    const { rerender } = render(
+      <ConfirmActionModal {...props} bulkPreview={{ data, loading: false, error: false }} />,
+    );
+    fireEvent.change(screen.getByRole('combobox', { name: 'How far back to act on' }), {
+      target: { value: '90' },
+    });
+    expect(screen.getByRole('heading')).toHaveTextContent('2 senders and archive 5 emails');
+    fireEvent.click(screen.getByText('Details'));
+    expect(screen.getByText(/Second sample: 3 emails/)).toBeVisible();
+    expect(screen.queryByText(/Protected sample.*500/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Archive' }));
+    expect(props.onConfirm).toHaveBeenCalledWith({
+      secondary: { type: 'archive', olderThanDays: 90 },
+      archiveHistoric: true,
+    });
+    props.onConfirm.mockClear();
+    rerender(
+      <ConfirmActionModal
+        {...props}
+        bulkPreview={{
+          data: {
+            ...data,
+            senders: data.senders.map((row) =>
+              row.senderId === second.id ? { ...row, counts: { all: 4 } as typeof counts } : row,
+            ),
+          },
+          loading: false,
+          error: false,
+        }}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeDisabled();
+    expect(screen.getByRole('heading')).not.toHaveTextContent('archive 2');
+    fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
+    expect(props.onConfirm).not.toHaveBeenCalled();
+  });
+
   it('previews and confirms Inbox + archived only for Delete, then resets on mode changes', () => {
     const onConfirm = vi.fn();
     render(

@@ -192,12 +192,13 @@ export function InboxReportFirstLanding(props: {
         setReportDismissed(mailboxId, false);
         setDismissed(false);
       }}
-      onFixConfirmed={(mode, reach) => {
+      onFixConfirmed={(mode, reach, olderThanDays) => {
         confirmBacklog.mutate(
           {
             mailboxId,
             mode,
             senderIds: report.fix.senderKeys,
+            ...(mode !== 'unsub_only' && olderThanDays != null ? { olderThanDays } : {}),
             ...(mode === 'delete' && reach ? { reach } : {}),
           },
           {
