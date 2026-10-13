@@ -201,7 +201,7 @@
     "one": "1 email (about {size}) is filed under a label from another app in your Gmail.",
     "other": "{count} emails (about {size}) are filed under labels from other apps in your Gmail."
   },
-  "report.thirdParty.detail": "Another app created these labels. The email is still in your Gmail and still counts toward your Google storage. Email that app marked read isn't counted as read in this report.",
+  "report.thirdParty.detail": "Another app created these labels. The email is still in your Gmail and still counts toward your Google storage. Email that app marked read isn’t counted as read in this report.",
   "report.thirdParty.recent": "{recent} arrived in the last 90 days.",
   "report.yearsDeep": "Your email goes back to {year}. {pct}% of it is more than 3 years old.",
   "report.top10": "{pct}% of your email comes from just 10 senders.",

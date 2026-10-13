@@ -73,7 +73,7 @@ describe('launch copy deck snapshots', () => {
 
   it('pins the third-party detail line and keeps competitor names out of the report', () => {
     expect(WS5_COPY['report.thirdParty.detail']).toBe(
-      "Another app created these labels. The email is still in your Gmail and still counts toward your Google storage. Email that app marked read isn't counted as read in this report.",
+      'Another app created these labels. The email is still in your Gmail and still counts toward your Google storage. Email that app marked read isn’t counted as read in this report.',
     );
     const reportCopy = JSON.stringify(
       Object.fromEntries(Object.entries(WS5_COPY).filter(([key]) => key.startsWith('report.'))),
