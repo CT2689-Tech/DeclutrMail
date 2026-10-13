@@ -13,6 +13,7 @@ import {
   type GmailDataProcessor,
 } from '@declutrmail/shared';
 import type { DataExportFormat } from '@declutrmail/shared/contracts';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 
 import { CookiePreferences } from '@/features/consent/cookie-preferences';
 import { DrillRow, SettingsGroup, SettingsRow } from '../settings-list';
@@ -127,12 +128,28 @@ function inventoryDisplayItem(item: {
   const processorDetail = item.transmittedTo
     .map((processor) => PROCESSOR_SENTENCE[processor])
     .join('');
-  const deletionDetail = deletionTriggerDetail(item.removalTrigger);
+  const retentionCopy = inventoryRetentionCopy(item.id, item.retention, item.removalTrigger);
   return {
     id: item.id,
     label: item.label,
-    detail: `${item.purpose} ${item.retention} ${deletionDetail} ${exportDetail}${processorDetail}`,
+    detail: `${item.purpose} ${retentionCopy} ${exportDetail}${processorDetail}`,
   };
+}
+
+/** Logo and audit rows carry their own retention sentence. Other rows keep the registry text. */
+function inventoryRetentionCopy(
+  itemId: string,
+  retention: string,
+  trigger: 'disconnect' | 'delete-indexed-data' | 'delete-account' | 'retention-policy',
+): string {
+  switch (itemId) {
+    case 'sender-logo-lookup':
+      return WS2_COPY.simplify.privacy.logoCache;
+    case 'mailbox-security-and-deletion-audit':
+      return WS2_COPY.simplify.privacy.auditRecords;
+    default:
+      return `${retention} ${deletionTriggerDetail(trigger)}`;
+  }
 }
 
 /**
@@ -159,7 +176,7 @@ function deletionTriggerDetail(
     case 'delete-account':
       return 'Kept if you delete one Gmail account’s data; deleted with your DeclutrMail account.';
     case 'retention-policy':
-      return 'Retained after mailbox or account deletion only under the stated operational retention policy.';
+      return WS2_COPY.simplify.privacy.keptLimited;
   }
 }
 
