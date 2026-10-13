@@ -136,8 +136,8 @@ export function PricingScreen() {
             {RAZORPAY_LIMITATIONS_NOTE} {PROVIDER_SWITCH_NOTE}
           </li>
           <li>
-            After a downgrade, existing connected inboxes keep working; you cannot add another while
-            above your plan’s inbox limit.
+            After a downgrade, existing connected Gmail accounts keep working; you cannot add
+            another while above your plan’s inbox limit.
           </li>
           {SAFETY_FACTS.map((fact) => (
             <li key={fact}>{fact}</li>

@@ -28,7 +28,7 @@ async function inViewport(locator: Locator, page: Page): Promise<void> {
 
 test('mobile menu links open inside a 390px viewport', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Open navigation' }).click();
+  await page.getByRole('button', { name: 'Open menu' }).click();
   const nav = page.getByRole('navigation', { name: 'Mobile navigation' });
   const pricing = nav.getByRole('link', { name: 'Pricing' });
   await expect(pricing).toBeVisible();

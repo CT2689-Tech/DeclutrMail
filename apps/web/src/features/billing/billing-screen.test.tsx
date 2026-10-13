@@ -66,7 +66,7 @@ vi.mock('@/lib/posthog', () => ({ track: vi.fn(() => Promise.resolve()) }));
 
 import { ERROR_CODES, type BillingSubscription } from '@declutrmail/shared/contracts';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
-import { fillStory, meterChipLine, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { fillStory, METER, meterChipLine, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { track } from '@/lib/posthog';
 import {
@@ -3311,7 +3311,12 @@ describe('BillingScreen — paid subscriber', () => {
     disclosure.open = true;
     fireEvent(disclosure, new Event('toggle'));
     const table = await screen.findByRole('table', { name: 'Included features by plan' });
-    expect(within(table).getByRole('row', { name: 'Connected inboxes 1 1 5' })).toBeInTheDocument();
+    expect(within(table).getByRole('row', { name: 'Gmail accounts 1 1 5' })).toBeInTheDocument();
+    expect(
+      within(table).getByRole('row', {
+        name: `Emails cleared a month ${METER.free.limit.toLocaleString('en-US')} No monthly limit No monthly limit`,
+      }),
+    ).toBeInTheDocument();
     expect(
       within(table).getByRole('rowheader', {
         name: 'Choices for each sender \u2014 Archive \u00b7 Unsubscribe \u00b7 Later \u00b7 Delete',
@@ -3343,7 +3348,7 @@ describe('BillingScreen — paid subscriber', () => {
     const current = await screen.findByTestId('current-plan-card');
     expect(current).toHaveTextContent('Plan price: $19/mo');
     const coverage = screen.getByRole('region', { name: 'Your plan includes' });
-    expect(coverage).toHaveTextContent('1 of 5 connected inboxes');
+    expect(coverage).toHaveTextContent('1 of 5 connected Gmail accounts');
     expect(within(coverage).getByRole('link', { name: 'Daily brief' })).toHaveAttribute(
       'href',
       '/brief',
@@ -3357,7 +3362,7 @@ describe('BillingScreen — paid subscriber', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Switch to Plus' }));
     const panel = await screen.findByTestId('change-plan-panel');
     expect(panel).toHaveTextContent('No longer included after the change: Daily Brief, Follow-ups');
-    expect(panel).toHaveTextContent('Existing connected inboxes continue working');
+    expect(panel).toHaveTextContent('Existing connected Gmail accounts continue working');
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Schedule downgrade' })).toBeEnabled(),
     );

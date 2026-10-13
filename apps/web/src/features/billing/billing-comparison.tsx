@@ -19,26 +19,24 @@ export interface BillingComparisonRow {
 }
 
 /**
- * Included-features rows. Quotas come from the same config the live
- * allowance uses: `PRICING_V2` reads `INBOXES` and `METER`, and the
- * legacy ladder reads the manifest. Capability rows collapse when two
- * capabilities share a label.
+ * Included-features rows. Inbox counts follow `PRICING_V2` (`INBOXES`)
+ * or the manifest. Emails cleared come from `METER`: Free is the
+ * configured limit, and paid plans have no monthly limit. Capability
+ * rows collapse when two capabilities share a label.
  */
 export function billingComparisonRows(pricingV2: boolean): readonly BillingComparisonRow[] {
   const rows: BillingComparisonRow[] = [
     {
-      label: 'Connected inboxes',
+      label: 'Gmail accounts',
       values: COMPARISON_TIERS.map((id) =>
         formatQuota(pricingV2 ? INBOXES[id] : TIER_MANIFEST[id].inboxLimit),
       ),
     },
     {
-      label: 'Cleanup / month',
-      values: COMPARISON_TIERS.map((id) => {
-        if (pricingV2) return id === 'free' ? formatQuota(METER.free.limit) : 'Unlimited';
-        const quota = TIER_MANIFEST[id].cleanupActionsPerMonth;
-        return quota === null ? 'Unlimited' : formatQuota(quota);
-      }),
+      label: 'Emails cleared a month',
+      values: COMPARISON_TIERS.map((id) =>
+        id === 'free' ? formatQuota(METER.free.limit) : 'No monthly limit',
+      ),
     },
   ];
   const seen = new Set<string>();

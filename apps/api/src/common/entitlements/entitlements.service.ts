@@ -613,7 +613,7 @@ export class EntitlementsService {
             : inboxLimitReachedMessage(copyTier)
           : limit === 1
             ? `Your plan includes 1 connected inbox.${upgrade}`
-            : `Your plan includes ${limit} connected inboxes and all are in use.${upgrade}`,
+            : `Your plan includes ${limit} connected Gmail accounts and all are in use.${upgrade}`,
         details: { limit, connected, tier, ...(reason ? { reason } : {}) },
       });
     }

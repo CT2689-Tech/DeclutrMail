@@ -71,6 +71,18 @@ describe('launch copy deck snapshots', () => {
     );
   });
 
+  it('pins the third-party detail line and keeps competitor names out of the report', () => {
+    expect(WS5_COPY['report.thirdParty.detail']).toBe(
+      'Another app created these labels. The email is still in your Gmail and still counts toward your Google storage. Email that app marked read isn’t counted as read in this report.',
+    );
+    const reportCopy = JSON.stringify(
+      Object.fromEntries(Object.entries(WS5_COPY).filter(([key]) => key.startsWith('report.'))),
+    );
+    expect(reportCopy).not.toMatch(
+      /Unroll|Cleanfox|SaneBox|Trimbox|Leave Me Alone|Clean Email|\{Vendor\}/,
+    );
+  });
+
   it('pins the drop2-r20 inbox report support line and pricing meta description', () => {
     expect(WS5_COPY['report.mostlyUnread.support']).toEqual({
       one: 'That sender had less than 10% of its email marked read in Gmail in that time.',

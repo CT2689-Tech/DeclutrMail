@@ -50,7 +50,7 @@ describe('report presentation', () => {
     );
   });
 
-  it('formats the Unroll.me headline and a large-mail count with thousands separators', () => {
+  it('formats the third-party headline and a large-mail count with thousands separators', () => {
     const thirdParty: InboxReportInsight = {
       id: 'third_party_labels',
       count: 20950,
@@ -59,7 +59,7 @@ describe('report presentation', () => {
       vendorKey: 'unroll_me',
     };
     expect(reportHeadline(thirdParty).sentence).toBe(
-      '20,950 emails (about 1.2 GB) are filed under Unroll.me labels in your Gmail.',
+      '20,950 emails (about 1.2 GB) are filed under labels from other apps in your Gmail.',
     );
     const large: InboxReportInsight = {
       id: 'large_mail',
@@ -71,7 +71,7 @@ describe('report presentation', () => {
     expect(reportHeadline(large).sentence).not.toContain('12481');
   });
 
-  it('keeps a one-email Unroll.me sentence on the singular deck line', () => {
+  it('keeps a one-email sentence on the singular deck line', () => {
     const insight: InboxReportInsight = {
       id: 'third_party_labels',
       count: 1,
@@ -80,7 +80,7 @@ describe('report presentation', () => {
       vendorKey: 'unroll_me',
     };
     expect(reportHeadline(insight).sentence).toBe(
-      '1 email (about 1.5 MB) is filed under a Unroll.me label in your Gmail.',
+      '1 email (about 1.5 MB) is filed under a label from another app in your Gmail.',
     );
   });
 

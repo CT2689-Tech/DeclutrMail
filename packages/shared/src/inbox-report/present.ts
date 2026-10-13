@@ -1,5 +1,4 @@
 import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '../copy/launch';
-import { sweeperDisplayName } from '../senders/sweeper-labels';
 import type { InboxReportDto, InboxReportInsight } from './types';
 
 export interface ReportHeadline {
@@ -71,7 +70,6 @@ export function reportHeadline(insight: InboxReportInsight): ReportHeadline {
         ? pluralCopy(copy, insight.count, {
             count: reportCount(insight.count),
             size: formatReportSize(insight.bytes),
-            Vendor: sweeperDisplayName(insight.vendorKey),
           })
         : '';
       return { figure: null, sentence };

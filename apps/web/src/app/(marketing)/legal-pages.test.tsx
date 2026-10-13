@@ -272,7 +272,7 @@ describe('/privacy content — D7 + D228 posture', () => {
       'Google Cloud',
       'Supabase',
       'Vercel',
-      'Upstash',
+      'Upstash Redis',
       'Sentry',
       'PostHog',
       'Anthropic',
@@ -283,5 +283,10 @@ describe('/privacy content — D7 + D228 posture', () => {
     ]) {
       expect(screen.getByRole('cell', { name: provider })).toBeInTheDocument();
     }
+    expect(
+      screen.getByRole('cell', {
+        name: 'runs background tasks, like scanning your Gmail. It never stores the contents of your Gmail messages.',
+      }),
+    ).toBeInTheDocument();
   });
 });

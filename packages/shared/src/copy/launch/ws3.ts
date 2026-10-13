@@ -42,7 +42,7 @@ export const WS3_COPY = {
   'ws3.nav.signIn': 'Sign in',
   'ws3.nav.startFree': 'Start free',
   'ws3.nav.theme.aria': ['Switch to dark mode', 'Switch to light mode'],
-  'ws3.nav.menu.aria': ['Open navigation', 'Close navigation'],
+  'ws3.nav.menu.aria': ['Open menu', 'Close menu'],
   'ws3.cta.demo': 'Try the demo',
   'ws3.footer.product': ['How it works', 'Demo', 'Pricing'],
   'ws3.footer.launchStage': '(no link)',

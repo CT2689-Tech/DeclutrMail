@@ -34,7 +34,7 @@ export function PlanCoverage({ tier, pass = false }: { tier: TierId; pass?: bool
     >
       <h2 style={{ ...tokens.typography.sectionTitle, margin: 0 }}>Your plan includes</h2>
       <div>
-        {connectedInboxes ?? 0} of {plan.inboxLimit} connected inboxes ·{' '}
+        {connectedInboxes ?? 0} of {plan.inboxLimit} connected Gmail accounts ·{' '}
         <Link className={`${linkStyles.link} dm-tap-target`} href="/settings">
           Manage inboxes
         </Link>
@@ -92,8 +92,8 @@ export function PlanConsequences({ fromTier, toTier }: { fromTier: TierId; toTie
       </p>
       {to.inboxLimit < from.inboxLimit ? (
         <p>
-          Existing connected inboxes continue working, even above the new limit. You cannot add
-          another while at or above {to.inboxLimit}. Completed email actions stay in place.
+          Existing connected Gmail accounts continue working, even above the new limit. You cannot
+          add another while at or above {to.inboxLimit}. Completed email actions stay in place.
         </p>
       ) : null}
     </div>

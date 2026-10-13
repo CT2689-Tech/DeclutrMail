@@ -62,7 +62,7 @@ export function PricingTeaserView({ provider }: { provider: BillingProviderId })
           <ul className="dm-mkt-tier-features">
             <li>Everything in {plus.name}</li>
             <li>Daily Brief and Follow-ups</li>
-            <li>{pro.inboxLimit} connected inboxes</li>
+            <li>{pro.inboxLimit} connected Gmail accounts</li>
           </ul>
         </div>
       </div>
