@@ -33,12 +33,12 @@ import {
 
 const SAFETY_FACTS = ACTION_SAFETY_SUMMARY.split(/(?<=\.)\s+/);
 
-// The refund line is the FAQ's own first sentence, so /pricing and /faq
-// cannot drift apart. A missing entry fails loudly at import.
+// The refund line is the FAQ answer, so /pricing and /faq cannot drift.
+// A missing entry fails loudly at import.
 const REFUND_FACT = (() => {
   const entry = FAQ_ENTRIES.find((faq) => faq.id === 'refunds-support');
   if (!entry) throw new Error('faq-content: refunds-support entry is missing');
-  return entry.answer.split(/(?<=\.)\s+/)[0];
+  return entry.answer;
 })();
 
 /**

@@ -429,8 +429,10 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(within(panel).getByRole('checkbox')).not.toBeChecked();
     expect(within(panel).getByText(/Claim Founding Pro — \$129\/yr/)).toBeInTheDocument();
     expect(within(panel).getByText(/\$190 billed annually, starting today/)).toBeInTheDocument();
-    expect(within(panel).getByText('30-day money-back guarantee')).toBeInTheDocument();
-    expect(within(panel).queryByText(/14-day money-back/)).not.toBeInTheDocument();
+    expect(
+      within(panel).getByText('14-day money-back on any purchase, once per customer.'),
+    ).toBeInTheDocument();
+    expect(within(panel).queryByText(/30-day money-back/)).not.toBeInTheDocument();
 
     // Click 2 — confirm into the provider surface.
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
@@ -2953,7 +2955,7 @@ describe('BillingScreen — paid subscriber', () => {
     expect(panel).toHaveTextContent('Next billing date: Jul 30, 2027.');
     // Money moves today, so the guarantee is reassurance and belongs here
     // — unlike the $0 downgrade branch, where it contradicts.
-    expect(panel).toHaveTextContent('30-day money-back guarantee');
+    expect(panel).toHaveTextContent('14-day money-back on any purchase, once per customer.');
   });
 
   it('blocks an upgrade while its quote fails, then retries before allowing confirmation', async () => {
@@ -3356,6 +3358,7 @@ describe('BillingScreen — paid subscriber', () => {
     // contradiction of the sentence right above it (founder, 2026-07-30).
     // It belongs on the branch where money moves today.
     expect(panel).not.toHaveTextContent('30-day money-back guarantee');
+    expect(panel).not.toHaveTextContent('14-day money-back on any purchase');
     await waitFor(() =>
       expect(within(panel).getByRole('button', { name: 'Schedule downgrade' })).toBeEnabled(),
     );

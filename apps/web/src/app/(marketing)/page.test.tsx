@@ -114,8 +114,7 @@ describe('landing page — D134', () => {
   it('states the canonical refund terms beside the prices (D121)', async () => {
     const { container } = await renderLanding();
     const foot = container.querySelector('.dm-mkt-pricing-foot');
-    expect(foot?.textContent).toContain('30-day money-back guarantee');
-    expect(foot?.textContent).toContain('every paid plan');
+    expect(foot?.textContent).toContain('14-day money-back on any purchase, once per customer.');
   });
 
   it('renders the launch teaser when the public pricing API says v2', async () => {

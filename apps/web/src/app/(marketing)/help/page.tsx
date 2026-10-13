@@ -8,9 +8,9 @@
 //
 // CONTENT CONTRACT (CLAUDE.md §2.1, D7, D228): the storage answer
 // quotes the locked privacy copy module from `@declutrmail/shared`
-// verbatim — never paraphrased. Refund terms were founder-confirmed
-// 2026-07-08 (D121): 30-day money-back guarantee on every paid plan;
-// the answer states it and links /refunds for the full terms.
+// verbatim — never paraphrased. The refund answer is
+// `pricing.faq.refunds.a`, filled from POLICY.refundWindowDays, and
+// links /refunds for the full terms.
 
 import type { Metadata } from 'next';
 

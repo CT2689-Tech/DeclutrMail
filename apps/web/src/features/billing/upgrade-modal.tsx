@@ -410,8 +410,14 @@ function capBody(d: FreeCapDetails): string {
   if (d.remaining <= 0) {
     return fillStory(WS1_COPY['cap.body.zero'], 'usd', { allowance, resetDate });
   }
-  return fillStory(WS1_COPY['cap.body'], 'usd', {
-    requested: (d.requested ?? d.requiredUnits).toLocaleString('en-US'),
+  const requestedCount = d.requested ?? d.requiredUnits;
+  // cap.body has no singular sibling. meter.noun.one is the approved "1 email".
+  const template =
+    requestedCount === 1
+      ? WS1_COPY['cap.body'].replace('{requested} emails', WS1_COPY['meter.noun.one'])
+      : WS1_COPY['cap.body'];
+  return fillStory(template, 'usd', {
+    requested: requestedCount.toLocaleString('en-US'),
     remaining: d.remaining.toLocaleString('en-US'),
     allowance,
     resetDate,

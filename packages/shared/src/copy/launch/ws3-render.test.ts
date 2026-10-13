@@ -69,7 +69,7 @@ describe('WS3 token fill', () => {
     expect(fillComplete('{refundDays}-day money-back on any purchase, once per customer.')).toBe(
       '',
     );
-    expect(REFUNDS_PAGE_WINDOW_DAYS).not.toBe(POLICY.refundWindowDays);
+    expect(REFUNDS_PAGE_WINDOW_DAYS).toBe(POLICY.refundWindowDays);
     expect(refundSentence()).toBe('');
     const answer = priceFaqAnswer();
     const summary = declutrPriceSummary();

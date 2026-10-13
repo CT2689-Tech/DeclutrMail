@@ -144,23 +144,18 @@ function launchTokenOverrides(
   };
 }
 
-/**
- * Days the public `/refunds` page states (D121). The comparison CTA
- * stays blank until this equals `POLICY.refundWindowDays`.
- */
-export const REFUNDS_PAGE_WINDOW_DAYS = 30;
+/** Days the public `/refunds` page states. Matches `POLICY.refundWindowDays`. */
+export const REFUNDS_PAGE_WINDOW_DAYS = POLICY.refundWindowDays;
 
 /**
  * Money-back line under a comparison CTA, linked to `/refunds`.
- * With `PRICING_V2` on, `/refunds` is the deck page, so this is
- * `refundLine()`. Otherwise it stays empty while the published page
- * still states a different window.
+ * With `PRICING_V2` on this is `refundLine()`. Flags-off stays empty
+ * while `ws3Tokens().refundDays` is blank, so a price sentence is not
+ * published with an empty window.
  */
 export function refundSentence(pricingV2 = isPricingV2()): string {
   if (pricingV2) return refundLine();
   if (ws3Tokens().refundDays === '') return '';
-  // Widened: a literal `30 !== 14` is a type error, and the two
-  // constants have to be comparable again once they are the same number.
   const publishedDays: number = REFUNDS_PAGE_WINDOW_DAYS;
   const policyDays: number = POLICY.refundWindowDays;
   if (publishedDays !== policyDays) return '';

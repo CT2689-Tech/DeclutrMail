@@ -52,7 +52,7 @@ export function ChangePlanPanel({
   provider: BillingProviderId;
   isPending: boolean;
   errorMessage: string | null;
-  /** Server launch flag. Off keeps the 30-day guarantee line. */
+  /** Server launch flag. The refund line is the deck sentence either way. */
   pricingV2?: boolean;
   onConfirm: () => void;
   onDismiss: () => void;

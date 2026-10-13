@@ -11,10 +11,6 @@ import { PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import type { FaqEntry } from './types';
 
-/** Flags-off D121 answer. The launch deck replaces it only while `PRICING_V2` is on. */
-const FLAGS_OFF_REFUND_SUPPORT =
-  'Every paid plan has a 30-day money-back guarantee subject to the published fair-use terms. Email support@declutrmail.com for product help and privacy@declutrmail.com for privacy, data-rights, or vulnerability reports.';
-
 export const FAQ_ENTRIES: readonly FaqEntry[] = [
   {
     id: 'what-is-declutrmail',
@@ -171,7 +167,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
   {
     id: 'refunds-support',
     question: 'What is the refund policy, and how do I get help?',
-    answer: FLAGS_OFF_REFUND_SUPPORT,
+    answer: fillStory(WS1_COPY['pricing.faq.refunds.a']),
     link: {
       href: '/refunds',
       label: 'Read the refund policy',
@@ -180,9 +176,8 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
   },
 ];
 
-/** Live refund answer. Flags-off stays the stored D121 sentence. */
-export function refundSupportAnswer(pricingV2 = isPricingV2()): string {
-  if (!pricingV2) return FLAGS_OFF_REFUND_SUPPORT;
+/** Live refund answer. The window comes from `pricing.faq.refunds.a`. */
+export function refundSupportAnswer(_pricingV2 = isPricingV2()): string {
   return fillStory(WS1_COPY['pricing.faq.refunds.a']);
 }
 

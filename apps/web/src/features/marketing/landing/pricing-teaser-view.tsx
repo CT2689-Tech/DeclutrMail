@@ -1,6 +1,6 @@
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
-import { fillStory, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { fillStory, refundLine, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import {
   currencyForPricePoint,
   formatMoney,
@@ -68,7 +68,7 @@ export function PricingTeaserView({ provider }: { provider: BillingProviderId })
       </div>
 
       <div className="dm-mkt-pricing-foot">
-        <p className="dm-mkt-refund-note">30-day money-back guarantee on every paid plan.</p>
+        <p className="dm-mkt-refund-note">{refundLine()}</p>
         <details className="dm-mkt-billing-details">
           <summary>Annual billing, currency and Founding Pro</summary>
           <p>

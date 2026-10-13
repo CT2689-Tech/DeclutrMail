@@ -15,10 +15,10 @@
  *   4. D159 (D132 batch) — each page emits page_viewed exactly once
  *      via the PageViewTracker island; the posthog module is mocked so
  *      the no-fetch proof stays intact.
- *   5. D121 + D148 (founder-confirmed 2026-07-08) — /refunds carries
- *      the canonical 30-day money-back guarantee with its fair-use
- *      terms, /terms carries the India/Mumbai governing-law clause,
- *      and NO page still shows a "Pending confirmation" marker.
+ *   5. /refunds carries the deck refund window (`POLICY.refundWindowDays`)
+ *      with its once-per-customer terms, /terms carries the India/Mumbai
+ *      governing-law clause, and NO page still shows a "Pending confirmation"
+ *      marker.
  */
 
 import { createElement, type ReactElement } from 'react';
@@ -102,24 +102,23 @@ describe.each(PAGES)('$name — D146', ({ Page, heading, page }) => {
   });
 });
 
-describe('/refunds content — D121 canonical refund terms', () => {
-  it('states the 30-day money-back guarantee on every paid plan, refunded in full', async () => {
+describe('/refunds content — published refund window', () => {
+  it('states the policy window on every paid plan, refunded in full', async () => {
     const { container } = render(await pageElement(RefundPolicyPage));
     const text = container.textContent ?? '';
-    expect(text).toContain('30-day money-back guarantee');
+    const days = POLICY.refundWindowDays;
+    expect(text).toContain(`${days}-day money-back guarantee`);
     expect(text).toContain(`${REFUNDS_PAGE_WINDOW_DAYS}-day money-back guarantee`);
-    expect(text).toContain('within 30 days');
+    expect(text).toContain(`within ${days} days`);
     expect(text).toMatch(/every paid plan/i);
-    // The interim 14-day pro-rata default must be fully gone.
-    expect(text).not.toMatch(/14[- ]days?/);
+    expect(text).not.toMatch(/30-day money-back/);
     expect(text).not.toMatch(/pro[- ]rata/i);
   });
 
-  it('carries the fair-use terms: once per customer, bulk-consume decline, statutory rights intact', async () => {
+  it('carries the fair-use terms: once per customer, statutory rights intact', async () => {
     const { container } = render(await pageElement(RefundPolicyPage));
     const text = container.textContent ?? '';
     expect(text).toContain('once per customer');
-    expect(text).toMatch(/consumed in bulk/);
     expect(text).toMatch(/Statutory refund rights/);
   });
 
@@ -131,10 +130,9 @@ describe('/refunds content — D121 canonical refund terms', () => {
     expect(text).toMatch(/original payment method/);
   });
 
-  it('keeps the flags-off spelling in the refund-versus-cancel sentence', async () => {
-    vi.stubEnv('PRICING_V2', '');
+  it('says canceling in the refund-versus-cancel sentence', async () => {
     const { container } = render(await pageElement(RefundPolicyPage));
-    expect(container.textContent).toContain('differs from cancelling');
+    expect(container.textContent).toContain('differs from canceling');
   });
 });
 
