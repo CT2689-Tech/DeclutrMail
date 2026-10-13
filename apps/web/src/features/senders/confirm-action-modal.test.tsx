@@ -2503,7 +2503,7 @@ describe('ConfirmActionModal — the title names the verb and the count (QA-arch
   // Unsubscribe confirm was reachable the instant the modal opened, before
   // the live preview had even started, let alone resolved — committing to
   // the stale queue count with no eligibility check at all.
-  it('confirms unsubscribe only while the live preview is still loading', () => {
+  it('does not confirm unsubscribe only while the live preview is still loading', () => {
     const one = makeSender({
       id: 'sender-u3',
       displayName: 'Daily Roundup',
@@ -2532,15 +2532,11 @@ describe('ConfirmActionModal — the title names the verb and the count (QA-arch
     expect(screen.queryByRole('radio', { name: /0 emails/ })).toBeNull();
     expect(screen.queryByText(/Loading preview/i)).toBeNull();
     const confirm = screen.getByRole('button', { name: 'Unsubscribe' });
-    expect(confirm).toBeEnabled();
+    expect(confirm).toBeDisabled();
     fireEvent.keyDown(window, { key: 'Enter' });
-    expect(onConfirm).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     fireEvent.click(confirm);
-    expect(onConfirm).toHaveBeenCalledWith({
-      secondary: null,
-      archiveHistoric: false,
-      senderIds: ['sender-u3', 'sender-u4'],
-    });
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 
   // Codex review 2026-09-03, round 4: `nothingActionableBulk` treated

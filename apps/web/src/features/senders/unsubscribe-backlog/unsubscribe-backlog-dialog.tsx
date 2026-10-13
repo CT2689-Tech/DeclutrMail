@@ -192,8 +192,10 @@ export function UnsubscribeBacklogDialog({
     : 0;
   // A bulk preview that is still loading or failed has not named who is
   // included. Posting request.senders from that state would include
-  // Protected senders and ids the preview never confirmed.
-  const senderIds = !single && !bulkReady ? [] : includedSenders.map((sender) => sender.id);
+  // Protected senders and ids the preview never confirmed. A dialog with
+  // no preview at all (a known inbox count, nothing in flight) is separate.
+  const bulkUnresolved = !single && (loading || failed);
+  const senderIds = bulkUnresolved ? [] : includedSenders.map((sender) => sender.id);
   const includeArchived = mode === 'delete' && activeReach === 'all_mail' && allMailCount !== null;
   const zeroDeleteInbox =
     mode === 'delete' &&
@@ -276,7 +278,7 @@ export function UnsubscribeBacklogDialog({
   const button = protectedButton(mode, protectedSingle);
 
   const confirm = useCallback(() => {
-    if (!single && !bulkReady) return;
+    if (bulkUnresolved) return;
     const secondary = mode === 'unsub_only' ? null : mode;
     void track('unsub_backlog_confirmed', {
       mode,
@@ -303,19 +305,18 @@ export function UnsubscribeBacklogDialog({
     protectedSingle,
     onConfirm,
     senderIds,
-    single,
-    bulkReady,
+    bulkUnresolved,
   ]);
 
   // A missing backlog count must not block a single sender's future-only
-  // request. Bulk Unsubscribe stays closed until the preview names who is
-  // included. Archive and Delete stay disabled until that count is known.
+  // request. Bulk Unsubscribe stays closed while its preview is loading or
+  // failed. Archive and Delete stay disabled until that count is known.
   const archivedRequested = mode === 'delete' && activeReach === 'all_mail';
   const confirmDisabled =
     submitting ||
     previewSenderGone ||
     nothingActionable ||
-    (!single && !bulkReady) ||
+    (mode === 'unsub_only' && bulkUnresolved) ||
     (archivedRequested && allMailCount === null) ||
     (mode !== 'unsub_only' && backlogOff);
   useEffect(() => {
