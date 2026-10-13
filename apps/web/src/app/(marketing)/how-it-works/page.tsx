@@ -129,12 +129,7 @@ export default function HowItWorksPage() {
         id="past-email"
         layout="side"
         title="Unsubscribe is also a choice about past email."
-        intro={
-          <p>
-            An unsubscribe request asks a sender to stop future mail. The email already in Gmail
-            stays where it is unless you choose a separate cleanup action.
-          </p>
-        }
+        intro={<p>{WS3_COPY['ws3.pr1019.howItWorks.unsubscribe']}</p>}
       >
         <div className="dm-story-split">
           <div>

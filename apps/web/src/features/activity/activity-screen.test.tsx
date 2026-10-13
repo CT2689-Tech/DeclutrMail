@@ -28,8 +28,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { activityKeys } from './api/query-keys';
 import { tokens, useUiStore } from '@declutrmail/shared';
-import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
-
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import {
   absoluteTime,
   activityActionDot,
@@ -1135,6 +1134,11 @@ describe('ActivityScreen — populated', () => {
     expect(
       within(dialog).getByRole('checkbox', { name: /include technical details/i }),
     ).not.toBeChecked();
+    const bundle = within(dialog).getByText(WS2_COPY.simplify.activity.bundleIncludes);
+    const appendix = within(dialog).getByText('What technical details can be included?');
+    expect(
+      bundle.compareDocumentPosition(appendix) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('sends edited filters and independent privacy opt-ins, then shows a recoverable error', async () => {
@@ -1211,14 +1215,10 @@ describe('ActivityScreen — populated', () => {
   });
 
   it('discloses what Undo cannot take back, without hedging the window', () => {
-    expect(activityUndoRecoveryHelp).toMatch(/Gmail Trash for up to 30 days/);
-    expect(activityUndoRecoveryHelp).toMatch(/sent unsubscribe can't be recalled/);
-    // D245 fix-wave: states the window instead of hedging with "your
-    // plan's window" once the ladder is uniform.
-    if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
-      expect(activityUndoRecoveryHelp).not.toMatch(/plan/i);
-      expect(activityUndoRecoveryHelp).toContain(`${UNIFORM_UNDO_WINDOW_DAYS}-day Undo window`);
-    }
+    expect(activityUndoRecoveryHelp).toContain('Undo Archive, Later or Delete for 30 days');
+    expect(activityUndoRecoveryHelp).toContain('Gmail Trash');
+    expect(activityUndoRecoveryHelp).toContain('Unsubscribe requests can’t be recalled');
+    expect(activityUndoRecoveryHelp).not.toMatch(/plan/i);
   });
 
   it('renders the D59 stats line with verb counts', async () => {
@@ -2076,7 +2076,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     expect(within(dialog).getByText('1')).toBeInTheDocument();
     expect(within(dialog).queryByText(/is Protected/)).not.toBeInTheDocument();
 
-    const confirm = within(dialog).getByRole('button', { name: 'Archive 2' });
+    const confirm = within(dialog).getByRole('button', { name: 'Finish it' });
     await userEvent.dblClick(confirm);
     await waitFor(() => expect(recoveryPosts).toBe(1));
     expect(idempotencyKeys[0]!.length).toBeGreaterThanOrEqual(8);
@@ -2208,7 +2208,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
         }),
       );
       const dialog = await openReview();
-      expect(await within(dialog).findByText(/Confirming runs it again/)).toBeInTheDocument();
+      expect(await within(dialog).findByText(/Confirming does it again/)).toBeInTheDocument();
       const again = within(dialog).getByRole('button', { name: 'Delete again' });
       expect(again).toBeEnabled();
       expect(again.style.background).toBe(tokens.color.danger);
@@ -2778,9 +2778,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     const dialog = await screen.findByRole('dialog', {}, { timeout: 5000 });
     // Anchored on the control it names: a bare /return to Activity/ stayed
     // green while the sentence pointed at a button that had been renamed.
-    expect(
-      within(dialog).getByText(/return to Activity and choose Check and retry\./i),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByText(/come back and choose Check again/i)).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: /reconnect Gmail/i }));
     expect(assignSpy).toHaveBeenCalledWith(
       expect.stringContaining(

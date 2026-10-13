@@ -3,6 +3,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 
 import { Button, TechnicalDetails, tokens } from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 
 import { technicalErrorDetails } from '@/lib/action-error-copy';
@@ -137,7 +138,8 @@ export function ActivitySupportBundleDialog({
             for all matching records, not only rows currently loaded on screen.
           </p>
           <p style={{ margin: '7px 0 0', color: color.fgMuted, fontSize: text.sm }}>
-            mailbox: <strong style={{ color: color.fg }}>{mailboxEmail ?? 'Active mailbox'}</strong>
+            mailbox:{' '}
+            <strong style={{ color: color.fg }}>{mailboxEmail ?? 'Selected Gmail account'}</strong>
           </p>
         </div>
 
@@ -246,14 +248,13 @@ export function ActivitySupportBundleDialog({
                 </span>
               </span>
             </label>
+            <p style={supportBundleIncludesStyle}>{WS2_COPY.simplify.activity.bundleIncludes}</p>
             <TechnicalDetails
               summary="What technical details can be included?"
               style={{ marginTop: 10 }}
             >
-              The optional appendix contains the bundle version, internal mailbox and Activity
-              identifiers, action-attempt identifiers, machine action/source values, execution
-              status, classified error codes, and filter dates. No tokens, idempotency keys, message
-              bodies, or raw provider responses.
+              Optional: add technical IDs that help support trace what happened. They contain no
+              email content.
             </TechnicalDetails>
           </section>
 
@@ -308,6 +309,13 @@ const supportBundleOptionStyle: CSSProperties = {
   padding: '6px 0',
   color: color.fgSoft,
   fontSize: text.base,
+  lineHeight: 1.45,
+};
+
+const supportBundleIncludesStyle: CSSProperties = {
+  margin: '10px 0 0',
+  color: color.fgSoft,
+  fontSize: text.sm,
   lineHeight: 1.45,
 };
 

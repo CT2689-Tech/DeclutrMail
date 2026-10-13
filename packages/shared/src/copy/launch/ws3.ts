@@ -1,8 +1,8 @@
-/** WS3 copy. Values equal deck/ws3.json (drop2-r19). */
+/** WS3 copy. Values equal deck/ws3.json (drop2-r30). */
 export const WS3_COPY = {
   _meta: {
-    revision: 'drop2-r19',
-    issued: '2026-10-11T21:35:00-07:00',
+    revision: 'drop2-r30',
+    issued: '2026-10-12T22:10:00-07:00',
     section: 'ws3',
   },
   'ws3.home.title': 'Clean up Gmail, one sender at a time — DeclutrMail',
@@ -99,12 +99,12 @@ export const WS3_COPY = {
     'No. We never fetch or store full email contents. DeclutrMail asks Google for one Gmail permission, gmail.modify, and uses it to list the email details shown on our security page and to make the changes you confirm. If you allow AI in the app, some of those details can be sent to Anthropic to write short explanations and summaries; our privacy policy says exactly what and when.',
   'ws3.vs.faq.price.q': 'How much does DeclutrMail cost?',
   'ws3.vs.faq.price.a':
-    '{freeName} is $0 and lets you clear {allowance} emails a month; Unsubscribe, Keep, Later, previews and Undo are unlimited. {plusName} is {plusPrice} a year with no monthly limit. The {passName} is {passPrice} once for {passDays} days of {plusName}. {refundDays}-day money-back on any purchase, once per customer.',
+    '{freeName} is $0 and lets you clear {allowance} emails a month; Unsubscribe, Keep, Later, previews and Undo are unlimited. {plusName} is {plusPrice} a year with no monthly limit. The {passName} is {passPrice} once for {passDays} days with no monthly limit on one {CONNECTION_TERM}. {refundDays}-day money-back on any purchase, once per customer.',
   'ws3.vs.faq.price.a.passOff':
     '{freeName} is $0 and lets you clear {allowance} emails a month; Unsubscribe, Keep, Later, previews and Undo are unlimited. {plusName} is {plusPrice} a year with no monthly limit. {refundDays}-day money-back on any purchase, once per customer.',
   'ws3.vs.declutr.price.summary': '{freeName}, {plusName} or a one-time {passName}',
   'ws3.vs.declutr.price.detail':
-    '{freeName} clears {allowance} emails a month. {plusName} is {plusPrice} a year. The {passName} is {passPrice} once for {passDays} days of {plusName}. Full details on our pricing page.',
+    '{freeName} clears {allowance} emails a month. {plusName} is {plusPrice} a year. The {passName} is {passPrice} once for {passDays} days with no monthly limit on one {CONNECTION_TERM}. Full details on our pricing page.',
   'ws3.vs.declutr.providers.detail': 'DeclutrMail is Gmail only for now.',
   'ws3.vs.declutr.preview.summary': 'A preview before email moves',
   'ws3.vs.compare.verdict':
@@ -401,4 +401,60 @@ export const WS3_COPY = {
   'ws3.liveFix.learn.firstScanStep': 'Connect and let the first scan finish',
   'ws3.liveFix.learn.deletePreview':
     'The preview names the sender and how many emails it found so far.',
+  'ws3.simulator.planLine':
+    'Free includes {allowance} emails cleared a month. {plusName} has no monthly limit.',
+  'ws3.faq.ai.a':
+    'Only if you allow AI in the app. Then, to explain a suggestion, Anthropic receives the sender’s name and domain and the facts behind it, without subject lines or snippets. The {BRIEF_NAME} (part of {proName}; waitlist only for new accounts) may send the sender, subject line and Gmail preview snippet to write a short summary. Neither sends full email contents or attachments. Until you allow it, or after you turn it off in Settings → AI, explanations are written from our rules.',
+  'ws3.security.meta.description':
+    'DeclutrMail never fetches or stores full email contents, encrypts Google access tokens, and has Google OAuth verification approved {OAUTH_DATE}.',
+  'ws3.security.permission.heading': 'The Gmail permission we request, and why',
+  'ws3.security.permission.body':
+    'DeclutrMail requests one Gmail permission, gmail.modify, plus openid and your email address to identify the connected account. DeclutrMail’s job is to change your email when you tell it to: archive, label, delete and unsubscribe. gmail.modify is the permission that allows those changes.',
+  'ws3.llms.compare.unrollme':
+    'how each uses your email data — Unroll.Me’s data page says it is owned by NielsenIQ and shares information about the commercial emails you receive for market analysis; cites unroll.me/your-data and the FTC’s December 17, 2019 settlement release',
+  'ws3.help.autopilotModes.q':
+    'What is the difference between Autopilot’s Watch first and Act now modes?',
+  'ws3.howItWorks.unsubscribeRow':
+    'Sends the sender’s one-click request, or opens a prefilled email in Gmail for you to send.',
+  'ws3.howTo.unsubscribePreviewStep':
+    'Check whether it sends a request or opens a prefilled email in Gmail, and whether Archive or Delete for older email is selected. The sender decides whether and when their email stops.',
+  'ws3.simulator.h1': 'Try DeclutrMail on made-up email.',
+  'ws3.simulator.guide': 'How the demo works',
+  'ws3.brand.orgName': 'DeclutrMail',
+  'ws3.brand.authorName': 'DeclutrMail',
+  'ws3.brand.makerName': 'DeclutrMail',
+  'ws3.legal.terms.buyer':
+    'Paddle is our merchant of record and reseller, so you buy your plan from Paddle. Paddle handles payment, tax and invoices, and Paddle’s buyer terms apply to the purchase. This is the same everywhere, including India.',
+  'ws3.legal.terms.existingRupee':
+    'If you already pay in rupees through Razorpay, your plan carries on and you can still manage it in {BILLING_NAME}. You can cancel there; to change, pause or restart it, email support@declutrmail.com. For these plans, DeclutrMail is the seller.',
+  'ws3.legal.terms.refunds':
+    'Refunds are described in our Refund Policy. To ask for a refund, contact Paddle or email support@declutrmail.com.',
+  'ws3.legal.terms.pause':
+    'Paddle offers a 30-day pause: your paid access ends right away and billing restarts automatically after 30 days.',
+  'ws3.legal.terms.downgrade':
+    'Gmail accounts you already connected keep working after a downgrade. You can’t connect more while you’re over your plan’s limit.',
+  'ws3.legal.privacy.billingRecords':
+    'billing records (kept by Paddle, and by Razorpay for earlier rupee plans; see Section 8. We never see or store full card numbers.)',
+  'ws3.legal.privacy.paddleRow': 'Merchant of record and reseller: payment, tax and invoices',
+  'ws3.legal.privacy.razorpayRow': 'Payment processing for earlier rupee plans (no new purchases)',
+  'ws3.beta.cta.emailUs': 'Email us',
+  'ws3.help.plans.a':
+    '{freeName} costs nothing and needs no card. It includes {freeInboxes} {CONNECTION_TERM}, Senders, Triage, Later and Activity, and {allowance} emails cleared a month. Only Archive and Delete count; Unsubscribe, Keep, Later, previews and Undo never do. {plusName} is {plusPrice} a year: no monthly limit, up to {plusInboxes} {CONNECTION_TERM_PLURAL}, the Screener, Autopilot rules and Quiet hours. The {passName} is {passPrice} once, for one {CONNECTION_TERM}: no monthly limit for {passDays} days, plus the Screener and Autopilot while it lasts, and it never renews. On every plan, you can undo Archive, Later and Delete for 30 days.',
+  'ws3.help.counting.q': 'What counts toward the free {allowance}, and when does it reset?',
+  'ws3.changelog.2026-07-27.free':
+    'The Free tier is live: Senders, Sender detail, Activity history, Triage sessions and the Later review queue, with a limit of 50 a month that resets on your signup date. (Free is now {allowance} emails cleared a month.)',
+  'ws3.vs.mailmop.declutrLicense':
+    'Not open source | DeclutrMail has no open-source license, so it can’t be self-hosted.',
+  'ws3.pr1019.howItWorks.unsubscribe':
+    'An unsubscribe request asks a sender to stop future mail. The email already in Gmail stays where it is unless you also choose Archive, Later or Delete.',
+  'ws3.pr1019.simulator.description':
+    'Try Senders and Triage with made-up email. Open the sender inspector, filter and select senders, and preview Archive, Later or Delete. No signup or Gmail access needed.',
+  'ws3.pr1019.terms.instruction':
+    'DeclutrMail changes your Gmail only at your instruction: a choice you approve directly, or a rule you turned on. Before you archive, move to Later or delete email in Triage or Senders, DeclutrMail shows the current matching count, a sample when one is available, and the planned Gmail changes.',
+  'ws3.pr1019.howTo.unsubscribe':
+    'Unsubscribe is different: it asks the sender to stop future delivery and leaves existing email where it is unless you also approve Archive, Later or Delete. Keep records your current sender decision, while Protected is the standing safety control.',
+  'ws3.pr1019.blog.recovery.description':
+    'Why every Archive, Later and Delete in Gmail needs its own recovery explanation, visible previews, small batches, and honest one-way warnings even when Undo exists.',
+  'ws3.pr1019.blog.recovery.moveBack':
+    'A generic “move back” command is not enough. An email may already have labels, may already be outside Inbox, or may change again after you archive it. DeclutrMail must remember the exact Gmail label changes for that Gmail account so a retry does not repeat or compound them.',
 } as const;

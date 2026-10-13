@@ -60,7 +60,7 @@ describe('mailbox links', () => {
     expect(state.mutate).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('button', { name: 'Inbox action' })).toBeNull();
     expect(screen.getByRole('status')).toHaveTextContent('Opening');
-    fireEvent.click(screen.getByRole('button', { name: 'Continue with my current inbox' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Keep using this account' }));
     expect(state.replace).not.toHaveBeenCalled();
   });
   it('strips the target after resolution and retains the destination query', async () => {
@@ -82,7 +82,7 @@ describe('mailbox links', () => {
     if (reason === 'disconnected') state.status = 'disconnected';
     if (reason === 'duplicate') state.target = 'b&mailbox=b';
     mount();
-    expect(screen.getByText('This inbox link is unavailable')).toBeInTheDocument();
+    expect(screen.getByText('This link is for another Gmail account')).toBeInTheDocument();
     expect(state.mutate).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Inbox action' })).toBeNull();
   });
@@ -99,7 +99,7 @@ describe('mailbox links', () => {
         </MailboxLinkBoundary>,
       );
       expect(state.mutate).toHaveBeenCalledTimes(1);
-      expect(screen.getByRole('button', { name: 'Continue with my current inbox' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Keep using this account' })).toBeDisabled();
       expect(screen.queryByRole('button', { name: 'Open Gmail accounts' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Inbox action' })).toBeNull();
       state.active = 'b';
@@ -114,7 +114,7 @@ describe('mailbox links', () => {
         expect(state.mutate).toHaveBeenCalledTimes(2);
         expect(screen.queryByRole('button', { name: 'Inbox action' })).toBeNull();
       } else if (target === 'unknown')
-        expect(screen.getByText('This inbox link is unavailable')).toBeInTheDocument();
+        expect(screen.getByText('This link is for another Gmail account')).toBeInTheDocument();
       else expect(screen.getByRole('button', { name: 'Inbox action' })).toBeInTheDocument();
     },
   );

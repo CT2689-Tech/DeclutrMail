@@ -7,6 +7,8 @@
 
 import type { Metadata } from 'next';
 
+import { WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { BILLING_NAME } from '@declutrmail/shared/copy/screen-decisions';
 import { isPricingV2 } from '@declutrmail/shared/entitlements';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import { TermsPlansV2 } from '@/features/marketing/pricing/terms-v2';
@@ -70,10 +72,7 @@ function TermsOfServicePage({ pricingV2 = isPricingV2() }: { pricingV2?: boolean
 
       <LegalSection id="your-instructions" title="3. Actions run on your instructions">
         <p>
-          DeclutrMail modifies your mailbox only at your instruction — either an action you approve
-          directly, or a rule you explicitly enabled. Before a manual sender-cleanup action moves
-          mail in Triage or Senders, DeclutrMail shows the current matching count, an available
-          sample, and the planned Gmail changes. Matching mail is resolved again when the action
+          {WS3_COPY['ws3.pr1019.terms.instruction']} Matching mail is resolved again when the action
           runs, so the final affected count can change. Autopilot rules show a preview before
           activation; once enabled, matching future mail can run without a new per-message approval.
           You are responsible for reviewing previews and rule scope before approval.{' '}
@@ -95,30 +94,29 @@ function TermsOfServicePage({ pricingV2 = isPricingV2() }: { pricingV2?: boolean
             Subscriptions renew automatically until canceled; you can cancel at any time and keep
             access until the end of the period you paid for.
           </p>
-          <ul>
-            <li>
-              <strong>Outside India:</strong> purchases are processed by Paddle, our merchant of
-              record. Paddle handles payment, applicable taxes, and invoicing, and Paddle&rsquo;s
-              buyer terms apply to the transaction.
-            </li>
-            <li>
-              <strong>In India:</strong> payments are processed by Razorpay, and DeclutrMail is your
-              seller.
-            </li>
-          </ul>
           <p>
-            Refunds are described in our <a href="/refunds">Refund Policy</a>. A subscription marked
-            past due keeps subscription access for up to 14 days after its billing period ends. If
-            the provider supplies no period end, the window starts when the past-due event is
-            processed. Access can end sooner if the provider cancels or halts the subscription. When
-            subscription access ends, your plan is Free unless a separate complimentary grant still
-            applies; your data is not deleted.
+            Paddle is our merchant of record and reseller, so you buy your plan from Paddle. Paddle
+            handles payment, tax and invoices, and Paddle&rsquo;s buyer terms apply to the purchase.
+            This is the same everywhere, including India.
           </p>
           <p>
-            Paddle offers a 30-day pause: subscription access ends immediately and billing resumes
-            automatically after 30 days. Razorpay plan changes, payment-method updates, pausing and
-            undoing cancellation require support. Existing connected inboxes keep working after a
-            downgrade; new connections are blocked while above your plan’s inbox limit.
+            If you already pay in rupees through Razorpay, your plan carries on and you can still
+            manage it in {BILLING_NAME}. You can cancel there; to change, pause or restart it, email
+            support@declutrmail.com. For these plans, DeclutrMail is the seller.
+          </p>
+          <p>
+            Refunds are described in our <a href="/refunds">Refund Policy</a>. To ask for a refund,
+            contact Paddle or email support@declutrmail.com. A subscription marked past due keeps
+            subscription access for up to 14 days after its billing period ends. If the provider
+            supplies no period end, the window starts when the past-due event is processed. Access
+            can end sooner if the provider cancels or halts the subscription. When subscription
+            access ends, your plan is Free unless a separate complimentary grant still applies; your
+            data is not deleted.
+          </p>
+          <p>
+            Paddle offers a 30-day pause: your paid access ends right away and billing restarts
+            automatically after 30 days. Gmail accounts you already connected keep working after a
+            downgrade. You can&rsquo;t connect more while you&rsquo;re over your plan&rsquo;s limit.
           </p>
         </LegalSection>
       )}

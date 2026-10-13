@@ -64,7 +64,7 @@ vi.mock('@/lib/posthog', () => ({ track: vi.fn(() => Promise.resolve()) }));
 
 import { ERROR_CODES, type BillingSubscription } from '@declutrmail/shared/contracts';
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { meterChipLine, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { track } from '@/lib/posthog';
 import {
@@ -337,7 +337,11 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // so the old copy would have been visibly wrong.
     expect(
       within(card).getByText(
-        `3 of ${TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions left · resets Sep 17, 2026`,
+        meterChipLine({
+          remaining: 3,
+          limit: TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0,
+          resetAt: '2026-09-17T00:00:00.000Z',
+        }).text,
       ),
     ).toBeInTheDocument();
     expect(
@@ -425,8 +429,10 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(within(panel).getByRole('checkbox')).not.toBeChecked();
     expect(within(panel).getByText(/Claim Founding Pro — \$129\/yr/)).toBeInTheDocument();
     expect(within(panel).getByText(/\$190 billed annually, starting today/)).toBeInTheDocument();
-    expect(within(panel).getByText('30-day money-back guarantee')).toBeInTheDocument();
-    expect(within(panel).queryByText(/14-day money-back/)).not.toBeInTheDocument();
+    expect(
+      within(panel).getByText('14-day money-back on any purchase, once per customer.'),
+    ).toBeInTheDocument();
+    expect(within(panel).queryByText(/30-day money-back/)).not.toBeInTheDocument();
 
     // Click 2 — confirm into the provider surface.
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
@@ -1408,7 +1414,13 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(notice).toHaveTextContent('Billing changes stay paused to avoid charging you twice.');
     const currentAccess = screen.getByTestId('current-plan-card');
     expect(within(currentAccess).getByText('Free')).toBeInTheDocument();
-    expect(currentAccess).toHaveTextContent('3 of 50 cleanup actions left');
+    expect(currentAccess).toHaveTextContent(
+      meterChipLine({
+        remaining: 3,
+        limit: TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0,
+        resetAt: mockCleanupResetsAt ?? '',
+      }).text,
+    );
     expect(currentAccess).not.toHaveTextContent(/no card on file|Free forever/i);
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
     // D249 copy truth: a first purchase awaits a PLAN UPGRADE — the old
@@ -2125,7 +2137,7 @@ describe('BillingScreen — paid subscriber', () => {
     stubSubscription(() => jsonOk({ data: { ...PRO_SUB, billingReviewPending: true } }));
     const mounted = renderScreen();
     const card = await screen.findByTestId('current-plan-card');
-    expect(await screen.findByText(/Billing verification pending/)).toBeInTheDocument();
+    expect(await screen.findByText(/confirming your payment/)).toBeInTheDocument();
     expect(card).not.toHaveTextContent('Next renewal');
     expect(within(card).getByRole('button', { name: 'Review cancellation' })).toBeEnabled();
     expect(within(card).queryByText('Manage plan')).toBeNull();
@@ -2137,7 +2149,7 @@ describe('BillingScreen — paid subscriber', () => {
     expect(within(cancellation).queryByRole('button', { name: 'Pause for 30 days' })).toBeNull();
     mounted.unmount();
     renderScreen();
-    expect(await screen.findByText(/Billing verification pending/)).toBeInTheDocument();
+    expect(await screen.findByText(/confirming your payment/)).toBeInTheDocument();
   });
   it('plan card: tier, price, renewal, cancel affordance — and NO provider name', async () => {
     mockTier = 'pro';
@@ -2816,7 +2828,7 @@ describe('BillingScreen — paid subscriber', () => {
     let modal = screen.getByTestId('cancel-modal');
     fireEvent.click(within(modal).getByRole('button', { name: 'Cancel subscription' }));
     expect(await within(modal).findByRole('alert')).toHaveTextContent(
-      'Cancellation could not be processed. Please try again.',
+      'Couldn’t cancel your plan. Try again.',
     );
 
     // Close ("Keep my plan") then reopen — the stale error must be gone.
@@ -2943,7 +2955,7 @@ describe('BillingScreen — paid subscriber', () => {
     expect(panel).toHaveTextContent('Next billing date: Jul 30, 2027.');
     // Money moves today, so the guarantee is reassurance and belongs here
     // — unlike the $0 downgrade branch, where it contradicts.
-    expect(panel).toHaveTextContent('30-day money-back guarantee');
+    expect(panel).toHaveTextContent('14-day money-back on any purchase, once per customer.');
   });
 
   it('blocks an upgrade while its quote fails, then retries before allowing confirmation', async () => {
@@ -3210,6 +3222,11 @@ describe('BillingScreen — paid subscriber', () => {
     fireEvent(disclosure, new Event('toggle'));
     const table = await screen.findByRole('table', { name: 'Included features by plan' });
     expect(within(table).getByRole('row', { name: 'Connected inboxes 1 1 5' })).toBeInTheDocument();
+    expect(
+      within(table).getByRole('rowheader', {
+        name: 'Choices for each sender \u2014 Archive \u00b7 Unsubscribe \u00b7 Later \u00b7 Delete',
+      }),
+    ).toBeInTheDocument();
     disclosure.open = false;
     fireEvent(disclosure, new Event('toggle'));
     await waitFor(() =>
@@ -3346,6 +3363,7 @@ describe('BillingScreen — paid subscriber', () => {
     // contradiction of the sentence right above it (founder, 2026-07-30).
     // It belongs on the branch where money moves today.
     expect(panel).not.toHaveTextContent('30-day money-back guarantee');
+    expect(panel).not.toHaveTextContent('14-day money-back on any purchase');
     await waitFor(() =>
       expect(within(panel).getByRole('button', { name: 'Schedule downgrade' })).toBeEnabled(),
     );
@@ -3515,9 +3533,7 @@ describe('BillingScreen — paid subscriber', () => {
     // by the paid→paid switch test above).
     const notice = await screen.findByTestId('payment-processing-notice');
     expect(notice).toHaveTextContent('Plan change unconfirmed — confirming your plan.');
-    expect(notice).toHaveTextContent(
-      'The provider has not confirmed whether your plan change applied.',
-    );
+    expect(notice).toHaveTextContent('We’re still confirming your plan change.');
     expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
     expect(screen.queryAllByRole('button', { name: /Switch to/ })).toHaveLength(0);
     expect(changeAttempts).toBe(1);

@@ -35,10 +35,7 @@ export async function deletionScheduledEmail(
   const text = [
     `Your DeclutrMail account is scheduled for deletion on ${input.scheduledFor}.`,
     '',
-    'On that date, everything DeclutrMail stored about your mailboxes —',
-    'sender names and addresses, subject lines, snippets, labels, and',
-    'dates — will be permanently deleted. Nothing in your Gmail account',
-    'itself is touched.',
+    'On that date, everything DeclutrMail saved about your Gmail accounts will be permanently deleted: sender names and addresses, subject lines, preview snippets, labels and dates. Nothing in your Gmail account changes.',
     '',
     'Changed your mind? Cancel any time before then:',
     emailLink(input.cancelUrl, { template: 'deletion_scheduled' }),
@@ -67,9 +64,9 @@ export async function deletionScheduledEmail(
         {input.scheduledFor}
       </Text>
       <Text style={{ ...BODY_TEXT, margin: '0 0 16px' }}>
-        On that date, everything DeclutrMail stored about your mailboxes — sender names and
-        addresses, subject lines, snippets, labels, and dates — will be permanently deleted. Nothing
-        in your Gmail account itself is touched.
+        On that date, everything DeclutrMail saved about your Gmail accounts will be permanently
+        deleted: sender names and addresses, subject lines, preview snippets, labels and dates.
+        Nothing in your Gmail account changes.
       </Text>
       <Text style={{ ...BODY_TEXT, margin: '0 0 26px' }}>Changed your mind?</Text>
       <Button

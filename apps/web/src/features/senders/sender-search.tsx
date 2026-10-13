@@ -319,7 +319,7 @@ export function SenderSearch({
                 color: color.fgMuted,
               }}
             >
-              Searching mailbox…
+              Searching…
             </div>
           )}
           {matches.map((s, i) => (

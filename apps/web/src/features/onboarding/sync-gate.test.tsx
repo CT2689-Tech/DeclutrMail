@@ -55,7 +55,7 @@ describe('stageSentence (D224 — the REAL current_stage, one sentence)', () => 
     expect(stageSentence(SYNCING)).toBe('Grouping email by sender.');
     // Same percentage, different real stage ⇒ different sentence.
     expect(stageSentence({ ...SYNCING, current_stage: 'fetching_metadata' })).toBe(
-      'Collecting sender details.',
+      'Finding your senders.',
     );
     expect(stageSentence({ ...SYNCING, current_stage: 'computing_recommendations' })).toBe(
       'Preparing suggestions.',
@@ -93,7 +93,7 @@ describe('SyncGate render', () => {
   it('syncing: the title, ONE progressbar at the real percent, ONE stage sentence', () => {
     const html = renderToStaticMarkup(<SyncGate status={SYNCING} />);
     // "Gmail": the scan reads all mail but Spam and Trash, not the inbox.
-    expect(html).toContain('Reading your Gmail');
+    expect(html).toContain('Scanning your Gmail');
     expect(html).toContain('aria-label="Scan progress"');
     expect(html).toContain('aria-valuenow="45"');
     expect(html.match(/role="progressbar"/g)).toHaveLength(1);
@@ -163,7 +163,7 @@ describe('SyncGate render', () => {
   it('ready: says so plainly — no "Reading…" title, no leave line, no second ready line', () => {
     const html = renderToStaticMarkup(<SyncGate status={READY} readyEmail />);
     expect(html).toContain('Your inbox is ready.');
-    expect(html).not.toContain('Reading your Gmail');
+    expect(html).not.toContain('Scanning your Gmail');
     expect(html).not.toContain('data-testid="sync-leave"');
     expect(html.match(/Your inbox is ready\./g)).toHaveLength(1);
   });
@@ -177,8 +177,8 @@ describe('SyncGate render', () => {
   it('failed: cause + next action, with a real retry', () => {
     const html = renderToStaticMarkup(withClient(<SyncGate status={FAILED} />));
     // FAILED is RateLimitError + progress 32 → rate_limit partlyReady.
-    expect(html).toContain('Your inbox is partly ready');
-    expect(html).toContain('Finish sync');
+    expect(html).toContain('Most of your email is scanned');
+    expect(html).toContain('Finish the scan');
     expect(html).toContain('data-reason-code="rate_limit"');
     expect(html).toContain('data-partly-ready="true"');
     // The trust badge is not on this gate (moved to the promise step) —
@@ -206,7 +206,7 @@ describe('SyncGate render', () => {
     const html = renderToStaticMarkup(withClient(<SyncGate status={FAILED} />));
     expect(html).not.toContain('retry automatically');
     expect(html).not.toContain('check back shortly');
-    expect(html).toContain('Finish sync');
+    expect(html).toContain('Finish the scan');
 
     const quota = renderToStaticMarkup(
       withClient(<SyncGate status={{ ...FAILED, error_code: 'RateLimitError' }} />),
@@ -248,12 +248,12 @@ describe('SyncGate render', () => {
     expect(html('ProviderPermissionError')).toContain('fuller permission grant');
     expect(html('InvalidGrantError')).toContain('allow Gmail access');
     expect(html('AuthExpiredError')).toContain('stopped accepting our access');
-    expect(html('RateLimitError', 0)).toContain('paused your sync');
-    expect(html('GmailQuotaError', 32)).toContain('partly ready');
+    expect(html('RateLimitError', 0)).toContain('slow down');
+    expect(html('GmailQuotaError', 32)).toContain('Most of your email is scanned');
 
     for (const name of ['TransientError', 'PermanentError', 'ValidationError'] as const) {
       const markup = html(name);
-      expect(markup).toContain('We hit a snag reading your inbox');
+      expect(markup).toContain('The scan stopped');
       expect(markup).toContain('data-reason-code="unknown"');
     }
   });
@@ -295,7 +295,7 @@ describe('SyncGate — the scan line "12,400 of 40,898 emails" (D109 reversal 20
     // The stage sentence stays the live status — for screen readers only,
     // so each new count is not announced.
     const status = screen.getByRole('status');
-    expect(status).toHaveTextContent('Collecting sender details.');
+    expect(status).toHaveTextContent('Finding your senders.');
     expect(status).toHaveStyle({ position: 'absolute' });
     expect(line).not.toHaveAttribute('role');
   });
@@ -304,7 +304,7 @@ describe('SyncGate — the scan line "12,400 of 40,898 emails" (D109 reversal 20
     render(<SyncGate status={{ ...READING, message_progress: null }} />);
 
     expect(screen.queryByTestId('sync-count')).toBeNull();
-    expect(screen.getByRole('status')).toHaveTextContent('Collecting sender details.');
+    expect(screen.getByRole('status')).toHaveTextContent('Finding your senders.');
     expect(screen.getByRole('status')).not.toHaveStyle({ position: 'absolute' });
   });
 
@@ -314,7 +314,7 @@ describe('SyncGate — the scan line "12,400 of 40,898 emails" (D109 reversal 20
     render(<SyncGate status={older} />);
 
     expect(screen.queryByTestId('sync-count')).toBeNull();
-    expect(screen.getByRole('status')).toHaveTextContent('Collecting sender details.');
+    expect(screen.getByRole('status')).toHaveTextContent('Finding your senders.');
   });
 
   it('shows counts only while the scan reads the mailbox', () => {
@@ -497,19 +497,20 @@ describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-syn
 
   it('still offers a real retry for a non-auth failure (e.g. RateLimitError)', () => {
     render(withClient(<SyncGate status={FAILED} mailboxId="mb-1" />));
-    expect(screen.getByRole('heading', { name: 'Your inbox is partly ready' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Finish sync' })).toBeInTheDocument();
-    expect(screen.getByText(/already pulled a lot of your mail/i)).toHaveAttribute(
+    expect(
+      screen.getByRole('heading', { name: 'Most of your email is scanned' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Finish the scan' })).toBeInTheDocument();
+    expect(screen.getByText(/Gmail slowed us down/i)).toHaveAttribute(
       'data-reason-code',
       'rate_limit',
     );
-    expect(screen.getByText(/already pulled a lot of your mail/i)).toHaveAttribute(
-      'data-partly-ready',
-      'true',
-    );
+    expect(screen.getByText(/Gmail slowed us down/i)).toHaveAttribute('data-partly-ready', 'true');
     expect(screen.queryByRole('button', { name: 'Reconnect Gmail' })).not.toBeInTheDocument();
     // Continue is a hook — omitted callback means no silent no-op.
-    expect(screen.queryByRole('button', { name: 'Continue ready' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Start with what’s ready' }),
+    ).not.toBeInTheDocument();
   });
 
   it('offers Reconnect Gmail for ProviderPermissionError (insufficient_scopes, never Retry)', () => {
@@ -527,7 +528,7 @@ describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-syn
       'insufficient_scopes',
     );
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Finish sync' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Finish the scan' })).not.toBeInTheDocument();
   });
 
   it('stamps invalid_grant / reconnect_required on the matching reconnect codes', () => {
@@ -567,22 +568,24 @@ describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-syn
       ),
     );
     expect(
-      screen.getByRole('heading', { name: 'Gmail paused your sync for a bit' }),
+      screen.getByRole('heading', { name: 'Gmail asked us to slow down' }),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
-    expect(screen.getByText(/temporarily limited how fast we can read/i)).toHaveAttribute(
+    expect(screen.getByText(/limits how fast apps can scan/i)).toHaveAttribute(
       'data-reason-code',
       'rate_limit',
     );
-    expect(screen.getByText(/temporarily limited how fast we can read/i)).toHaveAttribute(
+    expect(screen.getByText(/limits how fast apps can scan/i)).toHaveAttribute(
       'data-partly-ready',
       'false',
     );
     expect(screen.queryByRole('button', { name: 'Reconnect Gmail' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Continue ready' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Start with what’s ready' }),
+    ).not.toBeInTheDocument();
   });
 
-  it('rate_limit + progress + onContinuePartial: Finish sync | Continue ready', () => {
+  it('rate_limit + progress + onContinuePartial: Finish the scan | Start with what’s ready', () => {
     const onContinuePartial = vi.fn();
     render(
       withClient(
@@ -593,9 +596,11 @@ describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-syn
         />,
       ),
     );
-    expect(screen.getByRole('button', { name: 'Finish sync' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Your inbox is partly ready' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue ready' }));
+    expect(screen.getByRole('button', { name: 'Finish the scan' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Most of your email is scanned' }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Start with what’s ready' }));
     expect(onContinuePartial).toHaveBeenCalledOnce();
     expect(screen.queryByRole('button', { name: 'Reconnect Gmail' })).not.toBeInTheDocument();
   });
@@ -639,7 +644,7 @@ describe('SyncGate — stuck queued/syncing (stale heartbeat)', () => {
         />,
       ),
     );
-    expect(screen.getByText(/Reading your Gmail/)).toBeInTheDocument();
+    expect(screen.getByText(/Scanning your Gmail/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
   });
 
@@ -647,7 +652,7 @@ describe('SyncGate — stuck queued/syncing (stale heartbeat)', () => {
     const html = renderToStaticMarkup(
       withClient(<SyncGate status={SYNCING} mailboxId="mb-1" nowMs={NOW} />),
     );
-    expect(html).toContain('Reading your Gmail');
+    expect(html).toContain('Scanning your Gmail');
     expect(html).not.toContain('has not moved');
   });
 });

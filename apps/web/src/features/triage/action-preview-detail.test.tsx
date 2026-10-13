@@ -124,7 +124,7 @@ describe('Triage preview — verification detail (D226 parity)', () => {
   it('states the cleanup cost at the moment it is spent', () => {
     renderPreview();
     expect(
-      screen.getByText(/Uses 1 of your 34 cleanup actions left this month/),
+      screen.getByText(/This clears 1 email. You have 34 free this month/),
     ).toBeInTheDocument();
   });
 
@@ -133,7 +133,9 @@ describe('Triage preview — verification detail (D226 parity)', () => {
   it('charges one cleanup action for unsubscribe plus archive while the email meter is off', () => {
     renderPreview({ verb: 'Unsubscribe', archiveHistoric: true, mode: 'inline' });
     expect(screen.queryByText('Unsubscribing is free and doesn’t count.')).toBeNull();
-    expect(screen.getByText(/Uses 1 of your 34 cleanup actions/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/This clears 1 email. You have 34 free this month/),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/Uses 2 /)).toBeNull();
     expect(screen.getByText('Whether their email stops is up to the sender.')).toBeInTheDocument();
   });
@@ -165,7 +167,9 @@ describe('Triage preview — verification detail (D226 parity)', () => {
   it('shows the detail on the inline path too, since D34 lets the sheet be skipped', () => {
     renderPreview({ mode: 'inline' });
     expect(screen.getByTestId('mail-location-line')).toBeInTheDocument();
-    expect(screen.getByText(/Uses 1 of your 34 cleanup actions/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/This clears 1 email. You have 34 free this month/),
+    ).toBeInTheDocument();
   });
 });
 

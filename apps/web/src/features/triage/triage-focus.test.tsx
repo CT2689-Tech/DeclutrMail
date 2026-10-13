@@ -163,7 +163,7 @@ describe('focus mode — resting states', () => {
   it('loading: one card-sized skeleton, and neither a count nor a mode toggle', () => {
     renderScreen({ kind: 'loading' });
     expect(screen.getByRole('heading', { level: 1, name: 'Triage' })).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('Loading triage queue');
+    expect(screen.getByRole('status')).toHaveTextContent('Loading Triage…');
     expect(document.querySelectorAll('.dm-skeleton')).toHaveLength(1);
     expect(screen.queryByRole('status', { name: /decided this session/ })).toBeNull();
     expect(screen.queryByRole('button', { name: 'List' })).toBeNull();
@@ -172,7 +172,7 @@ describe('focus mode — resting states', () => {
   it('error: states the failure and offers Retry', () => {
     const retry = vi.fn();
     renderScreen({ kind: 'error', error: new Error('boom'), retry });
-    expect(screen.getByText("Your queue didn't load")).toBeInTheDocument();
+    expect(screen.getByText('Your Triage list didn’t load')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(retry).toHaveBeenCalledTimes(1);
   });
@@ -215,12 +215,12 @@ describe('focus mode — the card', () => {
     // Either noun: the row's why-line ended "· N messages" until it
     // became "· N emails", which a /messages$/ guard could never see.
     expect(within(card()).queryByText(/·\s*[\d,]+ (emails?|messages?)$/)).toBeNull();
-    expect(screen.queryByRole('list', { name: 'Triage queue' })).toBeNull();
+    expect(screen.queryByRole('list', { name: 'Triage list' })).toBeNull();
     // The second sender is not on screen.
     expect(screen.queryByRole('heading', { name: GROUPON.senderName })).toBeNull();
     expect(
       screen.getByRole('status', {
-        name: '0 decided this session; 2 in queue; reviewing 1 of 2',
+        name: '0 decided this session; 2 left; reviewing 1 of 2',
       }),
     ).toHaveTextContent('0 decided·Reviewing 1 of 2');
   });
@@ -355,7 +355,7 @@ describe('focus mode — deciding runs the EXISTING lifecycle (D226)', () => {
     expect(cardTitle()).toBe(LINKEDIN.senderName);
     expect(
       screen.getByRole('status', {
-        name: '1 decided this session; 1 in queue; reviewing 1 of 1',
+        name: '1 decided this session; 1 left; reviewing 1 of 1',
       }),
     ).toBeInTheDocument();
   });
@@ -428,7 +428,7 @@ describe('focus mode — Skip', () => {
     // Position, not decisions: nothing left the queue.
     expect(
       screen.getByRole('status', {
-        name: '0 decided this session; 2 in queue; reviewing 2 of 2',
+        name: '0 decided this session; 2 left; reviewing 2 of 2',
       }),
     ).toBeInTheDocument();
     fireEvent.keyDown(window, { key: 'ArrowRight' });
@@ -611,16 +611,16 @@ describe('focus ↔ list', () => {
   it('"See all" switches to the list and the choice persists on this device', () => {
     const first = renderScreen(ready([GROUPON, LINKEDIN]));
     fireEvent.click(screen.getByRole('button', { name: 'List' }));
-    expect(screen.getByRole('list', { name: 'Triage queue' })).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Triage list' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Current decision' })).toBeNull();
     // List mode counts decisions, not a position.
     expect(
-      screen.getByRole('status', { name: '0 decided this session; 2 in queue' }),
+      screen.getByRole('status', { name: '0 decided this session; 2 left' }),
     ).toBeInTheDocument();
     first.unmount();
 
     renderScreen(ready([GROUPON, LINKEDIN]));
-    expect(screen.getByRole('list', { name: 'Triage queue' })).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Triage list' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Focus' }));
     expect(screen.getByRole('button', { name: 'Focus' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'false');
@@ -630,7 +630,7 @@ describe('focus ↔ list', () => {
   it('list rows at rest carry no confidence band, no reasoning and no age; the list names every sender', () => {
     storeTriageMode('list');
     renderScreen(ready([GROUPON, LINKEDIN, SARAH]));
-    const list = screen.getByRole('list', { name: 'Triage queue' });
+    const list = screen.getByRole('list', { name: 'Triage list' });
     for (const row of [GROUPON, LINKEDIN, SARAH]) {
       expect(within(list).getByText(row.senderName)).toBeInTheDocument();
     }
@@ -642,7 +642,7 @@ describe('focus ↔ list', () => {
 
   it('onboarding journeys keep their fixed list and ignore the preference', () => {
     renderScreen(ready([GROUPON, LINKEDIN]), createTestQueryClient(), { journey: 'first_relief' });
-    expect(screen.getByRole('list', { name: 'Triage queue' })).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Triage list' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'List' })).toBeNull();
     expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
   });

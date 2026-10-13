@@ -32,7 +32,7 @@ export function TriageQueueSkeleton({ rows = 5, style }: TriageQueueSkeletonProp
       role="status"
       aria-busy="true"
       aria-live="polite"
-      aria-label="Loading triage queue"
+      aria-label="Loading Triage…"
       data-dm-skeleton-composite="triage-queue"
       style={{
         display: 'flex',

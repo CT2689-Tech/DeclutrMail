@@ -389,7 +389,7 @@ describe('HomeView', () => {
       />,
     );
     expect(screen.getByRole('heading', { name: HOME_DECK.syncingTitle })).toBeInTheDocument();
-    expect(screen.getByText('Collecting sender details.')).toBeInTheDocument();
+    expect(screen.getByText('Finding your senders.')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Review senders' })).toBeNull();
     expect(screen.queryByText(HOME_DECK.syncingBody)).toBeNull();
     expect(screen.queryByText('Waiting to start.')).toBeNull();

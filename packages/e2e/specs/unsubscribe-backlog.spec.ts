@@ -158,7 +158,7 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
     await expect(triageSheet).toContainText('Unsubscribing is free and doesn’t count.');
   } else if (me.meterV2 !== true && typeof me.cleanupRemaining === 'number') {
     await expect(triageSheet).toContainText(
-      `Uses 1 of your ${me.cleanupRemaining} cleanup actions`,
+      `This clears 1 email. You have ${me.cleanupRemaining} free this month.`,
     );
     await expect(triageSheet).not.toContainText('Uses 2 ');
   } else {

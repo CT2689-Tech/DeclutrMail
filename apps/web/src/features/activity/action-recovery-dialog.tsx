@@ -267,9 +267,11 @@ export function ActionRecoveryDialog({
                 ? 'Starting…'
                 : protectedNow
                   ? `${failedActionNoun(preview.verb)} anyway`
-                  : preview.outcome === 'already_applied'
-                    ? `${failedActionNoun(preview.verb)} again`
-                    : `${failedActionNoun(preview.verb)} ${preview.remainingCount.toLocaleString('en-US')}`}
+                  : preview.outcome === 'partial'
+                    ? 'Finish it'
+                    : preview.outcome === 'already_applied'
+                      ? `${failedActionNoun(preview.verb)} again`
+                      : `${failedActionNoun(preview.verb)} ${preview.remainingCount.toLocaleString('en-US')}`}
             </Button>
           )}
         </div>
@@ -328,8 +330,8 @@ function RecoveryPreviewBody({
     if (preview.outcome === 'reconnect_required') {
       return (
         <div role="alert" style={{ color: color.amber, fontSize: text.base, lineHeight: 1.5 }}>
-          DeclutrMail could not verify Gmail because access needs attention. Reconnect the account,
-          wait for its sync to finish, then return to Activity and choose Check and retry.
+          We can’t check Gmail until you reconnect. Reconnect, wait for the scan to finish, then
+          come back and choose Check again.
           <div style={{ marginTop: 10 }}>
             <Button tone="primary" onClick={onReconnect}>
               Reconnect Gmail
@@ -427,9 +429,9 @@ function RecoveryConsequence({
   // no promise about Gmail: mail moved back since the check moves again.
   const outcomeCopy =
     preview.outcome === 'already_applied'
-      ? 'Gmail already reflects this action. Confirming runs it again on the same emails.'
+      ? 'This already happened in Gmail. Confirming does it again for the same emails.'
       : preview.outcome === 'partial'
-        ? 'Gmail reflects only part of the original action. Confirming finishes it for the emails found in Gmail.'
+        ? 'This only partly happened in Gmail. Confirming finishes it.'
         : null;
   return (
     <div

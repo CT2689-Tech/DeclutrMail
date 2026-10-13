@@ -12,6 +12,8 @@ import {
   type UnsubscribeBacklogMode,
 } from '@/features/senders/unsubscribe-backlog/preview-copy';
 
+import { meterPreviewText } from '@declutrmail/shared/entitlements';
+
 import { useNow } from '@/lib/use-now';
 import type { TriageDecisionRow } from './data';
 import type { ActionVerb } from './types';
@@ -279,15 +281,13 @@ export function buildPreviewFacts({
   };
 }
 
-/** "Uses 1 of your 34 cleanup actions left this month." — metered tiers only. */
+/** Email-count preview from the deck. Hidden once a metered summary is showing. */
 export function cleanupCostLine(
   unitsNeeded: number,
   quotaRemaining: number | null | undefined,
 ): string | null {
   if (quotaRemaining == null) return null;
-  return `Uses ${n(unitsNeeded)} of your ${n(quotaRemaining)} cleanup action${
-    quotaRemaining === 1 ? '' : 's'
-  } left this month.`;
+  return meterPreviewText(unitsNeeded, quotaRemaining);
 }
 
 /**

@@ -22,7 +22,7 @@ const Resolver = dynamic(
     import('./mailbox-link-resolver')
       .then((module) => module.MailboxLinkResolver)
       .catch(() => LinkDownloadFailure),
-  { ssr: false, loading: () => <p role="status">Opening linked inbox…</p> },
+  { ssr: false, loading: () => <p role="status">Opening…</p> },
 );
 export function MailboxLinkBoundary({ children }: { children: ReactNode }) {
   const search = useSearchParams();

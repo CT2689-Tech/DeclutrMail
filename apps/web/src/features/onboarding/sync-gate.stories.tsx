@@ -18,7 +18,7 @@
 //   • FailedReconnect      — Google stopped accepting access: "Reconnect Gmail" leads
 //   • FailedInvalidGrant / FailedInsufficientScopes — Reconnect only
 //   • FailedQuota / FailedQuotaPartlyReady — rate_limit Try again /
-//     Finish sync | Continue ready
+//     Finish the scan | Start with what’s ready
 //   • Stuck                — stale heartbeat while still queued/syncing
 //   • SyncingSecondary / FailedSecondary — second mailbox, with "Go back to <primary>"
 
@@ -43,7 +43,7 @@ const meta: Meta<typeof SyncGate> = {
     docs: {
       description: {
         component:
-          'Onboarding sync gate (D109). "Reading your Gmail…" — the strict gate (D6) shown after a Gmail connect. One line saying the user may leave (it promises the "Your inbox is ready" email only when that email will go: switched on, and the first scan of that mailbox), one progress bar and one line under it, all from real backend state: while the scan reads the mailbox, emails read of emails in it (plus time left once the tab has watched two gaps between batches); otherwise the stage sentence. No privacy badge on this screen — it sits on the promise step, at the decision point.',
+          'Onboarding sync gate (D109). "Scanning your Gmail…" — the strict gate (D6) shown after a Gmail connect. One line saying the user may leave (it promises the "Your inbox is ready" email only when that email will go: switched on, and the first scan of that mailbox), one progress bar and one line under it, all from real backend state: while the scan reads the mailbox, emails read of emails in it (plus time left once the tab has watched two gaps between batches); otherwise the stage sentence. No privacy badge on this screen — it sits on the promise step, at the decision point.',
       },
     },
   },
@@ -303,7 +303,7 @@ export const FailedQuota: StoryObj<typeof SyncGate> = {
 };
 
 /**
- * Failed — rate_limit with progress already moved: Finish sync | Continue
+ * Failed — rate_limit with progress already moved: Finish the scan | Continue
  * ready. Continue is a wiring hook; production first-run does not pass
  * it (D6 still requires a completed initial scan).
  */

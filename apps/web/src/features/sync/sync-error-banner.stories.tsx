@@ -74,7 +74,7 @@ function frame(status: SyncStatus, note: ReactNode) {
     <div style={{ background: color.bg, minHeight: 200 }}>
       <QueryClientProvider client={client}>
         <AuthProvider>
-          <SyncErrorBanner mailboxId={ME.activeMailboxId!} />
+          <SyncErrorBanner mailboxId={ME.activeMailboxId!} mailboxEmail={ME.user.email} />
         </AuthProvider>
       </QueryClientProvider>
       <p
@@ -145,7 +145,7 @@ export const UnresolvedFailure: Story<typeof SyncErrorBanner> = {
     ),
 };
 
-/** Persistent — a revoked Gmail grant cannot recover through Sync now. */
+/** Persistent — a revoked Gmail grant cannot recover through Scan now. */
 export const NeedsReconnect: Story<typeof SyncErrorBanner> = {
   render: () =>
     frame(

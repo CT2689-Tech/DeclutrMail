@@ -6,7 +6,7 @@ export default function Loading() {
       gap={24}
       kicker="Clean up / New senders"
       title="Screener"
-      label="Loading the Screener queue"
+      label="Loading new senders…"
       rows={3}
       rowHeight={72}
     />

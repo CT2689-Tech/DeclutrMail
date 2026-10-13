@@ -167,6 +167,6 @@ const TOUR_STEPS = [
   {
     kind: 'recommendation',
     title: 'A highlighted action is a suggestion',
-    body: 'It is what we would pick from this sender’s history. It is never applied for you.',
+    body: 'It’s our suggestion from this sender’s history. We never apply it for you.',
   },
 ] as const;

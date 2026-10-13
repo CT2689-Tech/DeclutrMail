@@ -3,6 +3,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, ErrorState, tokens } from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { FINISH_LABEL } from '@declutrmail/shared/copy/screen-decisions';
 import type { OnboardingCleanupGoal } from '@declutrmail/shared/contracts';
 
@@ -92,9 +93,9 @@ export function StepFirstTriage({
         <PanelShell corner={corner}>
           <ErrorState
             headingLevel={2}
-            title="Your mailbox connection changed"
-            description="This step needs an active Gmail connection. Refresh your connection state to continue."
-            retryLabel="Refresh connection"
+            title="Your Gmail account changed"
+            description="Refresh to continue."
+            retryLabel="Refresh"
             onRetry={() => void resetMailboxScopedCache(queryClient)}
           />
         </PanelShell>
@@ -151,8 +152,10 @@ export function StepFirstTriage({
           }}
         >
           {meta.pinned === 0
-            ? "We didn't find enough repeated email to review here."
-            : `${meta.decided} ${meta.decided === 1 ? 'sender' : 'senders'} reviewed — Archive, Later and Delete can be undone from Activity.`}
+            ? 'Nothing here needs a decision yet.'
+            : meta.decided === 1
+              ? WS2_COPY.simplify.onboarding.reviewed.one
+              : WS2_COPY.simplify.onboarding.reviewed.other.replaceAll('{n}', String(meta.decided))}
         </p>
         <Button
           tone="primary"
@@ -161,7 +164,7 @@ export function StepFirstTriage({
           disabled={completing}
           style={{ minWidth: 240 }}
         >
-          {completing ? 'Finishing…' : 'Open workspace'}
+          {completing ? 'Finishing…' : 'Go to Senders'}
         </Button>
         {/* The undo tray stays reachable on the completion panel — the
             decisions just made must remain reversible (D35/D58). */}
@@ -221,7 +224,7 @@ export function StepFirstTriage({
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {/* Ends onboarding for good — `finish` writes `onboarded_at`
               and there is no way back into this step. It was briefly
-              labelled "Open workspace", which is what the
+              labelled "Go to Senders", which is what the
               COMPLETION panel's primary button says: mid-review, with
               senders still queued, that reads as navigation rather than
               as finishing. Say that it ends the review. */}

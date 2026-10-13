@@ -677,7 +677,10 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       if (isScopeConflict(err)) {
         // The guard moved the scope out from under the confirm. Designed
         // state — the app shell owns the recovery (picker / reconnect).
-        toast('Your active mailbox changed, so nothing was archived.', 'warn');
+        toast(
+          'You switched Gmail accounts, so nothing was archived. Close this and start again.',
+          'warn',
+        );
         return;
       }
       // EVERY other failure — including the remaining 409s — is a real

@@ -44,7 +44,7 @@ export const metadata: Metadata = marketingPageMetadata({
 // the mailbox itself is a tracked FOUNDER-FOLLOWUPS launch item. Was
 // the founder's personal Gmail — a leak on a public marketing page
 // (2026-07-04 launch audit).
-const FOUNDER_MAILTO = 'mailto:support@declutrmail.com?subject=DeclutrMail%20beta';
+const SUPPORT_MAILTO = 'mailto:support@declutrmail.com?subject=DeclutrMail%20beta';
 
 // Plain anchors keep permission entry and founder contact available
 // without client-side navigation or an authenticated session.
@@ -117,8 +117,8 @@ export default async function BetaPage({
             Review Gmail permissions
           </CtaLink>
         )}
-        <CtaLink href={FOUNDER_MAILTO} tone={denied ? 'primary' : 'default'}>
-          Email the founder
+        <CtaLink href={SUPPORT_MAILTO} tone={denied ? 'primary' : 'default'}>
+          Email us
         </CtaLink>
       </div>
       {!denied && (

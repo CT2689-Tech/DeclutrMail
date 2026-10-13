@@ -5,12 +5,43 @@ import { accountDeletionQueryOptions } from './api/query-options';
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 
 import { ERROR_CODES } from '@declutrmail/shared/contracts';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 
 import { ApiError } from '@/lib/api/client';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
-import { AccountDeletionSection, deletionSubmitError } from './account-deletion-section';
+
+import {
+  AccountDeletionSection,
+  deletionBlockCopy,
+  deletionSubmitError,
+} from './account-deletion-section';
 import { useAccountDeletionStatus, useRequestAccountDeletion } from './api/use-account-deletion';
+
+function renderBlocked(reason: 'subscription' | 'checkout' | 'verification') {
+  const client = createTestQueryClient();
+  client.setQueryData(
+    accountDeletionQueryOptions(async () => {
+      throw new Error('unexpected');
+    }).queryKey,
+    {
+      request: null,
+      billingBlockReason: reason,
+      projection: {
+        flatGraceAt: '2026-10-17T00:00:00Z',
+        latestUndoExpiresAt: null,
+        activeUndoCount: 0,
+        projectedEffectiveAt: '2026-10-17T00:00:00Z',
+        projectedBasis: 'flat-grace',
+      },
+    },
+  );
+  render(
+    <QueryWrapper client={client}>
+      <AccountDeletionSection />
+    </QueryWrapper>,
+  );
+}
 
 function conflict(code: string): ApiError {
   return new ApiError(409, { error: { code } }, 'conflict');
@@ -30,37 +61,58 @@ describe('deletionSubmitError', () => {
     expect(deletionSubmitError(new ApiError(500, {}, 'boom'))).toMatch(/try again/i);
     expect(deletionSubmitError(null)).toBeNull();
   });
+
+  it('names cancel-first for an uncanceled plan and the payment check otherwise', () => {
+    expect(deletionSubmitError(conflict('DELETION_BILLING_BLOCKED'))).toBe(
+      'Cancel your plan first, then delete your account.',
+    );
+    expect(deletionSubmitError(conflict('DELETION_BILLING_UNVERIFIED'))).toBe(
+      WS2_COPY.simplify.deleteAccount.paymentPending,
+    );
+    expect(deletionBlockCopy('subscription', null)).toBe(
+      'Cancel your plan first, then delete your account.',
+    );
+    expect(deletionBlockCopy('checkout', conflict('DELETION_BILLING_BLOCKED'))).toBe(
+      WS2_COPY.simplify.deleteAccount.paymentPending,
+    );
+    expect(deletionBlockCopy('verification', null)).toBe(
+      WS2_COPY.simplify.deleteAccount.paymentPending,
+    );
+    expect(deletionBlockCopy(null, conflict('DELETION_BILLING_BLOCKED'))).toBe(
+      'Cancel your plan first, then delete your account.',
+    );
+    expect(deletionBlockCopy(undefined, null)).toBeNull();
+  });
 });
 
 describe('AccountDeletionSection', () => {
-  it('blocks deletion and provides Billing and support routes when billing is unresolved', async () => {
-    const client = createTestQueryClient();
-    client.setQueryData(
-      accountDeletionQueryOptions(async () => {
-        throw new Error('unexpected');
-      }).queryKey,
-      {
-        request: null,
-        billingBlockReason: 'verification',
-        projection: {
-          flatGraceAt: '2026-10-17T00:00:00Z',
-          latestUndoExpiresAt: null,
-          activeUndoCount: 0,
-          projectedEffectiveAt: '2026-10-17T00:00:00Z',
-          projectedBasis: 'flat-grace',
-        },
-      },
-    );
-    render(
-      <QueryWrapper client={client}>
-        <AccountDeletionSection />
-      </QueryWrapper>,
-    );
+  it('blocks deletion and names the payment check when verification is pending', async () => {
+    renderBlocked('verification');
     expect(await screen.findByRole('button', { name: 'Delete account' })).toBeDisabled();
-    expect(screen.getByRole('link', { name: 'Open Billing' })).toHaveAttribute('href', '/billing');
-    expect(screen.getByRole('link', { name: 'contact support' })).toHaveAttribute(
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      WS2_COPY.simplify.deleteAccount.paymentPending,
+    );
+    expect(screen.getByRole('link', { name: 'support@declutrmail.com' })).toHaveAttribute(
       'href',
       'mailto:support@declutrmail.com',
+    );
+    expect(screen.queryByRole('link', { name: 'Open Billing' })).not.toBeInTheDocument();
+  });
+
+  it('tells an uncanceled subscription to cancel the plan first', async () => {
+    renderBlocked('subscription');
+    expect(await screen.findByRole('button', { name: 'Delete account' })).toBeDisabled();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Cancel your plan first, then delete your account.',
+    );
+    expect(screen.getByRole('link', { name: 'Open Billing' })).toHaveAttribute('href', '/billing');
+    expect(screen.queryByRole('link', { name: 'support@declutrmail.com' })).not.toBeInTheDocument();
+  });
+
+  it('uses the payment check for an open checkout', async () => {
+    renderBlocked('checkout');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      WS2_COPY.simplify.deleteAccount.paymentPending,
     );
   });
 

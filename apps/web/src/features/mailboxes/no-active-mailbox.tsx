@@ -102,7 +102,7 @@ export function NoActiveMailboxView({
       <div style={{ width: '100%', maxWidth: 560 }}>
         <EmptyState
           icon={<span aria-hidden>📭</span>}
-          title="No active mailbox"
+          title="No Gmail account selected"
           description={
             onlyDisconnected ? (
               <>
