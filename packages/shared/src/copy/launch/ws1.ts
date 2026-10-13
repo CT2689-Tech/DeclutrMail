@@ -249,4 +249,8 @@ export const WS1_COPY = {
   'price.inrSuffix': 'incl. GST',
   'price.plusLine': '{plusPrice} a year',
   'price.passLine': '{passPrice} once',
+  'pricing.lede.plus':
+    '{plusName} adds Autopilot rules, and you see a preview before you turn one on.',
+  'pricing.goodToKnow.free':
+    '{freeName} includes all five choices. Archive and Delete count toward {allowance} emails a month, and at the limit they pause until your reset or an upgrade. Unsubscribe, Keep, Later and Undo keep working.',
 } as const;

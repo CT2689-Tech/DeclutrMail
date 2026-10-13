@@ -283,8 +283,9 @@ export function meterChipLine(input: {
 
 export function meterPreviewText(requested: number, remaining: number): string {
   if (requested > remaining) {
-    return fill(WS1_COPY['meter.preview.over'], {
-      requested: grouped(requested),
+    // Singular uses meter.noun.one ("1 email"). The rest of the sentence stays.
+    const noun = meterNoun(requested);
+    return fill(WS1_COPY['meter.preview.over'].replace('{requested} emails', noun), {
       remaining: grouped(remaining),
     });
   }

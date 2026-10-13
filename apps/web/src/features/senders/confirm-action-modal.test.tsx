@@ -399,8 +399,8 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     // second reason to cover fewer senders than the selection.
     expect(screen.getByRole('heading', { name: 'Archive 4 emails?' })).toBeInTheDocument();
     expect(screen.queryByText(/from 40 senders/)).not.toBeInTheDocument();
-    expect(screen.getByText(/1 of 40 eligible senders/)).toBeInTheDocument();
-    expect(screen.getByText(/all you have left this month/)).toBeInTheDocument();
+    expect(screen.getByText(/This covers 1 of the 40 senders you picked/)).toBeInTheDocument();
+    expect(screen.getByText(/all your free total allows this month/)).toBeInTheDocument();
     // The whole point: confirm is live, and firing it calls through.
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(onConfirm).toHaveBeenCalled();
@@ -447,7 +447,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     );
 
     // The capped total is the ELIGIBLE count, and says so.
-    expect(screen.getByText(/2 of 4 eligible senders/)).toBeInTheDocument();
+    expect(screen.getByText(/This covers 2 of the 4 senders you picked/)).toBeInTheDocument();
     expect(screen.queryByText(/4 senders you selected/)).not.toBeInTheDocument();
     // The title is the acted-on count, stated by the caller.
     expect(

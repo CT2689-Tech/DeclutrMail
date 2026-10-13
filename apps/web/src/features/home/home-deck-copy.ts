@@ -138,8 +138,11 @@ export function meterPreviewSentence(requested: number, remaining: number): stri
   if (!Number.isFinite(requested) || requested <= 0 || !Number.isFinite(remaining)) return null;
   const remainingLabel = formatCount(remaining);
   if (requested > remaining) {
-    return fillDeck(HOME_DECK.previewOver, {
-      requested: formatCount(requested),
+    const noun =
+      requested === 1
+        ? WS1_COPY['meter.noun.one']
+        : WS1_COPY['meter.noun.other'].replaceAll('{n}', formatCount(requested));
+    return fillDeck(HOME_DECK.previewOver.replace('{requested} emails', noun), {
       remaining: remainingLabel,
     });
   }

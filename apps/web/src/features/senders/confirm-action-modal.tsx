@@ -1188,7 +1188,10 @@ export function ConfirmActionModal({
     emailMeter || previewStateCopy !== null || nothingActionableBulk || nothingToActOn
       ? null
       : quotaCappedFrom
-        ? `${unitsNeeded} of ${quotaCappedFrom} eligible senders — all you have left this month.`
+        ? fillStory(WS2_COPY.simplify.confirm.quotaCapped, 'usd', {
+            n: unitsNeeded,
+            total: quotaCappedFrom,
+          })
         : quotaRemaining !== null
           ? meterPreviewText(unitsNeeded, quotaRemaining)
           : null;

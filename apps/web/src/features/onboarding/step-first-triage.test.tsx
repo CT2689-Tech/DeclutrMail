@@ -128,7 +128,11 @@ describe('StepFirstTriage', () => {
 
     // Post-A3 (#401): Triage is Free — the completion panel makes no
     // tier claim (the quota surfaces at the cap, not here).
-    expect(screen.getByText(/can be undone from Activity/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        '3 reviewed. You can undo Archive, Later or Delete from Activity for 30 days.',
+      ),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/metered monthly/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/require Plus/i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Go to Senders/i })).toBeInTheDocument();

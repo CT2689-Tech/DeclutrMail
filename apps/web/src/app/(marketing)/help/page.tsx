@@ -14,7 +14,8 @@
 
 import type { Metadata } from 'next';
 
-import { isPricingV2 } from '@declutrmail/shared/entitlements';
+import { WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory, isPricingV2 } from '@declutrmail/shared/entitlements';
 
 import { faqAnswer } from '@/features/marketing/learn/faq-content';
 import { SupportTasks } from '@/features/marketing/learn/support-tasks';
@@ -93,7 +94,7 @@ const FAQS: ReadonlyArray<{
   },
   {
     id: 'cleanup-counting',
-    q: 'What counts as a cleanup action, and when does Free reset?',
+    q: fillStory(WS3_COPY['ws3.help.counting.q']),
     a: faqAnswer('cleanup-counting'),
   },
   {

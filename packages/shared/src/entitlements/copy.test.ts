@@ -101,6 +101,7 @@ describe('emails-cleared meter helpers', () => {
     expect(meterPreviewText(2708, 100)).toBe(
       'This clears 2,708 emails. You have 100 free left this month.',
     );
+    expect(meterPreviewText(1, 0)).toBe('This clears 1 email. You have 0 free left this month.');
     expect(meterPreviewText(1, 100)).toBe('This clears 1 email. You have 100 free this month.');
   });
 });

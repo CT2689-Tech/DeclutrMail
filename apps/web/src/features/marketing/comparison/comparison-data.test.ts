@@ -182,7 +182,11 @@ describe('comparison data', () => {
     expect(license?.competitor.detail).toBe(
       'Custom license: view, modify and run for personal use.',
     );
-    expect(license?.declutrMail.summary).toBe('Not publicly stated');
+    expect(license?.declutrMail.summary).toBe('Not open source');
+    expect(license?.declutrMail.detail).toBe(
+      'DeclutrMail has no open-source license, so it can\u2019t be self-hosted.',
+    );
+    expect(license?.declutrMail.state).toBe('supported');
   });
 
   it('states the recovery window on the Gmail-filters "choose DeclutrMail" bullet instead of hedging (D245)', () => {

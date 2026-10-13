@@ -22,6 +22,8 @@ import deck from './deck/ws2.json' with { type: 'json' };
  * `simplify.confirm.meterLabel`.
  * drop2-r28 adds `simplify.activity.bundleIncludes` and
  * `simplify.deleteAccount.paymentPending`.
+ * drop2-r30 adds `simplify.billing.resetLinePublic` and
+ * `simplify.confirm.quotaCapped`.
  * drop2-r29 adds `simplify.privacy.keptLimited`,
  * `simplify.privacy.logoCache`, and `simplify.privacy.auditRecords`.
  * The same revision’s reviewed, load-error, Later-slow, and reset lines

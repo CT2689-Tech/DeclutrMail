@@ -1,3 +1,6 @@
+import { WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory } from '@declutrmail/shared/entitlements';
+
 import type { ChangelogEntry } from './types';
 
 /**
@@ -99,7 +102,7 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
     summary:
       'Free became a plan you can actually work in, and previews were made to match their results.',
     added: [
-      'The Free tier is live: Senders, Sender detail, Activity history, Triage sessions, and the Later review queue, metered at 50 cleanup actions each month on your signup anniversary.',
+      fillStory(WS3_COPY['ws3.changelog.2026-07-27.free']),
       'A preview that will not fit within the remaining monthly allowance says so and offers the upgrade instead of a confirm.',
     ],
     improved: ['Billing screens tell one consistent story about your plan.'],

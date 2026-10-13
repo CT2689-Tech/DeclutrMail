@@ -563,7 +563,8 @@
     },
     "billing": {
       "meterRule": "Archive and Delete count each email they clear. Unsubscribe, Keep, Later and Undo don’t count.",
-      "resetLine": "Your free emails reset on {resetDate}."
+      "resetLine": "Your free emails reset on {resetDate}.",
+      "resetLinePublic": "The free {allowance} resets each month on the day you signed up."
     },
     "onboarding": {
       "loadError": "We couldn’t load setup.",
@@ -576,7 +577,8 @@
       "slow": "Bringing it back. This is taking longer than usual and updates on its own."
     },
     "confirm": {
-      "meterLabel": "Free emails"
+      "meterLabel": "Free emails",
+      "quotaCapped": "This covers {n} of the {total} senders you picked. That’s all your free total allows this month."
     },
     "deleteAccount": {
       "paymentPending": "We’re still checking a recent payment. Try again in a few minutes, or email support@declutrmail.com."

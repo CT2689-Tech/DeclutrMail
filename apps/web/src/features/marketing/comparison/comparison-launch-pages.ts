@@ -47,6 +47,16 @@ function competitor(cells: Map<string, ComparisonCell>, key: string): Comparison
   return cells.get(key) ?? UNKNOWN;
 }
 
+/** Deck cells stored as `summary | detail`, the same split as a competitor cell. */
+function valueDetail(line: string): ComparisonCell {
+  const splitAt = line.indexOf(' | ');
+  return {
+    summary: splitAt < 0 ? line : line.slice(0, splitAt),
+    detail: splitAt < 0 ? '' : line.slice(splitAt + 3),
+    state: 'supported',
+  };
+}
+
 const DECLUTR_PLATFORM: ComparisonCell = {
   summary: 'DeclutrMail runs on the web, including on your phone',
   state: 'supported',
@@ -90,7 +100,13 @@ function launchRows(
     rows.push({ label: 'Platform', declutrMail: DECLUTR_PLATFORM, competitor: platform });
   }
   const license = parsed.get('openSource');
-  if (license) rows.push({ label: 'License', declutrMail: UNKNOWN, competitor: license });
+  if (license) {
+    rows.push({
+      label: 'License',
+      declutrMail: valueDetail(WS3_COPY['ws3.vs.mailmop.declutrLicense']),
+      competitor: license,
+    });
+  }
   rows.push({
     label: 'Public starting point',
     declutrMail: cells.price,

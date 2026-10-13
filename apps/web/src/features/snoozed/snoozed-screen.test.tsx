@@ -320,7 +320,9 @@ describe('SnoozedScreen — wake now flow', () => {
       vi.spyOn(Date, 'now').mockReturnValue(afterDeadline);
       act(() => expire!());
       expect(screen.queryByText('Bringing back…')).not.toBeInTheDocument();
-      expect(screen.getByRole('status')).toHaveTextContent(/confirmation is taking longer/i);
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Bringing it back. This is taking longer than usual and updates on its own.',
+      );
       expect(screen.getByRole('button', { name: 'Bring back now' })).toBeEnabled();
       expect(screen.getByRole('button', { name: 'Change return time' })).toBeEnabled();
     } finally {

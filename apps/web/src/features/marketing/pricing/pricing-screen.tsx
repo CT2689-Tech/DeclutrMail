@@ -82,8 +82,8 @@ export function PricingScreen() {
       <header className="dm-pricing-head">
         <h1>Start free. Choose how to keep Gmail clear.</h1>
         <p>
-          {fillStory(WS1_COPY['pricing.free.features'][0])}. {WS1_COPY['pricing.plus.features'][0]}.
-          Plus adds rules you preview before enabling. Pro adds Daily Brief, Follow-ups, and up to{' '}
+          {fillStory(WS1_COPY['pricing.free.features'][0])}. {WS1_COPY['pricing.plus.features'][0]}.{' '}
+          {fillStory(WS1_COPY['pricing.lede.plus'])} Pro adds Daily Brief, Follow-ups, and up to{' '}
           {TIER_MANIFEST.pro.inboxLimit} Gmail inboxes.
         </p>
       </header>
@@ -127,11 +127,7 @@ export function PricingScreen() {
         <ul className="dm-pricing-facts">
           {/* Every line below is existing copy, re-laid out from the old
               hero paragraph and the FAQ — no new claims. */}
-          <li>
-            Free includes every manual cleanup action, capped monthly. Reaching the cap pauses
-            Archive, Unsubscribe, Later, and Delete until your next reset or an upgrade; Keep always
-            keeps working.
-          </li>
+          <li>{fillStory(WS1_COPY['pricing.goodToKnow.free'])}</li>
           <li>{CLEANUP_COUNT_NOTE}</li>
           <li>{CLEANUP_RESET_NOTE}</li>
           <li>{CHECKOUT_TOTAL_NOTE} USD and INR are independently set prices.</li>
