@@ -356,14 +356,10 @@ describe('InboxReportFirstLanding', () => {
     expect(await screen.findByText(/mostly leave unread/)).toBeInTheDocument();
     await waitFor(() => expect(onResolved).toHaveBeenCalledWith(true));
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
-    expect(
-      screen.getByRole('radio', { name: 'Unsubscribe and archive, counting emails' }),
-    ).toBeDisabled();
-    expect(
-      screen.getByRole('radio', { name: 'Unsubscribe and delete, counting emails' }),
-    ).toBeDisabled();
+    expect(screen.getByRole('radio', { name: '+ Archive' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: '+ Delete' })).toBeDisabled();
     expect(screen.getByRole('dialog')).not.toHaveTextContent('archive 4 emails');
-    expect(screen.getByRole('dialog')).toHaveTextContent(WS5_COPY['f1.preview.backlog.loading']);
+    expect(screen.getByRole('dialog')).toHaveTextContent(/Counting existing inbox email/);
     expect(screen.getByRole('dialog')).not.toHaveTextContent('0 emails you already have');
     releasePreview(
       jsonOk({
@@ -389,7 +385,7 @@ describe('InboxReportFirstLanding', () => {
       }),
     );
     const archiveChoice = await screen.findByRole('radio', {
-      name: 'Unsubscribe and archive 7 emails',
+      name: '+ Archive 7',
     });
     expect(archiveChoice).toBeEnabled();
     expect(archiveChoice).toBeChecked();
@@ -402,7 +398,7 @@ describe('InboxReportFirstLanding', () => {
       'Unsubscribe from Acme and archive 7 emails?',
     );
     expect(screen.getByRole('dialog')).toHaveTextContent(
-      '7 emails you already have: moved out of Inbox (Archive)',
+      'Existing inbox email leaves your inbox and stays in Gmail.',
     );
     fireEvent.click(archiveChoice);
     const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });

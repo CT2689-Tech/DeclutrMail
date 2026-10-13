@@ -807,7 +807,12 @@ export function ConfirmActionModal({
         request={request}
         compositePreview={compositePreview}
         compositePreviewLoading={compositePreviewLoading}
+        compositePreviewError={compositePreviewError}
         bulkPreview={bulkPreview}
+        mailboxEmail={mailboxEmail}
+        previewSenderGone={previewSenderGone}
+        onRetryPreview={onRetryPreview}
+        onRefreshSenders={onRefreshSenders}
         submitting={submitting}
         onCancel={onCancel}
         onConfirm={onConfirm}

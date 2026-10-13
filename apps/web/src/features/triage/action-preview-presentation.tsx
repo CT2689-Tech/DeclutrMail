@@ -4,7 +4,7 @@ import { buildActionPresentation } from '@declutrmail/shared/actions';
 import type { ActionReach } from '@declutrmail/shared/contracts';
 import { scoredAgeLabel } from '@declutrmail/shared/copy';
 import {
-  backlogMailLine,
+  backlogDestination,
   futureMailLine,
   unsubscribeButton,
   unsubscribeHonesty,
@@ -270,10 +270,13 @@ export function buildPreviewFacts({
   if (verb !== 'Unsubscribe') return facts;
   const n = facts.liveCount ?? 0;
   const future = futureMailLine(row.senderName, row.unsubscribeMethod);
-  const backlog = backlogMailLine(unsubMode, n);
+  const backlog =
+    facts.liveCount === null && unsubMode !== 'unsub_only'
+      ? 'Counting existing inbox email…'
+      : backlogDestination(unsubMode);
   return {
     ...facts,
-    title: unsubscribeTitle(unsubMode, row.senderName, n),
+    title: unsubscribeTitle(facts.liveCount === null ? 'unsub_only' : unsubMode, row.senderName, n),
     subtitle: [future, backlog].filter((line): line is string => line !== null).join(' '),
     note: unsubscribeHonesty(unsubMode),
     primaryLabel: unsubscribeButton(unsubMode),

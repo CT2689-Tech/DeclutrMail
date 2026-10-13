@@ -2364,6 +2364,7 @@ describe('TriageScreen — Protected rows act with an explicit override (D245/D4
     const dialog = await screen.findByRole('dialog');
     const archive = await within(dialog).findByRole('radio', { name: '+ Archive 47' });
     await waitFor(() => expect(archive).toBeEnabled());
+    fireEvent.click(archive);
     await confirmOpenSheet('Unsubscribe', false);
     await waitFor(() => expect(intents).toHaveLength(1));
     return intents[0];

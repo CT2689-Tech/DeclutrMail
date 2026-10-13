@@ -128,6 +128,33 @@ describe('<PreviewSheet />', () => {
 });
 
 describe('<SheetSegmented />', () => {
+  it('uses one tab stop and arrow keys, skipping disabled choices', () => {
+    const onChange = vi.fn();
+    render(
+      <SheetSegmented
+        label="Existing inbox email"
+        value="none"
+        onChange={onChange}
+        options={[
+          { value: 'none', label: 'Leave alone' },
+          { value: 'archive', label: 'Archive', disabled: true },
+          { value: 'delete', label: 'Delete' },
+        ]}
+      />,
+    );
+    const first = screen.getByRole('radio', { name: 'Leave alone' });
+    const last = screen.getByRole('radio', { name: 'Delete' });
+    expect(first).toHaveAttribute('tabindex', '0');
+    expect(last).toHaveAttribute('tabindex', '-1');
+    first.focus();
+    fireEvent.keyDown(first, { key: 'ArrowRight' });
+    expect(onChange).toHaveBeenLastCalledWith('delete');
+    expect(last).toHaveFocus();
+    fireEvent.keyDown(last, { key: 'ArrowRight' });
+    expect(onChange).toHaveBeenLastCalledWith('none');
+    expect(first).toHaveFocus();
+  });
+
   it('is a radio group that reports the chosen option with its count', () => {
     const onChange = vi.fn();
     render(

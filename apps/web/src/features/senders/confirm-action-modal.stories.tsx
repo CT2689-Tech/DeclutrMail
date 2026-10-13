@@ -101,6 +101,32 @@ const base = {
   mailboxEmail: 'you@gmail.com',
 } satisfies Partial<Args>;
 
+export const UnsubscribeCounting: Story<typeof ConfirmActionModal> = {
+  args: {
+    ...base,
+    request: { verb: 'Unsubscribe', senders: [macys] },
+    compositePreviewLoading: true,
+  } satisfies Args,
+};
+
+export const UnsubscribePreviewFailed: Story<typeof ConfirmActionModal> = {
+  args: {
+    ...base,
+    request: { verb: 'Unsubscribe', senders: [macys] },
+    compositePreviewError: true,
+    onRetryPreview: noop,
+  } satisfies Args,
+};
+
+export const UnsubscribeSubmitting: Story<typeof ConfirmActionModal> = {
+  args: {
+    ...base,
+    request: { verb: 'Unsubscribe', senders: [macys] },
+    compositePreview: preview,
+    submitting: true,
+  } satisfies Args,
+};
+
 /** Single sender, Archive — logo, "Archive 174 emails?", window chooser. */
 export const ArchiveOneSender: Story<typeof ConfirmActionModal> = {
   args: {

@@ -615,6 +615,21 @@ button {
 .dm-sheet-panel {
   border-radius: 28px;
   margin: auto;
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+}
+.dm-sheet-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  width: 100%;
+  box-sizing: border-box;
+}
+.dm-sheet-footer {
+  flex-shrink: 0;
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--dm-card);
 }
 .dm-sheet-details > summary::-webkit-details-marker {
   display: none;
@@ -671,6 +686,9 @@ button {
     max-width: none !important;
     margin: auto 0 0;
     border-radius: 28px 28px 0 0;
+    max-height: calc(100dvh - 12px);
+  }
+  .dm-sheet-footer {
     padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)) !important;
   }
   .dm-sheet-review {
