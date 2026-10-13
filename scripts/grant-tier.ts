@@ -2,11 +2,12 @@
 /**
  * scripts/grant-tier.ts
  *
- * Comp an email onto Plus or Pro — the admin surface for
- * `entitlement_grants`.
+ * Comp an email onto Plus or Pro, or grant a manual Backlog Pass —
+ * the admin surface for `entitlement_grants`.
  *
  *   pnpm grant-tier list
  *   pnpm grant-tier grant <email> <tier> --reason="advisor" [--expires=2026-12-31]
+ *   pnpm grant-tier grant-pass <email> --reason="support" [--by=name]
  *   pnpm grant-tier revoke <email>
  *
  * Add `--prod` to act on production (`SUPABASE_SESSION_DSN`); without
@@ -23,6 +24,11 @@
  * comped Pro who buys Plus stays Pro, and an expiring comp drops to the
  * paid tier rather than to Free.
  *
+ * A manual Backlog Pass is the same table with `source = 'pass'`,
+ * `provider` NULL, and a 30-day expiry from the pricing manifest. It
+ * does not call a payment provider. `revoke` clears that row and comps,
+ * and leaves a provider-backed Pass alone.
+ *
  * Grants are keyed on EMAIL, so one can be written before that person
  * has ever signed up: signup reads this table when it bootstraps their
  * workspace. For an email that HAS signed up, this script applies the
@@ -38,22 +44,21 @@ import { createInterface } from 'node:readline/promises';
 import postgres from 'postgres';
 
 import { TIER_RANK, type TierId } from '../packages/shared/src/entitlements/types.js';
-
-/** Tiers a comp may grant. Free is not a comp, and Team/Enterprise are unbuilt. */
-const GRANTABLE = ['plus', 'pro'] as const;
-type GrantableTier = (typeof GRANTABLE)[number];
+import {
+  GRANTABLE,
+  grantKindLabel,
+  grantManualPass,
+  listGrants,
+  parseGrantArgs,
+  previewManualPass,
+  revokeOperatorGrants,
+  tierRankCase,
+  type GrantArgs,
+  type ListedGrant,
+  type SqlQuery,
+} from './grant-tier-ops.js';
 
 const LOCAL_DSN = 'postgresql://postgres:postgres@localhost:5432/declutrmail';
-
-interface Args {
-  command: 'list' | 'grant' | 'revoke';
-  email: string | null;
-  tier: GrantableTier | null;
-  reason: string | null;
-  grantedBy: string;
-  expiresAt: Date | null;
-  prod: boolean;
-}
 
 function usage(message: string): never {
   console.error(`✗ ${message}
@@ -61,93 +66,15 @@ function usage(message: string): never {
 Usage:
   pnpm grant-tier list [--prod]
   pnpm grant-tier grant <email> <${GRANTABLE.join('|')}> --reason="why" [--expires=YYYY-MM-DD] [--by=name] [--prod]
+  pnpm grant-tier grant-pass <email> --reason="why" [--by=name] [--prod]
   pnpm grant-tier revoke <email> [--prod]`);
   process.exit(2);
 }
 
-function parseArgs(argv: string[]): Args {
-  const flags = new Map<string, string>();
-  const positional: string[] = [];
-  for (const arg of argv) {
-    const match = /^--([^=]+)(?:=(.*))?$/.exec(arg);
-    if (match) flags.set(match[1], match[2] ?? 'true');
-    else positional.push(arg);
-  }
-
-  const command = positional[0];
-  if (command !== 'list' && command !== 'grant' && command !== 'revoke') {
-    usage(`unknown command ${command ? `"${command}"` : '(none given)'}`);
-  }
-
-  const prod = flags.get('prod') === 'true';
-  if (command === 'list') {
-    return {
-      command,
-      email: null,
-      tier: null,
-      reason: null,
-      grantedBy: '',
-      expiresAt: null,
-      prod,
-    };
-  }
-
-  const email = positional[1];
-  if (!email || !email.includes('@')) usage('an email address is required');
-
-  if (command === 'revoke') {
-    return { command, email, tier: null, reason: null, grantedBy: '', expiresAt: null, prod };
-  }
-
-  const tier = positional[2];
-  if (!isGrantable(tier)) usage(`tier must be one of ${GRANTABLE.join(', ')}`);
-
-  // Required, not defaulted. A comp with no stated reason is
-  // indistinguishable six months on from a tier set by mistake.
-  const reason = flags.get('reason');
-  if (!reason || reason === 'true') usage('--reason="why this comp exists" is required');
-
-  let expiresAt: Date | null = null;
-  const rawExpiry = flags.get('expires');
-  if (rawExpiry && rawExpiry !== 'true') {
-    // End of the named day, UTC — "--expires=2026-12-31" should mean
-    // "through the 31st", not "at midnight as the 31st begins".
-    const parsed = new Date(`${rawExpiry}T23:59:59Z`);
-    if (Number.isNaN(parsed.getTime())) usage(`--expires must be YYYY-MM-DD, got "${rawExpiry}"`);
-    if (parsed.getTime() <= Date.now()) usage(`--expires is in the past (${rawExpiry})`);
-    expiresAt = parsed;
-  }
-
-  return {
-    command,
-    email,
-    tier,
-    reason,
-    grantedBy: flags.get('by') ?? process.env.USER ?? 'founder',
-    expiresAt,
-    prod,
-  };
-}
-
-function isGrantable(value: string | undefined): value is GrantableTier {
-  return value !== undefined && (GRANTABLE as readonly string[]).includes(value);
-}
-
-/**
- * `ORDER BY <this> DESC LIMIT 1` picks the highest tier in a set,
- * derived from the manifest rather than hand-written — the same
- * ordering the API's two recompute paths use. A hardcoded CASE here
- * would sort a newly-added tier below Free and silently stop granting.
- */
-function tierRankCase(column: string): string {
-  const branches = Object.entries(TIER_RANK)
-    .map(([tier, rank]) => `WHEN '${tier}' THEN ${rank}`)
-    .join(' ');
-  return `CASE ${column} ${branches} ELSE 0 END`;
-}
-
 async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
+  const parsed = parseGrantArgs(process.argv.slice(2));
+  if (!parsed.ok) usage(parsed.message);
+  const args = parsed.args;
 
   let dsn = LOCAL_DSN;
   if (args.prod) {
@@ -161,14 +88,20 @@ async function main(): Promise<void> {
 
   const target = args.prod ? 'PRODUCTION' : 'local dev';
   const sql = postgres(dsn, { max: 1, idle_timeout: 5, connect_timeout: 10 });
+  const query = sql as unknown as SqlQuery;
 
   try {
     if (args.command === 'list') {
-      await listGrants(sql, target);
+      await printGrants(query, target);
       return;
     }
 
     const email = args.email as string;
+
+    if (args.command === 'grant-pass') {
+      await runGrantPass(query, sql, args, email, target);
+      return;
+    }
 
     // Production writes are confirmed by hand. This grants or removes a
     // paid entitlement on a real account; the local DB needs no such
@@ -179,21 +112,29 @@ async function main(): Promise<void> {
     }
 
     if (args.command === 'revoke') {
-      const revoked = await sql`
-        UPDATE entitlement_grants
-        SET revoked_at = now()
-        WHERE email = ${email} AND source = 'comp' AND revoked_at IS NULL
-        RETURNING tier
-      `;
-      if (revoked.length === 0) {
+      const revoked = await revokeOperatorGrants(query, email);
+      if (revoked.status === 'none') {
         console.log(`No live grant for ${email} on ${target} — nothing to revoke.`);
         return;
       }
-      console.log(`✓ Revoked the ${revoked[0].tier} comp for ${email} on ${target}.`);
+      if (revoked.status === 'paid_pass_untouched') {
+        console.log(`No manual grant for ${email} on ${target} — nothing to revoke.`);
+        console.log(`  A live ${revoked.provider} Backlog Pass remains ${describePaid(revoked)}.`);
+        return;
+      }
+      const kinds = revoked.rows.map((row) =>
+        row.source === 'pass' ? 'manual Backlog Pass' : `${row.tier} comp`,
+      );
+      console.log(`✓ Revoked ${kinds.join(' and ')} for ${email} on ${target}.`);
+      if (revoked.untouchedPaidPass) {
+        console.log(
+          `  A live ${revoked.untouchedPaidPass.provider} Backlog Pass remains ${describePaid(revoked.untouchedPaidPass)}.`,
+        );
+      }
     } else {
       await sql`
         INSERT INTO entitlement_grants (email, tier, reason, granted_by, expires_at, source)
-        VALUES (${email}, ${args.tier as string}, ${args.reason as string}, ${args.grantedBy}, ${args.expiresAt}, 'comp')
+        VALUES (${email}, ${args.tier as string}, ${args.reason as string}, ${args.grantedBy}, ${args.expiresAt?.toISOString() ?? null}, 'comp')
         ON CONFLICT (email) WHERE source = 'comp' DO UPDATE SET
           tier = EXCLUDED.tier,
           reason = EXCLUDED.reason,
@@ -209,6 +150,61 @@ async function main(): Promise<void> {
   } finally {
     await sql.end({ timeout: 5 });
   }
+}
+
+async function runGrantPass(
+  query: SqlQuery,
+  sql: postgres.Sql,
+  args: GrantArgs,
+  email: string,
+  target: string,
+): Promise<void> {
+  const preview = await previewManualPass(query, email);
+  if (preview.status === 'already_manual') {
+    console.log(
+      `Already has a live manual Backlog Pass on ${target}${through(preview.expiresAt)} (${preview.providerTransactionId ?? 'no transaction id'}). Nothing written.`,
+    );
+    return;
+  }
+  if (preview.status === 'blocked_paid') {
+    console.log(
+      `Already has a live ${preview.provider} Backlog Pass on ${target}${through(preview.expiresAt)} (${preview.providerTransactionId ?? 'no transaction id'}). Nothing written.`,
+    );
+    return;
+  }
+
+  if (args.prod && !(await confirm(`grant-pass ${email} on PRODUCTION?`))) {
+    console.log('Aborted — nothing written.');
+    return;
+  }
+
+  const granted = await grantManualPass(query, {
+    email,
+    reason: args.reason as string,
+    grantedBy: args.grantedBy,
+  });
+  if (granted.status !== 'granted') {
+    console.log(`Nothing written for ${email} on ${target} (${granted.status}).`);
+    return;
+  }
+  console.log(
+    `✓ Manual Backlog Pass for ${email} on ${target}${through(granted.expiresAt)} (${granted.providerTransactionId}).`,
+  );
+  await applyToWorkspace(sql, email, target);
+}
+
+function through(expiresAt: Date | null): string {
+  return expiresAt ? ` through ${expiresAt.toISOString().slice(0, 10)}` : '';
+}
+
+function describePaid(pass: {
+  providerTransactionId: string | null;
+  expiresAt: Date | null;
+}): string {
+  const id = pass.providerTransactionId ?? 'no transaction id';
+  return pass.expiresAt
+    ? `(${id}, through ${pass.expiresAt.toISOString().slice(0, 10)})`
+    : `(${id})`;
 }
 
 /**
@@ -265,38 +261,23 @@ async function applyToWorkspace(sql: postgres.Sql, email: string, target: string
   }
 }
 
-async function listGrants(sql: postgres.Sql, target: string): Promise<void> {
-  const rows = await sql<
-    Array<{
-      email: string;
-      tier: string;
-      reason: string;
-      granted_by: string;
-      expires_at: Date | null;
-      revoked_at: Date | null;
-      live: boolean;
-    }>
-  >`
-    SELECT email, tier, reason, granted_by, expires_at, revoked_at,
-           (revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())) AS live
-    FROM entitlement_grants
-    ORDER BY live DESC, created_at DESC
-  `;
+async function printGrants(sql: SqlQuery, target: string): Promise<void> {
+  const rows = await listGrants(sql);
   if (rows.length === 0) {
     console.log(`No grants on ${target}.`);
     return;
   }
   console.log(`Grants on ${target}:\n`);
-  for (const row of rows) {
-    const state = row.revoked_at
-      ? `revoked ${row.revoked_at.toISOString().slice(0, 10)}`
-      : row.expires_at
-        ? `${row.live ? 'until' : 'expired'} ${row.expires_at.toISOString().slice(0, 10)}`
-        : 'permanent';
-    console.log(
-      `  ${row.live ? '●' : '○'} ${row.email.padEnd(34)} ${row.tier.padEnd(5)} ${state.padEnd(22)} ${row.reason} (${row.granted_by})`,
-    );
-  }
+  for (const row of rows) console.log(formatGrantLine(row));
+}
+
+function formatGrantLine(row: ListedGrant): string {
+  const state = row.revokedAt
+    ? `revoked ${row.revokedAt.toISOString().slice(0, 10)}`
+    : row.expiresAt
+      ? `${row.live ? 'until' : 'expired'} ${row.expiresAt.toISOString().slice(0, 10)}`
+      : 'permanent';
+  return `  ${row.live ? '●' : '○'} ${row.email.padEnd(34)} ${row.tier.padEnd(5)} ${grantKindLabel(row).padEnd(14)} ${state.padEnd(22)} ${row.reason} (${row.grantedBy})`;
 }
 
 async function confirm(question: string): Promise<boolean> {

@@ -400,6 +400,18 @@ describe('complimentary comps', () => {
     expect(complimentaryNote(view)).toContain('Backlog Pass');
   });
 
+  it('a manual Pass keeps the Pass name and makes no price claim', () => {
+    const view = comped('plus', {
+      tier: 'plus',
+      expiresAt: '2026-11-12T00:00:00.000Z',
+      source: 'pass',
+      provider: null,
+    });
+    expect(currentPlanTitle(view)).toBe('Backlog Pass');
+    expect(currentPlanPriceLabel(view)).toBe('');
+    expect(complimentaryNote(view)).toContain('Backlog Pass');
+  });
+
   it('names the comp instead of the generic no-price line', () => {
     const view = comped('pro', { tier: 'pro', expiresAt: null });
     expect(currentPlanPriceLabel(view)).toBe('Complimentary');

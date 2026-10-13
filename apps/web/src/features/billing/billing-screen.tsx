@@ -63,6 +63,7 @@ import {
   complimentaryNote,
   currentPlanPriceLabel,
   currentPlanTitle,
+  manualPassGrant,
   passCoversPlan,
   deriveBillingViewState,
   emptyPlanView,
@@ -1060,11 +1061,18 @@ export function BillingScreen({
       <p style={{ fontSize: text.sm }}>
         <a className={`${linkStyles.link} dm-tap-target`} href="/settings/help">
           Billing help
-        </a>{' '}
-        ·{' '}
-        <a className={`${linkStyles.link} dm-tap-target`} href="/refunds">
-          Refund policy
         </a>
+        {manualPassGrant(plan.complimentary) &&
+        plan.backing.state === 'none' &&
+        plan.nonBacking === null ? null : (
+          <>
+            {' '}
+            ·{' '}
+            <a className={`${linkStyles.link} dm-tap-target`} href="/refunds">
+              Refund policy
+            </a>
+          </>
+        )}
       </p>
       <CancelModal
         open={cancelOpen}
@@ -1648,21 +1656,23 @@ function CurrentPlanCard({
           >
             {currentPlanTitle(plan)}
           </span>
-          <span
-            style={{
-              fontSize: text.lg,
-              fontWeight: 600,
-              color: color.fg,
-              fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            {plan.backing.state === 'active' ||
-            plan.backing.state === 'past_due' ||
-            plan.backing.state === 'cancel_scheduled' ? (
-              <span style={{ fontWeight: 400 }}>Plan price: </span>
-            ) : null}
-            <span>{priceLabel}</span>
-          </span>
+          {priceLabel ? (
+            <span
+              style={{
+                fontSize: text.lg,
+                fontWeight: 600,
+                color: color.fg,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {plan.backing.state === 'active' ||
+              plan.backing.state === 'past_due' ||
+              plan.backing.state === 'cancel_scheduled' ? (
+                <span style={{ fontWeight: 400 }}>Plan price: </span>
+              ) : null}
+              <span>{priceLabel}</span>
+            </span>
+          ) : null}
         </div>
         {renewal ? (
           <span
