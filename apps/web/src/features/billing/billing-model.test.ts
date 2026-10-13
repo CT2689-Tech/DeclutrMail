@@ -20,6 +20,7 @@ import {
   complimentaryNote,
   currentPlanPriceLabel,
   currentPlanTitle,
+  freeManualPassGrant,
   deriveBillingViewState,
   emptyPlanView,
   formatBillingDate,
@@ -410,6 +411,39 @@ describe('complimentary comps', () => {
     expect(currentPlanTitle(view)).toBe('Backlog Pass');
     expect(currentPlanPriceLabel(view)).toBe('');
     expect(complimentaryNote(view)).toContain('Backlog Pass');
+  });
+
+  it('a free manual Pass is the pass with no provider and a manual-pass transaction id', () => {
+    expect(
+      freeManualPassGrant({
+        tier: 'plus',
+        expiresAt: '2026-11-12T00:00:00.000Z',
+        source: 'pass',
+        provider: null,
+        providerTransactionId: 'manual-pass:abc',
+      }),
+    ).toBe(true);
+  });
+
+  it('a paid Pass is not a free manual Pass', () => {
+    expect(
+      freeManualPassGrant({
+        tier: 'plus',
+        expiresAt: '2026-11-12T00:00:00.000Z',
+        source: 'pass',
+        provider: 'paddle',
+        providerTransactionId: 'txn_01paid',
+      }),
+    ).toBe(false);
+    expect(
+      freeManualPassGrant({
+        tier: 'plus',
+        expiresAt: '2026-11-12T00:00:00.000Z',
+        source: 'pass',
+        provider: null,
+        providerTransactionId: 'txn_other',
+      }),
+    ).toBe(false);
   });
 
   it('names the comp instead of the generic no-price line', () => {

@@ -96,4 +96,25 @@ describe('PlanCoverage', () => {
     expect(coverage.textContent).not.toContain('{freeName}');
     expect(coverage.textContent).not.toContain('Unlimited cleanup');
   });
+
+  it('keeps the buy-again line for a paid Backlog Pass', () => {
+    auth.me.tier = 'plus';
+    auth.me.pricingV2 = true;
+    render(<PlanCoverage tier="plus" pass freeManualPass={false} />);
+    const coverage = screen.getByRole('region', { name: 'Your plan includes' });
+    expect(coverage).toHaveTextContent('Buy again any time to add 30 more days');
+    expect(coverage).toHaveTextContent('No monthly limit for 30 days');
+  });
+
+  it('omits the buy-again line for a free manual Backlog Pass', () => {
+    auth.me.tier = 'plus';
+    auth.me.pricingV2 = true;
+    render(<PlanCoverage tier="plus" pass freeManualPass />);
+    const coverage = screen.getByRole('region', { name: 'Your plan includes' });
+    expect(coverage.textContent).not.toContain('Buy again any time to add 30 more days');
+    expect(coverage).toHaveTextContent('No monthly limit for 30 days');
+    expect(coverage).toHaveTextContent(
+      'Then you’re back on Free. Email you cleared stays where you put it.',
+    );
+  });
 });

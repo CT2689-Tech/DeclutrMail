@@ -519,6 +519,20 @@ export function manualPassGrant(grant: BillingSubscription['complimentary']): bo
   return grant?.source === 'pass' && grant.provider === null;
 }
 
+/**
+ * A free Backlog Pass granted by hand. Paid Passes keep a provider and
+ * a provider transaction id that does not use this prefix.
+ */
+export function freeManualPassGrant(grant: BillingSubscription['complimentary']): boolean {
+  const txn = grant?.providerTransactionId;
+  return (
+    grant?.source === 'pass' &&
+    grant.provider === null &&
+    typeof txn === 'string' &&
+    txn.startsWith('manual-pass:')
+  );
+}
+
 /** The live grant is a Backlog Pass and it is the plan on the card. */
 export function passCoversPlan(view: BillingPlanView): boolean {
   const grant = view.complimentary;
