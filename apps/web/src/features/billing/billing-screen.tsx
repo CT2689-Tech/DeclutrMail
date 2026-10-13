@@ -131,6 +131,14 @@ function processingPhaseAt(pending: PendingCheckout, now: number): ProcessingPha
   return 'fresh';
 }
 
+/** A Backlog Pass grant that still confers the entitlement. */
+function livePassGrant(grant: BillingSubscription['complimentary']): boolean {
+  if (grant?.source !== 'pass') return false;
+  if (grant.expiresAt == null) return true;
+  const ends = Date.parse(grant.expiresAt);
+  return Number.isFinite(ends) && ends > Date.now();
+}
+
 /**
  * Billing screen (D119) — current-plan card + inline plan picker (one
  * monthly/annual toggle, one CTA per plan into the D226 confirm step),
@@ -344,7 +352,9 @@ export function BillingScreen({
 
   // A complimentary entitlement can stay above the paid tier, or
   // already equal an unconfirmed upgrade's target. Only the server's
-  // granting paid subscription can acknowledge the money action.
+  // granting paid subscription can acknowledge a tier purchase. A
+  // Backlog Pass is the grant itself, so that purchase's lock clears
+  // when the grant is live.
   useEffect(() => {
     if (
       pending === null ||
@@ -353,6 +363,17 @@ export function BillingScreen({
       subscriptionQuery.isFetching
     )
       return;
+    if (
+      (pending.kind === 'checkout' || pending.kind === 'checkout_intent') &&
+      pending.offer === 'pass_onetime' &&
+      livePassGrant(data.complimentary)
+    ) {
+      clearPendingCheckout(workspaceId);
+      setPending(null);
+      void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
+      void queryClient.invalidateQueries();
+      return;
+    }
     const paid = data.subscription;
     if (paid === null || (paid.status !== 'active' && paid.status !== 'past_due')) return;
     if (paid.cancelSource === 'refund' || paid.cancelSource === 'chargeback') return;
@@ -480,6 +501,7 @@ export function BillingScreen({
     toTier: TierId,
     toCycle: BillingCycle | null,
     ownAttemptId?: string,
+    offer?: 'pass_onetime',
   ) {
     if (!mounted.current || currentOwner.current !== workspaceId) return;
     // No-clobber guard: the key is one per workspace. An id-CARRYING
@@ -500,8 +522,19 @@ export function BillingScreen({
     ) {
       setPending(existing);
     } else {
+      const keptOffer =
+        offer ?? (kind === 'checkout' || kind === 'checkout_intent' ? existing?.offer : undefined);
       setPending(
-        writePendingCheckout(workspaceId, kind, tier, subscription?.cycle ?? null, toTier, toCycle),
+        writePendingCheckout(
+          workspaceId,
+          kind,
+          tier,
+          subscription?.cycle ?? null,
+          toTier,
+          toCycle,
+          undefined,
+          keptOffer,
+        ),
       );
     }
     // Ask immediately — fast webhooks (sandbox flips in ~40s, some land
@@ -529,6 +562,7 @@ export function BillingScreen({
     kind: PendingKind,
     toTier: TierId,
     toCycle: BillingCycle | null,
+    offer?: 'pass_onetime',
   ): Promise<string | null> {
     const claim = await withMoneyActionMutex(workspaceId, () => {
       if (!mounted.current || currentOwner.current !== workspaceId) return null;
@@ -546,6 +580,7 @@ export function BillingScreen({
         toTier,
         toCycle,
         attemptId,
+        offer,
       );
       return attemptId;
     });
@@ -924,13 +959,15 @@ export function BillingScreen({
         passEnabled={passEnabled}
         country={country}
         onRequestCancel={() => setCancelOpen(true)}
-        onPaymentCompleted={(target, cycle, attemptId) =>
+        onPaymentCompleted={(target, cycle, attemptId, offer) =>
           // Own-id transition over this checkout's reservation: the
           // overlay reported payment — the record becomes the visible
           // "Payment received" lock+poll.
-          startPending('checkout', target, cycle, attemptId)
+          startPending('checkout', target, cycle, attemptId, offer)
         }
-        onCheckoutAttempt={(target, cycle) => attemptClaim('checkout_intent', target, cycle)}
+        onCheckoutAttempt={(target, cycle, offer) =>
+          attemptClaim('checkout_intent', target, cycle, offer)
+        }
         onCheckoutAbandoned={releaseAttemptLock}
         onCheckoutClosed={surfaceAttemptLock}
         ownsCheckout={() => mounted.current && currentOwner.current === workspaceId}
