@@ -493,7 +493,7 @@
       "scope": "Your plan covers every Gmail account you connect.",
       "limit": {
         "unlimited": "No monthly limit.",
-        "free": "{n} sender changes a month. Each change to a sender counts once, however many emails it moves. Keep and Unarchive don’t count."
+        "free": "Clear {allowance} emails a month free. Unsubscribe, Keep, Later and Undo stay free."
       },
       "sameFeatures": "Your features and number of Gmail accounts stay the same.",
       "accounts": {
@@ -562,7 +562,18 @@
       "bundleIncludes": "The bundle includes your Gmail address. Sender names and addresses stay hidden unless you choose to include them."
     },
     "billing": {
-      "meterRule": "Archive and Delete count each email they clear. Unsubscribe, Keep, Later and Undo don’t count."
+      "meterRule": "Archive and Delete count each email they clear. Unsubscribe, Keep, Later and Undo don’t count.",
+      "resetLine": "Your free emails reset on {resetDate}."
+    },
+    "onboarding": {
+      "loadError": "We couldn’t load setup.",
+      "reviewed": {
+        "one": "1 reviewed. You can undo Archive, Later or Delete from Activity for 30 days.",
+        "other": "{n} reviewed. You can undo Archive, Later or Delete from Activity for 30 days."
+      }
+    },
+    "later": {
+      "slow": "Bringing it back. This is taking longer than usual and updates on its own."
     },
     "confirm": {
       "meterLabel": "Free emails"

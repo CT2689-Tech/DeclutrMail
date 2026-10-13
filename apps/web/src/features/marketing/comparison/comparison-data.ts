@@ -163,6 +163,13 @@ const DECLUTR = {
   },
 } as const satisfies Record<string, ComparisonCell>;
 
+/** Preview summary plus the recovery detail, one shared cell on every /vs page. */
+const previewAndRecovery: ComparisonCell = {
+  summary: DECLUTR.preview.summary,
+  detail: `${DECLUTR.preview.detail} ${DECLUTR.recovery.detail}`,
+  state: DECLUTR.recovery.state,
+};
+
 const cleanEmail: ComparisonDefinition = {
   slug: 'clean-email',
   name: 'Clean Email',
@@ -245,7 +252,7 @@ const cleanEmail: ComparisonDefinition = {
     },
     {
       label: 'Preview and recovery',
-      declutrMail: DECLUTR.recovery,
+      declutrMail: previewAndRecovery,
       competitor: {
         summary: 'Optional five-second Quick Cancel; durable undo not stated',
         detail:
@@ -386,7 +393,7 @@ const trimbox: ComparisonDefinition = {
     },
     {
       label: 'Preview and recovery',
-      declutrMail: DECLUTR.recovery,
+      declutrMail: previewAndRecovery,
       competitor: {
         summary: 'Not publicly stated',
         detail:
@@ -515,7 +522,7 @@ const sanebox: ComparisonDefinition = {
     },
     {
       label: 'Preview and recovery',
-      declutrMail: DECLUTR.recovery,
+      declutrMail: previewAndRecovery,
       competitor: {
         summary: 'Correct by moving and retraining',
         detail:
@@ -652,7 +659,7 @@ const leaveMeAlone: ComparisonDefinition = {
     },
     {
       label: 'Preview and recovery',
-      declutrMail: DECLUTR.recovery,
+      declutrMail: previewAndRecovery,
       competitor: {
         summary: 'Unsubscribe is not reversible in the service',
         detail: 'The FAQ says re-subscribing must be done manually at the sender’s website.',
@@ -799,7 +806,7 @@ const unrollMe: ComparisonDefinition = {
     },
     {
       label: 'Preview and recovery',
-      declutrMail: DECLUTR.recovery,
+      declutrMail: previewAndRecovery,
       competitor: {
         summary: 'Not publicly stated',
         detail:
@@ -956,7 +963,7 @@ const gmailFilters: ComparisonDefinition = {
     },
     {
       label: 'Preview and recovery',
-      declutrMail: DECLUTR.recovery,
+      declutrMail: previewAndRecovery,
       competitor: {
         summary: 'Test criteria; edit or delete the rule later',
         detail:
@@ -1093,7 +1100,7 @@ const gmailNative: ComparisonDefinition = {
     },
     {
       label: 'Preview and recovery',
-      declutrMail: DECLUTR.recovery,
+      declutrMail: previewAndRecovery,
       competitor: {
         summary: 'Native selection and recovery; separate action history not stated',
         detail:
@@ -1185,7 +1192,7 @@ const metaMuse: ComparisonDefinition = {
     ],
   },
   chooseDeclutrMail: {
-    headline: 'Choose DeclutrMail when the job is cleaning up Gmail',
+    headline: WS3_COPY['ws3.vs.meta-muse.cdHeadline'],
     points: [
       'You want to clear senders in bulk and see the exact count and sample before anything moves.',
       'You want a cleanup tool that does not fetch full message bodies or attachments at all.',
@@ -1243,7 +1250,7 @@ const metaMuse: ComparisonDefinition = {
     },
     {
       label: 'Preview and recovery',
-      declutrMail: DECLUTR.recovery,
+      declutrMail: previewAndRecovery,
       competitor: {
         summary: 'Approval before important actions; undo window not stated',
         detail:
@@ -1347,7 +1354,7 @@ const COMPARISON_LIST: readonly ComparisonDefinition[] = [
   gmailFilters,
   gmailNative,
   metaMuse,
-  ...buildLaunchComparisons(DECLUTR),
+  ...buildLaunchComparisons({ ...DECLUTR, recovery: previewAndRecovery }),
 ].map((comparison) => ({ ...comparison, verdict: verdictFor(comparison.slug) }));
 
 export const COMPARISONS = COMPARISON_LIST as unknown as readonly [

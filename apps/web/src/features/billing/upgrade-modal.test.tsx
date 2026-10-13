@@ -146,9 +146,7 @@ describe('UpgradeModal', () => {
     render(<UpgradeModal />);
 
     expect(screen.getByTestId('upgrade-modal')).toBeInTheDocument();
-    expect(
-      screen.getByText("You've used all 50 cleanup actions for this month"),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Not enough free emails left this month')).toBeInTheDocument();
     // Manifest-derived price (D19) of the plan the CTA buys: Plus $9/mo.
     expect(screen.getByText(/Plus removes the monthly cap/)).toBeInTheDocument();
     expect(screen.getAllByText(/30-day money-back guarantee/)).toHaveLength(1);
@@ -285,9 +283,7 @@ describe('UpgradeModal', () => {
     });
     render(<UpgradeModal />);
 
-    expect(
-      screen.getByText('That needs 4 cleanup actions — only 2 of your 50 are left this month'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Not enough free emails left this month')).toBeInTheDocument();
   });
 
   it('free_cap: names the reset date when the server supplies one', () => {

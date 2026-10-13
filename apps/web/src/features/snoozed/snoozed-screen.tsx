@@ -425,8 +425,7 @@ export function SnoozedRow({
           </div>
           {confirmationDelayed ? (
             <div role="status" style={{ fontSize: text.sm, color: color.fgMuted }}>
-              Return requested; confirmation is taking longer than expected. Status refreshes
-              automatically.
+              {WS2_COPY.simplify.later.slow}
             </div>
           ) : null}
           {returnIssue ? (

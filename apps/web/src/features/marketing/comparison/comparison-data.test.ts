@@ -159,6 +159,30 @@ describe('comparison data', () => {
     expect(recovery.detail).toContain(
       'Delete also has separate Gmail Trash recovery, normally up to 30 days.',
     );
+    expect(recovery.summary).toBe('A preview before email moves');
+  });
+
+  it('shows the preview summary, the Meta Muse headline, and the launch platform and license cells', () => {
+    for (const comparison of COMPARISONS) {
+      const preview = comparison.rows.find((row) => row.label === 'Preview and recovery');
+      expect(preview?.declutrMail.summary, comparison.slug).toBe('A preview before email moves');
+    }
+    expect(comparisonBySlug('meta-muse')!.chooseDeclutrMail.headline).toBe(
+      'Choose DeclutrMail when the job is going through Gmail',
+    );
+    const inboxpurge = comparisonBySlug('inboxpurge')!;
+    const platform = inboxpurge.rows.find((row) => row.label === 'Platform');
+    expect(platform?.competitor.summary).toBe('Chrome extension, desktop');
+    expect(platform?.competitor.detail).toContain('mobile isn\u2019t supported yet');
+    expect(platform?.declutrMail.summary).toBe(
+      'DeclutrMail runs on the web, including on your phone',
+    );
+    const mailmop = comparisonBySlug('mailmop')!;
+    const license = mailmop.rows.find((row) => row.label === 'License');
+    expect(license?.competitor.detail).toBe(
+      'Custom license: view, modify and run for personal use.',
+    );
+    expect(license?.declutrMail.summary).toBe('Not publicly stated');
   });
 
   it('states the recovery window on the Gmail-filters "choose DeclutrMail" bullet instead of hedging (D245)', () => {

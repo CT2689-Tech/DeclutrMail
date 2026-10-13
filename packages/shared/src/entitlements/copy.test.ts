@@ -174,7 +174,7 @@ describe('pricing story builders', () => {
     expect(markdown).toContain('1,000 emails cleared a month');
     expect(markdown).toContain('Backlog Pass');
     expect(WS1_COPY['pricing.pass.features']).toEqual([
-      'No monthly limit for 30 days',
+      'No monthly limit for {passDays} days',
       'The Screener and Autopilot while it lasts',
       'Buy again any time to add {passDays} more days',
       'Then you’re back on {freeName}. Email you cleared stays where you put it.',

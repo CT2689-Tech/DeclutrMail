@@ -329,7 +329,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
       />,
     );
     expect(
-      screen.getByText(/Uses 1 of your 12 cleanup actions left this month/),
+      screen.getByText(/This clears 1 email. You have 12 free this month/),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Archive/ })).toBeEnabled();
   });
@@ -358,7 +358,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     );
 
     expect(
-      screen.getByText(/This needs 2 cleanup actions but only 1 is left this month/),
+      screen.getByText(/This clears 2 emails. You have 1 free left this month/),
     ).toBeInTheDocument();
     // No enabled confirm anywhere; the primary CTA is the upgrade action.
     expect(screen.queryByRole('button', { name: /Archive 2 senders|^📥/ })).not.toBeInTheDocument();

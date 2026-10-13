@@ -555,7 +555,7 @@ describe('InboxSimulatorScreen', () => {
     expect(screen.queryByRole('radio', { name: 'Act now' })).toBeNull();
     expect(screen.getByText(/Nothing moves until you approve each match/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Turn on$/ })).toBeInTheDocument();
-    expect(screen.getByText(/\bPlus\b/)).toBeInTheDocument();
+    expect(screen.getByText(/Autopilot\s*·\s*Plus/)).toBeInTheDocument();
   });
 
   it('previews only Inbox mail still actionable after the earlier batch', () => {
@@ -653,7 +653,7 @@ describe('InboxSimulatorScreen', () => {
     // archive future messages — nothing on this screen may imply
     // otherwise, for any verb.
     expect(screen.queryByText(/future emails? will skip/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/cleared/i)).toBeInTheDocument();
+    expect(screen.getByText('Cleared from Inbox')).toBeInTheDocument();
   });
 
   it('rejects a v3 snapshot rather than half-restoring it', () => {

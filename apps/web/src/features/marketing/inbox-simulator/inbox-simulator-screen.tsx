@@ -16,8 +16,8 @@ import {
   type TierId,
 } from '@declutrmail/shared';
 import { ACTION_REGISTRY, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
-import { CASA_VERIFICATION_APPROVED_ON, DELETE_RECOVERY_CLAIM } from '@declutrmail/shared/copy';
-import { WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { DELETE_RECOVERY_CLAIM } from '@declutrmail/shared/copy';
+import { fillWs3, WS3_COPY } from '@declutrmail/shared/copy/launch';
 import { fillStory, MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 import { TrackedCta } from '@/features/marketing/landing/tracked-cta';
@@ -1441,7 +1441,7 @@ function DemoCompletion({
       {/* Next to the connect CTA above. "Approved" only — Google approved
           an OAuth verification; it did not certify or audit the product. */}
       <p className="dm-simulator-oauth-note">
-        {`Google approved DeclutrMail's OAuth verification on ${CASA_VERIFICATION_APPROVED_ON} for the single restricted scope this connection would request, gmail.modify.`}
+        {fillWs3(WS3_COPY['ws3.liveFix.simulator.oauthNote'])}
       </p>
     </div>
   );

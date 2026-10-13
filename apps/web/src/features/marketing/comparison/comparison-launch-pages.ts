@@ -47,6 +47,58 @@ function competitor(cells: Map<string, ComparisonCell>, key: string): Comparison
   return cells.get(key) ?? UNKNOWN;
 }
 
+const DECLUTR_PLATFORM: ComparisonCell = {
+  summary: 'DeclutrMail runs on the web, including on your phone',
+  state: 'supported',
+};
+
+function launchRows(
+  cells: DeclutrCells,
+  parsed: Map<string, ComparisonCell>,
+): ComparisonDefinition['rows'] {
+  const rows: ComparisonDefinition['rows'][number][] = [
+    { label: 'Core approach', declutrMail: cells.focus, competitor: UNKNOWN },
+    {
+      label: 'Mailbox support',
+      declutrMail: cells.providers,
+      competitor: competitor(parsed, 'providers'),
+    },
+    {
+      label: 'Existing-mail cleanup',
+      declutrMail: cells.existingMail,
+      competitor: competitor(parsed, 'existingMail'),
+    },
+    {
+      label: 'Future-mail automation',
+      declutrMail: cells.futureMail,
+      competitor: competitor(parsed, 'futureMail'),
+    },
+    {
+      label: 'Unsubscribe',
+      declutrMail: cells.unsubscribe,
+      competitor: competitor(parsed, 'unsubscribe'),
+    },
+    { label: 'Preview and recovery', declutrMail: cells.recovery, competitor: UNKNOWN },
+    {
+      label: 'Email-data posture',
+      declutrMail: cells.data,
+      competitor: competitor(parsed, 'data'),
+    },
+  ];
+  const platform = parsed.get('platform');
+  if (platform) {
+    rows.push({ label: 'Platform', declutrMail: DECLUTR_PLATFORM, competitor: platform });
+  }
+  const license = parsed.get('openSource');
+  if (license) rows.push({ label: 'License', declutrMail: UNKNOWN, competitor: license });
+  rows.push({
+    label: 'Public starting point',
+    declutrMail: cells.price,
+    competitor: competitor(parsed, 'price'),
+  });
+  return rows;
+}
+
 function page(
   slug: ComparisonSlug,
   cells: DeclutrCells,
@@ -83,40 +135,7 @@ function page(
       headline: chooseDeclutr[0] ?? '',
       points: chooseDeclutr.slice(1),
     },
-    rows: [
-      { label: 'Core approach', declutrMail: cells.focus, competitor: UNKNOWN },
-      {
-        label: 'Mailbox support',
-        declutrMail: cells.providers,
-        competitor: competitor(parsed, 'providers'),
-      },
-      {
-        label: 'Existing-mail cleanup',
-        declutrMail: cells.existingMail,
-        competitor: competitor(parsed, 'existingMail'),
-      },
-      {
-        label: 'Future-mail automation',
-        declutrMail: cells.futureMail,
-        competitor: competitor(parsed, 'futureMail'),
-      },
-      {
-        label: 'Unsubscribe',
-        declutrMail: cells.unsubscribe,
-        competitor: competitor(parsed, 'unsubscribe'),
-      },
-      { label: 'Preview and recovery', declutrMail: cells.recovery, competitor: UNKNOWN },
-      {
-        label: 'Email-data posture',
-        declutrMail: cells.data,
-        competitor: competitor(parsed, 'data'),
-      },
-      {
-        label: 'Public starting point',
-        declutrMail: cells.price,
-        competitor: competitor(parsed, 'price'),
-      },
-    ],
+    rows: launchRows(cells, parsed),
     sources: sources.map((source) => {
       const [label, url, note] = source.split(' | ');
       return { label: label ?? '', url: url ?? '', note: note ?? '' };

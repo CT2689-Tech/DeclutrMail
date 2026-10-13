@@ -18,6 +18,7 @@ import {
   type SheetFactItem,
 } from '@declutrmail/shared';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
+import { meterPreviewText } from '@declutrmail/shared/entitlements';
 import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 
 import { afterLead } from '@/lib/copy/after-lead';
@@ -209,9 +210,7 @@ export function BatchActionSheet({
   const quotaLine = hideLegacyQuotaLine(
     quotaRemaining == null || confirmDisabled
       ? null
-      : quotaShort
-        ? `This needs ${fmt(unitsNeeded)} cleanup action${unitsNeeded === 1 ? '' : 's'} but only ${fmt(quotaRemaining)} ${quotaRemaining === 1 ? 'is' : 'are'} left this month.`
-        : `Uses ${fmt(unitsNeeded)} of your ${fmt(quotaRemaining)} cleanup action${quotaRemaining === 1 ? '' : 's'} left this month.`,
+      : meterPreviewText(unitsNeeded, quotaRemaining),
     cleanupSummary.data,
   );
   const meterCopy = meterPreviewCopy(total, cleanupSummary.data);

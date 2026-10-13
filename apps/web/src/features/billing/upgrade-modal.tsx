@@ -175,9 +175,7 @@ export function UpgradeModal() {
           }}
         >
           {hit.reason === 'free_cap'
-            ? typeof hit.details.requested === 'number'
-              ? WS1_COPY['cap.title']
-              : freeCapTitle(hit.details)
+            ? WS1_COPY['cap.title']
             : hit.reason === 'action_tier'
               ? actionTierTitle(hit.details)
               : hit.reason === 'pro_feature'
@@ -418,12 +416,6 @@ function capBody(d: FreeCapDetails): string {
     allowance,
     resetDate,
   });
-}
-
-function freeCapTitle(d: FreeCapDetails): string {
-  return d.requiredUnits > 1 && d.remaining > 0
-    ? `That needs ${d.requiredUnits} cleanup actions — only ${d.remaining} of your ${d.limit} are left this month`
-    : `You've used all ${d.limit} cleanup actions for this month`;
 }
 
 /** Short, locale-stable "Aug 27" label for the server's reset instant. */

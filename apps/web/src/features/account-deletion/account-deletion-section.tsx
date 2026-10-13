@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { Button, tokens } from '@declutrmail/shared';
 import type { AccountDeletionStatus } from '@declutrmail/shared/contracts';
@@ -42,6 +43,7 @@ export function AccountDeletionSection() {
   const [modalOpen, setModalOpen] = useState(false);
 
   const submitError = deletionSubmitError(request.error);
+  const blockKind = deletionBlockKind(status.data?.billingBlockReason, request.error);
   const blockCopy = deletionBlockCopy(status.data?.billingBlockReason, request.error);
   const billingBlocked = blockCopy != null;
 
@@ -89,7 +91,12 @@ export function AccountDeletionSection() {
 
       {blockCopy != null && (
         <p role="alert" style={{ color: color.dangerText, fontSize: text.sm }}>
-          <DeletionBlockSentence text={blockCopy} />
+          <DeletionBlockSentence text={blockCopy} />{' '}
+          {blockKind === 'subscription' ? (
+            <Link href="/billing" style={{ color: color.primary }}>
+              Open Billing
+            </Link>
+          ) : null}{' '}
           <Button
             size="sm"
             onClick={async () => {

@@ -195,7 +195,7 @@ describe('PricingScreen (D19)', () => {
   it('explains what happens when the Free monthly cap is reached', () => {
     render(<PricingScreen />);
     expect(screen.getByText(/until your next reset or an upgrade/i)).toBeInTheDocument();
-    expect(screen.getByText(/signup anniversary in UTC/i)).toBeInTheDocument();
+    expect(screen.getByText(/signup date each month/i)).toBeInTheDocument();
   });
 
   it('keeps the preview, undo, Trash and refund facts on the page', () => {

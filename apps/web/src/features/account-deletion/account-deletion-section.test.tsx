@@ -105,6 +105,7 @@ describe('AccountDeletionSection', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'Cancel your plan first, then delete your account.',
     );
+    expect(screen.getByRole('link', { name: 'Open Billing' })).toHaveAttribute('href', '/billing');
     expect(screen.queryByRole('link', { name: 'support@declutrmail.com' })).not.toBeInTheDocument();
   });
 

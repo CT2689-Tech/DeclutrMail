@@ -1,9 +1,19 @@
-import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory } from '@declutrmail/shared/entitlements';
 
 /** Published descriptions of existing billing behavior; no policy decisions live here. */
 export const CLEANUP_COUNT_NOTE = WS2_COPY.simplify.billing.meterRule;
-export const CLEANUP_RESET_NOTE =
-  'The Free quota resets each month on your signup anniversary in UTC, using the last day for shorter months. Billing shows your next reset date.';
+
+/**
+ * `resetLine` names a per-account date. Public pages have none, so they
+ * use the deck's signup-date sentence instead of leaving `{resetDate}` blank.
+ */
+export function cleanupResetNote(resetDate?: string): string {
+  if (resetDate) return fillStory(WS2_COPY.simplify.billing.resetLine, 'usd', { resetDate });
+  return fillStory(WS1_COPY['pricing.counts.body'][3]);
+}
+
+export const CLEANUP_RESET_NOTE = cleanupResetNote();
 export const BRIEF_PROCESSING_NOTE =
   'Daily Brief may send the sender, subject line, and Gmail preview snippet to Anthropic to compose a summary. Full email contents and attachments are never sent.';
 export const RAZORPAY_LIMITATIONS_NOTE =

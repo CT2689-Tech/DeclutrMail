@@ -163,9 +163,7 @@ describe('compareRows — derived from the manifest', () => {
 describe('cardBullets — manifest-derived card copy', () => {
   it('Free enumerates its surfaces and shows the monthly quota', () => {
     const bullets = cardBullets(TIER_MANIFEST.free);
-    expect(bullets).toContain(
-      `${TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions every month`,
-    );
+    expect(bullets).toContain('1,000 emails cleared a month (Archive or Delete)');
     expect(bullets).toContain(CAPABILITY_LABELS.senders);
   });
 
@@ -177,7 +175,7 @@ describe('cardBullets — manifest-derived card copy', () => {
     expect(bullets).not.toContain(CAPABILITY_LABELS.triage);
     expect(bullets).toContain(CAPABILITY_LABELS.screener);
     expect(bullets).toContain(CAPABILITY_LABELS.autopilot);
-    expect(bullets).toContain('Unlimited cleanup actions');
+    expect(bullets).toContain('No monthly limit');
   });
 
   it('Pro adds the attention surfaces and the manifest quota deltas', () => {

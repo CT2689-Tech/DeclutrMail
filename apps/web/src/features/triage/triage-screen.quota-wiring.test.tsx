@@ -124,7 +124,7 @@ describe('TriageScreen — every confirm surface receives the cleanup allowance'
     // it spans several text nodes.
     await waitFor(() =>
       expect(dialog.textContent).toContain(
-        `Uses 3 of your ${CLEANUP_REMAINING} cleanup actions left this month.`,
+        `This clears 3 emails. You have ${CLEANUP_REMAINING} free this month.`,
       ),
     );
   });
@@ -149,7 +149,7 @@ describe('TriageScreen — every confirm surface receives the cleanup allowance'
     const dialog = await screen.findByRole('dialog');
     await waitFor(() =>
       expect(dialog.textContent).toContain(
-        `Uses 1 of your ${CLEANUP_REMAINING} cleanup actions left this month.`,
+        `This clears 1 email. You have ${CLEANUP_REMAINING} free this month.`,
       ),
     );
   });
@@ -218,7 +218,7 @@ describe('TriageScreen — batch sheet does not arm confirm on a stale cached pr
     const dialog = await screen.findByRole('dialog');
     await waitFor(() =>
       expect(dialog.textContent).toContain(
-        `Uses 3 of your ${CLEANUP_REMAINING} cleanup actions left this month.`,
+        `This clears 3 emails. You have ${CLEANUP_REMAINING} free this month.`,
       ),
     );
     expect(

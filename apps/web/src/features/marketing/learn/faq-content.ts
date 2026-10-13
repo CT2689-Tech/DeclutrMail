@@ -5,7 +5,7 @@ import {
   PROVIDER_SWITCH_NOTE,
   RAZORPAY_LIMITATIONS_NOTE,
 } from '@/features/billing/billing-copy';
-import { fillWs3, WS1_COPY } from '@declutrmail/shared/copy/launch';
+import { fillWs3, WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { fillStory, isPricingV2, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
@@ -135,7 +135,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
   {
     id: 'plans',
     question: 'What changes between Free, Plus, and Pro?',
-    answer: `Free supports ${TIER_MANIFEST.free.inboxLimit} inbox with Senders, Triage, Later, bulk actions, and Activity, limited to ${TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions a month. Plus removes the monthly limit and adds the Screener, Autopilot rules that keep working on their own, and Quiet hours. Pro supports ${TIER_MANIFEST.pro.inboxLimit} connected inboxes, all-matching cleanup across filtered senders, Daily Brief, and Follow-ups. Use the pricing page for current plan details.`,
+    answer: `Free supports ${TIER_MANIFEST.free.inboxLimit} inbox with Senders, Triage, Later, bulk actions, and Activity. ${fillStory(WS2_COPY.liveFix.billing.limit.free)} Plus removes the monthly limit and adds the Screener, Autopilot rules that keep working on their own, and Quiet hours. Pro supports ${TIER_MANIFEST.pro.inboxLimit} connected inboxes, all-matching cleanup across filtered senders, Daily Brief, and Follow-ups. Use the pricing page for current plan details.`,
     link: {
       href: '/pricing',
       label: 'Compare current plans',

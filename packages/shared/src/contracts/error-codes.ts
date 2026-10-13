@@ -124,8 +124,7 @@ export const ERROR_CODES = {
     status: 402,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message:
-      "You've used all your free cleanup actions for this month. Upgrade for unlimited cleanup — everything you've already done stays done.",
+    message: 'Not enough free emails left this month',
   },
   ACTION_TIER_REQUIRED: {
     status: 402,

@@ -1,5 +1,6 @@
 import {
   CASA_VERIFICATION_APPROVED_ON,
+  formatVerificationDate,
   DATA_EXPORT_FORMAT_MANIFEST,
   DATA_EXPORT_LIMITATION,
   GMAIL_CONNECTION_DATA_INVENTORY,
@@ -13,7 +14,7 @@ import {
   type GmailDataProcessor,
 } from '@declutrmail/shared';
 import type { DataExportFormat } from '@declutrmail/shared/contracts';
-import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { fillWs3, WS2_COPY } from '@declutrmail/shared/copy/launch';
 
 import { CookiePreferences } from '@/features/consent/cookie-preferences';
 import { DrillRow, SettingsGroup, SettingsRow } from '../settings-list';
@@ -286,13 +287,9 @@ export function PrivacyDataFooter() {
       <SettingsGroup id="privacy-legal-evidence" title="Legal & evidence">
         <SettingsRow
           label="CASA Tier 2 verification"
-          detail={
-            <>
-              DeclutrMail&apos;s Gmail access goes through Google&apos;s CASA security assessment.
-              Google approved our OAuth verification on {CASA_VERIFICATION_APPROVED_ON} for the
-              single restricted scope we request, gmail.modify. It is recertified annually.
-            </>
-          }
+          detail={fillWs3(WS2_COPY.liveFix.settingsPrivacy.casa, {
+            OAUTH_DATE: formatVerificationDate(CASA_VERIFICATION_APPROVED_ON),
+          })}
         />
         <DrillRow href="/privacy" label="Privacy Policy" />
         <DrillRow href="/terms" label="Terms" />

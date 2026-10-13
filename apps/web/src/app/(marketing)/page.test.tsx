@@ -10,7 +10,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
-import { cleanupActionsPerMonthFor, MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import { METER, MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 import { installFetchStub } from '@/test/fetch-stub';
 import LandingPage, { metadata } from './page';
@@ -255,14 +255,11 @@ describe('landing page — D134', () => {
 });
 
 describe('Hero disclaimer — states the Free-tier cap (QA-sign-in-05)', () => {
-  it('mentions the monthly cleanup-action cap alongside the undo window', () => {
+  it('mentions the free email meter alongside the undo window', () => {
     render(<Hero />);
     const disclaimer = screen.getByText(/No card required/i);
-    const allowance = cleanupActionsPerMonthFor('free');
-    expect(allowance).not.toBeNull();
-    expect(disclaimer.textContent).toContain(
-      `${allowance!.toLocaleString('en-US')} emails cleared a month`,
-    );
+    const allowance = METER.free.limit.toLocaleString('en-US');
+    expect(disclaimer.textContent).toContain(`${allowance} emails cleared a month`);
   });
 });
 

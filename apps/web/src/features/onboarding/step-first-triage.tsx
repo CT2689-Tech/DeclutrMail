@@ -3,6 +3,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, ErrorState, tokens } from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { FINISH_LABEL } from '@declutrmail/shared/copy/screen-decisions';
 import type { OnboardingCleanupGoal } from '@declutrmail/shared/contracts';
 
@@ -152,7 +153,9 @@ export function StepFirstTriage({
         >
           {meta.pinned === 0
             ? 'Nothing here needs a decision yet.'
-            : `${meta.decided} ${meta.decided === 1 ? 'sender' : 'senders'} reviewed — Archive, Later and Delete can be undone from Activity.`}
+            : meta.decided === 1
+              ? WS2_COPY.simplify.onboarding.reviewed.one
+              : WS2_COPY.simplify.onboarding.reviewed.other.replaceAll('{n}', String(meta.decided))}
         </p>
         <Button
           tone="primary"

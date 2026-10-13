@@ -90,7 +90,7 @@ test('Keep via K: preview-on-cancel leaves queue intact; Keep removes the row se
   await identity.getByText('Sender details', { exact: true }).press('Enter');
   await expect(identity).not.toHaveAttribute('open');
   await page.getByRole('button', { name: 'List', exact: true }).click();
-  const queue = page.getByRole('list', { name: 'Triage queue' });
+  const queue = page.getByRole('list', { name: 'Triage list' });
   await expect(queue).toBeVisible();
   const escaped = senderName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const rowHeader = page.getByRole('button', {

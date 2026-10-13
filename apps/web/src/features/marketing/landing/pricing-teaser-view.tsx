@@ -1,5 +1,6 @@
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import {
   currencyForPricePoint,
   formatMoney,
@@ -33,7 +34,7 @@ export function PricingTeaserView({ provider }: { provider: BillingProviderId })
             {free.prices.monthly ? money(free.prices.monthly) : null}
           </div>
           <ul className="dm-mkt-tier-features">
-            <li>{free.cleanupActionsPerMonth} cleanup actions every month</li>
+            <li>{fillStory(WS1_COPY['pricing.free.features'][0])}</li>
             <li>Sender detail and live action previews</li>
             <li>{free.inboxLimit} connected inbox</li>
           </ul>
@@ -46,7 +47,7 @@ export function PricingTeaserView({ provider }: { provider: BillingProviderId })
             {plus.prices.monthly ? money(plus.prices.monthly) : '—'} <small>/ month</small>
           </div>
           <ul className="dm-mkt-tier-features">
-            <li>Unlimited cleanup actions</li>
+            <li>{WS1_COPY['pricing.plus.features'][0]}</li>
             <li>Screener and Autopilot rules</li>
             <li>Quiet hours</li>
           </ul>

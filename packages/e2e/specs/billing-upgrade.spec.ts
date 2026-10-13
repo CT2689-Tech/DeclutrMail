@@ -17,12 +17,7 @@ import {
 import { dbConnect } from '../helpers/db';
 import { E2E_ENV } from '../helpers/env';
 import { requirePrecondition } from '../helpers/preconditions';
-import {
-  applyBillingSeed,
-  BILLING_SEED,
-  FREE_CLEANUP_LIMIT,
-  resetBillingVolatileState,
-} from '../helpers/seed-billing';
+import { applyBillingSeed, BILLING_SEED, resetBillingVolatileState } from '../helpers/seed-billing';
 
 /**
  * Money-path spec (D183 / D19 / D77 / D117 / D180) — free user hits the
@@ -228,9 +223,7 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   // confirm CTA is REPLACED by the upgrade CTA — the shortfall is
   // stated in the modal and no request is ever sent (the server 402
   // path stays covered by actions.service.postgres.spec).
-  await expect(preview).toContainText(
-    'This needs 1 cleanup action but only 0 are left this month.',
-  );
+  await expect(preview).toContainText('This clears 1 email. You have 0 free left this month.');
   const upgradeCta = preview.getByRole('button', {
     name: fillStory(WS1_COPY['cap.plus.link']),
   });
@@ -239,9 +232,7 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
 
   const upgradeModal = page.getByTestId('upgrade-modal');
   await expect(upgradeModal).toBeVisible({ timeout: 15_000 });
-  await expect(upgradeModal).toContainText(
-    `You've used all ${FREE_CLEANUP_LIMIT} cleanup actions for this month`,
-  );
+  await expect(upgradeModal).toContainText('Not enough free emails left this month');
 
   // The gate fired BEFORE any insert — the quota ledger still holds
   // exactly the seeded units and nothing else.

@@ -5,7 +5,6 @@
 
 import { GMAIL_DATA_PROCESSORS } from '../../contracts/gmail-data-inventory';
 import {
-  cleanupActionsPerMonthFor,
   isBillingPassEnabled,
   isPricingV2,
   METER,
@@ -45,8 +44,7 @@ export function heroKicker(): string {
 }
 
 function allowanceToken(): string {
-  const allowance = cleanupActionsPerMonthFor('free');
-  return allowance == null ? '' : allowance.toLocaleString('en-US');
+  return METER.free.limit.toLocaleString('en-US');
 }
 
 function plusPriceToken(): string {

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 
 import { ACTION_SAFETY_SUMMARY, OAUTH_SCOPE_DISCLOSURE } from '@declutrmail/shared';
-import { TIER_MANIFEST, type TierDefinition } from '@declutrmail/shared/entitlements';
+import { fillStory, TIER_MANIFEST, type TierDefinition } from '@declutrmail/shared/entitlements';
 import { INR_NEW_PURCHASES_PAUSED } from '@declutrmail/shared/contracts/billing-availability';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 
@@ -82,9 +82,9 @@ export function PricingScreen() {
       <header className="dm-pricing-head">
         <h1>Start free. Choose how to keep Gmail clear.</h1>
         <p>
-          Free includes {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions each month. Plus
-          adds unlimited actions and rules you preview before enabling. Pro adds Daily Brief,
-          Follow-ups, and up to {TIER_MANIFEST.pro.inboxLimit} Gmail inboxes.
+          {fillStory(WS1_COPY['pricing.free.features'][0])}. {WS1_COPY['pricing.plus.features'][0]}.
+          Plus adds rules you preview before enabling. Pro adds Daily Brief, Follow-ups, and up to{' '}
+          {TIER_MANIFEST.pro.inboxLimit} Gmail inboxes.
         </p>
       </header>
 

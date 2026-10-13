@@ -24,5 +24,9 @@ import deck from './deck/ws2.json' with { type: 'json' };
  * `simplify.deleteAccount.paymentPending`.
  * drop2-r29 adds `simplify.privacy.keptLimited`,
  * `simplify.privacy.logoCache`, and `simplify.privacy.auditRecords`.
+ * The same revision’s reviewed, load-error, Later-slow, and reset lines
+ * live under `simplify.onboarding`, `simplify.later`, and
+ * `simplify.billing.resetLine`. `liveFix.billing.limit.free` is the
+ * email-count sentence.
  */
 export const WS2_COPY = deck;

@@ -13,8 +13,10 @@
  * appears.
  */
 
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import {
   CAPABILITIES,
+  fillStory,
   RAILS,
   SELECTOR_TIERS,
   TIER_IDS,
@@ -264,7 +266,7 @@ export function cardBullets(tier: TierDefinition): readonly string[] {
   if (!prev) {
     for (const capability of tier.capabilities) {
       if (capability === 'cleanup-actions' && tier.cleanupActionsPerMonth !== null) {
-        bullets.push(`${tier.cleanupActionsPerMonth} cleanup actions every month`);
+        bullets.push(fillStory(WS1_COPY['pricing.free.features'][0]));
       } else {
         bullets.push(CAPABILITY_LABELS[capability]);
       }
@@ -277,7 +279,7 @@ export function cardBullets(tier: TierDefinition): readonly string[] {
       }
     }
     if (prev.cleanupActionsPerMonth !== null && tier.cleanupActionsPerMonth === null) {
-      bullets.push('Unlimited cleanup actions');
+      bullets.push(WS1_COPY['pricing.plus.features'][0]);
     }
   }
 

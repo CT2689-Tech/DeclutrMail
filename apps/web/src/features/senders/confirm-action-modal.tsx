@@ -36,7 +36,7 @@ import { mailLocationValue } from '@/features/triage/action-preview-detail';
 import { afterLead } from '@/lib/copy/after-lead';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
-import { fillStory, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { fillStory, meterPreviewText, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import { useUpgradeGateStore } from '@/lib/entitlements/upgrade-gate';
@@ -1189,11 +1189,9 @@ export function ConfirmActionModal({
       ? null
       : quotaCappedFrom
         ? `${unitsNeeded} of ${quotaCappedFrom} eligible senders — all you have left this month.`
-        : quotaShort
-          ? `This needs ${unitsNeeded} cleanup action${unitsNeeded === 1 ? '' : 's'} but only ${quotaRemaining} ${quotaRemaining === 1 ? 'is' : 'are'} left this month.`
-          : quotaRemaining !== null
-            ? `Uses ${unitsNeeded} of your ${quotaRemaining} cleanup action${quotaRemaining === 1 ? '' : 's'} left this month.`
-            : null;
+        : quotaRemaining !== null
+          ? meterPreviewText(unitsNeeded, quotaRemaining)
+          : null;
 
   // ── Details ──────────────────────────────────────────────────────────
   // Short label/value facts (`SheetFactList`). Each value says the same

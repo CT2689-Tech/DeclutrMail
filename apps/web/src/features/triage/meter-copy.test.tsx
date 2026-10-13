@@ -71,9 +71,8 @@ describe('meter copy', () => {
       />,
     );
     expect(
-      screen.getByText('Uses 1 of your 34 cleanup actions left this month.'),
+      screen.getByText('This clears 1 email. You have 34 free this month.'),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/This clears/)).not.toBeInTheDocument();
   });
 
   it('replaces the action sentence with the email count and leaves confirm available', () => {
