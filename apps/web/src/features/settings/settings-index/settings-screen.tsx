@@ -7,7 +7,6 @@ import {
 } from '@/features/editorial/page';
 
 import { useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
 import { ScreenIntro, toast, tokens } from '@declutrmail/shared';
 import { SETTINGS_PREVIEWS_TITLE } from '@declutrmail/shared/copy/screen-decisions';
 import { hasCapability, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
@@ -58,6 +57,7 @@ import { ActionSheetPrefsCard, type ActionSheetPrefsCardState } from './action-s
 import { BriefPrefsCard, type BriefPrefsCardState } from './brief-prefs-card';
 import { EmailPrefsCard, type EmailPrefsCardState } from './email-prefs-card';
 import { MailboxesCard } from './mailboxes-card';
+import { SettingsRouteFallback } from './settings-route-fallback';
 import { VerbTourCard } from './verb-tour-card';
 import { AiSettingsSection } from '@/features/ai-consent/ai-settings-section';
 
@@ -113,41 +113,39 @@ export function SettingsScreen({
       (mounted ? queriedHealthById[mailbox.id] : undefined) ?? initialMailboxHealth[mailbox.id],
     ]),
   );
-  const searchParams = useSearchParams();
-
   // ?cancelDeletion=1 — scroll + highlight the Account section (D216).
   // Waits for the layout-shifting queries (settings + billing cards
   // above the section) to settle first — scrolling at mount lands on a
   // shorter page, then the resolved cards push the section back below
   // the fold (caught in the U23 browser smoke). Scrolls exactly once.
+  // Read from `window.location` inside the effect. `useSearchParams`
+  // bails this screen into the route Suspense hole, so some loads SSR
+  // the loading shell and the client hydrates the screen (React #418).
   const accountRef = useRef<HTMLDivElement>(null);
   const didDeepLinkScroll = useRef(false);
-  const wantsCancelDeletion = searchParams.get('cancelDeletion') === '1';
   // Prefetched settings and billing can sit in the client cache before this
-  // screen's first paint, while the server HTML is still the loading shell
-  // (useSearchParams keeps the screen in a Suspense hole). Reading those
-  // caches on that first paint swaps in the AI link, preview choices, and
-  // plan name and fails hydration. The shell stays up until after mount.
+  // screen's first paint, while the server HTML is still the loading
+  // cards. Reading those caches swaps in the AI link, preview choices,
+  // and plan name and fails hydration. The shell stays up until after mount.
   const settingsView = mounted ? settings : null;
   const billingView = mounted ? billing : null;
   const layoutSettled = mounted && !settings.isPending && !billing.isPending;
   const [highlightAccount, setHighlightAccount] = useState(false);
   useEffect(() => {
-    if (!wantsCancelDeletion || !layoutSettled || didDeepLinkScroll.current) return;
+    if (!layoutSettled || didDeepLinkScroll.current) return;
+    if (new URLSearchParams(window.location.search).get('cancelDeletion') !== '1') return;
     didDeepLinkScroll.current = true;
     accountRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     setHighlightAccount(true);
     const t = setTimeout(() => setHighlightAccount(false), 2600);
     return () => clearTimeout(t);
-  }, [wantsCancelDeletion, layoutSettled]);
+  }, [layoutSettled]);
 
   // OAuth reconnect/cold-start return. Query values are closed enums and
   // a reconnect target is accepted only from an exact UUID fragment.
   // Resolve rows with getElementById (never a selector built from URL
   // input), then scrub transient context so refresh cannot replay the
   // toast or retain a mailbox id in browser history.
-  const reconnectResultParam = searchParams.get('reconnect_result');
-  const connectStartResultParam = searchParams.get('connect_start_result');
   const didHandleReconnectResult = useRef(false);
   const [highlightMailboxId, setHighlightMailboxId] = useState<string | null>(null);
   const [reconnectAnnouncement, setReconnectAnnouncement] = useState<OAuthResultCopy | null>(null);
@@ -157,12 +155,14 @@ export function SettingsScreen({
   // done, so the result still shows here.
   const onboarded = onboardingGateVerdict(useOnboardingState()) === 'open';
   useEffect(() => {
-    if (
-      (reconnectResultParam === null && connectStartResultParam === null) ||
-      didHandleReconnectResult.current ||
-      !onboarded
-    )
-      return;
+    // The first paint is the route fallback, which has no mailbox rows.
+    // Consuming the result before those rows mount scrolls nowhere and
+    // then refuses to run again.
+    if (!mounted || didHandleReconnectResult.current || !onboarded) return;
+    const params = new URLSearchParams(window.location.search);
+    const reconnectResultParam = params.get('reconnect_result');
+    const connectStartResultParam = params.get('connect_start_result');
+    if (reconnectResultParam === null && connectStartResultParam === null) return;
     didHandleReconnectResult.current = true;
 
     const reconnectResult = reconnectResultOf(reconnectResultParam);
@@ -194,10 +194,9 @@ export function SettingsScreen({
       url.searchParams.delete('connect_start_result');
       url.hash = 'mailboxes';
     });
-  }, [connectStartResultParam, onboarded, reconnectResultParam]);
+  }, [mounted, onboarded]);
 
-  // Keep highlight lifetime independent from the URL effect: Next's
-  // native-history integration updates useSearchParams after replaceState.
+  // Highlight lifetime stays independent of the URL scrub.
   useEffect(() => {
     if (!highlightMailboxId) return;
     const timeout = window.setTimeout(() => setHighlightMailboxId(null), 2600);
@@ -277,6 +276,10 @@ export function SettingsScreen({
   function reactivateMailbox(mailboxId: string) {
     startMailboxReactivation(mailboxId);
   }
+
+  // Same tree as `settings/loading.tsx`. Hydration sometimes paints this
+  // screen into that fallback DOM; a richer first paint throws #418.
+  if (!mounted) return <SettingsRouteFallback />;
 
   return (
     <div

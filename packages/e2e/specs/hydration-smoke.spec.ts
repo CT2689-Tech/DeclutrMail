@@ -342,6 +342,13 @@ test('a normal paid plan hydrates across repeated loads', async ({ page }) => {
   });
 });
 
+test('settings hydrates across repeated loads', async ({ page }) => {
+  test.setTimeout(180_000);
+  await expectLoadsHydrate(page, '/settings', async () => {
+    await expect(page.getByRole('heading', { name: 'Gmail accounts' })).toBeVisible();
+  });
+});
+
 for (const route of HYDRATED_ROUTES) {
   test(`server-hydrated route mounts without recovery: ${route}`, async ({ page }) => {
     await expectRouteHydrates(page, route);
