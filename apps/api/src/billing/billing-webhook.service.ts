@@ -1517,9 +1517,8 @@ export class BillingWebhookService {
     event: Extract<NormalizedBillingEvent, { kind: 'payment' }>,
     eventRowId: string,
   ): Promise<WebhookProcessOutcome> {
-    const passId = this.catalog.passPaddlePriceId;
     const priceIds = event.oneTimePriceIds ?? [];
-    if (!passId || !priceIds.includes(passId)) {
+    if (!priceIds.some((id) => this.catalog.isPassPrice(id))) {
       this.logger.error(
         `billing.webhook.unknown_price provider=paddle price=${priceIds.join(',')} event=${event.providerEventId}`,
       );

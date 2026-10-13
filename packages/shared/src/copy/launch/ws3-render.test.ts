@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { cleanupActionsPerMonthFor, planName, POLICY } from '../../entitlements';
+import { METER, planName, POLICY } from '../../entitlements';
 import {
   BRAND_VERIFICATION_APPROVED_ON,
   CASA_LOV_SUBMITTED_ON,
@@ -54,13 +54,12 @@ describe('WS3 token fill', () => {
     expect(joined).not.toMatch(/\baudited\b/i);
   });
 
-  it('fills {allowance} from the free-tier quota, not a typed 1,000', () => {
-    const allowance = cleanupActionsPerMonthFor('free');
-    expect(allowance).not.toBeNull();
+  it('fills {allowance} from the free email meter', () => {
+    const allowance = METER.free.limit.toLocaleString('en-US');
     const note = fillWs3(WS3_COPY['ws3.home.note']);
-    expect(note).toContain(allowance!.toLocaleString('en-US'));
+    expect(note).toContain(`${allowance} emails cleared a month`);
     expect(note).not.toContain('{allowance}');
-    expect(ws3Tokens().allowance).toBe(allowance!.toLocaleString('en-US'));
+    expect(ws3Tokens().allowance).toBe(allowance);
   });
 
   it('drops a clause whose filler is still empty', () => {
@@ -70,7 +69,7 @@ describe('WS3 token fill', () => {
     expect(fillComplete('{refundDays}-day money-back on any purchase, once per customer.')).toBe(
       '',
     );
-    expect(REFUNDS_PAGE_WINDOW_DAYS).not.toBe(POLICY.refundWindowDays);
+    expect(REFUNDS_PAGE_WINDOW_DAYS).toBe(POLICY.refundWindowDays);
     expect(refundSentence()).toBe('');
     const answer = priceFaqAnswer();
     const summary = declutrPriceSummary();

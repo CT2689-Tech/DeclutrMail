@@ -1,11 +1,13 @@
 // apps/api/src/billing/paddle.adapter.ts — Paddle Billing (API v2)
 // adapter behind the D117 `BillingProvider` seam.
 //
-// Paddle is merchant-of-record (D117). While new rupee purchases are
-// paused, checkout is a server-created transaction with currency_code
-// USD; the overlay opens with that transaction id and no price id, so
-// Paddle cannot localize the charge to an INR price override. The
-// webhook is the only authoritative state channel.
+// Paddle is merchant-of-record (D117). Checkout is always a
+// server-created transaction. The price id and currency_code are
+// chosen here from the verified country: INR only for a trusted IN
+// and a configured India price, otherwise USD. The overlay opens with
+// that transaction id and no price id, so Paddle cannot localize the
+// charge onto a different override. The webhook is the only
+// authoritative state channel.
 //
 // SIGNATURE (D180, built to the D229 bar): `Paddle-Signature` header
 // carries `ts=<unix-seconds>;h1=<hex hmac>` (multiple `h1` blocks
@@ -24,12 +26,8 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import { Logger } from '@nestjs/common';
-import {
-  INR_NEW_PURCHASES_PAUSED,
-  type CheckoutSession,
-  type SubscriptionStatus,
-} from '@declutrmail/shared/contracts';
-import { checkoutDiscountId } from '@declutrmail/shared/entitlements';
+import { type CheckoutSession, type SubscriptionStatus } from '@declutrmail/shared/contracts';
+import { checkoutDiscountId, selectPaddleCheckoutPrice } from '@declutrmail/shared/entitlements';
 
 import { AppException } from '../common/app-exception.js';
 import type {
@@ -454,16 +452,15 @@ export class PaddleAdapter implements BillingProvider {
   }
 
   /**
-   * While rupee purchases are paused, create a transaction with
-   * `currency_code: USD` and return that id only. The signed
-   * `customData` stays on the transaction. Returning it, or a price
-   * id, would let a client open an overlay Paddle can localize to an
-   * INR override. There is no fallback to that overlay: a missing key
-   * or a transaction that is not USD fails closed.
+   * Create a transaction in the selected currency and return that id
+   * only. The signed attribution blob stays on the transaction.
+   * Returning it, or a price id, would let a client open an overlay
+   * Paddle can localize. A missing key, or a transaction whose
+   * currency does not match the one requested, fails closed.
    *
-   * After the pause lifts, the session is again the price id. The
-   * customer record is created provider-side at checkout completion
-   * and lands in `billing_customers` via the subscription webhook.
+   * India uses its own price id only when `trustedCountry` is `IN`
+   * and that id is configured. Every other caller stays on the USD
+   * price. Customer-supplied country is not an input.
    */
   async createCheckout(input: CreateCheckoutInput): Promise<CheckoutSession> {
     const clientToken = this.env.PADDLE_CLIENT_TOKEN;
@@ -475,56 +472,48 @@ export class PaddleAdapter implements BillingProvider {
     if (!clientToken || !webhookSecret) {
       throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
     }
-    const discountId = checkoutDiscountId(this.env, input.providerPriceId);
+    const selected = selectPaddleCheckoutPrice(this.env, {
+      usdPriceId: input.providerPriceId,
+      code: input.checkoutCode ?? 'other',
+      trustedCountry: input.trustedCountry ?? null,
+    });
+    const discountId = checkoutDiscountId(this.env, selected.priceId);
     const customData = {
       workspace_id: input.workspaceId,
       sig: attributionSignature(input.workspaceId, webhookSecret),
     };
     const environment = this.env.PADDLE_ENV === 'production' ? 'production' : 'sandbox';
-    if (INR_NEW_PURCHASES_PAUSED) {
-      const apiKey = this.env.PADDLE_API_KEY;
-      if (!apiKey) throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
-      const created = await this.createUsdTransaction(apiKey, {
-        collection_mode: 'automatic',
-        currency_code: 'USD',
-        items: [{ price_id: input.providerPriceId, quantity: 1 }],
-        custom_data: customData,
-        ...(discountId ? { discount_id: discountId } : {}),
-      });
-      if (
-        created.currency_code !== 'USD' ||
-        typeof created.id !== 'string' ||
-        !/^txn_[a-z\d]{26}$/.test(created.id)
-      ) {
-        throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
-      }
-      return {
-        provider: 'paddle',
-        kind: 'overlay',
-        transactionId: created.id,
-        clientToken,
-        environment,
-      };
+    const apiKey = this.env.PADDLE_API_KEY;
+    if (!apiKey) throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    const created = await this.createLockedTransaction(apiKey, {
+      collection_mode: 'automatic',
+      currency_code: selected.currency,
+      items: [{ price_id: selected.priceId, quantity: 1 }],
+      custom_data: customData,
+      ...(discountId ? { discount_id: discountId } : {}),
+    });
+    if (
+      created.currency_code !== selected.currency ||
+      typeof created.id !== 'string' ||
+      !/^txn_[a-z\d]{26}$/.test(created.id)
+    ) {
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
     return {
       provider: 'paddle',
       kind: 'overlay',
-      priceId: input.providerPriceId,
+      transactionId: created.id,
       clientToken,
       environment,
-      // Key must match the webhook reader (`custom_data.workspace_id`).
-      customData,
-      // FILL_ME is null here, so the overlay opens with no discount.
-      ...(discountId ? { discountId } : {}),
     };
   }
 
   /** POST /transactions with the currency fixed. Never logs the body. */
-  private async createUsdTransaction(
+  private async createLockedTransaction(
     apiKey: string,
     body: {
       collection_mode: 'automatic';
-      currency_code: 'USD';
+      currency_code: 'USD' | 'INR';
       items: [{ price_id: string; quantity: 1 }];
       custom_data: { workspace_id: string; sig: string };
       discount_id?: string;

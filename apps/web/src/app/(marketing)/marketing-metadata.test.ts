@@ -17,6 +17,7 @@ import { describe, expect, it } from 'vitest';
 import type { Metadata } from 'next';
 
 import { ACTION_SEMANTICS } from '@declutrmail/shared/actions';
+import { WS3_COPY } from '@declutrmail/shared/copy/launch';
 
 import { MARKETING_PATHS } from '@/app/sitemap';
 import { comparisonBySlug } from '@/features/marketing/comparison/comparison-data';
@@ -249,13 +250,25 @@ async function metadataForPath(path: string): Promise<Metadata> {
 
 const FORBIDDEN_WORDING = /Declutr Mail|DeclutterMail|metadata only|never reads/i;
 
+const APPROVED_OVER_LIMIT = new Map<string, string>([
+  ['/inbox-simulator', WS3_COPY['ws3.pr1019.simulator.description']],
+  ['/blog/reversible-does-not-mean-risk-free', WS3_COPY['ws3.pr1019.blog.recovery.description']],
+]);
+
 describe('marketing metadata guards', () => {
   it('gives every sitemap path a self canonical and a description of at most 160 characters', async () => {
     for (const path of MARKETING_PATHS) {
       const metadata = await metadataForPath(path);
       const description = metadata.description ?? '';
       expect(metadata.alternates?.canonical, path).toBe(path);
-      expect(description.length, `${path} (${description.length})`).toBeLessThanOrEqual(160);
+      // drop2-r32 locked these two descriptions past Google's 160-character
+      // display cap. Pin the deck string so any other page still fails at 160.
+      const approvedOverLimit = APPROVED_OVER_LIMIT.get(path);
+      if (approvedOverLimit) {
+        expect(description, path).toBe(approvedOverLimit);
+      } else {
+        expect(description.length, `${path} (${description.length})`).toBeLessThanOrEqual(160);
+      }
       expect(titleText(metadata), path).not.toMatch(FORBIDDEN_WORDING);
       expect(description, path).not.toMatch(FORBIDDEN_WORDING);
     }
@@ -302,7 +315,7 @@ describe('marketing metadata guards', () => {
     }
 
     expect(inboxSimulator.description).toBe(
-      'Try Senders and Triage in a made-up inbox. Open the sender inspector, filter and select senders, and preview cleanup actions. No signup or Gmail access needed.',
+      'Try Senders and Triage with made-up email. Open the sender inspector, filter and select senders, and preview Archive, Later or Delete. No signup or Gmail access needed.',
     );
     expect(howToHub.description).toBe(
       'Step-by-step Gmail guides: delete all emails from one sender, free up storage when Gmail is full, auto archive future email, stop promotional email, and more.',
@@ -338,7 +351,7 @@ describe('marketing metadata guards', () => {
     );
     expect(titleText(security)).toBe('Security — DeclutrMail');
     expect(security.description).toBe(
-      'DeclutrMail never fetches or stores full email contents, encrypts Google access tokens, and received Google OAuth verification approval in April 2026.',
+      'DeclutrMail never fetches or stores full email contents, encrypts Google access tokens, and has Google OAuth verification approved April 21, 2026.',
     );
     expect(titleText(methodology)).toBe('Privacy and control — DeclutrMail');
     expect(methodology.description).toBe(

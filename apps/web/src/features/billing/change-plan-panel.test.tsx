@@ -54,7 +54,9 @@ describe('deferred plan preview', () => {
     expect(button).toBeDisabled();
     await screen.findByRole('button', { name: 'Refresh quote' });
     expect(screen.getByTestId('change-plan-panel')).not.toHaveTextContent('$0 today');
-    expect(screen.getByRole('alert')).toHaveTextContent('paid period');
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'This change can\u2019t keep your paid time. Try yearly or monthly instead.',
+    );
     fireEvent.click(button);
     expect(confirm).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Refresh quote' }));

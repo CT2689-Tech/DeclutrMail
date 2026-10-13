@@ -143,7 +143,7 @@ describe('ScreenerScreen — empty / loading / error states', () => {
     (readiness) => {
       authState.readiness = readiness;
       const html = renderState({ kind: 'empty' });
-      expect(html).toContain('Still syncing your Gmail');
+      expect(html).toContain('Still scanning your Gmail');
       expect(html).not.toContain('No senders awaiting review');
     },
   );
@@ -170,7 +170,7 @@ describe('ScreenerScreen — empty / loading / error states', () => {
   it('error state offers an explicit retry', () => {
     const html = renderState({ kind: 'error', error: new Error('boom'), retry: () => {} });
     expect(html).toContain('role="alert"');
-    expect(html).toContain('didn&#x27;t load');
+    expect(html).toContain('New senders didn\u2019t load');
     expect(html).toContain('Try again');
     assertNoScreenVerb(html);
   });
@@ -190,7 +190,7 @@ describe('ScreenerScreen — empty / loading / error states', () => {
 
   it('loading state renders the skeleton status', () => {
     const html = renderState({ kind: 'loading' });
-    expect(html).toContain('Loading the Screener queue');
+    expect(html).toContain('Loading new senders…');
     assertNoScreenVerb(html);
   });
 });

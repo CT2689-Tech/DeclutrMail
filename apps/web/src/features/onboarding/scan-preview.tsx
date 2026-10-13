@@ -78,7 +78,7 @@ export function ScanPreviewView({
             </ul>
           ) : (
             <p>
-              No sender batch is available yet.{' '}
+              No senders found yet.{' '}
               <Button tone="ghost" onClick={refresh}>
                 Refresh preview
               </Button>

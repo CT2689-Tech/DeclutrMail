@@ -16,7 +16,12 @@ import { PlanPicker } from './plan-picker';
 import type { BillingIntent } from './billing-intent';
 
 function renderPicker(
-  flags: { pricingV2: boolean; passEnabled: boolean },
+  flags: {
+    pricingV2: boolean;
+    passEnabled: boolean;
+    country?: string;
+    indiaCheckoutOpen?: boolean;
+  },
   initialIntent: BillingIntent | null = null,
 ) {
   return render(
@@ -28,6 +33,8 @@ function renderPicker(
         initialIntent={initialIntent}
         pricingV2={flags.pricingV2}
         passEnabled={flags.passEnabled}
+        country={flags.country ?? null}
+        indiaCheckoutOpen={flags.indiaCheckoutOpen ?? false}
         onRequestCancel={() => undefined}
         onPaymentCompleted={() => undefined}
         onCheckoutAttempt={() => Promise.resolve('attempt')}
@@ -96,5 +103,38 @@ describe('PlanPicker launch pricing', () => {
     const panel = await screen.findByTestId('checkout-panel');
     expect(panel).toHaveTextContent('billed yearly');
     expect(panel).not.toHaveTextContent('$9');
+  });
+
+  it('quotes one INR catalog on plain /billing with no offer params', () => {
+    renderPicker({ pricingV2: true, passEnabled: true, country: 'IN', indiaCheckoutOpen: true });
+    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
+    expect(screen.getByTestId('plan-option-free')).toHaveTextContent('₹0');
+    expect(screen.getByTestId('plan-option-plus')).toHaveTextContent('₹1,999/yr');
+    expect(screen.getByTestId('plan-option-plus')).not.toHaveTextContent('incl. GST');
+    expect(screen.getByTestId('pass-offer-card')).toHaveTextContent(
+      '₹799 once · 30 days, one Gmail account · doesn’t renew',
+    );
+    expect(screen.getByTestId('plan-option-free').textContent).not.toContain('$');
+    expect(screen.getByTestId('plan-option-plus').textContent).not.toContain('$');
+    expect(screen.getByTestId('pass-offer-card').textContent).not.toContain('$');
+  });
+
+  it('quotes one INR catalog for an India visitor', async () => {
+    renderPicker(
+      { pricingV2: true, passEnabled: true, country: 'IN', indiaCheckoutOpen: true },
+      { plan: 'plus', cycle: 'annual', offer: 'pass_onetime' },
+    );
+    expect(screen.getByTestId('plan-option-free')).toHaveTextContent('₹0');
+    expect(screen.getByTestId('plan-option-plus')).toHaveTextContent('₹1,999/yr');
+    expect(screen.getByTestId('plan-option-plus')).not.toHaveTextContent('incl. GST');
+    expect(screen.getByTestId('pass-offer-card')).toHaveTextContent(
+      '₹799 once · 30 days, one Gmail account · doesn’t renew',
+    );
+    const panel = await screen.findByTestId('checkout-panel');
+    expect(panel).toHaveTextContent('₹799 once, today');
+    expect(screen.getByTestId('plan-option-free').textContent).not.toContain('$');
+    expect(screen.getByTestId('plan-option-plus').textContent).not.toContain('$');
+    expect(screen.getByTestId('pass-offer-card').textContent).not.toContain('$');
+    expect(panel.textContent).not.toContain('$');
   });
 });

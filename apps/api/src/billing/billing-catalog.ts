@@ -28,6 +28,7 @@ import {
   PLUS_ANNUAL_2026_10,
   SANDBOX_PRICE_IDS,
   TIER_MANIFEST,
+  indiaPaddlePriceId,
   usablePriceId,
 } from '@declutrmail/shared/entitlements';
 import type {
@@ -204,12 +205,38 @@ export class BillingCatalog {
 
   /** Reverse: webhook price id → catalog entry. Price custom_data is not an input. */
   resolveByPriceId(provider: BillingProviderId, providerPriceId: string): CatalogEntry | null {
-    return (
+    const direct =
       this.entries.find((e) =>
         provider === 'paddle'
           ? e.paddlePriceId === providerPriceId
           : e.razorpayPlanId === providerPriceId,
-      ) ?? legacyEntry(provider, providerPriceId)
+      ) ?? legacyEntry(provider, providerPriceId);
+    if (direct) return direct;
+    if (provider !== 'paddle') return null;
+    const indiaPlus = indiaPaddlePriceId(process.env, 'plus_annual');
+    if (!indiaPlus || providerPriceId !== indiaPlus) return null;
+    return (
+      this.entries.find(
+        (entry) =>
+          entry.planCode === 'plus_annual' &&
+          !entry.founding &&
+          entry.usdCents === PLUS_ANNUAL_2026_10.usdCents,
+      ) ?? {
+        planCode: 'plus_annual',
+        tierId: 'plus',
+        cycle: 'annual',
+        founding: false,
+        usdCents: PLUS_ANNUAL_2026_10.usdCents,
+        paddlePriceId: indiaPlus,
+        razorpayPlanId: null,
+      }
     );
+  }
+
+  /** USD Pass id or the configured India Pass id. Read at call time so env changes apply. */
+  isPassPrice(priceId: string): boolean {
+    if (this.passPaddlePriceId != null && priceId === this.passPaddlePriceId) return true;
+    const indiaPass = indiaPaddlePriceId(process.env, 'pass_onetime');
+    return indiaPass != null && priceId === indiaPass;
   }
 }

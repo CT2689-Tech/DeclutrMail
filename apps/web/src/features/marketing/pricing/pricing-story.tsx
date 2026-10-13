@@ -4,15 +4,13 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
-import { INR_NEW_PURCHASES_PAUSED } from '@declutrmail/shared/contracts/billing-availability';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import {
   fillStory,
   fillStoryList,
   indiaFaqAnswer,
-  moneyAmount,
+  launchPriceDisplay,
   passAmount,
-  plusAmount,
   pricePromiseLines,
   promoBanner,
   refundLine,
@@ -30,21 +28,28 @@ export function PricingStory({
   passEnabled,
   locale,
   now,
+  rupeePurchasesOpen = false,
+  inrPaused = false,
 }: {
   passEnabled: boolean;
   locale: 'usd' | 'inr';
   now: string;
+  /** India Paddle prices are configured and this server can sign checkout geo. */
+  rupeePurchasesOpen?: boolean;
+  /** This visitor is in India and rupee checkout is not open. Prices stay USD. */
+  inrPaused?: boolean;
 }) {
   const router = useRouter();
   const push = (path: string) => router.push(path);
   const banner = promoBanner(new Date(now), passEnabled);
+  const prices = launchPriceDisplay(locale);
   const h1 = fillStory(WS1_COPY[passEnabled ? 'pricing.h1.passOn' : 'pricing.h1.passOff'], locale);
   const cards = [
     {
       id: 'free' as const,
       name: fillStory(WS1_COPY['pricing.free.name'], locale),
       tagline: fillStory(WS1_COPY['pricing.free.tagline'], locale),
-      price: moneyAmount(0, locale),
+      price: prices.free.amount,
       suffix: '',
       renewal: fillStory(WS1_COPY['pricing.free.renewal'], locale),
       features: fillStoryList(WS1_COPY['pricing.free.features'], locale),
@@ -72,7 +77,7 @@ export function PricingStory({
       id: 'plus' as const,
       name: fillStory(WS1_COPY['pricing.plus.name'], locale),
       tagline: fillStory(WS1_COPY['pricing.plus.tagline'], locale),
-      price: plusAmount(locale),
+      price: prices.plus.amount,
       suffix: fillStory(WS1_COPY['pricing.plus.priceSuffix'], locale),
       renewal: fillStory(WS1_COPY['pricing.plus.renewal'], locale),
       features: fillStoryList(WS1_COPY['pricing.plus.features'], locale),
@@ -88,7 +93,7 @@ export function PricingStory({
         <h1>{h1}</h1>
         <p>{fillStory(WS1_COPY['pricing.sub'], locale)}</p>
       </header>
-      {locale === 'inr' && INR_NEW_PURCHASES_PAUSED ? (
+      {inrPaused || (locale === 'inr' && !rupeePurchasesOpen) ? (
         <p className="dm-pricing-oauth">{WS1_COPY['pricing.inrPaused.notice']}</p>
       ) : null}
       {banner ? (
@@ -160,7 +165,7 @@ export function PricingStory({
         <h2>{fillStory(WS1_COPY['pricing.faq.taxes.q'], locale)}</h2>
         <p>{fillStory(WS1_COPY['pricing.faq.taxes.a'], locale)}</p>
         <h2>{fillStory(WS1_COPY['pricing.faq.india.q'], locale)}</h2>
-        <p>{indiaFaqAnswer(passEnabled, 'inr', INR_NEW_PURCHASES_PAUSED)}</p>
+        <p>{indiaFaqAnswer(passEnabled, 'inr', inrPaused || !rupeePurchasesOpen)}</p>
       </section>
       <section data-testid="price-promise">
         <h2>{fillStory(WS1_COPY['pricing.promise.title'], locale)}</h2>

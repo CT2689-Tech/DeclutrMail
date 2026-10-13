@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 
+import { WS3_COPY } from '@declutrmail/shared/copy/launch';
+
 import { InboxSimulatorScreen } from '@/features/marketing/inbox-simulator/inbox-simulator-screen';
 import '@/features/marketing/inbox-simulator/inbox-simulator.css';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
@@ -7,8 +9,7 @@ import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Interactive product demo — DeclutrMail',
-  description:
-    'Try Senders and Triage in a made-up inbox. Open the sender inspector, filter and select senders, and preview cleanup actions. No signup or Gmail access needed.',
+  description: WS3_COPY['ws3.pr1019.simulator.description'],
   path: '/inbox-simulator',
   // This link gets shared into threads cold, so it unfurls as the preview
   // mechanism rather than the brand headline — see ./opengraph-image.tsx,

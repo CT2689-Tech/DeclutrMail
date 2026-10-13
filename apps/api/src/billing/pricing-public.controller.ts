@@ -5,12 +5,19 @@
 import { Controller, Get } from '@nestjs/common';
 
 import { ok, type Envelope } from '@declutrmail/shared/contracts';
-import { isBillingPassEnabled, isMeterV2, isPricingV2 } from '@declutrmail/shared/entitlements';
+import {
+  indiaPaddlePricesConfigured,
+  isBillingPassEnabled,
+  isMeterV2,
+  isPricingV2,
+} from '@declutrmail/shared/entitlements';
 
 export interface PublicPricingFlags {
   pricingV2: boolean;
   meterV2: boolean;
   passEnabled: boolean;
+  /** True when both India Paddle price ids are set. Not a feature flag. */
+  indiaCheckoutOpen: boolean;
 }
 
 @Controller('pricing')
@@ -22,6 +29,7 @@ export class PricingPublicController {
       pricingV2: isPricingV2(),
       meterV2: isMeterV2(),
       passEnabled: isBillingPassEnabled(),
+      indiaCheckoutOpen: indiaPaddlePricesConfigured(),
     });
   }
 }

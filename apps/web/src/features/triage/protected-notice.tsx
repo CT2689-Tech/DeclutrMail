@@ -101,7 +101,7 @@ export function ProtectedActionNotice({
       }}
     >
       <span>
-        This sender stays <strong>Protected</strong>, so bulk and automatic cleanup will keep
+        This sender stays <strong>Protected</strong>, so bulk changes and Autopilot will keep
         skipping {verb === 'Unsubscribe' ? 'whatever still arrives' : 'it'}.
       </span>
       {unprotectSlot}

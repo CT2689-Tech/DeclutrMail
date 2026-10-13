@@ -71,7 +71,7 @@ export function QuietRoute() {
       {mailboxes.length === 0 ? (
         <EmptyState
           headingLevel={2}
-          title="No mailboxes connected"
+          title="No Gmail account connected"
           description="Connect a Gmail account to set quiet hours for it."
         />
       ) : (
@@ -146,7 +146,9 @@ function QuietHoursCardContainer({ mailbox, active }: { mailbox: MeMailbox; acti
   return (
     // One raised settings group per mailbox, its address as the group title.
     <div style={{ display: 'grid', gap: 8 }}>
-      {active && <p style={{ margin: 0, color: color.primary, fontSize: text.sm }}>Active inbox</p>}
+      {active && (
+        <p style={{ margin: 0, color: color.primary, fontSize: text.sm }}>Selected Gmail account</p>
+      )}
       <QuietHoursCard
         mailboxEmail={mailbox.email}
         mailboxStatus={mailbox.status}
@@ -199,7 +201,7 @@ function QuietQueueSummary({
           Review Autopilot rules →
         </Link>
       ) : (
-        <span>Choose this inbox in the account menu to review its rules.</span>
+        <span>Pick this Gmail account in the account menu to see its rules.</span>
       )}
     </p>
   );

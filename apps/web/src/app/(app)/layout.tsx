@@ -19,18 +19,20 @@
 //     names the rail the visitor will be charged on — a client-side
 //     resolve would flash USD and correct itself.
 //
-// `(app)/billing/page.tsx` reads the same header for its own picker; the
-// two agree because they read one header through one helper.
+// `(app)/billing/page.tsx` uses the same helper. Both read
+// `x-vercel-ip-country` and ignore a client-sent country, including
+// on prefetches that skip middleware.
 
 import type { ReactNode } from 'react';
 import { headers } from 'next/headers';
 
 import { BillingCurrencyProvider } from '@/features/billing/billing-currency';
 import { defaultProviderForCountry } from '@/features/billing/billing-region';
+import { trustedVisitorCountry } from '@/features/billing/trusted-visitor-country';
 import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
+import { visitorPricingLocale } from '@/features/marketing/pricing/visitor-pricing-locale';
 import { ServerAppBoundary } from '@/features/auth/server-app-boundary';
 import { ThemeScript } from '@/features/theme/theme-script';
-import { COUNTRY_HEADER } from '@/middleware';
 
 import { AppChromeLayout } from './app-chrome-layout';
 
@@ -52,10 +54,13 @@ function crossOriginApi(): string | null {
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const [requestHeaders, flags] = await Promise.all([headers(), loadPricingFlags()]);
   const nonce = requestHeaders.get('x-nonce') ?? undefined;
-  const regionProvider = defaultProviderForCountry(
-    requestHeaders.get(COUNTRY_HEADER),
-    flags.pricingV2,
-  );
+  const country = trustedVisitorCountry(requestHeaders);
+  const regionProvider = defaultProviderForCountry(country, flags.pricingV2);
+  const visitorLocale = visitorPricingLocale({
+    country,
+    indiaCheckoutOpen: flags.indiaCheckoutOpen,
+    geoSecret: process.env.BILLING_GEO_HMAC_SECRET,
+  });
   const apiOrigin = crossOriginApi();
   const cookieHeader = requestHeaders.get('cookie') ?? '';
 
@@ -78,7 +83,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         </>
       )}
       <ThemeScript nonce={nonce} />
-      <BillingCurrencyProvider provider={regionProvider}>
+      <BillingCurrencyProvider provider={regionProvider} locale={visitorLocale}>
         <ServerAppBoundary cookieHeader={cookieHeader}>
           <AppChromeLayout>{children}</AppChromeLayout>
         </ServerAppBoundary>

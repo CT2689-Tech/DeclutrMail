@@ -11,21 +11,19 @@ import { Button, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
 import {
   ERROR_CODES,
   isErrorCode,
-  INR_NEW_PURCHASES_PAUSED,
   INR_CHECKOUT_PAUSED_MESSAGE,
   inrNewPurchasePaused,
 } from '@declutrmail/shared/contracts';
 import type {
   BillingCycle,
-  CheckoutSession,
   BillingProviderId,
   BillingSubscription,
 } from '@declutrmail/shared/contracts';
 import {
   fillStory,
+  launchPriceDisplay,
   OFFERS,
   PLUS_ANNUAL_2026_10,
-  priceLine as formatLaunchPrice,
   proNotPurchasableMessage,
   proWaitlistCta,
   proWaitlistJoined,
@@ -42,6 +40,7 @@ import {
   priceLineFor,
   TIER_JOBS,
 } from '@/features/marketing/pricing/pricing-model';
+import { visitorPriceLocale } from '@/features/marketing/pricing/visitor-pricing-locale';
 import { track } from '@/lib/posthog';
 
 import { apiErrorCode, apiErrorDetail } from './api/use-billing-subscription';
@@ -208,12 +207,13 @@ export function PlanPicker({
   pricingV2 = false,
   passEnabled = false,
   country = null,
+  indiaCheckoutOpen = false,
+  checkoutGeoToken = null,
   onRequestCancel,
   onPaymentCompleted,
   onCheckoutAttempt,
   onCheckoutAbandoned,
   onCheckoutClosed,
-  onCheckoutBlocked,
   mayOpenCheckout,
   ownsCheckout,
   onPlanChangeAccepted,
@@ -242,6 +242,10 @@ export function PlanPicker({
   /** From `/api/auth/me`. Hidden when false. */
   passEnabled?: boolean;
   country?: string | null;
+  /** From the server. Absent means rupee checkout stays paused. */
+  indiaCheckoutOpen?: boolean;
+  /** Server-signed geo. Stripped into a header before the checkout POST. */
+  checkoutGeoToken?: string | null;
   /** Route to the cancel confirm (the downgrade-to-free path, D120). */
   onRequestCancel: () => void;
   /** Paddle overlay reported `checkout.completed` — payment made, tier
@@ -280,13 +284,6 @@ export function PlanPicker({
   mayOpenCheckout?: (attemptId: string) => boolean;
   /** Lifecycle callbacks fence owner changes without discarding late valid payment events. */
   ownsCheckout?: () => boolean;
-  /** Retain the exact server session for a loader-only retry, with the claim held. */
-  onCheckoutBlocked?: (
-    session: CheckoutSession,
-    target: PaidTier,
-    cycle: BillingCycle,
-    attemptId: string,
-  ) => void;
   /** The change-plan endpoint accepted the switch — the screen enters
    *  the pending state until the webhook lands. `attemptId` identifies
    *  the pessimistic lock this attempt wrote (UUID-matched release). */
@@ -482,14 +479,17 @@ export function PlanPicker({
           ? PLUS_ANNUAL_2026_10
           : manifestPoint));
     const quotedCurrency = quotedPoint
-      ? currencyForPricePoint(quotedPoint, panelProvider, { pricingV2, country })
+      ? currencyForPricePoint(quotedPoint, panelProvider, {
+          pricingV2,
+          country,
+          indiaCheckoutOpen,
+        })
       : 'USD';
     if (
       disabled ||
       checkout.isPending ||
       confirmInFlight.current ||
-      (!pricingV2 && provider === 'razorpay' && INR_NEW_PURCHASES_PAUSED) ||
-      inrNewPurchasePaused(panelProvider, quotedCurrency)
+      inrNewPurchasePaused(panelProvider, quotedCurrency, indiaCheckoutOpen)
     )
       return;
     confirmInFlight.current = true;
@@ -517,6 +517,7 @@ export function PlanPicker({
         provider: effectiveProvider,
         ...(founding ? { promo: 'foundingPro' as const } : {}),
         ...(passSelected ? { offer: 'pass_onetime' as const } : {}),
+        ...(checkoutGeoToken ? { checkoutGeoToken } : {}),
       },
       {
         onSuccess: (session) => {
@@ -561,24 +562,22 @@ export function PlanPicker({
             )
             .then(
               () => undefined,
-              // Provider script failed to load — no overlay opened, but
-              // the SESSION exists server-side and the claim is held: a
-              // Razorpay subscription created with customer_notify is
-              // payable from the provider's own emailed link, so this is
-              // NOT "nothing at risk" (Codex 2026-07-29). Surface the
-              // reservation — the banner explains the locked state and
-              // owns the release path.
+              // Overlay never opened. A Paddle transaction without an
+              // open window is not payable from email (unlike Razorpay
+              // customer_notify). Keep the confirm panel, show the
+              // existing open-failed sentence, and release the local
+              // reservation so retry is armed. Do not paint
+              // "Checkout started".
               (err: unknown) => {
                 if (ownsCheckout && !ownsCheckout()) return;
                 void track('checkout_overlay_blocked', funnel);
                 checkout.reset();
                 setLaunchError(
-                  'The secure checkout window could not be opened. Your checkout remains reserved.',
+                  err instanceof CheckoutLaunchError
+                    ? err.message
+                    : new CheckoutLaunchError(true).message,
                 );
-                if (err instanceof CheckoutLaunchError && err.canRetry) {
-                  onCheckoutBlocked?.(session, target, cycle, attemptId);
-                }
-                onCheckoutClosed(attemptId);
+                onCheckoutAbandoned(attemptId);
               },
             );
         },
@@ -718,6 +717,7 @@ export function PlanPicker({
 
       {pricingV2 && passEnabled ? (
         <PassOfferCard
+          locale={visitorPriceLocale({ country, indiaCheckoutOpen })}
           included={
             grantingSub !== null && (grantingSub.tier === 'plus' || grantingSub.tier === 'pro')
           }
@@ -757,9 +757,9 @@ export function PlanPicker({
               disabled={disabled}
               hasGrantingSubscription={grantingSub !== null}
               provider={stripProvider}
-              {...(pricingV2 ? { geo: { pricingV2: true, country } } : {})}
+              {...(pricingV2 ? { geo: { pricingV2: true, country, indiaCheckoutOpen } } : {})}
               {...(pricingV2 && id === 'plus' && cycle === 'annual'
-                ? { priceOverride: launchPlusLine(country) }
+                ? { priceOverride: launchPlusLine(country, indiaCheckoutOpen) }
                 : {})}
               onSelect={() => onSelect(id)}
               showFoundingHint={
@@ -790,6 +790,7 @@ export function PlanPicker({
           razorpayOffered={false}
           pricingV2={pricingV2}
           country={country}
+          indiaCheckoutOpen={indiaCheckoutOpen}
           pricePointOverride={OFFERS.backlogPass.price}
           onProviderChange={setProvider}
           foundingEligible={false}
@@ -843,6 +844,7 @@ export function PlanPicker({
             razorpayOffered={razorpayOffered}
             pricingV2={pricingV2}
             country={country}
+            indiaCheckoutOpen={indiaCheckoutOpen}
             pricePointOverride={
               pricingV2 && selected === 'plus' && cycle === 'annual' ? PLUS_ANNUAL_2026_10 : null
             }
@@ -905,7 +907,7 @@ export function checkoutErrorMessage(error: unknown): string | null {
     }
     return ERROR_CODES[code].message;
   }
-  return 'Checkout could not be started. Please try again.';
+  return 'Couldn’t start checkout. Try again.';
 }
 
 /**
@@ -988,13 +990,11 @@ function CycleToggle({
   );
 }
 
-function launchPlusLine(country: string | null): { amount: string; per: string; note?: string } {
-  const currency = currencyForPricePoint(PLUS_ANNUAL_2026_10, 'paddle', {
-    pricingV2: true,
-    country,
-  });
-  if (currency === 'INR') return { amount: formatLaunchPrice(PLUS_ANNUAL_2026_10, 'inr'), per: '' };
-  return { amount: formatLaunchPrice(PLUS_ANNUAL_2026_10, 'usd'), per: '/yr' };
+function launchPlusLine(
+  country: string | null,
+  indiaCheckoutOpen: boolean,
+): { amount: string; per: string; note?: string } {
+  return launchPriceDisplay(visitorPriceLocale({ country, indiaCheckoutOpen })).plus;
 }
 
 function ProWaitlistCard({ disabled }: { disabled: boolean }) {
@@ -1086,7 +1086,7 @@ function PlanCard({
   /** Rail the strip prices against — clamped per point, so the cards
    *  agree with the confirm panel one click later. */
   provider: BillingProviderId;
-  geo?: { pricingV2?: boolean; country?: string | null };
+  geo?: { pricingV2?: boolean; country?: string | null; indiaCheckoutOpen?: boolean };
   priceOverride?: { amount: string; per: string; note?: string };
   /** QA-billing-20260901-05 — show the Founding Pro price on this card,
    *  gated by live availability (the parent already checked). */
@@ -1330,11 +1330,13 @@ function DowngradePanel({
 }
 
 function PassOfferCard({
+  locale = 'usd',
   included,
   selected,
   disabled,
   onSelect,
 }: {
+  locale?: 'usd' | 'inr';
   included: boolean;
   selected: boolean;
   disabled: boolean;
@@ -1352,7 +1354,7 @@ function PassOfferCard({
     >
       <div style={{ fontWeight: 600 }}>{fillStory(WS1_COPY['pricing.pass.name'])}</div>
       <div style={{ color: color.fgMuted, marginTop: 4 }}>
-        {fillStory(WS1_COPY['price.passLine'])}
+        {fillStory(WS1_COPY['cap.pass.sublabel'], locale)}
       </div>
       <Button
         tone="default"

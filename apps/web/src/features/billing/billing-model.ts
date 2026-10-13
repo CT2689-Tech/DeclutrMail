@@ -9,6 +9,7 @@
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import {
   fillStory,
+  launchPriceDisplay,
   passEndLabel,
   PLUS_ANNUAL_2026_10,
   plusAmount,
@@ -72,9 +73,13 @@ export function quotedPlanPrice(
  * The only Plus price a new launch checkout sells. INR uses the launch
  * price line; USD is the annual amount. This is not the legacy $9 or $90.
  */
-export function launchPlusQuote(provider: BillingProviderId = 'paddle'): string {
+export function launchPlusQuote(
+  provider: BillingProviderId = 'paddle',
+  locale: 'usd' | 'inr' = 'usd',
+): string {
+  if (locale === 'inr') return launchPriceDisplay('inr').plusLine;
   if (provider === 'razorpay') return priceLine(PLUS_ANNUAL_2026_10, 'inr');
-  return fillStory(WS1_COPY['price.plusLine']);
+  return launchPriceDisplay('usd').plusLine;
 }
 
 /**
@@ -106,7 +111,11 @@ export function chargedPlanPrice(
   founding = false,
   providerPriceId?: string,
   chargedUsdCents?: number,
+  chargedCurrency?: 'USD' | 'INR',
 ): string | null {
+  if (chargedCurrency === 'INR' && tier === 'plus' && cycle === 'annual' && !founding) {
+    return `${plusAmount('inr')}/yr`;
+  }
   const currency = currencyForProvider(provider);
   const promo = TIER_MANIFEST[tier].promo;
   // The promo is an annual-only price point; a founding member on any
@@ -203,19 +212,13 @@ export function formatProviderAmount(amount: string, currencyCode: string): stri
   }
 }
 
-/**
- * D121 flags-off line. `/refunds` and `/terms` still publish this
- * sentence. `refundLine()` is the launch deck and stays behind
- * `PRICING_V2` so the two windows are not on screen together.
- */
-const FLAGS_OFF_MONEY_BACK_NOTE = '30-day money-back guarantee';
-
-export function moneyBackNote(pricingV2: boolean): string {
-  return pricingV2 ? refundLine() : FLAGS_OFF_MONEY_BACK_NOTE;
+/** Approved refund line. The window is `POLICY.refundWindowDays`. */
+export function moneyBackNote(_pricingV2: boolean): string {
+  return refundLine();
 }
 
-/** Flags-off D121 line. Call `moneyBackNote` where `pricingV2` is known. */
-export const MONEY_BACK_NOTE = FLAGS_OFF_MONEY_BACK_NOTE;
+/** Same line as `moneyBackNote`, for callers that do not know the flag. */
+export const MONEY_BACK_NOTE = refundLine();
 
 // ── D119/A6 — the single derived billing story ───────────────────────
 //
@@ -467,7 +470,10 @@ export function deriveBillingViewState(read: BillingReadSnapshot): BillingViewSt
  * (nobody is charged one); the old quotedPlanPrice headline printed a
  * price for a plan nobody was paying for (A6).
  */
-export function currentPlanPriceLabel(view: BillingPlanView): string {
+export function currentPlanPriceLabel(
+  view: BillingPlanView,
+  locale: 'usd' | 'inr' = 'usd',
+): string {
   if (view.backing.state !== 'none') {
     const { sub } = view.backing;
     return (
@@ -478,13 +484,14 @@ export function currentPlanPriceLabel(view: BillingPlanView): string {
         sub.foundingMember,
         sub.providerPriceId,
         sub.chargedUsdCents,
+        sub.chargedCurrency,
       ) ?? ''
     );
   }
-  if (view.entitlementTier === 'free') return formatUsd(0);
+  if (view.entitlementTier === 'free') return launchPriceDisplay(locale).free.amount;
   // A Backlog Pass is a paid grant, not a complimentary one. The deck
   // names it and prices it once; "Complimentary" is only a comp.
-  if (passCoversPlan(view)) return fillStory(WS1_COPY['price.passLine']);
+  if (passCoversPlan(view)) return launchPriceDisplay(locale).passLine;
   // A comp is the reason there is no price, so say so instead of the
   // generic line. Only when the grant reaches the tier being named: a
   // comped Plus sitting on a paid-but-non-backing Pro row is not a

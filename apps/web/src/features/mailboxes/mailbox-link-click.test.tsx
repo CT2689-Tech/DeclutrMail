@@ -19,7 +19,7 @@ vi.mock('next/navigation', () => ({
 vi.mock('next/dynamic', () => ({
   default: () =>
     function WithheldResolver() {
-      return <p>Opening linked inbox…</p>;
+      return <p>Opening…</p>;
     },
 }));
 

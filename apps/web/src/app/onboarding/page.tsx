@@ -8,6 +8,7 @@ import {
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, ToastHost, toast, tokens } from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { hasCapability } from '@declutrmail/shared/entitlements';
 import type { OnboardingFunnelStep } from '@declutrmail/shared/observability';
 
@@ -295,16 +296,7 @@ function AuthedFlow({ returnTo, resumeScan }: { returnTo: string | null; resumeS
       case 'loading':
         return <FlowSkeleton label="Loading your onboarding…" />;
       case 'error':
-        return (
-          <FlowError
-            title={
-              step.error instanceof ApiError
-                ? `We couldn't load your onboarding state (${step.error.status}).`
-                : "We couldn't load your onboarding state."
-            }
-            onRetry={step.retry}
-          />
-        );
+        return <FlowError title={WS2_COPY.simplify.onboarding.loadError} onRetry={step.retry} />;
       case 'done':
         return <FlowSkeleton label="Opening DeclutrMail…" />;
       case 'connect':
@@ -438,7 +430,7 @@ function SecondaryConnectGate({
           setActive.mutate(other.id, {
             onSuccess: () =>
               router.replace(recoveryPath ?? (isTargetedReconnect ? '/settings' : '/home')),
-            onError: () => toast("Couldn't switch accounts. Please try again.", 'danger'),
+            onError: () => toast('Couldn’t switch Gmail accounts. Try again.', 'danger'),
           });
         },
       }

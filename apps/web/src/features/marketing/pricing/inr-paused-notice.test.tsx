@@ -1,20 +1,8 @@
 import { render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type * as BillingAvailability from '@declutrmail/shared/contracts/billing-availability';
+import { describe, expect, it, vi } from 'vitest';
 
 import { BillingCurrencyProvider } from '@/features/billing/billing-currency';
 
-const flags = vi.hoisted(() => ({ paused: true }));
-
-vi.mock('@declutrmail/shared/contracts/billing-availability', async (importOriginal) => {
-  const actual = await importOriginal<typeof BillingAvailability>();
-  return {
-    ...actual,
-    get INR_NEW_PURCHASES_PAUSED() {
-      return flags.paused;
-    },
-  };
-});
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
@@ -26,10 +14,6 @@ import { PricingStory } from './pricing-story';
 const NOW = '2026-10-27T07:01:00.000Z';
 const NOTICE =
   'Buying a plan in rupees is paused for now, so these prices are for reference. If you already pay in rupees, you can still manage your plan in Billing. Email support@declutrmail.com for help.';
-
-beforeEach(() => {
-  flags.paused = true;
-});
 
 describe('INR pause copy on /pricing', () => {
   it('shows the notice and paused India answer to INR visitors while paused', () => {
@@ -49,12 +33,19 @@ describe('INR pause copy on /pricing', () => {
   });
 
   it('uses the existing India answer and hides the notice when purchases are open', () => {
-    flags.paused = false;
-    render(<PricingStory passEnabled locale="inr" now={NOW} />);
+    render(<PricingStory passEnabled locale="inr" now={NOW} rupeePurchasesOpen />);
     expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
     expect(screen.queryByText(/Buying in rupees is paused for now/)).not.toBeInTheDocument();
     expect(screen.getByText(/prices are in rupees and include GST/)).toBeInTheDocument();
     expect(screen.queryByText(/You can pay with UPI/)).not.toBeInTheDocument();
+  });
+
+  it('shows dollar prices and the pause notice for an India visitor while checkout is closed', () => {
+    render(<PricingStory passEnabled locale="usd" now={NOW} inrPaused />);
+    expect(screen.getByText(NOTICE)).toBeInTheDocument();
+    expect(screen.getByText(/Buying in rupees is paused for now/)).toBeInTheDocument();
+    expect(screen.getByText('$59')).toBeInTheDocument();
+    expect(screen.queryByText('₹1,999')).not.toBeInTheDocument();
   });
 
   it('drops the Pass clause from the paused India answer when the Pass is off', () => {
@@ -65,7 +56,7 @@ describe('INR pause copy on /pricing', () => {
     expect(answer).toHaveTextContent('Plus');
   });
 
-  it('shows the legacy pricing notice only on the India rail while paused', () => {
+  it('shows the legacy pricing notice only on the India rail', () => {
     const { rerender } = render(
       <BillingCurrencyProvider provider="razorpay">
         <PricingScreen />
@@ -80,14 +71,13 @@ describe('INR pause copy on /pricing', () => {
     expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
   });
 
-  it('hides the legacy pricing notice when purchases are open', () => {
-    flags.paused = false;
+  it('keeps the legacy pricing notice on the Razorpay rail', () => {
     render(
       <BillingCurrencyProvider provider="razorpay">
         <PricingScreen />
       </BillingCurrencyProvider>,
     );
-    expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
+    expect(screen.getByText(NOTICE)).toBeInTheDocument();
     expect(screen.queryByText(/You can pay with UPI/)).not.toBeInTheDocument();
   });
 });

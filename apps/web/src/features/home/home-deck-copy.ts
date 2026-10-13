@@ -70,6 +70,7 @@ export const HOME_DECK = {
   previewFitsOne: WS1_COPY['meter.preview.fits.one'],
   previewFitsOther: WS1_COPY['meter.preview.fits.other'],
   previewOver: WS1_COPY['meter.preview.over'],
+  previewOverOne: WS1_COPY['meter.preview.over.one'],
   previewFree: WS1_COPY['meter.preview.free'],
 } as const;
 
@@ -138,6 +139,7 @@ export function meterPreviewSentence(requested: number, remaining: number): stri
   if (!Number.isFinite(requested) || requested <= 0 || !Number.isFinite(remaining)) return null;
   const remainingLabel = formatCount(remaining);
   if (requested > remaining) {
+    if (requested === 1) return HOME_DECK.previewOverOne;
     return fillDeck(HOME_DECK.previewOver, {
       requested: formatCount(requested),
       remaining: remainingLabel,

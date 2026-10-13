@@ -89,8 +89,8 @@ export function MailboxLinkView({
         <>
           <ErrorState
             onRetry={retry}
-            title="This inbox link is unavailable"
-            description="This account can’t open the inbox in this link. Refresh to check its connection, or choose a connected inbox in Settings."
+            title="This link is for another Gmail account"
+            description="Switch to that account in Settings, or keep going with this one."
           />
           <Button tone="ghost" onClick={settings}>
             Open Gmail accounts
@@ -103,10 +103,10 @@ export function MailboxLinkView({
           onRetry={retry}
         />
       ) : (
-        <p role="status">Opening the inbox from your link…</p>
+        <p role="status">Opening…</p>
       )}
       <Button tone="ghost" disabled={phase === 'opening'} onClick={dismiss}>
-        Continue with my current inbox
+        Keep using this account
       </Button>
     </main>
   );

@@ -541,7 +541,7 @@ describe('ActionSheet — Protected acknowledgement (D245/D42)', () => {
     // no undo kind and would forge a D245 sticky override.
     renderSheet(protectedRow);
     expect(notice()).toHaveTextContent(
-      /stays Protected, so bulk and automatic cleanup will keep skipping it/i,
+      /stays Protected, so bulk changes and Autopilot will keep skipping it/i,
     );
     expect(screen.getByRole('button', { name: /^Unprotect$/i })).toBeInTheDocument();
     expect(notice()).toHaveTextContent(/Automatic protection won’t re-apply/i);
@@ -883,13 +883,13 @@ describe('ActionSheet — the cleanup cost is stated whenever it can be spent', 
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Uses 1 of your 34 cleanup actions left this month/),
+      screen.getByText(/This clears 1 email. You have 34 free this month/),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Uses 2 /)).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 12' }));
     expect(screen.getByText(WS5_COPY['f1.deleteNote'], { exact: false })).toBeInTheDocument();
     expect(
-      screen.getByText(/Uses 1 of your 34 cleanup actions left this month/),
+      screen.getByText(/This clears 1 email. You have 34 free this month/),
     ).toBeInTheDocument();
   });
 
@@ -906,7 +906,7 @@ describe('ActionSheet — the cleanup cost is stated whenever it can be spent', 
       />,
     );
     expect(
-      screen.getByText(/Uses 1 of your 34 cleanup actions left this month/),
+      screen.getByText(/This clears 1 email. You have 34 free this month/),
     ).toBeInTheDocument();
   });
 

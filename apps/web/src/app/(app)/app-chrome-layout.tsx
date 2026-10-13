@@ -281,7 +281,15 @@ function AppChrome({ children }: { children: ReactNode }) {
               ONLY — its session-scoped status poll 409-storms without one,
               so it stays off on the user-scoped-route fallback (settings/
               billing rendered with no active mailbox). */}
-          {me.activeMailboxId !== null && <SyncErrorBanner mailboxId={me.activeMailboxId} />}
+          {me.activeMailboxId !== null && (
+            <SyncErrorBanner
+              mailboxId={me.activeMailboxId}
+              mailboxEmail={
+                me.mailboxes.find((mailbox) => mailbox.id === me.activeMailboxId)?.email ??
+                me.user.email
+              }
+            />
+          )}
           {/* The same gate for every OTHER broken mailbox (D224). Reads no
               endpoint — `me.mailboxes[].needsReconnect` is server-computed —
               so it is safe on the user-scoped fallback above and costs no

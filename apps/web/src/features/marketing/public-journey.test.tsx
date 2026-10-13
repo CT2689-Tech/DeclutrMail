@@ -151,7 +151,7 @@ describe('truthful Watch first activation guidance', () => {
 
   it('uses the same visible mode name in Help, FAQ, articles and the stable glossary anchor', async () => {
     const help = text(renderToStaticMarkup(await HelpPage()));
-    expect(help).toContain('Watch first and Active');
+    expect(help).toContain('Watch first and Act now');
     const content = JSON.stringify([FAQ_ENTRIES, HOW_TO_ARTICLES, ANSWER_ARTICLES, BLOG_ARTICLES]);
     expect(content).not.toMatch(/Observe (?:mode|only|before)|in Observe|begins in Observe/);
     expect(GLOSSARY_TERMS.observe.term).toBe('Watch first');

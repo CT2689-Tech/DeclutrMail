@@ -54,7 +54,7 @@ type CardArgs = ComponentProps<typeof QuietHoursCard>;
 const noop = () => undefined;
 
 const baseArgs: CardArgs = {
-  mailboxEmail: 'chintan.a.thakkar@gmail.com',
+  mailboxEmail: 'alex@example.com',
   mailboxStatus: 'active',
   state: { kind: 'ready', config: null, activeNow: false },
   saving: false,

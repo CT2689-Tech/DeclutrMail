@@ -125,7 +125,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
         title: 'Know what each decision actually means',
         paragraphs: [
           'Archive removes the Inbox label from the matching email that exists now. Later removes Inbox and adds DeclutrMail/Later to that current email. Delete moves current matching email to Gmail Trash. None of those manual actions creates a standing rule for future messages.',
-          'Unsubscribe is different: it asks the sender to stop future delivery and leaves existing email where it is unless you separately approve a cleanup action. Keep records your current sender decision, while Protected is the standing safety control.',
+          WS3_COPY['ws3.pr1019.howTo.unsubscribe'],
         ],
         callout: {
           title: 'Each action has its own Undo rules',
@@ -760,7 +760,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           },
           {
             name: 'Open the Unsubscribe preview',
-            text: 'Check whether the method submits a request or prepares a Gmail draft, and whether an optional backlog action is selected. The sender controls whether and when delivery stops.',
+            text: 'Check whether it sends a request or opens a prefilled email in Gmail, and whether Archive or Delete for older email is selected. The sender decides whether and when their email stops.',
           },
           {
             name: 'Complete the correct delivery path',

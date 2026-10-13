@@ -1,4 +1,4 @@
-// Explanations on demand in the Triage queue (D24, founder decision
+// Explanations on demand in the Triage list (D24, founder decision
 // 2026-09-25 — explain only what the user is about to see).
 //
 // The queue is what the user is about to read: every decision opens its

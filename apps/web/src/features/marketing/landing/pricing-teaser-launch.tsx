@@ -3,31 +3,38 @@
 import Link from 'next/link';
 
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
-import { fillStory, refundLine } from '@declutrmail/shared/entitlements';
+import { fillStory, launchPriceDisplay, refundLine } from '@declutrmail/shared/entitlements';
 
 /** Launch teaser. Loaded only after the public catalog says PRICING_V2 is on. */
-export function PricingTeaserStory({ passEnabled }: { passEnabled: boolean }) {
+export function PricingTeaserStory({
+  passEnabled,
+  locale = 'usd',
+}: {
+  passEnabled: boolean;
+  locale?: 'usd' | 'inr';
+}) {
+  const prices = launchPriceDisplay(locale);
   const plans = [
     {
-      name: fillStory(WS1_COPY['pricing.free.name']),
-      line: fillStory(WS1_COPY['pricing.free.renewal']),
-      cta: fillStory(WS1_COPY['pricing.free.cta']),
+      name: fillStory(WS1_COPY['pricing.free.name'], locale),
+      line: fillStory(WS1_COPY['pricing.free.renewal'], locale),
+      cta: fillStory(WS1_COPY['pricing.free.cta'], locale),
       href: '/sign-in',
     },
     ...(passEnabled
       ? [
           {
-            name: fillStory(WS1_COPY['pricing.pass.name']),
-            line: fillStory(WS1_COPY['price.passLine']),
-            cta: fillStory(WS1_COPY['pricing.pass.cta']),
+            name: fillStory(WS1_COPY['pricing.pass.name'], locale),
+            line: prices.passLine,
+            cta: fillStory(WS1_COPY['pricing.pass.cta'], locale),
             href: '/billing?plan=plus&cycle=annual&offer=pass_onetime',
           },
         ]
       : []),
     {
-      name: fillStory(WS1_COPY['pricing.plus.name']),
-      line: fillStory(WS1_COPY['price.plusLine']),
-      cta: fillStory(WS1_COPY['pricing.plus.cta']),
+      name: fillStory(WS1_COPY['pricing.plus.name'], locale),
+      line: prices.plusLine,
+      cta: fillStory(WS1_COPY['pricing.plus.cta'], locale),
       href: '/billing?plan=plus&cycle=annual',
     },
   ];
@@ -38,7 +45,7 @@ export function PricingTeaserStory({ passEnabled }: { passEnabled: boolean }) {
       data-testid="pricing-teaser-story"
     >
       <h2 className="dm-mkt-h2">
-        {fillStory(WS1_COPY[passEnabled ? 'pricing.h1.passOn' : 'pricing.h1.passOff'])}
+        {fillStory(WS1_COPY[passEnabled ? 'pricing.h1.passOn' : 'pricing.h1.passOff'], locale)}
       </h2>
       <div className="dm-mkt-tiers">
         {plans.map((plan) => (

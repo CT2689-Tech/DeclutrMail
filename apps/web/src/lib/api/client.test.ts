@@ -379,6 +379,7 @@ describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', (
     '/settings?cancelDeletion=1#account',
     '/senders/sender-123',
     '/senders?sender=s-123&q=news',
+    '/billing?_ptxn=txn_test',
   ])('preserves %s after an expired session', async (destination) => {
     const url = new URL(destination, 'http://localhost');
     const assign = vi.fn();

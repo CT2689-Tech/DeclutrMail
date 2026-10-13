@@ -198,9 +198,11 @@ test('emailed owned inbox target switches scope before showing its Senders, whil
     await expect(page.getByRole('button', { name: fixture.email, exact: true })).toBeVisible();
     await expect(page).toHaveURL(/\/senders$/);
     await page.goto('/senders?mailbox=00000000-0000-4000-8000-000000000099');
-    await expect(page.getByText('This inbox link is unavailable', { exact: true })).toBeVisible();
+    await expect(
+      page.getByText('This link is for another Gmail account', { exact: true }),
+    ).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Senders', exact: true })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Continue with my current inbox' }).click();
+    await page.getByRole('button', { name: 'Keep using this account' }).click();
     await expect(page).toHaveURL(/\/senders$/);
     await expect(page.getByRole('button', { name: fixture.email, exact: true })).toBeVisible();
   } finally {
@@ -231,7 +233,7 @@ test('failed scan preview is read-only and the first backlog nudge excludes Prot
     await sql`UPDATE provider_sync_state SET readiness_status = 'ready', current_stage = 'ready', error_code = NULL WHERE mailbox_account_id = ${fixture.mailboxId}`;
     await sql`DELETE FROM action_jobs WHERE mailbox_account_id = ${fixture.mailboxId}`;
     await page.goto('/senders');
-    const nudge = page.getByRole('region', { name: 'Finish first cleanup' });
+    const nudge = page.getByRole('region', { name: 'Start with one sender' });
     await expect(nudge.getByText(/Fresh Finds Weekly/)).toBeVisible();
     await expect(nudge.getByText(/2 emails/)).toBeVisible();
     await expect(nudge.getByText(fixture.screenerSenderName, { exact: false })).toHaveCount(0);

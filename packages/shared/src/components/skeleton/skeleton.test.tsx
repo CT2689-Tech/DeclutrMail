@@ -102,7 +102,7 @@ describe('TriageQueueSkeleton — composite (D166)', () => {
     expect(html).toContain('role="status"');
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain('aria-live="polite"');
-    expect(html).toContain('aria-label="Loading triage queue"');
+    expect(html).toContain('aria-label="Loading Triage…"');
   });
 
   it('renders the requested number of row cards', () => {

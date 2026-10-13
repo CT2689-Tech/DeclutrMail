@@ -16,8 +16,9 @@ import {
   type TierId,
 } from '@declutrmail/shared';
 import { ACTION_REGISTRY, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
-import { CASA_VERIFICATION_APPROVED_ON, DELETE_RECOVERY_CLAIM } from '@declutrmail/shared/copy';
-import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import { DELETE_RECOVERY_CLAIM } from '@declutrmail/shared/copy';
+import { fillWs3, WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory, MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 import { TrackedCta } from '@/features/marketing/landing/tracked-cta';
 import { CAPABILITY_LABELS, PRICING_TIER_ORDER } from '@/features/marketing/pricing/pricing-model';
@@ -897,7 +898,7 @@ export function InboxSimulatorScreen() {
   return (
     <div className="dm-simulator">
       <section className="dm-simulator-hero">
-        <h1>Try the workspace.</h1>
+        <h1>Try DeclutrMail on made-up email.</h1>
         <p>
           Explore Senders and a made-up Triage queue. Open a sender, filter, select several, and
           preview what each decision would do before you connect Gmail.
@@ -909,7 +910,7 @@ export function InboxSimulatorScreen() {
             aria-controls="dm-simulator-orientation-content"
             onClick={() => setOrientationOpen((open) => !open)}
           >
-            Workspace guide
+            How the demo works
           </button>
           {orientationOpen ? (
             <ol id="dm-simulator-orientation-content">
@@ -1161,10 +1162,7 @@ export function InboxSimulatorScreen() {
         <p className="dm-simulator-next-oauth">{OAUTH_SCOPE_DISCLOSURE}</p>
         <aside className="dm-simulator-tier-note" aria-label="Plan availability">
           <strong>Senders and Triage are included on every plan.</strong>{' '}
-          <span>
-            Free includes {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions every month;
-            paid plans are unlimited.
-          </span>{' '}
+          <span>{fillStory(WS3_COPY['ws3.simulator.planLine'])}</span>{' '}
           <Link href="/pricing">Compare plans</Link>
         </aside>
       </section>
@@ -1443,7 +1441,7 @@ function DemoCompletion({
       {/* Next to the connect CTA above. "Approved" only — Google approved
           an OAuth verification; it did not certify or audit the product. */}
       <p className="dm-simulator-oauth-note">
-        {`Google approved DeclutrMail's OAuth verification on ${CASA_VERIFICATION_APPROVED_ON} for the single restricted scope this connection would request, gmail.modify.`}
+        {fillWs3(WS3_COPY['ws3.liveFix.simulator.oauthNote'])}
       </p>
     </div>
   );

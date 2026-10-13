@@ -207,7 +207,7 @@ export function RouteErrorScreen({
 
         {error.digest != null && (
           <div style={{ marginTop: 16 }}>
-            <TechnicalDetails summary="Show support reference">
+            <TechnicalDetails summary="Show error code for support">
               <span style={{ fontSize: text.xs, fontVariantNumeric: 'tabular-nums' }}>
                 Reference: {error.digest}
               </span>

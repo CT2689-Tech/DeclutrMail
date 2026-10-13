@@ -145,7 +145,7 @@ export function GlobalErrorContent({
 
       {error.digest != null && (
         <TechnicalDetails
-          summary="Show support reference"
+          summary="Show error code for support"
           style={{
             background: color.paper,
             color: color.fg,

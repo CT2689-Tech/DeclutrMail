@@ -2,10 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  INR_CHECKOUT_PAUSED_MESSAGE,
-  INR_NEW_PURCHASES_PAUSED,
-} from '../contracts/billing-availability';
+import { INR_CHECKOUT_PAUSED_MESSAGE } from '../contracts/billing-availability';
 import {
   buildOffersJsonLd,
   fillStory,
@@ -14,8 +11,10 @@ import {
   isPricingV2,
   meterChipLine,
   meterPreviewText,
+  quotaExceededMessage,
   moneyAmount,
   passEndLabel,
+  launchPriceDisplay,
   priceLine,
   promoBanner,
   promoEndLabel,
@@ -24,7 +23,7 @@ import {
   suggestedWindowPreset,
   termsPastDue,
 } from './copy';
-import { OFFERS, PLUS_ANNUAL_2026_10 } from './pricing.config';
+import { OFFERS, PLUS_ANNUAL_2026_10, indiaPaddlePricesConfigured } from './pricing.config';
 import { WS1_COPY } from '../copy/launch';
 import { POLICY } from './pricing.config';
 
@@ -83,6 +82,19 @@ describe('emails-cleared meter helpers', () => {
     expect(moneyAmount(PLUS_ANNUAL_2026_10.inrPaise, 'inr')).toBe('₹1,999');
     expect(priceLine(OFFERS.backlogPass.price, 'usd')).toBe('$19');
     expect(priceLine(PLUS_ANNUAL_2026_10, 'inr')).toBe('₹1,999 incl. GST');
+    expect(launchPriceDisplay('usd')).toEqual({
+      free: { amount: '$0', per: '' },
+      plus: { amount: '$59', per: '/yr' },
+      plusLine: '$59 a year',
+      passLine: '$19 once',
+    });
+    expect(launchPriceDisplay('inr')).toEqual({
+      free: { amount: '₹0', per: '' },
+      plus: { amount: '₹1,999', per: '/yr' },
+      plusLine: '₹1,999 a year',
+      passLine: '₹799 once',
+    });
+    expect(JSON.stringify(launchPriceDisplay('inr'))).not.toContain('$');
     expect(promoEndLabel()).toBe('Nov 3, 11:59 PM PT');
     for (const value of [
       moneyAmount(5900, 'usd'),
@@ -101,7 +113,32 @@ describe('emails-cleared meter helpers', () => {
     expect(meterPreviewText(2708, 100)).toBe(
       'This clears 2,708 emails. You have 100 free left this month.',
     );
+    expect(meterPreviewText(1, 0)).toBe(
+      'This clears 1 email, but you have no free emails left this month.',
+    );
     expect(meterPreviewText(1, 100)).toBe('This clears 1 email. You have 100 free this month.');
+  });
+
+  it('uses the singular quota sentence when one email is requested', () => {
+    expect(
+      quotaExceededMessage({
+        used: 1000,
+        limit: 1000,
+        resetAt: '2026-11-09T00:00:00.000Z',
+        requested: 1,
+      }),
+    ).toBe('This needs 1 free email, but none of your 1,000 are left this month. More on Nov 9.');
+  });
+
+  it('keeps the plural quota sentence when more than one email is requested', () => {
+    expect(
+      quotaExceededMessage({
+        used: 900,
+        limit: 1000,
+        resetAt: '2026-11-09T00:00:00.000Z',
+        requested: 101,
+      }),
+    ).toBe('This needs 101 free emails, but 100 of 1,000 are left this month. More on Nov 9.');
   });
 });
 
@@ -131,16 +168,30 @@ describe('pricing story builders', () => {
     vi.unstubAllEnvs();
   });
 
-  it('returns no offers while the flag is off', () => {
+  it('lists the Free offer while paid offers stay unlisted', () => {
     vi.stubEnv('PRICING_V2', '');
-    expect(buildOffersJsonLd({ plus: true, pass: true })).toEqual([]);
+    expect(buildOffersJsonLd({ plus: true, pass: true })).toEqual([
+      {
+        '@type': 'Offer',
+        name: 'Free',
+        price: '0',
+        priceCurrency: 'USD',
+        url: 'https://declutrmail.com/pricing',
+      },
+    ]);
     expect(renderPricingMarkdown(true)).toBe('');
   });
 
   it('snapshots listed JSON-LD and markdown while the flag is on', () => {
     vi.stubEnv('PRICING_V2', 'true');
     expect(buildOffersJsonLd()).toEqual([
-      { '@type': 'Offer', name: 'Free', price: 0, priceCurrency: 'USD', url: '/pricing' },
+      {
+        '@type': 'Offer',
+        name: 'Free',
+        price: '0',
+        priceCurrency: 'USD',
+        url: 'https://declutrmail.com/pricing',
+      },
     ]);
     const listed = buildOffersJsonLd({ plus: true, pass: true });
     expect(listed).toHaveLength(4);
@@ -160,7 +211,8 @@ describe('pricing story builders', () => {
     expect(markdown).toContain('1,000 emails cleared a month');
     expect(markdown).toContain('Backlog Pass');
     expect(WS1_COPY['pricing.pass.features']).toEqual([
-      'No monthly limit for 30 days',
+      'No monthly limit for {passDays} days',
+      'For one {CONNECTION_TERM}',
       'The Screener and Autopilot while it lasts',
       'Buy again any time to add {passDays} more days',
       'Then you’re back on {freeName}. Email you cleared stays where you put it.',
@@ -171,6 +223,7 @@ describe('pricing story builders', () => {
     );
     const passLines = [
       '- No monthly limit for 30 days',
+      '- For one Gmail account',
       '- The Screener and Autopilot while it lasts',
       '- Buy again any time to add 30 more days',
       '- Then you’re back on Free. Email you cleared stays where you put it.',
@@ -224,7 +277,7 @@ describe('pricing story builders', () => {
     expect(indiaFaqAnswer(false, 'inr', false)).not.toContain('Backlog Pass');
     expect(indiaFaqAnswer(false, 'inr', false)).not.toContain('paused for now');
     expect(indiaFaqAnswer(false, 'inr', false)).not.toContain('You can pay with UPI');
-    expect(indiaFaqAnswer(true)).toBe(indiaFaqAnswer(true, 'inr', INR_NEW_PURCHASES_PAUSED));
+    expect(indiaFaqAnswer(true)).toBe(indiaFaqAnswer(true, 'inr', !indiaPaddlePricesConfigured()));
     expect(INR_CHECKOUT_PAUSED_MESSAGE).toBe(WS1_COPY['pricing.inrPaused.checkout']);
   });
 

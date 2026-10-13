@@ -1,0 +1,50 @@
+# Sandbox-only IN vs US checkout proof for the catalog India prices.
+#
+# Does not create prices. PADDLE_API_KEY is the Sandbox environment
+# secret. The host is fixed in scripts/paddle-sandbox-india-checkout.mjs.
+# A live key is refused before any request. There is no environment input.
+# Sandbox UPI is off, so a listed payment-method set must include card.
+
+name: Sandbox India Paddle checkout
+
+on:
+  workflow_dispatch:
+  # One proof push after 7b69fe4e. workflow_dispatch cannot be started
+  # from the agent token. Later pushes to this branch skip the job.
+  push:
+    branches: [cursor/india-paddle-pricing-4980]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: paddle-sandbox-india-checkout
+  cancel-in-progress: false
+
+jobs:
+  india-prices:
+    if: github.event_name != 'push' || github.event.before == '7b69fe4e56c3bb7aebd4f85e3ce2de2417ed5d46'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: Sandbox
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify catalog India prices and open IN and US transactions
+        env:
+          PADDLE_ENV: sandbox
+          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
+        run: pnpm exec tsx scripts/paddle-sandbox-india-checkout.ts
+      - name: IN vs US selection, spoof, fallback, and transaction currency
+        run: >-
+          pnpm --filter @declutrmail/shared exec vitest run
+          src/billing/checkout-geo.test.ts
+          src/entitlements/india-paddle-price.test.ts
+          && pnpm --filter @declutrmail/api exec vitest run
+          src/billing/__tests__/paddle.adapter.spec.ts
+          -t "India price|India id|INR transaction"

@@ -54,11 +54,22 @@ function envBlocksByService(workflow: string): Map<string, EnvBlock> {
     // assertion below passes twice on the same config while the other service
     // is unprotected. That is the same defect as the file-wide count this
     // parser replaced, one level further in.
-    const start = deploy.index;
+    const start = deploy.index ?? 0;
     const end = deploys[i + 1]?.index ?? workflow.length;
-    const envVars = /--set-env-vars="((?:[^"\\]|\\.)*)"/.exec(workflow.slice(start, end));
+    const section = workflow.slice(start, end);
+    const envVars = /--set-env-vars="((?:[^"\\]|\\.)*)"/.exec(section);
     if (envVars?.[1] !== undefined) {
-      blocks.set(deploy[1]!, { payload: envVars[1], offset: start + envVars.index });
+      // The API deploy appends India price ids in a script, so the gcloud
+      // flag is `$API_ENV` and the full-replace base is `API_ENV_BASE`,
+      // assigned before the gcloud line. Resolve that indirection or a
+      // drop of UNSUB_SEND_ENABLED inside the base would look present.
+      const reference = /^\$([A-Za-z_][A-Za-z0-9_]*)$/.exec(envVars[1]);
+      const prelude = workflow.slice(deploys[i - 1]?.index ?? 0, start);
+      const base = reference
+        ? new RegExp(`${reference[1]}_BASE="((?:[^"\\\\]|\\\\.)*)"`).exec(prelude)
+        : null;
+      const payload = base?.[1] ?? envVars[1];
+      blocks.set(deploy[1]!, { payload, offset: start + envVars.index });
     }
   }
   return blocks;

@@ -141,7 +141,9 @@ describe('llms.txt — marketing surface reconciliation', () => {
     expect(body).not.toContain('$9/mo');
     expect(full).toContain(body.trim());
     expect(full).toContain('## Backlog Pass');
-    expect(full).toContain('The Backlog Pass is $19 once for 30 days of Plus');
+    expect(full).toContain(
+      'The Backlog Pass is $19 once for 30 days with no monthly limit on one Gmail account',
+    );
     expect(full).not.toContain('$90');
     expect(full).not.toContain('$9/mo');
     expect(body).not.toContain('You can pay with UPI');

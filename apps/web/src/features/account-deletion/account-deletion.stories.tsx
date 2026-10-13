@@ -165,13 +165,23 @@ export const BannerExecuting: StoryObj<typeof GracePeriodBanner> = {
     }),
 };
 
-/** Billing cannot yet be confirmed stopped: actionable, no false deletion promise. */
+/** Payment verification: deletion waits on the payment check. */
 export const BillingBlocked: StoryObj<typeof AccountDeletionSection> = {
   render: () =>
     frame(<AccountDeletionSection />, {
       request: null,
       projection: FLAT_PROJECTION,
       billingBlockReason: 'verification',
+    }),
+};
+
+/** Uncanceled subscription: cancel the plan, then delete the account. */
+export const BillingBlockedSubscription: StoryObj<typeof AccountDeletionSection> = {
+  render: () =>
+    frame(<AccountDeletionSection />, {
+      request: null,
+      projection: FLAT_PROJECTION,
+      billingBlockReason: 'subscription',
     }),
 };
 export const BannerBillingBlocked: StoryObj<typeof GracePeriodBanner> = {

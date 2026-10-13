@@ -147,7 +147,7 @@ export function TriageQueue({
   return (
     <div
       role="list"
-      aria-label="Triage queue"
+      aria-label="Triage list"
       style={{ display: 'flex', flexDirection: 'column', borderTop: `1px solid ${color.lineSoft}` }}
     >
       {leading != null && <div role="listitem">{leading}</div>}

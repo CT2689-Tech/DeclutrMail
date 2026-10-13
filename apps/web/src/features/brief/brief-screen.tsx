@@ -988,7 +988,7 @@ function NoiseOutcomeLine({ outcome }: { outcome: NoiseArchiveOutcome }) {
           Nothing archived —{' '}
           {outcome.protectedCount !== null
             ? `${protectedSkippedCopy(outcome.protectedCount)}.`
-            : 'those senders are Protected or no longer in this mailbox.'}
+            : 'those senders are Protected or have no email left.'}
         </>
       );
     case 'unconfirmed':

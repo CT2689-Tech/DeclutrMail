@@ -5,15 +5,11 @@ import {
   PROVIDER_SWITCH_NOTE,
   RAZORPAY_LIMITATIONS_NOTE,
 } from '@/features/billing/billing-copy';
-import { WS1_COPY } from '@declutrmail/shared/copy/launch';
-import { fillStory, isPricingV2, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { fillWs3, WS1_COPY, WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory, isPricingV2 } from '@declutrmail/shared/entitlements';
 import { PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import type { FaqEntry } from './types';
-
-/** Flags-off D121 answer. The launch deck replaces it only while `PRICING_V2` is on. */
-const FLAGS_OFF_REFUND_SUPPORT =
-  'Every paid plan has a 30-day money-back guarantee subject to the published fair-use terms. Email support@declutrmail.com for product help and privacy@declutrmail.com for privacy, data-rights, or vulnerability reports.';
 
 export const FAQ_ENTRIES: readonly FaqEntry[] = [
   {
@@ -52,8 +48,9 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
   {
     id: 'anthropic',
     question: 'Are any Gmail details sent to an AI provider?',
-    answer:
-      'To explain a suggestion, Anthropic receives the sender’s name and domain and the facts behind it, without subject lines or snippets. Daily Brief works differently: it may send the sender, subject line, and Gmail preview snippet to Anthropic to compose a short summary. Neither use sends full email contents or attachments, and DeclutrMail uses a standard summary when Anthropic is unavailable.',
+    answer: fillWs3(
+      'Only if you allow AI in the app. Then, to explain a suggestion, Anthropic receives the sender’s name and domain and the facts behind it, without subject lines or snippets. The {BRIEF_NAME} (part of {proName}; waitlist only for new accounts) may send the sender, subject line and Gmail preview snippet to write a short summary. Neither sends full email contents or attachments. Until you allow it, or after you turn it off in Settings → AI, explanations are written from our rules.',
+    ),
     link: {
       href: '/answers/what-is-metadata-only-email-analysis',
       label: 'See exactly what is processed',
@@ -134,7 +131,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
   {
     id: 'plans',
     question: 'What changes between Free, Plus, and Pro?',
-    answer: `Free supports ${TIER_MANIFEST.free.inboxLimit} inbox with Senders, Triage, Later, bulk actions, and Activity, limited to ${TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions a month. Plus removes the monthly limit and adds the Screener, Autopilot rules that keep working on their own, and Quiet hours. Pro supports ${TIER_MANIFEST.pro.inboxLimit} connected inboxes, all-matching cleanup across filtered senders, Daily Brief, and Follow-ups. Use the pricing page for current plan details.`,
+    answer: fillStory(WS3_COPY['ws3.help.plans.a']),
     link: {
       href: '/pricing',
       label: 'Compare current plans',
@@ -143,7 +140,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
   },
   {
     id: 'cleanup-counting',
-    question: 'What counts as a cleanup action, and when does Free reset?',
+    question: fillStory(WS3_COPY['ws3.help.counting.q']),
     answer: `${CLEANUP_COUNT_NOTE} ${CLEANUP_RESET_NOTE}`,
   },
   {
@@ -170,7 +167,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
   {
     id: 'refunds-support',
     question: 'What is the refund policy, and how do I get help?',
-    answer: FLAGS_OFF_REFUND_SUPPORT,
+    answer: fillStory(WS1_COPY['pricing.faq.refunds.a']),
     link: {
       href: '/refunds',
       label: 'Read the refund policy',
@@ -179,9 +176,8 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
   },
 ];
 
-/** Live refund answer. Flags-off stays the stored D121 sentence. */
-export function refundSupportAnswer(pricingV2 = isPricingV2()): string {
-  if (!pricingV2) return FLAGS_OFF_REFUND_SUPPORT;
+/** Live refund answer. The window comes from `pricing.faq.refunds.a`. */
+export function refundSupportAnswer(_pricingV2 = isPricingV2()): string {
   return fillStory(WS1_COPY['pricing.faq.refunds.a']);
 }
 
