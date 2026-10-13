@@ -2,6 +2,7 @@ import { HttpException, Inject, Injectable } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import {
+  invalidateInboxReportCache,
   mailMessages,
   senderActionWhere,
   senderPolicies,
@@ -108,6 +109,7 @@ export class UnsubscribeBacklogService {
       }
       sendersOut.push(await this.recordOne(input, row.id, backlog?.actionId ?? null));
     }
+    await invalidateInboxReportCache(this.db, input.mailboxAccountId);
     return { mode: input.mode, backlog, senders: sendersOut };
   }
 

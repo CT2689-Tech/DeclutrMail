@@ -62,6 +62,7 @@ export function sampleInboxReport(
       wroteToCount: sender.wroteTo,
       isProtected: sender.protected,
       isKeep: sender.kept === true,
+      handledByBacklog: false,
       inboxCount: sender.inboxCount,
     })),
   };
