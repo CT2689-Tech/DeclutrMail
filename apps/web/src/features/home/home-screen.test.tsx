@@ -727,4 +727,348 @@ describe('HomeScreen', () => {
     expect(localStorage.getItem(celebrationKey)).toBeNull();
     localStorage.removeItem(celebrationKey);
   });
+
+  // The reverse job reports done before the report cache and the job list
+  // have rebuilt. The first refetch is that mid-rebuild read. A page that
+  // only invalidates once keeps it for the query staleTime.
+  it('Undo on Home replaces the mid-rebuild count and tray without navigating', async () => {
+    const generatedAt = '2026-10-11T00:00:00.000Z';
+    const keysFor = (n: number) => Array.from({ length: n }, (_, i) => `s${i + 1}`);
+    const reportFor = (n: number) => ({
+      ...REPORT_WITH_FIX,
+      generatedAt,
+      fix: { senderKeys: keysFor(n), sendersCount: n, inboxEmailCount: 40 },
+      fallbackSenderCount: n,
+    });
+    const celebrationKey = 'dm-inbox-report-celebration:mb-1';
+    localStorage.setItem(
+      celebrationKey,
+      JSON.stringify({
+        archived: 822,
+        senders: 13,
+        verb: 'archive',
+        actionId: 'act-1',
+        actionHandle: 'action',
+        senderKeys: keysFor(13),
+        fixGeneratedAt: generatedAt,
+      }),
+    );
+    const state = {
+      live: false,
+      rows: [] as Array<Record<string, unknown>>,
+      jobs: [] as Array<Record<string, unknown>>,
+    };
+    stub({ report: () => jsonOk({ data: reportFor(state.live ? 20 : 7) }) });
+    addFetchHandlers([
+      {
+        method: 'GET',
+        path: '/api/undo',
+        respond: () =>
+          jsonOk({ data: state.live ? [] : state.rows, meta: { nextCursor: null, limit: 50 } }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/active',
+        respond: () => jsonOk({ data: state.live ? [] : state.jobs }),
+      },
+      {
+        method: 'POST',
+        path: '/api/undo/undo-tray',
+        respond: () =>
+          jsonOk({
+            data: {
+              token: 'undo-tray',
+              actionKind: 'archive',
+              reverted: false,
+              expired: false,
+              revertedAt: null,
+              actionId: 'rev-1',
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/rev-1',
+        respond: () => {
+          // Later than the invalidate this response schedules, earlier than
+          // the rebuild poll. The first read stays stale; the next one is live.
+          setTimeout(() => {
+            state.live = true;
+          }, 250);
+          return jsonOk({
+            data: {
+              actionId: 'rev-1',
+              verb: 'archive',
+              direction: 'reverse',
+              status: 'done',
+              requestedCount: 822,
+              affectedCount: 822,
+              wakeAt: null,
+              undoToken: null,
+              undoExpiresAt: null,
+              undoExecutedAt: null,
+              undoRevertedAt: '2026-10-12T00:00:00.000Z',
+              errorCode: null,
+            },
+          });
+        },
+      },
+    ]);
+    const client = createTestQueryClient();
+    render(
+      <QueryClientProvider client={client}>
+        <HomeScreen />
+        <ProductUndoTray mailboxId="mb-1" />
+      </QueryClientProvider>,
+    );
+
+    expect(
+      await screen.findByRole('button', { name: 'Unsubscribe + archive 7 senders' }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(client.getQueryData(undoKeys.tray('mb-1'))).toEqual([]));
+    state.rows = [
+      {
+        token: 'undo-tray',
+        actionKind: 'archive',
+        createdAt: '2026-10-12T00:00:00.000Z',
+        expiresAt: '2026-11-12T00:00:00.000Z',
+        groupId: 'grp-archive',
+        senderCount: 13,
+        memberCount: 13,
+        affectedCount: 822,
+        members: [
+          {
+            token: 'member-1',
+            actionKind: 'archive',
+            senderName: 'Skyline Airways',
+            affectedCount: 100,
+          },
+        ],
+      },
+    ];
+    state.jobs = Array.from({ length: 14 }, (_, i) => ({
+      groupId: `unsub-${i}`,
+      verb: 'unsubscribe',
+      mixedVerbs: false,
+      running: true,
+      total: 1,
+      done: 0,
+      failed: 0,
+      senderCount: 1,
+      leadSenderName: `List ${i + 1}`,
+      startedAt: '2026-10-12T00:00:00.000Z',
+    }));
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: undoKeys.all });
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Show all recent actions' }));
+    const openTray = () => document.querySelector('[data-dm-undo-tray="open"]');
+    await waitFor(() =>
+      expect(openTray()).toHaveTextContent('Archived · 822 emails · Skyline Airways + 12 others'),
+    );
+    expect(document.querySelectorAll('[data-dm-tray-notice="working"]')).toHaveLength(14);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Undo Archive for Skyline Airways + 12 others' }),
+    );
+
+    await waitFor(
+      () => {
+        expect(
+          screen.getByRole('button', { name: 'Unsubscribe + archive 20 senders' }),
+        ).toBeInTheDocument();
+        expect(client.getQueryData(undoKeys.tray('mb-1'))).toEqual([]);
+        expect(client.getQueryData(undoKeys.inFlight('mb-1'))).toEqual([]);
+      },
+      // Shorter than the tray's own 2s job poll. That poll would eventually
+      // re-read the report when the jobs stop; this wait ends first, so a
+      // single invalidate still leaves the mid-rebuild count on screen.
+      { timeout: 1_200 },
+    );
+    expect(screen.queryByText(/Skyline Airways/)).toBeNull();
+    expect(document.querySelectorAll('[data-dm-tray-notice="working"]')).toHaveLength(0);
+    expect(localStorage.getItem(celebrationKey)).toBeNull();
+    localStorage.removeItem(celebrationKey);
+  });
+
+  it('Undo on the senders report clears the banner and the tray without navigating', async () => {
+    const generatedAt = '2026-10-11T00:00:00.000Z';
+    const keysFor = (n: number) => Array.from({ length: n }, (_, i) => `s${i + 1}`);
+    const reportFor = (n: number) => ({
+      ...REPORT_WITH_FIX,
+      generatedAt,
+      fix: { senderKeys: keysFor(n), sendersCount: n, inboxEmailCount: 40 },
+      fallbackSenderCount: n,
+    });
+    const celebrationKey = 'dm-inbox-report-celebration:mb-1';
+    localStorage.setItem(
+      celebrationKey,
+      JSON.stringify({
+        archived: 471,
+        senders: 13,
+        verb: 'archive',
+        actionId: 'act-1',
+        actionHandle: 'action',
+        senderKeys: keysFor(13),
+        fixGeneratedAt: generatedAt,
+      }),
+    );
+    const state = {
+      live: false,
+      rows: [] as Array<Record<string, unknown>>,
+      jobs: [] as Array<Record<string, unknown>>,
+    };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mb-1/inbox-report',
+        respond: () => jsonOk({ data: reportFor(state.live ? 20 : 13) }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/act-1',
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: 'act-1',
+              verb: 'archive',
+              direction: 'forward',
+              status: 'done',
+              requestedCount: 471,
+              affectedCount: 471,
+              wakeAt: null,
+              undoToken: 'undo-celebrate',
+              undoExpiresAt: '2026-11-11T00:00:00.000Z',
+              undoExecutedAt: null,
+              undoRevertedAt: null,
+              errorCode: null,
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/undo',
+        respond: () =>
+          jsonOk({ data: state.live ? [] : state.rows, meta: { nextCursor: null, limit: 50 } }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/active',
+        respond: () => jsonOk({ data: state.live ? [] : state.jobs }),
+      },
+      {
+        method: 'POST',
+        path: '/api/undo/undo-tray',
+        respond: () =>
+          jsonOk({
+            data: {
+              token: 'undo-tray',
+              actionKind: 'archive',
+              reverted: false,
+              expired: false,
+              revertedAt: null,
+              actionId: 'rev-1',
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/rev-1',
+        respond: () => {
+          setTimeout(() => {
+            state.live = true;
+          }, 250);
+          return jsonOk({
+            data: {
+              actionId: 'rev-1',
+              verb: 'archive',
+              direction: 'reverse',
+              status: 'done',
+              requestedCount: 471,
+              affectedCount: 471,
+              wakeAt: null,
+              undoToken: null,
+              undoExpiresAt: null,
+              undoExecutedAt: null,
+              undoRevertedAt: '2026-10-12T00:00:00.000Z',
+              errorCode: null,
+            },
+          });
+        },
+      },
+    ]);
+    const client = createTestQueryClient();
+    render(
+      <QueryClientProvider client={client}>
+        <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
+        <ProductUndoTray mailboxId="mb-1" />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText('Archived 471 emails from 13 senders.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Unsubscribe + archive 13 senders' })).toBeNull();
+    await waitFor(() => expect(client.getQueryData(undoKeys.tray('mb-1'))).toEqual([]));
+    state.rows = [
+      {
+        token: 'undo-tray',
+        actionKind: 'archive',
+        createdAt: '2026-10-12T00:00:00.000Z',
+        expiresAt: '2026-11-12T00:00:00.000Z',
+        groupId: 'grp-archive',
+        senderCount: 8,
+        memberCount: 8,
+        affectedCount: 471,
+        members: [
+          {
+            token: 'member-1',
+            actionKind: 'archive',
+            senderName: 'Pixel Games Store',
+            affectedCount: 80,
+          },
+        ],
+      },
+    ];
+    state.jobs = Array.from({ length: 14 }, (_, i) => ({
+      groupId: `unsub-${i}`,
+      verb: 'unsubscribe',
+      mixedVerbs: false,
+      running: true,
+      total: 1,
+      done: 0,
+      failed: 0,
+      senderCount: 1,
+      leadSenderName: `List ${i + 1}`,
+      startedAt: '2026-10-12T00:00:00.000Z',
+    }));
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: undoKeys.all });
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Show all recent actions' }));
+    await waitFor(() =>
+      expect(document.querySelector('[data-dm-undo-tray="open"]')).toHaveTextContent(
+        'Archived · 471 emails · Pixel Games Store + 7 others',
+      ),
+    );
+    expect(document.querySelectorAll('[data-dm-tray-notice="working"]')).toHaveLength(14);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Undo Archive for Pixel Games Store + 7 others' }),
+    );
+
+    await waitFor(
+      () => {
+        expect(
+          screen.getByRole('button', { name: 'Unsubscribe + archive 20 senders' }),
+        ).toBeInTheDocument();
+        expect(document.querySelector('[data-celebration]')).toBeNull();
+        expect(client.getQueryData(undoKeys.tray('mb-1'))).toEqual([]);
+        expect(client.getQueryData(undoKeys.inFlight('mb-1'))).toEqual([]);
+      },
+      { timeout: 1_200 },
+    );
+    expect(screen.queryByText(/Pixel Games Store/)).toBeNull();
+    expect(document.querySelectorAll('[data-dm-tray-notice="working"]')).toHaveLength(0);
+    expect(localStorage.getItem(celebrationKey)).toBeNull();
+    localStorage.removeItem(celebrationKey);
+  });
 });

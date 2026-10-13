@@ -7,8 +7,8 @@ import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-quer
 import { toast, UndoTray } from '@declutrmail/shared';
 import type { UndoTrayDataSource, UndoTrayEntry, UndoTrayNotice } from '@declutrmail/shared';
 
-import { activityKeys } from '@/features/activity/api/query-keys';
-import { sendersKeys } from '@/features/senders/api/query-keys';
+import { clearReportCelebration } from '@/features/inbox-report/seen';
+import { refreshAfterUndo } from '@/features/undo/refresh-after-undo';
 import {
   isRunning,
   outcomeNotice,
@@ -29,9 +29,6 @@ import {
 import { track } from '@/lib/posthog';
 import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
 
-import { SCREENER_ALL_KEY } from '@/features/screener/api/query-keys';
-
-import { TRIAGE_BOOTSTRAP_KEY } from './api/use-triage-queue';
 import { useTriageStore } from './store';
 
 /**
@@ -42,17 +39,10 @@ import { useTriageStore } from './store';
  * pill also calls this when a decision stops, and a Screener decision
  * leaves its queue only once its job lands, so the Screener is re-read too.
  */
-export function invalidateAfterUndo(qc: QueryClient): Promise<void> {
-  // The tray list's refetch is RETURNED: the tray keeps its revert slot
-  // latched until the refreshed list lands (see `ProductUndoTray`).
-  const trayRefreshed = qc.invalidateQueries({ queryKey: undoKeys.all });
-  // One key: the queue, the stats and the Today strip share a cache entry,
-  // so a reverted undo restores all three from the same read.
-  void qc.invalidateQueries({ queryKey: TRIAGE_BOOTSTRAP_KEY });
-  void qc.invalidateQueries({ queryKey: activityKeys.all });
-  void qc.invalidateQueries({ queryKey: sendersKeys.all });
-  void qc.invalidateQueries({ queryKey: SCREENER_ALL_KEY });
-  return trayRefreshed;
+export function invalidateAfterUndo(qc: QueryClient, mailboxId?: string): Promise<void> {
+  // The promise is the tray latch: the revert slot stays taken until the
+  // refreshed list lands, and until a following rebuild read agrees.
+  return refreshAfterUndo(qc, mailboxId);
 }
 
 /** How long a neutral "nothing to do" note stays on the pill. */
@@ -200,7 +190,7 @@ export function ProductUndoTray({
     if (stopped.length === 0) return;
     for (const g of stopped) reported.current.add(g.groupId);
     // Whatever it changed, every list that shows mail or undo is stale now.
-    void invalidateAfterUndo(qc);
+    void invalidateAfterUndo(qc, mailboxId);
     // …and so is the cleanup allowance: a skip as Protected gives a Free
     // unit back, and a start we could not confirm may have spent one.
     void qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
@@ -248,12 +238,15 @@ export function ProductUndoTray({
    */
   const releaseAfterRefresh = useCallback(
     (generation: number) => {
+      // The Archived banner is local to the report panel. Undo from the
+      // tray never mounts that panel's own release path, so clear it here.
+      if (mailboxId) clearReportCelebration(mailboxId);
       setInFlight((current) => (current ? { ...current, actionId: null } : current));
-      void invalidateAfterUndo(qc).finally(() => {
+      void invalidateAfterUndo(qc, mailboxId).finally(() => {
         if (mailboxGeneration.current === generation) setInFlight(null);
       });
     },
-    [qc],
+    [mailboxId, qc],
   );
 
   const revertToken = useCallback(

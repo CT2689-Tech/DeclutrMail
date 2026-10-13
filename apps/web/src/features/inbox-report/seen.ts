@@ -103,11 +103,17 @@ export function writeReportCelebration(mailboxId: string, celebration: ReportCel
   localStorage.setItem(celebrationKey(mailboxId), JSON.stringify(celebration));
 }
 
+/** Mounted report panels drop their in-memory banner when Undo clears storage. */
+export const REPORT_CELEBRATION_CLEARED = 'dm-report-celebration-cleared';
+
 /** Drop the stored result. The banner lives in localStorage; the same key is removed from sessionStorage. */
 export function clearReportCelebration(mailboxId: string): void {
   const key = celebrationKey(mailboxId);
   if (typeof localStorage !== 'undefined') localStorage.removeItem(key);
   if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(key);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(REPORT_CELEBRATION_CLEARED, { detail: mailboxId }));
+  }
 }
 
 /**
