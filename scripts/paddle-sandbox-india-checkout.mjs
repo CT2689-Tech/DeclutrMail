@@ -31,8 +31,8 @@ const SPOOFS = [
 ];
 
 export class SandboxCheckoutError extends Error {
-  constructor(code) {
-    super(code);
+  constructor(code, detail = '') {
+    super(detail ? `${code} ${detail}` : code);
     this.name = 'SandboxCheckoutError';
     this.code = code;
   }
@@ -104,7 +104,10 @@ async function paddle(fetchImpl, key, path, method = 'GET', body) {
   if (!response.ok) {
     const code = parsed?.error?.code;
     const suffix = typeof code === 'string' && /^[a-z0-9_]{1,80}$/.test(code) ? `_${code}` : '';
-    throw new SandboxCheckoutError(`paddle_${response.status}${suffix}`);
+    const detail = parsed?.error?.detail;
+    const safe =
+      typeof detail === 'string' && /^[A-Za-z0-9 .,:'()\-]{1,180}$/.test(detail) ? detail : '';
+    throw new SandboxCheckoutError(`paddle_${response.status}${suffix}`, safe);
   }
   return parsed;
 }

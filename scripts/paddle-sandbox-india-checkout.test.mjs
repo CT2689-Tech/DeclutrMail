@@ -151,6 +151,33 @@ test('refuses a live key and a non-sandbox env before any request', async () => 
   );
 });
 
+test('a Paddle error keeps a short detail and drops the key', async () => {
+  for (const item of [
+    { detail: 'Discount does not apply to this price.', kept: true },
+    { detail: `see ${key}`, kept: false },
+  ]) {
+    const fetchImpl = async () =>
+      json({ error: { code: 'transaction_discount_restricted', detail: item.detail } }, 400);
+    await assert.rejects(
+      () =>
+        runIndiaSandboxCheckout({
+          env: { PADDLE_ENV: 'sandbox', PADDLE_API_KEY: key },
+          catalog,
+          selectPrice: selectFromCatalog,
+          discountIdForPrice: () => null,
+          fetchImpl,
+        }),
+      (error) => {
+        assert.ok(error instanceof SandboxCheckoutError);
+        assert.equal(error.code, 'paddle_400_transaction_discount_restricted');
+        assert.equal(error.message.includes('Discount does not apply'), item.kept);
+        assert.equal(error.message.includes(key), false);
+        return true;
+      },
+    );
+  }
+});
+
 test('verifies the catalog prices and opens IN and US card transactions', async () => {
   const { calls, fetchImpl } = harness();
   const result = await runIndiaSandboxCheckout({
@@ -318,6 +345,10 @@ test('workflow is manual, Sandbox-scoped, and does not create prices', () => {
     'utf8',
   );
   assert.match(workflow, /on:\n {2}workflow_dispatch:\n/);
+  assert.match(
+    workflow,
+    /if: github\.event_name != 'pull_request' \|\| github\.head_ref == 'cursor\/india-paddle-pricing-4980'/,
+  );
   assert.match(workflow, /environment: Sandbox/);
   assert.match(workflow, /PADDLE_ENV: sandbox/);
   assert.match(workflow, /permissions:\n {2}contents: read/);
