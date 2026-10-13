@@ -2118,7 +2118,7 @@ describe('SenderDetailRoute', () => {
         // Mid-request: the last Archive mark clears and the sheet names
         // the in-flight request while preventing another confirmation.
         await waitFor(() => expect(confirm).toBeDisabled());
-        expect(within(dialog).getByRole('button', { name: 'Submitting…' })).toBeDisabled();
+        expect(within(dialog).getByRole('button', { name: 'Unsubscribing…' })).toBeDisabled();
         expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeEnabled();
         expect(pill('done')).toBeNull();
         release();

@@ -56,6 +56,7 @@
   "f1.preview.future": "Future emails: we’ll send {Sender} a one-click unsubscribe request.",
   "f1.preview.future.mailto": "Future emails: we’ll open a prefilled email in Gmail for you to send to {Sender}.",
   "f1.preview.future.none": "Future emails: {Sender} has no unsubscribe link, so we can’t send a request.",
+  "f1.preview.future.unchecked": "Future emails: we haven’t checked how to unsubscribe yet.",
   "f1.preview.backlog.archive": {
     "one": "1 email you already have: moved out of Inbox (Archive)",
     "other": "{n} emails you already have: moved out of Inbox (Archive)"
@@ -67,6 +68,13 @@
   "f1.preview.backlog.loading": "Counting the email you already have…",
   "f1.preview.backlog.error": "Couldn’t count the email you already have. Try again to archive or delete it.",
   "f1.preview.backlog.unsubOnly": "Email you already have stays where it is.",
+  "f1.preview.backlog.error": "Couldn’t count the email you already have. Try again to archive or delete it.",
+  "f1.preview.backlog.none": "There’s no email in your Inbox to move. Choose Unsubscribe only.",
+  "f1.preview.existing.label": "Email you already have",
+  "f1.preview.archived.unavailable": "Archived email can’t be counted right now, so only email in your Inbox is included.",
+  "f1.preview.archived.hint": "To include email you’ve archived, turn on Include archived email.",
+  "f1.preview.button.refreshSenders": "Refresh senders",
+  "f1.preview.button.reviewSenders": "Review senders",
   "f1.preview.bulkMore": {
     "one": "and 1 more sender",
     "other": "and {k} more senders"
@@ -81,6 +89,7 @@
   "f1.footer": "Whether their email stops is up to the sender.",
   "f1.deleteNote": "Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash.",
   "f1.button.unsubOnly": "Unsubscribe",
+  "f1.button.busy": "Unsubscribing…",
   "f1.button.archive": "Unsubscribe + Archive",
   "f1.button.delete": "Unsubscribe + Delete",
   "f1.button.unsubOnly.protected": "Unsubscribe anyway",

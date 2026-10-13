@@ -32,7 +32,7 @@ import {
   resetFetchStub,
 } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
-import { pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { pluralCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { unsubscribeOutcomeToast } from '@/features/senders/unsub-status';
 import { undoKeys } from '@/features/undo/query-keys';
 import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './fixtures';
@@ -628,7 +628,8 @@ describe('TriageScreen — D226 mutation wiring', () => {
         recentMessages: PREVIEW_BODY.recentMessages,
       },
     };
-    const reachRow = () => screen.queryByRole('radiogroup', { name: /Where it applies/i });
+    const reachRow = () =>
+      screen.queryByRole('checkbox', { name: WS2_COPY.simplify.confirm.includeArchived });
     function installReachStub(enqueues: unknown[]) {
       resetFetchStub();
       installFetchStub([
@@ -680,12 +681,11 @@ describe('TriageScreen — D226 mutation wiring', () => {
       fireEvent.keyDown(window, { key: 'd' });
 
       const dialog = await screen.findByRole('dialog');
-      const archived = await within(dialog).findByRole('radio', { name: /Inbox \+ archived/ });
+      const archived = await within(dialog).findByRole('checkbox', {
+        name: WS2_COPY.simplify.confirm.includeArchived,
+      });
       // Safe default: inbox only, and the copy says so.
-      expect(within(dialog).getByRole('radio', { name: /Inbox only/ })).toHaveAttribute(
-        'aria-checked',
-        'true',
-      );
+      expect(archived).not.toBeChecked();
       expect(within(dialog).getByText(/^Inbox only\. We check again/)).toBeDefined();
 
       fireEvent.click(archived);
@@ -693,12 +693,9 @@ describe('TriageScreen — D226 mutation wiring', () => {
         within(dialog).getByText(/Inbox and archived email both move to Gmail Trash/),
       ).toBeDefined();
       expect(within(dialog).getByText(/^Inbox and archived email\. We check again/)).toBeDefined();
-      // '412' = the chip AND the armed headline figure.
+      // '412' is the armed headline figure once archived mail is included.
       expect(within(dialog).getByRole('heading', { name: 'Delete 412 emails?' })).toBeDefined();
-      expect(within(dialog).getByRole('radio', { name: /Inbox \+ archived 412/ })).toHaveAttribute(
-        'aria-checked',
-        'true',
-      );
+      expect(archived).toBeChecked();
 
       const confirm = within(dialog).getByRole('button', { name: /^Delete/i });
       await waitFor(() => expect(confirm).not.toBeDisabled());
@@ -717,10 +714,9 @@ describe('TriageScreen — D226 mutation wiring', () => {
       await waitFor(() =>
         expect(screen.getByRole('heading', { name: 'Delete 47 emails?' })).toBeDefined(),
       );
-      expect(screen.getByRole('radio', { name: /Inbox only 47/ })).toHaveAttribute(
-        'aria-checked',
-        'true',
-      );
+      expect(
+        screen.getByRole('checkbox', { name: WS2_COPY.simplify.confirm.includeArchived }),
+      ).not.toBeChecked();
       await confirmOpenSheet('Delete', false);
       await waitFor(() => expect(enqueues).toHaveLength(1));
       expect(enqueues[0]!.primary).not.toHaveProperty('reach');
@@ -751,17 +747,18 @@ describe('TriageScreen — D226 mutation wiring', () => {
       expandRow(GROUPON.senderName);
       fireEvent.keyDown(window, { key: 'd' });
       const dialog = await screen.findByRole('dialog');
-      const inboxOnly = await within(dialog).findByRole('radio', { name: /Inbox only/ });
-      expect(inboxOnly).toHaveAttribute('aria-checked', 'true');
-      expect(within(dialog).getByText(/Switch to Inbox \+ archived/)).toBeDefined();
-      expect(within(dialog).getByRole('radio', { name: /Inbox \+ archived 412/ })).toBeDefined();
+      const includeArchived = await within(dialog).findByRole('checkbox', {
+        name: WS2_COPY.simplify.confirm.includeArchived,
+      });
+      expect(includeArchived).not.toBeChecked();
+      expect(within(dialog).getByText(WS5_COPY['f1.preview.archived.hint'])).toBeDefined();
       const confirm = within(dialog).getByRole('button', { name: /^Delete/i });
       expect(confirm).toBeDisabled();
 
       // The wider delete is a deliberate click — and only then arms confirm.
-      fireEvent.click(within(dialog).getByRole('radio', { name: /Inbox \+ archived/ }));
+      fireEvent.click(includeArchived);
       await waitFor(() => expect(confirm).not.toBeDisabled());
-      expect(within(dialog).queryByText(/Switch to Inbox \+ archived/)).toBeNull();
+      expect(within(dialog).queryByText(WS5_COPY['f1.preview.archived.hint'])).toBeNull();
     });
 
     it('offers no reach choice on Archive', async () => {
@@ -991,11 +988,15 @@ describe('TriageScreen — D226 mutation wiring', () => {
     const option = await within(dialog).findByRole('radio', { name: '+ Delete 47' });
     await waitFor(() => expect(option).toBeEnabled());
     fireEvent.click(option);
-    fireEvent.click(within(dialog).getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(
+      within(dialog).getByRole('checkbox', { name: WS2_COPY.simplify.confirm.includeArchived }),
+    );
     await waitFor(() =>
       expect(within(dialog).getByRole('heading')).toHaveTextContent('delete 80 emails'),
     );
-    expect(dialog).toHaveTextContent('Existing inbox and archived email moves to Gmail Trash.');
+    expect(dialog).toHaveTextContent(
+      pluralCopy(WS5_COPY['f1.preview.backlog.delete'], 80, { n: 80 }),
+    );
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     await waitFor(() =>
       expect(submitted).toMatchObject({
@@ -1030,7 +1031,9 @@ describe('TriageScreen — D226 mutation wiring', () => {
     const deletion = await within(dialog).findByRole('radio', { name: '+ Delete 47' });
     await waitFor(() => expect(deletion).toBeEnabled());
     fireEvent.click(deletion);
-    fireEvent.click(within(dialog).getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(
+      within(dialog).getByRole('checkbox', { name: WS2_COPY.simplify.confirm.includeArchived }),
+    );
     expect(within(dialog).getByRole('heading')).toHaveTextContent('delete 80 emails');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     fireEvent.keyDown(window, { key: 'u' });
@@ -1039,7 +1042,9 @@ describe('TriageScreen — D226 mutation wiring', () => {
       expect(within(dialog).getByRole('heading')).toHaveTextContent('archive 47 emails'),
     );
     expect(within(dialog).getByRole('radio', { name: '+ Archive 47' })).toBeChecked();
-    expect(within(dialog).queryByRole('radiogroup', { name: 'Where it applies' })).toBeNull();
+    expect(
+      within(dialog).queryByRole('checkbox', { name: WS2_COPY.simplify.confirm.includeArchived }),
+    ).toBeNull();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     act(() => useTriageStore.getState().setRememberPreference('Unsubscribe', true));
     fireEvent.keyDown(window, { key: 'u' });
@@ -1090,17 +1095,21 @@ describe('TriageScreen — D226 mutation wiring', () => {
     const deletion = await within(dialog).findByRole('radio', { name: '+ Delete 47' });
     await waitFor(() => expect(deletion).toBeEnabled());
     fireEvent.click(deletion);
-    fireEvent.click(within(dialog).getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(
+      within(dialog).getByRole('checkbox', { name: WS2_COPY.simplify.confirm.includeArchived }),
+    );
     includeAllMail = false;
     await act(async () => {
       await client.invalidateQueries({ queryKey: ['composite-preview'] });
     });
-    const scope = within(dialog).getByRole('radiogroup', { name: 'Where it applies' });
+    const includeArchived = within(dialog).getByRole('checkbox', {
+      name: WS2_COPY.simplify.confirm.includeArchived,
+    });
+    expect(includeArchived).toBeChecked();
     await waitFor(() =>
-      expect(within(scope).getByRole('radio', { name: /Inbox \+ archived/ })).toBeDisabled(),
+      expect(within(dialog).getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled(),
     );
-    expect(within(dialog).getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
-    fireEvent.click(within(scope).getByRole('radio', { name: 'Inbox only 47' }));
+    fireEvent.click(includeArchived);
     await waitFor(() =>
       expect(within(dialog).getByRole('button', { name: 'Unsubscribe + Delete' })).toBeEnabled(),
     );

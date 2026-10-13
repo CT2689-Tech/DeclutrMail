@@ -110,6 +110,12 @@ export interface ConfirmOptions {
    * action, not the unsubscribe-intent call.
    */
   reach?: ActionReach;
+  /**
+   * Senders the unsubscribe preview named. Confirm posts this list.
+   * A wider parent selection, including Protected ids held beside it,
+   * is not a substitute.
+   */
+  senderIds?: string[];
 }
 
 /**

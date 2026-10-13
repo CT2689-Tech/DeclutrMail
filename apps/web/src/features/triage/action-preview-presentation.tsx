@@ -273,10 +273,7 @@ export function buildPreviewFacts({
   if (verb !== 'Unsubscribe') return facts;
   const n = facts.liveCount ?? 0;
   const future = futureMailLine(row.senderName, row.unsubscribeMethod);
-  const backlog =
-    facts.liveCount === null && unsubMode !== 'unsub_only'
-      ? 'Counting existing inbox email…'
-      : backlogDestination(unsubMode, reach);
+  const backlog = backlogDestination(unsubMode, facts.liveCount);
   return {
     ...facts,
     title: unsubscribeTitle(facts.liveCount === null ? 'unsub_only' : unsubMode, row.senderName, n),

@@ -524,9 +524,10 @@ export function SendersSimulator() {
           setSelected(ids);
         }}
         trustHref="/privacy"
-        onFixConfirmed={(mode, scope) => {
+        onFixConfirmed={(mode, scope, senderIds) => {
+          const included = new Set(senderIds);
           applyUnsubscribe(
-            senders.filter((sender) => report.fix.senderKeys.includes(sender.id)),
+            senders.filter((sender) => included.has(sender.id)),
             mode,
             scope,
           );
@@ -809,8 +810,9 @@ export function SendersSimulator() {
             : {})}
           onCancel={closePreview}
           onConfirm={(opts) => {
+            const included = new Set(opts.senderIds);
             applyUnsubscribe(
-              pendingSenders,
+              pendingSenders.filter((sender) => included.has(sender.id)),
               opts.secondary?.type ?? 'unsub_only',
               opts.reach ?? 'inbox_only',
             );

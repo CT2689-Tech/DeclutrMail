@@ -17,7 +17,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { fillCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { fillCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { installFetchStub, resetFetchStub } from '@/test/fetch-stub';
@@ -120,7 +120,7 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
       />,
     );
 
-    expect(html).toContain('Retry preview');
+    expect(html).toContain('Try again');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Archive/);
   });
 
@@ -136,8 +136,25 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
       />,
     );
 
-    expect(html).toContain('Counting the email you already have');
+    expect(html).toContain(WS5_COPY['f1.preview.backlog.loading']);
+    expect(html).not.toContain('Counting the inbox');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Archive/);
+  });
+
+  it('names a disappeared sender with the deck sentence', () => {
+    const html = renderToStaticMarkup(
+      <ActionSheet
+        open={true}
+        verb="Archive"
+        row={row}
+        inboxCount={2}
+        previewSenderGone
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+    expect(html).toContain(WS2_COPY.simplify.senders.gone);
+    expect(html).not.toContain('This sender is no longer in this mailbox.');
   });
 });
 
@@ -1012,7 +1029,7 @@ describe('ActionSheet Unsubscribe preview recovery', () => {
       />,
     );
     expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Retry preview' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetryPreview).toHaveBeenCalledOnce();
   });
   it('shows a completed zero count as a way to choose Unsubscribe only', () => {
@@ -1027,8 +1044,8 @@ describe('ActionSheet Unsubscribe preview recovery', () => {
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
     rerender(<ActionSheet {...props} inboxCount={0} />);
     expect(screen.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
-    expect(screen.getByText(/No existing inbox email to move/)).toBeVisible();
-    expect(screen.queryByText(/Counting the email you already have/)).toBeNull();
+    expect(screen.getByText(WS5_COPY['f1.preview.backlog.none'])).toBeVisible();
+    expect(screen.queryByText(/Counting the inbox/)).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
     expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
   });
