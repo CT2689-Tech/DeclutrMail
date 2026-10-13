@@ -126,8 +126,8 @@ export async function refreshAfterUndo(
     // count: the report rebuild often lands on the read after they stop.
     const idleBefore = !jobsRunning(qc);
     await sleep(REBUILD_POLL_MS, signal);
-    // Unmount and mailbox switch abort this wait. A tick that already
-    // started must not refetch a report the screen is no longer showing.
+    // Unmount, mailbox switch, and leaving the page abort this wait. A tick
+    // that already started must not refetch a report the screen is no longer showing.
     if (signal?.aborted) return;
     await invalidateUndoSurfaces(qc, mailboxId);
     if (signal?.aborted) return;

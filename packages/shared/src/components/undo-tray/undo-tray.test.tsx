@@ -383,17 +383,8 @@ const UNSUBSCRIBE_NOTE_HTML =
   'Unsubscribes can&#x27;t be undone. Any that already started will finish.';
 
 describe('<UndoTray /> — unsubscribe note under Undo all', () => {
-  const unsubscribeBulk = entry({
-    token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-    actionKind: 'unsubscribe',
-    groupId: 'unsub-1',
-    senderCount: 2,
-    affectedCount: 40,
-    members: [
-      { token: 'u1', actionKind: 'unsubscribe', senderName: 'News Daily', affectedCount: 30 },
-      { token: 'u2', actionKind: 'unsubscribe', senderName: 'Shop Weekly', affectedCount: 10 },
-    ],
-  });
+  // The real decision: Undo all reverses the archive. Unsubscribes are a
+  // separate in-flight job row, not members of that decision.
   const archiveBulk = entry({
     token: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
     actionKind: 'archive',
@@ -405,22 +396,38 @@ describe('<UndoTray /> — unsubscribe note under Undo all', () => {
       { token: 'a2', actionKind: 'archive', senderName: 'RetailMeNot', affectedCount: 4 },
     ],
   });
+  const unsubscribing = {
+    id: 'run:unsub-1',
+    tone: 'working' as const,
+    verb: 'unsubscribe' as const,
+    label: 'Unsubscribing…',
+    who: 'News Daily + 13 others',
+    detail: '2 of 14',
+  };
 
-  it('states the locked line under Undo all only when an unsubscribe row is there', () => {
+  it('states the locked line under archive Undo all when an unsubscribe job is separate', () => {
     const open = renderToStaticMarkup(
-      <UndoTray defaultOpen dataSource={source({ entries: [unsubscribeBulk, archiveBulk] })} />,
+      <UndoTray
+        defaultOpen
+        dataSource={source({ entries: [archiveBulk], notices: [unsubscribing] })}
+      />,
     );
     const undoAll = open.indexOf('>Undo all<');
     const note = open.indexOf(UNSUBSCRIBE_NOTE_HTML);
+    expect(open).toContain('Unsubscribing…');
     expect(undoAll).toBeGreaterThan(-1);
     expect(note).toBeGreaterThan(undoAll);
     expect(open.match(/data-dm-undo-unsub-note/g)).toHaveLength(1);
 
+    // The closed pill's headline is the running job, so Undo all is not on screen.
     const pill = renderToStaticMarkup(
-      <UndoTray dataSource={source({ entries: [unsubscribeBulk] })} />,
+      <UndoTray dataSource={source({ entries: [archiveBulk], notices: [unsubscribing] })} />,
     );
     expect(pill).toContain('data-dm-undo-tray="pill"');
-    expect(pill.indexOf(UNSUBSCRIBE_NOTE_HTML)).toBeGreaterThan(pill.indexOf('>Undo all<'));
+    expect(pill).toContain('Unsubscribing…');
+    expect(pill).not.toContain('>Undo all<');
+    expect(pill).not.toContain(UNSUBSCRIBE_NOTE_HTML);
+    expect(pill).not.toContain('data-dm-undo-unsub-note');
 
     const archiveOnly = renderToStaticMarkup(
       <UndoTray defaultOpen dataSource={source({ entries: [archiveBulk] })} />,
@@ -428,5 +435,24 @@ describe('<UndoTray /> — unsubscribe note under Undo all', () => {
     expect(archiveOnly).toContain('>Undo all<');
     expect(archiveOnly).not.toContain(UNSUBSCRIBE_NOTE_HTML);
     expect(archiveOnly).not.toContain('data-dm-undo-unsub-note');
+  });
+
+  it('states the line under Undo all when a separate unsubscribe row is in the list', () => {
+    const unsubscribeRow = entry({
+      token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      actionKind: 'unsubscribe',
+      groupId: 'unsub-row',
+      senderCount: 1,
+      affectedCount: 4,
+    });
+    const open = renderToStaticMarkup(
+      <UndoTray defaultOpen dataSource={source({ entries: [archiveBulk, unsubscribeRow] })} />,
+    );
+    const undoAll = open.indexOf('>Undo all<');
+    const note = open.indexOf(UNSUBSCRIBE_NOTE_HTML);
+    expect(note).toBeGreaterThan(undoAll);
+    expect(open.match(/data-dm-undo-unsub-note/g)).toHaveLength(1);
+    // The unsubscribe row's own button is Undo, and it does not carry a second note.
+    expect(open.indexOf('>Undo<', note)).toBeGreaterThan(note);
   });
 });

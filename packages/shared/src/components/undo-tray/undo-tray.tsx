@@ -207,6 +207,11 @@ function UndoTrayBody({
 }) {
   const source = dataSource;
   const notices = source.notices ?? [];
+  // Once, under the first Undo all, when that button is on screen and any
+  // unsubscribe row or in-flight job is in the tray. The archive decision
+  // does not itself contain the unsubscribes.
+  const unsubscribeInTray = trayHasUnsubscribe(source.entries, notices);
+  const unsubscribeNoteEntry = unsubscribeInTray ? firstUndoAll(source.entries) : undefined;
   const trayRef = useTrayInset();
   const [open, setOpen] = useState(defaultOpen);
   // Hover / focus holds the pill at full size.
@@ -367,6 +372,7 @@ function UndoTrayBody({
                 headline={headline}
                 onUndo={(token) => void source.revert(token)}
                 onViewActivity={onViewActivity}
+                showUnsubscribeNote={unsubscribeInTray}
               />
             ) : (
               <span style={{ color: color.fgMuted }}>Loading…</span>
@@ -456,7 +462,7 @@ function UndoTrayBody({
             }}
             onUndoMember={source.revertMember}
             defaultOpen={defaultOpenDecisions}
-            showUnsubscribeNote={entry === firstUnsubscribeBulk(source.entries)}
+            showUnsubscribeNote={entry === unsubscribeNoteEntry}
           />
         ))}
       </ul>
@@ -510,9 +516,21 @@ function includesUnsubscribe(entry: UndoTrayEntry): boolean {
   return (entry.members ?? []).some((member) => member.actionKind === 'unsubscribe');
 }
 
-/** The first bulk decision whose Undo all covers an unsubscribe row. */
-function firstUnsubscribeBulk(entries: readonly UndoTrayEntry[]): UndoTrayEntry | undefined {
-  return entries.find((entry) => isBulkDecision(entry) && includesUnsubscribe(entry));
+/**
+ * Unsubscribe work is not inside the archive decision. It is any undo row
+ * or member of that kind, or any in-flight job the host marked unsubscribe.
+ */
+function trayHasUnsubscribe(
+  entries: readonly UndoTrayEntry[],
+  notices: readonly UndoTrayNotice[],
+): boolean {
+  if (notices.some((notice) => notice.verb === 'unsubscribe')) return true;
+  return entries.some(includesUnsubscribe);
+}
+
+/** The first decision whose button says Undo all. The note sits under that one. */
+function firstUndoAll(entries: readonly UndoTrayEntry[]): UndoTrayEntry | undefined {
+  return entries.find(isBulkDecision);
 }
 
 function UnsubscribeNote() {
@@ -537,10 +555,13 @@ function Headline({
   headline,
   onUndo,
   onViewActivity,
+  showUnsubscribeNote,
 }: {
   headline: TrayHeadline;
   onUndo: (token: string) => void;
   onViewActivity: (() => void) | undefined;
+  /** Tray-level: an unsubscribe row or job exists. The pill shows it only under Undo all. */
+  showUnsubscribeNote: boolean;
 }) {
   if (headline.kind === 'notice') {
     const { notice, running } = headline;
@@ -610,7 +631,7 @@ function Headline({
         >
           {isBulkDecision(entry) ? 'Undo all' : 'Undo'}
         </Button>
-        {isBulkDecision(entry) && includesUnsubscribe(entry) ? <UnsubscribeNote /> : null}
+        {isBulkDecision(entry) && showUnsubscribeNote ? <UnsubscribeNote /> : null}
       </span>
     </>
   );

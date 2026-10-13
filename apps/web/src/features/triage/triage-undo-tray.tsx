@@ -46,7 +46,7 @@ export function invalidateAfterUndo(
 ): Promise<void> {
   // The promise is the tray latch: the revert slot stays taken until the
   // refreshed list lands, and until a following rebuild read agrees.
-  // `signal` aborts that wait on unmount or a mailbox switch.
+  // `signal` aborts that wait on unmount, a mailbox switch, or leaving the page.
   return refreshAfterUndo(qc, mailboxId, signal);
 }
 
@@ -171,20 +171,29 @@ export function ProductUndoTray({
   const [sessionGroups, setSessionGroups] = useState<ReadonlySet<string>>(new Set());
   const refreshAbort = useRef<AbortController | null>(null);
 
-  // A capability from mailbox A must never stay hidden/polling after the
-  // chrome switches to mailbox B. Onboarding intentionally omits the prop;
-  // its single-mailbox mount therefore retains the original behavior.
   // Declared before the job-stop effect: that effect reads this controller,
   // and a switch must install the next one before the new mailbox refreshes.
+  // The tray stays mounted across routes, so leaving the page is a pathname
+  // change. Abort the rebuild poll then, and replace the controller so the
+  // next undo on the new page still refreshes. Do not clear the revert slot
+  // here — that belongs to a mailbox change, below.
   useEffect(() => {
     const controller = new AbortController();
     refreshAbort.current = controller;
+    return () => {
+      controller.abort();
+    };
+  }, [mailboxId, pathname]);
+
+  // A capability from mailbox A must never stay hidden after the chrome
+  // switches to mailbox B. Onboarding intentionally omits the prop; its
+  // single-mailbox mount therefore retains the original behavior.
+  useEffect(() => {
     mailboxGeneration.current += 1;
     setInFlight(null);
     setOutcomes([]);
     return () => {
       mailboxGeneration.current += 1;
-      controller.abort();
     };
   }, [mailboxId]);
 

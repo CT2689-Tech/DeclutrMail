@@ -4,7 +4,7 @@
  * a decision that stops without leaving something to undo says why.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -59,9 +59,15 @@ describe('what the pill says about a running decision', () => {
   it('names the verb, who, and how far along a bulk is', () => {
     expect(workingNotice(GROUP)).toMatchObject({
       tone: 'working',
+      verb: 'delete',
       label: 'Deleting…',
       who: 'Yankee Candle + 12 others',
       detail: '4 of 13',
+    });
+    expect(workingNotice({ ...GROUP, verb: 'unsubscribe' })).toMatchObject({
+      tone: 'working',
+      verb: 'unsubscribe',
+      label: 'Unsubscribing…',
     });
   });
 
@@ -243,14 +249,36 @@ describe('what the pill says once a decision stops', () => {
   });
 });
 
+/** Archive decision the way `GET /api/undo` sends a bulk Undo all. */
+const ARCHIVE_UNDO = {
+  groupId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  token: '11111111-1111-4111-8111-111111111111',
+  actionKind: 'archive' as const,
+  createdAt: '2026-09-20T10:00:05.000Z',
+  expiresAt: '2026-09-25T10:00:05.000Z',
+  senderCount: 13,
+  affectedCount: 822,
+};
+
+const UNSUBSCRIBE_JOB: InFlightActionGroup = {
+  ...GROUP,
+  groupId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  verb: 'unsubscribe',
+};
+
+const LOCKED_UNSUBSCRIBE_NOTE =
+  "Unsubscribes can't be undone. Any that already started will finish.";
+
 describe('ProductUndoTray — live line', () => {
   let active: InFlightActionGroup[] | 'error';
+  let undoList: unknown[];
   let batch: BatchStatusResult | 'error';
   let undoReads: number;
 
   beforeEach(() => {
     resetTriageStore();
     active = [GROUP];
+    undoList = [];
     batch = status({});
     undoReads = 0;
     installFetchStub([
@@ -259,7 +287,7 @@ describe('ProductUndoTray — live line', () => {
         path: '/api/undo',
         respond: () => {
           undoReads += 1;
-          return jsonOk({ data: [] });
+          return jsonOk({ data: undoList });
         },
       },
       {
@@ -491,6 +519,44 @@ describe('ProductUndoTray — live line', () => {
       expect(pill).toHaveTextContent('Delete: 1 Protected sender skipped · Yankee Candle'),
     );
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('states the locked line under archive Undo all when unsubscribes are separate jobs', async () => {
+    active = [];
+    const { client } = mount();
+    await waitFor(() => expect(client.getQueryData(undoKeys.tray(undefined))).toEqual([]));
+    undoList = [ARCHIVE_UNDO];
+    active = [UNSUBSCRIBE_JOB];
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: undoKeys.all });
+    });
+    // The closed pill's headline is the running job. Undo all is not on it.
+    await waitFor(() => expect(pillText()).toMatch(/Unsubscribing…/));
+    expect(document.querySelector('[data-dm-undo-unsub-note]')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show all recent actions' }));
+    const note = await screen.findByText(LOCKED_UNSUBSCRIBE_NOTE);
+    expect(screen.getAllByText(LOCKED_UNSUBSCRIBE_NOTE)).toHaveLength(1);
+    expect(note.closest('li')?.querySelector('button')?.textContent).toBe('Undo all');
+    expect(screen.getByRole('button', { name: /^Undo Archive/ })).toHaveTextContent('Undo all');
+    expect(screen.getAllByText(/Unsubscribing…/).length).toBeGreaterThan(0);
+  });
+
+  it('keeps the line off Undo all when the running job is not an unsubscribe', async () => {
+    active = [];
+    const { client } = mount();
+    await waitFor(() => expect(client.getQueryData(undoKeys.tray(undefined))).toEqual([]));
+    undoList = [ARCHIVE_UNDO];
+    active = [GROUP];
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: undoKeys.all });
+    });
+    await waitFor(() => expect(pillText()).toMatch(/Deleting…/));
+    fireEvent.click(await screen.findByRole('button', { name: 'Show all recent actions' }));
+    expect(await screen.findByRole('button', { name: /^Undo Archive/ })).toHaveTextContent(
+      'Undo all',
+    );
+    expect(screen.queryByText(LOCKED_UNSUBSCRIBE_NOTE)).toBeNull();
   });
 
   it('never reads another mailbox’s empty list as "everything stopped"', async () => {
