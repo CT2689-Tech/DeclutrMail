@@ -244,15 +244,23 @@ export async function runIndiaSandboxCheckout(options) {
   });
 
   const transactions = [];
+  let firstFailure = null;
   for (const plan of plans) {
-    const transaction = await createTransaction(fetchImpl, key, plan);
-    transactions.push(transaction);
-    emit(
-      [
-        `checkout ${transaction.label} currency=${transaction.currency} price=${transaction.priceId} txn=${transaction.id} payment_methods=${transaction.paymentMethods}`,
-      ],
-      env.GITHUB_STEP_SUMMARY,
-    );
+    try {
+      const transaction = await createTransaction(fetchImpl, key, plan);
+      transactions.push(transaction);
+      emit(
+        [
+          `checkout ${transaction.label} currency=${transaction.currency} price=${transaction.priceId} txn=${transaction.id} payment_methods=${transaction.paymentMethods}`,
+        ],
+        env.GITHUB_STEP_SUMMARY,
+      );
+    } catch (error) {
+      if (!(error instanceof SandboxCheckoutError)) throw error;
+      firstFailure ??= error;
+      emit([`checkout ${plan.label} failed ${error.message}`], env.GITHUB_STEP_SUMMARY);
+    }
   }
+  if (firstFailure) throw firstFailure;
   return { transactions };
 }

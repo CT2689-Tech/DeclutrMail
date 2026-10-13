@@ -281,6 +281,44 @@ test('a spoofed country does not open an India transaction', async () => {
   );
 });
 
+test('a discount rejection still opens the other transactions', async () => {
+  const { fetchImpl } = harness();
+  const seen = [];
+  const selective = async (url, init) => {
+    if (new URL(url).pathname === '/transactions' && init.body) {
+      const body = JSON.parse(init.body);
+      seen.push(body.currency_code);
+      if (body.currency_code === 'INR') {
+        return json(
+          {
+            error: {
+              code: 'transaction_discount_not_eligible',
+              detail: 'Discount is not eligible for the provided items',
+            },
+          },
+          400,
+        );
+      }
+    }
+    return fetchImpl(url, init);
+  };
+  await assert.rejects(
+    () =>
+      runIndiaSandboxCheckout({
+        env: { PADDLE_ENV: 'sandbox', PADDLE_API_KEY: key },
+        catalog,
+        selectPrice: selectFromCatalog,
+        discountIdForPrice: () => discountId,
+        fetchImpl: selective,
+      }),
+    (error) =>
+      error instanceof SandboxCheckoutError &&
+      error.code === 'paddle_400_transaction_discount_not_eligible' &&
+      error.message.includes('Discount is not eligible'),
+  );
+  assert.deepEqual(seen, ['INR', 'USD', 'INR', 'USD']);
+});
+
 test('a transaction without card fails when methods are listed', async () => {
   const { fetchImpl } = harness();
   const listed = async (url, init) => {
