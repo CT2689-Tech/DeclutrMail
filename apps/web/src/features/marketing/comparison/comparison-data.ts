@@ -1104,7 +1104,7 @@ const gmailNative: ComparisonDefinition = {
       competitor: {
         summary: 'Native selection and recovery; separate action history not stated',
         detail:
-          'Archives stay recoverable in All Mail; deleted mail normally remains in Trash for 30 days unless removed sooner. The reviewed help pages do not describe a separate long-term record and undo deadline for each cleanup action.',
+          'Archives stay recoverable in All Mail; deleted mail normally remains in Trash for 30 days unless removed sooner. The reviewed help pages do not describe a separate long-term record and undo deadline for each Archive, Later or Delete.',
         state: 'limited',
       },
     },

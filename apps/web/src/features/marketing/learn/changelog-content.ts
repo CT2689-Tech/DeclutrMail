@@ -365,7 +365,7 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
       'Secondary product screens and topbar controls now restack for mobile widths.',
       'Account and billing remain reachable when no Gmail mailbox is active.',
     ],
-    fixed: ['Refund messaging was aligned with the canonical 30-day paid-plan guarantee.'],
+    fixed: ['Refund wording now matches on every page. (The refund window is now 14 days.)'],
     evidence: [
       { commit: 'ec55425e', pullRequest: 307, summary: 'SEO/AEO/GEO foundations' },
       { commit: '1390f429', pullRequest: 305, summary: 'Secondary-screen mobile restack' },
