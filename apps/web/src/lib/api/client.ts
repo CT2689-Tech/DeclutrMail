@@ -231,11 +231,11 @@ function isRetryableFetchFailure(error: unknown): boolean {
 }
 
 /**
- * A poll failure the app already knows how to wait out: the browser
+ * A `/sync/status` poll failure the app already waits out: the browser
  * timed out or dropped the socket, the caller aborted, or the gateway
- * closed a hung read. These are not product defects. HTTP 481 is the
- * status a timed-out `/sync/status` read has logged beside
- * `ERR_TIMED_OUT`.
+ * closed a hung read. HTTP 481 is the status that poll has logged beside
+ * `ERR_TIMED_OUT`. An `ApiError` counts only by status — a 500 whose
+ * message says "timed out" is still a product failure.
  */
 export function isBenignTransportError(error: unknown): boolean {
   if (isPlainNetworkFailure(error)) return true;
@@ -245,11 +245,8 @@ export function isBenignTransportError(error: unknown): boolean {
   ) {
     return true;
   }
-  if (
-    error instanceof ApiError &&
-    (error.status === 408 || error.status === 481 || error.status === 504)
-  ) {
-    return true;
+  if (error instanceof ApiError) {
+    return error.status === 408 || error.status === 481 || error.status === 504;
   }
   return error instanceof Error && /ERR_TIMED_OUT|timed out/i.test(error.message);
 }

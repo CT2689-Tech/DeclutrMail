@@ -19,7 +19,7 @@ export function PublicMobileMenu({
   links: ReadonlyArray<{ href: string; label: string }>;
   startUrl: string;
   showTheme?: boolean;
-  /** Deck strings. Passed in so this client chunk does not import the copy module. */
+  /** `ws3.nav.menu.aria`. Passed in so this client chunk does not import the copy module. */
   openLabel: string;
   closeLabel: string;
 }) {
@@ -113,7 +113,7 @@ export function PublicMobileMenu({
           ref={buttonRef}
           type="button"
           className="dm-public-menu-button"
-          aria-label={open ? `${closeLabel}, Menu` : `${openLabel}, Menu`}
+          aria-label={open ? closeLabel : openLabel}
           aria-expanded={open}
           aria-controls={open ? 'dm-public-mobile-nav' : undefined}
           onClick={() => setOpen((value) => !value)}

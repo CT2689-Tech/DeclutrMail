@@ -20,9 +20,7 @@ beforeEach(() => {
 describe('PublicMobileMenu', () => {
   it('starts Google OAuth directly from both auth actions', () => {
     render(<PublicMobileMenu {...menuProps} />);
-    expect(screen.getByRole('button', { name: /Open navigation/ })).toHaveAccessibleName(/Menu/);
-    fireEvent.click(screen.getByRole('button', { name: /Open navigation/ }));
-    expect(screen.getByRole('button', { name: /Close navigation/ })).toHaveAccessibleName(/Menu/);
+    fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
 
     expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute(
       'href',
@@ -35,10 +33,10 @@ describe('PublicMobileMenu', () => {
 
   it('closes on Escape and restores focus to the menu button', () => {
     render(<PublicMobileMenu {...menuProps} />);
-    fireEvent.click(screen.getByRole('button', { name: /Open navigation/ }));
-    const button = screen.getByRole('button', { name: /Close navigation/ });
+    fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
+    const button = screen.getByRole('button', { name: 'Close navigation' });
     fireEvent.keyDown(button, { key: 'Escape' });
-    expect(screen.getByRole('button', { name: /Open navigation/ })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Open navigation' })).toHaveAttribute(
       'aria-expanded',
       'false',
     );
@@ -47,12 +45,12 @@ describe('PublicMobileMenu', () => {
 
   it('does not stay open after a client-side route change', () => {
     const { rerender } = render(<PublicMobileMenu {...menuProps} />);
-    fireEvent.click(screen.getByRole('button', { name: /Open navigation/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
 
     pathnameRef.current = '/how-it-works';
     rerender(<PublicMobileMenu {...menuProps} />);
 
-    expect(screen.getByRole('button', { name: /Open navigation/ })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Open navigation' })).toHaveAttribute(
       'aria-expanded',
       'false',
     );
@@ -60,13 +58,13 @@ describe('PublicMobileMenu', () => {
 
   it('keeps Tab inside the open menu', () => {
     render(<PublicMobileMenu {...menuProps} />);
-    fireEvent.click(screen.getByRole('button', { name: /Open navigation/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
     const nav = screen.getByRole('navigation', { name: 'Mobile navigation' });
     const last = [...nav.querySelectorAll('a')].at(-1);
     expect(last).toBeTruthy();
     last!.focus();
     fireEvent.keyDown(document, { key: 'Tab' });
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: /Close navigation/ }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close navigation' }));
 
     fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
     expect(document.activeElement).toBe(last);
@@ -75,11 +73,11 @@ describe('PublicMobileMenu', () => {
   it('closes immediately when a link targets the current route', () => {
     pathnameRef.current = '/how-it-works';
     render(<PublicMobileMenu {...menuProps} />);
-    fireEvent.click(screen.getByRole('button', { name: /Open navigation/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
     const link = screen.getByRole('link', { name: 'How it works' });
     expect(link).toHaveAttribute('aria-current', 'page');
     fireEvent.click(link);
-    expect(screen.getByRole('button', { name: /Open navigation/ })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Open navigation' })).toHaveAttribute(
       'aria-expanded',
       'false',
     );

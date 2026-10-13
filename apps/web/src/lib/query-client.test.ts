@@ -249,7 +249,7 @@ describe('makeQueryClient — global query-failure reporting', () => {
     expect(captureFeatureException).not.toHaveBeenCalled();
   });
 
-  it('stays silent for an expected timeout', async () => {
+  it('stays silent for an expected timeout on the sync-status poll', async () => {
     await runFailingQuery(new DOMException('The operation timed out', 'TimeoutError'), [
       'sync',
       'status',
@@ -257,6 +257,7 @@ describe('makeQueryClient — global query-failure reporting', () => {
     await runFailingQuery(new DOMException('The operation was aborted.', 'AbortError'), [
       'sync',
       'status',
+      null,
     ]);
     await runFailingQuery(new ApiError(504, {}, 'GET /api/v1/sync/status failed: 504'), [
       'sync',
@@ -264,6 +265,15 @@ describe('makeQueryClient — global query-failure reporting', () => {
     ]);
     await runFailingQuery(new TypeError('net::ERR_TIMED_OUT'), ['sync', 'status']);
     expect(captureFeatureException).not.toHaveBeenCalled();
+  });
+
+  it('reports a timed-out 500 outside the sync-status poll', async () => {
+    await runFailingQuery(new ApiError(500, {}, 'upstream timed out'), ['senders', {}]);
+    await runFailingQuery(new ApiError(504, {}, 'gateway timeout'), ['billing', 'subscription']);
+    await runFailingQuery(new DOMException('The operation timed out', 'TimeoutError'), [
+      'mailboxes',
+    ]);
+    expect(captureFeatureException).toHaveBeenCalledTimes(3);
   });
 
   it('reports a 5xx read failure', async () => {
