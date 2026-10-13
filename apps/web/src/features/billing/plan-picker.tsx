@@ -868,7 +868,7 @@ export function PlanPicker({
           tabIndex={0}
           style={{ overflowX: 'auto', marginTop: 12 }}
         >
-          {comparisonOpen ? <BillingComparison /> : null}
+          {comparisonOpen ? <BillingComparison pricingV2={pricingV2} /> : null}
         </div>
       </details>
       <Link
