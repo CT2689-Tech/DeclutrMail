@@ -12,11 +12,22 @@
  *     event contract as Paddle, and reject loader failures while retaining the current page.
  */
 
+import { readdirSync, statSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type * as PaddleJs from '@paddle/paddle-js';
 import type { PaddleCheckoutSession, RazorpayCheckoutSession } from '@declutrmail/shared/contracts';
 
-import { __setPaddleLoaderForTests, __setRazorpayLoaderForTests, launchCheckout } from './checkout';
+import {
+  __setPaddleLoaderForTests,
+  __setRazorpayLoaderForTests,
+  CheckoutLaunchError,
+  launchCheckout,
+  paddleCheckoutSuccessUrl,
+  PADDLE_CHECKOUT_SUCCESS_PATH,
+} from './checkout';
 
 const PADDLE_SESSION: PaddleCheckoutSession = {
   provider: 'paddle',
@@ -61,6 +72,50 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** App Router pages, with route groups removed from the URL. */
+function appPageRoutes(dir: string, prefix = ''): string[] {
+  const routes: string[] = [];
+  for (const name of readdirSync(dir)) {
+    if (name === 'api' || name.startsWith('_')) continue;
+    const full = path.join(dir, name);
+    if (statSync(full).isDirectory()) {
+      const segment = name.startsWith('(') && name.endsWith(')') ? '' : `/${name}`;
+      routes.push(...appPageRoutes(full, `${prefix}${segment}`));
+      continue;
+    }
+    if (name === 'page.tsx' || name === 'page.ts') {
+      routes.push(prefix === '' ? '/' : prefix);
+    }
+  }
+  return routes;
+}
+
+describe('paddle checkout success URL', () => {
+  const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../app');
+
+  it('stays on the opener origin and lands on /billing', () => {
+    expect(PADDLE_CHECKOUT_SUCCESS_PATH).toBe('/billing');
+    expect(
+      paddleCheckoutSuccessUrl('https://app.declutrmail.com/billing?plan=plus&cycle=annual'),
+    ).toBe('https://app.declutrmail.com/billing');
+    expect(paddleCheckoutSuccessUrl('http://localhost:3000/welcome')).toBe(
+      'http://localhost:3000/billing',
+    );
+  });
+
+  it('resolves to an existing page, and /welcome does not', () => {
+    const routes = appPageRoutes(appDir);
+    const success = new URL(paddleCheckoutSuccessUrl('https://declutrmail.com/welcome'));
+    expect(success.pathname).toBe('/billing');
+    expect(routes).toContain(success.pathname);
+    expect(routes).not.toContain('/welcome');
+  });
+
+  it('refuses a non-http opener', () => {
+    expect(() => paddleCheckoutSuccessUrl('javascript:alert(1)')).toThrow(CheckoutLaunchError);
+  });
+});
+
 describe('launchCheckout', () => {
   it('paddle: initializes with token + environment and opens the overlay verbatim', async () => {
     const { open, initializePaddle } = stubPaddle();
@@ -75,6 +130,7 @@ describe('launchCheckout', () => {
     );
     expect(open).toHaveBeenCalledWith({
       transactionId: 'txn_01ky067arw41802a6ssessknxh',
+      settings: { successUrl: paddleCheckoutSuccessUrl(window.location.href) },
     });
   });
 
@@ -88,6 +144,7 @@ describe('launchCheckout', () => {
     expect(open).toHaveBeenCalledTimes(1);
     expect(open).toHaveBeenCalledWith({
       transactionId: 'txn_01ky067arw41802a6ssessknxh',
+      settings: { successUrl: paddleCheckoutSuccessUrl(window.location.href) },
     });
   });
 
