@@ -4,6 +4,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import {
+  OVERLAY_Z,
   PreviewSheet,
   SheetFactList,
   SheetLinks,
@@ -34,6 +35,7 @@ describe('<PreviewSheet />', () => {
     const dialog = screen.getByRole('dialog', { name: 'Archive 174 emails?' });
     expect(dialog).toHaveAttribute('aria-modal', 'true');
     expect(dialog).toHaveAccessibleDescription(/leave your inbox/);
+    expect(dialog.parentElement).toHaveStyle({ zIndex: String(OVERLAY_Z.modal) });
   });
 
   it('keeps everything that is not count / destination / undo collapsed', () => {

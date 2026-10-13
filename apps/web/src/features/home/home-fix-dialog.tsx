@@ -1,6 +1,6 @@
 'use client';
 
-import { Button } from '@declutrmail/shared';
+import { Button, OVERLAY_Z } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 
 import { fillDeck, formatCount } from './home-deck-copy';
@@ -53,6 +53,7 @@ export function HomeFixDialog({
     <div
       className={styles.dialogScrim}
       role="presentation"
+      style={{ zIndex: OVERLAY_Z.modal }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onCancel();
       }}

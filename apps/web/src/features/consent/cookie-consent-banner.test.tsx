@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { OVERLAY_Z } from '@declutrmail/shared';
+
 import { hasAnalyticsConsent, readStoredConsent, storeConsent } from '@/lib/cookie-consent';
 import { CookieConsentBanner } from './cookie-consent-banner';
 
@@ -24,6 +26,8 @@ describe('CookieConsentBanner (D147)', () => {
     expect(screen.getByRole('button', { name: 'Essential only' })).toBeInTheDocument();
     expect(banner.style.right).toBe('16px');
     expect(banner.style.width).toBe('calc(100vw - 32px)');
+    expect(banner.style.zIndex).toBe(String(OVERLAY_Z.cookieBanner));
+    expect(OVERLAY_Z.modal).toBeGreaterThan(OVERLAY_Z.cookieBanner);
     expect(screen.getByRole('button', { name: 'Accept all' })).toHaveStyle({ minHeight: '44px' });
     expect(
       screen.getByRole('button', { name: 'Close and continue with essential cookies only' }),

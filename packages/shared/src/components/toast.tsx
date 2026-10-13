@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { OVERLAY_Z } from '../tokens/overlay-layers';
 import { color, font, radius, shadow, text } from '../tokens/tokens';
 
 export type ToastTone = 'info' | 'success' | 'warn' | 'danger';
@@ -84,7 +85,7 @@ export function ToastHost() {
         width: 'max-content',
         left: '50%',
         transform: 'translateX(-50%)',
-        zIndex: 200,
+        zIndex: OVERLAY_Z.toast,
         display: 'flex',
         flexDirection: 'column',
         gap: 8,

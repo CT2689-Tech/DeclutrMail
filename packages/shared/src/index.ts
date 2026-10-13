@@ -7,6 +7,7 @@ export { clampLimit, decodeCursor, encodeCursor, ok, paginated, withMeta } from 
 
 export { tokens } from './tokens/tokens';
 export type { Tokens } from './tokens/tokens';
+export { OVERLAY_Z } from './tokens/overlay-layers';
 
 // Branded identifiers (FOUNDER-FOLLOWUPS 2026-06-05).
 export type {

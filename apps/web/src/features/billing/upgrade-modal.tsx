@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import Link from 'next/link';
 import { useUpgradeReturnTo } from '@/features/billing/use-upgrade-return-to';
 
-import { Button, tokens } from '@declutrmail/shared';
+import { Button, OVERLAY_Z, tokens } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import { fillStory, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
@@ -142,7 +142,7 @@ export function UpgradeModal() {
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 150,
+        zIndex: OVERLAY_Z.modal,
         display: 'flex',
         justifyContent: 'center',
         padding: space[4],

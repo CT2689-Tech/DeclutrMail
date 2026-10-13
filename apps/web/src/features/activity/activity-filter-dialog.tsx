@@ -1,7 +1,7 @@
 'use client';
 
 import type { CSSProperties } from 'react';
-import { Button, tokens } from '@declutrmail/shared';
+import { Button, OVERLAY_Z, tokens } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { FilterFields, type FilterFieldsProps } from './activity-filter-fields';
 
@@ -50,7 +50,7 @@ function FilterSheet({ onClose, ...fields }: FilterFieldsProps & { onClose: () =
       <div
         className="dm-scrim"
         onClick={onClose}
-        style={{ position: 'fixed', inset: 0, zIndex: 150 }}
+        style={{ position: 'fixed', inset: 0, zIndex: OVERLAY_Z.modal }}
       />
       <div
         ref={trapRef}
@@ -69,7 +69,7 @@ function FilterSheet({ onClose, ...fields }: FilterFieldsProps & { onClose: () =
           borderTopLeftRadius: radius['2xl'],
           borderTopRightRadius: radius['2xl'],
           boxShadow: shadow.modal,
-          zIndex: 151,
+          zIndex: OVERLAY_Z.sheet,
           fontFamily: font.sans,
           padding: '10px 20px calc(20px + env(safe-area-inset-bottom))',
           display: 'flex',
