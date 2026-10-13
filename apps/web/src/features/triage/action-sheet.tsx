@@ -11,14 +11,8 @@ import {
   SheetSegmented,
   tokens,
 } from '@declutrmail/shared';
-import {
-  fillCopy,
-  isPluralCopy,
-  pluralCopy,
-  WS2_COPY,
-  WS5_COPY,
-} from '@declutrmail/shared/copy/launch';
-import { unnamedUnsubscribeTitle } from '@/features/senders/unsubscribe-backlog/preview-copy';
+import { isPluralCopy, pluralCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { unsubscribeTitle } from '@/features/senders/unsubscribe-backlog/preview-copy';
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import type { ActionReach } from '@declutrmail/shared/contracts';
@@ -321,7 +315,7 @@ export function ActionSheet({
   // count needs no line: the title already says nothing is there.
   const status: ReactNode = previewSenderGone ? (
     <StatusWithAction
-      message="This sender has no email in this Gmail account anymore."
+      message={WS2_COPY.simplify.senders.gone}
       action={onRefreshTriage ? { label: 'Refresh triage', onClick: onRefreshTriage } : undefined}
     />
   ) : nothingToActOn ? null : wakeAtInvalid ? (
@@ -338,7 +332,7 @@ export function ActionSheet({
   ) : verb === 'Unsubscribe' && requiresLivePreview && inboxCount === 0 ? (
     WS5_COPY['f1.preview.backlog.none']
   ) : confirmDisabled ? (
-    'Counting the inbox…'
+    WS5_COPY['f1.preview.backlog.loading']
   ) : null;
 
   const hasControls = showReach || verb === 'Later' || verb === 'Unsubscribe' || isProtectedRow;
@@ -685,19 +679,4 @@ function CheckRow({
       </span>
     </button>
   );
-}
-
-function unsubscribeTitle(
-  mode: 'unsub_only' | 'archive' | 'delete',
-  senderName: string,
-  n: number,
-): string {
-  if (senderName.trim() === '') return unnamedUnsubscribeTitle(mode, n);
-  if (mode === 'archive' && isPluralCopy(WS5_COPY['f1.title.archive'])) {
-    return pluralCopy(WS5_COPY['f1.title.archive'], n, { n, Sender: senderName });
-  }
-  if (mode === 'delete' && isPluralCopy(WS5_COPY['f1.title.delete'])) {
-    return pluralCopy(WS5_COPY['f1.title.delete'], n, { n, Sender: senderName });
-  }
-  return fillCopy(WS5_COPY['f1.title.unsubOnly'], { Sender: senderName });
 }

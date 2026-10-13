@@ -190,7 +190,19 @@ export function UnsubscribeBacklogDialog({
         (row) => row.protected && request.senders.some((sender) => sender.id === row.senderId),
       ).length ?? 0)
     : 0;
-  const senderIds = includedSenders.map((sender) => sender.id);
+  // A bulk preview that is still loading or failed has not named who is
+  // included. Posting request.senders from that state would include
+  // Protected senders and ids the preview never confirmed.
+  const senderIds = !single && !bulkReady ? [] : includedSenders.map((sender) => sender.id);
+  const includeArchived = mode === 'delete' && activeReach === 'all_mail' && allMailCount !== null;
+  const zeroDeleteInbox =
+    mode === 'delete' &&
+    countKnown &&
+    n === 0 &&
+    offersReach &&
+    allMailCount !== null &&
+    allMailCount > 0 &&
+    !includeArchived;
   const title = (() => {
     if (nothingActionable) {
       return allProtectedSelectionCopy(
@@ -199,8 +211,10 @@ export function UnsubscribeBacklogDialog({
       );
     }
     // A live count of 0 is a real empty set. Null is still loading, and
-    // "archive 0 emails" would be a count we have not read.
-    if (!countKnown && mode !== 'unsub_only') {
+    // "archive 0 emails" would be a count we have not read. Inbox 0 with
+    // archived mail still waiting on the checkbox is the same: no delete
+    // clause until that mail is actually included.
+    if (zeroDeleteInbox || (!countKnown && mode !== 'unsub_only')) {
       if (!single) return bulkUnsubscribeTitle('unsub_only', k, 0);
       if (singleName === '') return unnamedUnsubscribeTitle('unsub_only', 0);
       return fillCopy(WS5_COPY['f1.title.unsubOnly'], { Sender: singleName });
@@ -262,6 +276,7 @@ export function UnsubscribeBacklogDialog({
   const button = protectedButton(mode, protectedSingle);
 
   const confirm = useCallback(() => {
+    if (!single && !bulkReady) return;
     const secondary = mode === 'unsub_only' ? null : mode;
     void track('unsub_backlog_confirmed', {
       mode,
@@ -279,16 +294,28 @@ export function UnsubscribeBacklogDialog({
       ...(protectedSingle ? { override: true } : {}),
       senderIds,
     });
-  }, [mode, activeReach, allMailCount, k, n, protectedSingle, onConfirm, senderIds]);
+  }, [
+    mode,
+    activeReach,
+    allMailCount,
+    k,
+    n,
+    protectedSingle,
+    onConfirm,
+    senderIds,
+    single,
+    bulkReady,
+  ]);
 
-  // A missing backlog count must not block the future-only request.
-  // Archive and Delete stay disabled until that count is known.
-  const includeArchived = mode === 'delete' && activeReach === 'all_mail' && allMailCount !== null;
+  // A missing backlog count must not block a single sender's future-only
+  // request. Bulk Unsubscribe stays closed until the preview names who is
+  // included. Archive and Delete stay disabled until that count is known.
   const archivedRequested = mode === 'delete' && activeReach === 'all_mail';
   const confirmDisabled =
     submitting ||
     previewSenderGone ||
     nothingActionable ||
+    (!single && !bulkReady) ||
     (archivedRequested && allMailCount === null) ||
     (mode !== 'unsub_only' && backlogOff);
   useEffect(() => {
@@ -320,7 +347,7 @@ export function UnsubscribeBacklogDialog({
   const status =
     previewSenderGone || nothingActionable ? (
       <>
-        {nothingActionable ? null : <span>This sender is no longer in this mailbox.</span>}
+        {nothingActionable ? null : <span>{WS2_COPY.simplify.senders.gone}</span>}
         {onRefreshSenders ? (
           <Button tone="default" size="sm" onClick={onRefreshSenders}>
             {WS5_COPY['f1.preview.button.refreshSenders']}
@@ -394,8 +421,13 @@ export function UnsubscribeBacklogDialog({
         title={title}
         subtitle={
           <>
-            <span>{futureSummary}</span>{' '}
-            <span>{backlogDestination(mode, mode === 'unsub_only' ? null : cleanupCount)}</span>
+            <span>{futureSummary}</span>
+            {zeroDeleteInbox ? null : (
+              <>
+                {' '}
+                <span>{backlogDestination(mode, mode === 'unsub_only' ? null : cleanupCount)}</span>
+              </>
+            )}
           </>
         }
         note={note}

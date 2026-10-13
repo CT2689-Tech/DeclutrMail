@@ -288,7 +288,7 @@ describe('marketing metadata guards', () => {
 
     const gmail = await metadataForPath('/vs/gmail');
     expect(titleText(gmail)).toBe(
-      "DeclutrMail vs Gmail's built-in cleanup — compared, October 2026",
+      'DeclutrMail vs Gmail’s built-in cleanup — compared, October 2026',
     );
     expect(gmail.description).toBe(
       "A source-backed comparison of DeclutrMail and Gmail's cleanup tools (Manage subscriptions, bulk search, unsubscribe): preview, recovery and control by sender.",

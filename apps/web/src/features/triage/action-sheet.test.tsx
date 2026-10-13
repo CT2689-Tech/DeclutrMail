@@ -17,7 +17,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { fillCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { fillCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { installFetchStub, resetFetchStub } from '@/test/fetch-stub';
@@ -136,8 +136,25 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
       />,
     );
 
-    expect(html).toContain('Counting the inbox');
+    expect(html).toContain(WS5_COPY['f1.preview.backlog.loading']);
+    expect(html).not.toContain('Counting the inbox');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Archive/);
+  });
+
+  it('names a disappeared sender with the deck sentence', () => {
+    const html = renderToStaticMarkup(
+      <ActionSheet
+        open={true}
+        verb="Archive"
+        row={row}
+        inboxCount={2}
+        previewSenderGone
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+    expect(html).toContain(WS2_COPY.simplify.senders.gone);
+    expect(html).not.toContain('This sender is no longer in this mailbox.');
   });
 });
 

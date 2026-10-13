@@ -4,13 +4,10 @@ import { pluralCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch'
 import type { CompositeActionPreviewResult } from '@/lib/api/use-action';
 import { ConfirmActionModal } from '../confirm-action-modal';
 import { makeSender } from '../testing/make-sender';
+import { backlogMailLine, unsubscribeTitle } from './preview-copy';
 
 function backlogLine(mode: 'archive' | 'delete', n: number): string {
-  const forms =
-    mode === 'archive'
-      ? WS5_COPY['f1.preview.backlog.archive']
-      : WS5_COPY['f1.preview.backlog.delete'];
-  return pluralCopy(forms, n, { n });
+  return backlogMailLine(mode, n);
 }
 
 vi.mock('@/lib/posthog', () => ({ track: vi.fn() }));
@@ -95,6 +92,8 @@ describe('Unsubscribe uses the action preview contract', () => {
     expect(screen.getByRole('radio', { name: '+ Archive 0' })).toBeDisabled();
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 0' }));
     expect(screen.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
+    expect(screen.getByRole('heading')).not.toHaveTextContent(/delete 0 emails/);
+    expect(screen.queryByText(/0 emails you already have/)).toBeNull();
     expect(screen.getByText(WS5_COPY['f1.preview.archived.hint'])).toBeVisible();
     fireEvent.click(
       screen.getByRole('checkbox', { name: WS2_COPY.simplify.confirm.includeArchived }),
@@ -356,7 +355,86 @@ describe('Unsubscribe uses the action preview contract', () => {
       />,
     );
     expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeDisabled();
+    expect(screen.getByText(WS2_COPY.simplify.senders.gone)).toBeVisible();
+    expect(screen.queryByText('This sender is no longer in this mailbox.')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Refresh senders' }));
     expect(onRefreshSenders).toHaveBeenCalledOnce();
   });
+
+  it('formats backlog counts of a thousand or more in the title and the body', () => {
+    render(
+      <ConfirmActionModal
+        request={request}
+        compositePreview={{ ...preview, counts: { ...counts, all: 1139 } }}
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('heading')).toHaveTextContent('archive 1,139 emails');
+    expect(screen.getByRole('heading').textContent).not.toMatch(/\b1139\b/);
+    expect(screen.getByText(backlogMailLine('archive', 1139))).toBeVisible();
+    expect(unsubscribeTitle('delete', sender.name, 1139)).toBe(
+      `Unsubscribe from ${sender.name} and delete 1,139 emails?`,
+    );
+    expect(backlogMailLine('delete', 1139)).toBe(
+      '1,139 emails you already have: moved to Gmail Trash (Delete)',
+    );
+  });
+
+  it.each(['loading', 'failure'] as const)(
+    'never posts a Protected or unnamed sender while the bulk preview is %s',
+    (state) => {
+      const protectedSender = makeSender({
+        id: 'protected-sender',
+        protectionFlags: {
+          isProtected: true,
+          protectionReason: 'user_defined',
+          protectionSetAt: '2026-06-01T00:00:00.000Z',
+        },
+      });
+      const unnamed = makeSender({ id: 'unnamed-sender', unsubscribeMethod: 'one_click' });
+      const onConfirm = vi.fn();
+      render(
+        <ConfirmActionModal
+          request={{ verb: 'Unsubscribe', senders: [unnamed, protectedSender] }}
+          bulkPreview={{
+            data: {
+              senders: [
+                {
+                  senderId: unnamed.id,
+                  name: unnamed.name,
+                  counts,
+                  protected: false,
+                },
+                {
+                  senderId: protectedSender.id,
+                  name: protectedSender.name,
+                  counts,
+                  protected: true,
+                },
+              ],
+              totals: counts,
+              protectedCount: 1,
+            },
+            loading: state === 'loading',
+            error: state === 'failure',
+          }}
+          onCancel={vi.fn()}
+          onConfirm={onConfirm}
+        />,
+      );
+      fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
+      const confirm = screen.getByRole('button', { name: 'Unsubscribe' });
+      expect(confirm).toBeDisabled();
+      fireEvent.click(confirm);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
+      const posted = onConfirm.mock.calls.flatMap(
+        (call) => (call[0] as { senderIds: string[] }).senderIds,
+      );
+      expect(posted).not.toContain(protectedSender.id);
+      expect(posted).not.toContain(unnamed.id);
+      expect(onConfirm).not.toHaveBeenCalled();
+    },
+  );
 });

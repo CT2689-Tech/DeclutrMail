@@ -20,11 +20,12 @@ export function futureMailLine(name: string, method: string | null | undefined):
 }
 
 export function backlogMailLine(mode: UnsubscribeBacklogMode, n: number): string {
+  const shown = n.toLocaleString('en-US');
   if (mode === 'archive' && isPluralCopy(WS5_COPY['f1.preview.backlog.archive'])) {
-    return pluralCopy(WS5_COPY['f1.preview.backlog.archive'], n, { n });
+    return pluralCopy(WS5_COPY['f1.preview.backlog.archive'], n, { n: shown });
   }
   if (mode === 'delete' && isPluralCopy(WS5_COPY['f1.preview.backlog.delete'])) {
-    return pluralCopy(WS5_COPY['f1.preview.backlog.delete'], n, { n });
+    return pluralCopy(WS5_COPY['f1.preview.backlog.delete'], n, { n: shown });
   }
   return WS5_COPY['f1.preview.backlog.unsubOnly'];
 }
@@ -88,11 +89,12 @@ export function unsubscribeTitle(
   n: number,
 ): string {
   if (senderName.trim() === '') return unnamedUnsubscribeTitle(mode, n);
+  const shown = n.toLocaleString('en-US');
   if (mode === 'archive' && isPluralCopy(WS5_COPY['f1.title.archive'])) {
-    return pluralCopy(WS5_COPY['f1.title.archive'], n, { n, Sender: senderName });
+    return pluralCopy(WS5_COPY['f1.title.archive'], n, { n: shown, Sender: senderName });
   }
   if (mode === 'delete' && isPluralCopy(WS5_COPY['f1.title.delete'])) {
-    return pluralCopy(WS5_COPY['f1.title.delete'], n, { n, Sender: senderName });
+    return pluralCopy(WS5_COPY['f1.title.delete'], n, { n: shown, Sender: senderName });
   }
   return fillCopy(WS5_COPY['f1.title.unsubOnly'], { Sender: senderName });
 }
