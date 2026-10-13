@@ -1,7 +1,7 @@
 'use client';
 
-import { useLayoutEffect, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useLayoutEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import {
   reportHeadline,
   reportSupport,
@@ -116,6 +116,19 @@ export function HomeScreen() {
   // The stage sentence comes from a client poll. The server document has
   // only the leave line, so the first client render must match that.
   const [stageMounted, setStageMounted] = useState(false);
+  // A switch must not keep the previous report on screen. Hold the skeleton
+  // until this mailbox's report arrives, including after the old cache entry
+  // is removed. A first load has no other report cached, so a pending report
+  // does not replace the summary page.
+  const awaitingSwitchedReport = useRef(false);
+  if (
+    mailboxId != null &&
+    report.isPending &&
+    inboxReportCachedForOtherMailbox(queryClient, mailboxId)
+  ) {
+    awaitingSwitchedReport.current = true;
+  }
+  if (!report.isPending || mailboxId == null) awaitingSwitchedReport.current = false;
   useLayoutEffect(() => {
     setStageMounted(true);
   }, []);
@@ -178,10 +191,7 @@ export function HomeScreen() {
     if (summary.isError) {
       return { kind: 'error', error: summary.error, retry: () => void summary.refetch() };
     }
-    // Same-mailbox refetches keep their data. A new mailbox key is pending
-    // with nothing of its own yet — the summary query is not mailbox-keyed,
-    // so its previous payload would keep the other mailbox on screen.
-    if (summary.data === undefined || (mailboxId != null && report.isPending)) {
+    if (summary.data === undefined || awaitingSwitchedReport.current) {
       return { kind: 'loading' };
     }
 
@@ -208,6 +218,21 @@ export function HomeScreen() {
       action,
     };
   }
+}
+
+function inboxReportCachedForOtherMailbox(queryClient: QueryClient, mailboxId: string): boolean {
+  return (
+    queryClient.getQueryCache().findAll({
+      predicate: (query) => {
+        const key = query.queryKey;
+        return (
+          key.at(-2) === 'inbox-report' &&
+          key.at(-1) !== mailboxId &&
+          query.state.data !== undefined
+        );
+      },
+    }).length > 0
+  );
 }
 
 /** Lead and support from the same insight the Inbox Report puts first. */
