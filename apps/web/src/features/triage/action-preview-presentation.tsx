@@ -116,7 +116,9 @@ export function buildPreviewFacts({
   const actionVerb = verb.toLowerCase() as 'keep' | 'archive' | 'unsubscribe' | 'later' | 'delete';
   const liveCount = typeof inboxCount === 'number' ? inboxCount : null;
   // Only Delete may act past the inbox; any other verb ignores the prop.
-  const allMail = verb === 'Delete' && reach === 'all_mail';
+  const allMail =
+    (verb === 'Delete' || (verb === 'Unsubscribe' && backlogMode === 'delete')) &&
+    reach === 'all_mail';
   const presentation = buildActionPresentation({
     verb: actionVerb,
     liveCount: actionVerb === 'keep' || actionVerb === 'unsubscribe' ? 0 : liveCount,
@@ -273,7 +275,7 @@ export function buildPreviewFacts({
   const backlog =
     facts.liveCount === null && unsubMode !== 'unsub_only'
       ? 'Counting existing inbox email…'
-      : backlogDestination(unsubMode);
+      : backlogDestination(unsubMode, reach);
   return {
     ...facts,
     title: unsubscribeTitle(facts.liveCount === null ? 'unsub_only' : unsubMode, row.senderName, n),

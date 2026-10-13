@@ -221,7 +221,7 @@ export function InboxReportPanel({
   resetDate?: string;
   onDismiss: () => void;
   onReopen: () => void;
-  onFixConfirmed?: (mode: 'archive' | 'delete' | 'unsub_only') => void;
+  onFixConfirmed?: (mode: 'archive' | 'delete' | 'unsub_only', reach?: 'all_mail') => void;
   onReview?: () => void;
   trustHref?: string;
   celebration?: ReportCelebration | null;
@@ -458,7 +458,8 @@ export function InboxReportPanel({
           onConfirm={(opts) => {
             setFixOpen(false);
             const mode = opts.secondary?.type ?? 'unsub_only';
-            onFixConfirmed?.(mode);
+            if (mode === 'delete' && opts.reach) onFixConfirmed?.(mode, opts.reach);
+            else onFixConfirmed?.(mode);
           }}
         />
       ) : null}
@@ -485,6 +486,7 @@ function reportFixRequest(
 
 type FixConfirm = (opts: {
   secondary: { type: 'archive' | 'delete'; olderThanDays: null } | null;
+  reach?: 'all_mail';
 }) => void;
 
 function ReportFixDialog({

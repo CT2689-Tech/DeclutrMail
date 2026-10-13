@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 const gate = vi.hoisted(() => ({ showReport: false }));
 
-vi.mock('@/features/inbox-report', () => ({
+vi.mock('@/features/inbox-report/card', () => ({
   InboxReportCard: () => (
     <div data-surface="home" data-mailbox="mb">
       <h2 className="dm-home-report-title">Your Inbox Report</h2>

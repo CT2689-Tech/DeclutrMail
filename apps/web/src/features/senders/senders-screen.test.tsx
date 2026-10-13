@@ -2107,7 +2107,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'u' });
     const dialog = await screen.findByRole('dialog');
-    await within(dialog).findByRole('radiogroup', { name: 'Existing inbox email' });
+    await within(dialog).findByRole('radiogroup', { name: 'Existing email' });
     expect(within(dialog).getAllByText('Unsubscribe only')).toHaveLength(1);
     expect(within(dialog).getByRole('radio', { name: '+ Archive 3' })).toBeEnabled();
     expect(within(dialog).getByText('+ Archive 3')).toBeInTheDocument();

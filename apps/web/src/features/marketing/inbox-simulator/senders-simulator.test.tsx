@@ -14,6 +14,23 @@ function preview(): HTMLElement {
 }
 
 describe('SendersSimulator', () => {
+  it('uses archived scope for Unsubscribe + Delete and restores that mail with sample Undo', () => {
+    render(<SendersSimulator />);
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
+    fireEvent.click(within(preview()).getByRole('radio', { name: '+ Delete 111' }));
+    fireEvent.click(within(preview()).getByRole('radio', { name: /Inbox \+ archived/ }));
+    expect(within(preview()).getByRole('heading')).toHaveTextContent('delete 273 emails');
+    fireEvent.click(within(preview()).getByRole('button', { name: 'Unsubscribe + Delete' }));
+    const activity = screen.getByRole('region', { name: 'Sample activity' });
+    expect(activity).toHaveTextContent('Deleted 273 emails');
+    fireEvent.click(within(activity).getByRole('button', { name: 'Undo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
+    fireEvent.click(within(preview()).getByRole('radio', { name: '+ Delete 111' }));
+    expect(
+      within(preview()).getByRole('radio', { name: /Inbox \+ archived\s*273/ }),
+    ).toBeInTheDocument();
+  });
+
   it('opens Delete on Cancel and restores trigger focus on Escape', () => {
     render(<SendersSimulator />);
     const trigger = screen.getByRole('button', { name: 'Delete' });

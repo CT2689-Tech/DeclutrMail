@@ -1,4 +1,4 @@
-import { getFixSet } from '@/features/inbox-report';
+import { getFixSet } from '@declutrmail/shared/inbox-report';
 
 import type { HomeState } from './home-state';
 

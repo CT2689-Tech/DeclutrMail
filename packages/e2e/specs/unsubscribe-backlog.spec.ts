@@ -246,7 +246,7 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
   const sendersSheet = confirmSheet(page);
   await expect(sendersSheet).toBeVisible();
   await expect(sendersSheet).toContainText('Whether their email stops is up to the sender.');
-  await sendersSheet.getByRole('radio', { name: /Unsubscribe and delete/ }).click();
+  await sendersSheet.getByRole('radio', { name: /\+ Delete/ }).click();
   await expect(sendersSheet).toContainText(
     'Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash.',
   );
@@ -358,7 +358,7 @@ test('a spent monthly allowance refuses the mail move before any unsubscribe', a
     await card.getByRole('button', { name: 'More actions' }).click();
     await card.getByRole('menuitem', { name: 'Unsubscribe', exact: true }).click();
     const sheet = confirmSheet(page);
-    const archive = sheet.getByRole('radio', { name: /Unsubscribe and archive \d+/ });
+    const archive = sheet.getByRole('radio', { name: /\+ Archive \d+/ });
     await expect(archive).toBeEnabled();
     await archive.click();
     const confirm = sheet.getByRole('button', { name: 'Unsubscribe + Archive' });

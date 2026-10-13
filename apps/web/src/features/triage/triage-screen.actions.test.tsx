@@ -958,6 +958,157 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: undoKeys.all });
   });
 
+  it('confirms the displayed archived scope for Unsubscribe + Delete', async () => {
+    let submitted: unknown = null;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () =>
+          jsonOk({
+            data: {
+              ...PREVIEW_BODY,
+              allMail: {
+                counts: { ...PREVIEW_BODY.counts, all: 80 },
+                recentMessages: PREVIEW_BODY.recentMessages,
+              },
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-backlog',
+        respond: async (req) => {
+          submitted = await req.json();
+          return jsonServerError();
+        },
+      },
+    ]);
+    renderScreen(createTestQueryClient());
+    expandRow(LINKEDIN.senderName);
+    fireEvent.keyDown(window, { key: 'u' });
+    const dialog = await screen.findByRole('dialog');
+    const option = await within(dialog).findByRole('radio', { name: '+ Delete 47' });
+    await waitFor(() => expect(option).toBeEnabled());
+    fireEvent.click(option);
+    fireEvent.click(within(dialog).getByRole('radio', { name: /Inbox \+ archived/ }));
+    await waitFor(() =>
+      expect(within(dialog).getByRole('heading')).toHaveTextContent('delete 80 emails'),
+    );
+    expect(dialog).toHaveTextContent('Existing inbox and archived email moves to Gmail Trash.');
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await waitFor(() =>
+      expect(submitted).toMatchObject({
+        mode: 'delete',
+        reach: 'all_mail',
+        senderIds: [LINKEDIN.senderId],
+      }),
+    );
+  });
+
+  it('resets widened Unsubscribe scope on Cancel and on the remembered inline path', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () =>
+          jsonOk({
+            data: {
+              ...PREVIEW_BODY,
+              allMail: {
+                counts: { ...PREVIEW_BODY.counts, all: 80 },
+                recentMessages: PREVIEW_BODY.recentMessages,
+              },
+            },
+          }),
+      },
+    ]);
+    renderScreen(createTestQueryClient());
+    expandRow(LINKEDIN.senderName);
+    fireEvent.keyDown(window, { key: 'u' });
+    let dialog = await screen.findByRole('dialog');
+    const deletion = await within(dialog).findByRole('radio', { name: '+ Delete 47' });
+    await waitFor(() => expect(deletion).toBeEnabled());
+    fireEvent.click(deletion);
+    fireEvent.click(within(dialog).getByRole('radio', { name: /Inbox \+ archived/ }));
+    expect(within(dialog).getByRole('heading')).toHaveTextContent('delete 80 emails');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    fireEvent.keyDown(window, { key: 'u' });
+    dialog = await screen.findByRole('dialog');
+    await waitFor(() =>
+      expect(within(dialog).getByRole('heading')).toHaveTextContent('archive 47 emails'),
+    );
+    expect(within(dialog).getByRole('radio', { name: '+ Archive 47' })).toBeChecked();
+    expect(within(dialog).queryByRole('radiogroup', { name: 'Where it applies' })).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    act(() => useTriageStore.getState().setRememberPreference('Unsubscribe', true));
+    fireEvent.keyDown(window, { key: 'u' });
+    const inline = await screen.findByRole('region', { name: /^Preview · Unsubscribe / });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() =>
+      expect(within(inline).getByRole('radio', { name: '+ Archive 47' })).toBeEnabled(),
+    );
+    expect(inline).not.toHaveTextContent('80 emails');
+  });
+
+  it('lets Unsubscribe Delete narrow to Inbox only when the archived preview disappears', async () => {
+    let includeAllMail = true;
+    let submitted: Record<string, unknown> | null = null;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () =>
+          jsonOk({
+            data: {
+              ...PREVIEW_BODY,
+              ...(includeAllMail
+                ? {
+                    allMail: {
+                      counts: { ...PREVIEW_BODY.counts, all: 80 },
+                      recentMessages: PREVIEW_BODY.recentMessages,
+                    },
+                  }
+                : {}),
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-backlog',
+        respond: async (req) => {
+          submitted = await req.json();
+          return jsonServerError();
+        },
+      },
+    ]);
+    const client = createTestQueryClient();
+    renderScreen(client);
+    expandRow(LINKEDIN.senderName);
+    fireEvent.keyDown(window, { key: 'u' });
+    const dialog = await screen.findByRole('dialog');
+    const deletion = await within(dialog).findByRole('radio', { name: '+ Delete 47' });
+    await waitFor(() => expect(deletion).toBeEnabled());
+    fireEvent.click(deletion);
+    fireEvent.click(within(dialog).getByRole('radio', { name: /Inbox \+ archived/ }));
+    includeAllMail = false;
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ['composite-preview'] });
+    });
+    const scope = within(dialog).getByRole('radiogroup', { name: 'Where it applies' });
+    await waitFor(() =>
+      expect(within(scope).getByRole('radio', { name: /Inbox \+ archived/ })).toBeDisabled(),
+    );
+    expect(within(dialog).getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
+    fireEvent.click(within(scope).getByRole('radio', { name: 'Inbox only 47' }));
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: 'Unsubscribe + Delete' })).toBeEnabled(),
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Unsubscribe + Delete' }));
+    await waitFor(() => expect(submitted).toMatchObject({ mode: 'delete' }));
+    expect(submitted).not.toHaveProperty('reach');
+  });
+
   it('Unsubscribe deletes the backlog in one request and toasts the delete line', async () => {
     let unsubscribeBody: unknown = null;
     addFetchHandlers([

@@ -270,19 +270,18 @@ export function TriageScreen({
   // destructive scope can never be read for a different sender or verb —
   // not even for the one render an effect-based reset would leave open.
   const [deleteReachChoice, setDeleteReachChoice] = useState<{
-    key: string;
+    owner: typeof pendingAction;
     reach: ActionReach;
   } | null>(null);
-  const pendingReachKey = pendingAction ? `${pendingAction.rowId}:${pendingAction.verb}` : null;
   const deleteReach: ActionReach =
-    deleteReachChoice !== null && deleteReachChoice.key === pendingReachKey
+    deleteReachChoice !== null && deleteReachChoice.owner === pendingAction
       ? deleteReachChoice.reach
       : 'inbox_only';
   const setDeleteReach = useCallback(
     (reach: ActionReach) => {
-      if (pendingReachKey !== null) setDeleteReachChoice({ key: pendingReachKey, reach });
+      if (pendingAction !== null) setDeleteReachChoice({ owner: pendingAction, reach });
     },
-    [pendingReachKey],
+    [pendingAction],
   );
   const rememberPreference = useTriageStore((s) => s.rememberPreference);
   const openPending = useTriageStore((s) => s.openPending);
@@ -629,16 +628,21 @@ export function TriageScreen({
   // during a deploy skew the choice simply does not appear.
   const reachOffered =
     journey === 'daily' &&
-    pendingAction?.verb === 'Delete' &&
+    (pendingAction?.verb === 'Delete' || pendingAction?.verb === 'Unsubscribe') &&
     compositePreview.data?.allMail != null;
-  const activeReach: ActionReach = reachOffered ? deleteReach : 'inbox_only';
+  const activeReach: ActionReach =
+    pendingAction?.surface === 'sheet' &&
+    journey === 'daily' &&
+    (pendingAction?.verb === 'Delete' || pendingAction?.verb === 'Unsubscribe')
+      ? deleteReach
+      : 'inbox_only';
   // The ONE count the preview arms — at the SELECTED reach.
   const previewInboxCount: PreviewCount = compositePreview.isError
     ? 'unavailable'
     : compositePreview.isFetching || compositePreview.data == null
       ? 'loading'
       : activeReach === 'all_mail'
-        ? (compositePreview.data.allMail?.counts.all ?? compositePreview.data.counts.all)
+        ? (compositePreview.data.allMail?.counts.all ?? 'unavailable')
         : compositePreview.data.counts.all;
   /**
    * Verification detail for the D226 preview — parity with the senders
@@ -659,6 +663,16 @@ export function TriageScreen({
   const previewDetail: ActionPreviewDetail | undefined = (() => {
     const data = compositePreview.data;
     if (data == null || pendingRow == null) return undefined;
+    if (activeReach === 'all_mail' && data.allMail == null)
+      return {
+        reachControl: {
+          reach: activeReach,
+          inboxCount:
+            compositePreview.isFetching || compositePreview.isError ? null : data.counts.all,
+          allMailCount: null,
+          onChange: setDeleteReach,
+        },
+      };
     // Triage acts on every message from the sender at the selected
     // reach, so the Gmail search mirrors that: no window, and `in:inbox`
     // dropped at the widened reach. Approximate by construction — see
@@ -704,8 +718,12 @@ export function TriageScreen({
         ? {
             reachControl: {
               reach: activeReach,
-              inboxCount: data.counts.all,
-              allMailCount: data.allMail.counts.all,
+              inboxCount:
+                compositePreview.isFetching || compositePreview.isError ? null : data.counts.all,
+              allMailCount:
+                compositePreview.isFetching || compositePreview.isError
+                  ? null
+                  : data.allMail.counts.all,
               onChange: setDeleteReach,
             },
           }
@@ -1119,6 +1137,7 @@ export function TriageScreen({
             mailboxId: actionMailboxId,
             mode,
             senderIds: [row.senderId],
+            ...(mode === 'delete' && details?.reach === 'all_mail' ? { reach: details.reach } : {}),
             ...(row.protectionReason !== null ? { override: true } : {}),
           },
           {
@@ -1809,6 +1828,7 @@ export function TriageScreen({
         verb={(pendingAction?.verb ?? 'Archive') as SheetableVerb}
         row={pendingRow}
         inboxCount={previewInboxCount}
+        onReachChange={setDeleteReach}
         wakeAt={pendingAction?.wakeAt ?? null}
         mailboxEmail={activeEmail}
         // Constructed here (not inside ActionSheet) so the sheet never

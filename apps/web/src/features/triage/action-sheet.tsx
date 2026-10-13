@@ -34,6 +34,8 @@ export interface ConfirmDetails {
   wakeAt: string | null;
   /** Final value of the remember-preference toggle when confirming. */
   rememberPreference: boolean;
+  /** Explicit reach for the Unsubscribe + Delete backlog. */
+  reach?: ActionReach;
 }
 
 /**
@@ -73,6 +75,7 @@ export function ActionSheet({
   onRefreshTriage,
   detail,
   reach = 'inbox_only',
+  onReachChange,
   quotaRemaining,
 }: {
   open: boolean;
@@ -102,6 +105,7 @@ export function ActionSheet({
   detail?: ActionPreviewDetail | undefined;
   /** ADR-0028 — the reach a Delete is armed at; `inboxCount` is the count at it. */
   reach?: ActionReach | undefined;
+  onReachChange?: ((reach: ActionReach) => void) | undefined;
   /**
    * Cleanup actions left this month; `null` when the tier does not meter
    * them.
@@ -131,8 +135,13 @@ export function ActionSheet({
   // default immediately, before the reset effect runs. Otherwise a fast
   // Cmd/Ctrl-Enter could observe the previous action's `false` toggle.
   const countKnown = typeof inboxCount === 'number' ? inboxCount : null;
+  const inboxOptionCount =
+    countKnown === null ? null : (detail?.reachControl?.inboxCount ?? countKnown);
   const defaultBacklog =
-    verb === 'Unsubscribe' && row?.protectionReason == null && countKnown !== null && countKnown > 0
+    verb === 'Unsubscribe' &&
+    row?.protectionReason == null &&
+    inboxOptionCount !== null &&
+    inboxOptionCount > 0
       ? 'archive'
       : 'unsub_only';
   const effectiveMode =
@@ -198,6 +207,10 @@ export function ActionSheet({
         onConfirm({
           archiveHistoric: effectiveArchiveHistoric,
           ...(verb === 'Unsubscribe' ? { backlogMode: effectiveMode } : {}),
+          ...((verb === 'Delete' || (verb === 'Unsubscribe' && effectiveMode === 'delete')) &&
+          reach === 'all_mail'
+            ? { reach }
+            : {}),
           rememberPreference,
           wakeAt: verb === 'Later' ? selectedWakeAt : null,
         });
@@ -214,6 +227,7 @@ export function ActionSheet({
     selectedWakeAt,
     onConfirm,
     confirmDisabled,
+    reach,
   ]);
 
   if (!open || !row) return null;
@@ -223,30 +237,41 @@ export function ActionSheet({
     row,
     archiveHistoric: effectiveArchiveHistoric,
     ...(verb === 'Unsubscribe' ? { backlogMode: effectiveMode } : {}),
-    inboxCount,
+    inboxCount:
+      verb === 'Unsubscribe' && effectiveMode !== 'delete' && typeof inboxCount === 'number'
+        ? (inboxOptionCount ?? inboxCount)
+        : inboxCount,
     wakeAt: selectedWakeAt,
-    reach,
+    reach: verb === 'Unsubscribe' && effectiveMode !== 'delete' ? 'inbox_only' : reach,
   });
   const confirm = () =>
     onConfirm({
       archiveHistoric: effectiveArchiveHistoric,
       ...(verb === 'Unsubscribe' ? { backlogMode: effectiveMode } : {}),
+      ...((verb === 'Delete' || (verb === 'Unsubscribe' && effectiveMode === 'delete')) &&
+      reach === 'all_mail'
+        ? { reach }
+        : {}),
       rememberPreference,
       wakeAt: verb === 'Later' ? selectedWakeAt : null,
     });
 
-  // ADR-0028 — the reach is a control only when it changes the count.
+  // ADR-0028 — show the same explicit Delete scope even when counts tie.
   const movesMail = actionMovesMail(verb, effectiveMode !== 'unsub_only');
-  const reachControl = detail !== undefined && movesMail ? detail.reachControl : undefined;
-  const showReach =
-    reachControl !== undefined && reachControl.inboxCount !== reachControl.allMailCount;
+  const reachControl =
+    detail !== undefined &&
+    movesMail &&
+    (verb === 'Delete' || (verb === 'Unsubscribe' && effectiveMode === 'delete'))
+      ? detail.reachControl
+      : undefined;
+  const showReach = reachControl !== undefined;
   // Empty inbox, archived mail exists: the default stays the safe one
   // (founder decision 2026-09-19) and the subtitle names the way out.
   const reachHint =
     showReach &&
     reachControl.reach === 'inbox_only' &&
     reachControl.inboxCount === 0 &&
-    reachControl.allMailCount > 0
+    (reachControl.allMailCount ?? 0) > 0
       ? 'Switch to Inbox + archived to reach the archived email.'
       : null;
 
@@ -403,11 +428,17 @@ export function ActionSheet({
                 value={reachControl.reach}
                 onChange={reachControl.onChange}
                 options={[
-                  { value: 'inbox_only', label: 'Inbox only', count: reachControl.inboxCount },
+                  {
+                    value: 'inbox_only',
+                    label: 'Inbox only',
+                    count: reachControl.inboxCount ?? undefined,
+                    disabled: reachControl.inboxCount === null,
+                  },
                   {
                     value: 'all_mail',
                     label: 'Inbox + archived',
-                    count: reachControl.allMailCount,
+                    count: reachControl.allMailCount ?? undefined,
+                    disabled: reachControl.allMailCount === null,
                   },
                 ]}
               />
@@ -459,29 +490,32 @@ export function ActionSheet({
             {verb === 'Unsubscribe' && (
               <div>
                 <SheetSegmented
-                  label="Existing inbox email"
+                  label="Existing email"
                   value={effectiveMode}
                   onChange={(mode) => {
                     setBacklogMode(mode);
                     setChosenActionKey(actionKey);
+                    (onReachChange ?? detail?.reachControl?.onChange)?.('inbox_only');
                   }}
                   options={[
                     { value: 'unsub_only', label: WS5_COPY['f1.segment.unsubOnly'] },
                     {
                       value: 'archive',
-                      disabled: countKnown === null || countKnown === 0,
+                      disabled: inboxOptionCount === null || inboxOptionCount === 0,
                       label:
-                        countKnown === null
+                        inboxOptionCount === null
                           ? WS5_COPY['f1.segment.archive.loading']
                           : isPluralCopy(WS5_COPY['f1.segment.archive'])
-                            ? pluralCopy(WS5_COPY['f1.segment.archive'], countKnown, {
-                                n: countKnown.toLocaleString('en-US'),
+                            ? pluralCopy(WS5_COPY['f1.segment.archive'], inboxOptionCount, {
+                                n: inboxOptionCount.toLocaleString('en-US'),
                               })
                             : '',
                     },
                     {
                       value: 'delete',
-                      disabled: countKnown === null || countKnown === 0,
+                      disabled:
+                        countKnown === null ||
+                        (countKnown === 0 && !(detail?.reachControl?.allMailCount ?? 0)),
                       label:
                         countKnown === null
                           ? WS5_COPY['f1.segment.delete.loading']
@@ -496,8 +530,11 @@ export function ActionSheet({
                 {emailMeter && effectiveMode !== 'unsub_only' ? (
                   <p>{WS5_COPY['f1.meterFree']}</p>
                 ) : null}
-                {emailMeter && effectiveMode !== 'unsub_only' && cleanupSummary.data ? (
-                  <MeterPreviewLine requested={countKnown ?? 0} summary={cleanupSummary.data} />
+                {emailMeter &&
+                effectiveMode !== 'unsub_only' &&
+                cleanupSummary.data &&
+                countKnown !== null ? (
+                  <MeterPreviewLine requested={countKnown} summary={cleanupSummary.data} />
                 ) : null}
               </div>
             )}

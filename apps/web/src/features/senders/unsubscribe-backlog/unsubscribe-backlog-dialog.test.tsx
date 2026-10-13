@@ -30,6 +30,139 @@ const preview: CompositeActionPreviewResult = {
 };
 
 describe('Unsubscribe uses the action preview contract', () => {
+  const widePreview = {
+    ...preview,
+    allMail: { counts: { ...counts, all: 9 }, recentMessages: preview.recentMessages },
+  };
+
+  it('previews and confirms Inbox + archived only for Delete, then resets on mode changes', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={request}
+        compositePreview={widePreview}
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    );
+    expect(screen.queryByRole('radiogroup', { name: 'Where it applies' })).toBeNull();
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    expect(screen.getByRole('heading')).toHaveTextContent('delete 9 emails');
+    expect(
+      screen.getByText('Existing inbox and archived email moves to Gmail Trash.'),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Delete' }));
+    expect(onConfirm).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        secondary: { type: 'delete', olderThanDays: null },
+        reach: 'all_mail',
+      }),
+    );
+    fireEvent.click(screen.getByRole('radio', { name: '+ Archive 4' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Archive' }));
+    expect(onConfirm.mock.calls.at(-1)![0]).not.toHaveProperty('reach');
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+    expect(screen.getByRole('radio', { name: /^Inbox only/ })).toBeChecked();
+  });
+
+  it('lets an empty inbox reach archived email through an explicit Delete choice', () => {
+    render(
+      <ConfirmActionModal
+        request={request}
+        compositePreview={{ ...widePreview, counts: { ...counts, all: 0 } }}
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('radio', { name: '+ Archive 0' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 0' }));
+    expect(screen.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
+    expect(screen.getByText(/Switch to Inbox \+ archived/)).toBeVisible();
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    expect(screen.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeEnabled();
+    expect(screen.getByRole('heading')).toHaveTextContent('delete 9 emails');
+  });
+
+  it('never substitutes inbox counts when the selected widened preview disappears or refetches', () => {
+    const props = { request, onCancel: vi.fn(), onConfirm: vi.fn() };
+    const { rerender } = render(<ConfirmActionModal {...props} compositePreview={widePreview} />);
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    rerender(<ConfirmActionModal {...props} compositePreview={preview} />);
+    expect(screen.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: /Inbox \+ archived/ })).toBeChecked();
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(props.onConfirm).not.toHaveBeenCalled();
+    rerender(
+      <ConfirmActionModal {...props} compositePreview={widePreview} compositePreviewLoading />,
+    );
+    expect(screen.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
+    rerender(
+      <ConfirmActionModal
+        {...props}
+        compositePreview={{ ...widePreview, allMail: { ...widePreview.allMail, counts } }}
+      />,
+    );
+    expect(screen.getByRole('radio', { name: /Inbox \+ archived/ })).toBeChecked();
+    expect(screen.getByRole('radio', { name: /^Inbox only/ })).toBeEnabled();
+  });
+
+  it('uses only eligible bulk archived counts and blocks incomplete all-mail coverage', () => {
+    const second = makeSender({ id: 'protected-second', unsubscribeMethod: 'one_click' });
+    const props = {
+      request: { verb: 'Unsubscribe' as const, senders: [sender, second] },
+      onCancel: vi.fn(),
+      onConfirm: vi.fn(),
+    };
+    const data = {
+      senders: [
+        {
+          senderId: sender.id,
+          name: sender.name,
+          counts,
+          allMailCounts: { ...counts, all: 9 },
+          protected: false,
+        },
+        {
+          senderId: second.id,
+          name: second.name,
+          counts,
+          allMailCounts: { ...counts, all: 500 },
+          protected: true,
+        },
+      ],
+      totals: counts,
+      allMailTotals: { ...counts, all: 9 },
+      protectedCount: 1,
+    };
+    const { rerender } = render(
+      <ConfirmActionModal {...props} bulkPreview={{ data, loading: false, error: false }} />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived 9/ }));
+    expect(screen.getByRole('heading')).toHaveTextContent('1 sender and delete 9 emails');
+    rerender(
+      <ConfirmActionModal
+        {...props}
+        bulkPreview={{
+          data: {
+            ...data,
+            senders: data.senders.map((row) => ({
+              senderId: row.senderId,
+              name: row.name,
+              counts: row.counts,
+              protected: row.protected,
+            })),
+          },
+          loading: false,
+          error: false,
+        }}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
+  });
+
   it.each(['archive', 'delete'] as const)(
     'shows the %s destination with Details closed for a bulk request',
     (mode) => {

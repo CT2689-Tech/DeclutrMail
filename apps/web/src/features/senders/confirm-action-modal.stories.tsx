@@ -155,6 +155,18 @@ export const Unsubscribe: Story<typeof ConfirmActionModal> = {
   } satisfies Args,
 };
 
+/** Empty inbox with archived mail — choose Delete, then explicitly widen. */
+export const UnsubscribeArchivedOnly: Story<typeof ConfirmActionModal> = {
+  args: {
+    ...base,
+    request: { verb: 'Unsubscribe', senders: [macys] },
+    compositePreview: {
+      ...preview,
+      counts: { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 },
+    },
+  } satisfies Args,
+};
+
 /** Zero — "Nothing in your inbox from …", confirm disabled. */
 export const NothingInInbox: Story<typeof ConfirmActionModal> = {
   args: {

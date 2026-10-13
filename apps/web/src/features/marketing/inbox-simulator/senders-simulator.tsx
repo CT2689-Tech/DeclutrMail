@@ -354,17 +354,17 @@ export function SendersSimulator() {
   const applyUnsubscribe = (
     targets: readonly SampleSender[],
     mode: 'archive' | 'delete' | 'unsub_only',
+    requestedReach: Reach = 'inbox_only',
   ) => {
     if (targets.length === 0) return;
     const ids = new Set(targets.map((sender) => sender.id));
-    const n = targets.reduce((sum, sender) => sum + count(sender, 'inbox', null), 0);
+    const scope = mode === 'delete' ? requestedReach : 'inbox_only';
+    const n = totalCount(targets, scope, null);
     setSenders((current) =>
       current.map((sender) => {
         if (!ids.has(sender.id)) return sender;
         const moved =
-          mode === 'archive' || mode === 'delete'
-            ? moveMail(sender, mode, 'inbox_only', null)
-            : sender;
+          mode === 'archive' || mode === 'delete' ? moveMail(sender, mode, scope, null) : sender;
         return { ...moved, unsubRequested: true };
       }),
     );
@@ -517,10 +517,11 @@ export function SendersSimulator() {
           setSelected(ids);
         }}
         trustHref="/privacy"
-        onFixConfirmed={(mode) => {
+        onFixConfirmed={(mode, scope) => {
           applyUnsubscribe(
             senders.filter((sender) => report.fix.senderKeys.includes(sender.id)),
             mode,
+            scope,
           );
         }}
       />
@@ -782,6 +783,7 @@ export function SendersSimulator() {
             (sum, sender) => sum + count(sender, 'inbox', null),
             0,
           )}
+          preferredAllMailCount={totalCount(pendingSenders, 'all_mail', null)}
           {...(pendingSenders.length > 1
             ? {
                 bulkPreview: {
@@ -792,6 +794,7 @@ export function SendersSimulator() {
                       name: sender.name,
                       protected: false,
                       counts: { all: count(sender, 'inbox', null) },
+                      allMailCounts: { all: actionCount(sender, 'all_mail', null) },
                     })),
                   },
                 },
@@ -799,7 +802,11 @@ export function SendersSimulator() {
             : {})}
           onCancel={closePreview}
           onConfirm={(opts) => {
-            applyUnsubscribe(pendingSenders, opts.secondary?.type ?? 'unsub_only');
+            applyUnsubscribe(
+              pendingSenders,
+              opts.secondary?.type ?? 'unsub_only',
+              opts.reach ?? 'inbox_only',
+            );
           }}
         />
       ) : null}

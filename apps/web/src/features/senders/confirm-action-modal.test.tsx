@@ -641,7 +641,7 @@ describe('ConfirmActionModal — backlog secondary belongs to Unsubscribe only',
       />,
     );
 
-    expect(screen.getByRole('radiogroup', { name: 'Existing inbox email' })).toBeInTheDocument();
+    expect(screen.getByRole('radiogroup', { name: 'Existing email' })).toBeInTheDocument();
     expect(screen.getAllByText('Unsubscribe only')).toHaveLength(1);
     expect(screen.getByRole('radio', { name: '+ Archive 4' })).toBeEnabled();
     expect(screen.getByRole('radio', { name: '+ Delete 4' })).toBeEnabled();
@@ -1416,8 +1416,8 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
 // with 753 total mail and 2 in the inbox showed "2 emails currently
 // match" with no way to reach the other 751 (founder report
 // 2026-08-31).
-describe('ConfirmActionModal — unsubscribe has no reach or age window', () => {
-  it('offers no reach choice on Archive or Delete', () => {
+describe('ConfirmActionModal — unsubscribe offers Delete reach without an age window', () => {
+  it('offers reach only on Delete, with Inbox only as the default', () => {
     const onConfirm = vi.fn();
     render(
       <ConfirmActionModal
@@ -1432,7 +1432,7 @@ describe('ConfirmActionModal — unsubscribe has no reach or age window', () => 
     expect(screen.queryByRole('combobox', { name: /How far back/i })).toBeNull();
 
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
-    expect(screen.queryByRole('radiogroup', { name: /Where it applies/i })).toBeNull();
+    expect(screen.getByRole('radio', { name: /^Inbox only/ })).toBeChecked();
     expect(
       screen.getByRole('heading', {
         name: 'Unsubscribe from Acme Newsletter and delete 4 emails?',
@@ -1615,7 +1615,7 @@ describe('ConfirmActionModal — ADR-0028 reach on a bulk selection (amendment 2
     expect(reachRow()).toBeNull();
   });
 
-  it('confirms a bulk unsubscribe delete without a reach choice', () => {
+  it('confirms a bulk unsubscribe delete at the chosen reach', () => {
     const onConfirm = vi.fn();
     const senders = [oneClickSender, secondOneClick];
     render(
@@ -1628,12 +1628,14 @@ describe('ConfirmActionModal — ADR-0028 reach on a bulk selection (amendment 2
     );
     expect(reachRow()).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 8' }));
-    expect(reachRow()).toBeNull();
+    expect(reachRow()).not.toBeNull();
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
     expect(screen.queryByText(/^Inbox \+ archived now/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Delete' }));
     expect(onConfirm).toHaveBeenCalledWith({
       secondary: { type: 'delete', olderThanDays: null },
       archiveHistoric: false,
+      reach: 'all_mail',
     });
   });
 });

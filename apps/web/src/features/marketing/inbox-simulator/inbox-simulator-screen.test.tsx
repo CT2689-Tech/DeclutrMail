@@ -285,6 +285,18 @@ describe('InboxSimulatorScreen', () => {
     ['an array entry', storedState([[]])],
     ['an incomplete object', storedState([{}])],
     ['an unexpected field', storedState([{ ...validDecision, injected: true }])],
+    [
+      'a null cleanup mode',
+      storedState([{ ...validDecision, verb: 'Unsubscribe', backlogMode: null }]),
+    ],
+    [
+      'an unknown cleanup mode',
+      storedState([{ ...validDecision, verb: 'Unsubscribe', backlogMode: 'forward' }]),
+    ],
+    [
+      'cleanup mode on a sibling action',
+      storedState([{ ...validDecision, backlogMode: 'delete' }]),
+    ],
     ['an unknown verb', storedState([{ ...validDecision, verb: 'Forward' }])],
     ['an unknown row id', storedState([{ ...validDecision, rowId: 'not-a-demo-row' }])],
     ['a forged sender name', storedState([{ ...validDecision, senderName: 'Injected' }])],
@@ -448,6 +460,48 @@ describe('InboxSimulatorScreen', () => {
     expect(
       within(dialog).getByRole('button', { name: /^Move [\d,]+ emails? to Later$/ }),
     ).toBeEnabled();
+  });
+
+  it('records Unsubscribe + Delete at the chosen scope and preserves its receipt and Undo after reload', async () => {
+    const linkedin = TRIAGE_QUEUE.find((row) => row.id === 't-linkedin')!;
+    const total = syntheticInboxCount(linkedin) + syntheticArchivedCount(linkedin);
+    const { unmount } = render(<InboxSimulatorScreen />);
+    fireEvent.click(screen.getByRole('button', { name: 'Go to guided decision 2: One-way' }));
+    fireEvent.click(screen.getByRole('button', { name: 'LinkedIn — expand triage detail' }));
+    fireEvent.click(screen.getByRole('button', { name: /Unsubscribe \(U\)/ }));
+    const dialog = sheetFor('LinkedIn');
+    fireEvent.click(within(dialog).getByRole('radio', { name: /\+ Delete/ }));
+    fireEvent.click(within(dialog).getByRole('radio', { name: /Inbox \+ archived/ }));
+    expect(dialog).toHaveAccessibleName(new RegExp(`delete ${total} emails`));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Unsubscribe + Delete' }));
+    expect(
+      screen.getByText(new RegExp(`${total} sample messages also moved to Gmail Trash`)),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).decisions).toContainEqual(
+        expect.objectContaining({
+          rowId: linkedin.id,
+          backlogMode: 'delete',
+          affectedCount: total,
+        }),
+      ),
+    );
+    unmount();
+    render(<InboxSimulatorScreen />);
+    expect(
+      screen.getByText(new RegExp(`${total} sample messages also moved to Gmail Trash`)),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo deleted mail' }));
+    expect(
+      screen.getByText(
+        'Sample unsubscribe request recorded. A delivered request cannot be recalled.',
+      ),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).decisions).toContainEqual(
+        expect.objectContaining({ rowId: linkedin.id, backlogMode: 'delete', affectedCount: 0 }),
+      ),
+    );
   });
 
   it('shows the real Triage Delete reach choice with matching sample counts', () => {
