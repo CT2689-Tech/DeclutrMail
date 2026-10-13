@@ -12,6 +12,7 @@
 
 import { useState } from 'react';
 import { Avatar } from '../avatar';
+import { WS3_COPY } from '../../copy/launch/ws3';
 import { PreviewSheet } from './preview-sheet';
 import { SheetFactList, SheetLinks, SheetSegmented, SheetTextAction } from './sheet-parts';
 
@@ -227,7 +228,7 @@ export const LongAccount: Story = {
   ),
 };
 
-/** Expanded evidence with long labels and addresses; check on a short phone too. */
+/** Expanded evidence with long values; check on a short phone too. */
 export const ExpandedDetails: Story = {
   render: () => (
     <PreviewSheet
@@ -241,14 +242,16 @@ export const ExpandedDetails: Story = {
         <>
           <SheetFactList
             facts={[
-              { label: 'Where it is now', value: '18 in your inbox · 102 elsewhere in Gmail' },
+              { label: 'Where it is now', value: '0 in your inbox · 6,728 elsewhere in Gmail' },
               {
-                label: 'Matching sender address',
-                value: 'newsletter@a-very-long-sample-sender-domain.example.com',
+                label: WS3_COPY['ws3.demo.details.includes.label'],
+                value: WS3_COPY['ws3.demo.details.includes.all'],
               },
-              { label: 'Scope', value: 'Inbox + archived, rechecked when it runs' },
               { label: 'Never touched', value: 'Trash, Spam, Drafts, Chat' },
-              { label: 'Gmail Trash', value: 'Up to 30 days, unless you empty Trash sooner' },
+              {
+                label: WS3_COPY['ws3.demo.details.deleted.label'],
+                value: WS3_COPY['ws3.demo.details.deleted.value'],
+              },
             ]}
           />
           <SheetLinks>
