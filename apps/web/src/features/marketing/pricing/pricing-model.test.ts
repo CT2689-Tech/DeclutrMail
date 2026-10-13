@@ -98,11 +98,11 @@ describe('CAPABILITY_LABELS — D227 verb language', () => {
       // verdict "Screen" is banned on product surfaces (§2.2).
       expect(label).not.toMatch(/\bScreen\b(?!er)/);
     }
+    expect(CAPABILITY_LABELS['cleanup-actions']).toBe(
+      'Choices for each sender \u2014 Archive \u00b7 Unsubscribe \u00b7 Later \u00b7 Delete',
+    );
     expect(CAPABILITY_LABELS['cleanup-actions']).not.toContain('Keep');
-    expect(CAPABILITY_LABELS['cleanup-actions']).toContain('Archive');
-    expect(CAPABILITY_LABELS['cleanup-actions']).toContain('Unsubscribe');
-    expect(CAPABILITY_LABELS['cleanup-actions']).toContain('Later');
-    expect(CAPABILITY_LABELS['cleanup-actions']).toContain('Delete');
+    expect(CAPABILITY_LABELS['cleanup-actions']).not.toContain('Cleanup actions');
   });
 });
 

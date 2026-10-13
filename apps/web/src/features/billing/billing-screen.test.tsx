@@ -3222,6 +3222,11 @@ describe('BillingScreen — paid subscriber', () => {
     fireEvent(disclosure, new Event('toggle'));
     const table = await screen.findByRole('table', { name: 'Included features by plan' });
     expect(within(table).getByRole('row', { name: 'Connected inboxes 1 1 5' })).toBeInTheDocument();
+    expect(
+      within(table).getByRole('rowheader', {
+        name: 'Choices for each sender \u2014 Archive \u00b7 Unsubscribe \u00b7 Later \u00b7 Delete',
+      }),
+    ).toBeInTheDocument();
     disclosure.open = false;
     fireEvent(disclosure, new Event('toggle'));
     await waitFor(() =>

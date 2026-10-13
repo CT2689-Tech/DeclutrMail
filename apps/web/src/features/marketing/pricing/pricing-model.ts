@@ -217,7 +217,7 @@ export const CAPABILITY_LABELS: Readonly<Record<Capability, string>> = {
   senders: 'Senders overview',
   'sender-detail': 'Sender detail',
   activity: 'Activity history',
-  'cleanup-actions': 'Cleanup actions — Archive · Unsubscribe · Later · Delete',
+  'cleanup-actions': 'Choices for each sender — Archive · Unsubscribe · Later · Delete',
   triage: 'Triage sessions',
   // ONE feature name, deliberately shared by two capabilities.
   //
