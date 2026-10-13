@@ -44,7 +44,8 @@ export function selectFixSet(facts: ReportFacts): InboxReportDto['fix'] & {
         mostlyUnread(sender) &&
         !sender.isProtected &&
         sender.wroteToCount <= 0 &&
-        !sender.isKeep,
+        !sender.isKeep &&
+        !sender.handledByBacklog,
     )
     .sort((a, b) => b.inboxCount - a.inboxCount || a.senderId.localeCompare(b.senderId));
   const capped = eligible.slice(0, T.fixSetCap);

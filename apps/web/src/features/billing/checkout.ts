@@ -205,6 +205,36 @@ let paddleInstance: Paddle | null = null;
 let paddleInitialization: Promise<Paddle> | null = null;
 let activeEvents: CheckoutEvents = {};
 
+/**
+ * Page that already handles `checkout.completed`. The callback writes
+ * the pending lock, then Paddle navigates here and the screen reads it.
+ *
+ * Paddle.js redirects on completion only when `settings.successUrl` is
+ * set. This checkout omitted it, and the server transaction sends no
+ * checkout settings. The observed completion redirect was the dashboard
+ * default payment link (`https://declutrmail.com/welcome`), which has
+ * no route. The dashboard value is left unchanged.
+ */
+export const PADDLE_CHECKOUT_SUCCESS_PATH = '/billing';
+
+/** Absolute success URL on the page that opened checkout. */
+export function paddleCheckoutSuccessUrl(pageUrl: string): string {
+  let current: URL;
+  try {
+    current = new URL(pageUrl);
+  } catch {
+    throw new CheckoutLaunchError(false);
+  }
+  if (current.protocol !== 'https:' && current.protocol !== 'http:') {
+    throw new CheckoutLaunchError(false);
+  }
+  return new URL(PADDLE_CHECKOUT_SUCCESS_PATH, current.origin).href;
+}
+
+function checkoutSuccessSettings(): { successUrl: string } {
+  return { successUrl: paddleCheckoutSuccessUrl(window.location.href) };
+}
+
 async function openPaddleOverlay(
   session: PaddleCheckoutSession,
   events: CheckoutEvents,
@@ -236,9 +266,10 @@ async function openPaddleOverlay(
   }
   if (!mayOpen()) throw new CheckoutLaunchError(false);
   activeEvents = events;
+  const settings = checkoutSuccessSettings();
   // Currency and discount are already on the transaction. Items would
   // let Paddle localize a price that carries an INR override.
-  paddleInstance.Checkout.open({ transactionId: session.transactionId });
+  paddleInstance.Checkout.open({ transactionId: session.transactionId, settings });
 }
 
 /** Open the provider surface for a checkout session. */

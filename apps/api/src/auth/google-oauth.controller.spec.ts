@@ -365,7 +365,6 @@ describe('GoogleOAuthController.start — validated post-login billing intent', 
     'https://evil.example/billing?plan=pro&cycle=annual',
     '//evil.example/billing?plan=pro&cycle=annual',
     '/billing?plan=plus&cycle=annual&promo=foundingPro',
-    '/billing?plan=pro&cycle=annual&next=/senders',
     '/billing?plan=pro&plan=plus&cycle=annual',
   ])('drops an unsafe or impossible returnTo: %s', async (returnTo) => {
     const oauth = { getConsentUrl: vi.fn(() => 'https://accounts.google.test/consent') };
@@ -384,6 +383,29 @@ describe('GoogleOAuthController.start — validated post-login billing intent', 
 
     const state = decodeSignedState(jwt, res.cookie.mock.calls[0]?.[1] as string);
     expect(state).not.toHaveProperty('returnTo');
+  });
+
+  it('keeps /billing after stripping an unknown returnTo query key', async () => {
+    const oauth = { getConsentUrl: vi.fn(() => 'https://accounts.google.test/consent') };
+    const res = { cookie: vi.fn(), redirect: vi.fn() };
+    const jwt = makeJwtService();
+    const controller = new GoogleOAuthController(
+      oauth as unknown as GoogleOAuthService,
+      {} as AuthSignupOrchestrator,
+      makeSecurityEvents().service,
+      makeMailboxAccounts() as unknown as MailboxAccountsService,
+      jwt,
+      makeSessions().service,
+    );
+
+    await controller.start(
+      signedOutRequest(),
+      res as unknown as Response,
+      '/billing?plan=pro&cycle=annual&next=/senders',
+    );
+
+    const state = decodeSignedState(jwt, res.cookie.mock.calls[0]?.[1] as string);
+    expect(state.returnTo).toBe('/billing?plan=pro&cycle=annual');
   });
 
   it('shares the strict validator with the callback trust boundary', () => {
