@@ -53,6 +53,12 @@ export interface ReportSenderFacts {
   wroteToCount: number;
   isProtected: boolean;
   isKeep: boolean;
+  /**
+   * A standing unsubscribe-backlog decision for this sender: unsubscribe
+   * recorded, or archive/delete still in flight or inside its Undo window.
+   * A reverted decision is not standing.
+   */
+  handledByBacklog: boolean;
   inboxCount: number;
 }
 

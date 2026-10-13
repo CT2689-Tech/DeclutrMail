@@ -11,7 +11,12 @@ import {
 } from '@declutrmail/shared/inbox-report';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import { mailboxFactsQuery, senderFactsQuery, vendorQuery } from './inbox-report.queries.js';
+import {
+  backlogChangedSinceQuery,
+  mailboxFactsQuery,
+  senderFactsQuery,
+  vendorQuery,
+} from './inbox-report.queries.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -58,8 +63,16 @@ export class InboxReportService {
       .from(inboxReportCache)
       .where(eq(inboxReportCache.mailboxAccountId, mailboxId))
       .limit(1);
-    if (cached && (cached.sourceSyncRunId ?? null) === syncId && isReportDto(cached.payload)) {
-      return cached.payload;
+    const payload = cached && isReportDto(cached.payload) ? cached.payload : null;
+    const senderKeys = payload ? fixSenderKeys(payload) : null;
+    if (
+      cached &&
+      payload &&
+      senderKeys &&
+      (cached.sourceSyncRunId ?? null) === syncId &&
+      !(await this.backlogChangedSince(mailboxId, cached.generatedAt, senderKeys))
+    ) {
+      return payload;
     }
 
     const report = selectInboxReport(await this.computeFacts(mailboxId, now), now.toISOString());
@@ -90,6 +103,23 @@ export class InboxReportService {
       .where(and(eq(mailboxAccounts.id, mailboxId), eq(mailboxAccounts.workspaceId, workspaceId)))
       .limit(1);
     if (!row) throw new NotFoundException();
+  }
+
+  /**
+   * The cache key is the latest succeeded sync. Unsubscribe-backlog confirm
+   * and Undo do not write one. A newer decision, a finished revert, or a
+   * cached fix id that is backlog-handled now has to miss, or a reload
+   * offers the senders again.
+   */
+  private async backlogChangedSince(
+    mailboxId: string,
+    generatedAt: Date,
+    cachedSenderIds: readonly string[],
+  ): Promise<boolean> {
+    const result = await this.db.execute(
+      backlogChangedSinceQuery(mailboxId, generatedAt.toISOString(), cachedSenderIds),
+    );
+    return rowsOf(result).length > 0;
   }
 
   private async latestSucceededSyncId(mailboxId: string): Promise<string | null> {
@@ -123,6 +153,7 @@ export class InboxReportService {
       wroteToCount: num(row.wrote_to_count),
       isProtected: flag(row.is_protected),
       isKeep: flag(row.is_keep),
+      handledByBacklog: flag(row.backlog_handled),
       inboxCount: num(row.inbox_count),
     }));
     const oldest = mailbox.oldest_year;
@@ -154,4 +185,14 @@ function isReportDto(value: unknown): value is InboxReportDto {
   if (typeof value !== 'object' || value === null) return false;
   const variant = (value as { variant?: unknown }).variant;
   return variant === 'full' || variant === 'fallback';
+}
+
+/** Null when the payload cannot name its fix set, so the hit is not used. */
+function fixSenderKeys(payload: InboxReportDto): string[] | null {
+  const keys = payload.fix?.senderKeys;
+  if (!Array.isArray(keys)) return null;
+  for (const key of keys) {
+    if (typeof key !== 'string') return null;
+  }
+  return keys;
 }

@@ -15,6 +15,7 @@ function sender(
     wroteToCount: 0,
     isProtected: false,
     isKeep: false,
+    handledByBacklog: false,
     inboxCount: 4,
     ...over,
   };
@@ -172,6 +173,22 @@ describe('selectInboxReport', () => {
     expect(report.fix.senderKeys).not.toContain('no-link');
     expect(report.fix.senderKeys[0]).toBe('ok-00');
     expect(report.fallbackSenderCount).toBe(T.fixSetCap + 2);
+  });
+
+  it('drops a handled sender from the fix set and its counts', () => {
+    const report = selectInboxReport(
+      facts({
+        senders: [
+          sender({ senderId: 'handled', handledByBacklog: true, inboxCount: 40 }),
+          sender({ senderId: 'open', inboxCount: 4 }),
+        ],
+      }),
+      '2026-10-11T00:00:00.000Z',
+    );
+    expect(report.fix.senderKeys).toEqual(['open']);
+    expect(report.fix.sendersCount).toBe(1);
+    expect(report.fix.inboxEmailCount).toBe(4);
+    expect(report.fallbackSenderCount).toBe(1);
   });
 
   it('holds years_deep to oldest year at most eight years back', () => {
