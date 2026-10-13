@@ -1,8 +1,21 @@
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
-import { act, render, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, fireEvent, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { HomeArrivalsView } from '../home-arrivals';
 import { useHomeVisit } from './use-home-visit';
-const state = vi.hoisted(() => ({ mailbox: 'a', post: vi.fn(), get: vi.fn() }));
+const state = vi.hoisted(() => {
+  class ApiError extends Error {
+    readonly status: number;
+    readonly body: unknown;
+    constructor(status: number, body: unknown, message: string) {
+      super(message);
+      this.name = 'ApiError';
+      this.status = status;
+      this.body = body;
+    }
+  }
+  return { mailbox: 'a', post: vi.fn(), get: vi.fn(), ApiError };
+});
 vi.mock('@/features/auth/auth-provider', () => ({
   useAuth: () => ({
     me: {
@@ -12,10 +25,27 @@ vi.mock('@/features/auth/auth-provider', () => ({
     },
   }),
 }));
-vi.mock('@/lib/api/client', () => ({ apiPost: state.post, apiGet: state.get }));
+vi.mock('@/lib/api/client', () => ({
+  apiPost: state.post,
+  apiGet: state.get,
+  ApiError: state.ApiError,
+}));
 function Probe() {
   const result = useHomeVisit();
   return <p>{result.data?.visitId}</p>;
+}
+function VisitRead() {
+  const result = useHomeVisit();
+  return (
+    <>
+      <p>{result.isPending ? 'pending' : result.isError ? 'visit-error' : 'visit-ready'}</p>
+      <HomeArrivalsView
+        data={result.data}
+        error={result.isError}
+        retry={() => void result.refetch()}
+      />
+    </>
+  );
 }
 const key = 'declutrmail:visit:user:a';
 const savedId = '10000000-0000-4000-8000-000000000001';
@@ -153,5 +183,58 @@ describe('device visit lifecycle', () => {
       if (originalVisibility)
         Object.defineProperty(document, 'visibilityState', originalVisibility);
     }
+  });
+
+  it('treats a missing visit as quiet and records it instead of showing a load error', async () => {
+    localStorage.setItem(key, JSON.stringify({ id: savedId, lastActive: now - 1000 }));
+    state.get.mockRejectedValue(
+      new state.ApiError(404, { error: { code: 'NOT_FOUND' } }, 'GET /api/home/visit failed: 404'),
+    );
+    state.post.mockResolvedValue({
+      data: {
+        visitId: savedId,
+        since: '2026-10-09T10:00:00.000Z',
+        until: '2026-10-10T10:00:00.000Z',
+        indexedEmails: 0,
+        indexedSenders: 0,
+      },
+    });
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <VisitRead />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(screen.getByText('visit-ready')).toBeInTheDocument());
+    expect(screen.queryByText(/load changes since your visit/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'No new email since your last visit.' }),
+      ).toBeInTheDocument(),
+    );
+    expect(state.post).toHaveBeenCalledWith(
+      '/api/home/visit',
+      { visitId: savedId },
+      expect.objectContaining({ mailboxId: 'a' }),
+    );
+  });
+
+  it('still shows the load error when the visit read fails for another reason', async () => {
+    localStorage.setItem(key, JSON.stringify({ id: savedId, lastActive: now - 1000 }));
+    state.get.mockRejectedValue(
+      new state.ApiError(500, { error: { code: 'INTERNAL' } }, 'GET /api/home/visit failed: 500'),
+    );
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <VisitRead />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(screen.getByText('visit-error')).toBeInTheDocument());
+    expect(screen.getByText(/load changes since your visit/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 });

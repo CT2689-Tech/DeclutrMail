@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { Skeleton } from '@declutrmail/shared';
-import { planName } from '@declutrmail/shared/entitlements';
 
 import { HOME_DECK } from './home-deck-copy';
 import styles from './home-view.module.css';
@@ -47,7 +46,6 @@ export function HomeLoadingSlots({
  * against the other's markup is React #418.
  */
 export function HomeRouteLoading() {
-  const plan = planName('free');
   return (
     <div
       className={styles.page}
@@ -60,7 +58,7 @@ export function HomeRouteLoading() {
         <h1>{HOME_DECK.homeTitle}</h1>
         <div className={styles.planLine} data-home-slot="plan">
           <span>
-            {plan !== null && plan !== '' ? `${plan} · ` : null}
+            <Skeleton variant="text" width={48} height={14} style={{ marginRight: 8 }} />
             <Link href={BILLING_HREF} className="dm-external-link dm-tap-target">
               {HOME_DECK.compare}
             </Link>

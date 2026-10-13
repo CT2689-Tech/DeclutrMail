@@ -1,17 +1,34 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { HomeVisitSummary } from '@declutrmail/shared/contracts/home-visit';
 import { useAuth } from '@/features/auth/auth-provider';
-import { apiGet, apiPost } from '@/lib/api/client';
+import { ApiError, apiGet, apiPost } from '@/lib/api/client';
 
 import { writeHomeVisitCookie } from './home-visit-cookie';
+import { homeKeys } from './query-keys';
 import { homeVisitQueryOptions } from './query-options';
 
 const IDLE_MS = 30 * 60_000;
 const memoryVisits = new Map<string, { id: string; lastActive: number }>();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Same placeholder the API uses when a peek has no client visit yet. */
+const UNSTORED_VISIT_ID = '00000000-0000-4000-8000-000000000000';
+
+function quietVisit(visitId: string): HomeVisitSummary {
+  return {
+    visitId,
+    since: null,
+    until: new Date().toISOString(),
+    indexedEmails: null,
+    indexedSenders: null,
+  };
+}
+
+function missingVisit(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404;
+}
 
 function visitStorageKey(scope: string): string {
   return `declutrmail:visit:${scope}`;
@@ -44,6 +61,7 @@ function readStoredVisitId(scope: string, now: number): string | null {
 /** A device visit lasts while the app is visible and survives navigation/reload. */
 export function useHomeVisit() {
   const { me } = useAuth();
+  const queryClient = useQueryClient();
   const mailboxId = me.activeMailboxId;
   const scope = `${me.user.id}:${mailboxId}`;
   const [visit, setVisit] = useState<{ scope: string; id: string } | null>(() => {
@@ -103,11 +121,21 @@ export function useHomeVisit() {
     visitId !== null ? `/api/home/visit?visitId=${encodeURIComponent(visitId)}` : '/api/home/visit';
   const query = useQuery({
     ...homeVisitQueryOptions(mailboxId, async (signal) => {
-      const envelope = await apiGet<HomeVisitSummary>(peekPath, {
-        mailboxId: mailboxId!,
-        signal,
-      });
-      return envelope.data;
+      try {
+        const envelope = await apiGet<HomeVisitSummary>(peekPath, {
+          mailboxId: mailboxId!,
+          signal,
+        });
+        return envelope.data;
+      } catch (error) {
+        // The id is minted in the browser and written to storage before POST
+        // persists it. A 404 is that missing row (or a cached miss from the
+        // deploy that added this GET), not a failed Home.
+        if (!missingVisit(error) || mailboxId === null) throw error;
+        const recorded = queryClient.getQueryData<HomeVisitSummary>(homeKeys.visit(mailboxId));
+        if (recorded != null && recorded.since != null) return recorded;
+        return quietVisit(visitId ?? UNSTORED_VISIT_ID);
+      }
     }),
     enabled: ready && mailboxId !== null,
   });
@@ -117,15 +145,23 @@ export function useHomeVisit() {
     let cancelled = false;
     const frame = window.requestAnimationFrame(() => {
       if (cancelled || document.visibilityState === 'hidden') return;
-      void apiPost<HomeVisitSummary>('/api/home/visit', { visitId }, { mailboxId }).catch(
-        () => undefined,
-      );
+      void apiPost<HomeVisitSummary>('/api/home/visit', { visitId }, { mailboxId })
+        .then((envelope) => {
+          if (cancelled) return;
+          const snapshot = queryClient.getQueryState<HomeVisitSummary>(homeKeys.visit(mailboxId));
+          // A failed read (other than the missing-visit placeholder) keeps its error.
+          // A peek that already has a window stays, so recording cannot replace it mid-paint.
+          if (snapshot?.status === 'error') return;
+          if (snapshot?.data != null && snapshot.data.since != null) return;
+          queryClient.setQueryData(homeKeys.visit(mailboxId), envelope.data);
+        })
+        .catch(() => undefined);
     });
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(frame);
     };
-  }, [ready, mailboxId, visitId]);
+  }, [ready, mailboxId, visitId, queryClient]);
 
   return query;
 }

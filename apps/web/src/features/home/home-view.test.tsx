@@ -427,6 +427,15 @@ describe('HomeView', () => {
     expect(container.querySelector('a.dm-tap-target')).not.toBeNull();
   });
 
+  it('does not name a plan on the route skeleton before the plan is known', () => {
+    render(<HomeRouteLoading />);
+    const plan = document.querySelector('[data-home-slot="plan"]');
+    expect(plan).not.toBeNull();
+    expect(plan).not.toHaveTextContent(/\b(Free|Plus|Pro)\b/);
+    expect(plan?.querySelector('[data-dm-skeleton="text"]')).not.toBeNull();
+    expect(screen.getByRole('link', { name: 'Compare plans' })).toBeInTheDocument();
+  });
+
   it('uses the calm fallback when nothing is suggested', () => {
     const { container } = render(
       <HomeView state={{ ...ready, secondary: [] }} nextSteps={[]} indexedEmailCount={47} />,

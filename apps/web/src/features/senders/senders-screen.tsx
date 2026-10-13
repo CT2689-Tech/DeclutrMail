@@ -2708,7 +2708,7 @@ function SendersScreenContent({
                     }}
                   >
                     {(totalMatching ?? serverSenders.length).toLocaleString('en-US')}
-                  </span>
+                  </span>{' '}
                   <span
                     style={{
                       fontFamily: font.sans,

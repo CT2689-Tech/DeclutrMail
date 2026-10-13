@@ -112,7 +112,9 @@ export class UsersService {
 
   /**
    * Arrivals since the last recorded visit, or the stored window when this
-   * visitId already exists. Does not write — Home records after first paint.
+   * visitId already exists. An id the client minted but has not stored yet
+   * is still a successful open window — Home records it after first paint.
+   * Does not write.
    */
   async peekMailboxVisit(
     userId: string,

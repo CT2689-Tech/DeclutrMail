@@ -673,6 +673,13 @@ describe('SendersScreen — edge states', () => {
     expect(screen.queryByRole('group', { name: 'Active filters' })).not.toBeInTheDocument();
   });
 
+  it('puts a space between the sender count and its label', async () => {
+    installFetchStub([oneSenderHandler()]);
+    renderScreen();
+    await screen.findAllByText(/Sender A/);
+    expect(screen.getByTestId('senders-hero').textContent).toBe('1 active sender');
+  });
+
   it('does not claim "Results as of" a time it never measured while the mailbox is still syncing (QA-onboarding-20260828-01)', async () => {
     // The negative control: reverting the `stillSyncing` branch in
     // `SenderResultsFreshness` makes this assertion fail — `asOf` is the
