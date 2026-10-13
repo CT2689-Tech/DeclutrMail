@@ -317,6 +317,36 @@ completeness. To revoke: remove the
 `roles/iam.workloadIdentityUser` binding on the deploy SA, or delete
 the WIF pool/provider.
 
+### Checkout country token
+
+| Slot       | Storage                                                                                                                                                              | Env var                   | Rotated         | Owner   |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | --------------- | ------- |
+| Production | GH Actions secret `BILLING_GEO_HMAC_SECRET`, copied at deploy onto Cloud Run `declutrmail-api` and Vercel production (`prj_hWYbyer4xJEWfCiSb9M3krrdh5D7`, sensitive) | `BILLING_GEO_HMAC_SECRET` | not yet created | founder |
+
+**Note:** This is not a GCP Secret Manager secret. The worker does not
+receive it. The web signs the checkout country token and the API
+verifies it. A missing value at runtime keeps checkout on USD. The
+value must not contain a comma, an equals sign, or whitespace, because
+the API deploy places it in the comma-delimited `--set-env-vars` list.
+Next inlines it into the web build, so the Vercel deployment that
+follows the upsert is the one that signs.
+
+### Live India Paddle price ids
+
+Not secrets. Production deploy binds them as plain env on Cloud Run
+`declutrmail-api` and on the Vercel production web project
+(`prj_hWYbyer4xJEWfCiSb9M3krrdh5D7`):
+
+| Env var                                  | Value                            |
+| ---------------------------------------- | -------------------------------- |
+| `PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID` | `pri_01m4ss0bccahnyghv26rgs36xk` |
+| `PADDLE_LIVE_INDIA_PASS_PRICE_ID`        | `pri_01m4ss18n1c9r5s9p973tef9v2` |
+
+Plus is INR 1,999/yr on `pro_01ky15axpvfkvnkj6pbbg7gfj1`. Pass is INR 799
+one-time on `pro_01m4qkac2hde0tqvmrvt0tnbhb`. An absent id keeps checkout
+on the USD price. Live PH30 is not an env var and stays omitted until
+launch. Live UPI is enabled.
+
 ### Future / not-yet-configured
 
 These will become real entries when the corresponding feature ships.

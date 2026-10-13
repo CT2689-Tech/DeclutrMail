@@ -4,7 +4,8 @@
  * Does not create prices. Host is fixed to https://sandbox-api.paddle.com.
  * A live key is refused before any request. Sandbox UPI is off, so a
  * listed payment-method set must include card and is not required to
- * include UPI. The CLI is scripts/paddle-sandbox-india-checkout.ts.
+ * include UPI. Live UPI is enabled; this script does not call Live.
+ * The CLI is scripts/paddle-sandbox-india-checkout.ts.
  */
 import { appendFileSync } from 'node:fs';
 

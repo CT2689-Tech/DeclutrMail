@@ -5,8 +5,10 @@ import { indiaPaddlePricesConfigured } from '../entitlements/pricing.config';
  * Razorpay stays closed for new purchases.
  * A Paddle rupee checkout is available only when both India price ids
  * are configured. Chintan approved option A on 2026-10-12 at 7:50 PM PT,
- * via Ops. The Live price IDs are still pending his OK. Existing
- * subscription management is unchanged.
+ * via Ops, and the Live India prices are bound on deploy. Live PH30
+ * stays omitted until it is created at launch. A missing price id or
+ * geo secret keeps checkout on USD. Existing subscription management
+ * is unchanged.
  * Keep this module free of schemas so public pricing does not load billing validators.
  */
 export const INR_CHECKOUT_PAUSED_MESSAGE = WS1_COPY['pricing.inrPaused.checkout'];

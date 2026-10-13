@@ -305,10 +305,14 @@ export const PROMO = {
  *
  * PH30 has to allow every launch price that checkout can send:
  * USD Plus, USD Pass, India Plus, and India Pass. Sandbox India ids
- * are `SANDBOX_INDIA_PRICE_IDS`. Live India ids come from env.
- * Paddle's discount `restrict_to` must list those ids or a transaction
- * that includes `discount_id` fails. Live stays `FILL_ME` until that
- * discount is created with all four live ids.
+ * are `SANDBOX_INDIA_PRICE_IDS`. Live India ids are
+ * `pri_01m4ss0bccahnyghv26rgs36xk` (Plus, product
+ * `pro_01ky15axpvfkvnkj6pbbg7gfj1`) and
+ * `pri_01m4ss18n1c9r5s9p973tef9v2` (Pass, product
+ * `pro_01m4qkac2hde0tqvmrvt0tnbhb`). Paddle's discount `restrict_to`
+ * must list those ids or a transaction that includes `discount_id`
+ * fails. Live stays `FILL_ME` until that discount is created at launch
+ * with all four live ids.
  */
 export const PROMO_DISCOUNT_IDS = {
   sandbox: 'dsc_01m4phpp04scdes9ghqn3qps77',
@@ -329,7 +333,10 @@ export const SANDBOX_PRICE_IDS = {
 
 /**
  * Sandbox India prices on the existing Plus and Pass products.
- * The sandbox USD prices stay USD-only. Live India ids stay in env.
+ * The sandbox USD prices stay USD-only. Live India ids stay in env
+ * (`PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID`,
+ * `PADDLE_LIVE_INDIA_PASS_PRICE_ID`) so an unbound deploy still
+ * falls back to USD.
  */
 export const SANDBOX_INDIA_PRICE_IDS = {
   plus_annual: 'pri_01m4sjsrywj8sx5srbh16dk4jr',
