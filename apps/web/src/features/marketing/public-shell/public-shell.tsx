@@ -91,6 +91,7 @@ const FOOTER_GROUPS = [
 ];
 
 export function PublicHeader() {
+  const [openLabel, closeLabel] = WS3_COPY['ws3.nav.menu.aria'];
   return (
     <>
       <a className="dm-public-skip" href="#main-content">
@@ -117,6 +118,8 @@ export function PublicHeader() {
             links={PRODUCT_LINKS}
             startUrl={permissionEntryUrl()}
             showTheme={isFeatureEnabled('darkMode')}
+            openLabel={openLabel}
+            closeLabel={closeLabel}
           />
         </div>
       </header>

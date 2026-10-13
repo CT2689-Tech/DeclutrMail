@@ -19,6 +19,13 @@ describe('NotOnGmail', () => {
     track.mockClear();
   });
 
+  it('keeps the disclosure at least 24px tall', () => {
+    render(<NotOnGmail source="landing" />);
+    expect(screen.getByText(WS3_COPY['ws3.notOnGmail.link']).closest('summary')).toHaveStyle({
+      minHeight: '24px',
+    });
+  });
+
   it('joins once, leaves the opt-in unchecked, and emits a closed event', async () => {
     joinProviderWaitlist.mockResolvedValue({
       data: { status: 'joined', providerClass: 'microsoft' },

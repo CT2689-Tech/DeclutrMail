@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import Link from 'next/link';
 
 import { CASA_VERIFICATION_APPROVED_ON, formatVerificationDate } from '@declutrmail/shared';
@@ -18,12 +19,13 @@ export function TrustRow({ variant = TRUST_ROW_VARIANT }: { variant?: 'full' | '
     { OAUTH_DATE: oauthDate },
   );
   const narrow = fillWs3(WS3_COPY['ws3.trust.short'], { OAUTH_DATE: oauthDate });
+  const descriptionId = useId();
   return (
     <p className="dm-trust-row">
       <Link
         className="dm-trust-link"
         href="/security#verification"
-        aria-label={WS3_COPY['ws3.trust.aria']}
+        aria-describedby={descriptionId}
       >
         <svg
           className="dm-trust-badge"
@@ -42,6 +44,9 @@ export function TrustRow({ variant = TRUST_ROW_VARIANT }: { variant?: 'full' | '
           <span className="dm-trust-row-narrow">{narrow}</span>
         </span>
       </Link>
+      <span id={descriptionId} className="dm-trust-describedby">
+        {WS3_COPY['ws3.trust.aria']}
+      </span>
     </p>
   );
 }

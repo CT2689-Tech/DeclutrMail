@@ -83,7 +83,7 @@ export function NotOnGmail({ source }: { source: 'landing' | 'sign_in' }) {
 
   return (
     <details className="dm-waitlist" id={source === 'landing' ? 'not-on-gmail' : undefined}>
-      <summary>{WS3_COPY['ws3.notOnGmail.link']}</summary>
+      <summary style={{ minHeight: 24 }}>{WS3_COPY['ws3.notOnGmail.link']}</summary>
       {done ? (
         <div>
           <p>
