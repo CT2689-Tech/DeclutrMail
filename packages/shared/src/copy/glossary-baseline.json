@@ -2030,6 +2030,12 @@
   {
     "file": "packages/shared/src/copy/launch/ws1.ts",
     "id": "allowance_word",
+    "line": 164,
+    "text": "This needs 1 free email, but none of your {allowance} are left this month. More on {resetDate}."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws1.ts",
+    "id": "allowance_word",
     "line": 8,
     "text": "Clear {allowance} emails a month free"
   },

@@ -11,6 +11,7 @@ import {
   isPricingV2,
   meterChipLine,
   meterPreviewText,
+  quotaExceededMessage,
   moneyAmount,
   passEndLabel,
   priceLine,
@@ -102,6 +103,28 @@ describe('emails-cleared meter helpers', () => {
       'This clears 1 email, but you have no free emails left this month.',
     );
     expect(meterPreviewText(1, 100)).toBe('This clears 1 email. You have 100 free this month.');
+  });
+
+  it('uses the singular quota sentence when one email is requested', () => {
+    expect(
+      quotaExceededMessage({
+        used: 1000,
+        limit: 1000,
+        resetAt: '2026-11-09T00:00:00.000Z',
+        requested: 1,
+      }),
+    ).toBe('This needs 1 free email, but none of your 1,000 are left this month. More on Nov 9.');
+  });
+
+  it('keeps the plural quota sentence when more than one email is requested', () => {
+    expect(
+      quotaExceededMessage({
+        used: 900,
+        limit: 1000,
+        resetAt: '2026-11-09T00:00:00.000Z',
+        requested: 101,
+      }),
+    ).toBe('This needs 101 free emails, but 100 of 1,000 are left this month. More on Nov 9.');
   });
 });
 

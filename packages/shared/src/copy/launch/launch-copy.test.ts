@@ -18,6 +18,17 @@ describe('launch copy deck snapshots', () => {
     expect(() => expectMatchesDeck('ws1', { extra: 'not in the deck' })).toThrow();
   });
 
+  it('pins the drop2-r34 singular email sentences', () => {
+    expect(WS1_COPY['cap.api.message.one']).toBe(
+      'This needs 1 free email, but none of your {allowance} are left this month. More on {resetDate}.',
+    );
+    expect(WS5_COPY['report.celebrate.delete.one']).toBe(
+      'Moved 1 email (about {size}) to Gmail Trash.',
+    );
+    expect(WS5_COPY['report.celebrate.archive.oneEmail']).toBe('Archived 1 email from 1 sender.');
+    expect(WS5_COPY['report.celebrate.archive.one']).toBe('Archived {X} emails from 1 sender.');
+  });
+
   it('pins the drop2-r22 INR pause lines', () => {
     expect(WS1_COPY['pricing.inrPaused.notice']).toBe(
       'Buying a plan in rupees is paused for now, so these prices are for reference. If you already pay in rupees, you can still manage your plan in Billing. Email support@declutrmail.com for help.',

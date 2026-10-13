@@ -299,12 +299,20 @@ export function meterPreviewText(requested: number, remaining: number): string {
 }
 
 export function quotaExceededMessage(input: QuotaExceededMessageInput): string {
+  const allowance = grouped(input.limit);
+  const reset = resetDate(input.resetAt);
+  if (input.requested === 1) {
+    return fill(WS1_COPY['cap.api.message.one'], {
+      allowance,
+      resetDate: reset,
+    });
+  }
   const remaining = Math.max(0, input.limit - input.used);
   return fill(WS1_COPY['cap.api.message'], {
     requested: grouped(input.requested),
     remaining: grouped(remaining),
-    allowance: grouped(input.limit),
-    resetDate: resetDate(input.resetAt),
+    allowance,
+    resetDate: reset,
   });
 }
 

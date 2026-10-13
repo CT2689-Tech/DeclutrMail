@@ -160,6 +160,8 @@ export const WS1_COPY = {
   'cap.refund': '{refundDays}-day money-back on any purchase, once per customer.',
   'cap.api.message':
     'This needs {requested} free emails, but {remaining} of {allowance} are left this month. More on {resetDate}.',
+  'cap.api.message.one':
+    'This needs 1 free email, but none of your {allowance} are left this month. More on {resetDate}.',
   'cap.resumed': 'Your {passName} is active. Check the updated counts, then confirm.',
   'gate.inbox.free.title': 'Connect another {CONNECTION_TERM} with {plusName}',
   'gate.inbox.free.body':

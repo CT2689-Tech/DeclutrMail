@@ -233,7 +233,9 @@
   },
   "report.celebrate.archive": "Archived {X} emails from {n} senders.",
   "report.celebrate.archive.one": "Archived {X} emails from 1 sender.",
+  "report.celebrate.archive.oneEmail": "Archived 1 email from 1 sender.",
   "report.celebrate.delete": "Moved {count} emails (about {size}) to Gmail Trash.",
+  "report.celebrate.delete.one": "Moved 1 email (about {size}) to Gmail Trash.",
   "report.celebrate.delete.note": "It still counts toward your Google storage until it leaves Trash. Gmail deletes it for good after 30 days, or sooner if you empty Trash.",
   "report.celebrate.unsub": {
     "one": "Unsubscribe requested from 1 sender",
