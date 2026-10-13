@@ -42,6 +42,7 @@ export { Kbd } from './components/kbd';
 export { BottomSheet } from './components/bottom-sheet';
 export { PreviewSheet } from './components/preview-sheet/preview-sheet';
 export {
+  SheetCheckbox,
   SheetFactList,
   SheetLinks,
   SheetSegmented,

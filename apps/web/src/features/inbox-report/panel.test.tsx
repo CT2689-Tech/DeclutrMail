@@ -106,7 +106,7 @@ describe('InboxReportPanel', () => {
     expect(screen.getByRole('radio', { name: '+ Delete' })).toBeDisabled();
     expect(screen.getByRole('dialog')).not.toHaveTextContent('archive 10 emails');
     expect(screen.getByRole('dialog')).not.toHaveTextContent('Archive 0');
-    expect(screen.getByRole('dialog')).toHaveTextContent(/Counting existing inbox email/);
+    expect(screen.getByRole('dialog')).toHaveTextContent(WS5_COPY['f1.preview.backlog.loading']);
     expect(screen.getByRole('dialog')).not.toHaveTextContent('0 emails you already have');
     releasePreview(
       jsonOk({
@@ -457,5 +457,33 @@ describe('Inbox Report action preview recovery', () => {
     expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
     expect(onFixConfirmed).not.toHaveBeenCalled();
+  });
+
+  it('does not confirm a second fix while the first is still pending', () => {
+    const onFixConfirmed = vi.fn();
+    const { rerender } = render(
+      <InboxReportPanel
+        report={full}
+        onDismiss={vi.fn()}
+        onReopen={vi.fn()}
+        onFixConfirmed={onFixConfirmed}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
+    const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(onFixConfirmed).toHaveBeenCalledTimes(1);
+    expect(onFixConfirmed).toHaveBeenCalledWith('archive', undefined, ['s1', 's2']);
+    rerender(
+      <InboxReportPanel
+        report={full}
+        fixPending
+        onDismiss={vi.fn()}
+        onReopen={vi.fn()}
+        onFixConfirmed={onFixConfirmed}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' })).toBeDisabled();
   });
 });

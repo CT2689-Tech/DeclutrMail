@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { WS3_COPY } from '@declutrmail/shared/copy/launch';
 import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 import './sender-walkthrough.css';
@@ -58,9 +59,7 @@ export function SenderWalkthrough({
               <dd>64</dd>
             </div>
           </dl>
-          <p>
-            Open a sender's details. Check recent subjects and the email your decision would affect.
-          </p>
+          <p>{WS3_COPY['ws3.home.walkthrough.openDetails']}</p>
           <p className="dm-walkthrough-note">
             Marked-read flags give context; they do not prove an email was read.
           </p>

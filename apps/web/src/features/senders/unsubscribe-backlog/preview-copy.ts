@@ -2,16 +2,12 @@ import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/share
 
 export type UnsubscribeBacklogMode = 'unsub_only' | 'archive' | 'delete';
 
-/** Destination stays visible; the live count is already in the title. */
-export function backlogDestination(
-  mode: UnsubscribeBacklogMode,
-  reach: 'inbox_only' | 'all_mail' = 'inbox_only',
-): string {
-  if (mode === 'archive') return 'Existing inbox email leaves your inbox and stays in Gmail.';
-  if (mode === 'delete')
-    return reach === 'all_mail'
-      ? 'Existing inbox and archived email moves to Gmail Trash.'
-      : 'Existing inbox email moves to Gmail Trash.';
+/** Deck destination for the backlog the preview counted. Null count is still loading. */
+export function backlogDestination(mode: UnsubscribeBacklogMode, n: number | null): string {
+  if (mode === 'archive' || mode === 'delete') {
+    if (n === null) return WS5_COPY['f1.preview.backlog.loading'];
+    return backlogMailLine(mode, n);
+  }
   return WS5_COPY['f1.preview.backlog.unsubOnly'];
 }
 

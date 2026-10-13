@@ -120,7 +120,7 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
       />,
     );
 
-    expect(html).toContain('Retry preview');
+    expect(html).toContain('Try again');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Archive/);
   });
 
@@ -1010,7 +1010,7 @@ describe('ActionSheet Unsubscribe preview recovery', () => {
       />,
     );
     expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Retry preview' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetryPreview).toHaveBeenCalledOnce();
   });
   it('shows a completed zero count as a way to choose Unsubscribe only', () => {
@@ -1025,7 +1025,7 @@ describe('ActionSheet Unsubscribe preview recovery', () => {
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
     rerender(<ActionSheet {...props} inboxCount={0} />);
     expect(screen.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
-    expect(screen.getByText(/No existing inbox email to move/)).toBeVisible();
+    expect(screen.getByText(WS5_COPY['f1.preview.backlog.none'])).toBeVisible();
     expect(screen.queryByText(/Counting the inbox/)).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
     expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();

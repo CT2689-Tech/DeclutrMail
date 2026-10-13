@@ -192,19 +192,21 @@ export function InboxReportFirstLanding(props: {
         setReportDismissed(mailboxId, false);
         setDismissed(false);
       }}
-      onFixConfirmed={(mode, reach) => {
+      fixPending={confirmBacklog.isPending}
+      onFixConfirmed={(mode, reach, senderIds) => {
+        if (confirmBacklog.isPending || senderIds.length === 0) return;
         confirmBacklog.mutate(
           {
             mailboxId,
             mode,
-            senderIds: report.fix.senderKeys,
+            senderIds,
             ...(mode === 'delete' && reach ? { reach } : {}),
           },
           {
             onSuccess: (res) => {
               toastUnsubscribeBacklog(res);
               const next = celebrationFromUnsubscribeBacklog(res, {
-                senderKeys: report.fix.senderKeys,
+                senderKeys: senderIds,
                 generatedAt: report.generatedAt,
               });
               if (next === null) return;

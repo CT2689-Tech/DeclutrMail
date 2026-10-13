@@ -3,8 +3,21 @@
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { Avatar, Button, PreviewSheet, SheetSegmented, tokens } from '@declutrmail/shared';
-import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import {
+  Avatar,
+  Button,
+  PreviewSheet,
+  SheetCheckbox,
+  SheetSegmented,
+  tokens,
+} from '@declutrmail/shared';
+import {
+  fillCopy,
+  isPluralCopy,
+  pluralCopy,
+  WS2_COPY,
+  WS5_COPY,
+} from '@declutrmail/shared/copy/launch';
 import { unnamedUnsubscribeTitle } from '@/features/senders/unsubscribe-backlog/preview-copy';
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
@@ -170,8 +183,14 @@ export function ActionSheet({
   // real work at a zero backlog. The unsubscribe itself is free.
   const primaryActsOnInbox = verb === 'Archive' || verb === 'Later' || verb === 'Delete';
   const nothingToActOn = primaryActsOnInbox && inboxCount === 0;
+  const archivedUncounted =
+    reach === 'all_mail' &&
+    detail?.reachControl?.allMailCount === null &&
+    detail.reachControl != null &&
+    (verb === 'Delete' || (verb === 'Unsubscribe' && effectiveMode === 'delete'));
   const confirmDisabled =
     previewSenderGone ||
+    archivedUncounted ||
     (requiresLivePreview && (previewPending || previewUnavailable || inboxCount === 0)) ||
     nothingToActOn ||
     wakeAtInvalid;
@@ -272,7 +291,7 @@ export function ActionSheet({
     reachControl.reach === 'inbox_only' &&
     reachControl.inboxCount === 0 &&
     (reachControl.allMailCount ?? 0) > 0
-      ? 'Switch to Inbox + archived to reach the archived email.'
+      ? WS5_COPY['f1.preview.archived.hint']
       : null;
 
   const emailMeter = cleanupSummary.data?.metered === true;
@@ -310,10 +329,14 @@ export function ActionSheet({
   ) : previewUnavailable ? (
     <StatusWithAction
       message="Couldn’t load the preview. Nothing can move until it loads."
-      action={onRetryPreview ? { label: 'Retry preview', onClick: onRetryPreview } : undefined}
+      action={
+        onRetryPreview ? { label: WS2_COPY.home.failed.retry, onClick: onRetryPreview } : undefined
+      }
     />
+  ) : archivedUncounted ? (
+    WS5_COPY['f1.preview.archived.unavailable']
   ) : verb === 'Unsubscribe' && requiresLivePreview && inboxCount === 0 ? (
-    'No existing inbox email to move. Choose Unsubscribe only.'
+    WS5_COPY['f1.preview.backlog.none']
   ) : confirmDisabled ? (
     'Counting the inbox…'
   ) : null;
@@ -468,7 +491,7 @@ export function ActionSheet({
             {verb === 'Unsubscribe' && (
               <div>
                 <SheetSegmented
-                  label="Existing email"
+                  label={WS5_COPY['f1.preview.existing.label']}
                   value={effectiveMode}
                   onChange={(mode) => {
                     setBacklogMode(mode);
@@ -518,24 +541,14 @@ export function ActionSheet({
             )}
 
             {showReach && (
-              <SheetSegmented
-                label="Where it applies"
-                value={reachControl.reach}
-                onChange={reachControl.onChange}
-                options={[
-                  {
-                    value: 'inbox_only',
-                    label: 'Inbox only',
-                    count: reachControl.inboxCount ?? undefined,
-                    disabled: reachControl.inboxCount === null,
-                  },
-                  {
-                    value: 'all_mail',
-                    label: 'Inbox + archived',
-                    count: reachControl.allMailCount ?? undefined,
-                    disabled: reachControl.allMailCount === null,
-                  },
-                ]}
+              <SheetCheckbox
+                label={WS2_COPY.simplify.confirm.includeArchived}
+                checked={reachControl.reach === 'all_mail'}
+                disabled={reachControl.allMailCount === null && reachControl.reach !== 'all_mail'}
+                onChange={(next) => {
+                  if (next && reachControl.allMailCount === null) return;
+                  reachControl.onChange(next ? 'all_mail' : 'inbox_only');
+                }}
               />
             )}
 

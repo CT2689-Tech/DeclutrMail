@@ -2114,7 +2114,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'u' });
     const dialog = await screen.findByRole('dialog');
-    await within(dialog).findByRole('radiogroup', { name: 'Existing email' });
+    await within(dialog).findByRole('radiogroup', { name: 'Email you already have' });
     expect(within(dialog).getAllByText('Unsubscribe only')).toHaveLength(1);
     expect(within(dialog).getByRole('radio', { name: '+ Archive 3' })).toBeEnabled();
     expect(within(dialog).getByText('+ Archive 3')).toBeInTheDocument();
@@ -2908,6 +2908,85 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: /select sender b/i }));
     fireEvent.keyDown(document.body, { key });
   }
+
+  it('posts only the senders the unsubscribe preview included', async () => {
+    const posted: Array<{ senderIds?: string[] }> = [];
+    installFetchStub([
+      TWO_SENDER_LIST,
+      {
+        method: 'POST',
+        path: '/api/actions/preview/bulk',
+        respond: () =>
+          jsonOk({
+            data: {
+              senders: [
+                {
+                  senderId: 'a',
+                  name: 'Sender A',
+                  counts: {
+                    all: 12,
+                    olderThan30d: 8,
+                    olderThan90d: 5,
+                    olderThan180d: 3,
+                    olderThan365d: 1,
+                  },
+                  protected: false,
+                },
+                {
+                  senderId: 'b',
+                  name: 'Sender B',
+                  counts: {
+                    all: 18,
+                    olderThan30d: 9,
+                    olderThan90d: 6,
+                    olderThan180d: 4,
+                    olderThan365d: 2,
+                  },
+                  protected: true,
+                },
+              ],
+              totals: {
+                all: 12,
+                olderThan30d: 8,
+                olderThan90d: 5,
+                olderThan180d: 3,
+                olderThan365d: 1,
+              },
+              protectedCount: 1,
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-backlog',
+        respond: async (req) => {
+          posted.push((await req.json()) as { senderIds?: string[] });
+          return jsonOk({
+            data: {
+              mode: 'archive',
+              backlog: { actionId: 'batch-narrow', requestedCount: 12, verb: 'archive' },
+              senders: [backlogSender('a', 'requested')],
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+    await selectBothAndPress('u');
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      await within(dialog).findByText('1 selected sender is Protected and will be left as it is.'),
+    ).toBeVisible();
+    fireEvent.click(await within(dialog).findByRole('radio', { name: '+ Archive 12' }));
+    expect(within(dialog).getByRole('heading')).toHaveTextContent(
+      'Unsubscribe from 1 sender and archive 12 emails',
+    );
+    const confirm = within(dialog).getByRole('button', { name: 'Unsubscribe + Archive' });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]?.senderIds).toEqual(['a']);
+  });
 
   it.each([
     ['UNSUB_SEND_DISABLED', /nothing was sent/i, /archive/i],
