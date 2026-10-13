@@ -4783,12 +4783,46 @@ describe('BillingScreen — one billing story (A6)', () => {
       screen.queryByText('Your plan covers every Gmail account you connect.'),
     ).not.toBeInTheDocument();
     expect(within(card).getByText('$19 once')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Refund policy' })).toBeInTheDocument();
+    expect(screen.queryByTestId('payment-method-card')).not.toBeInTheDocument();
     expect(within(card).getByTestId('pass-status-detail')).toHaveTextContent(
       'No monthly limit on one Gmail account, plus the Screener and Autopilot, until Nov 12. Then you’re back on Free. Nothing renews.',
     );
     expect(within(card).queryByText('Complimentary')).not.toBeInTheDocument();
     expect(within(card).queryByText('Plus')).not.toBeInTheDocument();
     expect(within(card).queryByText(/everything in/i)).not.toBeInTheDocument();
+  });
+
+  it('a manual Pass is Backlog Pass with no price, refund link, or payment card', async () => {
+    mockTier = 'plus';
+    mockCleanupRemaining = null;
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          checkoutSetupComplete: true,
+          tier: 'plus',
+          foundingMember: false,
+          subscription: null,
+          pendingCheckout: null,
+          complimentary: {
+            tier: 'plus',
+            expiresAt: '2026-11-12T00:00:00.000Z',
+            source: 'pass',
+            provider: null,
+          },
+        },
+      }),
+    );
+    renderScreen();
+
+    const card = await screen.findByTestId('current-plan-card');
+    expect(within(card).getByText('Backlog Pass')).toBeInTheDocument();
+    expect(screen.getByText('Backlog Pass covers 1 Gmail account.')).toBeInTheDocument();
+    expect(within(card).queryByText('$19 once')).not.toBeInTheDocument();
+    expect(within(card).queryByText('Complimentary')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Refund policy' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('payment-method-card')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Billing help' })).toBeInTheDocument();
   });
 
   it('Pass-only /billing?plan=plus opens Before you pay for Plus, not the Pass card', async () => {

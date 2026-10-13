@@ -1,4 +1,4 @@
-import { queryOptions } from '@tanstack/react-query';
+import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import type { Envelope, LaterReturnRecoverySummary } from '@declutrmail/shared/contracts';
 
 import type { SnoozedSenderRow } from '@/lib/api/snoozed';
@@ -12,6 +12,8 @@ export function snoozedListQueryOptions(
   return queryOptions({
     queryKey: snoozedKeys.list(),
     queryFn: ({ signal }) => reader(signal),
+    staleTime: 5 * 60_000,
+    placeholderData: keepPreviousData,
   });
 }
 

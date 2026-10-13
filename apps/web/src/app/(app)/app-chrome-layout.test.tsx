@@ -258,6 +258,34 @@ function authedHandlers(opts: {
           data: opts.laterRecovery ?? { affectedCount: 0, firstIssue: null },
         }),
     },
+    {
+      method: 'GET',
+      path: '/api/home/visit',
+      respond: () =>
+        ok({
+          data: {
+            visitId: '00000000-0000-4000-8000-000000000000',
+            since: null,
+            until: '2026-01-02T00:00:00.000Z',
+            indexedEmails: null,
+            indexedSenders: null,
+          },
+        }),
+    },
+    {
+      method: 'POST',
+      path: '/api/home/visit',
+      respond: () =>
+        ok({
+          data: {
+            visitId: 'visit-1',
+            since: null,
+            until: '2026-01-02T00:00:00.000Z',
+            indexedEmails: null,
+            indexedSenders: null,
+          },
+        }),
+    },
   ];
 }
 

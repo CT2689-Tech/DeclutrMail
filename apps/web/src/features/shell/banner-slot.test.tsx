@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import { describe, expect, it } from 'vitest';
 
 import { BannerSlot } from './banner-slot';
@@ -22,6 +22,47 @@ describe('BannerSlot', () => {
       </BannerSlot>,
     );
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('does not count suspense comment markers as banners', () => {
+    function PlantComments() {
+      useLayoutEffect(() => {
+        document.querySelectorAll('.dm-banner-item').forEach((item) => {
+          item.append(document.createComment('$'));
+          item.append(document.createComment('/$'));
+        });
+      }, []);
+      return null;
+    }
+    render(
+      <BannerSlot>
+        <PlantComments />
+        <Banner name="sync" on={false} />
+      </BannerSlot>,
+    );
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('does not count a suspense template placeholder as a banner', () => {
+    function PlantTemplates() {
+      useLayoutEffect(() => {
+        const items = document.querySelectorAll('.dm-banner-item');
+        items[0]?.append(document.createElement('template'));
+        const wrap = document.createElement('div');
+        wrap.append(document.createElement('template'));
+        items[1]?.append(wrap);
+      }, []);
+      return null;
+    }
+    render(
+      <BannerSlot>
+        <PlantTemplates />
+        <div />
+        <Banner name="sync" on />
+      </BannerSlot>,
+    );
+    expect(item('sync')).not.toHaveAttribute('hidden');
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 

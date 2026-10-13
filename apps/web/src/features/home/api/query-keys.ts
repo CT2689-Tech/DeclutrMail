@@ -11,4 +11,5 @@ import { activityKeys } from '@/features/activity/api/query-keys';
 export const homeKeys = {
   all: [...activityKeys.all, 'home'] as const,
   summary: () => [...activityKeys.all, 'home', 'summary'] as const,
+  visit: (mailboxId: string | null) => [...activityKeys.all, 'home', 'visit', mailboxId] as const,
 };

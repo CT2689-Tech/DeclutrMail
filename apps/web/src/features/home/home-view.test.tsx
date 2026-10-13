@@ -59,6 +59,7 @@ import { HOME_DECK, fillDeck } from './home-deck-copy';
 import { homeCalmTemplate, homeReportCopy, homeTileCopy } from './home-ws5-copy';
 import { homePreviewReport } from './home-preview-report';
 import type { HomeFixCandidate } from './home-next-steps';
+import { HomeRouteLoading } from './home-loading-shell';
 import { HomePreview } from './home-preview';
 import { HomeView } from './home-view';
 
@@ -127,6 +128,10 @@ describe('HomeView', () => {
       'href',
       '/billing?from=%2Fhome',
     );
+    expect(screen.getByRole('link', { name: 'Compare plans' })).toHaveClass(
+      'dm-external-link',
+      'dm-tap-target',
+    );
     expect(screen.queryByRole('link', { name: /\/pricing/ })).toBeNull();
     expect(document.body.innerHTML).not.toContain('/pricing');
   });
@@ -169,8 +174,7 @@ describe('HomeView', () => {
       />,
     );
     expect(screen.getByRole('region', { name: 'Suggested next steps' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Unsubscribe/ })).toBeNull();
-    expect(screen.queryByText(/of these senders/)).toBeNull();
+    expect(screen.getByRole('button', { name: /Unsubscribe/ })).toBeInTheDocument();
     const laterLink = screen.getByRole('link', { name: HOME_DECK.laterCta });
     const laterCard = laterLink.closest('article');
     expect(laterLink).toHaveAttribute('href', '/later');
@@ -193,6 +197,7 @@ describe('HomeView', () => {
   });
 
   it('preview full state shows the fixture report and a count-free Later card', async () => {
+    cardGate.shape = 'shell';
     render(
       <HomeView
         state={ready}
@@ -226,23 +231,59 @@ describe('HomeView', () => {
     expect(homePreviewReport('caught-up')?.calm).toMatch(/47 emails/);
     expect(homePreviewReport('syncing')).toBeNull();
     expect(homePreviewReport('empty')).toBeNull();
+    cardGate.shape = 'none';
   });
 
-  it('keeps a narrow content inset while the shell reserves the tab bar', () => {
-    const narrow = (css: string) => css.slice(css.lastIndexOf('@media (max-width: 760px)'));
+  it('keeps the compact home slots while the shell reserves the tab bar', () => {
+    const narrowOf = (css: string) => css.slice(css.lastIndexOf('@media (max-width: 760px)'));
     const dir = dirname(fileURLToPath(import.meta.url));
-    const home = narrow(readFileSync(join(dir, 'home-view.module.css'), 'utf8'));
-    const card = narrow(readFileSync(join(dir, '../inbox-report/card.module.css'), 'utf8'));
-    expect(home).toContain('padding: 12px 16px 16px');
-    expect(home).not.toContain('min-height: 0');
-    expect(home).toContain('margin-bottom: var(--dm-tabbar-inset)');
-    expect(home).toContain('min-height: 28px');
+    const home = readFileSync(join(dir, 'home-view.module.css'), 'utf8');
+    const card = readFileSync(join(dir, '../inbox-report/card.module.css'), 'utf8');
+    const narrow = narrowOf(home);
+    expect(narrow).toContain('padding: 12px 16px 16px');
+    expect(narrow).not.toContain('min-height: 0');
+    expect(narrow).toContain('margin-bottom: var(--dm-tabbar-inset)');
+    expect(narrow).toContain('min-height: 28px');
+    expect(home).toMatch(/max-width:\s*760px/);
+    expect(home).toMatch(/\.leadFigure\s*\{[^}]*font-size:\s*28px/s);
+    expect(home).toMatch(/\.planLine\s*\{[^}]*min-height:\s*28px/s);
     expect(home).toMatch(/\.fixActions\s*\{[^}]*margin-top:\s*8px/);
-    expect(home).toMatch(/\.arrivals\s*\{[^}]*padding:\s*6px 10px/);
-    expect(home).toContain('.page:has(.arrivals) .header');
-    expect(home).toContain('.page:has(.arrivals) .leadFigure');
-    expect(card).toMatch(/\.card\s*\{[^}]*padding:\s*16px/);
-    expect(card).toMatch(/\.body\s*\{[^}]*margin:\s*8px 0 12px/);
+    expect(home).not.toContain('.page:has(.arrivals)');
+    expect(home).toContain('container-type: inline-size');
+    expect(home).toContain('container-name: home-report');
+    expect(card).toMatch(/\.card\s*\{[^}]*padding:\s*8px 10px/);
+    expect(card).toMatch(/\.body\s*\{[^}]*margin:\s*2px 0 4px/);
+  });
+
+  it('reserves 60px for the visit slot at a 390px width', () => {
+    const dir = dirname(fileURLToPath(import.meta.url));
+    const home = readFileSync(join(dir, 'home-view.module.css'), 'utf8');
+    const style = document.createElement('style');
+    style.textContent = home;
+    document.head.appendChild(style);
+    const happy = (
+      window as unknown as {
+        happyDOM: { setViewport: (viewport: { width: number; height: number }) => void };
+      }
+    ).happyDOM;
+    const previous = { width: window.innerWidth, height: window.innerHeight };
+    const slots: HTMLElement[] = [];
+    const measure = (width: number) => {
+      happy.setViewport({ width, height: 800 });
+      const slot = document.createElement('div');
+      slot.className = 'visitSlot';
+      document.body.appendChild(slot);
+      slots.push(slot);
+      return getComputedStyle(slot).minHeight;
+    };
+    try {
+      expect(measure(390)).toBe('60px');
+      expect(measure(800)).toBe('40px');
+    } finally {
+      happy.setViewport(previous);
+      style.remove();
+      for (const slot of slots) slot.remove();
+    }
   });
 
   it('keeps the lead, size tile, and trust line when the home card link is present', async () => {
@@ -326,12 +367,49 @@ describe('HomeView', () => {
     );
   });
 
-  it('does not paint an unsubscribe step while the report deck is empty', () => {
-    render(<HomeView state={ready} nextSteps={[unsub]} />);
-    expect(screen.queryByRole('button', { name: /Unsubscribe/ })).toBeNull();
-    expect(screen.queryByRole('alertdialog')).toBeNull();
-    expect(screen.queryByText(/of these senders/)).toBeNull();
-    expect(document.querySelector('[data-home-fix-expected="false"]')).not.toBeNull();
+  it('does not render a duplicate Inbox Report heading', () => {
+    cardGate.shape = 'shell';
+    render(
+      <HomeView
+        state={ready}
+        nextSteps={[unsub]}
+        mailboxId="mb-preview"
+        previewReport={homePreviewReport('full')}
+      />,
+    );
+    expect(screen.getAllByRole('heading', { name: 'Your Inbox Report' })).toHaveLength(1);
+    expect(screen.getAllByRole('link', { name: 'Open report' })).toHaveLength(1);
+    cardGate.shape = 'none';
+  });
+
+  it('uses one skeleton that matches the ready layout slots', () => {
+    const { rerender } = render(<HomeView state={{ kind: 'loading' }} />);
+    const slots = () =>
+      [...document.querySelectorAll('[data-home-slot]')].map((el) =>
+        el.getAttribute('data-home-slot'),
+      );
+    expect(slots()).toEqual(['plan', 'primary', 'visit', 'report']);
+    rerender(
+      <HomeView
+        state={ready}
+        nextSteps={[unsub, later]}
+        mailboxId="mb-preview"
+        previewReport={homePreviewReport('full')}
+      />,
+    );
+    expect(slots()).toEqual(['plan', 'primary', 'visit', 'report']);
+  });
+
+  it('keeps the route loading shell on the same slots without mounting HomeView', () => {
+    const { container } = render(<HomeRouteLoading />);
+    expect(container.querySelector('[data-home-mode="loading"]')).not.toBeNull();
+    expect(
+      [...container.querySelectorAll('[data-home-slot]')].map((el) =>
+        el.getAttribute('data-home-slot'),
+      ),
+    ).toEqual(['plan', 'primary', 'visit', 'report']);
+    expect(container.querySelector('[data-home-skeleton]')).not.toBeNull();
+    expect(container.querySelector('a.dm-tap-target')).not.toBeNull();
   });
 
   it('uses the calm fallback when nothing is suggested', () => {
@@ -446,10 +524,11 @@ describe('HomeView', () => {
     );
   });
 
-  it('loading: a labelled skeleton and no link', () => {
+  it('loading: a labelled skeleton and no senders action', () => {
     render(<HomeView state={{ kind: 'loading' }} />);
     expect(screen.getByRole('status', { name: 'Loading Home' })).toBeInTheDocument();
-    expect(screen.queryByRole('link')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Review senders' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Compare plans' })).toHaveClass('dm-tap-target');
   });
 
   it('error: names the cause and retries', () => {

@@ -121,6 +121,20 @@ function stub({ summary, queueLength = 0, screenerPending = 0, sync, report, sno
   };
   installFetchStub([
     {
+      method: 'GET',
+      path: '/api/home/visit',
+      respond: () =>
+        jsonOk({
+          data: {
+            visitId: '00000000-0000-4000-8000-000000000000',
+            since: null,
+            until: '2026-10-10T10:00:00.000Z',
+            indexedEmails: null,
+            indexedSenders: null,
+          },
+        }),
+    },
+    {
       method: 'POST',
       path: '/api/home/visit',
       respond: () => jsonOk({ data: { since: null, indexedEmails: null, indexedSenders: null } }),
@@ -382,6 +396,20 @@ describe('HomeScreen', () => {
     });
     installFetchStub([
       {
+        method: 'GET',
+        path: '/api/home/visit',
+        respond: () =>
+          jsonOk({
+            data: {
+              visitId: '00000000-0000-4000-8000-000000000000',
+              since: null,
+              until: '2026-10-10T10:00:00.000Z',
+              indexedEmails: null,
+              indexedSenders: null,
+            },
+          }),
+      },
+      {
         method: 'POST',
         path: '/api/home/visit',
         respond: () => jsonOk({ data: { since: null, indexedEmails: null, indexedSenders: null } }),
@@ -565,6 +593,66 @@ describe('HomeScreen', () => {
     renderHome(makeQueryClient());
     expect(await screen.findByText(/couldn't load Home/)).toBeInTheDocument();
     expect(calls.summary).toHaveLength(1);
+  });
+
+  it('a mailbox switch drops the previous inbox report while the next one is loading', async () => {
+    authCell.me = {
+      ...meFor('pro', 'ready'),
+      mailboxes: [
+        {
+          id: 'mb-1',
+          email: 'me@example.com',
+          status: 'active',
+          connectedAt: null,
+          readiness: 'ready',
+        },
+        {
+          id: 'mb-2',
+          email: 'other@example.com',
+          status: 'active',
+          connectedAt: null,
+          readiness: 'ready',
+        },
+      ],
+    };
+    stub({ report: () => jsonOk({ data: REPORT_WITH_FIX }) });
+    const releaseMb2: Array<(response: Response) => void> = [];
+    addFetchHandlers([
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mb-2/inbox-report',
+        respond: () =>
+          new Promise<Response>((resolve) => {
+            releaseMb2.push(resolve);
+          }),
+      },
+    ]);
+    const client = createTestQueryClient();
+    const view = render(
+      <QueryClientProvider client={client}>
+        <HomeScreen />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText('85%')).toBeInTheDocument();
+
+    authCell.me = { ...authCell.me, activeMailboxId: 'mb-2' };
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <HomeScreen />
+      </QueryClientProvider>,
+    );
+    const reset = resetMailboxScopedCache(client);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByText('85%')).not.toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Loading Home' })).toBeInTheDocument();
+
+    for (const release of releaseMb2) release(jsonOk({ data: EMPTY_REPORT }));
+    await act(async () => {
+      await reset;
+    });
+    view.unmount();
   });
 
   it('a mailbox switch refetches the numbers (scoped-cache reset)', async () => {

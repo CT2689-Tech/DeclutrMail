@@ -399,8 +399,9 @@ describe('InboxReportCard', () => {
     expect(card?.tagName).toBe('DIV');
     const action = screen.getByRole('link', { name: 'Open report' });
     expect(action).toHaveAttribute('href', '/senders');
-    expect(action).toHaveAttribute('data-dm-button', '');
-    expect(action).toHaveClass('dm-home-report-cta', 'dm-button-link');
+    expect(action).not.toHaveAttribute('data-dm-button');
+    expect(action).toHaveClass('dm-home-report-cta', 'dm-external-link');
+    expect(action).not.toHaveClass('dm-button-link');
     expect(
       screen.getByRole('heading', { name: WS5_COPY['report.home.title'] }),
     ).toBeInTheDocument();

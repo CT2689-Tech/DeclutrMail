@@ -1,8 +1,10 @@
 import {
   Body,
   Controller,
+  Get,
   Module,
   Post,
+  Query,
   UseGuards,
   BadRequestException,
   Header,
@@ -34,6 +36,25 @@ export class HomeController {
     private readonly mailboxes: MailboxAccountsService,
   ) {}
 
+  @Get('visit')
+  @Header('Cache-Control', 'private, no-store')
+  @RateLimit('default')
+  async peekVisit(
+    @CurrentUser() user: SessionPrincipal,
+    @CurrentMailbox() mailbox: { id: string },
+    @Query('visitId') rawVisitId: string | undefined,
+  ): Promise<Envelope<HomeVisitSummary>> {
+    const visitId = parseOptionalVisitId(rawVisitId);
+    const window = await this.users.peekMailboxVisit(
+      user.userId,
+      mailbox.id,
+      visitId,
+      (since, until, executor) => this.senders.indexedArrivals(mailbox.id, since, until, executor),
+      (executor) => this.mailboxes.assertVisitEligible(user.userId, mailbox.id, executor),
+    );
+    return ok(window);
+  }
+
   @Post('visit')
   @Header('Cache-Control', 'private, no-store')
   @RateLimit('default')
@@ -54,6 +75,14 @@ export class HomeController {
     );
     return ok(window);
   }
+}
+
+function parseOptionalVisitId(rawVisitId: string | undefined): string | undefined {
+  if (rawVisitId === undefined || rawVisitId === '') return undefined;
+  const parsed = HomeVisitRequestSchema.safeParse({ visitId: rawVisitId });
+  if (!parsed.success)
+    throw new BadRequestException({ code: 'INVALID_REQUEST', message: 'Invalid visit.' });
+  return parsed.data.visitId;
 }
 
 @Module({

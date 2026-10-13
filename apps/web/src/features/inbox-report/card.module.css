@@ -7,7 +7,7 @@
   width: 100%;
   min-width: 0;
   margin: 0;
-  padding: clamp(24px, 4vw, 46px);
+  padding: 8px 10px;
   border: 1px solid var(--dm-border);
   background: var(--dm-card);
   border-radius: var(--dm-radius-lg);
@@ -19,16 +19,16 @@
   margin: 0;
   font-family: var(--dm-font-display);
   font-weight: 400;
-  font-size: var(--dm-type-section-title);
+  font-size: 20px;
   letter-spacing: -0.025em;
-  line-height: 1.2;
+  line-height: 1.15;
 }
 
 .body {
-  margin: 16px 0 24px;
+  margin: 2px 0 4px;
   max-width: 420px;
-  font-size: 13px;
-  line-height: 1.8;
+  font-size: 12px;
+  line-height: 1.35;
   color: var(--dm-fg-muted);
 }
 
@@ -38,15 +38,6 @@
 
 .lead {
   width: 100%;
-  margin-bottom: 16px;
-}
-
-@media (max-width: 760px) {
-  .card {
-    padding: 16px;
-  }
-
-  .body {
-    margin: 8px 0 12px;
-  }
+  min-height: 36px;
+  margin-bottom: 4px;
 }

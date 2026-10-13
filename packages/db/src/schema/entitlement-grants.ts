@@ -60,7 +60,10 @@ export const entitlementGrants = pgTable(
      * `promo` is reserved. Existing rows default to `comp`.
      */
     source: text('source').notNull().default('comp'),
-    /** Set for a purchased grant (`paddle`). Null on a comp. */
+    /**
+     * Set for a purchased grant (`paddle`). Null on a comp and on a
+     * manual Backlog Pass (`source = 'pass'` written by grant-tier).
+     */
     provider: text('provider'),
     /**
      * Provider transaction id for a purchased grant. Unique so a

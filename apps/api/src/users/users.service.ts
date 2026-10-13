@@ -87,46 +87,16 @@ export class UsersService {
       // Guard resolution predates this lock. A purge may have disconnected the
       // mailbox and cleared its snapshots while this request waited for it.
       await assertEligible(tx);
-      const prefs: Record<string, unknown> =
-        user.preferences && typeof user.preferences === 'object' && !Array.isArray(user.preferences)
-          ? (user.preferences as Record<string, unknown>)
-          : {};
-      const raw = prefs.mailboxVisits;
-      const visits =
-        raw && typeof raw === 'object' && !Array.isArray(raw)
-          ? (raw as Record<string, unknown>)
-          : {};
-      const history = Array.isArray(visits[mailboxId])
-        ? (visits[mailboxId] as unknown[]).flatMap((entry) => {
-            const parsed = HomeVisitSummarySchema.safeParse(entry);
-            return parsed.success ? [parsed.data] : [];
-          })
-        : [];
+      const { prefs, visits, history } = mailboxVisitState(user.preferences, mailboxId);
       const existing = history.find((entry) => entry.visitId === visitId);
       if (existing) return existing;
-      const latest = history[0];
-      const instant =
-        now ??
-        new Date(
-          (
-            await tx
-              .select({ at: sql<string>`clock_timestamp()::text` })
-              .from(users)
-              .where(eq(users.id, userId))
-              .limit(1)
-          )[0]!.at,
-        );
-      const until = new Date(
-        Math.max(instant.getTime(), latest ? Date.parse(latest.until) : 0),
-      ).toISOString();
-      const since = latest?.until ?? null;
-      // Read once while the user row is locked; a failed read rolls back the visit.
-      // The callback is a read-only owner facade, never a provider/network call.
-      const counts =
-        since === null
-          ? { indexedEmails: null, indexedSenders: null }
-          : await readCounts(new Date(since), new Date(until), tx);
-      const window: HomeVisitSummary = { visitId, since, until, ...counts };
+      const window = await visitWindow(
+        visitId,
+        history,
+        readCounts,
+        tx,
+        now ?? (await clockTimestamp(tx, userId)),
+      );
       await tx
         .update(users)
         .set({
@@ -138,6 +108,43 @@ export class UsersService {
         .where(eq(users.id, userId));
       return window;
     });
+  }
+
+  /**
+   * Arrivals since the last recorded visit, or the stored window when this
+   * visitId already exists. Does not write — Home records after first paint.
+   */
+  async peekMailboxVisit(
+    userId: string,
+    mailboxId: string,
+    visitId: string | undefined,
+    readCounts: (
+      since: Date,
+      until: Date,
+      executor: Pick<DrizzleDb, 'execute'>,
+    ) => Promise<HomeVisitCounts>,
+    assertEligible: (executor: Pick<DrizzleDb, 'execute'>) => Promise<void>,
+    now?: Date,
+  ): Promise<HomeVisitSummary> {
+    const [user] = await this.db
+      .select({ preferences: users.preferences })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!user) throw new InternalServerErrorException('User not found.');
+    await assertEligible(this.db);
+    const { history } = mailboxVisitState(user.preferences, mailboxId);
+    if (visitId !== undefined) {
+      const existing = history.find((entry) => entry.visitId === visitId);
+      if (existing) return existing;
+    }
+    return visitWindow(
+      visitId ?? PEEK_VISIT_ID,
+      history,
+      readCounts,
+      this.db,
+      now ?? (await clockTimestamp(this.db, userId)),
+    );
   }
 
   /**
@@ -394,6 +401,68 @@ function signupCampaignColumns(campaign: SignupCampaign | undefined): {
     ...(narrow.utmCampaign ? { signupAttributionUtmCampaign: narrow.utmCampaign } : {}),
     ...(narrow.landingPath ? { signupAttributionLandingPath: narrow.landingPath } : {}),
   };
+}
+
+/** Placeholder visitId for a peek that has no client visit yet. */
+const PEEK_VISIT_ID = '00000000-0000-4000-8000-000000000000';
+
+function mailboxVisitState(
+  preferences: unknown,
+  mailboxId: string,
+): {
+  prefs: Record<string, unknown>;
+  visits: Record<string, unknown>;
+  history: HomeVisitSummary[];
+} {
+  const prefs: Record<string, unknown> =
+    preferences && typeof preferences === 'object' && !Array.isArray(preferences)
+      ? (preferences as Record<string, unknown>)
+      : {};
+  const raw = prefs.mailboxVisits;
+  const visits =
+    raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const history = Array.isArray(visits[mailboxId])
+    ? (visits[mailboxId] as unknown[]).flatMap((entry) => {
+        const parsed = HomeVisitSummarySchema.safeParse(entry);
+        return parsed.success ? [parsed.data] : [];
+      })
+    : [];
+  return { prefs, visits, history };
+}
+
+async function clockTimestamp(executor: Pick<DrizzleDb, 'select'>, userId: string): Promise<Date> {
+  return new Date(
+    (
+      await executor
+        .select({ at: sql<string>`clock_timestamp()::text` })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1)
+    )[0]!.at,
+  );
+}
+
+async function visitWindow(
+  visitId: string,
+  history: HomeVisitSummary[],
+  readCounts: (
+    since: Date,
+    until: Date,
+    executor: Pick<DrizzleDb, 'execute'>,
+  ) => Promise<HomeVisitCounts>,
+  executor: Pick<DrizzleDb, 'execute'>,
+  instant: Date,
+): Promise<HomeVisitSummary> {
+  const latest = history[0];
+  const until = new Date(
+    Math.max(instant.getTime(), latest ? Date.parse(latest.until) : 0),
+  ).toISOString();
+  const since = latest?.until ?? null;
+  const counts =
+    since === null
+      ? { indexedEmails: null, indexedSenders: null }
+      : await readCounts(new Date(since), new Date(until), executor);
+  return { visitId, since, until, ...counts };
 }
 
 /**

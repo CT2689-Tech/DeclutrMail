@@ -1,7 +1,7 @@
 'use client';
 
-import { useLayoutEffect, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useLayoutEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import {
   reportHeadline,
   reportSupport,
@@ -106,7 +106,6 @@ export function HomeScreen() {
     ...snoozedListQueryOptions((signal) => fetchSnoozed(signal)),
     select: (envelope) => envelope.data,
     enabled: hasActiveMailbox,
-    staleTime: 30_000,
   });
   const presentation = homeReportPresentation(report.data);
   const laterStep = homeLaterCandidate(later.data ?? []);
@@ -117,6 +116,19 @@ export function HomeScreen() {
   // The stage sentence comes from a client poll. The server document has
   // only the leave line, so the first client render must match that.
   const [stageMounted, setStageMounted] = useState(false);
+  // A switch must not keep the previous report on screen. Hold the skeleton
+  // until this mailbox's report arrives, including after the old cache entry
+  // is removed. A first load has no other report cached, so a pending report
+  // does not replace the summary page.
+  const awaitingSwitchedReport = useRef(false);
+  if (
+    mailboxId != null &&
+    report.isPending &&
+    inboxReportCachedForOtherMailbox(queryClient, mailboxId)
+  ) {
+    awaitingSwitchedReport.current = true;
+  }
+  if (!report.isPending || mailboxId == null) awaitingSwitchedReport.current = false;
   useLayoutEffect(() => {
     setStageMounted(true);
   }, []);
@@ -182,9 +194,9 @@ export function HomeScreen() {
     if (summary.isError) {
       return { kind: 'error', error: summary.error, retry: () => void summary.refetch() };
     }
-    // Totals can render independently. Keep the action non-interactive
-    // until its destination/count is known, so a link never moves under the cursor.
-    if (summary.data === undefined) return { kind: 'loading' };
+    if (summary.data === undefined || awaitingSwitchedReport.current) {
+      return { kind: 'loading' };
+    }
 
     const action = { label: 'Review senders', href: '/senders' };
     const numbers = composeHomeNumbers(summary.data);
@@ -209,6 +221,21 @@ export function HomeScreen() {
       action,
     };
   }
+}
+
+function inboxReportCachedForOtherMailbox(queryClient: QueryClient, mailboxId: string): boolean {
+  return (
+    queryClient.getQueryCache().findAll({
+      predicate: (query) => {
+        const key = query.queryKey;
+        return (
+          key.at(-2) === 'inbox-report' &&
+          key.at(-1) !== mailboxId &&
+          query.state.data !== undefined
+        );
+      },
+    }).length > 0
+  );
 }
 
 /** Lead and support from the same insight the Inbox Report puts first. */

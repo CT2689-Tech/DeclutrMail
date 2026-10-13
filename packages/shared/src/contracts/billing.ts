@@ -267,6 +267,11 @@ export const BillingSubscriptionSchema = z.object({
       expiresAt: z.iso.datetime().nullable(),
       /** `pass` is a Backlog Pass. Absent means a complimentary grant. */
       source: z.enum(['comp', 'pass', 'promo']).optional(),
+      /**
+       * Payment provider for a purchased Pass. Null on a manual Pass.
+       * Absent on payloads from before this field existed.
+       */
+      provider: z.string().nullable().optional(),
     })
     .nullable(),
 });
