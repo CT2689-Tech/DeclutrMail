@@ -14,7 +14,6 @@ import type { Request, Response } from 'express';
 
 import { ok, type Envelope, type SyncReadiness } from '@declutrmail/shared/contracts';
 import {
-  inboxLimitFor,
   isBillingPassEnabled,
   isMeterV2,
   isPricingV2,
@@ -140,6 +139,9 @@ export class AuthController {
     const quotaRead = measureRequestOperation('auth.quota', () =>
       this.entitlements.cleanupSummary(principal.workspaceId),
     );
+    const inboxLimitRead = measureRequestOperation('auth.inbox-limit', () =>
+      this.entitlements.inboxLimitForWorkspace(principal.workspaceId),
+    );
     // Sync health needs only the verified user and mailbox list. Start it
     // as soon as those reads finish, overlapping the quota's serial reads.
     // Promise.all below observes every rejection immediately, including
@@ -153,10 +155,11 @@ export class AuthController {
           )
         : null,
     );
-    const [user, mailboxes, quota, health] = await Promise.all([
+    const [user, mailboxes, quota, inboxLimit, health] = await Promise.all([
       userRead,
       mailboxRead,
       quotaRead,
+      inboxLimitRead,
       healthRead,
     ]).catch((error: unknown) => {
       bootstrapFailed = true;
@@ -189,7 +192,7 @@ export class AuthController {
       tier: quota.tier,
       cleanupRemaining: quota.remaining,
       cleanupResetsAt: quota.resetsAt?.toISOString() ?? null,
-      inboxLimit: inboxLimitFor(quota.tier),
+      inboxLimit,
       pricingV2: isPricingV2(),
       cleanupLimit: quota.limit,
       cleanupUsed: quota.used,

@@ -4,10 +4,12 @@ import { join } from 'node:path';
 import {
   actionJobs,
   activityLog,
+  entitlementGrants,
   mailboxAccounts,
   mailMessages,
   schema,
   senders,
+  subscriptions,
   undoJournal,
   users,
   workspaces,
@@ -84,6 +86,19 @@ async function seedWorkspace(
     })
     .returning({ id: mailboxAccounts.id });
   return { workspaceId: ws!.id, mailboxId: mailbox!.id, userId: user!.id };
+}
+
+async function seedPassGrant(db: Db, email: string, transactionId: string): Promise<void> {
+  await db.insert(entitlementGrants).values({
+    email,
+    tier: 'plus',
+    reason: 'Backlog Pass',
+    grantedBy: 'paddle',
+    source: 'pass',
+    provider: 'paddle',
+    providerTransactionId: transactionId,
+    expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+  });
 }
 
 let senderSeq = 0;
@@ -631,6 +646,82 @@ describe('EntitlementsService — inbox limit (D19/D81)', () => {
       expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
       expect((err as AppException).message).toBe(inboxLimitReachedMessage('plus'));
       expect((err as AppException).details).toEqual({ limit: 2, connected: 2, tier: 'plus' });
+    } finally {
+      delete process.env.PRICING_V2;
+    }
+  });
+
+  it('Pass-only: 402 INBOX_LIMIT_REACHED on a second connect when PRICING_V2 is on', async () => {
+    process.env.PRICING_V2 = 'true';
+    try {
+      const { workspaceId } = await seedWorkspace(db, 'plus');
+      await seedPassGrant(db, 'o-plus@declutrmail.ai', 'txn-pass-only-second');
+      expect(await svc.inboxLimitForWorkspace(workspaceId)).toBe(1);
+      const err = await svc.assertCanConnectMailbox(workspaceId).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(AppException);
+      expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
+      expect((err as AppException).getStatus()).toBe(402);
+      expect((err as AppException).message).toBe(inboxLimitReachedMessage('free'));
+      expect((err as AppException).details).toEqual({ limit: 1, connected: 1, tier: 'plus' });
+      await expect(
+        db.select({ id: mailboxAccounts.id }).from(mailboxAccounts),
+      ).resolves.toHaveLength(1);
+    } finally {
+      delete process.env.PRICING_V2;
+    }
+  });
+
+  it('Pass-only: an existing two-account workspace keeps both and only blocks a third', async () => {
+    process.env.PRICING_V2 = 'true';
+    try {
+      const { workspaceId, userId, mailboxId } = await seedWorkspace(db, 'plus');
+      await seedPassGrant(db, 'o-plus@declutrmail.ai', 'txn-pass-only-keep');
+      const [second] = await db
+        .insert(mailboxAccounts)
+        .values({
+          workspaceId,
+          userId,
+          provider: 'gmail',
+          providerAccountId: 'pass-second@x',
+        })
+        .returning({ id: mailboxAccounts.id });
+      expect(await svc.inboxLimitForWorkspace(workspaceId)).toBe(1);
+      const err = await svc.assertCanConnectMailbox(workspaceId).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(AppException);
+      expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
+      expect((err as AppException).details).toEqual({ limit: 1, connected: 2, tier: 'plus' });
+      const remaining = await db
+        .select({ id: mailboxAccounts.id, status: mailboxAccounts.status })
+        .from(mailboxAccounts)
+        .where(eq(mailboxAccounts.workspaceId, workspaceId));
+      expect(remaining).toEqual(
+        expect.arrayContaining([
+          { id: mailboxId, status: 'active' },
+          { id: second!.id, status: 'active' },
+        ]),
+      );
+      expect(remaining).toHaveLength(2);
+    } finally {
+      delete process.env.PRICING_V2;
+    }
+  });
+
+  it('Pass plus a granting paid Plus subscription keeps the Plus inbox floor', async () => {
+    process.env.PRICING_V2 = 'true';
+    try {
+      const { workspaceId } = await seedWorkspace(db, 'plus');
+      await seedPassGrant(db, 'o-plus@declutrmail.ai', 'txn-pass-plus-paid');
+      await db.insert(subscriptions).values({
+        workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub-pass-plus-paid',
+        tier: 'plus',
+        status: 'active',
+        providerPriceId: 'pri_plus',
+        billingCycle: 'annual',
+      });
+      expect(await svc.inboxLimitForWorkspace(workspaceId)).toBe(2);
+      await expect(svc.assertCanConnectMailbox(workspaceId)).resolves.toBeUndefined();
     } finally {
       delete process.env.PRICING_V2;
     }

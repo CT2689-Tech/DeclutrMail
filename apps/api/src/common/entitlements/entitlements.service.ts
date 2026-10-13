@@ -37,6 +37,7 @@ import { PRODUCT_EVENTS, recordProductEvent } from '../../analytics/product-even
 import { DRIZZLE, type DrizzleDb } from '../../db/db.module.js';
 import { AppException } from '../app-exception.js';
 import { cleanupPeriodFor } from './cleanup-period.js';
+import { isPassOnlyWorkspace } from './entitlement-grants.js';
 
 /**
  * Either the root Drizzle client or a caller-owned transaction.
@@ -126,8 +127,10 @@ export interface CleanupSummary {
  *   2. ACTION SELECTOR TIER — single-sender and explicit bulk are Free,
  *      all-matching starts at Pro (A3), sourced from the pricing config
  *      through the Action Registry.
- *   3. INBOX LIMIT — connected-Gmail-account ceiling per tier (D19/A3:
- *      Free 1 / Plus 1 / Pro 5). See `assertCanConnectMailbox`.
+ *   3. INBOX LIMIT — connected-Gmail-account ceiling per tier (D19/A3;
+ *      `PRICING_V2` Plus is 2). A Pass-only workspace (live
+ *      `source='pass'` grant, no granting paid Plus/Pro) stays at 1.
+ *      See `assertCanConnectMailbox`.
  *
  * Gates throw `AppException` with a 402 + a registered error code so
  * the FE can branch on the code and render the upgrade prompt.
@@ -516,11 +519,36 @@ export class EntitlementsService {
    * Enforcement is on ADDING only — existing connections keep working
    * even if a downgrade leaves the workspace over-limit, and counting
    * `active` rows means a disconnected mailbox can be reconnected
-   * whenever doing so stays within the limit.
+   * whenever doing so stays within the limit. A Pass-only workspace
+   * is capped at one new connection; already-connected extras stay.
    */
   async assertCanConnectMailbox(workspaceId: string): Promise<void> {
     const tier = await this.tierForWorkspace(workspaceId);
     await this.assertInboxCapacityForWorkspace({ workspaceId, tier });
+  }
+
+  /**
+   * Server-computed inbox ceiling for `/api/auth/me` and the connect
+   * guard. Pass-only workspaces stay at 1; paid Plus/Pro keep the
+   * tier floor.
+   */
+  async inboxLimitForWorkspace(
+    workspaceId: string,
+    executor: EntitlementsExecutor = this.db,
+    knownTier?: TierId,
+  ): Promise<number> {
+    const tier = knownTier ?? (await this.tierForWorkspace(workspaceId));
+    return this.resolveInboxLimit({ workspaceId, tier }, executor);
+  }
+
+  private async resolveInboxLimit(
+    workspace: InboxWorkspace,
+    executor: EntitlementsExecutor,
+  ): Promise<number> {
+    const base = inboxLimitFor(workspace.tier);
+    if (base <= 1) return base;
+    if (await isPassOnlyWorkspace(executor, workspace.workspaceId)) return 1;
+    return base;
   }
 
   /**
@@ -552,7 +580,7 @@ export class EntitlementsService {
     executor: EntitlementsExecutor = this.db,
   ): Promise<void> {
     const { workspaceId, tier } = workspace;
-    const limit = inboxLimitFor(tier);
+    const limit = await this.resolveInboxLimit(workspace, executor);
     const [row] = await executor
       .select({ connected: count() })
       .from(mailboxAccounts)
@@ -569,10 +597,13 @@ export class EntitlementsService {
         : upgradeTier
           ? ` Upgrade to ${TIER_MANIFEST[upgradeTier].name} to connect up to ${inboxLimitFor(upgradeTier)} Gmail accounts.`
           : '';
+      // Pass-only shares Free's 1-inbox ceiling; no approved Pass
+      // inbox-limit string exists yet, so reuse the Free upgrade line.
+      const copyTier: TierId = limit === 1 ? 'free' : tier;
       throw new AppException({
         code: 'INBOX_LIMIT_REACHED',
         message: isPricingV2()
-          ? inboxLimitReachedMessage(tier)
+          ? inboxLimitReachedMessage(copyTier)
           : limit === 1
             ? `Your plan includes 1 connected inbox.${upgrade}`
             : `Your plan includes ${limit} connected inboxes and all are in use.${upgrade}`,

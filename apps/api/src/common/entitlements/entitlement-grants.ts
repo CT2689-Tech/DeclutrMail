@@ -26,10 +26,13 @@
 // by any of its users.
 
 import { TIER_RANK, type TierId } from '@declutrmail/shared/entitlements';
-import { entitlementGrants, users } from '@declutrmail/db';
-import { and, eq, isNull, or, gt, sql, type SQL } from 'drizzle-orm';
+import { entitlementGrants, subscriptions, users } from '@declutrmail/db';
+import { and, eq, inArray, isNull, or, gt, sql, type SQL } from 'drizzle-orm';
 
 import type { DrizzleDb } from '../../db/db.module.js';
+
+/** Same statuses that recomputeWorkspaceTier treats as a paid floor. */
+const GRANTING_PAID_STATUSES = ['active', 'past_due'] as const;
 
 /**
  * `ORDER BY <this> DESC LIMIT 1` picks the highest tier in a set.
@@ -167,4 +170,40 @@ function highestTier(tiers: TierId[]): TierId | null {
 export function applyGrantFloor(billingTier: TierId, grantTier: TierId | null): TierId {
   if (grantTier === null) return billingTier;
   return TIER_RANK[grantTier] > TIER_RANK[billingTier] ? grantTier : billingTier;
+}
+
+/**
+ * A Backlog Pass with no granting paid Plus/Pro subscription. Pass
+ * floors the workspace at Plus for capabilities, but the Pass itself
+ * covers one Gmail account — only a paid Plus or Pro row raises that.
+ */
+export async function isPassOnlyWorkspace(
+  db: Pick<DrizzleDb, 'select'>,
+  workspaceId: string,
+): Promise<boolean> {
+  const grant = await highestLiveGrantForWorkspace(db, workspaceId);
+  if (grant?.source !== 'pass') return false;
+  return !(await workspaceHasGrantingPaidPlan(db, workspaceId));
+}
+
+async function workspaceHasGrantingPaidPlan(
+  db: Pick<DrizzleDb, 'select'>,
+  workspaceId: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: subscriptions.id })
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.workspaceId, workspaceId),
+        inArray(subscriptions.tier, ['plus', 'pro']),
+        inArray(subscriptions.status, [...GRANTING_PAID_STATUSES]),
+        or(
+          isNull(subscriptions.entitlementEndsAt),
+          gt(subscriptions.entitlementEndsAt, new Date()),
+        ),
+      ),
+    )
+    .limit(1);
+  return row != null;
 }
