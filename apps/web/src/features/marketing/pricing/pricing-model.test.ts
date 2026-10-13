@@ -154,7 +154,7 @@ describe('compareRows — derived from the manifest', () => {
 
   it('quota rows read inboxLimit/undoWindowDays straight off the manifest', () => {
     const rows = compareRows();
-    const inboxRow = rows.find((r) => r.label === 'Connected inboxes');
+    const inboxRow = rows.find((r) => r.label === 'Gmail accounts');
     const undoRow = rows.find((r) => r.label === 'Activity Undo for Archive, Later, and Delete');
     TIER_IDS.filter((id) => TIER_MANIFEST[id].purchasable).forEach((id, i) => {
       expect(inboxRow?.values[i]).toBe(String(TIER_MANIFEST[id].inboxLimit));

@@ -353,7 +353,7 @@ export function compareRows(): readonly CompareRow[] {
 
   const quotaRows: CompareRow[] = [
     {
-      label: 'Connected inboxes',
+      label: 'Gmail accounts',
       values: tiers.map((tier) => String(tier.inboxLimit)),
     },
     {

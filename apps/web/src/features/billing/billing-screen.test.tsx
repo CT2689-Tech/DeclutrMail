@@ -3362,7 +3362,7 @@ describe('BillingScreen — paid subscriber', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Switch to Plus' }));
     const panel = await screen.findByTestId('change-plan-panel');
     expect(panel).toHaveTextContent('No longer included after the change: Daily Brief, Follow-ups');
-    expect(panel).toHaveTextContent('Existing connected inboxes continue working');
+    expect(panel).toHaveTextContent('Existing connected Gmail accounts continue working');
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Schedule downgrade' })).toBeEnabled(),
     );

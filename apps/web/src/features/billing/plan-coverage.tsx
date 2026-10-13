@@ -92,8 +92,8 @@ export function PlanConsequences({ fromTier, toTier }: { fromTier: TierId; toTie
       </p>
       {to.inboxLimit < from.inboxLimit ? (
         <p>
-          Existing connected inboxes continue working, even above the new limit. You cannot add
-          another while at or above {to.inboxLimit}. Completed email actions stay in place.
+          Existing connected Gmail accounts continue working, even above the new limit. You cannot
+          add another while at or above {to.inboxLimit}. Completed email actions stay in place.
         </p>
       ) : null}
     </div>

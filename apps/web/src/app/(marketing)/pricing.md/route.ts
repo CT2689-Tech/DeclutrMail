@@ -205,7 +205,7 @@ ${BRIEF_PROCESSING_NOTE} Privacy details: ${origin}/privacy
 - ${BILLING_MANAGEMENT_NOTE}
 - ${RAZORPAY_LIMITATIONS_NOTE}
 - ${PROVIDER_SWITCH_NOTE}
-- After a downgrade, existing connected inboxes keep working; adding another is blocked while above the new plan's inbox limit.
+- After a downgrade, existing connected Gmail accounts keep working; adding another is blocked while above the new plan's inbox limit.
 - Gmail and Google Workspace only. DeclutrMail is not affiliated with or
   endorsed by Google.
 - Full pricing page: ${origin}/pricing
