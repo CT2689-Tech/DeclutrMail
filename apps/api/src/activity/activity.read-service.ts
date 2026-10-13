@@ -102,6 +102,13 @@ const SUMMARY_VERBS = Object.keys(CANONICAL_SHORTCUTS) as CanonicalVerb[];
 
 const EXECUTION_VERBS = ['archive', 'later', 'delete'] as const;
 type ExecutionVerb = (typeof EXECUTION_VERBS)[number];
+
+/** Activity rows `persistedReviewOutcomeExpression` classifies as failed. */
+const FAILED_UNSUBSCRIBE_ACTIONS = [
+  'unsubscribe_failed',
+  'unsubscribe_unconfirmed',
+  'unsubscribe_unavailable',
+] as const;
 type ExecutionAttempt = Pick<
   typeof actionJobs.$inferSelect,
   | 'id'
@@ -354,6 +361,7 @@ export class ActivityReadService {
         cursor,
         limit: batchSize,
         snapshotCreatedAt,
+        excludeSettledZeroEffectFailures: (params.outcomes ?? []).includes('failed'),
       });
       if (attempts.length === 0) return;
       const lineages = await this.hydrateCurrentExecutionLineages(
@@ -388,6 +396,8 @@ export class ActivityReadService {
     cursor: { occurredAt: Date; id: string } | null;
     limit: number;
     snapshotCreatedAt: Date;
+    /** Same settled-failure omission as the outcome=failed feed. */
+    excludeSettledZeroEffectFailures?: boolean;
   }): Promise<ExecutionAttempt[]> {
     const current = alias(actionJobs, 'activity_export_current');
     const later = alias(actionJobs, 'activity_export_later');
@@ -429,6 +439,11 @@ export class ActivityReadService {
     if (args.lowerBound) whereParts.push(gte(outcomeTime, timestamptzParam(args.lowerBound)));
     if (args.upperBound) whereParts.push(lt(outcomeTime, timestamptzParam(args.upperBound)));
     if (args.cursor) whereParts.push(afterCursor(outcomeTime, current.id, args.cursor));
+    if (args.excludeSettledZeroEffectFailures) {
+      whereParts.push(
+        sql`not (${zeroEffectLabelFailureSettledByLaterActivity(current, outcomeTime)})`,
+      );
+    }
     return this.db
       .select({
         id: current.id,
@@ -544,6 +559,12 @@ export class ActivityReadService {
     if (source) whereParts.push(eq(activityLog.source, source));
     if (verbs.length > 0) whereParts.push(activityVerbFilter(verbs));
     if (outcomes.length > 0) whereParts.push(inArray(reviewOutcomeExpression, outcomes));
+    // Same settled-failure omission as needsAttention. Applied only on the
+    // failed filter the badge links to, so the unfiltered feed keeps the
+    // earlier row next to the later success.
+    if (outcomes.includes('failed')) {
+      whereParts.push(sql`not (${settledUnsubscribeFailure()})`);
+    }
     if (senderQuery.length > 0) {
       const pattern = `%${escapeIlikeWildcards(senderQuery)}%`;
       whereParts.push(or(ilike(senders.displayName, pattern), ilike(senders.email, pattern))!);
@@ -1082,6 +1103,11 @@ export class ActivityReadService {
     if (args.lowerBound) scope.push(gte(outcomeTime, timestamptzParam(args.lowerBound)));
     if (args.upperBound) scope.push(lt(outcomeTime, timestamptzParam(args.upperBound)));
     if (args.cursor) scope.push(afterCursor(outcomeTime, current.id, args.cursor));
+    // The failed feed and needsAttention share this omission. The default
+    // feed still lists the lineage: it is history, not an open failure.
+    if (args.failedOnly) {
+      scope.push(sql`not (${zeroEffectLabelFailureSettledByLaterActivity(current, outcomeTime)})`);
+    }
     return {
       root,
       current,
@@ -1303,10 +1329,27 @@ export class ActivityReadService {
             eq(mailMessages.senderKey, deflected.senderKey),
           ),
         );
-      const [rows, [impact], failedExecutions] = await Promise.all([
+      // Open unsubscribe failures only. A later acceptance, or a sender
+      // that is gone with no indexed messages, is the same omission the
+      // outcome=failed list applies. The probe stays on
+      // activity_log_account_sender_occurred_idx, senders_account_sender_key_uniq,
+      // and mail_messages_account_sender_date_idx — no new index.
+      const openUnsubFailuresQuery = this.db
+        .select({
+          n: sql<number>`count(*) filter (
+            where not (
+              ${laterUnsubscribeResolutionExists()}
+              or ${unsubscribeFailureSenderGoneWithoutMessages()}
+            )
+          )::int`,
+        })
+        .from(activityLog)
+        .where(and(...whereParts, inArray(activityLog.action, [...FAILED_UNSUBSCRIBE_ACTIONS])));
+      const [rows, [impact], failedExecutions, [openUnsubFailures]] = await Promise.all([
         countsQuery,
         impactQuery,
         this.countFailedExecutions(args),
+        openUnsubFailuresQuery,
       ]);
       const noisePreventedPerMonth =
         Number(impact?.deflectedSenders ?? 0) > 0
@@ -1338,16 +1381,11 @@ export class ActivityReadService {
         kept: byVerb.get('keep') ?? 0,
         later: byVerb.get('later') ?? 0,
         followupsDismissed: byVerb.get('followup-dismiss') ?? 0,
-        // The same three actions `persistedReviewOutcomeExpression` maps to
-        // 'failed'. `unsubscribe_unavailable` was in that arm but not here,
-        // so the header count linked to a list larger than its own number
-        // once the count became a link to `outcome=failed`
-        // (QA-activity-20260918-08).
-        needsAttention:
-          (byVerb.get('unsubscribe_failed') ?? 0) +
-          (byVerb.get('unsubscribe_unconfirmed') ?? 0) +
-          (byVerb.get('unsubscribe_unavailable') ?? 0) +
-          failedExecutions,
+        // Open failures only: the three unsubscribe failure actions that
+        // are not settled, plus unresolved Archive/Later/Delete lineages
+        // that are not settled zero-effect retries. The outcome=failed
+        // list uses the same two predicates (QA-activity-20260918-08).
+        needsAttention: Number(openUnsubFailures?.n ?? 0) + failedExecutions,
         noisePreventedPerMonth,
       };
     });
@@ -1507,6 +1545,104 @@ function projectExecutionRows(
       },
     ];
   });
+}
+
+/**
+ * A later non-reverted acceptance for the same mailbox and sender.
+ * Strictly later: a tied timestamp does not settle the failure, and a
+ * reverted acceptance leaves it open.
+ *
+ * The lookup is activity_log_account_sender_occurred_idx
+ * (mailbox_account_id, sender_key, occurred_at).
+ */
+function laterUnsubscribeResolutionExists(): SQL {
+  return sql`exists (
+    select 1 from activity_log later_unsub_resolution
+    where later_unsub_resolution.mailbox_account_id = ${activityLog.mailboxAccountId}
+      and later_unsub_resolution.sender_key = ${activityLog.senderKey}
+      and later_unsub_resolution.reverted_at is null
+      and later_unsub_resolution.action in (
+        'unsubscribe_endpoint_accepted',
+        'unsubscribe_confirmed',
+        'unsubscribe_user_marked_sent'
+      )
+      and later_unsub_resolution.occurred_at > ${activityLog.occurredAt}
+  )`;
+}
+
+/**
+ * The sender row is gone and no indexed message remains for that key.
+ * A missing sender that still has messages stays an open failure.
+ * Null sender_key is not "gone" — there was no sender row to lose.
+ *
+ * senders_account_sender_key_uniq and mail_messages_account_sender_date_idx
+ * cover the two existence probes (leading mailbox_account_id, sender_key).
+ */
+function unsubscribeFailureSenderGoneWithoutMessages(): SQL {
+  return sql`(
+    ${activityLog.senderKey} is not null
+    and not exists (
+      select 1 from senders gone_unsub_sender
+      where gone_unsub_sender.mailbox_account_id = ${activityLog.mailboxAccountId}
+        and gone_unsub_sender.sender_key = ${activityLog.senderKey}
+    )
+    and not exists (
+      select 1 from mail_messages gone_unsub_message
+      where gone_unsub_message.mailbox_account_id = ${activityLog.mailboxAccountId}
+        and gone_unsub_message.sender_key = ${activityLog.senderKey}
+    )
+  )`;
+}
+
+/** Unsubscribe failure row the failed list and needsAttention both drop. */
+function settledUnsubscribeFailure(): SQL {
+  return sql`(
+    ${activityLog.action} in (
+      'unsubscribe_failed',
+      'unsubscribe_unconfirmed',
+      'unsubscribe_unavailable'
+    )
+    and (
+      ${laterUnsubscribeResolutionExists()}
+      or ${unsubscribeFailureSenderGoneWithoutMessages()}
+    )
+  )`;
+}
+
+/**
+ * A failed Archive, Later, or Delete lineage that changed nothing and
+ * was followed by a non-reverted activity row of the same verb for the
+ * same mailbox and sender. `affected_count = 0` and an empty
+ * `resolved_message_ids` are both required; a lineage that named
+ * messages stays open.
+ *
+ * The later-row probe uses activity_log_account_sender_occurred_idx.
+ * The outer failed-job scan stays on action_jobs_account_status_created_idx.
+ */
+function zeroEffectLabelFailureSettledByLaterActivity(
+  job: {
+    mailboxAccountId: SQLWrapper;
+    verb: SQLWrapper;
+    affectedCount: SQLWrapper;
+    resolvedMessageIds: SQLWrapper;
+    selector: SQLWrapper;
+  },
+  outcomeTime: SQLWrapper,
+): SQL {
+  return sql`(
+    ${job.verb} in ('archive', 'later', 'delete')
+    and ${job.affectedCount} = 0
+    and cardinality(${job.resolvedMessageIds}) = 0
+    and ${job.selector}->>'type' = 'sender'
+    and exists (
+      select 1 from activity_log later_label_resolution
+      where later_label_resolution.mailbox_account_id = ${job.mailboxAccountId}
+        and later_label_resolution.reverted_at is null
+        and later_label_resolution.action::text = ${job.verb}::text
+        and later_label_resolution.sender_key = ${job.selector}->>'senderKey'
+        and later_label_resolution.occurred_at > ${outcomeTime}
+    )
+  )`;
 }
 
 /**
