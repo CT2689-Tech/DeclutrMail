@@ -412,7 +412,7 @@ export function SyncNowAnimationStyle() {
       }
       .dm-sync-round { background: transparent; }
       .dm-sync-round:hover:not(:disabled) { background: var(--dm-fill); }
-      /* 44px touch target below the shell's 900px sm breakpoint. */
+      /* 44px touch target below the shell’s 900px sm breakpoint. */
       @media (max-width: 900px) {
         .dm-sync-round { min-width: 44px; min-height: 44px; }
       }

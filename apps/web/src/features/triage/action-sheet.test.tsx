@@ -136,7 +136,7 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
       />,
     );
 
-    expect(html).toContain('Counting the inbox');
+    expect(html).toContain('Counting the email you already have');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Archive/);
   });
 });
@@ -431,7 +431,9 @@ describe('ActionSheet — live-preview confirm gate', () => {
 
     // The count lives in the title, once; "current" in the Details line.
     expect(screen.getByRole('heading', { name: 'Archive 2 emails?' })).toBeInTheDocument();
-    expect(screen.getByText(/^Inbox now, rechecked when it runs$/)).toBeInTheDocument();
+    expect(
+      screen.getByText('Inbox only. We check again right before anything moves.'),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/will move out of the inbox/i)).not.toBeInTheDocument();
   });
 });
@@ -1026,7 +1028,7 @@ describe('ActionSheet Unsubscribe preview recovery', () => {
     rerender(<ActionSheet {...props} inboxCount={0} />);
     expect(screen.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
     expect(screen.getByText(/No existing inbox email to move/)).toBeVisible();
-    expect(screen.queryByText(/Counting the inbox/)).toBeNull();
+    expect(screen.queryByText(/Counting the email you already have/)).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
     expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
   });

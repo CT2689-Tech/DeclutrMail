@@ -1476,7 +1476,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.keyDown(document.body, { key: 'a' });
     await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
     // Wait for the REAL inbox count to load so confirm is no longer gated.
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     // The real endpoint was hit, and the REAL receipt appears only after the
@@ -1541,7 +1541,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
     await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await screen.findByText(/still confirming your last action/i);
@@ -1615,7 +1615,7 @@ describe('SendersScreen — edge states', () => {
     renderScreen();
     fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
     fireEvent.keyDown(document.body, { key: 'd' });
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     fireEvent.change(
       within(screen.getByRole('dialog')).getByRole('combobox', { name: /How far back/i }),
       {
@@ -1642,7 +1642,7 @@ describe('SendersScreen — edge states', () => {
   // identical token through a SEPARATE `useRevertUndo()` instance, mounted
   // in a different component tree — simulated here the same way, sharing
   // only the QueryClient, never touching this screen's React tree.
-  it("clears the receipt when a DIFFERENT component's useRevertUndo() reverts the same token (external undo)", async () => {
+  it('clears the receipt when a DIFFERENT component’s useRevertUndo() reverts the same token (external undo)', async () => {
     let archivePosted = false;
     let undoPosted = false;
     installFetchStub([
@@ -1708,7 +1708,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
     await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await findRowStatus();
@@ -1804,7 +1804,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
     await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
 
     // Pick the narrowest window — the chip states 12 of the 250.
     const dialog = screen.getByRole('dialog');
@@ -1869,7 +1869,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
     await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await waitFor(() => expect(statusPolled).toBe(true));
@@ -1911,7 +1911,7 @@ describe('SendersScreen — edge states', () => {
     renderScreen();
     fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await waitFor(() => expect(statusPolled).toBe(true));
@@ -1961,7 +1961,7 @@ describe('SendersScreen — edge states', () => {
     for (const _attempt of [1, 2]) {
       fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
       fireEvent.keyDown(document.body, { key: 'a' });
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() =>
         expect(document.querySelector('[data-dm-row-activity="working"]')).toBeNull(),
@@ -2012,7 +2012,7 @@ describe('SendersScreen — edge states', () => {
     await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
 
     // Preview resolves to 0 current matches and the confirm is disabled.
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByRole('button', { name: /archive/i })).toBeDisabled();
 
@@ -2075,7 +2075,7 @@ describe('SendersScreen — edge states', () => {
     await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
 
     // Count check failed → explicit no-change state and a blocked confirm.
-    await screen.findByText(/couldn't load the preview/i);
+    await screen.findByText(/couldn’t load the preview/i);
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByRole('button', { name: /archive/i })).toBeDisabled();
     fireEvent.click(within(dialog).getByRole('button', { name: /retry preview/i }));
@@ -2347,7 +2347,7 @@ describe('SendersScreen — edge states', () => {
       });
 
       expect(
-        screen.getByText("Couldn't confirm the unsubscribe from Sender A"),
+        screen.getByText('Couldn’t confirm the unsubscribe from Sender A'),
       ).toBeInTheDocument();
       expect(screen.queryByText(/chip/)).toBeNull();
     });
@@ -2662,7 +2662,7 @@ describe('SendersScreen — edge states', () => {
       fireEvent.click(screen.getByRole('checkbox', { name: /select overdue alpha/i }));
       fireEvent.keyDown(document.body, { key: 'a' });
       await tick(200);
-      screen.getByText(/rechecked when it runs/i);
+      screen.getByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await tick(200);
       expect(actionPosts).toBe(1);
@@ -2769,7 +2769,7 @@ describe('SendersScreen — edge states', () => {
       fireEvent.click(screen.getByRole('checkbox', { name: /select sender a/i }));
       fireEvent.keyDown(document.body, { key: 'a' });
       await tick(200);
-      screen.getByText(/rechecked when it runs/i);
+      screen.getByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await tick(200);
       await tick(ACTION_OVERDUE_MS);
@@ -2912,7 +2912,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
   it.each([
     ['UNSUB_SEND_DISABLED', /nothing was sent/i, /archive/i],
     ['NO_ACTIONABLE_SENDERS', /no request was sent/i, /archive|has an unsubscribe/i],
-    ['NO_ACTIVE_MAILBOX', /couldn't start Unsubscribe/i, /has an unsubscribe/i],
+    ['NO_ACTIVE_MAILBOX', /couldn’t start Unsubscribe/i, /has an unsubscribe/i],
   ] as const)(
     'a %s refusal on bulk Unsubscribe says only what that code proves',
     async (code, says, neverSays) => {
@@ -3213,7 +3213,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       ]);
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(donePills()).toEqual(['Archived', 'Archived']), { timeout: 4000 });
 
@@ -3250,7 +3250,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       });
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(screen.getAllByText('Archiving…')).toHaveLength(2));
 
@@ -3269,7 +3269,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       bulkStub(() => state);
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
       await waitFor(() => expect(screen.getAllByText('Archiving…')).toHaveLength(2));
@@ -3335,7 +3335,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       ]);
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
       const dialog = screen.getByRole('dialog');
@@ -3374,7 +3374,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       ]);
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
       await waitFor(() => expect(screen.getAllByText('Archive: unknown')).toHaveLength(2), {
@@ -3421,7 +3421,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       });
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(screen.getAllByText('Archiving…')).toHaveLength(2));
 
@@ -3674,7 +3674,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
         expect(patches).toBe(2);
         release();
         const result =
-          outcome === 'success' ? 'Kept 2 senders' : "Couldn't keep 2 senders — try again";
+          outcome === 'success' ? 'Kept 2 senders' : 'Couldn’t keep 2 senders — try again';
         expect((await screen.findAllByText(result)).length).toBeGreaterThan(0);
         expect(screen.queryAllByText('Keeping 2 senders…')).toHaveLength(0);
         expect(screen.queryAllByText('Keeping…')).toHaveLength(0);
@@ -3693,7 +3693,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       renderScreenWithToasts();
       await selectBothAndPress('k');
       // (The toast store outlives a test, so absence of an earlier "Kept…" is not assertable here.)
-      await screen.findByText(/Couldn't keep 2 senders/);
+      await screen.findByText(/Couldn’t keep 2 senders/);
       expect(trackMock.mock.calls.filter(([name]) => name === 'action_confirmed')).toHaveLength(0);
     });
 
@@ -3708,7 +3708,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       }));
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       // No outcome claimed per row — but never left looking untouched.
       await waitFor(
@@ -3738,7 +3738,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       }));
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(donePills()).toEqual(['Archived']), { timeout: 4000 });
       expect(rowOf(/select sender a/i).querySelector('[data-dm-row-activity]')).toBeNull();
@@ -3791,7 +3791,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       ]);
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(
         () => expect(document.querySelectorAll('[data-dm-row-activity="failed"]')).toHaveLength(2),
@@ -3799,7 +3799,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       );
 
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(posts).toBe(2));
       await waitFor(
@@ -3858,14 +3858,14 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       ]);
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(
         () => expect(document.querySelectorAll('[data-dm-row-activity="failed"]')).toHaveLength(2),
         { timeout: 4000 },
       );
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(posts).toBe(2));
     }
@@ -3919,7 +3919,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       );
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(donePills()).toEqual(['Archived']), { timeout: 4000 });
       expect(rowOf(/select sender a/i).querySelector('[data-dm-row-activity]')).toBeNull();
@@ -3936,7 +3936,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       const skipToasts = () => screen.queryAllByText('Archive: 1 Protected sender skipped').length;
       const before = skipToasts();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
       await waitFor(() => expect(skipToasts()).toBe(before + 1));
@@ -3975,7 +3975,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
         fireEvent.click(screen.getByRole('checkbox', { name: /select sender b/i }));
         fireEvent.keyDown(document.body, { key: 'a' });
         await tick(200);
-        screen.getByText(/rechecked when it runs/i);
+        screen.getByText(/We check again right before anything moves/);
         fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
         await tick(200);
         await tick(ACTION_OVERDUE_MS);
@@ -4063,7 +4063,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       );
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       acted = true;
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       // The batch poll ticks every 1s — the default 1s waitFor races it.
@@ -4163,7 +4163,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     await selectBothAndPress('a');
     // Mandatory D226 preview with the AGGREGATED real count (never the
     // fabricated tracer numbers).
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     // The aggregated total (12 + 18) is the title's count.
     expect(
       within(screen.getByRole('dialog')).getByRole('heading', {
@@ -4271,7 +4271,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       expect(
         within(dialog).queryByRole('radio', { name: /Archive them|Delete them|Leave alone/i }),
       ).toBeNull();
-      expect(within(dialog).queryByText(/rechecked when it runs/i)).toBeNull();
+      expect(within(dialog).queryByText(/We check again right before anything moves/)).toBeNull();
       fireEvent.click(await within(dialog).findByRole('radio', { name: radioName }));
       const confirm = within(dialog).getByRole('button', { name: buttonName });
       await waitFor(() => expect(confirm).toBeEnabled());
@@ -4643,7 +4643,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     const listReads = refusedBulk('NO_ACTIONABLE_SENDERS');
     await confirmBulk('u');
     const before = listReads();
-    await screen.findByText("Couldn't start Unsubscribe for 2 senders — no request was sent.");
+    await screen.findByText('Couldn’t start Unsubscribe for 2 senders — no request was sent.');
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
@@ -4674,14 +4674,14 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     ]);
     await confirmBulk('u');
     await screen.findByText(
-      "Can't tell if Unsubscribe for 2 senders started — check Activity before retrying.",
+      'Can’t tell if Unsubscribe for 2 senders started — check Activity before retrying.',
     );
   });
 
   it('blames no sender for a mailbox conflict', async () => {
     refusedBulk('SELECT_MAILBOX');
     await confirmBulk('u');
-    await screen.findByText("Couldn't start Unsubscribe for 2 senders — no request was sent.");
+    await screen.findByText('Couldn’t start Unsubscribe for 2 senders — no request was sent.');
   });
 
   it('re-reads the list when an Archive refused every sender', async () => {
@@ -4711,11 +4711,11 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     renderScreenWithToasts();
     fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await screen.findByText(
-      "Can't tell if Archive for Sender A started — check Activity before retrying.",
+      'Can’t tell if Archive for Sender A started — check Activity before retrying.',
     );
     expect(await screen.findByText('Archive: unknown')).toBeInTheDocument();
   });
@@ -4758,7 +4758,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     renderScreenWithToasts();
     fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(await screen.findByText('Archive: unknown')).toBeInTheDocument();
 
@@ -4794,7 +4794,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       renderScreenWithToasts();
       fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
       fireEvent.keyDown(document.body, { key: 'a' });
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       expect(await screen.findByText('Archive: unknown')).toBeInTheDocument();
 
@@ -4831,7 +4831,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
     renderScreen();
     await selectBothAndPress('a');
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await waitFor(() => expect(enqueueAttempted).toBe(true));
@@ -4852,11 +4852,11 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
     renderScreenWithToasts();
     await selectBothAndPress('a');
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await screen.findByText(
-      "Can't tell if Archive for 2 senders started — check Activity before retrying.",
+      'Can’t tell if Archive for 2 senders started — check Activity before retrying.',
     );
     expect(await screen.findAllByText('Archive: unknown')).toHaveLength(2);
     expect(screen.queryByText(/senders selected/i)).toBeNull();
@@ -4901,7 +4901,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
     renderScreen();
     await selectBothAndPress('a');
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     // This screen claims no per-row outcome it cannot know (the batch
@@ -4930,7 +4930,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     await screen.findByText(/delete email from 2 senders/i);
     await screen.findByText(/move to gmail trash/i);
     // D226: a failed preview must BLOCK the destructive confirm.
-    await screen.findByText(/couldn't load the preview/i);
+    await screen.findByText(/couldn’t load the preview/i);
     const dialog = screen.getByRole('dialog');
     const confirmBtn = within(dialog).getByRole('button', { name: /delete/i });
     expect(confirmBtn).toBeDisabled();

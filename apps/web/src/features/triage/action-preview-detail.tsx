@@ -9,6 +9,7 @@ import {
 } from '@declutrmail/shared';
 import type { ActionReach } from '@declutrmail/shared/contracts';
 import type { ActionVerb } from './types';
+import { PREVIEW_DETAILS, previewWhereNowFromSentence } from './preview-detail-copy';
 
 const { color, space, text } = tokens;
 
@@ -95,10 +96,7 @@ export function actionMovesMail(verb: ActionVerb, archiveHistoric: boolean): boo
  * through whole.
  */
 export function mailLocationValue(line: string): string {
-  return line
-    .replace(/^Where it is now: /, '')
-    .replace(/\.$/, '')
-    .replace(/ emails? (in your inbox|elsewhere in Gmail|in Trash or Spam)/g, ' $1');
+  return previewWhereNowFromSentence(line);
 }
 
 /**
@@ -129,7 +127,7 @@ export function ActionPreviewDetailBlock({
       ? []
       : [
           {
-            label: 'Where it is now',
+            label: PREVIEW_DETAILS.whereNow.label,
             value: <span data-testid="mail-location-line">{mailLocationValue(location)}</span>,
           },
         ]),

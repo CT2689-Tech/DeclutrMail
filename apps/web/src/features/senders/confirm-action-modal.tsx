@@ -33,6 +33,7 @@ import {
 } from '@declutrmail/shared/actions';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { mailLocationValue } from '@/features/triage/action-preview-detail';
+import { PREVIEW_DETAILS, previewIncludesValue } from '@/features/triage/preview-detail-copy';
 import { afterLead } from '@/lib/copy/after-lead';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
@@ -454,7 +455,7 @@ export function ConfirmActionModal({
   const previewStateCopy = livePreviewUnavailable
     ? previewSenderGone
       ? 'This sender has no email in this Gmail account anymore.'
-      : "Couldn't load the preview — nothing can run without one."
+      : 'Couldn’t load the preview — nothing can run without one.'
     : livePreviewLoading
       ? 'Loading preview…'
       : null;
@@ -1212,15 +1213,18 @@ export function ConfirmActionModal({
   // volume renders "—", never a factual 0 (finding 5.15).
   if (single) {
     facts.push(
-      { label: 'Domain', value: compositePreview?.sender?.domain ?? leadSender.domain },
       {
-        label: 'Sender',
+        label: PREVIEW_DETAILS.domain.label,
+        value: compositePreview?.sender?.domain ?? leadSender.domain,
+      },
+      {
+        label: PREVIEW_DETAILS.sender.label,
         value: `${leadSender.monthlyVolume == null ? '—' : fmt(leadSender.monthlyVolume)} in the last 90 days · ${fmt(leadSender.totalReceived)} received`,
       },
     );
     const days = compositePreview?.sender?.lastSeenDays ?? leadSender.lastDays;
     facts.push({
-      label: 'Last seen',
+      label: PREVIEW_DETAILS.lastSeen.label,
       value: days === 0 ? 'Today' : `${fmt(days)} day${days === 1 ? '' : 's'} ago`,
     });
     const wrote = compositePreview?.sender?.wroteToCount ?? leadSender.wroteToCount;
@@ -1232,12 +1236,9 @@ export function ConfirmActionModal({
     if (compositeCount === undefined) {
       if (!single) facts.push({ label: 'Received', value: `${fmt(historic)} in total` });
     } else {
-      const windowPart = showWindowQualifier
-        ? ` (older than ${olderThanDays} day${olderThanDays === 1 ? '' : 's'})`
-        : '';
       facts.push({
-        label: 'Count',
-        value: `${allMailScope ? 'Inbox + archived' : 'Inbox'} now${windowPart}, rechecked when it runs`,
+        label: PREVIEW_DETAILS.includes.label,
+        value: previewIncludesValue(allMailScope, showWindowQualifier ? olderThanDays : null),
       });
     }
   }
@@ -1250,7 +1251,7 @@ export function ConfirmActionModal({
   // composite preview, so the split cannot drift.
   if (mailLocationLine) {
     facts.push({
-      label: 'Where it is now',
+      label: PREVIEW_DETAILS.whereNow.label,
       value: <span data-testid="mail-location-line">{mailLocationValue(mailLocationLine)}</span>,
     });
   }
@@ -1282,8 +1283,8 @@ export function ConfirmActionModal({
         : null;
   if (trash !== null) {
     facts.push({
-      label: 'Gmail Trash',
-      value: `Kept up to ${trash.approximateDays} days, then deleted for good`,
+      label: PREVIEW_DETAILS.deleted.label,
+      value: PREVIEW_DETAILS.deleted.value,
     });
   }
   if (isUnsubVerb) {

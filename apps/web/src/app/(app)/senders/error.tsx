@@ -22,7 +22,7 @@ export default function SendersError({
       error={error}
       reset={reset}
       boundary="senders"
-      headline="We couldn't load your senders."
+      headline="We couldn’t load your senders."
       body="Try again, or head back to Triage."
       escape={{ href: '/triage', label: 'Back to Triage' }}
     />

@@ -33,7 +33,7 @@ export default function HowItWorksPage() {
           ? 'See the sender. Know what will change.'
           : WS3_COPY['ws3.howItWorks.h1']
       }
-      lede="DeclutrMail puts recurring senders and their recent email in one place. Open a sender's details, then preview the scope before moving mail."
+      lede="DeclutrMail puts recurring senders and their recent email in one place. Open a sender’s details, then preview the scope before moving mail."
       visual={<HeroWorkspace />}
     >
       <nav className="dm-story-jumps dm-story-shell" aria-label="Explore how it works">

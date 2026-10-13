@@ -196,7 +196,7 @@ describe('Triage preview — reasoning age label (D25, QA-archive-20260828-02)',
 // active even when the live count is 0.
 describe('Triage preview — the count lives in the title, once', () => {
   it.each(['Archive', 'Later', 'Delete'] as const)(
-    "titles %s's empty-inbox preview as nothing-to-move, not an active move",
+    'titles %s’s empty-inbox preview as nothing-to-move, not an active move',
     (verb) => {
       renderPreview({ verb, inboxCount: 0 });
       expect(
@@ -263,8 +263,12 @@ describe('buildPreviewFacts', () => {
       reach: 'all_mail',
     });
     const byLabel = new Map(facts.disclosures.map((f) => [f.label, f.value]));
-    expect(byLabel.get('Count')).toBe('Inbox + archived now, rechecked when it runs');
-    expect(byLabel.get('Gmail Trash')).toMatch(/up to 30 days, then deleted for good/);
+    expect(byLabel.get('Includes')).toBe(
+      'Inbox and archived email. We check again right before anything moves.',
+    );
+    expect(byLabel.get('Deleted email')).toBe(
+      'Goes to Gmail Trash for up to 30 days, unless you empty Trash sooner.',
+    );
   });
 
   it('keeps Later’s return as a floor ("from"), not an exact time', () => {
@@ -315,6 +319,6 @@ describe('afterLead / mailLocationValue', () => {
       mailLocationValue(
         'Where it is now: 0 emails in your inbox · 6,275 emails elsewhere in Gmail · 1 email in Trash or Spam.',
       ),
-    ).toBe('0 in your inbox · 6,275 elsewhere in Gmail · 1 in Trash or Spam');
+    ).toBe('0 in your inbox · 6,275 elsewhere in Gmail');
   });
 });

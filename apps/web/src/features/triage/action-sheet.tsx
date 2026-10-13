@@ -15,6 +15,7 @@ import {
   actionMovesMail,
   type ActionPreviewDetail,
 } from './action-preview-detail';
+import { PREVIEW_DETAILS } from './preview-detail-copy';
 import {
   PreviewReasoning,
   buildPreviewFacts,
@@ -285,7 +286,7 @@ export function ActionSheet({
       detail={detail !== undefined && movesMail ? detail : undefined}
       leadFacts={facts.disclosures}
       trailingFacts={[
-        { label: 'Why suggested', value: <PreviewReasoning row={row} /> },
+        { label: PREVIEW_DETAILS.whySuggested.label, value: <PreviewReasoning row={row} /> },
         ...(verb === 'Delete'
           ? []
           : [
@@ -309,13 +310,13 @@ export function ActionSheet({
     'Pick a future return time.'
   ) : previewUnavailable ? (
     <StatusWithAction
-      message="Couldn’t load the preview. Nothing can move until it loads."
+      message={WS5_COPY['f1.preview.backlog.error']}
       action={onRetryPreview ? { label: 'Retry preview', onClick: onRetryPreview } : undefined}
     />
   ) : verb === 'Unsubscribe' && requiresLivePreview && inboxCount === 0 ? (
     'No existing inbox email to move. Choose Unsubscribe only.'
   ) : confirmDisabled ? (
-    'Counting the inbox…'
+    WS5_COPY['f1.preview.backlog.loading']
   ) : null;
 
   const hasControls = showReach || verb === 'Later' || verb === 'Unsubscribe' || isProtectedRow;

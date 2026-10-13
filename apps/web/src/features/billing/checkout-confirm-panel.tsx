@@ -106,7 +106,7 @@ export function ConfirmPanel({
       ? launchImpact
       : amountLabel !== null
         ? `${amountLabel} billed ${cycle === 'annual' ? 'annually' : 'monthly'}, starting today. Renews automatically — cancel anytime.`
-        : `Pricing for the ${cycle} cycle isn't available right now — try the other billing cycle.`;
+        : `Pricing for the ${cycle} cycle isn’t available right now — try the other billing cycle.`;
   const promoLive = pricingV2 && promoBanner(new Date(), false) !== null;
 
   return (

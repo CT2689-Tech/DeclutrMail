@@ -9,7 +9,7 @@ describe('glossary content', () => {
     const { definition } = GLOSSARY_TERMS.activityUndo;
     expect(definition).not.toContain('plan-based');
     if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
-      expect(definition).toContain(`DeclutrMail's ${UNIFORM_UNDO_WINDOW_DAYS}-day window`);
+      expect(definition).toContain(`DeclutrMail’s ${UNIFORM_UNDO_WINDOW_DAYS}-day window`);
     }
   });
 });

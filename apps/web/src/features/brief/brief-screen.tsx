@@ -345,7 +345,7 @@ function BriefBody({
           // switcher reaches back, the same sentence over Saturday's
           // mail is simply wrong, so past days name the day instead.
           isToday
-            ? `Yesterday's email in three lists: review first, FYI for context, possible noise to assess.`
+            ? `Yesterday’s email in three lists: review first, FYI for context, possible noise to assess.`
             : `Email from ${dateLabel} in three lists: review first, FYI for context, possible noise to assess.`
         }
       />
@@ -1184,7 +1184,7 @@ function ReplyFyiRow({
 /** Why a Noise row cannot join the bulk archive, in the user's words. */
 const BLOCKED_COPY = {
   protected: 'Protected — kept out of bulk actions',
-  unresolved: "We can't act on this sender right now",
+  unresolved: 'We can’t act on this sender right now',
 } as const;
 
 /**
@@ -1404,7 +1404,7 @@ function BriefErrorState({ error, onRetry }: { error: unknown; onRetry: () => vo
       <h1 style={H1_STYLE}>Daily brief</h1>
       <RetryableErrorState
         headingLevel={2}
-        title="We couldn't load your Brief"
+        title="We couldn’t load your Brief"
         description={loadErrorDescription(error)}
         onRetry={onRetry}
       />

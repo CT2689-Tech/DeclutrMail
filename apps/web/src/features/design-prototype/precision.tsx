@@ -153,7 +153,7 @@ export function PrecisionPrototype(p: PrototypeProps) {
               </h1>
               <div className={s.heroBottom}>
                 <p>
-                  See what fills your inbox. Clear what you don't need.
+                  See what fills your inbox. Clear what you don’t need.
                   <br className={s.desktopBreak} /> Make room for the mail that matters.
                 </p>
                 {primary('Find your focus')}
@@ -516,7 +516,7 @@ export function PrecisionPrototype(p: PrototypeProps) {
               <div className={s.pageHeading}>
                 <div>
                   <div className={s.breadcrumb}>WORKSPACE / SENDERS</div>
-                  <h1>Know what you're keeping.</h1>
+                  <h1>Know what you’re keeping.</h1>
                   <p>Volume, context and a clear next step. All in one place.</p>
                 </div>
               </div>

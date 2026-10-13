@@ -142,8 +142,8 @@ function AuthUnavailable({ onRetry }: { onRetry: () => void }) {
     >
       <div style={{ width: '100%', maxWidth: 420 }}>
         <ErrorState
-          title="We couldn't load your account"
-          description="We're retrying automatically."
+          title="We couldn’t load your account"
+          description="We’re retrying automatically."
           onRetry={onRetry}
         />
       </div>

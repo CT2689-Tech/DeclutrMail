@@ -59,7 +59,7 @@ export function SenderWalkthrough({
             </div>
           </dl>
           <p>
-            Open a sender's details. Check recent subjects and the email your decision would affect.
+            Open a sender’s details. Check recent subjects and the email your decision would affect.
           </p>
           <p className="dm-walkthrough-note">
             Marked-read flags give context; they do not prove an email was read.

@@ -63,10 +63,10 @@ describe('getActionFailureCopy', () => {
       undefined,
     ]) {
       expect(getActionFailureCopy('enqueue', { action: 'Archive for Acme', error })).toBe(
-        "Can't tell if Archive for Acme started — check Activity before retrying.",
+        'Can’t tell if Archive for Acme started — check Activity before retrying.',
       );
       expect(getActionFailureCopy('revert-enqueue', { error })).toBe(
-        "Can't tell if undo started — try again.",
+        'Can’t tell if undo started — try again.',
       );
     }
   });
@@ -78,16 +78,16 @@ describe('getActionFailureCopy', () => {
         outcome: 'no request was sent',
         error,
       });
-    expect(copy(refused)).toBe("Couldn't start Unsubscribe for Acme — no request was sent.");
+    expect(copy(refused)).toBe('Couldn’t start Unsubscribe for Acme — no request was sent.');
     expect(copy(apiError(503, 'ENQUEUE_FAILED'))).toBe(
-      "Can't tell if Unsubscribe for Acme started — check Activity before retrying.",
+      'Can’t tell if Unsubscribe for Acme started — check Activity before retrying.',
     );
   });
 
   // An undo request is idempotent: the same token answers with the same
   // reverse job, or "reverted" once it finished. Trying again is safe.
   it('says an unconfirmed or failed undo may simply be tried again', () => {
-    expect(getActionFailureCopy('revert-status')).toBe("Couldn't confirm undo — try again.");
+    expect(getActionFailureCopy('revert-status')).toBe('Couldn’t confirm undo — try again.');
     expect(getActionFailureCopy('revert-terminal')).toBe('Undo failed — try again.');
   });
 
@@ -132,7 +132,7 @@ describe('actionLabel', () => {
     expect(actionLabel('Later', 'Acme')).toBe('moving email from Acme to Later');
     expect(
       getActionFailureCopy('enqueue', { action: actionLabel('Later', 'Acme'), error: refused }),
-    ).toBe("Couldn't start moving email from Acme to Later — nothing changed.");
+    ).toBe('Couldn’t start moving email from Acme to Later — nothing changed.');
     expect(getActionFailureCopy('terminal', { action: actionLabel('Later', '3 senders') })).toBe(
       'Moving email from 3 senders to Later failed — check Activity before retrying.',
     );

@@ -135,7 +135,7 @@ describe('public copy never claims a message was opened', () => {
     expect(isOffending('Opened regularly · excluded by the observed pattern')).toBe(true);
     expect(isOffending('47 messages · 2 opened · no replies')).toBe(true);
     expect(isOffending('47/mo · 0 opened in 90 days')).toBe(true);
-    expect(isOffending("You open 0% of Groupon's 52/mo.")).toBe(true);
+    expect(isOffending('You open 0% of Groupon’s 52/mo.')).toBe(true);
     expect(isOffending('Volume spiked 2× while you almost never opened (0% read).')).toBe(true);
     expect(isOffending('Volume, recent subjects, opens, replies, and current labels.')).toBe(true);
     expect(isOffending('Replies and opens can reveal a sender that looks noisy.')).toBe(true);

@@ -151,7 +151,7 @@ export function StepPresetPick({
         },
         onError: (err) => {
           captureFeatureException(err, { surface: 'onboarding', reason: 'preset_picks' });
-          toast("Couldn't save your picks — try again.", 'warn');
+          toast('Couldn’t save your picks — try again.', 'warn');
         },
       },
     );
@@ -254,7 +254,7 @@ export function StepPresetPick({
         <div style={{ marginBottom: 14 }}>
           <p role="status" style={{ color: color.fgMuted, fontSize: text.sm, maxWidth: 460 }}>
             {rules.isError
-              ? "We couldn't check your preset rules. You can still save your selections."
+              ? 'We couldn’t check your preset rules. You can still save your selections.'
               : 'No preset rules are available yet. You can still save your selections.'}
           </p>
           {rules.isError && (
@@ -321,12 +321,12 @@ export function StepFirstSenderReview({
       {
         onSuccess: (result) => {
           void track('activation_goal_selected', { goal: result.goal });
-          toast("Ready — let's review your first sender.", 'success');
+          toast('Ready — let’s review your first sender.', 'success');
           onSubmitted();
         },
         onError: (err) => {
           captureFeatureException(err, { surface: 'onboarding', reason: 'preset_picks' });
-          toast("Couldn't continue — try again.", 'warn');
+          toast('Couldn’t continue — try again.', 'warn');
         },
       },
     );

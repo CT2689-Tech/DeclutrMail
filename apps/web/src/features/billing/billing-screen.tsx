@@ -437,7 +437,7 @@ export function BillingScreen({
       // first so the app chrome's tier gates flip immediately.
       void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
       void queryClient.invalidateQueries();
-      toast(`Plan updated — you're on ${TIER_MANIFEST[data.tier].name}.`, 'success');
+      toast(`Plan updated — you’re on ${TIER_MANIFEST[data.tier].name}.`, 'success');
       if (TIER_RANK[pending.toTier] > TIER_RANK[pending.fromTier]) {
         void import('./return-after-upgrade')
           .then(({ returnAfterUpgrade }) => returnAfterUpgrade(returnTo ?? initialIntent?.from))
@@ -891,7 +891,7 @@ export function BillingScreen({
       <ScreenIntro
         id="billing"
         title="Plan & billing"
-        body="Upgrades start today; downgrades and cancellations take effect after the period you've paid for."
+        body="Upgrades start today; downgrades and cancellations take effect after the period you’ve paid for."
       />
 
       <NoticeSlot notices={notices} />
@@ -2421,7 +2421,7 @@ function BillingErrorState({ onRetry }: { onRetry: () => void }) {
     >
       <RecoverableErrorState
         headingLevel={2}
-        title="We couldn't load your billing details"
+        title="We couldn’t load your billing details"
         description="Try again to confirm your current billing details."
         onRetry={onRetry}
       />
@@ -2449,8 +2449,8 @@ function BillingUnknownState({ onRetry }: { onRetry: () => void }) {
     >
       <RecoverableErrorState
         headingLevel={2}
-        title="We couldn't read your billing details"
-        description="The billing service returned details we couldn't read. Try again in a moment."
+        title="We couldn’t read your billing details"
+        description="The billing service returned details we couldn’t read. Try again in a moment."
         onRetry={onRetry}
       />
     </div>

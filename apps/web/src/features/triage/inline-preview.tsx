@@ -175,8 +175,8 @@ export function InlinePreviewBlock({
       {blocked && (
         <p style={{ margin: `${space[1]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
           {preview.inboxCount === 'unavailable'
-            ? 'Couldn’t load the preview. Nothing can move until it loads.'
-            : 'Counting the inbox…'}
+            ? WS5_COPY['f1.preview.backlog.error']
+            : WS5_COPY['f1.preview.backlog.loading']}
         </p>
       )}
       {facts.note !== null && (

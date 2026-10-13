@@ -204,7 +204,7 @@ describe('SyncNowButton completion watch', () => {
       }),
     );
     expect(toast).toHaveBeenCalledWith('Up to date.', 'success');
-    expect(toast).not.toHaveBeenCalledWith(expect.stringContaining("Sync didn't finish"), 'danger');
+    expect(toast).not.toHaveBeenCalledWith(expect.stringContaining('Sync didn’t finish'), 'danger');
   });
 
   it('does not report the next mailbox freshness as completion of the previous mailbox sync', async () => {

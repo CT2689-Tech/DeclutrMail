@@ -21,7 +21,7 @@ export default function BriefError({
       error={error}
       reset={reset}
       boundary="brief"
-      headline="We couldn't open your Brief."
+      headline="We couldn’t open your Brief."
       body="Try again, or continue in Triage."
       escape={{ href: '/triage', label: 'Back to Triage' }}
     />

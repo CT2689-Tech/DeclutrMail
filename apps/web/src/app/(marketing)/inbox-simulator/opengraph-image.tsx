@@ -39,7 +39,7 @@ export const contentType = 'image/png';
  */
 export const undoWindowCaption =
   UNIFORM_UNDO_WINDOW_DAYS === null
-    ? "Undo from Activity during your plan's Undo window."
+    ? 'Undo from Activity during your plan’s Undo window.'
     : `Undo from Activity during the ${UNIFORM_UNDO_WINDOW_DAYS}-day Undo window.`;
 
 const INK = '#2D2630';

@@ -56,7 +56,7 @@ const KIND_CONFIG: Record<ReviewKind, KindConfig> = {
     // absence of UNREAD, which a filter or a third-party sweeper can strip
     // without a human ever seeing the message. Saying "opened" here would
     // justify a destructive DEFAULT with a fact we do not have.
-    sub: "These senders are rarely marked read. The default is Unsubscribe — downgrade any row to Later or Keep if you'd rather hang on to it.",
+    sub: 'These senders are rarely marked read. The default is Unsubscribe — downgrade any row to Later or Keep if you’d rather hang on to it.',
     defaultAction: 'unsub',
     options: [KEEP, LATER, UNSUB],
     ctaTone: 'warn',
@@ -76,7 +76,7 @@ const KIND_CONFIG: Record<ReviewKind, KindConfig> = {
     eyebrow: 'Protected senders · permanent until removed',
     tag: 'ok',
     headline: 'Lock these in?',
-    sub: "Once protected, no bulk action will touch these senders. Remove protection any time from the sender's detail page.",
+    sub: 'Once protected, no bulk action will touch these senders. Remove protection any time from the sender’s detail page.',
     defaultAction: 'lock',
     options: [
       { id: 'lock', label: 'Lock', tone: 'primary' },
@@ -425,7 +425,7 @@ export function ReviewSession({
         <span style={{ flex: 1 }} />
         <span style={{ fontSize: text.sm, color: color.fgMuted }}>
           {UNIFORM_UNDO_WINDOW_DAYS === null
-            ? "Archive, Later, and Delete use your plan's Activity Undo window"
+            ? 'Archive, Later, and Delete use your plan’s Activity Undo window'
             : `Archive, Later, and Delete use the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity Undo window`}{' '}
           · Activity logs every change
         </span>

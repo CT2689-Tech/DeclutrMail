@@ -1109,7 +1109,7 @@ export function TriageScreen({
             onError: (err) => {
               captureFeatureException(err, { surface: 'triage', reason: 'keep_intent' });
               invalidateAfterDecision(qc);
-              toast(`Couldn't confirm Keep for ${row.senderName}.`, 'warn');
+              toast(`Couldn’t confirm Keep for ${row.senderName}.`, 'warn');
             },
             onSettled: () => setIntentRowId(null),
           },

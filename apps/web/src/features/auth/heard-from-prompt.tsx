@@ -245,7 +245,7 @@ export function HeardFromPromptView({
       </div>
       {failed ? (
         <p role="status" style={{ margin: 0, fontSize: 12, color: color.dangerText }}>
-          That didn&apos;t save. Try again.
+          That didn’t save. Try again.
         </p>
       ) : null}
     </section>

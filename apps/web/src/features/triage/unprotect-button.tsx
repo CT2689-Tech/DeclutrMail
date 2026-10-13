@@ -65,7 +65,7 @@ export function UnprotectButton({
               },
               onError: (err) => {
                 captureFeatureException(err, { surface: 'triage', reason: 'unprotect' });
-                toast("Couldn't remove protection — try again.", 'warn');
+                toast('Couldn’t remove protection — try again.', 'warn');
               },
             },
           )

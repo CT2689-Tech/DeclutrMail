@@ -97,7 +97,7 @@ describe('LaterReturnAlert', () => {
     };
     state.wakeError = new ApiError(503, {}, 'unavailable');
     render(<LaterReturnAlert enabled />);
-    expect(screen.getByText(/aren't available right now/i)).toBeInTheDocument();
+    expect(screen.getByText(/aren’t available right now/i)).toBeInTheDocument();
   });
 });
 

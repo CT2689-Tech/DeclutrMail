@@ -22,7 +22,7 @@ export default function SenderDetailError({
       error={error}
       reset={reset}
       boundary="senders-detail"
-      headline="We couldn't load this sender."
+      headline="We couldn’t load this sender."
       body="Try again, or head back to Senders."
       escape={{ href: '/senders', label: 'Back to Senders' }}
     />

@@ -64,8 +64,8 @@ export function LaterReturnAlert({ enabled }: { enabled: boolean }) {
       {wake.isError ? (
         <span role="alert" style={{ width: '100%', fontSize: text.sm, color: color.dangerText }}>
           {wake.error instanceof ApiError && wake.error.status === 503
-            ? "Returns aren't available right now. Try again in a moment."
-            : "Couldn't start the return. Try again in a moment."}
+            ? 'Returns aren’t available right now. Try again in a moment.'
+            : 'Couldn’t start the return. Try again in a moment.'}
         </span>
       ) : null}
     </div>
@@ -93,7 +93,7 @@ export function laterReturnIssueCopy({
   retryAction: string;
 }): string {
   const subject =
-    count === 1 ? `${sender}'s Later return` : `${count} Later returns, starting with ${sender},`;
+    count === 1 ? `${sender}’s Later return` : `${count} Later returns, starting with ${sender},`;
   const guidance =
     failureKind === 'reauthorize'
       ? `Reconnect Gmail from the account menu, then choose ${retryAction}.`

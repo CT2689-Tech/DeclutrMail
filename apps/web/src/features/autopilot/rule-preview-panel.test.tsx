@@ -61,7 +61,7 @@ it('keeps invalid recorded evidence inspectable without inventing table metrics'
     />,
   );
   expect(screen.queryByRole('columnheader', { name: 'Read rate' })).not.toBeInTheDocument();
-  expect(screen.getByText("Matches this rule's recorded conditions.")).toBeInTheDocument();
+  expect(screen.getByText('Matches this rule’s recorded conditions.')).toBeInTheDocument();
   expect(screen.getByText(reason)).toBeInTheDocument();
 });
 

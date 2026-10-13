@@ -171,7 +171,7 @@ describe('AdminSecurityEventsScreen — render states', () => {
 
     const alert = await screen.findByRole('alert');
     expect(
-      screen.getByRole('heading', { name: /couldn't load security events/i }),
+      screen.getByRole('heading', { name: /couldn’t load security events/i }),
     ).toBeInTheDocument();
     expect(alert).not.toHaveTextContent('/api/security-events');
     expect(alert).not.toHaveTextContent('database.internal');
@@ -213,7 +213,7 @@ describe('AdminSecurityEventsScreen — render states', () => {
     });
 
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(/couldn't refresh security events/i);
+    expect(alert).toHaveTextContent(/couldn’t refresh security events/i);
     expect(alert).not.toHaveTextContent('refresh.internal');
     expect(screen.getByText('login.failure')).toBeInTheDocument();
     expect(screen.getByRole('table')).toBeInTheDocument();
@@ -364,7 +364,7 @@ describe('AdminSecurityEventsScreen — Load more', () => {
     await user.click(await screen.findByRole('button', { name: /load more/i }));
 
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(/couldn't load more events/i);
+    expect(alert).toHaveTextContent(/couldn’t load more events/i);
     expect(alert).not.toHaveTextContent('pagination.internal');
     expect(screen.getByText('login.failure')).toBeInTheDocument();
     expect(screen.getByRole('table')).toBeInTheDocument();

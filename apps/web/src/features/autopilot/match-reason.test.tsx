@@ -46,7 +46,7 @@ describe('recorded Autopilot match explanations', () => {
     'Future matcher: window=unknown',
   ])('does not infer facts from unavailable/invalid/unknown evidence: %s', (reason) => {
     expect(describeMatchReason(reason)).toEqual({
-      label: "Matches this rule's recorded conditions.",
+      label: 'Matches this rule’s recorded conditions.',
       technical: reason,
     });
   });

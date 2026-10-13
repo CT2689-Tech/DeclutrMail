@@ -69,12 +69,12 @@ describe('Activity action-only Undo lifecycle', () => {
 
   it('does not declare success for done without a recorded reversal', async () => {
     stubUndo(() => jsonOk({ data: { status: 'done', undoRevertedAt: null } }));
-    await expect(revertActivityUndo('token', 'mailbox-a')).rejects.toThrow("Couldn't confirm undo");
+    await expect(revertActivityUndo('token', 'mailbox-a')).rejects.toThrow('Couldn’t confirm undo');
   });
 
   it('stops on status access failure without claiming the background action failed', async () => {
     const requests = stubUndo(() => new Response('{}', { status: 403 }));
-    await expect(revertActivityUndo('token', 'mailbox-a')).rejects.toThrow("Couldn't confirm undo");
+    await expect(revertActivityUndo('token', 'mailbox-a')).rejects.toThrow('Couldn’t confirm undo');
     expect(requests.polls()).toBe(1);
   });
 

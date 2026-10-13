@@ -1,6 +1,7 @@
 'use client';
 
 import { tokens, type SheetFactItem } from '@declutrmail/shared';
+import { PREVIEW_DETAILS } from '@/features/triage/preview-detail-copy';
 import { buildActionPresentation, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { AutopilotMatchDto, AutopilotRuleDto } from '@/lib/api/autopilot';
 import { ConfirmModalFrame, ruleEffectFacts } from './confirm-modal-frame';
@@ -168,8 +169,8 @@ function approveFacts(
     ...(primary.providerRecovery.kind === 'gmail-trash'
       ? [
           {
-            label: 'Gmail Trash',
-            value: `Kept up to ${primary.providerRecovery.approximateDays} days, then deleted for good`,
+            label: PREVIEW_DETAILS.deleted.label,
+            value: PREVIEW_DETAILS.deleted.value,
           },
         ]
       : []),

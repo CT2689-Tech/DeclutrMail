@@ -21,7 +21,7 @@ export default function FollowupsError({
       error={error}
       reset={reset}
       boundary="followups"
-      headline="We couldn't load your follow-ups."
+      headline="We couldn’t load your follow-ups."
       body="Try again, or continue in Triage."
       escape={{ href: '/triage', label: 'Back to Triage' }}
     />

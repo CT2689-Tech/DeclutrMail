@@ -330,7 +330,7 @@ describe('withdrawal stops the SDK, not just the stored choice (GDPR Art. 7(3))'
     expect(posthogMock.opt_out_capturing).toHaveBeenCalledTimes(1);
   });
 
-  it("opts out AFTER reset — reset() clears posthog's own opt-out flag", async () => {
+  it('opts out AFTER reset — reset() clears posthog’s own opt-out flag', async () => {
     await loadSdkViaTrack();
 
     await withdrawAnalyticsConsent();
