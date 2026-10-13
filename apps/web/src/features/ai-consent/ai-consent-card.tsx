@@ -123,7 +123,7 @@ export function AiConsentCard({
       </h2>
       {view.reask ? <p style={{ margin: 0, color: color.fgSoft }}>{copy.reask}</p> : null}
       {body && <p style={{ margin: 0, color: color.fgSoft }}>{body}</p>}
-      <Link className="dm-external-link" href="/privacy#ai-processing">
+      <Link className="dm-external-link dm-tap-target" href="/privacy#ai-processing">
         {copy.link}
       </Link>
       {failed && (

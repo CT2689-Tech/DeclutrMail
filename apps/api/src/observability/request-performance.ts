@@ -14,6 +14,7 @@ const OPERATIONS = new Set([
   'auth.profile',
   'auth.mailboxes',
   'auth.quota',
+  'auth.inbox-limit',
   'mailbox.resolve',
   'rate-limit.consume',
   'auth.sync-state',
@@ -36,6 +37,7 @@ export type RequestOperation =
   | 'auth.profile'
   | 'auth.mailboxes'
   | 'auth.quota'
+  | 'auth.inbox-limit'
   | 'mailbox.resolve'
   | 'rate-limit.consume'
   | 'auth.sync-state'

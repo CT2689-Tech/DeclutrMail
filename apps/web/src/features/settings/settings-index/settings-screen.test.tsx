@@ -37,6 +37,7 @@ import type { Me } from '@/features/auth/api/use-me';
 import { billingKeys } from '@/features/billing/api/query-keys';
 import { ME_SETTINGS_QUERY_KEY } from '@/features/settings/api/query-options';
 import { resetTriageStore, useTriageStore } from '@/features/triage/store';
+import { useUpgradeGateStore } from '@/lib/entitlements/upgrade-gate';
 import { SettingsRouteFallback } from './settings-route-fallback';
 import { SettingsScreen } from './settings-screen';
 
@@ -207,6 +208,7 @@ describe('SettingsScreen', () => {
     setSettingsLocation();
     startMailboxConnectSpy.mockClear();
     startMailboxReactivationSpy.mockClear();
+    useUpgradeGateStore.getState().dismiss();
     vi.mocked(toast).mockClear();
     scrollIntoViewSpy.mockClear();
     resetTriageStore();
@@ -1293,6 +1295,44 @@ describe('SettingsScreen', () => {
     expect(document.activeElement).toBe(section);
     expect(scrollIntoViewSpy.mock.contexts).toContain(section);
     expect(document.querySelector('[data-reconnect-highlighted="true"]')).toBeNull();
+  });
+
+  it('opens the Pass second-account gate from connect_start_result=pass_second_account', async () => {
+    me = {
+      ...makeMe([mailbox(MAILBOX_A, 'active@example.com')]),
+      tier: 'plus',
+      inboxLimit: 1,
+      inboxLimitReason: 'pass',
+      pricingV2: true,
+    };
+    setSettingsLocation('source=oauth&connect_start_result=pass_second_account');
+    renderScreen();
+
+    await waitFor(() =>
+      expect(useUpgradeGateStore.getState().hit).toEqual({
+        reason: 'pass_second_account',
+        details: { limit: 1, connected: 1, reason: 'pass' },
+      }),
+    );
+    expect(toast).not.toHaveBeenCalled();
+    expect(new URLSearchParams(window.location.search).has('connect_start_result')).toBe(false);
+  });
+
+  it('reports the Pass second-account gate instead of starting OAuth', async () => {
+    me = {
+      ...makeMe([mailbox(MAILBOX_A, 'active@example.com')]),
+      tier: 'plus',
+      inboxLimit: 1,
+      inboxLimitReason: 'pass',
+      pricingV2: true,
+    };
+    renderScreen();
+
+    const connect = await screen.findByRole('button', { name: /add gmail account/i });
+    expect(connect).toBeEnabled();
+    await userEvent.setup().click(connect);
+    expect(startMailboxConnectSpy).not.toHaveBeenCalled();
+    expect(useUpgradeGateStore.getState().hit?.reason).toBe('pass_second_account');
   });
 
   it('disables connect-another at the tier inboxLimit with an upgrade pointer', async () => {

@@ -213,6 +213,7 @@ describe('shared request performance HTTP smoke', () => {
       'auth.profile',
       'auth.mailboxes',
       'auth.quota',
+      'auth.inbox-limit',
       'auth.sync-state',
     ]) {
       expect(line.operations[name]).toMatchObject({ count: 1, failures: 0 });

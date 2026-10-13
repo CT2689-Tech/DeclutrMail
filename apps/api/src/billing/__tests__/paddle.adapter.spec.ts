@@ -611,6 +611,50 @@ describe('PaddleAdapter checkout + cancel', () => {
     expect(us.items).toEqual([{ price_id: SANDBOX_PRICE_IDS.plus_annual, quantity: 1 }]);
   });
 
+  it('charges the India Pass price in INR for a trusted IN country', async () => {
+    const fetchSpy = stubTransaction('INR');
+    const adapter = makeAdapter({
+      PADDLE_CLIENT_TOKEN: 'test_abc',
+      PADDLE_API_KEY: 'pdl_test_key',
+      PADDLE_ENV: 'sandbox',
+    });
+    await adapter.createCheckout({
+      workspaceId: WORKSPACE,
+      userEmail: 'user@example.com',
+      tierId: 'plus',
+      cycle: 'annual',
+      providerPriceId: SANDBOX_PRICE_IDS.pass_onetime,
+      trustedCountry: 'IN',
+      checkoutCode: 'pass_onetime',
+    });
+    expect(postedTransaction(fetchSpy).body).toMatchObject({
+      currency_code: 'INR',
+      items: [{ price_id: SANDBOX_INDIA_PRICE_IDS.pass_onetime, quantity: 1 }],
+    });
+
+    const liveSpy = stubTransaction('INR');
+    const live = makeAdapter({
+      PADDLE_CLIENT_TOKEN: 'test_abc',
+      PADDLE_API_KEY: 'pdl_test_key',
+      PADDLE_ENV: 'production',
+      PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID: 'pri_01m4ss0bccahnyghv26rgs36xk',
+      PADDLE_LIVE_INDIA_PASS_PRICE_ID: 'pri_01m4ss18n1c9r5s9p973tef9v2',
+    });
+    await live.createCheckout({
+      workspaceId: WORKSPACE,
+      userEmail: 'user@example.com',
+      tierId: 'plus',
+      cycle: 'annual',
+      providerPriceId: 'pri_usd_pass',
+      trustedCountry: 'IN',
+      checkoutCode: 'pass_onetime',
+    });
+    expect(postedTransaction(liveSpy).body).toMatchObject({
+      currency_code: 'INR',
+      items: [{ price_id: 'pri_01m4ss18n1c9r5s9p973tef9v2', quantity: 1 }],
+    });
+  });
+
   it('falls back to the USD price when the India id is missing or the country is unsigned', async () => {
     const fetchSpy = stubTransaction();
     const adapter = makeAdapter({

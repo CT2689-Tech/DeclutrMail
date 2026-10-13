@@ -461,12 +461,21 @@ button {
     display: inline-flex;
   }
   :root {
-    --dm-tabbar-inset: calc(64px + env(safe-area-inset-bottom, 0px));
+    /* Border 1px + padding 6px + tab buttons 52px + padding 6px.
+       The safe area is padding inside the bar, so the background
+       paints through it to the physical bottom edge. */
+    --dm-tabbar-inset: calc(65px + env(safe-area-inset-bottom, 0px));
   }
   .dm-tabbar {
     display: flex;
+    position: fixed;
+    z-index: 40;
+    left: 0;
+    right: 0;
+    bottom: 0;
     border-top: 1px solid var(--dm-nav-active);
     padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+    background: var(--dm-nav-bg);
   }
 }
 
@@ -830,6 +839,26 @@ button {
   font: 500 13px/1.4 var(--dm-font-sans);
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+/* Phone-only hit area for text links that otherwise collapse to a
+   line box. Negative margin keeps the line where it was. */
+@media (max-width: 760px) {
+  a.dm-tap-target {
+    display: inline-block;
+    box-sizing: border-box;
+    min-height: 44px;
+    padding-block: 14px;
+    margin-block: -14px;
+  }
+
+  /* Fixed-height controls. min-size wins over an inline height and
+     over a later single-class min-height (report close, header chips).
+     No desktop rule, so widths above 760px stay on the component. */
+  button.dm-tap-44 {
+    box-sizing: border-box !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
+  }
 }
 .dm-disclosure {
   border-block: 1px solid var(--dm-line-soft);

@@ -6,6 +6,7 @@ import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   actionJobs,
   automationRules,
+  entitlementGrants,
   mailboxAccounts,
   mailboxDataDeletionRequests,
   mailMessages,
@@ -666,6 +667,125 @@ describe('MailboxAccountsService.upsertConnect', () => {
         ),
       );
     expect(active).toHaveLength(2);
+  });
+
+  it('rejects a Pass-only second connect while a paid Plus workspace can still take its second slot', async () => {
+    process.env.PRICING_V2 = 'true';
+    try {
+      const passOwner = await seedOwner('pass-only-second', 'plus');
+      await db.insert(entitlementGrants).values({
+        email: 'pass-only-second@example.com',
+        tier: 'plus',
+        reason: 'Backlog Pass',
+        grantedBy: 'paddle',
+        source: 'pass',
+        provider: 'paddle',
+        providerTransactionId: 'txn-pass-only-upsert',
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      });
+      await db.insert(mailboxAccounts).values({
+        workspaceId: passOwner.workspaceId,
+        userId: passOwner.userId,
+        provider: 'gmail',
+        providerAccountId: 'pass-first@example.com',
+      });
+
+      await expect(
+        db.transaction((tx) =>
+          service.upsertConnect(tx as unknown as EntitlementsTransaction, {
+            workspaceId: passOwner.workspaceId,
+            userId: passOwner.userId,
+            email: 'pass-second@example.com',
+            encryptedRefreshToken: Buffer.from('ciphertext'),
+            dekEncrypted: Buffer.from('dek'),
+            keyVersion: 1,
+          }),
+        ),
+      ).rejects.toMatchObject({ code: 'INBOX_LIMIT_REACHED', status: 402 });
+      await expect(service.findByProviderEmail('pass-second@example.com')).resolves.toBeNull();
+
+      const plusOwner = await seedOwner('paid-plus-second', 'plus');
+      await db.insert(mailboxAccounts).values({
+        workspaceId: plusOwner.workspaceId,
+        userId: plusOwner.userId,
+        provider: 'gmail',
+        providerAccountId: 'plus-first@example.com',
+      });
+      await expect(
+        db.transaction((tx) =>
+          service.upsertConnect(tx as unknown as EntitlementsTransaction, {
+            workspaceId: plusOwner.workspaceId,
+            userId: plusOwner.userId,
+            email: 'plus-second@example.com',
+            encryptedRefreshToken: Buffer.from('ciphertext'),
+            dekEncrypted: Buffer.from('dek'),
+            keyVersion: 1,
+          }),
+        ),
+      ).resolves.toMatchObject({ wasActive: false });
+    } finally {
+      delete process.env.PRICING_V2;
+    }
+  });
+
+  it('keeps both already-connected Pass-only mailboxes and still refreshes either', async () => {
+    process.env.PRICING_V2 = 'true';
+    try {
+      const owner = await seedOwner('pass-keep-two', 'plus');
+      await db.insert(entitlementGrants).values({
+        email: 'pass-keep-two@example.com',
+        tier: 'plus',
+        reason: 'Backlog Pass',
+        grantedBy: 'paddle',
+        source: 'pass',
+        provider: 'paddle',
+        providerTransactionId: 'txn-pass-keep-two',
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      });
+      const [first, second] = await db
+        .insert(mailboxAccounts)
+        .values([
+          {
+            workspaceId: owner.workspaceId,
+            userId: owner.userId,
+            provider: 'gmail',
+            providerAccountId: 'pass-keep-a@example.com',
+          },
+          {
+            workspaceId: owner.workspaceId,
+            userId: owner.userId,
+            provider: 'gmail',
+            providerAccountId: 'pass-keep-b@example.com',
+          },
+        ])
+        .returning({ id: mailboxAccounts.id });
+
+      const result = await db.transaction((tx) =>
+        service.upsertConnect(tx as unknown as EntitlementsTransaction, {
+          workspaceId: owner.workspaceId,
+          userId: owner.userId,
+          email: 'pass-keep-a@example.com',
+          encryptedRefreshToken: Buffer.from('fresh-ciphertext'),
+          dekEncrypted: Buffer.from('fresh-dek'),
+          keyVersion: 4,
+        }),
+      );
+
+      expect(result).toEqual({ id: first!.id, wasActive: true });
+      const remaining = await db
+        .select({ id: mailboxAccounts.id, status: mailboxAccounts.status })
+        .from(mailboxAccounts)
+        .where(eq(mailboxAccounts.workspaceId, owner.workspaceId));
+      expect(remaining).toEqual(
+        expect.arrayContaining([
+          { id: first!.id, status: 'active' },
+          { id: second!.id, status: 'active' },
+        ]),
+      );
+      expect(remaining).toHaveLength(2);
+    } finally {
+      delete process.env.PRICING_V2;
+    }
   });
 });
 

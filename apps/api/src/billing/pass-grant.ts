@@ -3,7 +3,7 @@
 
 import { entitlementGrants, users } from '@declutrmail/db';
 import { OFFERS } from '@declutrmail/shared/entitlements';
-import { and, asc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNotNull, isNull, or } from 'drizzle-orm';
 
 import type { DrizzleDb } from '../db/db.module.js';
 
@@ -88,6 +88,7 @@ export async function revokePassByTransaction(
       and(
         eq(entitlementGrants.providerTransactionId, providerTransactionId),
         eq(entitlementGrants.source, 'pass'),
+        isNotNull(entitlementGrants.provider),
         isNull(entitlementGrants.revokedAt),
       ),
     )
@@ -96,7 +97,12 @@ export async function revokePassByTransaction(
     const [any] = await db
       .select({ id: entitlementGrants.id })
       .from(entitlementGrants)
-      .where(eq(entitlementGrants.providerTransactionId, providerTransactionId))
+      .where(
+        and(
+          eq(entitlementGrants.providerTransactionId, providerTransactionId),
+          isNotNull(entitlementGrants.provider),
+        ),
+      )
       .limit(1);
     if (!any) return { status: 'missing' };
     return { status: 'revoked', workspaceIds: [] };

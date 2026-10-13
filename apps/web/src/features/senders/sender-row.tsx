@@ -276,6 +276,7 @@ export function SenderRow({
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
           <Link
+            className="dm-tap-target"
             href={`/senders/${encodeURIComponent(s.id)}`}
             // `aria-label` overrides the contents, so the activity has to be
             // IN it or a screen reader never hears "Archiving…".

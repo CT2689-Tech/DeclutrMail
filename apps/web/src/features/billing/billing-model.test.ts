@@ -359,6 +359,8 @@ describe('currentPlanPriceLabel', () => {
 
   it('free with no backing record is $0', () => {
     expect(currentPlanPriceLabel(emptyPlanView('free'))).toBe('$0');
+    expect(currentPlanPriceLabel(emptyPlanView('free'), 'usd')).toBe('$0');
+    expect(currentPlanPriceLabel(emptyPlanView('free'), 'inr')).toBe('₹0');
   });
 
   it('a paid tier with NO backing record makes no price claim', () => {
@@ -393,7 +395,20 @@ describe('complimentary comps', () => {
     });
     expect(currentPlanTitle(view)).toBe('Backlog Pass');
     expect(currentPlanPriceLabel(view)).toBe('$19 once');
+    expect(currentPlanPriceLabel(view, 'inr')).toBe('₹799 once');
     expect(currentPlanPriceLabel(view)).not.toBe('Complimentary');
+    expect(complimentaryNote(view)).toContain('Backlog Pass');
+  });
+
+  it('a manual Pass keeps the Pass name and makes no price claim', () => {
+    const view = comped('plus', {
+      tier: 'plus',
+      expiresAt: '2026-11-12T00:00:00.000Z',
+      source: 'pass',
+      provider: null,
+    });
+    expect(currentPlanTitle(view)).toBe('Backlog Pass');
+    expect(currentPlanPriceLabel(view)).toBe('');
     expect(complimentaryNote(view)).toContain('Backlog Pass');
   });
 

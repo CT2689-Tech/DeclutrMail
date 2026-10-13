@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { track } = vi.hoisted(() => ({ track: vi.fn(async () => undefined) }));
 vi.mock('@/lib/posthog', () => ({ track }));
 
+import { TrustRow } from './trust-row';
 import { FaqPage } from '../learn/index-pages';
 import { AlternativesScreen } from '../comparison/alternatives-screen';
 import { ALTERNATIVES_SLUGS, COMPARISONS, alternativesFor } from '../comparison/comparison-data';
@@ -21,6 +22,15 @@ function expectTrustLink(container: HTMLElement) {
   expect(link).toHaveAttribute('href', '/security#verification');
   expect(link).toHaveClass('dm-trust-link');
 }
+
+describe('trust link name', () => {
+  it('names the link with the visible sentence', () => {
+    const { getByRole } = render(<TrustRow />);
+    const link = getByRole('link');
+    expect(link).not.toHaveAttribute('aria-label');
+    expect(link).toHaveAccessibleName(/Google OAuth verification approved/);
+  });
+});
 
 describe('trust link class on prose templates', () => {
   beforeEach(() => track.mockClear());

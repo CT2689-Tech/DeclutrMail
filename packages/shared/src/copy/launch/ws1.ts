@@ -163,6 +163,11 @@ export const WS1_COPY = {
   'cap.api.message.one':
     'This needs 1 free email, but none of your {allowance} are left this month. More on {resetDate}.',
   'cap.resumed': 'Your {passName} is active. Check the updated counts, then confirm.',
+  'cap.pass.secondAccount.title': 'The {passName} covers one Gmail account',
+  'cap.pass.secondAccount.body':
+    'To connect another Gmail account, get {plusName}. It covers up to {plusInboxes} Gmail accounts for {plusPrice} a year.',
+  'cap.pass.secondAccount.cta': 'Get {plusName}',
+  'cap.pass.secondAccount.dismiss': 'Not now',
   'gate.inbox.free.title': 'Connect another {CONNECTION_TERM} with {plusName}',
   'gate.inbox.free.body':
     '{freeName} includes {freeInboxes} {CONNECTION_TERM}. {plusName} includes up to {plusInboxes}.',
@@ -199,7 +204,7 @@ export const WS1_COPY = {
   'checkout.refund': '{refundDays}-day money-back on any purchase, once per customer.',
   'billing.pass.status': '{passName} \u00b7 ends {passEndDate}',
   'billing.pass.statusDetail':
-    'You have everything in {plusName} until {passEndDate}. Then you\u2019re back on {freeName}. Nothing renews.',
+    'No monthly limit on one {CONNECTION_TERM}, plus the Screener and Autopilot, until {passEndDate}. Then you\u2019re back on {freeName}. Nothing renews.',
   'billing.pass.purchased': 'Your {passName} is active until {passEndDate}.',
   'billing.pass.extended': 'Your {passName} now ends {passEndDate}.',
   'billing.plus.status': '{plusName} \u00b7 renews {periodEnd}',

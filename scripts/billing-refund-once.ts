@@ -1,8 +1,9 @@
 /**
  * Refuse a second refund for the same customer email.
  *
- * Looks at a revoked Pass grant or a subscription with
- * cancel_source='refund'. Does not call Paddle. --override is the
+ * Looks at a revoked provider-backed Pass grant (provider IS NOT NULL)
+ * or a subscription with cancel_source='refund'. A manual Pass is not
+ * a refund. Does not call Paddle. --override is the
  * support escape hatch.
  *
  *   DATABASE_URL=... pnpm tsx scripts/billing-refund-once.ts --email you@example.com
@@ -11,6 +12,7 @@
 import postgres from 'postgres';
 
 import { refundOnceVerdict } from '../packages/shared/src/entitlements/refund-once.js';
+import { hasRevokedProviderPass, type SqlQuery } from './grant-tier-ops.js';
 
 const args = process.argv.slice(2);
 const emailFlag = args.indexOf('--email');
@@ -28,12 +30,8 @@ if (!dsn) {
 
 const sql = postgres(dsn, { max: 1, idle_timeout: 5, connect_timeout: 10 });
 try {
-  const [pass] = await sql<{ found: boolean }[]>`
-    SELECT true AS found
-    FROM entitlement_grants
-    WHERE email = ${email} AND source = 'pass' AND revoked_at IS NOT NULL
-    LIMIT 1
-  `;
+  // A manual Pass has provider NULL. Revoking it is not a refund.
+  const priorPassRefund = await hasRevokedProviderPass(sql as unknown as SqlQuery, email);
   const [sub] = await sql<{ found: boolean }[]>`
     SELECT true AS found
     FROM subscriptions s
@@ -42,7 +40,7 @@ try {
     LIMIT 1
   `;
   const verdict = refundOnceVerdict({
-    priorPassRefund: Boolean(pass?.found),
+    priorPassRefund,
     priorSubscriptionRefund: Boolean(sub?.found),
     override,
   });

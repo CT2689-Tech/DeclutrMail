@@ -149,6 +149,9 @@
     "failed": "Couldn’t undo that. Try again from Activity.",
     "expired": "This can’t be undone anymore. The 30-day window has closed.",
     "unsubNote": "Unsubscribe requests can’t be recalled.",
+    "tray": {
+      "unsubscribeNote": "Unsubscribes can’t be undone. Any that already started will finish."
+    },
     "meterRefund": {
       "one": "1 email added back to your free total",
       "other": "{n} emails added back to your free total"

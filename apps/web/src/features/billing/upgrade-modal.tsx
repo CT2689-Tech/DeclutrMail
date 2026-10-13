@@ -26,7 +26,7 @@ import {
   moneyBackNote,
   quotedPlanPrice,
 } from './billing-model';
-import { useRegionProvider } from './billing-currency';
+import { useRegionProvider, useVisitorPriceLocale } from './billing-currency';
 
 const { color, font, radius, shadow, space, text } = tokens;
 
@@ -84,6 +84,7 @@ export function UpgradeModal() {
   // `if (!hit) return null` fired a hook-order violation the moment a
   // 402 flipped `hit` on a mounted modal (billing audit 2026-07-28).
   const regionProvider = useRegionProvider();
+  const visitorLocale = useVisitorPriceLocale();
 
   if (!hit) return null;
 
@@ -101,7 +102,9 @@ export function UpgradeModal() {
   // /billing's confirm step via the same validated intent the pricing
   // page uses. Launch pricing sells Plus annual. Flags off still quotes
   // the monthly price the link buys.
-  const targetPlan: 'plus' | 'pro' = hit.reason === 'free_cap' ? 'plus' : (requiredTier ?? 'pro');
+  const isPassSecondAccount = hit.reason === 'pass_second_account';
+  const targetPlan: 'plus' | 'pro' =
+    hit.reason === 'free_cap' || isPassSecondAccount ? 'plus' : (requiredTier ?? 'pro');
   const checkoutCycle = pricingV2 ? 'annual' : 'monthly';
   const upgradeHref = billingIntentPath({
     plan: targetPlan,
@@ -114,14 +117,17 @@ export function UpgradeModal() {
   // other free-cap confirm, whose old label was not a deck string.
   const limitConfirmLabel =
     pricingV2 && freeCap !== null && !meteredCap
-      ? fillStory(passEnabled ? WS1_COPY['cap.pass.button'] : WS1_COPY['cap.plus.button'])
+      ? fillStory(
+          passEnabled ? WS1_COPY['cap.pass.button'] : WS1_COPY['cap.plus.button'],
+          visitorLocale,
+        )
       : null;
   const upgradeLabel = limitConfirmLabel ?? `Upgrade to ${TIER_MANIFEST[targetPlan].name}`;
   const targetQuote =
     limitConfirmLabel !== null
       ? null
       : pricingV2 && targetPlan === 'plus'
-        ? launchPlusQuote(regionProvider)
+        ? launchPlusQuote(regionProvider, visitorLocale)
         : quotedPlanPrice(targetPlan, 'monthly', regionProvider);
 
   return (
@@ -174,13 +180,15 @@ export function UpgradeModal() {
             textWrap: 'balance',
           }}
         >
-          {hit.reason === 'free_cap'
-            ? WS1_COPY['cap.title']
-            : hit.reason === 'action_tier'
-              ? actionTierTitle(hit.details)
-              : hit.reason === 'pro_feature'
-                ? proFeatureTitle(hit.details)
-                : inboxLimitTitle(hit.details, tierName(tier))}
+          {isPassSecondAccount
+            ? fillStory(WS1_COPY['cap.pass.secondAccount.title'], visitorLocale)
+            : hit.reason === 'free_cap'
+              ? WS1_COPY['cap.title']
+              : hit.reason === 'action_tier'
+                ? actionTierTitle(hit.details)
+                : hit.reason === 'pro_feature'
+                  ? proFeatureTitle(hit.details)
+                  : inboxLimitTitle(hit.details, tierName(tier))}
         </h2>
         <p
           style={{
@@ -192,7 +200,9 @@ export function UpgradeModal() {
             textWrap: 'pretty',
           }}
         >
-          {hit.reason === 'free_cap' && typeof hit.details.requested === 'number' ? (
+          {isPassSecondAccount ? (
+            fillStory(WS1_COPY['cap.pass.secondAccount.body'], visitorLocale)
+          ) : hit.reason === 'free_cap' && typeof hit.details.requested === 'number' ? (
             capBody(hit.details)
           ) : hit.reason === 'free_cap' ? (
             <>
@@ -241,7 +251,35 @@ export function UpgradeModal() {
             gap: space[2],
           }}
         >
-          {nudge && hit.reason === 'free_cap' && typeof hit.details.requested === 'number' ? (
+          {isPassSecondAccount ? (
+            <>
+              <Link
+                href={upgradeHref}
+                onClick={() => {
+                  void track('upgrade_cta_clicked', { source: 'upgrade_modal', plan: 'plus' });
+                  dismiss();
+                }}
+                data-dm-button=""
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: 50,
+                  padding: '0 28px',
+                  background: color.primary,
+                  color: color.fgInverse,
+                  borderRadius: radius.pill,
+                  textDecoration: 'none',
+                  fontWeight: 600,
+                }}
+              >
+                {fillStory(WS1_COPY['cap.pass.secondAccount.cta'], visitorLocale)}
+              </Link>
+              <Button tone="ghost" size="lg" onClick={dismiss} style={{ width: '100%' }}>
+                {WS1_COPY['cap.pass.secondAccount.dismiss']}
+              </Button>
+            </>
+          ) : nudge && hit.reason === 'free_cap' && typeof hit.details.requested === 'number' ? (
             <>
               {pricingV2 && passEnabled ? (
                 <Link
@@ -270,12 +308,12 @@ export function UpgradeModal() {
                     fontWeight: 600,
                   }}
                 >
-                  {fillStory(WS1_COPY['cap.pass.button'])}
+                  {fillStory(WS1_COPY['cap.pass.button'], visitorLocale)}
                 </Link>
               ) : null}
               {pricingV2 && passEnabled ? (
                 <span style={{ fontSize: text.sm, color: color.fgMuted }}>
-                  {fillStory(WS1_COPY['cap.pass.sublabel'])}
+                  {fillStory(WS1_COPY['cap.pass.sublabel'], visitorLocale)}
                 </span>
               ) : null}
               {typeof hit.details.suggestedPreset === 'number' ? (
@@ -325,10 +363,10 @@ export function UpgradeModal() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                {fillStory(WS1_COPY['cap.plus.button'])}
+                {fillStory(WS1_COPY['cap.plus.button'], visitorLocale)}
               </Link>
               <span style={{ fontSize: text.sm, color: color.fgMuted }}>
-                {fillStory(WS1_COPY['cap.plus.sublabel'])}
+                {fillStory(WS1_COPY['cap.plus.sublabel'], visitorLocale)}
               </span>
               <Button tone="ghost" size="lg" onClick={dismiss} style={{ width: '100%' }}>
                 {WS1_COPY['cap.dismiss']}
@@ -370,6 +408,7 @@ export function UpgradeModal() {
                 <span style={{ fontSize: text.sm, color: color.fgMuted }}>
                   {fillStory(
                     passEnabled ? WS1_COPY['cap.pass.sublabel'] : WS1_COPY['cap.plus.sublabel'],
+                    visitorLocale,
                   )}
                 </span>
               ) : null}
@@ -385,7 +424,7 @@ export function UpgradeModal() {
         </div>
 
         {/* The money-back note and the plan comparison — once, quiet. */}
-        {nudge ? (
+        {nudge && !isPassSecondAccount ? (
           <p style={{ margin: `${space[3]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
             {moneyBackNote(pricingV2)} ·{' '}
             <Link

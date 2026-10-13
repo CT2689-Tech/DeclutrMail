@@ -35,6 +35,7 @@ import {
   isBillingDisabledError,
   useBillingSubscription,
 } from '@/features/billing/api/use-billing-subscription';
+import { reportPassSecondAccountGate } from '@/lib/entitlements/upgrade-gate';
 import { track } from '@/lib/posthog';
 import { replaceUrl } from '@/lib/replace-url';
 import {
@@ -166,14 +167,18 @@ export function SettingsScreen({
 
     const reconnectResult = reconnectResultOf(reconnectResultParam);
     const connectStartResult = connectStartResultOf(connectStartResultParam);
-    const copy = reconnectResult
-      ? RECONNECT_RESULT_COPY[reconnectResult]
-      : connectStartResult
-        ? CONNECT_START_RESULT_COPY[connectStartResult]
-        : null;
-    if (copy) {
-      setReconnectAnnouncement(copy);
-      toast(copy.message, copy.tone);
+    if (connectStartResult === 'pass_second_account') {
+      reportPassSecondAccountGate({ limit: 1, connected: 1, reason: 'pass' });
+    } else {
+      const copy = reconnectResult
+        ? RECONNECT_RESULT_COPY[reconnectResult]
+        : connectStartResult
+          ? CONNECT_START_RESULT_COPY[connectStartResult]
+          : null;
+      if (copy) {
+        setReconnectAnnouncement(copy);
+        toast(copy.message, copy.tone);
+      }
     }
 
     const mailboxId = reconnectResult ? reconnectMailboxIdFromHash(window.location.hash) : null;
@@ -247,10 +252,24 @@ export function SettingsScreen({
   // billing is dark, which is the CURRENT production posture. Reading
   // the tier from there hid this card from every entitled workspace and
   // rendered clean in tests, whose fixture always answers that call 200.
-  const { tier: entitledTier, inboxLimit } = useTier();
+  const {
+    tier: entitledTier,
+    inboxLimit,
+    inboxLimitReason,
+    connectedInboxes,
+    atInboxLimit,
+  } = useTier();
   const briefUnlocked = hasCapability(entitledTier, 'brief');
 
   function connectMailbox(reconnectMailboxId?: string) {
+    if (inboxLimitReason === 'pass' && atInboxLimit && !reconnectMailboxId) {
+      reportPassSecondAccountGate({
+        limit: inboxLimit,
+        connected: connectedInboxes,
+        reason: 'pass',
+      });
+      return;
+    }
     startMailboxConnect(reconnectMailboxId);
   }
 
@@ -312,6 +331,7 @@ export function SettingsScreen({
         mailboxes={me.mailboxes}
         activeMailboxId={me.activeMailboxId}
         inboxLimit={inboxLimit}
+        {...(inboxLimitReason === 'pass' ? { inboxLimitReason: 'pass' as const } : {})}
         healthById={healthById}
         highlightMailboxId={highlightMailboxId}
         onConnect={connectMailbox}

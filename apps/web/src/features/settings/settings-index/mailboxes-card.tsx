@@ -31,6 +31,7 @@ export function MailboxesCard({
   mailboxes,
   activeMailboxId,
   inboxLimit,
+  inboxLimitReason,
   healthById,
   highlightMailboxId = null,
   onConnect,
@@ -40,6 +41,8 @@ export function MailboxesCard({
   activeMailboxId: string | null;
   /** The tier's connected-inbox allowance, or null while tier unknown. */
   inboxLimit: number | null;
+  /** Present when a live Backlog Pass is what set the one-account ceiling. */
+  inboxLimitReason?: 'pass';
   /** Per-mailbox sync health; entries absent while their query loads. */
   healthById: Record<string, MailboxHealth | undefined>;
   /** Brief visual acknowledgement after a target-bound reconnect return. */
@@ -52,6 +55,7 @@ export function MailboxesCard({
   const now = useNow();
   const activeCount = mailboxes.filter((m) => m.status === 'active').length;
   const atLimit = inboxLimit !== null && activeCount >= inboxLimit;
+  const passAtLimit = atLimit && inboxLimitReason === 'pass';
 
   return (
     <SettingsGroup
@@ -68,10 +72,10 @@ export function MailboxesCard({
             gap: 12,
           }}
         >
-          <Button tone="default" onClick={() => onConnect()} disabled={atLimit}>
+          <Button tone="default" onClick={() => onConnect()} disabled={atLimit && !passAtLimit}>
             {mailboxes.length === 0 ? 'Connect Gmail' : 'Add Gmail account'}
           </Button>
-          {atLimit && (
+          {atLimit && !passAtLimit && (
             <span
               id={MAILBOX_LIMIT_EXPLANATION_ID}
               style={{ fontSize: text.sm, color: color.fgMuted }}

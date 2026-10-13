@@ -71,6 +71,19 @@ describe('priceLineFor — derives every amount from the manifest', () => {
     expect(line?.amount).toBe(formatUsd(free.prices.monthly?.usdCents ?? NaN));
   });
 
+  it('quotes ₹0 for Free when India checkout is open, and $0 otherwise', () => {
+    const free = TIER_MANIFEST.free;
+    const india = { pricingV2: true, country: 'IN', indiaCheckoutOpen: true } as const;
+    expect(priceLineFor(free, 'monthly', 'paddle', india)).toEqual({ amount: '₹0', per: '' });
+    expect(priceLineFor(free, 'monthly', 'paddle', { ...india, indiaCheckoutOpen: false })).toEqual(
+      {
+        amount: '$0',
+        per: '',
+      },
+    );
+    expect(priceLineFor(free, 'monthly')).toEqual({ amount: '$0', per: '' });
+  });
+
   it('returns null for tiers with no price at all (team/enterprise)', () => {
     expect(priceLineFor(TIER_MANIFEST.team, 'monthly')).toBeNull();
     expect(priceLineFor(TIER_MANIFEST.enterprise, 'annual')).toBeNull();

@@ -997,6 +997,7 @@ function SummaryRow({
     <section
       aria-live="polite"
       aria-label="Activity summary"
+      className={styles.summary}
       style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
     >
       <div

@@ -5,9 +5,13 @@ const { pathnameRef } = vi.hoisted(() => ({ pathnameRef: { current: '/' } }));
 
 vi.mock('next/navigation', () => ({ usePathname: () => pathnameRef.current }));
 
+import { WS3_COPY } from '@declutrmail/shared/copy/launch';
+
 import { PublicMobileMenu } from './public-mobile-menu';
 
 const links = [{ href: '/how-it-works', label: 'How it works' }] as const;
+const [openLabel, closeLabel] = WS3_COPY['ws3.nav.menu.aria'];
+const menuProps = { links, startUrl: '/oauth', openLabel, closeLabel };
 
 beforeEach(() => {
   pathnameRef.current = '/';
@@ -15,7 +19,7 @@ beforeEach(() => {
 
 describe('PublicMobileMenu', () => {
   it('starts Google OAuth directly from both auth actions', () => {
-    render(<PublicMobileMenu links={links} startUrl="/oauth" />);
+    render(<PublicMobileMenu {...menuProps} />);
     fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
 
     expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute(
@@ -28,7 +32,7 @@ describe('PublicMobileMenu', () => {
   });
 
   it('closes on Escape and restores focus to the menu button', () => {
-    render(<PublicMobileMenu links={links} startUrl="/oauth" />);
+    render(<PublicMobileMenu {...menuProps} />);
     fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
     const button = screen.getByRole('button', { name: 'Close navigation' });
     fireEvent.keyDown(button, { key: 'Escape' });
@@ -40,11 +44,11 @@ describe('PublicMobileMenu', () => {
   });
 
   it('does not stay open after a client-side route change', () => {
-    const { rerender } = render(<PublicMobileMenu links={links} startUrl="/oauth" />);
+    const { rerender } = render(<PublicMobileMenu {...menuProps} />);
     fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
 
     pathnameRef.current = '/how-it-works';
-    rerender(<PublicMobileMenu links={links} startUrl="/oauth" />);
+    rerender(<PublicMobileMenu {...menuProps} />);
 
     expect(screen.getByRole('button', { name: 'Open navigation' })).toHaveAttribute(
       'aria-expanded',
@@ -53,7 +57,7 @@ describe('PublicMobileMenu', () => {
   });
 
   it('keeps Tab inside the open menu', () => {
-    render(<PublicMobileMenu links={links} startUrl="/oauth" />);
+    render(<PublicMobileMenu {...menuProps} />);
     fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
     const nav = screen.getByRole('navigation', { name: 'Mobile navigation' });
     const last = [...nav.querySelectorAll('a')].at(-1);
@@ -68,7 +72,7 @@ describe('PublicMobileMenu', () => {
 
   it('closes immediately when a link targets the current route', () => {
     pathnameRef.current = '/how-it-works';
-    render(<PublicMobileMenu links={links} startUrl="/oauth" />);
+    render(<PublicMobileMenu {...menuProps} />);
     fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
     const link = screen.getByRole('link', { name: 'How it works' });
     expect(link).toHaveAttribute('aria-current', 'page');

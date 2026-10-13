@@ -9,11 +9,12 @@
 
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useQuery } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import type { UndoTrayEntry } from '@declutrmail/shared';
 
-import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
+import { addFetchHandlers, installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { undoKeys } from '@/features/undo/query-keys';
 import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
@@ -111,6 +112,20 @@ function stubRevertLoop() {
     },
   ]);
   return { posts, state };
+}
+
+/** Keeps an inbox-report observer alive so the post-undo rebuild poll has a reader. */
+function ReportWatch({ mailboxId }: { mailboxId: string }) {
+  useQuery({
+    queryKey: ['activity', 'inbox-report', mailboxId],
+    queryFn: async () => {
+      const response = await fetch(`/api/mailboxes/${mailboxId}/inbox-report`);
+      const body = (await response.json()) as { data: { fix: { sendersCount: number } } };
+      return body.data;
+    },
+    staleTime: 30_000,
+  });
+  return null;
 }
 
 function renderTray({ mailboxId, before }: { mailboxId?: string; before?: ReactNode } = {}) {
@@ -410,6 +425,108 @@ describe('TriageUndoTray (D35)', () => {
     expect(mailboxHeaders.slice(0, 3)).toEqual(['mailbox-a', 'mailbox-a', 'mailbox-b']);
     expect(client.getQueryData(undoKeys.tray('mailbox-a'))).toBeDefined();
     expect(client.getQueryData(undoKeys.tray('mailbox-b'))).toBeDefined();
+  });
+
+  it('stops the report rebuild poll when the mailbox switches', async () => {
+    let reportReads = 0;
+    const stub = stubRevertLoop();
+    addFetchHandlers([
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mailbox-a/inbox-report',
+        respond: () => {
+          reportReads += 1;
+          return jsonOk({ data: { fix: { sendersCount: 7 } } });
+        },
+      },
+    ]);
+    const view = renderTray({
+      mailboxId: 'mailbox-a',
+      before: <ReportWatch mailboxId="mailbox-a" />,
+    });
+    await waitFor(() => expect(view.client.getQueryData(undoKeys.tray('mailbox-a'))).toBeDefined());
+    await waitFor(() => expect(reportReads).toBe(1));
+    stub.state.live = [ENTRY_NEWEST, ENTRY_OLDER];
+    await act(async () => {
+      await view.client.invalidateQueries({ queryKey: undoKeys.all });
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Show all recent actions' }));
+    await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(2));
+
+    const beforeUndo = reportReads;
+    fireEvent.click(screen.getByRole('button', { name: 'Undo Archive' }));
+    await waitFor(() => expect(reportReads).toBeGreaterThan(beforeUndo));
+    // Let the undo's immediate refetches land, still inside the rebuild wait.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    const duringPoll = reportReads;
+
+    view.rerender(
+      <QueryWrapper client={view.client}>
+        <ReportWatch mailboxId="mailbox-a" />
+        <TriageUndoTray mailboxId="mailbox-b" />
+      </QueryWrapper>,
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 700));
+    });
+    expect(reportReads).toBe(duringPoll);
+  });
+
+  it('stops the report rebuild poll when the page changes, and the next undo still refreshes', async () => {
+    let reportReads = 0;
+    const stub = stubRevertLoop();
+    addFetchHandlers([
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mailbox-a/inbox-report',
+        respond: () => {
+          reportReads += 1;
+          return jsonOk({ data: { fix: { sendersCount: 7 } } });
+        },
+      },
+    ]);
+    const view = renderTray({
+      mailboxId: 'mailbox-a',
+      before: <ReportWatch mailboxId="mailbox-a" />,
+    });
+    await waitFor(() => expect(view.client.getQueryData(undoKeys.tray('mailbox-a'))).toBeDefined());
+    await waitFor(() => expect(reportReads).toBe(1));
+    stub.state.live = [ENTRY_NEWEST, ENTRY_OLDER];
+    await act(async () => {
+      await view.client.invalidateQueries({ queryKey: undoKeys.all });
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Show all recent actions' }));
+    await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(2));
+
+    const beforeUndo = reportReads;
+    fireEvent.click(screen.getByRole('button', { name: 'Undo Archive' }));
+    await waitFor(() => expect(reportReads).toBeGreaterThan(beforeUndo));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    const duringPoll = reportReads;
+
+    mockPathname = '/home';
+    view.rerender(
+      <QueryWrapper client={view.client}>
+        <ReportWatch mailboxId="mailbox-a" />
+        <TriageUndoTray mailboxId="mailbox-a" />
+      </QueryWrapper>,
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 700));
+    });
+    expect(reportReads).toBe(duringPoll);
+
+    // The aborted controller is replaced. A later undo on this page still polls.
+    stub.state.live = [...stub.state.live, ENTRY_THIRD];
+    await act(async () => {
+      await view.client.invalidateQueries({ queryKey: undoKeys.all });
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo Delete' }));
+    await waitFor(() => expect(reportReads).toBeGreaterThan(duringPoll));
   });
 
   it('silences an old mailbox revert when the active mailbox changes', async () => {

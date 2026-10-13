@@ -49,6 +49,7 @@ export function QuotaChip(props: {
       </span>
       {' \u00b7 '}
       <a
+        className="dm-tap-target"
         href={`/billing?from=${encodeURIComponent(from)}`}
         onClick={() => {
           void track('upgrade_cta_clicked', { source: 'quota_chip', plan: 'plus' });

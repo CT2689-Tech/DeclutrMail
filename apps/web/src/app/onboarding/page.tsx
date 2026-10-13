@@ -303,7 +303,10 @@ function AuthedFlow({ returnTo, resumeScan }: { returnTo: string | null; resumeS
         // Authed but no active mailbox (aborted OAuth / all disconnected).
         return <StepConnect variant="reconnect" billingReturnTo={parseBillingReturnTo(returnTo)} />;
       case 'sync-gate': {
-        if (sync.isError) {
+        // A later poll can fail while the last SyncStatus is still cached.
+        // That reading is the scan on screen. The error screen is only for
+        // a failure that never produced one.
+        if (sync.isError && !sync.data) {
           return (
             <FlowError title="We couldn't check the scan." onRetry={() => void sync.refetch()} />
           );
@@ -460,7 +463,9 @@ function SecondaryConnectGate({
     }
   }, [recoveryPath, exitPath, ready, router, trapped]);
 
-  if (sync.isError && !trapped) {
+  // Same rule as the first-run gate: a retryable failure keeps the last
+  // SyncStatus on screen. FlowError is only the read that never returned one.
+  if (sync.isError && !sync.data && !trapped) {
     return (
       <FlowError
         title="We couldn't check the scan."

@@ -9,11 +9,17 @@ import {
   indiaFaqAnswer,
   isBillingPassEnabled,
   isPricingV2,
+  passSecondAccountCta,
+  passSecondAccountMessage,
+  passSecondAccountTitle,
+  planName,
   meterChipLine,
   meterPreviewText,
   quotaExceededMessage,
   moneyAmount,
   passEndLabel,
+  launchPriceDisplay,
+  plusAmount,
   priceLine,
   promoBanner,
   promoEndLabel,
@@ -22,7 +28,12 @@ import {
   suggestedWindowPreset,
   termsPastDue,
 } from './copy';
-import { OFFERS, PLUS_ANNUAL_2026_10, indiaPaddlePricesConfigured } from './pricing.config';
+import {
+  INBOXES,
+  OFFERS,
+  PLUS_ANNUAL_2026_10,
+  indiaPaddlePricesConfigured,
+} from './pricing.config';
 import { WS1_COPY } from '../copy/launch';
 import { POLICY } from './pricing.config';
 
@@ -81,6 +92,19 @@ describe('emails-cleared meter helpers', () => {
     expect(moneyAmount(PLUS_ANNUAL_2026_10.inrPaise, 'inr')).toBe('₹1,999');
     expect(priceLine(OFFERS.backlogPass.price, 'usd')).toBe('$19');
     expect(priceLine(PLUS_ANNUAL_2026_10, 'inr')).toBe('₹1,999 incl. GST');
+    expect(launchPriceDisplay('usd')).toEqual({
+      free: { amount: '$0', per: '' },
+      plus: { amount: '$59', per: '/yr' },
+      plusLine: '$59 a year',
+      passLine: '$19 once',
+    });
+    expect(launchPriceDisplay('inr')).toEqual({
+      free: { amount: '₹0', per: '' },
+      plus: { amount: '₹1,999', per: '/yr' },
+      plusLine: '₹1,999 a year',
+      passLine: '₹799 once',
+    });
+    expect(JSON.stringify(launchPriceDisplay('inr'))).not.toContain('$');
     expect(promoEndLabel()).toBe('Nov 3, 11:59 PM PT');
     for (const value of [
       moneyAmount(5900, 'usd'),
@@ -265,6 +289,19 @@ describe('pricing story builders', () => {
     expect(indiaFaqAnswer(false, 'inr', false)).not.toContain('You can pay with UPI');
     expect(indiaFaqAnswer(true)).toBe(indiaFaqAnswer(true, 'inr', !indiaPaddlePricesConfigured()));
     expect(INR_CHECKOUT_PAUSED_MESSAGE).toBe(WS1_COPY['pricing.inrPaused.checkout']);
+  });
+
+  it('fills the r37 Pass second-account lines from live pricing, never literals', () => {
+    expect(passSecondAccountTitle()).toBe('The Backlog Pass covers one Gmail account');
+    expect(passSecondAccountTitle()).toBe(fillStory(WS1_COPY['cap.pass.secondAccount.title']));
+    expect(passSecondAccountMessage()).toBe(
+      `To connect another Gmail account, get ${planName('plus')}. It covers up to ${INBOXES.plus} Gmail accounts for ${plusAmount('usd')} a year.`,
+    );
+    expect(passSecondAccountMessage('inr')).toBe(
+      `To connect another Gmail account, get ${planName('plus')}. It covers up to ${INBOXES.plus} Gmail accounts for ${plusAmount('inr')} a year.`,
+    );
+    expect(passSecondAccountCta()).toBe(`Get ${planName('plus')}`);
+    expect(WS1_COPY['cap.pass.secondAccount.dismiss']).toBe('Not now');
   });
 
   it('reads BILLING_PASS_ENABLED only as the string true', () => {

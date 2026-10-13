@@ -230,6 +230,25 @@ export function priceLine(price: PricePoint, locale: 'usd' | 'inr'): string {
   return stableCurrency(price.usdCents, 'usd');
 }
 
+/**
+ * One locale-aware launch catalog. Cards, chips, and teasers read this
+ * instead of assembling `$` / `₹` themselves. Cadence tokens are the
+ * ones already on the deck (`/yr`, `price.plusLine`, `price.passLine`).
+ */
+export function launchPriceDisplay(locale: 'usd' | 'inr'): {
+  free: { amount: string; per: string };
+  plus: { amount: string; per: string };
+  plusLine: string;
+  passLine: string;
+} {
+  return {
+    free: { amount: moneyAmount(0, locale), per: '' },
+    plus: { amount: plusAmount(locale), per: '/yr' },
+    plusLine: fillStory(WS1_COPY['price.plusLine'], locale),
+    passLine: fillStory(WS1_COPY['price.passLine'], locale),
+  };
+}
+
 function resetDate(resetAt: string): string {
   return utcMonthDay(resetAt) ?? resetAt;
 }
@@ -513,4 +532,18 @@ export function inboxLimitReachedMessage(tier: TierId): string {
     plusInboxes: INBOXES.plus,
     CONNECTION_TERM: connectionTerm(INBOXES.free),
   });
+}
+
+/** Locked r37 Pass second-account title. `{passName}` fills from config. */
+export function passSecondAccountTitle(locale: 'usd' | 'inr' = 'usd'): string {
+  return fillStory(WS1_COPY['cap.pass.secondAccount.title'], locale);
+}
+
+/** Locked r37 Pass second-account body. Price follows the region locale. */
+export function passSecondAccountMessage(locale: 'usd' | 'inr' = 'usd'): string {
+  return fillStory(WS1_COPY['cap.pass.secondAccount.body'], locale);
+}
+
+export function passSecondAccountCta(locale: 'usd' | 'inr' = 'usd'): string {
+  return fillStory(WS1_COPY['cap.pass.secondAccount.cta'], locale);
 }

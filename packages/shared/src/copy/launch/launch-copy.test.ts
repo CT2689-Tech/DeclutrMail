@@ -18,6 +18,35 @@ describe('launch copy deck snapshots', () => {
     expect(() => expectMatchesDeck('ws1', { extra: 'not in the deck' })).toThrow();
   });
 
+  it('pins the r37 Pass second-account title so {passName} fills to Backlog Pass', () => {
+    expect(WS1_COPY['cap.pass.secondAccount.title']).toBe(
+      'The {passName} covers one Gmail account',
+    );
+    expect(WS1_COPY['cap.pass.secondAccount.body']).toBe(
+      'To connect another Gmail account, get {plusName}. It covers up to {plusInboxes} Gmail accounts for {plusPrice} a year.',
+    );
+    expect(WS1_COPY['cap.pass.secondAccount.cta']).toBe('Get {plusName}');
+    expect(WS1_COPY['cap.pass.secondAccount.dismiss']).toBe('Not now');
+  });
+
+  it('pins the drop2-r37/r38 Pass one-account lines', () => {
+    expect(WS1_COPY['refunds.pass']).toBe(
+      'If we refund a {passName}, its {passDays} days with no monthly limit end when the refund is confirmed and your account returns to {freeName}. Email you already cleared stays where you put it.',
+    );
+    expect(WS1_COPY['terms.pass']).toBe(
+      'The {passName} is a one-time payment for {passDays} days with no monthly limit on one {CONNECTION_TERM}, and never renews. Buying another {passName} adds {passDays} days to the end of your current one.',
+    );
+    expect(WS1_COPY['cap.pass.sublabel']).toBe(
+      '{passPrice} once \u00b7 {passDays} days, one {CONNECTION_TERM} \u00b7 doesn\u2019t renew',
+    );
+    expect(WS1_COPY['billing.pass.statusDetail']).toBe(
+      'No monthly limit on one {CONNECTION_TERM}, plus the Screener and Autopilot, until {passEndDate}. Then you\u2019re back on {freeName}. Nothing renews.',
+    );
+    expect(WS1_COPY['refunds.pass']).not.toContain('{plusName}');
+    expect(WS1_COPY['terms.pass']).not.toContain('{plusName}');
+    expect(WS1_COPY['billing.pass.statusDetail']).not.toContain('{plusName}');
+  });
+
   it('pins the drop2-r34 singular email sentences', () => {
     expect(WS1_COPY['cap.api.message.one']).toBe(
       'This needs 1 free email, but none of your {allowance} are left this month. More on {resetDate}.',

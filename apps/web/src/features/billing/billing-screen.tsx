@@ -32,6 +32,7 @@ import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
 import {
   fillStory,
   meterChipLine,
+  passEndLabel,
   TIER_MANIFEST,
   TIER_RANK,
   type TierId,
@@ -41,6 +42,7 @@ import { useAuth } from '@/features/auth/auth-provider';
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { useTier } from '@/features/auth/api/use-tier';
 import { currencyForProvider, formatMoney } from '@/features/marketing/pricing/pricing-model';
+import { visitorPriceLocale } from '@/features/marketing/pricing/visitor-pricing-locale';
 import { ApiError, apiDelete } from '@/lib/api/client';
 import { useHydrated } from '@/lib/use-hydrated';
 import { track } from '@/lib/posthog';
@@ -61,6 +63,7 @@ import {
   complimentaryNote,
   currentPlanPriceLabel,
   currentPlanTitle,
+  manualPassGrant,
   passCoversPlan,
   deriveBillingViewState,
   emptyPlanView,
@@ -104,6 +107,17 @@ const CheckoutRecovery = dynamic(
 
 const { color, font, radius, text } = tokens;
 
+/** One-account plans use the approved planIncludes line. Plus keeps scope. */
+function billingAccountScope(plan: BillingPlanView): string {
+  const oneAccount = passCoversPlan(plan) || TIER_MANIFEST[plan.entitlementTier].inboxLimit === 1;
+  if (!oneAccount) return WS2_COPY.liveFix.billing.scope;
+  return fillStory(WS2_COPY.liveFix.billing.planIncludes.one, 'usd', {
+    name: passCoversPlan(plan)
+      ? fillStory(WS1_COPY['planName.pass'])
+      : TIER_MANIFEST[plan.entitlementTier].name,
+  });
+}
+
 /**
  * Post-checkout poll cadence — how often the screen re-reads the
  * subscription while a Paddle payment awaits its webhook grant.
@@ -135,6 +149,14 @@ function processingPhaseAt(pending: PendingCheckout, now: number): ProcessingPha
   if (elapsed >= PAYMENT_UNCONFIRMED_AFTER_MS) return 'unconfirmed';
   if (elapsed >= PAYMENT_PROCESSING_SLOW_AFTER_MS) return 'slow';
   return 'fresh';
+}
+
+/** A Backlog Pass grant that still confers the entitlement. */
+function livePassGrant(grant: BillingSubscription['complimentary']): boolean {
+  if (grant?.source !== 'pass') return false;
+  if (grant.expiresAt == null) return true;
+  const ends = Date.parse(grant.expiresAt);
+  return Number.isFinite(ends) && ends > Date.now();
 }
 
 /**
@@ -187,6 +209,7 @@ export function BillingScreen({
 }) {
   const { me } = useAuth();
   const { tier: meTier, cleanupRemaining, cleanupResetsAt, passEnabled } = useTier();
+  const visitorLocale = visitorPriceLocale({ country, indiaCheckoutOpen });
   const workspaceId = me.user.workspaceId;
   const currentOwner = useRef(workspaceId);
   currentOwner.current = workspaceId;
@@ -313,6 +336,16 @@ export function BillingScreen({
   useEffect(() => {
     if (!serverPending || pending !== null || data === null) return;
     if (Date.parse(serverPending.expiresAt) <= Date.now()) return;
+    // Hydrate and this effect both see `pending === null` on the first
+    // paint, and this one is declared later, so it would replace the
+    // stored lock. A Pass offer lives only on that record; dropping it
+    // leaves "confirming your plan" up after the grant. Storage stays
+    // authoritative when this browser already reserved the checkout.
+    const stored = readPendingCheckout(workspaceId);
+    if (stored) {
+      setPending(stored);
+      return;
+    }
     setPending({
       workspaceId,
       // 'checkout_intent', NOT 'checkout': the server row proves a
@@ -356,7 +389,9 @@ export function BillingScreen({
 
   // A complimentary entitlement can stay above the paid tier, or
   // already equal an unconfirmed upgrade's target. Only the server's
-  // granting paid subscription can acknowledge the money action.
+  // granting paid subscription can acknowledge a tier purchase. A
+  // Backlog Pass is the grant itself, so that purchase's lock clears
+  // when the grant is live.
   useEffect(() => {
     if (
       pending === null ||
@@ -365,6 +400,20 @@ export function BillingScreen({
       subscriptionQuery.isFetching
     )
       return;
+    // A Pass lock is only the grant. Returning here — granted or not —
+    // keeps an already-active Plus annual row from clearing it.
+    if (pending.offer === 'pass_onetime') {
+      if (
+        (pending.kind === 'checkout' || pending.kind === 'checkout_intent') &&
+        livePassGrant(data.complimentary)
+      ) {
+        clearPendingCheckout(workspaceId);
+        setPending(null);
+        void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
+        void queryClient.invalidateQueries();
+      }
+      return;
+    }
     const paid = data.subscription;
     if (paid === null || (paid.status !== 'active' && paid.status !== 'past_due')) return;
     if (paid.cancelSource === 'refund' || paid.cancelSource === 'chargeback') return;
@@ -492,6 +541,7 @@ export function BillingScreen({
     toTier: TierId,
     toCycle: BillingCycle | null,
     ownAttemptId?: string,
+    offer?: 'pass_onetime',
   ) {
     if (!mounted.current || currentOwner.current !== workspaceId) return;
     // No-clobber guard: the key is one per workspace. An id-CARRYING
@@ -512,8 +562,19 @@ export function BillingScreen({
     ) {
       setPending(existing);
     } else {
+      const keptOffer =
+        offer ?? (kind === 'checkout' || kind === 'checkout_intent' ? existing?.offer : undefined);
       setPending(
-        writePendingCheckout(workspaceId, kind, tier, subscription?.cycle ?? null, toTier, toCycle),
+        writePendingCheckout(
+          workspaceId,
+          kind,
+          tier,
+          subscription?.cycle ?? null,
+          toTier,
+          toCycle,
+          undefined,
+          keptOffer,
+        ),
       );
     }
     // Ask immediately — fast webhooks (sandbox flips in ~40s, some land
@@ -541,6 +602,7 @@ export function BillingScreen({
     kind: PendingKind,
     toTier: TierId,
     toCycle: BillingCycle | null,
+    offer?: 'pass_onetime',
   ): Promise<string | null> {
     const claim = await withMoneyActionMutex(workspaceId, () => {
       if (!mounted.current || currentOwner.current !== workspaceId) return null;
@@ -558,6 +620,7 @@ export function BillingScreen({
         toTier,
         toCycle,
         attemptId,
+        offer,
       );
       return attemptId;
     });
@@ -823,7 +886,7 @@ export function BillingScreen({
     >
       <EditorialKicker>Plan & billing</EditorialKicker>
       <h1 style={editorialTitleStyle}>Plan & billing</h1>
-      <p style={{ margin: 0, color: color.fgSoft }}>{WS2_COPY.liveFix.billing.scope}</p>
+      <p style={{ margin: 0, color: color.fgSoft }}>{billingAccountScope(plan)}</p>
       <ScreenIntro
         id="billing"
         title="Plan & billing"
@@ -856,6 +919,7 @@ export function BillingScreen({
 
       <CurrentPlanCard
         plan={plan}
+        locale={visitorLocale}
         cleanupRemaining={cleanupRemaining}
         cleanupResetsAt={cleanupResetsAt}
         billingDark={billingDark}
@@ -938,14 +1002,24 @@ export function BillingScreen({
         indiaCheckoutOpen={indiaCheckoutOpen}
         checkoutGeoToken={checkoutGeoToken}
         onRequestCancel={() => setCancelOpen(true)}
-        onPaymentCompleted={(target, cycle, attemptId) =>
+        onPaymentCompleted={(target, cycle, attemptId, offer) =>
           // Own-id transition over this checkout's reservation: the
           // overlay reported payment — the record becomes the visible
           // "Payment received" lock+poll.
-          startPending('checkout', target, cycle, attemptId)
+          startPending('checkout', target, cycle, attemptId, offer)
         }
-        onCheckoutAttempt={(target, cycle) => attemptClaim('checkout_intent', target, cycle)}
-        onCheckoutAbandoned={releaseAttemptLock}
+        onCheckoutAttempt={(target, cycle, offer) =>
+          attemptClaim('checkout_intent', target, cycle, offer)
+        }
+        onCheckoutAbandoned={(attemptId) => {
+          releaseAttemptLock(attemptId);
+          // Overlay never opened (or the server refused before a
+          // claim). Clear the server slot so a retry is not
+          // CHECKOUT_IN_FLIGHT. Best-effort: TTL is the fallback.
+          void apiDelete<{ released: true }>('/api/billing/checkout/pending').catch(
+            () => undefined,
+          );
+        }}
         onCheckoutClosed={surfaceAttemptLock}
         ownsCheckout={() => mounted.current && currentOwner.current === workspaceId}
         mayOpenCheckout={(attemptId) => {
@@ -958,22 +1032,6 @@ export function BillingScreen({
             record.attemptId === attemptId &&
             Date.now() < record.at + 30 * 60 * 1000
           );
-        }}
-        onCheckoutBlocked={(session, target, cycle, attemptId) => {
-          const record = readPendingCheckout(workspaceId);
-          if (
-            mounted.current &&
-            currentOwner.current === workspaceId &&
-            record?.attemptId === attemptId
-          )
-            setHeldCheckout({
-              workspaceId,
-              session,
-              target,
-              cycle,
-              attemptId,
-              expiresAt: record.at + 30 * 60 * 1000,
-            });
         }}
         onPlanChangeAttempt={(target, cycle) => attemptClaim('change_unconfirmed', target, cycle)}
         onPlanChangeFailedKnown={releaseAttemptLock}
@@ -1001,13 +1059,20 @@ export function BillingScreen({
       />
 
       <p style={{ fontSize: text.sm }}>
-        <a className={linkStyles.link} href="/settings/help">
+        <a className={`${linkStyles.link} dm-tap-target`} href="/settings/help">
           Billing help
-        </a>{' '}
-        ·{' '}
-        <a className={linkStyles.link} href="/refunds">
-          Refund policy
         </a>
+        {manualPassGrant(plan.complimentary) &&
+        plan.backing.state === 'none' &&
+        plan.nonBacking === null ? null : (
+          <>
+            {' '}
+            ·{' '}
+            <a className={`${linkStyles.link} dm-tap-target`} href="/refunds">
+              Refund policy
+            </a>
+          </>
+        )}
       </p>
       <CancelModal
         open={cancelOpen}
@@ -1496,6 +1561,7 @@ function freeEmailsLeftLine(remaining: number, resetAt: string | null): string {
 
 function CurrentPlanCard({
   plan,
+  locale = 'usd',
   cleanupRemaining,
   cleanupResetsAt,
   billingDark,
@@ -1507,6 +1573,7 @@ function CurrentPlanCard({
   resumeCancellationError,
 }: {
   plan: BillingPlanView;
+  locale?: 'usd' | 'inr';
   cleanupRemaining: number | null;
   cleanupResetsAt: string | null;
   billingDark: boolean;
@@ -1543,7 +1610,7 @@ function CurrentPlanCard({
   // paid tier makes no price claim at all — nobody is charged one.
   const note = backingStatusNote(backing);
   const compNote = complimentaryNote(plan);
-  const priceLabel = currentPlanPriceLabel(plan);
+  const priceLabel = currentPlanPriceLabel(plan, locale);
   // "Next renewal <date>" claims THIS plan, at THIS price, renews then.
   // With a scheduled change that is false: on Pro annual with a
   // downgrade booked, the card read "Pro · $190/yr · Next renewal Jul
@@ -1589,21 +1656,23 @@ function CurrentPlanCard({
           >
             {currentPlanTitle(plan)}
           </span>
-          <span
-            style={{
-              fontSize: text.lg,
-              fontWeight: 600,
-              color: color.fg,
-              fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            {plan.backing.state === 'active' ||
-            plan.backing.state === 'past_due' ||
-            plan.backing.state === 'cancel_scheduled' ? (
-              <span style={{ fontWeight: 400 }}>Plan price: </span>
-            ) : null}
-            <span>{priceLabel}</span>
-          </span>
+          {priceLabel ? (
+            <span
+              style={{
+                fontSize: text.lg,
+                fontWeight: 600,
+                color: color.fg,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {plan.backing.state === 'active' ||
+              plan.backing.state === 'past_due' ||
+              plan.backing.state === 'cancel_scheduled' ? (
+                <span style={{ fontWeight: 400 }}>Plan price: </span>
+              ) : null}
+              <span>{priceLabel}</span>
+            </span>
+          ) : null}
         </div>
         {renewal ? (
           <span
@@ -1621,6 +1690,16 @@ function CurrentPlanCard({
           style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}
         >
           {compNote}
+        </p>
+      ) : null}
+      {passCoversPlan(plan) && plan.complimentary?.expiresAt ? (
+        <p
+          data-testid="pass-status-detail"
+          style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}
+        >
+          {fillStory(WS1_COPY['billing.pass.statusDetail'], locale, {
+            passEndDate: passEndLabel(plan.complimentary.expiresAt),
+          })}
         </p>
       ) : null}
 
@@ -1719,8 +1798,7 @@ function CurrentPlanCard({
                 {formatBillingDate(backing.sub.currentPeriodEnd)
                   ? ` — next charge ${formatBillingDate(backing.sub.currentPeriodEnd)}`
                   : ' on its normal schedule'}
-                {currentPlanPriceLabel(plan) ? ` at ${currentPlanPriceLabel(plan)}` : ''}. You can
-                cancel again at any time.
+                {priceLabel ? ` at ${priceLabel}` : ''}. You can cancel again at any time.
               </p>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <Button

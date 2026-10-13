@@ -79,5 +79,6 @@ describe('launch primitives', () => {
     const html = renderToStaticMarkup(<TrustLine />);
     expect(html).toContain('We never fetch or store full email contents.');
     expect(html).toContain('href="/settings/privacy#what-we-store"');
+    expect(html).toContain('class="dm-tap-target"');
   });
 });

@@ -78,6 +78,13 @@ describe('ConnectMailboxStartFilter', () => {
   it.each([
     [new BadRequestException('private target detail'), 'target_invalid'],
     [new AppException({ code: 'INBOX_LIMIT_REACHED' }), 'inbox_limit'],
+    [
+      new AppException({
+        code: 'INBOX_LIMIT_REACHED',
+        details: { limit: 1, connected: 1, tier: 'plus', reason: 'pass' },
+      }),
+      'pass_second_account',
+    ],
     [new HttpException('slow down', HttpStatus.TOO_MANY_REQUESTS), 'rate_limited'],
   ] as const)(
     'redirects an expected browser-start failure without echoing detail',

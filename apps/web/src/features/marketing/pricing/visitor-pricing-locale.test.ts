@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { visitorPricingLocale } from './visitor-pricing-locale';
+import { visitorPriceLocale, visitorPricingLocale } from './visitor-pricing-locale';
+
+describe('visitorPriceLocale', () => {
+  it('is INR only for an India visitor whose checkout is already open', () => {
+    expect(visitorPriceLocale({ country: 'IN', indiaCheckoutOpen: true })).toBe('inr');
+    expect(visitorPriceLocale({ country: 'IN', indiaCheckoutOpen: false })).toBe('usd');
+    expect(visitorPriceLocale({ country: 'US', indiaCheckoutOpen: true })).toBe('usd');
+    expect(visitorPriceLocale({})).toBe('usd');
+  });
+});
 
 describe('visitorPricingLocale', () => {
   it('quotes INR only when India checkout can actually open', () => {
