@@ -26,6 +26,7 @@ describe('QuotaChip', () => {
       '640 of 1,000 free emails left · resets Nov 9',
     );
     expect(container.textContent).toContain('resets Nov 9 · See plans');
+    expect(screen.getByRole('link', { name: 'See plans' })).toHaveClass('dm-tap-target');
     expect(screen.getByTestId('quota-chip')).toHaveAttribute('data-tone', 'default');
 
     render(<QuotaChip summary={{ ...METERED, used: 800, remaining: 200 }} />);

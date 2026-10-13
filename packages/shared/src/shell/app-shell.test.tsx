@@ -4,6 +4,9 @@
 // Rendering is SSR-only (shared-package house style; see
 // packages/shared/vitest.config.ts).
 
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -27,8 +30,8 @@ describe('<AppShell /> — content scroller', () => {
   // 2026-07-29). Deleting the reserve silently restores that bug on
   // every product screen at once, so it is pinned here.
   it('reserves the undo tray footprint so fixed-tray overlap cannot swallow content', () => {
-    expect(markup()).toMatch(
-      new RegExp(`padding-bottom:max\\(0px, calc\\(var\\(${UNDO_TRAY_INSET_VAR}, 0px\\)`),
+    expect(markup()).toContain(
+      `padding-bottom:max(var(--dm-tabbar-inset, 0px), var(${UNDO_TRAY_INSET_VAR}, 0px))`,
     );
   });
 
@@ -75,5 +78,25 @@ describe('<AppShell /> — top bar and tab bar', () => {
     expect(start).toBeGreaterThan(html.indexOf('class="dm-main-scroll"'));
     expect(tabbar).not.toContain('safe-area-inset-bottom');
     expect(tabbar).not.toContain('More</button>');
+  });
+
+  it('pins the mobile bar to the viewport edge and reserves its measured height', () => {
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../styles/tokens.css'),
+      'utf8',
+    );
+    const mobile = css.slice(css.indexOf('@media (max-width: 760px)'));
+    const tabbarStart = mobile.indexOf('.dm-tabbar {');
+    const tabbar = mobile.slice(tabbarStart, mobile.indexOf('}', tabbarStart));
+    expect(tabbar).toContain('position: fixed');
+    expect(tabbar).toContain('bottom: 0');
+    expect(tabbar).toContain('left: 0');
+    expect(tabbar).toContain('right: 0');
+    expect(css).toContain('--dm-tabbar-inset: calc(65px + env(safe-area-inset-bottom, 0px))');
+    expect(tabbar).toContain('env(safe-area-inset-bottom, 0px)');
+    expect(css).toContain('a.dm-tap-target');
+    expect(css).toMatch(/a\.dm-tap-target\s*\{[^}]*min-height:\s*44px/);
+    expect(css).toMatch(/button\.dm-tap-44\s*\{[^}]*min-height:\s*44px\s*!important/);
+    expect(css).toMatch(/button\.dm-tap-44\s*\{[^}]*min-width:\s*44px\s*!important/);
   });
 });

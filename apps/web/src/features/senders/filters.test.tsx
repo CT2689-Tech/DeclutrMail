@@ -250,6 +250,7 @@ describe('FilterButton', () => {
       />,
     );
     expect(screen.getByRole('button', { name: /^filter/i })).toHaveTextContent(/^Filter$/);
+    expect(screen.getByRole('button', { name: /^filter/i })).toHaveClass('dm-tap-44');
 
     rerender(
       <FilterButton
@@ -314,6 +315,7 @@ describe('SortMenu', () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(<SortMenu sort="total" direction="desc" onChange={onChange} />);
+    expect(screen.getByRole('button', { name: /sort/i })).toHaveClass('dm-tap-44');
 
     await user.click(screen.getByRole('button', { name: /most received/i }));
     await user.click(screen.getByRole('menuitemradio', { name: 'Least recent' }));

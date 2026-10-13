@@ -263,7 +263,7 @@ export function FilterButton(props: FilterPanelProps) {
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="dm-hdr-btn"
+        className="dm-hdr-btn dm-tap-44"
         style={headerButtonStyle(n > 0)}
       >
         Filter
@@ -851,7 +851,7 @@ export function SortMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="dm-hdr-btn"
+        className="dm-hdr-btn dm-tap-44"
         style={headerButtonStyle(false)}
       >
         <span style={{ color: color.fgMuted }}>Sort:</span>

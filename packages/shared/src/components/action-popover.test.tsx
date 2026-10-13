@@ -31,6 +31,7 @@ describe('ActionPopover accessibility', () => {
     );
 
     expect(trigger).toContain('aria-label="More actions for Acme Deals"');
+    expect(trigger).toContain('class="dm-tap-44"');
     expect(menu).toContain('aria-label="Actions for Acme Deals"');
   });
 });

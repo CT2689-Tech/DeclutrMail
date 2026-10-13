@@ -2648,7 +2648,7 @@ function SendersScreenContent({
               />
               <button
                 type="button"
-                className={workspaceStyles.inboxFilter}
+                className={`${workspaceStyles.inboxFilter} dm-tap-44`}
                 aria-pressed={compose.hasInboxMail === true}
                 title="Show only senders with mail currently in Inbox. Turn off to see senders you may still want to unsubscribe."
                 onClick={() =>

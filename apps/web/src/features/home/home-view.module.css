@@ -827,7 +827,7 @@
 
 @media (max-width: 760px) {
   .page {
-    padding: 12px 16px var(--dm-tabbar-inset);
+    padding: 12px 16px 16px;
   }
 
   .header {
@@ -879,10 +879,6 @@
 
   .page:has(.arrivals) .header h1 {
     margin: 2px 0;
-  }
-
-  .page:has(.arrivals) .planLine :global(.dm-external-link) {
-    min-height: 0;
   }
 
   .page:has(.arrivals) .steps {
