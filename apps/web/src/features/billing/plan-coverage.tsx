@@ -24,8 +24,6 @@ const tools = [
   ['followups', '/followups', 'Follow-ups'],
 ] as const;
 
-const PASS_BUY_AGAIN = 'Buy again any time to add {passDays} more days';
-
 export function PlanCoverage({
   tier,
   pass = false,
@@ -33,7 +31,7 @@ export function PlanCoverage({
 }: {
   tier: TierId;
   pass?: boolean;
-  /** Free manual Backlog Pass: the buy-again line does not apply. */
+  /** Free hand-granted Pass: `pricing.pass.features.granted`, which has no buy-again line. */
   freeManualPass?: boolean;
 }) {
   const { connectedInboxes, pricingV2 } = useTier();
@@ -60,7 +58,7 @@ export function PlanCoverage({
         {pricingV2 && pass
           ? fillStoryList(
               freeManualPass
-                ? WS1_COPY['pricing.pass.features'].filter((line) => line !== PASS_BUY_AGAIN)
+                ? WS1_COPY['pricing.pass.features.granted']
                 : WS1_COPY['pricing.pass.features'],
             ).map((line) => <div key={line}>{line}</div>)
           : plan.cleanupActionsPerMonth === null

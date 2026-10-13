@@ -190,6 +190,7 @@
     "other": "{k} emails marked read by another tool aren’t counted as read."
   },
   "report.glyph": "about {n} in 10",
+  "report.glyph.aria": "{pct}% of the email you got in the last 90 days",
   "report.people": "{pct}% of your email comes from people you’ve written to.",
   "report.largeMail": {
     "one": "About {size} of your email is in 1 message over 5 MB.",
@@ -286,5 +287,10 @@
   "share.sheet.sub": "Rounded numbers only. No names, senders or email contents.",
   "share.actions": ["Download image", "Copy image", "Share", "Share on X", "Share on LinkedIn"],
   "share.theme": ["Light", "Dark"],
-  "share.copied": "Image copied"
+  "share.copied": "Image copied",
+  "simplify.unsubStatus.accepted": "The sender got the request. It’s up to them to stop sending.",
+  "simplify.unsubStatus.draft": "We started the email in Gmail for you to send. We can’t see whether it was sent.",
+  "simplify.unsubStatus.legacy": "We can’t confirm whether this earlier request went through.",
+  "simplify.unsubReceipt.busy": "already in progress",
+  "simplify.unsubReceipt.sending": "still sending"
 }

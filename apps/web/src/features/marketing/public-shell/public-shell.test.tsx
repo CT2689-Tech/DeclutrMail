@@ -11,7 +11,11 @@ const { track } = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({ usePathname: () => '/' }));
 vi.mock('@/lib/posthog', () => ({ track }));
 
+import { WS3_COPY } from '@declutrmail/shared/copy/launch';
+
 import { PublicFooter, PublicHeader } from './public-shell';
+
+const [openMenuLabel] = WS3_COPY['ws3.nav.menu.aria'];
 
 const PERMISSION_ENTRY = '/sign-in';
 
@@ -56,7 +60,7 @@ describe('PublicHeader auth entry', () => {
         '/home',
       );
       expect(screen.queryByRole('link', { name: 'Sign in' })).not.toBeInTheDocument();
-      fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+      fireEvent.click(screen.getByRole('button', { name: openMenuLabel }));
       const mobile = within(screen.getByRole('navigation', { name: 'Mobile navigation' }));
       expect(mobile.getByRole('link', { name: 'Open DeclutrMail' })).toHaveAttribute(
         'href',
@@ -87,7 +91,7 @@ describe('PublicHeader auth entry', () => {
     for (const label of ['How it works', 'Pricing', 'Demo', 'Compare', 'Privacy & control']) {
       expect(desktop.getByRole('link', { name: label })).toBeInTheDocument();
     }
-    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+    fireEvent.click(screen.getByRole('button', { name: openMenuLabel }));
     const mobile = within(screen.getByRole('navigation', { name: 'Mobile navigation' }));
     for (const label of ['How it works', 'Pricing', 'Demo', 'Compare', 'Privacy & control']) {
       expect(mobile.getByRole('link', { name: label })).toBeInTheDocument();

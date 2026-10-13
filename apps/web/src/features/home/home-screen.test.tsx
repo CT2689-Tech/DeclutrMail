@@ -508,7 +508,7 @@ describe('HomeScreen', () => {
       sync: { readiness_status: 'syncing', current_stage: 'fetching_metadata', progress_pct: 10 },
     });
     renderHome();
-    expect(await screen.findByText('Finding your senders.')).toBeInTheDocument();
+    expect(await screen.findByText('Collecting sender details.')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Review senders' })).toBeNull();
     expect(screen.queryByText('You can close this tab and come back later.')).toBeNull();
     expect(screen.queryByText('Waiting to start.')).toBeNull();

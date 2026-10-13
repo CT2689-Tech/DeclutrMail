@@ -3,7 +3,7 @@ import deck from './deck/ws2.json' with { type: 'json' };
 /**
  * WS2 launch copy. The checked-in deck file is the source; this module
  * re-exports it so a string cannot drift from `deck/ws2.json`.
- * Revision: drop2-r18 (issued 2026-10-11T21:04:00-07:00).
+ * Revision: drop2-r41 (issued 2026-10-13T11:25:00-07:00).
  * `home.failed` is drop2-r23.
  * drop2-r20 marks the inline `aiPrompt` question NOT SHIPPING. The short
  * consent card is the nudge; its Allow / Not now strings are unchanged.

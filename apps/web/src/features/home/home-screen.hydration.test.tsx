@@ -97,7 +97,7 @@ describe('Home scan hydration', () => {
     const container = document.createElement('div');
     container.innerHTML = renderToString(tree(server));
     expect(container.textContent).toContain('You can close this tab and come back later.');
-    expect(container.textContent).not.toContain('Finding your senders.');
+    expect(container.textContent).not.toContain('Collecting sender details.');
 
     const onRecoverableError = vi.fn();
     let root: Root | undefined;
@@ -106,7 +106,7 @@ describe('Home scan hydration', () => {
         root = hydrateRoot(container, tree(browser), { onRecoverableError });
       });
       expect(onRecoverableError).not.toHaveBeenCalled();
-      expect(container.textContent).toContain('Finding your senders.');
+      expect(container.textContent).toContain('Collecting sender details.');
       expect(container.textContent).not.toContain('You can close this tab and come back later.');
     } finally {
       root?.unmount();
