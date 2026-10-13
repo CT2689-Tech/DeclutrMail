@@ -383,10 +383,7 @@ test('workflow is manual, Sandbox-scoped, and does not create prices', () => {
     'utf8',
   );
   assert.match(workflow, /on:\n {2}workflow_dispatch:\n/);
-  assert.match(
-    workflow,
-    /if: github\.event_name != 'pull_request' \|\| github\.head_ref == 'cursor\/india-paddle-pricing-4980'/,
-  );
+  assert.doesNotMatch(workflow, /pull_request:/);
   assert.match(workflow, /environment: Sandbox/);
   assert.match(workflow, /PADDLE_ENV: sandbox/);
   assert.match(workflow, /permissions:\n {2}contents: read/);
