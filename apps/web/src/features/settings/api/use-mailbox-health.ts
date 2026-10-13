@@ -109,6 +109,7 @@ export function useMailboxesHealth(
         const envelope = await apiGet<SyncStatus>('/api/v1/sync/status', {
           signal,
           mailboxId: m.id,
+          networkAttempts: 1,
         });
         return envelope.data;
       }),

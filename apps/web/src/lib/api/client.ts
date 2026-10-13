@@ -142,6 +142,12 @@ export interface ApiRequestOptions {
    * once and does not rotate the session again.
    */
   _refreshEpoch?: number | undefined;
+  /**
+   * How many times to send a GET that throws before a response exists.
+   * Defaults to the shared GET budget. A poll that will back off on its
+   * own passes 1 so one timeout is not three console errors.
+   */
+  networkAttempts?: number | undefined;
 }
 
 /** Joins `?k=v` pairs onto a path. Skips entries whose value is null/undefined. */
@@ -224,6 +230,30 @@ function isRetryableFetchFailure(error: unknown): boolean {
   return error instanceof TypeError && error.name !== 'AbortError';
 }
 
+/**
+ * A poll failure the app already knows how to wait out: the browser
+ * timed out or dropped the socket, the caller aborted, or the gateway
+ * closed a hung read. These are not product defects. HTTP 481 is the
+ * status a timed-out `/sync/status` read has logged beside
+ * `ERR_TIMED_OUT`.
+ */
+export function isBenignTransportError(error: unknown): boolean {
+  if (isPlainNetworkFailure(error)) return true;
+  if (
+    error instanceof DOMException &&
+    (error.name === 'TimeoutError' || error.name === 'AbortError')
+  ) {
+    return true;
+  }
+  if (
+    error instanceof ApiError &&
+    (error.status === 408 || error.status === 481 || error.status === 504)
+  ) {
+    return true;
+  }
+  return error instanceof Error && /ERR_TIMED_OUT|timed out/i.test(error.message);
+}
+
 async function pauseForBackoff(attempt: number, signal: AbortSignal | undefined): Promise<void> {
   if (signal?.aborted) {
     throw signal.reason instanceof Error
@@ -300,7 +330,11 @@ async function apiRequest<T>(
     init.body = JSON.stringify(body);
   }
   if (options.signal != null) init.signal = options.signal;
-  const res = await fetchWithNetworkRetry(url, init, method === 'GET' ? NETWORK_ATTEMPTS : 1);
+  const attempts = Math.max(
+    1,
+    options.networkAttempts ?? (method === 'GET' ? NETWORK_ATTEMPTS : 1),
+  );
+  const res = await fetchWithNetworkRetry(url, init, attempts);
 
   // Read the body once — JSON if possible, raw text otherwise.
   const text = await res.text();

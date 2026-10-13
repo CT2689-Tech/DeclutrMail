@@ -16,10 +16,14 @@ import type { SyncStatus } from '@declutrmail/shared/contracts';
 import {
   useSyncStatus,
   syncRefetchInterval,
+  syncFailureStep,
+  syncErrorBackoffMs,
+  resetSyncFailureSteps,
   syncStatusQueryOptions,
   SYNC_POLL_MS,
   SYNC_FAILED_POLL_MS,
   SYNC_READY_POLL_MS,
+  SYNC_ERROR_BACKOFF_CAP_MS,
   SYNC_STATUS_KEY,
 } from './use-sync-status';
 import { ApiError } from '@/lib/api/client';
@@ -44,6 +48,7 @@ describe('useSyncStatus', () => {
   beforeEach(() => installFetchStub([]));
   afterEach(() => {
     focusManager.setFocused(undefined);
+    resetSyncFailureSteps();
     resetFetchStub();
   });
 
@@ -111,6 +116,24 @@ describe('useSyncStatus', () => {
     expect(syncRefetchInterval(SYNCING, new ApiError(429, {}, 'rate limited'))).toBe(
       SYNC_FAILED_POLL_MS,
     );
+    // Auth stops. A gateway timeout, including HTTP 481, backs off.
+    expect(syncRefetchInterval(READY, new ApiError(401, {}, 'unauthorized'))).toBe(false);
+    expect(syncRefetchInterval(READY, new ApiError(403, {}, 'forbidden'))).toBe(false);
+    expect(syncRefetchInterval(READY, new ApiError(481, {}, 'timed out'))).toBe(
+      SYNC_FAILED_POLL_MS,
+    );
+    expect(
+      syncRefetchInterval(READY, new DOMException('The operation timed out', 'TimeoutError'), 2),
+    ).toBe(20_000);
+    expect(syncErrorBackoffMs(1)).toBe(SYNC_FAILED_POLL_MS);
+    expect(syncErrorBackoffMs(6)).toBe(SYNC_ERROR_BACKOFF_CAP_MS);
+    const key = ['sync', 'status', 'mb'] as const;
+    expect(syncFailureStep(key, 1, 'error')).toBe(1);
+    expect(syncFailureStep(key, 1, 'error')).toBe(1);
+    expect(syncFailureStep(key, 1, 'pending')).toBe(1);
+    expect(syncFailureStep(key, 2, 'error')).toBe(2);
+    expect(syncFailureStep(key, 2, 'success')).toBe(0);
+    expect(syncFailureStep(key, 3, 'error')).toBe(1);
   });
 
   it.each([
@@ -123,9 +146,9 @@ describe('useSyncStatus', () => {
     {
       label: 'TypeError: Failed to fetch',
       failure: new TypeError('Failed to fetch'),
-      // GET replays a thrown fetch twice inside one query attempt.
-      // The first read and the explicit refetch each exhaust that budget.
-      giveUpAfter: 6,
+      // The status poll does not replay a thrown fetch. The first read
+      // and the explicit refetch each fail once; the interval recovers.
+      giveUpAfter: 2,
     },
   ])(
     'recovers a failed status poll without a focus event ($label)',
@@ -153,8 +176,14 @@ describe('useSyncStatus', () => {
         await act(async () => {
           await client.refetchQueries({ queryKey: [...SYNC_STATUS_KEY, null], type: 'active' });
         });
+        const failedReads = requests;
         await act(async () => {
-          await vi.advanceTimersByTimeAsync(11_000);
+          // Second failure uses the 20s step, so 15s is still inside it.
+          await vi.advanceTimersByTimeAsync(15_000);
+        });
+        expect(requests).toBe(failedReads);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(6_000);
         });
         expect(requests).toBe(giveUpAfter + 1);
         expect(result.current.data).toEqual(READY);

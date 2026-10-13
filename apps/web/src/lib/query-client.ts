@@ -15,7 +15,7 @@ import {
   resetMailboxScopedCache,
 } from '@/features/mailboxes/api/reset-mailbox-cache';
 
-import { ApiError, isPlainNetworkFailure } from './api/client';
+import { ApiError, isBenignTransportError } from './api/client';
 import { retryTransientOnly } from './api/retry';
 import { reportUpgradeGateHit } from './entitlements/upgrade-gate';
 import { captureFeatureException } from './sentry';
@@ -68,7 +68,7 @@ function makeQueryFailureReporter(): (error: unknown, queryKey: readonly unknown
   const lastReportedAt = new Map<string, number>();
   return (error, queryKey) => {
     if (error instanceof ApiError && error.status >= 400 && error.status < 500) return;
-    if (isPlainNetworkFailure(error)) return;
+    if (isBenignTransportError(error)) return;
     const scope = queryScope(queryKey);
     const now = Date.now();
     const previous = lastReportedAt.get(scope);
