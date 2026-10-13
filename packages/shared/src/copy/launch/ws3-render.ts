@@ -25,7 +25,7 @@ import {
   CASA_VERIFICATION_APPROVED_ON,
   formatVerificationDate,
 } from '../privacy';
-import { BRIEF_NAME } from '../screen-decisions';
+import { BRIEF_NAME, CONNECTION_TERM } from '../screen-decisions';
 import { AI_CONSENT_GATE_LIVE, HERO_KICKER, LAUNCH_STAGE, SECURITY_CONTACT } from './ws3-decisions';
 import { WS3_COPY } from './ws3';
 
@@ -69,6 +69,7 @@ export function ws3Tokens(extra?: Record<string, string>): Record<string, string
     passDays: '',
     refundDays: isPricingV2() ? String(POLICY.refundWindowDays) : '',
     BRIEF_NAME,
+    CONNECTION_TERM,
     anthropicRetention: GMAIL_DATA_PROCESSORS.Anthropic.retention,
     legalEntity: hasLegalEntity() ? LEGAL_ENTITY_NAME : '',
     legalAddress: hasLegalEntity() ? LEGAL_ENTITY_ADDRESS : '',

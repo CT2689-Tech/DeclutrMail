@@ -101,7 +101,9 @@ describe('emails-cleared meter helpers', () => {
     expect(meterPreviewText(2708, 100)).toBe(
       'This clears 2,708 emails. You have 100 free left this month.',
     );
-    expect(meterPreviewText(1, 0)).toBe('This clears 1 email. You have 0 free left this month.');
+    expect(meterPreviewText(1, 0)).toBe(
+      'This clears 1 email, but you have no free emails left this month.',
+    );
     expect(meterPreviewText(1, 100)).toBe('This clears 1 email. You have 100 free this month.');
   });
 });
@@ -176,6 +178,7 @@ describe('pricing story builders', () => {
     expect(markdown).toContain('Backlog Pass');
     expect(WS1_COPY['pricing.pass.features']).toEqual([
       'No monthly limit for {passDays} days',
+      'For one {CONNECTION_TERM}',
       'The Screener and Autopilot while it lasts',
       'Buy again any time to add {passDays} more days',
       'Then you’re back on {freeName}. Email you cleared stays where you put it.',
@@ -186,6 +189,7 @@ describe('pricing story builders', () => {
     );
     const passLines = [
       '- No monthly limit for 30 days',
+      '- For one Gmail account',
       '- The Screener and Autopilot while it lasts',
       '- Buy again any time to add 30 more days',
       '- Then you’re back on Free. Email you cleared stays where you put it.',

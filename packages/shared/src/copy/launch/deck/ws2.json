@@ -421,7 +421,7 @@
     "activity": "Everything DeclutrMail changed in your Gmail.",
     "activityEmpty": "Changes you or your Autopilot rules make will show up here.",
     "protected": "DeclutrMail suggests Keep for these senders and leaves them out of bulk changes and Autopilot rules.",
-    "backlogPass": "One payment for {passDays} days of {plusName}, to clear older email. It doesn’t renew.",
+    "backlogPass": "One payment for {passDays} days with no monthly limit on one {CONNECTION_TERM}, to clear older email. It doesn’t renew.",
     "catchup": "Later, {BRIEF_NAME} and Follow-ups"
   },
   "plainExplain": {
@@ -587,6 +587,11 @@
       "keptLimited": "Some records are kept after deletion. The list above shows what we keep and for how long.",
       "logoCache": "Sender logos are public images and aren’t linked to you.",
       "auditRecords": "Security and deletion records have no set end date. After you delete your account, they’re no longer linked to you."
+    }
+  },
+  "pr1019": {
+    "activity": {
+      "countsNote": "{windowLabel}. One choice, like archiving a sender, can cover many emails."
     }
   }
 }

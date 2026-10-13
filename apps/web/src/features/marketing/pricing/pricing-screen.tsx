@@ -83,8 +83,10 @@ export function PricingScreen() {
         <h1>Start free. Choose how to keep Gmail clear.</h1>
         <p>
           {fillStory(WS1_COPY['pricing.free.features'][0])}. {WS1_COPY['pricing.plus.features'][0]}.{' '}
-          {fillStory(WS1_COPY['pricing.lede.plus'])} Pro adds Daily Brief, Follow-ups, and up to{' '}
-          {TIER_MANIFEST.pro.inboxLimit} Gmail inboxes.
+          {fillStory(WS1_COPY['pricing.lede.plus'])}{' '}
+          {fillStory(WS1_COPY['pricing.lede.pro'], 'usd', {
+            proInboxes: TIER_MANIFEST.pro.inboxLimit,
+          })}
         </p>
       </header>
 

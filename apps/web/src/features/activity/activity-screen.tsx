@@ -36,6 +36,7 @@ import {
   useIsAtMost,
 } from '@declutrmail/shared';
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory } from '@declutrmail/shared/entitlements';
 import Link from 'next/link';
 import {
   ACTIVITY_REVIEW_OUTCOME_ROW_LABELS,
@@ -1133,7 +1134,7 @@ function SummaryRow({
         <details style={{ fontSize: text.xs, color: color.fgMuted }}>
           <summary className="dm-disclosure">View action counts</summary>
           <p style={{ margin: '8px 0' }}>
-            {windowLabel}. One cleanup action can handle many emails.
+            {fillStory(WS2_COPY.pr1019.activity.countsNote, 'usd', { windowLabel })}
           </p>
           <ul style={{ margin: 0, paddingLeft: 20 }}>
             {SUMMARY_VERBS.map(({ key, label }) => (

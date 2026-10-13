@@ -223,7 +223,9 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   // confirm CTA is REPLACED by the upgrade CTA — the shortfall is
   // stated in the modal and no request is ever sent (the server 402
   // path stays covered by actions.service.postgres.spec).
-  await expect(preview).toContainText('This clears 1 email. You have 0 free left this month.');
+  await expect(preview).toContainText(
+    'This clears 1 email, but you have no free emails left this month.',
+  );
   const upgradeCta = preview.getByRole('button', {
     name: fillStory(WS1_COPY['cap.plus.link']),
   });

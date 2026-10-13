@@ -7,6 +7,7 @@
 
 import type { Metadata } from 'next';
 
+import { WS3_COPY } from '@declutrmail/shared/copy/launch';
 import { BILLING_NAME } from '@declutrmail/shared/copy/screen-decisions';
 import { isPricingV2 } from '@declutrmail/shared/entitlements';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
@@ -71,10 +72,7 @@ function TermsOfServicePage({ pricingV2 = isPricingV2() }: { pricingV2?: boolean
 
       <LegalSection id="your-instructions" title="3. Actions run on your instructions">
         <p>
-          DeclutrMail modifies your mailbox only at your instruction — either an action you approve
-          directly, or a rule you explicitly enabled. Before a manual sender-cleanup action moves
-          mail in Triage or Senders, DeclutrMail shows the current matching count, an available
-          sample, and the planned Gmail changes. Matching mail is resolved again when the action
+          {WS3_COPY['ws3.pr1019.terms.instruction']} Matching mail is resolved again when the action
           runs, so the final affected count can change. Autopilot rules show a preview before
           activation; once enabled, matching future mail can run without a new per-message approval.
           You are responsible for reviewing previews and rule scope before approval.{' '}

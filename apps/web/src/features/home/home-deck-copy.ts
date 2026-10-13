@@ -70,6 +70,7 @@ export const HOME_DECK = {
   previewFitsOne: WS1_COPY['meter.preview.fits.one'],
   previewFitsOther: WS1_COPY['meter.preview.fits.other'],
   previewOver: WS1_COPY['meter.preview.over'],
+  previewOverOne: WS1_COPY['meter.preview.over.one'],
   previewFree: WS1_COPY['meter.preview.free'],
 } as const;
 
@@ -138,11 +139,9 @@ export function meterPreviewSentence(requested: number, remaining: number): stri
   if (!Number.isFinite(requested) || requested <= 0 || !Number.isFinite(remaining)) return null;
   const remainingLabel = formatCount(remaining);
   if (requested > remaining) {
-    const noun =
-      requested === 1
-        ? WS1_COPY['meter.noun.one']
-        : WS1_COPY['meter.noun.other'].replaceAll('{n}', formatCount(requested));
-    return fillDeck(HOME_DECK.previewOver.replace('{requested} emails', noun), {
+    if (requested === 1) return HOME_DECK.previewOverOne;
+    return fillDeck(HOME_DECK.previewOver, {
+      requested: formatCount(requested),
       remaining: remainingLabel,
     });
   }
