@@ -35,7 +35,7 @@ vi.mock('@/features/inbox-report/card', () => ({
           <span className="dm-home-report-body">
             A quick look at who sends you the most, what you leave unread and what takes up space.
           </span>
-          <a className="dm-home-report-cta dm-button-link" href="/senders">
+          <a className="dm-home-report-cta dm-external-link dm-tap-target" href="/senders">
             Open report
           </a>
         </div>
@@ -145,6 +145,7 @@ describe('HomeView', () => {
       'href',
       '/activity',
     );
+    expect(screen.getByRole('link', { name: 'See your activity' })).toHaveClass('dm-tap-target');
     expect(screen.queryByRole('link', { name: /Autopilot/ })).toBeNull();
     expect(screen.queryByRole('link', { name: /Daily brief/ })).toBeNull();
     expect(screen.queryByText(/Included with/)).toBeNull();
@@ -201,13 +202,27 @@ describe('HomeView', () => {
     render(
       <HomeView
         state={ready}
-        nextSteps={[later, unsub]}
+        nextSteps={[unsub, later]}
         mailboxId="mb-preview"
         previewReport={homePreviewReport('full')}
       />,
     );
     expect(screen.getByRole('heading', { name: 'Your Inbox Report' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open report' })).toHaveAttribute('href', '/senders');
+    expect(screen.getByRole('link', { name: 'Open report' })).toHaveClass(
+      'dm-external-link',
+      'dm-tap-target',
+    );
+    expect(screen.getByRole('link', { name: 'Open report' })).not.toHaveClass('dm-button-link');
+    expect(screen.getByRole('link', { name: 'What we store and share' })).toHaveClass(
+      'dm-external-link',
+      'dm-tap-target',
+    );
+    expect(screen.getByRole('link', { name: 'Review them first' })).toHaveClass(
+      'dm-external-link',
+      'dm-tap-target',
+    );
+    expect(screen.getByRole('link', { name: 'See your activity' })).toHaveClass('dm-tap-target');
     expect(screen.getByText('91%')).toBeInTheDocument();
     expect(screen.getByText(/195 senders you mostly leave unread/)).toBeInTheDocument();
     expect(screen.getByText(/Each of those 195 senders had less than 10%/)).toBeInTheDocument();

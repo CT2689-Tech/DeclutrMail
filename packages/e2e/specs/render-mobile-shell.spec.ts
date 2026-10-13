@@ -55,7 +55,6 @@ const PHONE_LINKS = [
   'Manage inboxes',
   'Newsletter',
   'See plans',
-  'What we store and share',
   'How we use AI',
 ] as const;
 
@@ -88,12 +87,58 @@ test('phone shell keeps the last content above a flush tab bar', async ({ page }
   for (const name of PHONE_LINKS) {
     expect(await linkHeight(page, name), name).toBeGreaterThanOrEqual(44);
   }
+  const reportStored = await page
+    .getByRole('region', { name: 'Your Inbox Report' })
+    .getByRole('link', { name: 'What we store and share', exact: true })
+    .boundingBox();
+  expect(reportStored).not.toBeNull();
+  expect(reportStored!.height).toBeGreaterThanOrEqual(44);
+  const home = page.getByRole('region', { name: 'Home links' });
+  for (const name of [
+    'What we store and share',
+    'Review them first',
+    'Open report',
+    'See your activity',
+  ]) {
+    const box = await home.getByRole('link', { name, exact: true }).boundingBox();
+    expect(box, name).not.toBeNull();
+    expect(box!.height, name).toBeGreaterThanOrEqual(44);
+  }
   for (const name of PHONE_BUTTONS) {
     const box = await buttonBox(page, name);
     expect(box.height, name).toBeGreaterThanOrEqual(44);
     expect(box.width, name).toBeGreaterThanOrEqual(44);
   }
   saveShot('mobile-links-390', await page.screenshot());
+
+  // Align the report action to the bottom of the scrollport, then a
+  // sticky bar that has scrolled past that edge. End padding cannot
+  // clear either one; the scroller has to stop at the tab bar.
+  await page
+    .getByRole('button', { name: 'Unsubscribe + archive', exact: true })
+    .evaluate((element) => {
+      element.scrollIntoView({ block: 'end', inline: 'nearest' });
+    });
+  const action = await page.evaluate(() => {
+    const button = document.querySelector('[data-report-fix]')!.getBoundingClientRect();
+    const tab = document.querySelector('.dm-tabbar')!.getBoundingClientRect();
+    return { buttonBottom: button.bottom, tabTop: tab.top };
+  });
+  expect(action.buttonBottom).toBeLessThanOrEqual(action.tabTop + 1);
+  saveShot('mobile-unsubscribe-390', await page.screenshot());
+
+  await page.locator('#sticky-actions').evaluate((element) => {
+    const scroller = element.closest('.dm-main-scroll');
+    if (!(scroller instanceof HTMLElement)) return;
+    element.scrollIntoView({ block: 'end', inline: 'nearest' });
+    scroller.scrollTop += 400;
+  });
+  const sticky = await page.evaluate(() => {
+    const bar = document.getElementById('sticky-actions')!.getBoundingClientRect();
+    const tab = document.querySelector('.dm-tabbar')!.getBoundingClientRect();
+    return { barBottom: bar.bottom, tabTop: tab.top };
+  });
+  expect(sticky.barBottom).toBeLessThanOrEqual(sticky.tabTop + 1);
 
   await page.locator('.dm-main-scroll').evaluate((element) => {
     element.scrollTop = element.scrollHeight;
@@ -121,6 +166,13 @@ test('desktop keeps the sidebar and the original link metrics', async ({ page })
   await page.goto(origin);
   await expect(page.locator('.dm-tabbar')).toBeHidden();
   await expect(page.locator('.dm-sidebar-desktop')).toBeVisible();
+  const desktopInset = await page.evaluate(() => {
+    const scroller = document.querySelector('.dm-main-scroll');
+    if (!(scroller instanceof HTMLElement)) return null;
+    const style = getComputedStyle(scroller);
+    return { marginBottom: style.marginBottom, paddingBottom: style.paddingBottom };
+  });
+  expect(desktopInset).toEqual({ marginBottom: '0px', paddingBottom: '0px' });
 
   const compare = await linkHeight(page, 'Compare plans');
   expect(compare).toBeGreaterThanOrEqual(36);
@@ -131,8 +183,24 @@ test('desktop keeps the sidebar and the original link metrics', async ({ page })
 
   const seePlans = await linkHeight(page, 'See plans');
   expect(seePlans).toBeLessThan(30);
-  const stored = await linkHeight(page, 'What we store and share');
-  expect(stored).toBeLessThan(30);
+  const stored = await page
+    .getByRole('region', { name: 'Your Inbox Report' })
+    .getByRole('link', { name: 'What we store and share', exact: true })
+    .boundingBox();
+  expect(stored).not.toBeNull();
+  expect(stored!.height).toBeLessThan(30);
+  const home = page.getByRole('region', { name: 'Home links' });
+  for (const name of [
+    'What we store and share',
+    'Review them first',
+    'Open report',
+    'See your activity',
+  ]) {
+    const box = await home.getByRole('link', { name, exact: true }).boundingBox();
+    expect(box, name).not.toBeNull();
+    expect(box!.height, name).toBeGreaterThanOrEqual(36);
+    expect(box!.height, name).toBeLessThan(40);
+  }
   const ai = await linkHeight(page, 'How we use AI');
   expect(ai).toBeGreaterThanOrEqual(36);
   expect(ai).toBeLessThan(40);

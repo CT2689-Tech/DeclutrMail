@@ -386,7 +386,10 @@ function ReportCard({
           <p className={styles.trust} data-report-trust="">
             {trust}{' '}
             {trustLink !== null && (
-              <Link href="/settings/privacy#what-we-store" className="dm-external-link">
+              <Link
+                href="/settings/privacy#what-we-store"
+                className="dm-external-link dm-tap-target"
+              >
                 {trustLink}
                 <span aria-hidden="true"> →</span>
               </Link>
@@ -425,7 +428,7 @@ function TrustLine() {
     <p className={styles.trust}>
       {copy.trust}{' '}
       {copy.trustLink !== null && (
-        <Link href="/settings/privacy#what-we-store" className="dm-external-link">
+        <Link href="/settings/privacy#what-we-store" className="dm-external-link dm-tap-target">
           {copy.trustLink}
           <span aria-hidden="true"> →</span>
         </Link>
@@ -515,7 +518,7 @@ function FixCard({
             >
               {label}
             </button>
-            <Link href="/senders" className="dm-external-link">
+            <Link href="/senders" className="dm-external-link dm-tap-target">
               {copy.review}
             </Link>
           </div>
@@ -610,7 +613,7 @@ function Progress({
           </span>
         )}
       </p>
-      <Link href="/activity" className="dm-external-link">
+      <Link href="/activity" className="dm-external-link dm-tap-target">
         {HOME_DECK.activityLink}
       </Link>
     </section>

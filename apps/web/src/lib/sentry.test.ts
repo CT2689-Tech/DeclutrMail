@@ -196,6 +196,7 @@ describe('lazy browser Sentry facade', () => {
   });
 
   it('loads once in a bounded idle callback and never replays stale router timing', async () => {
+    window.history.pushState({}, '', '/home');
     const runtime = makeRuntime();
     const init = vi.fn(() => runtime);
     const importer = vi.fn(async () => ({ initSentryBrowserRuntime: init }));
@@ -223,6 +224,71 @@ describe('lazy browser Sentry facade', () => {
     captureRouterTransitionStart('/current', 'push');
     expect(runtime.captureRouterTransitionStart).toHaveBeenCalledOnce();
     expect(runtime.captureRouterTransitionStart).toHaveBeenCalledWith('/current', 'push');
+  });
+
+  it('waits for load and idle with no deadline on a marketing page', () => {
+    window.history.pushState({}, '', '/pricing');
+    const readyState = vi.spyOn(document, 'readyState', 'get').mockReturnValue('interactive');
+    scheduleSentryBrowserInit();
+
+    expect(requestIdleCallback).not.toHaveBeenCalled();
+    readyState.mockReturnValue('complete');
+    window.dispatchEvent(new Event('load'));
+
+    expect(requestIdleCallback).toHaveBeenCalledTimes(1);
+    expect(requestIdleCallback.mock.calls[0]).toEqual([expect.any(Function)]);
+    readyState.mockRestore();
+  });
+
+  it('loads a marketing page immediately when the document is already complete', () => {
+    window.history.pushState({}, '', '/');
+    const readyState = vi.spyOn(document, 'readyState', 'get').mockReturnValue('complete');
+    scheduleSentryBrowserInit();
+    expect(requestIdleCallback).toHaveBeenCalledTimes(1);
+    expect(requestIdleCallback.mock.calls[0]).toEqual([expect.any(Function)]);
+    readyState.mockRestore();
+  });
+
+  it('loads immediately when a marketing page throws before idle', async () => {
+    window.history.pushState({}, '', '/security');
+    const readyState = vi.spyOn(document, 'readyState', 'get').mockReturnValue('loading');
+    const runtime = makeRuntime();
+    const importer = vi.fn(async () => ({ initSentryBrowserRuntime: vi.fn(() => runtime) }));
+    __testing.setRuntimeImporter(importer);
+
+    scheduleSentryBrowserInit();
+    expect(requestIdleCallback).not.toHaveBeenCalled();
+    dispatchEarlyError(new Error('before idle'));
+    await initSentryBrowser();
+
+    expect(importer).toHaveBeenCalledTimes(1);
+    expect(runtime.captureEarlyGlobalException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'before idle' }),
+      'window-error',
+    );
+    expect(requestIdleCallback).not.toHaveBeenCalled();
+    readyState.mockRestore();
+  });
+
+  it('does not use the 2s deadline when a marketing browser has no idle callback', () => {
+    window.history.pushState({}, '', '/');
+    const readyState = vi.spyOn(document, 'readyState', 'get').mockReturnValue('complete');
+    Reflect.deleteProperty(window, 'requestIdleCallback');
+    const delays: Array<number | undefined> = [];
+    const spy = vi.spyOn(global, 'setTimeout').mockImplementation(((
+      _fn: () => void,
+      ms?: number,
+    ) => {
+      delays.push(ms);
+      return 7 as unknown as ReturnType<typeof setTimeout>;
+    }) as typeof setTimeout);
+
+    scheduleSentryBrowserInit();
+
+    expect(delays).toContain(0);
+    expect(delays).not.toContain(2_000);
+    spy.mockRestore();
+    readyState.mockRestore();
   });
 
   it('captures early global errors once, sanitizes rejection payloads, and removes the bridge before replay', async () => {

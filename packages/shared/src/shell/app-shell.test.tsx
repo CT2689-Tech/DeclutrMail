@@ -29,9 +29,14 @@ describe('<AppShell /> — content scroller', () => {
   // that made the checkout Confirm button unclickable (browser smoke
   // 2026-07-29). Deleting the reserve silently restores that bug on
   // every product screen at once, so it is pinned here.
-  it('reserves the undo tray footprint so fixed-tray overlap cannot swallow content', () => {
-    expect(markup()).toContain(
-      `padding-bottom:max(var(--dm-tabbar-inset, 0px), var(${UNDO_TRAY_INSET_VAR}, 0px))`,
+  it('ends the scroller at the tab bar and reserves only the undo tray above it', () => {
+    const html = markup();
+    // Margin, not end padding: padding sits at the end of the scroll
+    // height, so a button in the lower band still paints under the
+    // fixed bar. Desktop inset is 0, so this margin is 0 there.
+    expect(html).toContain('margin-bottom:var(--dm-tabbar-inset, 0px)');
+    expect(html).toContain(
+      `padding-bottom:max(0px, calc(var(${UNDO_TRAY_INSET_VAR}, 0px) - var(--dm-tabbar-inset, 0px)))`,
     );
   });
 
@@ -95,7 +100,7 @@ describe('<AppShell /> — top bar and tab bar', () => {
     expect(css).toContain('--dm-tabbar-inset: calc(65px + env(safe-area-inset-bottom, 0px))');
     expect(tabbar).toContain('env(safe-area-inset-bottom, 0px)');
     expect(css).toContain('a.dm-tap-target');
-    expect(css).toMatch(/a\.dm-tap-target\s*\{[^}]*min-height:\s*44px/);
+    expect(css).toMatch(/a\.dm-tap-target:not\(\.dm-button-link\)\s*\{[^}]*min-height:\s*44px/);
     expect(css).toMatch(/button\.dm-tap-44\s*\{[^}]*min-height:\s*44px\s*!important/);
     expect(css).toMatch(/button\.dm-tap-44\s*\{[^}]*min-width:\s*44px\s*!important/);
   });

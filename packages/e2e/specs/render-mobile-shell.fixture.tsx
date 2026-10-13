@@ -84,6 +84,21 @@ process.stdout.write(
             <a className="dm-external-link dm-tap-target" href="/privacy#ai-processing">
               How we use AI
             </a>
+            <section aria-label="Home links">
+              <a className="dm-external-link dm-tap-target" href="/settings/privacy#what-we-store">
+                What we store and share
+                <span aria-hidden="true"> →</span>
+              </a>
+              <a className="dm-external-link dm-tap-target" href="/senders?fix=1">
+                Review them first
+              </a>
+              <a className="dm-external-link dm-home-report-cta dm-tap-target" href="/senders">
+                Open report
+              </a>
+              <a className="dm-external-link dm-tap-target" href="/activity">
+                See your activity
+              </a>
+            </section>
             <button
               type="button"
               className="dm-tap-44"
@@ -92,6 +107,13 @@ process.stdout.write(
             >
               ⋯
             </button>
+            <div style={{ height: 900 }} />
+            <button type="button" data-report-fix style={{ height: 45, width: '100%' }}>
+              Unsubscribe + archive
+            </button>
+            <div id="sticky-actions" style={{ position: 'sticky', bottom: 14, height: 52 }}>
+              <button type="button">Archive selected</button>
+            </div>
             <div style={{ height: 1400 }} />
             <div id="shell-end" style={{ height: 48, background: '#c45c26' }}>
               End of page
