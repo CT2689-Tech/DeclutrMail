@@ -208,6 +208,24 @@ describe('AccountMenu Gmail reconnect health', () => {
 
   // Orchestrator review (2026-09-27): loaded only on the click, a slow
   // connection showed nothing for a moment after pressing a delete control.
+  it.each([
+    [MAILBOX_A, 'Manage connection and data for'],
+    [MAILBOX_C, 'Manage retained data for'],
+  ] as const)(
+    'returns focus to the account trigger after reviewing %s data',
+    async (mailbox, label) => {
+      me = makeMe([MAILBOX_A, MAILBOX_C]);
+      const { user, trigger } = await renderOpenMenu();
+      await user.click(screen.getByRole('button', { name: `${label} ${mailbox.email}` }));
+      await screen.findByRole('button', { name: 'Keep current setup' });
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
+      expect(disconnectMutateSpy).not.toHaveBeenCalled();
+      expect(deleteIndexedDataMutateSpy).not.toHaveBeenCalled();
+    },
+  );
+
   it('starts loading the data dialog when the menu opens, and still opens it on the click', async () => {
     const user = userEvent.setup();
     render(<AccountMenu />);
