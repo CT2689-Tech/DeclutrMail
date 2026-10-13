@@ -1,0 +1,139 @@
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { fileURLToPath } from 'node:url';
+import {
+  COOKIE_BANNER_LIFT_VAR,
+  UNDO_TRAY_INSET_VAR,
+  cookieBannerLiftPx,
+  undoTrayOccupiedPx,
+} from '@declutrmail/shared';
+import { expect, test, type Locator, type Page } from '@playwright/test';
+
+const markup = execFileSync(
+  fileURLToPath(new URL('../../../node_modules/.bin/tsx', import.meta.url)),
+  [
+    fileURLToPath(
+      new URL(
+        '../../../apps/web/src/features/consent/cookie-banner-toast.fixture.tsx',
+        import.meta.url,
+      ),
+    ),
+  ],
+  {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      TSX_TSCONFIG_PATH: fileURLToPath(new URL('../../shared/tsconfig.json', import.meta.url)),
+    },
+  },
+);
+const css = readFileSync(new URL('../../shared/src/styles/tokens.css', import.meta.url), 'utf8');
+
+test.use({ storageState: { cookies: [], origins: [] } });
+
+test('undo toast and tray stay tappable above the cookie banner at 360px', async ({ page }) => {
+  const server = createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    res.end(
+      `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body>${markup}</body></html>`,
+    );
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    await page.setViewportSize({ width: 360, height: 740 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
+
+    const banner = page.getByTestId('cookie-consent-banner');
+    const trayUndo = page.getByRole('region', { name: 'Recent actions' }).getByRole('button', {
+      name: 'Undo Archive',
+    });
+    const toastUndo = page.getByTestId('undo-toast').getByRole('button', { name: 'Undo' });
+    const accept = banner.getByRole('button', { name: 'Accept all', exact: true });
+    const essential = banner.getByRole('button', { name: 'Essential only', exact: true });
+
+    await expect(trayUndo).toBeVisible();
+    await expect(toastUndo).toBeVisible();
+    await expect(banner).toBeVisible();
+    await expect(page.getByText('Archived 12 emails').first()).toBeVisible();
+
+    const bannerBox = (await banner.boundingBox())!;
+    const coveredTray = (await trayUndo.boundingBox())!;
+    expect(intersects(coveredTray, bannerBox), 'Undo starts under the banner').toBe(true);
+    expect(await hitButton(page, coveredTray)).not.toBe('Undo');
+    await page.screenshot({
+      path: '/opt/cursor/artifacts/cookie-banner-undo-covered-360.png',
+      fullPage: true,
+    });
+
+    await publishClearance(page);
+    await page.screenshot({
+      path: '/opt/cursor/artifacts/cookie-banner-undo-clear-360.png',
+      fullPage: true,
+    });
+
+    const liftedBanner = (await banner.boundingBox())!;
+    const liftedTray = (await trayUndo.boundingBox())!;
+    const liftedToast = (await toastUndo.boundingBox())!;
+    expect(intersects(liftedTray, liftedBanner), 'tray Undo clears the banner').toBe(false);
+    expect(intersects(liftedToast, liftedBanner), 'toast Undo clears the banner').toBe(false);
+    expect(await hitButton(page, liftedTray)).toBe('Undo');
+    expect(await hitButton(page, liftedToast)).toBe('Undo');
+    await expectTopmost(page, accept, 'Accept all');
+    await expectTopmost(page, essential, 'Essential only');
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+async function publishClearance(page: Page): Promise<void> {
+  const banner = (await page.getByTestId('cookie-consent-banner').boundingBox())!;
+  const viewport = page.viewportSize()!;
+  await page.evaluate(
+    ({ name, value }) => {
+      document.documentElement.style.setProperty(name, value);
+    },
+    {
+      name: COOKIE_BANNER_LIFT_VAR,
+      value: `${cookieBannerLiftPx(banner.height)}px`,
+    },
+  );
+  const tray = (await page.locator('[data-dm-undo-tray]').boundingBox())!;
+  await page.evaluate(
+    ({ name, value }) => {
+      document.documentElement.style.setProperty(name, value);
+    },
+    {
+      name: UNDO_TRAY_INSET_VAR,
+      value: `${undoTrayOccupiedPx(tray.y, viewport.height)}px`,
+    },
+  );
+}
+
+function intersects(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+async function hitButton(
+  page: Page,
+  box: { x: number; y: number; width: number; height: number },
+): Promise<string | null> {
+  return page.evaluate(
+    ({ x, y }) => {
+      const element = document.elementFromPoint(x, y);
+      return element?.closest('button')?.textContent?.replace(/\s+/g, ' ').trim() ?? null;
+    },
+    { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+  );
+}
+
+async function expectTopmost(page: Page, locator: Locator, name: string): Promise<void> {
+  const box = (await locator.boundingBox())!;
+  expect(await hitButton(page, box)).toBe(name);
+}

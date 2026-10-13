@@ -1,20 +1,61 @@
 'use client';
 
-import { ANALYTICS_PRIVACY_CLAIM, Button, OVERLAY_Z, tokens } from '@declutrmail/shared';
+import { useLayoutEffect, useRef } from 'react';
+import {
+  ANALYTICS_PRIVACY_CLAIM,
+  Button,
+  COOKIE_BANNER_INSET_EVENT,
+  COOKIE_BANNER_LIFT_VAR,
+  OVERLAY_Z,
+  cookieBannerLiftPx,
+  tokens,
+} from '@declutrmail/shared';
 
 const { color, font, shadow } = tokens;
 
 /**
  * Presentational D147 banner. The stateful wrapper decides when it mounts;
  * this view is what actually paints, including in the 360px stacking check.
+ *
+ * While mounted it publishes the banner height plus a gap. The undo tray
+ * and toasts add that to their bottom anchor so Undo stays tappable and
+ * the banner's own buttons stay reachable beside them.
  */
+function usePublishCookieBannerInset(): (node: HTMLElement | null) => void {
+  const nodeRef = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    const node = nodeRef.current;
+    if (!node) return;
+    const publish = () => {
+      const px = cookieBannerLiftPx(node.getBoundingClientRect().height);
+      document.documentElement.style.setProperty(COOKIE_BANNER_LIFT_VAR, `${px}px`);
+      window.dispatchEvent(new Event(COOKIE_BANNER_INSET_EVENT));
+    };
+    publish();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(publish) : null;
+    observer?.observe(node);
+    window.addEventListener('resize', publish);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', publish);
+      document.documentElement.style.removeProperty(COOKIE_BANNER_LIFT_VAR);
+      window.dispatchEvent(new Event(COOKIE_BANNER_INSET_EVENT));
+    };
+  }, []);
+  return (node) => {
+    nodeRef.current = node;
+  };
+}
+
 export function CookieConsentBannerView({
   onChoose,
 }: {
   onChoose: (choice: 'all' | 'essential') => void;
 }) {
+  const bannerRef = usePublishCookieBannerInset();
   return (
     <section
+      ref={bannerRef}
       aria-label="Cookie consent"
       data-testid="cookie-consent-banner"
       style={{

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { OVERLAY_Z } from '@declutrmail/shared';
+import { COOKIE_BANNER_LIFT_VAR, OVERLAY_Z, cookieBannerLiftPx } from '@declutrmail/shared';
 
 import { hasAnalyticsConsent, readStoredConsent, storeConsent } from '@/lib/cookie-consent';
 import { CookieConsentBanner } from './cookie-consent-banner';
@@ -13,6 +13,10 @@ function clearStoredConsent(): void {
 
 describe('CookieConsentBanner (D147)', () => {
   beforeEach(clearStoredConsent);
+  afterEach(() => {
+    document.documentElement.style.removeProperty(COOKIE_BANNER_LIFT_VAR);
+    vi.restoreAllMocks();
+  });
 
   it('shows the D147 copy and both choices on first visit', async () => {
     render(<CookieConsentBanner />);
@@ -32,6 +36,34 @@ describe('CookieConsentBanner (D147)', () => {
     expect(
       screen.getByRole('button', { name: 'Close and continue with essential cookies only' }),
     ).toHaveStyle({ width: '44px', height: '44px' });
+  });
+
+  it('publishes how far it reaches up the screen, and clears that when it goes', async () => {
+    const height = 220;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 400,
+      top: 400,
+      left: 0,
+      right: 328,
+      bottom: 400 + height,
+      width: 328,
+      height,
+      toJSON() {
+        return {};
+      },
+    });
+    const view = render(<CookieConsentBanner />);
+    await screen.findByTestId('cookie-consent-banner');
+
+    expect(document.documentElement.style.getPropertyValue(COOKIE_BANNER_LIFT_VAR)).toBe(
+      `${cookieBannerLiftPx(height)}px`,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Essential only' }));
+    expect(screen.queryByTestId('cookie-consent-banner')).not.toBeInTheDocument();
+    expect(document.documentElement.style.getPropertyValue(COOKIE_BANNER_LIFT_VAR)).toBe('');
+    view.unmount();
   });
 
   it('"Essential only" hides the banner and stores the decline — analytics stays off', async () => {
