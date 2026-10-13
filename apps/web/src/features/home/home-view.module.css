@@ -502,6 +502,10 @@
   background: var(--dm-card);
   border-radius: var(--dm-radius-lg);
   padding: 22px 32px 20px;
+  min-width: 0;
+  max-width: 100%;
+  container-type: inline-size;
+  container-name: home-report;
 }
 
 /* The shipped home card brings its own shell. Don't wrap a second frame around it. */
@@ -570,6 +574,13 @@
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.8fr);
   gap: 8px 32px;
   align-items: start;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.reportFacts > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .lead {
@@ -599,6 +610,9 @@
   flex-direction: column;
   gap: 2px;
   margin: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .storageTile strong {
@@ -923,7 +937,7 @@
   }
 
   .reportFacts {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .dialogScrim {
@@ -936,5 +950,11 @@
     margin-bottom: var(--dm-tabbar-inset);
     border-bottom-right-radius: 0;
     border-bottom-left-radius: 0;
+  }
+}
+
+@container home-report (max-width: 40rem) {
+  .reportFacts {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
