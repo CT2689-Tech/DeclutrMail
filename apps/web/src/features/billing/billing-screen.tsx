@@ -63,6 +63,7 @@ import {
   complimentaryNote,
   currentPlanPriceLabel,
   currentPlanTitle,
+  freeManualPassGrant,
   manualPassGrant,
   passCoversPlan,
   deriveBillingViewState,
@@ -951,7 +952,11 @@ export function BillingScreen({
           the picker. Withheld while a money action is unresolved — the
           portal can start a payment, and arming two money paths at once
           is the double-charge case this screen is built around. */}
-      <PlanCoverage tier={plan.entitlementTier} pass={passCoversPlan(plan)} />
+      <PlanCoverage
+        tier={plan.entitlementTier}
+        pass={passCoversPlan(plan)}
+        freeManualPass={freeManualPassGrant(plan.complimentary)}
+      />
 
       {!billingDark && paymentMethodSub && paymentMethodSub.status !== 'past_due' ? (
         <PaymentMethodCard

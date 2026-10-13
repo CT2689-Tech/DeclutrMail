@@ -83,7 +83,7 @@ export function PricingScreen() {
         <p>
           {fillStory(WS1_COPY['pricing.free.features'][0])}. {WS1_COPY['pricing.plus.features'][0]}.{' '}
           {fillStory(WS1_COPY['pricing.lede.plus'])}{' '}
-          {fillStory(WS1_COPY['pricing.lede.pro'], 'usd', {
+          {fillStory(WS1_COPY['pr1019.pricing.lede.pro'], 'usd', {
             proInboxes: TIER_MANIFEST.pro.inboxLimit,
           })}
         </p>

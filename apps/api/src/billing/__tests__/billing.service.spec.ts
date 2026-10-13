@@ -2,6 +2,7 @@ import { legacyUpgradePolicy } from './fixtures.js';
 import {
   accountDeletionRequests,
   billingCustomers,
+  entitlementGrants,
   mailboxAccounts,
   mailboxDataDeletionRequests,
   providerSyncState,
@@ -782,6 +783,48 @@ describe('BillingService', () => {
         promo: 'foundingPro',
       }),
     ).rejects.toMatchObject({ code: 'FOUNDING_PRO_SOLD_OUT' });
+  });
+
+  it('getSubscription returns a free manual Pass transaction id', async () => {
+    await db.insert(entitlementGrants).values({
+      email: 'buyer@example.com',
+      tier: 'plus',
+      reason: 'founder grant',
+      grantedBy: 'ops',
+      source: 'pass',
+      provider: null,
+      providerTransactionId: 'manual-pass:billing-read',
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+    expect(await service.getSubscription(principal.workspaceId)).toMatchObject({
+      complimentary: {
+        source: 'pass',
+        provider: null,
+        providerTransactionId: 'manual-pass:billing-read',
+        tier: 'plus',
+      },
+    });
+  });
+
+  it('getSubscription returns a paid Pass transaction id', async () => {
+    await db.insert(entitlementGrants).values({
+      email: 'buyer@example.com',
+      tier: 'plus',
+      reason: 'paddle pass',
+      grantedBy: 'paddle',
+      source: 'pass',
+      provider: 'paddle',
+      providerTransactionId: 'txn_01paid',
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+    expect(await service.getSubscription(principal.workspaceId)).toMatchObject({
+      complimentary: {
+        source: 'pass',
+        provider: 'paddle',
+        providerTransactionId: 'txn_01paid',
+        tier: 'plus',
+      },
+    });
   });
 
   it('getSubscription returns free/null for never-subscribed workspaces', async () => {

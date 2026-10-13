@@ -68,7 +68,7 @@ export function PricingStory({
             renewal: fillStory(WS1_COPY['pricing.pass.renewal'], locale),
             features: fillStoryList(WS1_COPY['pricing.pass.features'], locale),
             cta: fillStory(WS1_COPY['pricing.pass.cta'], locale),
-            expand: fillStory(WS1_COPY['pricing.features.expandPass'], locale),
+            expand: null,
             paid: true,
           },
         ]

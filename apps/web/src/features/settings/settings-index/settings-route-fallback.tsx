@@ -1,3 +1,5 @@
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+
 import { RouteLoading } from '@/app/(app)/route-loading';
 
 /**
@@ -8,13 +10,17 @@ import { RouteLoading } from '@/app/(app)/route-loading';
  * hydration, React hydrates the page into whichever DOM is already
  * showing. A different first paint is React #418.
  */
-export function SettingsRouteFallback() {
+export function SettingsRouteFallback({
+  label = WS2_COPY.simplify.settings.loading,
+}: {
+  label?: string;
+} = {}) {
   return (
     <RouteLoading
       gap={32}
       kicker="Settings"
       title="Settings"
-      label="Loading settings"
+      label={label}
       rows={5}
       rowHeight={56}
     />

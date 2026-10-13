@@ -1,8 +1,8 @@
-/** WS3 copy. Values equal deck/ws3.json (drop2-r30). */
+/** WS3 copy. Values equal deck/ws3.json (drop2-r41). */
 export const WS3_COPY = {
   _meta: {
-    revision: 'drop2-r30',
-    issued: '2026-10-12T22:10:00-07:00',
+    revision: 'drop2-r41',
+    issued: '2026-10-13T11:25:00-07:00',
     section: 'ws3',
   },
   'ws3.home.title': 'Clean up Gmail, one sender at a time — DeclutrMail',
@@ -401,8 +401,6 @@ export const WS3_COPY = {
   'ws3.liveFix.learn.firstScanStep': 'Connect and let the first scan finish',
   'ws3.liveFix.learn.deletePreview':
     'The preview names the sender and how many emails it found so far.',
-  'ws3.simulator.planLine':
-    'Free includes {allowance} emails cleared a month. {plusName} has no monthly limit.',
   'ws3.faq.ai.a':
     'Only if you allow AI in the app. Then, to explain a suggestion, Anthropic receives the sender’s name and domain and the facts behind it, without subject lines or snippets. The {BRIEF_NAME} (part of {proName}; waitlist only for new accounts) may send the sender, subject line and Gmail preview snippet to write a short summary. Neither sends full email contents or attachments. Until you allow it, or after you turn it off in Settings → AI, explanations are written from our rules.',
   'ws3.security.meta.description':
@@ -420,6 +418,8 @@ export const WS3_COPY = {
     'Check whether it sends a request or opens a prefilled email in Gmail, and whether Archive or Delete for older email is selected. The sender decides whether and when their email stops.',
   'ws3.simulator.h1': 'Try DeclutrMail on made-up email.',
   'ws3.simulator.guide': 'How the demo works',
+  'ws3.simulator.planLine':
+    'Free includes {allowance} emails cleared a month. {plusName} has no monthly limit.',
   'ws3.brand.orgName': 'DeclutrMail',
   'ws3.brand.authorName': 'DeclutrMail',
   'ws3.brand.makerName': 'DeclutrMail',
@@ -457,4 +457,15 @@ export const WS3_COPY = {
     'Why every Archive, Later and Delete in Gmail needs its own recovery explanation, visible previews, small batches, and honest one-way warnings even when Undo exists.',
   'ws3.pr1019.blog.recovery.moveBack':
     'A generic “move back” command is not enough. An email may already have labels, may already be outside Inbox, or may change again after you archive it. DeclutrMail must remember the exact Gmail label changes for that Gmail account so a retry does not repeat or compound them.',
+  'ws3.changelog.refundAligned':
+    'Refund wording now matches on every page. (The refund window is now 14 days.)',
+  'ws3.vs.gmail.undoDeadline':
+    'The reviewed help pages do not describe a separate long-term record and undo deadline for each Archive, Later or Delete.',
+  'ws3.legal.privacy.upstashRow':
+    'Upstash Redis: runs background tasks, like scanning your Gmail. It never stores the contents of your Gmail messages.',
+  'ws3.blog.systemLogs': 'our system logs',
+  'ws3.refunds.earlierBuyers':
+    'This 14-day window applies to every purchase, including plans bought before this change.',
+  'ws3.social.x.bio':
+    'Clear Gmail by sender. Archive or delete in bulk with 30 days to undo, and unsubscribe from lists you’re done with. 1,000 emails free a month.',
 } as const;

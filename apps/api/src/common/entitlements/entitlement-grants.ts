@@ -95,6 +95,7 @@ export async function highestLiveGrantForWorkspace(
   expiresAt: Date | null;
   source: 'comp' | 'pass' | 'promo';
   provider: string | null;
+  providerTransactionId: string | null;
 } | null> {
   const rows = await db
     .select({
@@ -102,6 +103,7 @@ export async function highestLiveGrantForWorkspace(
       expiresAt: entitlementGrants.expiresAt,
       source: entitlementGrants.source,
       provider: entitlementGrants.provider,
+      providerTransactionId: entitlementGrants.providerTransactionId,
     })
     .from(entitlementGrants)
     .innerJoin(users, eq(users.email, entitlementGrants.email))
@@ -117,6 +119,7 @@ export async function highestLiveGrantForWorkspace(
     expiresAt: Date | null;
     source: 'comp' | 'pass' | 'promo';
     provider: string | null;
+    providerTransactionId: string | null;
   } | null = null;
   for (const row of rows) {
     const source = grantSource(row.source);
@@ -125,6 +128,7 @@ export async function highestLiveGrantForWorkspace(
       expiresAt: row.expiresAt,
       source,
       provider: row.provider,
+      providerTransactionId: row.providerTransactionId,
     };
     if (best === null || preferGrant(candidate, best)) best = candidate;
   }

@@ -1,5 +1,5 @@
 /**
- * Deck drop2-r6 §WS4. This object equals deck/ws4.json.
+ * WS4 copy. This object equals deck/ws4.json (drop2-r41).
  * Tokens stay unfilled; rendering lives in ws4-fill.ts.
  * `syncFailed.retrying` is PENDING and is not rendered.
  */
@@ -92,5 +92,26 @@ export const WS4_COPY = {
     },
     unsubscribe: 'Unsubscribe',
     preferences: 'Email preferences',
+  },
+  simplify: {
+    footer: {
+      tagline: '· Gmail, sorted by sender',
+    },
+    billingAccess: {
+      expires:
+        'Your free access ends on {date}. To keep using paid features, choose a plan in Plan & billing.',
+      confirming: 'We’re confirming your access. Open Plan & billing for the latest status.',
+    },
+    deletion: {
+      receipt:
+        'DeclutrMail permanently deleted your account and everything it saved about your Gmail accounts: sender names and addresses, subject lines, preview snippets, labels and dates.',
+      scheduled:
+        'On that date, everything DeclutrMail saved about your Gmail accounts will be permanently deleted: sender names and addresses, subject lines, preview snippets, labels and dates. Nothing in your Gmail account changes.',
+    },
+    reconnect: {
+      body: 'DeclutrMail lost access to {mailboxEmail}. Updates for this Gmail account are paused until you reconnect and allow Gmail access.',
+      steps: 'Open Settings → Gmail accounts and choose Reconnect for this account:',
+      preview: 'Reconnect Gmail to keep DeclutrMail up to date.',
+    },
   },
 } as const;

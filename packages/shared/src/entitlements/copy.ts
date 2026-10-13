@@ -109,8 +109,9 @@ export function connectionTerm(count: number): string {
 }
 
 export function meterNoun(n: number): string {
-  if (n === 1) return WS1_COPY['meter.noun.one'];
-  return fill(WS1_COPY['meter.noun.other'], { n: grouped(n) });
+  const noun = WS1_COPY['meter.noun'];
+  if (n === 1) return noun.one;
+  return fill(noun.other, { n: grouped(n) });
 }
 
 export function freeAllowanceLine(): string {
@@ -308,10 +309,11 @@ export function meterPreviewText(requested: number, remaining: number): string {
       remaining: grouped(remaining),
     });
   }
+  const fits = WS1_COPY['meter.preview.fits'];
   if (requested === 1) {
-    return fill(WS1_COPY['meter.preview.fits.one'], { remaining: grouped(remaining) });
+    return fill(fits.one, { remaining: grouped(remaining) });
   }
-  return fill(WS1_COPY['meter.preview.fits.other'], {
+  return fill(fits.other, {
     requested: grouped(requested),
     remaining: grouped(remaining),
   });
@@ -336,13 +338,7 @@ export function quotaExceededMessage(input: QuotaExceededMessageInput): string {
 }
 
 export function pricePromiseLines(): readonly string[] {
-  const passName = planName('pass');
-  return [
-    WS1_COPY['pricing.promise.keep'],
-    fill(WS1_COPY['pricing.promise.pass'], { passName }),
-    WS1_COPY['pricing.promise.free'],
-    refundLine(),
-  ];
+  return WS1_COPY['pricing.promise.lines'].map((line) => fill(line, storyValues('usd')));
 }
 
 export interface ListedOfferOverride {

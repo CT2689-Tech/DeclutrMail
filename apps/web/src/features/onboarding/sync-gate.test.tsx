@@ -55,7 +55,7 @@ describe('stageSentence (D224 — the REAL current_stage, one sentence)', () => 
     expect(stageSentence(SYNCING)).toBe('Grouping email by sender.');
     // Same percentage, different real stage ⇒ different sentence.
     expect(stageSentence({ ...SYNCING, current_stage: 'fetching_metadata' })).toBe(
-      'Finding your senders.',
+      'Collecting sender details.',
     );
     expect(stageSentence({ ...SYNCING, current_stage: 'computing_recommendations' })).toBe(
       'Preparing suggestions.',
@@ -295,7 +295,7 @@ describe('SyncGate — the scan line "12,400 of 40,898 emails" (D109 reversal 20
     // The stage sentence stays the live status — for screen readers only,
     // so each new count is not announced.
     const status = screen.getByRole('status');
-    expect(status).toHaveTextContent('Finding your senders.');
+    expect(status).toHaveTextContent('Collecting sender details.');
     expect(status).toHaveStyle({ position: 'absolute' });
     expect(line).not.toHaveAttribute('role');
   });
@@ -304,7 +304,7 @@ describe('SyncGate — the scan line "12,400 of 40,898 emails" (D109 reversal 20
     render(<SyncGate status={{ ...READING, message_progress: null }} />);
 
     expect(screen.queryByTestId('sync-count')).toBeNull();
-    expect(screen.getByRole('status')).toHaveTextContent('Finding your senders.');
+    expect(screen.getByRole('status')).toHaveTextContent('Collecting sender details.');
     expect(screen.getByRole('status')).not.toHaveStyle({ position: 'absolute' });
   });
 
@@ -314,7 +314,7 @@ describe('SyncGate — the scan line "12,400 of 40,898 emails" (D109 reversal 20
     render(<SyncGate status={older} />);
 
     expect(screen.queryByTestId('sync-count')).toBeNull();
-    expect(screen.getByRole('status')).toHaveTextContent('Finding your senders.');
+    expect(screen.getByRole('status')).toHaveTextContent('Collecting sender details.');
   });
 
   it('shows counts only while the scan reads the mailbox', () => {

@@ -272,6 +272,11 @@ export const BillingSubscriptionSchema = z.object({
        * Absent on payloads from before this field existed.
        */
       provider: z.string().nullable().optional(),
+      /**
+       * Grant transaction id. A free manual Backlog Pass starts with
+       * `manual-pass:`. Absent on payloads from before this field existed.
+       */
+      providerTransactionId: z.string().nullable().optional(),
     })
     .nullable(),
 });

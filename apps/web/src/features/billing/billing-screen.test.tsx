@@ -27,6 +27,7 @@ let mockTier = 'free';
 let mockWorkspaceId = 'w';
 let mockCleanupRemaining: number | null = 3;
 let mockPassEnabled = false;
+let mockPricingV2 = false;
 // QA-billing-20260901-04 — the real anniversary reset date, distinct
 // from a calendar-month one so the fixture actually exercises the fix
 // rather than coincidentally matching the old "this month" copy.
@@ -49,6 +50,7 @@ vi.mock('@/features/auth/auth-provider', () => {
       cleanupRemaining: mockCleanupRemaining,
       cleanupResetsAt: mockCleanupResetsAt,
       passEnabled: mockPassEnabled,
+      pricingV2: mockPricingV2,
     },
   });
   return { useAuth: auth, useOptionalAuth: auth };
@@ -246,6 +248,7 @@ beforeEach(() => {
   mockWorkspaceId = 'w';
   mockCleanupRemaining = 3;
   mockPassEnabled = false;
+  mockPricingV2 = false;
   vi.mocked(launchCheckout).mockClear();
   vi.mocked(track).mockClear();
   // The pending-payment lock persists in localStorage by design — a
@@ -4828,6 +4831,63 @@ describe('BillingScreen — one billing story (A6)', () => {
     expect(screen.queryByRole('link', { name: 'Refund policy' })).not.toBeInTheDocument();
     expect(screen.queryByTestId('payment-method-card')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Billing help' })).toBeInTheDocument();
+  });
+
+  it('a paid Pass keeps the buy-again line on the plan card', async () => {
+    mockTier = 'plus';
+    mockCleanupRemaining = null;
+    mockPricingV2 = true;
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          checkoutSetupComplete: true,
+          tier: 'plus',
+          foundingMember: false,
+          subscription: null,
+          pendingCheckout: null,
+          complimentary: {
+            tier: 'plus',
+            expiresAt: '2026-11-12T00:00:00.000Z',
+            source: 'pass',
+            provider: 'paddle',
+            providerTransactionId: 'txn_01paid',
+          },
+        },
+      }),
+    );
+    renderScreen();
+
+    const coverage = await screen.findByRole('region', { name: 'Your plan includes' });
+    expect(coverage).toHaveTextContent('Buy again any time to add 30 more days');
+  });
+
+  it('a free manual Pass omits the buy-again line on the plan card', async () => {
+    mockTier = 'plus';
+    mockCleanupRemaining = null;
+    mockPricingV2 = true;
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          checkoutSetupComplete: true,
+          tier: 'plus',
+          foundingMember: false,
+          subscription: null,
+          pendingCheckout: null,
+          complimentary: {
+            tier: 'plus',
+            expiresAt: '2026-11-12T00:00:00.000Z',
+            source: 'pass',
+            provider: null,
+            providerTransactionId: 'manual-pass:abc',
+          },
+        },
+      }),
+    );
+    renderScreen();
+
+    const coverage = await screen.findByRole('region', { name: 'Your plan includes' });
+    expect(coverage.textContent).not.toContain('Buy again any time to add 30 more days');
+    expect(coverage).toHaveTextContent('No monthly limit for 30 days');
   });
 
   it('Pass-only /billing?plan=plus opens Before you pay for Plus, not the Pass card', async () => {

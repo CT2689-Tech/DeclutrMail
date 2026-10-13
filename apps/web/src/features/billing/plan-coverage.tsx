@@ -24,7 +24,16 @@ const tools = [
   ['followups', '/followups', 'Follow-ups'],
 ] as const;
 
-export function PlanCoverage({ tier, pass = false }: { tier: TierId; pass?: boolean }) {
+export function PlanCoverage({
+  tier,
+  pass = false,
+  freeManualPass = false,
+}: {
+  tier: TierId;
+  pass?: boolean;
+  /** Free hand-granted Pass: `pricing.pass.features.granted`, which has no buy-again line. */
+  freeManualPass?: boolean;
+}) {
   const { connectedInboxes, pricingV2 } = useTier();
   const plan = TIER_MANIFEST[tier];
   return (
@@ -47,9 +56,11 @@ export function PlanCoverage({ tier, pass = false }: { tier: TierId; pass?: bool
       ) : null}
       <div>
         {pricingV2 && pass
-          ? fillStoryList(WS1_COPY['pricing.pass.features']).map((line) => (
-              <div key={line}>{line}</div>
-            ))
+          ? fillStoryList(
+              freeManualPass
+                ? WS1_COPY['pricing.pass.features.granted']
+                : WS1_COPY['pricing.pass.features'],
+            ).map((line) => <div key={line}>{line}</div>)
           : plan.cleanupActionsPerMonth === null
             ? WS2_COPY.liveFix.billing.limit.unlimited
             : fillStory(WS2_COPY.liveFix.billing.limit.free)}
