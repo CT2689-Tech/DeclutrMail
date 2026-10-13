@@ -1533,16 +1533,23 @@ function SendersScreenContent({
       // network unsub (D58) — only a paired archive is reversible.
       if (verb === 'Unsubscribe') {
         if (recordUnsubIntent.isPending || confirmBacklog.isPending) return;
+        // The dialog names who the preview included. Post that list,
+        // never the selection that was open when the sheet appeared.
+        const postedIds = opts?.senderIds;
+        if (!postedIds || postedIds.length === 0) return;
         setSubmitting(true);
         setSelected(new Set());
         setBulkMailtoFollowups([]);
-        const senderRefs = senders.map((s) => ({
-          id: s.id,
-          name: s.name,
-          domain: s.domain,
-          unsubscribeMethod: s.unsubscribeMethod,
-        }));
-        const isBulk = senderRefs.length > 1;
+        const allowed = new Set(postedIds);
+        const senderRefs = senders
+          .filter((s) => allowed.has(s.id))
+          .map((s) => ({
+            id: s.id,
+            name: s.name,
+            domain: s.domain,
+            unsubscribeMethod: s.unsubscribeMethod,
+          }));
+        const isBulk = postedIds.length > 1;
         const mode =
           opts?.secondary?.type === 'delete'
             ? 'delete'
@@ -1553,12 +1560,7 @@ function SendersScreenContent({
           {
             mailboxId: actionMailboxId,
             mode,
-            senderIds: [
-              ...new Set([
-                ...senderRefs.map((sref) => sref.id),
-                ...(pendingActionRef.current?.protectedSenderIds ?? []),
-              ]),
-            ],
+            senderIds: postedIds,
             olderThanDays: opts?.secondary?.olderThanDays ?? opts?.olderThanDays ?? null,
             ...(mode === 'delete' && opts?.reach === 'all_mail' ? { reach: opts.reach } : {}),
             // Override rides only the dialog's explicit "anyway" click.
@@ -3032,7 +3034,7 @@ function SendersScreenContent({
                     <b>02</b> Choose what to do and preview what changes
                   </span>
                   <span>
-                    <b>03</b> Confirm when you're ready
+                    <b>03</b> {WS2_COPY.senders.emptySteps.confirm}
                   </span>
                 </div>
               </aside>

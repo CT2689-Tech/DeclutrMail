@@ -925,6 +925,8 @@ function ReadyState({
           toast('Still confirming your last action — give it a moment.', 'info');
           return;
         }
+        const postedIds = opts?.senderIds ?? [sender.id];
+        if (postedIds.length !== 1 || postedIds[0] !== sender.id) return;
         setSubmitting(true);
         setSettled(null);
         const mode =
@@ -937,7 +939,7 @@ function ReadyState({
           {
             mailboxId: actionMailboxId,
             mode,
-            senderIds: [sender.id],
+            senderIds: postedIds,
             olderThanDays: opts?.secondary?.olderThanDays ?? null,
             ...(mode === 'delete' && opts?.reach === 'all_mail' ? { reach: opts.reach } : {}),
             // Override rides only the dialog's explicit "anyway" click.
