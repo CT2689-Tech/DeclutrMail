@@ -80,6 +80,7 @@ describe('PlanCoverage', () => {
     const coverage = screen.getByRole('region', { name: 'Your plan includes' });
     const passLines = [
       'No monthly limit for 30 days',
+      'For one Gmail account',
       'The Screener and Autopilot while it lasts',
       'Buy again any time to add 30 more days',
       'Then you’re back on Free. Email you cleared stays where you put it.',

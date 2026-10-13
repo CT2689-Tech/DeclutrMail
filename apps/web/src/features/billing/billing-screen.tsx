@@ -99,6 +99,17 @@ const CheckoutRecovery = dynamic(
 
 const { color, font, radius, text } = tokens;
 
+/** One-account plans use the approved planIncludes line. Plus keeps scope. */
+function billingAccountScope(plan: BillingPlanView): string {
+  const oneAccount = passCoversPlan(plan) || TIER_MANIFEST[plan.entitlementTier].inboxLimit === 1;
+  if (!oneAccount) return WS2_COPY.liveFix.billing.scope;
+  return fillStory(WS2_COPY.liveFix.billing.planIncludes.one, 'usd', {
+    name: passCoversPlan(plan)
+      ? fillStory(WS1_COPY['planName.pass'])
+      : TIER_MANIFEST[plan.entitlementTier].name,
+  });
+}
+
 /**
  * Post-checkout poll cadence — how often the screen re-reads the
  * subscription while a Paddle payment awaits its webhook grant.
@@ -819,7 +830,7 @@ export function BillingScreen({
     >
       <EditorialKicker>Plan & billing</EditorialKicker>
       <h1 style={editorialTitleStyle}>Plan & billing</h1>
-      <p style={{ margin: 0, color: color.fgSoft }}>{WS2_COPY.liveFix.billing.scope}</p>
+      <p style={{ margin: 0, color: color.fgSoft }}>{billingAccountScope(plan)}</p>
       <ScreenIntro
         id="billing"
         title="Plan & billing"
@@ -942,7 +953,15 @@ export function BillingScreen({
           startPending('checkout', target, cycle, attemptId)
         }
         onCheckoutAttempt={(target, cycle) => attemptClaim('checkout_intent', target, cycle)}
-        onCheckoutAbandoned={releaseAttemptLock}
+        onCheckoutAbandoned={(attemptId) => {
+          releaseAttemptLock(attemptId);
+          // Overlay never opened (or the server refused before a
+          // claim). Clear the server slot so a retry is not
+          // CHECKOUT_IN_FLIGHT. Best-effort: TTL is the fallback.
+          void apiDelete<{ released: true }>('/api/billing/checkout/pending').catch(
+            () => undefined,
+          );
+        }}
         onCheckoutClosed={surfaceAttemptLock}
         ownsCheckout={() => mounted.current && currentOwner.current === workspaceId}
         mayOpenCheckout={(attemptId) => {
@@ -955,22 +974,6 @@ export function BillingScreen({
             record.attemptId === attemptId &&
             Date.now() < record.at + 30 * 60 * 1000
           );
-        }}
-        onCheckoutBlocked={(session, target, cycle, attemptId) => {
-          const record = readPendingCheckout(workspaceId);
-          if (
-            mounted.current &&
-            currentOwner.current === workspaceId &&
-            record?.attemptId === attemptId
-          )
-            setHeldCheckout({
-              workspaceId,
-              session,
-              target,
-              cycle,
-              attemptId,
-              expiresAt: record.at + 30 * 60 * 1000,
-            });
         }}
         onPlanChangeAttempt={(target, cycle) => attemptClaim('change_unconfirmed', target, cycle)}
         onPlanChangeFailedKnown={releaseAttemptLock}

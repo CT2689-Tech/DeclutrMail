@@ -127,7 +127,7 @@ describe('visitor price surfaces — US stays the #1020 strings', () => {
     expect(launchPlusQuote()).toBe('$59 a year');
     expect(fillStory(WS1_COPY['cap.plus.sublabel'])).toBe('$59 a year · no monthly limit');
     expect(fillStory(WS1_COPY['cap.pass.sublabel'])).toBe(
-      '$19 once · 30 days of Plus · doesn’t renew',
+      '$19 once · 30 days, one Gmail account · doesn’t renew',
     );
   });
 

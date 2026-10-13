@@ -39,7 +39,8 @@ export const WS1_COPY = {
   'pricing.pass.priceSuffix': 'once',
   'pricing.pass.renewal': 'Never renews',
   'pricing.pass.features': [
-    'No monthly limit for 30 days',
+    'No monthly limit for {passDays} days',
+    'For one {CONNECTION_TERM}',
     'The Screener and Autopilot while it lasts',
     'Buy again any time to add {passDays} more days',
     'Then you\u2019re back on {freeName}. Email you cleared stays where you put it.',
@@ -143,7 +144,7 @@ export const WS1_COPY = {
     'You\u2019ve used all {allowance} free emails this month. You get {allowance} more on {resetDate}.',
   'cap.pass.button': 'Clear all with {passName}',
   'cap.pass.sublabel':
-    '{passPrice} once \u00b7 {passDays} days of {plusName} \u00b7 doesn\u2019t renew',
+    '{passPrice} once \u00b7 {passDays} days, one {CONNECTION_TERM} \u00b7 doesn\u2019t renew',
   'cap.fit.button': 'Clear what fits free',
   'cap.fit.sublabel.one': 'Clears 1 email older than {presetDays} days, within your free total',
   'cap.fit.sublabel.other':
@@ -184,7 +185,7 @@ export const WS1_COPY = {
   'checkout.plus.summary':
     '{plusPrice} billed yearly, starting today. Renews automatically. Cancel any time.',
   'checkout.pass.summary':
-    '{passPrice} once, today. You get {passDays} days of {plusName}. It doesn\u2019t renew.',
+    '{passPrice} once, today. You get {passDays} days with no monthly limit on one {CONNECTION_TERM}. It doesn\u2019t renew.',
   'checkout.taxNote': 'Taxes and the final amount are confirmed at checkout.',
   'checkout.codeNote': 'Have a code? Enter it at checkout.',
   'checkout.inr': 'Prices in INR include GST.',

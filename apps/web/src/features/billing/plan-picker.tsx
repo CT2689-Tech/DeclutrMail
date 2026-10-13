@@ -16,7 +16,6 @@ import {
 } from '@declutrmail/shared/contracts';
 import type {
   BillingCycle,
-  CheckoutSession,
   BillingProviderId,
   BillingSubscription,
 } from '@declutrmail/shared/contracts';
@@ -215,7 +214,6 @@ export function PlanPicker({
   onCheckoutAttempt,
   onCheckoutAbandoned,
   onCheckoutClosed,
-  onCheckoutBlocked,
   mayOpenCheckout,
   ownsCheckout,
   onPlanChangeAccepted,
@@ -277,13 +275,6 @@ export function PlanPicker({
   mayOpenCheckout?: (attemptId: string) => boolean;
   /** Lifecycle callbacks fence owner changes without discarding late valid payment events. */
   ownsCheckout?: () => boolean;
-  /** Retain the exact server session for a loader-only retry, with the claim held. */
-  onCheckoutBlocked?: (
-    session: CheckoutSession,
-    target: PaidTier,
-    cycle: BillingCycle,
-    attemptId: string,
-  ) => void;
   /** The change-plan endpoint accepted the switch — the screen enters
    *  the pending state until the webhook lands. `attemptId` identifies
    *  the pessimistic lock this attempt wrote (UUID-matched release). */
@@ -561,24 +552,22 @@ export function PlanPicker({
             )
             .then(
               () => undefined,
-              // Provider script failed to load — no overlay opened, but
-              // the SESSION exists server-side and the claim is held: a
-              // Razorpay subscription created with customer_notify is
-              // payable from the provider's own emailed link, so this is
-              // NOT "nothing at risk" (Codex 2026-07-29). Surface the
-              // reservation — the banner explains the locked state and
-              // owns the release path.
+              // Overlay never opened. A Paddle transaction without an
+              // open window is not payable from email (unlike Razorpay
+              // customer_notify). Keep the confirm panel, show the
+              // existing open-failed sentence, and release the local
+              // reservation so retry is armed. Do not paint
+              // "Checkout started".
               (err: unknown) => {
                 if (ownsCheckout && !ownsCheckout()) return;
                 void track('checkout_overlay_blocked', funnel);
                 checkout.reset();
                 setLaunchError(
-                  'The secure checkout window could not be opened. Your checkout remains reserved.',
+                  err instanceof CheckoutLaunchError
+                    ? err.message
+                    : new CheckoutLaunchError(true).message,
                 );
-                if (err instanceof CheckoutLaunchError && err.canRetry) {
-                  onCheckoutBlocked?.(session, target, cycle, attemptId);
-                }
-                onCheckoutClosed(attemptId);
+                onCheckoutAbandoned(attemptId);
               },
             );
         },
