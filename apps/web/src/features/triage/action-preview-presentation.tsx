@@ -4,7 +4,7 @@ import { buildActionPresentation } from '@declutrmail/shared/actions';
 import type { ActionReach } from '@declutrmail/shared/contracts';
 import { scoredAgeLabel } from '@declutrmail/shared/copy';
 import {
-  backlogMailLine,
+  backlogDestination,
   futureMailLine,
   unsubscribeButton,
   unsubscribeHonesty,
@@ -116,7 +116,9 @@ export function buildPreviewFacts({
   const actionVerb = verb.toLowerCase() as 'keep' | 'archive' | 'unsubscribe' | 'later' | 'delete';
   const liveCount = typeof inboxCount === 'number' ? inboxCount : null;
   // Only Delete may act past the inbox; any other verb ignores the prop.
-  const allMail = verb === 'Delete' && reach === 'all_mail';
+  const allMail =
+    (verb === 'Delete' || (verb === 'Unsubscribe' && backlogMode === 'delete')) &&
+    reach === 'all_mail';
   const presentation = buildActionPresentation({
     verb: actionVerb,
     liveCount: actionVerb === 'keep' || actionVerb === 'unsubscribe' ? 0 : liveCount,
@@ -270,10 +272,13 @@ export function buildPreviewFacts({
   if (verb !== 'Unsubscribe') return facts;
   const n = facts.liveCount ?? 0;
   const future = futureMailLine(row.senderName, row.unsubscribeMethod);
-  const backlog = backlogMailLine(unsubMode, n);
+  const backlog =
+    facts.liveCount === null && unsubMode !== 'unsub_only'
+      ? 'Counting existing inbox email…'
+      : backlogDestination(unsubMode, reach);
   return {
     ...facts,
-    title: unsubscribeTitle(unsubMode, row.senderName, n),
+    title: unsubscribeTitle(facts.liveCount === null ? 'unsub_only' : unsubMode, row.senderName, n),
     subtitle: [future, backlog].filter((line): line is string => line !== null).join(' '),
     note: unsubscribeHonesty(unsubMode),
     primaryLabel: unsubscribeButton(unsubMode),

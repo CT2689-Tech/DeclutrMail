@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 
 const FOCUSABLE =
-  'summary,a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+  'summary,a[href],button:not([disabled]):not([tabindex="-1"]),input:not([disabled]):not([tabindex="-1"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
 /**
  * Focus management for modal surfaces. While `active`: focus moves into

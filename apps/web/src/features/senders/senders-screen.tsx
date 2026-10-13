@@ -55,7 +55,7 @@ import {
 } from './filters';
 import { useComposeState } from './use-compose-state';
 import { SelectionBar } from './selection-bar';
-import { ConfirmActionModal, type ConfirmOptions } from './confirm-action-modal';
+import type { ConfirmOptions } from './confirm-action-modal';
 import type { ActionReceipt } from './action-receipt';
 import { KeyboardCheatsheet } from './keyboard-cheatsheet';
 import { isTypingTarget } from './keyboard';
@@ -109,6 +109,12 @@ import { SenderList } from './sender-list';
 import workspaceStyles from './sender-workspace.module.css';
 import { useSenderPane } from './use-sender-pane';
 import { prefetchSenderInspector } from './inspector-intent';
+
+// Load the preview separately from the list route.
+const ConfirmActionModal = dynamic(
+  () => import('./confirm-action-modal').then((module) => module.ConfirmActionModal),
+  { ssr: false },
+);
 
 // The pane mounts only after a row click above the mobile shell breakpoint, and it carries the
 // whole Sender Detail surface. Loading it on demand keeps the list route

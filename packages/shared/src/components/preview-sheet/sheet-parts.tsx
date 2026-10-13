@@ -25,10 +25,18 @@ export function SheetSegmented<T extends string>({
 }: {
   label: string;
   value: T;
-  options: readonly { value: T; label: string; count?: number | undefined; disabled?: boolean }[];
+  options: readonly {
+    value: T;
+    label: string;
+    count?: number | undefined;
+    disabled?: boolean;
+  }[];
   onChange: (next: T) => void;
 }) {
   const labelId = useId();
+  const tabStop =
+    options.find((option) => option.value === value && !option.disabled) ??
+    options.find((option) => !option.disabled);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: space[2] }}>
       {/* Visible: a choice whose options say "them" needs to name what
@@ -57,8 +65,31 @@ export function SheetSegmented<T extends string>({
               type="button"
               role="radio"
               aria-checked={selected}
+              tabIndex={opt === tabStop ? 0 : -1}
               disabled={opt.disabled}
               onClick={() => onChange(opt.value)}
+              onKeyDown={(event) => {
+                const forward = event.key === 'ArrowRight' || event.key === 'ArrowDown';
+                const backward = event.key === 'ArrowLeft' || event.key === 'ArrowUp';
+                if (!forward && !backward && event.key !== 'Home' && event.key !== 'End') return;
+                event.preventDefault();
+                const enabled = options.filter((option) => !option.disabled);
+                const current = enabled.findIndex((option) => option.value === opt.value);
+                const nextIndex =
+                  event.key === 'Home'
+                    ? 0
+                    : event.key === 'End'
+                      ? enabled.length - 1
+                      : (current + (forward ? 1 : -1) + enabled.length) % enabled.length;
+                const next = enabled[nextIndex];
+                if (!next) return;
+                onChange(next.value);
+                const radios =
+                  event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+                    'button:not([disabled])',
+                  );
+                radios?.[nextIndex]?.focus();
+              }}
               style={{
                 minHeight: 44,
                 padding: `0 ${space[3]}px`,
@@ -72,6 +103,8 @@ export function SheetSegmented<T extends string>({
                 fontWeight: selected ? 600 : 500,
                 cursor: opt.disabled ? 'not-allowed' : 'pointer',
                 opacity: opt.disabled ? 0.45 : 1,
+                minWidth: 0,
+                overflowWrap: 'anywhere',
                 whiteSpace: 'normal',
                 transition: `background ${motion.fast} ${motion.ease}, color ${motion.fast} ${motion.ease}`,
               }}

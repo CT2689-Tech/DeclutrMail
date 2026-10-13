@@ -128,10 +128,22 @@ export function PreviewSheet({
           flexDirection: 'column',
           alignItems: review ? 'stretch' : 'center',
           textAlign: review ? 'left' : 'center',
-          padding: review ? 0 : `${space[8]}px ${space[6]}px ${space[6]}px`,
+          padding: 0,
         }}
       >
-        <div className="dm-sheet-body" style={review ? undefined : { display: 'contents' }}>
+        <div
+          className="dm-sheet-body"
+          style={
+            review
+              ? undefined
+              : {
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  padding: `${space[8]}px ${space[6]}px 0`,
+                }
+          }
+        >
           {icon != null && <div style={{ marginBottom: space[4] }}>{icon}</div>}
 
           {context != null && (
@@ -239,11 +251,14 @@ export function PreviewSheet({
             </details>
           )}
         </div>
-        <div className="dm-sheet-footer" style={review ? undefined : { display: 'contents' }}>
+        <div
+          className="dm-sheet-footer"
+          style={review ? undefined : { padding: `${space[4]}px ${space[6]}px ${space[6]}px` }}
+        >
           <div
             className="dm-sheet-actions"
             style={{
-              marginTop: review ? 0 : space[6],
+              marginTop: 0,
               width: '100%',
             }}
           >

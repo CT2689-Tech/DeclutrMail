@@ -22,6 +22,7 @@ import { useVisitorPriceLocale } from '@/features/billing/billing-currency';
 import { UnsubscribeBacklogDialog } from '@/features/senders/unsubscribe-backlog/unsubscribe-backlog-dialog';
 import type { ActionRequest } from '@/features/senders/data';
 import { useBulkActionPreview, useCompositePreview } from '@/lib/api/use-action';
+import { apiErrorCode } from '@/lib/api/client';
 
 import type { ReportCelebration } from './seen';
 
@@ -220,7 +221,7 @@ export function InboxReportPanel({
   resetDate?: string;
   onDismiss: () => void;
   onReopen: () => void;
-  onFixConfirmed?: (mode: 'archive' | 'delete' | 'unsub_only') => void;
+  onFixConfirmed?: (mode: 'archive' | 'delete' | 'unsub_only', reach?: 'all_mail') => void;
   onReview?: () => void;
   trustHref?: string;
   celebration?: ReportCelebration | null;
@@ -452,11 +453,13 @@ export function InboxReportPanel({
           report={report}
           senderNames={senderNames}
           mailboxId={mailboxId}
+          mailboxEmail={mailboxEmail}
           onCancel={() => setFixOpen(false)}
           onConfirm={(opts) => {
             setFixOpen(false);
             const mode = opts.secondary?.type ?? 'unsub_only';
-            onFixConfirmed?.(mode);
+            if (mode === 'delete' && opts.reach) onFixConfirmed?.(mode, opts.reach);
+            else onFixConfirmed?.(mode);
           }}
         />
       ) : null}
@@ -483,18 +486,21 @@ function reportFixRequest(
 
 type FixConfirm = (opts: {
   secondary: { type: 'archive' | 'delete'; olderThanDays: null } | null;
+  reach?: 'all_mail';
 }) => void;
 
 function ReportFixDialog({
   report,
   senderNames,
   mailboxId,
+  mailboxEmail,
   onCancel,
   onConfirm,
 }: {
   report: InboxReportDto;
   senderNames: InboxReportPanelProps['senderNames'];
   mailboxId: string | undefined;
+  mailboxEmail?: string | undefined;
   onCancel: () => void;
   onConfirm: FixConfirm;
 }) {
@@ -503,6 +509,7 @@ function ReportFixDialog({
     return (
       <UnsubscribeBacklogDialog
         request={request}
+        mailboxEmail={mailboxEmail}
         preferredInboxCount={report.fix.inboxEmailCount}
         preferArchive
         onCancel={onCancel}
@@ -514,6 +521,7 @@ function ReportFixDialog({
     <LiveReportFixDialog
       mailboxId={mailboxId}
       request={request}
+      mailboxEmail={mailboxEmail}
       onCancel={onCancel}
       onConfirm={onConfirm}
     />
@@ -522,11 +530,13 @@ function ReportFixDialog({
 
 function LiveReportFixDialog({
   mailboxId,
+  mailboxEmail,
   request,
   onCancel,
   onConfirm,
 }: {
   mailboxId: string;
+  mailboxEmail?: string | undefined;
   request: ActionRequest;
   onCancel: () => void;
   onConfirm: FixConfirm;
@@ -538,7 +548,11 @@ function LiveReportFixDialog({
     return (
       <UnsubscribeBacklogDialog
         request={request}
-        bulkPreview={{ data: bulk.data, loading: bulk.isPending }}
+        mailboxEmail={mailboxEmail}
+        bulkPreview={{ data: bulk.data, loading: bulk.isFetching, error: bulk.isError }}
+        onRetryPreview={() => {
+          void bulk.refetch();
+        }}
         preferArchive
         onCancel={onCancel}
         onConfirm={onConfirm}
@@ -548,8 +562,14 @@ function LiveReportFixDialog({
   return (
     <UnsubscribeBacklogDialog
       request={request}
+      mailboxEmail={mailboxEmail}
       compositePreview={composite.data}
-      compositePreviewLoading={composite.isPending}
+      compositePreviewLoading={composite.isFetching}
+      compositePreviewError={composite.isError}
+      previewSenderGone={apiErrorCode(composite.error) === 'SENDER_NOT_FOUND'}
+      onRetryPreview={() => {
+        void composite.refetch();
+      }}
       preferArchive
       onCancel={onCancel}
       onConfirm={onConfirm}

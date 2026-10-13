@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ToastHost, toast } from '@declutrmail/shared';
+import { Avatar, PreviewSheet, SheetSegmented, ToastHost, toast } from '@declutrmail/shared';
 import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import { WS5_COPY } from '@declutrmail/shared/copy/launch';
@@ -241,8 +241,6 @@ export function SendersSimulator() {
   const [celebration, setCelebration] = useState<{ archived: number; senders: number } | null>(
     null,
   );
-  const closeButton = useRef<HTMLButtonElement>(null);
-  const previousFocus = useRef<HTMLElement | null>(null);
   const activitySequence = useRef(0);
 
   const visible = useMemo(
@@ -334,8 +332,6 @@ export function SendersSimulator() {
         ? eligible.filter((sender) => sender.unsubscribe === 'one_click')
         : eligible;
     if (actionables.length === 0) return;
-    previousFocus.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setPending({
       ids: actionables.map((sender) => sender.id),
       verb,
@@ -353,49 +349,22 @@ export function SendersSimulator() {
 
   const closePreview = () => {
     setPending(null);
-    requestAnimationFrame(() => previousFocus.current?.focus());
   };
-
-  useEffect(() => {
-    if (!pending) return;
-    closeButton.current?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closePreview();
-      if (event.key !== 'Tab') return;
-      const modal = closeButton.current?.closest('[role="dialog"]');
-      const focusable = modal?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), select:not([disabled])',
-      );
-      if (!focusable || focusable.length === 0) return;
-      const first = focusable[0]!;
-      const last = focusable[focusable.length - 1]!;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-    // The modal owns focus for its lifetime; changing scope must not reset it.
-  }, [pending]);
 
   const applyUnsubscribe = (
     targets: readonly SampleSender[],
     mode: 'archive' | 'delete' | 'unsub_only',
+    requestedReach: Reach = 'inbox_only',
   ) => {
     if (targets.length === 0) return;
     const ids = new Set(targets.map((sender) => sender.id));
-    const n = targets.reduce((sum, sender) => sum + count(sender, 'inbox', null), 0);
+    const scope = mode === 'delete' ? requestedReach : 'inbox_only';
+    const n = totalCount(targets, scope, null);
     setSenders((current) =>
       current.map((sender) => {
         if (!ids.has(sender.id)) return sender;
         const moved =
-          mode === 'archive' || mode === 'delete'
-            ? moveMail(sender, mode, 'inbox_only', null)
-            : sender;
+          mode === 'archive' || mode === 'delete' ? moveMail(sender, mode, scope, null) : sender;
         return { ...moved, unsubRequested: true };
       }),
     );
@@ -516,6 +485,18 @@ export function SendersSimulator() {
     ]),
   );
 
+  useEffect(() => {
+    if (!pending || isUnsubscribe) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && canConfirm) {
+        event.preventDefault();
+        confirm();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pending, isUnsubscribe, canConfirm, confirm]);
+
   return (
     <div className="dm-senders-demo">
       <div className="dm-senders-demo-note">
@@ -536,10 +517,11 @@ export function SendersSimulator() {
           setSelected(ids);
         }}
         trustHref="/privacy"
-        onFixConfirmed={(mode) => {
+        onFixConfirmed={(mode, scope) => {
           applyUnsubscribe(
             senders.filter((sender) => report.fix.senderKeys.includes(sender.id)),
             mode,
+            scope,
           );
         }}
       />
@@ -801,6 +783,7 @@ export function SendersSimulator() {
             (sum, sender) => sum + count(sender, 'inbox', null),
             0,
           )}
+          preferredAllMailCount={totalCount(pendingSenders, 'all_mail', null)}
           {...(pendingSenders.length > 1
             ? {
                 bulkPreview: {
@@ -811,6 +794,7 @@ export function SendersSimulator() {
                       name: sender.name,
                       protected: false,
                       counts: { all: count(sender, 'inbox', null) },
+                      allMailCounts: { all: actionCount(sender, 'all_mail', null) },
                     })),
                   },
                 },
@@ -818,81 +802,107 @@ export function SendersSimulator() {
             : {})}
           onCancel={closePreview}
           onConfirm={(opts) => {
-            applyUnsubscribe(pendingSenders, opts.secondary?.type ?? 'unsub_only');
+            applyUnsubscribe(
+              pendingSenders,
+              opts.secondary?.type ?? 'unsub_only',
+              opts.reach ?? 'inbox_only',
+            );
           }}
         />
       ) : null}
       {pending && !isUnsubscribe ? (
-        <div className="dm-senders-demo-modal-layer">
-          <button
-            type="button"
-            className="dm-senders-demo-scrim"
-            aria-label="Close preview"
-            onClick={closePreview}
-          />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="dm-senders-demo-dialog-title"
-            className="dm-senders-demo-dialog"
-          >
-            <div className="dm-senders-demo-dialog-top">
-              <span>Action preview · sample data</span>
-              <button
-                type="button"
-                ref={closeButton}
-                aria-label="Close preview"
-                onClick={closePreview}
-              >
-                ×
-              </button>
-            </div>
-            <h2 id="dm-senders-demo-dialog-title">
-              {`${pending.verb} ${fmt(previewCount)} emails from ${pendingNames}?`}
-            </h2>
-            <p>
-              {pending.verb === 'Archive'
-                ? 'These emails leave Inbox and stay in Gmail All Mail.'
-                : pending.verb === 'Delete'
-                  ? 'These emails move to Gmail Trash. Gmail controls permanent deletion and recovery.'
-                  : 'These emails move to Later and return at the chosen time in the product.'}
-            </p>
-            {pending.skipped > 0 ? (
-              <p className="dm-senders-demo-warning">
-                {pending.skipped} selected sender{pending.skipped === 1 ? ' is' : 's are'} excluded
-                from this action (Protected or no one-click unsubscribe).
+        <PreviewSheet
+          onClose={closePreview}
+          icon={<Avatar name={pendingNames} size={64} />}
+          title={`${pending.verb} ${fmt(previewCount)} emails from ${pendingNames}?`}
+          subtitle={
+            pending.verb === 'Archive'
+              ? 'These emails leave your inbox and stay in Gmail.'
+              : pending.verb === 'Delete'
+                ? 'These emails move to Gmail Trash.'
+                : 'These emails move to Later and return at the chosen time in the product.'
+          }
+          note={`Undo from Activity for ${MIN_UNDO_WINDOW_DAYS} days.`}
+          footer="Sample data · changes stay in this browser"
+          primary={{
+            label: pendingSenders.some((sender) => sender.protected)
+              ? `${pending.verb} anyway`
+              : `${pending.verb} ${fmt(previewCount)}`,
+            onClick: confirm,
+            disabled: !canConfirm,
+            tone: pending.verb === 'Delete' ? 'danger' : 'primary',
+          }}
+          status={
+            pending.verb === 'Later' && !(Date.parse(wakeAt) > Date.now())
+              ? 'Pick a future return time.'
+              : undefined
+          }
+          details={
+            <>
+              <span>
+                {activeReach === 'all_mail' ? 'Inbox and archived' : 'Inbox only'}
+                {olderThanDays !== null ? ` · older than ${olderThanDays} days` : ''}
+              </span>
+              {pending.verb === 'Delete' && (
+                <span>
+                  Gmail Trash keeps email for up to 30 days, unless you empty Trash sooner.
+                </span>
+              )}
+              {pendingSenders.length === 1 && canMove && olderThanDays === null ? (
+                <>
+                  <strong>Sample subject context</strong>
+                  <ul>
+                    {pendingSenders[0]!.subjects.map((subject) => (
+                      <li key={subject}>{subject}</li>
+                    ))}
+                  </ul>
+                  <span>
+                    Illustrative recent subjects. The connected product shows live matches and a
+                    matching Gmail search.
+                  </span>
+                </>
+              ) : olderThanDays !== null && canMove ? (
+                <span>
+                  Subjects are omitted for this age selection in the demo. The connected product
+                  shows the matching subjects.
+                </span>
+              ) : null}
+            </>
+          }
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {pending.skipped > 0 && (
+              <p>
+                {pending.skipped} Protected sender{pending.skipped === 1 ? '' : 's'} will be left
+                unchanged.
               </p>
-            ) : null}
-            {pendingSenders.some((sender) => sender.protected) ? (
-              <p className="dm-senders-demo-warning">
+            )}
+            {pendingSenders.some((sender) => sender.protected) && (
+              <p>
                 This sender is Protected. A single-sender action requires your explicit choice; bulk
                 actions skip them.
               </p>
-            ) : null}
-            {canWiden ? (
-              <fieldset>
-                <legend>Where it applies</legend>
-                <label>
-                  <input
-                    type="radio"
-                    name="demo-reach"
-                    checked={reach === 'inbox_only'}
-                    onChange={() => setReach('inbox_only')}
-                  />
-                  Inbox only · {fmt(totalCount(pendingSenders, 'inbox_only', olderThanDays))}
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    name="demo-reach"
-                    checked={reach === 'all_mail'}
-                    onChange={() => setReach('all_mail')}
-                  />
-                  Inbox + archived · {fmt(totalCount(pendingSenders, 'all_mail', olderThanDays))}
-                </label>
-              </fieldset>
-            ) : null}
-            {mailVerb === 'archive' || mailVerb === 'delete' ? (
+            )}
+            {canWiden && (
+              <SheetSegmented
+                label="Where it applies"
+                value={reach}
+                onChange={setReach}
+                options={[
+                  {
+                    value: 'inbox_only',
+                    label: 'Inbox only',
+                    count: totalCount(pendingSenders, 'inbox_only', olderThanDays),
+                  },
+                  {
+                    value: 'all_mail',
+                    label: 'Inbox + archived',
+                    count: totalCount(pendingSenders, 'all_mail', olderThanDays),
+                  },
+                ]}
+              />
+            )}
+            {(mailVerb === 'archive' || mailVerb === 'delete') && (
               <label className="dm-senders-demo-window">
                 How far back
                 <select
@@ -912,8 +922,8 @@ export function SendersSimulator() {
                   ))}
                 </select>
               </label>
-            ) : null}
-            {pending.verb === 'Later' ? (
+            )}
+            {pending.verb === 'Later' && (
               <label className="dm-senders-demo-window">
                 Returns
                 <input
@@ -923,49 +933,9 @@ export function SendersSimulator() {
                   onChange={(event) => setWakeAt(event.target.value)}
                 />
               </label>
-            ) : null}
-            {canMove ? (
-              <div className="dm-senders-demo-preview-count">
-                <strong>{fmt(previewCount)} emails currently match</strong>
-                <span>
-                  {activeReach === 'all_mail' ? 'Inbox and archived' : 'Inbox only'}
-                  {olderThanDays !== null ? ` · older than ${olderThanDays} days` : ''}
-                </span>
-              </div>
-            ) : null}
-            {pendingSenders.length === 1 && canMove && olderThanDays === null ? (
-              <div className="dm-senders-demo-subjects">
-                <strong>Sample subject context</strong>
-                <ul>
-                  {pendingSenders[0]!.subjects.map((subject) => (
-                    <li key={subject}>{subject}</li>
-                  ))}
-                </ul>
-                <small>
-                  Illustrative recent subjects. The connected product shows live matches and a
-                  matching Gmail search.
-                </small>
-              </div>
-            ) : olderThanDays !== null && canMove ? (
-              <p className="dm-senders-demo-footnote">
-                Subjects are omitted for this age selection in the demo. The connected product shows
-                the matching subjects.
-              </p>
-            ) : null}
-            <p className="dm-senders-demo-footnote">
-              {`Supported mail-moving actions have ${MIN_UNDO_WINDOW_DAYS} days of Activity Undo.`}{' '}
-              This demo changes sample data in this browser only.
-            </p>
-            <div className="dm-senders-demo-dialog-actions">
-              <button type="button" onClick={closePreview}>
-                Cancel
-              </button>
-              <button type="button" disabled={!canConfirm} onClick={confirm}>
-                {`${pending.verb} ${fmt(previewCount)}`}
-              </button>
-            </div>
+            )}
           </div>
-        </div>
+        </PreviewSheet>
       ) : null}
       <ToastHost />
     </div>

@@ -63,7 +63,14 @@ const SendersSimulator = dynamic(
 const DEMO_ROWS = TRIAGE_QUEUE;
 const DEMO_ROW_BY_ID = new Map(DEMO_ROWS.map((row) => [row.id, row] as const));
 const DEMO_VERBS: ReadonlySet<string> = new Set(VERB_ORDER);
-const DEMO_DECISION_KEYS = new Set(['rowId', 'verb', 'senderName', 'affectedCount', 'at']);
+const DEMO_DECISION_KEYS = new Set([
+  'rowId',
+  'verb',
+  'senderName',
+  'affectedCount',
+  'at',
+  'backlogMode',
+]);
 // v4 (Plan 4 Task 5) adds `ruleDecision` — the rule step (kind: 'rule') has
 // no row, so its outcome is not a `DemoDecision` and needs its own top-level
 // field. The key-count check below rejects any pre-v4 payload on shape
@@ -82,6 +89,7 @@ interface DemoDecision {
   verb: ActionVerb;
   senderName: string;
   affectedCount: number;
+  backlogMode?: ConfirmDetails['backlogMode'];
   at: number;
 }
 
@@ -256,7 +264,7 @@ function parseStoredDecisions(parsed: unknown): DemoDecision[] | null {
     const record = candidate as Record<string, unknown>;
     const keys = Object.keys(record);
     if (
-      keys.length !== DEMO_DECISION_KEYS.size ||
+      (keys.length !== 5 && keys.length !== 6) ||
       keys.some((key) => !DEMO_DECISION_KEYS.has(key))
     ) {
       return null;
@@ -273,18 +281,29 @@ function parseStoredDecisions(parsed: unknown): DemoDecision[] | null {
     ) {
       return null;
     }
-    // Unsubscribe's affected count is 0 UNLESS the visitor also ticked
-    // the historic-archive toggle (D226 — Task 3 `ActionSheet` swap), in
-    // which case it matches the same live count Archive/Later/Delete
-    // use. Both are the only two legitimate values for that verb; a
-    // single hard-coded expectation would reject an honest entry (and
-    // one malformed entry rejects the whole snapshot below).
+    // Older v4 snapshots recorded only Archive cleanup. Preserve those receipts,
+    // and validate newly recorded Delete cleanup against the offered scopes.
+    const backlogMode =
+      record.backlogMode === undefined
+        ? record.verb === 'Unsubscribe' && record.affectedCount > 0
+          ? 'archive'
+          : 'unsub_only'
+        : record.backlogMode;
+    if (
+      ('backlogMode' in record && record.verb !== 'Unsubscribe') ||
+      !['archive', 'delete', 'unsub_only'].includes(backlogMode as string)
+    )
+      return null;
     const expectedCounts: readonly number[] =
-      record.verb === 'Delete'
-        ? [syntheticInboxCount(row), syntheticInboxCount(row) + syntheticArchivedCount(row)]
+      record.verb === 'Delete' || (record.verb === 'Unsubscribe' && backlogMode === 'delete')
+        ? [
+            ...(record.verb === 'Unsubscribe' ? [0] : []),
+            syntheticInboxCount(row),
+            syntheticInboxCount(row) + syntheticArchivedCount(row),
+          ]
         : record.verb === 'Archive' || record.verb === 'Later'
           ? [syntheticInboxCount(row)]
-          : record.verb === 'Unsubscribe'
+          : record.verb === 'Unsubscribe' && backlogMode === 'archive'
             ? [0, syntheticInboxCount(row)]
             : [0];
     if (!expectedCounts.includes(record.affectedCount)) return null;
@@ -304,10 +323,10 @@ function parseStoredDecisions(parsed: unknown): DemoDecision[] | null {
       rowId: row.id,
       verb: record.verb,
       senderName: row.senderName,
-      // Already validated against `expectedCounts` above — one of two
-      // legitimate values for Unsubscribe, the one legitimate value for
-      // everything else — so the incoming value itself is the sanitized one.
       affectedCount: record.affectedCount,
+      ...(record.verb === 'Unsubscribe'
+        ? { backlogMode: backlogMode as ConfirmDetails['backlogMode'] }
+        : {}),
       at: record.at,
     });
   }
@@ -388,10 +407,10 @@ function decisionSummary(decision: DemoDecision): string {
     case 'Later':
       return `${decision.affectedCount} sample messages moved to DeclutrMail/Later.`;
     case 'Unsubscribe':
-      // The historic-archive toggle (D226) is the only way Unsubscribe's
-      // own affectedCount is ever nonzero — see `recordDecision`.
       return decision.affectedCount > 0
-        ? `Sample unsubscribe request recorded — it can't be recalled. ${decision.affectedCount} sample messages already in the inbox were also archived.`
+        ? decision.backlogMode === 'delete'
+          ? `Sample unsubscribe request recorded — it can't be recalled. ${decision.affectedCount} sample messages also moved to Gmail Trash.`
+          : `Sample unsubscribe request recorded — it can't be recalled. ${decision.affectedCount} sample messages already in the inbox were also archived.`
         : 'Sample unsubscribe request recorded. A delivered request cannot be recalled.';
     case 'Delete':
       return `${decision.affectedCount} sample messages moved to Gmail Trash.`;
@@ -656,24 +675,25 @@ export function InboxSimulatorScreen() {
     });
   };
 
-  const recordDecision = (row: TriageDecisionRow, verb: ActionVerb, archiveHistoric = false) => {
+  const recordDecision = (row: TriageDecisionRow, verb: ActionVerb, details?: ConfirmDetails) => {
     if (decisionLock.current === row.id || decidedIds.has(row.id)) return;
     decisionLock.current = row.id;
     queueMicrotask(() => {
       if (decisionLock.current === row.id) decisionLock.current = null;
     });
 
-    // Archive/Later/Delete always move inbox mail. Unsubscribe only does
-    // when the visitor also ticked the sheet's historic-archive toggle
-    // (D226) — mirrors `ActionSheet`'s own `requiresLivePreview` gate.
-    const affectedCount =
+    const backlogMode =
+      details?.backlogMode ?? (details?.archiveHistoric ? 'archive' : 'unsub_only');
+    const movesMail =
       verb === 'Archive' ||
       verb === 'Later' ||
       verb === 'Delete' ||
-      (verb === 'Unsubscribe' && archiveHistoric)
-        ? syntheticInboxCount(row) +
-          (verb === 'Delete' && deleteReach === 'all_mail' ? syntheticArchivedCount(row) : 0)
-        : 0;
+      (verb === 'Unsubscribe' && backlogMode !== 'unsub_only');
+    const canWiden = verb === 'Delete' || (verb === 'Unsubscribe' && backlogMode === 'delete');
+    const affectedCount = movesMail
+      ? syntheticInboxCount(row) +
+        (canWiden && details?.reach === 'all_mail' ? syntheticArchivedCount(row) : 0)
+      : 0;
     const at = Math.max(
       Date.now(),
       decisions.reduce((next, decision) => Math.max(next, decision.at + 1), 0),
@@ -685,6 +705,7 @@ export function InboxSimulatorScreen() {
         senderName: row.senderName,
         verb,
         affectedCount,
+        ...(verb === 'Unsubscribe' ? { backlogMode } : {}),
         at,
       },
     ];
@@ -705,7 +726,7 @@ export function InboxSimulatorScreen() {
 
   const confirm = (details: ConfirmDetails) => {
     if (!pending) return;
-    recordDecision(pending.row, pending.verb, details.archiveHistoric);
+    recordDecision(pending.row, pending.verb, details);
   };
 
   /**
@@ -806,8 +827,8 @@ export function InboxSimulatorScreen() {
   };
 
   const undo = (decision: DemoDecision) => {
-    // An unsubscribe request cannot be recalled. If its historic Archive
-    // was selected, Undo restores only that mail movement and leaves the
+    // An unsubscribe request cannot be recalled. If cleanup was selected,
+    // Undo restores only that mail movement and leaves the
     // one-way request in Activity, as the connected product does.
     const nextDecisions =
       decision.verb === 'Unsubscribe'
@@ -876,13 +897,13 @@ export function InboxSimulatorScreen() {
   const pendingInboxCount = pending ? syntheticInboxCount(pending.row) : 0;
   const pendingArchivedCount = pending ? syntheticArchivedCount(pending.row) : 0;
   const pendingReachCount =
-    pending?.verb === 'Delete' && deleteReach === 'all_mail'
+    (pending?.verb === 'Delete' || pending?.verb === 'Unsubscribe') && deleteReach === 'all_mail'
       ? pendingInboxCount + pendingArchivedCount
       : pendingInboxCount;
   const pendingDetail: ActionPreviewDetail | undefined = pending
     ? {
         mailLocationLine: `Where it is now: ${pendingInboxCount} emails in your inbox · ${pendingArchivedCount} emails elsewhere in Gmail.`,
-        ...(pending.verb === 'Delete'
+        ...(pending.verb === 'Delete' || pending.verb === 'Unsubscribe'
           ? {
               reachControl: {
                 reach: deleteReach,
@@ -1123,7 +1144,9 @@ export function InboxSimulatorScreen() {
                         {isActivityUndoable(decision) ? (
                           <button type="button" onClick={() => undo(decision)}>
                             {decision.verb === 'Unsubscribe'
-                              ? 'Undo archived mail'
+                              ? decision.backlogMode === 'delete'
+                                ? 'Undo deleted mail'
+                                : 'Undo archived mail'
                               : 'Undo demo action'}
                           </button>
                         ) : null}
@@ -1177,6 +1200,7 @@ export function InboxSimulatorScreen() {
         wakeAt={pending?.wakeAt ?? null}
         detail={pendingDetail}
         reach={deleteReach}
+        onReachChange={setDeleteReach}
         onCancel={() => setPending(null)}
         onConfirm={confirm}
       />

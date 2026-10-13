@@ -60,8 +60,8 @@ export interface ActionPreviewDetail {
    */
   reachControl?: {
     reach: ActionReach;
-    inboxCount: number;
-    allMailCount: number;
+    inboxCount: number | null;
+    allMailCount: number | null;
     onChange: (reach: ActionReach) => void;
   };
 }

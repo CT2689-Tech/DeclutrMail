@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WS5_COPY } from '@declutrmail/shared/copy/launch';
 import type { InboxReportDto } from '@declutrmail/shared/inbox-report';
 
-import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
+import { installFetchStub, jsonNotFound, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { InboxReportCard } from './index';
@@ -101,14 +101,12 @@ describe('InboxReportPanel', () => {
       </QueryWrapper>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
-    const archive = screen.getByRole('radio', { name: 'Unsubscribe and archive, counting emails' });
+    const archive = screen.getByRole('radio', { name: '+ Archive' });
     expect(archive).toBeDisabled();
-    expect(
-      screen.getByRole('radio', { name: 'Unsubscribe and delete, counting emails' }),
-    ).toBeDisabled();
+    expect(screen.getByRole('radio', { name: '+ Delete' })).toBeDisabled();
     expect(screen.getByRole('dialog')).not.toHaveTextContent('archive 10 emails');
     expect(screen.getByRole('dialog')).not.toHaveTextContent('Archive 0');
-    expect(screen.getByRole('dialog')).toHaveTextContent(WS5_COPY['f1.preview.backlog.loading']);
+    expect(screen.getByRole('dialog')).toHaveTextContent(/Counting existing inbox email/);
     expect(screen.getByRole('dialog')).not.toHaveTextContent('0 emails you already have');
     releasePreview(
       jsonOk({
@@ -144,13 +142,11 @@ describe('InboxReportPanel', () => {
         },
       }),
     );
-    await waitFor(() =>
-      expect(screen.getByRole('radio', { name: 'Unsubscribe and archive 7 emails' })).toBeEnabled(),
-    );
+    await waitFor(() => expect(screen.getByRole('radio', { name: '+ Archive 7' })).toBeEnabled());
     expect(screen.getByRole('dialog')).toHaveTextContent(
       'Unsubscribe from 2 senders and archive 7 emails?',
     );
-    expect(screen.getByRole('radio', { name: 'Unsubscribe and archive 7 emails' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: '+ Archive 7' })).toBeChecked();
   });
 
   it('uses the calm fallback without a fix, a share card, or a celebration', () => {
@@ -424,5 +420,42 @@ describe('InboxReportCard', () => {
     expect(lead.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
+  });
+});
+
+describe('Inbox Report action preview recovery', () => {
+  it('blocks a disappeared sender and offers a working route to review senders', async () => {
+    const onFixConfirmed = vi.fn();
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () => jsonNotFound('SENDER_NOT_FOUND'),
+      },
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <InboxReportPanel
+          report={{ ...full, fix: { senderKeys: ['gone'], sendersCount: 1, inboxEmailCount: 4 } }}
+          mailboxId="mb-1"
+          mailboxEmail="report@synthetic.test"
+          onDismiss={vi.fn()}
+          onReopen={vi.fn()}
+          onFixConfirmed={onFixConfirmed}
+        />
+      </QueryWrapper>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
+    expect(await screen.findByRole('link', { name: 'Review senders' })).toHaveAttribute(
+      'href',
+      '/senders',
+    );
+    expect(
+      screen.getByRole('note', { name: 'Gmail account: report@synthetic.test' }),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
+    expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
+    expect(onFixConfirmed).not.toHaveBeenCalled();
   });
 });

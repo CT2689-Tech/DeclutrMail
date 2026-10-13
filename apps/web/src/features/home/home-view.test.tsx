@@ -11,7 +11,7 @@ import { createTestQueryClient } from '@/test/query-wrapper';
 
 const cardGate = vi.hoisted(() => ({ shape: 'none' as 'none' | 'anchor' | 'shell' }));
 
-vi.mock('@/features/inbox-report', () => ({
+vi.mock('@/features/inbox-report/card', () => ({
   InboxReportCard: (props: { mailboxId: string; lead?: ReactNode }) => {
     if (cardGate.shape === 'anchor') {
       return (

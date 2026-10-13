@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { ErrorState, Skeleton } from '@declutrmail/shared';
 import type { CleanupSummaryDto } from '@declutrmail/shared/contracts';
 import { planName, type TierId } from '@declutrmail/shared/entitlements';
-import { InboxReportCard } from '@/features/inbox-report';
+import { InboxReportCard } from '@/features/inbox-report/card';
 import { QuotaChipSlot } from '@/features/shell/quota-chip-slot';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';

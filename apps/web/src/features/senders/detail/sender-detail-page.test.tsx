@@ -1980,7 +1980,7 @@ describe('SenderDetailRoute', () => {
         ).toBeInTheDocument();
         expect(within(dialog).queryByRole('button', { name: 'Unsubscribe + Archive' })).toBeNull();
         const archiveChoice = await within(dialog).findByRole('radio', {
-          name: /Unsubscribe and archive \d+ emails/,
+          name: /\+ Archive \d+/,
         });
         await waitFor(() => expect(archiveChoice).toBeEnabled());
         fireEvent.click(archiveChoice);
@@ -2012,7 +2012,7 @@ describe('SenderDetailRoute', () => {
         fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
         const dialog = await screen.findByRole('dialog');
         const archiveChoice = await within(dialog).findByRole('radio', {
-          name: /Unsubscribe and archive \d+ emails/,
+          name: /\+ Archive \d+/,
         });
         await waitFor(() => expect(archiveChoice).toBeEnabled());
         fireEvent.click(archiveChoice);
@@ -2109,18 +2109,17 @@ describe('SenderDetailRoute', () => {
         await waitFor(() => expect(pill('done')).not.toBeNull());
         fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe (U)' }));
         const dialog = await screen.findByRole('dialog');
-        fireEvent.click(
-          await within(dialog).findByRole('radio', { name: /Unsubscribe and archive \d+/ }),
-        );
+        fireEvent.click(await within(dialog).findByRole('radio', { name: /\+ Archive \d+/ }));
         const confirm = await within(dialog).findByRole('button', {
           name: 'Unsubscribe + Archive',
         });
         await waitFor(() => expect(confirm).toBeEnabled());
         fireEvent.click(confirm);
-        // Mid-request: the last Archive mark clears, and the button stays
-        // labeled while it is busy — there is no "Submitting…" label.
+        // Mid-request: the last Archive mark clears and the sheet names
+        // the in-flight request while preventing another confirmation.
         await waitFor(() => expect(confirm).toBeDisabled());
-        expect(within(dialog).queryByRole('button', { name: /Submitting…/ })).toBeNull();
+        expect(within(dialog).getByRole('button', { name: 'Submitting…' })).toBeDisabled();
+        expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeEnabled();
         expect(pill('done')).toBeNull();
         release();
       });

@@ -526,12 +526,8 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     expect(confirm).toBeEnabled();
     // The preview never resolved, so Archive and Delete stay off and
     // do not claim a zero count.
-    expect(
-      screen.getByRole('radio', { name: 'Unsubscribe and archive, counting emails' }),
-    ).toBeDisabled();
-    expect(
-      screen.getByRole('radio', { name: 'Unsubscribe and delete, counting emails' }),
-    ).toBeDisabled();
+    expect(screen.getByRole('radio', { name: '+ Archive' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: '+ Delete' })).toBeDisabled();
     expect(screen.queryByRole('radio', { name: /0 emails/ })).toBeNull();
     expect(screen.queryByRole('combobox', { name: /How far back/i })).toBeNull();
     fireEvent.click(confirm);
@@ -645,10 +641,10 @@ describe('ConfirmActionModal — backlog secondary belongs to Unsubscribe only',
       />,
     );
 
-    expect(screen.getByRole('radiogroup', { name: 'Unsubscribe only' })).toBeInTheDocument();
+    expect(screen.getByRole('radiogroup', { name: 'Existing email' })).toBeInTheDocument();
     expect(screen.getAllByText('Unsubscribe only')).toHaveLength(1);
-    expect(screen.getByRole('radio', { name: 'Unsubscribe and archive 4 emails' })).toBeEnabled();
-    expect(screen.getByRole('radio', { name: 'Unsubscribe and delete 4 emails' })).toBeEnabled();
+    expect(screen.getByRole('radio', { name: '+ Archive 4' })).toBeEnabled();
+    expect(screen.getByRole('radio', { name: '+ Delete 4' })).toBeEnabled();
     expect(screen.getByText('+ Archive 4')).toBeInTheDocument();
     expect(screen.getByText('+ Delete 4')).toBeInTheDocument();
     expect(
@@ -700,16 +696,16 @@ describe('ConfirmActionModal — backlog secondary belongs to Unsubscribe only',
   it.each([
     [
       'archive',
-      'Unsubscribe and archive 4 emails',
+      '+ Archive 4',
       'Unsubscribe from Acme Newsletter and archive 4 emails?',
-      '4 emails you already have: moved out of Inbox (Archive)',
+      'Existing inbox email leaves your inbox and stays in Gmail.',
       'Unsubscribe + Archive',
     ],
     [
       'delete',
-      'Unsubscribe and delete 4 emails',
+      '+ Delete 4',
       'Unsubscribe from Acme Newsletter and delete 4 emails?',
-      '4 emails you already have: moved to Gmail Trash (Delete)',
+      'Existing inbox email moves to Gmail Trash.',
       'Unsubscribe + Delete',
     ],
   ] as const)(
@@ -998,8 +994,8 @@ describe('ConfirmActionModal — a zero inbox leaves unsubscribe confirmable', (
       />,
     );
 
-    expect(screen.getByRole('radio', { name: 'Unsubscribe and archive 0 emails' })).toBeDisabled();
-    expect(screen.getByRole('radio', { name: 'Unsubscribe and delete 0 emails' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: '+ Archive 0' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: '+ Delete 0' })).toBeDisabled();
     expect(screen.queryByText(/Unsubscribe only acts on email still in the inbox/)).toBeNull();
     expect(screen.queryByRole('radiogroup', { name: /Where it applies/i })).toBeNull();
     const confirm = screen.getByRole('button', { name: 'Unsubscribe' });
@@ -1420,8 +1416,8 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
 // with 753 total mail and 2 in the inbox showed "2 emails currently
 // match" with no way to reach the other 751 (founder report
 // 2026-08-31).
-describe('ConfirmActionModal — unsubscribe has no reach or age window', () => {
-  it('offers no reach choice on Archive or Delete', () => {
+describe('ConfirmActionModal — unsubscribe offers Delete reach without an age window', () => {
+  it('offers reach only on Delete, with Inbox only as the default', () => {
     const onConfirm = vi.fn();
     render(
       <ConfirmActionModal
@@ -1435,8 +1431,8 @@ describe('ConfirmActionModal — unsubscribe has no reach or age window', () => 
     expect(screen.queryByRole('radio', { name: /Inbox only|Inbox \+ archived/i })).toBeNull();
     expect(screen.queryByRole('combobox', { name: /How far back/i })).toBeNull();
 
-    fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe and delete 4 emails' }));
-    expect(screen.queryByRole('radiogroup', { name: /Where it applies/i })).toBeNull();
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+    expect(screen.getByRole('radio', { name: /^Inbox only/ })).toBeChecked();
     expect(
       screen.getByRole('heading', {
         name: 'Unsubscribe from Acme Newsletter and delete 4 emails?',
@@ -1583,8 +1579,8 @@ describe('ConfirmActionModal — ADR-0028 reach on a bulk selection (amendment 2
       />,
     );
     expect(screen.queryByRole('radiogroup', { name: /Where it applies/i })).toBeNull();
-    fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe and delete 8 emails' }));
-    fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe and archive 8 emails' }));
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 8' }));
+    fireEvent.click(screen.getByRole('radio', { name: '+ Archive 8' }));
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Archive' }));
     expect(onConfirm).toHaveBeenCalledWith({
       secondary: { type: 'archive', olderThanDays: null },
@@ -1619,7 +1615,7 @@ describe('ConfirmActionModal — ADR-0028 reach on a bulk selection (amendment 2
     expect(reachRow()).toBeNull();
   });
 
-  it('confirms a bulk unsubscribe delete without a reach choice', () => {
+  it('confirms a bulk unsubscribe delete at the chosen reach', () => {
     const onConfirm = vi.fn();
     const senders = [oneClickSender, secondOneClick];
     render(
@@ -1631,13 +1627,15 @@ describe('ConfirmActionModal — ADR-0028 reach on a bulk selection (amendment 2
       />,
     );
     expect(reachRow()).toBeNull();
-    fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe and delete 8 emails' }));
-    expect(reachRow()).toBeNull();
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 8' }));
+    expect(reachRow()).not.toBeNull();
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
     expect(screen.queryByText(/^Inbox \+ archived now/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Delete' }));
     expect(onConfirm).toHaveBeenCalledWith({
       secondary: { type: 'delete', olderThanDays: null },
       archiveHistoric: false,
+      reach: 'all_mail',
     });
   });
 });
@@ -2155,7 +2153,7 @@ describe('ConfirmActionModal — each fact is stated once (D226)', () => {
       />,
     );
     expect(
-      screen.getByText('4 emails you already have: moved out of Inbox (Archive)'),
+      screen.getByText('Existing inbox email leaves your inbox and stays in Gmail.'),
     ).toBeInTheDocument();
     expect(screen.queryByText(/^Inbox now, rechecked when it runs$/)).toBeNull();
   });
@@ -2188,7 +2186,7 @@ describe('ConfirmActionModal — unsubscribe has no current-match sample (D226)'
       />,
     );
     expect(
-      screen.getByText('4 emails you already have: moved out of Inbox (Archive)'),
+      screen.getByText('Existing inbox email leaves your inbox and stays in Gmail.'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Show \d/ })).toBeNull();
     expect(screen.queryByRole('link', { name: /Check in Gmail/ })).toBeNull();
@@ -2427,7 +2425,7 @@ describe('ConfirmActionModal — the title names the verb and the count (QA-arch
   // preview can independently resolve to zero actionable senders for ANY
   // bulk verb, Unsubscribe included, when every queued sender went
   // Protected since the request was built — nothing else caught that.
-  it('keeps unsubscribe-only confirmable when every sender in the preview is Protected', () => {
+  it('blocks unsubscribe-only when every sender in the preview is Protected', () => {
     const one = makeSender({
       id: 'sender-u1',
       displayName: 'Weekly Digest',
@@ -2456,13 +2454,13 @@ describe('ConfirmActionModal — the title names the verb and the count (QA-arch
         bulkPreview={{ data: bulkData, loading: false, error: false }}
       />,
     );
-    expect(screen.getByRole('radio', { name: 'Unsubscribe and archive 0 emails' })).toBeDisabled();
-    expect(screen.queryByText(/Every selected sender is now Protected/)).toBeNull();
+    expect(screen.getByRole('radio', { name: '+ Archive 0' })).toBeDisabled();
+    expect(screen.getByText(/Every selected sender is now Protected/)).toBeVisible();
     expect(screen.queryByText(/No sendable unsubscribe/)).toBeNull();
     const confirm = screen.getByRole('button', { name: 'Unsubscribe' });
-    expect(confirm).toBeEnabled();
+    expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
-    expect(onConfirm).toHaveBeenCalledWith({ secondary: null, archiveHistoric: false });
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 
   // Codex review 2026-09-03, round 3: `nothingActionableBulk` above only
@@ -2498,9 +2496,7 @@ describe('ConfirmActionModal — the title names the verb and the count (QA-arch
         bulkPreview={{ data: undefined, loading: true, error: false }}
       />,
     );
-    expect(
-      screen.getByRole('radio', { name: 'Unsubscribe and archive, counting emails' }),
-    ).toBeDisabled();
+    expect(screen.getByRole('radio', { name: '+ Archive' })).toBeDisabled();
     expect(screen.queryByRole('radio', { name: /0 emails/ })).toBeNull();
     expect(screen.queryByText(/Loading preview/i)).toBeNull();
     const confirm = screen.getByRole('button', { name: 'Unsubscribe' });
@@ -2700,10 +2696,7 @@ describe('ConfirmActionModal — explicit period and scope choices', () => {
       expect(screen.queryByRole('radiogroup', { name: /Where it applies/ })).toBeNull();
       fireEvent.click(
         screen.getByRole('radio', {
-          name:
-            secondary === 'archive'
-              ? 'Unsubscribe and archive 7 emails'
-              : 'Unsubscribe and delete 7 emails',
+          name: secondary === 'archive' ? '+ Archive 7' : '+ Delete 7',
         }),
       );
       fireEvent.click(
