@@ -105,6 +105,18 @@ describe('PlanPicker launch pricing', () => {
     expect(panel).not.toHaveTextContent('$9');
   });
 
+  it('quotes one INR catalog on plain /billing with no offer params', () => {
+    renderPicker({ pricingV2: true, passEnabled: true, country: 'IN', indiaCheckoutOpen: true });
+    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
+    expect(screen.getByTestId('plan-option-free')).toHaveTextContent('₹0');
+    expect(screen.getByTestId('plan-option-plus')).toHaveTextContent('₹1,999/yr');
+    expect(screen.getByTestId('plan-option-plus')).not.toHaveTextContent('incl. GST');
+    expect(screen.getByTestId('pass-offer-card')).toHaveTextContent('₹799 once');
+    expect(screen.getByTestId('plan-option-free').textContent).not.toContain('$');
+    expect(screen.getByTestId('plan-option-plus').textContent).not.toContain('$');
+    expect(screen.getByTestId('pass-offer-card').textContent).not.toContain('$');
+  });
+
   it('quotes one INR catalog for an India visitor', async () => {
     renderPicker(
       { pricingV2: true, passEnabled: true, country: 'IN', indiaCheckoutOpen: true },

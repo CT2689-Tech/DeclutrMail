@@ -45,14 +45,22 @@ const US = launchPriceDisplay('usd');
 const IN = launchPriceDisplay('inr');
 const NOW = '2026-10-27T07:01:00.000Z';
 
-function renderPicker(country: string | null, indiaCheckoutOpen: boolean) {
+function renderPicker(
+  country: string | null,
+  indiaCheckoutOpen: boolean,
+  initialIntent: { plan: 'plus'; cycle: 'annual'; offer: 'pass_onetime' } | null = {
+    plan: 'plus',
+    cycle: 'annual',
+    offer: 'pass_onetime',
+  },
+) {
   return render(
     <QueryWrapper client={createTestQueryClient()}>
       <PlanPicker
         currentTier="free"
         grantingSub={null}
         disabled={false}
-        initialIntent={{ plan: 'plus', cycle: 'annual', offer: 'pass_onetime' }}
+        initialIntent={initialIntent}
         pricingV2
         passEnabled
         country={country}
@@ -173,6 +181,26 @@ describe('visitor price surfaces — India uses one currency', () => {
     expect(
       `${IN.free.amount}${IN.plus.amount}${IN.plus.per}${IN.plusLine}${IN.passLine}`,
     ).not.toContain('$');
+  });
+
+  it('quotes one INR catalog on plain /billing for a Free account (no offer params)', () => {
+    renderPicker('IN', true, null);
+    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
+    expect(screen.getByTestId('plan-option-free')).toHaveTextContent('₹0');
+    expect(screen.getByTestId('plan-option-plus')).toHaveTextContent('₹1,999/yr');
+    expect(screen.getByTestId('plan-option-plus')).not.toHaveTextContent('incl. GST');
+    expect(screen.getByTestId('pass-offer-card')).toHaveTextContent('₹799 once');
+    expect(screen.getByTestId('plan-option-free').textContent).not.toContain('$');
+    expect(screen.getByTestId('plan-option-plus').textContent).not.toContain('$');
+    expect(screen.getByTestId('pass-offer-card').textContent).not.toContain('$');
+  });
+
+  it('keeps USD on plain /billing for a US Free account (no offer params)', () => {
+    renderPicker('US', false, null);
+    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
+    expect(screen.getByTestId('plan-option-free')).toHaveTextContent('$0');
+    expect(screen.getByTestId('plan-option-plus')).toHaveTextContent('$59/yr');
+    expect(screen.getByTestId('pass-offer-card')).toHaveTextContent('$19 once');
   });
 
   it('renders /billing cards, offer header, and confirm without $ and with Plus cadence', async () => {

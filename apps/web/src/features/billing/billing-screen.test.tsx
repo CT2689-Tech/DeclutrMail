@@ -26,6 +26,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 let mockTier = 'free';
 let mockWorkspaceId = 'w';
 let mockCleanupRemaining: number | null = 3;
+let mockPassEnabled = false;
 // QA-billing-20260901-04 — the real anniversary reset date, distinct
 // from a calendar-month one so the fixture actually exercises the fix
 // rather than coincidentally matching the old "this month" copy.
@@ -47,6 +48,7 @@ vi.mock('@/features/auth/auth-provider', () => {
       tier: mockTier,
       cleanupRemaining: mockCleanupRemaining,
       cleanupResetsAt: mockCleanupResetsAt,
+      passEnabled: mockPassEnabled,
     },
   });
   return { useAuth: auth, useOptionalAuth: auth };
@@ -243,6 +245,7 @@ beforeEach(() => {
   mockTier = 'free';
   mockWorkspaceId = 'w';
   mockCleanupRemaining = 3;
+  mockPassEnabled = false;
   vi.mocked(launchCheckout).mockClear();
   vi.mocked(track).mockClear();
   // The pending-payment lock persists in localStorage by design — a
@@ -2234,6 +2237,39 @@ describe('BillingScreen — paid subscriber', () => {
     expect(within(panel).queryByText('30-day money-back guarantee')).not.toBeInTheDocument();
     expect(within(panel).queryByRole('checkbox')).not.toBeInTheDocument();
     expect(within(panel).queryByText(/Claim Founding Pro/)).not.toBeInTheDocument();
+  });
+
+  it('PRICING_V2 quotes one INR catalog on plain /billing for a Free account', async () => {
+    mockPassEnabled = true;
+    stubSubscription(() => jsonOk({ data: FREE_BODY }));
+    renderScreen(null, undefined, { pricingV2: true, country: 'IN', indiaCheckoutOpen: true });
+
+    const current = await screen.findByTestId('current-plan-card');
+    expect(within(current).getByText('Free')).toBeInTheDocument();
+    expect(within(current).getByText('₹0')).toBeInTheDocument();
+    expect(current.textContent).not.toContain('$');
+
+    expect(screen.getByTestId('plan-option-free')).toHaveTextContent('₹0');
+    expect(screen.getByTestId('plan-option-plus')).toHaveTextContent('₹1,999/yr');
+    expect(screen.getByTestId('plan-option-plus')).not.toHaveTextContent('incl. GST');
+    expect(screen.getByTestId('pass-offer-card')).toHaveTextContent('₹799 once');
+    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
+    expect(screen.getByTestId('plan-option-free').textContent).not.toContain('$');
+    expect(screen.getByTestId('plan-option-plus').textContent).not.toContain('$');
+    expect(screen.getByTestId('pass-offer-card').textContent).not.toContain('$');
+  });
+
+  it('PRICING_V2 keeps USD on plain /billing for a US Free account', async () => {
+    mockPassEnabled = true;
+    stubSubscription(() => jsonOk({ data: FREE_BODY }));
+    renderScreen(null, undefined, { pricingV2: true, country: 'US' });
+
+    const current = await screen.findByTestId('current-plan-card');
+    expect(within(current).getByText('$0')).toBeInTheDocument();
+    expect(screen.getByTestId('plan-option-free')).toHaveTextContent('$0');
+    expect(screen.getByTestId('plan-option-plus')).toHaveTextContent('$59/yr');
+    expect(screen.getByTestId('pass-offer-card')).toHaveTextContent('$19 once');
+    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
   });
 
   it('PRICING_V2 quotes USD for India on /billing while India checkout is closed', async () => {
