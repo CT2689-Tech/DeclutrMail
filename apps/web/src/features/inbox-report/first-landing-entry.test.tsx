@@ -33,6 +33,7 @@ afterEach(() => {
   resetFetchStub();
   vi.unstubAllEnvs();
   localStorage.removeItem('dm-inbox-report-celebration:mb-1');
+  sessionStorage.removeItem('dm-inbox-report-celebration:mb-1');
 });
 
 describe('InboxReportFirstLanding', () => {
@@ -110,6 +111,163 @@ describe('InboxReportFirstLanding', () => {
       ).toBeNull(),
     );
     expect(screen.getByText(WS5_COPY['report.celebrate.undo'])).toBeInTheDocument();
+  });
+
+  it('drops the stored archive result after Undo finishes and offers the fix again', async () => {
+    const stored = JSON.stringify({
+      archived: 4,
+      senders: 1,
+      verb: 'archive',
+      actionId: 'act-1',
+      actionHandle: 'action',
+      senderKeys: ['s1'],
+      fixGeneratedAt: report.generatedAt,
+    });
+    localStorage.setItem('dm-inbox-report-celebration:mb-1', stored);
+    sessionStorage.setItem('dm-inbox-report-celebration:mb-1', stored);
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mb-1/inbox-report',
+        respond: () => jsonOk({ data: report }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/act-1',
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: 'act-1',
+              verb: 'archive',
+              direction: 'forward',
+              status: 'done',
+              requestedCount: 4,
+              affectedCount: 4,
+              wakeAt: null,
+              undoToken: 'undo-1',
+              undoExpiresAt: '2026-11-11T00:00:00.000Z',
+              undoExecutedAt: null,
+              undoRevertedAt: null,
+              errorCode: null,
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/undo/undo-1',
+        respond: () =>
+          jsonOk({
+            data: {
+              token: 'undo-1',
+              actionKind: 'archive',
+              reverted: false,
+              expired: false,
+              revertedAt: null,
+              actionId: 'rev-1',
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/rev-1',
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: 'rev-1',
+              verb: 'archive',
+              direction: 'reverse',
+              status: 'done',
+              requestedCount: 4,
+              affectedCount: 4,
+              wakeAt: null,
+              undoToken: null,
+              undoExpiresAt: null,
+              undoExecutedAt: null,
+              undoRevertedAt: '2026-10-12T00:00:00.000Z',
+              errorCode: null,
+            },
+          }),
+      },
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
+      </QueryWrapper>,
+    );
+    fireEvent.click(
+      await screen.findByRole('button', { name: WS5_COPY['report.celebrate.undo.button'] }),
+    );
+    expect(
+      await screen.findByRole('button', { name: 'Unsubscribe + archive 1 sender' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Archived 4 emails from 1 sender.')).toBeNull();
+    expect(localStorage.getItem('dm-inbox-report-celebration:mb-1')).toBeNull();
+    expect(sessionStorage.getItem('dm-inbox-report-celebration:mb-1')).toBeNull();
+  });
+
+  it('drops a stored result when a later report lists those senders again', async () => {
+    localStorage.setItem(
+      'dm-inbox-report-celebration:mb-1',
+      JSON.stringify({
+        archived: 4,
+        senders: 1,
+        verb: 'archive',
+        senderKeys: ['s1'],
+        fixGeneratedAt: '2020-01-01T00:00:00.000Z',
+      }),
+    );
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mb-1/inbox-report',
+        respond: () => jsonOk({ data: report }),
+      },
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
+      </QueryWrapper>,
+    );
+    expect(
+      await screen.findByRole('button', { name: 'Unsubscribe + archive 1 sender' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Archived 4 emails from 1 sender.')).toBeNull();
+    expect(localStorage.getItem('dm-inbox-report-celebration:mb-1')).toBeNull();
+  });
+
+  it('keeps a stored result when the later report no longer offers those senders', async () => {
+    localStorage.setItem(
+      'dm-inbox-report-celebration:mb-1',
+      JSON.stringify({
+        archived: 4,
+        senders: 1,
+        verb: 'archive',
+        senderKeys: ['s1'],
+        fixGeneratedAt: '2020-01-01T00:00:00.000Z',
+      }),
+    );
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mb-1/inbox-report',
+        respond: () =>
+          jsonOk({
+            data: {
+              ...report,
+              generatedAt: '2026-10-12T00:00:00.000Z',
+              fix: { senderKeys: [], sendersCount: 0, inboxEmailCount: 0 },
+            },
+          }),
+      },
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
+      </QueryWrapper>,
+    );
+    expect(await screen.findByText('Archived 4 emails from 1 sender.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Unsubscribe/ })).toBeNull();
+    expect(localStorage.getItem('dm-inbox-report-celebration:mb-1')).toContain('"senderKeys"');
   });
 
   it('keeps the done state after a reload and does not offer the action again', async () => {
@@ -333,6 +491,9 @@ describe('InboxReportFirstLanding', () => {
     expect(screen.queryByRole('button', { name: /Unsubscribe \+ archive/ })).toBeNull();
     expect(localStorage.getItem('dm-inbox-report-celebration:mb-1')).toContain(
       '"verb":"unsub_only"',
+    );
+    expect(localStorage.getItem('dm-inbox-report-celebration:mb-1')).toContain(
+      '"senderKeys":["s1"]',
     );
     localStorage.removeItem('dm-inbox-report-celebration:mb-1');
   });

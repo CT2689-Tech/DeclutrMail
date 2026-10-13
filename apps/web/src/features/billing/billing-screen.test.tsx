@@ -4786,6 +4786,268 @@ describe('BillingScreen — one billing story (A6)', () => {
     expect(within(card).queryByText(/everything in/i)).not.toBeInTheDocument();
   });
 
+  it('clears a Pass checkout_intent once the Pass entitlement is active', async () => {
+    mockTier = 'plus';
+    mockCleanupRemaining = null;
+    writePendingCheckout(
+      'w',
+      'checkout_intent',
+      'free',
+      null,
+      'plus',
+      'annual',
+      'pass-attempt',
+      'pass_onetime',
+    );
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          checkoutSetupComplete: true,
+          tier: 'plus',
+          foundingMember: false,
+          subscription: null,
+          pendingCheckout: null,
+          complimentary: {
+            tier: 'plus',
+            expiresAt: '2026-11-12T00:00:00.000Z',
+            source: 'pass',
+          },
+        },
+      }),
+    );
+    renderScreen();
+
+    const card = await screen.findByTestId('current-plan-card');
+    await waitFor(() => expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull());
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+    expect(within(card).getByText('Backlog Pass')).toBeInTheDocument();
+  });
+
+  it('clears a Plus checkout_intent once the Plus subscription is active', async () => {
+    mockTier = 'plus';
+    mockCleanupRemaining = null;
+    writePendingCheckout('w', 'checkout_intent', 'free', null, 'plus', 'monthly');
+    stubSubscription(() => jsonOk({ data: { ...PLUS_SUB, checkoutSetupComplete: true } }));
+    renderScreen();
+
+    const card = await screen.findByTestId('current-plan-card');
+    await waitFor(() => expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull());
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+    expect(within(card).getByText('Plus')).toBeInTheDocument();
+  });
+
+  it('keeps a Plus checkout_intent while only a Pass is active', async () => {
+    mockTier = 'plus';
+    mockCleanupRemaining = null;
+    const pending = writePendingCheckout(
+      'w',
+      'checkout_intent',
+      'free',
+      null,
+      'plus',
+      'annual',
+      'plus-attempt',
+    );
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          checkoutSetupComplete: true,
+          tier: 'plus',
+          foundingMember: false,
+          subscription: null,
+          pendingCheckout: null,
+          complimentary: {
+            tier: 'plus',
+            expiresAt: '2026-11-12T00:00:00.000Z',
+            source: 'pass',
+          },
+        },
+      }),
+    );
+    renderScreen();
+
+    const notice = await screen.findByTestId('payment-processing-notice');
+    expect(notice).toHaveTextContent('confirming your plan');
+    expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toEqual(pending);
+    expect(
+      within(screen.getByTestId('current-plan-card')).getByText('Backlog Pass'),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps a Pass checkout_intent while an active Plus annual row has no Pass grant', async () => {
+    mockTier = 'plus';
+    mockCleanupRemaining = null;
+    const pending = writePendingCheckout(
+      'w',
+      'checkout_intent',
+      'free',
+      null,
+      'plus',
+      'annual',
+      'pass-attempt',
+      'pass_onetime',
+    );
+    let granted = false;
+    stubSubscription(() =>
+      jsonOk({
+        data: granted
+          ? {
+              checkoutSetupComplete: true,
+              tier: 'plus',
+              foundingMember: false,
+              subscription: null,
+              pendingCheckout: null,
+              complimentary: {
+                tier: 'plus',
+                expiresAt: '2026-11-12T00:00:00.000Z',
+                source: 'pass',
+              },
+            }
+          : {
+              ...PLUS_SUB,
+              checkoutSetupComplete: true,
+              subscription: { ...PLUS_SUB.subscription, cycle: 'annual' },
+            },
+      }),
+    );
+    renderScreen();
+
+    const notice = await screen.findByTestId('payment-processing-notice');
+    expect(notice).toHaveTextContent('confirming your plan');
+    // The unlock effect has a settled read here. Falling through to the
+    // Plus matcher would already have cleared this lock.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toEqual(pending);
+    expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+
+    granted = true;
+    await waitFor(
+      () => {
+        expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
+        expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+      },
+      { timeout: 8_000 },
+    );
+  });
+
+  it('a reload keeps the stored Pass offer, so the grant clears the checkout notice', async () => {
+    mockTier = 'plus';
+    mockCleanupRemaining = null;
+    writePendingCheckout(
+      'w',
+      'checkout_intent',
+      'free',
+      null,
+      'plus',
+      'annual',
+      'pass-attempt',
+      'pass_onetime',
+    );
+    const pendingCheckout = {
+      provider: 'paddle' as const,
+      tier: 'plus' as const,
+      cycle: 'annual' as const,
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    };
+    let granted = false;
+    const openCheckout: BillingSubscription = { ...FREE_BODY, pendingCheckout };
+    stubSubscription(() =>
+      jsonOk({
+        data: granted
+          ? {
+              checkoutSetupComplete: true,
+              tier: 'plus',
+              foundingMember: false,
+              subscription: null,
+              pendingCheckout: null,
+              complimentary: {
+                tier: 'plus',
+                expiresAt: '2026-11-12T00:00:00.000Z',
+                source: 'pass',
+              },
+            }
+          : openCheckout,
+      }),
+    );
+    // The subscription read is already in cache on this paint, the way a
+    // reload lands when the pending row is known before the lock hydrates.
+    // Otherwise the lock is applied first and the synthesize effect never
+    // runs, so the test cannot see the offer being dropped.
+    const client = createTestQueryClient();
+    client.setQueryData(billingKeys.subscription(), openCheckout);
+    render(
+      <QueryWrapper client={client}>
+        <BillingScreen initialIntent={null} />
+      </QueryWrapper>,
+    );
+
+    const notice = await screen.findByTestId('payment-processing-notice');
+    expect(notice).toHaveTextContent('Checkout started — confirming your plan.');
+    expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toMatchObject({
+      kind: 'checkout_intent',
+      offer: 'pass_onetime',
+    });
+
+    granted = true;
+    await waitFor(
+      () => {
+        expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+        expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
+      },
+      { timeout: 8_000 },
+    );
+    expect(
+      within(screen.getByTestId('current-plan-card')).getByText('Backlog Pass'),
+    ).toBeInTheDocument();
+  });
+
+  it('a Pass confirm records the purchase on the checkout_intent lock', async () => {
+    mockPassEnabled = true;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: () =>
+          jsonOk({
+            data: {
+              provider: 'paddle',
+              kind: 'overlay',
+              priceId: 'pri_test_123',
+              clientToken: 'test_token',
+              environment: 'sandbox',
+              customData: { workspace_id: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff', sig: 'test-sig' },
+            },
+          }),
+      },
+    ]);
+    renderScreen(null, undefined, { pricingV2: true });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Get Backlog Pass' }));
+    const panel = await screen.findByTestId('checkout-panel');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toMatchObject({
+      kind: 'checkout_intent',
+      offer: 'pass_onetime',
+      toTier: 'plus',
+    });
+
+    act(() => capturedCheckoutEvents().onCompleted?.());
+    await waitFor(() =>
+      expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toMatchObject({
+        kind: 'checkout',
+        offer: 'pass_onetime',
+      }),
+    );
+  });
+
   it('a non-backing past_due row surfaces its dunning warning and locks new checkouts', async () => {
     mockTier = 'pro';
     stubSubscription(() =>

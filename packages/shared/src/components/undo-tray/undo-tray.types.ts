@@ -61,6 +61,9 @@ export interface UndoTrayEntry {
  * both so the tray can render a distinct error state — network failure
  * must NOT silently collapse the tray into the empty state (D211).
  */
+/** Verb of an in-flight job. Distinct from the undoable decision beside it. */
+export type UndoTrayNoticeVerb = 'archive' | 'later' | 'delete' | 'unsubscribe';
+
 /**
  * A line about an action that is NOT (yet) an undoable decision: still
  * running, or ended with nothing to undo (failed, partly failed, nothing
@@ -70,6 +73,11 @@ export interface UndoTrayNotice {
   id: string;
   /** `working` still running · `attention` ended badly · `info` ended, nothing changed. */
   tone: 'working' | 'attention' | 'info';
+  /**
+   * Set when this line is an in-flight job. Undo all is a different
+   * decision (usually archive); unsubscribe jobs are their own rows.
+   */
+  verb?: UndoTrayNoticeVerb;
   /** "Archiving…" · "Archive failed" · "Nothing to archive". */
   label: string;
   /** "Yankee Candle + 2 others". */
