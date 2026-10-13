@@ -3,6 +3,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 
 import { Button, TechnicalDetails, tokens } from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 
 import { technicalErrorDetails } from '@/lib/action-error-copy';
@@ -247,6 +248,7 @@ export function ActivitySupportBundleDialog({
                 </span>
               </span>
             </label>
+            <p style={supportBundleIncludesStyle}>{WS2_COPY.simplify.activity.bundleIncludes}</p>
             <TechnicalDetails
               summary="What technical details can be included?"
               style={{ marginTop: 10 }}
@@ -307,6 +309,13 @@ const supportBundleOptionStyle: CSSProperties = {
   padding: '6px 0',
   color: color.fgSoft,
   fontSize: text.base,
+  lineHeight: 1.45,
+};
+
+const supportBundleIncludesStyle: CSSProperties = {
+  margin: '10px 0 0',
+  color: color.fgSoft,
+  fontSize: text.sm,
   lineHeight: 1.45,
 };
 

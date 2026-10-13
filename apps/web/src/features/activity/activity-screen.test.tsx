@@ -28,6 +28,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { activityKeys } from './api/query-keys';
 import { tokens, useUiStore } from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import {
   absoluteTime,
   activityActionDot,
@@ -1133,6 +1134,11 @@ describe('ActivityScreen — populated', () => {
     expect(
       within(dialog).getByRole('checkbox', { name: /include technical details/i }),
     ).not.toBeChecked();
+    const bundle = within(dialog).getByText(WS2_COPY.simplify.activity.bundleIncludes);
+    const appendix = within(dialog).getByText('What technical details can be included?');
+    expect(
+      bundle.compareDocumentPosition(appendix) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('sends edited filters and independent privacy opt-ins, then shows a recoverable error', async () => {

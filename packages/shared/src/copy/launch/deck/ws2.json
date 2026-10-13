@@ -556,5 +556,13 @@
         "senderListClause": "names and addresses come from the saved sender list, one page at a time"
       }
     }
+  },
+  "simplify": {
+    "activity": {
+      "bundleIncludes": "The bundle includes your Gmail address. Sender names and addresses stay hidden unless you choose to include them."
+    },
+    "deleteAccount": {
+      "paymentPending": "We’re still checking a recent payment. Try again in a few minutes, or email support@declutrmail.com."
+    }
   }
 }
