@@ -106,7 +106,7 @@ async function paddle(fetchImpl, key, path, method = 'GET', body) {
     const suffix = typeof code === 'string' && /^[a-z0-9_]{1,80}$/.test(code) ? `_${code}` : '';
     const detail = parsed?.error?.detail;
     const safe =
-      typeof detail === 'string' && /^[A-Za-z0-9 .,:'()\-]{1,180}$/.test(detail) ? detail : '';
+      typeof detail === 'string' && /^[A-Za-z0-9 .,:'()-]{1,180}$/.test(detail) ? detail : '';
     throw new SandboxCheckoutError(`paddle_${response.status}${suffix}`, safe);
   }
   return parsed;
