@@ -1,3 +1,5 @@
+import { ToastHost } from '@declutrmail/shared';
+import { pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
@@ -5,17 +7,22 @@ import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import type { Me } from '@/features/auth/api/me-contract';
 import { resetMailboxScopedCache } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { makeQueryClient } from '@/lib/query-client';
-import { installFetchStub, jsonOk, jsonServerError } from '@/test/fetch-stub';
+import { addFetchHandlers, installFetchStub, jsonOk, jsonServerError } from '@/test/fetch-stub';
 import { createTestQueryClient } from '@/test/query-wrapper';
 
+import { HOME_DECK } from './home-deck-copy';
+import { homeFixCopy } from './home-ws5-copy';
 import { HomeScreen } from './home-screen';
-import homeStyles from './home-view.module.css';
 
 const authCell: { me: Me } = { me: meFor('pro', 'ready') };
 
 vi.mock('@/features/auth/auth-provider', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
-  return { ...actual, useAuth: () => ({ me: authCell.me }) };
+  return {
+    ...actual,
+    useAuth: () => ({ me: authCell.me }),
+    useOptionalAuth: () => ({ me: authCell.me }),
+  };
 });
 vi.mock('@/features/mailboxes/no-active-mailbox', () => ({
   NoActiveMailbox: () => <div data-testid="no-active-mailbox" />,
@@ -61,14 +68,50 @@ function mailboxConflict(code: string): Response {
   });
 }
 
+const EMPTY_REPORT = {
+  generatedAt: '2026-10-01T00:00:00.000Z',
+  mailboxSizeBucket: 'under_1gb',
+  insights: [],
+  fix: { senderKeys: [], sendersCount: 0, inboxEmailCount: 0 },
+  fallbackSenderCount: 0,
+  receivedCount: 0,
+  totalBytes: 0,
+  variant: 'fallback',
+};
+
+const REPORT_WITH_FIX = {
+  ...EMPTY_REPORT,
+  variant: 'full',
+  insights: [
+    {
+      id: 'mostly_unread_share',
+      pct: 85,
+      senderCount: 29,
+      sweeperExcluded: 0,
+      window: '90d',
+    },
+  ],
+  fix: { senderKeys: ['s1', 's2'], sendersCount: 2, inboxEmailCount: 40 },
+  fallbackSenderCount: 2,
+  receivedCount: 80,
+};
+
 interface Stub {
   summary?: () => Response;
   queueLength?: number;
   screenerPending?: number;
+  sync?: Record<string, unknown>;
+  report?: () => Response;
+  snoozed?: () => Response;
 }
 
-function stub({ summary, queueLength = 0, screenerPending = 0 }: Stub = {}) {
-  const calls = { summary: [] as string[], triage: 0, screener: 0 };
+function stub({ summary, queueLength = 0, screenerPending = 0, sync, report, snoozed }: Stub = {}) {
+  const calls = {
+    summary: [] as string[],
+    triage: 0,
+    screener: 0,
+    retryMailbox: null as string | null,
+  };
   installFetchStub([
     {
       method: 'POST',
@@ -80,7 +123,11 @@ function stub({ summary, queueLength = 0, screenerPending = 0 }: Stub = {}) {
       path: '/api/v1/sync/status',
       respond: () =>
         jsonOk({
-          data: { readiness_status: 'failed', error_code: 'TransientError', progress_pct: 25 },
+          data: sync ?? {
+            readiness_status: 'failed',
+            error_code: 'TransientError',
+            progress_pct: 25,
+          },
         }),
     },
     {
@@ -120,13 +167,32 @@ function stub({ summary, queueLength = 0, screenerPending = 0 }: Stub = {}) {
         return jsonOk({ data: { pending: screenerPending } });
       },
     },
+    {
+      method: 'GET',
+      path: '/api/mailboxes/mb-1/inbox-report',
+      respond: () => (report ? report() : jsonOk({ data: EMPTY_REPORT })),
+    },
+    {
+      method: 'GET',
+      path: '/api/snoozed',
+      respond: () => (snoozed ? snoozed() : jsonOk({ data: [] })),
+    },
+    {
+      method: 'POST',
+      path: '/api/v1/sync/initial/retry',
+      respond: (req) => {
+        calls.retryMailbox = req.headers.get('X-Active-Mailbox-Id');
+        return jsonOk({ data: { outcome: 'requeued' } });
+      },
+    },
   ]);
   return calls;
 }
 
-function renderHome(client: QueryClient = createTestQueryClient()) {
+function renderHome(client: QueryClient = createTestQueryClient(), withToast = false) {
   render(
     <QueryClientProvider client={client}>
+      {withToast ? <ToastHost /> : null}
       <HomeScreen />
     </QueryClientProvider>,
   );
@@ -139,33 +205,167 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('HomeScreen', () => {
-  it('shows the all-time cleared total and continues Triage', async () => {
+  it('shows the unsubscribe step and the Later card from the mailbox reads', async () => {
+    stub({
+      report: () => jsonOk({ data: REPORT_WITH_FIX }),
+      snoozed: () =>
+        jsonOk({
+          data: [
+            {
+              senderId: 'later-1',
+              displayName: 'Ada',
+              email: 'ada@example.com',
+              domain: 'example.com',
+              laterCount: 2,
+              snoozedUntil: '2026-10-13T00:00:00.000Z',
+              snoozedAt: '2026-10-01T00:00:00.000Z',
+              reason: null,
+              returnStatus: 'scheduled',
+              lastReturnAttemptAt: null,
+              returnFailureKind: null,
+            },
+          ],
+        }),
+    });
+    renderHome();
+    const unsubscribe = await screen.findByRole('button', {
+      name: 'Unsubscribe + archive 2 senders',
+    });
+    expect(screen.getByRole('region', { name: 'Suggested next steps' })).toBeInTheDocument();
+    expect(screen.getByText(/Each of those 29 senders had less than 10%/)).toBeInTheDocument();
+    const lead = screen.getByText('85%');
+    expect(lead.closest('[data-surface="home"]')).not.toBeNull();
+    expect(lead.closest('a')).toBeNull();
+    const laterCard = screen.getByRole('link', { name: 'Open Later' }).closest('article');
+    expect(laterCard).toHaveTextContent('Later');
+    expect(laterCard).not.toHaveTextContent('1 sender');
+    fireEvent.click(unsubscribe);
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent(
+      'Unsubscribe from 2 senders and archive 40 emails?',
+    );
+  });
+
+  it('confirming Unsubscribe + Archive sends the request and shows the toast', async () => {
+    const posts: { body: unknown; mailbox: string | null }[] = [];
+    const statusReads: string[] = [];
+    stub({ report: () => jsonOk({ data: REPORT_WITH_FIX }) });
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-backlog',
+        respond: async (req) => {
+          posts.push({
+            body: await req.json(),
+            mailbox: req.headers.get('X-Active-Mailbox-Id'),
+          });
+          return jsonOk({
+            data: {
+              mode: 'archive',
+              backlog: {
+                actionId: 'act-1',
+                handle: 'action',
+                requestedCount: 40,
+                verb: 'archive',
+              },
+              senders: [
+                {
+                  senderId: 's1',
+                  method: 'one_click',
+                  mailtoUrl: null,
+                  executionActionId: null,
+                  lifecycleStatus: null,
+                  unsubStatus: 'requested',
+                  reasonCode: null,
+                },
+                {
+                  senderId: 's2',
+                  method: 'one_click',
+                  mailtoUrl: null,
+                  executionActionId: null,
+                  lifecycleStatus: null,
+                  unsubStatus: 'requested',
+                  reasonCode: null,
+                },
+              ],
+            },
+          });
+        },
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/act-1',
+        respond: () => {
+          statusReads.push('/api/actions/act-1');
+          return jsonOk({
+            data: {
+              actionId: 'act-1',
+              verb: 'archive',
+              direction: 'forward',
+              status: 'done',
+              requestedCount: 40,
+              affectedCount: 40,
+              wakeAt: null,
+              undoToken: 'undo-1',
+              undoExpiresAt: '2026-11-11T00:00:00.000Z',
+              undoExecutedAt: null,
+              undoRevertedAt: null,
+              errorCode: null,
+            },
+          });
+        },
+      },
+    ]);
+    renderHome(createTestQueryClient(), true);
+    const copy = homeFixCopy();
+    expect(copy).not.toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: copy!.cancel }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(posts).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
+    fireEvent.click(await screen.findByRole('button', { name: copy!.button }));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]).toEqual({
+      body: { mode: 'archive', senderIds: ['s1', 's2'] },
+      mailbox: 'mb-1',
+    });
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      [
+        pluralCopy(WS5_COPY['f1.toast.part.unsub'], 2, { m: '2' }),
+        pluralCopy(WS5_COPY['f1.toast.part.archived'], 40, { n: '40' }),
+      ].join(' · '),
+    );
+    expect(localStorage.getItem('dm-inbox-report-celebration:mb-1')).toContain(
+      '"actionId":"act-1"',
+    );
+    await waitFor(() => expect(statusReads).toContain('/api/actions/act-1'));
+    localStorage.removeItem('dm-inbox-report-celebration:mb-1');
+  });
+
+  it('shows the all-time cleared total without a Review today button', async () => {
     const calls = stub({ queueLength: 2, screenerPending: 4 });
     renderHome();
 
     expect(screen.getByRole('status', { name: 'Loading Home' })).toBeInTheDocument();
     expect(await screen.findByTestId('home-hero')).toHaveTextContent('1,234');
     expect(calls.summary).toEqual(['?window=all']);
-    const link = screen.getByRole('link', { name: 'Review 2 today' });
-    expect(link).toHaveAttribute('href', '/triage');
-    expect(link).toHaveTextContent('Review 2 today');
-    expect(screen.getByRole('link', { name: /Journal 0/ })).toHaveAttribute(
-      'href',
-      '/senders?sender=sender-0',
-    );
-    expect(screen.getByText('In inbox now')).toBeInTheDocument();
-    expect(calls.triage).toBe(1);
+    expect(screen.queryByRole('link', { name: /Review \d+ today/ })).toBeNull();
+    expect(screen.queryByText('In inbox now')).toBeNull();
+    expect(screen.queryByRole('link', { name: /Autopilot/ })).toBeNull();
+    expect(calls.triage).toBe(0);
+    expect(calls.screener).toBe(0);
   });
 
-  it('offers the Screener when Triage is clear', async () => {
+  it('does not offer the Screener as Home’s primary step', async () => {
     stub({ queueLength: 0, screenerPending: 4 });
     renderHome();
-    const link = await screen.findByRole('link', { name: 'Review 4 new' });
-    expect(link).toHaveAttribute('href', '/screener');
-    expect(link).toHaveTextContent('Review 4 new');
+    expect(await screen.findByTestId('home-hero')).toHaveTextContent('1,234');
+    expect(screen.queryByRole('link', { name: 'Review 4 new' })).toBeNull();
   });
 
-  it('shows cleanup totals while review tasks are still loading', async () => {
+  it('shows cleanup totals without waiting on a removed review list', async () => {
     let release!: () => void;
     const held = new Promise<void>((resolve) => {
       release = resolve;
@@ -198,44 +398,47 @@ describe('HomeScreen', () => {
         path: '/api/screener/count',
         respond: () => jsonOk({ data: { pending: 0 } }),
       },
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mb-1/inbox-report',
+        respond: () => jsonOk({ data: EMPTY_REPORT }),
+      },
+      { method: 'GET', path: '/api/snoozed', respond: () => jsonOk({ data: [] }) },
     ]);
     renderHome();
     try {
       expect(await screen.findByTestId('home-hero', {}, { timeout: 300 })).toHaveTextContent(
         '1,234',
       );
-      expect(screen.getByText('Loading review tasks…')).toBeInTheDocument();
-      expect(screen.queryByRole('link', { name: 'Review senders' })).not.toBeInTheDocument();
+      expect(screen.queryByText('Loading review tasks…')).toBeNull();
+      expect(screen.queryByRole('link', { name: /Review \d+ today/ })).toBeNull();
     } finally {
       release();
     }
-    expect(await screen.findByRole('link', { name: 'Review senders' })).toBeInTheDocument();
   });
 
   it('never reads the Screener for a tier without it', async () => {
     authCell.me = meFor('free', 'ready');
     const calls = stub({ screenerPending: 4 });
     renderHome();
-    expect(await screen.findByRole('link', { name: 'Review senders' })).toHaveAttribute(
-      'href',
-      '/senders',
-    );
-    expect(calls.triage).toBe(1);
+    expect(await screen.findByTestId('home-hero')).toHaveTextContent('1,234');
+    expect(calls.triage).toBe(0);
     expect(calls.screener).toBe(0);
   });
 
-  it('shows existing review work before any cleanup history, without an achievement count', async () => {
+  it('shows an empty home without an achievement count or Review today', async () => {
     stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }), queueLength: 2 });
     renderHome();
-    expect(await screen.findByRole('link', { name: /Journal 0/ })).toHaveAttribute(
-      'href',
-      '/senders?sender=sender-0',
-    );
+    expect(await screen.findByText('Nothing cleared yet.')).toBeInTheDocument();
     expect(screen.queryByTestId('home-hero')).toBeNull();
-    expect(screen.getByRole('link', { name: 'Review 2 today' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Review 2 today' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Review senders' })).toHaveAttribute(
+      'href',
+      '/senders',
+    );
   });
 
-  it('new user: no number, a title and the button', async () => {
+  it('new user: no number, a title and the senders link', async () => {
     stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }) });
     renderHome();
     expect(await screen.findByText('Nothing cleared yet.')).toBeInTheDocument();
@@ -244,35 +447,51 @@ describe('HomeScreen', () => {
       'href',
       '/senders',
     );
-    const report = screen.getByRole('link', { name: /Open report/ });
-    expect(report).toHaveAttribute('href', '/senders');
-    expect(report).toHaveAttribute('data-dm-button', '');
-    expect(screen.getByRole('heading', { name: 'Your Inbox Report' })).toBeInTheDocument();
-    const reportSlot = homeStyles.reportSlot;
-    if (!reportSlot) throw new Error('Home report slot class is missing');
-    expect(document.querySelector('[data-home-report-card]')).toHaveClass(reportSlot);
-    const title = screen.getByRole('heading', { level: 1 });
-    const column = title.closest('[data-home-priority]');
-    const card = document.querySelector('[data-home-report-card]');
-    expect(column).not.toBeNull();
-    expect(card?.parentElement).toBe(column);
-    expect(title.compareDocumentPosition(card!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('new user whose mailbox is still syncing', async () => {
     authCell.me = meFor('pro', 'syncing');
     stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }) });
     renderHome();
-    expect(await screen.findByText('Reading your Gmail.')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Your Inbox Report' })).toBeNull();
+    expect(
+      await screen.findByRole('heading', { name: 'Scanning your Gmail…' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('You can close this tab and come back later.')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Review senders' })).toBeNull();
+    expect(screen.queryByText('Waiting to start.')).toBeNull();
+    expect(screen.getByTestId('home-scan-bar')).toBeInTheDocument();
+  });
+
+  it('syncing home shows the stage the status read reports', async () => {
+    authCell.me = meFor('pro', 'syncing');
+    stub({
+      summary: () => jsonOk({ data: EMPTY_SUMMARY }),
+      sync: { readiness_status: 'syncing', current_stage: 'fetching_metadata', progress_pct: 10 },
+    });
+    renderHome();
+    expect(await screen.findByText('Collecting sender details.')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Review senders' })).toBeNull();
+    expect(screen.queryByText('You can close this tab and come back later.')).toBeNull();
+    expect(screen.queryByText('Waiting to start.')).toBeNull();
   });
 
   it('new user whose scan failed: says so and offers a scoped retry', async () => {
     authCell.me = meFor('pro', 'failed');
-    stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }) });
+    const calls = stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }) });
     renderHome();
-    expect(await screen.findByText('Gmail scan failed.')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: HOME_DECK.failedTitle })).toBeInTheDocument();
+    expect(screen.getByText(HOME_DECK.failedBody)).toBeInTheDocument();
     expect(screen.queryByText('Nothing cleared yet.')).toBeNull();
-    expect(await screen.findByRole('button', { name: 'Scan again' })).toBeEnabled();
+    expect(screen.queryByText('Gmail scan failed.')).toBeNull();
+    expect(screen.getByRole('link', { name: HOME_DECK.failedHelp })).toHaveAttribute(
+      'href',
+      '/help',
+    );
+    fireEvent.click(screen.getByRole('button', { name: HOME_DECK.failedRetry }));
+    await waitFor(() => {
+      expect(calls.retryMailbox).toBe('mb-1');
+    });
   });
 
   it('reports a queued scan without claiming a worker has started', async () => {
@@ -280,7 +499,10 @@ describe('HomeScreen', () => {
     stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }) });
     renderHome();
     expect(await screen.findByText('Your scan is waiting to start.')).toBeInTheDocument();
-    expect(screen.queryByText('Reading your Gmail.')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Review senders' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Scanning your Gmail…' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Reading your Gmail…' })).toBeNull();
+    expect(screen.queryByText('Waiting to start.')).toBeNull();
   });
 
   it('a syncing mailbox with history still shows its number', async () => {
@@ -308,7 +530,7 @@ describe('HomeScreen', () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(calls).toEqual({ summary: [], triage: 0, screener: 0 });
+    expect(calls).toEqual({ summary: [], triage: 0, screener: 0, retryMailbox: null });
   });
 
   it('server failure: error state, and Try again recovers', async () => {

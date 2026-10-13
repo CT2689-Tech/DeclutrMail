@@ -369,6 +369,13 @@ export function ActionSheet({
                 </span>
               ) : null}
               {costLine !== null && <span>{costLine}</span>}
+              {emailMeter &&
+              cleanupSummary.data &&
+              verb !== 'Unsubscribe' &&
+              typeof inboxCount === 'number' &&
+              inboxCount > 0 ? (
+                <MeterPreviewLine requested={inboxCount} summary={cleanupSummary.data} />
+              ) : null}
               {/*
                * D34 — remember-preference. Persists per verb in the triage
                * store. The sheet still renders for THIS action — the

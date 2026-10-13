@@ -368,4 +368,16 @@ describe('InboxReportCard', () => {
     expect(card).toContainElement(screen.getByText(WS5_COPY['report.home.body']));
     expect(action.textContent).toBe(WS5_COPY['report.home.cta']);
   });
+
+  it('puts a lead at the top of the card and outside the link', () => {
+    render(<InboxReportCard surface="home" mailboxId="mb" lead={<p>91%</p>} />);
+    const lead = screen.getByText('91%');
+    const card = document.querySelector('[data-surface="home"]');
+    const title = screen.getByRole('heading', { name: WS5_COPY['report.home.title'] });
+    expect(card).toContainElement(lead);
+    expect(lead.closest('a')).toBeNull();
+    expect(lead.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
 });

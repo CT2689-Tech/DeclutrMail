@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useHomeVisit } from './use-home-visit';
 const state = vi.hoisted(() => ({ mailbox: 'a', post: vi.fn() }));
@@ -75,5 +75,34 @@ describe('device visit lifecycle', () => {
     mount();
     await waitFor(() => expect(state.post).toHaveBeenCalledTimes(2));
     expect(state.post.mock.calls[1]![1].visitId).toBe(firstId);
+  });
+
+  it('does not open a new visit while the tab is hidden', async () => {
+    localStorage.setItem(key, JSON.stringify({ id: savedId, lastActive: now - 1000 }));
+    const originalVisibility = Object.getOwnPropertyDescriptor(document, 'visibilityState');
+    const ticks: Array<() => void> = [];
+    const interval = vi.spyOn(window, 'setInterval').mockImplementation((handler) => {
+      ticks.push(handler as () => void);
+      return 1 as unknown as ReturnType<typeof setInterval>;
+    });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    try {
+      mount();
+      await waitFor(() => expect(state.post).toHaveBeenCalledTimes(1));
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+      now += 31 * 60_000;
+      act(() => {
+        for (const tick of ticks) tick();
+      });
+      expect(state.post).toHaveBeenCalledTimes(1);
+
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      document.dispatchEvent(new Event('visibilitychange'));
+      await waitFor(() => expect(state.post).toHaveBeenCalledTimes(2));
+    } finally {
+      interval.mockRestore();
+      if (originalVisibility)
+        Object.defineProperty(document, 'visibilityState', originalVisibility);
+    }
   });
 });

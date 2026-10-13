@@ -834,6 +834,12 @@
     "text": "Finish sync"
   },
   {
+    "file": "apps/web/src/features/onboarding/sync-stage-copy.ts",
+    "line": 14,
+    "id": "contact_promise",
+    "text": "You can close this tab \u2014 we\u2019ll email you when your inbox is ready."
+  },
+  {
     "file": "apps/web/src/features/quiet/quiet-screen.tsx",
     "line": 196,
     "id": "action_word",

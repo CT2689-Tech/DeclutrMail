@@ -228,6 +228,13 @@ export function InlinePreviewBlock({
           {costLine}
         </p>
       )}
+      {emailMeter &&
+      preview.verb !== 'Unsubscribe' &&
+      cleanupSummary.data &&
+      typeof preview.inboxCount === 'number' &&
+      preview.inboxCount > 0 ? (
+        <MeterPreviewLine requested={preview.inboxCount} summary={cleanupSummary.data} />
+      ) : null}
       {hasDetails && (
         <details className="dm-disclosure" style={{ marginTop: space[2] }}>
           <summary

@@ -99,6 +99,10 @@ export function syncStatusQueryOptions(mailboxId: string | undefined, reader: Sy
         query.state.data,
         query.state.status === 'error' ? query.state.error : null,
       ),
+    // Home and the scan gate share this poll. Keep the interval while the
+    // tab is hidden or offline; TanStack skips the tick and runs it again
+    // when the tab returns. Returning false here would clear that timer.
+    refetchIntervalInBackground: false,
     // Global query defaults disable focus refetches to prevent storms.
     // Sync health is the narrow exception: a backgrounded tab may have
     // paused its timer, so a STALE reading should restore truth on

@@ -16,10 +16,9 @@
  * decided, and no decisions at all is the `empty` state.
  */
 
-import { WS2_COPY } from '@declutrmail/shared/copy/launch';
-
 import type { HomeSenderPreview } from './api/use-home-pending';
 import type { HomeSummary } from './api/use-home-summary';
+import { HOME_DECK } from './home-deck-copy';
 
 export interface HomeAction {
   label: string;
@@ -39,6 +38,8 @@ export type HomeState =
       kind: 'empty';
       syncing: boolean;
       queued?: boolean;
+      /** Shipped sync-gate stage sentence. Absent until the status read names a stage. */
+      stageSentence?: string;
       action: HomeAction;
       senders?: HomeSenderPreview[];
     }
@@ -121,10 +122,7 @@ export function composeHomeNumbers(
       });
     }
     return {
-      hero: {
-        label: plural(cleared, WS2_COPY.home.progressHero.one, WS2_COPY.home.progressHero.other),
-        value: cleared,
-      },
+      hero: { label: plural(cleared, HOME_DECK.heroOne, HOME_DECK.heroOther), value: cleared },
       secondary,
     };
   }

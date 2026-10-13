@@ -50,6 +50,15 @@ describe('launch copy deck snapshots', () => {
     ]);
   });
 
+  it('pins the drop2-r23 home scan-failed sentences', () => {
+    expect(WS2_COPY.home.failed).toEqual({
+      title: 'The scan stopped',
+      body: 'Your progress is saved. Try the scan again, and if it keeps stopping, get help.',
+      retry: 'Try again',
+      help: 'Get help',
+    });
+  });
+
   it('pins the drop2-r18 trash sentences', () => {
     expect(WS2_COPY.dialog.delete.footer).toBe(
       'Undo from Activity for 30 days. Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash.',

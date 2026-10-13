@@ -4,13 +4,7 @@
 // typechecks without `@storybook/react` installed. The presentational
 // `HomeView` is storied (props only) — no AuthProvider, no QueryClient.
 //
-// Variants (D211 edge-state coverage):
-//   • Cleared        — emails cleared hero + the three secondary numerals
-//   • SendersDecided — nothing cleared yet, senders-decided hero
-//   • NewUser        — no decisions: title + button
-//   • Syncing        — no decisions, mailbox still being read
-//   • SyncFailed     — no decisions, the mailbox's scan failed
-//   • Loading / LoadError
+// Variants: full, fallback, empty, sync-failed, no-F2, loading, error.
 
 import { HomeView } from './home-view';
 
@@ -34,55 +28,82 @@ const meta: StoryMeta<typeof HomeView> = {
 
 export default meta;
 
-const reviewSenders = { label: 'Review senders', href: '/senders' };
+const action = { label: 'Review senders', href: '/senders' };
 
-export const Cleared: Story<typeof HomeView> = {
+const ready = {
+  kind: 'ready' as const,
+  hero: { label: 'emails cleared', value: 3310 },
+  since: '2026-08-11T12:00:00.000Z',
+  secondary: [
+    { label: 'Emails archived', value: 3000 },
+    { label: 'Emails deleted', value: 310 },
+    { label: 'Senders decided', value: 41 },
+  ],
+  action,
+};
+
+const summary = {
+  metered: true,
+  limit: 1000,
+  used: 360,
+  remaining: 640,
+  resetAt: '2026-11-01T00:00:00.000Z',
+};
+
+const steps = [
+  { kind: 'unsub_archive' as const, senderCount: 158, emailCount: 2400, senderIds: ['a'] },
+  { kind: 'largest' as const, senderCount: 10, sizeLabel: '2.1 GB', senderIds: ['b'] },
+  { kind: 'later_due' as const, senderCount: 3, senderIds: ['c'] },
+];
+
+export const Full: Story<typeof HomeView> = {
   args: {
-    state: {
-      kind: 'ready',
-      hero: { label: 'emails cleared', value: 12480 },
-      since: '2026-03-15T12:00:00.000Z',
-      secondary: [
-        { label: 'Emails archived', value: 11932 },
-        { label: 'Emails deleted', value: 548 },
-        { label: 'Senders decided', value: 86 },
-      ],
-      action: { label: 'Review 8 today', href: '/triage' },
-      pending: { triagePending: 8, screenerPending: 3 },
-      senders: [
-        { id: 'journal', name: 'The Sunday Journal', domain: 'journal.example', inboxCount: 28 },
-        { id: 'studio', name: 'Studio Notes', domain: 'studio.example', inboxCount: 16 },
-        { id: 'dispatch', name: 'Design Dispatch', domain: 'dispatch.example', inboxCount: 42 },
-      ],
-    },
+    state: ready,
+    summary,
+    nextSteps: steps,
+    senderSizeView: true,
+    reportSizeLabel: '7.7 GB',
+    timeZone: 'UTC',
   },
 };
 
-export const SendersDecided: Story<typeof HomeView> = {
+export const NoSizeView: Story<typeof HomeView> = {
   args: {
-    state: {
-      kind: 'ready',
-      hero: { label: 'senders decided', value: 3 },
-      since: '2026-09-02T12:00:00.000Z',
-      secondary: [],
-      action: { label: 'Review 4 new', href: '/screener' },
-    },
+    state: ready,
+    summary,
+    nextSteps: steps,
+    senderSizeView: false,
+    reportSizeLabel: '7.7 GB',
+    timeZone: 'UTC',
+  },
+};
+
+export const CaughtUp: Story<typeof HomeView> = {
+  args: {
+    state: ready,
+    summary,
+    nextSteps: [],
+    indexedEmailCount: 47,
+    timeZone: 'UTC',
   },
 };
 
 export const NewUser: Story<typeof HomeView> = {
-  args: { state: { kind: 'empty', syncing: false, action: reviewSenders } },
+  args: { state: { kind: 'empty', syncing: false, action } },
 };
 
 export const Syncing: Story<typeof HomeView> = {
-  args: { state: { kind: 'empty', syncing: true, action: reviewSenders } },
+  args: { state: { kind: 'empty', syncing: true, action } },
+};
+
+export const QueuedScan: Story<typeof HomeView> = {
+  args: { state: { kind: 'empty', syncing: true, queued: true, action } },
 };
 
 export const SyncFailed: Story<typeof HomeView> = {
   args: { state: { kind: 'sync-failed', needsReconnect: false } },
 };
 
-/** Only a refused Gmail grant is a connection problem — Settings offers Reconnect. */
 export const SyncFailedNeedsReconnect: Story<typeof HomeView> = {
   args: { state: { kind: 'sync-failed', needsReconnect: true } },
 };
@@ -93,29 +114,4 @@ export const Loading: Story<typeof HomeView> = {
 
 export const LoadError: Story<typeof HomeView> = {
   args: { state: { kind: 'error', error: new Error('offline'), retry: () => {} } },
-};
-
-export const FirstReviewReady: Story<typeof HomeView> = {
-  args: {
-    state: {
-      kind: 'empty',
-      syncing: false,
-      action: { label: 'Review 2 today', href: '/triage' },
-      senders: [
-        { id: 'journal', name: 'The Sunday Journal', domain: 'journal.example', inboxCount: 28 },
-        { id: 'studio', name: 'Studio Notes', domain: 'studio.example', inboxCount: 16 },
-      ],
-    },
-  },
-};
-
-export const QueuedScan: Story<typeof HomeView> = {
-  args: {
-    state: {
-      kind: 'empty',
-      syncing: true,
-      queued: true,
-      action: { label: 'Review senders', href: '/senders' },
-    },
-  },
 };

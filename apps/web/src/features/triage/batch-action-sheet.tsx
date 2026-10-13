@@ -1,6 +1,12 @@
 'use client';
 
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
+import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
+import {
+  MeterPreviewSlot,
+  hideLegacyQuotaLine,
+  meterPreviewCopy,
+} from '@/features/shell/meter-preview-slot';
 
 import { useEffect, type CSSProperties, type ReactNode } from 'react';
 import {
@@ -125,6 +131,8 @@ export function BatchActionSheet({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onConfirm, confirmDisabled]);
 
+  const cleanupSummary = useCleanupSummary();
+
   if (!open || !batch) return null;
 
   const unitsNeeded = actionableCount;
@@ -198,12 +206,15 @@ export function BatchActionSheet({
   ) : null;
 
   // A sheet that cannot run has nothing to charge — the status is the reason.
-  const quotaLine =
+  const quotaLine = hideLegacyQuotaLine(
     quotaRemaining == null || confirmDisabled
       ? null
       : quotaShort
         ? `This needs ${fmt(unitsNeeded)} cleanup action${unitsNeeded === 1 ? '' : 's'} but only ${fmt(quotaRemaining)} ${quotaRemaining === 1 ? 'is' : 'are'} left this month.`
-        : `Uses ${fmt(unitsNeeded)} of your ${fmt(quotaRemaining)} cleanup action${quotaRemaining === 1 ? '' : 's'} left this month.`;
+        : `Uses ${fmt(unitsNeeded)} of your ${fmt(quotaRemaining)} cleanup action${quotaRemaining === 1 ? '' : 's'} left this month.`,
+    cleanupSummary.data,
+  );
+  const meterCopy = meterPreviewCopy(total, cleanupSummary.data);
 
   // ── Details ──────────────────────────────────────────────────────────
   const facts: SheetFactItem[] = [];
@@ -283,10 +294,15 @@ export function BatchActionSheet({
         }}
         status={status ?? undefined}
         footer={
-          quotaLine === null ? undefined : (
-            <span style={quotaShort ? { color: color.amber, fontWeight: 600 } : undefined}>
-              {quotaLine}
-            </span>
+          quotaLine === null && meterCopy === null ? undefined : (
+            <>
+              {quotaLine !== null && (
+                <span style={quotaShort ? { color: color.amber, fontWeight: 600 } : undefined}>
+                  {quotaLine}
+                </span>
+              )}
+              <MeterPreviewSlot requested={total} summary={cleanupSummary.data ?? null} />
+            </>
           )
         }
       />

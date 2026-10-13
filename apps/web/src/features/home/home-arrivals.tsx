@@ -4,12 +4,13 @@ import { Button } from '@declutrmail/shared';
 import type { HomeVisitSummary } from '@declutrmail/shared/contracts/home-visit';
 import { pluralCopy, WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { useHomeVisit } from './api/use-home-visit';
+import { formatCount } from './home-deck-copy';
 import styles from './home-view.module.css';
 
 const sinceLast = WS2_COPY.liveFix.home.sinceLast;
 
-function counted(copy: { readonly one: string; readonly other: string }, n: number): string {
-  return pluralCopy(copy, n, { n: n.toLocaleString('en-US') });
+function sinceLastCount(forms: { readonly one: string; readonly other: string }, count: number) {
+  return pluralCopy(forms, count, { n: formatCount(count) });
 }
 
 export function HomeArrivals() {
@@ -38,13 +39,15 @@ export function HomeArrivalsView({
       </p>
     );
   if (!data?.since || data.indexedEmails === null || data.indexedSenders === null) return null;
+  const title =
+    data.indexedEmails === 0 ? sinceLast.none : sinceLastCount(sinceLast.title, data.indexedEmails);
+  const senders =
+    data.indexedSenders === 0 ? null : sinceLastCount(sinceLast.senders, data.indexedSenders);
   return (
-    <section className={styles.beginning} aria-label={sinceLast.eyebrow}>
+    <section className={`${styles.beginning} ${styles.arrivals}`} aria-label={sinceLast.eyebrow}>
       <span className={styles.eyebrow}>{sinceLast.eyebrow}</span>
-      <h2>
-        {data.indexedEmails === 0 ? sinceLast.none : counted(sinceLast.title, data.indexedEmails)}
-      </h2>
-      {data.indexedSenders > 0 ? <p>{counted(sinceLast.senders, data.indexedSenders)}</p> : null}
+      <h2>{title}</h2>
+      {senders !== null && <p>{senders}</p>}
     </section>
   );
 }

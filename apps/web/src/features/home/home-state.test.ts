@@ -17,6 +17,15 @@ describe('composeHomeNumbers', () => {
     ]);
   });
 
+  it('uses the singular hero when one email was cleared', () => {
+    const numbers = composeHomeNumbers({
+      since: null,
+      decidedSenders: 1,
+      emailsByVerb: { archive: 1, delete: 0 },
+    });
+    expect(numbers?.hero).toEqual({ label: 'email cleared', value: 1 });
+  });
+
   it('drops the Archived/Deleted split when one verb is the whole total', () => {
     const numbers = composeHomeNumbers({
       since: null,

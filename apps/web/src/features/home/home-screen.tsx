@@ -1,17 +1,48 @@
 'use client';
 
+import { useLayoutEffect, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  reportHeadline,
+  reportSupport,
+  type InboxReportDto,
+} from '@declutrmail/shared/inbox-report';
+
+import { activityKeys } from '@/features/activity/api/query-keys';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useTier } from '@/features/auth/api/use-tier';
-import { QuotaChip } from '@/features/billing/quota-chip';
-import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
+import {
+  celebrationFromUnsubscribeBacklog,
+  toastUnsubscribeBacklog,
+  toastUnsubscribeBacklogFailure,
+} from '@/features/inbox-report/backlog-outcome';
+import { writeReportCelebration } from '@/features/inbox-report/seen';
 import { isMailboxScopeConflict } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { NoActiveMailbox } from '@/features/mailboxes/no-active-mailbox';
+import { undoKeys } from '@/features/undo/query-keys';
 
-import { useHomePending } from './api/use-home-pending';
+import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
+import { useSyncStatus } from '@/features/onboarding/api/use-sync-status';
+import { inProgressStageSentence } from '@/features/onboarding/sync-stage-copy';
+import { apiGet } from '@/lib/api/client';
+import {
+  useActionStatus,
+  useBatchStatus,
+  useConfirmUnsubscribeBacklog,
+} from '@/lib/api/use-action';
+import { fetchSnoozed } from '@/lib/api/snoozed';
+import { snoozedListQueryOptions } from '@/features/snoozed/api/query-options';
+
+import { homeInboxReportQueryOptions } from './api/query-options';
 import { useHomeSummary } from './api/use-home-summary';
-import { useHomeWorkflows } from './api/use-home-workflows';
-import { composeHomeAction, composeHomeNumbers, type HomeState } from './home-state';
 import { HomeArrivals } from './home-arrivals';
+import {
+  homeCandidatesFromReport,
+  homeLaterCandidate,
+  rankHomeNextSteps,
+  type HomeFixCandidate,
+} from './home-next-steps';
+import { composeHomeNumbers, type HomeState } from './home-state';
 import { HomeView } from './home-view';
 
 /**
@@ -25,50 +56,117 @@ import { HomeView } from './home-view';
  * |                               | QueryCache handler also resets   |
  * |                               | the scoped cache off this error  |
  * | other summary failure         | ErrorState + retry               |
- * | no decisions, still syncing   | "Reading your Gmail" + button    |
- * | no decisions, scan failed     | "Gmail scan failed" + Settings   |
+ * | no decisions, still syncing   | title, status, scan bar          |
+ * | no decisions, scan failed     | "The scan stopped" + retry       |
  * | no decisions                  | "Nothing cleared yet" + button   |
  * | decisions                     | number + label + button          |
  *
  * A mailbox switch needs nothing here: `resetMailboxScopedCache`
  * invalidates every query, these included.
  */
+/** F2's size field is not on main, so the Largest card stays off. */
+const SENDER_SIZE_VIEW = false;
+
+interface ArchiveMove {
+  id: string;
+  handle: 'action' | 'batch';
+}
+
+/** Poll the archive Home just confirmed so the tray can offer Undo. */
+function useHomeArchiveUndo(mailboxId: string | null, move: ArchiveMove | null) {
+  const batch = move?.handle === 'batch';
+  const scoped = mailboxId !== null ? mailboxId : undefined;
+  useActionStatus(move && !batch ? move.id : null, scoped);
+  useBatchStatus(move && batch ? move.id : null, scoped);
+}
+
 export function HomeScreen() {
   const { me } = useAuth();
-  const { tier, cleanupRemaining, cleanupResetsAt } = useTier();
-  const cleanupSummary = useCleanupSummary();
+  const { tier } = useTier();
+  const queryClient = useQueryClient();
+  const confirmBacklog = useConfirmUnsubscribeBacklog();
+  const [archiveMove, setArchiveMove] = useState<ArchiveMove | null>(null);
   const hasActiveMailbox = me.activeMailboxId != null;
+  useHomeArchiveUndo(me.activeMailboxId, archiveMove);
 
   const summary = useHomeSummary({ enabled: hasActiveMailbox });
-  const pending = useHomePending({ tier, enabled: hasActiveMailbox });
-  const workflows = useHomeWorkflows(tier, hasActiveMailbox);
+  const sync = useSyncStatus(me.activeMailboxId ?? undefined, { enabled: hasActiveMailbox });
+  const cleanup = useCleanupSummary();
+  const mailboxId = me.activeMailboxId;
+  const report = useQuery({
+    ...homeInboxReportQueryOptions(mailboxId, async (signal) => {
+      const envelope = await apiGet<InboxReportDto>(`/api/mailboxes/${mailboxId}/inbox-report`, {
+        signal,
+      });
+      return envelope.data;
+    }),
+    enabled: hasActiveMailbox && mailboxId != null,
+  });
+  const later = useQuery({
+    ...snoozedListQueryOptions((signal) => fetchSnoozed(signal)),
+    select: (envelope) => envelope.data,
+    enabled: hasActiveMailbox,
+    staleTime: 30_000,
+  });
+  const presentation = homeReportPresentation(report.data);
+  const laterStep = homeLaterCandidate(later.data ?? []);
+  const nextSteps = rankHomeNextSteps(
+    [...homeCandidatesFromReport(report.data ?? null), ...(laterStep !== null ? [laterStep] : [])],
+    { senderSizeView: SENDER_SIZE_VIEW },
+  );
+  // The stage sentence comes from a client poll. The server document has
+  // only the leave line, so the first client render must match that.
+  const [stageMounted, setStageMounted] = useState(false);
+  useLayoutEffect(() => {
+    setStageMounted(true);
+  }, []);
 
   const activeMailbox = me.mailboxes.find((m) => m.id === me.activeMailboxId);
   const readiness = activeMailbox?.readiness;
   const syncing = readiness === 'queued' || readiness === 'syncing';
+
+  function confirmHomeFix(step: HomeFixCandidate) {
+    if (step.kind !== 'unsub_archive') return;
+    const mailbox = activeMailbox?.id;
+    if (!mailbox || step.senderIds.length === 0) return;
+    confirmBacklog.mutate(
+      { mailboxId: mailbox, mode: 'archive', senderIds: [...step.senderIds] },
+      {
+        onSuccess: (result) => {
+          toastUnsubscribeBacklog(result);
+          const next = celebrationFromUnsubscribeBacklog(result);
+          if (next) {
+            writeReportCelebration(mailbox, next);
+            if (next.actionId && next.actionHandle) {
+              setArchiveMove({ id: next.actionId, handle: next.actionHandle });
+            }
+          }
+          void queryClient.invalidateQueries({ queryKey: activityKeys.all });
+          void queryClient.invalidateQueries({ queryKey: undoKeys.all });
+        },
+        onError: toastUnsubscribeBacklogFailure,
+      },
+    );
+  }
 
   // The active mailbox could not be resolved — the same takeover the app
   // chrome renders once `me` agrees.
   if (!hasActiveMailbox || isMailboxScopeConflict(summary.error)) return <NoActiveMailbox />;
 
   return (
-    <>
-      <HomeView
-        state={resolve()}
-        tier={tier}
-        workflows={workflows}
-        timeZone={me.user.timezone ?? 'UTC'}
-        mailboxId={me.activeMailboxId}
-        visitSummary={<HomeArrivals />}
-        quota={
-          cleanupSummary.data?.metered ? (
-            <QuotaChip summary={cleanupSummary.data} />
-          ) : cleanupRemaining !== null ? (
-            `${cleanupRemaining.toLocaleString('en-US')} cleanup actions left${cleanupResetsAt ? ` · resets ${new Date(cleanupResetsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: me.user.timezone ?? 'UTC' })}` : ''}`
-          ) : undefined
-        }
-      />
-    </>
+    <HomeView
+      state={resolve()}
+      tier={tier}
+      timeZone={me.user.timezone ?? 'UTC'}
+      visitSummary={<HomeArrivals />}
+      summary={cleanup.data ?? null}
+      nextSteps={nextSteps}
+      senderSizeView={SENDER_SIZE_VIEW}
+      mailboxId={activeMailbox?.id ?? ''}
+      reportLead={presentation.lead}
+      supportText={presentation.support}
+      onConfirmFix={(step) => confirmHomeFix(step)}
+    />
   );
 
   function resolve(): HomeState {
@@ -85,18 +183,20 @@ export function HomeScreen() {
     // until its destination/count is known, so a link never moves under the cursor.
     if (summary.data === undefined) return { kind: 'loading' };
 
-    const action = pending.isLoading
-      ? { label: 'Loading review tasks…', href: '/senders', loading: true }
-      : composeHomeAction(pending);
+    const action = { label: 'Review senders', href: '/senders' };
     const numbers = composeHomeNumbers(summary.data);
     if (numbers === null) {
       // A failed scan is not a healthy empty mailbox — never "Nothing cleared yet".
+      const stageSentence =
+        stageMounted && readiness === 'syncing'
+          ? (inProgressStageSentence(sync.data) ?? undefined)
+          : undefined;
       return {
         kind: 'empty',
         syncing,
         queued: readiness === 'queued',
+        ...(stageSentence !== undefined ? { stageSentence } : {}),
         action,
-        senders: pending.senders,
       };
     }
     return {
@@ -104,8 +204,20 @@ export function HomeScreen() {
       ...numbers,
       since: summary.data.since,
       action,
-      pending,
-      senders: pending.senders,
     };
   }
+}
+
+/** Lead and support from the same insight the Inbox Report puts first. */
+function homeReportPresentation(report: InboxReportDto | undefined): {
+  lead: string | null;
+  support: string | null;
+} {
+  if (report === undefined || report.variant !== 'full') return { lead: null, support: null };
+  const insight = report.insights[0];
+  if (insight === undefined) return { lead: null, support: null };
+  return {
+    lead: reportHeadline(insight).sentence,
+    support: reportSupport(insight),
+  };
 }

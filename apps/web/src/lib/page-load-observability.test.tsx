@@ -49,10 +49,12 @@ describe('PageLoadObservability', () => {
     };
     visit(appRoot);
 
-    // This exact development-only route is gated by notFound() in production;
-    // app/design-prototype/page.test.tsx verifies that boundary. Keep the
-    // exception narrow so future production routes still require attribution.
-    const productionPagePaths = pagePaths.filter((pathname) => pathname !== '/design-prototype');
+    // These routes 404 outside preview/dev. Their own page tests verify
+    // that boundary. Keep the exception narrow so future production routes
+    // still require attribution.
+    const productionPagePaths = pagePaths.filter(
+      (pathname) => pathname !== '/design-prototype' && pathname !== '/home-preview',
+    );
     expect(productionPagePaths.filter((pathname) => pageLoadSurface(pathname) === 'other')).toEqual(
       [],
     );

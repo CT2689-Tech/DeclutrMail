@@ -35,3 +35,18 @@
 .cta {
   text-decoration: none;
 }
+
+.lead {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 760px) {
+  .card {
+    padding: 16px;
+  }
+
+  .body {
+    margin: 8px 0 12px;
+  }
+}

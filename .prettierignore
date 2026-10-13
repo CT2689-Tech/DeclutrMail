@@ -11,6 +11,10 @@ pnpm-lock.yaml
 *.min.css
 docs/execution/Implementation-Plan.md
 
+# Vendored screen mocks. They are single-line design exports; Prettier
+# would reflow them and they would no longer match the source files.
+docs/design/screens/
+
 # Byte-identical copy of the drop2-r24 checker. Formatting would change the file.
 scripts/check-no-index-copy.mjs
 

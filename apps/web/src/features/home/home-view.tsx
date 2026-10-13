@@ -1,118 +1,253 @@
 'use client';
 
 import Link from 'next/link';
-import type { ReactNode } from 'react';
-import { Avatar, ErrorState, ScreenIntro, Skeleton } from '@declutrmail/shared';
-import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import {
-  hasCapability,
-  minimumTierForCapability,
-  TIER_MANIFEST,
-  type TierId,
-} from '@declutrmail/shared/entitlements';
-import { EditorialKicker } from '@/features/editorial/page';
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
+import { ErrorState, Skeleton } from '@declutrmail/shared';
+import type { CleanupSummaryDto } from '@declutrmail/shared/contracts';
+import { planName, type TierId } from '@declutrmail/shared/entitlements';
 import { InboxReportCard } from '@/features/inbox-report';
+import { QuotaChipSlot } from '@/features/shell/quota-chip-slot';
 import { loadErrorDescription } from '@/lib/load-error-copy';
-import { HomeScanRecovery } from './home-scan-recovery';
-import { SYNC_FAILED_ACTION, type HomeAction, type HomeStat, type HomeState } from './home-state';
-import type { HomeSenderPreview } from './api/use-home-pending';
-import type { HomeWorkflows } from './api/use-home-workflows';
+import { track } from '@/lib/posthog';
+
+import { fillDeck, formatCount, HOME_DECK } from './home-deck-copy';
+import type { HomePreviewReport } from './home-preview-report';
+import { HomeFixDialog } from './home-fix-dialog';
+import {
+  homeCalmTemplate,
+  homeFixCopy,
+  homeReportCopy,
+  homeReportNamesSenders,
+  homeTileCopy,
+} from './home-ws5-copy';
+import { HomeScanFailedCopy, HomeScanRecovery } from './home-scan-recovery';
+import {
+  homeV1Mode,
+  isRetiredReviewCta,
+  rankHomeNextSteps,
+  type HomeFixCandidate,
+  type HomeV1Mode,
+} from './home-next-steps';
+import { SYNC_FAILED_ACTION, type HomeAction, type HomeState } from './home-state';
 import styles from './home-view.module.css';
 
-/** Real cleanup history and the next available task, with no inferred savings or inbox score. */
+const BILLING_HREF = '/billing?from=%2Fhome';
+
+/** The shipped card marks the mailbox on its root, not only on an anchor. */
+const REPORT_CARD_MARK = '[data-mailbox]';
+
+function homeNextStepEventKind(
+  kind: HomeFixCandidate['kind'],
+): 'unsubscribe_archive' | 'largest_senders' | 'later_due' {
+  switch (kind) {
+    case 'unsub_archive':
+      return 'unsubscribe_archive';
+    case 'largest':
+      return 'largest_senders';
+    case 'later_due':
+      return 'later_due';
+    default: {
+      const unreachable: never = kind;
+      return unreachable;
+    }
+  }
+}
+
+/** Home v1: report, suggested next steps, progress. No promo and no auto-confirm. */
 export function HomeView({
   state,
   tier = 'free',
-  workflows,
   timeZone = 'UTC',
   visitSummary,
-  quota,
-  mailboxId = null,
+  summary = null,
+  nextSteps = [],
+  senderSizeView = false,
+  reportSizeLabel = null,
+  indexedEmailCount = null,
+  mailboxId = '',
+  previewReport = null,
+  reportLead = null,
+  supportText = null,
+  onConfirmFix,
 }: {
   state: HomeState;
   visitSummary?: ReactNode;
-  quota?: ReactNode | undefined;
-  mailboxId?: string | null;
   tier?: TierId;
-  workflows?: HomeWorkflows | undefined;
   timeZone?: string;
+  summary?: CleanupSummaryDto | null;
+  nextSteps?: readonly HomeFixCandidate[];
+  /** F2 size view. Largest is dropped by the ranker before it arrives here. */
+  senderSizeView?: boolean;
+  /** Total Gmail size label, already formatted (for example "7.7 GB"). Never an amount freed. */
+  reportSizeLabel?: string | null;
+  indexedEmailCount?: number | null;
+  /** Passed through to `InboxReportCard`. Empty until a mailbox is in scope. */
+  mailboxId?: string;
+  /** Preview route only. Production Home leaves this null. */
+  previewReport?: HomePreviewReport | null;
+  /** Filled report headline. Preview uses `previewReport.headline` instead. */
+  reportLead?: string | null;
+  /** Filled mostly-unread support. Preview uses its own deck sample. */
+  supportText?: string | null;
+  onConfirmFix?: (step: HomeFixCandidate) => void;
 }) {
-  const prioritizeReview =
-    state.kind === 'ready'
-      ? state.action.href !== '/senders' ||
-        (state.pending?.triagePending ?? 0) > 0 ||
-        (state.pending?.screenerPending ?? 0) > 0
-      : state.kind === 'empty' && !state.syncing && (state.senders?.length ?? 0) > 0;
+  const steps = rankHomeNextSteps(nextSteps, { senderSizeView });
+  const mode = homeV1Mode(state.kind, state.kind === 'ready' ? steps.length : 0);
+  const [pendingFix, setPendingFix] = useState<HomeFixCandidate | null>(null);
+  const reportRef = useRef<HTMLDivElement>(null);
+  const reportMounted = useInboxReportMounted(reportRef);
+  const fixCopy = previewReport?.fix ?? homeFixCopy();
+  const namesSenders = previewReport !== null || homeReportNamesSenders();
+  const fixReady =
+    fixCopy !== null &&
+    namesSenders &&
+    reportMounted &&
+    steps.some((step) => step.kind === 'unsub_archive');
+  useHomeSurfaceEvents(mode);
+
   return (
-    <div className={styles.page} data-home-priority={prioritizeReview ? 'review' : 'intro'}>
-      <ScreenIntro
-        id="home"
-        title="How Home works"
-        body="Start with the next review task or open a sender to inspect its email. Your progress comes from completed cleanup actions; undone actions are excluded. Open Activity to see outcomes and undo supported actions."
-      />
+    <div
+      className={styles.page}
+      data-home-mode={mode}
+      data-sender-size-view={senderSizeView ? 'on' : 'off'}
+      data-home-priority={mode === 'full' ? 'review' : 'intro'}
+      data-home-fix-expected={fixReady ? 'true' : 'false'}
+    >
       <header className={styles.header}>
-        <div>
-          <EditorialKicker>Home</EditorialKicker>
-          <h1>
-            {'A little room '}
-            <br />
-            for a <em>clearer day.</em>
-          </h1>
-          <p className={styles.subtitle}>
-            Review what needs attention and see the progress you’ve made.
-          </p>
-        </div>
+        <h1>{HOME_DECK.homeTitle}</h1>
+        {state.kind !== 'loading' && (
+          <div className={styles.planLine}>
+            <QuotaChipSlot summary={summary} />
+            <span>
+              <PlanLabel tier={tier} />
+              <Link href={BILLING_HREF} className="dm-external-link">
+                {HOME_DECK.compare}
+              </Link>
+            </span>
+          </div>
+        )}
       </header>
-      {mailboxId ? (
-        <div className={`${styles.reportSlot} dm-home-report-card`} data-home-report-card>
-          <InboxReportCard surface="home" mailboxId={mailboxId} />
-        </div>
-      ) : null}
-      {quota && <p className={styles.subtitle}>{quota}</p>}
       {visitSummary}
-      <HomeBody state={state} tier={tier} workflows={workflows} timeZone={timeZone} />
+      <HomeBody
+        state={state}
+        timeZone={timeZone}
+        mode={mode}
+        steps={steps}
+        reportRef={reportRef}
+        reportMounted={reportMounted}
+        reportSizeLabel={reportSizeLabel}
+        indexedEmailCount={indexedEmailCount}
+        mailboxId={mailboxId}
+        previewReport={previewReport}
+        reportLead={reportLead}
+        supportText={previewReport === null ? supportText : null}
+        onOpenFix={(step) => {
+          void track('home_next_step_clicked', { kind: homeNextStepEventKind(step.kind) });
+          if (step.kind === 'unsub_archive') setPendingFix(step);
+        }}
+      />
+      {pendingFix !== null && (
+        <HomeFixDialog
+          step={pendingFix}
+          onCancel={() => setPendingFix(null)}
+          onConfirm={() => {
+            const step = pendingFix;
+            setPendingFix(null);
+            onConfirmFix?.(step);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function CleanupStamp({
-  state,
-  timeZone,
-}: {
-  state: Extract<HomeState, { kind: 'ready' }>;
-  timeZone: string;
-}) {
+function useHomeSurfaceEvents(mode: HomeV1Mode) {
+  const caughtUp = useRef(false);
+  useEffect(() => {
+    if (mode !== 'fallback' || caughtUp.current) return;
+    caughtUp.current = true;
+    void track('caught_up_viewed', { surface: 'home' });
+  }, [mode]);
+}
+
+function PlanLabel({ tier }: { tier: TierId }) {
+  const name = planName(tier);
+  if (!name) return null;
   return (
-    <section className={styles.stamp} aria-label="Your cleanup so far">
-      <span className={styles.eyebrow}>The space you’ve made</span>
-      <strong data-testid="home-hero">{state.hero.value.toLocaleString('en-US')}</strong>
-      <span>
-        {state.hero.label}{' '}
-        {state.since && (
-          <span className={styles.since}>since {formatSince(state.since, timeZone)}</span>
-        )}
-      </span>
-      <small>Undone actions excluded</small>
-    </section>
+    <>
+      {name}
+      {' · '}
+    </>
   );
+}
+
+function useInboxReportMounted(ref: RefObject<HTMLElement | null>): boolean {
+  const [mounted, setMounted] = useState(false);
+  useLayoutEffect(() => {
+    setMounted(ref.current?.querySelector(`[data-inbox-report], ${REPORT_CARD_MARK}`) != null);
+  });
+  return mounted;
 }
 
 function HomeBody({
   state,
-  tier,
-  workflows,
   timeZone,
+  mode,
+  steps,
+  reportRef,
+  reportMounted,
+  reportSizeLabel,
+  indexedEmailCount,
+  mailboxId,
+  previewReport,
+  reportLead,
+  supportText,
+  onOpenFix,
 }: {
   state: HomeState;
-  tier: TierId;
-  workflows?: HomeWorkflows | undefined;
   timeZone: string;
+  mode: HomeV1Mode;
+  steps: readonly HomeFixCandidate[];
+  reportRef: RefObject<HTMLDivElement | null>;
+  reportMounted: boolean;
+  reportSizeLabel: string | null;
+  indexedEmailCount: number | null;
+  mailboxId: string;
+  previewReport: HomePreviewReport | null;
+  reportLead: string | null;
+  supportText: string | null;
+  onOpenFix: (step: HomeFixCandidate) => void;
 }) {
-  const hasAttention =
-    state.kind === 'ready' &&
-    (state.action.href !== '/senders' ||
-      (state.pending?.triagePending ?? 0) > 0 ||
-      (state.pending?.screenerPending ?? 0) > 0);
+  const afterCard =
+    state.kind === 'ready' && steps.length > 0 ? (
+      <NextSteps
+        steps={steps}
+        reportMounted={reportMounted}
+        previewReport={previewReport}
+        supportText={supportText}
+        onOpenFix={onOpenFix}
+      />
+    ) : null;
+  const report = (
+    <ReportCard
+      reportRef={reportRef}
+      mode={mode}
+      reportSizeLabel={reportSizeLabel}
+      indexedEmailCount={indexedEmailCount}
+      mailboxId={mailboxId}
+      previewReport={previewReport}
+      reportLead={reportLead}
+      afterCard={afterCard}
+    />
+  );
   switch (state.kind) {
     case 'loading':
       return <HomeSkeleton />;
@@ -127,397 +262,453 @@ function HomeBody({
       );
     case 'empty':
       return (
-        <section
-          className={state.senders?.length ? styles.summaryGrid : styles.beginning}
-          aria-label="Your next step"
-        >
-          <div className={state.senders?.length ? styles.nextStep : undefined}>
-            <span className={styles.eyebrow}>
-              {state.syncing ? 'Getting the picture' : 'A fresh start'}
-            </span>
-            <h2>
-              {state.queued
-                ? WS2_COPY.home.queued.title
-                : state.syncing
-                  ? 'Reading your Gmail.'
-                  : state.senders?.length
-                    ? 'Your first review is ready.'
-                    : WS2_COPY.home.empty.title}
-            </h2>
-            <p>
-              {state.queued
-                ? WS2_COPY.home.queued.body
-                : state.syncing
-                  ? 'Your first scan is in progress. Available senders are ready to explore as the picture comes together.'
-                  : state.senders?.length
-                    ? 'Start with the senders in your inbox. See their activity, then decide what deserves a place.'
-                    : WS2_COPY.home.empty.body}
-            </p>
-            <PrimaryLink action={state.action} />
-            <span className={styles.footnote}>You’ll see a preview before email is moved.</span>
-          </div>
-          {!!state.senders?.length && (
-            <div className={styles.opportunityList}>
-              <SenderPreviews senders={state.senders} />
-            </div>
-          )}
-        </section>
+        <>
+          {report}
+          <EmptyCopy state={state} />
+        </>
       );
     case 'sync-failed':
-      // Never "the connection": a scan also stops on Gmail throttling, a
-      // Google error or a response it could not process. The step names
-      // reconnect only when the grant is what failed.
       return (
-        <section className={styles.beginning} aria-label={WS2_COPY.home.failedEyebrow}>
-          <span className={styles.eyebrow}>{WS2_COPY.home.failedEyebrow}</span>
-          <h2>Gmail scan failed.</h2>
-          {state.mailboxId ? (
-            <HomeScanRecovery mailboxId={state.mailboxId} needsReconnect={state.needsReconnect} />
-          ) : (
-            <>
-              <p>
-                {state.needsReconnect
-                  ? 'Reconnect it in Settings → Gmail accounts.'
-                  : 'Scan again in Settings → Gmail accounts.'}
-              </p>
-              <PrimaryLink action={SYNC_FAILED_ACTION} />
-            </>
-          )}
-        </section>
+        <>
+          <section className={styles.beginning} aria-label={HOME_DECK.failedEyebrow}>
+            <span className={styles.eyebrow}>{HOME_DECK.failedEyebrow}</span>
+            <h2>{HOME_DECK.failedTitle}</h2>
+            {state.mailboxId ? (
+              <HomeScanRecovery mailboxId={state.mailboxId} needsReconnect={state.needsReconnect} />
+            ) : state.needsReconnect ? (
+              <>
+                <p>Reconnect it in Settings → Gmail accounts.</p>
+                <PrimaryLink action={SYNC_FAILED_ACTION} />
+              </>
+            ) : (
+              <HomeScanFailedCopy />
+            )}
+          </section>
+          <TrustLine />
+        </>
       );
     case 'ready':
       return (
         <>
-          <section className={styles.summaryGrid} aria-label="Your next step">
-            <div className={styles.nextStep}>
-              <span className={styles.eyebrow}>A good place to start</span>
-              <h2>
-                {state.action.href === '/triage' ? (
-                  'Your daily review is ready.'
-                ) : state.action.href === '/screener' ? (
-                  'Give new senders a first decision.'
-                ) : (
-                  <>
-                    A few decisions.<span className={styles.nextLine}>A little more space.</span>
-                  </>
-                )}
-              </h2>
-              <p>
-                {state.action.href === '/triage'
-                  ? 'Take a look at these senders and decide what still belongs.'
-                  : state.action.href === '/screener'
-                    ? 'Senders awaiting a first decision are ready for your attention. Their email keeps arriving until you choose what to do.'
-                    : 'Explore your senders, look at their activity, and decide what still belongs in your inbox.'}
-              </p>
-              <PrimaryLink action={state.action} />
-              <span className={styles.footnote}>Preview email moves before confirming.</span>
-            </div>
-            <div className={styles.opportunityList}>
-              {state.senders && state.senders.length > 0 ? (
-                <SenderPreviews senders={state.senders} />
-              ) : (
-                <>
-                  <span className={styles.eyebrow}>Your recorded progress</span>
-                  {state.secondary.length > 0 ? (
-                    <SecondaryRow stats={state.secondary} />
-                  ) : (
-                    <div className={styles.emptyProgress}>
-                      <p className={styles.quietCopy}>
-                        Open Activity for individual outcomes and available Undo actions.
-                      </p>
-                      <Link href="/activity">
-                        View cleanup history <span aria-hidden="true">↗</span>
-                      </Link>
-                    </div>
-                  )}
-                  <p className={styles.footnote}>
-                    From your cleanup history. Undone actions are excluded.
-                  </p>
-                </>
-              )}
-            </div>
-          </section>
-          <CleanupStamp state={state} timeZone={timeZone} />
-          <section
-            className={styles.overviewLower}
-            style={!hasAttention ? { gridTemplateColumns: '1fr' } : undefined}
-          >
-            {hasAttention && (
-              <div className={styles.attention}>
-                <span className={styles.eyebrow}>Ready for your review</span>
-                <h2>A little attention.</h2>
-                {state.action.href !== '/triage' &&
-                  state.pending?.triagePending != null &&
-                  state.pending.triagePending > 0 && (
-                    <AttentionLink
-                      href="/triage"
-                      title={`${state.pending.triagePending.toLocaleString('en-US')} to review today`}
-                      description="One sender at a time, with the detail to decide."
-                    />
-                  )}
-                {state.action.href !== '/screener' &&
-                  state.pending?.screenerPending != null &&
-                  state.pending.screenerPending > 0 && (
-                    <AttentionLink
-                      href="/screener"
-                      title={`${state.pending.screenerPending.toLocaleString('en-US')} unreviewed ${state.pending.screenerPending === 1 ? 'sender' : 'senders'}`}
-                      description="Give each sender a first decision on your terms."
-                    />
-                  )}
-                {state.action.href !== '/senders' && (
-                  <AttentionLink
-                    href="/senders"
-                    title="See your senders"
-                    description="Revisit the senders that have a place in your inbox."
-                  />
-                )}
-              </div>
-            )}
-            <div
-              className={styles.activity}
-              style={!hasAttention ? { borderLeft: 0, paddingLeft: 0 } : undefined}
-            >
-              <span className={styles.eyebrow}>Small decisions add up</span>
-              <h2>
-                {'More space. '}
-                <br />
-                Less second-guessing.
-              </h2>
-              <p>
-                Your cleanup history keeps every outcome in view, with Undo available for supported
-                actions.
-              </p>
-              <Link href="/activity">
-                {WS2_COPY.home.linkActivity} <span aria-hidden="true">↗</span>
-              </Link>
-            </div>
-          </section>
-          <WorkspaceOverview tier={tier} workflows={workflows} />
-          {state.senders && state.senders.length > 0 && state.secondary.length > 0 && (
-            <SecondaryRow stats={state.secondary} />
-          )}
-          <p className={styles.closing}>A considered inbox, one decision at a time.</p>
+          {report}
+          <Progress state={state} timeZone={timeZone} />
         </>
       );
+    default: {
+      const unreachable: never = state;
+      return unreachable;
+    }
   }
 }
 
-function WorkspaceOverview({
-  tier,
-  workflows,
-}: {
-  tier: TierId;
-  workflows?: HomeWorkflows | undefined;
-}) {
-  const access = (capability: 'brief' | 'followups' | 'snoozed' | 'autopilot' | 'quiet') =>
-    hasCapability(tier, capability)
-      ? undefined
-      : `Included with ${TIER_MANIFEST[minimumTierForCapability(capability)].name}`;
-  const briefStatus = workflows?.brief
-    ? workflows.brief.opened
-      ? "Today's edition read"
-      : workflows.brief.replyCount > 0
-        ? `${workflows.brief.replyCount} ${workflows.brief.replyCount === 1 ? 'reply' : 'replies'} to consider`
-        : "Today's edition is ready"
-    : 'Open the latest edition';
-  const followupStatus =
-    workflows?.followups === null || workflows?.followups === undefined
-      ? 'See conversations awaiting a reply'
-      : workflows.followups === 0
-        ? 'No conversations waiting'
-        : `${workflows.followups} ${workflows.followups === 1 ? 'conversation' : 'conversations'} waiting`;
-  const suggestionStatus =
-    workflows?.suggestions === null || workflows?.suggestions === undefined
-      ? 'Inspect rules and suggestions'
-      : workflows.suggestions === 0
-        ? 'No suggestions waiting'
-        : `${workflows.suggestions === 50 ? '50+' : workflows.suggestions} ${workflows.suggestions === 1 ? 'suggestion' : 'suggestions'} to review`;
-
+function EmptyCopy({ state }: { state: Extract<HomeState, { kind: 'empty' }> }) {
+  if (state.syncing) {
+    const title = state.queued ? HOME_DECK.queuedTitle : HOME_DECK.syncingTitle;
+    const status = state.queued
+      ? HOME_DECK.queuedBody
+      : (state.stageSentence ?? HOME_DECK.syncingBody);
+    return (
+      <section className={styles.beginning} aria-label={title}>
+        <h2>{title}</h2>
+        <p>{status}</p>
+        <div className={styles.scanBar} data-testid="home-scan-bar" aria-hidden="true">
+          <span />
+        </div>
+      </section>
+    );
+  }
   return (
-    <section className={styles.workflows} aria-labelledby="workflows-title">
-      <div className={styles.workflowsHeading}>
-        <span className={styles.eyebrow}>Your workspace</span>
-        <h2 id="workflows-title">The rest of your day, in view.</h2>
-        <p>Pick up a conversation, check what will return, or let a rule handle the repeat work.</p>
+    <section className={styles.beginning} aria-label="Your next step">
+      <h2>{HOME_DECK.emptyTitle}</h2>
+      <p>{HOME_DECK.emptyBody}</p>
+      {!isRetiredReviewCta(state.action.label) && <PrimaryLink action={state.action} />}
+    </section>
+  );
+}
+
+function ReportCard({
+  reportRef,
+  mode,
+  reportSizeLabel,
+  indexedEmailCount,
+  mailboxId,
+  previewReport,
+  reportLead,
+  afterCard,
+}: {
+  reportRef: RefObject<HTMLDivElement | null>;
+  mode: HomeV1Mode;
+  reportSizeLabel: string | null;
+  indexedEmailCount: number | null;
+  mailboxId: string;
+  previewReport: HomePreviewReport | null;
+  reportLead: string | null;
+  afterCard: ReactNode;
+}) {
+  const deck = homeReportCopy();
+  const copy = previewReport ?? deck;
+  const calmTemplate = homeCalmTemplate();
+  const calm =
+    previewReport !== null
+      ? previewReport.calm
+      : copy !== null &&
+          calmTemplate !== null &&
+          mode === 'fallback' &&
+          indexedEmailCount !== null &&
+          indexedEmailCount > 0
+        ? fillDeck(calmTemplate, { total: formatCount(indexedEmailCount) })
+        : null;
+  const tileCopy = homeTileCopy();
+  const deckTile =
+    previewReport === null &&
+    copy !== null &&
+    tileCopy !== null &&
+    reportSizeLabel !== null &&
+    reportSizeLabel !== ''
+      ? {
+          value: fillDeck(tileCopy.value, { size: reportSizeLabel }),
+          label: tileCopy.label,
+          note: tileCopy.note,
+        }
+      : null;
+  const tile =
+    previewReport !== null && previewReport.tileValue !== null && previewReport.tileLabel !== null
+      ? {
+          value: previewReport.tileValue,
+          label: previewReport.tileLabel,
+          note: previewReport.tileNote,
+        }
+      : deckTile;
+  const trust = previewReport?.trust ?? deck?.trust ?? null;
+  const trustLink = previewReport?.trustLink ?? deck?.trustLink ?? null;
+  const headline = previewReport?.headline ?? reportLead;
+  const lead = headline !== null && headline !== '' ? <LeadLine headline={headline} /> : null;
+  // The card link owns title, body, and the Open report action. The lead
+  // sits at the top of that card, outside the link. Tile and trust follow
+  // the suggested step so the primary action stays above the tab bar.
+  const [cardOwnsIntro, setCardOwnsIntro] = useState(false);
+  useLayoutEffect(() => {
+    setCardOwnsIntro(reportRef.current?.querySelector(REPORT_CARD_MARK) != null);
+  });
+  if (copy === null) {
+    return (
+      <div ref={reportRef} hidden>
+        <InboxReportCard surface="home" mailboxId={mailboxId} lead={lead} />
       </div>
-      <div className={styles.workflowGrid}>
-        <div className={styles.workflowGroup}>
-          <h3>Catch up</h3>
-          <WorkflowLink
-            href="/brief"
-            title="Daily Brief"
-            detail={briefStatus}
-            locked={access('brief')}
-          />
-          <WorkflowLink
-            href="/followups"
-            title="Follow-ups"
-            detail={followupStatus}
-            locked={access('followups')}
-          />
-          <WorkflowLink
-            href="/later"
-            title="Later"
-            detail="See what is set to return"
-            locked={access('snoozed')}
-          />
+    );
+  }
+  return (
+    <section ref={reportRef} className={styles.report} aria-label={copy.title}>
+      <div className={`${styles.reportCard} dm-home-report-card`} data-home-report-card="">
+        <InboxReportCard surface="home" mailboxId={mailboxId} lead={lead} />
+      </div>
+      {!cardOwnsIntro && (
+        <div className={styles.reportIntro} data-report-intro="">
+          <h2>{copy.title}</h2>
+          <p>{copy.body}</p>
+          {copy.cta !== '' && (
+            // There is no /inbox-report route. Senders is where the report card opens.
+            <Link
+              href="/senders"
+              data-dm-button=""
+              className={`dm-button-link ${styles.primaryAction}`}
+            >
+              {copy.cta}
+            </Link>
+          )}
         </div>
-        <div className={styles.workflowGroup}>
-          <h3>Keep it clear</h3>
-          <WorkflowLink
-            href="/autopilot"
-            title="Autopilot"
-            detail={suggestionStatus}
-            locked={access('autopilot')}
-          />
-          <WorkflowLink
-            href="/quiet"
-            title="Quiet hours"
-            detail="Choose when Autopilot holds its actions"
-            locked={access('quiet')}
-          />
-          <WorkflowLink
-            href="/activity"
-            title="Activity & Undo"
-            detail="See decisions and recover supported actions"
-          />
-        </div>
+      )}
+      {afterCard}
+      <div
+        className={styles.reportFacts}
+        data-report-facts=""
+        {...(lead !== null ? { 'data-inbox-report': '' } : {})}
+      >
+        {calm !== null && <p data-testid="home-calm">{calm}</p>}
+        {tile !== null && (
+          <div className={styles.storageTile} data-report-tile="">
+            <strong>{tile.value}</strong>
+            <span>{tile.label}</span>
+            {tile.note !== null && <small>{tile.note}</small>}
+          </div>
+        )}
+        {trust !== null && (
+          <p className={styles.trust} data-report-trust="">
+            {trust}{' '}
+            {trustLink !== null && (
+              <Link href="/settings/privacy#what-we-store" className="dm-external-link">
+                {trustLink}
+                <span aria-hidden="true"> →</span>
+              </Link>
+            )}
+          </p>
+        )}
       </div>
     </section>
   );
 }
 
-function WorkflowLink({
-  href,
-  title,
-  detail,
-  locked,
-}: {
-  href: string;
-  title: string;
-  detail: string;
-  locked?: string | undefined;
-}) {
+/** A template that still has `{n}` is not a sentence. Preview copy is already filled. */
+function supportLine(template: string, filled: string | null): string | null {
+  if (filled !== null && filled !== '') return filled;
+  if (template.includes('{')) return null;
+  return template;
+}
+
+function LeadLine({ headline }: { headline: string }) {
+  const match = /^(\d+%)\s+([\s\S]+)$/.exec(headline);
+  if (match === null) {
+    return <p data-report-lead="">{headline}</p>;
+  }
   return (
-    <Link href={href} className={styles.workflowLink}>
-      <span>
-        <strong>{title}</strong>
-        <small>{locked ?? detail}</small>
-      </span>
-      <span aria-hidden="true">↗</span>
-    </Link>
+    <p className={styles.lead} data-report-lead="">
+      <strong className={styles.leadFigure}>{match[1]}</strong>
+      <span>{match[2]}</span>
+    </p>
   );
 }
 
-function SenderPreviews({ senders }: { senders: HomeSenderPreview[] }) {
+function TrustLine() {
+  const copy = homeReportCopy();
+  if (copy === null) return null;
   return (
-    <>
-      <div className={styles.listLabel}>
-        <span>Sender</span>
-        <span>In inbox now</span>
-      </div>
-      {senders.map((sender) => (
-        <Link
-          className={styles.senderRow}
-          key={sender.id}
-          href={`/senders?sender=${encodeURIComponent(sender.id)}`}
-        >
-          <Avatar
-            name={sender.name}
-            domain={sender.domain}
-            size={36}
-            {...(sender.brandMark !== undefined ? { hasMark: sender.brandMark } : {})}
-          />
-          <span className={styles.senderIdentity}>
-            <strong>{sender.name}</strong>
-            <small>{sender.domain}</small>
-          </span>
-          <span className={styles.senderCount}>
-            {sender.inboxCount.toLocaleString('en-US')}
-            <small>{sender.inboxCount === 1 ? 'email' : 'emails'}</small>
-          </span>
-          <span aria-hidden="true">↗</span>
+    <p className={styles.trust}>
+      {copy.trust}{' '}
+      {copy.trustLink !== null && (
+        <Link href="/settings/privacy#what-we-store" className="dm-external-link">
+          {copy.trustLink}
+          <span aria-hidden="true"> →</span>
         </Link>
-      ))}
-      <p className={styles.footnote}>
-        From your daily review queue. Preview confirms the exact scope.
-      </p>
-    </>
+      )}
+    </p>
   );
 }
 
-function AttentionLink({
-  href,
-  title,
-  description,
+function NextSteps({
+  steps,
+  reportMounted,
+  previewReport,
+  supportText,
+  onOpenFix,
 }: {
-  href: string;
-  title: string;
-  description: string;
+  steps: readonly HomeFixCandidate[];
+  reportMounted: boolean;
+  previewReport: HomePreviewReport | null;
+  supportText: string | null;
+  onOpenFix: (step: HomeFixCandidate) => void;
+}) {
+  const fixCopy = previewReport?.fix ?? homeFixCopy();
+  const namesSenders = previewReport !== null || homeReportNamesSenders();
+  const visible = steps.filter(
+    (step) => step.kind !== 'unsub_archive' || (fixCopy !== null && reportMounted && namesSenders),
+  );
+  const [primary, ...secondary] = visible;
+  if (!primary) return null;
+  return (
+    <section className={styles.steps} aria-label={HOME_DECK.nextSteps}>
+      <h2 className={styles.eyebrow}>{HOME_DECK.nextSteps}</h2>
+      <div className={styles.stepGrid}>
+        <FixCard
+          step={primary}
+          primary
+          reportMounted={reportMounted}
+          previewReport={previewReport}
+          supportText={supportText}
+          onOpenFix={onOpenFix}
+        />
+        {secondary.map((step) => (
+          <FixCard
+            key={step.kind}
+            step={step}
+            primary={false}
+            reportMounted={reportMounted}
+            previewReport={previewReport}
+            supportText={supportText}
+            onOpenFix={onOpenFix}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function FixCard({
+  step,
+  primary,
+  reportMounted,
+  previewReport,
+  supportText,
+  onOpenFix,
+}: {
+  step: HomeFixCandidate;
+  primary: boolean;
+  reportMounted: boolean;
+  previewReport: HomePreviewReport | null;
+  supportText: string | null;
+  onOpenFix: (step: HomeFixCandidate) => void;
+}) {
+  if (step.kind === 'unsub_archive') {
+    const copy = previewReport?.fix ?? homeFixCopy();
+    const namesSenders = previewReport !== null || homeReportNamesSenders();
+    // "of these senders" counts a set the report names. Hide it until that
+    // sentence is on the page.
+    if (copy === null || !reportMounted || !namesSenders) return null;
+    const heading =
+      step.senderCount === 1
+        ? copy.headingOne
+        : fillDeck(copy.headingOther, { n: formatCount(step.senderCount) });
+    const label =
+      step.senderCount === 1
+        ? copy.primaryOne
+        : fillDeck(copy.primaryOther, { n: formatCount(step.senderCount) });
+    const supportTemplate = step.senderCount === 1 ? copy.supportOne : copy.supportOther;
+    const support = supportLine(supportTemplate, supportText);
+    if (heading === null || label === null) return null;
+    return (
+      <article className={primary ? styles.fixCard : styles.secondaryCard} data-step={step.kind}>
+        <h3>{heading}</h3>
+        {support !== null && <p>{support}</p>}
+        {primary ? (
+          <div className={styles.fixActions}>
+            <button
+              type="button"
+              data-dm-button=""
+              className={`dm-button-link ${styles.primaryAction}`}
+              onClick={() => onOpenFix(step)}
+            >
+              {label}
+            </button>
+            <Link href="/senders" className="dm-external-link">
+              {copy.review}
+            </Link>
+          </div>
+        ) : (
+          <button type="button" className={styles.textButton} onClick={() => onOpenFix(step)}>
+            {label}
+          </button>
+        )}
+      </article>
+    );
+  }
+  if (step.kind === 'largest') {
+    const title =
+      step.senderCount === 1
+        ? HOME_DECK.largestTitleOne
+        : fillDeck(HOME_DECK.largestTitleOther, { k: formatCount(step.senderCount) });
+    const body =
+      step.sizeLabel !== undefined && step.sizeLabel !== ''
+        ? fillDeck(HOME_DECK.largestBody, { size: step.sizeLabel })
+        : null;
+    if (title === null) return null;
+    return (
+      <article className={styles.secondaryCard} data-step={step.kind}>
+        <h3>{title}</h3>
+        {body !== null && <p>{body}</p>}
+        <Link href="/senders" className="dm-external-link">
+          {HOME_DECK.largestCta}
+        </Link>
+      </article>
+    );
+  }
+  if (step.kind === 'later_due') {
+    return <LaterCard step={step} />;
+  }
+  const unreachable: never = step.kind;
+  return unreachable;
+}
+
+/** Same clock as the Later row in the shell. The count key is held, so the card shows none. */
+const LATER_ICON = 'M12 6v6l4 2M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z';
+
+function LaterCard({ step }: { step: HomeFixCandidate }) {
+  return (
+    <article className={styles.secondaryCard} data-step={step.kind}>
+      <div className={styles.cardTitle}>
+        <svg
+          className={styles.cardIcon}
+          width={20}
+          height={20}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d={LATER_ICON} />
+        </svg>
+        <h3>{HOME_DECK.laterTitle}</h3>
+      </div>
+      <p>{HOME_DECK.laterBody}</p>
+      <Link
+        href="/later"
+        className={`dm-external-link ${styles.cardAction}`}
+        onClick={() => {
+          void track('home_next_step_clicked', { kind: homeNextStepEventKind('later_due') });
+        }}
+      >
+        {HOME_DECK.laterCta}
+      </Link>
+    </article>
+  );
+}
+
+function Progress({
+  state,
+  timeZone,
+}: {
+  state: Extract<HomeState, { kind: 'ready' }>;
+  timeZone: string;
 }) {
   return (
-    <Link href={href} className={styles.attentionLink}>
-      <span className={styles.attentionIcon} aria-hidden="true">
-        ↗
-      </span>
-      <span>
-        <strong>{title}</strong>
-        <small>{description}</small>
-      </span>
-      <span aria-hidden="true">→</span>
-    </Link>
-  );
-}
-
-function SecondaryRow({ stats }: { stats: HomeStat[] }) {
-  return (
-    <dl className={styles.stats}>
-      {stats.map((stat) => (
-        <div key={stat.label}>
-          <dt>{stat.label}</dt>
-          <dd>{stat.value.toLocaleString('en-US')}</dd>
-        </div>
-      ))}
-    </dl>
+    <section className={styles.progressLine} aria-label="Progress">
+      <p className={styles.progressSentence}>
+        <strong data-testid="home-hero">{state.hero.value.toLocaleString('en-US')}</strong>{' '}
+        <span>{state.hero.label}</span>
+        {state.since !== null && (
+          <span className={styles.since}>
+            {' since '}
+            <time dateTime={state.since}>{formatSince(state.since, timeZone)}</time>
+          </span>
+        )}
+      </p>
+      <Link href="/activity" className="dm-external-link">
+        {HOME_DECK.activityLink}
+      </Link>
+    </section>
   );
 }
 
 function PrimaryLink({ action }: { action: HomeAction }) {
-  if (action.loading)
+  if (action.loading) {
     return (
       <span role="status" aria-live="polite" className={styles.loadingAction}>
         <Skeleton variant="rect" width={16} height={16} />
         {action.label}
       </span>
     );
+  }
   return (
-    <Link href={action.href} data-dm-button="" className="dm-button-link">
+    <Link href={action.href} data-dm-button="" className={`dm-button-link ${styles.primaryAction}`}>
       {action.label}
-      <span aria-hidden="true">↗</span>
     </Link>
   );
 }
 
 function HomeSkeleton() {
+  const labelId = useId();
   return (
-    <div role="status" aria-label="Loading Home" className={styles.summaryGrid}>
-      <div className={styles.progress}>
-        <Skeleton variant="text" width={160} />
-        <Skeleton variant="rect" width={210} height={90} />
-        <Skeleton variant="text" width={180} />
-      </div>
-      <div className={styles.nextStep}>
-        <Skeleton variant="text" width={150} />
-        <Skeleton variant="rect" width={210} height={80} />
-        <Skeleton variant="text" width={180} />
-        <Skeleton variant="rect" width={180} height={44} />
-      </div>
+    <div role="status" aria-labelledby={labelId} className={styles.summaryGrid}>
+      <span id={labelId} className={styles.srOnly}>
+        Loading Home
+      </span>
+      <Skeleton variant="text" width={160} />
+      <Skeleton variant="rect" width={210} height={90} />
     </div>
   );
 }
 
 function formatSince(iso: string, timeZone: string): string {
-  // A UTC server and a local browser can disagree at a month boundary.
-  // Use the session's timezone (or the same UTC fallback) for both renders.
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone });
 }

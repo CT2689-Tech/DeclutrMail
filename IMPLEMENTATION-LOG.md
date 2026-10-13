@@ -429,3 +429,16 @@ privacy, migration or worker behavior is changed. The complete finding mapping,
 verification evidence and limits are in
 `docs/execution/signed-in-ui-audit-2026-10-10.md`. Merge and serving-state
 verification are separate from this implementation record.
+
+## Home v1, meter mounts and Home glossary requests — 2026-10-11
+
+Relates to D6, D113, D159, D200, D210, D211, D226 and D227. Home v1
+replaces the editorial Home with the report slot, ranked next steps and
+the existing progress numbers. Unsubscribe opens a prefilled dialog and
+confirms only from its button. The quota chip mounts in the app topbar
+and on Home. Preview sentences use the email allowance only when a
+metered cleanup summary exists; the sender-unit sentence stays until
+then. Home strings that need a rewrite are requested, not invented.
+No billing state, OAuth scope, migration or mail-changing default is
+changed. See `docs/execution/ws2b-home-v1-2026-10-11.md`. Preview visual
+review is separate from this record.
