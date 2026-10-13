@@ -8,13 +8,14 @@
 //
 // CONTENT CONTRACT (CLAUDE.md §2.1, D7, D228): the storage answer
 // quotes the locked privacy copy module from `@declutrmail/shared`
-// verbatim — never paraphrased. Refund terms were founder-confirmed
-// 2026-07-08 (D121): 30-day money-back guarantee on every paid plan;
-// the answer states it and links /refunds for the full terms.
+// verbatim — never paraphrased. The refund answer is
+// `pricing.faq.refunds.a`, filled from POLICY.refundWindowDays, and
+// links /refunds for the full terms.
 
 import type { Metadata } from 'next';
 
-import { isPricingV2 } from '@declutrmail/shared/entitlements';
+import { WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory, isPricingV2 } from '@declutrmail/shared/entitlements';
 
 import { faqAnswer } from '@/features/marketing/learn/faq-content';
 import { SupportTasks } from '@/features/marketing/learn/support-tasks';
@@ -80,7 +81,7 @@ const FAQS: ReadonlyArray<{
   },
   {
     id: 'autopilot-modes',
-    q: 'What is the difference between Autopilot’s Watch first and Active modes?',
+    q: 'What is the difference between Autopilot’s Watch first and Act now modes?',
     a: faqAnswer('autopilot'),
   },
   {
@@ -93,7 +94,7 @@ const FAQS: ReadonlyArray<{
   },
   {
     id: 'cleanup-counting',
-    q: 'What counts as a cleanup action, and when does Free reset?',
+    q: fillStory(WS3_COPY['ws3.help.counting.q']),
     a: faqAnswer('cleanup-counting'),
   },
   {

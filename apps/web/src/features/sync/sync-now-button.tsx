@@ -17,7 +17,7 @@ const { color, font, radius, text, motion } = tokens;
 const SYNC_BUTTON_CLASS = 'dm-sync-round';
 
 /**
- * "Sync now" button (D38 prod-ready pass; freshness + completion watch
+ * "Scan now" button (D38 prod-ready pass; freshness + completion watch
  * added 2026-07-07 founder smoke feedback).
  *
  * Lives in `AppShell.topbarRight` alongside `<AccountMenu>`. One click
@@ -40,7 +40,7 @@ const SYNC_BUTTON_CLASS = 'dm-sync-round';
  *     the failure needs reauthorization — never a doomed Sync-now CTA.
  *   - **Idle** — ready + not in-flight. Click → mutation fires. A round
  *     36px icon button; its tooltip (hover or keyboard focus) carries
- *     "Synced Xm ago · Sync now" plus the absolute time.
+ *     "Synced Xm ago · Scan now" plus the absolute time.
  *   - **Pending/Watching** — request in flight OR completion watch
  *     running. `aria-busy`, icon spins, tooltip reads "Syncing…", disabled.
  *
@@ -146,7 +146,7 @@ function MailboxSyncNowButton({ mailboxId }: { mailboxId: string | undefined }) 
       // hidden. It promises nothing either: a retryable failure keeps the
       // outage's FIRST error stamp (`recordMailboxSyncFailure`), so a run
       // that failed again is invisible to this watch and times out here.
-      toast("Couldn't confirm the sync finished.", 'info');
+      toast('Couldn’t confirm the check finished.', 'info');
     }, WATCH_TIMEOUT_MS);
     return () => {
       clearInterval(poll);
@@ -171,8 +171,8 @@ function MailboxSyncNowButton({ mailboxId }: { mailboxId: string | undefined }) 
       // step — the one the banner that replaces this button offers.
       toast(
         syncStatusNeedsReconnect(status.data)
-          ? "Sync didn't finish — reconnect Gmail."
-          : "Sync didn't finish — try again.",
+          ? 'Couldn’t finish checking. Reconnect Gmail.'
+          : 'Couldn’t finish checking. Try again.',
         'danger',
       );
       return;
@@ -180,7 +180,7 @@ function MailboxSyncNowButton({ mailboxId }: { mailboxId: string | undefined }) 
 
     if (!movedPast(lastSyncedAt, baseline.synced)) return;
     setWatching(false);
-    toast('Inbox up to date — synced just now.', 'success');
+    toast('Up to date.', 'success');
     // The 202-time invalidation in `useSyncNow` fires before the worker
     // has written anything; THIS one lands after completion, so new
     // senders/activity actually appear without a manual reload.
@@ -237,7 +237,7 @@ function MailboxSyncNowButton({ mailboxId }: { mailboxId: string | undefined }) 
     } catch {
       if (!mounted.current) return;
       setArming(false);
-      toast("Couldn't check the inbox's sync status. Please try again.", 'danger');
+      toast('Couldn’t check for new email. Try again.', 'danger');
       return;
     }
     baselineRef.current = fresh;
@@ -253,7 +253,7 @@ function MailboxSyncNowButton({ mailboxId }: { mailboxId: string | undefined }) 
 
   // One quiet round control. Freshness lives in its tooltip (hover or
   // keyboard focus) instead of a standing label beside it.
-  const action = busy ? 'Syncing…' : 'Sync now';
+  const action = busy ? 'Syncing…' : 'Scan now';
   return (
     <Tooltip
       placement="bottom"

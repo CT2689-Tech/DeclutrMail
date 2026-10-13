@@ -36,6 +36,7 @@ import {
   useIsAtMost,
 } from '@declutrmail/shared';
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory } from '@declutrmail/shared/entitlements';
 import Link from 'next/link';
 import {
   ACTIVITY_REVIEW_OUTCOME_ROW_LABELS,
@@ -44,7 +45,6 @@ import {
   type VerbId,
   type VerbTone,
 } from '@declutrmail/shared/actions';
-import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import { isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
 import { InlineFeedback } from '@/features/feedback/inline-feedback';
@@ -121,10 +121,7 @@ const { color, font, motion, radius, shadow, text } = tokens;
  * can read without rendering this screen.
  */
 export const activityUndoRecoveryHelp =
-  (UNIFORM_UNDO_WINDOW_DAYS === null
-    ? "Archive, Later, and Delete can be undone within your plan's Undo window"
-    : `Archive, Later, and Delete have a ${UNIFORM_UNDO_WINDOW_DAYS}-day Undo window`) +
-  "; deleted email also sits in Gmail Trash for up to 30 days. A sent unsubscribe can't be recalled.";
+  'Undo Archive, Later or Delete for 30 days. Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash. Unsubscribe requests can’t be recalled.';
 
 const ActivityInteractionBlocked = createContext(false);
 
@@ -447,7 +444,7 @@ export function ActivityScreen() {
       <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
         History ·{' '}
         {windowToLabel(filters.window ?? '30d', filters.dateFrom ?? null, filters.dateTo ?? null)} ·
-        Active mailbox
+        Selected Gmail account
       </p>
       <ActiveFilterChips {...filterProps} onClear={clearFilters} />
 
@@ -568,7 +565,7 @@ export function ActivityScreen() {
       <details style={{ borderTop: `1px solid ${color.line}`, paddingTop: 16 }}>
         <summary className="dm-disclosure">Help with Activity</summary>
         <p style={{ color: color.fgMuted, fontSize: text.sm }}>
-          Export a support bundle when you need help investigating an outcome.
+          Need help with something here? Export details for support.
         </p>
         <ExportSupportBundleButton
           filters={filters}
@@ -1000,6 +997,7 @@ function SummaryRow({
     <section
       aria-live="polite"
       aria-label="Activity summary"
+      className={styles.summary}
       style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
     >
       <div
@@ -1137,7 +1135,7 @@ function SummaryRow({
         <details style={{ fontSize: text.xs, color: color.fgMuted }}>
           <summary className="dm-disclosure">View action counts</summary>
           <p style={{ margin: '8px 0' }}>
-            {windowLabel}. One cleanup action can handle many emails.
+            {fillStory(WS2_COPY.pr1019.activity.countsNote, 'usd', { windowLabel })}
           </p>
           <ul style={{ margin: 0, paddingLeft: 20 }}>
             {SUMMARY_VERBS.map(({ key, label }) => (

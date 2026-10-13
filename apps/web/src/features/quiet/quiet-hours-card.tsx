@@ -248,9 +248,7 @@ function QuietHoursForm({
   const submit = () => {
     const parsed = QuietHoursConfigSchema.safeParse(draft);
     if (!parsed.success) {
-      setValidationError(
-        parsed.error.issues[0]?.message ?? 'The quiet window is invalid — check the times.',
-      );
+      setValidationError(parsed.error.issues[0]?.message ?? 'Check the start and end times.');
       return;
     }
     onSave(parsed.data);

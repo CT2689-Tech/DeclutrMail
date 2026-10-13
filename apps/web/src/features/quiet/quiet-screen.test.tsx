@@ -108,7 +108,7 @@ describe('QuietRoute', () => {
       })),
     );
     renderRoute();
-    await screen.findByText(/Choose this inbox in the account menu/i);
+    await screen.findByText(/Pick this Gmail account in the account menu/i);
     expect(screen.getAllByRole('link', { name: /Review Autopilot rules/i })).toHaveLength(1);
     expect(screen.getByRole('link', { name: /Review Autopilot rules/i })).toHaveAttribute(
       'href',
@@ -119,7 +119,7 @@ describe('QuietRoute', () => {
   it('renders the empty state when no mailboxes are connected', () => {
     me = makeMe([]);
     renderRoute();
-    expect(screen.getByText('No mailboxes connected')).toBeInTheDocument();
+    expect(screen.getByText('No Gmail account connected')).toBeInTheDocument();
   });
 
   it('renders one hydrated card per mailbox', async () => {
@@ -655,6 +655,8 @@ describe('QuietRoute', () => {
     expect(
       screen.queryByRole('status', { name: 'Quiet status for b@b.com' }),
     ).not.toBeInTheDocument();
-    expect(screen.queryByText(/Choose this inbox in the account menu/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Pick this Gmail account in the account menu/),
+    ).not.toBeInTheDocument();
   });
 });

@@ -61,7 +61,7 @@ export function HomeRouteLoading() {
         <div className={styles.planLine} data-home-slot="plan">
           <span>
             {plan !== null && plan !== '' ? `${plan} · ` : null}
-            <Link href={BILLING_HREF} className="dm-external-link">
+            <Link href={BILLING_HREF} className="dm-external-link dm-tap-target">
               {HOME_DECK.compare}
             </Link>
           </span>

@@ -18,7 +18,12 @@ export function LaunchFilterRow({
       style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}
     >
       {LAUNCH_FILTERS.map((filter) => (
-        <button key={filter.id} type="button" onClick={() => apply(filter.id, mailboxId, onApply)}>
+        <button
+          key={filter.id}
+          type="button"
+          className="dm-tap-44"
+          onClick={() => apply(filter.id, mailboxId, onApply)}
+        >
           {filter.label}
         </button>
       ))}

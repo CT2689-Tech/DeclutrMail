@@ -1,13 +1,63 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { INBOXES, METER, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { CAPABILITY_LABELS } from '@/features/marketing/pricing/pricing-model';
 
 const { color } = tokens;
 
-export function BillingComparison() {
-  const tiers = ['free', 'plus', 'pro'] as const;
+const COMPARISON_TIERS = ['free', 'plus', 'pro'] as const;
+
+/** Same grouping the meter uses (`1,000 of 1,000 left`). */
+function formatQuota(value: number): string {
+  return value.toLocaleString('en-US');
+}
+
+export interface BillingComparisonRow {
+  label: string;
+  values: readonly string[];
+}
+
+/**
+ * Included-features rows. Quotas come from the same config the live
+ * allowance uses: `PRICING_V2` reads `INBOXES` and `METER`, and the
+ * legacy ladder reads the manifest. Capability rows collapse when two
+ * capabilities share a label.
+ */
+export function billingComparisonRows(pricingV2: boolean): readonly BillingComparisonRow[] {
+  const rows: BillingComparisonRow[] = [
+    {
+      label: 'Connected inboxes',
+      values: COMPARISON_TIERS.map((id) =>
+        formatQuota(pricingV2 ? INBOXES[id] : TIER_MANIFEST[id].inboxLimit),
+      ),
+    },
+    {
+      label: 'Cleanup / month',
+      values: COMPARISON_TIERS.map((id) => {
+        if (pricingV2) return id === 'free' ? formatQuota(METER.free.limit) : 'Unlimited';
+        const quota = TIER_MANIFEST[id].cleanupActionsPerMonth;
+        return quota === null ? 'Unlimited' : formatQuota(quota);
+      }),
+    },
+  ];
+  const seen = new Set<string>();
+  for (const cap of TIER_MANIFEST.pro.capabilities) {
+    const label = CAPABILITY_LABELS[cap];
+    if (seen.has(label)) continue;
+    seen.add(label);
+    rows.push({
+      label,
+      values: COMPARISON_TIERS.map((id) =>
+        TIER_MANIFEST[id].capabilities.includes(cap) ? 'Included' : '—',
+      ),
+    });
+  }
+  return rows;
+}
+
+export function BillingComparison({ pricingV2 = false }: { pricingV2?: boolean }) {
+  const rows = billingComparisonRows(pricingV2);
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
       <caption style={{ textAlign: 'left', marginBottom: 10 }}>Included features by plan</caption>
@@ -16,7 +66,7 @@ export function BillingComparison() {
           <th scope="col" style={{ textAlign: 'left' }}>
             Includes
           </th>
-          {tiers.map((id) => (
+          {COMPARISON_TIERS.map((id) => (
             <th scope="col" key={id}>
               {TIER_MANIFEST[id].name}
             </th>
@@ -24,34 +74,17 @@ export function BillingComparison() {
         </tr>
       </thead>
       <tbody>
-        <tr>
-          <th scope="row" style={{ textAlign: 'left' }}>
-            Connected inboxes
-          </th>
-          {tiers.map((id) => (
-            <td style={{ textAlign: 'center' }} key={id}>
-              {TIER_MANIFEST[id].inboxLimit}
-            </td>
-          ))}
-        </tr>
-        <tr>
-          <th scope="row" style={{ textAlign: 'left' }}>
-            Cleanup / month
-          </th>
-          {tiers.map((id) => (
-            <td style={{ textAlign: 'center' }} key={id}>
-              {TIER_MANIFEST[id].cleanupActionsPerMonth ?? 'Unlimited'}
-            </td>
-          ))}
-        </tr>
-        {TIER_MANIFEST.pro.capabilities.map((cap) => (
-          <tr key={cap} style={{ borderTop: `1px solid ${color.border}` }}>
+        {rows.map((row, index) => (
+          <tr
+            key={row.label}
+            style={index < 2 ? undefined : { borderTop: `1px solid ${color.border}` }}
+          >
             <th scope="row" style={{ textAlign: 'left', padding: '8px 0', fontWeight: 400 }}>
-              {CAPABILITY_LABELS[cap]}
+              {row.label}
             </th>
-            {tiers.map((id) => (
-              <td style={{ textAlign: 'center' }} key={id}>
-                {TIER_MANIFEST[id].capabilities.includes(cap) ? 'Included' : '—'}
+            {row.values.map((value, index) => (
+              <td style={{ textAlign: 'center' }} key={COMPARISON_TIERS[index]}>
+                {value}
               </td>
             ))}
           </tr>

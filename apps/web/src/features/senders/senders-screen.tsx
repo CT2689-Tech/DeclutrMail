@@ -2648,7 +2648,7 @@ function SendersScreenContent({
               />
               <button
                 type="button"
-                className={workspaceStyles.inboxFilter}
+                className={`${workspaceStyles.inboxFilter} dm-tap-44`}
                 aria-pressed={compose.hasInboxMail === true}
                 title="Show only senders with mail currently in Inbox. Turn off to see senders you may still want to unsubscribe."
                 onClick={() =>
@@ -2869,7 +2869,7 @@ function SendersScreenContent({
               // query-specific branches.
               <EmptyState
                 headingLevel={2}
-                title="Still syncing"
+                title="Still scanning your Gmail"
                 body="Senders appear as the scan finishes."
               />
             ) : senders.length === 0 && mailboxSyncFailed ? (
@@ -3023,7 +3023,7 @@ function SendersScreenContent({
                     <b>01</b> Review recent messages and history
                   </span>
                   <span>
-                    <b>02</b> Choose an action and inspect its scope
+                    <b>02</b> Choose what to do and preview what changes
                   </span>
                   <span>
                     <b>03</b> Confirm when you're ready
@@ -3136,9 +3136,9 @@ function SenderResultsWarning({
   needsReconnect: boolean;
 }) {
   const message = syncFailed
-    ? `The last scan failed, so this list may be incomplete or stale. ${failedScanStep(needsReconnect)}`
+    ? `The last scan didn’t finish, so some senders may be missing. ${failedScanStep(needsReconnect)}`
     : stillSyncing
-      ? 'Still syncing — this list may be incomplete or stale.'
+      ? 'Still scanning. Some senders may be missing.'
       : rowsReadOnly
         ? 'Loading new results — these rows are read-only.'
         : approximate

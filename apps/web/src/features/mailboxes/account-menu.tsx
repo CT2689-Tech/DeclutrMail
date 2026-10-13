@@ -17,6 +17,7 @@ import type { MeMailbox } from '@/features/auth/api/use-me';
 import { useLogout } from '@/features/auth/api/use-logout';
 import { useTier } from '@/features/auth/api/use-tier';
 import { useMailboxesHealth } from '@/features/settings/api/use-mailbox-health';
+import { reportPassSecondAccountGate } from '@/lib/entitlements/upgrade-gate';
 import { track } from '@/lib/posthog';
 import { startMailboxConnect, startMailboxReactivation } from './connect-mailbox-url';
 import { useDeleteMailboxIndexedData } from './api/use-delete-mailbox-indexed-data';
@@ -75,7 +76,9 @@ export function AccountMenu() {
   // D19/D81 inbox limit — gates ADDING (or reactivating) a Gmail
   // account; existing connections keep working even over-limit. The BE
   // mirror is InboxLimitGuard on connect-mailbox/start (402).
-  const { tier, inboxLimit, connectedInboxes, atInboxLimit, pricingV2 } = useTier();
+  const { tier, inboxLimit, inboxLimitReason, connectedInboxes, atInboxLimit, pricingV2 } =
+    useTier();
+  const passInboxLimit = inboxLimitReason === 'pass';
   // Keep the closed disclosure cheap. Opening enables the mailbox-keyed
   // health reads: the selected mailbox dedupes with banner/Sync-now, while
   // each other active row gets one low-frequency poll only while visible.
@@ -108,9 +111,12 @@ export function AccountMenu() {
   // counts appearances of the upgrade affordance, not re-renders).
   useEffect(() => {
     if (open && atInboxLimit) {
-      void track('upgrade_prompt_shown', { reason: 'inbox_limit', source: 'account_menu' });
+      void track('upgrade_prompt_shown', {
+        reason: passInboxLimit ? 'pass_second_account' : 'inbox_limit',
+        source: 'account_menu',
+      });
     }
-  }, [open, atInboxLimit]);
+  }, [open, atInboxLimit, passInboxLimit]);
 
   const activeMailbox =
     me.mailboxes.find((m) => m.id === me.activeMailboxId) ??
@@ -227,7 +233,9 @@ export function AccountMenu() {
             Selected marks the Gmail account shown across the app.
           </div>
           {me.mailboxes.length === 0 && (
-            <div style={{ padding: '6px 12px', color: color.fgMuted }}>No mailboxes connected.</div>
+            <div style={{ padding: '6px 12px', color: color.fgMuted }}>
+              No Gmail account connected.
+            </div>
           )}
           {me.mailboxes.map((m) => {
             const isSelected = m.id === activeMailbox?.id;
@@ -258,7 +266,7 @@ export function AccountMenu() {
                   <button
                     type="button"
                     aria-pressed={isSelected}
-                    aria-label={`${isSelected ? 'Active mailbox' : 'Switch to mailbox'} ${m.email}${needsReconnect ? ', needs reconnect' : ''}`}
+                    aria-label={`${isSelected ? 'Selected Gmail account' : 'Switch to this Gmail account'} ${m.email}${needsReconnect ? ', needs reconnect' : ''}`}
                     disabled={isDisconnected || setActive.isPending}
                     onClick={() => {
                       if (isSelected) return;
@@ -267,7 +275,7 @@ export function AccountMenu() {
                       // re-authorized. Only Gmail-dependent actions pause.
                       setActive.mutate(m.id, {
                         onError: () => {
-                          toast('Could not switch Gmail accounts. Please try again.', 'warn');
+                          toast('Couldn’t switch Gmail accounts. Try again.', 'warn');
                         },
                         onSuccess: () => {
                           setOpen(false);
@@ -358,7 +366,7 @@ export function AccountMenu() {
                       !needsReconnect &&
                       m.readiness === 'ready' &&
                       healthById[m.id]?.hasSyncError && (
-                        <MenuStatus tone="danger">Not syncing</MenuStatus>
+                        <MenuStatus tone="danger">Not updating</MenuStatus>
                       )}
                   </button>
                   <span
@@ -447,7 +455,23 @@ export function AccountMenu() {
               gap: 2,
             }}
           >
-            {atInboxLimit ? (
+            {atInboxLimit && passInboxLimit ? (
+              <button
+                type="button"
+                className="dm-nav-row"
+                onClick={() => {
+                  setOpen(false);
+                  reportPassSecondAccountGate({
+                    limit: inboxLimit,
+                    connected: connectedInboxes,
+                    reason: 'pass',
+                  });
+                }}
+                style={menuItemStyle()}
+              >
+                Add Gmail account
+              </button>
+            ) : atInboxLimit ? (
               // D19/D81 inbox-limit gate — replaces the connect
               // affordance with the honest state + the upgrade path.
               // Existing accounts above keep working; only ADDING is

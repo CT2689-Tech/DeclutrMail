@@ -67,6 +67,22 @@ describe('makeQueryClient — global entitlement-402 handler', () => {
     expect(useUpgradeGateStore.getState().hit?.reason).toBe('inbox_limit');
   });
 
+  it('routes a Pass-only INBOX_LIMIT_REACHED 402 into the Pass second-account hit', async () => {
+    await runFailingMutation(
+      new ApiError(
+        402,
+        {
+          error: {
+            code: 'INBOX_LIMIT_REACHED',
+            details: { limit: 1, connected: 1, tier: 'plus', reason: 'pass' },
+          },
+        },
+        'POST /api/auth/google/connect failed: 402',
+      ),
+    );
+    expect(useUpgradeGateStore.getState().hit?.reason).toBe('pass_second_account');
+  });
+
   it('routes an ACTION_TIER_REQUIRED 402 into the upgrade-gate store', async () => {
     await runFailingMutation(
       new ApiError(
@@ -247,6 +263,33 @@ describe('makeQueryClient — global query-failure reporting', () => {
       else Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
     }
     expect(captureFeatureException).not.toHaveBeenCalled();
+  });
+
+  it('stays silent for an expected timeout on the sync-status poll', async () => {
+    await runFailingQuery(new DOMException('The operation timed out', 'TimeoutError'), [
+      'sync',
+      'status',
+    ]);
+    await runFailingQuery(new DOMException('The operation was aborted.', 'AbortError'), [
+      'sync',
+      'status',
+      null,
+    ]);
+    await runFailingQuery(new ApiError(504, {}, 'GET /api/v1/sync/status failed: 504'), [
+      'sync',
+      'status',
+    ]);
+    await runFailingQuery(new TypeError('net::ERR_TIMED_OUT'), ['sync', 'status']);
+    expect(captureFeatureException).not.toHaveBeenCalled();
+  });
+
+  it('reports a timed-out 500 outside the sync-status poll', async () => {
+    await runFailingQuery(new ApiError(500, {}, 'upstream timed out'), ['senders', {}]);
+    await runFailingQuery(new ApiError(504, {}, 'gateway timeout'), ['billing', 'subscription']);
+    await runFailingQuery(new DOMException('The operation timed out', 'TimeoutError'), [
+      'mailboxes',
+    ]);
+    expect(captureFeatureException).toHaveBeenCalledTimes(3);
   });
 
   it('reports a 5xx read failure', async () => {

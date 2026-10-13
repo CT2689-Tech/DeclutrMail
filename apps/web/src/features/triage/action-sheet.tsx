@@ -284,7 +284,7 @@ export function ActionSheet({
   // count needs no line: the title already says nothing is there.
   const status: ReactNode = !confirmDisabled ? null : previewSenderGone ? (
     <StatusWithAction
-      message="This sender is no longer in this mailbox."
+      message="This sender has no email in this Gmail account anymore."
       action={onRefreshTriage ? { label: 'Refresh triage', onClick: onRefreshTriage } : undefined}
     />
   ) : nothingToActOn ? null : wakeAtInvalid ? (

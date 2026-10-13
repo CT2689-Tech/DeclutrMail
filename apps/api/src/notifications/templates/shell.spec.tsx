@@ -95,7 +95,7 @@ describe('shell', () => {
       </Shell>,
     );
     expect(html).toContain('DeclutrMail');
-    expect(html).toContain('Gmail cleanup, by sender');
+    expect(html).toContain('Gmail, sorted by sender');
     // The newspaper rule is a bordered block, never a remote image:
     // Gmail hides images until the reader opts in, and brand chrome
     // that only appears after "display images" mostly does not appear.

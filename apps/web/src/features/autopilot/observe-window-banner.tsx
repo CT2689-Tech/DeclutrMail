@@ -6,6 +6,7 @@ import { Button, tokens } from '@declutrmail/shared';
 import { TIER_MANIFEST, minimumTierForCapability } from '@declutrmail/shared/entitlements';
 
 import { useOptionalAuth } from '@/features/auth/auth-provider';
+import { useVisitorPriceLocale } from '@/features/billing/billing-currency';
 import { billingIntentPath } from '@/features/billing/billing-intent';
 import { launchPlusQuote } from '@/features/billing/billing-model';
 import type { AutopilotRuleDto } from '@/lib/api/autopilot';
@@ -76,11 +77,13 @@ export function ObserveWindowBanner({
   const actPlan = actTier === 'pro' ? ('pro' as const) : ('plus' as const);
   const actName = TIER_MANIFEST[actTier].name;
   const pricingV2 = useOptionalAuth()?.me.pricingV2 === true;
+  const visitorLocale = useVisitorPriceLocale();
   const upgradeHref = billingIntentPath({
     plan: actPlan,
     cycle: pricingV2 ? 'annual' : 'monthly',
   });
-  const upgradePrice = pricingV2 && actPlan === 'plus' ? launchPlusQuote() : null;
+  const upgradePrice =
+    pricingV2 && actPlan === 'plus' ? launchPlusQuote('paddle', visitorLocale) : null;
   if (rules.length === 0) return null;
 
   return (

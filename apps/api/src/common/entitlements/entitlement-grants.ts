@@ -25,11 +25,14 @@
 // has ever signed up. A workspace inherits the highest live grant held
 // by any of its users.
 
-import { TIER_RANK, type TierId } from '@declutrmail/shared/entitlements';
-import { entitlementGrants, users } from '@declutrmail/db';
-import { and, eq, isNull, or, gt, sql, type SQL } from 'drizzle-orm';
+import { inboxLimitFor, TIER_RANK, type TierId } from '@declutrmail/shared/entitlements';
+import { entitlementGrants, subscriptions, users } from '@declutrmail/db';
+import { and, eq, inArray, isNotNull, isNull, lte, or, gt, sql, type SQL } from 'drizzle-orm';
 
 import type { DrizzleDb } from '../../db/db.module.js';
+
+/** Same statuses that recomputeWorkspaceTier treats as a paid floor. */
+const GRANTING_PAID_STATUSES = ['active', 'past_due'] as const;
 
 /**
  * `ORDER BY <this> DESC LIMIT 1` picks the highest tier in a set.
@@ -167,4 +170,88 @@ function highestTier(tiers: TierId[]): TierId | null {
 export function applyGrantFloor(billingTier: TierId, grantTier: TierId | null): TierId {
   if (grantTier === null) return billingTier;
   return TIER_RANK[grantTier] > TIER_RANK[billingTier] ? grantTier : billingTier;
+}
+
+/**
+ * A Backlog Pass with no granting paid Plus/Pro subscription. Pass
+ * floors the workspace at Plus for capabilities, but the Pass itself
+ * covers one Gmail account — only a paid Plus or Pro row raises that.
+ */
+export async function isPassOnlyWorkspace(
+  db: Pick<DrizzleDb, 'select'>,
+  workspaceId: string,
+): Promise<boolean> {
+  const grant = await highestLiveGrantForWorkspace(db, workspaceId);
+  if (grant?.source !== 'pass') return false;
+  return (await grantingPaidTierForWorkspace(db, workspaceId)) == null;
+}
+
+/** Closed reason `/me` and the inbox-limit 402 attach for Pass-only. */
+export type InboxLimitReason = 'pass';
+
+/**
+ * Inbox ceiling from the live entitlement: granting paid Plus/Pro,
+ * then a live grant, then the stored workspace tier. An expired Pass
+ * leaves `workspaces.tier` at Plus until the grant-ageing sweep — that
+ * cached Plus is not a paid plan, so the ceiling is Free's.
+ */
+export async function inboxEntitlementForWorkspace(
+  db: Pick<DrizzleDb, 'select'>,
+  workspaceId: string,
+  storedTier: TierId = 'free',
+): Promise<{ limit: number; reason?: InboxLimitReason }> {
+  const grant = await highestLiveGrantForWorkspace(db, workspaceId);
+  const paidTier = await grantingPaidTierForWorkspace(db, workspaceId);
+  if (grant?.source === 'pass' && paidTier == null) {
+    return { limit: 1, reason: 'pass' };
+  }
+  if (paidTier == null && grant == null && (await hasLapsedPassGrant(db, workspaceId))) {
+    return { limit: inboxLimitFor('free') };
+  }
+  return {
+    limit: inboxLimitFor(applyGrantFloor(paidTier ?? storedTier, grant?.tier ?? null)),
+  };
+}
+
+async function hasLapsedPassGrant(
+  db: Pick<DrizzleDb, 'select'>,
+  workspaceId: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: entitlementGrants.id })
+    .from(entitlementGrants)
+    .innerJoin(users, eq(users.email, entitlementGrants.email))
+    .where(
+      and(
+        eq(users.workspaceId, workspaceId),
+        eq(entitlementGrants.source, 'pass'),
+        or(
+          isNotNull(entitlementGrants.revokedAt),
+          and(isNotNull(entitlementGrants.expiresAt), lte(entitlementGrants.expiresAt, new Date())),
+        ),
+      ),
+    )
+    .limit(1);
+  return row != null;
+}
+
+async function grantingPaidTierForWorkspace(
+  db: Pick<DrizzleDb, 'select'>,
+  workspaceId: string,
+): Promise<TierId | null> {
+  const rows = await db
+    .select({ tier: subscriptions.tier })
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.workspaceId, workspaceId),
+        inArray(subscriptions.tier, ['plus', 'pro']),
+        inArray(subscriptions.status, [...GRANTING_PAID_STATUSES]),
+        or(
+          isNull(subscriptions.entitlementEndsAt),
+          gt(subscriptions.entitlementEndsAt, new Date()),
+        ),
+      ),
+    );
+  return highestTier(rows.map((row) => row.tier));
 }

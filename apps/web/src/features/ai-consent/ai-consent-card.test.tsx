@@ -95,7 +95,7 @@ describe('AiConsentCard', () => {
       expect(region.style.height).toBe('');
       const link = screen.getByRole('link', { name: WS2_COPY.aiConsent.link });
       expect(link).toHaveAttribute('href', '/privacy#ai-processing');
-      expect(link).toHaveClass('dm-external-link');
+      expect(link).toHaveClass('dm-external-link', 'dm-tap-target');
       const text = region.textContent ?? '';
       const expected = [
         titles[kind],

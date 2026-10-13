@@ -230,6 +230,25 @@ export function priceLine(price: PricePoint, locale: 'usd' | 'inr'): string {
   return stableCurrency(price.usdCents, 'usd');
 }
 
+/**
+ * One locale-aware launch catalog. Cards, chips, and teasers read this
+ * instead of assembling `$` / `₹` themselves. Cadence tokens are the
+ * ones already on the deck (`/yr`, `price.plusLine`, `price.passLine`).
+ */
+export function launchPriceDisplay(locale: 'usd' | 'inr'): {
+  free: { amount: string; per: string };
+  plus: { amount: string; per: string };
+  plusLine: string;
+  passLine: string;
+} {
+  return {
+    free: { amount: moneyAmount(0, locale), per: '' },
+    plus: { amount: plusAmount(locale), per: '/yr' },
+    plusLine: fillStory(WS1_COPY['price.plusLine'], locale),
+    passLine: fillStory(WS1_COPY['price.passLine'], locale),
+  };
+}
+
 function resetDate(resetAt: string): string {
   return utcMonthDay(resetAt) ?? resetAt;
 }
@@ -283,6 +302,7 @@ export function meterChipLine(input: {
 
 export function meterPreviewText(requested: number, remaining: number): string {
   if (requested > remaining) {
+    if (requested === 1) return WS1_COPY['meter.preview.over.one'];
     return fill(WS1_COPY['meter.preview.over'], {
       requested: grouped(requested),
       remaining: grouped(remaining),
@@ -298,12 +318,20 @@ export function meterPreviewText(requested: number, remaining: number): string {
 }
 
 export function quotaExceededMessage(input: QuotaExceededMessageInput): string {
+  const allowance = grouped(input.limit);
+  const reset = resetDate(input.resetAt);
+  if (input.requested === 1) {
+    return fill(WS1_COPY['cap.api.message.one'], {
+      allowance,
+      resetDate: reset,
+    });
+  }
   const remaining = Math.max(0, input.limit - input.used);
   return fill(WS1_COPY['cap.api.message'], {
     requested: grouped(input.requested),
     remaining: grouped(remaining),
-    allowance: grouped(input.limit),
-    resetDate: resetDate(input.resetAt),
+    allowance,
+    resetDate: reset,
   });
 }
 
@@ -327,19 +355,19 @@ export interface ListedOfferOverride {
  * returns Free until a price id is real. Tests pass `listed` to pin the
  * shape Plus and the Pass take once they are listed.
  */
+const FREE_OFFER = {
+  '@type': 'Offer',
+  name: 'Free',
+  price: '0',
+  priceCurrency: 'USD',
+  url: 'https://declutrmail.com/pricing',
+} as const;
+
 export function buildOffersJsonLd(listed?: ListedOfferOverride): object[] {
-  if (!isPricingV2()) return [];
+  if (!isPricingV2()) return [FREE_OFFER];
   const plusListed = listed?.plus ?? PLUS_ANNUAL_2026_10.listed === true;
   const passListed = listed?.pass ?? OFFERS.backlogPass.price.listed === true;
-  const offers: object[] = [
-    {
-      '@type': 'Offer',
-      name: planName('free'),
-      price: 0,
-      priceCurrency: 'USD',
-      url: '/pricing',
-    },
-  ];
+  const offers: object[] = [FREE_OFFER];
   if (plusListed) {
     const usd = PLUS_ANNUAL_2026_10.usdCents / 100;
     const inr = (PLUS_ANNUAL_2026_10.inr?.paise ?? PLUS_ANNUAL_2026_10.inrPaise) / 100;
@@ -504,4 +532,18 @@ export function inboxLimitReachedMessage(tier: TierId): string {
     plusInboxes: INBOXES.plus,
     CONNECTION_TERM: connectionTerm(INBOXES.free),
   });
+}
+
+/** Locked r37 Pass second-account title. `{passName}` fills from config. */
+export function passSecondAccountTitle(locale: 'usd' | 'inr' = 'usd'): string {
+  return fillStory(WS1_COPY['cap.pass.secondAccount.title'], locale);
+}
+
+/** Locked r37 Pass second-account body. Price follows the region locale. */
+export function passSecondAccountMessage(locale: 'usd' | 'inr' = 'usd'): string {
+  return fillStory(WS1_COPY['cap.pass.secondAccount.body'], locale);
+}
+
+export function passSecondAccountCta(locale: 'usd' | 'inr' = 'usd'): string {
+  return fillStory(WS1_COPY['cap.pass.secondAccount.cta'], locale);
 }

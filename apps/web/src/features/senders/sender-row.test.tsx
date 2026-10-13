@@ -165,7 +165,7 @@ describe('<SenderRow /> — what the row says', () => {
     renderRow({ policyType: 'unsubscribe', unsubscribeMethod: 'one_click', unsubStatus: null });
     expect(screen.getByText('Outcome unknown').parentElement).toHaveAttribute(
       'title',
-      'This earlier unsubscribe has no delivery record, so we cannot confirm its outcome',
+      'We can’t confirm whether this earlier request went through.',
     );
     expect(screen.queryByText('Requesting…')).not.toBeInTheDocument();
   });

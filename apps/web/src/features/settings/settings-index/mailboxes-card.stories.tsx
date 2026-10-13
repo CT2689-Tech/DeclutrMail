@@ -59,7 +59,7 @@ const noop = () => undefined;
 
 const MAILBOX_A = {
   id: '11111111-1111-4111-8111-111111111111',
-  email: 'chintan.a.thakkar@gmail.com',
+  email: 'alex@example.com',
   status: 'active' as const,
   connectedAt: '2026-05-01T00:00:00.000Z',
   readiness: 'ready' as const,
@@ -67,7 +67,7 @@ const MAILBOX_A = {
 
 const MAILBOX_B = {
   id: '22222222-2222-4222-8222-222222222222',
-  email: 'chintan.a.thakkar.crypt@gmail.com',
+  email: 'sam@example.com',
   status: 'active' as const,
   connectedAt: '2026-06-01T00:00:00.000Z',
   readiness: 'ready' as const,

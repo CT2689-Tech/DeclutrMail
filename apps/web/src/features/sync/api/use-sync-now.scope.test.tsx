@@ -61,7 +61,7 @@ describe('manual sync toast', () => {
       await result.current.mutateAsync();
     });
     const [message] = vi.mocked(toast).mock.calls.at(-1)!;
-    expect(message).toMatch(/already in progress/i);
+    expect(message).toMatch(/Already checking for new email/i);
     expect(message).not.toMatch(/shortly|soon|minute|will appear/i);
   });
 });

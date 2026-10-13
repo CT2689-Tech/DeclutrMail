@@ -169,7 +169,7 @@ export function FollowupsScreen() {
           description={
             excludedCount > 0
               ? 'The current suggestions were marked not a follow-up. Show them above to review or change that feedback.'
-              : 'No tracked conversation is waiting on a reply.'
+              : 'Nothing is waiting on a reply.'
           }
         />
       ) : (
@@ -264,8 +264,7 @@ function FollowupsScopeNote() {
         before following up.
       </p>
       <p style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}>
-        Mark resolved only hides it here — nothing changes in Gmail. Counts cover shown
-        conversations, up to 100.
+        Mark resolved only hides it here. Nothing changes in Gmail.
       </p>
     </div>
   );
@@ -524,9 +523,9 @@ export function FollowupListItem({
                 {followupCheckedTail}
               </>
             ) : (
-              'Evaluation time unavailable.'
+              'Last check time unavailable.'
             )}{' '}
-            New replies may still be syncing.
+            New replies may not be here yet.
           </p>
         </details>
       </div>

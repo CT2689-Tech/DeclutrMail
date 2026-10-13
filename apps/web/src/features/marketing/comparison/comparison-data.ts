@@ -163,11 +163,18 @@ const DECLUTR = {
   },
 } as const satisfies Record<string, ComparisonCell>;
 
+/** Preview summary plus the recovery detail, one shared cell on every /vs page. */
+const previewAndRecovery: ComparisonCell = {
+  summary: DECLUTR.preview.summary,
+  detail: `${DECLUTR.preview.detail} ${DECLUTR.recovery.detail}`,
+  state: DECLUTR.recovery.state,
+};
+
 const cleanEmail: ComparisonDefinition = {
   slug: 'clean-email',
   name: 'Clean Email',
   category: 'Broad cleanup suite',
-  verifiedIso: '2026-09-22',
+  verifiedIso: '2026-10-13',
   title: 'DeclutrMail vs Clean Email',
   description:
     'A source-backed comparison of DeclutrMail and Clean Email for Gmail cleanup, automation, unsubscribe, privacy, and pricing.',
@@ -239,14 +246,13 @@ const cleanEmail: ComparisonDefinition = {
       declutrMail: DECLUTR.unsubscribe,
       competitor: {
         summary: 'Bulk Unsubscriber',
-        detail:
-          'Clean Email says it sends unsubscribe requests and can trash later messages when a list does not honor the request.',
+        detail: 'Bulk Unsubscriber sends unsubscribe requests.',
         state: 'supported',
       },
     },
     {
       label: 'Preview and recovery',
-      declutrMail: DECLUTR.recovery,
+      declutrMail: previewAndRecovery,
       competitor: {
         summary: 'Optional five-second Quick Cancel; durable undo not stated',
         detail:
@@ -260,7 +266,7 @@ const cleanEmail: ComparisonDefinition = {
       competitor: {
         summary: 'Vendor says it accesses envelope and header information',
         detail:
-          'Its September privacy policy says bodies are never downloaded or accessed by its systems. Its feature page also offers in-app reading and replies; these are vendor statements, not an independent audit.',
+          'Its privacy policy (last updated October 9, 2026) says bodies are never downloaded or accessed by its systems. Its feature page also offers in-app reading and replies; these are vendor statements, not an independent audit.',
         state: 'limited',
       },
     },
@@ -270,8 +276,8 @@ const cleanEmail: ComparisonDefinition = {
       competitor: {
         summary: 'Up to 1,000 messages free; 14-day premium trial',
         detail:
-          'The reviewed official help page confirms monthly and yearly subscriptions but does not publish the current paid amount.',
-        state: 'unknown',
+          'From $9.99 a month or $29.99 a year for 1 account, per Clean Email’s plans page. Higher tiers cost more.',
+        state: 'supported',
       },
     },
   ],
@@ -296,6 +302,11 @@ const cleanEmail: ComparisonDefinition = {
       url: 'https://clean.email/privacy',
       note: 'Vendor’s current legal description of Gmail-data access and processing.',
     },
+    {
+      label: 'Clean Email plans',
+      url: 'https://clean.email/plans',
+      note: 'Paid plan amounts for one account.',
+    },
   ],
 };
 
@@ -303,7 +314,7 @@ const trimbox: ComparisonDefinition = {
   slug: 'trimbox',
   name: 'Trimbox',
   category: 'In-inbox unsubscriber',
-  verifiedIso: '2026-09-22',
+  verifiedIso: '2026-10-13',
   title: 'DeclutrMail vs Trimbox',
   description:
     'A source-backed comparison of DeclutrMail and Trimbox for Gmail unsubscribe, past-email deletion, automation, privacy, and pricing.',
@@ -382,7 +393,7 @@ const trimbox: ComparisonDefinition = {
     },
     {
       label: 'Preview and recovery',
-      declutrMail: DECLUTR.recovery,
+      declutrMail: previewAndRecovery,
       competitor: {
         summary: 'Not publicly stated',
         detail:
@@ -434,7 +445,7 @@ const sanebox: ComparisonDefinition = {
   slug: 'sanebox',
   name: 'SaneBox',
   category: 'Importance sorting',
-  verifiedIso: '2026-09-22',
+  verifiedIso: '2026-10-13',
   title: 'DeclutrMail vs SaneBox',
   description:
     'A source-backed comparison of DeclutrMail and SaneBox for sender cleanup, importance sorting, training, privacy, providers, and pricing.',
@@ -511,7 +522,7 @@ const sanebox: ComparisonDefinition = {
     },
     {
       label: 'Preview and recovery',
-      declutrMail: DECLUTR.recovery,
+      declutrMail: previewAndRecovery,
       competitor: {
         summary: 'Correct by moving and retraining',
         detail:
@@ -533,10 +544,10 @@ const sanebox: ComparisonDefinition = {
       label: 'Public starting point',
       declutrMail: DECLUTR.price,
       competitor: {
-        summary: 'Free trial advertised; paid amounts not stated in reviewed snapshot',
+        summary: 'From $9.49 a month',
         detail:
-          'The feature guide confirms plan-dependent feature limits. The pricing snapshot did not expose current amounts, trial duration, or account allowances; check the vendor before buying.',
-        state: 'unknown',
+          'From $9.49 a month or $65 a year for the Snack plan, with a 7-day free trial, per SaneBox’s pricing page.',
+        state: 'supported',
       },
     },
   ],
@@ -544,7 +555,7 @@ const sanebox: ComparisonDefinition = {
     {
       label: 'SaneBox pricing',
       url: 'https://www.sanebox.com/pricing',
-      note: 'Pricing destination; dynamically rendered amounts and allowances were unavailable in this review.',
+      note: 'Snack plan amounts and the 7-day free trial.',
     },
     {
       label: 'What is a SaneBox feature?',
@@ -568,7 +579,7 @@ const leaveMeAlone: ComparisonDefinition = {
   slug: 'leave-me-alone',
   name: 'Leave Me Alone',
   category: 'Subscription control',
-  verifiedIso: '2026-09-22',
+  verifiedIso: '2026-10-13',
   title: 'DeclutrMail vs Leave Me Alone',
   description:
     'A source-backed comparison of DeclutrMail and Leave Me Alone for unsubscribe, newsletter rollups, sender cleanup, privacy, providers, and pricing.',
@@ -648,7 +659,7 @@ const leaveMeAlone: ComparisonDefinition = {
     },
     {
       label: 'Preview and recovery',
-      declutrMail: DECLUTR.recovery,
+      declutrMail: previewAndRecovery,
       competitor: {
         summary: 'Unsubscribe is not reversible in the service',
         detail: 'The FAQ says re-subscribing must be done manually at the sender’s website.',
@@ -712,7 +723,7 @@ const unrollMe: ComparisonDefinition = {
   slug: 'unroll-me',
   name: 'Unroll.Me',
   category: 'Digest and blocking',
-  verifiedIso: '2026-09-22',
+  verifiedIso: '2026-10-13',
   title: 'DeclutrMail vs Unroll.Me',
   metaTitle: 'DeclutrMail vs Unroll.Me: how each uses your email data',
   description:
@@ -795,7 +806,7 @@ const unrollMe: ComparisonDefinition = {
     },
     {
       label: 'Preview and recovery',
-      declutrMail: DECLUTR.recovery,
+      declutrMail: previewAndRecovery,
       competitor: {
         summary: 'Not publicly stated',
         detail:
@@ -871,7 +882,7 @@ const gmailFilters: ComparisonDefinition = {
   slug: 'gmail-filters',
   name: 'Gmail filters',
   category: 'Native rules',
-  verifiedIso: '2026-09-22',
+  verifiedIso: '2026-10-13',
   title: 'DeclutrMail vs Gmail filters',
   description:
     'A source-backed comparison of DeclutrMail and native Gmail filters for sender cleanup, future-mail rules, unsubscribe, preview, recovery, and cost.',
@@ -952,7 +963,7 @@ const gmailFilters: ComparisonDefinition = {
     },
     {
       label: 'Preview and recovery',
-      declutrMail: DECLUTR.recovery,
+      declutrMail: previewAndRecovery,
       competitor: {
         summary: 'Test criteria; edit or delete the rule later',
         detail:
@@ -1008,7 +1019,7 @@ const gmailNative: ComparisonDefinition = {
   slug: 'gmail',
   name: "Gmail's built-in cleanup",
   category: 'Native tools',
-  verifiedIso: '2026-09-22',
+  verifiedIso: '2026-10-13',
   title: "DeclutrMail vs Gmail's built-in cleanup",
   description:
     "A source-backed comparison of DeclutrMail and Gmail's own cleanup tools — Manage subscriptions, bulk search actions, and unsubscribe — for preview, recovery, and control by sender.",
@@ -1089,11 +1100,11 @@ const gmailNative: ComparisonDefinition = {
     },
     {
       label: 'Preview and recovery',
-      declutrMail: DECLUTR.recovery,
+      declutrMail: previewAndRecovery,
       competitor: {
         summary: 'Native selection and recovery; separate action history not stated',
         detail:
-          'Archives stay recoverable in All Mail; deleted mail normally remains in Trash for 30 days unless removed sooner. The reviewed help pages do not describe a separate long-term record and undo deadline for each cleanup action.',
+          'Archives stay recoverable in All Mail; deleted mail normally remains in Trash for 30 days unless removed sooner. The reviewed help pages do not describe a separate long-term record and undo deadline for each Archive, Later or Delete.',
         state: 'limited',
       },
     },
@@ -1159,7 +1170,7 @@ const metaMuse: ComparisonDefinition = {
   slug: 'meta-muse',
   name: 'Meta Muse',
   category: 'General-purpose AI agent',
-  verifiedIso: '2026-09-22',
+  verifiedIso: '2026-10-13',
   title: 'DeclutrMail vs Meta Muse',
   description:
     'A source-backed comparison of DeclutrMail and Meta Muse for Gmail: a narrow cleanup tool that never fetches full message contents versus a general AI agent that can read and send mail.',
@@ -1181,7 +1192,7 @@ const metaMuse: ComparisonDefinition = {
     ],
   },
   chooseDeclutrMail: {
-    headline: 'Choose DeclutrMail when the job is cleaning up Gmail',
+    headline: WS3_COPY['ws3.vs.meta-muse.cdHeadline'],
     points: [
       'You want to clear senders in bulk and see the exact count and sample before anything moves.',
       'You want a cleanup tool that does not fetch full message bodies or attachments at all.',
@@ -1239,7 +1250,7 @@ const metaMuse: ComparisonDefinition = {
     },
     {
       label: 'Preview and recovery',
-      declutrMail: DECLUTR.recovery,
+      declutrMail: previewAndRecovery,
       competitor: {
         summary: 'Approval before important actions; undo window not stated',
         detail:
@@ -1343,7 +1354,7 @@ const COMPARISON_LIST: readonly ComparisonDefinition[] = [
   gmailFilters,
   gmailNative,
   metaMuse,
-  ...buildLaunchComparisons(DECLUTR),
+  ...buildLaunchComparisons({ ...DECLUTR, recovery: previewAndRecovery }),
 ].map((comparison) => ({ ...comparison, verdict: verdictFor(comparison.slug) }));
 
 export const COMPARISONS = COMPARISON_LIST as unknown as readonly [

@@ -19,7 +19,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import {
-  CASA_VERIFICATION_APPROVED_MONTH,
+  CASA_VERIFICATION_APPROVED_ON,
+  formatVerificationDate,
   PRIVACY_BADGE_HEADLINE,
   PRIVACY_STORAGE_ITEMS,
   PRIVACY_NEVER_ITEMS,
@@ -44,7 +45,7 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Security — DeclutrMail',
-  description: `DeclutrMail never fetches or stores full email contents, encrypts Google access tokens, and received Google OAuth verification approval in ${CASA_VERIFICATION_APPROVED_MONTH}.`,
+  description: `DeclutrMail never fetches or stores full email contents, encrypts Google access tokens, and has Google OAuth verification approved ${formatVerificationDate(CASA_VERIFICATION_APPROVED_ON)}.`,
   path: '/security',
 });
 
@@ -53,7 +54,7 @@ const LAST_UPDATED = PAGE_LAST_UPDATED['/security'];
 const TOC = [
   { id: 'at-a-glance', label: 'At a glance' },
   { id: 'the-boundary', label: 'What we store' },
-  { id: 'oauth-scopes', label: 'OAuth scopes, and why' },
+  { id: 'oauth-scopes', label: 'The Gmail permission we request, and why' },
   { id: 'encryption', label: 'Encryption' },
   { id: 'verification', label: 'Verification' },
   { id: 'ai-processing', label: 'AI processing' },
@@ -115,12 +116,13 @@ export default function SecurityPage() {
         <p className="dm-story-callout">{WS3_COPY['ws3.security.boundary.callout']}</p>
       </DocSection>
 
-      <DocSection id="oauth-scopes" title="OAuth scopes, and why">
+      <DocSection id="oauth-scopes" title="The Gmail permission we request, and why">
         <p>
-          DeclutrMail requests one Gmail scope, <code>gmail.modify</code>, plus <code>openid</code>{' '}
-          and your email address to identify the connected account. The product&rsquo;s job is to
-          act on your email at your instruction — archive, label, delete, unsubscribe — and{' '}
-          <code>gmail.modify</code> is the scope that permits those label changes.
+          DeclutrMail requests one Gmail permission, <code>gmail.modify</code>, plus{' '}
+          <code>openid</code> and your email address to identify the connected account.
+          DeclutrMail&rsquo;s job is to change your email when you tell it to: archive, label,
+          delete and unsubscribe. <code>gmail.modify</code> is the permission that allows those
+          changes.
         </p>
         <p>
           This permission is broader than what DeclutrMail uses. The app requests only the listed

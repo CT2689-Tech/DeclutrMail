@@ -19,7 +19,7 @@ export default function OnboardingError({
       reset={reset}
       boundary="onboarding"
       headline="We couldn't load this onboarding step."
-      body="Try again. Setup picks up from the last step the server recorded."
+      body="Try again. Setup picks up where you left off."
       escape={{ href: '/', label: 'Back to the website' }}
     />
   );

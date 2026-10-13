@@ -414,19 +414,21 @@ export function AppShell({
             minHeight: 0,
             overflowY: 'auto',
             overflowX: 'hidden',
-            // Reserve the undo tray's footprint. The tray is fixed to the
-            // viewport bottom and mounted OUTSIDE this scroller, so without
-            // this it occludes the content's last ~90px — and the content
-            // cannot scroll past it, because this container is already at
-            // its end. See UNDO_TRAY_INSET_VAR; resolves to 0px whenever no
-            // tray is mounted. The tray measures from the VIEWPORT bottom,
-            // minus the bottom navigation already reserved in normal flow.
-            paddingBottom: `max(0px, calc(var(${UNDO_TRAY_INSET_VAR}, 0px) - var(--dm-tabbar-inset, 0px)))`,
+            // Reserve whichever covers the end of this scroller. The mobile
+            // tab bar is fixed to the viewport bottom, so its inset has to
+            // be padded here or the last content sits under it. The undo
+            // tray is also fixed, mounted outside this scroller, and its
+            // published inset is already the distance to the viewport
+            // bottom — larger than the bar while the tray is open. Desktop
+            // --dm-tabbar-inset is 0. See UNDO_TRAY_INSET_VAR.
+            paddingBottom: `max(var(--dm-tabbar-inset, 0px), var(${UNDO_TRAY_INSET_VAR}, 0px))`,
           }}
         >
           {children}
         </div>
-        {/* Mobile primary navigation stays in flow at the bottom. */}
+        {/* Mobile primary navigation is fixed to the viewport bottom.
+            tokens.css owns that positioning; this node stays in the
+            markup at every width and is hidden on desktop. */}
         <nav
           className="dm-tabbar"
           aria-label="Primary"

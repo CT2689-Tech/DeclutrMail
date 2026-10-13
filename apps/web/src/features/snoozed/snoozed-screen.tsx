@@ -177,7 +177,7 @@ function SnoozedScreenContents({ initialNow }: { initialNow: number | undefined 
       <EditorialKicker>Catch up</EditorialKicker>
       <h1 style={editorialTitleStyle}>Later</h1>
       <FeatureExplainer id="later-explainer">{WS2_COPY.explain.later}</FeatureExplainer>
-      <EditorialDescription>Return times for the active inbox · {timeZone}</EditorialDescription>
+      <EditorialDescription>When email comes back to your inbox · {timeZone}</EditorialDescription>
       <ScreenIntro
         id="snoozed"
         title="Later"
@@ -332,7 +332,7 @@ export function SnoozedRow({
   const timeZone = useUserTimeZone();
 
   const name = row.displayName.trim().length > 0 ? row.displayName : row.email;
-  const countLabel = row.laterCount === null ? 'count syncing…' : `${row.laterCount} in Later`;
+  const countLabel = row.laterCount === null ? 'counting…' : `${row.laterCount} in Later`;
   const returnIssue = returnIssueCopy(row);
 
   const startWake = () => {
@@ -425,8 +425,7 @@ export function SnoozedRow({
           </div>
           {confirmationDelayed ? (
             <div role="status" style={{ fontSize: text.sm, color: color.fgMuted }}>
-              Return requested; confirmation is taking longer than expected. Status refreshes
-              automatically.
+              {WS2_COPY.simplify.later.slow}
             </div>
           ) : null}
           {returnIssue ? (
@@ -509,7 +508,7 @@ export function formatLastAttempt(iso: string, timeZone: string): string {
 
 function returnIssueCopy(row: SnoozedSenderRow): string | null {
   if (row.returnStatus === 'missed') {
-    return 'No successful return is confirmed; check the inbox or Later label.';
+    return 'We couldn’t confirm it came back. Check your inbox or the Later label in Gmail.';
   }
   if (row.returnStatus !== 'retrying') return null;
   if (row.returnFailureKind === 'reauthorize') {
@@ -518,7 +517,7 @@ function returnIssueCopy(row: SnoozedSenderRow): string | null {
   if (row.returnFailureKind === 'needs_attention') {
     return 'Choose Bring back now. If it fails again, use Help in Settings.';
   }
-  return 'Return is unconfirmed; automatic retry remains active.';
+  return 'Not confirmed yet. We’ll keep trying.';
 }
 
 /**

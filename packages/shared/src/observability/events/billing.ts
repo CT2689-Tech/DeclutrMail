@@ -37,7 +37,13 @@ export interface BillingEventPayloads {
 
   upgrade_prompt_shown: {
     /** Which entitlement gate triggered the prompt (D19/D77/D81). */
-    reason: 'free_cap' | 'inbox_limit' | 'action_tier' | 'feature_tier' | 'pro_feature';
+    reason:
+      | 'free_cap'
+      | 'inbox_limit'
+      | 'pass_second_account'
+      | 'action_tier'
+      | 'feature_tier'
+      | 'pro_feature';
     /** The surface that rendered it. */
     source: 'account_menu' | 'upgrade_modal' | 'tier_gate';
   };

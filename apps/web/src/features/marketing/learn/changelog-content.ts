@@ -1,3 +1,6 @@
+import { WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory } from '@declutrmail/shared/entitlements';
+
 import type { ChangelogEntry } from './types';
 
 /**
@@ -99,7 +102,7 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
     summary:
       'Free became a plan you can actually work in, and previews were made to match their results.',
     added: [
-      'The Free tier is live: Senders, Sender detail, Activity history, Triage sessions, and the Later review queue, metered at 50 cleanup actions each month on your signup anniversary.',
+      fillStory(WS3_COPY['ws3.changelog.2026-07-27.free']),
       'A preview that will not fit within the remaining monthly allowance says so and offers the upgrade instead of a confirm.',
     ],
     improved: ['Billing screens tell one consistent story about your plan.'],
@@ -362,7 +365,7 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
       'Secondary product screens and topbar controls now restack for mobile widths.',
       'Account and billing remain reachable when no Gmail mailbox is active.',
     ],
-    fixed: ['Refund messaging was aligned with the canonical 30-day paid-plan guarantee.'],
+    fixed: ['Refund wording now matches on every page. (The refund window is now 14 days.)'],
     evidence: [
       { commit: 'ec55425e', pullRequest: 307, summary: 'SEO/AEO/GEO foundations' },
       { commit: '1390f429', pullRequest: 305, summary: 'Secondary-screen mobile restack' },

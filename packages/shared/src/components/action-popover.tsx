@@ -468,6 +468,7 @@ export function ActionPopoverTrigger({
   return (
     <button
       type="button"
+      className="dm-tap-44"
       aria-label={ariaLabel}
       title={ariaLabel}
       aria-disabled={disabled || undefined}

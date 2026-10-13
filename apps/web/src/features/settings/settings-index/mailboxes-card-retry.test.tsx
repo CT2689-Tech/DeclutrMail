@@ -90,7 +90,7 @@ describe('MailboxesCard — failed-sync retry', () => {
         hasSyncError: true,
       },
     });
-    expect(screen.getByText('Not syncing')).toBeInTheDocument();
+    expect(screen.getByText('Not updating')).toBeInTheDocument();
     expect(screen.queryByText('Ready')).not.toBeInTheDocument();
   });
 

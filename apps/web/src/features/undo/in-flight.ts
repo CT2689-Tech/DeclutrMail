@@ -56,6 +56,7 @@ export function workingNotice(group: InFlightActionGroup, confirmed = true): Und
     return {
       id: `run:${group.groupId}`,
       tone: 'info',
+      verb: group.verb,
       label: `${VERB[group.verb]}: unknown`,
       who: who(group),
     };
@@ -63,6 +64,7 @@ export function workingNotice(group: InFlightActionGroup, confirmed = true): Und
   return {
     id: `run:${group.groupId}`,
     tone: 'working',
+    verb: group.verb,
     label: WORKING[group.verb],
     who: who(group),
     // Jobs, not senders: a composite runs two per sender. Unit-less on purpose.

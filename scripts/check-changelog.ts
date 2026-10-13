@@ -23,7 +23,10 @@
  * would simply never be run.
  *
  * Exits 1 on any of:
- *   - a product merge no entry cites (OMISSION)
+ *   - a product merge no entry cites, unless that PR is already listed in
+ *     scripts/changelog-known-omissions.json (OMISSION)
+ *   - a baseline PR that is no longer an omission
+ *   - a missing, unreadable, or duplicate baseline
  *   - an evidence commit whose merge date ≠ its entry's date (BACKDATING)
  *   - a cited commit that does not resolve, or belongs to a different PR
  *   - history it cannot see (shallow clone, truncated walk, empty window)
@@ -37,7 +40,29 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { CHANGELOG_ENTRIES } from '../apps/web/src/features/marketing/learn/changelog-content.js';
+
+/**
+ * Product merges that were already uncited when this list was recorded.
+ *
+ * The public changelog has been behind history since the coverage check
+ * landed. Editing one sentence re-runs the whole walk, so a new sentence
+ * cannot land while every older omission blocks the file. This list is
+ * that debt, not a judgment that the merges are invisible. A PR number
+ * belongs here only when `pnpm check-changelog` already reports it.
+ *
+ * The check fails when a product merge is missing from both the changelog
+ * and this list, when a number here is no longer an omission, and when
+ * this file is missing or unreadable. Success with a non-empty list says
+ * the debt remains. It does not say the changelog is complete.
+ */
+const KNOWN_OMISSIONS_PATH = join(
+  dirname(fileURLToPath(import.meta.url)),
+  'changelog-known-omissions.json',
+);
 
 /**
  * Conventional-commit types whose merges are infrastructure, not product.
@@ -320,6 +345,38 @@ function mergesSince(since: string): Merge[] {
   });
 }
 
+function knownOmissions(): Set<number> {
+  let raw: string;
+  try {
+    raw = readFileSync(KNOWN_OMISSIONS_PATH, 'utf8');
+  } catch {
+    console.error(
+      `✗ Known-omission baseline missing at ${KNOWN_OMISSIONS_PATH}.\n` +
+        '  A missing list is not full coverage. Refusing to pass.',
+    );
+    process.exit(1);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    console.error('✗ Known-omission baseline is not JSON. Refusing to pass.');
+    process.exit(1);
+  }
+  if (
+    !Array.isArray(parsed) ||
+    parsed.some((value) => typeof value !== 'number' || !Number.isInteger(value) || value <= 0)
+  ) {
+    console.error('✗ Known-omission baseline must be an array of positive PR numbers.');
+    process.exit(1);
+  }
+  if (new Set(parsed).size !== parsed.length) {
+    console.error('✗ Known-omission baseline contains duplicate PR numbers.');
+    process.exit(1);
+  }
+  return new Set(parsed);
+}
+
 function main(): void {
   if (CHANGELOG_ENTRIES.length === 0) {
     console.error('✗ CHANGELOG_ENTRIES is empty.');
@@ -366,11 +423,26 @@ function main(): void {
       (r) => `  entry ${r.entry} cites PR #${r.pullRequest} (${r.commit}), merged ${r.mergedOn}`,
     );
 
-  if (omissions.length === 0 && misdated.length === 0) {
+  const known = knownOmissions();
+  const omissionNumbers = new Set(omissions.map((m) => m.pullRequest));
+  const fresh = omissions.filter((m) => !known.has(m.pullRequest));
+  const stale = [...known].filter((pr) => !omissionNumbers.has(pr)).sort((a, b) => a - b);
+
+  if (fresh.length === 0 && stale.length === 0 && misdated.length === 0) {
     const excluded = Object.keys(JUDGED_NOT_USER_VISIBLE).length;
-    console.log(
-      `✓ /changelog covers every product merge since ${oldest} (${merges.length} merges walked, ${cited.size} cited), and every entry date matches its evidence.`,
-    );
+    if (known.size === 0) {
+      console.log(
+        `✓ /changelog covers every product merge since ${oldest} (${merges.length} merges walked, ${cited.size} cited), and every entry date matches its evidence.`,
+      );
+    } else {
+      console.log(
+        `✓ No new uncited product merge since ${oldest} (${merges.length} merges walked, ${cited.size} cited).`,
+      );
+      console.log(
+        `  ${known.size} historical product merge(s) remain uncited in scripts/changelog-known-omissions.json.`,
+      );
+      console.log('  This is not full coverage.');
+    }
     // Never let a suppression stay silent — a check that hides what it
     // dropped reads as "covered everything" when it did not.
     console.log(`  ${excluded} merge(s) judged not user-visible and excluded on purpose:`);
@@ -380,14 +452,20 @@ function main(): void {
     return;
   }
 
-  if (omissions.length > 0) {
+  if (fresh.length > 0) {
     console.error(
-      `✗ ${omissions.length} product merge(s) since ${oldest} have no changelog entry:`,
+      `✗ ${fresh.length} product merge(s) since ${oldest} have no changelog entry and are not in the known-omission baseline:`,
     );
-    for (const m of omissions) console.error(`  ${m.date}  #${m.pullRequest}  ${m.subject}`);
+    for (const m of fresh) console.error(`  ${m.date}  #${m.pullRequest}  ${m.subject}`);
     console.error(
       '\n  Add an entry, or — if it is genuinely not user-visible — retype the commit\n  (chore/ci/test/build) so the exclusion is recorded rather than assumed.',
     );
+  }
+  if (stale.length > 0) {
+    console.error(
+      `✗ ${stale.length} baseline PR(s) are no longer uncited. Remove them from scripts/changelog-known-omissions.json:`,
+    );
+    for (const pr of stale) console.error(`  #${pr}`);
   }
   if (misdated.length > 0) {
     console.error(`\n✗ ${misdated.length} evidence commit(s) do not match their entry date:`);

@@ -16,12 +16,13 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { toast as sharedToast } from '@declutrmail/shared';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { installFetchStub, jsonOk, type FetchStubHandler } from '@/test/fetch-stub';
 import { ONBOARDING_STATE_KEY } from '@/features/onboarding/api/use-onboarding';
+import { SYNC_POLL_MS } from '@/features/onboarding/api/use-sync-status';
 import type { TierId } from '@declutrmail/shared/entitlements';
 
 const replace = vi.fn();
@@ -393,7 +394,7 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     installFetchStub([meAuthed('syncing'), onboardingState(), syncStatus(false)]);
     renderPage();
 
-    expect(await screen.findByText('Reading your Gmail…')).toBeInTheDocument();
+    expect(await screen.findByText('Scanning your Gmail…')).toBeInTheDocument();
     expect(screen.getByRole('progressbar')).toBeInTheDocument();
   });
 
@@ -593,7 +594,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     installFetchStub([secondaryMe(), syncStatus(false)]);
     renderPage();
 
-    expect(await screen.findByText('Reading your Gmail…')).toBeInTheDocument();
+    expect(await screen.findByText('Scanning your Gmail…')).toBeInTheDocument();
     // Escape hatch back to the other active mailbox is offered.
     expect(screen.getByText(/a@b\.com/)).toBeInTheDocument();
   });
@@ -718,7 +719,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
 
       // The gate, not the "Checking the scan…" screen it replaces — both
       // offer the way back, and a click on the one leaving is lost.
-      await screen.findByText('Reading your Gmail…');
+      await screen.findByText('Scanning your Gmail…');
       await userEvent.click(screen.getByRole('button', { name: 'Go back to a@b.com' }));
 
       await waitFor(() => expect(replace).toHaveBeenCalledWith(exit));
@@ -771,6 +772,51 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
       await waitFor(() =>
         expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '35'),
       );
+    },
+  );
+
+  it.each(['first-run', 'secondary'] as const)(
+    'keeps the scan progress when a later status read times out (%s)',
+    async (entry) => {
+      searchParams =
+        entry === 'secondary' ? new URLSearchParams({ mailbox: 'mb2' }) : new URLSearchParams();
+      let reads = 0;
+      installFetchStub([
+        ...(entry === 'secondary' ? [secondaryMe()] : [meAuthed('syncing'), onboardingState()]),
+        {
+          method: 'GET' as const,
+          path: '/api/v1/sync/status',
+          respond: () => {
+            reads += 1;
+            if (reads === 1) {
+              return json({
+                data: {
+                  readiness_status: 'syncing',
+                  current_stage: 'fetching_metadata',
+                  progress_pct: 40,
+                  is_ready_for_triage: false,
+                },
+              });
+            }
+            throw new DOMException('The operation timed out', 'TimeoutError');
+          },
+        },
+      ]);
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        renderPage();
+        await screen.findByRole('progressbar');
+        expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '40');
+        const shown = reads;
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(SYNC_POLL_MS);
+        });
+        expect(reads).toBeGreaterThan(shown);
+        expect(screen.queryByText("We couldn't check the scan.")).not.toBeInTheDocument();
+        expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '40');
+      } finally {
+        vi.useRealTimers();
+      }
     },
   );
 

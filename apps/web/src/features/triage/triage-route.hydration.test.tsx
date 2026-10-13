@@ -90,7 +90,7 @@ describe('Triage initial document hydration', () => {
       );
       const container = document.createElement('div');
       container.innerHTML = renderToString(tree(server));
-      expect(container.textContent).toContain('4 in queue');
+      expect(container.textContent).toContain('4 left');
       expect(container.textContent).not.toContain('Reviewing');
       if (jobCompletesBeforeHydration) {
         const group: InFlightActionGroup = {

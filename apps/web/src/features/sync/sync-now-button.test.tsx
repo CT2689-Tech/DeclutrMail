@@ -136,7 +136,7 @@ describe('SyncNowButton completion watch', () => {
     vi.clearAllTimers();
   });
 
-  it('hides Sync now while the current scoped Gmail grant needs reconnect', () => {
+  it('hides Scan now while the current scoped Gmail grant needs reconnect', () => {
     statusCell.data = statusOf({
       last_synced_at: '2026-07-07T10:00:00.000Z',
       last_sync_error_at: '2026-07-07T10:05:00.000Z',
@@ -150,7 +150,7 @@ describe('SyncNowButton completion watch', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('keeps Sync now available for a current retryable sync error', () => {
+  it('keeps Scan now available for a current retryable sync error', () => {
     statusCell.data = statusOf({
       last_synced_at: '2026-07-07T10:00:00.000Z',
       last_sync_error_at: '2026-07-07T10:05:00.000Z',
@@ -167,7 +167,10 @@ describe('SyncNowButton completion watch', () => {
     renderButton('mb1');
     await clickSyncNow();
     expect(syncMutate).not.toHaveBeenCalled();
-    expect(toast).toHaveBeenCalledWith(expect.stringContaining("Couldn't check"), 'danger');
+    expect(toast).toHaveBeenCalledWith(
+      expect.stringContaining('Couldn\u2019t check for new email'),
+      'danger',
+    );
   });
 
   it('does not enqueue after leaving the mailbox while its preflight read is pending', async () => {
@@ -200,7 +203,7 @@ describe('SyncNowButton completion watch', () => {
         last_synced_at: '2026-07-07T10:02:00.000Z',
       }),
     );
-    expect(toast).toHaveBeenCalledWith('Inbox up to date — synced just now.', 'success');
+    expect(toast).toHaveBeenCalledWith('Up to date.', 'success');
     expect(toast).not.toHaveBeenCalledWith(expect.stringContaining("Sync didn't finish"), 'danger');
   });
 
@@ -213,7 +216,7 @@ describe('SyncNowButton completion watch', () => {
         <Harness mailboxId="mb2" />
       </QueryWrapper>,
     );
-    expect(toast).not.toHaveBeenCalledWith('Inbox up to date — synced just now.', 'success');
+    expect(toast).not.toHaveBeenCalledWith('Up to date.', 'success');
     expect(screen.getByRole('button', { name: /check gmail for new emails/i })).toBeEnabled();
   });
 
@@ -223,7 +226,7 @@ describe('SyncNowButton completion watch', () => {
     expect(vi.mocked(toast)).not.toHaveBeenCalled();
 
     pushStatus(statusOf({ last_synced_at: '2026-07-07T10:05:00.000Z' }));
-    expect(vi.mocked(toast)).toHaveBeenCalledWith('Inbox up to date — synced just now.', 'success');
+    expect(vi.mocked(toast)).toHaveBeenCalledWith('Up to date.', 'success');
     // Watch ended — the button is clickable again.
     expect(
       screen.getByRole('button', { name: /check gmail for new emails/i }).hasAttribute('disabled'),
@@ -241,7 +244,7 @@ describe('SyncNowButton completion watch', () => {
         last_sync_error_code: 'GMAIL_HISTORY_GONE',
       }),
     );
-    expect(vi.mocked(toast)).toHaveBeenCalledWith("Sync didn't finish — try again.", 'danger');
+    expect(vi.mocked(toast)).toHaveBeenCalledWith('Couldn’t finish checking. Try again.', 'danger');
     // The stamp moves for ANY error name — the 2026-09 incremental
     // failures were database lock timeouts — so the toast names no cause.
     expect(vi.mocked(toast)).not.toHaveBeenCalledWith(
@@ -267,7 +270,7 @@ describe('SyncNowButton completion watch', () => {
       }),
     );
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
-      "Sync didn't finish — reconnect Gmail.",
+      'Couldn’t finish checking. Reconnect Gmail.',
       'danger',
     );
     expect(vi.mocked(toast)).not.toHaveBeenCalledWith(
@@ -287,7 +290,7 @@ describe('SyncNowButton completion watch', () => {
       await act(async () => {
         vi.advanceTimersByTime(90_000);
       });
-      expect(vi.mocked(toast)).toHaveBeenCalledWith("Couldn't confirm the sync finished.", 'info');
+      expect(vi.mocked(toast)).toHaveBeenCalledWith('Couldn’t confirm the check finished.', 'info');
       expect(vi.mocked(toast)).not.toHaveBeenCalledWith(
         expect.stringMatching(/will appear/i),
         expect.anything(),
@@ -313,7 +316,7 @@ describe('SyncNowButton completion watch', () => {
 
     // Our run completes → T2 → success.
     pushStatus(statusOf({ last_synced_at: '2026-07-07T09:31:00.000Z' }));
-    expect(vi.mocked(toast)).toHaveBeenCalledWith('Inbox up to date — synced just now.', 'success');
+    expect(vi.mocked(toast)).toHaveBeenCalledWith('Up to date.', 'success');
   });
 });
 
@@ -395,7 +398,7 @@ describe('SyncNowButton — readiness_status=failed (QA-sync-20260831-03)', () =
   );
 
   it.each(['queued', 'syncing'] as const)(
-    'still hides Sync now for pre-ready states (`queued`/`syncing`) — the onboarding gate owns those (%s)',
+    'still hides Scan now for pre-ready states (`queued`/`syncing`) — the onboarding gate owns those (%s)',
     (readiness) => {
       statusCell.data = statusOf({
         readiness_status: readiness,

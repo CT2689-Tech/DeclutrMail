@@ -513,6 +513,15 @@
   }
 }
 
+/* The phone ⋯ is 44px. A 32px track would spill it at 320px. */
+@media (max-width: 760px) {
+  @container sender-list (max-width: 280px) {
+    .compactRow {
+      grid-template-columns: 44px minmax(0, 1fr) 44px !important;
+    }
+  }
+}
+
 .tools {
   container-type: inline-size;
 }

@@ -83,13 +83,13 @@ describe('SyncErrorBanner', () => {
   });
 
   it('renders nothing while the status query has no data (fail quiet)', () => {
-    render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
+    render(<SyncErrorBanner mailboxId={MAILBOX_ID} mailboxEmail="alex@example.com" />);
     expect(screen.queryByTestId('sync-error-banner')).not.toBeInTheDocument();
   });
 
   it('renders nothing when there is no error stamp', () => {
     statusCell.data = statusOf({ last_synced_at: minutesAgo(5) });
-    render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
+    render(<SyncErrorBanner mailboxId={MAILBOX_ID} mailboxEmail="alex@example.com" />);
     expect(screen.queryByTestId('sync-error-banner')).not.toBeInTheDocument();
   });
 
@@ -99,9 +99,9 @@ describe('SyncErrorBanner', () => {
       last_sync_error_at: minutesAgo(5),
       last_sync_error_code: 'GMAIL_HISTORY_GONE',
     });
-    render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
+    render(<SyncErrorBanner mailboxId={MAILBOX_ID} mailboxEmail="alex@example.com" />);
     expect(screen.getByTestId('sync-error-banner')).toBeInTheDocument();
-    expect(screen.getByText(/new email isn't syncing/i)).toBeInTheDocument();
+    expect(screen.getByText(/new email isn.t coming in/i)).toBeInTheDocument();
   });
 
   it('stays hidden when readiness is failed, even with a fresh preserved incremental error stamp (Codex adversarial review of QA-sync-20260831-03)', () => {
@@ -120,7 +120,7 @@ describe('SyncErrorBanner', () => {
       last_sync_error_at: minutesAgo(5),
       last_sync_error_code: 'GMAIL_HISTORY_GONE',
     });
-    render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
+    render(<SyncErrorBanner mailboxId={MAILBOX_ID} mailboxEmail="alex@example.com" />);
     expect(screen.queryByTestId('sync-error-banner')).not.toBeInTheDocument();
   });
 
@@ -130,7 +130,7 @@ describe('SyncErrorBanner', () => {
       last_sync_error_at: minutesAgo(5),
       last_sync_error_code: 'GMAIL_HISTORY_GONE',
     });
-    render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
+    render(<SyncErrorBanner mailboxId={MAILBOX_ID} mailboxEmail="alex@example.com" />);
     expect(screen.getByTestId('sync-error-banner')).toBeInTheDocument();
   });
 
@@ -140,7 +140,7 @@ describe('SyncErrorBanner', () => {
       last_sync_error_at: minutesAgo(5),
       last_sync_error_code: 'GMAIL_HISTORY_GONE',
     });
-    render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
+    render(<SyncErrorBanner mailboxId={MAILBOX_ID} mailboxEmail="alex@example.com" />);
     expect(screen.queryByTestId('sync-error-banner')).not.toBeInTheDocument();
   });
 
@@ -156,7 +156,7 @@ describe('SyncErrorBanner', () => {
       last_sync_error_at: tie,
       last_sync_error_code: 'GMAIL_HISTORY_GONE',
     });
-    render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
+    render(<SyncErrorBanner mailboxId={MAILBOX_ID} mailboxEmail="alex@example.com" />);
     expect(screen.getByTestId('sync-error-banner')).toBeInTheDocument();
   });
 
@@ -166,7 +166,7 @@ describe('SyncErrorBanner', () => {
       last_sync_error_at: minutesAgo(61),
       last_sync_error_code: 'GMAIL_HISTORY_GONE',
     });
-    render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
+    render(<SyncErrorBanner mailboxId={MAILBOX_ID} mailboxEmail="alex@example.com" />);
     expect(screen.getByTestId('sync-error-banner')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /try again/i }));
     expect(mutateSpy).toHaveBeenCalledTimes(1);
@@ -178,7 +178,7 @@ describe('SyncErrorBanner', () => {
       last_sync_error_at: minutesAgo(90),
       last_sync_error_code: 'InvalidGrantError',
     });
-    render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
+    render(<SyncErrorBanner mailboxId={MAILBOX_ID} mailboxEmail="alex@example.com" />);
 
     expect(screen.getByTestId('sync-error-banner')).toBeInTheDocument();
     // Names the full remedy and no expiry: the same code is a Gmail
@@ -197,7 +197,7 @@ describe('SyncErrorBanner', () => {
       last_sync_error_at: minutesAgo(90),
       last_sync_error_code: 'InvalidGrantError',
     });
-    render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
+    render(<SyncErrorBanner mailboxId={MAILBOX_ID} mailboxEmail="alex@example.com" />);
 
     expect(screen.queryByTestId('sync-error-banner')).not.toBeInTheDocument();
   });
@@ -208,7 +208,7 @@ describe('SyncErrorBanner', () => {
       last_sync_error_at: minutesAgo(5),
       last_sync_error_code: 'GMAIL_HISTORY_GONE',
     });
-    render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
+    render(<SyncErrorBanner mailboxId={MAILBOX_ID} mailboxEmail="alex@example.com" />);
     fireEvent.click(screen.getByRole('button', { name: /try again/i }));
     expect(mutateSpy).toHaveBeenCalledTimes(1);
     expect(startMailboxConnectSpy).not.toHaveBeenCalled();
@@ -220,7 +220,7 @@ describe('SyncErrorBanner', () => {
       last_sync_error_at: minutesAgo(5),
       last_sync_error_code: 'InvalidGrantError',
     });
-    render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
+    render(<SyncErrorBanner mailboxId={MAILBOX_ID} mailboxEmail="alex@example.com" />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Reconnect Gmail' }));
 
@@ -235,10 +235,10 @@ describe('SyncErrorBanner', () => {
     // health exactly what a healthy user sees.
     statusCell.isError = true;
     statusCell.error = new ApiError(503, null, 'GET /api/v1/sync/status failed: 503');
-    render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
+    render(<SyncErrorBanner mailboxId={MAILBOX_ID} mailboxEmail="alex@example.com" />);
 
     const banner = screen.getByTestId('sync-status-unavailable-banner');
-    expect(banner).toHaveTextContent(/can.t check whether new email is syncing/i);
+    expect(banner).toHaveTextContent(/can.t check for new email right now/i);
     fireEvent.click(screen.getByRole('button', { name: /check again/i }));
     expect(refetchSpy).toHaveBeenCalledTimes(1);
   });
@@ -250,7 +250,7 @@ describe('SyncErrorBanner', () => {
       { error: { code: 'NO_ACTIVE_MAILBOX' } },
       'GET /api/v1/sync/status failed: 409',
     );
-    render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
+    render(<SyncErrorBanner mailboxId={MAILBOX_ID} mailboxEmail="alex@example.com" />);
 
     expect(screen.queryByTestId('sync-status-unavailable-banner')).not.toBeInTheDocument();
     expect(screen.queryByTestId('sync-error-banner')).not.toBeInTheDocument();
@@ -266,7 +266,7 @@ describe('SyncErrorBanner', () => {
       last_sync_error_at: minutesAgo(5),
       last_sync_error_code: 'InvalidGrantError',
     });
-    render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
+    render(<SyncErrorBanner mailboxId={MAILBOX_ID} mailboxEmail="alex@example.com" />);
 
     expect(screen.getByRole('button', { name: 'Reconnect Gmail' })).toBeInTheDocument();
   });

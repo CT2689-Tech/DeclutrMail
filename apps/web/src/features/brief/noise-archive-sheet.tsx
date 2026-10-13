@@ -99,7 +99,7 @@ export function NoiseArchiveSheet({
     preview === 'loading' ? (
       'Counting the inbox…'
     ) : scopeConflict ? (
-      'Your active mailbox changed while this was open, so these counts no longer apply. Close this and pick a mailbox to start again. Nothing was archived.'
+      'You switched Gmail accounts, so nothing was archived. Close this and start again.'
     ) : preview === 'unavailable' ? (
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         Couldn&rsquo;t load the preview. Nothing can move until it loads.

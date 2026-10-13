@@ -128,6 +128,10 @@ describe('HomeView', () => {
       'href',
       '/billing?from=%2Fhome',
     );
+    expect(screen.getByRole('link', { name: 'Compare plans' })).toHaveClass(
+      'dm-external-link',
+      'dm-tap-target',
+    );
     expect(screen.queryByRole('link', { name: /\/pricing/ })).toBeNull();
     expect(document.body.innerHTML).not.toContain('/pricing');
   });
@@ -230,17 +234,23 @@ describe('HomeView', () => {
     cardGate.shape = 'none';
   });
 
-  it('reserves the narrow page inset so the primary action stays above the tab bar', () => {
+  it('keeps the compact home slots while the shell reserves the tab bar', () => {
+    const narrowOf = (css: string) => css.slice(css.lastIndexOf('@media (max-width: 760px)'));
     const dir = dirname(fileURLToPath(import.meta.url));
     const home = readFileSync(join(dir, 'home-view.module.css'), 'utf8');
     const card = readFileSync(join(dir, '../inbox-report/card.module.css'), 'utf8');
-    const narrow = home.slice(home.lastIndexOf('@media (max-width: 760px)'));
-    expect(narrow).toContain('padding: 12px 16px var(--dm-tabbar-inset)');
+    const narrow = narrowOf(home);
+    expect(narrow).toContain('padding: 12px 16px 16px');
+    expect(narrow).not.toContain('min-height: 0');
+    expect(narrow).toContain('margin-bottom: var(--dm-tabbar-inset)');
+    expect(narrow).toContain('min-height: 28px');
     expect(home).toMatch(/max-width:\s*760px/);
     expect(home).toMatch(/\.leadFigure\s*\{[^}]*font-size:\s*28px/s);
     expect(home).toMatch(/\.planLine\s*\{[^}]*min-height:\s*28px/s);
     expect(home).toMatch(/\.fixActions\s*\{[^}]*margin-top:\s*8px/);
     expect(home).not.toContain('.page:has(.arrivals)');
+    expect(home).toContain('container-type: inline-size');
+    expect(home).toContain('container-name: home-report');
     expect(card).toMatch(/\.card\s*\{[^}]*padding:\s*8px 10px/);
     expect(card).toMatch(/\.body\s*\{[^}]*margin:\s*2px 0 4px/);
   });
@@ -399,6 +409,7 @@ describe('HomeView', () => {
       ),
     ).toEqual(['plan', 'primary', 'visit', 'report']);
     expect(container.querySelector('[data-home-skeleton]')).not.toBeNull();
+    expect(container.querySelector('a.dm-tap-target')).not.toBeNull();
   });
 
   it('uses the calm fallback when nothing is suggested', () => {
@@ -458,7 +469,7 @@ describe('HomeView', () => {
       />,
     );
     expect(screen.getByRole('heading', { name: HOME_DECK.syncingTitle })).toBeInTheDocument();
-    expect(screen.getByText('Collecting sender details.')).toBeInTheDocument();
+    expect(screen.getByText('Finding your senders.')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Review senders' })).toBeNull();
     expect(screen.queryByText(HOME_DECK.syncingBody)).toBeNull();
     expect(screen.queryByText('Waiting to start.')).toBeNull();
@@ -517,7 +528,7 @@ describe('HomeView', () => {
     render(<HomeView state={{ kind: 'loading' }} />);
     expect(screen.getByRole('status', { name: 'Loading Home' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Review senders' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Compare plans' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Compare plans' })).toHaveClass('dm-tap-target');
   });
 
   it('error: names the cause and retries', () => {

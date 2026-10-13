@@ -780,7 +780,7 @@ export function ScreenerScreen({
         gap: 24,
       }}
     >
-      <EditorialKicker>Clean up / First decisions</EditorialKicker>
+      <EditorialKicker>New senders</EditorialKicker>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
         <h1 style={editorialTitleStyle}>Screener</h1>
         {/* Only the count query knows the true total — the queue loads a
@@ -798,8 +798,8 @@ export function ScreenerScreen({
       </div>
 
       <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm, lineHeight: 1.6 }}>
-        These senders are waiting for your first decision. Some may have been in your inbox for a
-        while; their email keeps arriving in Gmail until you decide.
+        Decide what happens to email from these senders. Until you do, their email keeps arriving as
+        usual.
       </p>
       <ScreenIntro
         id="screener"
@@ -855,7 +855,7 @@ export function ScreenerScreen({
                 className="dm-field"
                 style={{ ...tokens.field, minWidth: 0, width: '100%' }}
               >
-                <option value="all">All loaded</option>
+                <option value="all">All</option>
                 <option value="multiple">More than one email</option>
                 <option value="unsubscribe">Can unsubscribe</option>
                 <option value="protected">Protected</option>
@@ -879,7 +879,7 @@ export function ScreenerScreen({
                 className="dm-field"
                 style={{ ...tokens.field, minWidth: 0, width: '100%' }}
               >
-                <option value="queued">Recently queued</option>
+                <option value="queued">Newest first</option>
                 <option value="most_mail">Most email received</option>
                 <option value="first_seen">First seen longest ago</option>
               </select>
@@ -893,7 +893,7 @@ export function ScreenerScreen({
           </div>
           {visibleRows.length === 0 && (
             <p role="status" style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
-              No loaded senders match this filter. Choose All loaded to see the queue.
+              No senders match this filter. Choose All to see everyone.
             </p>
           )}
           <div
@@ -951,7 +951,7 @@ function ScreenerErrorState({ error, onRetry }: { error: unknown; onRetry: () =>
   return (
     <ErrorState
       headingLevel={2}
-      title="Your pending senders didn't load"
+      title="New senders didn’t load"
       description={loadErrorDescription(error)}
       onRetry={onRetry}
     />
@@ -969,7 +969,7 @@ function LoadingState() {
           style={{ height: 72, borderTop: `1px solid ${color.lineSoft}` }}
         />
       ))}
-      <span style={{ position: 'absolute', left: -9999 }}>Loading the Screener queue</span>
+      <span style={{ position: 'absolute', left: -9999 }}>Loading new senders…</span>
     </div>
   );
 }

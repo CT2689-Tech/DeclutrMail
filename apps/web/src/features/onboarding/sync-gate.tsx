@@ -38,7 +38,7 @@ const { color, font, text, radius, motion } = tokens;
 /**
  * Onboarding sync gate (D109, D224).
  *
- * "Reading your Gmail…" — the strict gate (D6) shown after a Gmail
+ * "Scanning your Gmail…" — the strict gate (D6) shown after a Gmail
  * connect, before the app opens. D109's one line saying the user may
  * leave, ONE progress bar bound to the real `progress_pct` and ONE
  * line under it: while the scan reads the mailbox, the real counts
@@ -121,12 +121,12 @@ function recoverySurface(recovery: InitialSyncRecovery): { title: string; body: 
     case 'rate_limit':
       return recovery.partlyReady
         ? {
-            title: 'Your inbox is partly ready',
-            body: 'We already pulled a lot of your mail, then Gmail slowed us down. Finish sync to complete, or continue with what’s ready if that control is shown.',
+            title: 'Most of your email is scanned',
+            body: 'Gmail slowed us down before the end. Finish the scan, or start with what’s ready.',
           }
         : {
-            title: 'Gmail paused your sync for a bit',
-            body: 'Google temporarily limited how fast we can read your inbox. Your progress is saved — tap Try again when you’re ready.',
+            title: 'Gmail asked us to slow down',
+            body: 'Google limits how fast apps can scan. Your progress is saved. Try again in a few minutes.',
           };
     case 'stuck':
       return {
@@ -135,10 +135,10 @@ function recoverySurface(recovery: InitialSyncRecovery): { title: string; body: 
       };
     case 'unknown':
       return {
-        title: 'We hit a snag reading your inbox',
+        title: 'The scan stopped',
         // The address stays. Help is also a real route (#921); the support
         // link under this state and the stuck state points at it.
-        body: 'Something interrupted the scan. Your Gmail is untouched — try again, or email support@declutrmail.com if it keeps happening.',
+        body: 'Nothing in your Gmail changed. Try again, or email support@declutrmail.com if it keeps happening.',
       };
     default: {
       const _exhaustive: never = recovery.reason;
@@ -238,7 +238,7 @@ export function SyncGate({
    */
   nowMs?: number | undefined;
   /**
-   * Hook for the rate_limit + partlyReady branch ("Continue ready").
+   * Hook for the rate_limit + partlyReady branch ("Start with what’s ready").
    * Onboarding owns the destination; this gate only exposes the control.
    * Omitted → the Continue control is not rendered (no silent no-op).
    */
@@ -438,7 +438,7 @@ function SyncFailed({
     : 0;
   const copy = recoverySurface(recovery);
   const retryLabel =
-    recovery.reason === 'rate_limit' && recovery.partlyReady ? 'Finish sync' : 'Try again';
+    recovery.reason === 'rate_limit' && recovery.partlyReady ? 'Finish the scan' : 'Try again';
   return (
     <Shell>
       <h1 style={titleStyle}>{scheduled ? 'Your scan will resume' : copy.title}</h1>
@@ -450,9 +450,9 @@ function SyncFailed({
         data-sync-surface={stuck ? 'stuck' : 'failed'}
       >
         {scheduled
-          ? `Your progress is saved. ${nowMs === undefined ? 'We’ll retry automatically.' : waiting ? `We’ll retry automatically in about ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}.` : 'Your retry is scheduled and will start shortly.'}`
+          ? `Your progress is saved. ${nowMs === undefined ? 'We’ll retry automatically.' : waiting ? `We’ll retry automatically in about ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}.` : 'We’ll try again automatically in a few minutes.'}`
           : waiting
-            ? `Gmail needs more time. ${nowMs === undefined ? 'Your retry will be available soon.' : `Try again in about ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}.`}`
+            ? `Gmail needs more time. ${nowMs === undefined ? 'We’ll try again automatically in a few minutes.' : `Try again in about ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}.`}`
             : copy.body}
       </p>
       <div
@@ -501,7 +501,7 @@ function SyncFailed({
         {mailboxId && <ScanPreview key={mailboxId} mailboxId={mailboxId} />}
         {recovery.reason === 'rate_limit' && recovery.partlyReady && onContinuePartial && (
           <Button tone="ghost" onClick={onContinuePartial}>
-            Continue ready
+            Start with what’s ready
           </Button>
         )}
         {/* Don't strand a secondary connect on a failed gate — let them

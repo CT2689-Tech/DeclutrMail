@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { Button, tokens } from '@declutrmail/shared';
+import type { AccountDeletionStatus } from '@declutrmail/shared/contracts';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { useUserTimeZone } from '@/features/auth/api/use-me';
 import {
@@ -41,11 +43,9 @@ export function AccountDeletionSection() {
   const [modalOpen, setModalOpen] = useState(false);
 
   const submitError = deletionSubmitError(request.error);
-  const billingBlocked =
-    status.data?.billingBlockReason != null ||
-    ['DELETION_BILLING_BLOCKED', 'DELETION_BILLING_UNVERIFIED'].includes(
-      apiErrorCode(request.error) ?? '',
-    );
+  const blockKind = deletionBlockKind(status.data?.billingBlockReason, request.error);
+  const blockCopy = deletionBlockCopy(status.data?.billingBlockReason, request.error);
+  const billingBlocked = blockCopy != null;
 
   return (
     <>
@@ -89,17 +89,14 @@ export function AccountDeletionSection() {
         </SettingsRow>
       )}
 
-      {billingBlocked && (
+      {blockCopy != null && (
         <p role="alert" style={{ color: color.dangerText, fontSize: text.sm }}>
-          Billing must be confirmed stopped before account deletion.{' '}
-          <Link href="/billing" style={{ color: color.primary }}>
-            Open Billing
-          </Link>{' '}
-          to cancel, or{' '}
-          <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
-            contact support
-          </a>{' '}
-          about an unresolved payment.
+          <DeletionBlockSentence text={blockCopy} />{' '}
+          {blockKind === 'subscription' ? (
+            <Link href="/billing" style={{ color: color.primary }}>
+              Open Billing
+            </Link>
+          ) : null}{' '}
           <Button
             size="sm"
             onClick={async () => {
@@ -172,13 +169,13 @@ function PendingState({
           : executing
             ? 'Deletion is in progress — your data is being removed.'
             : basis === 'waived-immediate'
-              ? 'Deletion requested without the undo wait — your data deletes shortly.'
+              ? 'Your data will be deleted shortly.'
               : `Deletion scheduled for ${formatDate(effectiveAt, timeZone)}.`}
       </p>
       {!executing && basis === 'undo-window' && (
         <p style={{ fontSize: text.sm, color: color.fgSoft, lineHeight: 1.5, margin: 0 }}>
-          Later than 7 days because an undo window is still open. To delete sooner, cancel and
-          choose “Delete immediately”.
+          Your account is deleted after your last Undo ends. To delete sooner, cancel this and
+          choose Delete immediately.
         </p>
       )}
       {cancelFailed && (
@@ -194,6 +191,69 @@ function PendingState({
         </div>
       )}
     </div>
+  );
+}
+
+const CANCEL_PLAN_FIRST = 'Cancel your plan first, then delete your account.';
+const SUPPORT_ADDRESS = 'support@declutrmail.com';
+
+/**
+ * The deletion block's sentence, from the status reason when the API sent
+ * one. A submit error is the fallback for the same two existing codes.
+ */
+export function deletionBlockCopy(
+  reason: AccountDeletionStatus['billingBlockReason'],
+  error: unknown,
+): string | null {
+  const kind = deletionBlockKind(reason, error);
+  switch (kind) {
+    case 'subscription':
+      return CANCEL_PLAN_FIRST;
+    case 'payment':
+      return WS2_COPY.simplify.deleteAccount.paymentPending;
+    case null:
+      return null;
+    default: {
+      const exhaustive: never = kind;
+      return exhaustive;
+    }
+  }
+}
+
+function deletionBlockKind(
+  reason: AccountDeletionStatus['billingBlockReason'],
+  error: unknown,
+): 'subscription' | 'payment' | null {
+  switch (reason) {
+    case 'subscription':
+      return 'subscription';
+    case 'checkout':
+    case 'verification':
+      return 'payment';
+    case null:
+    case undefined:
+      break;
+    default: {
+      const exhaustive: never = reason;
+      return exhaustive;
+    }
+  }
+  if (apiErrorCode(error) === 'DELETION_BILLING_BLOCKED') return 'subscription';
+  if (apiErrorCode(error) === 'DELETION_BILLING_UNVERIFIED') return 'payment';
+  return null;
+}
+
+function DeletionBlockSentence({ text }: { text: string }) {
+  const at = text.indexOf(SUPPORT_ADDRESS);
+  if (at < 0) return text;
+  return (
+    <>
+      {text.slice(0, at)}
+      <a href={`mailto:${SUPPORT_ADDRESS}`} style={{ color: color.primary }}>
+        {SUPPORT_ADDRESS}
+      </a>
+      {text.slice(at + SUPPORT_ADDRESS.length)}
+    </>
   );
 }
 
@@ -215,10 +275,10 @@ export function deletionSubmitError(error: unknown): string | null {
     return 'The confirmation phrase did not match. Type it exactly to continue.';
   }
   if (apiErrorCode(error) === 'DELETION_BILLING_BLOCKED') {
-    return 'Billing must stop before account deletion. Open Billing to cancel, or contact support.';
+    return CANCEL_PLAN_FIRST;
   }
   if (apiErrorCode(error) === 'DELETION_BILLING_UNVERIFIED') {
-    return 'We could not confirm that billing has stopped. Open Billing or contact support before deleting your account.';
+    return WS2_COPY.simplify.deleteAccount.paymentPending;
   }
   if (apiErrorCode(error) === 'DELETION_ALREADY_PENDING') {
     // The registry's own sentence, as a literal: importing `ERROR_CODES`
@@ -226,5 +286,5 @@ export function deletionSubmitError(error: unknown): string | null {
     // pins the two equal.
     return 'Account deletion is already scheduled for this account.';
   }
-  return 'Could not submit the deletion request. Please try again.';
+  return 'Couldn’t request deletion. Try again.';
 }

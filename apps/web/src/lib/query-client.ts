@@ -15,7 +15,7 @@ import {
   resetMailboxScopedCache,
 } from '@/features/mailboxes/api/reset-mailbox-cache';
 
-import { ApiError, isPlainNetworkFailure } from './api/client';
+import { ApiError, isBenignTransportError, isPlainNetworkFailure } from './api/client';
 import { retryTransientOnly } from './api/retry';
 import { reportUpgradeGateHit } from './entitlements/upgrade-gate';
 import { captureFeatureException } from './sentry';
@@ -31,6 +31,11 @@ const DEFAULT_STALE_TIME_MS = 30_000;
 function queryScope(queryKey: readonly unknown[]): string {
   const head = queryKey[0];
   return typeof head === 'string' ? head : 'unknown';
+}
+
+/** `syncStatusQueryKey` is `['sync', 'status', mailboxId]`. */
+function isSyncStatusPoll(queryKey: readonly unknown[]): boolean {
+  return queryKey[0] === 'sync' && queryKey[1] === 'status';
 }
 
 /**
@@ -69,6 +74,9 @@ function makeQueryFailureReporter(): (error: unknown, queryKey: readonly unknown
   return (error, queryKey) => {
     if (error instanceof ApiError && error.status >= 400 && error.status < 500) return;
     if (isPlainNetworkFailure(error)) return;
+    // Timeouts are expected on the status poll, which backs off on its own.
+    // The same timeout on any other read is still a defect.
+    if (isSyncStatusPoll(queryKey) && isBenignTransportError(error)) return;
     const scope = queryScope(queryKey);
     const now = Date.now();
     const previous = lastReportedAt.get(scope);

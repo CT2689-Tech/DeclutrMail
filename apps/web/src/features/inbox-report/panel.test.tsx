@@ -53,6 +53,10 @@ describe('InboxReportPanel', () => {
         onFixConfirmed={onFixConfirmed}
       />,
     );
+    expect(screen.getByRole('button', { name: 'Close Inbox Report' })).toHaveClass('dm-tap-44');
+    expect(screen.getByRole('link', { name: 'What we store and share' })).toHaveClass(
+      'dm-tap-target',
+    );
     expect(screen.getByText('91%')).toBeInTheDocument();
     expect(
       screen.getByText(
@@ -195,6 +199,46 @@ describe('InboxReportPanel', () => {
     );
     expect(screen.getByText('Archived 1,139 emails from 12 senders.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Unsubscribe \+ archive/ })).toBeNull();
+  });
+
+  it('uses the singular archive sentence for one email', () => {
+    render(
+      <InboxReportPanel
+        report={full}
+        onDismiss={() => {}}
+        onReopen={() => {}}
+        celebration={{ archived: 1, senders: 2 }}
+      />,
+    );
+    expect(screen.getByText('Archived 1 email from 1 sender.')).toBeInTheDocument();
+    expect(screen.queryByText(/1 emails/)).toBeNull();
+  });
+
+  it('uses the singular-sender archive sentence only when that sender has 2 or more emails', () => {
+    render(
+      <InboxReportPanel
+        report={full}
+        onDismiss={() => {}}
+        onReopen={() => {}}
+        celebration={{ archived: 2, senders: 1 }}
+      />,
+    );
+    expect(screen.getByText('Archived 2 emails from 1 sender.')).toBeInTheDocument();
+    expect(screen.queryByText('Archived 1 email from 1 sender.')).toBeNull();
+  });
+
+  it('uses the singular delete sentence when one email is deleted', () => {
+    render(
+      <InboxReportPanel
+        report={full}
+        onDismiss={() => {}}
+        onReopen={() => {}}
+        celebration={{ archived: 1, senders: 1, verb: 'delete', bytes: 1_500_000 }}
+      />,
+    );
+    expect(screen.getByText('Moved 1 email (about 1.5 MB) to Gmail Trash.')).toBeInTheDocument();
+    expect(screen.queryByText(/1 emails/)).toBeNull();
+    expect(screen.getByText(WS5_COPY['report.celebrate.delete.note'])).toBeInTheDocument();
   });
 
   it('says a Delete moved mail to Trash and does not say it was archived', () => {
