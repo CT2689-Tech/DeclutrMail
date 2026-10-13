@@ -368,12 +368,17 @@ export function PlanPicker({
       intentCycleForOpen !== null &&
       grantingSub !== null &&
       intentCycleForOpen !== grantingSub.cycle;
+    // A Pass or other complimentary grant can floor the entitlement at
+    // Plus without a paid subscription. That is not "already on Plus"
+    // for checkout — /billing?plan=plus still opens Before you pay.
+    const alreadyOnPaidPlan =
+      intentPlan === currentTier && grantingSub !== null && !intentCycleDiffers;
     // Launch pricing does not sell Pro. A Brief deep link lands on the
     // waitlist card instead of a confirm panel the catalog cannot charge.
     if (
       intentPlan &&
       !(pricingV2 && intentPlan === 'pro') &&
-      (intentPlan !== currentTier || intentCycleDiffers) &&
+      !alreadyOnPaidPlan &&
       !disabled &&
       !consumedIntent.current
     ) {
@@ -447,7 +452,7 @@ export function PlanPicker({
     // The current plan card carries no CTA — but with a PADDLE granting
     // sub, the CURRENT TIER at the OTHER cycle is a valid switch target
     // (Razorpay changes aren't self-serve — no cycle switch either).
-    if (id === currentTier && grantingSub?.provider !== 'paddle') return;
+    if (id === currentTier && grantingSub !== null && grantingSub.provider !== 'paddle') return;
     checkout.reset();
     changePlan.reset();
     setLaunchError(null);
@@ -1133,7 +1138,9 @@ function PlanCard({
   const cta = isCurrent
     ? hasGrantingSubscription && canSwitchCycle && currentCycle !== null && currentCycle !== cycle
       ? `Switch to ${cycle} billing`
-      : null
+      : !hasGrantingSubscription && tierId === 'plus'
+        ? `Subscribe to ${tier.name}`
+        : null
     : tierId === 'free'
       ? hasGrantingSubscription
         ? 'Switch to Free'

@@ -63,8 +63,8 @@ vi.mock('@/features/billing/checkout', async (importOriginal) => ({
 vi.mock('@/lib/posthog', () => ({ track: vi.fn(() => Promise.resolve()) }));
 
 import { ERROR_CODES, type BillingSubscription } from '@declutrmail/shared/contracts';
-import { WS2_COPY } from '@declutrmail/shared/copy/launch';
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { track } from '@/lib/posthog';
 import {
@@ -4675,6 +4675,35 @@ describe('BillingScreen — one billing story (A6)', () => {
     expect(within(card).getByText('$19 once')).toBeInTheDocument();
     expect(within(card).queryByText('Complimentary')).not.toBeInTheDocument();
     expect(within(card).queryByText('Plus')).not.toBeInTheDocument();
+  });
+
+  it('Pass-only /billing?plan=plus opens Before you pay for Plus, not the Pass card', async () => {
+    mockTier = 'plus';
+    mockCleanupRemaining = null;
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          checkoutSetupComplete: true,
+          tier: 'plus',
+          foundingMember: false,
+          subscription: null,
+          pendingCheckout: null,
+          complimentary: {
+            tier: 'plus',
+            expiresAt: '2026-11-12T00:00:00.000Z',
+            source: 'pass',
+          },
+        },
+      }),
+    );
+    renderScreen({ plan: 'plus', cycle: 'annual' }, undefined, { pricingV2: true });
+
+    await screen.findByTestId('current-plan-card');
+    expect(screen.getByRole('button', { name: 'Subscribe to Plus' })).toBeInTheDocument();
+    const panel = await screen.findByTestId('checkout-panel');
+    expect(panel).toHaveTextContent(fillStory(WS1_COPY['checkout.title']));
+    expect(panel).toHaveTextContent(fillStory(WS1_COPY['checkout.plus.summary']));
+    expect(panel).not.toHaveTextContent(fillStory(WS1_COPY['checkout.pass.summary']));
   });
 
   it('a non-backing past_due row surfaces its dunning warning and locks new checkouts', async () => {

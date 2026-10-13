@@ -97,4 +97,37 @@ describe('PlanPicker launch pricing', () => {
     expect(panel).toHaveTextContent('billed yearly');
     expect(panel).not.toHaveTextContent('$9');
   });
+
+  it('opens Plus Before you pay for a Pass-only /billing?plan=plus deep link', async () => {
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <PlanPicker
+          currentTier="plus"
+          grantingSub={null}
+          disabled={false}
+          initialIntent={{ plan: 'plus', cycle: 'annual' }}
+          pricingV2
+          passEnabled
+          onRequestCancel={() => undefined}
+          onPaymentCompleted={() => undefined}
+          onCheckoutAttempt={() => Promise.resolve('attempt')}
+          onCheckoutAbandoned={() => undefined}
+          onCheckoutClosed={() => undefined}
+          onPlanChangeAccepted={() => undefined}
+          onPlanChangeUnconfirmed={() => undefined}
+          onPlanChangeAttempt={() => Promise.resolve('attempt')}
+          onPlanChangeFailedKnown={() => undefined}
+        />
+      </QueryWrapper>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Subscribe to Plus' })).toBeInTheDocument();
+    const panel = await screen.findByTestId('checkout-panel');
+    expect(panel).toHaveTextContent(fillStory(WS1_COPY['checkout.title']));
+    expect(panel).toHaveTextContent(fillStory(WS1_COPY['checkout.plus.summary']));
+    expect(panel).not.toHaveTextContent(fillStory(WS1_COPY['checkout.pass.summary']));
+    expect(
+      screen.getByRole('button', { name: fillStory(WS1_COPY['checkout.continue']) }),
+    ).toBeInTheDocument();
+  });
 });
