@@ -29,6 +29,8 @@ export interface ManifestPriceCheck {
   taxInclusive: boolean;
   /** INR-native prices compare amount to paise. Omitted prices stay USD with an optional INR override. */
   nativeCurrency?: 'USD' | 'INR';
+  /** Sandbox USD launch prices no longer carry an India country override. */
+  usdOnly?: boolean;
 }
 
 export interface DriftReport {
@@ -84,6 +86,9 @@ export function checkCatalogDrift(input: {
       failures.push(
         `amount mismatch ${expected.id}: paddle ${live.amount} ${live.currencyCode}, manifest ${expected.usdCents} USD`,
       );
+    }
+    if (expected.usdOnly && live.inrAmount) {
+      failures.push(`unexpected INR override ${expected.id}: paddle ${live.inrAmount}`);
     }
     if (expected.inrPaise !== null) {
       if (live.inrAmount !== String(expected.inrPaise)) {

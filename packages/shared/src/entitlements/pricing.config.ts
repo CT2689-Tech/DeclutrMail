@@ -304,12 +304,11 @@ export const PROMO = {
  * Sandbox expiry is 2026-10-19 23:59 UTC. Live uses `PROMO.endsAt`.
  *
  * PH30 has to allow every launch price that checkout can send:
- * USD Plus, USD Pass, India Plus, and India Pass. The India ids are
- * env-specific (`indiaPaddlePriceId`). Paddle's discount `restrict_to`
- * must list those ids or a transaction that includes `discount_id`
- * fails. Sandbox discount `dsc_01m4phpp04scdes9ghqn3qps77` currently
- * lists only the two sandbox USD prices. Live stays `FILL_ME` until
- * that discount is created with all four live ids.
+ * USD Plus, USD Pass, India Plus, and India Pass. Sandbox India ids
+ * are `SANDBOX_INDIA_PRICE_IDS`. Live India ids come from env.
+ * Paddle's discount `restrict_to` must list those ids or a transaction
+ * that includes `discount_id` fails. Live stays `FILL_ME` until that
+ * discount is created with all four live ids.
  */
 export const PROMO_DISCOUNT_IDS = {
   sandbox: 'dsc_01m4phpp04scdes9ghqn3qps77',
@@ -326,6 +325,20 @@ export const SANDBOX_PROMO_EXPIRES_AT = '2026-10-19T23:59:00Z';
 export const SANDBOX_PRICE_IDS = {
   plus_annual: 'pri_01m4phk06hdmmq5cw5b8aa5r2y',
   pass_onetime: 'pri_01m4phkr8yhydb76dz11b74br8',
+} as const;
+
+/**
+ * Sandbox India prices on the existing Plus and Pass products.
+ * The sandbox USD prices stay USD-only. Live India ids stay in env.
+ */
+export const SANDBOX_INDIA_PRICE_IDS = {
+  plus_annual: 'pri_01m4sjsrywj8sx5srbh16dk4jr',
+  pass_onetime: 'pri_01m4sjtr7r4qxv2cyyxs8qbj1j',
+} as const;
+
+export const SANDBOX_PRODUCT_IDS = {
+  plus: 'pro_01ky067agvcnc77hf635bsjn01',
+  pass: 'pro_01m4phk7mrggrfyqgprpxgz1hr',
 } as const;
 
 const UNPROVISIONED_PRICE_ID = 'FILL_ME';
@@ -448,28 +461,21 @@ export function usablePriceId(id: string | null | undefined): string | null {
 /** India Paddle prices are separate ids from the USD Plus and Pass prices. */
 export type IndiaPriceCode = 'plus_annual' | 'pass_onetime';
 
-const INDIA_PRICE_ENV = {
-  sandbox: {
-    plus_annual: 'PADDLE_SANDBOX_INDIA_PLUS_ANNUAL_PRICE_ID',
-    pass_onetime: 'PADDLE_SANDBOX_INDIA_PASS_PRICE_ID',
-  },
-  live: {
-    plus_annual: 'PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID',
-    pass_onetime: 'PADDLE_LIVE_INDIA_PASS_PRICE_ID',
-  },
+const LIVE_INDIA_PRICE_ENV = {
+  plus_annual: 'PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID',
+  pass_onetime: 'PADDLE_LIVE_INDIA_PASS_PRICE_ID',
 } as const;
 
 /**
- * India price id for this process's Paddle environment, or null while
- * that env var is unset or still `FILL_ME`. Sandbox and live are
- * different Paddle prices. A missing id falls back to the USD price.
+ * Sandbox uses `SANDBOX_INDIA_PRICE_IDS`. Any other env, including
+ * unset, reads the live env vars. Empty or `FILL_ME` falls back to USD.
  */
 export function indiaPaddlePriceId(
   env: NodeJS.ProcessEnv = process.env,
   code: IndiaPriceCode,
 ): string | null {
-  const slot = env.PADDLE_ENV === 'sandbox' ? 'sandbox' : 'live';
-  return usablePriceId(env[INDIA_PRICE_ENV[slot][code]]?.trim());
+  if (env.PADDLE_ENV === 'sandbox') return SANDBOX_INDIA_PRICE_IDS[code];
+  return usablePriceId(env[LIVE_INDIA_PRICE_ENV[code]]?.trim());
 }
 
 /** Both India prices must be set before a rupee checkout is offered. */

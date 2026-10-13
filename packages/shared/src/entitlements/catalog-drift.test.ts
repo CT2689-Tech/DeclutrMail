@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   PROMO,
   PROMO_DISCOUNT_IDS,
+  SANDBOX_INDIA_PRICE_IDS,
   SANDBOX_PROMO_EXPIRES_AT,
   checkoutDiscountId,
 } from './pricing.config';
@@ -131,24 +132,29 @@ describe('checkCatalogDrift', () => {
     expect(PROMO_DISCOUNT_IDS.live).toBe('FILL_ME');
     expect(
       checkoutDiscountId(
-        {
-          PADDLE_ENV: 'sandbox',
-          PADDLE_SANDBOX_INDIA_PLUS_ANNUAL_PRICE_ID: 'pri_india_plus',
-          PADDLE_SANDBOX_INDIA_PASS_PRICE_ID: 'pri_india_pass',
-        } as NodeJS.ProcessEnv,
-        'pri_india_plus',
+        { PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv,
+        SANDBOX_INDIA_PRICE_IDS.plus_annual,
       ),
     ).toBe(PROMO_DISCOUNT_IDS.sandbox);
     expect(
       checkoutDiscountId(
-        {
-          PADDLE_ENV: 'sandbox',
-          PADDLE_SANDBOX_INDIA_PLUS_ANNUAL_PRICE_ID: 'pri_india_plus',
-          PADDLE_SANDBOX_INDIA_PASS_PRICE_ID: 'pri_india_pass',
-        } as NodeJS.ProcessEnv,
-        'pri_india_pass',
+        { PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv,
+        SANDBOX_INDIA_PRICE_IDS.pass_onetime,
       ),
     ).toBe(PROMO_DISCOUNT_IDS.sandbox);
+  });
+
+  it('fails a USD-only price that still has an India override', () => {
+    const report = checkCatalogDrift({
+      manifest: [{ id: PLUS, usdCents: 5900, inrPaise: null, taxInclusive: false, usdOnly: true }],
+      paddlePrices: [price({ id: PLUS, inrAmount: '199900' })],
+      discount: null,
+      discountId: 'FILL_ME',
+      promoPriceIds: [],
+    });
+    expect(report.failures).toContain(
+      'unexpected INR override pri_plus_annual_fixture: paddle 199900',
+    );
   });
 
   it('fails an INR-native price that is still quoted in USD', () => {

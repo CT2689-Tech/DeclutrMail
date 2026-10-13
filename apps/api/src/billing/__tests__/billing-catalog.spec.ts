@@ -213,8 +213,6 @@ describe('BillingCatalog resolution', () => {
   it('resolves the India Plus price to the 2026-10 Plus annual entry', () => {
     vi.stubEnv('PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID', 'pri_india_plus');
     vi.stubEnv('PADDLE_LIVE_INDIA_PASS_PRICE_ID', 'pri_india_pass');
-    vi.stubEnv('PADDLE_SANDBOX_INDIA_PLUS_ANNUAL_PRICE_ID', 'pri_india_plus');
-    vi.stubEnv('PADDLE_SANDBOX_INDIA_PASS_PRICE_ID', 'pri_india_pass');
     try {
       const catalog = new BillingCatalog(
         buildCatalog({ PRICING_V2: 'true', PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv),

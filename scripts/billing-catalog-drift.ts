@@ -13,6 +13,7 @@ import {
   PLUS_ANNUAL_2026_10,
   SANDBOX_PRICE_IDS,
   TIER_MANIFEST,
+  SANDBOX_INDIA_PRICE_IDS,
   indiaPaddlePriceId,
   ph30PriceIds,
 } from '../packages/shared/src/entitlements/pricing.config.js';
@@ -79,9 +80,16 @@ function manifestPrices(): ManifestPriceCheck[] {
     usdCents: number,
     inrPaise: number | null,
     taxInclusive: boolean,
+    usdOnly = false,
   ) => {
     if (!id) return;
-    rows.push({ id, usdCents, inrPaise, taxInclusive });
+    rows.push({
+      id,
+      usdCents,
+      inrPaise,
+      taxInclusive,
+      ...(usdOnly ? { usdOnly: true } : {}),
+    });
   };
   for (const tier of [TIER_MANIFEST.plus, TIER_MANIFEST.pro]) {
     for (const point of [tier.prices.monthly, tier.prices.annual]) {
@@ -100,16 +108,35 @@ function manifestPrices(): ManifestPriceCheck[] {
   push(
     sandbox ? SANDBOX_PRICE_IDS.plus_annual : PLUS_ANNUAL_2026_10.paddlePriceId,
     PLUS_ANNUAL_2026_10.usdCents,
-    PLUS_ANNUAL_2026_10.inr?.paise ?? null,
-    PLUS_ANNUAL_2026_10.inr?.taxInclusive ?? false,
+    sandbox ? null : (PLUS_ANNUAL_2026_10.inr?.paise ?? null),
+    sandbox ? false : (PLUS_ANNUAL_2026_10.inr?.taxInclusive ?? false),
+    sandbox,
   );
   push(
     sandbox ? SANDBOX_PRICE_IDS.pass_onetime : OFFERS.backlogPass.price.paddlePriceId,
     OFFERS.backlogPass.price.usdCents,
-    OFFERS.backlogPass.price.inr?.paise ?? null,
-    OFFERS.backlogPass.price.inr?.taxInclusive ?? false,
+    sandbox ? null : (OFFERS.backlogPass.price.inr?.paise ?? null),
+    sandbox ? false : (OFFERS.backlogPass.price.inr?.taxInclusive ?? false),
+    sandbox,
   );
-  const indiaPlus = indiaPaddlePriceId(process.env, 'plus_annual');
+  if (sandbox) {
+    rows.push({
+      id: SANDBOX_INDIA_PRICE_IDS.plus_annual,
+      usdCents: PLUS_ANNUAL_2026_10.usdCents,
+      inrPaise: PLUS_ANNUAL_2026_10.inr?.paise ?? PLUS_ANNUAL_2026_10.inrPaise,
+      taxInclusive: true,
+      nativeCurrency: 'INR',
+    });
+    const pass = OFFERS.backlogPass.price;
+    rows.push({
+      id: SANDBOX_INDIA_PRICE_IDS.pass_onetime,
+      usdCents: pass.usdCents,
+      inrPaise: pass.inr?.paise ?? pass.inrPaise,
+      taxInclusive: true,
+      nativeCurrency: 'INR',
+    });
+  }
+  const indiaPlus = sandbox ? null : indiaPaddlePriceId(process.env, 'plus_annual');
   if (indiaPlus) {
     rows.push({
       id: indiaPlus,
@@ -119,7 +146,7 @@ function manifestPrices(): ManifestPriceCheck[] {
       nativeCurrency: 'INR',
     });
   }
-  const indiaPass = indiaPaddlePriceId(process.env, 'pass_onetime');
+  const indiaPass = sandbox ? null : indiaPaddlePriceId(process.env, 'pass_onetime');
   if (indiaPass) {
     const pass = OFFERS.backlogPass.price;
     rows.push({

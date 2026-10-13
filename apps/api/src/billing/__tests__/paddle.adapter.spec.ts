@@ -1,7 +1,11 @@
 import { createHmac } from 'node:crypto';
 
 import { Logger } from '@nestjs/common';
-import { PROMO_DISCOUNT_IDS, SANDBOX_PRICE_IDS } from '@declutrmail/shared/entitlements';
+import {
+  PROMO_DISCOUNT_IDS,
+  SANDBOX_INDIA_PRICE_IDS,
+  SANDBOX_PRICE_IDS,
+} from '@declutrmail/shared/entitlements';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { PaddleAdapter } from '../paddle.adapter.js';
@@ -571,15 +575,12 @@ describe('PaddleAdapter checkout + cancel', () => {
   });
 
   it('charges the India price in INR only for a trusted IN country', async () => {
-    const indiaPlus = 'pri_india_plus_annual_test';
-    const indiaPass = 'pri_india_pass_onetime_test';
     const fetchSpy = stubTransaction('INR');
     const adapter = makeAdapter({
       PADDLE_CLIENT_TOKEN: 'test_abc',
       PADDLE_API_KEY: 'pdl_test_key',
       PADDLE_ENV: 'sandbox',
-      PADDLE_SANDBOX_INDIA_PLUS_ANNUAL_PRICE_ID: indiaPlus,
-      PADDLE_SANDBOX_INDIA_PASS_PRICE_ID: indiaPass,
+      PADDLE_SANDBOX_INDIA_PLUS_ANNUAL_PRICE_ID: 'pri_ignored',
     });
     await adapter.createCheckout({
       workspaceId: WORKSPACE,
@@ -592,7 +593,7 @@ describe('PaddleAdapter checkout + cancel', () => {
     });
     const india = postedTransaction(fetchSpy).body;
     expect(india.currency_code).toBe('INR');
-    expect(india.items).toEqual([{ price_id: indiaPlus, quantity: 1 }]);
+    expect(india.items).toEqual([{ price_id: SANDBOX_INDIA_PRICE_IDS.plus_annual, quantity: 1 }]);
     expect(india.discount_id).toBe(PROMO_DISCOUNT_IDS.sandbox);
 
     const usdSpy = stubTransaction('USD');

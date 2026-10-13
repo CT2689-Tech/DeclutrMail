@@ -1,9 +1,9 @@
-# Sandbox-only India prices and IN vs US checkout proof.
+# Sandbox-only IN vs US checkout proof for the catalog India prices.
 #
-# PADDLE_API_KEY is the Sandbox environment secret. The host is fixed in
-# scripts/paddle-sandbox-india-checkout.mjs. A live key does not match
-# the sandbox key shape and is refused before any request. There is no
-# environment input.
+# Does not create prices. PADDLE_API_KEY is the Sandbox environment
+# secret. The host is fixed in scripts/paddle-sandbox-india-checkout.mjs.
+# A live key is refused before any request. There is no environment input.
+# Sandbox UPI is off, so a listed payment-method set must include card.
 
 name: Sandbox India Paddle checkout
 
@@ -30,7 +30,7 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Create or reuse India prices and open IN and US transactions
+      - name: Verify catalog India prices and open IN and US transactions
         env:
           PADDLE_ENV: sandbox
           PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}

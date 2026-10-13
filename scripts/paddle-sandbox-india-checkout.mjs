@@ -1,10 +1,10 @@
 /**
- * Sandbox-only India price create-or-reuse, then IN vs US transactions.
+ * Sandbox-only check of the catalog India prices, then IN vs US transactions.
  *
- * Host is fixed to https://sandbox-api.paddle.com. A live key does not
- * match the sandbox key shape and is refused before any request.
- * The CLI is scripts/paddle-sandbox-india-checkout.ts, which supplies
- * selectPaddleCheckoutPrice and checkoutDiscountId.
+ * Does not create prices. Host is fixed to https://sandbox-api.paddle.com.
+ * A live key is refused before any request. Sandbox UPI is off, so a
+ * listed payment-method set must include card and is not required to
+ * include UPI. The CLI is scripts/paddle-sandbox-india-checkout.ts.
  */
 import { appendFileSync } from 'node:fs';
 
@@ -15,37 +15,12 @@ const PRODUCT_RE = /^pro_[a-z\d]{26}$/;
 const TXN_RE = /^txn_[a-z\d]{26}$/;
 const DISCOUNT_RE = /^dsc_[a-z\d]{26}$/;
 const TIMEOUT_MS = 15_000;
-const MAX_PAGES = 5;
-
-/** Tax-inclusive catalog prices use Paddle tax_mode `internal`. */
-const SPECS = [
-  {
-    code: 'plus_annual',
-    usdAmount: '5900',
-    amount: '199900',
-    cycle: { interval: 'year', frequency: 1 },
-    sku: 'plus_annual_india',
-    description: 'DeclutrMail Plus (annual, India)',
-    envName: 'PADDLE_SANDBOX_INDIA_PLUS_ANNUAL_PRICE_ID',
-    catalogKey: 'plusUsdPriceId',
-  },
-  {
-    code: 'pass_onetime',
-    usdAmount: '1900',
-    amount: '79900',
-    cycle: null,
-    sku: 'pass_onetime_india',
-    description: 'DeclutrMail Pass (India)',
-    envName: 'PADDLE_SANDBOX_INDIA_PASS_PRICE_ID',
-    catalogKey: 'passUsdPriceId',
-  },
-];
 
 const CHECKOUTS = [
-  { label: 'IN plus', trustedCountry: 'IN', code: 'plus_annual' },
-  { label: 'US plus', trustedCountry: 'US', code: 'plus_annual' },
-  { label: 'IN pass', trustedCountry: 'IN', code: 'pass_onetime' },
-  { label: 'US pass', trustedCountry: 'US', code: 'pass_onetime' },
+  { label: 'IN plus', trustedCountry: 'IN', code: 'plus_annual', currency: 'INR' },
+  { label: 'US plus', trustedCountry: 'US', code: 'plus_annual', currency: 'USD' },
+  { label: 'IN pass', trustedCountry: 'IN', code: 'pass_onetime', currency: 'INR' },
+  { label: 'US pass', trustedCountry: 'US', code: 'pass_onetime', currency: 'USD' },
 ];
 
 const SPOOFS = [
@@ -74,36 +49,24 @@ function cycleEqual(actual, expected) {
   return actual?.interval === expected.interval && actual?.frequency === expected.frequency;
 }
 
-function exactIndia(price, spec, productId) {
-  return (
-    price?.status === 'active' &&
-    price.product_id === productId &&
-    price.unit_price?.amount === spec.amount &&
-    price.unit_price?.currency_code === 'INR' &&
-    price.tax_mode === 'internal' &&
-    cycleEqual(price.billing_cycle, spec.cycle) &&
-    PRICE_RE.test(price.id ?? '')
+function indiaOverride(price) {
+  const overrides = price?.unit_price_overrides;
+  if (!Array.isArray(overrides)) return false;
+  return overrides.some(
+    (row) => Array.isArray(row?.country_codes) && row.country_codes.includes('IN'),
   );
 }
 
-export function findIndiaPrice(prices, spec, productId) {
-  const sameAmount = prices.filter(
-    (price) =>
-      price?.status === 'active' &&
-      price.product_id === productId &&
-      price.unit_price?.amount === spec.amount &&
-      price.unit_price?.currency_code === 'INR',
-  );
-  const exact = sameAmount.filter((price) => exactIndia(price, spec, productId));
-  if (exact.length === 0) {
-    if (sameAmount.length > 0) {
-      const ids = sameAmount.map((price) => price.id).join(',');
-      throw new SandboxCheckoutError(`india_price_spec_mismatch:${ids}`);
-    }
-    return null;
-  }
-  const tagged = exact.find((price) => price.custom_data?.sku === spec.sku);
-  return tagged ?? [...exact].sort((a, b) => (a.id < b.id ? -1 : 1))[0];
+export function priceMismatch(price, spec) {
+  if (!PRICE_RE.test(spec.id) || !PRODUCT_RE.test(spec.productId)) return 'catalog_id';
+  if (price?.id !== spec.id || price.status !== 'active') return 'status';
+  if (price.product_id !== spec.productId) return 'product';
+  if (price.unit_price?.amount !== spec.amount) return 'amount';
+  if (price.unit_price?.currency_code !== spec.currency) return 'currency';
+  if (!cycleEqual(price.billing_cycle, spec.cycle)) return 'cycle';
+  if (spec.taxMode && price.tax_mode !== spec.taxMode) return 'tax';
+  if (spec.usdOnly && indiaOverride(price)) return 'inr_override';
+  return null;
 }
 
 async function paddle(fetchImpl, key, path, method = 'GET', body) {
@@ -146,80 +109,6 @@ async function paddle(fetchImpl, key, path, method = 'GET', body) {
   return parsed;
 }
 
-async function listActivePrices(fetchImpl, key) {
-  const items = [];
-  let after;
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const path = after
-      ? `/prices?per_page=200&status=active&after=${after}`
-      : '/prices?per_page=200&status=active';
-    const body = await paddle(fetchImpl, key, path);
-    const rows = body?.data;
-    const pagination = body?.meta?.pagination;
-    if (!Array.isArray(rows) || rows.length > 200 || typeof pagination?.has_more !== 'boolean') {
-      throw new SandboxCheckoutError('malformed_response');
-    }
-    items.push(...rows);
-    if (!pagination.has_more) return items;
-    let cursor;
-    try {
-      const next = new URL(pagination.next);
-      if (next.origin !== HOST || next.pathname !== '/prices') {
-        throw new SandboxCheckoutError('invalid_pagination');
-      }
-      cursor = next.searchParams.get('after');
-    } catch (error) {
-      if (error instanceof SandboxCheckoutError) throw error;
-      throw new SandboxCheckoutError('invalid_pagination');
-    }
-    if (!PRICE_RE.test(cursor ?? '') || cursor === after || cursor !== rows.at(-1)?.id) {
-      throw new SandboxCheckoutError('invalid_pagination');
-    }
-    after = cursor;
-  }
-  throw new SandboxCheckoutError('page_limit');
-}
-
-async function readUsdPrice(fetchImpl, key, priceId, spec) {
-  if (!PRICE_RE.test(priceId)) throw new SandboxCheckoutError('usd_price_id');
-  const body = await paddle(fetchImpl, key, `/prices/${priceId}`);
-  const price = body?.data;
-  if (
-    price?.id !== priceId ||
-    price.status !== 'active' ||
-    !PRODUCT_RE.test(price.product_id ?? '') ||
-    price.unit_price?.amount !== spec.usdAmount ||
-    price.unit_price?.currency_code !== 'USD' ||
-    !cycleEqual(price.billing_cycle, spec.cycle)
-  ) {
-    throw new SandboxCheckoutError(`usd_price_mismatch:${spec.code}`);
-  }
-  return price;
-}
-
-function createBody(spec, productId) {
-  return {
-    description: spec.description,
-    product_id: productId,
-    unit_price: { amount: spec.amount, currency_code: 'INR' },
-    tax_mode: 'internal',
-    quantity: { minimum: 1, maximum: 1 },
-    custom_data: { sku: spec.sku },
-    ...(spec.cycle ? { billing_cycle: { interval: spec.cycle.interval, frequency: 1 } } : {}),
-  };
-}
-
-async function resolveIndiaPrice(fetchImpl, key, spec, productId, existing) {
-  const found = findIndiaPrice(existing, spec, productId);
-  if (found) return { id: found.id, action: 'reused' };
-  const created = await paddle(fetchImpl, key, '/prices', 'POST', createBody(spec, productId));
-  const price = created?.data;
-  if (!exactIndia(price, spec, productId)) {
-    throw new SandboxCheckoutError(`india_price_create_mismatch:${spec.code}`);
-  }
-  return { id: price.id, action: 'created' };
-}
-
 function emit(lines, summaryPath) {
   const text = `${lines.join('\n')}\n`;
   console.log(text.trimEnd());
@@ -228,13 +117,16 @@ function emit(lines, summaryPath) {
   }
 }
 
-function selectionFor(selectPrice, usdPrices, code, trustedCountry) {
-  const spec = SPECS.find((row) => row.code === code) ?? SPECS[0];
-  return selectPrice({
-    usdPriceId: usdPrices[spec.code].id,
-    code,
-    trustedCountry,
-  });
+function usdPrice(catalog, code) {
+  const price = catalog.prices.find((row) => row.code === code && row.currency === 'USD');
+  if (!price) throw new SandboxCheckoutError('catalog_required');
+  return price;
+}
+
+function indiaPrice(catalog, code) {
+  const price = catalog.prices.find((row) => row.code === code && row.currency === 'INR');
+  if (!price) throw new SandboxCheckoutError('catalog_required');
+  return price;
 }
 
 function assertSelection(selected, expected) {
@@ -243,46 +135,30 @@ function assertSelection(selected, expected) {
   }
 }
 
-async function ensureDiscount(fetchImpl, key, discountId, requiredIds) {
-  if (!DISCOUNT_RE.test(discountId)) throw new SandboxCheckoutError('sandbox_discount_id');
-  const body = await paddle(fetchImpl, key, `/discounts/${discountId}`);
-  const discount = body?.data;
-  if (discount?.id !== discountId || discount.status !== 'active') {
-    throw new SandboxCheckoutError('discount_inactive');
-  }
-  if (discount.expires_at != null) {
-    const expires = Date.parse(discount.expires_at);
-    if (!Number.isFinite(expires)) throw new SandboxCheckoutError('malformed_response');
-    if (expires <= Date.now()) throw new SandboxCheckoutError('discount_expired');
-  }
-  const restrict = discount.restrict_to;
-  if (restrict === null) return false;
-  if (!Array.isArray(restrict) || restrict.some((id) => typeof id !== 'string')) {
+function paymentMethods(data) {
+  const methods = data?.available_payment_methods;
+  if (!Array.isArray(methods)) return { listed: false, methods: [] };
+  if (methods.some((method) => typeof method !== 'string')) {
     throw new SandboxCheckoutError('malformed_response');
   }
-  if (requiredIds.every((id) => restrict.includes(id))) return false;
-  const next = [...new Set([...restrict, ...requiredIds])];
-  const updated = await paddle(fetchImpl, key, `/discounts/${discountId}`, 'PATCH', {
-    restrict_to: next,
-  });
-  const got = updated?.data?.restrict_to;
-  if (!Array.isArray(got) || requiredIds.some((id) => !got.includes(id))) {
-    throw new SandboxCheckoutError('discount_restrict_to_incomplete');
-  }
-  return true;
+  return { listed: true, methods };
 }
 
 async function createTransaction(fetchImpl, key, plan) {
+  const discountId = plan.discountId;
+  if (discountId && !DISCOUNT_RE.test(discountId)) {
+    throw new SandboxCheckoutError('sandbox_discount_id');
+  }
   const body = {
     collection_mode: 'automatic',
     currency_code: plan.currency,
     items: [{ price_id: plan.priceId, quantity: 1 }],
-    ...(plan.discountId ? { discount_id: plan.discountId } : {}),
+    ...(discountId ? { discount_id: discountId } : {}),
   };
   const created = await paddle(fetchImpl, key, '/transactions', 'POST', body);
   const data = created?.data;
   const item = data?.items?.[0];
-  const priceId = item?.price?.id;
+  const priceId = item?.price?.id ?? item?.price_id;
   if (
     !TXN_RE.test(data?.id ?? '') ||
     data?.currency_code !== plan.currency ||
@@ -291,13 +167,23 @@ async function createTransaction(fetchImpl, key, plan) {
   ) {
     throw new SandboxCheckoutError(`transaction_mismatch:${plan.label}`);
   }
-  return { label: plan.label, id: data.id, currency: data.currency_code, priceId };
+  const payment = paymentMethods(data);
+  if (payment.listed && !payment.methods.includes('card')) {
+    throw new SandboxCheckoutError(`payment_method_card_required:${plan.label}`);
+  }
+  return {
+    label: plan.label,
+    id: data.id,
+    currency: data.currency_code,
+    priceId,
+    paymentMethods: payment.listed ? payment.methods.join(',') : 'unspecified',
+  };
 }
 
 /**
  * @param {{
  *   env: NodeJS.ProcessEnv,
- *   catalog: { plusUsdPriceId: string, passUsdPriceId: string },
+ *   catalog: { prices: Array<{ code: string, id: string, productId: string, amount: string, currency: 'USD' | 'INR', cycle: { interval: string, frequency: number } | null, taxMode?: string, usdOnly?: boolean }> },
  *   selectPrice: (input: { usdPriceId: string, code: string, trustedCountry: string | null }) => { priceId: string, currency: string },
  *   discountIdForPrice: (priceId: string) => string | null,
  *   fetchImpl?: typeof fetch,
@@ -306,66 +192,53 @@ async function createTransaction(fetchImpl, key, plan) {
 export async function runIndiaSandboxCheckout(options) {
   const { env, catalog, selectPrice, discountIdForPrice, fetchImpl = globalThis.fetch } = options;
   assertSandboxCredentials(env);
-  if (!catalog?.plusUsdPriceId || !catalog?.passUsdPriceId) {
+  if (!Array.isArray(catalog?.prices) || catalog.prices.length !== 4) {
     throw new SandboxCheckoutError('catalog_required');
   }
   const key = env.PADDLE_API_KEY;
-  const usdPrices = {};
-  for (const spec of SPECS) {
-    usdPrices[spec.code] = await readUsdPrice(fetchImpl, key, catalog[spec.catalogKey], spec);
-  }
-  const existing = await listActivePrices(fetchImpl, key);
-  const india = {};
   const lines = [];
-  for (const spec of SPECS) {
-    india[spec.code] = await resolveIndiaPrice(
-      fetchImpl,
-      key,
-      spec,
-      usdPrices[spec.code].product_id,
-      existing,
+  for (const spec of catalog.prices) {
+    const body = await paddle(fetchImpl, key, `/prices/${spec.id}`);
+    const reason = priceMismatch(body?.data, spec);
+    if (reason)
+      throw new SandboxCheckoutError(`price_mismatch:${spec.code}:${spec.currency}:${reason}`);
+    lines.push(
+      `${spec.code} ${spec.currency} ${spec.id} product=${spec.productId} verified${spec.usdOnly ? ' usd_only' : ''}`,
     );
-    lines.push(`${spec.envName}=${india[spec.code].id} ${india[spec.code].action}`);
   }
   emit(lines, env.GITHUB_STEP_SUMMARY);
 
-  env.PADDLE_ENV = 'sandbox';
-  env.PADDLE_SANDBOX_INDIA_PLUS_ANNUAL_PRICE_ID = india.plus_annual.id;
-  env.PADDLE_SANDBOX_INDIA_PASS_PRICE_ID = india.pass_onetime.id;
-
+  const plusUsd = usdPrice(catalog, 'plus_annual');
   for (const spoof of SPOOFS) {
-    const selected = selectionFor(selectPrice, usdPrices, spoof.code, spoof.trustedCountry);
-    assertSelection(selected, {
-      label: spoof.label,
-      currency: 'USD',
-      priceId: usdPrices.plus_annual.id,
+    const usd = spoof.code === 'pass_onetime' ? usdPrice(catalog, spoof.code) : plusUsd;
+    const selected = selectPrice({
+      usdPriceId: usd.id,
+      code: spoof.code,
+      trustedCountry: spoof.trustedCountry,
     });
+    assertSelection(selected, { label: spoof.label, currency: 'USD', priceId: plusUsd.id });
   }
 
   const plans = CHECKOUTS.map((checkout) => {
-    const selected = selectionFor(selectPrice, usdPrices, checkout.code, checkout.trustedCountry);
-    const expected = {
+    const usd = usdPrice(catalog, checkout.code);
+    const expectedPrice = checkout.currency === 'INR' ? indiaPrice(catalog, checkout.code) : usd;
+    const selected = selectPrice({
+      usdPriceId: usd.id,
+      code: checkout.code,
+      trustedCountry: checkout.trustedCountry,
+    });
+    assertSelection(selected, {
       label: checkout.label,
-      currency: checkout.trustedCountry === 'IN' ? 'INR' : 'USD',
-      priceId:
-        checkout.trustedCountry === 'IN' ? india[checkout.code].id : usdPrices[checkout.code].id,
+      currency: checkout.currency,
+      priceId: expectedPrice.id,
+    });
+    return {
+      label: checkout.label,
+      currency: checkout.currency,
+      priceId: selected.priceId,
+      discountId: discountIdForPrice(selected.priceId) || null,
     };
-    assertSelection(selected, expected);
-    const discountId = discountIdForPrice(selected.priceId);
-    return { ...expected, discountId: discountId || null };
   });
-
-  const requiredIds = [
-    usdPrices.plus_annual.id,
-    usdPrices.pass_onetime.id,
-    india.plus_annual.id,
-    india.pass_onetime.id,
-  ];
-  let discountUpdated = false;
-  for (const discountId of new Set(plans.map((plan) => plan.discountId).filter(Boolean))) {
-    discountUpdated =
-      (await ensureDiscount(fetchImpl, key, discountId, requiredIds)) || discountUpdated;
-  }
 
   const transactions = [];
   for (const plan of plans) {
@@ -373,10 +246,10 @@ export async function runIndiaSandboxCheckout(options) {
     transactions.push(transaction);
     emit(
       [
-        `checkout ${transaction.label} currency=${transaction.currency} price=${transaction.priceId} txn=${transaction.id}`,
+        `checkout ${transaction.label} currency=${transaction.currency} price=${transaction.priceId} txn=${transaction.id} payment_methods=${transaction.paymentMethods}`,
       ],
       env.GITHUB_STEP_SUMMARY,
     );
   }
-  return { prices: india, transactions, discountUpdated };
+  return { transactions };
 }

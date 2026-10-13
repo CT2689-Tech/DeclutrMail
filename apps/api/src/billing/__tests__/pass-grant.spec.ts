@@ -76,7 +76,6 @@ describe('Backlog Pass grants', () => {
 
   it('grants Plus from the India Pass price id', async () => {
     vi.stubEnv('PADDLE_LIVE_INDIA_PASS_PRICE_ID', 'pri_india_pass');
-    vi.stubEnv('PADDLE_SANDBOX_INDIA_PASS_PRICE_ID', 'pri_india_pass');
     try {
       const fixture = completed('txn_pass_in', 'pri_india_pass');
       expect(await service.process('paddle', paddle.mapWebhookEvent(fixture), fixture)).toEqual({
