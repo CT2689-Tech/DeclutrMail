@@ -7,6 +7,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory } from '@declutrmail/shared/entitlements';
 import {
   act,
   cleanup,
@@ -3048,7 +3050,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(within(dialog).queryByText(/from 2 senders/)).not.toBeInTheDocument();
     // And it can actually run — the upgrade swap is for a ZERO allowance.
     expect(
-      within(dialog).queryByRole('button', { name: /Upgrade for unlimited cleanup/ }),
+      within(dialog).queryByRole('button', { name: fillStory(WS1_COPY['cap.plus.link']) }),
     ).not.toBeInTheDocument();
   });
 

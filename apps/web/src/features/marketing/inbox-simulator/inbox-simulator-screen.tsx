@@ -17,7 +17,8 @@ import {
 } from '@declutrmail/shared';
 import { ACTION_REGISTRY, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import { CASA_VERIFICATION_APPROVED_ON, DELETE_RECOVERY_CLAIM } from '@declutrmail/shared/copy';
-import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import { WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory, MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 import { TrackedCta } from '@/features/marketing/landing/tracked-cta';
 import { CAPABILITY_LABELS, PRICING_TIER_ORDER } from '@/features/marketing/pricing/pricing-model';
@@ -1161,10 +1162,7 @@ export function InboxSimulatorScreen() {
         <p className="dm-simulator-next-oauth">{OAUTH_SCOPE_DISCLOSURE}</p>
         <aside className="dm-simulator-tier-note" aria-label="Plan availability">
           <strong>Senders and Triage are included on every plan.</strong>{' '}
-          <span>
-            Free includes {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions every month;
-            paid plans are unlimited.
-          </span>{' '}
+          <span>{fillStory(WS3_COPY['ws3.simulator.planLine'])}</span>{' '}
           <Link href="/pricing">Compare plans</Link>
         </aside>
       </section>

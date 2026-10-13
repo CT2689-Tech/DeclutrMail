@@ -29,7 +29,13 @@ import type {
   CancelRequest,
 } from '@declutrmail/shared/contracts';
 import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
-import { fillStory, TIER_MANIFEST, TIER_RANK, type TierId } from '@declutrmail/shared/entitlements';
+import {
+  fillStory,
+  meterChipLine,
+  TIER_MANIFEST,
+  TIER_RANK,
+  type TierId,
+} from '@declutrmail/shared/entitlements';
 
 import { useAuth } from '@/features/auth/auth-provider';
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
@@ -1464,6 +1470,20 @@ export function PaymentProcessingNotice({
   );
 }
 
+/** Non-metered Free chip. A missing reset is omitted, not invented. */
+function freeEmailsLeftLine(remaining: number, resetAt: string | null): string {
+  const limit = TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0;
+  const line = meterChipLine({
+    remaining,
+    limit,
+    resetAt: resetAt ?? '2000-01-01T00:00:00.000Z',
+  }).text;
+  if (resetAt) return line;
+  const mark = ' \u00b7 ';
+  const at = line.indexOf(mark);
+  return at === -1 ? line : line.slice(0, at);
+}
+
 // ── Current plan card (D119 top block) ───────────────────────────────
 
 function CurrentPlanCard({
@@ -1603,15 +1623,10 @@ function CurrentPlanCard({
       ) : plan.entitlementTier === 'free' && cleanupRemaining !== null ? (
         <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
           <strong style={{ fontWeight: 600, color: color.fg }}>
-            {cleanupRemaining} of {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions left
             {/* QA-billing-20260901-04: the reset is the signup
-                    anniversary, not the calendar month — "this month" was
-                    provably wrong (e.g. an anniversary of the 27th, told
-                    in the first days of the next month). The real date is
+                    anniversary, not the calendar month. The real date is
                     already fetched by useTier(); state it instead. */}
-            {formatBillingDate(cleanupResetsAt)
-              ? ` · resets ${formatBillingDate(cleanupResetsAt)}`
-              : '.'}
+            {freeEmailsLeftLine(cleanupRemaining, cleanupResetsAt)}
           </strong>
         </p>
       ) : null}

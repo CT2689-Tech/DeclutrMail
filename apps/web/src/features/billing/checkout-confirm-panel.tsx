@@ -146,7 +146,9 @@ export function ConfirmPanel({
               onChange={onProviderChange}
               title="UPI · cards · netbanking (India)"
               detail={
-                INR_NEW_PURCHASES_PAUSED ? WS1_COPY['pricing.inrPaused.button'] : 'Prices in rupees'
+                INR_NEW_PURCHASES_PAUSED
+                  ? WS1_COPY['pricing.inrPaused.button']
+                  : WS1_COPY['simplify.checkout.rupeeOption']
               }
             />
           </div>

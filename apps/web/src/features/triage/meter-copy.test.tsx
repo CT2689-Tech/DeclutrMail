@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CleanupSummaryDto } from '@declutrmail/shared/contracts';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory } from '@declutrmail/shared/entitlements';
 import { hideLegacyQuotaLine } from '@/features/shell/meter-preview-slot';
 import { ConfirmActionModal } from '@/features/senders/confirm-action-modal';
 import { makeSender } from '@/features/senders/testing/make-sender';
@@ -137,7 +139,7 @@ describe('meter copy', () => {
       />,
     );
     expect(screen.queryByText(/cleanup action/)).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Upgrade for unlimited cleanup/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: fillStory(WS1_COPY['cap.plus.link']) })).toBeNull();
     expect(screen.getByRole('button', { name: /Archive/ })).toBeEnabled();
     expect(
       screen.getByText('This clears 12 emails. You have 640 free this month.'),
@@ -146,7 +148,8 @@ describe('meter copy', () => {
 
   it('keeps the empty-state action sentence until the email meter exists', () => {
     render(<TriageEmptyState stats={TRIAGE_SESSION_STATS_FREE} readiness="ready" />);
-    expect(screen.getByText(/free cleanup actions left this month/)).toBeInTheDocument();
+    expect(screen.getByText('2 of 50 free emails left')).toBeInTheDocument();
+    expect(screen.queryByText(/Jan 1|resets/)).not.toBeInTheDocument();
   });
 
   it('shows the email allowance on the empty state when the meter is on', () => {

@@ -561,6 +561,12 @@
     "activity": {
       "bundleIncludes": "The bundle includes your Gmail address. Sender names and addresses stay hidden unless you choose to include them."
     },
+    "billing": {
+      "meterRule": "Archive and Delete count each email they clear. Unsubscribe, Keep, Later and Undo don’t count."
+    },
+    "confirm": {
+      "meterLabel": "Free emails"
+    },
     "deleteAccount": {
       "paymentPending": "We’re still checking a recent payment. Try again in a few minutes, or email support@declutrmail.com."
     }

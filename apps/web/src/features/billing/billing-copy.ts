@@ -1,6 +1,7 @@
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+
 /** Published descriptions of existing billing behavior; no policy decisions live here. */
-export const CLEANUP_COUNT_NOTE =
-  'One cleanup action counts per sender. Bulk cleanup counts once for each sender; a combined Later and Delete action counts once. Unsubscribe plus a separate Archive or Delete counts twice. Keep and Unarchive are free; failed actions and mail-moving actions that move no messages do not count. An unsubscribe request still counts, and Undo does not restore a used action.';
+export const CLEANUP_COUNT_NOTE = WS2_COPY.simplify.billing.meterRule;
 export const CLEANUP_RESET_NOTE =
   'The Free quota resets each month on your signup anniversary in UTC, using the last day for shorter months. Billing shows your next reset date.';
 export const BRIEF_PROCESSING_NOTE =

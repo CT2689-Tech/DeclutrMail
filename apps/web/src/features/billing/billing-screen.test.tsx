@@ -64,7 +64,7 @@ vi.mock('@/lib/posthog', () => ({ track: vi.fn(() => Promise.resolve()) }));
 
 import { ERROR_CODES, type BillingSubscription } from '@declutrmail/shared/contracts';
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { meterChipLine, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { track } from '@/lib/posthog';
 import {
@@ -330,7 +330,11 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // so the old copy would have been visibly wrong.
     expect(
       within(card).getByText(
-        `3 of ${TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions left · resets Sep 17, 2026`,
+        meterChipLine({
+          remaining: 3,
+          limit: TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0,
+          resetAt: '2026-09-17T00:00:00.000Z',
+        }).text,
       ),
     ).toBeInTheDocument();
     expect(
@@ -1401,7 +1405,13 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(notice).toHaveTextContent('Billing changes stay paused to avoid charging you twice.');
     const currentAccess = screen.getByTestId('current-plan-card');
     expect(within(currentAccess).getByText('Free')).toBeInTheDocument();
-    expect(currentAccess).toHaveTextContent('3 of 50 cleanup actions left');
+    expect(currentAccess).toHaveTextContent(
+      meterChipLine({
+        remaining: 3,
+        limit: TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0,
+        resetAt: mockCleanupResetsAt ?? '',
+      }).text,
+    );
     expect(currentAccess).not.toHaveTextContent(/no card on file|Free forever/i);
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
     // D249 copy truth: a first purchase awaits a PLAN UPGRADE — the old

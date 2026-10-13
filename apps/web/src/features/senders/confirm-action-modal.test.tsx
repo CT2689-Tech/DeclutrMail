@@ -1,5 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory } from '@declutrmail/shared/entitlements';
 import type { CompositeActionPreviewResult } from '@/lib/api/use-action';
 import { ConfirmActionModal } from './confirm-action-modal';
 import type { ActionRequest } from './data';
@@ -311,7 +313,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     );
     expect(screen.getByRole('button', { name: 'Get Plus' })).toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: /Upgrade for unlimited cleanup/ }),
+      screen.queryByRole('button', { name: fillStory(WS1_COPY['cap.plus.link']) }),
     ).not.toBeInTheDocument();
     meterSummary.current = undefined;
   });
@@ -360,7 +362,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     ).toBeInTheDocument();
     // No enabled confirm anywhere; the primary CTA is the upgrade action.
     expect(screen.queryByRole('button', { name: /Archive 2 senders|^📥/ })).not.toBeInTheDocument();
-    const upgrade = screen.getByRole('button', { name: /Upgrade for unlimited cleanup/ });
+    const upgrade = screen.getByRole('button', { name: fillStory(WS1_COPY['cap.plus.link']) });
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(onConfirm).not.toHaveBeenCalled();
     fireEvent.click(upgrade);
@@ -403,7 +405,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(onConfirm).toHaveBeenCalled();
     expect(
-      screen.queryByRole('button', { name: /Upgrade for unlimited cleanup/ }),
+      screen.queryByRole('button', { name: fillStory(WS1_COPY['cap.plus.link']) }),
     ).not.toBeInTheDocument();
   });
 

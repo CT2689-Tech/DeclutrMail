@@ -149,6 +149,7 @@
   "checkout.continue": "Continue to checkout",
   "checkout.opening": "Opening checkout…",
   "checkout.back": "Not now",
+  "simplify.checkout.rupeeOption": "Prices in rupees",
   "checkout.refund": "{refundDays}-day money-back on any purchase, once per customer.",
   "billing.pass.status": "{passName} · ends {passEndDate}",
   "billing.pass.statusDetail": "You have everything in {plusName} until {passEndDate}. Then you’re back on {freeName}. Nothing renews.",

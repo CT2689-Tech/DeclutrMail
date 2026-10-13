@@ -191,6 +191,7 @@ export const WS1_COPY = {
   'checkout.continue': 'Continue to checkout',
   'checkout.opening': 'Opening checkout\u2026',
   'checkout.back': 'Not now',
+  'simplify.checkout.rupeeOption': 'Prices in rupees',
   'checkout.refund': '{refundDays}-day money-back on any purchase, once per customer.',
   'billing.pass.status': '{passName} \u00b7 ends {passEndDate}',
   'billing.pass.statusDetail':

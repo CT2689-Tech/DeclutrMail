@@ -35,7 +35,7 @@ import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-pro
 import { mailLocationValue } from '@/features/triage/action-preview-detail';
 import { afterLead } from '@/lib/copy/after-lead';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
-import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { fillStory, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
@@ -1281,7 +1281,10 @@ export function ConfirmActionModal({
     });
   }
   if (isUnsubVerb) {
-    facts.push({ label: 'Cleanup actions', value: 'Acting on past email uses a second one' });
+    facts.push({
+      label: WS2_COPY.simplify.confirm.meterLabel,
+      value: 'Acting on past email uses a second one',
+    });
   }
   // Decision-point scope disclosure. The live preview's count replaces the
   // selection-time arithmetic; new protection/deletion can narrow it further.
@@ -1501,7 +1504,7 @@ export function ConfirmActionModal({
                         ? WS1_COPY['cap.pass.button']
                         : WS1_COPY['cap.plus.button'],
                     )
-                  : 'Upgrade for unlimited cleanup',
+                  : fillStory(WS1_COPY['cap.plus.link']),
                 onClick: reportQuotaShort,
               }
             : {

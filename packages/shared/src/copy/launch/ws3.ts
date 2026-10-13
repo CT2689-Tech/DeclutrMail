@@ -401,4 +401,6 @@ export const WS3_COPY = {
   'ws3.liveFix.learn.firstScanStep': 'Connect and let the first scan finish',
   'ws3.liveFix.learn.deletePreview':
     'The preview names the sender and how many emails it found so far.',
+  'ws3.simulator.planLine':
+    'Free includes {allowance} emails cleared a month. {plusName} has no monthly limit.',
 } as const;

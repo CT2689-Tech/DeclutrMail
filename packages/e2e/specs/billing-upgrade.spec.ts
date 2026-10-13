@@ -1,4 +1,6 @@
 import { expect, test, request } from '@playwright/test';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory } from '@declutrmail/shared/entitlements';
 import { expectScreenMounted } from '../helpers/screen-ready';
 import type postgres from 'postgres';
 
@@ -229,7 +231,9 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   await expect(preview).toContainText(
     'This needs 1 cleanup action but only 0 are left this month.',
   );
-  const upgradeCta = preview.getByRole('button', { name: 'Upgrade for unlimited cleanup' });
+  const upgradeCta = preview.getByRole('button', {
+    name: fillStory(WS1_COPY['cap.plus.link']),
+  });
   await expect(upgradeCta).toBeEnabled();
   await upgradeCta.click();
 
@@ -259,8 +263,8 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   // QA-billing-20260901-04: the card states the real signup-anniversary
   // reset date, not "this month" — the seed creates the user at `now()`,
   // so the date itself is not fixed here, only the shape.
-  await expect(planCard).toContainText(`0 of ${FREE_CLEANUP_LIMIT} cleanup actions left`);
-  await expect(planCard).toContainText(/· resets [A-Z][a-z]{2} \d{1,2}, \d{4}/);
+  await expect(planCard).toContainText('No free emails left');
+  await expect(planCard).toContainText(/· resets [A-Z][a-z]{2} \d{1,2}(?!,)/);
   await expect(page.getByTestId('checkout-panel')).toBeVisible();
   await expect(page.getByTestId('checkout-panel')).toContainText(
     'Preview · before anything changes',

@@ -2131,6 +2131,12 @@
   },
   {
     "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "allowance_word",
+    "line": 405,
+    "text": "Free includes {allowance} emails cleared a month. {plusName} has no monthly limit."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
     "id": "clean_verb",
     "line": 3,
     "text": "Clean up Gmail, one sender at a time \u2014 DeclutrMail"
