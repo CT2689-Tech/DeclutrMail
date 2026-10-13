@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 
+import { WS2_COPY } from '../../copy/launch/ws2';
 import { Button } from '../button';
 import { InlineProgress } from '../inline-progress/inline-progress';
 import { color, font, radius, shadow, text } from '../../tokens/tokens';
@@ -455,6 +456,7 @@ function UndoTrayBody({
             }}
             onUndoMember={source.revertMember}
             defaultOpen={defaultOpenDecisions}
+            showUnsubscribeNote={entry === firstUnsubscribeBulk(source.entries)}
           />
         ))}
       </ul>
@@ -502,6 +504,34 @@ function decisionSenderCount(entry: UndoTrayEntry): number {
 
 const isBulkDecision = (entry: UndoTrayEntry): boolean =>
   decisionSenderCount(entry) > 1 || (entry.members ?? []).length > 1;
+
+function includesUnsubscribe(entry: UndoTrayEntry): boolean {
+  if (entry.actionKind === 'unsubscribe') return true;
+  return (entry.members ?? []).some((member) => member.actionKind === 'unsubscribe');
+}
+
+/** The first bulk decision whose Undo all covers an unsubscribe row. */
+function firstUnsubscribeBulk(entries: readonly UndoTrayEntry[]): UndoTrayEntry | undefined {
+  return entries.find((entry) => isBulkDecision(entry) && includesUnsubscribe(entry));
+}
+
+function UnsubscribeNote() {
+  return (
+    <span
+      data-dm-undo-unsub-note=""
+      style={{
+        display: 'block',
+        maxWidth: 280,
+        color: color.fgMuted,
+        fontSize: text.xs,
+        lineHeight: 1.35,
+        textAlign: 'right',
+      }}
+    >
+      {WS2_COPY.undo.tray.unsubscribeNote}
+    </span>
+  );
+}
 
 function Headline({
   headline,
@@ -569,14 +599,19 @@ function Headline({
         {whose ? <span style={{ color: color.fgSoft }}>{` · ${whose}`}</span> : null}
         {entry.note ? <span style={{ color: color.fgSoft }}>{` · ${entry.note}`}</span> : null}
       </span>
-      <Button
-        size="sm"
-        tone="ghost"
-        onClick={() => onUndo(entry.token)}
-        ariaLabel={`Undo ${verbLabel(entry.actionKind)}${who !== null ? ` for ${who}` : ''}`}
+      <span
+        style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}
       >
-        {isBulkDecision(entry) ? 'Undo all' : 'Undo'}
-      </Button>
+        <Button
+          size="sm"
+          tone="ghost"
+          onClick={() => onUndo(entry.token)}
+          ariaLabel={`Undo ${verbLabel(entry.actionKind)}${who !== null ? ` for ${who}` : ''}`}
+        >
+          {isBulkDecision(entry) ? 'Undo all' : 'Undo'}
+        </Button>
+        {isBulkDecision(entry) && includesUnsubscribe(entry) ? <UnsubscribeNote /> : null}
+      </span>
     </>
   );
 }
@@ -635,11 +670,13 @@ function DecisionRow({
   onUndoAll,
   onUndoMember,
   defaultOpen,
+  showUnsubscribeNote,
 }: {
   entry: UndoTrayEntry;
   onUndoAll: () => void;
   onUndoMember: ((token: string) => Promise<void>) | undefined;
   defaultOpen: boolean;
+  showUnsubscribeNote: boolean;
 }) {
   const rowRef = useRef<HTMLLIElement | null>(null);
   const members = entry.members ?? [];
@@ -700,14 +737,24 @@ function DecisionRow({
             Undo until {formatExpiry(entry.expiresAt)}
           </span>
         </span>
-        <Button
-          size="sm"
-          tone="ghost"
-          onClick={onUndoAll}
-          ariaLabel={`Undo ${verbLabel(entry.actionKind)}${who !== null ? ` for ${who}` : ''}`}
+        <span
+          style={{
+            display: 'inline-flex',
+            flexDirection: 'column',
+            alignItems: 'flex-end',
+            gap: 4,
+          }}
         >
-          {isBulk ? 'Undo all' : 'Undo'}
-        </Button>
+          <Button
+            size="sm"
+            tone="ghost"
+            onClick={onUndoAll}
+            ariaLabel={`Undo ${verbLabel(entry.actionKind)}${who !== null ? ` for ${who}` : ''}`}
+          >
+            {isBulk ? 'Undo all' : 'Undo'}
+          </Button>
+          {showUnsubscribeNote ? <UnsubscribeNote /> : null}
+        </span>
       </div>
       {showMembers && members.length > 0 ? (
         // Open by default when verbs are mixed: the headline can only name

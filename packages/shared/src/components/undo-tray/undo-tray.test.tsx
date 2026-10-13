@@ -377,3 +377,56 @@ describe('<UndoTray /> — one pill (static)', () => {
     expect(html).not.toContain('>Undo');
   });
 });
+
+/** react-dom escapes the apostrophe in the locked sentence. */
+const UNSUBSCRIBE_NOTE_HTML =
+  'Unsubscribes can&#x27;t be undone. Any that already started will finish.';
+
+describe('<UndoTray /> — unsubscribe note under Undo all', () => {
+  const unsubscribeBulk = entry({
+    token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    actionKind: 'unsubscribe',
+    groupId: 'unsub-1',
+    senderCount: 2,
+    affectedCount: 40,
+    members: [
+      { token: 'u1', actionKind: 'unsubscribe', senderName: 'News Daily', affectedCount: 30 },
+      { token: 'u2', actionKind: 'unsubscribe', senderName: 'Shop Weekly', affectedCount: 10 },
+    ],
+  });
+  const archiveBulk = entry({
+    token: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    actionKind: 'archive',
+    groupId: 'arch-1',
+    senderCount: 2,
+    affectedCount: 12,
+    members: [
+      { token: 'a1', actionKind: 'archive', senderName: 'Yankee Candle', affectedCount: 8 },
+      { token: 'a2', actionKind: 'archive', senderName: 'RetailMeNot', affectedCount: 4 },
+    ],
+  });
+
+  it('states the locked line under Undo all only when an unsubscribe row is there', () => {
+    const open = renderToStaticMarkup(
+      <UndoTray defaultOpen dataSource={source({ entries: [unsubscribeBulk, archiveBulk] })} />,
+    );
+    const undoAll = open.indexOf('>Undo all<');
+    const note = open.indexOf(UNSUBSCRIBE_NOTE_HTML);
+    expect(undoAll).toBeGreaterThan(-1);
+    expect(note).toBeGreaterThan(undoAll);
+    expect(open.match(/data-dm-undo-unsub-note/g)).toHaveLength(1);
+
+    const pill = renderToStaticMarkup(
+      <UndoTray dataSource={source({ entries: [unsubscribeBulk] })} />,
+    );
+    expect(pill).toContain('data-dm-undo-tray="pill"');
+    expect(pill.indexOf(UNSUBSCRIBE_NOTE_HTML)).toBeGreaterThan(pill.indexOf('>Undo all<'));
+
+    const archiveOnly = renderToStaticMarkup(
+      <UndoTray defaultOpen dataSource={source({ entries: [archiveBulk] })} />,
+    );
+    expect(archiveOnly).toContain('>Undo all<');
+    expect(archiveOnly).not.toContain(UNSUBSCRIBE_NOTE_HTML);
+    expect(archiveOnly).not.toContain('data-dm-undo-unsub-note');
+  });
+});
