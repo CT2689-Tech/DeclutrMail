@@ -92,6 +92,13 @@ process.stdout.write(
             >
               ⋯
             </button>
+            <div style={{ height: 900 }} />
+            <button type="button" data-report-fix style={{ height: 45, width: '100%' }}>
+              Unsubscribe + archive
+            </button>
+            <div id="sticky-actions" style={{ position: 'sticky', bottom: 14, height: 52 }}>
+              <button type="button">Archive selected</button>
+            </div>
             <div style={{ height: 1400 }} />
             <div id="shell-end" style={{ height: 48, background: '#c45c26' }}>
               End of page

@@ -414,14 +414,17 @@ export function AppShell({
             minHeight: 0,
             overflowY: 'auto',
             overflowX: 'hidden',
-            // Reserve whichever covers the end of this scroller. The mobile
-            // tab bar is fixed to the viewport bottom, so its inset has to
-            // be padded here or the last content sits under it. The undo
-            // tray is also fixed, mounted outside this scroller, and its
-            // published inset is already the distance to the viewport
-            // bottom — larger than the bar while the tray is open. Desktop
-            // --dm-tabbar-inset is 0. See UNDO_TRAY_INSET_VAR.
-            paddingBottom: `max(var(--dm-tabbar-inset, 0px), var(${UNDO_TRAY_INSET_VAR}, 0px))`,
+            // The tab bar is position:fixed, so end-padding only clears
+            // the last row once the scroller is at its end. A bottom
+            // margin stops the scrollport at the bar — including the
+            // safe area inside --dm-tabbar-inset — so an in-flow button
+            // or a sticky action bar in the lower band stays above it.
+            // Desktop --dm-tabbar-inset is 0. The undo tray is also
+            // fixed, outside this scroller, and its published inset is
+            // already the distance to the viewport bottom, so only the
+            // part above the bar is padded. See UNDO_TRAY_INSET_VAR.
+            marginBottom: 'var(--dm-tabbar-inset, 0px)',
+            paddingBottom: `max(0px, calc(var(${UNDO_TRAY_INSET_VAR}, 0px) - var(--dm-tabbar-inset, 0px)))`,
           }}
         >
           {children}

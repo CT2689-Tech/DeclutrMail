@@ -95,6 +95,35 @@ test('phone shell keeps the last content above a flush tab bar', async ({ page }
   }
   saveShot('mobile-links-390', await page.screenshot());
 
+  // Align the report action to the bottom of the scrollport, then a
+  // sticky bar that has scrolled past that edge. End padding cannot
+  // clear either one; the scroller has to stop at the tab bar.
+  await page
+    .getByRole('button', { name: 'Unsubscribe + archive', exact: true })
+    .evaluate((element) => {
+      element.scrollIntoView({ block: 'end', inline: 'nearest' });
+    });
+  const action = await page.evaluate(() => {
+    const button = document.querySelector('[data-report-fix]')!.getBoundingClientRect();
+    const tab = document.querySelector('.dm-tabbar')!.getBoundingClientRect();
+    return { buttonBottom: button.bottom, tabTop: tab.top };
+  });
+  expect(action.buttonBottom).toBeLessThanOrEqual(action.tabTop + 1);
+  saveShot('mobile-unsubscribe-390', await page.screenshot());
+
+  await page.locator('#sticky-actions').evaluate((element) => {
+    const scroller = element.closest('.dm-main-scroll');
+    if (!(scroller instanceof HTMLElement)) return;
+    element.scrollIntoView({ block: 'end', inline: 'nearest' });
+    scroller.scrollTop += 400;
+  });
+  const sticky = await page.evaluate(() => {
+    const bar = document.getElementById('sticky-actions')!.getBoundingClientRect();
+    const tab = document.querySelector('.dm-tabbar')!.getBoundingClientRect();
+    return { barBottom: bar.bottom, tabTop: tab.top };
+  });
+  expect(sticky.barBottom).toBeLessThanOrEqual(sticky.tabTop + 1);
+
   await page.locator('.dm-main-scroll').evaluate((element) => {
     element.scrollTop = element.scrollHeight;
   });
@@ -121,6 +150,13 @@ test('desktop keeps the sidebar and the original link metrics', async ({ page })
   await page.goto(origin);
   await expect(page.locator('.dm-tabbar')).toBeHidden();
   await expect(page.locator('.dm-sidebar-desktop')).toBeVisible();
+  const desktopInset = await page.evaluate(() => {
+    const scroller = document.querySelector('.dm-main-scroll');
+    if (!(scroller instanceof HTMLElement)) return null;
+    const style = getComputedStyle(scroller);
+    return { marginBottom: style.marginBottom, paddingBottom: style.paddingBottom };
+  });
+  expect(desktopInset).toEqual({ marginBottom: '0px', paddingBottom: '0px' });
 
   const compare = await linkHeight(page, 'Compare plans');
   expect(compare).toBeGreaterThanOrEqual(36);
