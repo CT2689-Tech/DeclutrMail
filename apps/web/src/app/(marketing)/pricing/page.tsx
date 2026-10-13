@@ -51,7 +51,10 @@ export default async function PricingPage() {
     geoSecret: process.env.BILLING_GEO_HMAC_SECRET,
   });
   return (
-    <BillingCurrencyProvider provider={defaultProviderForCountry(country, flags.pricingV2)}>
+    <BillingCurrencyProvider
+      provider={defaultProviderForCountry(country, flags.pricingV2)}
+      locale={locale}
+    >
       {flags.pricingV2 ? (
         <PricingStory
           passEnabled={flags.passEnabled}

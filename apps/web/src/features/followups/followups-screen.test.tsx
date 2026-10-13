@@ -84,7 +84,7 @@ describe('Followups evaluation clock', () => {
     // Arrives between interval ticks, newer than the previous display clock.
     vi.setSystemTime(NOW + 90_000);
     rerender(view({ ...row, lastEvaluatedAt: new Date(NOW + 89_000).toISOString() }));
-    expect(screen.queryByText('Evaluation time unavailable.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Last check time unavailable.')).not.toBeInTheDocument();
     expect(screen.getByText('just now')).toHaveAttribute(
       'datetime',
       new Date(NOW + 89_000).toISOString(),
@@ -109,9 +109,9 @@ describe('FollowupsScreen — edge states', () => {
     expect(evaluated).toHaveAttribute('datetime', stamp);
     expect(evaluated.closest('details')).not.toHaveAttribute('open');
     expect(evaluated.closest('p')).toHaveTextContent(
-      'Checked 5m ago against the email scanned so far. New replies may still be syncing.',
+      'Checked 5m ago against the email scanned so far. New replies may not be here yet.',
     );
-    expect(screen.getByText(/Counts cover shown conversations, up to 100/)).toBeInTheDocument();
+    expect(screen.getByText(/Nothing changes in Gmail/)).toBeInTheDocument();
     expect(screen.queryByText(/Gmail checked|synced .*ago/i)).not.toBeInTheDocument();
   });
 
@@ -126,7 +126,7 @@ describe('FollowupsScreen — edge states', () => {
         },
       ]);
       renderScreen();
-      expect(await screen.findByText(/Evaluation time unavailable/)).toBeInTheDocument();
+      expect(await screen.findByText(/Last check time unavailable/)).toBeInTheDocument();
       expect(screen.queryByText(/against the email scanned so far/)).not.toBeInTheDocument();
     },
   );
@@ -542,9 +542,7 @@ it('shows a retryable error rather than false absence when dismissal and reconci
     await screen.findByRole('heading', { name: /couldn[’']t load your follow-ups/i }),
   ).toBeInTheDocument();
   expect(screen.queryByRole('heading', { name: /^no follow-ups$/i })).not.toBeInTheDocument();
-  expect(
-    screen.queryByText('No tracked conversation is waiting on a reply.'),
-  ).not.toBeInTheDocument();
+  expect(screen.queryByText('Nothing is waiting on a reply.')).not.toBeInTheDocument();
   expect(screen.queryByText(/Marked resolved|Feedback saved/)).not.toBeInTheDocument();
   readsFail = false;
   fireEvent.click(screen.getByRole('button', { name: /try again/i }));

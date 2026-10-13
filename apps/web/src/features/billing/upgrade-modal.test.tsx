@@ -41,6 +41,7 @@ import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 
 import { useUpgradeGateStore } from '@/lib/entitlements/upgrade-gate';
 
+import { BillingCurrencyProvider } from './billing-currency';
 import { UpgradeModal } from './upgrade-modal';
 import { UpgradeModalHost } from './upgrade-modal-host';
 
@@ -149,13 +150,13 @@ describe('UpgradeModal', () => {
     render(<UpgradeModal />);
 
     expect(screen.getByTestId('upgrade-modal')).toBeInTheDocument();
-    expect(
-      screen.getByText("You've used all 50 cleanup actions for this month"),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Not enough free emails left this month')).toBeInTheDocument();
     // Manifest-derived price (D19) of the plan the CTA buys: Plus $9/mo.
     expect(screen.getByText(/Plus removes the monthly cap/)).toBeInTheDocument();
-    expect(screen.getAllByText(/30-day money-back guarantee/)).toHaveLength(1);
-    expect(screen.queryByText(/14-day money-back on any purchase/)).not.toBeInTheDocument();
+    expect(
+      screen.getAllByText(/14-day money-back on any purchase, once per customer/),
+    ).toHaveLength(1);
+    expect(screen.queryByText(/30-day money-back guarantee/)).not.toBeInTheDocument();
     // ONE checkout path (D117): the CTA deep-links the nudged plan into
     // /billing's confirm step via the validated billing intent.
     expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$9\/mo$/ })).toHaveAttribute(
@@ -191,6 +192,23 @@ describe('UpgradeModal', () => {
     );
     expect(screen.getByText('$59 a year · no monthly limit')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /\$9\/mo/ })).not.toBeInTheDocument();
+  });
+
+  it('PRICING_V2 quotes INR chips for a trusted India locale', () => {
+    mockPricingV2 = true;
+    useUpgradeGateStore.getState().report({
+      reason: 'free_cap',
+      details: { remaining: 0, limit: 50, used: 50, requiredUnits: 1, resetsAt: null },
+    });
+    render(
+      <BillingCurrencyProvider provider="paddle" locale="inr">
+        <UpgradeModal />
+      </BillingCurrencyProvider>,
+    );
+
+    expect(screen.getByText('₹1,999 a year · no monthly limit')).toBeInTheDocument();
+    expect(screen.queryByText('$59 a year · no monthly limit')).not.toBeInTheDocument();
+    expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
   });
 
   it('PRICING_V2 points a Plus feature gate at annual', () => {
@@ -281,6 +299,27 @@ describe('UpgradeModal', () => {
     expect(screen.getByRole('button', { name: 'Not now' })).toBeInTheDocument();
   });
 
+  it('emails-cleared 402 says 1 email when the over-limit count is 1', () => {
+    useUpgradeGateStore.getState().report({
+      reason: 'free_cap',
+      details: {
+        remaining: 100,
+        limit: 1000,
+        used: 900,
+        requiredUnits: 1,
+        requested: 1,
+        suggestedPreset: 30,
+        resetsAt: '2026-11-09T00:00:00.000Z',
+      },
+    });
+    render(<UpgradeModal />);
+
+    expect(
+      screen.getByText('This clears 1 email. You have 100 of 1,000 free emails left until Nov 9.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/1 emails/)).not.toBeInTheDocument();
+  });
+
   it('free_cap (partial): bulk-needs-more headline', () => {
     useUpgradeGateStore.getState().report({
       reason: 'free_cap',
@@ -288,9 +327,7 @@ describe('UpgradeModal', () => {
     });
     render(<UpgradeModal />);
 
-    expect(
-      screen.getByText('That needs 4 cleanup actions — only 2 of your 50 are left this month'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Not enough free emails left this month')).toBeInTheDocument();
   });
 
   it('free_cap: names the reset date when the server supplies one', () => {
@@ -384,6 +421,27 @@ describe('UpgradeModal', () => {
     expect(screen.queryByText(/Free includes/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Upgrade to Pro/)).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /compare plans/i })).not.toBeInTheDocument();
+  });
+
+  it('pass_second_account quotes Plus in INR from the visitor locale, not Razorpay', () => {
+    mockTier = 'plus';
+    mockPricingV2 = true;
+    useUpgradeGateStore.getState().report({
+      reason: 'pass_second_account',
+      details: { limit: 1, connected: 1, reason: 'pass' },
+    });
+    render(
+      <BillingCurrencyProvider provider="paddle" locale="inr">
+        <UpgradeModal />
+      </BillingCurrencyProvider>,
+    );
+
+    expect(screen.getByText('The Backlog Pass covers one Gmail account')).toBeInTheDocument();
+    expect(
+      screen.getByText(fillStory(WS1_COPY['cap.pass.secondAccount.body'], 'inr')),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/₹1,999/)).toBeInTheDocument();
+    expect(screen.queryByText(/\$59/)).not.toBeInTheDocument();
   });
 
   it('inbox_limit on Plus: upgrade nudge toward Pro', () => {

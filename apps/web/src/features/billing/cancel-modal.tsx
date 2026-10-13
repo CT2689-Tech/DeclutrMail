@@ -30,17 +30,14 @@ const REASON_OPTIONS: ReadonlyArray<{ value: CancelReason; label: string }> = [
  * features stay until period end, then Free; canceling isn't itself a
  * refund (D120 downgrade copy) — before the mutation runs. Not the D226
  * destructive-preview class (no mail is touched), but the same honest
- * shape. EVERY paid plan carries the D121 30-day money-back guarantee
- * (founder-confirmed 2026-07-08 — all paid tiers, not Pro-only); it is
+ * shape. The published refund window lives on /refunds.
  * The guarantee is NOT mentioned here (founder, 2026-07-31). Naming a
  * refund at the moment of highest churn intent reads as an invitation —
  * "if I see this as a term, I will go ahead and ask for a refund every
  * time". The policy stays public on /refunds and on the Plan & billing
  * header, so nothing is hidden; this screen simply stops advertising it.
  * The bullet below still says canceling is not itself a refund, which is
- * a fact about cancellation, not a denial of the guarantee — so the
- * 2026-07-08 contradiction with the public 30-day promise does not
- * return.
+ * a fact about cancellation, not a denial of the guarantee.
  */
 export function CancelModal({
   open,

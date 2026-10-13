@@ -3,7 +3,7 @@
 import Link from 'next/link';
 
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
-import { fillStory, refundLine } from '@declutrmail/shared/entitlements';
+import { fillStory, launchPriceDisplay, refundLine } from '@declutrmail/shared/entitlements';
 
 /** Launch teaser. Loaded only after the public catalog says PRICING_V2 is on. */
 export function PricingTeaserStory({
@@ -13,6 +13,7 @@ export function PricingTeaserStory({
   passEnabled: boolean;
   locale?: 'usd' | 'inr';
 }) {
+  const prices = launchPriceDisplay(locale);
   const plans = [
     {
       name: fillStory(WS1_COPY['pricing.free.name'], locale),
@@ -24,7 +25,7 @@ export function PricingTeaserStory({
       ? [
           {
             name: fillStory(WS1_COPY['pricing.pass.name'], locale),
-            line: fillStory(WS1_COPY['price.passLine'], locale),
+            line: prices.passLine,
             cta: fillStory(WS1_COPY['pricing.pass.cta'], locale),
             href: '/billing?plan=plus&cycle=annual&offer=pass_onetime',
           },
@@ -32,7 +33,7 @@ export function PricingTeaserStory({
       : []),
     {
       name: fillStory(WS1_COPY['pricing.plus.name'], locale),
-      line: fillStory(WS1_COPY['price.plusLine'], locale),
+      line: prices.plusLine,
       cta: fillStory(WS1_COPY['pricing.plus.cta'], locale),
       href: '/billing?plan=plus&cycle=annual',
     },

@@ -15,6 +15,7 @@ import {
   ACTION_SAFETY_SUMMARY,
   ANALYTICS_PRIVACY_CLAIM,
   CASA_VERIFICATION_APPROVED_ON,
+  formatVerificationDate,
   PRIVACY_BADGE_HEADLINE,
   PRIVACY_STORAGE_ITEMS,
   PRIVACY_NEVER_ITEMS,
@@ -22,7 +23,7 @@ import {
   PRIVACY_NEVER_LABEL,
 } from '@declutrmail/shared';
 import { MAX_UNDO_WINDOW_DAYS, MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
-import { gatedText, WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { fillWs3, gatedText, WS3_COPY } from '@declutrmail/shared/copy/launch';
 
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
@@ -37,6 +38,16 @@ export const metadata: Metadata = marketingPageMetadata({
 });
 
 const LAST_UPDATED = PAGE_LAST_UPDATED['/privacy'];
+const OAUTH_DATE = formatVerificationDate(CASA_VERIFICATION_APPROVED_ON);
+
+function permissionText(template: string) {
+  const filled = fillWs3(template, { OAUTH_DATE });
+  const parts = filled.split('gmail.modify');
+  if (parts.length === 1) return filled;
+  return parts.flatMap((part, index) =>
+    index === 0 ? [part] : [<code key={index}>gmail.modify</code>, part],
+  );
+}
 
 const TOC = [
   { id: 'who-we-are', label: 'Who we are' },
@@ -105,18 +116,13 @@ export default function PrivacyPolicyPage() {
           Beyond the Gmail details listed above, we also store: your Google account email address
           and display name (from sign-in), your DeclutrMail preferences and per-sender decisions, an
           activity log of the actions DeclutrMail performed on your behalf, and billing records
-          (handled by our payment providers — see <a href="#subprocessors">Section 8</a>; we never
-          see or store full card numbers).
+          (kept by Paddle, and by Razorpay for earlier rupee plans; see{' '}
+          <a href="#subprocessors">Section 8</a>. We never see or store full card numbers.)
         </p>
       </LegalSection>
 
       <LegalSection id="how-we-access-gmail" title="3. How we access your Gmail">
-        <p>
-          DeclutrMail connects to your Gmail account through Google&rsquo;s official API, using
-          OAuth consent you grant explicitly. We request the <code>gmail.modify</code> scope — a
-          restricted scope — because the product&rsquo;s job is to act on your mail at your
-          instruction: archive, label, delete, and unsubscribe.
-        </p>
+        <p>{permissionText(WS3_COPY['ws3.liveFix.privacy.access'])}</p>
         <ul>
           <li>
             DeclutrMail requests only the listed Gmail details: sender, subject line, Gmail&rsquo;s
@@ -129,12 +135,7 @@ export default function PrivacyPolicyPage() {
             OAuth tokens are encrypted at rest and are never included in data exports or sent to
             your browser.
           </li>
-          <li>
-            Apps using restricted Gmail scopes are subject to Google&rsquo;s independent CASA (Cloud
-            Application Security Assessment) process. Google approved DeclutrMail&rsquo;s OAuth
-            verification on {CASA_VERIFICATION_APPROVED_ON} for the single restricted scope we
-            request, gmail.modify. Verification is recertified annually.
-          </li>
+          <li>{permissionText(WS3_COPY['ws3.liveFix.privacy.casa'])}</li>
         </ul>
         <p>
           You can revoke DeclutrMail&rsquo;s access at any time from DeclutrMail&rsquo;s settings or
@@ -362,11 +363,11 @@ export default function PrivacyPolicyPage() {
             </tr>
             <tr>
               <td>Paddle</td>
-              <td>Merchant of record and payment processing (outside India)</td>
+              <td>Merchant of record and reseller: payment, tax and invoices</td>
             </tr>
             <tr>
               <td>Razorpay</td>
-              <td>Payment processing (India)</td>
+              <td>Payment processing for earlier rupee plans (no new purchases)</td>
             </tr>
           </tbody>
         </table>

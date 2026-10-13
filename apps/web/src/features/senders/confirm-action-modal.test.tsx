@@ -1,5 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory } from '@declutrmail/shared/entitlements';
 import type { CompositeActionPreviewResult } from '@/lib/api/use-action';
 import { ConfirmActionModal } from './confirm-action-modal';
 import type { ActionRequest } from './data';
@@ -311,7 +313,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     );
     expect(screen.getByRole('button', { name: 'Get Plus' })).toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: /Upgrade for unlimited cleanup/ }),
+      screen.queryByRole('button', { name: fillStory(WS1_COPY['cap.plus.link']) }),
     ).not.toBeInTheDocument();
     meterSummary.current = undefined;
   });
@@ -327,7 +329,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
       />,
     );
     expect(
-      screen.getByText(/Uses 1 of your 12 cleanup actions left this month/),
+      screen.getByText(/This clears 1 email. You have 12 free this month/),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Archive/ })).toBeEnabled();
   });
@@ -356,11 +358,11 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     );
 
     expect(
-      screen.getByText(/This needs 2 cleanup actions but only 1 is left this month/),
+      screen.getByText(/This clears 2 emails. You have 1 free left this month/),
     ).toBeInTheDocument();
     // No enabled confirm anywhere; the primary CTA is the upgrade action.
     expect(screen.queryByRole('button', { name: /Archive 2 senders|^📥/ })).not.toBeInTheDocument();
-    const upgrade = screen.getByRole('button', { name: /Upgrade for unlimited cleanup/ });
+    const upgrade = screen.getByRole('button', { name: fillStory(WS1_COPY['cap.plus.link']) });
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(onConfirm).not.toHaveBeenCalled();
     fireEvent.click(upgrade);
@@ -397,13 +399,13 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     // second reason to cover fewer senders than the selection.
     expect(screen.getByRole('heading', { name: 'Archive 4 emails?' })).toBeInTheDocument();
     expect(screen.queryByText(/from 40 senders/)).not.toBeInTheDocument();
-    expect(screen.getByText(/1 of 40 eligible senders/)).toBeInTheDocument();
-    expect(screen.getByText(/all you have left this month/)).toBeInTheDocument();
+    expect(screen.getByText(/This covers 1 of the 40 senders you picked/)).toBeInTheDocument();
+    expect(screen.getByText(/all your free total allows this month/)).toBeInTheDocument();
     // The whole point: confirm is live, and firing it calls through.
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(onConfirm).toHaveBeenCalled();
     expect(
-      screen.queryByRole('button', { name: /Upgrade for unlimited cleanup/ }),
+      screen.queryByRole('button', { name: fillStory(WS1_COPY['cap.plus.link']) }),
     ).not.toBeInTheDocument();
   });
 
@@ -445,7 +447,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     );
 
     // The capped total is the ELIGIBLE count, and says so.
-    expect(screen.getByText(/2 of 4 eligible senders/)).toBeInTheDocument();
+    expect(screen.getByText(/This covers 2 of the 4 senders you picked/)).toBeInTheDocument();
     expect(screen.queryByText(/4 senders you selected/)).not.toBeInTheDocument();
     // The title is the acted-on count, stated by the caller.
     expect(
@@ -1960,7 +1962,7 @@ describe('ConfirmActionModal — a preview failure that retrying cannot fix', ()
     );
     // Said once — the inline panel carries it; the footer stays empty
     // beside the Refresh senders button.
-    expect(screen.getAllByText(/no longer in this mailbox/)).toHaveLength(1);
+    expect(screen.getAllByText(/no email in this Gmail account anymore/)).toHaveLength(1);
     expect(screen.queryByText(/Couldn't load the preview/)).not.toBeInTheDocument();
   });
 
@@ -2589,7 +2591,7 @@ describe('ConfirmActionModal — the title names the verb and the count (QA-arch
       />,
     );
     expect(
-      screen.getByText('Every selected sender is now Protected or no longer in this mailbox.'),
+      screen.getByText('Every sender you picked is now Protected or has no email left.'),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Refresh senders' }));
     expect(onRefreshSenders).toHaveBeenCalledTimes(1);

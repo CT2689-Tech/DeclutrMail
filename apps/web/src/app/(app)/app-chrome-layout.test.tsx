@@ -1153,7 +1153,7 @@ describe('(app) layout — no-active-mailbox branch (ladder #5)', () => {
 
     renderLayout();
 
-    expect(await screen.findByText('No active mailbox')).toBeInTheDocument();
+    expect(await screen.findByText('No Gmail account selected')).toBeInTheDocument();
     expect(replaceSpy).not.toHaveBeenCalled();
   });
 
@@ -1184,7 +1184,7 @@ describe('(app) layout — no-active-mailbox branch (ladder #5)', () => {
     try {
       renderLayout();
 
-      expect(await screen.findByText('No active mailbox')).toBeInTheDocument();
+      expect(await screen.findByText('No Gmail account selected')).toBeInTheDocument();
       expect(
         await screen.findByText('Could not connect that Gmail account. Try again.'),
       ).toBeInTheDocument();
@@ -1295,7 +1295,7 @@ describe('(app) layout — no-active-mailbox branch (ladder #5)', () => {
       expect(replaceSpy).toHaveBeenCalledWith('/onboarding?returnTo=%2Fsenders'),
     );
     // The reconnect gate must NOT have flashed.
-    expect(screen.queryByText('No active mailbox')).not.toBeInTheDocument();
+    expect(screen.queryByText('No Gmail account selected')).not.toBeInTheDocument();
   });
 
   it('holds (renders nothing) while onboarding state is in flight — no reconnect-gate flash', () => {
@@ -1318,7 +1318,7 @@ describe('(app) layout — no-active-mailbox branch (ladder #5)', () => {
 
     // Neither the reconnect gate nor the app body — the branch is held
     // until onboarding state settles (the flash fix).
-    expect(screen.queryByText('No active mailbox')).not.toBeInTheDocument();
+    expect(screen.queryByText('No Gmail account selected')).not.toBeInTheDocument();
     expect(screen.queryByText('authed app body')).not.toBeInTheDocument();
   });
 });
@@ -1368,7 +1368,7 @@ describe('(app) layout — user-scoped routes stay reachable with no active mail
     renderLayout();
 
     expect(await screen.findByText('authed app body')).toBeInTheDocument();
-    expect(screen.queryByText('No active mailbox')).not.toBeInTheDocument();
+    expect(screen.queryByText('No Gmail account selected')).not.toBeInTheDocument();
     // SyncErrorBanner + SyncNowButton are gated off with no active mailbox.
     expect(syncSpy).not.toHaveBeenCalled();
     expect(screen.queryByTestId('triage-undo-tray')).not.toBeInTheDocument();
@@ -1382,7 +1382,7 @@ describe('(app) layout — user-scoped routes stay reachable with no active mail
     renderLayout();
 
     expect(await screen.findByText('authed app body')).toBeInTheDocument();
-    expect(screen.queryByText('No active mailbox')).not.toBeInTheDocument();
+    expect(screen.queryByText('No Gmail account selected')).not.toBeInTheDocument();
   });
 
   it('still shows the reconnect gate on a mailbox-scoped route (/senders)', async () => {
@@ -1391,7 +1391,7 @@ describe('(app) layout — user-scoped routes stay reachable with no active mail
 
     renderLayout();
 
-    expect(await screen.findByText('No active mailbox')).toBeInTheDocument();
+    expect(await screen.findByText('No Gmail account selected')).toBeInTheDocument();
     expect(screen.queryByText('authed app body')).not.toBeInTheDocument();
   });
 
@@ -1404,7 +1404,7 @@ describe('(app) layout — user-scoped routes stay reachable with no active mail
 
     renderLayout();
 
-    expect(await screen.findByText('No active mailbox')).toBeInTheDocument();
+    expect(await screen.findByText('No Gmail account selected')).toBeInTheDocument();
     expect(screen.queryByText('authed app body')).not.toBeInTheDocument();
   });
 
@@ -1415,7 +1415,7 @@ describe('(app) layout — user-scoped routes stay reachable with no active mail
     renderLayout();
 
     expect(await screen.findByText('authed app body')).toBeInTheDocument();
-    expect(screen.queryByText('No active mailbox')).not.toBeInTheDocument();
+    expect(screen.queryByText('No Gmail account selected')).not.toBeInTheDocument();
   });
 
   // `/api/security-events` is JwtGuard + AdminAllowlistGuard with no
@@ -1430,7 +1430,7 @@ describe('(app) layout — user-scoped routes stay reachable with no active mail
     renderLayout();
 
     expect(await screen.findByText('authed app body')).toBeInTheDocument();
-    expect(screen.queryByText('No active mailbox')).not.toBeInTheDocument();
+    expect(screen.queryByText('No Gmail account selected')).not.toBeInTheDocument();
   });
 });
 

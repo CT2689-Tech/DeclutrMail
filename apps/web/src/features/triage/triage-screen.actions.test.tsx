@@ -184,7 +184,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     const client = createTestQueryClient();
     const view = renderScreen(client);
     expect(
-      screen.getByRole('status', { name: '0 decided this session; 2 in queue' }),
+      screen.getByRole('status', { name: '0 decided this session; 2 left' }),
     ).toBeInTheDocument();
 
     expandRow(GROUPON.senderName);
@@ -201,13 +201,13 @@ describe('TriageScreen — D226 mutation wiring', () => {
       </QueryWrapper>,
     );
     expect(
-      screen.getByRole('status', { name: '1 decided this session; 2 in queue' }),
+      screen.getByRole('status', { name: '1 decided this session; 2 left' }),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Focus' }));
     expect(
       screen.getByRole('status', {
-        name: '1 decided this session; 2 in queue; reviewing 1 of 2',
+        name: '1 decided this session; 2 left; reviewing 1 of 2',
       }),
     ).toBeInTheDocument();
 
@@ -222,7 +222,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     await waitFor(() =>
       expect(
         screen.getByRole('status', {
-          name: '0 decided this session; 2 in queue; reviewing 1 of 2',
+          name: '0 decided this session; 2 left; reviewing 1 of 2',
         }),
       ).toBeInTheDocument(),
     );
@@ -254,7 +254,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     h.mailbox = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
     renderScreen(client);
     expect(
-      screen.getByRole('status', { name: '0 decided this session; 2 in queue' }),
+      screen.getByRole('status', { name: '0 decided this session; 2 left' }),
     ).toBeInTheDocument();
     await waitFor(() => expect(useTriageStore.getState().sessionMailboxId).toBe(h.mailbox));
     expect(useTriageStore.getState().sessionDecidedCount).toBe(0);
@@ -2959,7 +2959,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
     await confirmDomainBatch();
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        'Nothing changed — those senders are Protected or no longer in this mailbox.',
+        'Nothing changed — those senders are Protected or have no email left.',
         'warn',
       ),
     );

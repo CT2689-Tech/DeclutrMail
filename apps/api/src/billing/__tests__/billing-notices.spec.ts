@@ -335,7 +335,7 @@ describe('billing app notices', () => {
         await notice('grant_expired'),
         userId,
       ))!.text,
-    ).toContain('Access verification is pending');
+    ).toContain('We\u2019re confirming your access');
   });
   it('remains off until explicitly enrolled and never backfills old expired grants', async () => {
     delete process.env.BILLING_APP_NOTICES_ENABLED;

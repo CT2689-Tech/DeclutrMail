@@ -29,12 +29,20 @@ import type {
   CancelRequest,
 } from '@declutrmail/shared/contracts';
 import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
-import { fillStory, TIER_MANIFEST, TIER_RANK, type TierId } from '@declutrmail/shared/entitlements';
+import {
+  fillStory,
+  meterChipLine,
+  passEndLabel,
+  TIER_MANIFEST,
+  TIER_RANK,
+  type TierId,
+} from '@declutrmail/shared/entitlements';
 
 import { useAuth } from '@/features/auth/auth-provider';
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { useTier } from '@/features/auth/api/use-tier';
 import { currencyForProvider, formatMoney } from '@/features/marketing/pricing/pricing-model';
+import { visitorPriceLocale } from '@/features/marketing/pricing/visitor-pricing-locale';
 import { ApiError, apiDelete } from '@/lib/api/client';
 import { useHydrated } from '@/lib/use-hydrated';
 import { track } from '@/lib/posthog';
@@ -97,6 +105,17 @@ const CheckoutRecovery = dynamic(
 );
 
 const { color, font, radius, text } = tokens;
+
+/** One-account plans use the approved planIncludes line. Plus keeps scope. */
+function billingAccountScope(plan: BillingPlanView): string {
+  const oneAccount = passCoversPlan(plan) || TIER_MANIFEST[plan.entitlementTier].inboxLimit === 1;
+  if (!oneAccount) return WS2_COPY.liveFix.billing.scope;
+  return fillStory(WS2_COPY.liveFix.billing.planIncludes.one, 'usd', {
+    name: passCoversPlan(plan)
+      ? fillStory(WS1_COPY['planName.pass'])
+      : TIER_MANIFEST[plan.entitlementTier].name,
+  });
+}
 
 /**
  * Post-checkout poll cadence — how often the screen re-reads the
@@ -181,6 +200,7 @@ export function BillingScreen({
 }) {
   const { me } = useAuth();
   const { tier: meTier, cleanupRemaining, cleanupResetsAt, passEnabled } = useTier();
+  const visitorLocale = visitorPriceLocale({ country, indiaCheckoutOpen });
   const workspaceId = me.user.workspaceId;
   const currentOwner = useRef(workspaceId);
   currentOwner.current = workspaceId;
@@ -672,7 +692,7 @@ export function BillingScreen({
       key: 'billing-review',
       node: (
         <p role="status" style={{ margin: 0, color: color.fgMuted }}>
-          Billing verification pending. Current access is shown below.{' '}
+          We’re confirming your payment. You keep your current plan meanwhile.{' '}
           <a className={linkStyles.link} href="mailto:support@declutrmail.com">
             Contact support
           </a>{' '}
@@ -817,7 +837,7 @@ export function BillingScreen({
     >
       <EditorialKicker>Plan & billing</EditorialKicker>
       <h1 style={editorialTitleStyle}>Plan & billing</h1>
-      <p style={{ margin: 0, color: color.fgSoft }}>{WS2_COPY.liveFix.billing.scope}</p>
+      <p style={{ margin: 0, color: color.fgSoft }}>{billingAccountScope(plan)}</p>
       <ScreenIntro
         id="billing"
         title="Plan & billing"
@@ -850,6 +870,7 @@ export function BillingScreen({
 
       <CurrentPlanCard
         plan={plan}
+        locale={visitorLocale}
         cleanupRemaining={cleanupRemaining}
         cleanupResetsAt={cleanupResetsAt}
         billingDark={billingDark}
@@ -939,7 +960,15 @@ export function BillingScreen({
           startPending('checkout', target, cycle, attemptId)
         }
         onCheckoutAttempt={(target, cycle) => attemptClaim('checkout_intent', target, cycle)}
-        onCheckoutAbandoned={releaseAttemptLock}
+        onCheckoutAbandoned={(attemptId) => {
+          releaseAttemptLock(attemptId);
+          // Overlay never opened (or the server refused before a
+          // claim). Clear the server slot so a retry is not
+          // CHECKOUT_IN_FLIGHT. Best-effort: TTL is the fallback.
+          void apiDelete<{ released: true }>('/api/billing/checkout/pending').catch(
+            () => undefined,
+          );
+        }}
         onCheckoutClosed={surfaceAttemptLock}
         ownsCheckout={() => mounted.current && currentOwner.current === workspaceId}
         mayOpenCheckout={(attemptId) => {
@@ -952,22 +981,6 @@ export function BillingScreen({
             record.attemptId === attemptId &&
             Date.now() < record.at + 30 * 60 * 1000
           );
-        }}
-        onCheckoutBlocked={(session, target, cycle, attemptId) => {
-          const record = readPendingCheckout(workspaceId);
-          if (
-            mounted.current &&
-            currentOwner.current === workspaceId &&
-            record?.attemptId === attemptId
-          )
-            setHeldCheckout({
-              workspaceId,
-              session,
-              target,
-              cycle,
-              attemptId,
-              expiresAt: record.at + 30 * 60 * 1000,
-            });
         }}
         onPlanChangeAttempt={(target, cycle) => attemptClaim('change_unconfirmed', target, cycle)}
         onPlanChangeFailedKnown={releaseAttemptLock}
@@ -1108,7 +1121,7 @@ function resumeCancellationErrorMessage(error: unknown): string {
   if (error instanceof ApiError && error.status === 503) {
     return 'Billing isn’t switched on yet.';
   }
-  return 'Your subscription could not be restored. Please try again.';
+  return 'Couldn’t restore your plan. Try again.';
 }
 
 /** D118 pause-offer failures. */
@@ -1126,7 +1139,7 @@ function pauseErrorMessage(error: unknown): string {
   if (error instanceof ApiError && error.status === 503) {
     return 'Billing isn’t switched on yet.';
   }
-  return 'The pause could not be processed. Please try again.';
+  return 'Couldn’t pause your plan. Try again.';
 }
 
 /** Honest copy for a cancel failure — never a silent swallow. */
@@ -1137,7 +1150,7 @@ function cancelErrorMessage(error: unknown): string {
   if (error instanceof ApiError && error.status === 503) {
     return 'Billing isn’t switched on yet.';
   }
-  return 'Cancellation could not be processed. Please try again.';
+  return 'Couldn’t cancel your plan. Try again.';
 }
 
 /**
@@ -1280,11 +1293,11 @@ export function PaymentProcessingNotice({
           <dt style={{ fontSize: text.sm, fontWeight: 600 }}>What we know</dt>
           <dd style={{ margin: 0, color: color.fgSoft }}>
             {kind === 'checkout'
-              ? 'Checkout reported completion. Our server has not yet confirmed your new plan.'
+              ? 'Payment received. Your new plan will show here in a minute.'
               : kind === 'checkout_intent'
                 ? 'Checkout started, but we do not yet know whether a payment completed.'
                 : kind === 'change_unconfirmed'
-                  ? 'The provider has not confirmed whether your plan change applied.'
+                  ? 'We’re still confirming your plan change.'
                   : kind === 'resume'
                     ? 'The provider accepted your resume. No charge was started; your existing paid period continues.'
                     : 'The provider accepted your plan change. Your new plan is not confirmed here yet.'}
@@ -1320,7 +1333,7 @@ export function PaymentProcessingNotice({
           style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}
           aria-live="polite"
         >
-          <strong>Latest provider check: </strong>
+          <strong>Last checked: </strong>
           {providerCheck === 'checking' ? (
             'Checking with the payment provider…'
           ) : providerCheck === 'none_found' ? (
@@ -1472,10 +1485,25 @@ export function PaymentProcessingNotice({
   );
 }
 
+/** Non-metered Free chip. A missing reset is omitted, not invented. */
+function freeEmailsLeftLine(remaining: number, resetAt: string | null): string {
+  const limit = TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0;
+  const line = meterChipLine({
+    remaining,
+    limit,
+    resetAt: resetAt ?? '2000-01-01T00:00:00.000Z',
+  }).text;
+  if (resetAt) return line;
+  const mark = ' \u00b7 ';
+  const at = line.indexOf(mark);
+  return at === -1 ? line : line.slice(0, at);
+}
+
 // ── Current plan card (D119 top block) ───────────────────────────────
 
 function CurrentPlanCard({
   plan,
+  locale = 'usd',
   cleanupRemaining,
   cleanupResetsAt,
   billingDark,
@@ -1487,6 +1515,7 @@ function CurrentPlanCard({
   resumeCancellationError,
 }: {
   plan: BillingPlanView;
+  locale?: 'usd' | 'inr';
   cleanupRemaining: number | null;
   cleanupResetsAt: string | null;
   billingDark: boolean;
@@ -1523,7 +1552,7 @@ function CurrentPlanCard({
   // paid tier makes no price claim at all — nobody is charged one.
   const note = backingStatusNote(backing);
   const compNote = complimentaryNote(plan);
-  const priceLabel = currentPlanPriceLabel(plan);
+  const priceLabel = currentPlanPriceLabel(plan, locale);
   // "Next renewal <date>" claims THIS plan, at THIS price, renews then.
   // With a scheduled change that is false: on Pro annual with a
   // downgrade booked, the card read "Pro · $190/yr · Next renewal Jul
@@ -1603,6 +1632,16 @@ function CurrentPlanCard({
           {compNote}
         </p>
       ) : null}
+      {passCoversPlan(plan) && plan.complimentary?.expiresAt ? (
+        <p
+          data-testid="pass-status-detail"
+          style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}
+        >
+          {fillStory(WS1_COPY['billing.pass.statusDetail'], locale, {
+            passEndDate: passEndLabel(plan.complimentary.expiresAt),
+          })}
+        </p>
+      ) : null}
 
       {plan.entitlementTier === 'free' && cleanupSummary.data?.metered ? (
         <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
@@ -1611,15 +1650,10 @@ function CurrentPlanCard({
       ) : plan.entitlementTier === 'free' && cleanupRemaining !== null ? (
         <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
           <strong style={{ fontWeight: 600, color: color.fg }}>
-            {cleanupRemaining} of {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions left
             {/* QA-billing-20260901-04: the reset is the signup
-                    anniversary, not the calendar month — "this month" was
-                    provably wrong (e.g. an anniversary of the 27th, told
-                    in the first days of the next month). The real date is
+                    anniversary, not the calendar month. The real date is
                     already fetched by useTier(); state it instead. */}
-            {formatBillingDate(cleanupResetsAt)
-              ? ` · resets ${formatBillingDate(cleanupResetsAt)}`
-              : '.'}
+            {freeEmailsLeftLine(cleanupRemaining, cleanupResetsAt)}
           </strong>
         </p>
       ) : null}
@@ -1704,8 +1738,7 @@ function CurrentPlanCard({
                 {formatBillingDate(backing.sub.currentPeriodEnd)
                   ? ` — next charge ${formatBillingDate(backing.sub.currentPeriodEnd)}`
                   : ' on its normal schedule'}
-                {currentPlanPriceLabel(plan) ? ` at ${currentPlanPriceLabel(plan)}` : ''}. You can
-                cancel again at any time.
+                {priceLabel ? ` at ${priceLabel}` : ''}. You can cancel again at any time.
               </p>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <Button
@@ -1822,7 +1855,7 @@ function ScheduledPlanChangeNotice({
         <span style={{ color: color.fgMuted, fontSize: text.sm }}>
           {restoring
             ? 'Paddle has not confirmed whether your renewal was restored. Retry before renewal or contact support.'
-            : 'The payment provider’s response was interrupted, so billing changes are paused until we confirm what happened.'}{' '}
+            : 'We’re confirming what happened with your payment. Billing changes are paused until then.'}{' '}
           {restoring ? '' : 'Your current plan and renewal remain unchanged. '}Email{' '}
           <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
             support@declutrmail.com
@@ -2133,7 +2166,7 @@ function NonBackingSubscriptionNotice({
       {isPaused && !canSelfServeResume ? (
         <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>
           {sub.provider === 'razorpay'
-            ? 'Razorpay does not guarantee a no-charge resume on the existing billing period. To avoid an unexpected charge, email '
+            ? 'Restarting a plan paid in rupees could start a new charge. To avoid that, email '
             : 'We can’t confirm your retained billing period from here, so resume isn’t offered without review. Email '}
           <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
             support@declutrmail.com

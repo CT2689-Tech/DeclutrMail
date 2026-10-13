@@ -155,7 +155,7 @@ describe('SnoozedScreen — populated (D80 grouping)', () => {
     resetFetchStub();
     installFetchStub([listHandler([{ ...ROW_TODAY, laterCount: null }])]);
     renderScreen();
-    expect(await screen.findByText('count syncing…')).toBeInTheDocument();
+    expect(await screen.findByText('counting…')).toBeInTheDocument();
   });
 
   it('surfaces a failed return without implying the mail was lost', async () => {
@@ -175,7 +175,7 @@ describe('SnoozedScreen — populated (D80 grouping)', () => {
     // The app-wide LaterReturnAlert owns the banner; this page must not
     // render a second copy of the same failure.
     expect(screen.queryByText(/could not be confirmed/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/automatic retry remains active/i)).toBeInTheDocument();
+    expect(screen.getByText(/We.ll keep trying/i)).toBeInTheDocument();
     expect(screen.getByText(/Last tried/i)).toBeInTheDocument();
   });
 });
@@ -320,7 +320,9 @@ describe('SnoozedScreen — wake now flow', () => {
       vi.spyOn(Date, 'now').mockReturnValue(afterDeadline);
       act(() => expire!());
       expect(screen.queryByText('Bringing back…')).not.toBeInTheDocument();
-      expect(screen.getByRole('status')).toHaveTextContent(/confirmation is taking longer/i);
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Bringing it back. This is taking longer than usual and updates on its own.',
+      );
       expect(screen.getByRole('button', { name: 'Bring back now' })).toBeEnabled();
       expect(screen.getByRole('button', { name: 'Change return time' })).toBeEnabled();
     } finally {

@@ -18,7 +18,10 @@ describe('TriageEmptyState', () => {
       <TriageEmptyState stats={{ ...TRIAGE_SESSION_STATS, decidedToday }} readiness="failed" />,
     );
     expect(
-      screen.getByRole('heading', { level: 2, name: "This mailbox's last scan didn't finish." }),
+      screen.getByRole('heading', {
+        level: 2,
+        name: 'The last scan of this Gmail account didn’t finish.',
+      }),
     ).toBeInTheDocument();
     expect(screen.queryByText('Nothing needs a decision right now.')).not.toBeInTheDocument();
     expect(screen.queryByText(/done for now/i)).not.toBeInTheDocument();
@@ -37,7 +40,13 @@ describe('TriageEmptyState', () => {
           readiness={readiness}
         />,
       );
-      expect(screen.getByRole('heading', { level: 2, name: /mailbox scan/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', {
+          level: 2,
+          name:
+            readiness === 'queued' ? 'Your scan will start soon.' : 'Still scanning your Gmail.',
+        }),
+      ).toBeInTheDocument();
       expect(screen.getByText('3 decided today')).toBeInTheDocument();
       expect(screen.queryByText(/done for now/i)).not.toBeInTheDocument();
     },
@@ -46,9 +55,7 @@ describe('TriageEmptyState', () => {
     render(
       <TriageEmptyState stats={{ ...TRIAGE_SESSION_STATS, decidedToday: 0 }} readiness={null} />,
     );
-    expect(
-      screen.getByRole('heading', { name: 'Mailbox scan status is unavailable.' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Couldn’t check the scan.' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open Settings' })).toBeInTheDocument();
   });
 });

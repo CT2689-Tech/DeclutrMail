@@ -73,10 +73,10 @@ describe('TierGate', () => {
       'href',
       '/billing?plan=pro&cycle=monthly&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
     );
-    // The money-back note appears exactly once. Flags off keeps the
-    // published 30-day sentence; the deck line must not leak.
-    expect(screen.getAllByText(/30-day money-back guarantee/)).toHaveLength(1);
-    expect(screen.queryByText(/14-day money-back on any purchase/)).not.toBeInTheDocument();
+    expect(
+      screen.getAllByText(/14-day money-back on any purchase, once per customer/),
+    ).toHaveLength(1);
+    expect(screen.queryByText(/30-day money-back guarantee/)).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Compare plans' })).toHaveAttribute(
       'href',
       '/billing?from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',

@@ -17,7 +17,7 @@ import { track } from '@/lib/posthog';
 
 import { billingIntentPath } from './billing-intent';
 import { launchPlusQuote, moneyBackNote, quotedPlanPrice } from './billing-model';
-import { useRegionProvider } from './billing-currency';
+import { useRegionProvider, useVisitorPriceLocale } from './billing-currency';
 
 const { color, font, motion, radius, shadow, text } = tokens;
 
@@ -68,6 +68,7 @@ export function TierGate({
   }, [granted, requiredTierId]);
 
   const regionProvider = useRegionProvider();
+  const visitorLocale = useVisitorPriceLocale();
 
   if (granted) return <>{children}</>;
 
@@ -77,7 +78,7 @@ export function TierGate({
   const checkoutCycle = pricingV2 ? 'annual' : 'monthly';
   const quotedPrice =
     pricingV2 && requiredTierId === 'plus'
-      ? launchPlusQuote(regionProvider)
+      ? launchPlusQuote(regionProvider, visitorLocale)
       : quotedPlanPrice(requiredTierId, 'monthly', regionProvider);
   const requiredTier = TIER_MANIFEST[requiredTierId].name;
   // ONE checkout path (D117): deep-link the required plan into

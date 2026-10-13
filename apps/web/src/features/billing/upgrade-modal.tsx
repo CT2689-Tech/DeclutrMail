@@ -26,7 +26,7 @@ import {
   moneyBackNote,
   quotedPlanPrice,
 } from './billing-model';
-import { useRegionProvider } from './billing-currency';
+import { useRegionProvider, useVisitorPriceLocale } from './billing-currency';
 
 const { color, font, radius, shadow, space, text } = tokens;
 
@@ -84,6 +84,7 @@ export function UpgradeModal() {
   // `if (!hit) return null` fired a hook-order violation the moment a
   // 402 flipped `hit` on a mounted modal (billing audit 2026-07-28).
   const regionProvider = useRegionProvider();
+  const visitorLocale = useVisitorPriceLocale();
 
   if (!hit) return null;
 
@@ -102,7 +103,6 @@ export function UpgradeModal() {
   // page uses. Launch pricing sells Plus annual. Flags off still quotes
   // the monthly price the link buys.
   const isPassSecondAccount = hit.reason === 'pass_second_account';
-  const storyLocale = regionProvider === 'razorpay' ? 'inr' : 'usd';
   const targetPlan: 'plus' | 'pro' =
     hit.reason === 'free_cap' || isPassSecondAccount ? 'plus' : (requiredTier ?? 'pro');
   const checkoutCycle = pricingV2 ? 'annual' : 'monthly';
@@ -117,14 +117,17 @@ export function UpgradeModal() {
   // other free-cap confirm, whose old label was not a deck string.
   const limitConfirmLabel =
     pricingV2 && freeCap !== null && !meteredCap
-      ? fillStory(passEnabled ? WS1_COPY['cap.pass.button'] : WS1_COPY['cap.plus.button'])
+      ? fillStory(
+          passEnabled ? WS1_COPY['cap.pass.button'] : WS1_COPY['cap.plus.button'],
+          visitorLocale,
+        )
       : null;
   const upgradeLabel = limitConfirmLabel ?? `Upgrade to ${TIER_MANIFEST[targetPlan].name}`;
   const targetQuote =
     limitConfirmLabel !== null
       ? null
       : pricingV2 && targetPlan === 'plus'
-        ? launchPlusQuote(regionProvider)
+        ? launchPlusQuote(regionProvider, visitorLocale)
         : quotedPlanPrice(targetPlan, 'monthly', regionProvider);
 
   return (
@@ -178,11 +181,9 @@ export function UpgradeModal() {
           }}
         >
           {isPassSecondAccount
-            ? fillStory(WS1_COPY['cap.pass.secondAccount.title'], storyLocale)
+            ? fillStory(WS1_COPY['cap.pass.secondAccount.title'], visitorLocale)
             : hit.reason === 'free_cap'
-              ? typeof hit.details.requested === 'number'
-                ? WS1_COPY['cap.title']
-                : freeCapTitle(hit.details)
+              ? WS1_COPY['cap.title']
               : hit.reason === 'action_tier'
                 ? actionTierTitle(hit.details)
                 : hit.reason === 'pro_feature'
@@ -200,7 +201,7 @@ export function UpgradeModal() {
           }}
         >
           {isPassSecondAccount ? (
-            fillStory(WS1_COPY['cap.pass.secondAccount.body'], storyLocale)
+            fillStory(WS1_COPY['cap.pass.secondAccount.body'], visitorLocale)
           ) : hit.reason === 'free_cap' && typeof hit.details.requested === 'number' ? (
             capBody(hit.details)
           ) : hit.reason === 'free_cap' ? (
@@ -272,7 +273,7 @@ export function UpgradeModal() {
                   fontWeight: 600,
                 }}
               >
-                {fillStory(WS1_COPY['cap.pass.secondAccount.cta'], storyLocale)}
+                {fillStory(WS1_COPY['cap.pass.secondAccount.cta'], visitorLocale)}
               </Link>
               <Button tone="ghost" size="lg" onClick={dismiss} style={{ width: '100%' }}>
                 {WS1_COPY['cap.pass.secondAccount.dismiss']}
@@ -307,12 +308,12 @@ export function UpgradeModal() {
                     fontWeight: 600,
                   }}
                 >
-                  {fillStory(WS1_COPY['cap.pass.button'])}
+                  {fillStory(WS1_COPY['cap.pass.button'], visitorLocale)}
                 </Link>
               ) : null}
               {pricingV2 && passEnabled ? (
                 <span style={{ fontSize: text.sm, color: color.fgMuted }}>
-                  {fillStory(WS1_COPY['cap.pass.sublabel'])}
+                  {fillStory(WS1_COPY['cap.pass.sublabel'], visitorLocale)}
                 </span>
               ) : null}
               {typeof hit.details.suggestedPreset === 'number' ? (
@@ -362,10 +363,10 @@ export function UpgradeModal() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                {fillStory(WS1_COPY['cap.plus.button'])}
+                {fillStory(WS1_COPY['cap.plus.button'], visitorLocale)}
               </Link>
               <span style={{ fontSize: text.sm, color: color.fgMuted }}>
-                {fillStory(WS1_COPY['cap.plus.sublabel'])}
+                {fillStory(WS1_COPY['cap.plus.sublabel'], visitorLocale)}
               </span>
               <Button tone="ghost" size="lg" onClick={dismiss} style={{ width: '100%' }}>
                 {WS1_COPY['cap.dismiss']}
@@ -407,6 +408,7 @@ export function UpgradeModal() {
                 <span style={{ fontSize: text.sm, color: color.fgMuted }}>
                   {fillStory(
                     passEnabled ? WS1_COPY['cap.pass.sublabel'] : WS1_COPY['cap.plus.sublabel'],
+                    visitorLocale,
                   )}
                 </span>
               ) : null}
@@ -447,18 +449,18 @@ function capBody(d: FreeCapDetails): string {
   if (d.remaining <= 0) {
     return fillStory(WS1_COPY['cap.body.zero'], 'usd', { allowance, resetDate });
   }
-  return fillStory(WS1_COPY['cap.body'], 'usd', {
-    requested: (d.requested ?? d.requiredUnits).toLocaleString('en-US'),
+  const requestedCount = d.requested ?? d.requiredUnits;
+  // cap.body has no singular sibling. meter.noun.one is the approved "1 email".
+  const template =
+    requestedCount === 1
+      ? WS1_COPY['cap.body'].replace('{requested} emails', WS1_COPY['meter.noun.one'])
+      : WS1_COPY['cap.body'];
+  return fillStory(template, 'usd', {
+    requested: requestedCount.toLocaleString('en-US'),
     remaining: d.remaining.toLocaleString('en-US'),
     allowance,
     resetDate,
   });
-}
-
-function freeCapTitle(d: FreeCapDetails): string {
-  return d.requiredUnits > 1 && d.remaining > 0
-    ? `That needs ${d.requiredUnits} cleanup actions — only ${d.remaining} of your ${d.limit} are left this month`
-    : `You've used all ${d.limit} cleanup actions for this month`;
 }
 
 /** Short, locale-stable "Aug 27" label for the server's reset instant. */

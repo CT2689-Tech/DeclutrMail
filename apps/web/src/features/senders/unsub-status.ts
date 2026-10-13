@@ -22,7 +22,7 @@ export const UNSUB_PILL: Record<UnsubscribeLifecycleStatus, { label: string; tit
   },
   endpoint_accepted: {
     label: 'Request accepted',
-    title: "The sender's system accepted the request; whether email stops is up to them",
+    title: 'The sender got the request. It’s up to them to stop sending.',
   },
   failed: {
     label: 'Request failed',
@@ -38,7 +38,7 @@ export const UNSUB_PILL: Record<UnsubscribeLifecycleStatus, { label: string; tit
   },
   draft_opened: {
     label: 'Draft opened',
-    title: 'The Gmail draft was opened; DeclutrMail has not been told it was sent',
+    title: 'We started the email in Gmail for you to send. We can’t see whether it was sent.',
   },
   user_marked_sent: {
     label: 'Marked sent',
@@ -58,7 +58,7 @@ export function unsubscribeStatusCopy(
   if (status == null && method === 'one_click') {
     return {
       label: 'Outcome unknown',
-      title: 'This earlier unsubscribe has no delivery record, so we cannot confirm its outcome',
+      title: 'We can’t confirm whether this earlier request went through.',
     };
   }
   const resolved =

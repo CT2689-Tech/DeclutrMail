@@ -25,16 +25,24 @@ import { createContext, useContext, type ReactNode } from 'react';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
 const RegionProviderContext = createContext<BillingProviderId>('paddle');
+const VisitorPriceLocaleContext = createContext<'usd' | 'inr'>('usd');
 
 export function BillingCurrencyProvider({
   provider,
+  locale = 'usd',
   children,
 }: {
   provider: BillingProviderId;
+  /** Trusted visitor locale. Defaults to USD so tests and Storybook stay dollar-priced. */
+  locale?: 'usd' | 'inr';
   children: ReactNode;
 }) {
   return (
-    <RegionProviderContext.Provider value={provider}>{children}</RegionProviderContext.Provider>
+    <RegionProviderContext.Provider value={provider}>
+      <VisitorPriceLocaleContext.Provider value={locale}>
+        {children}
+      </VisitorPriceLocaleContext.Provider>
+    </RegionProviderContext.Provider>
   );
 }
 
@@ -51,4 +59,9 @@ export function BillingCurrencyProvider({
  */
 export function useRegionProvider(): BillingProviderId {
   return useContext(RegionProviderContext);
+}
+
+/** Display locale after the server resolved country + India checkout. */
+export function useVisitorPriceLocale(): 'usd' | 'inr' {
+  return useContext(VisitorPriceLocaleContext);
 }

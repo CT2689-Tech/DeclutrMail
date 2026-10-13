@@ -22,7 +22,7 @@ export function SessionProgress({
   return (
     <div
       role="status"
-      aria-label={`${decided} decided this session; ${queued} in queue${focusPosition == null ? '' : `; reviewing ${focusPosition} of ${queued}`}`}
+      aria-label={`${decided} decided this session; ${queued} left${focusPosition == null ? '' : `; reviewing ${focusPosition} of ${queued}`}`}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -38,7 +38,7 @@ export function SessionProgress({
       <span>{decided} decided</span>
       <span aria-hidden="true">·</span>
       <span>
-        {focusPosition == null ? `${queued} in queue` : `Reviewing ${focusPosition} of ${queued}`}
+        {focusPosition == null ? `${queued} left` : `Reviewing ${focusPosition} of ${queued}`}
       </span>
     </div>
   );

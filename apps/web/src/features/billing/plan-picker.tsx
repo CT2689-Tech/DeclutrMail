@@ -16,15 +16,14 @@ import {
 } from '@declutrmail/shared/contracts';
 import type {
   BillingCycle,
-  CheckoutSession,
   BillingProviderId,
   BillingSubscription,
 } from '@declutrmail/shared/contracts';
 import {
   fillStory,
+  launchPriceDisplay,
   OFFERS,
   PLUS_ANNUAL_2026_10,
-  priceLine as formatLaunchPrice,
   proNotPurchasableMessage,
   proWaitlistCta,
   proWaitlistJoined,
@@ -41,6 +40,7 @@ import {
   priceLineFor,
   TIER_JOBS,
 } from '@/features/marketing/pricing/pricing-model';
+import { visitorPriceLocale } from '@/features/marketing/pricing/visitor-pricing-locale';
 import { track } from '@/lib/posthog';
 
 import { apiErrorCode, apiErrorDetail } from './api/use-billing-subscription';
@@ -214,7 +214,6 @@ export function PlanPicker({
   onCheckoutAttempt,
   onCheckoutAbandoned,
   onCheckoutClosed,
-  onCheckoutBlocked,
   mayOpenCheckout,
   ownsCheckout,
   onPlanChangeAccepted,
@@ -276,13 +275,6 @@ export function PlanPicker({
   mayOpenCheckout?: (attemptId: string) => boolean;
   /** Lifecycle callbacks fence owner changes without discarding late valid payment events. */
   ownsCheckout?: () => boolean;
-  /** Retain the exact server session for a loader-only retry, with the claim held. */
-  onCheckoutBlocked?: (
-    session: CheckoutSession,
-    target: PaidTier,
-    cycle: BillingCycle,
-    attemptId: string,
-  ) => void;
   /** The change-plan endpoint accepted the switch — the screen enters
    *  the pending state until the webhook lands. `attemptId` identifies
    *  the pessimistic lock this attempt wrote (UUID-matched release). */
@@ -565,24 +557,22 @@ export function PlanPicker({
             )
             .then(
               () => undefined,
-              // Provider script failed to load — no overlay opened, but
-              // the SESSION exists server-side and the claim is held: a
-              // Razorpay subscription created with customer_notify is
-              // payable from the provider's own emailed link, so this is
-              // NOT "nothing at risk" (Codex 2026-07-29). Surface the
-              // reservation — the banner explains the locked state and
-              // owns the release path.
+              // Overlay never opened. A Paddle transaction without an
+              // open window is not payable from email (unlike Razorpay
+              // customer_notify). Keep the confirm panel, show the
+              // existing open-failed sentence, and release the local
+              // reservation so retry is armed. Do not paint
+              // "Checkout started".
               (err: unknown) => {
                 if (ownsCheckout && !ownsCheckout()) return;
                 void track('checkout_overlay_blocked', funnel);
                 checkout.reset();
                 setLaunchError(
-                  'The secure checkout window could not be opened. Your checkout remains reserved.',
+                  err instanceof CheckoutLaunchError
+                    ? err.message
+                    : new CheckoutLaunchError(true).message,
                 );
-                if (err instanceof CheckoutLaunchError && err.canRetry) {
-                  onCheckoutBlocked?.(session, target, cycle, attemptId);
-                }
-                onCheckoutClosed(attemptId);
+                onCheckoutAbandoned(attemptId);
               },
             );
         },
@@ -722,6 +712,7 @@ export function PlanPicker({
 
       {pricingV2 && passEnabled ? (
         <PassOfferCard
+          locale={visitorPriceLocale({ country, indiaCheckoutOpen })}
           included={
             grantingSub !== null && (grantingSub.tier === 'plus' || grantingSub.tier === 'pro')
           }
@@ -911,7 +902,7 @@ export function checkoutErrorMessage(error: unknown): string | null {
     }
     return ERROR_CODES[code].message;
   }
-  return 'Checkout could not be started. Please try again.';
+  return 'Couldn’t start checkout. Try again.';
 }
 
 /**
@@ -998,13 +989,7 @@ function launchPlusLine(
   country: string | null,
   indiaCheckoutOpen: boolean,
 ): { amount: string; per: string; note?: string } {
-  const currency = currencyForPricePoint(PLUS_ANNUAL_2026_10, 'paddle', {
-    pricingV2: true,
-    country,
-    indiaCheckoutOpen,
-  });
-  if (currency === 'INR') return { amount: formatLaunchPrice(PLUS_ANNUAL_2026_10, 'inr'), per: '' };
-  return { amount: formatLaunchPrice(PLUS_ANNUAL_2026_10, 'usd'), per: '/yr' };
+  return launchPriceDisplay(visitorPriceLocale({ country, indiaCheckoutOpen })).plus;
 }
 
 function ProWaitlistCard({ disabled }: { disabled: boolean }) {
@@ -1342,11 +1327,13 @@ function DowngradePanel({
 }
 
 function PassOfferCard({
+  locale = 'usd',
   included,
   selected,
   disabled,
   onSelect,
 }: {
+  locale?: 'usd' | 'inr';
   included: boolean;
   selected: boolean;
   disabled: boolean;
@@ -1364,7 +1351,7 @@ function PassOfferCard({
     >
       <div style={{ fontWeight: 600 }}>{fillStory(WS1_COPY['pricing.pass.name'])}</div>
       <div style={{ color: color.fgMuted, marginTop: 4 }}>
-        {fillStory(WS1_COPY['price.passLine'])}
+        {fillStory(WS1_COPY['cap.pass.sublabel'], locale)}
       </div>
       <Button
         tone="default"

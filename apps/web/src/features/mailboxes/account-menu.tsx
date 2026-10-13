@@ -233,7 +233,9 @@ export function AccountMenu() {
             Selected marks the Gmail account shown across the app.
           </div>
           {me.mailboxes.length === 0 && (
-            <div style={{ padding: '6px 12px', color: color.fgMuted }}>No mailboxes connected.</div>
+            <div style={{ padding: '6px 12px', color: color.fgMuted }}>
+              No Gmail account connected.
+            </div>
           )}
           {me.mailboxes.map((m) => {
             const isSelected = m.id === activeMailbox?.id;
@@ -264,7 +266,7 @@ export function AccountMenu() {
                   <button
                     type="button"
                     aria-pressed={isSelected}
-                    aria-label={`${isSelected ? 'Active mailbox' : 'Switch to mailbox'} ${m.email}${needsReconnect ? ', needs reconnect' : ''}`}
+                    aria-label={`${isSelected ? 'Selected Gmail account' : 'Switch to this Gmail account'} ${m.email}${needsReconnect ? ', needs reconnect' : ''}`}
                     disabled={isDisconnected || setActive.isPending}
                     onClick={() => {
                       if (isSelected) return;
@@ -273,7 +275,7 @@ export function AccountMenu() {
                       // re-authorized. Only Gmail-dependent actions pause.
                       setActive.mutate(m.id, {
                         onError: () => {
-                          toast('Could not switch Gmail accounts. Please try again.', 'warn');
+                          toast('Couldn’t switch Gmail accounts. Try again.', 'warn');
                         },
                         onSuccess: () => {
                           setOpen(false);
@@ -364,7 +366,7 @@ export function AccountMenu() {
                       !needsReconnect &&
                       m.readiness === 'ready' &&
                       healthById[m.id]?.hasSyncError && (
-                        <MenuStatus tone="danger">Not syncing</MenuStatus>
+                        <MenuStatus tone="danger">Not updating</MenuStatus>
                       )}
                   </button>
                   <span

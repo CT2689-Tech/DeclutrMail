@@ -73,7 +73,7 @@ export function MailboxReconnectBanner() {
             {/* Not "expired": the same state is a Gmail permission left
                 unticked at consent (403 insufficientPermissions), which a
                 plain reconnect repeats unless the box is ticked. */}
-            {`Google isn't granting access to ${mailbox.email} — reconnect and allow Gmail access.`}
+            {`DeclutrMail lost access to ${mailbox.email}. Reconnect and allow Gmail access.`}
           </span>
           <Button tone="default" size="sm" onClick={() => startMailboxConnect(mailbox.id)}>
             Reconnect

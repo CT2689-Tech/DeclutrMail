@@ -230,7 +230,7 @@ export function MailboxesCard({
                     // (only an initial-sync failure ever flips it) — a
                     // persistently-broken mailbox otherwise read as plain
                     // "Ready" here, worse than no tag at all.
-                    <StatusTag tone="danger">Not syncing</StatusTag>
+                    <StatusTag tone="danger">Not updating</StatusTag>
                   ) : m.readiness === 'ready' ? (
                     <StatusTag tone="muted">Scan complete</StatusTag>
                   ) : (

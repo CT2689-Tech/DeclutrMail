@@ -1,3 +1,4 @@
+import { WS3_COPY } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import type { LearnArticle } from './types';
 
@@ -223,8 +224,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
     updatedAt: '2026-07-14',
     kind: 'Launch essay',
     title: 'Reversible does not mean risk-free',
-    description:
-      'Why each Gmail cleanup action needs its own recovery explanation, visible previews, small batches, and honest one-way warnings even when Undo exists.',
+    description: WS3_COPY['ws3.pr1019.blog.recovery.description'],
     intro:
       'Undo is a safety net. When a product uses it as permission to leave the affected email unclear or make confirmation effortless, recovery becomes a substitute for informed action.',
     readingMinutes: 9,
@@ -251,7 +251,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         id: 'journal',
         title: 'A good Activity history supports accurate Undo',
         paragraphs: [
-          'A generic “move back” command is not enough. An email may already have labels, may already be outside Inbox, or may change again after the cleanup action. DeclutrMail must remember the exact Gmail label changes for that mailbox so a retry does not repeat or compound them.',
+          WS3_COPY['ws3.pr1019.blog.recovery.moveBack'],
           'DeclutrMail stores Gmail message IDs and label changes rather than a duplicate email body. Activity shows Undo while recovery is available. Triage also shows recent actions, but Activity remains the dependable place to review results and start recovery.',
           (UNIFORM_UNDO_WINDOW_DAYS === null
             ? 'The deadline should be visible. Every plan offers Undo, though the exact window depends on which plan.'

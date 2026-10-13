@@ -6,7 +6,7 @@ import Link from 'next/link';
 const { color, font, text } = tokens;
 
 function screenerEmptyTitle(readiness?: string | null): string {
-  if (readiness === 'queued' || readiness === 'syncing') return 'Still syncing your Gmail';
+  if (readiness === 'queued' || readiness === 'syncing') return 'Still scanning your Gmail';
   if (readiness === 'failed') return 'Your Gmail scan needs attention';
   return 'No senders awaiting review';
 }

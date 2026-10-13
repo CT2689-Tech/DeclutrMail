@@ -14,7 +14,7 @@ export function describeMatchReason(reason: string): { label: string; technical:
     // The matcher rounds both values to two decimals after its strict comparison.
     if (confidence <= 1 && threshold <= 1 && confidence >= threshold) {
       return {
-        label: `At matching: ${verdict[1]} suggestion exceeded the rule's confidence threshold.`,
+        label: `Matched: the suggestion was ${verdict[1]}, and this rule acts on those.`,
         technical: reason,
       };
     }

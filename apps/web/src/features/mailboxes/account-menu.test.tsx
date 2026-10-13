@@ -195,14 +195,13 @@ describe('AccountMenu Gmail reconnect health', () => {
 
   it('reports a failed switch and leaves the account picker available to retry', async () => {
     const { user } = await renderOpenMenu();
-    const selector = screen.getByRole('button', { name: `Switch to mailbox ${MAILBOX_B.email}` });
+    const selector = screen.getByRole('button', {
+      name: `Switch to this Gmail account ${MAILBOX_B.email}`,
+    });
     await user.click(selector);
     const callbacks = setActiveMutateSpy.mock.calls.at(-1)?.[1];
     act(() => callbacks?.onError?.(new Error('Network unavailable')));
-    expect(toastSpy).toHaveBeenCalledWith(
-      'Could not switch Gmail accounts. Please try again.',
-      'warn',
-    );
+    expect(toastSpy).toHaveBeenCalledWith('Couldn’t switch Gmail accounts. Try again.', 'warn');
     expect(screen.getByRole('dialog', { name: 'Gmail accounts' })).toBeInTheDocument();
     expect(selector).toBeEnabled();
   });
@@ -278,7 +277,7 @@ describe('AccountMenu Gmail reconnect health', () => {
     expect(within(row).queryByText('Scan failed')).not.toBeInTheDocument();
     expect(
       within(row).getByRole('button', {
-        name: `Active mailbox ${MAILBOX_A.email}, needs reconnect`,
+        name: `Selected Gmail account ${MAILBOX_A.email}, needs reconnect`,
       }),
     ).toBeEnabled();
 
@@ -308,7 +307,7 @@ describe('AccountMenu Gmail reconnect health', () => {
     expect(within(row).queryByText('Selected')).not.toBeInTheDocument();
     expect(within(row).queryByText('Scan failed')).not.toBeInTheDocument();
     const selector = within(row).getByRole('button', {
-      name: `Switch to mailbox ${MAILBOX_B.email}, needs reconnect`,
+      name: `Switch to this Gmail account ${MAILBOX_B.email}, needs reconnect`,
     });
     expect(selector).toBeEnabled();
     const reconnect = within(row).getByRole('button', { name: `Reconnect ${MAILBOX_B.email}` });
@@ -342,7 +341,7 @@ describe('AccountMenu Gmail reconnect health', () => {
     await renderOpenMenu();
     const row = screen.getByTestId(`account-mailbox-${MAILBOX_B.id}`);
 
-    expect(within(row).getByText('Not syncing')).toBeInTheDocument();
+    expect(within(row).getByText('Not updating')).toBeInTheDocument();
     expect(within(row).queryByText('Needs reconnect')).not.toBeInTheDocument();
     expect(within(row).queryByText('Scan failed')).not.toBeInTheDocument();
   });
@@ -447,7 +446,9 @@ describe('AccountMenu Gmail reconnect health', () => {
     expect(dialog.getAttribute('style')).toContain('overscroll-behavior: contain');
 
     await user.tab();
-    expect(screen.getByRole('button', { name: `Active mailbox ${MAILBOX_A.email}` })).toHaveFocus();
+    expect(
+      screen.getByRole('button', { name: `Selected Gmail account ${MAILBOX_A.email}` }),
+    ).toHaveFocus();
     await user.tab();
     expect(
       screen.getByRole('button', {

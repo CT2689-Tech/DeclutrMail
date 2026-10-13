@@ -60,7 +60,7 @@ describe('/beta page — F7 beta status page', () => {
       'href',
       '/sign-in',
     );
-    expect(screen.getByRole('link', { name: /email the founder/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /email us/i })).toHaveAttribute(
       'href',
       expect.stringMatching(/^mailto:/),
     );
@@ -80,7 +80,7 @@ describe('/beta page — F7 beta status page', () => {
     expect(
       screen.getByRole('heading', { name: /this email needs an invite right now/i }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /email the founder/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /email us/i })).toHaveAttribute(
       'href',
       expect.stringMatching(/^mailto:/),
     );

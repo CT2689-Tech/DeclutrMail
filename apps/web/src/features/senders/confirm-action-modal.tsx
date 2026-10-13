@@ -35,8 +35,8 @@ import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-pro
 import { mailLocationValue } from '@/features/triage/action-preview-detail';
 import { afterLead } from '@/lib/copy/after-lead';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
-import { WS1_COPY } from '@declutrmail/shared/copy/launch';
-import { fillStory, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory, meterPreviewText, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import { useUpgradeGateStore } from '@/lib/entitlements/upgrade-gate';
@@ -453,7 +453,7 @@ export function ConfirmActionModal({
     requiresLivePreview && (livePreviewLoading || livePreviewUnavailable);
   const previewStateCopy = livePreviewUnavailable
     ? previewSenderGone
-      ? 'This sender is no longer in this mailbox.'
+      ? 'This sender has no email in this Gmail account anymore.'
       : "Couldn't load the preview — nothing can run without one."
     : livePreviewLoading
       ? 'Loading preview…'
@@ -1083,8 +1083,7 @@ export function ConfirmActionModal({
   if (reachAvailable && inboxReachCount != null && inboxReachCount === allMailReachCount) {
     controls.push(
       <p key="equal-reach" style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
-        Both scopes currently match the same emails. Inbox + archived also includes archived matches
-        when this action runs.
+        Both choices cover the same emails right now.
       </p>,
     );
   }
@@ -1178,7 +1177,7 @@ export function ConfirmActionModal({
       NO_SENDABLE_UNSUB
     ) : (
       <StatusWithAction
-        message="Every selected sender is now Protected or no longer in this mailbox."
+        message="Every sender you picked is now Protected or has no email left."
         action={onRefreshSenders && { label: 'Refresh senders', onClick: onRefreshSenders }}
       />
     )
@@ -1189,12 +1188,13 @@ export function ConfirmActionModal({
     emailMeter || previewStateCopy !== null || nothingActionableBulk || nothingToActOn
       ? null
       : quotaCappedFrom
-        ? `${unitsNeeded} of ${quotaCappedFrom} eligible senders — all you have left this month.`
-        : quotaShort
-          ? `This needs ${unitsNeeded} cleanup action${unitsNeeded === 1 ? '' : 's'} but only ${quotaRemaining} ${quotaRemaining === 1 ? 'is' : 'are'} left this month.`
-          : quotaRemaining !== null
-            ? `Uses ${unitsNeeded} of your ${quotaRemaining} cleanup action${quotaRemaining === 1 ? '' : 's'} left this month.`
-            : null;
+        ? fillStory(WS2_COPY.simplify.confirm.quotaCapped, 'usd', {
+            n: unitsNeeded,
+            total: quotaCappedFrom,
+          })
+        : quotaRemaining !== null
+          ? meterPreviewText(unitsNeeded, quotaRemaining)
+          : null;
 
   // ── Details ──────────────────────────────────────────────────────────
   // Short label/value facts (`SheetFactList`). Each value says the same
@@ -1282,7 +1282,10 @@ export function ConfirmActionModal({
     });
   }
   if (isUnsubVerb) {
-    facts.push({ label: 'Cleanup actions', value: 'Acting on past email uses a second one' });
+    facts.push({
+      label: WS2_COPY.simplify.confirm.meterLabel,
+      value: 'Acting on past email uses a second one',
+    });
   }
   // Decision-point scope disclosure. The live preview's count replaces the
   // selection-time arithmetic; new protection/deletion can narrow it further.
@@ -1502,7 +1505,7 @@ export function ConfirmActionModal({
                         ? WS1_COPY['cap.pass.button']
                         : WS1_COPY['cap.plus.button'],
                     )
-                  : 'Upgrade for unlimited cleanup',
+                  : fillStory(WS1_COPY['cap.plus.link']),
                 onClick: reportQuotaShort,
               }
             : {

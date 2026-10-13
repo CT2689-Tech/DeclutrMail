@@ -18,6 +18,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import type { Me } from '@/features/auth/api/use-me';
 import { PrivacyDataView } from './privacy-data-screen';
@@ -91,6 +92,25 @@ describe('PrivacyDataView', () => {
     expect(screen.getByText(/disconnected — sync stopped/i)).toBeInTheDocument();
   });
 
+  it('states what remains after deletion with the approved sentences', () => {
+    renderView();
+
+    expect(
+      screen.getAllByText(WS2_COPY.simplify.privacy.keptLimited, { exact: false }).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getByText(WS2_COPY.simplify.privacy.logoCache, { exact: false }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(WS2_COPY.simplify.privacy.auditRecords, { exact: false }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/stated operational retention policy/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/rows are never deleted/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/under DeclutrMail operational retention policy/i),
+    ).not.toBeInTheDocument();
+  });
+
   it('states removal triggers and distinguishes one-mailbox purge from account deletion', () => {
     renderView();
 
@@ -98,7 +118,7 @@ describe('PrivacyDataView', () => {
       screen.getAllByText(/removed when this Gmail account is disconnected/i).length,
     ).toBeGreaterThan(0);
     expect(screen.getAllByText(/Disconnect & delete saved data/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Records we keep to investigate problems/i)).toBeInTheDocument();
+    expect(screen.getByText(/What we keep to fix problems/i)).toBeInTheDocument();
     expect(screen.getByText(/Disconnect & delete one mailbox's saved data/i)).toBeInTheDocument();
     expect(
       screen.getByText(/other mailboxes.*disconnected Gmail address.*remain/i),

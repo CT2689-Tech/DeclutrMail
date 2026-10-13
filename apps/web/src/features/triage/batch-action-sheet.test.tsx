@@ -171,7 +171,7 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
     fireEvent.click(confirm);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(screen.getByText(/Protected or no longer in this mailbox/i)).toBeInTheDocument();
+    expect(screen.getByText(/Protected or has no email left/i)).toBeInTheDocument();
   });
 
   it('disables confirm when the senders are actionable but none has inbox email', () => {
@@ -259,7 +259,7 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(screen.getByText(/Protected or no longer in this mailbox/i)).toBeInTheDocument();
+    expect(screen.getByText(/Protected or has no email left/i)).toBeInTheDocument();
   });
 });
 
@@ -281,7 +281,7 @@ describe('BatchActionSheet — states what the batch costs (D226)', () => {
       />,
     );
     expect(
-      screen.getByText(/Uses 3 of your 34 cleanup actions left this month/),
+      screen.getByText(/This clears 3 emails. You have 34 free this month/),
     ).toBeInTheDocument();
   });
 
@@ -298,7 +298,7 @@ describe('BatchActionSheet — states what the batch costs (D226)', () => {
       />,
     );
     expect(
-      screen.getByText(/needs 3 cleanup actions but only 2 are left this month/),
+      screen.getByText(/This clears 3 emails. You have 2 free left this month/),
     ).toBeInTheDocument();
   });
 
@@ -364,7 +364,7 @@ describe('BatchActionSheet — the title names the real count (QA-archive-202609
     expect(screen.getByText(/1 Protected sender is skipped\./)).toBeInTheDocument();
     expect(screen.getByText('Protected')).toBeInTheDocument();
     expect(
-      screen.getByText(/Uses 2 of your 34 cleanup actions left this month/),
+      screen.getByText(/This clears 2 emails. You have 34 free this month/),
     ).toBeInTheDocument();
     expect(screen.queryByText(/3 senders/)).toBeNull();
   });

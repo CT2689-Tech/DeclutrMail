@@ -90,7 +90,7 @@ describe('TriageScreen — populated queue', () => {
     });
     expect(html).toContain('aria-label="Loading your review layout"');
     expect(html).not.toContain('aria-label="Current decision"');
-    expect(html).not.toContain('aria-label="Triage queue"');
+    expect(html).not.toContain('aria-label="Triage list"');
     expect(html).toContain('>List<');
     expect(html).toContain('>Focus<');
   });
@@ -104,7 +104,7 @@ describe('TriageScreen — populated queue', () => {
     expect(html).toContain('>Triage</h1>');
     expect(html).not.toContain('decisions, one at a time.');
     expect(html).toContain('>0 decided<');
-    expect(html).toContain(`>${TRIAGE_QUEUE.length} in queue<`);
+    expect(html).toContain(`>${TRIAGE_QUEUE.length} left<`);
     expect(html).not.toContain('Reviewing 1 of');
     expect(html).not.toContain('decisions waiting');
   });
@@ -167,7 +167,7 @@ describe('TriageScreen — empty / loading branches', () => {
     expect(html).toContain('>Triage</h1>');
     expect(html).not.toContain('Nothing waiting.');
     // `renderToStaticMarkup` HTML-escapes the straight apostrophe.
-    expect(html).toContain('This mailbox&#x27;s last scan didn&#x27;t finish.');
+    expect(html).toContain('The last scan of this Gmail account didn\u2019t finish.');
     expect(html).not.toContain('Nothing needs a decision');
   });
 
@@ -188,7 +188,7 @@ describe('TriageScreen — empty / loading branches', () => {
     expect(free).toContain('See Plus');
     // D19 — freeRemaining is the LIFETIME cleanup remainder (5 total),
     // not a daily counter; the copy must say so.
-    expect(free).toContain('free cleanup actions left');
+    expect(free).toContain('free emails left');
 
     const paid = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS });
     expect(paid).not.toContain('See Plus');
@@ -248,7 +248,7 @@ describe('TriageScreen — empty / loading branches', () => {
     expect(html).not.toContain('Decided');
     // Must not look like an error state (D212).
     expect(html).not.toContain('Try again');
-    expect(html).not.toContain('Loading triage queue');
+    expect(html).not.toContain('Loading Triage…');
   });
 
   it('renders the resting state for kind=ready with [] rows and no decisions today (W5)', () => {
@@ -265,7 +265,7 @@ describe('TriageScreen — empty / loading branches', () => {
 
   it('renders the skeleton when state.kind=loading', () => {
     const html = renderState({ kind: 'loading' });
-    expect(html).toContain('Loading triage queue');
+    expect(html).toContain('Loading Triage…');
   });
 
   it('renders a real error state with a retry affordance when state.kind=error (D211)', () => {
@@ -278,14 +278,14 @@ describe('TriageScreen — empty / loading branches', () => {
       error: new Error('network down'),
       retry: () => {},
     });
-    expect(html).toContain('Your queue didn');
+    expect(html).toContain('Your Triage list didn');
     expect(html).toContain('Try again');
     expect(html).toContain('role="alert"');
     // The error's visual signature is the shared ErrorState's amber mark
     // (the amber/dashed borders are gone by design — ADR-0042).
     expect(html).toContain('data-dm-error-mark');
     // Never the skeleton alongside the error.
-    expect(html).not.toContain('Loading triage queue');
+    expect(html).not.toContain('Loading Triage…');
   });
 
   it('keeps the successful resting state visually distinct from a failed fetch', () => {

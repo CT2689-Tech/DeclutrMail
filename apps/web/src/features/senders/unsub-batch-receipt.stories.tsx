@@ -58,7 +58,7 @@ export const MixedSelection: Story<typeof UnsubBatchReceipt> = {
   } satisfies ReceiptArgs,
 };
 
-/** Requests still going out — no outcome is claimed yet. */
+/** Requests still sending — no outcome is claimed yet. */
 export const StillSending: Story<typeof UnsubBatchReceipt> = {
   args: {
     receipt: {

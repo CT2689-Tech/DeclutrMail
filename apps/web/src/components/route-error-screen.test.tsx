@@ -103,7 +103,7 @@ describe('RouteErrorScreen', () => {
     );
 
     expect(screen.getByRole('heading', { name: /couldn't load your settings/i })).toBeVisible();
-    const disclosure = screen.getByText('Show support reference');
+    const disclosure = screen.getByText('Show error code for support');
     expect(disclosure.closest('details')).not.toHaveAttribute('open');
     fireEvent.click(disclosure);
     expect(disclosure.closest('details')).toHaveAttribute('open');

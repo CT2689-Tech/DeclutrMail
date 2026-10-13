@@ -261,7 +261,7 @@
       "title": "Scanning your Gmail…",
       "body": "You can close this tab and come back later.",
       "stage": [
-        "fetching_metadata: Collecting sender details.",
+        "fetching_metadata: Finding your senders.",
         "building_sender_index: Grouping email by sender.",
         "computing_recommendations: Preparing suggestions.",
         "finalizing: Finishing up."
@@ -421,7 +421,7 @@
     "activity": "Everything DeclutrMail changed in your Gmail.",
     "activityEmpty": "Changes you or your Autopilot rules make will show up here.",
     "protected": "DeclutrMail suggests Keep for these senders and leaves them out of bulk changes and Autopilot rules.",
-    "backlogPass": "One payment for {passDays} days of {plusName}, to clear older email. It doesn’t renew.",
+    "backlogPass": "One payment for {passDays} days with no monthly limit on one {CONNECTION_TERM}, to clear older email. It doesn’t renew.",
     "catchup": "Later, {BRIEF_NAME} and Follow-ups"
   },
   "plainExplain": {
@@ -493,7 +493,7 @@
       "scope": "Your plan covers every Gmail account you connect.",
       "limit": {
         "unlimited": "No monthly limit.",
-        "free": "{n} sender changes a month. Each change to a sender counts once, however many emails it moves. Keep and Unarchive don’t count."
+        "free": "Clear {allowance} emails a month free. Unsubscribe, Keep, Later and Undo stay free."
       },
       "sameFeatures": "Your features and number of Gmail accounts stay the same.",
       "accounts": {
@@ -555,6 +555,43 @@
         "purgeClause": "failed jobs stay until resolved or removed when this inbox’s saved data or the account is deleted",
         "senderListClause": "names and addresses come from the saved sender list, one page at a time"
       }
+    }
+  },
+  "simplify": {
+    "activity": {
+      "bundleIncludes": "The bundle includes your Gmail address. Sender names and addresses stay hidden unless you choose to include them."
+    },
+    "billing": {
+      "meterRule": "Archive and Delete count each email they clear. Unsubscribe, Keep, Later and Undo don’t count.",
+      "resetLine": "Your free emails reset on {resetDate}.",
+      "resetLinePublic": "The free {allowance} resets each month on the day you signed up."
+    },
+    "onboarding": {
+      "loadError": "We couldn’t load setup.",
+      "reviewed": {
+        "one": "1 reviewed. You can undo Archive, Later or Delete from Activity for 30 days.",
+        "other": "{n} reviewed. You can undo Archive, Later or Delete from Activity for 30 days."
+      }
+    },
+    "later": {
+      "slow": "Bringing it back. This is taking longer than usual and updates on its own."
+    },
+    "confirm": {
+      "meterLabel": "Free emails",
+      "quotaCapped": "This covers {n} of the {total} senders you picked. That’s all your free total allows this month."
+    },
+    "deleteAccount": {
+      "paymentPending": "We’re still checking a recent payment. Try again in a few minutes, or email support@declutrmail.com."
+    },
+    "privacy": {
+      "keptLimited": "Some records are kept after deletion. The list above shows what we keep and for how long.",
+      "logoCache": "Sender logos are public images and aren’t linked to you.",
+      "auditRecords": "Security and deletion records have no set end date. After you delete your account, they’re no longer linked to you."
+    }
+  },
+  "pr1019": {
+    "activity": {
+      "countsNote": "{windowLabel}. One choice, like archiving a sender, can cover many emails."
     }
   }
 }

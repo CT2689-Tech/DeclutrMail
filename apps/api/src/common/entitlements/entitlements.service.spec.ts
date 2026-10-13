@@ -1132,8 +1132,8 @@ describe('METER_V2 off keeps the cleanup-action count', () => {
       requiredUnits: FREE_LIMIT,
       resetsAt: expect.any(String),
     });
-    expect(hit.message).toMatch(/cleanup actions/);
-    expect(hit.message).not.toMatch(/free emails/);
+    expect(hit.message).toMatch(/free emails/);
+    expect(hit.message).not.toMatch(/cleanup actions/);
   });
 });
 

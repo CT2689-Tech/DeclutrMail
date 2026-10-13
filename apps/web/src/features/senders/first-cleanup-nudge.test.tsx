@@ -34,7 +34,7 @@ describe('shouldShowFirstCleanupNudge', () => {
 describe('<FirstCleanupNudge />', () => {
   it('names the next step and links the first sender', () => {
     render(<FirstCleanupNudge href="/senders/a" />);
-    expect(screen.getByRole('region', { name: 'Finish first cleanup' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Start with one sender' })).toBeInTheDocument();
     expect(screen.getByText('Pick one sender')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open a sender' })).toHaveAttribute(
       'href',

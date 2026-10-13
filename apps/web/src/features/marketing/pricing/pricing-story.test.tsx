@@ -25,9 +25,11 @@ describe('PricingStory', () => {
     expect(plusCard).toHaveTextContent('$59');
     expect(plusCard).toHaveTextContent('a year');
     expect(plusCard?.textContent).not.toMatch(/a year a year/);
+    expect(screen.getByTestId('pricing-story').textContent).toContain('$0');
 
     const passLines = [
       'No monthly limit for 30 days',
+      'For one Gmail account',
       'The Screener and Autopilot while it lasts',
       'Buy again any time to add 30 more days',
       'Then you’re back on Free. Email you cleared stays where you put it.',
@@ -54,6 +56,11 @@ describe('PricingStory', () => {
         ).toBeInTheDocument();
         expect(view.container.textContent).toMatch(/rupees and include GST/);
         expect(view.container.textContent).not.toMatch(/You can pay with UPI/);
+        if (locale === 'inr') {
+          expect(view.container.textContent).not.toContain('$');
+          expect(view.container.textContent).toContain('₹1,999');
+          expect(view.container.textContent).toMatch(/a year/);
+        }
         view.unmount();
       }
     },

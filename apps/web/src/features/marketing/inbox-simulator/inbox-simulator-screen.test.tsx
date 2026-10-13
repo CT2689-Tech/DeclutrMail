@@ -10,7 +10,8 @@ vi.mock('@/features/auth/mailbox-action-context', () => {
   throw new Error('The public inbox simulator imported authenticated mailbox context.');
 });
 
-import { TIER_IDS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory, TIER_IDS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { CAPABILITY_LABELS } from '@/features/marketing/pricing/pricing-model';
 import { TRIAGE_QUEUE } from '@/features/triage/fixtures';
@@ -148,9 +149,7 @@ describe('InboxSimulatorScreen', () => {
 
     const availability = screen.getByRole('complementary', { name: 'Plan availability' });
     expect(availability).toHaveTextContent('Senders and Triage are included on every plan.');
-    expect(availability).toHaveTextContent(
-      'Free includes 50 cleanup actions every month; paid plans are unlimited.',
-    );
+    expect(availability).toHaveTextContent(fillStory(WS3_COPY['ws3.simulator.planLine']));
     expect(screen.getByRole('link', { name: 'Compare plans' })).toHaveAttribute('href', '/pricing');
   });
 
@@ -556,7 +555,7 @@ describe('InboxSimulatorScreen', () => {
     expect(screen.queryByRole('radio', { name: 'Act now' })).toBeNull();
     expect(screen.getByText(/Nothing moves until you approve each match/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Turn on$/ })).toBeInTheDocument();
-    expect(screen.getByText(/\bPlus\b/)).toBeInTheDocument();
+    expect(screen.getByText(/Autopilot\s*·\s*Plus/)).toBeInTheDocument();
   });
 
   it('previews only Inbox mail still actionable after the earlier batch', () => {
@@ -654,7 +653,7 @@ describe('InboxSimulatorScreen', () => {
     // archive future messages — nothing on this screen may imply
     // otherwise, for any verb.
     expect(screen.queryByText(/future emails? will skip/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/cleared/i)).toBeInTheDocument();
+    expect(screen.getByText('Cleared from Inbox')).toBeInTheDocument();
   });
 
   it('rejects a v3 snapshot rather than half-restoring it', () => {

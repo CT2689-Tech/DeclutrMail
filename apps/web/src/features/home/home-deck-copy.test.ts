@@ -26,6 +26,9 @@ describe('Home deck sentences', () => {
     expect(meterPreviewSentence(800, 640)).toBe(
       'This clears 800 emails. You have 640 free left this month.',
     );
+    expect(meterPreviewSentence(1, 0)).toBe(
+      'This clears 1 email, but you have no free emails left this month.',
+    );
   });
 
   it('does not invent a chip for an unmetered summary or a zero-email preview', () => {

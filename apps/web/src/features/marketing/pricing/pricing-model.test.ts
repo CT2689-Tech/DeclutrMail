@@ -71,6 +71,19 @@ describe('priceLineFor — derives every amount from the manifest', () => {
     expect(line?.amount).toBe(formatUsd(free.prices.monthly?.usdCents ?? NaN));
   });
 
+  it('quotes ₹0 for Free when India checkout is open, and $0 otherwise', () => {
+    const free = TIER_MANIFEST.free;
+    const india = { pricingV2: true, country: 'IN', indiaCheckoutOpen: true } as const;
+    expect(priceLineFor(free, 'monthly', 'paddle', india)).toEqual({ amount: '₹0', per: '' });
+    expect(priceLineFor(free, 'monthly', 'paddle', { ...india, indiaCheckoutOpen: false })).toEqual(
+      {
+        amount: '$0',
+        per: '',
+      },
+    );
+    expect(priceLineFor(free, 'monthly')).toEqual({ amount: '$0', per: '' });
+  });
+
   it('returns null for tiers with no price at all (team/enterprise)', () => {
     expect(priceLineFor(TIER_MANIFEST.team, 'monthly')).toBeNull();
     expect(priceLineFor(TIER_MANIFEST.enterprise, 'annual')).toBeNull();
@@ -98,11 +111,11 @@ describe('CAPABILITY_LABELS — D227 verb language', () => {
       // verdict "Screen" is banned on product surfaces (§2.2).
       expect(label).not.toMatch(/\bScreen\b(?!er)/);
     }
+    expect(CAPABILITY_LABELS['cleanup-actions']).toBe(
+      'Choices for each sender \u2014 Archive \u00b7 Unsubscribe \u00b7 Later \u00b7 Delete',
+    );
     expect(CAPABILITY_LABELS['cleanup-actions']).not.toContain('Keep');
-    expect(CAPABILITY_LABELS['cleanup-actions']).toContain('Archive');
-    expect(CAPABILITY_LABELS['cleanup-actions']).toContain('Unsubscribe');
-    expect(CAPABILITY_LABELS['cleanup-actions']).toContain('Later');
-    expect(CAPABILITY_LABELS['cleanup-actions']).toContain('Delete');
+    expect(CAPABILITY_LABELS['cleanup-actions']).not.toContain('Cleanup actions');
   });
 });
 
@@ -163,9 +176,7 @@ describe('compareRows — derived from the manifest', () => {
 describe('cardBullets — manifest-derived card copy', () => {
   it('Free enumerates its surfaces and shows the monthly quota', () => {
     const bullets = cardBullets(TIER_MANIFEST.free);
-    expect(bullets).toContain(
-      `${TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions every month`,
-    );
+    expect(bullets).toContain('1,000 emails cleared a month (Archive or Delete)');
     expect(bullets).toContain(CAPABILITY_LABELS.senders);
   });
 
@@ -177,7 +188,7 @@ describe('cardBullets — manifest-derived card copy', () => {
     expect(bullets).not.toContain(CAPABILITY_LABELS.triage);
     expect(bullets).toContain(CAPABILITY_LABELS.screener);
     expect(bullets).toContain(CAPABILITY_LABELS.autopilot);
-    expect(bullets).toContain('Unlimited cleanup actions');
+    expect(bullets).toContain('No monthly limit');
   });
 
   it('Pro adds the attention surfaces and the manifest quota deltas', () => {

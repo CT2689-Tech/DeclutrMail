@@ -7,6 +7,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory } from '@declutrmail/shared/entitlements';
 import {
   act,
   cleanup,
@@ -497,7 +499,7 @@ describe('SendersScreen — edge states', () => {
 
       renderScreen();
       await waitFor(() =>
-        expect(screen.getByRole('heading', { name: /still syncing/i })).toBeInTheDocument(),
+        expect(screen.getByRole('heading', { name: /still scanning/i })).toBeInTheDocument(),
       );
       expect(screen.queryByText(/no active senders/i)).not.toBeInTheDocument();
     },
@@ -562,7 +564,7 @@ describe('SendersScreen — edge states', () => {
 
       renderScreen();
       await waitFor(() =>
-        expect(screen.getByRole('heading', { name: /still syncing/i })).toBeInTheDocument(),
+        expect(screen.getByRole('heading', { name: /still scanning/i })).toBeInTheDocument(),
       );
 
       fireEvent.change(screen.getByPlaceholderText('Search senders…'), {
@@ -571,7 +573,7 @@ describe('SendersScreen — edge states', () => {
 
       // Past the search debounce: the same state, never "no senders match".
       await new Promise((r) => setTimeout(r, 600));
-      expect(screen.getByRole('heading', { name: /still syncing/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /still scanning/i })).toBeInTheDocument();
       expect(screen.queryByText(/no senders match/i)).not.toBeInTheDocument();
     },
   );
@@ -685,7 +687,7 @@ describe('SendersScreen — edge states', () => {
 
     await screen.findAllByText(/Sender A/);
     const freshness = screen.getByTestId('sender-results-freshness');
-    expect(freshness).toHaveTextContent(/still syncing/i);
+    expect(freshness).toHaveTextContent(/still scanning/i);
     expect(freshness).not.toHaveTextContent(/results as of/i);
     // QA-sync-20260831-09: "senders indexed" is a banned phrase
     // (check-microcopy.sh) — "scan" is the sanctioned term.
@@ -698,7 +700,7 @@ describe('SendersScreen — edge states', () => {
     // false single-provenance claim, same class as the `syncFailed`
     // branch's fixed copy.
     expect(freshness).not.toHaveTextContent(/from before this scan started/i);
-    expect(freshness).toHaveTextContent(/may be incomplete or stale/i);
+    expect(freshness).toHaveTextContent(/some senders may be missing/i);
   });
 
   it('does not claim "Results as of" a time it never measured while the mailbox scan has failed (QA-sync-20260831-02)', async () => {
@@ -711,7 +713,7 @@ describe('SendersScreen — edge states', () => {
 
     await screen.findAllByText(/Sender A/);
     const freshness = screen.getByTestId('sender-results-freshness');
-    expect(freshness).toHaveTextContent(/scan failed/i);
+    expect(freshness).toHaveTextContent(/last scan didn\u2019t finish/i);
     expect(freshness).not.toHaveTextContent(/results as of/i);
     // Codex adversarial review: initial-sync flushes sender identity rows
     // in batches, before its final aggregate rebuild, so a mid-fetch
@@ -720,7 +722,7 @@ describe('SendersScreen — edge states', () => {
     // overclaimed a single, known provenance the backend can't guarantee.
     // The negative control: reverting to that phrasing makes this fail.
     expect(freshness).not.toHaveTextContent(/from before this scan started/i);
-    expect(freshness).toHaveTextContent(/may be incomplete or stale/i);
+    expect(freshness).toHaveTextContent(/some senders may be missing/i);
     expect(freshness).toHaveTextContent(failedScanSettingsStep(false));
   });
 
@@ -959,7 +961,7 @@ describe('SendersScreen — edge states', () => {
     renderScreen();
     await screen.findAllByText(/Sender A/);
     const freshness = screen.getByTestId('sender-results-freshness');
-    expect(freshness).toHaveTextContent(/still syncing/i);
+    expect(freshness).toHaveTextContent(/still scanning/i);
     expect(freshness).not.toHaveTextContent(/read-only/i);
 
     fireEvent.change(screen.getByRole('combobox', { name: /search senders/i }), {
@@ -3036,7 +3038,9 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
     const dialog = await screen.findByRole('dialog');
     // Says what it trimmed, and to what.
-    expect(await within(dialog).findByText(/1 of 2 eligible senders/)).toBeVisible();
+    expect(
+      await within(dialog).findByText(/This covers 1 of the 2 senders you picked/),
+    ).toBeVisible();
     // D226: every count on the preview must equal what will run. The
     // title and the scope line must both say 1 — a title of "2 senders"
     // over a 1-sender mutation is the contradiction the preview exists
@@ -3048,7 +3052,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(within(dialog).queryByText(/from 2 senders/)).not.toBeInTheDocument();
     // And it can actually run — the upgrade swap is for a ZERO allowance.
     expect(
-      within(dialog).queryByRole('button', { name: /Upgrade for unlimited cleanup/ }),
+      within(dialog).queryByRole('button', { name: fillStory(WS1_COPY['cap.plus.link']) }),
     ).not.toBeInTheDocument();
   });
 
@@ -3142,7 +3146,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(
       within(dialog).getByText('1 selected sender is Protected and will be left as it is.'),
     ).toBeInTheDocument();
-    expect(within(dialog).getByText(/1 of 2 eligible senders/)).toBeVisible();
+    expect(within(dialog).getByText(/This covers 1 of the 2 senders you picked/)).toBeVisible();
   });
 
   // Founder report 2026-09-20: "After selecting any action … no clue if the

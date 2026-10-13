@@ -1902,7 +1902,7 @@ function TriageErrorState({ error, onRetry }: { error: unknown; onRetry: () => v
   return (
     <ErrorState
       headingLevel={2}
-      title="Your queue didn't load"
+      title="Your Triage list didn’t load"
       description={loadErrorDescription(error)}
       onRetry={onRetry}
     />
@@ -1930,7 +1930,7 @@ export function TriageLoadingState({ variant = 'list' }: { variant?: 'focus' | '
           }}
         />
       ))}
-      <span style={{ position: 'absolute', left: -9999 }}>Loading triage queue</span>
+      <span style={{ position: 'absolute', left: -9999 }}>Loading Triage…</span>
     </div>
   );
 }
