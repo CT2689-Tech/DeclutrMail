@@ -338,7 +338,7 @@ describe('marketing metadata guards', () => {
     );
     expect(titleText(security)).toBe('Security — DeclutrMail');
     expect(security.description).toBe(
-      'DeclutrMail never fetches or stores full email contents, encrypts Google access tokens, and received Google OAuth verification approval in April 2026.',
+      'DeclutrMail never fetches or stores full email contents, encrypts Google access tokens, and has Google OAuth verification approved April 21, 2026.',
     );
     expect(titleText(methodology)).toBe('Privacy and control — DeclutrMail');
     expect(methodology.description).toBe(

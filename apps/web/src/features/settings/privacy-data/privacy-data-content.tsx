@@ -82,7 +82,7 @@ export function PrivacyDataContent() {
             items={GMAIL_DERIVED_DATA_INVENTORY.map(inventoryDisplayItem)}
           />
           <InventoryGroup
-            title="Records we keep to investigate problems"
+            title="What we keep to fix problems"
             items={GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY.map(inventoryDisplayItem)}
           />
           <div id="shared-with" style={{ scrollMarginTop: 24 }}>
@@ -157,7 +157,7 @@ function deletionTriggerDetail(
     case 'delete-indexed-data':
       return 'Deleted when you choose Disconnect & delete saved data, or when you delete your DeclutrMail account.';
     case 'delete-account':
-      return 'Retained after one mailbox’s saved data is deleted; deleted with the DeclutrMail account.';
+      return 'Kept if you delete one Gmail account’s data; deleted with your DeclutrMail account.';
     case 'retention-policy':
       return 'Retained after mailbox or account deletion only under the stated operational retention policy.';
   }

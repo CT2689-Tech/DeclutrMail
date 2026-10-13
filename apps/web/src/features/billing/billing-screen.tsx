@@ -666,7 +666,7 @@ export function BillingScreen({
       key: 'billing-review',
       node: (
         <p role="status" style={{ margin: 0, color: color.fgMuted }}>
-          Billing verification pending. Current access is shown below.{' '}
+          We’re confirming your payment. You keep your current plan meanwhile.{' '}
           <a className={linkStyles.link} href="mailto:support@declutrmail.com">
             Contact support
           </a>{' '}
@@ -1100,7 +1100,7 @@ function resumeCancellationErrorMessage(error: unknown): string {
   if (error instanceof ApiError && error.status === 503) {
     return 'Billing isn’t switched on yet.';
   }
-  return 'Your subscription could not be restored. Please try again.';
+  return 'Couldn’t restore your plan. Try again.';
 }
 
 /** D118 pause-offer failures. */
@@ -1118,7 +1118,7 @@ function pauseErrorMessage(error: unknown): string {
   if (error instanceof ApiError && error.status === 503) {
     return 'Billing isn’t switched on yet.';
   }
-  return 'The pause could not be processed. Please try again.';
+  return 'Couldn’t pause your plan. Try again.';
 }
 
 /** Honest copy for a cancel failure — never a silent swallow. */
@@ -1129,7 +1129,7 @@ function cancelErrorMessage(error: unknown): string {
   if (error instanceof ApiError && error.status === 503) {
     return 'Billing isn’t switched on yet.';
   }
-  return 'Cancellation could not be processed. Please try again.';
+  return 'Couldn’t cancel your plan. Try again.';
 }
 
 /**
@@ -1272,11 +1272,11 @@ export function PaymentProcessingNotice({
           <dt style={{ fontSize: text.sm, fontWeight: 600 }}>What we know</dt>
           <dd style={{ margin: 0, color: color.fgSoft }}>
             {kind === 'checkout'
-              ? 'Checkout reported completion. Our server has not yet confirmed your new plan.'
+              ? 'Payment received. Your new plan will show here in a minute.'
               : kind === 'checkout_intent'
                 ? 'Checkout started, but we do not yet know whether a payment completed.'
                 : kind === 'change_unconfirmed'
-                  ? 'The provider has not confirmed whether your plan change applied.'
+                  ? 'We’re still confirming your plan change.'
                   : kind === 'resume'
                     ? 'The provider accepted your resume. No charge was started; your existing paid period continues.'
                     : 'The provider accepted your plan change. Your new plan is not confirmed here yet.'}
@@ -1312,7 +1312,7 @@ export function PaymentProcessingNotice({
           style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}
           aria-live="polite"
         >
-          <strong>Latest provider check: </strong>
+          <strong>Last checked: </strong>
           {providerCheck === 'checking' ? (
             'Checking with the payment provider…'
           ) : providerCheck === 'none_found' ? (
@@ -1814,7 +1814,7 @@ function ScheduledPlanChangeNotice({
         <span style={{ color: color.fgMuted, fontSize: text.sm }}>
           {restoring
             ? 'Paddle has not confirmed whether your renewal was restored. Retry before renewal or contact support.'
-            : 'The payment provider’s response was interrupted, so billing changes are paused until we confirm what happened.'}{' '}
+            : 'We’re confirming what happened with your payment. Billing changes are paused until then.'}{' '}
           {restoring ? '' : 'Your current plan and renewal remain unchanged. '}Email{' '}
           <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
             support@declutrmail.com
@@ -2125,7 +2125,7 @@ function NonBackingSubscriptionNotice({
       {isPaused && !canSelfServeResume ? (
         <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>
           {sub.provider === 'razorpay'
-            ? 'Razorpay does not guarantee a no-charge resume on the existing billing period. To avoid an unexpected charge, email '
+            ? 'Restarting a plan paid in rupees could start a new charge. To avoid that, email '
             : 'We can’t confirm your retained billing period from here, so resume isn’t offered without review. Email '}
           <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
             support@declutrmail.com

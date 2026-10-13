@@ -379,7 +379,7 @@ export function ScreenerRow({
                   senders diverge from COUNT(mail_messages). */}
               <span
                 style={{ fontWeight: 600 }}
-                title="Messages received from this sender, within DeclutrMail's retention — archived mail included. The second number is how many are in your inbox now."
+                title="All email from this sender, archived included. The second number is what’s in your inbox now."
               >
                 Messages received:
               </span>{' '}

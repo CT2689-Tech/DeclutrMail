@@ -901,13 +901,9 @@ describe('Brief Noise bulk archive (D65)', () => {
     renderScreen();
     await confirmArchive();
 
-    await screen.findByText(
-      'Nothing changed — those senders are Protected or no longer in this mailbox.',
-    );
+    await screen.findByText('Nothing changed — those senders are Protected or have no email left.');
     expect(
-      screen.getByText(
-        'Nothing archived — those senders are Protected or no longer in this mailbox.',
-      ),
+      screen.getByText('Nothing archived — those senders are Protected or have no email left.'),
     ).toBeInTheDocument();
     expect(sentry.captureFeatureException).not.toHaveBeenCalled();
   });
@@ -1247,7 +1243,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     renderScreen();
 
     const dialog = await openPreview();
-    await within(dialog).findByText(/Your active mailbox changed while this was open/i);
+    await within(dialog).findByText(/You switched Gmail accounts, so nothing was archived/i);
     expect(within(dialog).getByRole('button', { name: /^Archive/ })).toBeDisabled();
     expect(
       within(dialog).queryByRole('button', { name: /retry preview/i }),

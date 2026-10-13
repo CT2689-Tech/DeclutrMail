@@ -63,13 +63,13 @@ export class SyncNowError extends Error {
 type Source = EventPayloads['sync_now_clicked']['source'];
 
 /**
- * Mutation hook for the "Sync now" button.
+ * Mutation hook for the "Scan now" button.
  *
  * Surfaces using this:
  *   - `SyncNowButton` in `AppShell.topbarRight`
  *   - Brief's empty-state "Refresh" CTA
  *   - Senders' Senders-list error-state "Try again" CTA
- *   - Sender Detail's overflow "Sync now"
+ *   - Sender Detail's overflow "Scan now"
  *
  * Each call site passes a distinct `source` so PostHog can attribute
  * which surface drove the click — the funnel question "is anyone using
@@ -151,7 +151,7 @@ export function useSyncNow(source: Source, mailboxId?: string) {
         // noop — a sync job is already waiting or running; the click did
         // not add a duplicate. Nothing measures when it lands or whether
         // it brings new mail, so the toast promises neither.
-        toast('Sync already in progress.', 'info');
+        toast('Already checking for new email.', 'info');
       }
     },
     onError: (err) => {
@@ -169,21 +169,24 @@ export function useSyncNow(source: Source, mailboxId?: string) {
           // cursorless-`ready` mailbox, and only the first two are
           // "in progress". This wording holds for all four.
           toast(
-            "Can't check for new email — this inbox's scan hasn't finished. See Settings → Gmail accounts.",
+            'Can’t check for new email until the first scan finishes. See Settings → Gmail accounts.',
             'info',
           );
           break;
         case 'RATE_LIMITED':
-          toast(`Slow down — try again in ${err.retryAfterSec ?? 60} seconds.`, 'warn');
+          toast(`Too many checks. Try again in ${err.retryAfterSec ?? 60} seconds.`, 'warn');
           break;
         case 'NO_ACTIVE_MAILBOX':
-          toast('Reconnect a mailbox to sync.', 'danger');
+          toast('Reconnect your Gmail account to check for new email.', 'danger');
           break;
         case 'MAILBOX_NOT_OWNED':
-          toast('That mailbox is no longer connected — switch accounts to sync.', 'danger');
+          toast(
+            'That Gmail account isn’t connected anymore. Switch accounts to check for new email.',
+            'danger',
+          );
           break;
         case 'UNKNOWN':
-          toast('Sync failed — please try again.', 'danger');
+          toast('Couldn’t check for new email. Try again.', 'danger');
           break;
         default:
           // Exhaustiveness gate (typescript-reviewer 2026-06-06). When

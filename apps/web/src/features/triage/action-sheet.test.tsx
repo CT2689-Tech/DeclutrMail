@@ -541,7 +541,7 @@ describe('ActionSheet — Protected acknowledgement (D245/D42)', () => {
     // no undo kind and would forge a D245 sticky override.
     renderSheet(protectedRow);
     expect(notice()).toHaveTextContent(
-      /stays Protected, so bulk and automatic cleanup will keep skipping it/i,
+      /stays Protected, so bulk changes and Autopilot will keep skipping it/i,
     );
     expect(screen.getByRole('button', { name: /^Unprotect$/i })).toBeInTheDocument();
     expect(notice()).toHaveTextContent(/Automatic protection won’t re-apply/i);

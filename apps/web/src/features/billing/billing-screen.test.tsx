@@ -2118,7 +2118,7 @@ describe('BillingScreen — paid subscriber', () => {
     stubSubscription(() => jsonOk({ data: { ...PRO_SUB, billingReviewPending: true } }));
     const mounted = renderScreen();
     const card = await screen.findByTestId('current-plan-card');
-    expect(await screen.findByText(/Billing verification pending/)).toBeInTheDocument();
+    expect(await screen.findByText(/confirming your payment/)).toBeInTheDocument();
     expect(card).not.toHaveTextContent('Next renewal');
     expect(within(card).getByRole('button', { name: 'Review cancellation' })).toBeEnabled();
     expect(within(card).queryByText('Manage plan')).toBeNull();
@@ -2130,7 +2130,7 @@ describe('BillingScreen — paid subscriber', () => {
     expect(within(cancellation).queryByRole('button', { name: 'Pause for 30 days' })).toBeNull();
     mounted.unmount();
     renderScreen();
-    expect(await screen.findByText(/Billing verification pending/)).toBeInTheDocument();
+    expect(await screen.findByText(/confirming your payment/)).toBeInTheDocument();
   });
   it('plan card: tier, price, renewal, cancel affordance — and NO provider name', async () => {
     mockTier = 'pro';
@@ -2764,7 +2764,7 @@ describe('BillingScreen — paid subscriber', () => {
     let modal = screen.getByTestId('cancel-modal');
     fireEvent.click(within(modal).getByRole('button', { name: 'Cancel subscription' }));
     expect(await within(modal).findByRole('alert')).toHaveTextContent(
-      'Cancellation could not be processed. Please try again.',
+      'Couldn’t cancel your plan. Try again.',
     );
 
     // Close ("Keep my plan") then reopen — the stale error must be gone.
@@ -3463,9 +3463,7 @@ describe('BillingScreen — paid subscriber', () => {
     // by the paid→paid switch test above).
     const notice = await screen.findByTestId('payment-processing-notice');
     expect(notice).toHaveTextContent('Plan change unconfirmed — confirming your plan.');
-    expect(notice).toHaveTextContent(
-      'The provider has not confirmed whether your plan change applied.',
-    );
+    expect(notice).toHaveTextContent('We’re still confirming your plan change.');
     expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
     expect(screen.queryAllByRole('button', { name: /Switch to/ })).toHaveLength(0);
     expect(changeAttempts).toBe(1);

@@ -81,7 +81,7 @@ describe('StepFirstTriage', () => {
         <StepFirstTriage onComplete={onComplete} completing={false} goal="reduce_newsletters" />,
       );
 
-      fireEvent.click(screen.getByRole('button', { name: 'Refresh connection' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
 
       expect(connection.reset).toHaveBeenCalledOnce();
       expect(onboarding.firstTriage.refetch).not.toHaveBeenCalled();
@@ -131,7 +131,7 @@ describe('StepFirstTriage', () => {
     expect(screen.getByText(/can be undone from Activity/i)).toBeInTheDocument();
     expect(screen.queryByText(/metered monthly/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/require Plus/i)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Open workspace/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Go to Senders/i })).toBeInTheDocument();
   });
 
   it('spares Plus/Pro users the Free-tier caveat', () => {
@@ -139,7 +139,7 @@ describe('StepFirstTriage', () => {
 
     render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);
 
-    expect(screen.getByRole('button', { name: /Open workspace/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Go to Senders/i })).toBeInTheDocument();
     expect(screen.queryByText(/metered monthly/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/On Free/i)).not.toBeInTheDocument();
   });
@@ -149,7 +149,7 @@ describe('StepFirstTriage', () => {
 
     render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);
 
-    expect(screen.getByRole('button', { name: /Open workspace/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Go to Senders/i })).toBeInTheDocument();
     expect(screen.queryByText(/metered monthly/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Triage keeps a queue ready/i)).not.toBeInTheDocument();
   });
@@ -167,7 +167,7 @@ describe('StepFirstTriage', () => {
     const title = screen.getByRole('heading', { level: 1 });
     expect(title).toHaveTextContent(/decisions/i);
     expect(title).not.toHaveTextContent(/\bclean/i);
-    expect(screen.getByRole('button', { name: /Open workspace/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Go to Senders/i })).toBeInTheDocument();
   });
 
   it('stays retryable when the completion POST fails', () => {
@@ -184,7 +184,7 @@ describe('StepFirstTriage', () => {
     render(
       <StepFirstTriage onComplete={onComplete} completing={false} goal="reduce_newsletters" />,
     );
-    const exit = screen.getByRole('button', { name: /Open workspace/i });
+    const exit = screen.getByRole('button', { name: /Go to Senders/i });
 
     fireEvent.click(exit);
     fireEvent.click(exit);
@@ -217,7 +217,7 @@ describe('StepFirstTriage', () => {
   });
 
   // The mid-review exit ends onboarding for good. It was briefly given
-  // the COMPLETION panel's label ("Open workspace"), which reads as
+  // the COMPLETION panel's label ("Go to Senders"), which reads as
   // navigation while senders are still queued. The two controls must not
   // share a name.
   it('does not label the mid-review exit as navigation', () => {
@@ -229,7 +229,7 @@ describe('StepFirstTriage', () => {
     render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);
 
     expect(screen.getByRole('button', { name: /Finish review/i })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Open workspace/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Go to Senders/i })).not.toBeInTheDocument();
   });
 
   // Step 5 renders `corner` in every state — mid-review, loading, error

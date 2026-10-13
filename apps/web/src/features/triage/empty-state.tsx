@@ -72,12 +72,12 @@ export function TriageEmptyState({
     const failed = readiness === 'failed';
     const unknown = readiness == null;
     const title = failed
-      ? "This mailbox's last scan didn't finish."
+      ? 'The last scan of this Gmail account didn’t finish.'
       : unknown
-        ? 'Mailbox scan status is unavailable.'
+        ? 'Couldn’t check the scan.'
         : readiness === 'queued'
-          ? 'Your mailbox scan is queued.'
-          : 'Your mailbox scan is still in progress.';
+          ? 'Your scan will start soon.'
+          : 'Still scanning your Gmail.';
     return (
       <>
         <EmptyState

@@ -5,7 +5,7 @@ import {
   PROVIDER_SWITCH_NOTE,
   RAZORPAY_LIMITATIONS_NOTE,
 } from '@/features/billing/billing-copy';
-import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+import { fillWs3, WS1_COPY } from '@declutrmail/shared/copy/launch';
 import { fillStory, isPricingV2, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
@@ -52,8 +52,9 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
   {
     id: 'anthropic',
     question: 'Are any Gmail details sent to an AI provider?',
-    answer:
-      'To explain a suggestion, Anthropic receives the sender’s name and domain and the facts behind it, without subject lines or snippets. Daily Brief works differently: it may send the sender, subject line, and Gmail preview snippet to Anthropic to compose a short summary. Neither use sends full email contents or attachments, and DeclutrMail uses a standard summary when Anthropic is unavailable.',
+    answer: fillWs3(
+      'Only if you allow AI in the app. Then, to explain a suggestion, Anthropic receives the sender’s name and domain and the facts behind it, without subject lines or snippets. The {BRIEF_NAME} (part of {proName}; waitlist only for new accounts) may send the sender, subject line and Gmail preview snippet to write a short summary. Neither sends full email contents or attachments. Until you allow it, or after you turn it off in Settings → AI, explanations are written from our rules.',
+    ),
     link: {
       href: '/answers/what-is-metadata-only-email-analysis',
       label: 'See exactly what is processed',

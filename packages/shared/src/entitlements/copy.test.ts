@@ -131,16 +131,30 @@ describe('pricing story builders', () => {
     vi.unstubAllEnvs();
   });
 
-  it('returns no offers while the flag is off', () => {
+  it('lists the Free offer while paid offers stay unlisted', () => {
     vi.stubEnv('PRICING_V2', '');
-    expect(buildOffersJsonLd({ plus: true, pass: true })).toEqual([]);
+    expect(buildOffersJsonLd({ plus: true, pass: true })).toEqual([
+      {
+        '@type': 'Offer',
+        name: 'Free',
+        price: '0',
+        priceCurrency: 'USD',
+        url: 'https://declutrmail.com/pricing',
+      },
+    ]);
     expect(renderPricingMarkdown(true)).toBe('');
   });
 
   it('snapshots listed JSON-LD and markdown while the flag is on', () => {
     vi.stubEnv('PRICING_V2', 'true');
     expect(buildOffersJsonLd()).toEqual([
-      { '@type': 'Offer', name: 'Free', price: 0, priceCurrency: 'USD', url: '/pricing' },
+      {
+        '@type': 'Offer',
+        name: 'Free',
+        price: '0',
+        priceCurrency: 'USD',
+        url: 'https://declutrmail.com/pricing',
+      },
     ]);
     const listed = buildOffersJsonLd({ plus: true, pass: true });
     expect(listed).toHaveLength(4);

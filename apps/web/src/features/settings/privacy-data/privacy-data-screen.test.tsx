@@ -98,7 +98,7 @@ describe('PrivacyDataView', () => {
       screen.getAllByText(/removed when this Gmail account is disconnected/i).length,
     ).toBeGreaterThan(0);
     expect(screen.getAllByText(/Disconnect & delete saved data/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Records we keep to investigate problems/i)).toBeInTheDocument();
+    expect(screen.getByText(/What we keep to fix problems/i)).toBeInTheDocument();
     expect(screen.getByText(/Disconnect & delete one mailbox's saved data/i)).toBeInTheDocument();
     expect(
       screen.getByText(/other mailboxes.*disconnected Gmail address.*remain/i),

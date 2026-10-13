@@ -128,7 +128,7 @@ export function ChangePlanPanel({
                 {isDowngrade
                   ? quoteReady && effectiveDate
                     ? `from ${effectiveDate}.`
-                    : 'if your provider can schedule it.'
+                    : 'if it can be scheduled.'
                   : 'from now on.'}
               </span>
             ) : null}
@@ -147,9 +147,9 @@ export function ChangePlanPanel({
               style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}
             >
               {preview.isFetching
-                ? 'Checking whether your provider can schedule this change…'
+                ? 'Checking…'
                 : apiErrorCode(preview.error) === 'PLAN_CHANGE_UNSUPPORTED'
-                  ? 'Your provider can’t schedule this change while preserving your paid period. Try another billing interval.'
+                  ? 'This change can’t keep your paid time. Try yearly or monthly instead.'
                   : apiErrorCode(preview.error) === 'PLAN_CHANGE_TOO_LATE'
                     ? 'This change is too close to renewal. Try again after your plan renews.'
                     : 'We could not confirm this schedule. Refresh the quote before continuing.'}

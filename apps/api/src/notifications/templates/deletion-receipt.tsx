@@ -14,9 +14,7 @@ export async function deletionReceiptEmail(
   input: DeletionReceiptEmailInput,
 ): Promise<RenderedEmail> {
   const text = [
-    `On ${input.deletedAt}, DeclutrMail permanently deleted your account`,
-    'and everything it stored about your mailboxes — sender names and',
-    'addresses, subject lines, snippets, labels, and dates.',
+    `On ${input.deletedAt}, DeclutrMail permanently deleted your account and everything it saved about your Gmail accounts: sender names and addresses, subject lines, preview snippets, labels and dates.`,
     '',
     'Your Gmail account itself was never modified by this deletion.',
     '',
@@ -32,8 +30,8 @@ export async function deletionReceiptEmail(
     <Shell preview="Your DeclutrMail data has been deleted." footer={FOOTER}>
       <Eyebrow>Deleted {input.deletedAt}</Eyebrow>
       <Text style={{ ...BODY_TEXT, margin: '0 0 16px' }}>
-        DeclutrMail permanently deleted your account and everything it stored about your mailboxes —
-        sender names and addresses, subject lines, snippets, labels, and dates.
+        DeclutrMail permanently deleted your account and everything it saved about your Gmail
+        accounts: sender names and addresses, subject lines, preview snippets, labels and dates.
       </Text>
       <Text style={{ ...BODY_TEXT, margin: '0 0 16px' }}>
         Your Gmail account itself was never modified by this deletion.

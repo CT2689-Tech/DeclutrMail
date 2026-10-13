@@ -605,7 +605,7 @@ describe('TriageRow — inline preview Protected acknowledgement (D245/D42)', ()
     // kind and would forge a D245 sticky override.
     renderInline(rowById('t-sarah'));
     expect(screen.getByRole('status')).toHaveTextContent(
-      /stays Protected, so bulk and automatic cleanup will keep skipping it/i,
+      /stays Protected, so bulk changes and Autopilot will keep skipping it/i,
     );
     expect(screen.getByRole('button', { name: /^Unprotect$/i })).toBeInTheDocument();
   });
@@ -655,19 +655,19 @@ describe('TriageRow — the D245 review row strip (offerUnprotect)', () => {
 
   it('renders the consequence and the Unprotect control on a protected row', () => {
     renderStrip(rowById('t-sarah'));
-    expect(screen.getByText(/Bulk and automatic cleanup skip this sender/i)).toBeInTheDocument();
+    expect(screen.getByText(/Bulk changes and Autopilot skip this sender/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Unprotect$/i })).toBeInTheDocument();
   });
 
   it('renders no strip for an unprotected row, even on the review', () => {
     renderStrip(rowById('t-groupon'));
-    expect(screen.queryByText(/Bulk and automatic cleanup skip this sender/i)).toBeNull();
+    expect(screen.queryByText(/Bulk changes and Autopilot skip this sender/i)).toBeNull();
     expect(screen.queryByRole('button', { name: /^Unprotect$/i })).toBeNull();
   });
 
   it('renders no strip outside the review (offerUnprotect unset)', () => {
     renderStrip(rowById('t-sarah'), { offerUnprotect: false });
-    expect(screen.queryByText(/Bulk and automatic cleanup skip this sender/i)).toBeNull();
+    expect(screen.queryByText(/Bulk changes and Autopilot skip this sender/i)).toBeNull();
   });
 
   it('never stacks two Unprotect buttons when the strip and an inline preview are both live', () => {

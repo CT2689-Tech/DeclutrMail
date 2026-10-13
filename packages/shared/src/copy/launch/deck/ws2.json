@@ -261,7 +261,7 @@
       "title": "Scanning your Gmail…",
       "body": "You can close this tab and come back later.",
       "stage": [
-        "fetching_metadata: Collecting sender details.",
+        "fetching_metadata: Finding your senders.",
         "building_sender_index: Grouping email by sender.",
         "computing_recommendations: Preparing suggestions.",
         "finalizing: Finishing up."

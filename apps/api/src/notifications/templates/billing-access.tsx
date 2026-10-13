@@ -17,13 +17,13 @@ export async function billingAccessEmail(input: {
     : null;
   const message =
     input.kind === 'grant_expiring'
-      ? `Your complimentary access grant expires on ${date}. A paid plan or another complimentary grant may continue your access.`
+      ? `Your free access ends on ${date}. To keep using paid features, choose a plan in Plan & billing.`
       : input.kind === 'grant_expired'
         ? `Your complimentary access grant expired on ${date}. Other paid plans and complimentary grants continue according to Billing.`
-        : `Your subscription access deadline is ${date ?? 'available in Billing'}. This notice describes app access; your payment provider confirms refunds and recurring billing.`;
+        : `Your subscription access deadline is ${date ?? 'available in Billing'}. `;
   const access =
     input.currentTier === null
-      ? 'Access verification is pending. Open Billing for the latest status.'
+      ? 'We’re confirming your access. Open Plan & billing for the latest status.'
       : `Current app access: ${input.currentTier.charAt(0).toUpperCase() + input.currentTier.slice(1)}.`;
   const footer = 'This is an account access notice from DeclutrMail. Reply for help.';
   const subject =

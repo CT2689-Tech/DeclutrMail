@@ -895,7 +895,7 @@ export function checkoutErrorMessage(error: unknown): string | null {
     }
     return ERROR_CODES[code].message;
   }
-  return 'Checkout could not be started. Please try again.';
+  return 'Couldn’t start checkout. Try again.';
 }
 
 /**

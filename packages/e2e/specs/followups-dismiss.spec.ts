@@ -88,7 +88,7 @@ test('Mark resolved dismisses the row, audits it, and survives reload', async ({
   await row.getByText('Evaluation', { exact: true }).click();
   await expect(row.locator(`time[datetime="${evaluatedAt}"]`)).toBeVisible();
   await expect(row).toContainText(
-    'against the email scanned so far. New replies may still be syncing.',
+    'against the email scanned so far. New replies may not be here yet.',
   );
 
   // ---- Dismiss via the D88 affordance. The label says WHERE it is

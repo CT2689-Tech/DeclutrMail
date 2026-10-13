@@ -760,7 +760,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           },
           {
             name: 'Open the Unsubscribe preview',
-            text: 'Check whether the method submits a request or prepares a Gmail draft, and whether an optional backlog action is selected. The sender controls whether and when delivery stops.',
+            text: 'Check whether it sends a request or opens a prefilled email in Gmail, and whether Archive or Delete for older email is selected. The sender decides whether and when their email stops.',
           },
           {
             name: 'Complete the correct delivery path',

@@ -72,7 +72,7 @@ describe('INR pause copy on checkout confirm', () => {
     expect(screen.queryByRole('button', { name: 'Paused for now' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Continue to checkout' })).toBeEnabled();
     expect(screen.getByLabelText(/UPI · cards · netbanking/).closest('label')).toHaveTextContent(
-      'INR pricing — secure checkout by Razorpay',
+      'Prices in rupees',
     );
     expect(panel).toHaveTextContent(/billed annually, starting today/);
   });

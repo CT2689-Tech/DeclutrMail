@@ -15,7 +15,7 @@ export default function Loading() {
       gap={20}
       kicker="Cleanup"
       title="Triage"
-      label="Loading triage queue"
+      label="Loading Triage…"
       rows={1}
       rowHeight={440}
       rowRadius={tokens.radius['2xl']}

@@ -137,7 +137,8 @@ export function ActivitySupportBundleDialog({
             for all matching records, not only rows currently loaded on screen.
           </p>
           <p style={{ margin: '7px 0 0', color: color.fgMuted, fontSize: text.sm }}>
-            mailbox: <strong style={{ color: color.fg }}>{mailboxEmail ?? 'Active mailbox'}</strong>
+            mailbox:{' '}
+            <strong style={{ color: color.fg }}>{mailboxEmail ?? 'Selected Gmail account'}</strong>
           </p>
         </div>
 
@@ -250,10 +251,8 @@ export function ActivitySupportBundleDialog({
               summary="What technical details can be included?"
               style={{ marginTop: 10 }}
             >
-              The optional appendix contains the bundle version, internal mailbox and Activity
-              identifiers, action-attempt identifiers, machine action/source values, execution
-              status, classified error codes, and filter dates. No tokens, idempotency keys, message
-              bodies, or raw provider responses.
+              Optional: add technical IDs that help support trace what happened. They contain no
+              email content.
             </TechnicalDetails>
           </section>
 

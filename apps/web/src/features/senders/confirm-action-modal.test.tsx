@@ -1960,7 +1960,7 @@ describe('ConfirmActionModal — a preview failure that retrying cannot fix', ()
     );
     // Said once — the inline panel carries it; the footer stays empty
     // beside the Refresh senders button.
-    expect(screen.getAllByText(/no longer in this mailbox/)).toHaveLength(1);
+    expect(screen.getAllByText(/no email in this Gmail account anymore/)).toHaveLength(1);
     expect(screen.queryByText(/Couldn't load the preview/)).not.toBeInTheDocument();
   });
 
@@ -2589,7 +2589,7 @@ describe('ConfirmActionModal — the title names the verb and the count (QA-arch
       />,
     );
     expect(
-      screen.getByText('Every selected sender is now Protected or no longer in this mailbox.'),
+      screen.getByText('Every sender you picked is now Protected or has no email left.'),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Refresh senders' }));
     expect(onRefreshSenders).toHaveBeenCalledTimes(1);

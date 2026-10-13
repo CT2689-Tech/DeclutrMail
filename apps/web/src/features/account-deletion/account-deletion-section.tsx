@@ -172,13 +172,13 @@ function PendingState({
           : executing
             ? 'Deletion is in progress — your data is being removed.'
             : basis === 'waived-immediate'
-              ? 'Deletion requested without the undo wait — your data deletes shortly.'
+              ? 'Your data will be deleted shortly.'
               : `Deletion scheduled for ${formatDate(effectiveAt, timeZone)}.`}
       </p>
       {!executing && basis === 'undo-window' && (
         <p style={{ fontSize: text.sm, color: color.fgSoft, lineHeight: 1.5, margin: 0 }}>
-          Later than 7 days because an undo window is still open. To delete sooner, cancel and
-          choose “Delete immediately”.
+          Your account is deleted after your last Undo ends. To delete sooner, cancel this and
+          choose Delete immediately.
         </p>
       )}
       {cancelFailed && (
@@ -226,5 +226,5 @@ export function deletionSubmitError(error: unknown): string | null {
     // pins the two equal.
     return 'Account deletion is already scheduled for this account.';
   }
-  return 'Could not submit the deletion request. Please try again.';
+  return 'Couldn’t request deletion. Try again.';
 }

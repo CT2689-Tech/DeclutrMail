@@ -93,7 +93,7 @@ export function PlanConsequences({ fromTier, toTier }: { fromTier: TierId; toTie
   const labelsFor = (capabilities: typeof lost) =>
     [...new Set(capabilities.map((cap) => CAPABILITY_LABELS[cap]))].join(', ');
   if (fromTier === toTier)
-    return <p style={{ margin: 0 }}>Your included features and inbox allowance stay the same.</p>;
+    return <p style={{ margin: 0 }}>Your features and number of Gmail accounts stay the same.</p>;
   return (
     <div style={{ fontSize: 14, lineHeight: 1.6 }}>
       {gained.length ? <p>Added: {labelsFor(gained)}.</p> : null}

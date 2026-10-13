@@ -350,11 +350,11 @@ function backlogCopy(commitsActive: boolean, pendingCount: number, approximate: 
   const n = `${pendingCount} suggestion${one ? '' : 's'}`;
   if (commitsActive) {
     return approximate
-      ? 'Covered by this; they clear from pending'
+      ? 'This rule handles them. They leave your suggestions.'
       : `${n} covered by this; ${one ? 'it clears' : 'they clear'} from pending`;
   }
   return approximate
-    ? 'Stay pending; approve or skip them separately'
+    ? 'They stay in your suggestions. Approve or skip each one.'
     : `${n} ${one ? 'stays' : 'stay'} pending; approve or skip ${one ? 'it' : 'them'} separately`;
 }
 

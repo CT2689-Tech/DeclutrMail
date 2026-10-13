@@ -300,7 +300,7 @@ function AuthedFlow({ returnTo, resumeScan }: { returnTo: string | null; resumeS
             title={
               step.error instanceof ApiError
                 ? `We couldn't load your onboarding state (${step.error.status}).`
-                : "We couldn't load your onboarding state."
+                : 'We couldn’t load setup.'
             }
             onRetry={step.retry}
           />
@@ -438,7 +438,7 @@ function SecondaryConnectGate({
           setActive.mutate(other.id, {
             onSuccess: () =>
               router.replace(recoveryPath ?? (isTargetedReconnect ? '/settings' : '/home')),
-            onError: () => toast("Couldn't switch accounts. Please try again.", 'danger'),
+            onError: () => toast('Couldn’t switch Gmail accounts. Try again.', 'danger'),
           });
         },
       }

@@ -453,7 +453,7 @@ export function ConfirmActionModal({
     requiresLivePreview && (livePreviewLoading || livePreviewUnavailable);
   const previewStateCopy = livePreviewUnavailable
     ? previewSenderGone
-      ? 'This sender is no longer in this mailbox.'
+      ? 'This sender has no email in this Gmail account anymore.'
       : "Couldn't load the preview — nothing can run without one."
     : livePreviewLoading
       ? 'Loading preview…'
@@ -1083,8 +1083,7 @@ export function ConfirmActionModal({
   if (reachAvailable && inboxReachCount != null && inboxReachCount === allMailReachCount) {
     controls.push(
       <p key="equal-reach" style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
-        Both scopes currently match the same emails. Inbox + archived also includes archived matches
-        when this action runs.
+        Both choices cover the same emails right now.
       </p>,
     );
   }
@@ -1178,7 +1177,7 @@ export function ConfirmActionModal({
       NO_SENDABLE_UNSUB
     ) : (
       <StatusWithAction
-        message="Every selected sender is now Protected or no longer in this mailbox."
+        message="Every sender you picked is now Protected or has no email left."
         action={onRefreshSenders && { label: 'Refresh senders', onClick: onRefreshSenders }}
       />
     )

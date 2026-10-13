@@ -44,7 +44,6 @@ import {
   type VerbId,
   type VerbTone,
 } from '@declutrmail/shared/actions';
-import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import { isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
 import { InlineFeedback } from '@/features/feedback/inline-feedback';
@@ -121,10 +120,7 @@ const { color, font, motion, radius, shadow, text } = tokens;
  * can read without rendering this screen.
  */
 export const activityUndoRecoveryHelp =
-  (UNIFORM_UNDO_WINDOW_DAYS === null
-    ? "Archive, Later, and Delete can be undone within your plan's Undo window"
-    : `Archive, Later, and Delete have a ${UNIFORM_UNDO_WINDOW_DAYS}-day Undo window`) +
-  "; deleted email also sits in Gmail Trash for up to 30 days. A sent unsubscribe can't be recalled.";
+  'Undo Archive, Later or Delete for 30 days. Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash. Unsubscribe requests can’t be recalled.';
 
 const ActivityInteractionBlocked = createContext(false);
 
@@ -447,7 +443,7 @@ export function ActivityScreen() {
       <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
         History ·{' '}
         {windowToLabel(filters.window ?? '30d', filters.dateFrom ?? null, filters.dateTo ?? null)} ·
-        Active mailbox
+        Selected Gmail account
       </p>
       <ActiveFilterChips {...filterProps} onClear={clearFilters} />
 
@@ -568,7 +564,7 @@ export function ActivityScreen() {
       <details style={{ borderTop: `1px solid ${color.line}`, paddingTop: 16 }}>
         <summary className="dm-disclosure">Help with Activity</summary>
         <p style={{ color: color.fgMuted, fontSize: text.sm }}>
-          Export a support bundle when you need help investigating an outcome.
+          Need help with something here? Export details for support.
         </p>
         <ExportSupportBundleButton
           filters={filters}

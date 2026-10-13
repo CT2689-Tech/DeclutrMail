@@ -43,12 +43,12 @@ const GOALS: ReadonlyArray<{
   {
     id: 'reduce_newsletters',
     title: 'Reduce newsletters',
-    description: 'Prioritize recurring senders you can unsubscribe from or remove.',
+    description: 'Start with newsletters you can unsubscribe from.',
   },
   {
     id: 'protect_important',
     title: 'Protect important senders',
-    description: 'Review important senders first so you can confirm what stays.',
+    description: 'Start with the people and senders you want to keep.',
   },
   {
     id: 'clear_old_promotions',
@@ -269,7 +269,7 @@ export function StepPresetPick({
                 }
               }}
             >
-              {isMailboxScopeConflict(rules.error) ? 'Refresh connection' : 'Try again'}
+              {isMailboxScopeConflict(rules.error) ? 'Refresh' : 'Try again'}
             </Button>
           )}
         </div>

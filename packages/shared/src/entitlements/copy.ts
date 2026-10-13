@@ -327,19 +327,19 @@ export interface ListedOfferOverride {
  * returns Free until a price id is real. Tests pass `listed` to pin the
  * shape Plus and the Pass take once they are listed.
  */
+const FREE_OFFER = {
+  '@type': 'Offer',
+  name: 'Free',
+  price: '0',
+  priceCurrency: 'USD',
+  url: 'https://declutrmail.com/pricing',
+} as const;
+
 export function buildOffersJsonLd(listed?: ListedOfferOverride): object[] {
-  if (!isPricingV2()) return [];
+  if (!isPricingV2()) return [FREE_OFFER];
   const plusListed = listed?.plus ?? PLUS_ANNUAL_2026_10.listed === true;
   const passListed = listed?.pass ?? OFFERS.backlogPass.price.listed === true;
-  const offers: object[] = [
-    {
-      '@type': 'Offer',
-      name: planName('free'),
-      price: 0,
-      priceCurrency: 'USD',
-      url: '/pricing',
-    },
-  ];
+  const offers: object[] = [FREE_OFFER];
   if (plusListed) {
     const usd = PLUS_ANNUAL_2026_10.usdCents / 100;
     const inr = (PLUS_ANNUAL_2026_10.inr?.paise ?? PLUS_ANNUAL_2026_10.inrPaise) / 100;

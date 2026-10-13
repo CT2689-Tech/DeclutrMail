@@ -897,7 +897,7 @@ export function InboxSimulatorScreen() {
   return (
     <div className="dm-simulator">
       <section className="dm-simulator-hero">
-        <h1>Try the workspace.</h1>
+        <h1>Try DeclutrMail on made-up email.</h1>
         <p>
           Explore Senders and a made-up Triage queue. Open a sender, filter, select several, and
           preview what each decision would do before you connect Gmail.
@@ -909,7 +909,7 @@ export function InboxSimulatorScreen() {
             aria-controls="dm-simulator-orientation-content"
             onClick={() => setOrientationOpen((open) => !open)}
           >
-            Workspace guide
+            How the demo works
           </button>
           {orientationOpen ? (
             <ol id="dm-simulator-orientation-content">

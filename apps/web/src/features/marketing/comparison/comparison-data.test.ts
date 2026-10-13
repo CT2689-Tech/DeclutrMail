@@ -140,7 +140,7 @@ describe('comparison data', () => {
     }
     expect(comparisonVerifiedLabel('2026-07-11')).toBe('Last verified July 2026');
     expect(comparisonVerifiedLabel(comparisonBySlug('unroll-me')!.verifiedIso)).toBe(
-      'Last verified September 2026',
+      'Last verified October 2026',
     );
   });
 

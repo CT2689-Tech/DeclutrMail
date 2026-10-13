@@ -279,9 +279,7 @@ describe('TriageScreen — batch sheet does not arm confirm on a stale cached pr
 
     releaseRefetch();
     await waitFor(() =>
-      expect(
-        within(dialog).getByText(/Protected or no longer in this mailbox/i),
-      ).toBeInTheDocument(),
+      expect(within(dialog).getByText(/Protected or has no email left/i)).toBeInTheDocument(),
     );
     expect(
       within(dialog).getByRole('button', { name: /^Archive( [\d,]+ emails?)?$/ }),

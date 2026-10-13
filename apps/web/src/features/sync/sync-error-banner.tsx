@@ -75,7 +75,13 @@ export function syncStatusReadUnavailable(
   return !(error instanceof ApiError && error.status >= 400 && error.status < 500);
 }
 
-export function SyncErrorBanner({ mailboxId }: { mailboxId: string }) {
+export function SyncErrorBanner({
+  mailboxId,
+  mailboxEmail,
+}: {
+  mailboxId: string;
+  mailboxEmail: string;
+}) {
   const status = useSyncStatus(mailboxId);
   const sync = useSyncNow('app_shell', mailboxId);
 
@@ -88,9 +94,7 @@ export function SyncErrorBanner({ mailboxId }: { mailboxId: string }) {
   if (syncStatusReadUnavailable(status.isError, status.error, status.data !== undefined)) {
     return (
       <SyncBannerFrame testId="sync-status-unavailable-banner">
-        <SyncBannerMessage>
-          We can&rsquo;t check whether new email is syncing right now.
-        </SyncBannerMessage>
+        <SyncBannerMessage>We can’t check for new email right now.</SyncBannerMessage>
         <Button
           tone="default"
           size="sm"
@@ -134,8 +138,8 @@ export function SyncErrorBanner({ mailboxId }: { mailboxId: string }) {
     <SyncBannerFrame testId="sync-error-banner">
       <SyncBannerMessage>
         {needsReconnect
-          ? "Google isn't granting access to this inbox. Reconnect and allow Gmail access."
-          : "New email isn't syncing — the last attempt failed."}
+          ? `DeclutrMail lost access to ${mailboxEmail}. Reconnect and allow Gmail access.`
+          : 'New email isn’t coming in. The last check failed.'}
       </SyncBannerMessage>
       <Button
         tone="default"

@@ -113,9 +113,9 @@ export function StepProtectionReview({
         <PanelShell corner={corner}>
           <ErrorState
             headingLevel={2}
-            title="Your mailbox connection changed"
-            description="This step needs an active Gmail connection. Refresh your connection state to continue."
-            retryLabel="Refresh connection"
+            title="Your Gmail account changed"
+            description="Refresh to continue."
+            retryLabel="Refresh"
             onRetry={() => {
               void resetMailboxScopedCache(queryClient);
             }}
@@ -188,7 +188,7 @@ export function StepProtectionReview({
           disabled={completing}
           style={{ minWidth: 240 }}
         >
-          {completing ? 'Finishing…' : 'Open workspace'}
+          {completing ? 'Finishing…' : 'Go to Senders'}
         </Button>
         {/* Any verb used during the review is still reversible (D35/D58). */}
         <TriageUndoTray />

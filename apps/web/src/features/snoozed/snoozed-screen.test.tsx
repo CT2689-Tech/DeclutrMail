@@ -155,7 +155,7 @@ describe('SnoozedScreen — populated (D80 grouping)', () => {
     resetFetchStub();
     installFetchStub([listHandler([{ ...ROW_TODAY, laterCount: null }])]);
     renderScreen();
-    expect(await screen.findByText('count syncing…')).toBeInTheDocument();
+    expect(await screen.findByText('counting…')).toBeInTheDocument();
   });
 
   it('surfaces a failed return without implying the mail was lost', async () => {
@@ -175,7 +175,7 @@ describe('SnoozedScreen — populated (D80 grouping)', () => {
     // The app-wide LaterReturnAlert owns the banner; this page must not
     // render a second copy of the same failure.
     expect(screen.queryByText(/could not be confirmed/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/automatic retry remains active/i)).toBeInTheDocument();
+    expect(screen.getByText(/We.ll keep trying/i)).toBeInTheDocument();
     expect(screen.getByText(/Last tried/i)).toBeInTheDocument();
   });
 });

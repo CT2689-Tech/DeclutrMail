@@ -505,7 +505,7 @@ export function DomainGroupRow({
             )}
           </span>
         </span>
-        <CountCell value={totalReceived} unit="emails" scope="received · retained" />
+        <CountCell value={totalReceived} unit="emails" scope="received" />
       </button>
     </div>
   );

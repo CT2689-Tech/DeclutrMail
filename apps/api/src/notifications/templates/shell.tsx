@@ -151,7 +151,7 @@ export function Shell(props: {
             }}
           >
             DeclutrMail
-            <span style={{ color: TEAL }}> · Gmail cleanup, by sender</span>
+            <span style={{ color: TEAL }}> · Gmail, sorted by sender</span>
           </Text>
 
           <Section

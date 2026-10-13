@@ -80,7 +80,7 @@ const FAQS: ReadonlyArray<{
   },
   {
     id: 'autopilot-modes',
-    q: 'What is the difference between Autopilot’s Watch first and Active modes?',
+    q: 'What is the difference between Autopilot’s Watch first and Act now modes?',
     a: faqAnswer('autopilot'),
   },
   {

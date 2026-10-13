@@ -171,7 +171,7 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
     fireEvent.click(confirm);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(screen.getByText(/Protected or no longer in this mailbox/i)).toBeInTheDocument();
+    expect(screen.getByText(/Protected or has no email left/i)).toBeInTheDocument();
   });
 
   it('disables confirm when the senders are actionable but none has inbox email', () => {
@@ -259,7 +259,7 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(screen.getByText(/Protected or no longer in this mailbox/i)).toBeInTheDocument();
+    expect(screen.getByText(/Protected or has no email left/i)).toBeInTheDocument();
   });
 });
 

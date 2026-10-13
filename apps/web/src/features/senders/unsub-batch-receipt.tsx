@@ -58,7 +58,9 @@ function skippedLines(skipped: UnsubBatchReceiptData['skipped']): string[] {
     ...(missingCount > 0
       ? [`${missingCount} ${noun(missingCount)} no longer in this mailbox`]
       : []),
-    ...(inProgressCount > 0 ? [`${inProgressCount} ${noun(inProgressCount)} already busy`] : []),
+    ...(inProgressCount > 0
+      ? [`${inProgressCount} ${noun(inProgressCount)} already in progress`]
+      : []),
   ];
 }
 
@@ -83,7 +85,7 @@ export function UnsubBatchReceipt({
 }) {
   if (!receipt) return null;
 
-  // Requests are still going out. `unreported` is the deploy-skew case:
+  // Requests are still sending. `unreported` is the deploy-skew case:
   // the batch finished but this API build sends no outcome breakdown, so
   // the receipt points at Activity rather than inventing a split.
   const inFlight = receipt.outcomes === null && receipt.pending > 0;
@@ -181,12 +183,12 @@ export function UnsubBatchReceipt({
               }}
             >
               {inFlight
-                ? `${receipt.pending} still going out`
+                ? `${receipt.pending} still sending`
                 : unreported
                   ? 'See Activity for each result.'
                   : [
                       ...outcomeLines,
-                      ...(receipt.pending > 0 ? [`${receipt.pending} still going out`] : []),
+                      ...(receipt.pending > 0 ? [`${receipt.pending} still sending`] : []),
                     ].join(' · ')}
             </span>
           </>
