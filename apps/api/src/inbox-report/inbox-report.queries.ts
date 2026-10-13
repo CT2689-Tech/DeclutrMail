@@ -159,11 +159,19 @@ function backlogHandledSenders(mailboxId: string): SQL {
 }
 
 /**
- * True when a backlog decision or its Undo landed after the cached report.
- * Sync id alone does not move for confirm or revert.
+ * True when the cached report must be recomputed.
+ *
+ * A newer archive, delete, unsubscribe, or revert misses. So does a fix
+ * set that still lists a sender the backlog now covers. A row written
+ * after those jobs is newer than updated_at, so the timestamp check
+ * alone would serve it again.
  */
-export function backlogChangedSinceQuery(mailboxId: string, generatedAtIso: string): SQL {
-  return sql`
+export function backlogChangedSinceQuery(
+  mailboxId: string,
+  generatedAtIso: string,
+  cachedSenderIds: readonly string[],
+): SQL {
+  const changedSince = sql`
     select 1 as hit
     from action_jobs aj
     where aj.mailbox_account_id = ${mailboxId}
@@ -181,6 +189,21 @@ export function backlogChangedSinceQuery(mailboxId: string, generatedAtIso: stri
     where al.mailbox_account_id = ${mailboxId}
       and al.action in ('archive', 'delete', 'unsubscribe')
       and al.reverted_at > ${generatedAtIso}::timestamptz
+  `;
+  if (cachedSenderIds.length === 0) {
+    return sql`${changedSince} limit 1`;
+  }
+  const ids = sql.join(
+    cachedSenderIds.map((id) => sql`${id}`),
+    sql`, `,
+  );
+  const handled = backlogHandledSenders(mailboxId);
+  return sql`
+    ${changedSince}
+    union all
+    select 1
+    from (${handled}) handled
+    where handled.sender_id in (${ids})
     limit 1
   `;
 }

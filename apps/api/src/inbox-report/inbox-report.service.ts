@@ -63,11 +63,12 @@ export class InboxReportService {
       .from(inboxReportCache)
       .where(eq(inboxReportCache.mailboxAccountId, mailboxId))
       .limit(1);
+    const senderKeys = cached && isReportDto(cached.payload) ? fixSenderKeys(cached.payload) : null;
     if (
       cached &&
       (cached.sourceSyncRunId ?? null) === syncId &&
-      isReportDto(cached.payload) &&
-      !(await this.backlogChangedSince(mailboxId, cached.generatedAt))
+      senderKeys &&
+      !(await this.backlogChangedSince(mailboxId, cached.generatedAt, senderKeys))
     ) {
       return cached.payload;
     }
@@ -104,12 +105,17 @@ export class InboxReportService {
 
   /**
    * The cache key is the latest succeeded sync. Unsubscribe-backlog confirm
-   * and Undo do not write one, so a newer decision or a finished revert
-   * has to miss the cache or a reload offers the senders again.
+   * and Undo do not write one. A newer decision, a finished revert, or a
+   * cached fix id that is backlog-handled now has to miss, or a reload
+   * offers the senders again.
    */
-  private async backlogChangedSince(mailboxId: string, generatedAt: Date): Promise<boolean> {
+  private async backlogChangedSince(
+    mailboxId: string,
+    generatedAt: Date,
+    cachedSenderIds: readonly string[],
+  ): Promise<boolean> {
     const result = await this.db.execute(
-      backlogChangedSinceQuery(mailboxId, generatedAt.toISOString()),
+      backlogChangedSinceQuery(mailboxId, generatedAt.toISOString(), cachedSenderIds),
     );
     return rowsOf(result).length > 0;
   }
@@ -177,4 +183,14 @@ function isReportDto(value: unknown): value is InboxReportDto {
   if (typeof value !== 'object' || value === null) return false;
   const variant = (value as { variant?: unknown }).variant;
   return variant === 'full' || variant === 'fallback';
+}
+
+/** Null when the payload cannot name its fix set, so the hit is not used. */
+function fixSenderKeys(payload: InboxReportDto): string[] | null {
+  const keys = payload.fix?.senderKeys;
+  if (!Array.isArray(keys)) return null;
+  for (const key of keys) {
+    if (typeof key !== 'string') return null;
+  }
+  return keys;
 }

@@ -157,7 +157,7 @@ describe('InboxReportService', () => {
     expect(duringMiss).toBeGreaterThan(0);
     execute.mockClear();
     await service.getForMailbox(mailboxId, NOW);
-    // The hit still checks whether a backlog decision landed after the cache.
+    // The hit still checks backlog timestamps and whether a cached fix sender is handled.
     expect(execute).toHaveBeenCalledTimes(1);
     // A second overlapping miss that did not join the first would have
     // doubled the fact queries. One compute is three executes.

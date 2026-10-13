@@ -4,6 +4,7 @@ import type { schema } from '@declutrmail/db';
 import {
   actionJobs,
   activityLog,
+  inboxReportCache,
   mailMessages,
   mailboxAccounts,
   senders,
@@ -146,6 +147,15 @@ describe('inbox report fix set after unsubscribe-backlog', () => {
       mode: 'archive',
       senderIds: [alpha, beta],
     });
+    expect(
+      await db
+        .select()
+        .from(inboxReportCache)
+        .where(eq(inboxReportCache.mailboxAccountId, mailboxId)),
+    ).toEqual([]);
+    // Confirm stamps jobs with the database clock, which is after NOW.
+    // Pin them so this reload is not a miss just because updated_at is newer.
+    await db.update(actionJobs).set({ updatedAt: NOW });
 
     const afterConfirm = await report.getForMailbox(mailboxId, NOW);
     expect(afterConfirm.fix.senderKeys).toEqual([calm]);
@@ -217,6 +227,41 @@ describe('inbox report fix set after unsubscribe-backlog', () => {
     expect(after.fix.senderKeys).toContain(alpha);
     expect(after.fix.sendersCount).toBe(2);
     expect(after.fix.inboxEmailCount).toBe(7);
+  });
+
+  it('drops a handled sender from a cache row written after the jobs', async () => {
+    const mailboxId = await seedMailbox(db);
+    const alpha = await seedSender(db, mailboxId, 'a'.repeat(64), 'alpha@news.test', 4);
+    const calm = await seedSender(db, mailboxId, 'c'.repeat(64), 'calm@news.test', 3);
+    const stale = await report.getForMailbox(mailboxId, NOW);
+    expect(stale.fix.senderKeys).toEqual([alpha, calm]);
+
+    await backlog.confirm({
+      mailboxAccountId: mailboxId,
+      idempotencyKey: 'stale-cache-1',
+      mode: 'archive',
+      senderIds: [alpha],
+    });
+    await db.update(actionJobs).set({ updatedAt: NOW });
+    const generatedAt = new Date(NOW.getTime() + 24 * 60 * 60 * 1000);
+    await db
+      .insert(inboxReportCache)
+      .values({
+        mailboxAccountId: mailboxId,
+        payload: stale,
+        sourceSyncRunId: null,
+        generatedAt,
+      })
+      .onConflictDoUpdate({
+        target: inboxReportCache.mailboxAccountId,
+        set: { payload: stale, sourceSyncRunId: null, generatedAt },
+      });
+
+    const after = await report.getForMailbox(mailboxId, generatedAt);
+    expect(after.fix.senderKeys).toEqual([calm]);
+    expect(after.fix.sendersCount).toBe(1);
+    expect(after.fix.inboxEmailCount).toBe(3);
+    expect(after.fallbackSenderCount).toBe(1);
   });
 
   it('keeps a sender archived outside unsubscribe-backlog in the fix set', async () => {
