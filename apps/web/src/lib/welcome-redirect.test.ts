@@ -5,6 +5,8 @@ import path from 'node:path';
 import { NextRequest } from 'next/server';
 import { describe, expect, it } from 'vitest';
 
+import { parseAppReturnTo } from '@declutrmail/shared/contracts/app-navigation';
+
 import { middleware } from '@/middleware';
 
 import { welcomeRedirect } from './welcome-redirect';
@@ -65,6 +67,11 @@ describe('Paddle /welcome payment link', () => {
       utm_source: 'paddle',
     });
     expect(redirected({}).query).toEqual({});
+    expect(
+      parseAppReturnTo(
+        `/billing?${new URLSearchParams({ _ptxn: PTXN, utm_source: 'paddle' }).toString()}`,
+      ),
+    ).toBe(`/billing?_ptxn=${PTXN}`);
   });
 
   it('keeps _ptxn when the apex sends /billing on to the app host', () => {
