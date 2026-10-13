@@ -422,28 +422,6 @@ export function ActionSheet({
       >
         {hasControls ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: space[3] }}>
-            {showReach && (
-              <SheetSegmented
-                label="Where it applies"
-                value={reachControl.reach}
-                onChange={reachControl.onChange}
-                options={[
-                  {
-                    value: 'inbox_only',
-                    label: 'Inbox only',
-                    count: reachControl.inboxCount ?? undefined,
-                    disabled: reachControl.inboxCount === null,
-                  },
-                  {
-                    value: 'all_mail',
-                    label: 'Inbox + archived',
-                    count: reachControl.allMailCount ?? undefined,
-                    disabled: reachControl.allMailCount === null,
-                  },
-                ]}
-              />
-            )}
-
             {verb === 'Later' && (
               <label
                 style={{
@@ -537,6 +515,28 @@ export function ActionSheet({
                   <MeterPreviewLine requested={countKnown} summary={cleanupSummary.data} />
                 ) : null}
               </div>
+            )}
+
+            {showReach && (
+              <SheetSegmented
+                label="Where it applies"
+                value={reachControl.reach}
+                onChange={reachControl.onChange}
+                options={[
+                  {
+                    value: 'inbox_only',
+                    label: 'Inbox only',
+                    count: reachControl.inboxCount ?? undefined,
+                    disabled: reachControl.inboxCount === null,
+                  },
+                  {
+                    value: 'all_mail',
+                    label: 'Inbox + archived',
+                    count: reachControl.allMailCount ?? undefined,
+                    disabled: reachControl.allMailCount === null,
+                  },
+                ]}
+              />
             )}
 
             {isProtectedRow && (

@@ -15,7 +15,8 @@ Delete and Unsubscribe + Delete offer the same explicit Inbox only / Inbox +
 archived choice when the current preview supports both scopes. Inbox only remains
 selected on opening, including an empty inbox. Archive, Later and Unsubscribe +
 Archive remain inbox-only; Unsubscribe only leaves existing email unchanged.
-Counts, destinations, cleanup meters and submitted scope agree. Missing archived
+Cleanup mode precedes scope in visual and keyboard order on every Unsubscribe
+preview. Counts, destinations, cleanup meters and submitted scope agree. Missing archived
 counts block the widened cleanup while retaining a way to choose Inbox only.
 
 The selected flow covers Senders, Sender Detail, Triage, bulk previews, Inbox
@@ -104,14 +105,16 @@ Report. Bulk archived totals require coverage for every eligible sender.
   obsolete Unsubscribe radio names. Integrated main once, narrowed Home's report
   imports, split Senders' preview chunk and repaired those queries. All 51 local
   bundle routes pass with unchanged caps (Home 282.3 / 295 kB, Senders 335.0 /
-  344 kB before the final decoder-only rebuild). Remote E2E and final CI status
+  344 kB in the final scope build). Remote E2E and final CI status
   are recorded in the PR.
 - Updated browser verification: synthetic Senders U+Delete expands 111 inbox
   emails to 273 inbox + archived, records Deleted 273 and restores 111 inbox
   email with Undo while retaining the request. The actual account-aware story
   expands 174 to 1,980 with arrow-key scope selection. At 320 × 568 with Details
   open, its body scrolls 739 px in 342 px; confirmation and Cancel end at 413.5
-  and 465.5 px, with no horizontal overflow.
+  and 465.5 px, with no horizontal overflow. The Triage demo independently
+  confirms U+Delete at 922 inbox + archived emails and records the Trash result.
+  The final control-order move passed 167 tests across three affected suites.
 - Independent reviewer inspected the final flow/diff and adjacent safety, copy,
   layout and state transitions. Findings were fixed and re-reviewed; final review
   status is recorded in the PR. Reviewer performed source review; runtime checks
