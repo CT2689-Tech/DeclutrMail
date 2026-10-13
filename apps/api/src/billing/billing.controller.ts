@@ -15,7 +15,17 @@
 // `BILLING_ENABLED=true` — the module is always loaded so the routes
 // exist and fail CLEANLY (not 404) while billing is dark.
 
-import { Delete, Body, Controller, Get, Header, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Delete,
+  Body,
+  Controller,
+  Get,
+  Header,
+  Headers,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import {
   BillingReconcileRequestSchema,
   CancelRequestSchema,
@@ -33,6 +43,8 @@ import {
   type PaymentMethodSession,
   type PlanChangePreview,
 } from '@declutrmail/shared/contracts';
+
+import { CHECKOUT_GEO_HEADER, verifyCheckoutGeo } from '@declutrmail/shared/billing/checkout-geo';
 
 import { AppException } from '../common/app-exception.js';
 import { CsrfGuard } from '../auth/csrf.guard.js';
@@ -71,6 +83,7 @@ export class BillingController {
   async checkout(
     @CurrentUser() principal: Principal,
     @Body() body: unknown,
+    @Headers(CHECKOUT_GEO_HEADER) checkoutGeo: string | undefined,
   ): Promise<Envelope<CheckoutSession>> {
     assertBillingEnabled();
     const parsed = CheckoutRequestSchema.safeParse(body);
@@ -80,7 +93,8 @@ export class BillingController {
         message: parsed.error.issues[0]?.message ?? 'Invalid checkout request.',
       });
     }
-    return ok(await this.billing.createCheckout(principal, parsed.data));
+    const trustedCountry = verifyCheckoutGeo(checkoutGeo, process.env.BILLING_GEO_HMAC_SECRET);
+    return ok(await this.billing.createCheckout(principal, parsed.data, trustedCountry));
   }
 
   /**

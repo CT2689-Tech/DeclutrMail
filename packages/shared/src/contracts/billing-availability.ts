@@ -1,18 +1,29 @@
 import { WS1_COPY } from '../copy/launch/ws1';
+import { indiaPaddlePricesConfigured } from '../entitlements/pricing.config';
 
-/** Founder-approved pause, 2026-10-10. Reopen only after seller/invoice readiness review.
- * New INR checkout only; existing subscription management remains available.
- * Keep this module free of schemas so public pricing does not load billing validators. */
-export const INR_NEW_PURCHASES_PAUSED = true;
+/**
+ * Razorpay stays closed for new purchases.
+ * A Paddle rupee checkout is available only when both India price ids
+ * are configured. Chintan approved option A on 2026-10-12 at 7:50 PM PT,
+ * via Ops, and the Live India prices are bound on deploy. Live PH30
+ * stays omitted until it is created at launch. A missing price id or
+ * geo secret keeps checkout on USD. Existing subscription management
+ * is unchanged.
+ * Keep this module free of schemas so public pricing does not load billing validators.
+ */
 export const INR_CHECKOUT_PAUSED_MESSAGE = WS1_COPY['pricing.inrPaused.checkout'];
 
 /**
  * New rupee checkout, on whichever rail would charge INR.
- * Razorpay is always INR. Paddle is INR only when the quoted currency is.
+ * Razorpay is always paused. Paddle INR is paused until both India
+ * price ids are set. `indiaConfigured` is the caller's view of that
+ * (the API reads env; the browser receives the public flag).
  */
 export function inrNewPurchasePaused(
   provider: 'paddle' | 'razorpay',
   currency: 'INR' | 'USD',
+  indiaConfigured: boolean = indiaPaddlePricesConfigured(),
 ): boolean {
-  return INR_NEW_PURCHASES_PAUSED && (provider === 'razorpay' || currency === 'INR');
+  if (provider === 'razorpay') return true;
+  return currency === 'INR' && !indiaConfigured;
 }

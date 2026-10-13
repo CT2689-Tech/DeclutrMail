@@ -11,7 +11,6 @@ import { Button, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
 import {
   ERROR_CODES,
   isErrorCode,
-  INR_NEW_PURCHASES_PAUSED,
   INR_CHECKOUT_PAUSED_MESSAGE,
   inrNewPurchasePaused,
 } from '@declutrmail/shared/contracts';
@@ -208,6 +207,8 @@ export function PlanPicker({
   pricingV2 = false,
   passEnabled = false,
   country = null,
+  indiaCheckoutOpen = false,
+  checkoutGeoToken = null,
   onRequestCancel,
   onPaymentCompleted,
   onCheckoutAttempt,
@@ -242,6 +243,10 @@ export function PlanPicker({
   /** From `/api/auth/me`. Hidden when false. */
   passEnabled?: boolean;
   country?: string | null;
+  /** From the server. Absent means rupee checkout stays paused. */
+  indiaCheckoutOpen?: boolean;
+  /** Server-signed geo. Stripped into a header before the checkout POST. */
+  checkoutGeoToken?: string | null;
   /** Route to the cancel confirm (the downgrade-to-free path, D120). */
   onRequestCancel: () => void;
   /** Paddle overlay reported `checkout.completed` — payment made, tier
@@ -473,14 +478,17 @@ export function PlanPicker({
           ? PLUS_ANNUAL_2026_10
           : manifestPoint));
     const quotedCurrency = quotedPoint
-      ? currencyForPricePoint(quotedPoint, panelProvider, { pricingV2, country })
+      ? currencyForPricePoint(quotedPoint, panelProvider, {
+          pricingV2,
+          country,
+          indiaCheckoutOpen,
+        })
       : 'USD';
     if (
       disabled ||
       checkout.isPending ||
       confirmInFlight.current ||
-      (!pricingV2 && provider === 'razorpay' && INR_NEW_PURCHASES_PAUSED) ||
-      inrNewPurchasePaused(panelProvider, quotedCurrency)
+      inrNewPurchasePaused(panelProvider, quotedCurrency, indiaCheckoutOpen)
     )
       return;
     confirmInFlight.current = true;
@@ -507,6 +515,7 @@ export function PlanPicker({
         provider: effectiveProvider,
         ...(founding ? { promo: 'foundingPro' as const } : {}),
         ...(passSelected ? { offer: 'pass_onetime' as const } : {}),
+        ...(checkoutGeoToken ? { checkoutGeoToken } : {}),
       },
       {
         onSuccess: (session) => {
@@ -747,9 +756,9 @@ export function PlanPicker({
               disabled={disabled}
               hasGrantingSubscription={grantingSub !== null}
               provider={stripProvider}
-              {...(pricingV2 ? { geo: { pricingV2: true, country } } : {})}
+              {...(pricingV2 ? { geo: { pricingV2: true, country, indiaCheckoutOpen } } : {})}
               {...(pricingV2 && id === 'plus' && cycle === 'annual'
-                ? { priceOverride: launchPlusLine(country) }
+                ? { priceOverride: launchPlusLine(country, indiaCheckoutOpen) }
                 : {})}
               onSelect={() => onSelect(id)}
               showFoundingHint={
@@ -780,6 +789,7 @@ export function PlanPicker({
           razorpayOffered={false}
           pricingV2={pricingV2}
           country={country}
+          indiaCheckoutOpen={indiaCheckoutOpen}
           pricePointOverride={OFFERS.backlogPass.price}
           onProviderChange={setProvider}
           foundingEligible={false}
@@ -833,6 +843,7 @@ export function PlanPicker({
             razorpayOffered={razorpayOffered}
             pricingV2={pricingV2}
             country={country}
+            indiaCheckoutOpen={indiaCheckoutOpen}
             pricePointOverride={
               pricingV2 && selected === 'plus' && cycle === 'annual' ? PLUS_ANNUAL_2026_10 : null
             }
@@ -978,10 +989,14 @@ function CycleToggle({
   );
 }
 
-function launchPlusLine(country: string | null): { amount: string; per: string; note?: string } {
+function launchPlusLine(
+  country: string | null,
+  indiaCheckoutOpen: boolean,
+): { amount: string; per: string; note?: string } {
   const currency = currencyForPricePoint(PLUS_ANNUAL_2026_10, 'paddle', {
     pricingV2: true,
     country,
+    indiaCheckoutOpen,
   });
   if (currency === 'INR') return { amount: formatLaunchPrice(PLUS_ANNUAL_2026_10, 'inr'), per: '' };
   return { amount: formatLaunchPrice(PLUS_ANNUAL_2026_10, 'usd'), per: '/yr' };
@@ -1076,7 +1091,7 @@ function PlanCard({
   /** Rail the strip prices against — clamped per point, so the cards
    *  agree with the confirm panel one click later. */
   provider: BillingProviderId;
-  geo?: { pricingV2?: boolean; country?: string | null };
+  geo?: { pricingV2?: boolean; country?: string | null; indiaCheckoutOpen?: boolean };
   priceOverride?: { amount: string; per: string; note?: string };
   /** QA-billing-20260901-05 — show the Founding Pro price on this card,
    *  gated by live availability (the parent already checked). */

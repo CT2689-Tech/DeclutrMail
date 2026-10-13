@@ -152,12 +152,25 @@ test('workflow gates worker boot through HTTP, preserves production OAuth identi
     workflow.indexOf('- name: Deploy declutrmail-api'),
   );
   assert.doesNotMatch(worker, /--no-traffic|--tag=/);
-  const api = workflow.slice(workflow.indexOf('gcloud run deploy declutrmail-api'));
+  const api = workflow.slice(
+    workflow.indexOf('- name: Deploy declutrmail-api'),
+    workflow.indexOf('- name: Verify billing notice API producers'),
+  );
   for (const block of [worker, api]) {
     assert.match(block, /PRICING_V2=true/);
     assert.match(block, /METER_V2=true/);
     assert.match(block, /BILLING_PASS_ENABLED=true/);
   }
+  assert.match(api, /scripts\/live-india-billing-env\.mjs --api-env/);
+  assert.match(api, /BILLING_GEO_HMAC_SECRET: \$\{\{ secrets\.BILLING_GEO_HMAC_SECRET \}\}/);
+  assert.doesNotMatch(worker, /live-india-billing-env/);
+  assert.doesNotMatch(worker, /BILLING_GEO_HMAC_SECRET/);
+  assert.doesNotMatch(worker, /PADDLE_LIVE_INDIA_/);
+  const vercel = workflow.slice(workflow.indexOf('- name: Bind live India billing env on Vercel'));
+  assert.match(vercel, /scripts\/live-india-billing-env\.mjs --vercel/);
+  assert.match(vercel, /secrets\.VERCEL_TOKEN/);
+  assert.match(vercel, /secrets\.VERCEL_TEAM_ID/);
+  assert.match(vercel, /secrets\.BILLING_GEO_HMAC_SECRET/);
 });
 
 test('missing candidate identity fails closed without promotion', async () => {

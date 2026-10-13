@@ -17,16 +17,22 @@ export {
   PROMO,
   PROMO_DISCOUNT_IDS,
   RAILS,
+  SANDBOX_INDIA_PRICE_IDS,
   SANDBOX_PRICE_IDS,
+  SANDBOX_PRODUCT_IDS,
   SANDBOX_PROMO_EXPIRES_AT,
   SELECTOR_CAPS,
   SELECTOR_TIERS,
   TIER_MANIFEST,
   checkoutDiscountId,
+  indiaPaddlePriceId,
+  indiaPaddlePricesConfigured,
+  ph30PriceIds,
+  selectPaddleCheckoutPrice,
   usableDiscountId,
   usablePriceId,
 } from './pricing.config';
-export type { LegacyPrice } from './pricing.config';
+export type { IndiaPriceCode, LegacyPrice, PaddleCheckoutCode } from './pricing.config';
 export {
   buildOffersJsonLd,
   connectionTerm,

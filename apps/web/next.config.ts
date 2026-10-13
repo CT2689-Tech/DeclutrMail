@@ -4,6 +4,7 @@ import { withSentryConfig } from '@sentry/nextjs/config';
 
 import { legacyDomainRedirects, wwwApexRedirects } from './src/lib/legacy-domain-redirects';
 import { noindexHeaderRules } from './src/lib/noindex-headers';
+import { welcomeRedirect } from './src/lib/welcome-redirect';
 
 const nextConfig: NextConfig = {
   // `/pricing` stays dynamic so India sees INR, and Next otherwise streams
@@ -82,6 +83,8 @@ const nextConfig: NextConfig = {
     { source: '/signup', destination: '/sign-in', permanent: true },
     { source: '/dashboard', destination: '/home', permanent: true },
     { source: '/app', destination: '/home', permanent: true },
+    // Paddle's default payment link. No query on the destination, so `_ptxn` is forwarded.
+    welcomeRedirect(),
   ],
 
   headers: async () => noindexHeaderRules(),

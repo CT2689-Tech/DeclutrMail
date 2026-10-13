@@ -47,7 +47,8 @@ export type PurchasableTier = z.infer<typeof PurchasableTierSchema>;
  * checkout time.
  *
  * `country` is accepted and ignored. It does not choose the provider
- * or the checkout currency.
+ * or the checkout currency. India pricing uses the server-signed
+ * checkout-geo header, never this field.
  *
  * `promo: 'foundingPro'` requires `tierId: 'pro'` + `cycle: 'annual'`
  * (the promo is an annual-only Pro price point, D126) — enforced by
@@ -90,17 +91,16 @@ export const CheckoutRequestSchema = z
 export type CheckoutRequest = z.infer<typeof CheckoutRequestSchema>;
 
 /**
- * Paddle checkout session. While new rupee purchases are paused the
- * session is a server-created USD transaction. The response carries
- * that transaction id and the client token, and omits `priceId` and
+ * Paddle checkout session. The session is a server-created transaction
+ * whose currency is already USD or INR. The response carries that
+ * transaction id and the client token, and omits `priceId` and
  * `customData`: both would let a client open a price overlay that
- * Paddle can localize to INR. The signed attribution blob is stored
- * on the transaction before the overlay opens. `priceId` and
- * `customData` remain for a checkout opened after the pause lifts.
- * `clientToken` is Paddle's publishable client-side token (safe to
- * expose to an authed user by design, like a Stripe publishable key).
- * On a price overlay, `customData` is passed through to
- * `Paddle.Checkout.open({ customData })` verbatim.
+ * Paddle can localize. The signed attribution blob is stored on the
+ * transaction before the overlay opens. `priceId` and `customData`
+ * stay optional so an older payload still parses; this server does
+ * not send them. `clientToken` is Paddle's publishable client-side
+ * token (safe to expose to an authed user by design, like a Stripe
+ * publishable key).
  */
 export const PaddleCheckoutSessionSchema = z.object({
   provider: z.literal('paddle'),
@@ -197,6 +197,12 @@ export const BillingSubscriptionSchema = z.object({
        * deploy. Absent when the id is unknown.
        */
       chargedUsdCents: z.number().int().nonnegative().optional(),
+      /**
+       * Currency the provider price actually bills. Optional during a
+       * rolling deploy. `INR` is the India Plus price; absence keeps
+       * the USD cents label.
+       */
+      chargedCurrency: z.enum(['USD', 'INR']).optional(),
       currentPeriodEnd: z.iso.datetime().nullable(),
       /** Exact access deadline from the server; optional during rolling deploys. */
       entitlementEndsAt: z.iso.datetime().nullable().optional(),

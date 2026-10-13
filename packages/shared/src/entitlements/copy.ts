@@ -10,7 +10,6 @@ import {
   CONNECTION_TERM,
 } from '../copy/screen-decisions';
 import { WS1_COPY } from '../copy/launch/ws1';
-import { INR_NEW_PURCHASES_PAUSED } from '../contracts/billing-availability';
 import {
   INBOXES,
   METER,
@@ -19,6 +18,7 @@ import {
   POLICY,
   PROMO,
   TIER_MANIFEST,
+  indiaPaddlePricesConfigured,
 } from './pricing.config';
 import type { PricePoint, TierId } from './types';
 
@@ -385,7 +385,7 @@ export function buildOffersJsonLd(listed?: ListedOfferOverride): object[] {
 export function indiaFaqAnswer(
   passEnabled: boolean,
   locale: 'usd' | 'inr' = 'inr',
-  purchasesPaused = INR_NEW_PURCHASES_PAUSED,
+  purchasesPaused = !indiaPaddlePricesConfigured(),
 ): string {
   const values = storyValues(locale);
   const template = purchasesPaused
