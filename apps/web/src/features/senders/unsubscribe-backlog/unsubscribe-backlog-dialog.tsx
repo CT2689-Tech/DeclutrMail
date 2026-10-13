@@ -190,12 +190,12 @@ export function UnsubscribeBacklogDialog({
         (row) => row.protected && request.senders.some((sender) => sender.id === row.senderId),
       ).length ?? 0)
     : 0;
-  // A bulk preview that is still loading or failed has not named who is
-  // included. Posting request.senders from that state would include
-  // Protected senders and ids the preview never confirmed. A dialog with
-  // no preview at all (a known inbox count, nothing in flight) is separate.
-  const bulkUnresolved = !single && (loading || failed);
-  const senderIds = bulkUnresolved ? [] : includedSenders.map((sender) => sender.id);
+  // A preview that is still loading or failed has not named the mail.
+  // Posting from that state would include ids the preview never confirmed.
+  // A dialog with no preview at all (a known inbox count, nothing in flight)
+  // is separate.
+  const previewUnresolved = loading || failed;
+  const senderIds = previewUnresolved ? [] : includedSenders.map((sender) => sender.id);
   const includeArchived = mode === 'delete' && activeReach === 'all_mail' && allMailCount !== null;
   const zeroDeleteInbox =
     mode === 'delete' &&
@@ -275,10 +275,12 @@ export function UnsubscribeBacklogDialog({
       : mode === 'archive'
         ? WS5_COPY['f1.honesty.archive']
         : WS5_COPY['f1.honesty.unsubOnly'];
-  const button = protectedButton(mode, protectedSingle);
+  const button = zeroDeleteInbox
+    ? WS5_COPY['f1.segment.unsubOnly']
+    : protectedButton(mode, protectedSingle);
 
   const confirm = useCallback(() => {
-    if (bulkUnresolved) return;
+    if (previewUnresolved) return;
     const secondary = mode === 'unsub_only' ? null : mode;
     void track('unsub_backlog_confirmed', {
       mode,
@@ -305,18 +307,17 @@ export function UnsubscribeBacklogDialog({
     protectedSingle,
     onConfirm,
     senderIds,
-    bulkUnresolved,
+    previewUnresolved,
   ]);
 
-  // A missing backlog count must not block a single sender's future-only
-  // request. Bulk Unsubscribe stays closed while its preview is loading or
-  // failed. Archive and Delete stay disabled until that count is known.
+  // Archive and Delete stay disabled until the backlog count is known.
+  // Unsubscribe stays closed while the preview is loading or failed.
   const archivedRequested = mode === 'delete' && activeReach === 'all_mail';
   const confirmDisabled =
     submitting ||
     previewSenderGone ||
     nothingActionable ||
-    (mode === 'unsub_only' && bulkUnresolved) ||
+    (mode === 'unsub_only' && previewUnresolved) ||
     (archivedRequested && allMailCount === null) ||
     (mode !== 'unsub_only' && backlogOff);
   useEffect(() => {

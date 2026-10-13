@@ -1022,9 +1022,9 @@ const gmailNative: ComparisonDefinition = {
   verifiedIso: '2026-10-13',
   title: 'DeclutrMail vs Gmail’s built-in cleanup',
   description:
-    "A source-backed comparison of DeclutrMail and Gmail's own cleanup tools — Manage subscriptions, bulk search actions, and unsubscribe — for preview, recovery, and control by sender.",
+    'A source-backed comparison of DeclutrMail and Gmail’s own cleanup tools — Manage subscriptions, bulk search actions, and unsubscribe — for preview, recovery, and control by sender.',
   metaDescription:
-    "A source-backed comparison of DeclutrMail and Gmail's cleanup tools (Manage subscriptions, bulk search, unsubscribe): preview, recovery and control by sender.",
+    'A source-backed comparison of DeclutrMail and Gmail’s cleanup tools (Manage subscriptions, bulk search, unsubscribe): preview, recovery and control by sender.',
   verdict:
     'Gmail’s built-in cleanup is free, already there, and requires no third-party access — start with it. DeclutrMail adds an exact count and sample before manual changes, a per-sender Activity history with undo windows, and one review flow across every sender.',
   indexSummary:
@@ -1033,7 +1033,7 @@ const gmailNative: ComparisonDefinition = {
   providerScope: 'Gmail and Google Workspace',
   publicEntryPoint: 'Included with Gmail (Manage subscriptions is gradually rolling out)',
   chooseCompetitor: {
-    headline: "Choose Gmail's built-in tools when they already cover you",
+    headline: 'Choose Gmail’s built-in tools when they already cover you',
     points: [
       'You do not want to authorize any additional service against your mailbox.',
       'Your cleanup is mostly unsubscribing from active subscription senders, which Manage subscriptions lists with recent-email counts.',

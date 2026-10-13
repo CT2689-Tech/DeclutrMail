@@ -91,7 +91,8 @@ describe('Unsubscribe uses the action preview contract', () => {
     );
     expect(screen.getByRole('radio', { name: '+ Archive 0' })).toBeDisabled();
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 0' }));
-    expect(screen.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: WS5_COPY['f1.segment.unsubOnly'] })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Unsubscribe + Delete' })).toBeNull();
     expect(screen.getByRole('heading')).not.toHaveTextContent(/delete 0 emails/);
     expect(screen.queryByText(/0 emails you already have/)).toBeNull();
     expect(screen.getByText(WS5_COPY['f1.preview.archived.hint'])).toBeVisible();
@@ -434,6 +435,30 @@ describe('Unsubscribe uses the action preview contract', () => {
       );
       expect(posted).not.toContain(protectedSender.id);
       expect(posted).not.toContain(unnamed.id);
+      expect(onConfirm).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['loading', 'failure'] as const)(
+    'keeps a single-sender Unsubscribe confirm closed while the preview is %s',
+    (state) => {
+      const onConfirm = vi.fn();
+      render(
+        <ConfirmActionModal
+          request={request}
+          compositePreview={preview}
+          compositePreviewLoading={state === 'loading'}
+          compositePreviewError={state === 'failure'}
+          onCancel={vi.fn()}
+          onConfirm={onConfirm}
+        />,
+      );
+      fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
+      const confirm = screen.getByRole('button', { name: 'Unsubscribe' });
+      expect(confirm).toBeDisabled();
+      fireEvent.click(confirm);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
       expect(onConfirm).not.toHaveBeenCalled();
     },
   );
