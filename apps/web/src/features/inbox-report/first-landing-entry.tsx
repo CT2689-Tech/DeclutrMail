@@ -8,6 +8,7 @@ import { toast } from '@declutrmail/shared';
 import type { InboxReportDto } from '@declutrmail/shared/inbox-report';
 
 import { activityKeys } from '@/features/activity/api/query-keys';
+import { undoKeys } from '@/features/undo/query-keys';
 import { getActionFailureCopy } from '@/lib/action-error-copy';
 import { apiGet } from '@/lib/api/client';
 import { isTerminalStatus, type UndoRevertResult } from '@/lib/api/actions';
@@ -75,7 +76,11 @@ export function InboxReportFirstLanding(props: {
     setCelebration(null);
     setUndoHidden(true);
     setRevertActionId(null);
-    void queryClient.invalidateQueries({ queryKey: inboxReportQueryKey(mailboxId) });
+    // Home's report sits at ['activity','home','inbox-report',id]. The
+    // senders key is not a prefix of that, so invalidating only this
+    // panel leaves Home on the pre-undo count and leaves the tray line up.
+    void queryClient.invalidateQueries({ queryKey: activityKeys.all });
+    void queryClient.invalidateQueries({ queryKey: undoKeys.all });
   };
 
   useEffect(() => {

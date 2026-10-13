@@ -4716,6 +4716,77 @@ describe('BillingScreen — one billing story (A6)', () => {
     ).toBeInTheDocument();
   });
 
+  it('a reload keeps the stored Pass offer, so the grant clears the checkout notice', async () => {
+    mockTier = 'plus';
+    mockCleanupRemaining = null;
+    writePendingCheckout(
+      'w',
+      'checkout_intent',
+      'free',
+      null,
+      'plus',
+      'annual',
+      'pass-attempt',
+      'pass_onetime',
+    );
+    const pendingCheckout = {
+      provider: 'paddle' as const,
+      tier: 'plus' as const,
+      cycle: 'annual' as const,
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    };
+    let granted = false;
+    const openCheckout: BillingSubscription = { ...FREE_BODY, pendingCheckout };
+    stubSubscription(() =>
+      jsonOk({
+        data: granted
+          ? {
+              checkoutSetupComplete: true,
+              tier: 'plus',
+              foundingMember: false,
+              subscription: null,
+              pendingCheckout: null,
+              complimentary: {
+                tier: 'plus',
+                expiresAt: '2026-11-12T00:00:00.000Z',
+                source: 'pass',
+              },
+            }
+          : openCheckout,
+      }),
+    );
+    // The subscription read is already in cache on this paint, the way a
+    // reload lands when the pending row is known before the lock hydrates.
+    // Otherwise the lock is applied first and the synthesize effect never
+    // runs, so the test cannot see the offer being dropped.
+    const client = createTestQueryClient();
+    client.setQueryData(billingKeys.subscription(), openCheckout);
+    render(
+      <QueryWrapper client={client}>
+        <BillingScreen initialIntent={null} />
+      </QueryWrapper>,
+    );
+
+    const notice = await screen.findByTestId('payment-processing-notice');
+    expect(notice).toHaveTextContent('Checkout started — confirming your plan.');
+    expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toMatchObject({
+      kind: 'checkout_intent',
+      offer: 'pass_onetime',
+    });
+
+    granted = true;
+    await waitFor(
+      () => {
+        expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+        expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
+      },
+      { timeout: 8_000 },
+    );
+    expect(
+      within(screen.getByTestId('current-plan-card')).getByText('Backlog Pass'),
+    ).toBeInTheDocument();
+  });
+
   it('a Pass confirm records the purchase on the checkout_intent lock', async () => {
     mockPassEnabled = true;
     installFetchStub([

@@ -309,6 +309,16 @@ export function BillingScreen({
   useEffect(() => {
     if (!serverPending || pending !== null || data === null) return;
     if (Date.parse(serverPending.expiresAt) <= Date.now()) return;
+    // Hydrate and this effect both see `pending === null` on the first
+    // paint, and this one is declared later, so it would replace the
+    // stored lock. A Pass offer lives only on that record; dropping it
+    // leaves "confirming your plan" up after the grant. Storage stays
+    // authoritative when this browser already reserved the checkout.
+    const stored = readPendingCheckout(workspaceId);
+    if (stored) {
+      setPending(stored);
+      return;
+    }
     setPending({
       workspaceId,
       // 'checkout_intent', NOT 'checkout': the server row proves a

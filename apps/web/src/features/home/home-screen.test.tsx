@@ -5,7 +5,10 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 
 import type { Me } from '@/features/auth/api/me-contract';
+import { InboxReportFirstLanding } from '@/features/inbox-report/first-landing-entry';
 import { resetMailboxScopedCache } from '@/features/mailboxes/api/reset-mailbox-cache';
+import { ProductUndoTray } from '@/features/triage/triage-undo-tray';
+import { undoKeys } from '@/features/undo/query-keys';
 import { makeQueryClient } from '@/lib/query-client';
 import { addFetchHandlers, installFetchStub, jsonOk, jsonServerError } from '@/test/fetch-stub';
 import { createTestQueryClient } from '@/test/query-wrapper';
@@ -26,6 +29,10 @@ vi.mock('@/features/auth/auth-provider', async (importOriginal) => {
 });
 vi.mock('@/features/mailboxes/no-active-mailbox', () => ({
   NoActiveMailbox: () => <div data-testid="no-active-mailbox" />,
+}));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+  usePathname: () => '/home',
 }));
 
 function meFor(
@@ -572,5 +579,152 @@ describe('HomeScreen', () => {
     });
     await waitFor(() => expect(screen.getByTestId('home-hero')).toHaveTextContent('7'));
     expect(screen.queryByText('1,234')).toBeNull();
+  });
+
+  it('Undo refreshes Home and drops the tray line without a reload', async () => {
+    const generatedAt = '2026-10-11T00:00:00.000Z';
+    const keysFor = (n: number) => Array.from({ length: n }, (_, i) => `s${i + 1}`);
+    const reportFor = (n: number) => ({
+      ...REPORT_WITH_FIX,
+      generatedAt,
+      fix: { senderKeys: keysFor(n), sendersCount: n, inboxEmailCount: 40 },
+      fallbackSenderCount: n,
+    });
+    const celebrationKey = 'dm-inbox-report-celebration:mb-1';
+    localStorage.setItem(
+      celebrationKey,
+      JSON.stringify({
+        archived: 40,
+        senders: 7,
+        verb: 'archive',
+        actionId: 'act-1',
+        actionHandle: 'action',
+        senderKeys: keysFor(7),
+        fixGeneratedAt: generatedAt,
+      }),
+    );
+    let liveCount = 7;
+    const tray = {
+      rows: [] as Array<{
+        token: string;
+        actionKind: 'archive';
+        createdAt: string;
+        expiresAt: string;
+        groupId: string;
+        senderCount: number;
+        memberCount: number;
+        affectedCount: number;
+        members: Array<{
+          token: string;
+          actionKind: 'archive';
+          senderName: string;
+          affectedCount: number;
+        }>;
+      }>,
+    };
+    stub({ report: () => jsonOk({ data: reportFor(liveCount) }) });
+    addFetchHandlers([
+      {
+        method: 'GET',
+        path: '/api/actions/act-1',
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: 'act-1',
+              verb: 'archive',
+              direction: 'forward',
+              status: 'done',
+              requestedCount: 40,
+              affectedCount: 40,
+              wakeAt: null,
+              undoToken: 'undo-1',
+              undoExpiresAt: '2026-11-11T00:00:00.000Z',
+              undoExecutedAt: null,
+              undoRevertedAt: null,
+              errorCode: null,
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/undo/undo-1',
+        respond: () => {
+          // Immediate revert: no reverse job, so the status poll's
+          // reconcile cannot refresh Home or the tray. Only releaseRef can.
+          liveCount = 20;
+          tray.rows = [];
+          return jsonOk({
+            data: {
+              token: 'undo-1',
+              actionKind: 'archive',
+              reverted: true,
+              expired: false,
+              revertedAt: '2026-10-12T00:00:00.000Z',
+              actionId: null,
+            },
+          });
+        },
+      },
+      {
+        method: 'GET',
+        path: '/api/undo',
+        respond: () => jsonOk({ data: tray.rows, meta: { nextCursor: null, limit: 50 } }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/active',
+        respond: () => jsonOk({ data: [] }),
+      },
+    ]);
+    const client = createTestQueryClient();
+    render(
+      <QueryClientProvider client={client}>
+        <HomeScreen />
+        <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
+        <ProductUndoTray mailboxId="mb-1" />
+      </QueryClientProvider>,
+    );
+
+    expect(
+      await screen.findByRole('button', { name: 'Unsubscribe + archive 7 senders' }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(client.getQueryData(undoKeys.tray('mb-1'))).toEqual([]));
+    tray.rows = [
+      {
+        token: 'undo-tray',
+        actionKind: 'archive',
+        createdAt: '2026-10-12T00:00:00.000Z',
+        expiresAt: '2026-11-12T00:00:00.000Z',
+        groupId: 'grp-1',
+        senderCount: 13,
+        memberCount: 13,
+        affectedCount: 863,
+        members: [
+          {
+            token: 'member-1',
+            actionKind: 'archive',
+            senderName: 'Skyline Airways',
+            affectedCount: 100,
+          },
+        ],
+      },
+    ];
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: undoKeys.all });
+    });
+    const trayLine = () => document.querySelector('[data-dm-undo-tray="pill"]');
+    await waitFor(() => expect(trayLine()).toHaveTextContent('Archived 863 emails'));
+    expect(trayLine()).toHaveTextContent('13 senders');
+
+    fireEvent.click(screen.getByRole('button', { name: WS5_COPY['report.celebrate.undo.button'] }));
+
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole('button', { name: 'Unsubscribe + archive 20 senders' }),
+      ).toHaveLength(2),
+    );
+    expect(document.querySelector('[data-dm-undo-tray]')).toBeNull();
+    expect(localStorage.getItem(celebrationKey)).toBeNull();
+    localStorage.removeItem(celebrationKey);
   });
 });
