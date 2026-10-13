@@ -71,13 +71,29 @@ Revoke before expiry:
 pnpm grant-tier revoke advisor@example.com
 ```
 
-`--reason` is required — a comp with no stated reason is
+Grant a manual Backlog Pass (Plus, 30 days, no payment-provider call):
+
+```bash
+pnpm grant-tier grant-pass reader@example.com --reason="support"
+```
+
+The 30 days come from `OFFERS.backlogPass.durationDays` in
+`packages/shared/src/entitlements/pricing.config.ts`. `--expires` is
+rejected here so the duration cannot drift from that manifest.
+
+`--reason` is required — a grant with no stated reason is
 indistinguishable, six months on, from a tier someone set by mistake.
 `--by=name` overrides the granter (defaults to `$USER`).
 
-Re-granting an email **updates** its row rather than stacking a second
-one, and clears any revocation. One grant per identity, matched
+Re-granting a **comp** updates its row rather than stacking a second
+one, and clears any revocation. One comp per identity, matched
 case-insensitively (`citext`, same as `users.email`).
+
+A second `grant-pass` while a manual Pass is still live does nothing
+and prints the existing row. It does not add another 30 days. A live
+Pass that has a payment provider also blocks `grant-pass`; that row
+is left as it is. After the manual Pass expires or is revoked, a new
+`grant-pass` inserts a new row.
 
 ---
 
@@ -95,10 +111,13 @@ Then add `--prod` to any command:
 
 ```bash
 pnpm grant-tier grant advisor@example.com pro --reason="advisor" --prod
+pnpm grant-tier grant-pass reader@example.com --reason="support" --prod
 ```
 
-`--prod` prints what it is about to do and waits for a typed `y`. Every
-command accepts it; `list` is read-only and safe to run any time.
+`--prod` prints what it is about to do and waits for a typed `y` before
+a write. A `grant-pass` that finds an existing live Pass prints that
+row and does not ask, because it writes nothing. `list` is read-only
+and safe to run any time.
 
 ---
 
@@ -113,6 +132,9 @@ at the granted tier immediately. The script says so:
   future@example.com has not signed up on PRODUCTION yet — the grant applies when they do.
 ```
 
+`grant-pass` uses the same email key. Signup opens the workspace at
+Plus, and the account cap is the Backlog Pass cap: one Gmail account.
+
 ---
 
 ## What happens after you grant
@@ -121,9 +143,14 @@ at the granted tier immediately. The script says so:
   rather than waiting for the 6-hourly reconciliation sweep.
 - **They may need to reload.** A comped user with the app already open
   still holds a cached `me` naming the old tier.
-- **The Billing screen names it** — "Pro · Complimentary", with the end
-  date when the grant has one. No price, no cancel control, because there
-  is no subscription to manage.
+- **The Billing screen names a comp** — "Pro · Complimentary", with the
+  end date when the grant has one. No price, no cancel control, because
+  there is no subscription to manage.
+- **A manual Backlog Pass is named "Backlog Pass"** on that same screen,
+  with the existing Pass end-date lines. It does not show the catalog
+  price, the refund-policy link, or a payment-method card. Those belong
+  to a charge. A Pass bought through the payment provider still shows
+  its price and the refund-policy link.
 
 After a **revoke** below Pro, their active Autopilot rules stay on the
 books until the next sweep converges them (≤6h). The script prints a
@@ -138,9 +165,15 @@ billing never writes automation tables (D204).
 pnpm grant-tier list --prod
 ```
 
-A `●` marks a live grant, `○` an expired or revoked one. Expired and
-revoked rows are kept deliberately: the trail of who was comped, why, and
-when it ended is the reason this is a table and not an env var.
+A `●` marks a live grant, `○` an expired or revoked one. The kind column
+is `comp`, `pass manual`, or `pass paddle`. Expired and revoked rows are
+kept deliberately: the trail of who was granted, why, and when it ended
+is the reason this is a table and not an env var.
+
+`revoke` sets `revoked_at` on live comps and live manual Passes. It
+does not update a Pass whose `provider` is set. Refund checks and the
+Pass refund path also ignore `provider` NULL, so revoking a manual
+Pass is not recorded as a refund.
 
 To confirm the entitlement itself rather than the grant record, read the
 workspace tier:
@@ -169,6 +202,14 @@ production.** This applies only when the mechanism itself changes;
 ordinary grants against a deployed system have no such window.
 
 ---
+
+## No schema change
+
+A manual Pass stores a unique `provider_transaction_id` of the form
+`manual-pass:<uuid>`. That value fits the existing unique index. A
+partial unique index cannot express "one live manual Pass" because
+`now()` is not an immutable index predicate, so the one-live rule is
+enforced by the command. No migration is required.
 
 ## If a comp disappears
 

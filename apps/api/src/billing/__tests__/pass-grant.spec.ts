@@ -8,6 +8,7 @@ import type { DrizzleDb } from '../../db/db.module.js';
 import { BillingCatalog } from '../billing-catalog.js';
 import { BillingWebhookService } from '../billing-webhook.service.js';
 import { PaddleAdapter } from '../paddle.adapter.js';
+import { revokePassByTransaction } from '../pass-grant.js';
 import {
   ordinaryRefundPolicy,
   paddleAdjustmentCreated,
@@ -201,5 +202,24 @@ describe('Backlog Pass grants', () => {
     expect(
       await service.process('paddle', paddle.mapWebhookEvent(chargeback), chargeback),
     ).toMatchObject({ kind: 'processed', effect: 'pass_revoked:chargeback' });
+  });
+
+  it('does not revoke a manual Pass that has no provider', async () => {
+    await db.insert(entitlementGrants).values({
+      email: 'owner@example.test',
+      tier: 'plus',
+      reason: 'support',
+      grantedBy: 'founder',
+      source: 'pass',
+      provider: null,
+      providerTransactionId: 'manual-pass:test',
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+    await expect(revokePassByTransaction(db, 'manual-pass:test')).resolves.toEqual({
+      status: 'missing',
+    });
+    const [row] = await db.select().from(entitlementGrants);
+    expect(row?.revokedAt).toBeNull();
+    expect(row?.provider).toBeNull();
   });
 });

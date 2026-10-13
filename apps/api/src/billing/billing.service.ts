@@ -531,6 +531,7 @@ export class BillingService {
             tier: grant.tier,
             expiresAt: grant.expiresAt?.toISOString() ?? null,
             source: grant.source,
+            provider: grant.provider,
           }
         : null,
       subscription:

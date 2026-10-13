@@ -90,12 +90,18 @@ export async function liveGrantTierForWorkspace(
 export async function highestLiveGrantForWorkspace(
   db: Pick<DrizzleDb, 'select'>,
   workspaceId: string,
-): Promise<{ tier: TierId; expiresAt: Date | null; source: 'comp' | 'pass' | 'promo' } | null> {
+): Promise<{
+  tier: TierId;
+  expiresAt: Date | null;
+  source: 'comp' | 'pass' | 'promo';
+  provider: string | null;
+} | null> {
   const rows = await db
     .select({
       tier: entitlementGrants.tier,
       expiresAt: entitlementGrants.expiresAt,
       source: entitlementGrants.source,
+      provider: entitlementGrants.provider,
     })
     .from(entitlementGrants)
     .innerJoin(users, eq(users.email, entitlementGrants.email))
@@ -106,11 +112,20 @@ export async function highestLiveGrantForWorkspace(
         or(isNull(entitlementGrants.expiresAt), gt(entitlementGrants.expiresAt, new Date())),
       ),
     );
-  let best: { tier: TierId; expiresAt: Date | null; source: 'comp' | 'pass' | 'promo' } | null =
-    null;
+  let best: {
+    tier: TierId;
+    expiresAt: Date | null;
+    source: 'comp' | 'pass' | 'promo';
+    provider: string | null;
+  } | null = null;
   for (const row of rows) {
     const source = grantSource(row.source);
-    const candidate = { tier: row.tier, expiresAt: row.expiresAt, source };
+    const candidate = {
+      tier: row.tier,
+      expiresAt: row.expiresAt,
+      source,
+      provider: row.provider,
+    };
     if (best === null || preferGrant(candidate, best)) best = candidate;
   }
   return best;

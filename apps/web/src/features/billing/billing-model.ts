@@ -491,7 +491,12 @@ export function currentPlanPriceLabel(
   if (view.entitlementTier === 'free') return launchPriceDisplay(locale).free.amount;
   // A Backlog Pass is a paid grant, not a complimentary one. The deck
   // names it and prices it once; "Complimentary" is only a comp.
-  if (passCoversPlan(view)) return launchPriceDisplay(locale).passLine;
+  // A manual Pass has no charge, so it keeps the Pass name and omits
+  // the catalog price rather than claiming one.
+  if (passCoversPlan(view)) {
+    if (manualPassGrant(view.complimentary)) return '';
+    return launchPriceDisplay(locale).passLine;
+  }
   // A comp is the reason there is no price, so say so instead of the
   // generic line. Only when the grant reaches the tier being named: a
   // comped Plus sitting on a paid-but-non-backing Pro row is not a
@@ -507,6 +512,11 @@ export function currentPlanPriceLabel(
 export function currentPlanTitle(view: BillingPlanView): string {
   if (passCoversPlan(view)) return fillStory(WS1_COPY['planName.pass']);
   return TIER_MANIFEST[view.entitlementTier].name;
+}
+
+/** A Backlog Pass written without a payment provider. */
+export function manualPassGrant(grant: BillingSubscription['complimentary']): boolean {
+  return grant?.source === 'pass' && grant.provider === null;
 }
 
 /** The live grant is a Backlog Pass and it is the plan on the card. */
