@@ -69,18 +69,16 @@ export const RECONNECT_RESULT_COPY: Record<ReconnectResult, OAuthResultCopy> = {
   },
 };
 
-export const CONNECT_START_RESULT_COPY: Record<ConnectStartResult, OAuthResultCopy> = {
+export const CONNECT_START_RESULT_COPY: Record<
+  Exclude<ConnectStartResult, 'pass_second_account'>,
+  OAuthResultCopy
+> = {
   target_invalid: {
     message: 'Could not start that reconnect. Try again.',
     tone: 'danger',
     liveRole: 'alert',
   },
   inbox_limit: {
-    message: 'Your plan’s Gmail limit is in use, so nothing was connected.',
-    tone: 'warn',
-    liveRole: 'status',
-  },
-  pass_second_account: {
     message: 'Your plan’s Gmail limit is in use, so nothing was connected.',
     tone: 'warn',
     liveRole: 'status',
@@ -171,7 +169,8 @@ export function oauthResultIn(
     return { param: 'reconnect_result', value: reconnect, copy: RECONNECT_RESULT_COPY[reconnect] };
   }
   const connectStart = connectStartResultOf(params.get('connect_start_result'));
-  if (connectStart) {
+  // Pass second-account uses the locked dialog, not a toast.
+  if (connectStart && connectStart !== 'pass_second_account') {
     return {
       param: 'connect_start_result',
       value: connectStart,

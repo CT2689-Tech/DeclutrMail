@@ -12,11 +12,11 @@ describe('oauthResultIn', () => {
     });
   });
 
-  it('reads the Pass second-account start result', () => {
-    expect(oauthResultIn('?connect_start_result=pass_second_account')).toMatchObject({
-      param: 'connect_start_result',
-      value: 'pass_second_account',
-    });
+  it('does not toast the Pass second-account start result', () => {
+    expect(oauthResultIn('?connect_start_result=pass_second_account')).toBeNull();
+    expect(oauthResultIn('?connect_start_result=inbox_limit')?.copy.message).toBe(
+      'Your plan’s Gmail limit is in use, so nothing was connected.',
+    );
   });
 
   it('drops a reconnect or start result it does not know', () => {
@@ -63,6 +63,9 @@ describe('onboardingPathKeepingOAuthResult', () => {
     );
     expect(onboardingPathKeepingOAuthResult('?returnTo=/billing')).toBe(
       '/onboarding?returnTo=%2Fbilling',
+    );
+    expect(onboardingPathKeepingOAuthResult('?connect_start_result=pass_second_account')).toBe(
+      '/onboarding?connect_start_result=pass_second_account',
     );
   });
 });
