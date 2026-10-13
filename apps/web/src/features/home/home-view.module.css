@@ -456,6 +456,10 @@
   .page {
     padding-top: 24px;
   }
+  /* Two lines: eyebrow/title row plus the sender line. 40px fits one. */
+  .visitSlot {
+    min-height: 60px;
+  }
   .header {
     align-items: flex-start;
     flex-direction: column;

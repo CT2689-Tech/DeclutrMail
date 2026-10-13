@@ -14,6 +14,20 @@ interface Measured {
   behind: string;
 }
 
+/**
+ * A rendered banner has an element or real text. Suspense markers from
+ * `ssr: false` chrome (`<!--$-->`) sit in the item until the chunk loads
+ * and make `childNodes.length` lie — counting them mounts "+N more" for
+ * one frame and drops the shell (45px under 760px, ~33px above).
+ */
+function itemRendered(item: Element): boolean {
+  return Array.from(item.childNodes).some((node) => {
+    if (node.nodeType === Node.ELEMENT_NODE) return true;
+    if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? '').trim() !== '';
+    return false;
+  });
+}
+
 /** A banner's words without its controls — "Reconnect Dismiss" is noise when read aloud. */
 function spokenText(item: Element): string {
   const copy = item.cloneNode(true) as Element;
@@ -56,7 +70,7 @@ export function BannerSlot({ children }: { children: ReactNode }) {
       const items = Array.from(slot.children).filter((el) =>
         el.classList.contains('dm-banner-item'),
       );
-      const rendered = items.map((el) => el.childNodes.length > 0);
+      const rendered = items.map(itemRendered);
       const first = rendered.indexOf(true);
       const next = {
         active: rendered.filter(Boolean).length,

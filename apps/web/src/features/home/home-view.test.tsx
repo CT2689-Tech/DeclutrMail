@@ -239,6 +239,9 @@ describe('HomeView', () => {
     expect(home).toMatch(/max-width:\s*760px/);
     expect(home).toMatch(/\.leadFigure\s*\{[^}]*font-size:\s*28px/s);
     expect(home).toMatch(/\.visitSlot\s*\{[^}]*min-height:\s*40px/s);
+    expect(home).toMatch(
+      /@media \(max-width: 480px\)[\s\S]*?\.visitSlot\s*\{[^}]*min-height:\s*60px/,
+    );
     expect(home).toMatch(/\.planLine\s*\{[^}]*min-height:\s*28px/s);
     expect(home).toMatch(/\.fixActions\s*\{[^}]*margin-top:\s*8px/);
     expect(home).not.toContain('.page:has(.arrivals)');
