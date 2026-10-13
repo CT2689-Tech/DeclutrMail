@@ -378,13 +378,11 @@ describe('<UndoTray /> — one pill (static)', () => {
   });
 });
 
-/** react-dom escapes the apostrophe in the locked sentence. */
-const UNSUBSCRIBE_NOTE_HTML =
-  'Unsubscribes can&#x27;t be undone. Any that already started will finish.';
+/** Locked deck sentence. The apostrophe is U+2019, which SSR leaves as itself. */
+const UNSUBSCRIBE_NOTE = 'Unsubscribes can’t be undone. Any that already started will finish.';
 
-describe('<UndoTray /> — unsubscribe note under Undo all', () => {
-  // The real decision: Undo all reverses the archive. Unsubscribes are a
-  // separate in-flight job row, not members of that decision.
+describe('<UndoTray /> — unsubscribe note on the open tray', () => {
+  // Undo all reverses a bulk archive. Unsubscribes are a separate job row.
   const archiveBulk = entry({
     token: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
     actionKind: 'archive',
@@ -405,54 +403,71 @@ describe('<UndoTray /> — unsubscribe note under Undo all', () => {
     detail: '2 of 14',
   };
 
-  it('states the locked line under archive Undo all when an unsubscribe job is separate', () => {
+  it('states the locked line once in the open tray when an unsubscribe job is separate', () => {
     const open = renderToStaticMarkup(
       <UndoTray
         defaultOpen
         dataSource={source({ entries: [archiveBulk], notices: [unsubscribing] })}
       />,
     );
-    const undoAll = open.indexOf('>Undo all<');
-    const note = open.indexOf(UNSUBSCRIBE_NOTE_HTML);
+    expect(open).toContain('data-dm-undo-tray="open"');
     expect(open).toContain('Unsubscribing…');
-    expect(undoAll).toBeGreaterThan(-1);
-    expect(note).toBeGreaterThan(undoAll);
+    expect(open).toContain('>Undo all<');
+    expect(open).toContain(UNSUBSCRIBE_NOTE);
     expect(open.match(/data-dm-undo-unsub-note/g)).toHaveLength(1);
 
-    // The closed pill's headline is the running job, so Undo all is not on screen.
+    // The closed pill does not carry the line. Undo all is not on that screen.
     const pill = renderToStaticMarkup(
       <UndoTray dataSource={source({ entries: [archiveBulk], notices: [unsubscribing] })} />,
     );
     expect(pill).toContain('data-dm-undo-tray="pill"');
     expect(pill).toContain('Unsubscribing…');
-    expect(pill).not.toContain('>Undo all<');
-    expect(pill).not.toContain(UNSUBSCRIBE_NOTE_HTML);
+    expect(pill).not.toContain(UNSUBSCRIBE_NOTE);
     expect(pill).not.toContain('data-dm-undo-unsub-note');
 
     const archiveOnly = renderToStaticMarkup(
       <UndoTray defaultOpen dataSource={source({ entries: [archiveBulk] })} />,
     );
     expect(archiveOnly).toContain('>Undo all<');
-    expect(archiveOnly).not.toContain(UNSUBSCRIBE_NOTE_HTML);
+    expect(archiveOnly).not.toContain(UNSUBSCRIBE_NOTE);
     expect(archiveOnly).not.toContain('data-dm-undo-unsub-note');
   });
 
-  it('states the line under Undo all when a separate unsubscribe row is in the list', () => {
-    const unsubscribeRow = entry({
-      token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-      actionKind: 'unsubscribe',
-      groupId: 'unsub-row',
+  it('states the line once for one archived sender and one unsubscribe job', () => {
+    const archiveOne = entry({
+      token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      actionKind: 'archive',
+      groupId: 'arch-one',
       senderCount: 1,
-      affectedCount: 4,
+      affectedCount: 103,
+      members: [
+        { token: 'a1', actionKind: 'archive', senderName: 'Skyline Airways', affectedCount: 103 },
+      ],
     });
+    const unsubOne = {
+      id: 'run:fresh',
+      tone: 'working' as const,
+      verb: 'unsubscribe' as const,
+      label: 'Unsubscribing…',
+      who: 'Fresh Market Deals',
+    };
     const open = renderToStaticMarkup(
-      <UndoTray defaultOpen dataSource={source({ entries: [archiveBulk, unsubscribeRow] })} />,
+      <UndoTray defaultOpen dataSource={source({ entries: [archiveOne], notices: [unsubOne] })} />,
     );
-    const undoAll = open.indexOf('>Undo all<');
-    const note = open.indexOf(UNSUBSCRIBE_NOTE_HTML);
-    expect(note).toBeGreaterThan(undoAll);
+    expect(open).toContain('Unsubscribing…');
+    expect(open).toContain('Fresh Market Deals');
+    expect(open).toContain('>Undo<');
+    expect(open).not.toContain('>Undo all<');
+    expect(open).toContain(UNSUBSCRIBE_NOTE);
     expect(open.match(/data-dm-undo-unsub-note/g)).toHaveLength(1);
-    // The unsubscribe row's own button is Undo, and it does not carry a second note.
-    expect(open.indexOf('>Undo<', note)).toBeGreaterThan(note);
+    // Tray level: the note follows the rows, it is not inside either of them.
+    expect(open.indexOf(UNSUBSCRIBE_NOTE)).toBeGreaterThan(open.indexOf('>Undo<'));
+
+    const archiveOnly = renderToStaticMarkup(
+      <UndoTray defaultOpen dataSource={source({ entries: [archiveOne] })} />,
+    );
+    expect(archiveOnly).toContain('>Undo<');
+    expect(archiveOnly).not.toContain(UNSUBSCRIBE_NOTE);
+    expect(archiveOnly).not.toContain('data-dm-undo-unsub-note');
   });
 });

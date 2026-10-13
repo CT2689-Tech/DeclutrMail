@@ -267,7 +267,7 @@ const UNSUBSCRIBE_JOB: InFlightActionGroup = {
 };
 
 const LOCKED_UNSUBSCRIBE_NOTE =
-  "Unsubscribes can't be undone. Any that already started will finish.";
+  'Unsubscribes can’t be undone. Any that already started will finish.';
 
 describe('ProductUndoTray — live line', () => {
   let active: InFlightActionGroup[] | 'error';
@@ -537,9 +537,48 @@ describe('ProductUndoTray — live line', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show all recent actions' }));
     const note = await screen.findByText(LOCKED_UNSUBSCRIBE_NOTE);
     expect(screen.getAllByText(LOCKED_UNSUBSCRIBE_NOTE)).toHaveLength(1);
-    expect(note.closest('li')?.querySelector('button')?.textContent).toBe('Undo all');
+    expect(note.closest('[data-dm-undo-tray="open"]')).not.toBeNull();
+    expect(note.closest('li')).toBeNull();
     expect(screen.getByRole('button', { name: /^Undo Archive/ })).toHaveTextContent('Undo all');
     expect(screen.getAllByText(/Unsubscribing…/).length).toBeGreaterThan(0);
+  });
+
+  it('states the locked line once for one archived sender and one unsubscribe', async () => {
+    active = [];
+    const { client } = mount();
+    await waitFor(() => expect(client.getQueryData(undoKeys.tray(undefined))).toEqual([]));
+    undoList = [
+      {
+        ...ARCHIVE_UNDO,
+        groupId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        token: '22222222-2222-4222-8222-222222222222',
+        senderCount: 1,
+        affectedCount: 103,
+      },
+    ];
+    active = [
+      {
+        ...UNSUBSCRIBE_JOB,
+        groupId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        senderCount: 1,
+        total: 1,
+        done: 0,
+        failed: 0,
+        leadSenderName: 'Fresh Market Deals',
+      },
+    ];
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: undoKeys.all });
+    });
+    await waitFor(() => expect(pillText()).toMatch(/Unsubscribing…/));
+    expect(document.querySelector('[data-dm-undo-unsub-note]')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show all recent actions' }));
+    const note = await screen.findByText(LOCKED_UNSUBSCRIBE_NOTE);
+    expect(screen.getAllByText(LOCKED_UNSUBSCRIBE_NOTE)).toHaveLength(1);
+    expect(note.closest('[data-dm-undo-tray="open"]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: /^Undo Archive/ })).toHaveTextContent(/^Undo$/);
+    expect(screen.getAllByText(/Fresh Market Deals/).length).toBeGreaterThan(0);
   });
 
   it('keeps the line off Undo all when the running job is not an unsubscribe', async () => {
