@@ -38,7 +38,7 @@ export async function ServerHomeBoundary({
       if (me === null || mailboxId === undefined) return [];
       const mailboxOptions = { mailboxId };
       const visitId = readHomeVisitCookie(cookieHeader, mailboxId);
-      const reads = [
+      const reads: Promise<unknown>[] = [
         queryClient.fetchQuery(
           homeSummaryQueryOptions((signal) =>
             serverGet<HomeSummary>(
