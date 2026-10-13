@@ -84,6 +84,21 @@ process.stdout.write(
             <a className="dm-external-link dm-tap-target" href="/privacy#ai-processing">
               How we use AI
             </a>
+            <section aria-label="Home links">
+              <a className="dm-external-link dm-tap-target" href="/settings/privacy#what-we-store">
+                What we store and share
+                <span aria-hidden="true"> →</span>
+              </a>
+              <a className="dm-external-link dm-tap-target" href="/senders?fix=1">
+                Review them first
+              </a>
+              <a className="dm-external-link dm-home-report-cta dm-tap-target" href="/senders">
+                Open report
+              </a>
+              <a className="dm-external-link dm-tap-target" href="/activity">
+                See your activity
+              </a>
+            </section>
             <button
               type="button"
               className="dm-tap-44"

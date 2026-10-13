@@ -841,9 +841,11 @@ button {
   text-underline-offset: 3px;
 }
 /* Phone-only hit area for text links that otherwise collapse to a
-   line box. Negative margin keeps the line where it was. */
+   line box. Negative margin keeps the line where it was. Filled
+   .dm-button-link controls are already 44px, and this padding would
+   stretch the fill. */
 @media (max-width: 760px) {
-  a.dm-tap-target {
+  a.dm-tap-target:not(.dm-button-link) {
     display: inline-block;
     box-sizing: border-box;
     min-height: 44px;

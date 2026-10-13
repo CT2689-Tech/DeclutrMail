@@ -19,7 +19,10 @@ export function InboxReportCard(props: {
       {props.lead != null && <div className={styles.lead}>{props.lead}</div>}
       <h2 className={`${styles.title} dm-home-report-title`}>{WS5_COPY['report.home.title']}</h2>
       <span className={`${styles.body} dm-home-report-body`}>{WS5_COPY['report.home.body']}</span>
-      <a className={`${styles.cta} dm-home-report-cta dm-external-link`} href="/senders">
+      <a
+        className={`${styles.cta} dm-home-report-cta dm-external-link dm-tap-target`}
+        href="/senders"
+      >
         {WS5_COPY['report.home.cta']}
       </a>
     </div>

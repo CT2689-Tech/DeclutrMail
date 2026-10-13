@@ -55,7 +55,6 @@ const PHONE_LINKS = [
   'Manage inboxes',
   'Newsletter',
   'See plans',
-  'What we store and share',
   'How we use AI',
 ] as const;
 
@@ -87,6 +86,23 @@ test('phone shell keeps the last content above a flush tab bar', async ({ page }
 
   for (const name of PHONE_LINKS) {
     expect(await linkHeight(page, name), name).toBeGreaterThanOrEqual(44);
+  }
+  const reportStored = await page
+    .getByRole('region', { name: 'Your Inbox Report' })
+    .getByRole('link', { name: 'What we store and share', exact: true })
+    .boundingBox();
+  expect(reportStored).not.toBeNull();
+  expect(reportStored!.height).toBeGreaterThanOrEqual(44);
+  const home = page.getByRole('region', { name: 'Home links' });
+  for (const name of [
+    'What we store and share',
+    'Review them first',
+    'Open report',
+    'See your activity',
+  ]) {
+    const box = await home.getByRole('link', { name, exact: true }).boundingBox();
+    expect(box, name).not.toBeNull();
+    expect(box!.height, name).toBeGreaterThanOrEqual(44);
   }
   for (const name of PHONE_BUTTONS) {
     const box = await buttonBox(page, name);
@@ -167,8 +183,24 @@ test('desktop keeps the sidebar and the original link metrics', async ({ page })
 
   const seePlans = await linkHeight(page, 'See plans');
   expect(seePlans).toBeLessThan(30);
-  const stored = await linkHeight(page, 'What we store and share');
-  expect(stored).toBeLessThan(30);
+  const stored = await page
+    .getByRole('region', { name: 'Your Inbox Report' })
+    .getByRole('link', { name: 'What we store and share', exact: true })
+    .boundingBox();
+  expect(stored).not.toBeNull();
+  expect(stored!.height).toBeLessThan(30);
+  const home = page.getByRole('region', { name: 'Home links' });
+  for (const name of [
+    'What we store and share',
+    'Review them first',
+    'Open report',
+    'See your activity',
+  ]) {
+    const box = await home.getByRole('link', { name, exact: true }).boundingBox();
+    expect(box, name).not.toBeNull();
+    expect(box!.height, name).toBeGreaterThanOrEqual(36);
+    expect(box!.height, name).toBeLessThan(40);
+  }
   const ai = await linkHeight(page, 'How we use AI');
   expect(ai).toBeGreaterThanOrEqual(36);
   expect(ai).toBeLessThan(40);

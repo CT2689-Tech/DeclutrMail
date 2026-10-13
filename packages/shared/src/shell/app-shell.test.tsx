@@ -100,7 +100,7 @@ describe('<AppShell /> — top bar and tab bar', () => {
     expect(css).toContain('--dm-tabbar-inset: calc(65px + env(safe-area-inset-bottom, 0px))');
     expect(tabbar).toContain('env(safe-area-inset-bottom, 0px)');
     expect(css).toContain('a.dm-tap-target');
-    expect(css).toMatch(/a\.dm-tap-target\s*\{[^}]*min-height:\s*44px/);
+    expect(css).toMatch(/a\.dm-tap-target:not\(\.dm-button-link\)\s*\{[^}]*min-height:\s*44px/);
     expect(css).toMatch(/button\.dm-tap-44\s*\{[^}]*min-height:\s*44px\s*!important/);
     expect(css).toMatch(/button\.dm-tap-44\s*\{[^}]*min-width:\s*44px\s*!important/);
   });
