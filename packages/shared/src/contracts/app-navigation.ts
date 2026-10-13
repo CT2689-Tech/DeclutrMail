@@ -21,6 +21,15 @@ const APP_PATHS = [
 
 export { isUserScopedAppPath } from './account-navigation.js';
 
+/** Paddle transaction ids are `txn_` plus alphanumerics; keep a bound. */
+const PADDLE_TRANSACTION_ID = /^txn_[a-z0-9]+$/i;
+const PADDLE_TRANSACTION_ID_MAX_LENGTH = 64;
+
+function parsePaddleTransactionId(value: string | null): string | undefined {
+  if (value === null || value.length > PADDLE_TRANSACTION_ID_MAX_LENGTH) return undefined;
+  return PADDLE_TRANSACTION_ID.test(value) ? value : undefined;
+}
+
 /** Preserve a known local app destination without admitting hosts or normalized path tricks. */
 export function parseAppReturnTo(value: unknown): string | undefined {
   if (
@@ -51,7 +60,6 @@ export function parseAppReturnTo(value: unknown): string | undefined {
   const keys = [...url.searchParams.keys()];
   if (new Set(keys).size !== keys.length) return undefined;
   if (url.pathname === '/billing') {
-    if (keys.some((key) => !['plan', 'cycle', 'promo', 'from'].includes(key))) return undefined;
     const plan = url.searchParams.get('plan');
     const cycle = url.searchParams.get('cycle');
     const promo = url.searchParams.get('promo');
@@ -65,7 +73,9 @@ export function parseAppReturnTo(value: unknown): string | undefined {
     const from = url.searchParams.get('from');
     // An upgrade returns to work, never another checkout (or another nested intent).
     if (from !== null && !parseUpgradeReturnTo(from)) return undefined;
+    const ptxn = parsePaddleTransactionId(url.searchParams.get('_ptxn'));
     const query = new URLSearchParams();
+    if (ptxn !== undefined) query.set('_ptxn', ptxn);
     if (plan !== null && cycle !== null) {
       query.set('plan', plan);
       query.set('cycle', cycle);

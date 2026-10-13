@@ -41,6 +41,28 @@ describe('app destinations surviving login', () => {
     );
     expect(parseUpgradeReturnTo('/billing')).toBeUndefined();
   });
+  it('keeps a Paddle transaction id on billing', () => {
+    expect(parseAppReturnTo('/billing?_ptxn=txn_test')).toBe('/billing?_ptxn=txn_test');
+    expect(parseAppReturnTo('/billing?_ptxn=TXN_01ABCDEFGHIJKLMNOPQRSTUVWX')).toBe(
+      '/billing?_ptxn=TXN_01ABCDEFGHIJKLMNOPQRSTUVWX',
+    );
+    expect(parseBillingReturnTo('/billing?_ptxn=txn_01abcdefghijklmnopqrstuvwx')).toBe(
+      '/billing?_ptxn=txn_01abcdefghijklmnopqrstuvwx',
+    );
+  });
+  it('keeps /billing after stripping unknown query keys', () => {
+    expect(parseAppReturnTo('/billing?utm_source=paddle&a=1%202')).toBe('/billing');
+    expect(parseAppReturnTo('/billing?_ptxn=txn_test&utm_source=x')).toBe(
+      '/billing?_ptxn=txn_test',
+    );
+  });
+  it('strips a malformed _ptxn and still returns /billing', () => {
+    expect(parseAppReturnTo('/billing?_ptxn=not-a-txn')).toBe('/billing');
+    expect(parseAppReturnTo('/billing?_ptxn=txn_bad-id')).toBe('/billing');
+    expect(parseAppReturnTo('/billing?_ptxn=javascript%3Aalert(1)')).toBe('/billing');
+    expect(parseAppReturnTo(`/billing?_ptxn=txn_${'a'.repeat(64)}`)).toBe('/billing');
+    expect(parseBillingReturnTo('/billing?_ptxn=not-a-txn')).toBe('/billing');
+  });
   it('exempts account controls, while keeping sender policies gated', () => {
     for (const path of ['/settings', '/settings/privacy', '/settings/help', '/billing'])
       expect(isUserScopedAppPath(path)).toBe(true);
