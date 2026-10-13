@@ -146,6 +146,28 @@ describe('returning visit and scan discovery', () => {
     expect(
       ((await visits.findById(userId))!.preferences as Record<string, unknown>).emailPrefs,
     ).toEqual({ reminders: false });
+    const peek = await visits.peekMailboxVisit(
+      userId,
+      inboxA,
+      first,
+      reads.indexedArrivals.bind(reads, inboxA),
+      (executor) => mailboxes.assertVisitEligible(userId, inboxA, executor),
+      finish,
+    );
+    expect(peek).toEqual(initial);
+    const open = await visits.peekMailboxVisit(
+      userId,
+      inboxA,
+      undefined,
+      reads.indexedArrivals.bind(reads, inboxA),
+      (executor) => mailboxes.assertVisitEligible(userId, inboxA, executor),
+      finish,
+    );
+    expect(open.since).toBe(next.until);
+    expect(
+      ((await visits.findById(userId))!.preferences as { mailboxVisits: Record<string, unknown> })
+        .mailboxVisits[inboxA],
+    ).toHaveLength(2);
   });
 
   it('counts newly indexed rows, uses exact visit boundaries, and excludes another inbox and outbound', async () => {

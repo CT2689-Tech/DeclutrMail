@@ -106,7 +106,6 @@ export function HomeScreen() {
     ...snoozedListQueryOptions((signal) => fetchSnoozed(signal)),
     select: (envelope) => envelope.data,
     enabled: hasActiveMailbox,
-    staleTime: 30_000,
   });
   const presentation = homeReportPresentation(report.data);
   const laterStep = homeLaterCandidate(later.data ?? []);

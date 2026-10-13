@@ -114,6 +114,20 @@ function stub({ summary, queueLength = 0, screenerPending = 0, sync, report, sno
   };
   installFetchStub([
     {
+      method: 'GET',
+      path: '/api/home/visit',
+      respond: () =>
+        jsonOk({
+          data: {
+            visitId: '00000000-0000-4000-8000-000000000000',
+            since: null,
+            until: '2026-10-10T10:00:00.000Z',
+            indexedEmails: null,
+            indexedSenders: null,
+          },
+        }),
+    },
+    {
       method: 'POST',
       path: '/api/home/visit',
       respond: () => jsonOk({ data: { since: null, indexedEmails: null, indexedSenders: null } }),
@@ -371,6 +385,20 @@ describe('HomeScreen', () => {
       release = resolve;
     });
     installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/home/visit',
+        respond: () =>
+          jsonOk({
+            data: {
+              visitId: '00000000-0000-4000-8000-000000000000',
+              since: null,
+              until: '2026-10-10T10:00:00.000Z',
+              indexedEmails: null,
+              indexedSenders: null,
+            },
+          }),
+      },
       {
         method: 'POST',
         path: '/api/home/visit',

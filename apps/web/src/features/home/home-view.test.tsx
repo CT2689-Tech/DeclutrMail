@@ -169,8 +169,7 @@ describe('HomeView', () => {
       />,
     );
     expect(screen.getByRole('region', { name: 'Suggested next steps' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Unsubscribe/ })).toBeNull();
-    expect(screen.queryByText(/of these senders/)).toBeNull();
+    expect(screen.getByRole('button', { name: /Unsubscribe/ })).toBeInTheDocument();
     const laterLink = screen.getByRole('link', { name: HOME_DECK.laterCta });
     const laterCard = laterLink.closest('article');
     expect(laterLink).toHaveAttribute('href', '/later');
@@ -193,6 +192,7 @@ describe('HomeView', () => {
   });
 
   it('preview full state shows the fixture report and a count-free Later card', async () => {
+    cardGate.shape = 'shell';
     render(
       <HomeView
         state={ready}
@@ -226,21 +226,23 @@ describe('HomeView', () => {
     expect(homePreviewReport('caught-up')?.calm).toMatch(/47 emails/);
     expect(homePreviewReport('syncing')).toBeNull();
     expect(homePreviewReport('empty')).toBeNull();
+    cardGate.shape = 'none';
   });
 
   it('reserves the narrow page inset so the primary action stays above the tab bar', () => {
-    const narrow = (css: string) => css.slice(css.lastIndexOf('@media (max-width: 760px)'));
     const dir = dirname(fileURLToPath(import.meta.url));
-    const home = narrow(readFileSync(join(dir, 'home-view.module.css'), 'utf8'));
-    const card = narrow(readFileSync(join(dir, '../inbox-report/card.module.css'), 'utf8'));
-    expect(home).toContain('padding: 12px 16px var(--dm-tabbar-inset)');
-    expect(home).toContain('min-height: 28px');
+    const home = readFileSync(join(dir, 'home-view.module.css'), 'utf8');
+    const card = readFileSync(join(dir, '../inbox-report/card.module.css'), 'utf8');
+    const narrow = home.slice(home.lastIndexOf('@media (max-width: 760px)'));
+    expect(narrow).toContain('padding: 12px 16px var(--dm-tabbar-inset)');
+    expect(home).toMatch(/max-width:\s*760px/);
+    expect(home).toMatch(/\.leadFigure\s*\{[^}]*font-size:\s*28px/s);
+    expect(home).toMatch(/\.visitSlot\s*\{[^}]*min-height:\s*40px/s);
+    expect(home).toMatch(/\.planLine\s*\{[^}]*min-height:\s*28px/s);
     expect(home).toMatch(/\.fixActions\s*\{[^}]*margin-top:\s*8px/);
-    expect(home).toMatch(/\.arrivals\s*\{[^}]*padding:\s*6px 10px/);
-    expect(home).toContain('.page:has(.arrivals) .header');
-    expect(home).toContain('.page:has(.arrivals) .leadFigure');
-    expect(card).toMatch(/\.card\s*\{[^}]*padding:\s*16px/);
-    expect(card).toMatch(/\.body\s*\{[^}]*margin:\s*8px 0 12px/);
+    expect(home).not.toContain('.page:has(.arrivals)');
+    expect(card).toMatch(/\.card\s*\{[^}]*padding:\s*8px 10px/);
+    expect(card).toMatch(/\.body\s*\{[^}]*margin:\s*2px 0 4px/);
   });
 
   it('keeps the lead, size tile, and trust line when the home card link is present', async () => {
@@ -324,12 +326,37 @@ describe('HomeView', () => {
     );
   });
 
-  it('does not paint an unsubscribe step while the report deck is empty', () => {
-    render(<HomeView state={ready} nextSteps={[unsub]} />);
-    expect(screen.queryByRole('button', { name: /Unsubscribe/ })).toBeNull();
-    expect(screen.queryByRole('alertdialog')).toBeNull();
-    expect(screen.queryByText(/of these senders/)).toBeNull();
-    expect(document.querySelector('[data-home-fix-expected="false"]')).not.toBeNull();
+  it('does not render a duplicate Inbox Report heading', () => {
+    cardGate.shape = 'shell';
+    render(
+      <HomeView
+        state={ready}
+        nextSteps={[unsub]}
+        mailboxId="mb-preview"
+        previewReport={homePreviewReport('full')}
+      />,
+    );
+    expect(screen.getAllByRole('heading', { name: 'Your Inbox Report' })).toHaveLength(1);
+    expect(screen.getAllByRole('link', { name: 'Open report' })).toHaveLength(1);
+    cardGate.shape = 'none';
+  });
+
+  it('uses one skeleton that matches the ready layout slots', () => {
+    const { rerender } = render(<HomeView state={{ kind: 'loading' }} />);
+    const slots = () =>
+      [...document.querySelectorAll('[data-home-slot]')].map((el) =>
+        el.getAttribute('data-home-slot'),
+      );
+    expect(slots()).toEqual(['plan', 'primary', 'visit', 'report']);
+    rerender(
+      <HomeView
+        state={ready}
+        nextSteps={[unsub, later]}
+        mailboxId="mb-preview"
+        previewReport={homePreviewReport('full')}
+      />,
+    );
+    expect(slots()).toEqual(['plan', 'primary', 'visit', 'report']);
   });
 
   it('uses the calm fallback when nothing is suggested', () => {
@@ -444,10 +471,11 @@ describe('HomeView', () => {
     );
   });
 
-  it('loading: a labelled skeleton and no link', () => {
+  it('loading: a labelled skeleton and no senders action', () => {
     render(<HomeView state={{ kind: 'loading' }} />);
     expect(screen.getByRole('status', { name: 'Loading Home' })).toBeInTheDocument();
-    expect(screen.queryByRole('link')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Review senders' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Compare plans' })).toBeInTheDocument();
   });
 
   it('error: names the cause and retries', () => {

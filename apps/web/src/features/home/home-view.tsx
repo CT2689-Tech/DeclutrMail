@@ -1,15 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import {
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-  type RefObject,
-} from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { ErrorState, Skeleton } from '@declutrmail/shared';
 import type { CleanupSummaryDto } from '@declutrmail/shared/contracts';
 import { planName, type TierId } from '@declutrmail/shared/entitlements';
@@ -40,9 +32,6 @@ import { SYNC_FAILED_ACTION, type HomeAction, type HomeState } from './home-stat
 import styles from './home-view.module.css';
 
 const BILLING_HREF = '/billing?from=%2Fhome';
-
-/** The shipped card marks the mailbox on its root, not only on an anchor. */
-const REPORT_CARD_MARK = '[data-mailbox]';
 
 function homeNextStepEventKind(
   kind: HomeFixCandidate['kind'],
@@ -102,16 +91,15 @@ export function HomeView({
   const steps = rankHomeNextSteps(nextSteps, { senderSizeView });
   const mode = homeV1Mode(state.kind, state.kind === 'ready' ? steps.length : 0);
   const [pendingFix, setPendingFix] = useState<HomeFixCandidate | null>(null);
-  const reportRef = useRef<HTMLDivElement>(null);
-  const reportMounted = useInboxReportMounted(reportRef);
   const fixCopy = previewReport?.fix ?? homeFixCopy();
   const namesSenders = previewReport !== null || homeReportNamesSenders();
   const fixReady =
-    fixCopy !== null &&
-    namesSenders &&
-    reportMounted &&
-    steps.some((step) => step.kind === 'unsub_archive');
+    fixCopy !== null && namesSenders && steps.some((step) => step.kind === 'unsub_archive');
   useHomeSurfaceEvents(mode);
+  const openFix = (step: HomeFixCandidate) => {
+    void track('home_next_step_clicked', { kind: homeNextStepEventKind(step.kind) });
+    if (step.kind === 'unsub_archive') setPendingFix(step);
+  };
 
   return (
     <div
@@ -123,36 +111,29 @@ export function HomeView({
     >
       <header className={styles.header}>
         <h1>{HOME_DECK.homeTitle}</h1>
-        {state.kind !== 'loading' && (
-          <div className={styles.planLine}>
-            <QuotaChipSlot summary={summary} />
-            <span>
-              <PlanLabel tier={tier} />
-              <Link href={BILLING_HREF} className="dm-external-link">
-                {HOME_DECK.compare}
-              </Link>
-            </span>
-          </div>
-        )}
+        <div className={styles.planLine} data-home-slot="plan">
+          <QuotaChipSlot summary={summary} />
+          <span>
+            <PlanLabel tier={tier} />
+            <Link href={BILLING_HREF} className="dm-external-link">
+              {HOME_DECK.compare}
+            </Link>
+          </span>
+        </div>
       </header>
-      {visitSummary}
       <HomeBody
         state={state}
         timeZone={timeZone}
         mode={mode}
         steps={steps}
-        reportRef={reportRef}
-        reportMounted={reportMounted}
+        visitSummary={visitSummary}
         reportSizeLabel={reportSizeLabel}
         indexedEmailCount={indexedEmailCount}
         mailboxId={mailboxId}
         previewReport={previewReport}
         reportLead={reportLead}
         supportText={previewReport === null ? supportText : null}
-        onOpenFix={(step) => {
-          void track('home_next_step_clicked', { kind: homeNextStepEventKind(step.kind) });
-          if (step.kind === 'unsub_archive') setPendingFix(step);
-        }}
+        onOpenFix={openFix}
       />
       {pendingFix !== null && (
         <HomeFixDialog
@@ -189,21 +170,12 @@ function PlanLabel({ tier }: { tier: TierId }) {
   );
 }
 
-function useInboxReportMounted(ref: RefObject<HTMLElement | null>): boolean {
-  const [mounted, setMounted] = useState(false);
-  useLayoutEffect(() => {
-    setMounted(ref.current?.querySelector(`[data-inbox-report], ${REPORT_CARD_MARK}`) != null);
-  });
-  return mounted;
-}
-
 function HomeBody({
   state,
   timeZone,
   mode,
   steps,
-  reportRef,
-  reportMounted,
+  visitSummary,
   reportSizeLabel,
   indexedEmailCount,
   mailboxId,
@@ -216,8 +188,7 @@ function HomeBody({
   timeZone: string;
   mode: HomeV1Mode;
   steps: readonly HomeFixCandidate[];
-  reportRef: RefObject<HTMLDivElement | null>;
-  reportMounted: boolean;
+  visitSummary?: ReactNode;
   reportSizeLabel: string | null;
   indexedEmailCount: number | null;
   mailboxId: string;
@@ -226,31 +197,25 @@ function HomeBody({
   supportText: string | null;
   onOpenFix: (step: HomeFixCandidate) => void;
 }) {
-  const afterCard =
-    state.kind === 'ready' && steps.length > 0 ? (
-      <NextSteps
-        steps={steps}
-        reportMounted={reportMounted}
-        previewReport={previewReport}
-        supportText={supportText}
-        onOpenFix={onOpenFix}
-      />
-    ) : null;
+  const [primary, ...secondary] = state.kind === 'ready' ? steps : [];
+  const visit = (
+    <div className={styles.visitSlot} data-home-slot="visit">
+      {visitSummary}
+    </div>
+  );
   const report = (
     <ReportCard
-      reportRef={reportRef}
       mode={mode}
       reportSizeLabel={reportSizeLabel}
       indexedEmailCount={indexedEmailCount}
       mailboxId={mailboxId}
       previewReport={previewReport}
       reportLead={reportLead}
-      afterCard={afterCard}
     />
   );
   switch (state.kind) {
     case 'loading':
-      return <HomeSkeleton />;
+      return <HomeSkeleton visitSummary={visitSummary} />;
     case 'error':
       return (
         <ErrorState
@@ -263,6 +228,7 @@ function HomeBody({
     case 'empty':
       return (
         <>
+          {visit}
           {report}
           <EmptyCopy state={state} />
         </>
@@ -270,6 +236,7 @@ function HomeBody({
     case 'sync-failed':
       return (
         <>
+          {visit}
           <section className={styles.beginning} aria-label={HOME_DECK.failedEyebrow}>
             <span className={styles.eyebrow}>{HOME_DECK.failedEyebrow}</span>
             <h2>{HOME_DECK.failedTitle}</h2>
@@ -290,6 +257,16 @@ function HomeBody({
     case 'ready':
       return (
         <>
+          {primary ? (
+            <NextSteps
+              primary={primary}
+              secondary={secondary}
+              previewReport={previewReport}
+              supportText={supportText}
+              onOpenFix={onOpenFix}
+            />
+          ) : null}
+          {visit}
           {report}
           <Progress state={state} timeZone={timeZone} />
         </>
@@ -327,23 +304,19 @@ function EmptyCopy({ state }: { state: Extract<HomeState, { kind: 'empty' }> }) 
 }
 
 function ReportCard({
-  reportRef,
   mode,
   reportSizeLabel,
   indexedEmailCount,
   mailboxId,
   previewReport,
   reportLead,
-  afterCard,
 }: {
-  reportRef: RefObject<HTMLDivElement | null>;
   mode: HomeV1Mode;
   reportSizeLabel: string | null;
   indexedEmailCount: number | null;
   mailboxId: string;
   previewReport: HomePreviewReport | null;
   reportLead: string | null;
-  afterCard: ReactNode;
 }) {
   const deck = homeReportCopy();
   const copy = previewReport ?? deck;
@@ -383,42 +356,18 @@ function ReportCard({
   const trustLink = previewReport?.trustLink ?? deck?.trustLink ?? null;
   const headline = previewReport?.headline ?? reportLead;
   const lead = headline !== null && headline !== '' ? <LeadLine headline={headline} /> : null;
-  // The card link owns title, body, and the Open report action. The lead
-  // sits at the top of that card, outside the link. Tile and trust follow
-  // the suggested step so the primary action stays above the tab bar.
-  const [cardOwnsIntro, setCardOwnsIntro] = useState(false);
-  useLayoutEffect(() => {
-    setCardOwnsIntro(reportRef.current?.querySelector(REPORT_CARD_MARK) != null);
-  });
   if (copy === null) {
     return (
-      <div ref={reportRef} hidden>
+      <div hidden>
         <InboxReportCard surface="home" mailboxId={mailboxId} lead={lead} />
       </div>
     );
   }
   return (
-    <section ref={reportRef} className={styles.report} aria-label={copy.title}>
+    <section className={styles.report} aria-label={copy.title} data-home-slot="report">
       <div className={`${styles.reportCard} dm-home-report-card`} data-home-report-card="">
         <InboxReportCard surface="home" mailboxId={mailboxId} lead={lead} />
       </div>
-      {!cardOwnsIntro && (
-        <div className={styles.reportIntro} data-report-intro="">
-          <h2>{copy.title}</h2>
-          <p>{copy.body}</p>
-          {copy.cta !== '' && (
-            // There is no /inbox-report route. Senders is where the report card opens.
-            <Link
-              href="/senders"
-              data-dm-button=""
-              className={`dm-button-link ${styles.primaryAction}`}
-            >
-              {copy.cta}
-            </Link>
-          )}
-        </div>
-      )}
-      {afterCard}
       <div
         className={styles.reportFacts}
         data-report-facts=""
@@ -485,33 +434,25 @@ function TrustLine() {
 }
 
 function NextSteps({
-  steps,
-  reportMounted,
+  primary,
+  secondary,
   previewReport,
   supportText,
   onOpenFix,
 }: {
-  steps: readonly HomeFixCandidate[];
-  reportMounted: boolean;
+  primary: HomeFixCandidate;
+  secondary: readonly HomeFixCandidate[];
   previewReport: HomePreviewReport | null;
   supportText: string | null;
   onOpenFix: (step: HomeFixCandidate) => void;
 }) {
-  const fixCopy = previewReport?.fix ?? homeFixCopy();
-  const namesSenders = previewReport !== null || homeReportNamesSenders();
-  const visible = steps.filter(
-    (step) => step.kind !== 'unsub_archive' || (fixCopy !== null && reportMounted && namesSenders),
-  );
-  const [primary, ...secondary] = visible;
-  if (!primary) return null;
   return (
-    <section className={styles.steps} aria-label={HOME_DECK.nextSteps}>
+    <section className={styles.steps} aria-label={HOME_DECK.nextSteps} data-home-slot="primary">
       <h2 className={styles.eyebrow}>{HOME_DECK.nextSteps}</h2>
       <div className={styles.stepGrid}>
         <FixCard
           step={primary}
           primary
-          reportMounted={reportMounted}
           previewReport={previewReport}
           supportText={supportText}
           onOpenFix={onOpenFix}
@@ -521,7 +462,6 @@ function NextSteps({
             key={step.kind}
             step={step}
             primary={false}
-            reportMounted={reportMounted}
             previewReport={previewReport}
             supportText={supportText}
             onOpenFix={onOpenFix}
@@ -535,14 +475,12 @@ function NextSteps({
 function FixCard({
   step,
   primary,
-  reportMounted,
   previewReport,
   supportText,
   onOpenFix,
 }: {
   step: HomeFixCandidate;
   primary: boolean;
-  reportMounted: boolean;
   previewReport: HomePreviewReport | null;
   supportText: string | null;
   onOpenFix: (step: HomeFixCandidate) => void;
@@ -550,9 +488,7 @@ function FixCard({
   if (step.kind === 'unsub_archive') {
     const copy = previewReport?.fix ?? homeFixCopy();
     const namesSenders = previewReport !== null || homeReportNamesSenders();
-    // "of these senders" counts a set the report names. Hide it until that
-    // sentence is on the page.
-    if (copy === null || !reportMounted || !namesSenders) return null;
+    if (copy === null || !namesSenders) return null;
     const heading =
       step.senderCount === 1
         ? copy.headingOne
@@ -696,15 +632,28 @@ function PrimaryLink({ action }: { action: HomeAction }) {
   );
 }
 
-function HomeSkeleton() {
+function HomeSkeleton({ visitSummary }: { visitSummary?: ReactNode }) {
   const labelId = useId();
   return (
-    <div role="status" aria-labelledby={labelId} className={styles.summaryGrid}>
+    <div role="status" aria-labelledby={labelId} className={styles.skeleton} data-home-skeleton="">
       <span id={labelId} className={styles.srOnly}>
         Loading Home
       </span>
-      <Skeleton variant="text" width={160} />
-      <Skeleton variant="rect" width={210} height={90} />
+      <div className={styles.fixCard} data-home-slot="primary">
+        <Skeleton variant="text" width={240} />
+        <Skeleton variant="text" width={180} />
+        <Skeleton variant="rect" width={210} height={44} />
+      </div>
+      <div className={styles.visitSlot} data-home-slot="visit">
+        {visitSummary ?? <Skeleton variant="text" width={220} />}
+      </div>
+      <section className={styles.report} data-home-slot="report">
+        <p className={styles.lead}>
+          <Skeleton variant="rect" width={72} height={28} />
+        </p>
+        <Skeleton variant="text" width={200} />
+        <Skeleton variant="text" width={280} />
+      </section>
     </div>
   );
 }
