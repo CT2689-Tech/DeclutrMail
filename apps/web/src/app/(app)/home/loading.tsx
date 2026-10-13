@@ -1,10 +1,11 @@
-import { HomeView } from '@/features/home/home-view';
+import { HomeRouteLoading } from '@/features/home/home-loading-shell';
 
 /**
- * Home's own loading state, from its presentational view: the identical
- * centred skeleton the screen shows while its reads are pending. See
+ * Home's route-level Suspense fallback. Uses the same slot geometry as
+ * HomeView's pending body, but must not mount `HomeView` itself — that
+ * client component also renders on the resolved page. See
  * `../route-loading.tsx` for why every sidebar route has a `loading.tsx`.
  */
 export default function Loading() {
-  return <HomeView state={{ kind: 'loading' }} />;
+  return <HomeRouteLoading />;
 }

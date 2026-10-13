@@ -6,12 +6,21 @@ import { describe, expect, it, vi } from 'vitest';
 const gate = vi.hoisted(() => ({ showReport: false }));
 
 vi.mock('@/features/inbox-report', () => ({
-  InboxReportCard: () =>
-    gate.showReport ? (
-      <p data-inbox-report>
-        91% of the email you got in the last 90 days came from 195 senders you mostly leave unread.
-      </p>
-    ) : null,
+  InboxReportCard: () => (
+    <div data-surface="home" data-mailbox="mb">
+      <h2 className="dm-home-report-title">Your Inbox Report</h2>
+      <span className="dm-home-report-body">A quick look</span>
+      <a className="dm-home-report-cta dm-external-link" href="/senders">
+        Open report
+      </a>
+      {gate.showReport ? (
+        <p data-inbox-report>
+          91% of the email you got in the last 90 days came from 195 senders you mostly leave
+          unread.
+        </p>
+      ) : null}
+    </div>
+  ),
   getFixSet: () => [],
 }));
 
@@ -107,11 +116,12 @@ describe('full Home when the WS5 keys exist', () => {
       expect(screen.getByRole('heading', { name: 'Your Inbox Report' })).toBeInTheDocument();
       const reportAction = screen.getByRole('link', { name: 'Open report' });
       expect(reportAction).toHaveAttribute('href', '/senders');
-      expect(reportAction.className.split(/\s+/)).toContain('dm-button-link');
+      expect(reportAction.className.split(/\s+/)).toContain('dm-external-link');
+      expect(reportAction.className.split(/\s+/)).not.toContain('dm-button-link');
 
       gate.showReport = true;
       rerender(<HomeView state={ready} nextSteps={[step]} senderSizeView={senderSizeView} />);
-      expect(screen.getByRole('heading', { name: 'Your Inbox Report' })).toBeInTheDocument();
+      expect(screen.getAllByRole('heading', { name: 'Your Inbox Report' })).toHaveLength(1);
       const fix = await screen.findByRole('button', { name: 'Unsubscribe + archive 158 senders' });
       expect(fix.className.split(/\s+/)).toContain('dm-button-link');
     },
@@ -119,20 +129,19 @@ describe('full Home when the WS5 keys exist', () => {
 });
 
 describe('Home unsubscribe step', () => {
-  it('hides the sender count until the report names those senders', async () => {
+  it('shows the unsubscribe step with the report heading once', async () => {
     gate.showReport = false;
     const { rerender } = render(<HomeView state={ready} nextSteps={[step]} />);
-    expect(screen.getByRole('heading', { name: 'Your Inbox Report' })).toBeInTheDocument();
-    expect(screen.queryByText(/of these senders/)).toBeNull();
-    expect(screen.queryByRole('button', { name: /Unsubscribe \+ archive/ })).toBeNull();
+    expect(screen.getAllByRole('heading', { name: 'Your Inbox Report' })).toHaveLength(1);
+    expect(
+      screen.getByRole('button', { name: 'Unsubscribe + archive 158 senders' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/158 of these senders/)).toBeInTheDocument();
 
     gate.showReport = true;
     rerender(<HomeView state={ready} nextSteps={[step]} />);
-    expect(
-      await screen.findByRole('button', { name: 'Unsubscribe + archive 158 senders' }),
-    ).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { name: 'Your Inbox Report' })).toHaveLength(1);
     expect(screen.getByText(/195 senders you mostly leave unread/)).toBeInTheDocument();
-    expect(screen.getByText(/158 of these senders/)).toBeInTheDocument();
   });
 });
 

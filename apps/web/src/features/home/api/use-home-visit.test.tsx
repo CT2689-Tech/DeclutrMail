@@ -2,7 +2,7 @@ import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 import { act, render, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useHomeVisit } from './use-home-visit';
-const state = vi.hoisted(() => ({ mailbox: 'a', post: vi.fn() }));
+const state = vi.hoisted(() => ({ mailbox: 'a', post: vi.fn(), get: vi.fn() }));
 vi.mock('@/features/auth/auth-provider', () => ({
   useAuth: () => ({
     me: {
@@ -12,7 +12,7 @@ vi.mock('@/features/auth/auth-provider', () => ({
     },
   }),
 }));
-vi.mock('@/lib/api/client', () => ({ apiPost: state.post }));
+vi.mock('@/lib/api/client', () => ({ apiPost: state.post, apiGet: state.get }));
 function Probe() {
   const result = useHomeVisit();
   return <p>{result.data?.visitId}</p>;
@@ -23,16 +23,22 @@ let now: number;
 beforeEach(() => {
   state.mailbox = 'a';
   state.post.mockReset();
+  state.get.mockReset();
   localStorage.clear();
   now = Date.parse('2026-10-10T10:00:00Z');
   vi.spyOn(Date, 'now').mockImplementation(() => now);
+  const window = {
+    visitId: savedId,
+    since: null,
+    until: new Date(now).toISOString(),
+    indexedEmails: null,
+    indexedSenders: null,
+  };
+  state.get.mockResolvedValue({ data: window });
   state.post.mockImplementation(async (_path, body) => ({
     data: {
+      ...window,
       ...body,
-      since: null,
-      until: new Date(now).toISOString(),
-      indexedEmails: null,
-      indexedSenders: null,
     },
   }));
 });
@@ -46,10 +52,48 @@ function mount() {
     </QueryClientProvider>,
   );
 }
+async function paint() {
+  await act(async () => {
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
+}
 describe('device visit lifecycle', () => {
+  it('reads the visit peek first and records after paint', async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    localStorage.setItem(key, JSON.stringify({ id: savedId, lastActive: now - 1000 }));
+    mount();
+    await waitFor(() =>
+      expect(state.get).toHaveBeenCalledWith(
+        `/api/home/visit?visitId=${savedId}`,
+        expect.objectContaining({ mailboxId: 'a' }),
+      ),
+    );
+    expect(state.post).not.toHaveBeenCalled();
+    await act(async () => {
+      for (const callback of frames) callback(0);
+    });
+    await waitFor(() =>
+      expect(state.post).toHaveBeenCalledWith(
+        '/api/home/visit',
+        { visitId: savedId },
+        expect.objectContaining({ mailboxId: 'a' }),
+      ),
+    );
+    expect(state.get.mock.invocationCallOrder[0]!).toBeLessThan(
+      state.post.mock.invocationCallOrder[0]!,
+    );
+  });
+
   it('retains a recent visit across reload and generates a new id after idle in the same mounted tab', async () => {
     localStorage.setItem(key, JSON.stringify({ id: savedId, lastActive: now - 1000 }));
     mount();
+    await paint();
     await waitFor(() =>
       expect(state.post).toHaveBeenCalledWith(
         '/api/home/visit',
@@ -59,6 +103,7 @@ describe('device visit lifecycle', () => {
     );
     now += 31 * 60_000;
     fireEvent.focus(window);
+    await paint();
     await waitFor(() => expect(state.post).toHaveBeenCalledTimes(2));
     const next = state.post.mock.calls[1]![1].visitId;
     expect(next).not.toBe(savedId);
@@ -69,10 +114,12 @@ describe('device visit lifecycle', () => {
       throw new Error('storage disabled');
     });
     const first = mount();
+    await paint();
     await waitFor(() => expect(state.post).toHaveBeenCalledTimes(1));
     const firstId = state.post.mock.calls[0]![1].visitId;
     first.unmount();
     mount();
+    await paint();
     await waitFor(() => expect(state.post).toHaveBeenCalledTimes(2));
     expect(state.post.mock.calls[1]![1].visitId).toBe(firstId);
   });
@@ -88,6 +135,7 @@ describe('device visit lifecycle', () => {
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
     try {
       mount();
+      await paint();
       await waitFor(() => expect(state.post).toHaveBeenCalledTimes(1));
       Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
       now += 31 * 60_000;
@@ -98,6 +146,7 @@ describe('device visit lifecycle', () => {
 
       Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
       document.dispatchEvent(new Event('visibilitychange'));
+      await paint();
       await waitFor(() => expect(state.post).toHaveBeenCalledTimes(2));
     } finally {
       interval.mockRestore();
