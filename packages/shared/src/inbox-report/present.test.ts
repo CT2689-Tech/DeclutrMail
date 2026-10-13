@@ -50,7 +50,7 @@ describe('report presentation', () => {
     );
   });
 
-  it('formats the Unroll.me headline and a large-mail count with thousands separators', () => {
+  it('formats the third-party headline and a large-mail count with thousands separators', () => {
     const thirdParty: InboxReportInsight = {
       id: 'third_party_labels',
       count: 20950,
