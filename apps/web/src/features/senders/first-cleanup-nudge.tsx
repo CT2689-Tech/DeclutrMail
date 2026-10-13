@@ -44,7 +44,7 @@ export function FirstCleanupNudge({
   return (
     <div
       role="region"
-      aria-label="Finish first cleanup"
+      aria-label="Start with one sender"
       data-testid="first-cleanup-nudge"
       style={{
         display: 'flex',
@@ -61,12 +61,12 @@ export function FirstCleanupNudge({
     >
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: color.fg, marginBottom: 2 }}>
-          {candidate ? 'Start with your biggest eligible sender' : 'Pick one sender'}
+          {candidate ? 'Start with your biggest sender' : 'Pick one sender'}
         </div>
         <p style={{ fontSize: 12.5, color: color.fg, lineHeight: 1.5, margin: 0 }}>
           {candidate
             ? `${candidate.name} has ${candidate.inboxEmails.toLocaleString('en-US')} ${candidate.inboxEmails === 1 ? 'email' : 'emails'} in your inbox. Preview before choosing an action.`
-            : 'Open a sender you recognize and finish your first cleanup.'}
+            : 'Open a sender you recognize and decide what happens to its email.'}
         </p>
       </div>
       <Link

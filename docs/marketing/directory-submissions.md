@@ -34,7 +34,7 @@ every link, update the Status column as you go.
 | No ML category prediction. Gmail data is not used to train generalized AI models.                                                                                                                          | `security/page.tsx` (`#no-prediction`); `CLAUDE.md` §2.4 [S10][S1]                                                      |
 | AI disclosure, if a directory asks: suggestion explanations may send Anthropic the sender and engagement numbers; Pro Brief may send sender, subject line, and preview snippet; never full email contents. | `action-safety.ts` (`RECOMMENDATION_AI_DISCLOSURE`, `BRIEF_AI_DISCLOSURE`) [S4]                                         |
 | Pricing (see the table in 1.4).                                                                                                                                                                            | `pricing.config.ts` [S5]                                                                                                |
-| 30-day money-back guarantee on paid plans.                                                                                                                                                                 | `apps/web/src/app/(marketing)/refunds/page.tsx` [S11]                                                                   |
+| 14-day money-back on any purchase, once per customer.                                                                                                                                                      | `pricing.refundLine` filled from `POLICY.refundWindowDays` [S11]                                                        |
 | There is a no-sign-in demo at `/inbox-simulator` using made-up senders.                                                                                                                                    | `llms.txt`; `landing/hero.tsx` [S2][S12]                                                                                |
 | Funding: subscriptions only; Gmail data is not sold or used for advertising.                                                                                                                               | `comparison-data.ts` (`DECLUTR.funding`), which cites the published privacy policy [S7]                                 |
 
@@ -110,7 +110,7 @@ copy of the same manifest is served at `https://declutrmail.com/pricing.md`.
 - Team and Enterprise are not purchasable. Do not list them as plans.
 - Directories with a single "Pricing model" dropdown: choose **Freemium**. "Starting price": **$9 /
   month** (Plus monthly). "Free plan": **Yes**. "Free trial": **No** — there is a Free plan and a
-  30-day money-back guarantee, which is not a trial.
+  14-day money-back on any purchase, once per customer, which is not a trial.
 
 ---
 
@@ -200,7 +200,7 @@ We never fetch or store full email contents. DeclutrMail requests one Gmail perm
 2. One Gmail permission, `gmail.modify`; DeclutrMail never sends email as you.
 3. Google approved DeclutrMail's OAuth verification on 21 April 2026 (CASA Tier 2).
 4. No ML category prediction; automation follows preset rules you explicitly enable.
-5. Free plan with every cleanup action (50 a month). Paid plans carry a 30-day money-back guarantee.
+5. Free plan with every cleanup action (50 a month). 14-day money-back on any purchase, once per customer.
 
 Sources for F1: [S7][S8][S4][S5]. For F2: [S3][S10][S11][S5].
 

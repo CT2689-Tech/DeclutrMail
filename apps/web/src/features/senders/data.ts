@@ -199,7 +199,7 @@ export const GROUPS: GroupMeta[] = [
   {
     key: 'promotions',
     label: 'Promotions',
-    hint: 'Deals and marketing — the best candidates to unsubscribe.',
+    hint: 'Deals and marketing you can unsubscribe from.',
   },
   {
     key: 'social',

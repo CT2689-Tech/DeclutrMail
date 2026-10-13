@@ -1,4 +1,6 @@
 import { expect, test, request } from '@playwright/test';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+import { fillStory } from '@declutrmail/shared/entitlements';
 import { expectScreenMounted } from '../helpers/screen-ready';
 import type postgres from 'postgres';
 
@@ -15,12 +17,7 @@ import {
 import { dbConnect } from '../helpers/db';
 import { E2E_ENV } from '../helpers/env';
 import { requirePrecondition } from '../helpers/preconditions';
-import {
-  applyBillingSeed,
-  BILLING_SEED,
-  FREE_CLEANUP_LIMIT,
-  resetBillingVolatileState,
-} from '../helpers/seed-billing';
+import { applyBillingSeed, BILLING_SEED, resetBillingVolatileState } from '../helpers/seed-billing';
 
 /**
  * Money-path spec (D183 / D19 / D77 / D117 / D180) — free user hits the
@@ -227,17 +224,17 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   // stated in the modal and no request is ever sent (the server 402
   // path stays covered by actions.service.postgres.spec).
   await expect(preview).toContainText(
-    'This needs 1 cleanup action but only 0 are left this month.',
+    'This clears 1 email, but you have no free emails left this month.',
   );
-  const upgradeCta = preview.getByRole('button', { name: 'Upgrade for unlimited cleanup' });
+  const upgradeCta = preview.getByRole('button', {
+    name: fillStory(WS1_COPY['cap.plus.link']),
+  });
   await expect(upgradeCta).toBeEnabled();
   await upgradeCta.click();
 
   const upgradeModal = page.getByTestId('upgrade-modal');
   await expect(upgradeModal).toBeVisible({ timeout: 15_000 });
-  await expect(upgradeModal).toContainText(
-    `You've used all ${FREE_CLEANUP_LIMIT} cleanup actions for this month`,
-  );
+  await expect(upgradeModal).toContainText('Not enough free emails left this month');
 
   // The gate fired BEFORE any insert — the quota ledger still holds
   // exactly the seeded units and nothing else.
@@ -259,8 +256,8 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   // QA-billing-20260901-04: the card states the real signup-anniversary
   // reset date, not "this month" — the seed creates the user at `now()`,
   // so the date itself is not fixed here, only the shape.
-  await expect(planCard).toContainText(`0 of ${FREE_CLEANUP_LIMIT} cleanup actions left`);
-  await expect(planCard).toContainText(/· resets [A-Z][a-z]{2} \d{1,2}, \d{4}/);
+  await expect(planCard).toContainText('No free emails left');
+  await expect(planCard).toContainText(/· resets [A-Z][a-z]{2} \d{1,2}(?!,)/);
   await expect(page.getByTestId('checkout-panel')).toBeVisible();
   await expect(page.getByTestId('checkout-panel')).toContainText(
     'Preview · before anything changes',

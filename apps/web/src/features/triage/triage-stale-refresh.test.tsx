@@ -1,4 +1,4 @@
-// Attention-scoped re-score on the Triage queue (D25 `stale_refresh`,
+// Attention-scoped re-score on the Triage list (D25 `stale_refresh`,
 // founder decision 2026-08-19 — option 1A).
 //
 // Context these tests encode: no trigger in production revisits an

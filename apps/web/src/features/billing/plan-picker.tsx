@@ -897,7 +897,7 @@ export function checkoutErrorMessage(error: unknown): string | null {
     }
     return ERROR_CODES[code].message;
   }
-  return 'Checkout could not be started. Please try again.';
+  return 'Couldn’t start checkout. Try again.';
 }
 
 /**
@@ -1344,7 +1344,7 @@ function PassOfferCard({
     >
       <div style={{ fontWeight: 600 }}>{fillStory(WS1_COPY['pricing.pass.name'])}</div>
       <div style={{ color: color.fgMuted, marginTop: 4 }}>
-        {launchPriceDisplay(locale).passLine}
+        {fillStory(WS1_COPY['cap.pass.sublabel'], locale)}
       </div>
       <Button
         tone="default"

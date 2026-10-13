@@ -418,7 +418,7 @@ export function ProtectionStrip({ unprotectSlot }: { unprotectSlot: ReactNode })
       }}
     >
       <span style={{ fontSize: text.sm, color: color.fgSoft, lineHeight: 1.45 }}>
-        Bulk and automatic cleanup skip this sender.
+        Bulk changes and Autopilot skip this sender.
       </span>
       {unprotectSlot}
     </div>

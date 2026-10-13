@@ -553,20 +553,28 @@ function celebrationSentence(celebration: ReportCelebration): string | null {
   if (celebration.verb === 'unsub_only') return null;
   if (celebration.verb === 'delete') {
     if (typeof celebration.bytes !== 'number') return null;
+    const size = formatReportSize(celebration.bytes);
+    if (celebration.archived === 1) {
+      return fillCopy(WS5_COPY['report.celebrate.delete.one'], { size });
+    }
     return fillCopy(WS5_COPY['report.celebrate.delete'], {
       count: celebration.archived.toLocaleString('en-US'),
-      size: formatReportSize(celebration.bytes),
+      size,
     });
   }
   if (celebration.archived <= 0) return null;
-  return celebration.senders === 1
-    ? fillCopy(WS5_COPY['report.celebrate.archive.one'], {
-        X: celebration.archived.toLocaleString('en-US'),
-      })
-    : fillCopy(WS5_COPY['report.celebrate.archive'], {
-        X: celebration.archived.toLocaleString('en-US'),
-        n: celebration.senders.toLocaleString('en-US'),
-      });
+  if (celebration.archived === 1) {
+    return WS5_COPY['report.celebrate.archive.oneEmail'];
+  }
+  if (celebration.senders === 1) {
+    return fillCopy(WS5_COPY['report.celebrate.archive.one'], {
+      X: celebration.archived.toLocaleString('en-US'),
+    });
+  }
+  return fillCopy(WS5_COPY['report.celebrate.archive'], {
+    X: celebration.archived.toLocaleString('en-US'),
+    n: celebration.senders.toLocaleString('en-US'),
+  });
 }
 
 function celebrationRequestLine(celebration: ReportCelebration): string | null {

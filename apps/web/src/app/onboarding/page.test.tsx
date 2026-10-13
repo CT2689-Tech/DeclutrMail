@@ -393,7 +393,7 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     installFetchStub([meAuthed('syncing'), onboardingState(), syncStatus(false)]);
     renderPage();
 
-    expect(await screen.findByText('Reading your Gmail…')).toBeInTheDocument();
+    expect(await screen.findByText('Scanning your Gmail…')).toBeInTheDocument();
     expect(screen.getByRole('progressbar')).toBeInTheDocument();
   });
 
@@ -593,7 +593,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     installFetchStub([secondaryMe(), syncStatus(false)]);
     renderPage();
 
-    expect(await screen.findByText('Reading your Gmail…')).toBeInTheDocument();
+    expect(await screen.findByText('Scanning your Gmail…')).toBeInTheDocument();
     // Escape hatch back to the other active mailbox is offered.
     expect(screen.getByText(/a@b\.com/)).toBeInTheDocument();
   });
@@ -718,7 +718,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
 
       // The gate, not the "Checking the scan…" screen it replaces — both
       // offer the way back, and a click on the one leaving is lost.
-      await screen.findByText('Reading your Gmail…');
+      await screen.findByText('Scanning your Gmail…');
       await userEvent.click(screen.getByRole('button', { name: 'Go back to a@b.com' }));
 
       await waitFor(() => expect(replace).toHaveBeenCalledWith(exit));

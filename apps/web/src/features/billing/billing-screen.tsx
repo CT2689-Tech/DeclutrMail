@@ -29,7 +29,14 @@ import type {
   CancelRequest,
 } from '@declutrmail/shared/contracts';
 import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
-import { fillStory, TIER_MANIFEST, TIER_RANK, type TierId } from '@declutrmail/shared/entitlements';
+import {
+  fillStory,
+  meterChipLine,
+  passEndLabel,
+  TIER_MANIFEST,
+  TIER_RANK,
+  type TierId,
+} from '@declutrmail/shared/entitlements';
 
 import { useAuth } from '@/features/auth/auth-provider';
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
@@ -685,7 +692,7 @@ export function BillingScreen({
       key: 'billing-review',
       node: (
         <p role="status" style={{ margin: 0, color: color.fgMuted }}>
-          Billing verification pending. Current access is shown below.{' '}
+          We’re confirming your payment. You keep your current plan meanwhile.{' '}
           <a className={linkStyles.link} href="mailto:support@declutrmail.com">
             Contact support
           </a>{' '}
@@ -1114,7 +1121,7 @@ function resumeCancellationErrorMessage(error: unknown): string {
   if (error instanceof ApiError && error.status === 503) {
     return 'Billing isn’t switched on yet.';
   }
-  return 'Your subscription could not be restored. Please try again.';
+  return 'Couldn’t restore your plan. Try again.';
 }
 
 /** D118 pause-offer failures. */
@@ -1132,7 +1139,7 @@ function pauseErrorMessage(error: unknown): string {
   if (error instanceof ApiError && error.status === 503) {
     return 'Billing isn’t switched on yet.';
   }
-  return 'The pause could not be processed. Please try again.';
+  return 'Couldn’t pause your plan. Try again.';
 }
 
 /** Honest copy for a cancel failure — never a silent swallow. */
@@ -1143,7 +1150,7 @@ function cancelErrorMessage(error: unknown): string {
   if (error instanceof ApiError && error.status === 503) {
     return 'Billing isn’t switched on yet.';
   }
-  return 'Cancellation could not be processed. Please try again.';
+  return 'Couldn’t cancel your plan. Try again.';
 }
 
 /**
@@ -1286,11 +1293,11 @@ export function PaymentProcessingNotice({
           <dt style={{ fontSize: text.sm, fontWeight: 600 }}>What we know</dt>
           <dd style={{ margin: 0, color: color.fgSoft }}>
             {kind === 'checkout'
-              ? 'Checkout reported completion. Our server has not yet confirmed your new plan.'
+              ? 'Payment received. Your new plan will show here in a minute.'
               : kind === 'checkout_intent'
                 ? 'Checkout started, but we do not yet know whether a payment completed.'
                 : kind === 'change_unconfirmed'
-                  ? 'The provider has not confirmed whether your plan change applied.'
+                  ? 'We’re still confirming your plan change.'
                   : kind === 'resume'
                     ? 'The provider accepted your resume. No charge was started; your existing paid period continues.'
                     : 'The provider accepted your plan change. Your new plan is not confirmed here yet.'}
@@ -1326,7 +1333,7 @@ export function PaymentProcessingNotice({
           style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}
           aria-live="polite"
         >
-          <strong>Latest provider check: </strong>
+          <strong>Last checked: </strong>
           {providerCheck === 'checking' ? (
             'Checking with the payment provider…'
           ) : providerCheck === 'none_found' ? (
@@ -1478,6 +1485,20 @@ export function PaymentProcessingNotice({
   );
 }
 
+/** Non-metered Free chip. A missing reset is omitted, not invented. */
+function freeEmailsLeftLine(remaining: number, resetAt: string | null): string {
+  const limit = TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0;
+  const line = meterChipLine({
+    remaining,
+    limit,
+    resetAt: resetAt ?? '2000-01-01T00:00:00.000Z',
+  }).text;
+  if (resetAt) return line;
+  const mark = ' \u00b7 ';
+  const at = line.indexOf(mark);
+  return at === -1 ? line : line.slice(0, at);
+}
+
 // ── Current plan card (D119 top block) ───────────────────────────────
 
 function CurrentPlanCard({
@@ -1611,6 +1632,16 @@ function CurrentPlanCard({
           {compNote}
         </p>
       ) : null}
+      {passCoversPlan(plan) && plan.complimentary?.expiresAt ? (
+        <p
+          data-testid="pass-status-detail"
+          style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}
+        >
+          {fillStory(WS1_COPY['billing.pass.statusDetail'], locale, {
+            passEndDate: passEndLabel(plan.complimentary.expiresAt),
+          })}
+        </p>
+      ) : null}
 
       {plan.entitlementTier === 'free' && cleanupSummary.data?.metered ? (
         <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
@@ -1619,15 +1650,10 @@ function CurrentPlanCard({
       ) : plan.entitlementTier === 'free' && cleanupRemaining !== null ? (
         <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
           <strong style={{ fontWeight: 600, color: color.fg }}>
-            {cleanupRemaining} of {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions left
             {/* QA-billing-20260901-04: the reset is the signup
-                    anniversary, not the calendar month — "this month" was
-                    provably wrong (e.g. an anniversary of the 27th, told
-                    in the first days of the next month). The real date is
+                    anniversary, not the calendar month. The real date is
                     already fetched by useTier(); state it instead. */}
-            {formatBillingDate(cleanupResetsAt)
-              ? ` · resets ${formatBillingDate(cleanupResetsAt)}`
-              : '.'}
+            {freeEmailsLeftLine(cleanupRemaining, cleanupResetsAt)}
           </strong>
         </p>
       ) : null}
@@ -1829,7 +1855,7 @@ function ScheduledPlanChangeNotice({
         <span style={{ color: color.fgMuted, fontSize: text.sm }}>
           {restoring
             ? 'Paddle has not confirmed whether your renewal was restored. Retry before renewal or contact support.'
-            : 'The payment provider’s response was interrupted, so billing changes are paused until we confirm what happened.'}{' '}
+            : 'We’re confirming what happened with your payment. Billing changes are paused until then.'}{' '}
           {restoring ? '' : 'Your current plan and renewal remain unchanged. '}Email{' '}
           <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
             support@declutrmail.com
@@ -2140,7 +2166,7 @@ function NonBackingSubscriptionNotice({
       {isPaused && !canSelfServeResume ? (
         <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>
           {sub.provider === 'razorpay'
-            ? 'Razorpay does not guarantee a no-charge resume on the existing billing period. To avoid an unexpected charge, email '
+            ? 'Restarting a plan paid in rupees could start a new charge. To avoid that, email '
             : 'We can’t confirm your retained billing period from here, so resume isn’t offered without review. Email '}
           <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
             support@declutrmail.com

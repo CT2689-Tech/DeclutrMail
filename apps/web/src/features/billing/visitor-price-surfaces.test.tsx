@@ -129,13 +129,24 @@ describe('visitor price surfaces — US stays the #1020 strings', () => {
     expect(fillStory(WS1_COPY['cap.pass.sublabel'])).toBe(
       '$19 once · 30 days, one Gmail account · doesn’t renew',
     );
+    expect(fillStory(WS1_COPY['refunds.pass'])).toBe(
+      'If we refund a Backlog Pass, its 30 days with no monthly limit end when the refund is confirmed and your account returns to Free. Email you already cleared stays where you put it.',
+    );
+    expect(fillStory(WS1_COPY['terms.pass'])).toBe(
+      'The Backlog Pass is a one-time payment for 30 days with no monthly limit on one Gmail account, and never renews. Buying another Backlog Pass adds 30 days to the end of your current one.',
+    );
+    expect(fillStory(WS1_COPY['billing.pass.statusDetail'], 'usd', { passEndDate: 'Nov 12' })).toBe(
+      'No monthly limit on one Gmail account, plus the Screener and Autopilot, until Nov 12. Then you’re back on Free. Nothing renews.',
+    );
   });
 
   it('renders /billing cards, confirm, /pricing, teaser, and chips in USD', async () => {
     const picker = renderPicker('US', false);
     expect(screen.getByTestId('plan-option-free')).toHaveTextContent('$0');
     expect(screen.getByTestId('plan-option-plus')).toHaveTextContent('$59/yr');
-    expect(screen.getByTestId('pass-offer-card')).toHaveTextContent('$19 once');
+    expect(screen.getByTestId('pass-offer-card')).toHaveTextContent(
+      '$19 once · 30 days, one Gmail account · doesn’t renew',
+    );
     const billingConfirm = await screen.findByTestId('checkout-panel');
     expect(billingConfirm).toHaveTextContent('$19 once, today');
     picker.unmount();
@@ -178,6 +189,10 @@ describe('visitor price surfaces — India uses one currency', () => {
     expect(IN.plus).toEqual({ amount: '₹1,999', per: '/yr' });
     expect(IN.plusLine).toBe('₹1,999 a year');
     expect(IN.passLine).toBe('₹799 once');
+    expect(fillStory(WS1_COPY['cap.pass.sublabel'], 'inr')).toBe(
+      '₹799 once · 30 days, one Gmail account · doesn’t renew',
+    );
+    expect(fillStory(WS1_COPY['cap.pass.sublabel'], 'inr')).not.toContain('$');
     expect(
       `${IN.free.amount}${IN.plus.amount}${IN.plus.per}${IN.plusLine}${IN.passLine}`,
     ).not.toContain('$');
@@ -189,7 +204,9 @@ describe('visitor price surfaces — India uses one currency', () => {
     expect(screen.getByTestId('plan-option-free')).toHaveTextContent('₹0');
     expect(screen.getByTestId('plan-option-plus')).toHaveTextContent('₹1,999/yr');
     expect(screen.getByTestId('plan-option-plus')).not.toHaveTextContent('incl. GST');
-    expect(screen.getByTestId('pass-offer-card')).toHaveTextContent('₹799 once');
+    expect(screen.getByTestId('pass-offer-card')).toHaveTextContent(
+      '₹799 once · 30 days, one Gmail account · doesn’t renew',
+    );
     expect(screen.getByTestId('plan-option-free').textContent).not.toContain('$');
     expect(screen.getByTestId('plan-option-plus').textContent).not.toContain('$');
     expect(screen.getByTestId('pass-offer-card').textContent).not.toContain('$');
@@ -200,7 +217,9 @@ describe('visitor price surfaces — India uses one currency', () => {
     expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
     expect(screen.getByTestId('plan-option-free')).toHaveTextContent('$0');
     expect(screen.getByTestId('plan-option-plus')).toHaveTextContent('$59/yr');
-    expect(screen.getByTestId('pass-offer-card')).toHaveTextContent('$19 once');
+    expect(screen.getByTestId('pass-offer-card')).toHaveTextContent(
+      '$19 once · 30 days, one Gmail account · doesn’t renew',
+    );
   });
 
   it('renders /billing cards, offer header, and confirm without $ and with Plus cadence', async () => {
@@ -213,7 +232,7 @@ describe('visitor price surfaces — India uses one currency', () => {
     expect(plus).toHaveTextContent('₹1,999/yr');
     expect(plus).not.toHaveTextContent('incl. GST');
     expect(plus).not.toHaveTextContent('$');
-    expect(pass).toHaveTextContent('₹799 once');
+    expect(pass).toHaveTextContent('₹799 once · 30 days, one Gmail account · doesn’t renew');
     expect(pass).not.toHaveTextContent('$');
     const confirm = await screen.findByTestId('checkout-panel');
     expect(confirm).toHaveTextContent('Before you pay');

@@ -128,7 +128,7 @@ export function MailboxDataControlsDialog({
             style={{ fontSize: text.md, color: color.fgSoft, lineHeight: 1.5, margin: '8px 0 0' }}
           >
             {alreadyDisconnected
-              ? 'Gmail access and sync are already stopped. Choose whether to keep or permanently delete this mailbox’s saved data.'
+              ? 'DeclutrMail no longer has access to this Gmail account. Keep its saved data, or delete it for good.'
               : 'Choose what DeclutrMail should do with data from this Gmail account.'}{' '}
             Neither option deletes or changes email in Gmail.
           </p>
@@ -141,16 +141,15 @@ export function MailboxDataControlsDialog({
                 Disconnect and keep saved data
               </h3>
               <p style={optionBodyStyle}>
-                Removes DeclutrMail’s saved Google credential and stops sync and Gmail actions. The
-                exact saved Gmail and DeclutrMail categories below stay, and reconnecting continues
-                with this history. Gmail is unchanged.
+                DeclutrMail stops accessing this Gmail account. Your saved data stays, so you can
+                reconnect later.
               </p>
               <InventoryList
                 title="Removed on disconnect"
                 items={GMAIL_DISCONNECT_DATA_INVENTORY}
               />
               <InventoryList
-                title="Retained after disconnect"
+                title="Kept after disconnecting"
                 items={GMAIL_DISCONNECT_RETAINED_DATA_INVENTORY}
               />
               <div style={{ marginTop: 12 }}>
@@ -180,7 +179,7 @@ export function MailboxDataControlsDialog({
               items={GMAIL_INDEXED_DATA_DELETION_INVENTORY}
             />
             <InventoryList
-              title="Retained after deletion"
+              title="Kept after deleting"
               items={GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY}
             />
             <p
@@ -191,8 +190,8 @@ export function MailboxDataControlsDialog({
                 lineHeight: 1.5,
               }}
             >
-              Past Gmail actions stay applied. Any remaining Activity Undo for this mailbox ends
-              when deletion completes. Gmail email and labels are not changed by this deletion.
+              Changes already made in Gmail stay. Undo for this account ends when the deletion
+              finishes. Your email and labels in Gmail don’t change.
             </p>
             <label
               htmlFor="dm-mailbox-data-delete-phrase"

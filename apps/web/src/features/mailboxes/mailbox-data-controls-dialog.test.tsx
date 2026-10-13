@@ -110,20 +110,20 @@ describe('MailboxDataControlsDialog', () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        `Retained after disconnect (${GMAIL_INDEXED_DATA_DELETION_INVENTORY.length + GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY.length} categories)`,
+        `Kept after disconnecting (${GMAIL_INDEXED_DATA_DELETION_INVENTORY.length + GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY.length} categories)`,
       ),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        `Retained after deletion (${GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY.length} categories)`,
+        `Kept after deleting (${GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY.length} categories)`,
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText(/past Gmail actions stay applied/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/Gmail is unchanged/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Changes already made in Gmail stay/i)).toBeInTheDocument();
+    expect(screen.getByText(/email and labels in Gmail don.t change/i)).toBeInTheDocument();
     // The options state their own consequences once — no help block restating both.
     expect(screen.queryByText('Which mailbox exit should I choose?')).not.toBeInTheDocument();
-    expect(screen.getByText(/reconnecting continues with this history/i)).toBeInTheDocument();
-    expect(screen.getByText(/remaining Activity Undo for this mailbox ends/i)).toBeInTheDocument();
+    expect(screen.getByText(/so you can reconnect later/i)).toBeInTheDocument();
+    expect(screen.getByText(/Undo for this account ends/i)).toBeInTheDocument();
   });
 
   it('runs standard disconnect without requiring the destructive phrase', () => {

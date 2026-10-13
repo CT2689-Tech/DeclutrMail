@@ -212,19 +212,13 @@ export function formatProviderAmount(amount: string, currencyCode: string): stri
   }
 }
 
-/**
- * D121 flags-off line. `/refunds` and `/terms` still publish this
- * sentence. `refundLine()` is the launch deck and stays behind
- * `PRICING_V2` so the two windows are not on screen together.
- */
-const FLAGS_OFF_MONEY_BACK_NOTE = '30-day money-back guarantee';
-
-export function moneyBackNote(pricingV2: boolean): string {
-  return pricingV2 ? refundLine() : FLAGS_OFF_MONEY_BACK_NOTE;
+/** Approved refund line. The window is `POLICY.refundWindowDays`. */
+export function moneyBackNote(_pricingV2: boolean): string {
+  return refundLine();
 }
 
-/** Flags-off D121 line. Call `moneyBackNote` where `pricingV2` is known. */
-export const MONEY_BACK_NOTE = FLAGS_OFF_MONEY_BACK_NOTE;
+/** Same line as `moneyBackNote`, for callers that do not know the flag. */
+export const MONEY_BACK_NOTE = refundLine();
 
 // ── D119/A6 — the single derived billing story ───────────────────────
 //

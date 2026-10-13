@@ -41,13 +41,13 @@ describe('PlanCoverage', () => {
     auth.me.cleanupRemaining = 1000;
   });
 
-  it('keeps the sender-counting sentence once when the email meter is off', () => {
+  it('states the free email allowance when the plan is Free', () => {
     render(<PlanCoverage tier="free" />);
     const coverage = screen.getByRole('region', { name: 'Your plan includes' });
     expect(coverage).toHaveTextContent(
-      `50 ${UNIT}s per month. One ${UNIT} counts one sender acted on, not one email.`,
+      'Clear 1,000 emails a month free. Unsubscribe, Keep, Later and Undo stay free.',
     );
-    expect(coverage.textContent?.match(new RegExp(UNIT, 'g'))).toHaveLength(2);
+    expect(coverage.textContent).not.toContain(UNIT);
   });
 
   it('states the email allowance on a metered Free plan', () => {

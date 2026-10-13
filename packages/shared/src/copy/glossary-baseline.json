@@ -2024,6 +2024,12 @@
   {
     "file": "packages/shared/src/copy/launch/ws1.ts",
     "id": "allowance_word",
+    "line": 164,
+    "text": "This needs 1 free email, but none of your {allowance} are left this month. More on {resetDate}."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws1.ts",
+    "id": "allowance_word",
     "line": 8,
     "text": "Clear {allowance} emails a month free"
   },
@@ -2125,6 +2131,12 @@
   },
   {
     "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "allowance_word",
+    "line": 405,
+    "text": "Free includes {allowance} emails cleared a month. {plusName} has no monthly limit."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
     "id": "clean_verb",
     "line": 3,
     "text": "Clean up Gmail, one sender at a time \u2014 DeclutrMail"
@@ -2188,5 +2200,53 @@
     "id": "price_literal",
     "line": 24,
     "text": "Free is $0 with {allowance} emails cleared a month and unlimited unsubscribes. The {passName} is {passPrice} once. {plusName} is {plusPrice} a year. 30-day Undo on every plan."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws1.ts",
+    "id": "allowance_word",
+    "line": 255,
+    "text": "{freeName} includes all five choices. Archive and Delete count toward {allowance} emails a month, and at the limit they pause until your reset or an upgrade. Unsubscribe, Keep, Later and Undo keep working."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "allowance_word",
+    "line": 442,
+    "text": "{freeName} costs nothing and needs no card. It includes {freeInboxes} {CONNECTION_TERM}, Senders, Triage, Later and Activity, and {allowance} emails cleared a month. Only Archive and Delete count; Unsubscribe, Keep, Later, previews and Undo never do. {plusName} is {plusPrice} a year: no monthly limit, up to {plusInboxes} {CONNECTION_TERM_PLURAL}, the Screener, Autopilot rules and Quiet hours. The {passName} is {passPrice} once: no monthly limit for {passDays} days, plus the Screener and Autopilot while it lasts, and it never renews. On every plan, you can undo Archive, Later and Delete for 30 days."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "allowance_word",
+    "line": 443,
+    "text": "What counts toward the free {allowance}, and when does it reset?"
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "allowance_word",
+    "line": 445,
+    "text": "The Free tier is live: Senders, Sender detail, Activity history, Triage sessions and the Later review queue, with a limit of 50 a month that resets on your signup date. (Free is now {allowance} emails cleared a month.)"
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "allowance_word",
+    "line": 102,
+    "text": "{freeName} is $0 and lets you clear {allowance} emails a month; Unsubscribe, Keep, Later, previews and Undo are unlimited. {plusName} is {plusPrice} a year with no monthly limit. The {passName} is {passPrice} once for {passDays} days with no monthly limit on one {CONNECTION_TERM}. {refundDays}-day money-back on any purchase, once per customer."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "price_literal",
+    "line": 102,
+    "text": "{freeName} is $0 and lets you clear {allowance} emails a month; Unsubscribe, Keep, Later, previews and Undo are unlimited. {plusName} is {plusPrice} a year with no monthly limit. The {passName} is {passPrice} once for {passDays} days with no monthly limit on one {CONNECTION_TERM}. {refundDays}-day money-back on any purchase, once per customer."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "allowance_word",
+    "line": 107,
+    "text": "{freeName} clears {allowance} emails a month. {plusName} is {plusPrice} a year. The {passName} is {passPrice} once for {passDays} days with no monthly limit on one {CONNECTION_TERM}. Full details on our pricing page."
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws3.ts",
+    "id": "allowance_word",
+    "line": 442,
+    "text": "{freeName} costs nothing and needs no card. It includes {freeInboxes} {CONNECTION_TERM}, Senders, Triage, Later and Activity, and {allowance} emails cleared a month. Only Archive and Delete count; Unsubscribe, Keep, Later, previews and Undo never do. {plusName} is {plusPrice} a year: no monthly limit, up to {plusInboxes} {CONNECTION_TERM_PLURAL}, the Screener, Autopilot rules and Quiet hours. The {passName} is {passPrice} once, for one {CONNECTION_TERM}: no monthly limit for {passDays} days, plus the Screener and Autopilot while it lasts, and it never renews. On every plan, you can undo Archive, Later and Delete for 30 days."
   }
 ]

@@ -241,7 +241,7 @@ claims, and product proof adjacent to the claim it supports.
 - Preview before enabling preset Autopilot rules; Watch first is optional.
 - Source-backed competitor comparison pages.
 - Interactive synthetic inbox demo that does not require mailbox access.
-- 30-day money-back guarantee under the published refund policy.
+- 14-day money-back on any purchase, once per customer. (`pricing.refundLine`, `POLICY.refundWindowDays`)
 
 **Not available:** Paid-customer count, testimonials, logos, review score, measured hours saved,
 measured email reduction, conversion rate, retention rate, churn reasons, or win/loss interviews.

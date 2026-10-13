@@ -5,7 +5,6 @@
 
 import { GMAIL_DATA_PROCESSORS } from '../../contracts/gmail-data-inventory';
 import {
-  cleanupActionsPerMonthFor,
   isBillingPassEnabled,
   isPricingV2,
   METER,
@@ -26,7 +25,7 @@ import {
   CASA_VERIFICATION_APPROVED_ON,
   formatVerificationDate,
 } from '../privacy';
-import { BRIEF_NAME } from '../screen-decisions';
+import { BRIEF_NAME, CONNECTION_TERM } from '../screen-decisions';
 import { AI_CONSENT_GATE_LIVE, HERO_KICKER, LAUNCH_STAGE, SECURITY_CONTACT } from './ws3-decisions';
 import { WS3_COPY } from './ws3';
 
@@ -45,8 +44,7 @@ export function heroKicker(): string {
 }
 
 function allowanceToken(): string {
-  const allowance = cleanupActionsPerMonthFor('free');
-  return allowance == null ? '' : allowance.toLocaleString('en-US');
+  return METER.free.limit.toLocaleString('en-US');
 }
 
 function plusPriceToken(): string {
@@ -71,6 +69,7 @@ export function ws3Tokens(extra?: Record<string, string>): Record<string, string
     passDays: '',
     refundDays: isPricingV2() ? String(POLICY.refundWindowDays) : '',
     BRIEF_NAME,
+    CONNECTION_TERM,
     anthropicRetention: GMAIL_DATA_PROCESSORS.Anthropic.retention,
     legalEntity: hasLegalEntity() ? LEGAL_ENTITY_NAME : '',
     legalAddress: hasLegalEntity() ? LEGAL_ENTITY_ADDRESS : '',
@@ -145,23 +144,18 @@ function launchTokenOverrides(
   };
 }
 
-/**
- * Days the public `/refunds` page states (D121). The comparison CTA
- * stays blank until this equals `POLICY.refundWindowDays`.
- */
-export const REFUNDS_PAGE_WINDOW_DAYS = 30;
+/** Days the public `/refunds` page states. Matches `POLICY.refundWindowDays`. */
+export const REFUNDS_PAGE_WINDOW_DAYS = POLICY.refundWindowDays;
 
 /**
  * Money-back line under a comparison CTA, linked to `/refunds`.
- * With `PRICING_V2` on, `/refunds` is the deck page, so this is
- * `refundLine()`. Otherwise it stays empty while the published page
- * still states a different window.
+ * With `PRICING_V2` on this is `refundLine()`. Flags-off stays empty
+ * while `ws3Tokens().refundDays` is blank, so a price sentence is not
+ * published with an empty window.
  */
 export function refundSentence(pricingV2 = isPricingV2()): string {
   if (pricingV2) return refundLine();
   if (ws3Tokens().refundDays === '') return '';
-  // Widened: a literal `30 !== 14` is a type error, and the two
-  // constants have to be comparable again once they are the same number.
   const publishedDays: number = REFUNDS_PAGE_WINDOW_DAYS;
   const policyDays: number = POLICY.refundWindowDays;
   if (publishedDays !== policyDays) return '';

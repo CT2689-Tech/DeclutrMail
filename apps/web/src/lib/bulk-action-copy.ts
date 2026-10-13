@@ -64,4 +64,4 @@ export function skippedAtClickCopy(
  * does not say which reason was whose.
  */
 export const NO_ACTIONABLE_SENDERS_COPY =
-  'Nothing changed — those senders are Protected or no longer in this mailbox.';
+  'Nothing changed — those senders are Protected or have no email left.';

@@ -11,6 +11,7 @@ import {
   isPricingV2,
   meterChipLine,
   meterPreviewText,
+  quotaExceededMessage,
   moneyAmount,
   passEndLabel,
   launchPriceDisplay,
@@ -112,7 +113,32 @@ describe('emails-cleared meter helpers', () => {
     expect(meterPreviewText(2708, 100)).toBe(
       'This clears 2,708 emails. You have 100 free left this month.',
     );
+    expect(meterPreviewText(1, 0)).toBe(
+      'This clears 1 email, but you have no free emails left this month.',
+    );
     expect(meterPreviewText(1, 100)).toBe('This clears 1 email. You have 100 free this month.');
+  });
+
+  it('uses the singular quota sentence when one email is requested', () => {
+    expect(
+      quotaExceededMessage({
+        used: 1000,
+        limit: 1000,
+        resetAt: '2026-11-09T00:00:00.000Z',
+        requested: 1,
+      }),
+    ).toBe('This needs 1 free email, but none of your 1,000 are left this month. More on Nov 9.');
+  });
+
+  it('keeps the plural quota sentence when more than one email is requested', () => {
+    expect(
+      quotaExceededMessage({
+        used: 900,
+        limit: 1000,
+        resetAt: '2026-11-09T00:00:00.000Z',
+        requested: 101,
+      }),
+    ).toBe('This needs 101 free emails, but 100 of 1,000 are left this month. More on Nov 9.');
   });
 });
 
@@ -142,16 +168,30 @@ describe('pricing story builders', () => {
     vi.unstubAllEnvs();
   });
 
-  it('returns no offers while the flag is off', () => {
+  it('lists the Free offer while paid offers stay unlisted', () => {
     vi.stubEnv('PRICING_V2', '');
-    expect(buildOffersJsonLd({ plus: true, pass: true })).toEqual([]);
+    expect(buildOffersJsonLd({ plus: true, pass: true })).toEqual([
+      {
+        '@type': 'Offer',
+        name: 'Free',
+        price: '0',
+        priceCurrency: 'USD',
+        url: 'https://declutrmail.com/pricing',
+      },
+    ]);
     expect(renderPricingMarkdown(true)).toBe('');
   });
 
   it('snapshots listed JSON-LD and markdown while the flag is on', () => {
     vi.stubEnv('PRICING_V2', 'true');
     expect(buildOffersJsonLd()).toEqual([
-      { '@type': 'Offer', name: 'Free', price: 0, priceCurrency: 'USD', url: '/pricing' },
+      {
+        '@type': 'Offer',
+        name: 'Free',
+        price: '0',
+        priceCurrency: 'USD',
+        url: 'https://declutrmail.com/pricing',
+      },
     ]);
     const listed = buildOffersJsonLd({ plus: true, pass: true });
     expect(listed).toHaveLength(4);

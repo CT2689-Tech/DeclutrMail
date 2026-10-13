@@ -115,7 +115,7 @@ export const Idle: Story<typeof SyncNowButton> = {
   render: () =>
     frame(
       statusOf({ last_synced_at: minutesAgo(12) }),
-      'Ready, synced 12 minutes ago — the ordinary "Sync now" control.',
+      'Ready, synced 12 minutes ago — the ordinary "Scan now" control.',
     ),
 };
 

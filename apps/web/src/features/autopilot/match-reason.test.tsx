@@ -29,7 +29,7 @@ describe('recorded Autopilot match explanations', () => {
     (action) => {
       const reason = `Engine verdict=${action} @0.95 above threshold 0.90`;
       expect(describeMatchReason(reason)).toEqual({
-        label: `At matching: ${action} suggestion exceeded the rule's confidence threshold.`,
+        label: `Matched: the suggestion was ${action}, and this rule acts on those.`,
         technical: reason,
       });
     },
@@ -61,7 +61,7 @@ describe('recorded Autopilot match explanations', () => {
   it('retains the matcher decision when display rounding makes both numbers equal', () => {
     const reason = 'Engine verdict=Archive @0.74 above threshold 0.74';
     expect(describeMatchReason(reason)).toEqual({
-      label: "At matching: Archive suggestion exceeded the rule's confidence threshold.",
+      label: 'Matched: the suggestion was Archive, and this rule acts on those.',
       technical: reason,
     });
   });

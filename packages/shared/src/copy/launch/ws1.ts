@@ -16,6 +16,7 @@ export const WS1_COPY = {
     'This clears {requested} emails. You have {remaining} free this month.',
   'meter.preview.over':
     'This clears {requested} emails. You have {remaining} free left this month.',
+  'meter.preview.over.one': 'This clears 1 email, but you have no free emails left this month.',
   'meter.preview.free': 'Unsubscribing is free and doesn\u2019t count.',
   'pricing.h1.passOn': 'Free to start. Pay once to clear the rest.',
   'pricing.h1.passOff': 'Free to start. Upgrade when you want more.',
@@ -120,7 +121,7 @@ export const WS1_COPY = {
   'refunds.window':
     'Refund requests made within {refundDays} days of a charge (your first purchase, a renewal or a {passName}) are refunded in full. This applies to every paid plan.',
   'refunds.pass':
-    'If we refund a {passName}, its {passDays} days of {plusName} end when the refund is confirmed and your account returns to {freeName}. Email you already cleared stays where you put it.',
+    'If we refund a {passName}, its {passDays} days with no monthly limit end when the refund is confirmed and your account returns to {freeName}. Email you already cleared stays where you put it.',
   'refunds.oncePerCustomer':
     'The money-back guarantee can be used once per customer. Statutory refund rights in your country (for example, EU consumer withdrawal rights) are not limited by this policy.',
   'refunds.exclusions.window':
@@ -132,7 +133,7 @@ export const WS1_COPY = {
   'terms.plans':
     'DeclutrMail offers a {freeName} plan, a one-time {passName}, and a yearly {plusName} subscription. Current pricing and what each plan includes are shown at purchase time. Subscriptions renew automatically until canceled; you can cancel at any time and keep access until the end of the period you paid for.',
   'terms.pass':
-    'The {passName} is a one-time payment for {passDays} days of {plusName} and never renews. Buying another {passName} adds {passDays} days to the end of your current one.',
+    'The {passName} is a one-time payment for {passDays} days with no monthly limit on one {CONNECTION_TERM}, and never renews. Buying another {passName} adds {passDays} days to the end of your current one.',
   'terms.india':
     'In India: new purchases are processed by Paddle, our merchant of record, in rupees with GST included. Subscriptions bought earlier through Razorpay continue under DeclutrMail as the seller.',
   'terms.pastDue':
@@ -159,6 +160,8 @@ export const WS1_COPY = {
   'cap.refund': '{refundDays}-day money-back on any purchase, once per customer.',
   'cap.api.message':
     'This needs {requested} free emails, but {remaining} of {allowance} are left this month. More on {resetDate}.',
+  'cap.api.message.one':
+    'This needs 1 free email, but none of your {allowance} are left this month. More on {resetDate}.',
   'cap.resumed': 'Your {passName} is active. Check the updated counts, then confirm.',
   'gate.inbox.free.title': 'Connect another {CONNECTION_TERM} with {plusName}',
   'gate.inbox.free.body':
@@ -192,10 +195,11 @@ export const WS1_COPY = {
   'checkout.continue': 'Continue to checkout',
   'checkout.opening': 'Opening checkout\u2026',
   'checkout.back': 'Not now',
+  'simplify.checkout.rupeeOption': 'Prices in rupees',
   'checkout.refund': '{refundDays}-day money-back on any purchase, once per customer.',
   'billing.pass.status': '{passName} \u00b7 ends {passEndDate}',
   'billing.pass.statusDetail':
-    'You have everything in {plusName} until {passEndDate}. Then you\u2019re back on {freeName}. Nothing renews.',
+    'No monthly limit on one {CONNECTION_TERM}, plus the Screener and Autopilot, until {passEndDate}. Then you\u2019re back on {freeName}. Nothing renews.',
   'billing.pass.purchased': 'Your {passName} is active until {passEndDate}.',
   'billing.pass.extended': 'Your {passName} now ends {passEndDate}.',
   'billing.plus.status': '{plusName} \u00b7 renews {periodEnd}',
@@ -249,4 +253,10 @@ export const WS1_COPY = {
   'price.inrSuffix': 'incl. GST',
   'price.plusLine': '{plusPrice} a year',
   'price.passLine': '{passPrice} once',
+  'pricing.lede.plus':
+    '{plusName} adds Autopilot rules, and you see a preview before you turn one on.',
+  'pricing.lede.pro':
+    'Pro adds Daily Brief, Follow-ups, and up to {proInboxes} {CONNECTION_TERM_PLURAL}.',
+  'pricing.goodToKnow.free':
+    '{freeName} includes all five choices. Archive and Delete count toward {allowance} emails a month, and at the limit they pause until your reset or an upgrade. Unsubscribe, Keep, Later and Undo keep working.',
 } as const;

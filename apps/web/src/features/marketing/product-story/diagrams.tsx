@@ -169,8 +169,8 @@ export function DecisionsTable() {
           <tr>
             {row('unsubscribe')}
             <td data-label="What changes in Gmail">
-              Sends the sender&rsquo;s one-click request, or prepares a Gmail draft for you to send.
-              Existing email stays where it is unless you choose a separate Archive or Delete.
+              Sends the sender’s one-click request, or opens a prefilled email in Gmail for you to
+              send. Existing email stays where it is unless you choose a separate Archive or Delete.
             </td>
             <td data-label="Future email">
               The sender may stop mailing once it accepts the request.

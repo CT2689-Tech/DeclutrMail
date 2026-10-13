@@ -2,7 +2,7 @@ import type { SyncStatus, SyncStage } from '@declutrmail/shared/contracts';
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 
 /** Scan-gate title. Home uses `ws2.home.syncing.title` instead. */
-export const SYNC_READING_TITLE = 'Reading your Gmail\u2026';
+export const SYNC_READING_TITLE = 'Scanning your Gmail\u2026';
 
 /**
  * Scan-gate reassurance when the ready email is not promised. Same words

@@ -16,6 +16,7 @@
 import {
   isPricingV2,
   RAILS,
+  refundLine,
   renderPricingMarkdown,
   type PricePoint,
 } from '@declutrmail/shared/entitlements';
@@ -198,7 +199,7 @@ ${BRIEF_PROCESSING_NOTE} Privacy details: ${origin}/privacy
 
 ## Terms
 
-- Paid plans carry a 30-day money-back guarantee. Terms: ${origin}/refunds
+- ${refundLine()} Terms: ${origin}/refunds
 - Cancel any time from billing settings; access continues to the end of the
   paid period.
 - ${BILLING_MANAGEMENT_NOTE}

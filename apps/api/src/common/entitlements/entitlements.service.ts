@@ -418,7 +418,6 @@ export class EntitlementsService {
     const used = await this.cleanupUnitsUsed(workspace.workspaceId, executor, period.periodStart);
     if (used + unitsNeeded > limit) {
       const remaining = Math.max(0, limit - used);
-      const upgradePlan = unlimitedCleanupPlanName();
       const resetsAt = period.resetsAt.toISOString();
       const userId = await earliestWorkspaceUserId(executor, workspace.workspaceId);
       recordProductEvent(
@@ -429,16 +428,12 @@ export class EntitlementsService {
       );
       throw new AppException({
         code: 'FREE_CAP_REACHED',
-        message: isMeterV2()
-          ? quotaExceededMessage({
-              used,
-              limit,
-              resetAt: resetsAt,
-              requested: unitsNeeded,
-            })
-          : remaining > 0
-            ? `This needs ${unitsNeeded} cleanup actions but only ${remaining} of your ${limit} are left this month. Upgrade to ${upgradePlan} for unlimited cleanup.`
-            : `You've used all ${limit} cleanup actions for this month. Upgrade to ${upgradePlan} for unlimited cleanup — everything you've already done stays done.`,
+        message: quotaExceededMessage({
+          used,
+          limit,
+          resetAt: resetsAt,
+          requested: unitsNeeded,
+        }),
         details: {
           remaining,
           limit,
@@ -580,16 +575,6 @@ export class EntitlementsService {
       });
     }
   }
-}
-
-/**
- * The plan a quota-capped workspace upgrades to for unlimited cleanup —
- * the lowest tier whose monthly quota is `null`. Derived from the
- * pricing config so retiering never edits this file.
- */
-function unlimitedCleanupPlanName(): string {
-  const tier = TIER_IDS.find((id) => cleanupActionsPerMonthFor(id) === null);
-  return tier ? TIER_MANIFEST[tier].name : 'a paid plan';
 }
 
 /**

@@ -85,15 +85,15 @@ export function StepConnect({
           . Connecting grants that access, but does not change any email.
         </ConsentStep>
         <ConsentStep number="2" title="Fetched during the scan">
-          Only the sender and message metadata used to group email and show previews. Full bodies
-          and attachments are not fetched.
+          Only sender, subject line, Gmail’s preview snippet, dates and labels. We never fetch or
+          store full email contents.
           <ConsentDetails label="Show fetched fields" items={GMAIL_MESSAGE_STORAGE_LABELS} />
         </ConsentStep>
         <ConsentStep number="3" title="Stored in DeclutrMail">
-          That metadata, plus connection records, sender facts, your decisions, and the records
-          needed to run and reverse actions. Settings → Privacy &amp; data lists every dataset.
+          Those details, plus your decisions and what we need to undo your changes. Settings →
+          Privacy &amp; data lists everything we keep.
           <ConsentDetails
-            label="Show stored and derived data"
+            label="Show what we keep"
             items={[
               ...GMAIL_CONNECTION_DATA_INVENTORY.map((item) => item.label),
               ...GMAIL_DERIVED_DATA_INVENTORY.map((item) => item.label),

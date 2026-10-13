@@ -10,8 +10,7 @@
  *      `@declutrmail/shared` verbatim (the plain-language full-email
  *      boundary plus the stored-data list). The banned pre-D228 phrase
  *      "Bodies read: 0" must not appear.
- *   3. D121 (founder-confirmed 2026-07-08) — /help states the 30-day
- *      money-back guarantee on every paid plan and links /refunds for
+ *   3. /help states the published refund window and links /refunds for
  *      the full terms. No page carries a "Pending confirmation" marker.
  *   4. /security claims match the repo: single gmail.modify scope,
  *      envelope-encrypted tokens, CASA Tier 2, no ML category
@@ -103,12 +102,10 @@ describe('/help content — D219 + D137', () => {
     }
   });
 
-  it('states the canonical 30-day guarantee and links /refunds for the full terms (D121)', async () => {
+  it('states the published refund window and links /refunds for the full terms', async () => {
     const { container } = render(await pageElement(HelpPage));
-    expect(container.textContent).toContain('30-day money-back guarantee');
-    expect(container.textContent).toMatch(/every paid plan/i);
-    // The interim 14-day pro-rata default must not resurface.
-    expect(container.textContent).not.toMatch(/14[- ]days?/);
+    expect(container.textContent).toContain('Ask within 14 days of any charge');
+    expect(container.textContent).not.toMatch(/30-day money-back/);
     // querySelectorAll: the footer chrome also links /refunds ("Refund
     // Policy"); the full-terms label lives on the FAQ answer's link.
     const refundLinks = Array.from(container.querySelectorAll('a[href="/refunds"]'));

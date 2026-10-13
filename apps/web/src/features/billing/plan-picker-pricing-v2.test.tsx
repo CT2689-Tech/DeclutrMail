@@ -111,7 +111,9 @@ describe('PlanPicker launch pricing', () => {
     expect(screen.getByTestId('plan-option-free')).toHaveTextContent('₹0');
     expect(screen.getByTestId('plan-option-plus')).toHaveTextContent('₹1,999/yr');
     expect(screen.getByTestId('plan-option-plus')).not.toHaveTextContent('incl. GST');
-    expect(screen.getByTestId('pass-offer-card')).toHaveTextContent('₹799 once');
+    expect(screen.getByTestId('pass-offer-card')).toHaveTextContent(
+      '₹799 once · 30 days, one Gmail account · doesn’t renew',
+    );
     expect(screen.getByTestId('plan-option-free').textContent).not.toContain('$');
     expect(screen.getByTestId('plan-option-plus').textContent).not.toContain('$');
     expect(screen.getByTestId('pass-offer-card').textContent).not.toContain('$');
@@ -125,7 +127,9 @@ describe('PlanPicker launch pricing', () => {
     expect(screen.getByTestId('plan-option-free')).toHaveTextContent('₹0');
     expect(screen.getByTestId('plan-option-plus')).toHaveTextContent('₹1,999/yr');
     expect(screen.getByTestId('plan-option-plus')).not.toHaveTextContent('incl. GST');
-    expect(screen.getByTestId('pass-offer-card')).toHaveTextContent('₹799 once');
+    expect(screen.getByTestId('pass-offer-card')).toHaveTextContent(
+      '₹799 once · 30 days, one Gmail account · doesn’t renew',
+    );
     const panel = await screen.findByTestId('checkout-panel');
     expect(panel).toHaveTextContent('₹799 once, today');
     expect(screen.getByTestId('plan-option-free').textContent).not.toContain('$');
