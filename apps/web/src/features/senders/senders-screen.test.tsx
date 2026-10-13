@@ -4509,7 +4509,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(screen.queryByText(/Not sent: 1 Protected sender/)).toBeNull();
   });
 
-  it('includes a Protected sender in the request so the mixed toast can name it', async () => {
+  it('omits a Protected sender from the request and still names the skip the server reports', async () => {
     const bodies: Array<{ senderIds?: string[] }> = [];
     installFetchStub([
       {
@@ -4591,7 +4591,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     await waitFor(() => expect(confirm).toBeEnabled());
     fireEvent.click(confirm);
     await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0]?.senderIds).toEqual(['a', 'b']);
+    expect(bodies[0]?.senderIds).toEqual(['a']);
     expect(
       await screen.findByText(
         'Unsubscribe requested from 1 sender · Archived 12 emails · 1 Protected sender left as it is',
