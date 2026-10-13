@@ -92,10 +92,26 @@ describe('SendersSimulator', () => {
     expect(within(dialog).getByRole('radio', { name: /Inbox only/ })).toHaveTextContent('45'); // Default 6-month window.
     fireEvent.click(within(dialog).getByRole('radio', { name: /Inbox \+ archived/ }));
     expect(within(dialog).getByRole('heading')).toHaveTextContent('155 emails');
+    fireEvent.click(within(dialog).getByText('Details'));
+    expect(
+      within(dialog)
+        .getAllByRole('term')
+        .map((term) => term.textContent),
+    ).toContain('Scope');
+    expect(
+      within(dialog)
+        .getAllByRole('definition')
+        .map((value) => value.textContent),
+    ).toContain('Inbox + archived · older than 180 days');
     fireEvent.change(within(dialog).getByRole('combobox', { name: 'How far back to act on' }), {
       target: { value: '365' },
     });
     expect(within(dialog).getByRole('heading')).toHaveTextContent('76 emails');
+    expect(
+      within(dialog)
+        .getAllByRole('definition')
+        .map((value) => value.textContent),
+    ).toContain('Inbox + archived · older than 365 days');
     expect(within(dialog).queryByText('Your Sunday reading list')).not.toBeInTheDocument();
   });
 

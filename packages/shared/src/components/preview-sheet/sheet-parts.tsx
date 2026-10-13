@@ -135,12 +135,12 @@ export type SheetFactItem = { label: string; value: ReactNode };
 
 /**
  * The Details well's facts as a two-column list — label left (muted,
- * never wraps), value right (full contrast, wraps). A reader scans the
+ * wraps in full), value right (full contrast, wraps). A reader scans the
  * labels and reads only the value they came for, which a stack of full
  * sentences never allowed.
  *
  * Stacks label-over-value on narrow wells with no media query: the value
- * asks for 200px, so once the label column plus that no longer fit (a
+ * asks for 200px, so once the label's 110px plus that no longer fit (a
  * phone under ~420px) flex-wrap drops it to its own line. Pure CSS, so
  * there is no post-hydration jump.
  */
@@ -162,27 +162,25 @@ export function SheetFactList({
             flexWrap: 'wrap',
             alignItems: 'baseline',
             columnGap: space[3],
-            rowGap: 2,
-            padding: `11px 0`,
+            rowGap: space[1],
+            padding: `${space[3]}px 0`,
             borderTop: i === 0 ? 'none' : `1px solid ${color.lineSoft}`,
           }}
         >
           <dt
             style={{
-              flex: '0 0 38%',
+              flex: '1 1 110px',
               minWidth: 0,
               fontSize: text.sm,
               color: color.fgMuted,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
+              overflowWrap: 'anywhere',
             }}
           >
             {fact.label}
           </dt>
           <dd
             style={{
-              flex: '1 1 200px',
+              flex: '2 1 200px',
               minWidth: 0,
               margin: 0,
               fontSize: text.sm,

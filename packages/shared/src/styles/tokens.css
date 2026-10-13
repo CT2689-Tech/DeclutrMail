@@ -637,6 +637,19 @@ button {
 .dm-sheet-details > summary:hover {
   background: var(--dm-fill);
 }
+.dm-sheet-details[open] {
+  background: var(--dm-fill);
+}
+.dm-sheet-details[open] > summary {
+  border-bottom: 1px solid var(--dm-line-soft);
+}
+.dm-sheet-details > summary:focus-visible {
+  outline: 2px solid var(--dm-primary);
+  outline-offset: 2px;
+}
+.dm-sheet-panel:has(.dm-sheet-details[open]) > .dm-sheet-footer {
+  border-top: 1px solid var(--dm-line-soft);
+}
 .dm-sheet-details[open] .dm-sheet-details-chevron {
   transform: rotate(180deg);
 }
@@ -672,6 +685,9 @@ button {
   padding: 0 4px !important;
   border-top: 1px solid var(--dm-line-soft);
   border-radius: 0 !important;
+}
+.dm-sheet-review .dm-sheet-details[open] {
+  background: transparent;
 }
 .dm-sheet-review .dm-sheet-details-content {
   padding: 0 !important;
