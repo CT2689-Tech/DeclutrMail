@@ -286,7 +286,7 @@ describe('SettingsScreen', () => {
       </QueryWrapper>,
     );
     expect(renderToString(node)).toBe(fallbackHtml);
-    expect(fallbackHtml).toContain('Loading settings');
+    expect(fallbackHtml).toContain('Loading Settings…');
     expect(fallbackHtml).not.toContain('Founding member');
     expect(fallbackHtml).not.toContain('Inline');
     expect(fallbackHtml).not.toContain('href="#ai"');

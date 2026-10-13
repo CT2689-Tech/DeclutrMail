@@ -590,6 +590,9 @@
       "keptLimited": "Some records are kept after deletion. The list above shows what we keep and for how long.",
       "logoCache": "Sender logos are public images and aren’t linked to you.",
       "auditRecords": "Security and deletion records have no set end date. After you delete your account, they’re no longer linked to you."
+    },
+    "settings": {
+      "loading": "Loading Settings…"
     }
   },
   "pr1019": {

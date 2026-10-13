@@ -29,6 +29,8 @@ import deck from './deck/ws2.json' with { type: 'json' };
  * The same revision’s reviewed, load-error, Later-slow, and reset lines
  * live under `simplify.onboarding`, `simplify.later`, and
  * `simplify.billing.resetLine`. `liveFix.billing.limit.free` is the
- * email-count sentence.
+ * email-count sentence. `simplify.settings.loading` is the settings
+ * route label: capital S and one ellipsis character, same shape as
+ * the Triage loading label.
  */
 export const WS2_COPY = deck;
