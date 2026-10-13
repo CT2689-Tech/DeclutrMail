@@ -14,7 +14,6 @@ import type { Request, Response } from 'express';
 
 import { ok, type Envelope, type SyncReadiness } from '@declutrmail/shared/contracts';
 import {
-  inboxLimitFor,
   isBillingPassEnabled,
   isMeterV2,
   isPricingV2,
@@ -76,6 +75,12 @@ export interface MeEnvelope {
    * client falls back to the flag-off manifest when it is absent.
    */
   inboxLimit: number;
+  /**
+   * Present when the one-account ceiling is a live Backlog Pass, so
+   * the client can show the Pass second-account copy. Absent after
+   * the Pass lapses or when a paid Plus/Pro row is what set the limit.
+   */
+  inboxLimitReason?: 'pass';
   /** Server env `PRICING_V2`. The browser does not read the env itself. */
   pricingV2: boolean;
   /** Email allowance this period. `null` when the tier is not metered. */
@@ -140,6 +145,9 @@ export class AuthController {
     const quotaRead = measureRequestOperation('auth.quota', () =>
       this.entitlements.cleanupSummary(principal.workspaceId),
     );
+    const inboxLimitRead = measureRequestOperation('auth.inbox-limit', () =>
+      this.entitlements.inboxEntitlementForWorkspace(principal.workspaceId),
+    );
     // Sync health needs only the verified user and mailbox list. Start it
     // as soon as those reads finish, overlapping the quota's serial reads.
     // Promise.all below observes every rejection immediately, including
@@ -153,10 +161,11 @@ export class AuthController {
           )
         : null,
     );
-    const [user, mailboxes, quota, health] = await Promise.all([
+    const [user, mailboxes, quota, inboxEntitlement, health] = await Promise.all([
       userRead,
       mailboxRead,
       quotaRead,
+      inboxLimitRead,
       healthRead,
     ]).catch((error: unknown) => {
       bootstrapFailed = true;
@@ -189,7 +198,8 @@ export class AuthController {
       tier: quota.tier,
       cleanupRemaining: quota.remaining,
       cleanupResetsAt: quota.resetsAt?.toISOString() ?? null,
-      inboxLimit: inboxLimitFor(quota.tier),
+      inboxLimit: inboxEntitlement.limit,
+      ...(inboxEntitlement.reason ? { inboxLimitReason: inboxEntitlement.reason } : {}),
       pricingV2: isPricingV2(),
       cleanupLimit: quota.limit,
       cleanupUsed: quota.used,

@@ -36,6 +36,9 @@ vi.mock('@/features/auth/auth-provider', () => ({
   }),
 }));
 
+import { fillStory } from '@declutrmail/shared/entitlements';
+import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+
 import { useUpgradeGateStore } from '@/lib/entitlements/upgrade-gate';
 
 import { BillingCurrencyProvider } from './billing-currency';
@@ -391,6 +394,54 @@ describe('UpgradeModal', () => {
       'href',
       '/billing?plan=pro&cycle=monthly&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
     );
+  });
+
+  it('pass_second_account: locked r37 copy, Plus checkout, no Free reuse', () => {
+    mockTier = 'plus';
+    mockPricingV2 = true;
+    useUpgradeGateStore.getState().report({
+      reason: 'pass_second_account',
+      details: { limit: 1, connected: 1, reason: 'pass' },
+    });
+    render(<UpgradeModal />);
+
+    expect(screen.getByText('The Backlog Pass covers one Gmail account')).toBeInTheDocument();
+    expect(
+      screen.getByText(fillStory(WS1_COPY['cap.pass.secondAccount.body'])),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: fillStory(WS1_COPY['cap.pass.secondAccount.cta']) }),
+    ).toHaveAttribute(
+      'href',
+      '/billing?plan=plus&cycle=annual&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
+    );
+    expect(
+      screen.getByRole('button', { name: WS1_COPY['cap.pass.secondAccount.dismiss'] }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Free includes/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Upgrade to Pro/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /compare plans/i })).not.toBeInTheDocument();
+  });
+
+  it('pass_second_account quotes Plus in INR from the visitor locale, not Razorpay', () => {
+    mockTier = 'plus';
+    mockPricingV2 = true;
+    useUpgradeGateStore.getState().report({
+      reason: 'pass_second_account',
+      details: { limit: 1, connected: 1, reason: 'pass' },
+    });
+    render(
+      <BillingCurrencyProvider provider="paddle" locale="inr">
+        <UpgradeModal />
+      </BillingCurrencyProvider>,
+    );
+
+    expect(screen.getByText('The Backlog Pass covers one Gmail account')).toBeInTheDocument();
+    expect(
+      screen.getByText(fillStory(WS1_COPY['cap.pass.secondAccount.body'], 'inr')),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/₹1,999/)).toBeInTheDocument();
+    expect(screen.queryByText(/\$59/)).not.toBeInTheDocument();
   });
 
   it('inbox_limit on Plus: upgrade nudge toward Pro', () => {

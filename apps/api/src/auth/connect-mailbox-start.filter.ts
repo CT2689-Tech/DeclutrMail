@@ -1,11 +1,16 @@
 import { Catch, HttpStatus } from '@nestjs/common';
 import type { Response } from 'express';
-import { parseBillingReturnTo } from '@declutrmail/shared/contracts';
+import { parseBillingReturnTo, type ApiError } from '@declutrmail/shared/contracts';
 
 import { AllExceptionsFilter } from '../common/all-exceptions.filter.js';
 
 export type ConnectMailboxStartResult =
-  'target_invalid' | 'inbox_limit' | 'session_retry' | 'rate_limited' | 'failed';
+  | 'target_invalid'
+  | 'inbox_limit'
+  | 'pass_second_account'
+  | 'session_retry'
+  | 'rate_limited'
+  | 'failed';
 
 /**
  * `/connect-mailbox/start` is deliberately a full-page browser navigation.
@@ -20,10 +25,13 @@ export type ConnectMailboxStartResult =
  */
 @Catch()
 export class ConnectMailboxStartFilter extends AllExceptionsFilter {
-  protected override respond(res: Response, status: number): void {
+  protected override respond(res: Response, status: number, error?: ApiError): void {
     if (res.headersSent) return;
 
-    const result = connectMailboxStartResult(status) ?? 'failed';
+    const result =
+      error?.details?.reason === 'pass'
+        ? 'pass_second_account'
+        : (connectMailboxStartResult(status) ?? 'failed');
     const webBase = (process.env.WEB_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
 
     const destination = parseBillingReturnTo(res.req?.query?.billingReturnTo);

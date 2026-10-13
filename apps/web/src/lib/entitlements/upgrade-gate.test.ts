@@ -84,6 +84,16 @@ describe('upgradeGateHitFrom', () => {
     expect(hit).toEqual({ reason: 'inbox_limit', details: { limit: 1, connected: 1 } });
   });
 
+  it('maps a Pass-only INBOX_LIMIT_REACHED reason to the Pass second-account hit', () => {
+    const hit = upgradeGateHitFrom(
+      inboxLimit402({ limit: 1, connected: 1, tier: 'plus', reason: 'pass' }),
+    );
+    expect(hit).toEqual({
+      reason: 'pass_second_account',
+      details: { limit: 1, connected: 1, reason: 'pass' },
+    });
+  });
+
   it('extracts ACTION_TIER_REQUIRED selector context', () => {
     const hit = upgradeGateHitFrom(
       actionTier402({

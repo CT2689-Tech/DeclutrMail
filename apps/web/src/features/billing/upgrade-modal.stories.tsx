@@ -129,6 +129,15 @@ export const FreeCapPartial: Story<typeof UpgradeModalHost> = {
     }),
 };
 
+/** Pass-only workspace blocked from a second Gmail account (r37). */
+export const PassSecondAccount: Story<typeof UpgradeModalHost> = {
+  render: (_args: ComponentProps<typeof UpgradeModalHost>) =>
+    frame('plus', {
+      reason: 'pass_second_account',
+      details: { limit: 1, connected: 1, reason: 'pass' },
+    }),
+};
+
 /** Plus workspace at its 1-inbox limit — nudge toward Pro (2 inboxes). */
 export const InboxLimitPlus: Story<typeof UpgradeModalHost> = {
   render: (_args: ComponentProps<typeof UpgradeModalHost>) =>

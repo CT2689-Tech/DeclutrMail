@@ -18,6 +18,17 @@ describe('launch copy deck snapshots', () => {
     expect(() => expectMatchesDeck('ws1', { extra: 'not in the deck' })).toThrow();
   });
 
+  it('pins the r37 Pass second-account title so {passName} fills to Backlog Pass', () => {
+    expect(WS1_COPY['cap.pass.secondAccount.title']).toBe(
+      'The {passName} covers one Gmail account',
+    );
+    expect(WS1_COPY['cap.pass.secondAccount.body']).toBe(
+      'To connect another Gmail account, get {plusName}. It covers up to {plusInboxes} Gmail accounts for {plusPrice} a year.',
+    );
+    expect(WS1_COPY['cap.pass.secondAccount.cta']).toBe('Get {plusName}');
+    expect(WS1_COPY['cap.pass.secondAccount.dismiss']).toBe('Not now');
+  });
+
   it('pins the drop2-r37/r38 Pass one-account lines', () => {
     expect(WS1_COPY['refunds.pass']).toBe(
       'If we refund a {passName}, its {passDays} days with no monthly limit end when the refund is confirmed and your account returns to {freeName}. Email you already cleared stays where you put it.',

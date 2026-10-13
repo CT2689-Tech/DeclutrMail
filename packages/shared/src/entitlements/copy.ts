@@ -533,3 +533,17 @@ export function inboxLimitReachedMessage(tier: TierId): string {
     CONNECTION_TERM: connectionTerm(INBOXES.free),
   });
 }
+
+/** Locked r37 Pass second-account title. `{passName}` fills from config. */
+export function passSecondAccountTitle(locale: 'usd' | 'inr' = 'usd'): string {
+  return fillStory(WS1_COPY['cap.pass.secondAccount.title'], locale);
+}
+
+/** Locked r37 Pass second-account body. Price follows the region locale. */
+export function passSecondAccountMessage(locale: 'usd' | 'inr' = 'usd'): string {
+  return fillStory(WS1_COPY['cap.pass.secondAccount.body'], locale);
+}
+
+export function passSecondAccountCta(locale: 'usd' | 'inr' = 'usd'): string {
+  return fillStory(WS1_COPY['cap.pass.secondAccount.cta'], locale);
+}

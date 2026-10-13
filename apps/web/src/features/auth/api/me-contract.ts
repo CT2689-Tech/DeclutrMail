@@ -55,6 +55,8 @@ export interface Me {
   cleanupResetsAt?: string | null;
   /** Server inbox ceiling. Absent on an older API; fall back to the manifest. */
   inboxLimit?: number;
+  /** Present when a live Backlog Pass is what set the one-account ceiling. */
+  inboxLimitReason?: 'pass';
   /** Server `PRICING_V2`. Absent means the flag is off. */
   pricingV2?: boolean;
   /**

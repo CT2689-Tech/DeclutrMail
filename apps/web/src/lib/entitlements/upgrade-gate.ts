@@ -58,6 +58,8 @@ export interface FreeCapDetails {
 export interface InboxLimitDetails {
   limit: number;
   connected: number;
+  /** Present when a live Backlog Pass is what set the one-account ceiling. */
+  reason?: 'pass';
 }
 
 /** Scalar Action Registry context attached to ACTION_TIER_REQUIRED. */
@@ -85,6 +87,7 @@ export interface ProFeatureDetails {
 export type UpgradeGateHit =
   | { reason: 'free_cap'; details: FreeCapDetails }
   | { reason: 'inbox_limit'; details: InboxLimitDetails }
+  | { reason: 'pass_second_account'; details: InboxLimitDetails }
   | { reason: 'action_tier'; details: ActionTierDetails }
   | { reason: 'pro_feature'; details: ProFeatureDetails };
 
@@ -160,12 +163,14 @@ export function upgradeGateHitFrom(error: unknown): UpgradeGateHit | null {
     };
   }
   if (code === 'INBOX_LIMIT_REACHED') {
+    const details: InboxLimitDetails = {
+      limit: asCount(d['limit'], INBOX_LIMIT_FALLBACK.limit),
+      connected: asCount(d['connected'], INBOX_LIMIT_FALLBACK.connected),
+      ...(d['reason'] === 'pass' ? { reason: 'pass' as const } : {}),
+    };
     return {
-      reason: 'inbox_limit',
-      details: {
-        limit: asCount(d['limit'], INBOX_LIMIT_FALLBACK.limit),
-        connected: asCount(d['connected'], INBOX_LIMIT_FALLBACK.connected),
-      },
+      reason: details.reason === 'pass' ? 'pass_second_account' : 'inbox_limit',
+      details,
     };
   }
   if (code === 'ACTION_TIER_REQUIRED') {
@@ -206,6 +211,14 @@ export function reportUpgradeGateHit(error: unknown): boolean {
   if (!hit) return false;
   useUpgradeGateStore.getState().report(hit);
   return true;
+}
+
+/** Open the locked r37 Pass second-account modal from a client-side gate. */
+export function reportPassSecondAccountGate(details: InboxLimitDetails): void {
+  useUpgradeGateStore.getState().report({
+    reason: 'pass_second_account',
+    details: { ...details, reason: 'pass' },
+  });
 }
 
 function asCount(value: unknown, fallback: number): number {
