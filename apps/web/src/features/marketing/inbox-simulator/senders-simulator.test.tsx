@@ -1,7 +1,13 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { fillCopy, pluralCopy, WS3_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import {
+  fillCopy,
+  pluralCopy,
+  WS2_COPY,
+  WS3_COPY,
+  WS5_COPY,
+} from '@declutrmail/shared/copy/launch';
 
 import { SendersSimulator } from './senders-simulator';
 
@@ -85,14 +91,27 @@ describe('SendersSimulator', () => {
     );
   });
 
-  it('changes Delete counts with age and Inbox + archived reach before confirmation', () => {
+  it('changes Delete counts with age and the archived-email checkbox before confirmation', () => {
     render(<SendersSimulator />);
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     const dialog = preview();
-    expect(within(dialog).getByRole('radio', { name: /Inbox only/ })).toHaveTextContent('45'); // Default 6-month window.
-    fireEvent.click(within(dialog).getByRole('radio', { name: /Inbox \+ archived/ }));
-    expect(within(dialog).getByRole('heading')).toHaveTextContent('155 emails');
+    const includeArchived = within(dialog).getByRole('checkbox', {
+      name: WS2_COPY.simplify.confirm.includeArchived,
+    });
+    expect(includeArchived).not.toBeChecked();
+    expect(includeArchived).toHaveStyle({ minHeight: '44px' });
+    expect(within(dialog).getByRole('heading')).toHaveTextContent('45 emails'); // Default 6-month window.
     fireEvent.click(within(dialog).getByText('Details'));
+    const includes = () =>
+      within(dialog)
+        .getAllByRole('definition')
+        .map((value) => value.textContent);
+    expect(includes()).toContain(
+      `${WS3_COPY['ws3.demo.details.includes.inbox']} · older than 180 days`,
+    );
+    fireEvent.click(includeArchived);
+    expect(includeArchived).toBeChecked();
+    expect(within(dialog).getByRole('heading')).toHaveTextContent('155 emails');
     expect(
       within(dialog)
         .getAllByRole('term')
@@ -103,11 +122,7 @@ describe('SendersSimulator', () => {
         WS3_COPY['ws3.demo.details.deleted.label'],
       ]),
     );
-    expect(
-      within(dialog)
-        .getAllByRole('definition')
-        .map((value) => value.textContent),
-    ).toEqual(
+    expect(includes()).toEqual(
       expect.arrayContaining([
         `${WS3_COPY['ws3.demo.details.includes.all']} · older than 180 days`,
         WS3_COPY['ws3.demo.details.deleted.value'],
@@ -117,11 +132,9 @@ describe('SendersSimulator', () => {
       target: { value: '365' },
     });
     expect(within(dialog).getByRole('heading')).toHaveTextContent('76 emails');
-    expect(
-      within(dialog)
-        .getAllByRole('definition')
-        .map((value) => value.textContent),
-    ).toContain(`${WS3_COPY['ws3.demo.details.includes.all']} · older than 365 days`);
+    expect(includes()).toContain(
+      `${WS3_COPY['ws3.demo.details.includes.all']} · older than 365 days`,
+    );
     expect(within(dialog).queryByText('Your Sunday reading list')).not.toBeInTheDocument();
   });
 
@@ -154,7 +167,11 @@ describe('SendersSimulator', () => {
     expect(preview()).toHaveTextContent('1 Protected sender will be left unchanged.');
     fireEvent.click(within(preview()).getByRole('button', { name: /^Archive \d+/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-    fireEvent.click(within(preview()).getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(
+      within(preview()).getByRole('checkbox', {
+        name: WS2_COPY.simplify.confirm.includeArchived,
+      }),
+    );
     fireEvent.click(within(preview()).getByRole('button', { name: /^Delete \d+/ }));
     const activity = screen.getByRole('region', { name: 'Sample activity' });
     expect(activity).toHaveTextContent('A later sample decision changed this sender');
