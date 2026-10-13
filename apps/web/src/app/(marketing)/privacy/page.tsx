@@ -329,7 +329,10 @@ export default function PrivacyPolicyPage() {
             </tr>
             <tr>
               <td>Upstash Redis</td>
-              <td>runs background tasks, like scanning your Gmail.</td>
+              <td>
+                runs background tasks, like scanning your Gmail. It never stores the contents of
+                your Gmail messages.
+              </td>
             </tr>
             <tr>
               <td>Sentry</td>
