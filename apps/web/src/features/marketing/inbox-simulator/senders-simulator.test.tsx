@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { fillCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { fillCopy, pluralCopy, WS3_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
 import { SendersSimulator } from './senders-simulator';
 
@@ -97,12 +97,22 @@ describe('SendersSimulator', () => {
       within(dialog)
         .getAllByRole('term')
         .map((term) => term.textContent),
-    ).toContain('Scope');
+    ).toEqual(
+      expect.arrayContaining([
+        WS3_COPY['ws3.demo.details.includes.label'],
+        WS3_COPY['ws3.demo.details.deleted.label'],
+      ]),
+    );
     expect(
       within(dialog)
         .getAllByRole('definition')
         .map((value) => value.textContent),
-    ).toContain('Inbox + archived · older than 180 days');
+    ).toEqual(
+      expect.arrayContaining([
+        `${WS3_COPY['ws3.demo.details.includes.all']} · older than 180 days`,
+        WS3_COPY['ws3.demo.details.deleted.value'],
+      ]),
+    );
     fireEvent.change(within(dialog).getByRole('combobox', { name: 'How far back to act on' }), {
       target: { value: '365' },
     });
@@ -111,7 +121,7 @@ describe('SendersSimulator', () => {
       within(dialog)
         .getAllByRole('definition')
         .map((value) => value.textContent),
-    ).toContain('Inbox + archived · older than 365 days');
+    ).toContain(`${WS3_COPY['ws3.demo.details.includes.all']} · older than 365 days`);
     expect(within(dialog).queryByText('Your Sunday reading list')).not.toBeInTheDocument();
   });
 

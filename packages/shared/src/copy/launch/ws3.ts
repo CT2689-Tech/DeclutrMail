@@ -468,4 +468,10 @@ export const WS3_COPY = {
     'This 14-day window applies to every purchase, including plans bought before this change.',
   'ws3.social.x.bio':
     'Clear Gmail by sender. Archive or delete in bulk with 30 days to undo, and unsubscribe from lists you’re done with. 1,000 emails free a month.',
+  'ws3.demo.details.includes.label': 'Includes',
+  'ws3.demo.details.includes.inbox': 'Inbox only',
+  'ws3.demo.details.includes.all': 'Inbox and archived email',
+  'ws3.demo.details.deleted.label': 'Deleted email',
+  'ws3.demo.details.deleted.value':
+    'Goes to Gmail Trash for up to 30 days, unless you empty Trash sooner.',
 } as const;
