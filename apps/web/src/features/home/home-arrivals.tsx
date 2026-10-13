@@ -1,5 +1,6 @@
 'use client';
 
+import { useLayoutEffect, useState } from 'react';
 import { Button } from '@declutrmail/shared';
 import type { HomeVisitSummary } from '@declutrmail/shared/contracts/home-visit';
 import { pluralCopy, WS2_COPY } from '@declutrmail/shared/copy/launch';
@@ -15,6 +16,13 @@ function sinceLastCount(forms: { readonly one: string; readonly other: string },
 
 export function HomeArrivals() {
   const visit = useHomeVisit();
+  // Same first paint on the server and in the browser. The visit id lives
+  // in localStorage, so a sync read would render a different tree (#418).
+  const [painted, setPainted] = useState(false);
+  useLayoutEffect(() => {
+    setPainted(true);
+  }, []);
+  if (!painted) return null;
   return (
     <HomeArrivalsView data={visit.data} error={visit.isError} retry={() => void visit.refetch()} />
   );

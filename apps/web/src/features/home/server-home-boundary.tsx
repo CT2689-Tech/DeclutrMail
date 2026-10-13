@@ -38,11 +38,7 @@ export async function ServerHomeBoundary({
       if (me === null || mailboxId === undefined) return [];
       const mailboxOptions = { mailboxId };
       const visitId = readHomeVisitCookie(cookieHeader, mailboxId);
-      const visitPath =
-        visitId !== null
-          ? `/api/home/visit?visitId=${encodeURIComponent(visitId)}`
-          : '/api/home/visit';
-      return [
+      const reads = [
         queryClient.fetchQuery(
           homeSummaryQueryOptions((signal) =>
             serverGet<HomeSummary>(
@@ -63,12 +59,25 @@ export async function ServerHomeBoundary({
             ),
           ),
         ),
-        queryClient.fetchQuery(
-          homeVisitQueryOptions(mailboxId, (signal) =>
-            serverGet<HomeVisitSummary>(visitPath, cookieHeader, signal, mailboxOptions),
-          ),
-        ),
       ];
+      // Peek only when this visit is already known. A no-cookie compute
+      // would dehydrate a new window and keepPreviousData would hide the
+      // stored one after a reload.
+      if (visitId !== null) {
+        reads.push(
+          queryClient.fetchQuery(
+            homeVisitQueryOptions(mailboxId, (signal) =>
+              serverGet<HomeVisitSummary>(
+                `/api/home/visit?visitId=${encodeURIComponent(visitId)}`,
+                cookieHeader,
+                signal,
+                mailboxOptions,
+              ),
+            ),
+          ),
+        );
+      }
+      return reads;
     },
     children,
   });

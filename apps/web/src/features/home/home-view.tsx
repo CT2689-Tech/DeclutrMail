@@ -408,13 +408,13 @@ function supportLine(template: string, filled: string | null): string | null {
 function LeadLine({ headline }: { headline: string }) {
   const match = /^(\d+%)\s+([\s\S]+)$/.exec(headline);
   if (match === null) {
-    return <p data-report-lead="">{headline}</p>;
+    return <div data-report-lead="">{headline}</div>;
   }
   return (
-    <p className={styles.lead} data-report-lead="">
+    <div className={styles.lead} data-report-lead="">
       <strong className={styles.leadFigure}>{match[1]}</strong>
       <span>{match[2]}</span>
-    </p>
+    </div>
   );
 }
 

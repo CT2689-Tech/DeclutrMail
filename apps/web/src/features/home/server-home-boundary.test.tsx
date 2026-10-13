@@ -105,7 +105,6 @@ describe('Home server hydration', () => {
         '/api/auth/me',
         '/api/activity/summary',
         '/api/mailboxes/mb-synthetic/inbox-report',
-        '/api/home/visit',
         '/api/triage/bootstrap',
         '/api/screener/count',
       ]);
@@ -137,11 +136,11 @@ describe('Home server hydration', () => {
       return boundary;
     });
     await vi.advanceTimersByTimeAsync(0);
-    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
     expect(ready).toBe(false);
     await vi.advanceTimersByTimeAsync(500);
     expect(ready).toBe(true);
-    expect((await render).props.state?.queries).toHaveLength(3);
+    expect((await render).props.state?.queries).toHaveLength(2);
   });
 
   it.each(['free', 'plus', 'pro'] as const)('preserves %s capability gates', async (tier) => {
@@ -185,14 +184,35 @@ describe('Home server hydration', () => {
       cookieHeader: 'dm_access=synthetic',
       children: <div />,
     });
-    expect(boundary.props.state?.queries).toHaveLength(2);
-    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    expect(boundary.props.state?.queries).toHaveLength(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not dehydrate a computed visit window when the cookie is absent', async () => {
+    stub();
+    const boundary = await ServerHomeBoundary({
+      cookieHeader: 'dm_access=synthetic',
+      children: <div />,
+    });
+    const client = makeQueryClient();
+    const view = render(<QueryClientProvider client={client}>{boundary}</QueryClientProvider>);
+    try {
+      expect(client.getQueryData(homeKeys.visit('mb-synthetic'))).toBeUndefined();
+      expect(client.getQueryData([...homeKeys.all, 'inbox-report', 'mb-synthetic'])).toMatchObject({
+        variant: 'fallback',
+        receivedCount: 0,
+      });
+    } finally {
+      view.unmount();
+      client.clear();
+    }
   });
 
   it('hydrates the visit peek and inbox report onto the home query keys', async () => {
     stub();
     const boundary = await ServerHomeBoundary({
-      cookieHeader: 'dm_access=synthetic',
+      cookieHeader:
+        'dm_access=synthetic; dm_home_visit=mb-synthetic:11111111-1111-4111-8111-111111111111',
       children: <div />,
     });
     const client = makeQueryClient();
@@ -232,7 +252,7 @@ describe('Home server hydration', () => {
     await vi.advanceTimersByTimeAsync(2_000);
     const boundary = await render;
     expect(aborted).toBe(true);
-    expect(boundary.props.state?.queries).toHaveLength(2);
-    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    expect(boundary.props.state?.queries).toHaveLength(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
   });
 });
