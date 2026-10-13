@@ -550,6 +550,13 @@ describe('InboxReportFirstLanding', () => {
         respond: () =>
           jsonOk({
             data: {
+              sender: {
+                id: 's1',
+                name: 'Acme',
+                domain: 'acme.example',
+                lastSeenDays: 1,
+                wroteToCount: 0,
+              },
               counts: {
                 all: 7,
                 olderThan30d: 0,
@@ -600,6 +607,8 @@ describe('InboxReportFirstLanding', () => {
     );
     fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
     fireEvent.click(await screen.findByRole('radio', { name: 'Unsubscribe only' }));
+    // Confirm stays closed while the single-sender preview is still loading.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
     await waitFor(() =>
       expect(document.querySelector('[data-celebration]')).toHaveTextContent(

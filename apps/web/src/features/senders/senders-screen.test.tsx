@@ -3608,6 +3608,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       installFetchStub([
         TWO_SENDER_LIST,
         BULK_PREVIEW_OK,
+        compositePreviewHandler(12),
         {
           method: 'POST',
           path: '/api/actions/unsubscribe-backlog',
@@ -3661,9 +3662,13 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
       fireEvent.keyDown(document.body, { key: 'u' });
       await screen.findByRole('heading', { name: /^Unsubscribe from .+\?$/ });
-      fireEvent.click(
-        within(screen.getByRole('dialog')).getByRole('button', { name: /unsubscribe/i }),
-      );
+      // A single sender stays closed until its preview settles. The click
+      // below is the settled confirm, which must still post.
+      const singleConfirm = within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'Unsubscribe',
+      });
+      await waitFor(() => expect(singleConfirm).toBeEnabled());
+      fireEvent.click(singleConfirm);
       await waitFor(() => expect(intents).toHaveLength(2));
       expect(intents[1]).toMatchObject({ mode: 'unsub_only', senderIds: ['a'] });
       expect(screen.queryAllByText(/Still confirming your last action/)).toHaveLength(held);
