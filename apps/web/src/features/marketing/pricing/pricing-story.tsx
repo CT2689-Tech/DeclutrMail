@@ -30,12 +30,15 @@ export function PricingStory({
   locale,
   now,
   rupeePurchasesOpen = false,
+  inrPaused = false,
 }: {
   passEnabled: boolean;
   locale: 'usd' | 'inr';
   now: string;
   /** India Paddle prices are configured and this server can sign checkout geo. */
   rupeePurchasesOpen?: boolean;
+  /** This visitor is in India and rupee checkout is not open. Prices stay USD. */
+  inrPaused?: boolean;
 }) {
   const router = useRouter();
   const push = (path: string) => router.push(path);
@@ -90,7 +93,7 @@ export function PricingStory({
         <h1>{h1}</h1>
         <p>{fillStory(WS1_COPY['pricing.sub'], locale)}</p>
       </header>
-      {locale === 'inr' && !rupeePurchasesOpen ? (
+      {inrPaused || (locale === 'inr' && !rupeePurchasesOpen) ? (
         <p className="dm-pricing-oauth">{WS1_COPY['pricing.inrPaused.notice']}</p>
       ) : null}
       {banner ? (
@@ -162,7 +165,7 @@ export function PricingStory({
         <h2>{fillStory(WS1_COPY['pricing.faq.taxes.q'], locale)}</h2>
         <p>{fillStory(WS1_COPY['pricing.faq.taxes.a'], locale)}</p>
         <h2>{fillStory(WS1_COPY['pricing.faq.india.q'], locale)}</h2>
-        <p>{indiaFaqAnswer(passEnabled, 'inr', !rupeePurchasesOpen)}</p>
+        <p>{indiaFaqAnswer(passEnabled, 'inr', inrPaused || !rupeePurchasesOpen)}</p>
       </section>
       <section data-testid="price-promise">
         <h2>{fillStory(WS1_COPY['pricing.promise.title'], locale)}</h2>

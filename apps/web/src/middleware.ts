@@ -267,6 +267,24 @@ export function buildContentSecurityPolicy(nonce: string | null, env: CspEnv): s
  */
 export const COUNTRY_HEADER = 'x-declutr-country';
 
+const VERCEL_COUNTRY_HEADER = 'x-vercel-ip-country';
+const CHECKOUT_GEO_REQUEST_HEADER = 'x-declutr-checkout-geo';
+
+/**
+ * Drop client-supplied geo headers, then set the country from Vercel
+ * alone. A missing or non-ISO value leaves the country header absent,
+ * which every reader treats as USD. Prefetch requests never reach this
+ * function, so minting must not read the client header either.
+ */
+export function applyTrustedGeoHeaders(requestHeaders: Headers): void {
+  const vercel = requestHeaders.get(VERCEL_COUNTRY_HEADER);
+  requestHeaders.delete(COUNTRY_HEADER);
+  requestHeaders.delete(CHECKOUT_GEO_REQUEST_HEADER);
+  if (!vercel) return;
+  const country = vercel.trim().toUpperCase();
+  if (/^[A-Z]{2}$/.test(country)) requestHeaders.set(COUNTRY_HEADER, country);
+}
+
 export const STATIC_SECURITY_HEADERS: ReadonlyArray<readonly [string, string]> = [
   ['X-Content-Type-Options', 'nosniff'],
   ['Referrer-Policy', 'strict-origin-when-cross-origin'],
@@ -344,18 +362,11 @@ export function middleware(request: NextRequest): NextResponse {
   // would be inert at best — nothing under `(marketing)` reads
   // `headers()`, which is precisely what lets it prerender.
   const requestHeaders = new Headers(request.headers);
+  applyTrustedGeoHeaders(requestHeaders);
   if (nonce !== null) {
     requestHeaders.set('x-nonce', nonce);
     requestHeaders.set('Content-Security-Policy', csp);
   }
-  // Billing region hint (D117). Vercel geolocates at the edge; the
-  // header is ABSENT locally and on any non-Vercel host, so every
-  // reader must treat "unknown" as the normal case and fall back to the
-  // international default rather than guessing. Normalized to a plain
-  // ISO-3166-alpha-2 so app code never parses vendor-specific shapes.
-  const country = request.headers.get('x-vercel-ip-country');
-  if (country) requestHeaders.set(COUNTRY_HEADER, country.toUpperCase());
-
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set(headerName, csp);
   for (const [name, value] of STATIC_SECURITY_HEADERS) {

@@ -2236,8 +2236,9 @@ describe('BillingScreen — paid subscriber', () => {
     expect(within(panel).queryByText(/Claim Founding Pro/)).not.toBeInTheDocument();
   });
 
-  it('PRICING_V2 pauses an India Paddle checkout on /billing', async () => {
-    let checkoutPosts = 0;
+  it('PRICING_V2 quotes USD for India on /billing while India checkout is closed', async () => {
+    let checkoutBody: unknown = null;
+    let geoHeader: string | null = 'present';
     installFetchStub([
       {
         method: 'GET',
@@ -2247,9 +2248,10 @@ describe('BillingScreen — paid subscriber', () => {
       {
         method: 'POST',
         path: '/api/billing/checkout',
-        respond: () => {
-          checkoutPosts += 1;
-          return jsonOk({ data: {} });
+        respond: async (req) => {
+          checkoutBody = await req.json();
+          geoHeader = req.headers.get('x-declutr-checkout-geo');
+          return paddleSessionOk();
         },
       },
     ]);
@@ -2257,15 +2259,18 @@ describe('BillingScreen — paid subscriber', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
     const panel = await screen.findByTestId('checkout-panel');
-    expect(panel).toHaveTextContent(
-      'Buying a plan in rupees is paused for now. Email support@declutrmail.com for help.',
+    expect(panel).toHaveTextContent(/\$59 billed yearly/);
+    expect(panel).not.toHaveTextContent('₹1,999');
+    expect(panel).not.toHaveTextContent(/paused for now/i);
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    await waitFor(() =>
+      expect(checkoutBody).toEqual({
+        tierId: 'plus',
+        cycle: 'annual',
+        provider: 'paddle',
+      }),
     );
-    expect(panel).not.toHaveTextContent(/billed yearly/);
-    const paused = within(panel).getByRole('button', { name: 'Paused for now' });
-    expect(paused).toBeDisabled();
-    fireEvent.click(paused);
-    expect(checkoutPosts).toBe(0);
-    expect(launchCheckout).not.toHaveBeenCalled();
+    expect(geoHeader).toBeNull();
   });
 
   it('PRICING_V2 leaves a US Paddle checkout open on /billing', async () => {

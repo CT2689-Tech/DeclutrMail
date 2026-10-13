@@ -478,7 +478,11 @@ export function PlanPicker({
           ? PLUS_ANNUAL_2026_10
           : manifestPoint));
     const quotedCurrency = quotedPoint
-      ? currencyForPricePoint(quotedPoint, panelProvider, { pricingV2, country })
+      ? currencyForPricePoint(quotedPoint, panelProvider, {
+          pricingV2,
+          country,
+          indiaCheckoutOpen,
+        })
       : 'USD';
     if (
       disabled ||
@@ -752,9 +756,9 @@ export function PlanPicker({
               disabled={disabled}
               hasGrantingSubscription={grantingSub !== null}
               provider={stripProvider}
-              {...(pricingV2 ? { geo: { pricingV2: true, country } } : {})}
+              {...(pricingV2 ? { geo: { pricingV2: true, country, indiaCheckoutOpen } } : {})}
               {...(pricingV2 && id === 'plus' && cycle === 'annual'
-                ? { priceOverride: launchPlusLine(country) }
+                ? { priceOverride: launchPlusLine(country, indiaCheckoutOpen) }
                 : {})}
               onSelect={() => onSelect(id)}
               showFoundingHint={
@@ -985,10 +989,14 @@ function CycleToggle({
   );
 }
 
-function launchPlusLine(country: string | null): { amount: string; per: string; note?: string } {
+function launchPlusLine(
+  country: string | null,
+  indiaCheckoutOpen: boolean,
+): { amount: string; per: string; note?: string } {
   const currency = currencyForPricePoint(PLUS_ANNUAL_2026_10, 'paddle', {
     pricingV2: true,
     country,
+    indiaCheckoutOpen,
   });
   if (currency === 'INR') return { amount: formatLaunchPrice(PLUS_ANNUAL_2026_10, 'inr'), per: '' };
   return { amount: formatLaunchPrice(PLUS_ANNUAL_2026_10, 'usd'), per: '/yr' };
@@ -1083,7 +1091,7 @@ function PlanCard({
   /** Rail the strip prices against — clamped per point, so the cards
    *  agree with the confirm panel one click later. */
   provider: BillingProviderId;
-  geo?: { pricingV2?: boolean; country?: string | null };
+  geo?: { pricingV2?: boolean; country?: string | null; indiaCheckoutOpen?: boolean };
   priceOverride?: { amount: string; per: string; note?: string };
   /** QA-billing-20260901-05 — show the Founding Pro price on this card,
    *  gated by live availability (the parent already checked). */

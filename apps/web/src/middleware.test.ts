@@ -403,3 +403,38 @@ describe('canonical app host', () => {
     ).toBeNull();
   });
 });
+
+function overriddenRequestHeader(response: Response, name: string): string | null {
+  const listed = (response.headers.get('x-middleware-override-headers') ?? '')
+    .split(',')
+    .map((key) => key.trim());
+  if (!listed.includes(name)) return null;
+  return response.headers.get(`x-middleware-request-${name}`);
+}
+
+describe('trusted geo headers', () => {
+  it('drops a forged country when Vercel sends none', () => {
+    const response = middleware(
+      new NextRequest('https://app.declutrmail.com/billing', {
+        headers: {
+          'x-declutr-country': 'IN',
+          'x-declutr-checkout-geo': 'v1.IN.forged',
+        },
+      }),
+    );
+    expect(overriddenRequestHeader(response, 'x-declutr-country')).toBeNull();
+    expect(overriddenRequestHeader(response, 'x-declutr-checkout-geo')).toBeNull();
+  });
+
+  it('keeps the Vercel country when the client also sends India', () => {
+    const response = middleware(
+      new NextRequest('https://app.declutrmail.com/billing', {
+        headers: {
+          'x-vercel-ip-country': 'US',
+          'x-declutr-country': 'IN',
+        },
+      }),
+    );
+    expect(overriddenRequestHeader(response, 'x-declutr-country')).toBe('US');
+  });
+});

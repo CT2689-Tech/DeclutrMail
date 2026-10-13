@@ -76,10 +76,10 @@ export function ConfirmPanel({
   const pricePoint = founding ? founding.annual : (pricePointOverride ?? point ?? null);
   // D226 makes this preview the truthful "here is exactly what
   // happens" step, so it must quote the currency this checkout would
-  // charge. Razorpay settles INR. Under pricing v2 the India rail is
-  // off, and an India visitor on Paddle is still quoted INR.
+  // charge. Razorpay settles INR. Under pricing v2 an India visitor
+  // is quoted INR only while India checkout is open; otherwise USD.
   const currency = pricePoint
-    ? currencyForPricePoint(pricePoint, provider, { pricingV2, country })
+    ? currencyForPricePoint(pricePoint, provider, { pricingV2, country, indiaCheckoutOpen })
     : 'USD';
   const amountLabel =
     pricePoint && pricingV2

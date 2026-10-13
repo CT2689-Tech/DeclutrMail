@@ -56,14 +56,14 @@ describe('INR pause copy on checkout confirm', () => {
     );
   });
 
-  it('pauses an INR Paddle quote while India price ids are not configured', () => {
+  it('quotes USD for an India Paddle checkout while India prices are not open', () => {
     renderPanel('paddle', { pricingV2: true, country: 'IN' });
     const panel = screen.getByTestId('checkout-panel');
-    expect(panel).toHaveTextContent(CHECKOUT);
-    expect(panel).toHaveTextContent(/Reference price: ₹1,999/);
-    expect(panel).not.toHaveTextContent(/billed yearly/);
-    expect(screen.getByRole('button', { name: 'Paused for now' })).toBeDisabled();
-    expect(screen.queryByRole('button', { name: 'Continue to checkout' })).not.toBeInTheDocument();
+    expect(panel).not.toHaveTextContent(CHECKOUT);
+    expect(panel).toHaveTextContent(/\$59 billed yearly/);
+    expect(panel).not.toHaveTextContent('₹1,999');
+    expect(screen.getByRole('button', { name: 'Continue to checkout' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Paused for now' })).not.toBeInTheDocument();
   });
 
   it('opens an INR Paddle quote when India checkout is available', () => {

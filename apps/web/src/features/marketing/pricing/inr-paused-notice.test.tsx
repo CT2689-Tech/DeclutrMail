@@ -40,6 +40,14 @@ describe('INR pause copy on /pricing', () => {
     expect(screen.queryByText(/You can pay with UPI/)).not.toBeInTheDocument();
   });
 
+  it('shows dollar prices and the pause notice for an India visitor while checkout is closed', () => {
+    render(<PricingStory passEnabled locale="usd" now={NOW} inrPaused />);
+    expect(screen.getByText(NOTICE)).toBeInTheDocument();
+    expect(screen.getByText(/Buying in rupees is paused for now/)).toBeInTheDocument();
+    expect(screen.getByText('$59')).toBeInTheDocument();
+    expect(screen.queryByText('₹1,999')).not.toBeInTheDocument();
+  });
+
   it('drops the Pass clause from the paused India answer when the Pass is off', () => {
     render(<PricingStory passEnabled={false} locale="inr" now={NOW} />);
     expect(screen.getByText(NOTICE)).toBeInTheDocument();
