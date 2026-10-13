@@ -585,6 +585,66 @@ describe('HomeScreen', () => {
     expect(calls.summary).toHaveLength(1);
   });
 
+  it('a mailbox switch drops the previous inbox report while the next one is loading', async () => {
+    authCell.me = {
+      ...meFor('pro', 'ready'),
+      mailboxes: [
+        {
+          id: 'mb-1',
+          email: 'me@example.com',
+          status: 'active',
+          connectedAt: null,
+          readiness: 'ready',
+        },
+        {
+          id: 'mb-2',
+          email: 'other@example.com',
+          status: 'active',
+          connectedAt: null,
+          readiness: 'ready',
+        },
+      ],
+    };
+    stub({ report: () => jsonOk({ data: REPORT_WITH_FIX }) });
+    const releaseMb2: Array<(response: Response) => void> = [];
+    addFetchHandlers([
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mb-2/inbox-report',
+        respond: () =>
+          new Promise<Response>((resolve) => {
+            releaseMb2.push(resolve);
+          }),
+      },
+    ]);
+    const client = createTestQueryClient();
+    const view = render(
+      <QueryClientProvider client={client}>
+        <HomeScreen />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText('85%')).toBeInTheDocument();
+
+    authCell.me = { ...authCell.me, activeMailboxId: 'mb-2' };
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <HomeScreen />
+      </QueryClientProvider>,
+    );
+    const reset = resetMailboxScopedCache(client);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByText('85%')).not.toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Loading Home' })).toBeInTheDocument();
+
+    for (const release of releaseMb2) release(jsonOk({ data: EMPTY_REPORT }));
+    await act(async () => {
+      await reset;
+    });
+    view.unmount();
+  });
+
   it('a mailbox switch refetches the numbers (scoped-cache reset)', async () => {
     let summary = SUMMARY;
     stub({ summary: () => jsonOk({ data: summary }) });

@@ -1,4 +1,4 @@
-import { keepPreviousData, queryOptions } from '@tanstack/react-query';
+import { queryOptions, type PlaceholderDataFunction } from '@tanstack/react-query';
 import type { HomeVisitSummary } from '@declutrmail/shared/contracts/home-visit';
 import type { InboxReportDto } from '@declutrmail/shared/inbox-report';
 
@@ -6,6 +6,18 @@ import type { HomeSummary } from './use-home-summary';
 import { homeKeys } from './query-keys';
 
 const HOME_READ_STALE_MS = 5 * 60_000;
+
+/**
+ * Keep the last result across a refetch of the SAME mailbox. A new mailbox
+ * key must stay pending — `keepPreviousData` would paint the previous
+ * mailbox's report and visit line until the next response landed.
+ */
+function placeholderForMailbox<T>(mailboxId: string | null): PlaceholderDataFunction<T> {
+  return (previousData, previousQuery) => {
+    if (previousData === undefined || previousQuery === undefined) return undefined;
+    return previousQuery.queryKey.at(-1) === mailboxId ? previousData : undefined;
+  };
+}
 
 export function homeSummaryQueryOptions(reader: (signal: AbortSignal) => Promise<HomeSummary>) {
   return queryOptions({
@@ -24,7 +36,7 @@ export function homeInboxReportQueryOptions(
     queryKey: [...homeKeys.all, 'inbox-report', mailboxId] as const,
     queryFn: ({ signal }) => reader(signal),
     staleTime: HOME_READ_STALE_MS,
-    placeholderData: keepPreviousData,
+    placeholderData: placeholderForMailbox<InboxReportDto>(mailboxId),
   });
 }
 
@@ -37,6 +49,6 @@ export function homeVisitQueryOptions(
     queryKey: homeKeys.visit(mailboxId),
     queryFn: ({ signal }) => reader(signal),
     staleTime: HOME_READ_STALE_MS,
-    placeholderData: keepPreviousData,
+    placeholderData: placeholderForMailbox<HomeVisitSummary>(mailboxId),
   });
 }

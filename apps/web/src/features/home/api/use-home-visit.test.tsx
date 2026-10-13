@@ -61,6 +61,11 @@ async function paint() {
 }
 describe('device visit lifecycle', () => {
   it('reads the visit peek first and records after paint', async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
     localStorage.setItem(key, JSON.stringify({ id: savedId, lastActive: now - 1000 }));
     mount();
     await waitFor(() =>
@@ -69,7 +74,10 @@ describe('device visit lifecycle', () => {
         expect.objectContaining({ mailboxId: 'a' }),
       ),
     );
-    await paint();
+    expect(state.post).not.toHaveBeenCalled();
+    await act(async () => {
+      for (const callback of frames) callback(0);
+    });
     await waitFor(() =>
       expect(state.post).toHaveBeenCalledWith(
         '/api/home/visit',

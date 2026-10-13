@@ -61,8 +61,8 @@ export async function ServerHomeBoundary({
         ),
       ];
       // Peek only when this visit is already known. A no-cookie compute
-      // would dehydrate a new window and keepPreviousData would hide the
-      // stored one after a reload.
+      // would dehydrate a new window and the same-mailbox placeholder would
+      // hide the stored one after a reload.
       if (visitId !== null) {
         reads.push(
           queryClient.fetchQuery(

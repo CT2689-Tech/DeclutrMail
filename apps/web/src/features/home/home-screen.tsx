@@ -178,9 +178,12 @@ export function HomeScreen() {
     if (summary.isError) {
       return { kind: 'error', error: summary.error, retry: () => void summary.refetch() };
     }
-    // Totals can render independently. Keep the action non-interactive
-    // until its destination/count is known, so a link never moves under the cursor.
-    if (summary.data === undefined) return { kind: 'loading' };
+    // Same-mailbox refetches keep their data. A new mailbox key is pending
+    // with nothing of its own yet — the summary query is not mailbox-keyed,
+    // so its previous payload would keep the other mailbox on screen.
+    if (summary.data === undefined || (mailboxId != null && report.isPending)) {
+      return { kind: 'loading' };
+    }
 
     const action = { label: 'Review senders', href: '/senders' };
     const numbers = composeHomeNumbers(summary.data);
