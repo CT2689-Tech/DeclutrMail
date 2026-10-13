@@ -7,7 +7,6 @@
 // (from the deletion-scheduled email) scrolls to + highlights the
 // Account section.
 
-import { Suspense } from 'react';
 import { headers } from 'next/headers';
 import type { MeSettings } from '@declutrmail/shared/contracts';
 
@@ -21,11 +20,6 @@ export const metadata = {
   title: 'Settings — DeclutrMail',
 };
 
-/**
- * Suspense boundary required because `SettingsScreen` reads the
- * `?cancelDeletion=1` deep link via `useSearchParams()`, which Next.js
- * requires to be wrapped at the route boundary in app-router.
- */
 export default async function SettingsPage() {
   const cookieHeader = (await headers()).get('cookie') ?? '';
   // The user-scoped preferences endpoint authenticates this read itself.
@@ -46,9 +40,7 @@ export default async function SettingsPage() {
         ];
       }}
     >
-      <Suspense fallback={null}>
-        <SettingsScreen />
-      </Suspense>
+      <SettingsScreen />
     </ServerQueryHydration>
   );
 }

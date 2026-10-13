@@ -24,14 +24,18 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { hydrateRoot } from 'react-dom/client';
+import { renderToString } from 'react-dom/server';
 import { toast } from '@declutrmail/shared';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import type { Me } from '@/features/auth/api/use-me';
+import { billingKeys } from '@/features/billing/api/query-keys';
+import { ME_SETTINGS_QUERY_KEY } from '@/features/settings/api/query-options';
 import { resetTriageStore, useTriageStore } from '@/features/triage/store';
 import { SettingsScreen } from './settings-screen';
 
@@ -54,14 +58,9 @@ vi.mock('@/features/mailboxes/connect-mailbox-url', () => ({
 }));
 
 let me: Me;
-let search: string;
 
 vi.mock('@/features/auth/auth-provider', () => ({
   useAuth: () => ({ me }),
-}));
-
-vi.mock('next/navigation', () => ({
-  useSearchParams: () => new URLSearchParams(search),
 }));
 
 const mailbox = (id: string, email: string): Me['mailboxes'][number] => ({
@@ -194,7 +193,6 @@ function renderScreen(client = createTestQueryClient()) {
 }
 
 function setSettingsLocation(nextSearch = '', hash = '') {
-  search = nextSearch;
   const query = nextSearch ? `?${nextSearch}` : '';
   window.history.replaceState(null, '', `/settings${query}${hash}`);
 }
@@ -258,6 +256,45 @@ describe('SettingsScreen', () => {
     // Humanized last-synced stamps resolve from the per-mailbox
     // sync-status reads (one per active mailbox).
     await waitFor(() => expect(screen.getAllByText(/^Synced .+ ago$/)).toHaveLength(2));
+  });
+
+  it('hydrates the loading cards when settings and billing are already cached', async () => {
+    const client = createTestQueryClient();
+    client.setQueryData(ME_SETTINGS_QUERY_KEY, {
+      ...SETTINGS_PAYLOAD,
+      senderViews: [],
+      aiConsent: { explanations: 'allowed', brief: 'allowed', reask: false },
+    });
+    client.setQueryData(billingKeys.subscription(), {
+      ...SUBSCRIPTION_PAYLOAD,
+      foundingMember: true,
+    });
+    const node = (
+      <QueryWrapper client={client}>
+        <SettingsScreen />
+      </QueryWrapper>
+    );
+    const html = renderToString(node);
+    expect(html).toContain('Loading plan');
+    expect(html).not.toContain('Founding member');
+    expect(html).not.toContain('Inline');
+    expect(html).not.toContain('href="#ai"');
+
+    const container = document.createElement('div');
+    container.innerHTML = html;
+    document.body.appendChild(container);
+    const onRecoverableError = vi.fn();
+    let root: ReturnType<typeof hydrateRoot> | undefined;
+    try {
+      await act(async () => {
+        root = hydrateRoot(container, node, { onRecoverableError });
+      });
+      expect(onRecoverableError).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => root?.unmount());
+      container.remove();
+      client.clear();
+    }
   });
 
   it('offers Reconnect, not a doomed retry, when the first scan failed on an expired grant', async () => {

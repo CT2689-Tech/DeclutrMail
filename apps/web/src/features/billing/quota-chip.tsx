@@ -1,6 +1,7 @@
 'use client';
 
-import type { JSX } from 'react';
+import { useEffect, useState, type JSX } from 'react';
+import { usePathname } from 'next/navigation';
 
 import { tokens } from '@declutrmail/shared';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
@@ -24,8 +25,15 @@ export function QuotaChip(props: {
     ...(props.compact ? { compact: true } : {}),
   });
   const amber = props.summary.limit > 0 && props.summary.used / props.summary.limit >= AMBER_AT;
-  const from =
-    typeof window === 'undefined' ? '/' : `${window.location.pathname}${window.location.search}`;
+  // Pathname is the same on the server and the first client render.
+  // Reading `window` here made the server href `from=/` and the client
+  // href the real route. The query string is applied after mount.
+  const pathname = usePathname() ?? '/';
+  const [search, setSearch] = useState('');
+  useEffect(() => {
+    setSearch(window.location.search);
+  }, [pathname]);
+  const from = `${pathname}${search}`;
   return (
     <>
       <span
