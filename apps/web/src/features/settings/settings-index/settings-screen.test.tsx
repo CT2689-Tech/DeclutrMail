@@ -37,6 +37,7 @@ import type { Me } from '@/features/auth/api/use-me';
 import { billingKeys } from '@/features/billing/api/query-keys';
 import { ME_SETTINGS_QUERY_KEY } from '@/features/settings/api/query-options';
 import { resetTriageStore, useTriageStore } from '@/features/triage/store';
+import { SettingsRouteFallback } from './settings-route-fallback';
 import { SettingsScreen } from './settings-screen';
 
 const MAILBOX_A = '11111111-1111-4111-8111-111111111111';
@@ -258,7 +259,7 @@ describe('SettingsScreen', () => {
     await waitFor(() => expect(screen.getAllByText(/^Synced .+ ago$/)).toHaveLength(2));
   });
 
-  it('hydrates the loading cards when settings and billing are already cached', async () => {
+  it('hydrates the route fallback when settings and billing are already cached', async () => {
     const client = createTestQueryClient();
     client.setQueryData(ME_SETTINGS_QUERY_KEY, {
       ...SETTINGS_PAYLOAD,
@@ -274,14 +275,22 @@ describe('SettingsScreen', () => {
         <SettingsScreen />
       </QueryWrapper>
     );
-    const html = renderToString(node);
-    expect(html).toContain('Loading plan');
-    expect(html).not.toContain('Founding member');
-    expect(html).not.toContain('Inline');
-    expect(html).not.toContain('href="#ai"');
+    // The streamed `loading.tsx` DOM is what hydration sometimes still
+    // holds when this screen renders. A cached plan or AI section here
+    // is a different tree (React #418).
+    const fallbackHtml = renderToString(
+      <QueryWrapper client={client}>
+        <SettingsRouteFallback />
+      </QueryWrapper>,
+    );
+    expect(renderToString(node)).toBe(fallbackHtml);
+    expect(fallbackHtml).toContain('Loading settings');
+    expect(fallbackHtml).not.toContain('Founding member');
+    expect(fallbackHtml).not.toContain('Inline');
+    expect(fallbackHtml).not.toContain('href="#ai"');
 
     const container = document.createElement('div');
-    container.innerHTML = html;
+    container.innerHTML = fallbackHtml;
     document.body.appendChild(container);
     const onRecoverableError = vi.fn();
     let root: ReturnType<typeof hydrateRoot> | undefined;

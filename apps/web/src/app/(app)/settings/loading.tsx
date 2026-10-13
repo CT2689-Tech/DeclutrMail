@@ -1,14 +1,5 @@
-import { RouteLoading } from '../route-loading';
+import { SettingsRouteFallback } from '@/features/settings/settings-index/settings-route-fallback';
 
 export default function Loading() {
-  return (
-    <RouteLoading
-      gap={32}
-      kicker="Settings"
-      title="Settings"
-      label="Loading settings"
-      rows={5}
-      rowHeight={56}
-    />
-  );
+  return <SettingsRouteFallback />;
 }

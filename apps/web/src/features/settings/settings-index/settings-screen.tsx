@@ -56,6 +56,7 @@ import { ActionSheetPrefsCard, type ActionSheetPrefsCardState } from './action-s
 import { BriefPrefsCard, type BriefPrefsCardState } from './brief-prefs-card';
 import { EmailPrefsCard, type EmailPrefsCardState } from './email-prefs-card';
 import { MailboxesCard } from './mailboxes-card';
+import { SettingsRouteFallback } from './settings-route-fallback';
 import { VerbTourCard } from './verb-tour-card';
 import { AiSettingsSection } from '@/features/ai-consent/ai-settings-section';
 
@@ -153,7 +154,10 @@ export function SettingsScreen({
   // done, so the result still shows here.
   const onboarded = onboardingGateVerdict(useOnboardingState()) === 'open';
   useEffect(() => {
-    if (didHandleReconnectResult.current || !onboarded) return;
+    // The first paint is the route fallback, which has no mailbox rows.
+    // Consuming the result before those rows mount scrolls nowhere and
+    // then refuses to run again.
+    if (!mounted || didHandleReconnectResult.current || !onboarded) return;
     const params = new URLSearchParams(window.location.search);
     const reconnectResultParam = params.get('reconnect_result');
     const connectStartResultParam = params.get('connect_start_result');
@@ -185,7 +189,7 @@ export function SettingsScreen({
       url.searchParams.delete('connect_start_result');
       url.hash = 'mailboxes';
     });
-  }, [onboarded]);
+  }, [mounted, onboarded]);
 
   // Highlight lifetime stays independent of the URL scrub.
   useEffect(() => {
@@ -253,6 +257,10 @@ export function SettingsScreen({
   function reactivateMailbox(mailboxId: string) {
     startMailboxReactivation(mailboxId);
   }
+
+  // Same tree as `settings/loading.tsx`. Hydration sometimes paints this
+  // screen into that fallback DOM; a richer first paint throws #418.
+  if (!mounted) return <SettingsRouteFallback />;
 
   return (
     <div
