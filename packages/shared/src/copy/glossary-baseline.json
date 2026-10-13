@@ -2203,6 +2203,12 @@
   },
   {
     "file": "packages/shared/src/copy/launch/ws1.ts",
+    "id": "price_literal",
+    "line": 12,
+    "text": "$0"
+  },
+  {
+    "file": "packages/shared/src/copy/launch/ws1.ts",
     "id": "allowance_word",
     "line": 255,
     "text": "{freeName} includes all five choices. Archive and Delete count toward {allowance} emails a month, and at the limit they pause until your reset or an upgrade. Unsubscribe, Keep, Later and Undo keep working."
