@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   PROMO,
   PROMO_DISCOUNT_IDS,
+  SANDBOX_INDIA_PRICE_IDS,
   SANDBOX_PROMO_EXPIRES_AT,
   checkoutDiscountId,
 } from './pricing.config';
@@ -129,5 +130,58 @@ describe('checkCatalogDrift', () => {
     );
     expect(promoExpiresAt({ PADDLE_ENV: 'production' } as NodeJS.ProcessEnv)).toBe(PROMO.endsAt);
     expect(PROMO_DISCOUNT_IDS.live).toBe('FILL_ME');
+    expect(
+      checkoutDiscountId(
+        { PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv,
+        SANDBOX_INDIA_PRICE_IDS.plus_annual,
+      ),
+    ).toBe(PROMO_DISCOUNT_IDS.sandbox);
+    expect(
+      checkoutDiscountId(
+        { PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv,
+        SANDBOX_INDIA_PRICE_IDS.pass_onetime,
+      ),
+    ).toBe(PROMO_DISCOUNT_IDS.sandbox);
+  });
+
+  it('fails a USD-only price that still has an India override', () => {
+    const report = checkCatalogDrift({
+      manifest: [{ id: PLUS, usdCents: 5900, inrPaise: null, taxInclusive: false, usdOnly: true }],
+      paddlePrices: [price({ id: PLUS, inrAmount: '199900' })],
+      discount: null,
+      discountId: 'FILL_ME',
+      promoPriceIds: [],
+    });
+    expect(report.failures).toContain(
+      'unexpected INR override pri_plus_annual_fixture: paddle 199900',
+    );
+  });
+
+  it('fails an INR-native price that is still quoted in USD', () => {
+    const report = checkCatalogDrift({
+      manifest: [
+        {
+          id: 'pri_in',
+          usdCents: 5900,
+          inrPaise: 199900,
+          taxInclusive: true,
+          nativeCurrency: 'INR',
+        },
+      ],
+      paddlePrices: [
+        {
+          id: 'pri_in',
+          status: 'active',
+          amount: '5900',
+          currencyCode: 'USD',
+          taxInclusive: true,
+        },
+      ],
+      discount: null,
+      discountId: 'FILL_ME',
+      promoPriceIds: [],
+    });
+    expect(report.failures.some((line) => line.includes('amount mismatch'))).toBe(true);
+    expect(report.ok).toBe(false);
   });
 });

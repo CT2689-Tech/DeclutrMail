@@ -302,6 +302,17 @@ export const PROMO = {
  * `FILL_ME` until the launch discount is created. Checkout omits that
  * placeholder and charges the price with no discount.
  * Sandbox expiry is 2026-10-19 23:59 UTC. Live uses `PROMO.endsAt`.
+ *
+ * PH30 has to allow every launch price that checkout can send:
+ * USD Plus, USD Pass, India Plus, and India Pass. Sandbox India ids
+ * are `SANDBOX_INDIA_PRICE_IDS`. Live India ids are
+ * `pri_01m4ss0bccahnyghv26rgs36xk` (Plus, product
+ * `pro_01ky15axpvfkvnkj6pbbg7gfj1`) and
+ * `pri_01m4ss18n1c9r5s9p973tef9v2` (Pass, product
+ * `pro_01m4qkac2hde0tqvmrvt0tnbhb`). Paddle's discount `restrict_to`
+ * must list those ids or a transaction that includes `discount_id`
+ * fails. Live stays `FILL_ME` until that discount is created at launch
+ * with all four live ids.
  */
 export const PROMO_DISCOUNT_IDS = {
   sandbox: 'dsc_01m4phpp04scdes9ghqn3qps77',
@@ -318,6 +329,23 @@ export const SANDBOX_PROMO_EXPIRES_AT = '2026-10-19T23:59:00Z';
 export const SANDBOX_PRICE_IDS = {
   plus_annual: 'pri_01m4phk06hdmmq5cw5b8aa5r2y',
   pass_onetime: 'pri_01m4phkr8yhydb76dz11b74br8',
+} as const;
+
+/**
+ * Sandbox India prices on the existing Plus and Pass products.
+ * The sandbox USD prices stay USD-only. Live India ids stay in env
+ * (`PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID`,
+ * `PADDLE_LIVE_INDIA_PASS_PRICE_ID`) so an unbound deploy still
+ * falls back to USD.
+ */
+export const SANDBOX_INDIA_PRICE_IDS = {
+  plus_annual: 'pri_01m4sjsrywj8sx5srbh16dk4jr',
+  pass_onetime: 'pri_01m4sjtr7r4qxv2cyyxs8qbj1j',
+} as const;
+
+export const SANDBOX_PRODUCT_IDS = {
+  plus: 'pro_01ky067agvcnc77hf635bsjn01',
+  pass: 'pro_01m4phk7mrggrfyqgprpxgz1hr',
 } as const;
 
 const UNPROVISIONED_PRICE_ID = 'FILL_ME';
@@ -437,6 +465,67 @@ export function usablePriceId(id: string | null | undefined): string | null {
   return id;
 }
 
+/** India Paddle prices are separate ids from the USD Plus and Pass prices. */
+export type IndiaPriceCode = 'plus_annual' | 'pass_onetime';
+
+const LIVE_INDIA_PRICE_ENV = {
+  plus_annual: 'PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID',
+  pass_onetime: 'PADDLE_LIVE_INDIA_PASS_PRICE_ID',
+} as const;
+
+/**
+ * Sandbox uses `SANDBOX_INDIA_PRICE_IDS`. Any other env, including
+ * unset, reads the live env vars. Empty or `FILL_ME` falls back to USD.
+ */
+export function indiaPaddlePriceId(
+  env: NodeJS.ProcessEnv = process.env,
+  code: IndiaPriceCode,
+): string | null {
+  if (env.PADDLE_ENV === 'sandbox') return SANDBOX_INDIA_PRICE_IDS[code];
+  return usablePriceId(env[LIVE_INDIA_PRICE_ENV[code]]?.trim());
+}
+
+/** Both India prices must be set before a rupee checkout is offered. */
+export function indiaPaddlePricesConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
+  return (
+    indiaPaddlePriceId(env, 'plus_annual') != null &&
+    indiaPaddlePriceId(env, 'pass_onetime') != null
+  );
+}
+
+export type PaddleCheckoutCode = IndiaPriceCode | 'other';
+
+/**
+ * USD price unless the trusted country is exactly `IN` and this
+ * checkout is a launch price with an India id configured. Customer
+ * country is not an input.
+ */
+export function selectPaddleCheckoutPrice(
+  env: NodeJS.ProcessEnv,
+  input: {
+    usdPriceId: string;
+    code: PaddleCheckoutCode;
+    trustedCountry: string | null;
+  },
+): { priceId: string; currency: 'USD' | 'INR' } {
+  if (input.trustedCountry !== 'IN' || input.code === 'other') {
+    return { priceId: input.usdPriceId, currency: 'USD' };
+  }
+  const india = indiaPaddlePriceId(env, input.code);
+  if (!india) return { priceId: input.usdPriceId, currency: 'USD' };
+  return { priceId: india, currency: 'INR' };
+}
+
+/** USD launch prices plus any India ids configured for this Paddle environment. */
+export function ph30PriceIds(env: NodeJS.ProcessEnv = process.env): string[] {
+  const sandbox = env.PADDLE_ENV === 'sandbox';
+  const base = sandbox
+    ? [SANDBOX_PRICE_IDS.plus_annual, SANDBOX_PRICE_IDS.pass_onetime]
+    : [PLUS_ANNUAL_2026_10.paddlePriceId, OFFERS.backlogPass.price.paddlePriceId];
+  const india = [indiaPaddlePriceId(env, 'plus_annual'), indiaPaddlePriceId(env, 'pass_onetime')];
+  return [...base, ...india].filter((id): id is string => id != null);
+}
+
 /** A placeholder discount id is omitted. Checkout then charges full price. */
 export function usableDiscountId(id: string | null | undefined): string | null {
   if (!id || id === UNPROVISIONED_PRICE_ID) return null;
@@ -452,8 +541,5 @@ export function checkoutDiscountId(
   const id = usableDiscountId(sandbox ? PROMO_DISCOUNT_IDS.sandbox : PROMO_DISCOUNT_IDS.live);
   if (!id) return null;
   if (priceId === undefined) return id;
-  const allowed = sandbox
-    ? [SANDBOX_PRICE_IDS.plus_annual, SANDBOX_PRICE_IDS.pass_onetime]
-    : [PLUS_ANNUAL_2026_10.paddlePriceId, OFFERS.backlogPass.price.paddlePriceId];
-  return allowed.some((candidate) => candidate === priceId) ? id : null;
+  return ph30PriceIds(env).some((candidate) => candidate === priceId) ? id : null;
 }

@@ -108,11 +108,13 @@ export function currencyForProvider(provider: 'paddle' | 'razorpay'): Currency {
 export function currencyForPricePoint(
   point: { razorpayPlanId: string | null; inrPaise?: number; inr?: { paise: number } },
   provider: 'paddle' | 'razorpay',
-  geo?: { pricingV2?: boolean; country?: string | null },
+  geo?: { pricingV2?: boolean; country?: string | null; indiaCheckoutOpen?: boolean },
 ): Currency {
   if (geo?.pricingV2 === true && !RAILS.razorpay.enabled) {
     const paise = point.inr?.paise ?? point.inrPaise ?? 0;
-    return geo.country?.toUpperCase() === 'IN' && paise > 0 ? 'INR' : 'USD';
+    return geo.country?.toUpperCase() === 'IN' && geo.indiaCheckoutOpen === true && paise > 0
+      ? 'INR'
+      : 'USD';
   }
   return provider === 'razorpay' && point.razorpayPlanId !== null ? 'INR' : 'USD';
 }
@@ -150,7 +152,7 @@ export function priceLineFor(
   tier: TierDefinition,
   interval: BillingInterval,
   provider: 'paddle' | 'razorpay' = 'paddle',
-  geo?: { pricingV2?: boolean; country?: string | null },
+  geo?: { pricingV2?: boolean; country?: string | null; indiaCheckoutOpen?: boolean },
 ): PriceLine | null {
   const point = tier.prices[interval] ?? tier.prices.monthly ?? tier.prices.annual;
   if (!point) return null;

@@ -106,7 +106,11 @@ export function chargedPlanPrice(
   founding = false,
   providerPriceId?: string,
   chargedUsdCents?: number,
+  chargedCurrency?: 'USD' | 'INR',
 ): string | null {
+  if (chargedCurrency === 'INR' && tier === 'plus' && cycle === 'annual' && !founding) {
+    return `${plusAmount('inr')}/yr`;
+  }
   const currency = currencyForProvider(provider);
   const promo = TIER_MANIFEST[tier].promo;
   // The promo is an annual-only price point; a founding member on any
@@ -478,6 +482,7 @@ export function currentPlanPriceLabel(view: BillingPlanView): string {
         sub.foundingMember,
         sub.providerPriceId,
         sub.chargedUsdCents,
+        sub.chargedCurrency,
       ) ?? ''
     );
   }

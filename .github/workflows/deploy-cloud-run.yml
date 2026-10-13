@@ -70,6 +70,7 @@ on:
       - '.github/workflows/deploy-cloud-run.yml'
       - 'scripts/select-deployment.mjs'
       - 'scripts/deploy-api-safely*'
+      - 'scripts/live-india-billing-env*'
       - 'scripts/check-billing-queue-runtime*'
   workflow_dispatch:
     # Allow manual re-deploys (e.g. after a Secret Manager rotation
@@ -275,7 +276,7 @@ jobs:
         uses: google-github-actions/setup-gcloud@v3
 
       - name: Verify deployment safety contracts
-        run: node --test scripts/deploy-api-safely.test.mjs scripts/check-billing-queue-runtime.test.mjs
+        run: node --test scripts/deploy-api-safely.test.mjs scripts/live-india-billing-env.test.mjs scripts/check-billing-queue-runtime.test.mjs
 
       - name: Check serving API driver before releasing either service
         run: node scripts/deploy-api-safely.mjs --check-driver="$API_DB_DRIVER" --region="$REGION" --project="$PROJECT"
@@ -457,10 +458,12 @@ jobs:
           echo "Notice worker serving $NOTICE_REVISION; enrollment $BILLING_APP_NOTICES_START_AT"
 
       - name: Deploy declutrmail-api (HTTP)
+        id: deploy_api
         # Same routing-via-env pattern for every interpolation.
         env:
           IMAGE: ${{ steps.build.outputs.image }}
           GITHUB_SHA: ${{ github.sha }}
+          BILLING_GEO_HMAC_SECRET: ${{ secrets.BILLING_GEO_HMAC_SECRET }}
         run: |
           set -euo pipefail
           # `--update-secrets` mounts existing Secret Manager secrets as
@@ -497,8 +500,14 @@ jobs:
           # BILLING_ENABLED / PADDLE_ENV (D117/D118): production Paddle
           # cutover. The three Paddle runtime secrets now exist in Secret
           # Manager and are API-only bindings (the worker must not receive
-          # billing credentials). Razorpay remains intentionally deferred;
-          # its secrets are not bound and India checkout stays unavailable.
+          # billing credentials). India Plus and Pass price ids are plain
+          # API env, not secrets, appended by
+          # scripts/live-india-billing-env.mjs. Live PH30 stays omitted
+          # until launch. Live UPI is enabled. BILLING_GEO_HMAC_SECRET is
+          # the GitHub Actions secret of that name, passed here and to the
+          # Vercel production web project. When it is missing, it is left
+          # off and checkout stays on USD. The worker does not receive the
+          # India env or the HMAC.
           # This enables the guarded billing routes for the live catalog;
           # merge/deploy still requires one low-value purchase + refund
           # verification before public announcement.
@@ -605,6 +614,13 @@ jobs:
           # HTTP-only candidate: consumers remain on the ordinary worker rollout.
           # The helper smokes a tagged revision before promotion and restores
           # the previous resolved traffic assignment if promotion/smoke fails.
+          # India price ids are appended here. An empty geo secret is omitted
+          # so checkout stays on USD; a secret that would split this list
+          # fails the deploy instead of corrupting the other variables.
+          API_ENV="$(
+            API_ENV_BASE="NODE_ENV=production,API_DB_DRIVER=$API_DB_DRIVER,API_DB_POOL_MAX=10,HTTP_PERFORMANCE_SAMPLE_RATE=0.1,WEB_URL=https://app.declutrmail.com,GOOGLE_REDIRECT_URI=https://api.declutrmail.com/api/auth/google/callback,CORS_ORIGIN=/^https:[/][/](app[.])?declutrmail[.]com$/,COOKIE_DOMAIN=.declutrmail.com,KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE,GOOGLE_CLOUD_PROJECT_ID=$PROJECT,GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID,GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC,PUBSUB_OIDC_SERVICE_ACCOUNT=$PUBSUB_OIDC_SERVICE_ACCOUNT,PUBSUB_WEBHOOK_ENABLED=true,PUBSUB_PUSH_AUDIENCE=https://api.declutrmail.com,PUBSUB_PUSH_SA_EMAIL=$PUBSUB_OIDC_SERVICE_ACCOUNT,SENTRY_RELEASE=$GITHUB_SHA,BETA_GATE_ENABLED=false,BILLING_ENABLED=true,PADDLE_ENV=production,BILLING_APP_NOTICES_ENABLED=$BILLING_APP_NOTICES_ENABLED,BILLING_APP_NOTICES_START_AT=$BILLING_APP_NOTICES_START_AT,UNSUB_SEND_ENABLED=true,PRICING_V2=true,METER_V2=true,BILLING_PASS_ENABLED=true" \
+            node scripts/live-india-billing-env.mjs --api-env
+          )"
           node scripts/deploy-api-safely.mjs gcloud run deploy declutrmail-api \
             --image="$IMAGE" \
             --region="$REGION" \
@@ -620,13 +636,17 @@ jobs:
             --allow-unauthenticated \
             --startup-probe="httpGet.path=/api/healthz,httpGet.port=8080,periodSeconds=10,timeoutSeconds=5,failureThreshold=24" \
             --liveness-probe="httpGet.path=/api/healthz,httpGet.port=8080,periodSeconds=30,timeoutSeconds=5,failureThreshold=3" \
-            --set-env-vars="NODE_ENV=production,API_DB_DRIVER=$API_DB_DRIVER,API_DB_POOL_MAX=10,HTTP_PERFORMANCE_SAMPLE_RATE=0.1,WEB_URL=https://app.declutrmail.com,GOOGLE_REDIRECT_URI=https://api.declutrmail.com/api/auth/google/callback,CORS_ORIGIN=/^https:[/][/](app[.])?declutrmail[.]com$/,COOKIE_DOMAIN=.declutrmail.com,KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE,GOOGLE_CLOUD_PROJECT_ID=$PROJECT,GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID,GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC,PUBSUB_OIDC_SERVICE_ACCOUNT=$PUBSUB_OIDC_SERVICE_ACCOUNT,PUBSUB_WEBHOOK_ENABLED=true,PUBSUB_PUSH_AUDIENCE=https://api.declutrmail.com,PUBSUB_PUSH_SA_EMAIL=$PUBSUB_OIDC_SERVICE_ACCOUNT,SENTRY_RELEASE=$GITHUB_SHA,BETA_GATE_ENABLED=false,BILLING_ENABLED=true,PADDLE_ENV=production,BILLING_APP_NOTICES_ENABLED=$BILLING_APP_NOTICES_ENABLED,BILLING_APP_NOTICES_START_AT=$BILLING_APP_NOTICES_START_AT,UNSUB_SEND_ENABLED=true,PRICING_V2=true,METER_V2=true,BILLING_PASS_ENABLED=true" \
+            --set-env-vars="$API_ENV" \
             --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,SENTRY_DSN=sentry-dsn-api:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,ADMIN_EMAIL_ALLOWLIST=admin-email-allowlist-prod:latest,RESEND_WEBHOOK_SECRET=resend-webhook-secret-prod:latest,PADDLE_API_KEY=paddle-api-key-prod:latest,PADDLE_CLIENT_TOKEN=paddle-client-token-prod:latest,PADDLE_WEBHOOK_SECRET=paddle-webhook-secret-prod:latest,RAZORPAY_KEY_ID=razorpay-key-id-prod:latest,RAZORPAY_KEY_SECRET=razorpay-key-secret-prod:latest,RAZORPAY_WEBHOOK_SECRET=razorpay-webhook-secret-prod:latest,UNSUBSCRIBE_TOKEN_SECRET=unsubscribe-token-secret-prod:latest" \
             --quiet
 
       - name: Verify billing notice API producers
+        env:
+          GEO_HMAC_BOUND: ${{ steps.deploy_api.outputs.geo_hmac_bound }}
         run: |
           set -euo pipefail
+          PLUS_PRICE_ID="$(node scripts/live-india-billing-env.mjs --print-id PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID)"
+          PASS_PRICE_ID="$(node scripts/live-india-billing-env.mjs --print-id PADDLE_LIVE_INDIA_PASS_PRICE_ID)"
           NOTICE_REVISION=$(gcloud run services describe declutrmail-api \
             --region="$REGION" --project="$PROJECT" \
             --format='json(status.traffic)' | jq -er '
@@ -637,15 +657,30 @@ jobs:
             --region="$REGION" --project="$PROJECT" \
             --format='json(spec.containers[0].env)' | jq -e \
               --arg enabled "$BILLING_APP_NOTICES_ENABLED" \
-              --arg start "$BILLING_APP_NOTICES_START_AT" --arg sha "$GITHUB_SHA" '
+              --arg start "$BILLING_APP_NOTICES_START_AT" --arg sha "$GITHUB_SHA" \
+              --arg plus "$PLUS_PRICE_ID" --arg pass "$PASS_PRICE_ID" \
+              --arg geo "$GEO_HMAC_BOUND" '
               (.spec.containers[0].env | map({key: .name, value: .value}) | from_entries) as $env |
               $env.BILLING_APP_NOTICES_ENABLED == $enabled and
               $env.BILLING_APP_NOTICES_START_AT == $start and
               $env.SENTRY_RELEASE == $sha and
+              $env.PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID == $plus and
+              $env.PADDLE_LIVE_INDIA_PASS_PRICE_ID == $pass and
+              (
+                ($geo == "true" and (($env.BILLING_GEO_HMAC_SECRET // "") | length) > 0) or
+                ($geo == "false" and (($env.BILLING_GEO_HMAC_SECRET // "") | length) == 0)
+              ) and
               ([.spec.containers[0].env[]? |
                 select(.name == "BILLING_UPGRADE_REFUND_RESTORE_ENABLED")] |
                 all(.value == "false" and (has("valueFrom") | not) and (has("valueSource") | not)))'
           echo "Notice API serving $NOTICE_REVISION; enrollment $BILLING_APP_NOTICES_START_AT"
+
+      - name: Bind live India billing env on Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          BILLING_GEO_HMAC_SECRET: ${{ secrets.BILLING_GEO_HMAC_SECRET }}
+        run: node scripts/live-india-billing-env.mjs --vercel
 
       - name: Recover owned billing probe after failed or cancelled release
         if: always() && steps.billing_queue_check.outputs.owned_probe == 'true'

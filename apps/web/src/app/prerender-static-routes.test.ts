@@ -43,9 +43,9 @@ const MUST_STAY_STATIC = [
 
 /**
  * The deliberate exception. `/pricing` is the page where someone decides
- * to pay, and the India rail is live-provisioned, so it must see the
- * visitor's geo even at the cost of its own <head> tags. `/beta` and
- * `/sign-in` read `searchParams` and were never prerenderable.
+ * to pay, so it reads the edge country even at the cost of its own
+ * <head> tags. `/beta` and `/sign-in` read `searchParams` and were never
+ * prerenderable.
  */
 const INTENTIONALLY_DYNAMIC = ['src/app/(marketing)/pricing/page.tsx'] as const;
 
@@ -80,7 +80,9 @@ describe('static prerendering of the public site (Option A′)', () => {
     expect(code(file)).toMatch(PER_REQUEST_READ);
     // The read must be the billing rail and nothing else — any other
     // per-request dependency on a public page is a new decision.
-    expect(source).toContain('COUNTRY_HEADER');
+    expect(source).toContain('trustedVisitorCountry');
+    expect(code(file)).not.toContain('COUNTRY_HEADER');
+    expect(code(file)).not.toContain('x-declutr-country');
     expect(source).toContain('BillingCurrencyProvider');
     expect(source).toContain('DYNAMIC ON PURPOSE');
   });

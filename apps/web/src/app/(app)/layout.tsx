@@ -19,18 +19,19 @@
 //     names the rail the visitor will be charged on — a client-side
 //     resolve would flash USD and correct itself.
 //
-// `(app)/billing/page.tsx` reads the same header for its own picker; the
-// two agree because they read one header through one helper.
+// `(app)/billing/page.tsx` uses the same helper. Both read
+// `x-vercel-ip-country` and ignore a client-sent country, including
+// on prefetches that skip middleware.
 
 import type { ReactNode } from 'react';
 import { headers } from 'next/headers';
 
 import { BillingCurrencyProvider } from '@/features/billing/billing-currency';
 import { defaultProviderForCountry } from '@/features/billing/billing-region';
+import { trustedVisitorCountry } from '@/features/billing/trusted-visitor-country';
 import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
 import { ServerAppBoundary } from '@/features/auth/server-app-boundary';
 import { ThemeScript } from '@/features/theme/theme-script';
-import { COUNTRY_HEADER } from '@/middleware';
 
 import { AppChromeLayout } from './app-chrome-layout';
 
@@ -53,7 +54,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const [requestHeaders, flags] = await Promise.all([headers(), loadPricingFlags()]);
   const nonce = requestHeaders.get('x-nonce') ?? undefined;
   const regionProvider = defaultProviderForCountry(
-    requestHeaders.get(COUNTRY_HEADER),
+    trustedVisitorCountry(requestHeaders),
     flags.pricingV2,
   );
   const apiOrigin = crossOriginApi();

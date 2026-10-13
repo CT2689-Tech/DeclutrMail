@@ -20,6 +20,14 @@ const PricingTeaserStory = dynamic(() =>
  * lands before the API must not surface an error, report the miss, or
  * put the flags-off teaser back.
  */
+async function readVisitorLocale(signal: AbortSignal): Promise<'inr' | 'usd'> {
+  const response = await fetch('/visitor-locale', { signal, cache: 'no-store' });
+  if (!response.ok) return 'usd';
+  const body: unknown = await response.json();
+  if (typeof body !== 'object' || body === null) return 'usd';
+  return (body as { locale?: unknown }).locale === 'inr' ? 'inr' : 'usd';
+}
+
 async function readLaunchFlags(signal: AbortSignal): Promise<PricingFlags | null> {
   const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
   const response = await fetch(`${apiBase}/api/pricing/public`, { signal });
@@ -30,10 +38,15 @@ async function readLaunchFlags(signal: AbortSignal): Promise<PricingFlags | null
       ? (body as { data?: unknown }).data
       : body;
   if (typeof data !== 'object' || data === null) return null;
-  const record = data as { pricingV2?: unknown; passEnabled?: unknown };
+  const record = data as {
+    pricingV2?: unknown;
+    passEnabled?: unknown;
+    indiaCheckoutOpen?: unknown;
+  };
   return {
     pricingV2: record.pricingV2 === true,
     passEnabled: record.passEnabled === true,
+    indiaCheckoutOpen: record.indiaCheckoutOpen === true,
   };
 }
 
@@ -45,8 +58,9 @@ export function PricingTeaserGate({
   passEnabled?: boolean;
 } = {}) {
   const [flags, setFlags] = useState<PricingFlags | null>(
-    pricingV2 ? { pricingV2: true, passEnabled } : null,
+    pricingV2 ? { pricingV2: true, passEnabled, indiaCheckoutOpen: false } : null,
   );
+  const [locale, setLocale] = useState<'usd' | 'inr'>('usd');
   useEffect(() => {
     const controller = new AbortController();
     void readLaunchFlags(controller.signal)
@@ -54,9 +68,12 @@ export function PricingTeaserGate({
         if (next) setFlags(next);
       })
       .catch(() => undefined);
+    void readVisitorLocale(controller.signal)
+      .then((next) => setLocale(next))
+      .catch(() => undefined);
     return () => controller.abort();
   }, []);
 
   if (!flags?.pricingV2) return <PricingTeaserView provider="paddle" />;
-  return <PricingTeaserStory passEnabled={flags.passEnabled} />;
+  return <PricingTeaserStory passEnabled={flags.passEnabled} locale={locale} />;
 }
