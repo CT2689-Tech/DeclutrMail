@@ -140,7 +140,7 @@ export function PreviewSheet({
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  padding: `${space[8]}px ${space[6]}px 0`,
+                  padding: `${space[8]}px ${space[6]}px ${space[4]}px`,
                 }
           }
         >
@@ -195,17 +195,28 @@ export function PreviewSheet({
           )}
 
           {details != null && (
-            <details className="dm-sheet-details" style={{ marginTop: space[4], width: '100%' }}>
+            <details
+              className="dm-sheet-details"
+              style={{
+                marginTop: space[4],
+                width: '100%',
+                borderRadius: radius.lg,
+                textAlign: 'left',
+              }}
+            >
               <summary
                 style={{
                   cursor: 'pointer',
                   listStyle: 'none',
-                  display: 'inline-flex',
+                  display: 'flex',
                   alignItems: 'center',
-                  gap: 6,
-                  minHeight: 32,
-                  padding: `0 ${space[3]}px`,
-                  borderRadius: radius.pill,
+                  justifyContent: 'space-between',
+                  boxSizing: 'border-box',
+                  width: '100%',
+                  gap: space[3],
+                  minHeight: 44,
+                  padding: `0 ${space[4]}px`,
+                  borderRadius: radius.lg,
                   fontSize: text.sm,
                   fontWeight: 500,
                   color: color.fgSoft,
@@ -231,10 +242,7 @@ export function PreviewSheet({
               <div
                 className="dm-sheet-details-content"
                 style={{
-                  marginTop: space[2],
-                  padding: `${space[1]}px ${space[4]}px ${space[3]}px`,
-                  borderRadius: radius.lg,
-                  background: color.fill,
+                  padding: `0 ${space[4]}px ${space[4]}px`,
                   textAlign: 'left',
                   fontSize: text.sm,
                   lineHeight: 1.5,

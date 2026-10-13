@@ -1,7 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Avatar, PreviewSheet, SheetSegmented, ToastHost, toast } from '@declutrmail/shared';
+import {
+  Avatar,
+  PreviewSheet,
+  SheetFactList,
+  SheetSegmented,
+  ToastHost,
+  toast,
+} from '@declutrmail/shared';
 import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import { WS5_COPY } from '@declutrmail/shared/copy/launch';
@@ -839,19 +846,26 @@ export function SendersSimulator() {
           }
           details={
             <>
-              <span>
-                {activeReach === 'all_mail' ? 'Inbox and archived' : 'Inbox only'}
-                {olderThanDays !== null ? ` · older than ${olderThanDays} days` : ''}
-              </span>
-              {pending.verb === 'Delete' && (
-                <span>
-                  Gmail Trash keeps email for up to 30 days, unless you empty Trash sooner.
-                </span>
-              )}
+              <SheetFactList
+                facts={[
+                  {
+                    label: 'Scope',
+                    value: `${activeReach === 'all_mail' ? 'Inbox + archived' : 'Inbox only'}${olderThanDays !== null ? ` · older than ${olderThanDays} days` : ''}`,
+                  },
+                  ...(pending.verb === 'Delete'
+                    ? [
+                        {
+                          label: 'Gmail Trash',
+                          value: 'Up to 30 days, unless you empty Trash sooner.',
+                        },
+                      ]
+                    : []),
+                ]}
+              />
               {pendingSenders.length === 1 && canMove && olderThanDays === null ? (
                 <>
                   <strong>Sample subject context</strong>
-                  <ul>
+                  <ul style={{ margin: 0, paddingInlineStart: 20 }}>
                     {pendingSenders[0]!.subjects.map((subject) => (
                       <li key={subject}>{subject}</li>
                     ))}

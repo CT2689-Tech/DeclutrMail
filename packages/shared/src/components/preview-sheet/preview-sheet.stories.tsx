@@ -21,7 +21,10 @@ type StoryMeta<C extends (...args: never) => unknown> = {
   parameters?: Record<string, unknown>;
 };
 
-type Story = { render: () => React.ReactElement };
+type Story = {
+  render: () => React.ReactElement;
+  play?: (context: { canvasElement: HTMLElement }) => void;
+};
 
 const meta: StoryMeta<typeof PreviewSheet> = {
   title: 'Primitives/PreviewSheet',
@@ -222,4 +225,50 @@ export const LongAccount: Story = {
       primary={{ label: 'Archive 2', onClick: noop }}
     />
   ),
+};
+
+/** Expanded evidence with long labels and addresses; check on a short phone too. */
+export const ExpandedDetails: Story = {
+  render: () => (
+    <PreviewSheet
+      onClose={noop}
+      context="Gmail account: you@example.com"
+      icon={<Avatar name="Northstar Weekly" size={64} />}
+      title="Delete 120 emails?"
+      subtitle="From Northstar Weekly. These emails move to Gmail Trash."
+      note="Undo from Activity for 30 days. Future email is unchanged."
+      details={
+        <>
+          <SheetFactList
+            facts={[
+              { label: 'Where it is now', value: '18 in your inbox · 102 elsewhere in Gmail' },
+              {
+                label: 'Matching sender address',
+                value: 'newsletter@a-very-long-sample-sender-domain.example.com',
+              },
+              { label: 'Scope', value: 'Inbox + archived, rechecked when it runs' },
+              { label: 'Never touched', value: 'Trash, Spam, Drafts, Chat' },
+              { label: 'Gmail Trash', value: 'Up to 30 days, unless you empty Trash sooner' },
+            ]}
+          />
+          <SheetLinks>
+            <SheetTextAction href="https://mail.google.com/">
+              Check in Gmail <span aria-hidden="true">↗</span>
+            </SheetTextAction>
+          </SheetLinks>
+        </>
+      }
+      primary={{ label: 'Delete 120', tone: 'danger', onClick: noop }}
+    />
+  ),
+  play: ({ canvasElement }) => {
+    const summary = canvasElement.querySelector('summary');
+    if (!(summary instanceof HTMLElement)) throw new Error('Missing Details disclosure');
+    summary.click();
+  },
+};
+
+export const ExpandedDetailsDark: Story = {
+  render: () => <div data-theme="dark">{ExpandedDetails.render()}</div>,
+  play: (context) => ExpandedDetails.play?.(context),
 };
