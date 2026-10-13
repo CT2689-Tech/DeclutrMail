@@ -228,12 +228,14 @@ describe('HomeView', () => {
     expect(homePreviewReport('empty')).toBeNull();
   });
 
-  it('reserves the narrow page inset so the primary action stays above the tab bar', () => {
+  it('keeps a narrow content inset while the shell reserves the tab bar', () => {
     const narrow = (css: string) => css.slice(css.lastIndexOf('@media (max-width: 760px)'));
     const dir = dirname(fileURLToPath(import.meta.url));
     const home = narrow(readFileSync(join(dir, 'home-view.module.css'), 'utf8'));
     const card = narrow(readFileSync(join(dir, '../inbox-report/card.module.css'), 'utf8'));
-    expect(home).toContain('padding: 12px 16px var(--dm-tabbar-inset)');
+    expect(home).toContain('padding: 12px 16px 16px');
+    expect(home).not.toContain('min-height: 0');
+    expect(home).toContain('margin-bottom: var(--dm-tabbar-inset)');
     expect(home).toContain('min-height: 28px');
     expect(home).toMatch(/\.fixActions\s*\{[^}]*margin-top:\s*8px/);
     expect(home).toMatch(/\.arrivals\s*\{[^}]*padding:\s*6px 10px/);

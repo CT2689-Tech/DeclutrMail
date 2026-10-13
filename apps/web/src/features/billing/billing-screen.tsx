@@ -1058,11 +1058,11 @@ export function BillingScreen({
       />
 
       <p style={{ fontSize: text.sm }}>
-        <a className={linkStyles.link} href="/settings/help">
+        <a className={`${linkStyles.link} dm-tap-target`} href="/settings/help">
           Billing help
         </a>{' '}
         ·{' '}
-        <a className={linkStyles.link} href="/refunds">
+        <a className={`${linkStyles.link} dm-tap-target`} href="/refunds">
           Refund policy
         </a>
       </p>

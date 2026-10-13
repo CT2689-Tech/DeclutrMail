@@ -24,6 +24,7 @@
 // on prefetches that skip middleware.
 
 import type { ReactNode } from 'react';
+import type { Viewport } from 'next';
 import { headers } from 'next/headers';
 
 import { BillingCurrencyProvider } from '@/features/billing/billing-currency';
@@ -41,6 +42,12 @@ import { AppChromeLayout } from './app-chrome-layout';
  * (production: Vercel → Cloud Run). `null` same-origin, which is local
  * dev and needs no warm-up.
  */
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+};
+
 function crossOriginApi(): string | null {
   const configured = process.env.NEXT_PUBLIC_API_URL;
   if (!configured) return null;

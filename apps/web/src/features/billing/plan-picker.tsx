@@ -883,7 +883,7 @@ export function PlanPicker({
       </details>
       <Link
         href="/pricing"
-        className={linkStyles.link}
+        className={`${linkStyles.link} dm-tap-target`}
         style={{ alignSelf: 'flex-start', fontSize: text.sm }}
       >
         Compare plans

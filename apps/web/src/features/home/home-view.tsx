@@ -128,7 +128,7 @@ export function HomeView({
             <QuotaChipSlot summary={summary} />
             <span>
               <PlanLabel tier={tier} />
-              <Link href={BILLING_HREF} className="dm-external-link">
+              <Link href={BILLING_HREF} className="dm-external-link dm-tap-target">
                 {HOME_DECK.compare}
               </Link>
             </span>
