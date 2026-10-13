@@ -327,6 +327,9 @@ describe('BillingService', () => {
     );
 
     vi.stubEnv('PRICING_V2', 'true');
+    vi.stubEnv('PADDLE_ENV', 'production');
+    vi.stubEnv('PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID', 'pri_india_plus');
+    vi.stubEnv('PADDLE_LIVE_INDIA_PASS_PRICE_ID', 'pri_india_pass');
     try {
       await service.releasePendingCheckout(principal.workspaceId);
       await service.createCheckout(
@@ -340,6 +343,39 @@ describe('BillingService', () => {
           checkoutCode: 'plus_annual',
           providerPriceId: 'pri_plus_a',
         }),
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('charges USD when a verified India country has no live India price ids', async () => {
+    vi.stubEnv('PRICING_V2', 'true');
+    vi.stubEnv('PADDLE_ENV', 'production');
+    try {
+      await service.releasePendingCheckout(principal.workspaceId);
+      await service.createCheckout(
+        principal,
+        { tierId: 'plus', cycle: 'annual', provider: 'paddle', country: 'US' },
+        'IN',
+      );
+      expect(paddleCheckout).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          trustedCountry: null,
+          checkoutCode: 'plus_annual',
+          providerPriceId: 'pri_plus_a',
+        }),
+      );
+
+      vi.stubEnv('PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID', 'pri_india_plus');
+      await service.releasePendingCheckout(principal.workspaceId);
+      await service.createCheckout(
+        principal,
+        { tierId: 'plus', cycle: 'annual', provider: 'paddle' },
+        'IN',
+      );
+      expect(paddleCheckout).toHaveBeenLastCalledWith(
+        expect.objectContaining({ trustedCountry: null, checkoutCode: 'plus_annual' }),
       );
     } finally {
       vi.unstubAllEnvs();

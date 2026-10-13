@@ -55,6 +55,7 @@ import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import {
   fillStory,
   indiaPaddlePriceId,
+  indiaPaddlePricesConfigured,
   isBillingPassEnabled,
   isPricingV2,
   proNotPurchasableMessage,
@@ -323,6 +324,10 @@ export class BillingService {
           : isPricingV2() && dto.tierId === 'plus' && dto.cycle === 'annual' && !founding
             ? 'plus_annual'
             : 'other';
+    // Live India ids unbound means this checkout is USD, even when the
+    // geo token says IN. Sandbox catalog ids count as configured.
+    const checkoutCountry =
+      trustedCountry === 'IN' && !indiaPaddlePricesConfigured() ? null : trustedCountry;
 
     let session: CheckoutSession;
     try {
@@ -332,7 +337,7 @@ export class BillingService {
         tierId: dto.tierId,
         cycle: dto.cycle,
         providerPriceId: priceId,
-        trustedCountry,
+        trustedCountry: checkoutCountry,
         checkoutCode,
       });
       // A price id or the signed attribution blob is enough to open a
