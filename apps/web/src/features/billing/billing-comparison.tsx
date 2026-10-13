@@ -8,6 +8,11 @@ const { color } = tokens;
 
 const COMPARISON_TIERS = ['free', 'plus', 'pro'] as const;
 
+/** Same grouping the meter uses (`1,000 of 1,000 left`). */
+function formatQuota(value: number): string {
+  return value.toLocaleString('en-US');
+}
+
 export interface BillingComparisonRow {
   label: string;
   values: readonly string[];
@@ -24,15 +29,15 @@ export function billingComparisonRows(pricingV2: boolean): readonly BillingCompa
     {
       label: 'Connected inboxes',
       values: COMPARISON_TIERS.map((id) =>
-        String(pricingV2 ? INBOXES[id] : TIER_MANIFEST[id].inboxLimit),
+        formatQuota(pricingV2 ? INBOXES[id] : TIER_MANIFEST[id].inboxLimit),
       ),
     },
     {
       label: 'Cleanup / month',
       values: COMPARISON_TIERS.map((id) => {
-        if (pricingV2) return id === 'free' ? String(METER.free.limit) : 'Unlimited';
+        if (pricingV2) return id === 'free' ? formatQuota(METER.free.limit) : 'Unlimited';
         const quota = TIER_MANIFEST[id].cleanupActionsPerMonth;
-        return quota === null ? 'Unlimited' : String(quota);
+        return quota === null ? 'Unlimited' : formatQuota(quota);
       }),
     },
   ];
