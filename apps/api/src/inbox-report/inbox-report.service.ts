@@ -63,14 +63,16 @@ export class InboxReportService {
       .from(inboxReportCache)
       .where(eq(inboxReportCache.mailboxAccountId, mailboxId))
       .limit(1);
-    const senderKeys = cached && isReportDto(cached.payload) ? fixSenderKeys(cached.payload) : null;
+    const payload = cached && isReportDto(cached.payload) ? cached.payload : null;
+    const senderKeys = payload ? fixSenderKeys(payload) : null;
     if (
       cached &&
-      (cached.sourceSyncRunId ?? null) === syncId &&
+      payload &&
       senderKeys &&
+      (cached.sourceSyncRunId ?? null) === syncId &&
       !(await this.backlogChangedSince(mailboxId, cached.generatedAt, senderKeys))
     ) {
-      return cached.payload;
+      return payload;
     }
 
     const report = selectInboxReport(await this.computeFacts(mailboxId, now), now.toISOString());
