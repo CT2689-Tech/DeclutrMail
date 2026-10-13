@@ -252,12 +252,21 @@ export function PlanPicker({
    *  grant pending the webhook. The screen owns the truthful pending
    *  state; this component only reports the provider fact. `attemptId`
    *  is this checkout's reservation id (own-id transition). */
-  onPaymentCompleted: (target: PaidTier, cycle: BillingCycle, attemptId: string) => void;
+  onPaymentCompleted: (
+    target: PaidTier,
+    cycle: BillingCycle,
+    attemptId: string,
+    offer?: 'pass_onetime',
+  ) => void;
   /** Atomic claim + `checkout_intent` RESERVATION before any checkout
    *  session is created or overlay opened — without it a second tab
    *  could open a second payment surface while the first is unpaid.
    *  Null means the slot (or mutex) is held: stand down. */
-  onCheckoutAttempt: (target: PaidTier, cycle: BillingCycle) => Promise<string | null>;
+  onCheckoutAttempt: (
+    target: PaidTier,
+    cycle: BillingCycle,
+    offer?: 'pass_onetime',
+  ) => Promise<string | null>;
   /** No payment surface ever existed for this reservation (session
    *  POST failed / provider script never loaded) — hard-release it
    *  (id-matched). NEVER used for `checkout.closed`: a closed overlay
@@ -489,7 +498,8 @@ export function PlanPicker({
     )
       return;
     confirmInFlight.current = true;
-    const attemptId = await onCheckoutAttempt(target, cycle);
+    const offer = passSelected ? ('pass_onetime' as const) : undefined;
+    const attemptId = await onCheckoutAttempt(target, cycle, offer);
     confirmInFlight.current = false;
     if (ownsCheckout && !ownsCheckout()) return;
     if (attemptId === null) {
@@ -538,7 +548,7 @@ export function PlanPicker({
                       }
                     }
                     closePanel();
-                    onPaymentCompleted(target, cycle, attemptId);
+                    onPaymentCompleted(target, cycle, attemptId, offer);
                   },
                   // Overlay dismissed without a completed event — NOT proof
                   // of no payment (popup/3DS edges). Surface the reservation

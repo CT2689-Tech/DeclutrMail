@@ -50,6 +50,12 @@ export interface PendingCheckout {
   /** Exact server state that acknowledges this action. */
   toTier: TierId;
   toCycle: BillingCycle | null;
+  /**
+   * Purchase this lock is waiting on. Absent on a tier checkout and on
+   * rows stored before the field existed. A Backlog Pass is not a
+   * subscription, so the tier flip cannot see it.
+   */
+  offer?: 'pass_onetime';
   /** Epoch ms of the triggering action. */
   at: number;
   /**
@@ -120,15 +126,22 @@ export function readPendingCheckout(workspaceId: string): PendingCheckout | null
     typeof record.toTier !== 'string' ||
     !TIER_IDS.includes(record.toTier) ||
     (record.toCycle !== null && !CYCLES.includes(record.toCycle as string)) ||
-    (record.attemptId !== undefined && typeof record.attemptId !== 'string')
+    (record.attemptId !== undefined && typeof record.attemptId !== 'string') ||
+    (record.offer !== undefined && record.offer !== 'pass_onetime')
   ) {
     clearPendingCheckout(workspaceId);
     return null;
   }
   if (record.workspaceId !== workspaceId) return null;
-  lastKnown.set(workspaceId, record as PendingCheckout);
+  const offer = record.offer === 'pass_onetime' ? record.offer : undefined;
+  const stored: PendingCheckout = {
+    ...(record as PendingCheckout),
+    ...(offer !== undefined ? { offer } : {}),
+  };
+  if (offer === undefined) delete stored.offer;
+  lastKnown.set(workspaceId, stored);
   failedWrites.delete(workspaceId);
-  return record as PendingCheckout;
+  return stored;
 }
 
 /** Record the pending action for this workspace. Returns the record. */
@@ -140,6 +153,7 @@ export function writePendingCheckout(
   toTier: TierId,
   toCycle: BillingCycle | null,
   attemptId?: string,
+  offer?: 'pass_onetime',
 ): PendingCheckout {
   const record: PendingCheckout = {
     workspaceId,
@@ -150,6 +164,7 @@ export function writePendingCheckout(
     toCycle,
     at: Date.now(),
     ...(attemptId !== undefined ? { attemptId } : {}),
+    ...(offer === 'pass_onetime' ? { offer } : {}),
   };
   lastKnown.set(workspaceId, record);
   try {

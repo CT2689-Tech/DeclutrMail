@@ -21,6 +21,7 @@ export function toastUnsubscribeBacklog(result: UnsubscribeBacklogResult): void 
  */
 export function celebrationFromUnsubscribeBacklog(
   result: UnsubscribeBacklogResult,
+  fix?: { senderKeys: readonly string[]; generatedAt?: string | undefined },
 ): ReportCelebration | null {
   const requested = result.senders.filter((sender) => sender.unsubStatus === 'requested').length;
   const manual = result.senders.filter((sender) => sender.unsubStatus === 'manual').length;
@@ -28,6 +29,7 @@ export function celebrationFromUnsubscribeBacklog(
   if (!moved && requested === 0 && manual === 0) return null;
   const verb = moved ? (result.backlog?.verb === 'delete' ? 'delete' : 'archive') : 'unsub_only';
   const handle = result.backlog?.handle;
+  const senderKeys = fix?.senderKeys.filter((id) => id !== '');
   return {
     archived: result.backlog?.requestedCount ?? 0,
     senders: requested + manual,
@@ -41,6 +43,13 @@ export function celebrationFromUnsubscribeBacklog(
     result.backlog?.actionId &&
     (handle === 'action' || handle === 'batch')
       ? { actionId: result.backlog.actionId, actionHandle: handle }
+      : {}),
+    ...(senderKeys !== undefined && senderKeys.length > 0 ? { senderKeys: [...senderKeys] } : {}),
+    ...(senderKeys !== undefined &&
+    senderKeys.length > 0 &&
+    typeof fix?.generatedAt === 'string' &&
+    fix.generatedAt !== ''
+      ? { fixGeneratedAt: fix.generatedAt }
       : {}),
   };
 }
