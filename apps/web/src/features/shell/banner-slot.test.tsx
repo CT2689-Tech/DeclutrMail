@@ -44,6 +44,28 @@ describe('BannerSlot', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
+  it('does not count a suspense template placeholder as a banner', () => {
+    function PlantTemplates() {
+      useLayoutEffect(() => {
+        const items = document.querySelectorAll('.dm-banner-item');
+        items[0]?.append(document.createElement('template'));
+        const wrap = document.createElement('div');
+        wrap.append(document.createElement('template'));
+        items[1]?.append(wrap);
+      }, []);
+      return null;
+    }
+    render(
+      <BannerSlot>
+        <PlantTemplates />
+        <div />
+        <Banner name="sync" on />
+      </BannerSlot>,
+    );
+    expect(item('sync')).not.toHaveAttribute('hidden');
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
   it('shows a lone banner with no "more" control', () => {
     render(
       <BannerSlot>

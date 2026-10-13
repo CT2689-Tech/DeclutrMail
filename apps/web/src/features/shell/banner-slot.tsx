@@ -15,17 +15,26 @@ interface Measured {
 }
 
 /**
- * A rendered banner has an element or real text. Suspense markers from
- * `ssr: false` chrome (`<!--$-->`) sit in the item until the chunk loads
- * and make `childNodes.length` lie — counting them mounts "+N more" for
- * one frame and drops the shell (45px under 760px, ~33px above).
+ * A rendered banner has text or a box with height. Suspense leaves a
+ * `<template>` (and `<!--$-->` markers) in the item until the chunk
+ * loads. Counting that element mounts "+N more" for one frame and drops
+ * the shell (45px under 760px, ~33px above).
  */
 function itemRendered(item: Element): boolean {
-  return Array.from(item.childNodes).some((node) => {
-    if (node.nodeType === Node.ELEMENT_NODE) return true;
-    if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? '').trim() !== '';
-    return false;
-  });
+  return Array.from(item.childNodes).some(nodeRendered);
+}
+
+function nodeRendered(node: Node): boolean {
+  if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? '').trim() !== '';
+  if (node.nodeType !== Node.ELEMENT_NODE) return false;
+  const el = node as HTMLElement;
+  // Placeholders do not paint. Skip them before reading descendants:
+  // a parent `textContent` includes the template's inert markup.
+  if (el.tagName === 'TEMPLATE') return false;
+  if (el.hidden || getComputedStyle(el).display === 'none') return false;
+  if (el.offsetHeight > 0) return true;
+  if (Array.from(el.getClientRects()).some((rect) => rect.height > 0)) return true;
+  return Array.from(el.childNodes).some(nodeRendered);
 }
 
 /** A banner's words without its controls — "Reconnect Dismiss" is noise when read aloud. */
