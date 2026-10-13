@@ -238,15 +238,42 @@ describe('HomeView', () => {
     expect(narrow).toContain('padding: 12px 16px var(--dm-tabbar-inset)');
     expect(home).toMatch(/max-width:\s*760px/);
     expect(home).toMatch(/\.leadFigure\s*\{[^}]*font-size:\s*28px/s);
-    expect(home).toMatch(/\.visitSlot\s*\{[^}]*min-height:\s*40px/s);
-    expect(home).toMatch(
-      /@media \(max-width: 480px\)[\s\S]*?\.visitSlot\s*\{[^}]*min-height:\s*60px/,
-    );
     expect(home).toMatch(/\.planLine\s*\{[^}]*min-height:\s*28px/s);
     expect(home).toMatch(/\.fixActions\s*\{[^}]*margin-top:\s*8px/);
     expect(home).not.toContain('.page:has(.arrivals)');
     expect(card).toMatch(/\.card\s*\{[^}]*padding:\s*8px 10px/);
     expect(card).toMatch(/\.body\s*\{[^}]*margin:\s*2px 0 4px/);
+  });
+
+  it('reserves 60px for the visit slot at a 390px width', () => {
+    const dir = dirname(fileURLToPath(import.meta.url));
+    const home = readFileSync(join(dir, 'home-view.module.css'), 'utf8');
+    const style = document.createElement('style');
+    style.textContent = home;
+    document.head.appendChild(style);
+    const happy = (
+      window as unknown as {
+        happyDOM: { setViewport: (viewport: { width: number; height: number }) => void };
+      }
+    ).happyDOM;
+    const previous = { width: window.innerWidth, height: window.innerHeight };
+    const slots: HTMLElement[] = [];
+    const measure = (width: number) => {
+      happy.setViewport({ width, height: 800 });
+      const slot = document.createElement('div');
+      slot.className = 'visitSlot';
+      document.body.appendChild(slot);
+      slots.push(slot);
+      return getComputedStyle(slot).minHeight;
+    };
+    try {
+      expect(measure(390)).toBe('60px');
+      expect(measure(800)).toBe('40px');
+    } finally {
+      happy.setViewport(previous);
+      style.remove();
+      for (const slot of slots) slot.remove();
+    }
   });
 
   it('keeps the lead, size tile, and trust line when the home card link is present', async () => {

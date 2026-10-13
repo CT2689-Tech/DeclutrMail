@@ -452,6 +452,11 @@
     padding: 24px 0 0;
   }
 }
+
+.visitSlot {
+  min-height: 40px;
+}
+
 @media (max-width: 480px) {
   .page {
     padding-top: 24px;
@@ -501,10 +506,6 @@
 .planLine a {
   min-height: 0;
   color: var(--dm-primary);
-}
-
-.visitSlot {
-  min-height: 40px;
 }
 
 .arrivals {
