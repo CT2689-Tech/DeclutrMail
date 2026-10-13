@@ -2,13 +2,18 @@
 
 import { isSentryEnvironmentEnabled } from '@declutrmail/shared/observability';
 
+import { AUTHED_APP_PATHS } from '@/app/robots';
+
 /**
  * Lightweight browser Sentry facade.
  *
  * Next's universal client instrumentation and product features import this
  * module, so it must not statically import the SDK or telemetry scrubber. The
- * heavy runtime loads once during a bounded idle window, or immediately after
- * an exception. Tiny temporary global-error listeners cover that lazy window.
+ * heavy runtime loads once the browser is idle, or immediately after an
+ * exception. Marketing pages wait until the load event and then idle with no
+ * deadline, so the SDK does not compete with Time to Interactive. Signed-in
+ * routes keep a 2s idle deadline. Tiny temporary global-error listeners cover
+ * that lazy window and replay once the SDK is up.
  */
 
 /** The breadcrumb subset used by product surfaces. */
@@ -82,7 +87,13 @@ let warnedLoadFailure = false;
 let earlyGlobalListenersInstalled = false;
 
 type ScheduledLoad =
-  { kind: 'idle'; handle: number } | { kind: 'timeout'; handle: ReturnType<typeof setTimeout> };
+  | { kind: 'idle'; handle: number }
+  | { kind: 'timeout'; handle: ReturnType<typeof setTimeout> }
+  | { kind: 'load'; listener: () => void };
+
+function isAuthedAppPath(pathname: string): boolean {
+  return AUTHED_APP_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+}
 
 let scheduledLoad: ScheduledLoad | undefined;
 let retryHandle: ReturnType<typeof setTimeout> | undefined;
@@ -174,12 +185,23 @@ function safeBufferedError(error: unknown): Error {
 function cancelScheduledLoad(): void {
   if (!scheduledLoad || typeof window === 'undefined') return;
 
-  if (scheduledLoad.kind === 'idle') {
-    (window as WindowWithIdleCallback).cancelIdleCallback?.(scheduledLoad.handle);
-  } else {
-    clearTimeout(scheduledLoad.handle);
-  }
+  const pending = scheduledLoad;
   scheduledLoad = undefined;
+  switch (pending.kind) {
+    case 'idle':
+      (window as WindowWithIdleCallback).cancelIdleCallback?.(pending.handle);
+      return;
+    case 'timeout':
+      clearTimeout(pending.handle);
+      return;
+    case 'load':
+      window.removeEventListener('load', pending.listener);
+      return;
+    default: {
+      const unreachable: never = pending;
+      return unreachable;
+    }
+  }
 }
 
 function cancelRetry(): void {
@@ -363,9 +385,35 @@ async function loadSentryBrowserRuntime(): Promise<BrowserSentryRuntime | undefi
   return attempt;
 }
 
+function scheduleIdleLoad(timeoutMs: number | undefined): void {
+  const browserWindow = window as WindowWithIdleCallback;
+  if (typeof browserWindow.requestIdleCallback === 'function') {
+    const start = () => {
+      scheduledLoad = undefined;
+      void loadSentryBrowserRuntime();
+    };
+    // No options on marketing pages: a timeout forces the chunk onto the
+    // main thread while it is still busy, which is the mobile TBT hit.
+    const handle =
+      timeoutMs === undefined
+        ? browserWindow.requestIdleCallback(start)
+        : browserWindow.requestIdleCallback(start, { timeout: timeoutMs });
+    scheduledLoad = { kind: 'idle', handle };
+    return;
+  }
+
+  const handle = setTimeout(() => {
+    scheduledLoad = undefined;
+    void loadSentryBrowserRuntime();
+  }, timeoutMs ?? 0);
+  scheduledLoad = { kind: 'timeout', handle };
+}
+
 /**
- * Install the DSN-gated error bridge and schedule one SDK load. The idle
- * callback is bounded; browsers without it use an equivalent timeout.
+ * Install the DSN-gated error bridge and schedule one SDK load.
+ * Authed routes use a bounded idle callback. Marketing routes wait until
+ * after the load event, then idle with no deadline. An exception still
+ * calls `loadSentryBrowserRuntime` immediately and cancels this schedule.
  */
 export function scheduleSentryBrowserInit(): void {
   if (!canLoadBrowserRuntime()) return;
@@ -374,24 +422,19 @@ export function scheduleSentryBrowserInit(): void {
     return;
   }
 
-  const browserWindow = window as WindowWithIdleCallback;
-  if (typeof browserWindow.requestIdleCallback === 'function') {
-    const handle = browserWindow.requestIdleCallback(
-      () => {
-        scheduledLoad = undefined;
-        void loadSentryBrowserRuntime();
-      },
-      { timeout: IDLE_LOAD_TIMEOUT_MS },
-    );
-    scheduledLoad = { kind: 'idle', handle };
+  const deferUntilLoaded = !isAuthedAppPath(window.location.pathname);
+  if (deferUntilLoaded && document.readyState !== 'complete') {
+    const listener = () => {
+      if (scheduledLoad?.kind === 'load') scheduledLoad = undefined;
+      window.removeEventListener('load', listener);
+      scheduleIdleLoad(undefined);
+    };
+    window.addEventListener('load', listener);
+    scheduledLoad = { kind: 'load', listener };
     return;
   }
 
-  const handle = setTimeout(() => {
-    scheduledLoad = undefined;
-    void loadSentryBrowserRuntime();
-  }, IDLE_LOAD_TIMEOUT_MS);
-  scheduledLoad = { kind: 'timeout', handle };
+  scheduleIdleLoad(deferUntilLoaded ? undefined : IDLE_LOAD_TIMEOUT_MS);
 }
 
 /** Explicit init retained for existing App Router error boundaries. */

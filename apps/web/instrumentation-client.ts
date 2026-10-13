@@ -4,7 +4,8 @@
 
 import { captureRouterTransitionStart, scheduleSentryBrowserInit } from '@/lib/sentry';
 
-// Install the tiny error bridge and start the SDK during a bounded idle window.
+// Install the tiny error bridge and start the SDK once the browser is idle.
+// Marketing pages wait for the load event first, with no hard deadline.
 // With no DSN this is a synchronous no-op: no chunk import and no listeners.
 scheduleSentryBrowserInit();
 
