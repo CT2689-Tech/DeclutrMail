@@ -11,6 +11,7 @@ import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
 
 import { fillDeck, formatCount, HOME_DECK } from './home-deck-copy';
+import { HomeLoadingSlots } from './home-loading-shell';
 import type { HomePreviewReport } from './home-preview-report';
 import { HomeFixDialog } from './home-fix-dialog';
 import {
@@ -635,26 +636,10 @@ function PrimaryLink({ action }: { action: HomeAction }) {
 function HomeSkeleton({ visitSummary }: { visitSummary?: ReactNode }) {
   const labelId = useId();
   return (
-    <div role="status" aria-labelledby={labelId} className={styles.skeleton} data-home-skeleton="">
-      <span id={labelId} className={styles.srOnly}>
-        Loading Home
-      </span>
-      <div className={styles.fixCard} data-home-slot="primary">
-        <Skeleton variant="text" width={240} />
-        <Skeleton variant="text" width={180} />
-        <Skeleton variant="rect" width={210} height={44} />
-      </div>
-      <div className={styles.visitSlot} data-home-slot="visit">
-        {visitSummary ?? <Skeleton variant="text" width={220} />}
-      </div>
-      <section className={styles.report} data-home-slot="report">
-        <p className={styles.lead}>
-          <Skeleton variant="rect" width={72} height={28} />
-        </p>
-        <Skeleton variant="text" width={200} />
-        <Skeleton variant="text" width={280} />
-      </section>
-    </div>
+    <HomeLoadingSlots
+      labelId={labelId}
+      visitSlot={visitSummary ?? <Skeleton variant="text" width={220} />}
+    />
   );
 }
 

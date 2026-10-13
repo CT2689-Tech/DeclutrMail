@@ -59,6 +59,7 @@ import { HOME_DECK, fillDeck } from './home-deck-copy';
 import { homeCalmTemplate, homeReportCopy, homeTileCopy } from './home-ws5-copy';
 import { homePreviewReport } from './home-preview-report';
 import type { HomeFixCandidate } from './home-next-steps';
+import { HomeRouteLoading } from './home-loading-shell';
 import { HomePreview } from './home-preview';
 import { HomeView } from './home-view';
 
@@ -357,6 +358,17 @@ describe('HomeView', () => {
       />,
     );
     expect(slots()).toEqual(['plan', 'primary', 'visit', 'report']);
+  });
+
+  it('keeps the route loading shell on the same slots without mounting HomeView', () => {
+    const { container } = render(<HomeRouteLoading />);
+    expect(container.querySelector('[data-home-mode="loading"]')).not.toBeNull();
+    expect(
+      [...container.querySelectorAll('[data-home-slot]')].map((el) =>
+        el.getAttribute('data-home-slot'),
+      ),
+    ).toEqual(['plan', 'primary', 'visit', 'report']);
+    expect(container.querySelector('[data-home-skeleton]')).not.toBeNull();
   });
 
   it('uses the calm fallback when nothing is suggested', () => {

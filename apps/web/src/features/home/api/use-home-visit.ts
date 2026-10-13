@@ -117,7 +117,9 @@ export function useHomeVisit() {
     let cancelled = false;
     const frame = window.requestAnimationFrame(() => {
       if (cancelled || document.visibilityState === 'hidden') return;
-      void apiPost<HomeVisitSummary>('/api/home/visit', { visitId }, { mailboxId });
+      void apiPost<HomeVisitSummary>('/api/home/visit', { visitId }, { mailboxId }).catch(
+        () => undefined,
+      );
     });
     return () => {
       cancelled = true;
