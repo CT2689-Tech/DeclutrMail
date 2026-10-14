@@ -17,7 +17,10 @@ const FOCUSABLE =
  */
 export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
   active: boolean,
-  options?: { initialFocusSelector?: string; returnFocusRef?: RefObject<HTMLElement | null> },
+  options?: {
+    initialFocusSelector?: string;
+    returnFocusRef?: RefObject<HTMLElement | null> | undefined;
+  },
 ) {
   const ref = useRef<T>(null);
   const initialFocusSelector = options?.initialFocusSelector;
@@ -108,7 +111,22 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
       node.removeEventListener('keydown', onKey);
       observer.disconnect();
       if (addedTabIndex) node.removeAttribute('tabindex');
-      restoreTo?.focus?.();
+      const target = restoreTo?.isConnected ? restoreTo : null;
+      if (!target) return;
+      const focusTarget = () => {
+        if (target instanceof HTMLButtonElement && target.disabled) return false;
+        target.focus();
+        return document.activeElement === target;
+      };
+      if (focusTarget()) return;
+      // The return target can still be disabled in the commit that closes
+      // the dialog. Try again after that commit enables it.
+      queueMicrotask(() => {
+        if (focusTarget()) return;
+        requestAnimationFrame(() => {
+          focusTarget();
+        });
+      });
     };
   }, [active, initialFocusSelector, returnFocusRef]);
 

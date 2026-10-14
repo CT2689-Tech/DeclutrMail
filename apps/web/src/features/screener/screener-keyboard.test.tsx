@@ -171,6 +171,31 @@ describe('Screener keyboard handler (#220, D226)', () => {
     },
   );
 
+  it('does not confirm when Enter is pressed on the live inline Details summary', async () => {
+    const writes = vi.fn();
+    installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/screener/decide',
+        respond: () => {
+          writes();
+          return jsonServerError('must_not_run');
+        },
+      },
+    ]);
+    renderReady();
+    expandFirstRow();
+    fireEvent.keyDown(window, { key: 'k' });
+    const summary = screen.getByText('Details').closest('summary');
+    expect(summary).not.toBeNull();
+    summary?.focus();
+    fireEvent.keyDown(summary!, { key: 'Enter' });
+    await Promise.resolve();
+    expect(writes).not.toHaveBeenCalled();
+    expect(previewRegion(PREVIEW_KEEP)).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
   it('K on the EXPANDED row opens the mandatory preview (never a direct mutation)', () => {
     renderReady();
     expandFirstRow();

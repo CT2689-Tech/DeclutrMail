@@ -1324,7 +1324,14 @@ function FilterButton({ isMobile, ...fields }: FilterFieldsProps & { isMobile: b
         Filter
         {count > 0 && <span style={numeralStyle}>{count}</span>}
       </button>
-      {open && <ActivityFilterDialog isMobile={isMobile} onClose={close} {...fields} />}
+      {open && (
+        <ActivityFilterDialog
+          isMobile={isMobile}
+          onClose={close}
+          returnFocusRef={buttonRef}
+          {...fields}
+        />
+      )}
     </div>
   );
 }

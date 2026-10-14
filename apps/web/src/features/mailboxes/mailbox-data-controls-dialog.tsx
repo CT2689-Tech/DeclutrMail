@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type RefObject } from 'react';
 import {
   Button,
   DialogFrame,
@@ -36,6 +36,7 @@ export function MailboxDataControlsDialog({
   isDisconnecting,
   isDeleting,
   error,
+  returnFocusRef,
 }: {
   mailbox: MeMailbox | null;
   onCancel: () => void;
@@ -44,6 +45,7 @@ export function MailboxDataControlsDialog({
   isDisconnecting: boolean;
   isDeleting: boolean;
   error: string | null;
+  returnFocusRef?: RefObject<HTMLElement | null> | undefined;
 }) {
   const [typed, setTyped] = useState('');
   const open = mailbox !== null;
@@ -64,6 +66,7 @@ export function MailboxDataControlsDialog({
 
   const trapRef = useFocusTrap<HTMLDivElement>(open, {
     initialFocusSelector: '#dm-mailbox-data-cancel',
+    ...(returnFocusRef ? { returnFocusRef } : {}),
   });
   if (!mailbox) return null;
 
@@ -132,10 +135,10 @@ export function MailboxDataControlsDialog({
               DeclutrMail stops accessing this Gmail account. Your saved data stays, so you can
               reconnect later.
             </p>
-            <InventoryList title="Removed on disconnect" items={GMAIL_DISCONNECT_DATA_INVENTORY} />
-            <InventoryList
-              title="Kept after disconnecting"
-              items={GMAIL_DISCONNECT_RETAINED_DATA_INVENTORY}
+            <InventoryDisclosure
+              removed={GMAIL_DISCONNECT_DATA_INVENTORY}
+              keptHeading={WS2_COPY.simplify.dataControls.keptAfterDisconnect}
+              kept={GMAIL_DISCONNECT_RETAINED_DATA_INVENTORY}
             />
             <div style={{ marginTop: 12 }}>
               <Button tone="default" size="lg" onClick={onDisconnect} disabled={busy}>
@@ -159,13 +162,10 @@ export function MailboxDataControlsDialog({
             Your DeclutrMail account, other Gmail accounts, and this disconnected Gmail address
             remain. {WS2_COPY.liveFix.mailboxes.deleteReconnect}
           </p>
-          <InventoryList
-            title="Deleted from DeclutrMail"
-            items={GMAIL_INDEXED_DATA_DELETION_INVENTORY}
-          />
-          <InventoryList
-            title="Kept after deleting"
-            items={GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY}
+          <InventoryDisclosure
+            removed={GMAIL_INDEXED_DATA_DELETION_INVENTORY}
+            keptHeading={WS2_COPY.simplify.dataControls.keptAfterDelete}
+            kept={GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY}
           />
           <p
             style={{
@@ -246,21 +246,28 @@ export function MailboxDataControlsDialog({
   );
 }
 
-function InventoryList({
-  title,
-  items,
+function InventoryDisclosure({
+  removed,
+  keptHeading,
+  kept,
 }: {
-  title: string;
-  items: ReadonlyArray<{ id: string; label: string }>;
+  removed: ReadonlyArray<{ id: string; label: string }>;
+  keptHeading: string;
+  kept: ReadonlyArray<{ id: string; label: string }>;
 }) {
   return (
-    <Disclosure
-      summary={`${title} (${items.length} ${items.length === 1 ? 'category' : 'categories'})`}
-      style={{ marginTop: 10 }}
-    >
-      <ul style={{ margin: 0, paddingLeft: 20, color: color.fg, fontSize: text.sm }}>
-        {items.map((item) => (
-          <li key={item.id} style={{ marginBottom: 5, lineHeight: 1.4 }}>
+    <Disclosure summary={WS2_COPY.simplify.dataControls.inventoryToggle} style={{ marginTop: 10 }}>
+      <ul style={inventoryListStyle}>
+        {removed.map((item) => (
+          <li key={item.id} style={inventoryItemStyle}>
+            {item.label}
+          </li>
+        ))}
+      </ul>
+      <h4 style={keptHeadingStyle}>{keptHeading}</h4>
+      <ul style={inventoryListStyle}>
+        {kept.map((item) => (
+          <li key={item.id} style={inventoryItemStyle}>
             {item.label}
           </li>
         ))}
@@ -268,6 +275,20 @@ function InventoryList({
     </Disclosure>
   );
 }
+
+const inventoryListStyle = {
+  margin: 0,
+  paddingLeft: 20,
+  color: color.fg,
+  fontSize: text.sm,
+} as const;
+const inventoryItemStyle = { marginBottom: 5, lineHeight: 1.4 } as const;
+const keptHeadingStyle = {
+  margin: '12px 0 6px',
+  color: color.fg,
+  fontSize: text.sm,
+  fontWeight: 600,
+} as const;
 
 /** Two plain sections on one surface, split by a hairline — no boxes inside the sheet. */
 function optionStyle(danger: boolean) {

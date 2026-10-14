@@ -9,6 +9,7 @@
  */
 
 import { UNIFORM_UNDO_WINDOW_DAYS } from '../entitlements';
+import { WS2_COPY } from '../copy/launch/ws2';
 
 export const GMAIL_DATA_RETENTION = {
   mailboxIndex:
@@ -387,7 +388,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
   {
     id: 'mailbox-visit-summary',
     category: 'derived',
-    label: 'Your DeclutrMail visits and newly scanned email counts',
+    label: WS2_COPY.liveFix.privacy.inventory.visitLabel,
     fetchedFrom: ['sender-profile-and-stats', 'message-identifiers'],
     storageRefs: ['users.preferences.mailboxVisits'],
     derived: true,

@@ -798,6 +798,32 @@ describe('ActivityScreen — Filter popover', () => {
     ).toEqual(['Source', 'Outcome', 'Time', 'View']);
   });
 
+  it('keeps keyboard focus inside the desktop filter dialog', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    const dialog = await openFilters();
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    const focusable = [
+      ...dialog.querySelectorAll<HTMLElement>('button, input, select, textarea, a[href]'),
+    ];
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    expect(first).toBeDefined();
+    expect(last).toBeDefined();
+    expect(last).not.toBe(first);
+    last!.focus();
+    await userEvent.tab();
+    expect(first).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(last).toHaveFocus();
+  });
+
   it('closes on Escape, returning focus to the button, and on an outside click', async () => {
     installFetchStub([
       {

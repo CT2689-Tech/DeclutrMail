@@ -1,6 +1,6 @@
 'use client';
 
-import type { CSSProperties } from 'react';
+import type { CSSProperties, RefObject } from 'react';
 import { Button, DialogFrame, tokens } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { FilterFields, type FilterFieldsProps } from './activity-filter-fields';
@@ -11,13 +11,35 @@ const { color, motion, radius, shadow } = tokens;
 export function ActivityFilterDialog({
   isMobile,
   onClose,
+  returnFocusRef,
   ...fields
-}: FilterFieldsProps & { isMobile: boolean; onClose: () => void }) {
+}: FilterFieldsProps & {
+  isMobile: boolean;
+  onClose: () => void;
+  returnFocusRef?: RefObject<HTMLElement | null> | undefined;
+}) {
   if (isMobile) return <FilterSheet onClose={onClose} {...fields} />;
+  return <FilterPopover returnFocusRef={returnFocusRef} {...fields} />;
+}
+
+/** Desktop popover. A real modal so Tab cannot leave it for the page behind. */
+function FilterPopover({
+  returnFocusRef,
+  ...fields
+}: FilterFieldsProps & {
+  returnFocusRef?: RefObject<HTMLElement | null> | undefined;
+}) {
+  const trapRef = useFocusTrap<HTMLDivElement>(
+    true,
+    returnFocusRef ? { returnFocusRef } : undefined,
+  );
   return (
     <div
+      ref={trapRef}
       role="dialog"
+      aria-modal="true"
       aria-label="Activity filters"
+      tabIndex={-1}
       style={{
         position: 'absolute',
         top: 'calc(100% + 8px)',

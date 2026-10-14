@@ -739,7 +739,10 @@ export function ScreenerScreen({
         if (e.key === 'Enter') {
           // Native controls own Enter: activating Cancel or changing a
           // scope chip must never submit the pending destructive action.
-          if (target?.closest('button, a, select, [role="button"], [role="radio"]')) return;
+          if (
+            target?.closest('button, a, select, summary, details, [role="button"], [role="radio"]')
+          )
+            return;
           e.preventDefault();
           if (!pendingPreviewBlocked) onConfirm(pendingRow);
         } else if (e.key === 'Escape') {
