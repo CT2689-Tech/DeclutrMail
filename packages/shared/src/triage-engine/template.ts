@@ -38,7 +38,7 @@ const RULE_PHRASE = {
   starred_recently: 'Kept because you’ve starred a message from them this year.',
   high_read_rate: 'Kept because at least half their mail from the last 90 days is marked read.',
   long_relationship_engaged:
-    "Kept because they've emailed you for 5+ years and 30%+ of the last 90 days is marked read.",
+    'Kept because they’ve emailed you for 5+ years and 30%+ of the last 90 days is marked read.',
   insufficient_signal: 'Recommended: Later — not enough signal yet.',
   score_archive: 'Recommended: Archive.',
   score_unsubscribe: 'Recommended: Unsubscribe.',
@@ -82,7 +82,7 @@ export function renderTemplate(displayName: string, result: CascadeResult): stri
   //
   // Codex adversarial review, round 2: rounding BEFORE the zero-volume
   // check meant a positive-but-tiny raw value (e.g. 0.04) rounded to 0.0
-  // and triggered "hasn't sent anything" — false for a sender who did
+  // and triggered "hasn’t sent anything" — false for a sender who did
   // send something. Today's only producer (score.worker.ts's
   // `volume90 / 3`) can never emit a value that small — the closest
   // nonzero result is 1/3 — so this was latent, not live, but the
@@ -111,11 +111,11 @@ export function renderTemplate(displayName: string, result: CascadeResult): stri
   // WIDER type: `{ monthlyVolume: 9, readRatePct: null }` is valid —
   // volume can be known and nonzero while the read rate is unmeasurable
   // for an unrelated reason. That version broke the existing
-  // "still sends 9/mo" assertion by printing "hasn't sent anything"
+  // "still sends 9/mo" assertion by printing "hasn’t sent anything"
   // for a sender who plainly had sent something. Check volume directly
   // instead of inferring it from readPct.
   if (rawMonthlyVol === 0) {
-    return `${name} hasn't sent anything in the last 90 days. ${phrase}`;
+    return `${name} hasn’t sent anything in the last 90 days. ${phrase}`;
   }
   // A null read rate (with nonzero volume) DROPS the clause rather than
   // printing 0%. The sentence is addressed to the user about their own
