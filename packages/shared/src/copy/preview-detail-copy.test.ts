@@ -32,4 +32,11 @@ describe('preview Details deck r44', () => {
       ),
     ).toBe('0 in your inbox · 6,275 elsewhere in Gmail');
   });
+  it('preserves the fallback for malformed location counts', () => {
+    const line = `${','.repeat(10_000)} emails in your inbox; 2 emails elsewhere in Gmail.`;
+    expect(previewWhereNowFromSentence(line)).toBe(line.slice(0, -1));
+    expect(previewWhereNowFromSentence('Where it is now: unknown emails in your inbox.')).toBe(
+      'unknown emails in your inbox',
+    );
+  });
 });

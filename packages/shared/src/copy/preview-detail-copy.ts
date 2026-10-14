@@ -24,9 +24,9 @@ export function previewIncludesValue(allMail: boolean, olderThanDays: number | n
  * The deck value names those two places and leaves Trash and Spam out of this row.
  */
 export function previewWhereNowFromSentence(line: string): string {
-  const inbox = /([\d,]+) emails? in your inbox/u.exec(line);
-  const elsewhere = /([\d,]+) emails? elsewhere in Gmail/u.exec(line);
-  if (inbox?.[1] === undefined || elsewhere?.[1] === undefined) {
+  const inbox = countBeforeLocation(line, ' in your inbox');
+  const elsewhere = countBeforeLocation(line, ' elsewhere in Gmail');
+  if (inbox === null || elsewhere === null) {
     return line.replace(/^Where it is now: /u, '').replace(/\.$/u, '');
   }
   const format = (raw: string) => {
@@ -34,11 +34,30 @@ export function previewWhereNowFromSentence(line: string): string {
     return Number.isFinite(value) ? value.toLocaleString('en-US') : raw;
   };
   return fillCopy(PREVIEW_DETAILS.whereNow.value, {
-    n: format(inbox[1]),
-    m: format(elsewhere[1]),
+    n: format(inbox),
+    m: format(elsewhere),
   });
 }
 
 /** Neutral failure for any mail-moving preview, including Later. */
 export const PREVIEW_UNAVAILABLE_MESSAGE =
   'Couldn’t load the preview. Nothing can move until it loads.';
+
+/** Read the immediately preceding count without an unbounded pattern search. */
+function countBeforeLocation(line: string, location: string): string | null {
+  const end = line.indexOf(location);
+  if (end === -1) return null;
+  const prefix = line.slice(0, end);
+  const nounStart = prefix.lastIndexOf(' ');
+  const noun = prefix.slice(nounStart + 1);
+  if (noun !== 'email' && noun !== 'emails') return null;
+  const beforeNoun = prefix.slice(0, nounStart);
+  const count = beforeNoun.slice(beforeNoun.lastIndexOf(' ') + 1);
+  let hasDigit = false;
+  for (const char of count) {
+    if (char === ',') continue;
+    if (char < '0' || char > '9') return null;
+    hasDigit = true;
+  }
+  return hasDigit ? count : null;
+}
