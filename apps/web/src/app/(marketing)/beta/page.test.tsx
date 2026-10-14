@@ -1,17 +1,4 @@
-/**
- * /beta — beta status page (buildout F7; open-beta copy 2026-07-07).
- *
- * Two render variants share one page:
- *   - organic visit (no `reason` param) → open-beta copy with a real
- *     permission-checkpoint CTA (signup is open: BETA_GATE_ENABLED is
- *     off in prod), NO `beta_gate_denied` event, NO waitlist CTA
- *   - OAuth-callback denial (`?reason=not_invited`) → denial copy +
- *     exactly one `beta_gate_denied` emit with the closed-enum payload
- *     (never the denied email — D7/D159)
- *
- * The page is a public marketing route: like the layout test above it,
- * a clean render with no fetch proves no auth chain is mounted.
- */
+/** Retired organic beta redirects at GA; OAuth denial still renders and tracks. */
 
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -21,6 +8,11 @@ import BetaPage from './page';
 
 const { trackSpy } = vi.hoisted(() => ({
   trackSpy: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('next/navigation', () => ({
+  redirect: (path: string) => {
+    throw new Error(`redirect:${path}`);
+  },
 }));
 vi.mock('@/lib/posthog', () => ({ track: trackSpy }));
 
@@ -48,30 +40,9 @@ function callsFor(event: string) {
 }
 
 describe('/beta page — F7 beta status page', () => {
-  it('renders open beta with permission entry, sample demo, founder contact and no fetch', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
-
-    await renderPage();
-
-    expect(
-      screen.getByRole('heading', { name: /declutrmail is in open beta/i }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /review Gmail permissions/i })).toHaveAttribute(
-      'href',
-      '/sign-in',
-    );
-    expect(screen.getByRole('link', { name: /email us/i })).toHaveAttribute(
-      'href',
-      expect.stringMatching(/^mailto:/),
-    );
-    expect(screen.getByRole('link', { name: /try daily triage/i })).toHaveAttribute(
-      'href',
-      '/inbox-simulator?workspace=triage',
-    );
-    expect(document.querySelector('a[href*="/api/auth/google/start"]')).toBeNull();
-    // The Team-tier waitlist CTA is gone — signup is open (2026-07-07).
-    expect(screen.queryByRole('link', { name: /waitlist/i })).not.toBeInTheDocument();
-    expect(fetchSpy).not.toHaveBeenCalled();
+  it('redirects organic GA visits to the current workflow', async () => {
+    await expect(renderPage()).rejects.toThrow('redirect:/how-it-works');
+    expect(trackSpy).not.toHaveBeenCalled();
   });
 
   it('renders the denial copy with a founder-contact CTA when redirected by the gate', async () => {
@@ -87,7 +58,7 @@ describe('/beta page — F7 beta status page', () => {
   });
 
   it('does NOT emit beta_gate_denied on an organic visit', async () => {
-    await renderPage();
+    await expect(renderPage()).rejects.toThrow('redirect:/how-it-works');
     expect(callsFor('beta_gate_denied')).toHaveLength(0);
   });
 
@@ -99,15 +70,13 @@ describe('/beta page — F7 beta status page', () => {
   });
 
   it('treats an unknown reason value as an organic visit (no emit)', async () => {
-    await renderPage({ reason: 'something-else' });
+    await expect(renderPage({ reason: 'something-else' })).rejects.toThrow(
+      'redirect:/how-it-works',
+    );
     expect(callsFor('beta_gate_denied')).toHaveLength(0);
   });
 
-  it('emits page_viewed exactly once on every variant (D159, D132 batch)', async () => {
-    await renderPage();
-    expect(callsFor('page_viewed')).toEqual([['page_viewed', { page: 'beta', mailbox_id: null }]]);
-
-    trackSpy.mockClear();
+  it('emits page_viewed once on the retained denial route', async () => {
     await renderPage({ reason: 'not_invited' });
     expect(callsFor('page_viewed')).toEqual([['page_viewed', { page: 'beta', mailbox_id: null }]]);
   });

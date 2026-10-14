@@ -25,7 +25,7 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
  * source-backed dedicated routes.
  */
 
-const TITLE = 'Clean up Gmail, one sender at a time — DeclutrMail';
+const TITLE = 'Gmail cleanup with preview and undo | DeclutrMail';
 const DESCRIPTION =
   'Clear Gmail clutter by sender. Preview which emails will move before you confirm. Start free, with 30-day undo on Archive, Later, and Delete.';
 

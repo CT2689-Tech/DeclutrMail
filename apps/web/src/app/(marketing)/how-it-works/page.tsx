@@ -207,6 +207,11 @@ export default function HowItWorksPage() {
         title="Bring the sender view to your Gmail."
         body="Connect Gmail, let the first scan finish, and make your first decision with the affected emails in view."
       />
+      <p className="dm-story-note">
+        Trying to recover storage?{' '}
+        <Link href="/how-to/gmail-storage-full">Follow the Gmail storage cleanup guide</Link>.
+        Archiving clears the inbox but frees no storage.
+      </p>
     </ProductStoryShell>
   );
 }

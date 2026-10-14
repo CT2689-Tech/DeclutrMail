@@ -25,6 +25,24 @@ export interface SignupCampaign {
 
 type ParamSource = { get(name: string): string | null };
 
+/** Retain only these fixed source names, never the referring URL or its query. */
+export function directorySourceFromReferrer(
+  referrer: unknown,
+): 'alternativeto' | 'saashub' | undefined {
+  if (typeof referrer !== 'string') return undefined;
+  try {
+    const url = new URL(referrer);
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password)
+      return undefined;
+    const host = url.hostname.toLowerCase();
+    if (host === 'alternativeto.net' || host === 'www.alternativeto.net') return 'alternativeto';
+    if (host === 'saashub.com' || host === 'www.saashub.com') return 'saashub';
+  } catch {
+    // Empty, relative and malformed referrers provide no attribution.
+  }
+  return undefined;
+}
+
 /** Parse a stored cookie. Undefined when it has no usable field. */
 export function parseDmAttr(value: unknown): SignupCampaign | undefined {
   if (typeof value !== 'string' || value.length === 0 || value.length > 512) return undefined;
@@ -51,18 +69,26 @@ export function resolveFirstTouchCampaign(input: {
   existing: string | undefined;
   searchParams: ParamSource;
   pathname: string;
+  referrer?: string | null | undefined;
 }): string | undefined {
   if (parseDmAttr(input.existing)) return undefined;
+  const utmSource = narrowUtm(input.searchParams.get('utm_source'));
+  const utmMedium = narrowUtm(input.searchParams.get('utm_medium'));
+  const utmCampaign = narrowUtm(input.searchParams.get('utm_campaign'));
+  const queryRef = parseSignupAttributionRef(input.searchParams.get('ref'));
+  const directorySource = directorySourceFromReferrer(input.referrer);
+  const hasExplicitCampaign = Boolean(utmSource || utmMedium || utmCampaign || queryRef);
   const ref = resolveFirstTouchRef({
     existing: undefined,
-    queryRef: input.searchParams.get('ref'),
+    queryRef,
     pathname: input.pathname,
+    allowSimulatorFallback: !hasExplicitCampaign && !directorySource,
   });
   const campaign = campaignOrUndefined(
     fields({
-      utmSource: narrowUtm(input.searchParams.get('utm_source')),
-      utmMedium: narrowUtm(input.searchParams.get('utm_medium')),
-      utmCampaign: narrowUtm(input.searchParams.get('utm_campaign')),
+      utmSource: utmSource ?? (!hasExplicitCampaign ? directorySource : undefined),
+      utmMedium: utmMedium ?? (!hasExplicitCampaign && directorySource ? 'referral' : undefined),
+      utmCampaign,
       ref,
     }),
   );
