@@ -124,8 +124,7 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
       );
 
       expect(html).toContain('Try again');
-      expect(html).toContain('Nothing can move until it loads.');
-      expect(html).not.toContain('Try again to archive or delete');
+      expect(html).toContain('Couldn’t count the email you already have.');
       expect(html).toMatch(/<button[^>]*disabled=""/);
     },
   );
