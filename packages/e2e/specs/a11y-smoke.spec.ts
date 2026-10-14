@@ -283,7 +283,7 @@ for (const phase of ['checking', 'ready'] as const) {
       const viewResults = filters.getByRole('button', { name: 'View results' });
       if (await viewResults.isVisible()) await viewResults.click();
       else await page.keyboard.press('Escape');
-      const trigger = page.getByRole('button', { name: 'Check and retry', exact: true });
+      const trigger = page.getByRole('button', { name: /^(Check and retry|Checking…)$/ });
       await trigger.click();
       const dialog = page.getByTestId('action-recovery-dialog');
       await expect(dialog).toBeVisible();
