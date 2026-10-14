@@ -107,7 +107,8 @@ export class InboxReportService {
 
   /**
    * The cache key is the latest succeeded sync. Unsubscribe-backlog confirm
-   * and Undo do not write one. A newer decision, a finished revert, or a
+   * and Undo do not write one. Keep/protection changes do not either.
+   * A newer decision or policy, a finished revert, or a
    * cached fix id that is backlog-handled now has to miss, or a reload
    * offers the senders again.
    */
