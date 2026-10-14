@@ -39,10 +39,6 @@ export function previewWhereNowFromSentence(line: string): string {
   });
 }
 
-/** Neutral failure for any mail-moving preview, including Later. */
-export const PREVIEW_UNAVAILABLE_MESSAGE =
-  'Couldn’t load the preview. Nothing can move until it loads.';
-
 /** Read the immediately preceding count without an unbounded pattern search. */
 function countBeforeLocation(line: string, location: string): string | null {
   const end = line.indexOf(location);

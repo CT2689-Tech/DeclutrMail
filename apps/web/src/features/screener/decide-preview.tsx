@@ -1,7 +1,5 @@
 'use client';
 
-import { PREVIEW_UNAVAILABLE_MESSAGE } from '@declutrmail/shared/copy';
-
 import { useActionPreviewAnalytics } from '@/lib/use-action-preview-analytics';
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 
@@ -19,7 +17,7 @@ import {
   inboxScopeNoticeCopy,
 } from '@declutrmail/shared/actions';
 import { scoredAgeLabel } from '@declutrmail/shared/copy';
-import { WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 import { afterLead } from '@/lib/copy/after-lead';
@@ -362,7 +360,7 @@ export function DecidePreview({
         <p style={mutedLine}>{WS5_COPY['f1.preview.backlog.loading']}</p>
       )}
       {moves && effectiveCount === 'unavailable' && (
-        <p style={mutedLine}>{PREVIEW_UNAVAILABLE_MESSAGE}</p>
+        <p style={mutedLine}>{WS2_COPY.preview.unavailable}</p>
       )}
 
       {scopeCopy && (

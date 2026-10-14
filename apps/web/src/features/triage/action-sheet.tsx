@@ -1,7 +1,5 @@
 'use client';
 
-import { PREVIEW_UNAVAILABLE_MESSAGE } from '@declutrmail/shared/copy';
-
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 
 import { useEffect, useState, type ReactNode } from 'react';
@@ -325,7 +323,7 @@ export function ActionSheet({
     'Pick a future return time.'
   ) : previewUnavailable ? (
     <StatusWithAction
-      message={PREVIEW_UNAVAILABLE_MESSAGE}
+      message={WS2_COPY.preview.unavailable}
       action={
         onRetryPreview ? { label: WS2_COPY.home.failed.retry, onClick: onRetryPreview } : undefined
       }
@@ -568,7 +566,7 @@ export function ActionSheet({
   );
 }
 
-/** A disabled-state line with its one way out ("Retry preview"). */
+/** A disabled-state line with its one way out ("Try again"). */
 function StatusWithAction({
   message,
   action,

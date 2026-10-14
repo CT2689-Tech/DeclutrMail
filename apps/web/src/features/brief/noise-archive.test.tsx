@@ -531,7 +531,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     const dialog = await openPreview();
     await within(dialog).findByText(/couldn’t load the preview/i);
     expect(within(dialog).getByRole('button', { name: /^Archive/ })).toBeDisabled();
-    expect(within(dialog).getByRole('button', { name: /retry preview/i })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
     expect(enqueued).toHaveLength(0);
   });
 
@@ -1245,9 +1245,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     const dialog = await openPreview();
     await within(dialog).findByText(/You switched Gmail accounts, so nothing was archived/i);
     expect(within(dialog).getByRole('button', { name: /^Archive/ })).toBeDisabled();
-    expect(
-      within(dialog).queryByRole('button', { name: /retry preview/i }),
-    ).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
     expect(enqueued).toHaveLength(0);
   });
 

@@ -78,7 +78,7 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /retry preview/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetryPreview).toHaveBeenCalledTimes(1);
   });
 
