@@ -1500,7 +1500,7 @@ function ReadyState({
           the evidence into a small viewport on shorter screens. */}
         <div className={styles.actionSection}>
           <div role="group" aria-label="Sender actions" className={styles.actionSection}>
-            <h3 className={styles.actionHeading}>Choose an action</h3>
+            <h3 className={styles.actionHeading}>Your next decision</h3>
             {actionToolbar}
           </div>
           {recommendation != null && <RecommendationBanner recommendation={recommendation} />}

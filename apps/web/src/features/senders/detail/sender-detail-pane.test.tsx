@@ -158,7 +158,7 @@ describe('SenderDetailPane', () => {
     expect(pane.getByRole('switch', { name: 'Protected' })).toBeInTheDocument();
     const actionGroup = pane.getByRole('group', { name: 'Sender actions' });
     const actions = within(actionGroup);
-    expect(actions.getByRole('heading', { name: 'Choose an action', level: 3 })).toBeVisible();
+    expect(actions.getByRole('heading', { name: 'Your next decision', level: 3 })).toBeVisible();
     const currentMail = pane.getByTestId('sender-detail-inbox-count');
     const history = pane.getByTestId('sender-detail-window-count');
     // Decisions sit in the same reading flow, between current mail and
