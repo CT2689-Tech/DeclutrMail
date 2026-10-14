@@ -21,7 +21,7 @@ export default function AdminSecurityError({
       error={error}
       reset={reset}
       boundary="admin-security"
-      headline="We couldn't load the security audit log."
+      headline="We couldn’t load the security audit log."
       body="Try again, or head back to Senders."
       escape={{ href: '/senders', label: 'Back to Senders' }}
     />

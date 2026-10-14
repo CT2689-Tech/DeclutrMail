@@ -113,7 +113,7 @@ describe('useRetryInitialSync', () => {
     const { result } = renderRetry();
     act(() => result.current.mutate());
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(vi.mocked(toast)).toHaveBeenCalledWith("Still scanning — we'll keep going.", 'success');
+    expect(vi.mocked(toast)).toHaveBeenCalledWith('Still scanning — we’ll keep going.', 'success');
   });
 
   it('toasts a real message on failure, instead of silently doing nothing (QA-sync-20260831-10 item 4)', async () => {
@@ -135,7 +135,7 @@ describe('useRetryInitialSync', () => {
     act(() => result.current.mutate());
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
-      "Couldn't start the scan — try again in a minute.",
+      'Couldn’t start the scan — try again in a minute.',
       'danger',
     );
   });

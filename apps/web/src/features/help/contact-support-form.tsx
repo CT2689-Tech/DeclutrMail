@@ -108,7 +108,7 @@ export function ContactSupportForm() {
             setMessage(e.target.value);
             if (status === 'error') setStatus('idle');
           }}
-          placeholder="What's going on?"
+          placeholder="What’s going on?"
           aria-label="Message"
           disabled={status === 'submitting'}
           className="dm-support-field"
@@ -130,7 +130,7 @@ export function ContactSupportForm() {
           </Button>
           {status === 'error' ? (
             <span role="alert" style={{ fontSize: text.sm, color: color.dangerText }}>
-              Couldn't send that — try again, or email{' '}
+              Couldn’t send that — try again, or email{' '}
               <a href="mailto:support@declutrmail.com" style={{ color: color.dangerText }}>
                 support@declutrmail.com
               </a>

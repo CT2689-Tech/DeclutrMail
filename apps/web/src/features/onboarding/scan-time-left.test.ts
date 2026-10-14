@@ -347,7 +347,7 @@ describe('useScanTimeLeft', () => {
   // Seen live in the 2026-09-26 smoke: "1,000 of 1,345 emails · about 4
   // min left" reached the DOM for one commit before "about 2 min" — the
   // new count beside the previous count's time.
-  it("never commits a new count with the previous count's time", () => {
+  it('never commits a new count with the previous count’s time', () => {
     const committed: Array<number | null> = [];
     function Probe({ progress }: { progress: SyncMessageProgress }) {
       const msLeft = useScanTimeLeft(progress);

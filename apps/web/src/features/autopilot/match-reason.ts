@@ -53,7 +53,7 @@ export function describeMatchReason(reason: string): { label: string; technical:
   // Legacy/custom/unknown formats have no safely established units or window.
   // Keep their exact evidence inspectable rather than guessing what it means.
   return {
-    label: reason ? "Matches this rule's recorded conditions." : 'Match details unavailable.',
+    label: reason ? 'Matches this rule’s recorded conditions.' : 'Match details unavailable.',
     technical: reason || null,
   };
 }

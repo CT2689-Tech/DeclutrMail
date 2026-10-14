@@ -19,10 +19,12 @@ import {
 } from '@declutrmail/shared';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
 import { meterPreviewText } from '@declutrmail/shared/entitlements';
+import { WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 
 import { afterLead } from '@/lib/copy/after-lead';
 import type { TriageDecisionRow } from './data';
+import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 import type { DomainBatch } from './domain-batch';
 import type { BatchVerb } from './domain-batch-card';
 
@@ -193,11 +195,13 @@ export function BatchActionSheet({
   const status: ReactNode = wakeAtInvalid ? (
     'Choose a future return time before confirming Later.'
   ) : preview === 'loading' ? (
-    'Counting the inbox…'
+    WS5_COPY['f1.preview.backlog.loading']
   ) : preview === 'unavailable' ? (
     <StatusWithAction
-      message="Couldn’t load the preview. Nothing can move until it loads."
-      action={onRetryPreview ? { label: 'Retry preview', onClick: onRetryPreview } : undefined}
+      message={WS2_COPY.preview.unavailable}
+      action={
+        onRetryPreview ? { label: WS2_COPY.home.failed.retry, onClick: onRetryPreview } : undefined
+      }
     />
   ) : nothingActionable ? (
     <StatusWithAction
@@ -218,7 +222,10 @@ export function BatchActionSheet({
   // ── Details ──────────────────────────────────────────────────────────
   const facts: SheetFactItem[] = [];
   if (total !== null && total > 0) {
-    facts.push({ label: 'Count', value: 'Inbox now, rechecked when it runs' });
+    facts.push({
+      label: PREVIEW_DETAILS.includes.label,
+      value: previewIncludesValue(false, null),
+    });
   }
   if (primary.schedule.kind === 'scheduled') {
     facts.push({
@@ -359,7 +366,7 @@ function AvatarStack({ rows }: { rows: readonly TriageDecisionRow[] }) {
   );
 }
 
-/** A disabled-state line with its one way out ("Retry preview"). */
+/** A disabled-state line with its one way out ("Try again"). */
 function StatusWithAction({
   message,
   action,

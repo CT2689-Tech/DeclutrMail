@@ -68,7 +68,7 @@ describe('UnprotectButton — failure is a failure, not a quiet success', () => 
     await userEvent.click(screen.getByRole('button', { name: /^Unprotect$/i }));
 
     await waitFor(() =>
-      expect(h.toast).toHaveBeenCalledWith("Couldn't remove protection — try again.", 'warn'),
+      expect(h.toast).toHaveBeenCalledWith('Couldn’t remove protection — try again.', 'warn'),
     );
     expect(h.capture).toHaveBeenCalledWith(expect.anything(), {
       surface: 'triage',

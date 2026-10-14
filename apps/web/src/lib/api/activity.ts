@@ -256,7 +256,7 @@ export async function revertActivityUndo(token: string, mailboxId?: string): Pro
     options,
   );
   if (data.reverted) return;
-  if (!data.actionId) throw new Error("Couldn't confirm undo — try again.");
+  if (!data.actionId) throw new Error('Couldn’t confirm undo — try again.');
   // Keep the originating mailbox for every poll even if the user switches.
   // Bound the wait: losing status access does not prove the Gmail job failed.
   for (let attempt = 0; attempt < 120; attempt++) {
@@ -264,14 +264,14 @@ export async function revertActivityUndo(token: string, mailboxId?: string): Pro
     try {
       status = await getActionStatus(data.actionId, options);
     } catch {
-      throw new Error("Couldn't confirm undo — try again.");
+      throw new Error('Couldn’t confirm undo — try again.');
     }
     if (status.status === 'failed') {
       throw new Error('Undo failed — try again.');
     }
     if (status.status === 'done') {
       if (status.undoRevertedAt) return;
-      throw new Error("Couldn't confirm undo — try again.");
+      throw new Error('Couldn’t confirm undo — try again.');
     }
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }

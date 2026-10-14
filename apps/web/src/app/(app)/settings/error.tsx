@@ -21,7 +21,7 @@ export default function SettingsError({
       error={error}
       reset={reset}
       boundary="settings"
-      headline="We couldn't load your settings."
+      headline="We couldn’t load your settings."
       body="Try again, or head back to Senders."
       escape={{ href: '/senders', label: 'Back to Senders' }}
     />

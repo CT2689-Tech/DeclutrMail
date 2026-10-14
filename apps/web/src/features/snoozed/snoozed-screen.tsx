@@ -181,7 +181,7 @@ function SnoozedScreenContents({ initialNow }: { initialNow: number | undefined 
       <ScreenIntro
         id="snoozed"
         title="Later"
-        body="Email from these senders waits in Gmail's DeclutrMail/Later label until its return time."
+        body="Email from these senders waits in Gmail’s DeclutrMail/Later label until its return time."
       />
 
       {/* A failed return is announced ONCE, by the app-wide
@@ -571,8 +571,8 @@ function WakeConfirm({
       {error ? (
         <span role="alert" style={{ fontSize: text.sm, color: color.dangerText, width: '100%' }}>
           {error instanceof ApiError && error.status === 503
-            ? "The return schedule isn't available right now. Try again in a moment."
-            : "Couldn't start the return. Try again in a moment."}
+            ? 'The return schedule isn’t available right now. Try again in a moment.'
+            : 'Couldn’t start the return. Try again in a moment.'}
         </span>
       ) : null}
     </div>
@@ -777,7 +777,7 @@ function SnoozedErrorState({ error, onRetry }: { error: unknown; onRetry: () => 
     >
       <ErrorState
         headingLevel={2}
-        title="We couldn't load Later"
+        title="We couldn’t load Later"
         description={loadErrorDescription(error)}
         onRetry={onRetry}
       />

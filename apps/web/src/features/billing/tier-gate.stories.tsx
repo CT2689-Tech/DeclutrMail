@@ -59,7 +59,7 @@ function frame(tier: Me['tier']) {
           <TierGate
             capability="brief"
             title="Daily brief"
-            pitch="A daily summary of yesterday's email, in-app, at an hour you choose."
+            pitch="A daily summary of yesterday’s email, in-app, at an hour you choose."
           >
             <div
               style={{

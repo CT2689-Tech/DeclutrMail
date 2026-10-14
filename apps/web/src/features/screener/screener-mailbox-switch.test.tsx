@@ -54,7 +54,7 @@ function harness() {
 async function openArchive() {
   fireEvent.click(screen.getByRole('button', { name: new RegExp(`${row.senderName} — expand`) }));
   fireEvent.keyDown(window, { key: 'a' });
-  await screen.findByText(/Inbox now.*rechecked/i);
+  await screen.findByText(/Inbox only.*We check again right before anything moves/i);
 }
 
 beforeEach(() => {
@@ -192,7 +192,9 @@ describe('Screener refuses a sender the server reports busy (2026-09-28)', () =>
     fireEvent.click(screen.getByRole('button', { name: new RegExp(`${row.senderName} — expand`) }));
     fireEvent.keyDown(window, { key: 'a' });
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(screen.queryByText(/Inbox now.*rechecked/i)).toBeNull();
+    expect(
+      screen.queryByText(/Inbox only.*We check again right before anything moves/i),
+    ).toBeNull();
     expect(post).not.toHaveBeenCalled();
   });
 });

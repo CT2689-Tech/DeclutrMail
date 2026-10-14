@@ -290,7 +290,7 @@ describe('adaptSenderDetail — honest wire composition', () => {
     expect(detail.history).toEqual([]);
   });
 
-  it('preserves readRate: null — "we don\'t know" never becomes 0%', () => {
+  it('preserves readRate: null — "we don’t know" never becomes 0%', () => {
     const detail = adaptSenderDetail({
       detail: makeSenderRow({ readRate: null }),
       messages: [],

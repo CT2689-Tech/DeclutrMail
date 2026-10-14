@@ -22,6 +22,7 @@ import {
   actionMovesMail,
   type ActionPreviewDetail,
 } from './action-preview-detail';
+import { PREVIEW_DETAILS } from '@declutrmail/shared/copy';
 import {
   PreviewReasoning,
   buildPreviewFacts,
@@ -298,7 +299,7 @@ export function ActionSheet({
       detail={detail !== undefined && movesMail ? detail : undefined}
       leadFacts={facts.disclosures}
       trailingFacts={[
-        { label: 'Why suggested', value: <PreviewReasoning row={row} /> },
+        { label: PREVIEW_DETAILS.whySuggested.label, value: <PreviewReasoning row={row} /> },
         ...(verb === 'Delete'
           ? []
           : [
@@ -322,7 +323,7 @@ export function ActionSheet({
     'Pick a future return time.'
   ) : previewUnavailable ? (
     <StatusWithAction
-      message="Couldn’t load the preview. Nothing can move until it loads."
+      message={WS2_COPY.preview.unavailable}
       action={
         onRetryPreview ? { label: WS2_COPY.home.failed.retry, onClick: onRetryPreview } : undefined
       }
@@ -565,7 +566,7 @@ export function ActionSheet({
   );
 }
 
-/** A disabled-state line with its one way out ("Retry preview"). */
+/** A disabled-state line with its one way out ("Try again"). */
 function StatusWithAction({
   message,
   action,

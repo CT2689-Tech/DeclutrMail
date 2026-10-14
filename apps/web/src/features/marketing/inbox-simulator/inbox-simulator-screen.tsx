@@ -409,8 +409,8 @@ function decisionSummary(decision: DemoDecision): string {
     case 'Unsubscribe':
       return decision.affectedCount > 0
         ? decision.backlogMode === 'delete'
-          ? `Sample unsubscribe request recorded — it can't be recalled. ${decision.affectedCount} sample messages also moved to Gmail Trash.`
-          : `Sample unsubscribe request recorded — it can't be recalled. ${decision.affectedCount} sample messages already in the inbox were also archived.`
+          ? `Sample unsubscribe request recorded — it can’t be recalled. ${decision.affectedCount} sample messages also moved to Gmail Trash.`
+          : `Sample unsubscribe request recorded — it can’t be recalled. ${decision.affectedCount} sample messages already in the inbox were also archived.`
         : 'Sample unsubscribe request recorded. A delivered request cannot be recalled.';
     case 'Delete':
       return `${decision.affectedCount} sample messages moved to Gmail Trash.`;

@@ -686,13 +686,13 @@ describe('TriageScreen — D226 mutation wiring', () => {
       });
       // Safe default: inbox only, and the copy says so.
       expect(archived).not.toBeChecked();
-      expect(within(dialog).getByText(/^Inbox now, rechecked/)).toBeDefined();
+      expect(within(dialog).getByText(/^Inbox only\. We check again/)).toBeDefined();
 
       fireEvent.click(archived);
       expect(
         within(dialog).getByText(/Inbox and archived email both move to Gmail Trash/),
       ).toBeDefined();
-      expect(within(dialog).getByText(/^Inbox \+ archived now, rechecked/)).toBeDefined();
+      expect(within(dialog).getByText(/^Inbox and archived email\. We check again/)).toBeDefined();
       // '412' is the armed headline figure once archived mail is included.
       expect(within(dialog).getByRole('heading', { name: 'Delete 412 emails?' })).toBeDefined();
       expect(archived).toBeChecked();
@@ -773,7 +773,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
       expect(reachRow()).toBeNull();
     });
 
-    it("hides the choice during onboarding's first cleanup", async () => {
+    it('hides the choice during onboarding’s first cleanup', async () => {
       installReachStub([]);
       render(
         <QueryWrapper client={createTestQueryClient()}>
@@ -1489,7 +1489,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        expect.stringContaining(`Couldn't confirm Archive for ${GROUPON.senderName}`),
+        expect.stringContaining(`Couldn’t confirm Archive for ${GROUPON.senderName}`),
         'warn',
       ),
     );
@@ -1525,7 +1525,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        expect.stringContaining(`Couldn't confirm Keep for ${GROUPON.senderName}`),
+        expect.stringContaining(`Couldn’t confirm Keep for ${GROUPON.senderName}`),
         'warn',
       ),
     );
@@ -1567,7 +1567,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `Couldn't start Unsubscribe for ${LINKEDIN.senderName} — no request was sent.`,
+        `Couldn’t start Unsubscribe for ${LINKEDIN.senderName} — no request was sent.`,
         'warn',
       ),
     );
@@ -1587,7 +1587,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `Can't tell if Unsubscribe for ${LINKEDIN.senderName} started — check Activity before retrying.`,
+        `Can’t tell if Unsubscribe for ${LINKEDIN.senderName} started — check Activity before retrying.`,
         'warn',
       ),
     );
@@ -1891,7 +1891,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     };
   }
 
-  it("D58: the sheet says a delivered unsubscribe request can't be recalled", async () => {
+  it('D58: the sheet says a delivered unsubscribe request can’t be recalled', async () => {
     const client = createTestQueryClient();
     renderScreen(client);
     expandRow(LINKEDIN.senderName);
@@ -2305,7 +2305,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
 
-    await screen.findByText(/Couldn.t load the preview/i);
+    await screen.findByText(/couldn’t load the preview/i);
     const archive = screen.getByRole('button', { name: /Archive \(A\)/i });
     expect(archive).toBeDisabled();
     fireEvent.click(archive);
@@ -2342,7 +2342,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
 
-    await screen.findByText(/Inbox now, rechecked when it runs/i);
+    await screen.findByText(/Inbox only\. We check again right before anything moves/);
     expect(screen.getByRole('button', { name: /Archive \(A\)/i })).toBeEnabled();
     fireEvent.keyDown(window, { key: 'a' });
 
@@ -3141,7 +3141,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
     await confirmDomainBatch();
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        expect.stringMatching(/^Couldn't start Archive for the .* batch — nothing changed\.$/),
+        expect.stringMatching(/^Couldn’t start Archive for the .* batch — nothing changed\.$/),
         'warn',
       ),
     );
@@ -3162,7 +3162,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
     await confirmDomainBatch();
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        expect.stringMatching(/^Can't tell if Archive for the .* batch started/),
+        expect.stringMatching(/^Can’t tell if Archive for the .* batch started/),
         'warn',
       ),
     );

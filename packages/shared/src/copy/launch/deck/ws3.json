@@ -324,6 +324,7 @@
   "ws3.howTo.unsubscribePreviewStep": "Check whether it sends a request or opens a prefilled email in Gmail, and whether Archive or Delete for older email is selected. The sender decides whether and when their email stops.",
   "ws3.simulator.h1": "Try DeclutrMail on made-up email.",
   "ws3.simulator.guide": "How the demo works",
+  "ws3.demo.details.subjectsNote": "The demo hides subjects for this age range. With your Gmail connected, you’ll see them.",
   "ws3.simulator.planLine": "Free includes {allowance} emails cleared a month. {plusName} has no monthly limit.",
   "ws3.brand.orgName": "DeclutrMail",
   "ws3.brand.authorName": "DeclutrMail",

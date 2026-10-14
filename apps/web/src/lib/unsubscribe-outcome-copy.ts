@@ -28,7 +28,7 @@ export function unsubscribeOutcomeToast(
   }
   if (outcome.errorCode === UNSUB_MANUAL_ERROR_CODE) {
     return [
-      `${senderName} didn't accept the one-click request — send the unsubscribe email from Gmail instead.`,
+      `${senderName} didn’t accept the one-click request — send the unsubscribe email from Gmail instead.`,
       'warn',
     ];
   }

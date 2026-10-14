@@ -269,8 +269,8 @@ export function ActivitySupportBundleDialog({
                 fontSize: text.base,
               }}
             >
-              We couldn&apos;t create the support bundle. Your Activity is unchanged. Review the
-              options and try again.
+              We couldn’t create the support bundle. Your Activity is unchanged. Review the options
+              and try again.
               <TechnicalDetails summary="Show error details" style={{ marginTop: 8 }}>
                 {technicalErrorDetails(exportBundle.error)}
               </TechnicalDetails>

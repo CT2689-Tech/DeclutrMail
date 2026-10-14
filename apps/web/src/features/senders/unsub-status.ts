@@ -30,7 +30,7 @@ export const UNSUB_PILL: Record<UnsubscribeLifecycleStatus, { label: string; tit
   },
   unconfirmed: {
     label: 'Result unconfirmed',
-    title: "We couldn't confirm the sender received the request; watch for future email",
+    title: 'We couldn’t confirm the sender received the request; watch for future email',
   },
   action_required: {
     label: 'Send from Gmail',
@@ -47,7 +47,7 @@ export const UNSUB_PILL: Record<UnsubscribeLifecycleStatus, { label: string; tit
   },
   unavailable: {
     label: 'Unavailable',
-    title: "This sender doesn't offer an unsubscribe link DeclutrMail can use",
+    title: 'This sender doesn’t offer an unsubscribe link DeclutrMail can use',
   },
 };
 

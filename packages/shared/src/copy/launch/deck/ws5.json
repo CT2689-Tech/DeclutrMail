@@ -66,8 +66,8 @@
     "other": "{n} emails you already have: moved to Gmail Trash (Delete)"
   },
   "f1.preview.backlog.loading": "Counting the email you already have…",
-  "f1.preview.backlog.unsubOnly": "Email you already have stays where it is.",
   "f1.preview.backlog.error": "Couldn’t count the email you already have. Try again to archive or delete it.",
+  "f1.preview.backlog.unsubOnly": "Email you already have stays where it is.",
   "f1.preview.backlog.none": "There’s no email in your Inbox to move. Choose Unsubscribe only.",
   "f1.preview.existing.label": "Email you already have",
   "f1.preview.archived.unavailable": "Archived email can’t be counted right now, so only email in your Inbox is included.",

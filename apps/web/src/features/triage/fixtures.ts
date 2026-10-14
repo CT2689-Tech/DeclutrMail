@@ -195,7 +195,7 @@ export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
     signals: [
       'Marked read: 0% over the last 90 days',
       'Volume: 64 emails/month (90-day average)',
-      "Volume spike: 2× the sender's usual cadence",
+      'Volume spike: 2× the sender’s usual cadence',
       // Locked-copy ban per spec v1.2 Decision 15: jargon-free phrasing.
       'One-click unsubscribe available',
     ],
@@ -239,7 +239,7 @@ export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
     signals: [
       'Marked read: 0% over the last 90 days',
       'Volume: 48 emails/month (90-day average)',
-      "Volume spike: 3× the sender's usual cadence",
+      'Volume spike: 3× the sender’s usual cadence',
     ],
     protectionReason: null,
     monthlyVolume: 48,
@@ -637,7 +637,7 @@ export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
     signals: [
       'Marked read: 2% over the last 90 days',
       'Volume: 18 emails/month (90-day average)',
-      "Volume spike: 3× the sender's usual cadence",
+      'Volume spike: 3× the sender’s usual cadence',
     ],
     protectionReason: null,
     monthlyVolume: 18,
@@ -759,7 +759,7 @@ export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
     gmailCategory: 'updates',
     unsubscribeMethod: 'none',
     signals: [
-      "Protected — Gmail marked several of this sender's messages important this year",
+      'Protected — Gmail marked several of this sender’s messages important this year',
       'Marked read: 90% over the last 90 days',
       'Volume: 1 message/month',
     ],

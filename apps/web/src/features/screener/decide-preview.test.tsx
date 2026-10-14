@@ -27,7 +27,7 @@ describe('DecidePreview — live-preview confirm gate', () => {
       expect(confirm).toBeDisabled();
       fireEvent.click(confirm);
       expect(onConfirm).not.toHaveBeenCalled();
-      expect(screen.getByText(/Couldn.t load the preview/i)).toBeInTheDocument();
+      expect(screen.getByText(/couldn’t load the preview/i)).toBeInTheDocument();
     },
   );
 
@@ -66,7 +66,7 @@ describe('DecidePreview — live-preview confirm gate', () => {
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(screen.getByText(/Counting the inbox/i)).toBeInTheDocument();
+    expect(screen.getByText(/Counting the email you already have/)).toBeInTheDocument();
   });
 
   it.each(['keep', 'unsubscribe'] as const)(
@@ -109,7 +109,9 @@ describe('DecidePreview — live-preview confirm gate', () => {
     expect(confirm).toBeEnabled();
     // One bold line: the count and where it goes. Its scope sits in Details.
     expect(screen.getByRole('heading', { name: 'Archive 2 emails?' })).toBeInTheDocument();
-    expect(screen.getByText(/Inbox now, rechecked when it runs/i)).toBeInTheDocument();
+    expect(
+      screen.getByText('Inbox only. We check again right before anything moves.'),
+    ).toBeInTheDocument();
     const account = screen.getByRole('note', { name: 'Gmail account: active@gmail.com' });
     expect(account.closest('details')).toBeNull();
     expect(account).toBeVisible();
@@ -143,7 +145,9 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
     expect(allMailChip).toHaveTextContent('9');
     // Default reach keeps the inbox-scoped headline + count scope.
     expect(screen.getByText(/They move to Gmail Trash\./)).toBeInTheDocument();
-    expect(screen.getByText(/^Inbox now/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/^Inbox only\. We check again right before anything moves/),
+    ).toBeInTheDocument();
   });
 
   it('hides the chips on a non-Delete verb and when the all-mail block is absent', () => {
@@ -202,7 +206,9 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/^2 emails from/)).toBeNull();
-    expect(screen.getByText(/^Inbox \+ archived now/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/^Inbox and archived email\. We check again right before anything moves/),
+    ).toBeInTheDocument();
     expect(screen.getByText('Puts each email back where it was')).toBeInTheDocument();
     expect(screen.getByText('Trash, Spam, Drafts, Chat')).toBeInTheDocument();
     expect(screen.queryByText(/They move to Gmail Trash/)).toBeNull();
@@ -258,7 +264,11 @@ describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () =
         onCancel={() => {}}
       />,
     );
-    expect(screen.getByText(/Inbox now \(older than 6 months\+\)/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Inbox only (older than 180 days). We check again right before anything moves.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('stays silent when no window is active (every non-Delete verb)', () => {
@@ -324,7 +334,9 @@ describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () =
       />,
     );
     expect(
-      screen.getByText(/Inbox \+ archived now \(older than 6 months\+\)/i),
+      screen.getByText(
+        'Inbox and archived email (older than 180 days). We check again right before anything moves.',
+      ),
     ).toBeInTheDocument();
     expect(screen.queryByRole('status')).toBeNull();
   });

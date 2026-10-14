@@ -231,7 +231,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
       />,
     );
 
-    expect(screen.getByText(/rechecked when it runs/)).toBeInTheDocument();
+    expect(screen.getByText(/We check again right before anything moves/)).toBeInTheDocument();
     const confirm = screen.getByRole('button', { name: /Archive/ });
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
@@ -499,7 +499,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     fireEvent.click(confirm);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(screen.getAllByText(/Couldn't load the preview/i)).toHaveLength(1);
+    expect(screen.getAllByText(/Couldn’t load the preview/i)).toHaveLength(1);
   });
 
   it('fails closed with retry copy when the required preview is unavailable', () => {
@@ -515,7 +515,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
 
     expect(screen.getByRole('button', { name: /Archive/ })).toBeDisabled();
     // Said once, beside the Retry preview button — never body AND footer.
-    expect(screen.getAllByText(/Couldn't load the preview/i)).toHaveLength(1);
+    expect(screen.getAllByText(/Couldn’t load the preview/i)).toHaveLength(1);
     expect(screen.queryByText(/archive whatever/i)).not.toBeInTheDocument();
   });
 
@@ -555,7 +555,9 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
       />,
     );
 
-    expect(screen.getByText(/^Inbox now, rechecked when it runs$/)).toBeInTheDocument();
+    expect(
+      screen.getByText('Inbox only. We check again right before anything moves.'),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Show 1 of 4$/ })).toBeInTheDocument();
     expect(screen.queryByText(/will move to Archive/i)).not.toBeInTheDocument();
     const account = screen.getByRole('note', { name: 'Gmail account: active@gmail.com' });
@@ -1285,7 +1287,11 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
     // on both the chip and the title, so assert the pair.
     expect(screen.getByRole('heading', { name: 'Delete 700 emails?' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /Inbox \+ archived/ })).toHaveTextContent('700');
-    expect(screen.getByText(/^Inbox \+ archived now.*rechecked when it runs$/)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Inbox and archived email (older than 180 days). We check again right before anything moves.',
+      ),
+    ).toBeInTheDocument();
     // The un-windowed option stops claiming "inbox" once the reach is wider.
     expect(screen.getByRole('option', { name: /All mail/ })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: /All inbox/ })).toBeNull();
@@ -1515,7 +1521,11 @@ describe('ConfirmActionModal — ADR-0028 reach on a bulk selection (amendment 2
 
     expect(screen.getByText('They move to Gmail Trash.')).toBeInTheDocument();
     fireEvent.click(archived);
-    expect(screen.getByText(/^Inbox \+ archived now.*rechecked when it runs$/)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Inbox and archived email (older than 180 days). We check again right before anything moves.',
+      ),
+    ).toBeInTheDocument();
     // The subtitle follows the chip — it must not keep describing inbox mail only.
     expect(screen.queryByText('They move to Gmail Trash.')).toBeNull();
     expect(
@@ -1862,7 +1872,7 @@ describe('ConfirmActionModal — where the sender’s mail actually is', () => {
     );
     // 4 in inbox + 973 elsewhere + 23 binned = 1,000 received.
     expect(screen.getByTestId('mail-location-line')).toHaveTextContent(
-      '4 in your inbox · 973 elsewhere in Gmail · 23 in Trash or Spam',
+      '4 in your inbox · 973 elsewhere in Gmail',
     );
   });
 
@@ -1984,7 +1994,7 @@ describe('ConfirmActionModal — a preview failure that retrying cannot fix', ()
     // Said once — the inline panel carries it; the footer stays empty
     // beside the Refresh senders button.
     expect(screen.getAllByText(/no email in this Gmail account anymore/)).toHaveLength(1);
-    expect(screen.queryByText(/Couldn't load the preview/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Couldn’t load the preview/)).not.toBeInTheDocument();
   });
 
   it('still offers Retry preview for a failure that MIGHT clear on its own', () => {
@@ -2168,7 +2178,9 @@ describe('ConfirmActionModal — each fact is stated once (D226)', () => {
         compositePreview={livePreview}
       />,
     );
-    expect(alone.container.textContent).toContain('CountInbox now, rechecked when it runs');
+    expect(alone.container.textContent).toContain(
+      'IncludesInbox only. We check again right before anything moves.',
+    );
     alone.unmount();
 
     render(
@@ -2180,7 +2192,9 @@ describe('ConfirmActionModal — each fact is stated once (D226)', () => {
       />,
     );
     expect(screen.getByText(backlogMail('archive', 4))).toBeInTheDocument();
-    expect(screen.queryByText(/^Inbox now, rechecked when it runs$/)).toBeNull();
+    expect(
+      screen.queryByText('Inbox only. We check again right before anything moves.'),
+    ).toBeNull();
   });
 });
 

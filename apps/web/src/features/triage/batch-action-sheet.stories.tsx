@@ -202,6 +202,17 @@ export const Unavailable: Story<typeof BatchActionSheet> = {
   render: (args: Args) => frame(<BatchActionSheet {...args} />),
 };
 
+/** Later failure after a valid return date: the failure names no unrelated verb. */
+export const LaterUnavailable: Story<typeof BatchActionSheet> = {
+  ...Unavailable,
+  args: {
+    ...Unavailable.args,
+    verb: 'Later',
+    wakeAt: '2099-01-01T09:00:00.000Z',
+    onRetryPreview: () => {},
+  },
+};
+
 /**
  * Nothing actionable — every queued sender went Protected since queuing.
  * Confirm is disabled and Refresh triage is the route out.

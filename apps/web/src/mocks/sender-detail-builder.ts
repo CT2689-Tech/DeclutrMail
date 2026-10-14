@@ -65,7 +65,7 @@ const SUBJECT_POOL: Record<SenderGroup, string[]> = {
     'Your receipt from this week',
     'Weekly workspace summary',
     'Statement is ready',
-    "What's new in your account",
+    'What’s new in your account',
     'Action required: review the changes',
   ],
   forums: [
@@ -86,9 +86,9 @@ const SNIPPETS: Record<SenderGroup, string[]> = {
     'Thanks for sending the deck — looks great. Two small notes inline.',
   ],
   promotions: [
-    "Don't miss our biggest sale of the season. Up to 40% off everything sitewide — ends Sunday.",
-    "We saved your cart — these styles are running low. Tap to check out before they're gone.",
-    "Just landed: the new collection you've been waiting for. Members get 24-hour early access.",
+    'Don’t miss our biggest sale of the season. Up to 40% off everything sitewide — ends Sunday.',
+    'We saved your cart — these styles are running low. Tap to check out before they’re gone.',
+    'Just landed: the new collection you’ve been waiting for. Members get 24-hour early access.',
   ],
   social: [
     'See what 5 people have done in your network this week, plus 12 new updates from people you follow.',
@@ -97,11 +97,11 @@ const SNIPPETS: Record<SenderGroup, string[]> = {
   ],
   updates: [
     'Your weekly receipt is attached. Charges totaled $42.18 across 3 transactions. View details inside.',
-    "Here's a summary of activity in your workspace this week: 14 new comments, 3 documents shared.",
+    'Here’s a summary of activity in your workspace this week: 14 new comments, 3 documents shared.',
     'Your monthly statement is ready. Available to download from the account dashboard.',
   ],
   forums: [
-    "The week's top 5 questions, with accepted answers from the community. Plus 3 unanswered you might know.",
+    'The week’s top 5 questions, with accepted answers from the community. Plus 3 unanswered you might know.',
     'Two new replies on a thread you started, and one mention by another member you should see.',
     'This week: 12 new posts, 4 high-traffic threads, and the monthly community digest.',
   ],

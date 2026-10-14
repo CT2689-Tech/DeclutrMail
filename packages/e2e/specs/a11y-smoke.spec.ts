@@ -229,7 +229,7 @@ test('Privacy export distinguishes failures, announces preparation and permits a
   expect(path).not.toBeNull();
   expect(await readFile(path!, 'utf8')).toBe(contents);
   await expect(status).toHaveText(
-    "Senders CSV prepared. Check your browser's downloads for the file.",
+    'Senders CSV prepared. Check your browser’s downloads for the file.',
   );
   for (const button of await section.getByRole('button').all()) await expect(button).toBeEnabled();
   await expectNoBlockingAxeViolations(page);

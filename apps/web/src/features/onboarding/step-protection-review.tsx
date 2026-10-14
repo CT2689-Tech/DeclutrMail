@@ -132,8 +132,8 @@ export function StepProtectionReview({
             must never make without knowing. */}
         <ErrorState
           headingLevel={2}
-          title="Couldn't load your protection summary"
-          description="We couldn't read which senders are protected. Try again in a moment."
+          title="Couldn’t load your protection summary"
+          description="We couldn’t read which senders are protected. Try again in a moment."
           onRetry={() => void firstTriage.refetch()}
         />
       </PanelShell>
@@ -440,7 +440,7 @@ function donePanel(
   if (remaining > 0) {
     return {
       headline: reviewHeadline(split),
-      body: `We didn't have a review to line up here, but ${stillWeak}`,
+      body: `We didn’t have a review to line up here, but ${stillWeak}`,
     };
   }
 

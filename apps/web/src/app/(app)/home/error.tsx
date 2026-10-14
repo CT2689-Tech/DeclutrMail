@@ -18,7 +18,7 @@ export default function HomeError({
       error={error}
       reset={reset}
       boundary="home"
-      headline="We couldn't load Home."
+      headline="We couldn’t load Home."
       body="Try again, or go to Senders."
       escape={{ href: '/senders', label: 'Back to Senders' }}
     />

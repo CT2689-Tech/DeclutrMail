@@ -160,7 +160,7 @@ test('Quiet hours save, rejected save, retry and disable survive real API reads 
   await expect(save).toBeEnabled();
   await save.click();
   await expect(
-    page.getByText("Couldn't save quiet hours. Try again.", { exact: true }),
+    page.getByText('Couldn’t save quiet hours. Try again.', { exact: true }),
   ).toBeVisible();
   expect((await api.get<QuietHoursState>(path)).config).toEqual(config);
   const afterFailure = await sql<{ quiet_state: Record<string, unknown> }[]>`

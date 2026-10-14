@@ -188,10 +188,10 @@ function FreshFlow({ returnTo, resumeScan }: { returnTo: string | null; resumeSc
     if (me.isPending) return <FlowSkeleton label="Checking your session…" />;
     return (
       <FlowError
-        title="We couldn't load your account."
+        title="We couldn’t load your account."
         accountControls={false}
         // True: useMe keeps polling while the read is in error.
-        detail="We're retrying automatically."
+        detail="We’re retrying automatically."
         onRetry={() => void me.refetch()}
       />
     );
@@ -263,7 +263,7 @@ function AuthedFlow({ returnTo, resumeScan }: { returnTo: string | null; resumeS
           onError: (err) => {
             finishingThisVisit.current = false;
             captureFeatureException(err, { surface: 'onboarding', reason: 'complete' });
-            toast("Couldn't finish onboarding — try again.", 'warn');
+            toast('Couldn’t finish onboarding — try again.', 'warn');
           },
         },
       );
@@ -308,7 +308,7 @@ function AuthedFlow({ returnTo, resumeScan }: { returnTo: string | null; resumeS
         // a failure that never produced one.
         if (sync.isError && !sync.data) {
           return (
-            <FlowError title="We couldn't check the scan." onRetry={() => void sync.refetch()} />
+            <FlowError title="We couldn’t check the scan." onRetry={() => void sync.refetch()} />
           );
         }
         // Unreachable today: the step is `sync-gate` only once the status
@@ -468,7 +468,7 @@ function SecondaryConnectGate({
   if (sync.isError && !sync.data && !trapped) {
     return (
       <FlowError
-        title="We couldn't check the scan."
+        title="We couldn’t check the scan."
         onRetry={() => void sync.refetch()}
         escape={escape}
       />

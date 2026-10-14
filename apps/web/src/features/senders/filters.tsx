@@ -336,7 +336,7 @@ export function FilterPanel({
           count={counts?.unsubReady}
           value={state.unsubReady}
           onChange={(unsubReady) => onChange({ ...state, unsubReady })}
-          negatedHint="No unsubscribe link found — or the sender hasn't been checked yet"
+          negatedHint="No unsubscribe link found — or the sender hasn’t been checked yet"
         />
         <ToggleChip
           label="you wrote to them"

@@ -121,7 +121,7 @@ function Body({
     return (
       <ErrorState
         headingLevel={2}
-        title="Couldn't load security events"
+        title="Couldn’t load security events"
         description="The audit log is unavailable right now. Try again to refresh it."
         onRetry={() => void query.refetch()}
       />
@@ -144,7 +144,7 @@ function Body({
 
       {retainedDataError ? (
         <InlineReadError
-          description="Couldn't refresh security events. The events already shown are still available and may be out of date."
+          description="Couldn’t refresh security events. The events already shown are still available and may be out of date."
           onRetry={() => void query.refetch()}
           retryLabel="Retry refresh"
           pendingLabel="Refreshing…"
@@ -155,7 +155,7 @@ function Body({
       {rows.length > 0 ? (
         query.isFetchNextPageError ? (
           <InlineReadError
-            description="Couldn't load more events. The events already shown are still available."
+            description="Couldn’t load more events. The events already shown are still available."
             onRetry={() => void query.fetchNextPage()}
             retryLabel="Try again"
             pendingLabel="Retrying…"

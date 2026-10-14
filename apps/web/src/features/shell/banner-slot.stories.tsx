@@ -59,7 +59,7 @@ export const One: Story = {
   render: () => (
     <BannerSlot>
       <Quiet />
-      <DemoBanner>New email isn&apos;t syncing — the last attempt failed.</DemoBanner>
+      <DemoBanner>New email isn’t syncing — the last attempt failed.</DemoBanner>
     </BannerSlot>
   ),
 };
@@ -69,9 +69,9 @@ export const Several: Story = {
   render: () => (
     <BannerSlot>
       <DemoBanner>Account deletion is in progress.</DemoBanner>
-      <DemoBanner>New email isn&apos;t syncing — the last attempt failed.</DemoBanner>
+      <DemoBanner>New email isn’t syncing — the last attempt failed.</DemoBanner>
       <Quiet />
-      <DemoBanner>Google isn't granting access to a second mailbox.</DemoBanner>
+      <DemoBanner>Google isn’t granting access to a second mailbox.</DemoBanner>
     </BannerSlot>
   ),
 };
