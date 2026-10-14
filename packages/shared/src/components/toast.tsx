@@ -62,9 +62,9 @@ const TONE_DOT: Record<ToastTone, string | null> = {
 export function toastStackPosition(): CSSProperties {
   return {
     position: 'fixed',
-    // A published tray inset already includes the banner lift. A missing
-    // or shorter inset must not drop the stack into the banner, so the
-    // banner clearance is a floor rather than a var() fallback.
+    // Larger of the tray's occupied inset and the banner clearance
+    // (20px + tab bar + banner lift). A plain var() fallback would keep a
+    // short inset and, at z-index 200, cover Accept all and Essential only.
     bottom: `max(var(${UNDO_TRAY_INSET_VAR}, 0px), ${bottomClearOfCookieBanner('20px + var(--dm-tabbar-inset, 0px)')})`,
     maxWidth: 'calc(100vw - 32px)',
     width: 'max-content',

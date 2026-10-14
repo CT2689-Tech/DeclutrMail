@@ -1,15 +1,41 @@
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
-import { createServer } from 'node:http';
+import { createServer, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import {
   COOKIE_BANNER_CLEARANCE_PX,
+  COOKIE_BANNER_INSET_EVENT,
   COOKIE_BANNER_LIFT_VAR,
   UNDO_TRAY_INSET_VAR,
   undoTrayOccupiedPx,
 } from '@declutrmail/shared';
 import { expect, test, type Locator, type Page } from '@playwright/test';
+
+const requireFromShared = createRequire(new URL('../../shared/package.json', import.meta.url));
+const esbuild = createRequire(requireFromShared.resolve('vite/package.json'))('esbuild') as {
+  buildSync: (options: {
+    absWorkingDir: string;
+    bundle: true;
+    define: Record<string, string>;
+    entryPoints: string[];
+    format: 'iife';
+    jsx: 'automatic';
+    platform: 'browser';
+    write: false;
+  }) => { outputFiles: Array<{ text: string }> };
+};
+const clientBundle = esbuild.buildSync({
+  absWorkingDir: fileURLToPath(new URL('../../../apps/web', import.meta.url)),
+  bundle: true,
+  define: { 'process.env.NODE_ENV': '"production"' },
+  entryPoints: ['src/features/consent/cookie-banner-toast.client.tsx'],
+  format: 'iife',
+  jsx: 'automatic',
+  platform: 'browser',
+  write: false,
+}).outputFiles[0]!.text;
 
 const markup = execFileSync(
   fileURLToPath(new URL('../../../node_modules/.bin/tsx', import.meta.url)),
@@ -86,6 +112,83 @@ test('undo toast and tray stay tappable above the cookie banner at 360px', async
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+test('mounted banner and tray publish a clearance that keeps both Undo buttons and the banner buttons tappable', async ({
+  page,
+}) => {
+  const server = createServer((req, res) => {
+    if (req.url === '/client.js') {
+      send(res, 'text/javascript; charset=utf-8', clientBundle);
+      return;
+    }
+    send(
+      res,
+      'text/html; charset=utf-8',
+      `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><script>window.__cookieBannerInsetEvents=0;window.addEventListener(${JSON.stringify(COOKIE_BANNER_INSET_EVENT)},function(){window.__cookieBannerInsetEvents++})</script></head><body><div id="root"></div><script src="/client.js"></script></body></html>`,
+    );
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    await page.setViewportSize({ width: 360, height: 740 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
+
+    const banner = page.getByTestId('cookie-consent-banner');
+    const trayUndo = page.getByRole('region', { name: 'Recent actions' }).getByRole('button', {
+      name: 'Undo Archive',
+    });
+    const toastUndo = page.getByRole('button', { name: 'Undo', exact: true });
+    const accept = banner.getByRole('button', { name: 'Accept all', exact: true });
+    const essential = banner.getByRole('button', { name: 'Essential only', exact: true });
+
+    await expect(trayUndo).toBeVisible();
+    await expect(toastUndo).toBeVisible();
+    await expect(banner).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    await nextFrame(page);
+
+    const published = await page.evaluate(
+      ({ eventCountKey, liftName, insetName }) => {
+        const root = document.documentElement;
+        return {
+          events: (window as unknown as Record<string, number>)[eventCountKey] ?? 0,
+          lift: root.style.getPropertyValue(liftName),
+          inset: root.style.getPropertyValue(insetName),
+        };
+      },
+      {
+        eventCountKey: '__cookieBannerInsetEvents',
+        liftName: COOKIE_BANNER_LIFT_VAR,
+        insetName: UNDO_TRAY_INSET_VAR,
+      },
+    );
+    expect(published.events, COOKIE_BANNER_INSET_EVENT).toBeGreaterThan(0);
+    expect(published.lift).toMatch(/^\d+px$/);
+    expect(published.inset).toMatch(/^\d+px$/);
+
+    const bannerBox = (await banner.boundingBox())!;
+    const trayBox = (await trayUndo.boundingBox())!;
+    const toastBox = (await toastUndo.boundingBox())!;
+    expect(intersects(trayBox, bannerBox), 'tray Undo clears the banner').toBe(false);
+    expect(intersects(toastBox, bannerBox), 'toast Undo clears the banner').toBe(false);
+    expect(toastBox.y + toastBox.height, 'toast Undo sits above the tray').toBeLessThanOrEqual(
+      trayBox.y,
+    );
+    expect(await hitButton(page, trayBox)).toBe('Undo');
+    expect(await hitButton(page, toastBox)).toBe('Undo');
+    await expectTopmost(page, accept, 'Accept all');
+    await expectTopmost(page, essential, 'Essential only');
+    await page.screenshot({ path: '/opt/cursor/artifacts/cookie-banner-undo-live-360.png' });
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+function send(res: ServerResponse, contentType: string, body: string): void {
+  res.writeHead(200, { 'content-type': contentType });
+  res.end(body);
+}
 
 async function publishClearance(page: Page): Promise<void> {
   // The tray's used bottom stays on the previous frame in the same turn
