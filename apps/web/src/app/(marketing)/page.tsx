@@ -1,8 +1,6 @@
 import { ProductJourney } from '@/features/marketing/landing/product-journey';
 import type { Metadata } from 'next';
 
-import '@/features/marketing/landing/landing.css';
-import '@/features/marketing/landing/homepage-sections.css';
 import { Hero } from '@/features/marketing/landing/hero';
 import { HowItWorks, PrivacyDesk, ProductBreadth } from '@/features/marketing/landing/sections';
 import { PricingTeaserGate } from '@/features/marketing/landing/pricing-teaser-story';

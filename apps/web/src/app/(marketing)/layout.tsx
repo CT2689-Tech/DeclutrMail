@@ -31,7 +31,7 @@ import { SignupRefCapture } from '@/features/marketing/signup-ref-capture';
 import { SiteAnalytics } from '@/features/marketing/site-analytics';
 import { ThemeScript } from '@/features/theme/theme-script';
 import { softwareApplicationDescription } from './site-json-ld-description';
-import '@/features/marketing/public-shell/public-shell.css';
+import '@/features/marketing/public-styles.css';
 
 const { color, font } = tokens;
 
