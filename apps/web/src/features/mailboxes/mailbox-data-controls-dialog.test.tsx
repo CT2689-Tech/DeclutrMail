@@ -100,6 +100,10 @@ describe('MailboxDataControlsDialog', () => {
     ).toBeInTheDocument();
     const dialog = screen.getByRole('dialog', { name: /disconnect person@example\.com/i });
     expect(dialog.textContent?.toLowerCase()).not.toContain('mailbox');
+    expect(dialog).toHaveTextContent(
+      `${WS2_COPY.simplify.dataControls.deleteBodyConnected} ${WS2_COPY.simplify.dataControls.deleteRemain} ${WS2_COPY.liveFix.mailboxes.deleteReconnect}`,
+    );
+    expect(dialog).not.toHaveTextContent(WS2_COPY.simplify.dataControls.deleteBody);
     expect(screen.queryByText(/Removed on disconnect/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Deleted from DeclutrMail/)).not.toBeInTheDocument();
     const summaries = screen.getAllByText(WS2_COPY.simplify.dataControls.inventoryToggle);
@@ -174,6 +178,12 @@ describe('MailboxDataControlsDialog', () => {
       screen.queryByRole('heading', { name: /disconnect and keep saved data/i }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /^delete saved data$/i })).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: /manage data for person@example\.com/i });
+    expect(dialog.textContent?.toLowerCase()).not.toContain('mailbox');
+    expect(dialog).toHaveTextContent(
+      `${WS2_COPY.simplify.dataControls.deleteBody} ${WS2_COPY.simplify.dataControls.deleteRemain} ${WS2_COPY.liveFix.mailboxes.deleteReconnect}`,
+    );
+    expect(dialog).not.toHaveTextContent(WS2_COPY.simplify.dataControls.deleteBodyConnected);
   });
 
   it('surfaces an error and disables cancellation while a request is in flight', () => {

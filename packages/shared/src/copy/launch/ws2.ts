@@ -33,6 +33,10 @@ import deck from './deck/ws2.json' with { type: 'json' };
  * route label: capital S and one ellipsis character, same shape as
  * the Triage loading label.
  * drop2-r45 adds `simplify.recovery.checking`, `checkFailed`, and
- * `checkAgain`.
+ * `checkAgain`. §Z adds `simplify.dataControls.deleteBody`,
+ * `deleteBodyConnected` (deck key `deleteBody.connected`; a string key
+ * cannot also be a parent), `deleteRemain`, and
+ * `liveFix.privacy.inventory` `oauthLabel`, `visitLabel`,
+ * `processingLabel`, and `auditLabel`.
  */
 export const WS2_COPY = deck;
