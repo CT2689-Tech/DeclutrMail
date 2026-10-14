@@ -9,7 +9,7 @@ import {
 } from '@declutrmail/shared';
 import type { ActionReach } from '@declutrmail/shared/contracts';
 import type { ActionVerb } from './types';
-import { PREVIEW_DETAILS, previewWhereNowFromSentence } from './preview-detail-copy';
+import { PREVIEW_DETAILS, previewWhereNowFromSentence } from '@declutrmail/shared/copy';
 
 const { color, space, text } = tokens;
 

@@ -54,3 +54,10 @@ export {
 } from './engine-confidence';
 
 export { previewEyebrowLabel } from './preview-eyebrow';
+
+export {
+  PREVIEW_DETAILS,
+  PREVIEW_UNAVAILABLE_MESSAGE,
+  previewIncludesValue,
+  previewWhereNowFromSentence,
+} from './preview-detail-copy';

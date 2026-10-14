@@ -107,22 +107,28 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
     expect(html).toBe('');
   });
 
-  it('blocks confirmation and offers retry when the live preview is unavailable', () => {
-    const html = renderToStaticMarkup(
-      <ActionSheet
-        open={true}
-        verb="Archive"
-        row={row}
-        inboxCount="unavailable"
-        onCancel={() => {}}
-        onConfirm={() => {}}
-        onRetryPreview={() => {}}
-      />,
-    );
+  it.each(['Archive', 'Later', 'Delete'] as const)(
+    'blocks %s on preview failure without suggesting another action',
+    (verb) => {
+      const html = renderToStaticMarkup(
+        <ActionSheet
+          open={true}
+          verb={verb}
+          wakeAt={new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()}
+          row={row}
+          inboxCount="unavailable"
+          onCancel={() => {}}
+          onConfirm={() => {}}
+          onRetryPreview={() => {}}
+        />,
+      );
 
-    expect(html).toContain('Try again');
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Archive/);
-  });
+      expect(html).toContain('Try again');
+      expect(html).toContain('Nothing can move until it loads.');
+      expect(html).not.toContain('Try again to archive or delete');
+      expect(html).toMatch(/<button[^>]*disabled=""/);
+    },
+  );
 
   it('blocks confirmation while the live preview is still loading', () => {
     const html = renderToStaticMarkup(

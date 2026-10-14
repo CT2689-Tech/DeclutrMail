@@ -1,5 +1,7 @@
 'use client';
 
+import { PREVIEW_UNAVAILABLE_MESSAGE } from '@declutrmail/shared/copy';
+
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 
 import { useEffect, useState, type ReactNode } from 'react';
@@ -22,7 +24,7 @@ import {
   actionMovesMail,
   type ActionPreviewDetail,
 } from './action-preview-detail';
-import { PREVIEW_DETAILS } from './preview-detail-copy';
+import { PREVIEW_DETAILS } from '@declutrmail/shared/copy';
 import {
   PreviewReasoning,
   buildPreviewFacts,
@@ -323,7 +325,7 @@ export function ActionSheet({
     'Pick a future return time.'
   ) : previewUnavailable ? (
     <StatusWithAction
-      message="Couldn’t load the preview. Nothing can move until it loads."
+      message={PREVIEW_UNAVAILABLE_MESSAGE}
       action={
         onRetryPreview ? { label: WS2_COPY.home.failed.retry, onClick: onRetryPreview } : undefined
       }

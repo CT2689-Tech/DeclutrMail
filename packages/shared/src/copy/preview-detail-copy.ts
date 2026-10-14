@@ -1,4 +1,8 @@
-import { fillCopy, pluralCopy, WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { fillCopy, pluralCopy, WS2_COPY } from './launch';
+
+// D199 consumers: Senders, Triage (modal and inline), Screener,
+// Brief Noise, and Autopilot rule approval. Existing preview stories
+// exercise these rows; this module owns wording/formatting only.
 
 /** Content deck r44 labels and values for in-app preview Details rows. */
 export const PREVIEW_DETAILS = WS2_COPY.preview.details;
@@ -34,3 +38,7 @@ export function previewWhereNowFromSentence(line: string): string {
     m: format(elsewhere[1]),
   });
 }
+
+/** Neutral failure for any mail-moving preview, including Later. */
+export const PREVIEW_UNAVAILABLE_MESSAGE =
+  'Couldn’t load the preview. Nothing can move until it loads.';

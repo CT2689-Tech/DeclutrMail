@@ -33,7 +33,7 @@ import {
 } from '@declutrmail/shared/actions';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { mailLocationValue } from '@/features/triage/action-preview-detail';
-import { PREVIEW_DETAILS, previewIncludesValue } from '@/features/triage/preview-detail-copy';
+import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 import { afterLead } from '@/lib/copy/after-lead';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';

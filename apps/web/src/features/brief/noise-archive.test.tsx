@@ -529,7 +529,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     renderScreen();
 
     const dialog = await openPreview();
-    await within(dialog).findByText(/couldn’t count the email you already have/i);
+    await within(dialog).findByText(/couldn’t load the preview/i);
     expect(within(dialog).getByRole('button', { name: /^Archive/ })).toBeDisabled();
     expect(within(dialog).getByRole('button', { name: /retry preview/i })).toBeInTheDocument();
     expect(enqueued).toHaveLength(0);

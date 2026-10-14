@@ -15,7 +15,7 @@ import {
 import { meterPreviewText } from '@declutrmail/shared/entitlements';
 
 import { useNow } from '@/lib/use-now';
-import { PREVIEW_DETAILS, previewIncludesValue } from './preview-detail-copy';
+import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 import type { TriageDecisionRow } from './data';
 import type { ActionVerb } from './types';
 

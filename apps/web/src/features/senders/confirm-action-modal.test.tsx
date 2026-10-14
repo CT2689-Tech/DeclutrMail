@@ -2192,7 +2192,9 @@ describe('ConfirmActionModal — each fact is stated once (D226)', () => {
       />,
     );
     expect(screen.getByText(backlogMail('archive', 4))).toBeInTheDocument();
-    expect(screen.queryByText('Inbox only. We check again right before anything moves.')).toBeNull();
+    expect(
+      screen.queryByText('Inbox only. We check again right before anything moves.'),
+    ).toBeNull();
   });
 });
 

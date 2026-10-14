@@ -226,7 +226,7 @@ describe('Screener keyboard handler (#220, D226)', () => {
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'a' });
-    await screen.findByText(/count the email you already have/i);
+    await screen.findByText(/couldn’t load the preview/i);
 
     fireEvent.keyDown(window, { key: 'Enter' });
     await Promise.resolve();

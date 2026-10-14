@@ -1,5 +1,7 @@
 'use client';
 
+import { PREVIEW_UNAVAILABLE_MESSAGE } from '@declutrmail/shared/copy';
+
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import {
@@ -24,7 +26,7 @@ import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 
 import { afterLead } from '@/lib/copy/after-lead';
 import type { TriageDecisionRow } from './data';
-import { PREVIEW_DETAILS, previewIncludesValue } from './preview-detail-copy';
+import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 import type { DomainBatch } from './domain-batch';
 import type { BatchVerb } from './domain-batch-card';
 
@@ -198,7 +200,7 @@ export function BatchActionSheet({
     WS5_COPY['f1.preview.backlog.loading']
   ) : preview === 'unavailable' ? (
     <StatusWithAction
-      message={WS5_COPY['f1.preview.backlog.error']}
+      message={PREVIEW_UNAVAILABLE_MESSAGE}
       action={onRetryPreview ? { label: 'Retry preview', onClick: onRetryPreview } : undefined}
     />
   ) : nothingActionable ? (

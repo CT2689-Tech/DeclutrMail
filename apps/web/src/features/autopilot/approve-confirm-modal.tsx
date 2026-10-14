@@ -1,7 +1,7 @@
 'use client';
 
 import { tokens, type SheetFactItem } from '@declutrmail/shared';
-import { PREVIEW_DETAILS } from '@/features/triage/preview-detail-copy';
+import { PREVIEW_DETAILS } from '@declutrmail/shared/copy';
 import { buildActionPresentation, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { AutopilotMatchDto, AutopilotRuleDto } from '@/lib/api/autopilot';
 import { ConfirmModalFrame, ruleEffectFacts } from './confirm-modal-frame';

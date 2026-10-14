@@ -1,5 +1,7 @@
 'use client';
 
+import { PREVIEW_UNAVAILABLE_MESSAGE } from '@declutrmail/shared/copy';
+
 import { useActionPreviewAnalytics } from '@/lib/use-action-preview-analytics';
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 
@@ -7,7 +9,7 @@ import { useEffect, type ReactNode } from 'react';
 import { Button, PreviewSheet, SheetFactList, tokens } from '@declutrmail/shared';
 import { WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
-import { PREVIEW_DETAILS, previewIncludesValue } from '@/features/triage/preview-detail-copy';
+import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 
@@ -104,7 +106,7 @@ export function NoiseArchiveSheet({
       'You switched Gmail accounts, so nothing was archived. Close this and start again.'
     ) : preview === 'unavailable' ? (
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        {WS5_COPY['f1.preview.backlog.error']}
+        {PREVIEW_UNAVAILABLE_MESSAGE}
         <Button tone="default" size="sm" onClick={onRetryPreview}>
           Retry preview
         </Button>

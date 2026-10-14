@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { WS2_COPY } from './launch';
 
 import {
   PREVIEW_DETAILS,
