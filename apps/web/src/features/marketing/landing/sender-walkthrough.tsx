@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { WS3_COPY } from '@declutrmail/shared/copy/launch';
 import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
-import './sender-walkthrough.css';
+// Styles are loaded by the public route group through public-styles.css.
 
 const STEPS = ['Inspect', 'Preview', 'Result', 'Undo'] as const;
 

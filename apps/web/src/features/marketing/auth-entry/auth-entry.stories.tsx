@@ -1,3 +1,5 @@
+// Stories render outside the public route group.
+import '../trust/trust-row.css';
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { AuthEntry } from './auth-entry';
 const meta = { title: 'Marketing/AuthEntry', component: AuthEntry } satisfies Meta<
