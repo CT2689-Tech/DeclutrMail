@@ -198,7 +198,7 @@ export function BatchActionSheet({
     WS5_COPY['f1.preview.backlog.loading']
   ) : preview === 'unavailable' ? (
     <StatusWithAction
-      message={WS5_COPY['f1.preview.backlog.error']}
+      message={WS2_COPY.preview.unavailable}
       action={
         onRetryPreview ? { label: WS2_COPY.home.failed.retry, onClick: onRetryPreview } : undefined
       }
