@@ -279,7 +279,7 @@ export function buildPreviewFacts({
     title: unsubscribeTitle(facts.liveCount === null ? 'unsub_only' : unsubMode, row.senderName, n),
     subtitle: [future, backlog].filter((line): line is string => line !== null).join(' '),
     note: unsubscribeHonesty(unsubMode),
-    primaryLabel: unsubscribeButton(unsubMode),
+    primaryLabel: unsubscribeButton(unsubMode, facts.liveCount),
     unitsNeeded: unsubMode === 'unsub_only' ? 0 : 1,
   };
 }

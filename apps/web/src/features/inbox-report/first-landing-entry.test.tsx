@@ -2,7 +2,7 @@ import { ToastHost } from '@declutrmail/shared';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { pluralCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import type { InboxReportDto } from '@declutrmail/shared/inbox-report';
 
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
@@ -103,7 +103,7 @@ describe('InboxReportFirstLanding', () => {
       await waitFor(() => expect(archive).toBeEnabled());
       if (mode === 'delete') {
         fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
-        fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
+        fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
       }
       fireEvent.change(screen.getByRole('combobox', { name: 'How far back to act on' }), {
         target: { value: '180' },
@@ -113,7 +113,7 @@ describe('InboxReportFirstLanding', () => {
       );
       fireEvent.click(
         screen.getByRole('button', {
-          name: `Unsubscribe + ${mode === 'delete' ? 'Delete' : 'Archive'}`,
+          name: mode === 'delete' ? 'Unsubscribe + Delete 6 emails' : 'Unsubscribe + Archive',
         }),
       );
       await waitFor(() =>
@@ -182,11 +182,11 @@ describe('InboxReportFirstLanding', () => {
     const option = await screen.findByRole('radio', { name: '+ Delete 4' });
     await waitFor(() => expect(option).toBeEnabled());
     fireEvent.click(option);
-    fireEvent.click(
-      screen.getByRole('checkbox', { name: WS2_COPY.simplify.confirm.includeArchived }),
-    );
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
     expect(screen.getByRole('dialog')).toHaveTextContent('delete 12 emails');
-    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Delete' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+    );
     await waitFor(() =>
       expect(submitted).toMatchObject({ mode: 'delete', reach: 'all_mail', senderIds: ['s1'] }),
     );
