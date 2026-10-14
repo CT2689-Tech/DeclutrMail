@@ -775,7 +775,6 @@
     }
   },
   "preview": {
-    "unavailable": "Couldn’t load the preview. Nothing can move until it loads.",
     "details": {
       "includes": {
         "label": "Includes",
