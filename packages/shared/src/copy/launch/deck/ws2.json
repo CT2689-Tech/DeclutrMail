@@ -341,7 +341,7 @@
     "privacy": {
       "inventory": {
         "purpose": "Scan the listed Gmail details and provide the features you ask for.",
-        "visitLabel": "Mailbox visit times and counts of newly scanned email",
+        "visitLabel": "Your DeclutrMail visits and newly scanned email counts",
         "purgeClause": "failed jobs stay until resolved or removed when this inbox’s saved data or the account is deleted",
         "senderListClause": "names and addresses come from the saved sender list, one page at a time"
       }

@@ -2331,6 +2331,7 @@ function RecoveryCell({
 }) {
   const interactionBlocked = useContext(ActivityInteractionBlocked);
   const createPreview = useCreateActionRecoveryPreview();
+  const reviewButtonRef = useRef<HTMLButtonElement>(null);
   const confirmRecovery = useConfirmActionRecovery();
   const [open, setOpen] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
@@ -2355,6 +2356,7 @@ function RecoveryCell({
 
   const startReview = async () => {
     if (interactionBlocked || createPreview.isPending) return;
+    reviewButtonRef.current?.focus();
     setOpen(true);
     setPreviewId(null);
     createPreview.reset();
@@ -2371,7 +2373,8 @@ function RecoveryCell({
     if (confirmRecovery.isPending) return;
     setOpen(false);
     setPreviewId(null);
-    createPreview.reset();
+    // Closing the UI does not cancel its verification request. Preserve
+    // the pending guard; the next review clears the previous result.
     resetConfirmation();
   };
 
@@ -2450,8 +2453,10 @@ function RecoveryCell({
     <>
       <button
         type="button"
+        ref={reviewButtonRef}
         onClick={() => void startReview()}
-        disabled={interactionBlocked || createPreview.isPending}
+        disabled={interactionBlocked}
+        aria-disabled={createPreview.isPending || undefined}
         style={{
           ...rowControlStyle,
           color: color.amber,
@@ -2475,6 +2480,7 @@ function RecoveryCell({
               onConfirm={(confirmation) => void confirm(confirmation)}
               onReconnect={() => startMailboxConnect(mailboxId ?? undefined)}
               onClose={close}
+              returnFocusRef={reviewButtonRef}
             />,
             document.body,
           )

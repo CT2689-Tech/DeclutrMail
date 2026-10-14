@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type RefObject } from 'react';
 
 import { Button, DialogFrame, TechnicalDetails, tokens } from '@declutrmail/shared';
 import {
@@ -49,6 +49,7 @@ export function ActionRecoveryDialog({
   onConfirm,
   onReconnect,
   onClose,
+  returnFocusRef,
 }: {
   row: ActivityRowWire;
   mailboxEmail?: string | null;
@@ -61,8 +62,12 @@ export function ActionRecoveryDialog({
   onConfirm: (confirmation: RecoveryConfirmation) => void;
   onReconnect: () => void;
   onClose: () => void;
+  returnFocusRef?: RefObject<HTMLElement | null>;
 }) {
-  const trapRef = useFocusTrap<HTMLDivElement>(true);
+  const trapRef = useFocusTrap<HTMLDivElement>(
+    true,
+    returnFocusRef ? { returnFocusRef } : undefined,
+  );
   const [wakeAtLocal, setWakeAtLocal] = useState('');
 
   useEffect(() => {

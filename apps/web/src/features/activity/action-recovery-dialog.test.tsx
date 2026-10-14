@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { createRef } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ActivityRowWire } from '@/lib/api/activity';
@@ -20,6 +21,50 @@ const row: ActivityRowWire = {
 };
 
 describe('recovery dismissal policy', () => {
+  it('returns to the explicit opener when focus moved before the lazy dialog mounted', async () => {
+    const opener = createRef<HTMLButtonElement>();
+    const props = {
+      row,
+      preview: undefined,
+      isStarting: true,
+      startError: null,
+      confirmError: null,
+      isConfirming: false,
+      onRetryVerification: vi.fn(),
+      onConfirm: vi.fn(),
+      onReconnect: vi.fn(),
+      onClose: vi.fn(),
+      returnFocusRef: opener,
+    };
+    const background = (
+      <>
+        <button ref={opener}>Check and retry</button>
+        <button>Next control</button>
+      </>
+    );
+    const { rerender } = render(
+      <div>
+        <section>{background}</section>
+      </div>,
+    );
+    screen.getByRole('button', { name: 'Next control' }).focus();
+    rerender(
+      <div>
+        <section>{background}</section>
+        <ActionRecoveryDialog {...props} />
+      </div>,
+    );
+    expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus();
+    await userEvent.keyboard('{Escape}');
+    expect(props.onClose).toHaveBeenCalledOnce();
+    rerender(
+      <div>
+        <section>{background}</section>
+      </div>,
+    );
+    expect(opener.current).toHaveFocus();
+  });
+
   it('keeps focus in the review when its last enabled control becomes disabled', async () => {
     const user = userEvent.setup();
     const props = {

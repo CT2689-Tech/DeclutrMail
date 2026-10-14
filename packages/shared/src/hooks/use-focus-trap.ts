@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 
 const FOCUSABLE =
   'summary,a[href],button:not([disabled]):not([tabindex="-1"]),input:not([disabled]):not([tabindex="-1"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
@@ -17,17 +17,20 @@ const FOCUSABLE =
  */
 export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
   active: boolean,
-  options?: { initialFocusSelector?: string },
+  options?: { initialFocusSelector?: string; returnFocusRef?: RefObject<HTMLElement | null> },
 ) {
   const ref = useRef<T>(null);
   const initialFocusSelector = options?.initialFocusSelector;
+  const returnFocusRef = options?.returnFocusRef;
 
   useEffect(() => {
     if (!active) return;
     const node = ref.current;
     if (!node) return;
 
-    const restoreTo = document.activeElement as HTMLElement | null;
+    // An async/lazy host can mount after the opener lost focus. Its
+    // persistent trigger is the explicit return point when supplied.
+    const restoreTo = returnFocusRef?.current ?? (document.activeElement as HTMLElement | null);
     const focusable = () =>
       Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((element) => {
         // Descendants of a closed disclosure are in the DOM but cannot
@@ -107,7 +110,7 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
       if (addedTabIndex) node.removeAttribute('tabindex');
       restoreTo?.focus?.();
     };
-  }, [active, initialFocusSelector]);
+  }, [active, initialFocusSelector, returnFocusRef]);
 
   return ref;
 }

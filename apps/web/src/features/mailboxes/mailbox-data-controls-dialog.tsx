@@ -154,10 +154,10 @@ export function MailboxDataControlsDialog({
           </h3>
           <p style={optionBodyStyle}>
             {alreadyDisconnected
-              ? 'Permanently deletes this mailbox’s saved email details and related data from DeclutrMail.'
-              : 'Removes the saved Google credential, stops access, then permanently deletes this mailbox’s saved email details and related data from DeclutrMail.'}{' '}
-            Your DeclutrMail account, other mailboxes, and this disconnected Gmail address remain.{' '}
-            {WS2_COPY.liveFix.mailboxes.deleteReconnect}
+              ? 'Permanently deletes this Gmail account’s saved email details and related data from DeclutrMail.'
+              : 'Removes the saved Gmail access details, stops access, then permanently deletes this Gmail account’s saved email details and related data from DeclutrMail.'}{' '}
+            Your DeclutrMail account, other Gmail accounts, and this disconnected Gmail address
+            remain. {WS2_COPY.liveFix.mailboxes.deleteReconnect}
           </p>
           <InventoryList
             title="Deleted from DeclutrMail"

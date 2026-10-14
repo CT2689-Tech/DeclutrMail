@@ -176,6 +176,138 @@ test('keyboard shortcut dialog traps and restores focus', async ({ page }) => {
   await expect(trigger).toBeFocused();
 });
 
+for (const phase of ['checking', 'ready'] as const) {
+  test(`recovery restores its opener after cancellation while ${phase}`, async ({ page }) => {
+    const actionId = '11111111-1111-1111-1111-111111111111';
+    const previewId = '22222222-2222-2222-2222-222222222222';
+    const preview = {
+      previewId,
+      actionId,
+      rootActionId: actionId,
+      verb: 'archive',
+      status: 'ready',
+      outcome: 'not_applied',
+      targetCount: 3,
+      remainingCount: 3,
+      alreadyAppliedCount: 0,
+      unavailableCount: 0,
+      verifiedCount: 3,
+      errorCode: null,
+      wakeAt: null,
+      requiresNewWakeAt: false,
+      expiresAt: new Date(Date.now() + 600_000).toISOString(),
+      recoveryActionId: null,
+    };
+    // Intercepted fictional metadata only; no verification or retry reaches the API/provider.
+    await page.route('**/api/activity?*', async (route) => {
+      if (route.request().method() !== 'GET') return route.continue();
+      const response = await route.fetch();
+      const envelope = await response.json();
+      await route.fulfill({
+        response,
+        json: {
+          ...envelope,
+          data: [
+            {
+              id: 'recovery-focus-fixture',
+              occurredAt: new Date().toISOString(),
+              source: 'manual',
+              action: 'archive',
+              affectedCount: 0,
+              sender: {
+                senderKey: 'fictional',
+                displayName: 'Sample newsletter',
+                email: 'sample@example.invalid',
+                domain: 'example.invalid',
+              },
+              rule: null,
+              feedbackRating: null,
+              undoState: { kind: 'unavailable' },
+              reviewOutcome: null,
+              executionState: {
+                kind: 'failed',
+                actionId,
+                rootActionId: actionId,
+                requestedCount: 3,
+                errorCode: 'GMAIL_RATE_LIMITED',
+                resolution: 'review',
+              },
+            },
+          ],
+        },
+      });
+    });
+    let verificationCalls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(`**/api/actions/${actionId}/recovery-preview`, async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      verificationCalls += 1;
+      await gate;
+      await route.fulfill({
+        json: { data: preview },
+        headers: {
+          'access-control-allow-origin': new URL(page.url()).origin,
+          'access-control-allow-credentials': 'true',
+        },
+      });
+    });
+    await page.route(`**/api/actions/recovery-previews/${previewId}`, (route) =>
+      route.request().method() !== 'GET'
+        ? route.continue()
+        : route.fulfill({
+            json: { data: preview },
+            headers: {
+              'access-control-allow-origin': new URL(page.url()).origin,
+              'access-control-allow-credentials': 'true',
+            },
+          }),
+    );
+    let confirmationCalls = 0;
+    await page.route(`**/api/actions/recovery-previews/${previewId}/retry`, (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      confirmationCalls += 1;
+      return route.abort();
+    });
+    if (phase === 'ready') release();
+    try {
+      await page.goto('/activity');
+      await expectScreenMounted(page);
+      // Changing a filter requests a fresh client feed, rather than
+      // depending on whether the server-hydrated default feed refetches.
+      await page.getByRole('button', { name: /^Filter\b/ }).click();
+      const filters = page.getByRole('dialog', { name: 'Activity filters' });
+      await filters.getByRole('button', { name: 'Manual', exact: true }).click();
+      const viewResults = filters.getByRole('button', { name: 'View results' });
+      if (await viewResults.isVisible()) await viewResults.click();
+      else await page.keyboard.press('Escape');
+      const trigger = page.getByRole('button', { name: 'Check and retry', exact: true });
+      await trigger.click();
+      const dialog = page.getByTestId('action-recovery-dialog');
+      await expect(dialog).toBeVisible();
+      if (phase === 'ready')
+        await expect(dialog.getByText('Still to do', { exact: true })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+      await expect(trigger).toBeFocused();
+      if (phase === 'checking') {
+        await expect(trigger).toHaveAttribute('aria-disabled', 'true');
+        await trigger.press('Enter');
+        expect(verificationCalls).toBe(1);
+        release();
+        await expect(trigger).toHaveText('Check and retry');
+        await expect(trigger).toBeFocused();
+      }
+      expect(verificationCalls).toBe(1);
+      expect(confirmationCalls).toBe(0);
+    } finally {
+      release();
+    }
+  });
+}
+
 // Intercepted export bytes only: no real mailbox data or account/export API write.
 test('Privacy export distinguishes failures, announces preparation and permits a retry', async ({
   page,
