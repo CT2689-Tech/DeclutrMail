@@ -1,8 +1,10 @@
+'use client';
+
 // Promoted per D199: existing disclosures share the native Details treatment.
 // Consumers: PreviewSheet, TechnicalDetails, Mailbox data inventories,
 // Triage InlinePreview and Screener DecidePreview. Stories follow D210.
 
-import type { CSSProperties, DetailsHTMLAttributes, ReactNode } from 'react';
+import { useState, type CSSProperties, type DetailsHTMLAttributes, type ReactNode } from 'react';
 
 import { color, font, motion, radius, space, text } from '../tokens/tokens';
 
@@ -13,6 +15,7 @@ export function Disclosure({
   defaultOpen = false,
   className,
   style,
+  onToggle,
   ...detailsProps
 }: Omit<DetailsHTMLAttributes<HTMLDetailsElement>, 'open'> & {
   summary?: string;
@@ -21,11 +24,18 @@ export function Disclosure({
   className?: string;
   style?: CSSProperties | undefined;
 }) {
+  // `open={true}` is controlled. A constant true pins the disclosure open,
+  // so the initial value has to follow later toggles.
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <details
       {...detailsProps}
       className={['dm-sheet-details', className].filter(Boolean).join(' ')}
-      open={defaultOpen || undefined}
+      open={open}
+      onToggle={(event) => {
+        setOpen(event.currentTarget.open);
+        onToggle?.(event);
+      }}
       style={{ width: '100%', minWidth: 0, borderRadius: radius.lg, textAlign: 'left', ...style }}
     >
       <summary
