@@ -572,7 +572,7 @@ describe('SenderDetailRoute', () => {
     expect(screen.queryByText(/Hasn.t mailed you yet\./)).not.toBeInTheDocument();
   });
 
-  it('keeps "Hasn\'t mailed you yet." for a sender who genuinely never mailed', async () => {
+  it('keeps "Hasn’t mailed you yet." for a sender who genuinely never mailed', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -895,13 +895,13 @@ describe('SenderDetailRoute', () => {
     // not-found UI, never the generic "We couldn't load this sender"
     // retry state.
     await waitFor(() => expect(screen.getByText(/sender not found/i)).toBeInTheDocument());
-    expect(screen.queryByText(/we couldn't load this sender/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/we couldn’t load this sender/i)).not.toBeInTheDocument();
 
     // Release `detail`'s own 404 and confirm the page stays correct —
     // no flash back to a loading or error state once it settles too.
     releaseDetail();
     await waitFor(() => expect(screen.getByText(/sender not found/i)).toBeInTheDocument());
-    expect(screen.queryByText(/we couldn't load this sender/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/we couldn’t load this sender/i)).not.toBeInTheDocument();
   });
 
   // D38 session-3 — instrument coverage.
@@ -1184,7 +1184,7 @@ describe('SenderDetailRoute', () => {
    * pending, `history.error` is still B's 404, dated BEFORE the second
    * reset — the fix must not treat it as authoritative for A.
    */
-  it("does not go not-found on a sibling's stale 404 from before the last mailbox switch", async () => {
+  it('does not go not-found on a sibling’s stale 404 from before the last mailbox switch', async () => {
     let historyCallCount = 0;
     let releaseThirdHistoryCall!: () => void;
     const thirdHistoryCallPending = new Promise<void>((resolve) => {
@@ -1529,7 +1529,7 @@ describe('SenderDetailRoute', () => {
         await tick(200);
         fireEvent.click(screen.getByRole('button', { name: 'Archive (A)' }));
         await tick(200);
-        screen.getByText(/rechecked when it runs/i);
+        screen.getByText(/We check again right before anything moves/);
         fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
         await tick(200);
         expect(actionPosts).toBe(1);
@@ -1642,7 +1642,7 @@ describe('SenderDetailRoute', () => {
         await tick(200);
         fireEvent.click(screen.getByRole('button', { name: 'Archive (A)' }));
         await tick(200);
-        screen.getByText(/rechecked when it runs/i);
+        screen.getByText(/We check again right before anything moves/);
         fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
         await tick(200);
         await tick(ACTION_OVERDUE_MS);
@@ -1683,7 +1683,7 @@ describe('SenderDetailRoute', () => {
       ]);
       renderDetail();
       fireEvent.click(await screen.findByRole('button', { name: 'Archive (A)' }));
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
       // It used to close before the request was even sent.
@@ -1729,7 +1729,7 @@ describe('SenderDetailRoute', () => {
 
       const archiveButton = await screen.findByRole('button', { name: 'Archive (A)' });
       fireEvent.click(archiveButton);
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(actionPosts).toBe(1));
       // The latch is armed once its status poll starts.
@@ -1795,7 +1795,7 @@ describe('SenderDetailRoute', () => {
       const archiveButton = await screen.findByRole('button', { name: 'Archive (A)' });
       expect(archiveButton).not.toHaveAttribute('aria-disabled', 'true');
       fireEvent.click(archiveButton);
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
       await waitFor(() =>
@@ -1837,7 +1837,7 @@ describe('SenderDetailRoute', () => {
         ]);
         renderDetail();
         fireEvent.click(await screen.findByRole('button', { name: 'Archive (A)' }));
-        await screen.findByText(/rechecked when it runs/i);
+        await screen.findByText(/We check again right before anything moves/);
         fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       }
 
@@ -2037,7 +2037,7 @@ describe('SenderDetailRoute', () => {
         ]);
         renderDetail();
         fireEvent.click(await screen.findByRole('button', { name: 'Archive (A)' }));
-        await screen.findByText(/rechecked when it runs/i);
+        await screen.findByText(/We check again right before anything moves/);
         fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       }
 
@@ -2056,7 +2056,7 @@ describe('SenderDetailRoute', () => {
         await archiveEnqueueFails(apiFailure(400, 'VALIDATION_FAILED'));
         await waitFor(() =>
           expect(h.toast).toHaveBeenCalledWith(
-            expect.stringMatching(/^Couldn't start Archive/),
+            expect.stringMatching(/^Couldn’t start Archive/),
             'warn',
           ),
         );
@@ -2071,7 +2071,7 @@ describe('SenderDetailRoute', () => {
         await unsubscribeThenBacklog(apiFailure(400, 'VALIDATION_FAILED'));
         await waitFor(() =>
           expect(h.toast).toHaveBeenCalledWith(
-            "Couldn't start Unsubscribe for LinkedIn — no request was sent.",
+            'Couldn’t start Unsubscribe for LinkedIn — no request was sent.',
             'warn',
           ),
         );
@@ -2085,7 +2085,7 @@ describe('SenderDetailRoute', () => {
         await waitFor(() => expect(pill('unconfirmed')).toHaveTextContent('Archive: unknown'));
         expect(pill('failed')).toBeNull();
         expect(h.toast).toHaveBeenCalledWith(
-          "Can't tell if Unsubscribe for LinkedIn started — check Activity before retrying.",
+          'Can’t tell if Unsubscribe for LinkedIn started — check Activity before retrying.',
           'warn',
         );
       });
@@ -2118,7 +2118,7 @@ describe('SenderDetailRoute', () => {
         // Mid-request: the last Archive mark clears and the sheet names
         // the in-flight request while preventing another confirmation.
         await waitFor(() => expect(confirm).toBeDisabled());
-        expect(within(dialog).getByRole('button', { name: 'Submitting…' })).toBeDisabled();
+        expect(within(dialog).getByRole('button', { name: 'Unsubscribing…' })).toBeDisabled();
         expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeEnabled();
         expect(pill('done')).toBeNull();
         release();
@@ -2146,7 +2146,7 @@ describe('SenderDetailRoute', () => {
       });
     });
 
-    it("clears the receipt when a DIFFERENT component's useRevertUndo() reverts the same token (external undo, immediate)", async () => {
+    it('clears the receipt when a DIFFERENT component’s useRevertUndo() reverts the same token (external undo, immediate)', async () => {
       let actionPosts = 0;
       let undoPosts = 0;
       installHappyPath();
@@ -2184,7 +2184,7 @@ describe('SenderDetailRoute', () => {
 
       const archiveButton = await screen.findByRole('button', { name: 'Archive (A)' });
       fireEvent.click(archiveButton);
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(actionPosts).toBe(1));
 
@@ -2249,7 +2249,7 @@ describe('SenderDetailRoute', () => {
 
       const archiveButton = await screen.findByRole('button', { name: 'Archive (A)' });
       fireEvent.click(archiveButton);
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(actionPosts).toBe(1));
       await waitFor(() => expect(doneMark()).not.toBeNull());

@@ -1591,7 +1591,7 @@ describe('ActivityScreen — D58 undo affordances', () => {
     ]);
     renderScreen();
     await userEvent.click(await screen.findByRole('button', { name: /^undo/i }));
-    expect(await screen.findByText("Can't tell if undo started — try again.")).toBeInTheDocument();
+    expect(await screen.findByText('Can’t tell if undo started — try again.')).toBeInTheDocument();
     expect(screen.queryByText(/undo-one|\/api\//)).toBeNull();
   });
 
@@ -2081,7 +2081,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     await waitFor(() => expect(recoveryPosts).toBe(1));
     expect(idempotencyKeys[0]!.length).toBeGreaterThanOrEqual(8);
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      /can't tell if the retry started.*won't run twice/i,
+      /can’t tell if the retry started.*won’t run twice/i,
     );
     await userEvent.click(confirm);
     await waitFor(() => expect(recoveryPosts).toBe(2));
@@ -2271,7 +2271,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
       const dialog = await openReview();
       await userEvent.click(await within(dialog).findByRole('button', { name: 'Delete 3' }));
       expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-        "Couldn't start the retry — nothing changed. Check Gmail again.",
+        'Couldn’t start the retry — nothing changed. Check Gmail again.',
       );
       expect(within(dialog).getByRole('button', { name: 'Check Gmail again' })).toBeEnabled();
     });

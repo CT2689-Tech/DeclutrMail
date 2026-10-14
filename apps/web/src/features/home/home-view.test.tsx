@@ -558,7 +558,7 @@ describe('HomeView', () => {
   it('error: names the cause and retries', () => {
     const retry = vi.fn();
     render(<HomeView state={{ kind: 'error', error: new ApiError(500, null, 'boom'), retry }} />);
-    expect(screen.getByText(/couldn't load Home/)).toBeInTheDocument();
+    expect(screen.getByText(/couldn’t load Home/)).toBeInTheDocument();
     expect(screen.getByText(/server returned an error/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /try again/i }));
     expect(retry).toHaveBeenCalledTimes(1);

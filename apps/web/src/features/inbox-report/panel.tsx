@@ -209,6 +209,7 @@ export function InboxReportPanel({
   onDismiss,
   onReopen,
   onFixConfirmed,
+  fixPending = false,
   celebration = null,
   undoToken,
   onUndo,
@@ -228,11 +229,14 @@ export function InboxReportPanel({
   onReopen: () => void;
   onFixConfirmed?: (
     mode: 'archive' | 'delete' | 'unsub_only',
-    reach?: 'all_mail',
+    reach: 'all_mail' | undefined,
+    senderIds: string[],
     olderThanDays?: number,
   ) => void;
   /** Synthetic demo buckets; live mailboxes always read a fresh preview. */
   fixPreviewCounts?: UnsubscribeSnapshotCounts;
+  /** True while the confirmed fix is still in flight. Blocks a second submit. */
+  fixPending?: boolean;
   onReview?: () => void;
   trustHref?: string;
   celebration?: ReportCelebration | null;
@@ -252,6 +256,10 @@ export function InboxReportPanel({
   const catalog = useCatalogFlags();
   const visitorLocale = useVisitorPriceLocale();
   const [fixOpen, setFixOpen] = useState(false);
+  const fixLatch = useRef(false);
+  useEffect(() => {
+    if (!fixPending) fixLatch.current = false;
+  }, [fixPending]);
   const calm = report.variant === 'fallback';
   const headline = calm ? null : report.insights[0] ? reportHeadline(report.insights[0]) : null;
   const glyph =
@@ -371,7 +379,15 @@ export function InboxReportPanel({
                         })
                       : ''}
                   </p>
-                  <button type="button" data-report-fix onClick={() => setFixOpen(true)}>
+                  <button
+                    type="button"
+                    data-report-fix
+                    disabled={fixPending}
+                    onClick={() => {
+                      fixLatch.current = false;
+                      setFixOpen(true);
+                    }}
+                  >
                     {fixLabel}
                   </button>
                   {onReview ? (
@@ -467,13 +483,18 @@ export function InboxReportPanel({
           mailboxEmail={mailboxEmail}
           fixPreviewCounts={fixPreviewCounts}
           onCancel={() => setFixOpen(false)}
+          submitting={fixPending}
           onConfirm={(opts) => {
+            if (fixPending || fixLatch.current) return;
+            fixLatch.current = true;
             setFixOpen(false);
             const mode = opts.secondary?.type ?? 'unsub_only';
-            if (opts.secondary?.olderThanDays != null) {
-              onFixConfirmed?.(mode, opts.reach, opts.secondary.olderThanDays);
-            } else if (mode === 'delete' && opts.reach) onFixConfirmed?.(mode, opts.reach);
-            else onFixConfirmed?.(mode);
+            onFixConfirmed?.(
+              mode,
+              mode === 'delete' ? opts.reach : undefined,
+              opts.senderIds,
+              opts.secondary?.olderThanDays ?? undefined,
+            );
           }}
         />
       ) : null}
@@ -506,6 +527,7 @@ function ReportFixDialog({
   mailboxId,
   mailboxEmail,
   fixPreviewCounts,
+  submitting = false,
   onCancel,
   onConfirm,
 }: {
@@ -514,6 +536,7 @@ function ReportFixDialog({
   mailboxId: string | undefined;
   mailboxEmail?: string | undefined;
   fixPreviewCounts?: UnsubscribeSnapshotCounts | undefined;
+  submitting?: boolean;
   onCancel: () => void;
   onConfirm: FixConfirm;
 }) {
@@ -526,6 +549,7 @@ function ReportFixDialog({
         preferredInboxCount={report.fix.inboxEmailCount}
         preferredCounts={fixPreviewCounts}
         preferArchive
+        submitting={submitting}
         onCancel={onCancel}
         onConfirm={onConfirm}
       />
@@ -536,6 +560,7 @@ function ReportFixDialog({
       mailboxId={mailboxId}
       request={request}
       mailboxEmail={mailboxEmail}
+      submitting={submitting}
       onCancel={onCancel}
       onConfirm={onConfirm}
     />
@@ -546,12 +571,14 @@ function LiveReportFixDialog({
   mailboxId,
   mailboxEmail,
   request,
+  submitting = false,
   onCancel,
   onConfirm,
 }: {
   mailboxId: string;
   mailboxEmail?: string | undefined;
   request: ActionRequest;
+  submitting?: boolean;
   onCancel: () => void;
   onConfirm: FixConfirm;
 }) {
@@ -568,6 +595,7 @@ function LiveReportFixDialog({
           void bulk.refetch();
         }}
         preferArchive
+        submitting={submitting}
         onCancel={onCancel}
         onConfirm={onConfirm}
       />
@@ -585,6 +613,7 @@ function LiveReportFixDialog({
         void composite.refetch();
       }}
       preferArchive
+      submitting={submitting}
       onCancel={onCancel}
       onConfirm={onConfirm}
     />

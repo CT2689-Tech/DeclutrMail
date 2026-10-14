@@ -235,7 +235,7 @@ describe('Screener keyboard handler (#220, D226)', () => {
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'a' });
-    await screen.findByText(/Couldn.t load the preview/i);
+    await screen.findByText(/couldn’t load the preview/i);
 
     fireEvent.keyDown(window, { key: 'Enter' });
     await Promise.resolve();
@@ -283,7 +283,7 @@ describe('Screener keyboard handler (#220, D226)', () => {
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'a' });
-    await screen.findByText(/Inbox now.*rechecked/i);
+    await screen.findByText(/Inbox only.*We check again right before anything moves/i);
 
     fireEvent.keyDown(window, { key: 'Enter' });
     await waitFor(() => expect(decidePosted).toBe(true));
@@ -401,7 +401,7 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'd' });
-    await screen.findByText(/Inbox now.*rechecked/i);
+    await screen.findByText(/Inbox only.*We check again right before anything moves/i);
     expect(screen.queryByRole('radiogroup', { name: 'Where it applies' })).toBeNull();
 
     fireEvent.keyDown(window, { key: 'Enter' });

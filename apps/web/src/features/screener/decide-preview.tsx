@@ -1,5 +1,7 @@
 'use client';
 
+import { PREVIEW_UNAVAILABLE_MESSAGE } from '@declutrmail/shared/copy';
+
 import { useActionPreviewAnalytics } from '@/lib/use-action-preview-analytics';
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 
@@ -15,10 +17,11 @@ import {
   buildActionPresentation,
   describeInboxScope,
   inboxScopeNoticeCopy,
-  WINDOW_PRESET_LABELS,
 } from '@declutrmail/shared/actions';
 import { scoredAgeLabel } from '@declutrmail/shared/copy';
+import { WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
+import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 import { afterLead } from '@/lib/copy/after-lead';
 import { useNow } from '@/lib/use-now';
 import type { ActionReach } from '@/lib/api/actions';
@@ -269,19 +272,12 @@ export function DecidePreview({
           { verbActsBeyondInbox: reachAvailable },
         )
       : null;
-  // Same "(older than N)" qualifier the senders confirm modal renders
-  // beside its own live count when a window is active.
-  const windowQualifier =
-    windowDays !== null
-      ? ` (older than ${WINDOW_PRESET_LABELS[windowDays] ?? `${windowDays} days`})`
-      : '';
-
   // ── Details ─────────────────────────────────────────────────────────
   const facts: SheetFactItem[] = [];
   if (moves && liveCount !== null) {
     facts.push({
-      label: 'Count',
-      value: `${allMailReach ? 'Inbox + archived' : 'Inbox'} now${windowQualifier}, rechecked when it runs`,
+      label: PREVIEW_DETAILS.includes.label,
+      value: previewIncludesValue(allMailReach, windowDays),
     });
   }
   if (allMailReach) {
@@ -315,15 +311,15 @@ export function DecidePreview({
   }
   if (primary.providerRecovery.kind === 'gmail-trash') {
     facts.push({
-      label: 'Gmail Trash',
-      value: `Kept up to ${primary.providerRecovery.approximateDays} days, then deleted for good`,
+      label: PREVIEW_DETAILS.deleted.label,
+      value: PREVIEW_DETAILS.deleted.value,
     });
   }
   // Engine recap — why the engine queued this sender, and how old that
   // read is (QA-archive-20260903-01).
   if (row.recommendation != null) {
     facts.push({
-      label: 'Why suggested',
+      label: PREVIEW_DETAILS.whySuggested.label,
       value: (
         <>
           {row.recommendation.reasoning}
@@ -362,9 +358,11 @@ export function DecidePreview({
       {explanation && <p style={{ ...mutedLine, textWrap: 'balance' }}>{explanation}</p>}
 
       {/* Why confirm is disabled while the live count is not a number (D211). */}
-      {moves && effectiveCount === 'loading' && <p style={mutedLine}>Counting the inbox…</p>}
+      {moves && effectiveCount === 'loading' && (
+        <p style={mutedLine}>{WS5_COPY['f1.preview.backlog.loading']}</p>
+      )}
       {moves && effectiveCount === 'unavailable' && (
-        <p style={mutedLine}>Couldn’t load the preview. Nothing can move until it loads.</p>
+        <p style={mutedLine}>{PREVIEW_UNAVAILABLE_MESSAGE}</p>
       )}
 
       {scopeCopy && (

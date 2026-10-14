@@ -225,7 +225,7 @@ export function SendersPoliciesScreen() {
               description={
                 query
                   ? 'Try another name, email, or domain, or clear the search to see all protected senders.'
-                  : "Senders you've written to at least three times, starred, or that Gmail keeps marking important are protected automatically."
+                  : 'Senders you’ve written to at least three times, starred, or that Gmail keeps marking important are protected automatically.'
               }
               action={
                 <Link href="/senders" style={{ textDecoration: 'none' }}>
@@ -424,7 +424,7 @@ function PolicyRow({ sender, disabled = false }: { sender: Sender; disabled?: bo
                 onSuccess: () => toast(`${sender.name} is no longer Protected.`, 'success'),
                 onError: (err) => {
                   captureFeatureException(err, { surface: 'senders', reason: 'unprotect' });
-                  toast("Couldn't remove protection — try again.", 'warn');
+                  toast('Couldn’t remove protection — try again.', 'warn');
                 },
               },
             )
@@ -500,7 +500,7 @@ function PoliciesErrorState({ onRetry }: { onRetry: () => void }) {
     >
       <RecoverableErrorState
         headingLevel={2}
-        title="We couldn't load protected senders"
+        title="We couldn’t load protected senders"
         description="Your existing policies remain active. Try again in a moment."
         onRetry={onRetry}
       />

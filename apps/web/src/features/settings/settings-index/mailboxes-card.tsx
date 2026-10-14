@@ -126,7 +126,7 @@ export function MailboxesCard({
             const reconnectBlockedReason = deletionInFlight
               ? indexedDataState === 'deletion_delayed'
                 ? 'Data deletion is delayed and will retry. Reconnect becomes available after deletion completes.'
-                : "You can reconnect once we've finished erasing what we stored."
+                : 'You can reconnect once we’ve finished erasing what we stored.'
               : undefined;
             const reconnectBlockedReasonId = `mailbox-${m.id}-reconnect-blocked`;
             const reconnectBlocked = deletionInFlight || (atLimit && !needsReconnect);

@@ -21,7 +21,9 @@ describe('SendersSimulator', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
       if (mode === 'Delete') {
         fireEvent.click(within(preview()).getByRole('radio', { name: '+ Delete 111' }));
-        fireEvent.click(within(preview()).getByRole('radio', { name: /Inbox \+ archived/ }));
+        fireEvent.click(
+          within(preview()).getByRole('checkbox', { name: 'Include archived email' }),
+        );
       }
       fireEvent.change(
         within(preview()).getByRole('combobox', { name: 'How far back to act on' }),
@@ -47,7 +49,7 @@ describe('SendersSimulator', () => {
     render(<SendersSimulator />);
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
     fireEvent.click(within(preview()).getByRole('radio', { name: '+ Delete 111' }));
-    fireEvent.click(within(preview()).getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(within(preview()).getByRole('checkbox', { name: 'Include archived email' }));
     expect(within(preview()).getByRole('heading')).toHaveTextContent('delete 273 emails');
     fireEvent.click(within(preview()).getByRole('button', { name: 'Unsubscribe + Delete' }));
     const activity = screen.getByRole('region', { name: 'Sample activity' });
@@ -55,9 +57,12 @@ describe('SendersSimulator', () => {
     fireEvent.click(within(activity).getByRole('button', { name: 'Undo' }));
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
     fireEvent.click(within(preview()).getByRole('radio', { name: '+ Delete 111' }));
-    expect(
-      within(preview()).getByRole('radio', { name: /Inbox \+ archived\s*273/ }),
-    ).toBeInTheDocument();
+    const includeArchived = within(preview()).getByRole('checkbox', {
+      name: 'Include archived email',
+    });
+    expect(includeArchived).not.toBeChecked();
+    fireEvent.click(includeArchived);
+    expect(within(preview()).getByRole('heading')).toHaveTextContent('delete 273 emails');
   });
 
   it('opens Delete on Cancel and restores trigger focus on Escape', () => {
@@ -218,7 +223,9 @@ describe('SendersSimulator — WS5 sample surfaces', () => {
     expect(dialog).toHaveTextContent(
       fillCopy(WS5_COPY['f1.preview.future'], { Sender: 'Northstar Weekly' }),
     );
-    expect(dialog).toHaveTextContent('Existing inbox email leaves your inbox and stays in Gmail.');
+    expect(dialog).toHaveTextContent(
+      pluralCopy(WS5_COPY['f1.preview.backlog.archive'], 111, { n: 111 }),
+    );
     expect(dialog).toHaveTextContent(WS5_COPY['f1.honesty.archive']);
     expect(dialog).toHaveTextContent(WS5_COPY['f1.meterFree']);
     expect(dialog).toHaveTextContent(WS5_COPY['f1.footer']);
@@ -229,7 +236,9 @@ describe('SendersSimulator — WS5 sample surfaces', () => {
 
     fireEvent.click(within(dialog).getByRole('radio', { name: /\+ Delete 111/ }));
     expect(dialog).toHaveTextContent(WS5_COPY['f1.deleteNote']);
-    expect(dialog).toHaveTextContent('Existing inbox email moves to Gmail Trash.');
+    expect(dialog).toHaveTextContent(
+      pluralCopy(WS5_COPY['f1.preview.backlog.delete'], 111, { n: 111 }),
+    );
     fireEvent.click(within(dialog).getByRole('radio', { name: /\+ Archive 111/ }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Unsubscribe + Archive' }));
     expect(

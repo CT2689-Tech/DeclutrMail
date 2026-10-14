@@ -15,6 +15,7 @@ import {
 import { meterPreviewText } from '@declutrmail/shared/entitlements';
 
 import { useNow } from '@/lib/use-now';
+import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 import type { TriageDecisionRow } from './data';
 import type { ActionVerb } from './types';
 
@@ -218,8 +219,8 @@ export function buildPreviewFacts({
   const disclosures: PreviewDisclosure[] = [];
   if (counts && liveCount !== null) {
     disclosures.push({
-      label: 'Count',
-      value: `${allMail ? 'Inbox + archived' : 'Inbox'} now, rechecked when it runs`,
+      label: PREVIEW_DETAILS.includes.label,
+      value: previewIncludesValue(allMail, null),
     });
   }
   // "from", a floor rather than a delivery time — see `presentationSchedule`.
@@ -244,8 +245,8 @@ export function buildPreviewFacts({
   }
   if (primary.providerRecovery.kind === 'gmail-trash') {
     disclosures.push({
-      label: 'Gmail Trash',
-      value: `Kept up to ${primary.providerRecovery.approximateDays} days, then deleted for good`,
+      label: PREVIEW_DETAILS.deleted.label,
+      value: PREVIEW_DETAILS.deleted.value,
     });
   }
 
@@ -272,10 +273,7 @@ export function buildPreviewFacts({
   if (verb !== 'Unsubscribe') return facts;
   const n = facts.liveCount ?? 0;
   const future = futureMailLine(row.senderName, row.unsubscribeMethod);
-  const backlog =
-    facts.liveCount === null && unsubMode !== 'unsub_only'
-      ? 'Counting existing inbox email…'
-      : backlogDestination(unsubMode, reach);
+  const backlog = backlogDestination(unsubMode, facts.liveCount);
   return {
     ...facts,
     title: unsubscribeTitle(facts.liveCount === null ? 'unsub_only' : unsubMode, row.senderName, n),

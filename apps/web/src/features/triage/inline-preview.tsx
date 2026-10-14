@@ -1,5 +1,6 @@
 'use client';
 
+import { PREVIEW_UNAVAILABLE_MESSAGE } from '@declutrmail/shared/copy';
 import { Button, Disclosure, SheetFactList, tokens } from '@declutrmail/shared';
 import { isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import type { ReactNode } from 'react';
@@ -175,8 +176,8 @@ export function InlinePreviewBlock({
       {blocked && (
         <p style={{ margin: `${space[1]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
           {preview.inboxCount === 'unavailable'
-            ? 'Couldn’t load the preview. Nothing can move until it loads.'
-            : 'Counting the inbox…'}
+            ? PREVIEW_UNAVAILABLE_MESSAGE
+            : WS5_COPY['f1.preview.backlog.loading']}
         </p>
       )}
       {facts.note !== null && (

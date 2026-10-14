@@ -783,7 +783,7 @@ function ReadyState({
               dismissPendingKeep();
               captureFeatureException(err, { surface: 'senders', reason: 'policy_keep' });
               setSettled({ phase: 'failed', verb: 'keep' });
-              toast(`Couldn't keep ${sender.name}`, 'warn');
+              toast(`Couldn’t keep ${sender.name}`, 'warn');
             },
           },
         );
@@ -925,6 +925,8 @@ function ReadyState({
           toast('Still confirming your last action — give it a moment.', 'info');
           return;
         }
+        const postedIds = opts?.senderIds ?? [sender.id];
+        if (postedIds.length !== 1 || postedIds[0] !== sender.id) return;
         setSubmitting(true);
         setSettled(null);
         const mode =
@@ -937,7 +939,7 @@ function ReadyState({
           {
             mailboxId: actionMailboxId,
             mode,
-            senderIds: [sender.id],
+            senderIds: postedIds,
             olderThanDays: opts?.secondary?.olderThanDays ?? null,
             ...(mode === 'delete' && opts?.reach === 'all_mail' ? { reach: opts.reach } : {}),
             // Override rides only the dialog's explicit "anyway" click.
@@ -1169,7 +1171,7 @@ function ReadyState({
         surface: 'senders',
         reason: 'unsub_status_poll',
       });
-      toast(`Couldn't confirm the unsubscribe from ${activeUnsub.senderName}`, 'warn');
+      toast(`Couldn’t confirm the unsubscribe from ${activeUnsub.senderName}`, 'warn');
       setActiveUnsub(null);
       return;
     }
@@ -1278,7 +1280,7 @@ function ReadyState({
         onError: (err) => {
           setDetail((d) => ({ ...d, isProtected: !next, protectionReason: prevReason }));
           captureFeatureException(err, { surface: 'senders', reason: 'policy_protect' });
-          toast(next ? "Couldn't protect — try again" : "Couldn't unprotect — try again", 'warn');
+          toast(next ? 'Couldn’t protect — try again' : 'Couldn’t unprotect — try again', 'warn');
         },
       },
     );
@@ -1862,7 +1864,7 @@ function NotFoundState({ layout, onClose }: { layout: DetailLayout; onClose?: ()
       <EmptyState
         headingLevel={layout === 'page' ? 2 : 3}
         title="Sender not found"
-        body="This sender isn't in this mailbox."
+        body="This sender isn’t in this mailbox."
         action={
           // In the pane the list is already on screen — closing is "back".
           layout === 'pane' ? (
@@ -1896,7 +1898,7 @@ function SenderDetailErrorState({
     <DetailFrame layout={layout}>
       <RecoverableErrorState
         headingLevel={2}
-        title="We couldn't load this sender"
+        title="We couldn’t load this sender"
         description="Nothing in your mailbox changed."
         onRetry={handleRetry}
       />

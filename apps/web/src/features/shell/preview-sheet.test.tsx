@@ -18,7 +18,7 @@ function renderSheet(overrides: Partial<Parameters<typeof PreviewSheet>[0]> = {}
     <PreviewSheet
       onClose={onClose}
       title="Archive 174 emails?"
-      subtitle="From Macy's. They leave your inbox and stay in Gmail."
+      subtitle="From Macy’s. They leave your inbox and stay in Gmail."
       note="Undo from Activity for 30 days."
       details={<p>Counted now, rechecked when it runs.</p>}
       primary={{ label: 'Archive 174', onClick: onConfirm }}

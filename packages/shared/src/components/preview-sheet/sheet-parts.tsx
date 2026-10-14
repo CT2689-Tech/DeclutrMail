@@ -130,6 +130,83 @@ export function SheetSegmented<T extends string>({
   );
 }
 
+/**
+ * One yes/no choice in a confirm sheet. Unchecked is the safe scope.
+ * Callers disable it when the checked scope cannot be counted.
+ */
+export function SheetCheckbox({
+  checked,
+  disabled = false,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'flex-start',
+        gap: 10,
+        width: '100%',
+        minHeight: 48,
+        padding: `${space[2]}px ${space[4]}px`,
+        background: color.fill,
+        border: 'none',
+        borderRadius: radius.lg,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        textAlign: 'left',
+        fontFamily: font.sans,
+        fontSize: text.sm,
+        color: color.fg,
+        opacity: disabled ? 0.45 : 1,
+      }}
+    >
+      <span
+        aria-hidden="true"
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: 6,
+          boxShadow: checked ? 'none' : `inset 0 0 0 1.5px ${color.fgMuted}`,
+          background: checked ? color.primary : 'transparent',
+          color: color.fgInverse,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        {checked && (
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M20 6 9 17l-5-5" />
+          </svg>
+        )}
+      </span>
+      <span>{label}</span>
+    </button>
+  );
+}
+
 /** One row of {@link SheetFactList}: a short label and a short value. */
 export type SheetFactItem = { label: string; value: ReactNode };
 

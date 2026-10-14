@@ -112,7 +112,7 @@ describe('/pricing.md — machine-readable pricing', () => {
   it('states the Activity Undo window for Archive and Later instead of hedging (D245)', async () => {
     const markdown = await body();
 
-    expect(markdown).not.toContain("for the plan's undo window");
+    expect(markdown).not.toContain('for the plan’s undo window');
     if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
       expect(markdown).toContain(
         `Archive and Later can be reversed from Activity for the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity Undo window.`,

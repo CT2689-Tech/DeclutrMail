@@ -283,7 +283,7 @@ function RecoveryPreviewBody({
   if (isStarting || preview?.status === 'verifying') {
     return (
       <div role="status" aria-live="polite" style={{ color: color.fgSoft, fontSize: text.base }}>
-        Checking Gmail&apos;s current state…
+        Checking Gmail’s current state…
       </div>
     );
   }
@@ -359,7 +359,7 @@ function RecoveryVerificationFailure({
 }) {
   return (
     <div role="alert" style={{ color: color.amber, fontSize: text.base, lineHeight: 1.5 }}>
-      We couldn&apos;t check Gmail&apos;s current state.
+      We couldn’t check Gmail’s current state.
       <div style={{ marginTop: 10 }}>
         <Button tone="default" onClick={onRetry}>
           Check Gmail again
@@ -399,7 +399,7 @@ function RecoveryConsequence({
       ? 'They leave your inbox and stay in Gmail. You can undo it from Activity.'
       : preview.verb === 'delete'
         ? 'They move to Gmail Trash. You can undo it from Activity.'
-        : "They wait in Gmail's DeclutrMail/Later label, then return to your inbox. You can undo it from Activity.";
+        : 'They wait in Gmail’s DeclutrMail/Later label, then return to your inbox. You can undo it from Activity.';
   // The retry re-applies its whole set, so an already-applied review makes
   // no promise about Gmail: mail moved back since the check moves again.
   const outcomeCopy =
@@ -469,7 +469,7 @@ function recoveryStartRefusal(error: Error): string | null {
     case 'ACTION_NOT_RECOVERABLE':
       return 'This action no longer needs recovery.';
     case 'ACTION_NOT_FOUND':
-      return "We couldn't find this action.";
+      return 'We couldn’t find this action.';
     default:
       return null;
   }
@@ -500,8 +500,8 @@ function recoveryConfirmErrorMessage(error: Error, senderName: string | null): s
   // The same key answers a repeat, so an ambiguous failure is safe to
   // retry; a refusal would only be refused again.
   return enqueueMayHaveStarted(error)
-    ? "Can't tell if the retry started — try again; it won't run twice."
-    : "Couldn't start the retry — nothing changed. Check Gmail again.";
+    ? 'Can’t tell if the retry started — try again; it won’t run twice.'
+    : 'Couldn’t start the retry — nothing changed. Check Gmail again.';
 }
 
 /** Codes whose own message names what to do instead of checking Gmail again. */

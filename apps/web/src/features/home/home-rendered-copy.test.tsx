@@ -37,7 +37,7 @@ const steps = [
  */
 const ALLOWED = new Set<string>([
   'Loading Home',
-  "We couldn't load Home",
+  'We couldn’t load Home',
   'Review senders',
   'Open Settings',
   'Try again',

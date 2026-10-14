@@ -556,7 +556,7 @@ describe('HomeScreen', () => {
       stub({ summary: () => mailboxConflict(code) });
       renderHome();
       expect(await screen.findByTestId('no-active-mailbox')).toBeInTheDocument();
-      expect(screen.queryByText(/couldn't load Home/)).toBeNull();
+      expect(screen.queryByText(/couldn’t load Home/)).toBeNull();
     },
   );
 
@@ -575,7 +575,7 @@ describe('HomeScreen', () => {
     let fail = true;
     stub({ summary: () => (fail ? jsonServerError() : jsonOk({ data: SUMMARY })) });
     renderHome();
-    expect(await screen.findByText(/couldn't load Home/)).toBeInTheDocument();
+    expect(await screen.findByText(/couldn’t load Home/)).toBeInTheDocument();
 
     fail = false;
     fireEvent.click(screen.getByRole('button'));
@@ -591,7 +591,7 @@ describe('HomeScreen', () => {
         }),
     });
     renderHome(makeQueryClient());
-    expect(await screen.findByText(/couldn't load Home/)).toBeInTheDocument();
+    expect(await screen.findByText(/couldn’t load Home/)).toBeInTheDocument();
     expect(calls.summary).toHaveLength(1);
   });
 

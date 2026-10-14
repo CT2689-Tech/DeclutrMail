@@ -11,7 +11,7 @@ import {
 } from '@declutrmail/shared';
 import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
-import { WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { WS3_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
 import { InboxReportPanel } from '@/features/inbox-report/panel';
 import type { ActionRequest } from '@/features/senders/data';
@@ -547,9 +547,10 @@ export function SendersSimulator() {
           setSelected(ids);
         }}
         trustHref="/privacy"
-        onFixConfirmed={(mode, scope, days) => {
+        onFixConfirmed={(mode, scope, senderIds, days) => {
+          const included = new Set(senderIds);
           applyUnsubscribe(
-            senders.filter((sender) => report.fix.senderKeys.includes(sender.id)),
+            senders.filter((sender) => included.has(sender.id)),
             mode,
             scope,
             days,
@@ -832,8 +833,9 @@ export function SendersSimulator() {
             : {})}
           onCancel={closePreview}
           onConfirm={(opts) => {
+            const included = new Set(opts.senderIds);
             applyUnsubscribe(
-              pendingSenders,
+              pendingSenders.filter((sender) => included.has(sender.id)),
               opts.secondary?.type ?? 'unsub_only',
               opts.reach ?? 'inbox_only',
               opts.secondary?.olderThanDays ?? null,
@@ -900,10 +902,7 @@ export function SendersSimulator() {
                   </span>
                 </>
               ) : olderThanDays !== null && canMove ? (
-                <span>
-                  Subjects are omitted for this age selection in the demo. The connected product
-                  shows the matching subjects.
-                </span>
+                <span>{WS3_COPY['ws3.demo.details.subjectsNote']}</span>
               ) : null}
             </>
           }

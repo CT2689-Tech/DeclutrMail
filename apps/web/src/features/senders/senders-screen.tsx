@@ -1533,16 +1533,23 @@ function SendersScreenContent({
       // network unsub (D58) — only a paired archive is reversible.
       if (verb === 'Unsubscribe') {
         if (recordUnsubIntent.isPending || confirmBacklog.isPending) return;
+        // The dialog names who the preview included. Post that list,
+        // never the selection that was open when the sheet appeared.
+        const postedIds = opts?.senderIds;
+        if (!postedIds || postedIds.length === 0) return;
         setSubmitting(true);
         setSelected(new Set());
         setBulkMailtoFollowups([]);
-        const senderRefs = senders.map((s) => ({
-          id: s.id,
-          name: s.name,
-          domain: s.domain,
-          unsubscribeMethod: s.unsubscribeMethod,
-        }));
-        const isBulk = senderRefs.length > 1;
+        const allowed = new Set(postedIds);
+        const senderRefs = senders
+          .filter((s) => allowed.has(s.id))
+          .map((s) => ({
+            id: s.id,
+            name: s.name,
+            domain: s.domain,
+            unsubscribeMethod: s.unsubscribeMethod,
+          }));
+        const isBulk = postedIds.length > 1;
         const mode =
           opts?.secondary?.type === 'delete'
             ? 'delete'
@@ -1553,12 +1560,7 @@ function SendersScreenContent({
           {
             mailboxId: actionMailboxId,
             mode,
-            senderIds: [
-              ...new Set([
-                ...senderRefs.map((sref) => sref.id),
-                ...(pendingActionRef.current?.protectedSenderIds ?? []),
-              ]),
-            ],
+            senderIds: postedIds,
             olderThanDays: opts?.secondary?.olderThanDays ?? opts?.olderThanDays ?? null,
             ...(mode === 'delete' && opts?.reach === 'all_mail' ? { reach: opts.reach } : {}),
             // Override rides only the dialog's explicit "anyway" click.
@@ -1747,7 +1749,7 @@ function SendersScreenContent({
             if (!isBulk) {
               toast(
                 failed
-                  ? `Couldn't keep ${senderRefs[0]!.name}`
+                  ? `Couldn’t keep ${senderRefs[0]!.name}`
                   : WS2_COPY.keepUndo.toast.one.replace('{Sender}', senderRefs[0]!.name),
                 failed ? 'warn' : 'success',
                 failed ? undefined : undoAction,
@@ -1756,7 +1758,7 @@ function SendersScreenContent({
             }
             toast(
               succeeded === 0
-                ? `Couldn't keep ${failed} senders — try again`
+                ? `Couldn’t keep ${failed} senders — try again`
                 : `${WS2_COPY.keepUndo.toast.other.replace('{n}', String(succeeded))}${
                     failed ? ` · ${failed} failed, try again` : ''
                   }`,
@@ -2017,7 +2019,7 @@ function SendersScreenContent({
       captureFeatureException(err, { surface: 'senders', reason: 'unsub_status_poll' });
       // No promise about where the result appears: nothing refetches the
       // list after a failed poll, so the row can keep its last state.
-      toast(`Couldn't confirm the unsubscribe from ${activeUnsub.senderName}`, 'warn');
+      toast(`Couldn’t confirm the unsubscribe from ${activeUnsub.senderName}`, 'warn');
       setActiveUnsub(null);
       return;
     }
@@ -2039,7 +2041,7 @@ function SendersScreenContent({
     if (unsubBatchStatus.isError) {
       const err = unsubBatchStatus.error;
       captureFeatureException(err, { surface: 'senders', reason: 'unsub_batch_status_poll' });
-      toast("Couldn't confirm the unsubscribe requests — see Activity", 'warn');
+      toast('Couldn’t confirm the unsubscribe requests — see Activity', 'warn');
       setActiveUnsubBatch(null);
       setUnsubBatchReceipt(null);
       return;
@@ -2079,7 +2081,7 @@ function SendersScreenContent({
     if (overdueUnsubBatchStatus.isError) {
       const err = overdueUnsubBatchStatus.error;
       captureFeatureException(err, { surface: 'senders', reason: 'unsub_batch_status_poll' });
-      toast("Couldn't confirm the unsubscribe requests — see Activity", 'warn');
+      toast('Couldn’t confirm the unsubscribe requests — see Activity', 'warn');
       // Clear only OUR slot — `unsubBatchReceipt` is shared, and by now
       // it may narrate an earlier batch, which this parked failure has
       // no claim over (the same own-slot rule as the noise settle).
@@ -2383,7 +2385,7 @@ function SendersScreenContent({
           allProtected
             ? allProtectedSelectionCopy(n, selectedSenders[0]?.name ?? '')
             : n === 1
-              ? `${selectedSenders[0]!.name} is a person — Unsubscribe doesn't apply`
+              ? `${selectedSenders[0]!.name} is a person — Unsubscribe doesn’t apply`
               : 'Nothing to unsubscribe — these senders are protected or people',
           'warn',
         );
@@ -2558,7 +2560,7 @@ function SendersScreenContent({
         onSuccess: () => toast(`Saved view "${name}"`, 'success'),
         onError: (err) => {
           captureFeatureException(err, { surface: 'senders', reason: 'save_view' });
-          toast(`Couldn't save the view "${name}"`, 'warn');
+          toast(`Couldn’t save the view "${name}"`, 'warn');
         },
       });
     },
@@ -2576,7 +2578,7 @@ function SendersScreenContent({
           onSuccess: () => toast(`Deleted view "${name}"`, 'success'),
           onError: (err) => {
             captureFeatureException(err, { surface: 'senders', reason: 'delete_view' });
-            toast(`Couldn't delete the view "${name}"`, 'warn');
+            toast(`Couldn’t delete the view "${name}"`, 'warn');
           },
         },
       );
@@ -3032,7 +3034,7 @@ function SendersScreenContent({
                     <b>02</b> Choose what to do and preview what changes
                   </span>
                   <span>
-                    <b>03</b> Confirm when you're ready
+                    <b>03</b> {WS2_COPY.senders.emptySteps.confirm}
                   </span>
                 </div>
               </aside>
@@ -3280,7 +3282,7 @@ function SendersErrorState({ onRetry }: { onRetry: () => void }) {
     >
       <RecoverableErrorState
         headingLevel={2}
-        title="We couldn't load your senders"
+        title="We couldn’t load your senders"
         description="Try again in a moment."
         onRetry={onRetry}
       />

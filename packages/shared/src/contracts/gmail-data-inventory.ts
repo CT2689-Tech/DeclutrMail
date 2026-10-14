@@ -422,7 +422,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
   {
     id: 'actions-activity-and-undo',
     category: 'derived',
-    label: 'Cleanup actions, Activity history, results, and available Undo data',
+    label: 'Cleanup history, results, and available Undo data',
     fetchedFrom: ['message-identifiers', 'sender-identity', 'choices-rules-and-suggestions'],
     storageRefs: ['action_jobs.*', 'activity_log.*', 'undo_journal.*'],
     derived: true,

@@ -471,7 +471,7 @@ describe('InboxSimulatorScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: /Unsubscribe \(U\)/ }));
     const dialog = sheetFor('LinkedIn');
     fireEvent.click(within(dialog).getByRole('radio', { name: /\+ Delete/ }));
-    fireEvent.click(within(dialog).getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Include archived email' }));
     expect(dialog).toHaveAccessibleName(new RegExp(`delete ${total} emails`));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Unsubscribe + Delete' }));
     expect(
@@ -514,9 +514,7 @@ describe('InboxSimulatorScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: /Delete \(D\)/ }));
     const dialog = sheetFor('Groupon');
     const total = syntheticInboxCount(groupon) + syntheticArchivedCount(groupon);
-    fireEvent.click(
-      within(dialog).getByRole('radio', { name: new RegExp(`Inbox \\+ archived.*${total}`) }),
-    );
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Include archived email' }));
     expect(dialog).toHaveAccessibleName(new RegExp(`Delete ${total} emails`));
   });
 
@@ -569,7 +567,7 @@ describe('InboxSimulatorScreen', () => {
     const deletedRow = TRIAGE_QUEUE.find((row) => row.id === 't-groupon')!;
     const deleteCount = syntheticInboxCount(deletedRow) + syntheticArchivedCount(deletedRow);
     const dialog = sheetFor(deletedRow.senderName);
-    fireEvent.click(within(dialog).getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Include archived email' }));
     fireEvent.click(within(dialog).getByRole('button', { name: /^Delete/ }));
 
     const archiveBatch = findDomainBatches(TRIAGE_QUEUE).find(

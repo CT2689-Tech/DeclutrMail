@@ -13,7 +13,7 @@ import { ApiError } from '@/lib/api/client';
 export function loadErrorDescription(error: unknown): string {
   if (error instanceof ApiError) return 'The server returned an error. Try again in a moment.';
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-    return "You're offline. Reconnect, then try again.";
+    return 'You’re offline. Reconnect, then try again.';
   }
   return 'Try again in a moment.';
 }

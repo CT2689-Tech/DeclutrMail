@@ -274,11 +274,11 @@ export function PrivacyDataFooter() {
       <SettingsGroup id="privacy-leave-cleanly" title="Leave cleanly">
         <SettingsRow
           label="Disconnect a mailbox"
-          detail="Removes DeclutrMail's saved Google credential and stops sync and Gmail actions. Saved Gmail and DeclutrMail data stays so reconnecting can continue its history; Gmail is unchanged. Choose Manage in the top-bar account menu."
+          detail="Removes DeclutrMail’s saved Google credential and stops sync and Gmail actions. Saved Gmail and DeclutrMail data stays so reconnecting can continue its history; Gmail is unchanged. Choose Manage in the top-bar account menu."
         />
         <SettingsRow
-          label="Disconnect & delete one mailbox's saved data"
-          detail="Also permanently deletes that mailbox's saved email details, sender data, decisions, rules, Activity, and Undo data. Your DeclutrMail account, other mailboxes, disconnected Gmail address, and your email in Gmail remain. Choose Manage in the top-bar account menu."
+          label="Disconnect & delete one mailbox’s saved data"
+          detail="Also permanently deletes that mailbox’s saved email details, sender data, decisions, rules, Activity, and Undo data. Your DeclutrMail account, other mailboxes, disconnected Gmail address, and your email in Gmail remain. Choose Manage in the top-bar account menu."
         />
         <DrillRow href="/settings#account" label="Delete account and data" />
       </SettingsGroup>

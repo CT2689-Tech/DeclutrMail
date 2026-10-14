@@ -667,7 +667,7 @@ function FollowupsErrorState({ onRetry }: { onRetry: () => void }) {
     >
       <RecoverableErrorState
         headingLevel={2}
-        title="We couldn't load your follow-ups"
+        title="We couldn’t load your follow-ups"
         description="Your sent email and tracked follow-ups are unchanged. Try again in a moment."
         onRetry={onRetry}
       />

@@ -1,11 +1,20 @@
 'use client';
 
+import { PREVIEW_UNAVAILABLE_MESSAGE } from '@declutrmail/shared/copy';
+
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { Avatar, Button, PreviewSheet, SheetSegmented, tokens } from '@declutrmail/shared';
-import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
-import { unnamedUnsubscribeTitle } from '@/features/senders/unsubscribe-backlog/preview-copy';
+import {
+  Avatar,
+  Button,
+  PreviewSheet,
+  SheetCheckbox,
+  SheetSegmented,
+  tokens,
+} from '@declutrmail/shared';
+import { isPluralCopy, pluralCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { unsubscribeTitle } from '@/features/senders/unsubscribe-backlog/preview-copy';
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import type { ActionReach } from '@declutrmail/shared/contracts';
@@ -15,6 +24,7 @@ import {
   actionMovesMail,
   type ActionPreviewDetail,
 } from './action-preview-detail';
+import { PREVIEW_DETAILS } from '@declutrmail/shared/copy';
 import {
   PreviewReasoning,
   buildPreviewFacts,
@@ -170,8 +180,14 @@ export function ActionSheet({
   // real work at a zero backlog. The unsubscribe itself is free.
   const primaryActsOnInbox = verb === 'Archive' || verb === 'Later' || verb === 'Delete';
   const nothingToActOn = primaryActsOnInbox && inboxCount === 0;
+  const archivedUncounted =
+    reach === 'all_mail' &&
+    detail?.reachControl?.allMailCount === null &&
+    detail.reachControl != null &&
+    (verb === 'Delete' || (verb === 'Unsubscribe' && effectiveMode === 'delete'));
   const confirmDisabled =
     previewSenderGone ||
+    archivedUncounted ||
     (requiresLivePreview && (previewPending || previewUnavailable || inboxCount === 0)) ||
     nothingToActOn ||
     wakeAtInvalid;
@@ -272,7 +288,7 @@ export function ActionSheet({
     reachControl.reach === 'inbox_only' &&
     reachControl.inboxCount === 0 &&
     (reachControl.allMailCount ?? 0) > 0
-      ? 'Switch to Inbox + archived to reach the archived email.'
+      ? WS5_COPY['f1.preview.archived.hint']
       : null;
 
   const emailMeter = cleanupSummary.data?.metered === true;
@@ -285,7 +301,7 @@ export function ActionSheet({
       detail={detail !== undefined && movesMail ? detail : undefined}
       leadFacts={facts.disclosures}
       trailingFacts={[
-        { label: 'Why suggested', value: <PreviewReasoning row={row} /> },
+        { label: PREVIEW_DETAILS.whySuggested.label, value: <PreviewReasoning row={row} /> },
         ...(verb === 'Delete'
           ? []
           : [
@@ -302,20 +318,24 @@ export function ActionSheet({
   // count needs no line: the title already says nothing is there.
   const status: ReactNode = previewSenderGone ? (
     <StatusWithAction
-      message="This sender has no email in this Gmail account anymore."
+      message={WS2_COPY.simplify.senders.gone}
       action={onRefreshTriage ? { label: 'Refresh triage', onClick: onRefreshTriage } : undefined}
     />
   ) : nothingToActOn ? null : wakeAtInvalid ? (
     'Pick a future return time.'
   ) : previewUnavailable ? (
     <StatusWithAction
-      message="Couldn’t load the preview. Nothing can move until it loads."
-      action={onRetryPreview ? { label: 'Retry preview', onClick: onRetryPreview } : undefined}
+      message={PREVIEW_UNAVAILABLE_MESSAGE}
+      action={
+        onRetryPreview ? { label: WS2_COPY.home.failed.retry, onClick: onRetryPreview } : undefined
+      }
     />
+  ) : archivedUncounted ? (
+    WS5_COPY['f1.preview.archived.unavailable']
   ) : verb === 'Unsubscribe' && requiresLivePreview && inboxCount === 0 ? (
-    'No existing inbox email to move. Choose Unsubscribe only.'
+    WS5_COPY['f1.preview.backlog.none']
   ) : confirmDisabled ? (
-    'Counting the inbox…'
+    WS5_COPY['f1.preview.backlog.loading']
   ) : null;
 
   const hasControls = showReach || verb === 'Later' || verb === 'Unsubscribe' || isProtectedRow;
@@ -468,7 +488,7 @@ export function ActionSheet({
             {verb === 'Unsubscribe' && (
               <div>
                 <SheetSegmented
-                  label="Existing email"
+                  label={WS5_COPY['f1.preview.existing.label']}
                   value={effectiveMode}
                   onChange={(mode) => {
                     setBacklogMode(mode);
@@ -518,24 +538,14 @@ export function ActionSheet({
             )}
 
             {showReach && (
-              <SheetSegmented
-                label="Where it applies"
-                value={reachControl.reach}
-                onChange={reachControl.onChange}
-                options={[
-                  {
-                    value: 'inbox_only',
-                    label: 'Inbox only',
-                    count: reachControl.inboxCount ?? undefined,
-                    disabled: reachControl.inboxCount === null,
-                  },
-                  {
-                    value: 'all_mail',
-                    label: 'Inbox + archived',
-                    count: reachControl.allMailCount ?? undefined,
-                    disabled: reachControl.allMailCount === null,
-                  },
-                ]}
+              <SheetCheckbox
+                label={WS2_COPY.simplify.confirm.includeArchived}
+                checked={reachControl.reach === 'all_mail'}
+                disabled={reachControl.allMailCount === null && reachControl.reach !== 'all_mail'}
+                onChange={(next) => {
+                  if (next && reachControl.allMailCount === null) return;
+                  reachControl.onChange(next ? 'all_mail' : 'inbox_only');
+                }}
               />
             )}
 
@@ -672,19 +682,4 @@ function CheckRow({
       </span>
     </button>
   );
-}
-
-function unsubscribeTitle(
-  mode: 'unsub_only' | 'archive' | 'delete',
-  senderName: string,
-  n: number,
-): string {
-  if (senderName.trim() === '') return unnamedUnsubscribeTitle(mode, n);
-  if (mode === 'archive' && isPluralCopy(WS5_COPY['f1.title.archive'])) {
-    return pluralCopy(WS5_COPY['f1.title.archive'], n, { n, Sender: senderName });
-  }
-  if (mode === 'delete' && isPluralCopy(WS5_COPY['f1.title.delete'])) {
-    return pluralCopy(WS5_COPY['f1.title.delete'], n, { n, Sender: senderName });
-  }
-  return fillCopy(WS5_COPY['f1.title.unsubOnly'], { Sender: senderName });
 }

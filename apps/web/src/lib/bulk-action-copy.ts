@@ -26,8 +26,8 @@ export function backlogAfterUnsubFailureCopy(options: {
   const lead = senderName ? 'Unsubscribe requested' : 'Unsubscribe requests recorded';
   const mail = senderName ? `older email from ${senderName}` : 'older email';
   return enqueueMayHaveStarted(error)
-    ? `${lead}, but can't tell if ${verb} started for ${mail} — ${CHECK_ACTIVITY}.`
-    : `${lead}, but ${mail} wasn't ${verb === 'Delete' ? 'deleted' : 'archived'} — ${verb} it separately.`;
+    ? `${lead}, but can’t tell if ${verb} started for ${mail} — ${CHECK_ACTIVITY}.`
+    : `${lead}, but ${mail} wasn’t ${verb === 'Delete' ? 'deleted' : 'archived'} — ${verb} it separately.`;
 }
 
 /**

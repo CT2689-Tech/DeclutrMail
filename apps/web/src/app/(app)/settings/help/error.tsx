@@ -17,7 +17,7 @@ export default function SettingsSectionError({
       error={error}
       reset={reset}
       boundary="settings"
-      headline="We couldn't load this settings page."
+      headline="We couldn’t load this settings page."
       body="Try again, or return to Settings."
       escape={{ href: '/settings', label: 'Back to Settings' }}
     />

@@ -64,24 +64,24 @@ export function getActionFailureCopy(
   const [lead, outcome] = ((): [string, string] => {
     switch (phase) {
       case 'preview':
-        return ["Couldn't load the preview", NOTHING_CHANGED];
+        return ['Couldn’t load the preview', NOTHING_CHANGED];
       // "Can't tell", not "couldn't confirm": right after a Confirm button,
       // "couldn't confirm" reads as "your click did nothing".
       case 'enqueue':
         return unconfirmedStart
-          ? [`Can't tell if ${action} started`, CHECK_ACTIVITY]
-          : [`Couldn't start ${action}`, NOTHING_CHANGED];
+          ? [`Can’t tell if ${action} started`, CHECK_ACTIVITY]
+          : [`Couldn’t start ${action}`, NOTHING_CHANGED];
       // An undo request is idempotent (the same token answers with the same
       // reverse job, or "reverted" once it finished), so trying again is
       // always safe — here and after a lost status read below.
       case 'revert-enqueue':
         return unconfirmedStart
-          ? ["Can't tell if undo started", 'try again']
-          : ["Couldn't start undo", NOTHING_CHANGED];
+          ? ['Can’t tell if undo started', 'try again']
+          : ['Couldn’t start undo', NOTHING_CHANGED];
       case 'status':
-        return [`Couldn't confirm ${action}`, CHECK_ACTIVITY];
+        return [`Couldn’t confirm ${action}`, CHECK_ACTIVITY];
       case 'revert-status':
-        return ["Couldn't confirm undo", 'try again'];
+        return ['Couldn’t confirm undo', 'try again'];
       case 'terminal':
         return [`${sentenceCase(action)} failed`, CHECK_ACTIVITY];
       // A repeat undo re-queues the same reverse job: safe to try again.

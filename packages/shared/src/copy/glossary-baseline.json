@@ -471,7 +471,7 @@
     "file": "apps/web/src/features/activity/action-recovery-dialog.tsx",
     "line": 495,
     "id": "action_word",
-    "text": "We couldn't find this action."
+    "text": "We couldn’t find this action."
   },
   {
     "file": "apps/web/src/features/activity/action-recovery-dialog.tsx",
@@ -711,7 +711,7 @@
     "file": "apps/web/src/features/help/glossary-content.ts",
     "line": 61,
     "id": "action_word",
-    "text": "DeclutrMail's plan-based window for reversing an eligible Archive, Later, or Delete action. Activity shows the deadline and any available Undo control."
+    "text": "DeclutrMail’s plan-based window for reversing an eligible Archive, Later, or Delete action. Activity shows the deadline and any available Undo control."
   },
   {
     "file": "apps/web/src/features/help/glossary-content.ts",
@@ -1119,7 +1119,7 @@
     "file": "apps/web/src/features/senders/review-session.tsx",
     "line": 79,
     "id": "action_word",
-    "text": "Once protected, no bulk action will touch these senders. Remove protection any time from the sender's detail page."
+    "text": "Once protected, no bulk action will touch these senders. Remove protection any time from the sender’s detail page."
   },
   {
     "file": "apps/web/src/features/senders/row-activity.tsx",
@@ -1269,13 +1269,13 @@
     "file": "apps/web/src/features/settings/privacy-data/privacy-data-content.tsx",
     "line": 254,
     "id": "action_word",
-    "text": "Removes DeclutrMail's saved Google credential and stops sync and Gmail actions. Saved Gmail and DeclutrMail data stays so reconnecting can continue its history; Gmail is unchanged. Choose Manage in the top-bar account menu."
+    "text": "Removes DeclutrMail’s saved Google credential and stops sync and Gmail actions. Saved Gmail and DeclutrMail data stays so reconnecting can continue its history; Gmail is unchanged. Choose Manage in the top-bar account menu."
   },
   {
     "file": "apps/web/src/features/settings/privacy-data/privacy-data-content.tsx",
     "line": 254,
     "id": "sync_word",
-    "text": "Removes DeclutrMail's saved Google credential and stops sync and Gmail actions. Saved Gmail and DeclutrMail data stays so reconnecting can continue its history; Gmail is unchanged. Choose Manage in the top-bar account menu."
+    "text": "Removes DeclutrMail’s saved Google credential and stops sync and Gmail actions. Saved Gmail and DeclutrMail data stays so reconnecting can continue its history; Gmail is unchanged. Choose Manage in the top-bar account menu."
   },
   {
     "file": "apps/web/src/features/settings/privacy-data/privacy-data-content.tsx",
@@ -1479,7 +1479,7 @@
     "file": "apps/web/src/features/sync/sync-now-button.tsx",
     "line": 405,
     "id": "sync_word",
-    "text": "\n      @keyframes dm-sync-spin {\n        from { transform: rotate(0deg); }\n        to   { transform: rotate(360deg); }\n      }\n      @media (prefers-reduced-motion: reduce) {\n        [style*=\"dm-sync-spin\"] { animation: none !important; }\n      }\n      .dm-sync-round { background: transparent; }\n      .dm-sync-round:hover:not(:disabled) { background: var(--dm-fill); }\n      /* 44px touch target below the shell's 900px sm breakpoint. */\n      @media (max-width: 900px) {\n        .dm-sync-round { min-width: 44px; min-height: 44px; }\n      }\n    "
+    "text": "\n      @keyframes dm-sync-spin {\n        from { transform: rotate(0deg); }\n        to   { transform: rotate(360deg); }\n      }\n      @media (prefers-reduced-motion: reduce) {\n        [style*=\"dm-sync-spin\"] { animation: none !important; }\n      }\n      .dm-sync-round { background: transparent; }\n      .dm-sync-round:hover:not(:disabled) { background: var(--dm-fill); }\n      /* 44px touch target below the shell’s 900px sm breakpoint. */\n      @media (max-width: 900px) {\n        .dm-sync-round { min-width: 44px; min-height: 44px; }\n      }\n    "
   },
   {
     "file": "apps/web/src/features/tour/verb-lessons.ts",
@@ -1683,7 +1683,7 @@
     "file": "apps/web/src/mocks/sender-detail-builder.ts",
     "line": 100,
     "id": "workspace_word",
-    "text": "Here's a summary of activity in your workspace this week: 14 new comments, 3 documents shared."
+    "text": "Here’s a summary of activity in your workspace this week: 14 new comments, 3 documents shared."
   },
   {
     "file": "apps/web/src/mocks/sender-detail-builder.ts",

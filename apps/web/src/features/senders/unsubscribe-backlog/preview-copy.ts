@@ -2,16 +2,12 @@ import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/share
 
 export type UnsubscribeBacklogMode = 'unsub_only' | 'archive' | 'delete';
 
-/** Destination stays visible; the live count is already in the title. */
-export function backlogDestination(
-  mode: UnsubscribeBacklogMode,
-  reach: 'inbox_only' | 'all_mail' = 'inbox_only',
-): string {
-  if (mode === 'archive') return 'Existing inbox email leaves your inbox and stays in Gmail.';
-  if (mode === 'delete')
-    return reach === 'all_mail'
-      ? 'Existing inbox and archived email moves to Gmail Trash.'
-      : 'Existing inbox email moves to Gmail Trash.';
+/** Deck destination for the backlog the preview counted. Null count is still loading. */
+export function backlogDestination(mode: UnsubscribeBacklogMode, n: number | null): string {
+  if (mode === 'archive' || mode === 'delete') {
+    if (n === null) return WS5_COPY['f1.preview.backlog.loading'];
+    return backlogMailLine(mode, n);
+  }
   return WS5_COPY['f1.preview.backlog.unsubOnly'];
 }
 
@@ -24,11 +20,12 @@ export function futureMailLine(name: string, method: string | null | undefined):
 }
 
 export function backlogMailLine(mode: UnsubscribeBacklogMode, n: number): string {
+  const shown = n.toLocaleString('en-US');
   if (mode === 'archive' && isPluralCopy(WS5_COPY['f1.preview.backlog.archive'])) {
-    return pluralCopy(WS5_COPY['f1.preview.backlog.archive'], n, { n });
+    return pluralCopy(WS5_COPY['f1.preview.backlog.archive'], n, { n: shown });
   }
   if (mode === 'delete' && isPluralCopy(WS5_COPY['f1.preview.backlog.delete'])) {
-    return pluralCopy(WS5_COPY['f1.preview.backlog.delete'], n, { n });
+    return pluralCopy(WS5_COPY['f1.preview.backlog.delete'], n, { n: shown });
   }
   return WS5_COPY['f1.preview.backlog.unsubOnly'];
 }
@@ -92,11 +89,12 @@ export function unsubscribeTitle(
   n: number,
 ): string {
   if (senderName.trim() === '') return unnamedUnsubscribeTitle(mode, n);
+  const shown = n.toLocaleString('en-US');
   if (mode === 'archive' && isPluralCopy(WS5_COPY['f1.title.archive'])) {
-    return pluralCopy(WS5_COPY['f1.title.archive'], n, { n, Sender: senderName });
+    return pluralCopy(WS5_COPY['f1.title.archive'], n, { n: shown, Sender: senderName });
   }
   if (mode === 'delete' && isPluralCopy(WS5_COPY['f1.title.delete'])) {
-    return pluralCopy(WS5_COPY['f1.title.delete'], n, { n, Sender: senderName });
+    return pluralCopy(WS5_COPY['f1.title.delete'], n, { n: shown, Sender: senderName });
   }
   return fillCopy(WS5_COPY['f1.title.unsubOnly'], { Sender: senderName });
 }

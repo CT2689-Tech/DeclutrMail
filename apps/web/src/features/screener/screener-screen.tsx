@@ -423,7 +423,7 @@ export function ScreenerScreen({
         surface: 'screener',
         reason: 'action_status_poll',
       });
-      toast(`Couldn't confirm ${activeAction.senderName} — see Activity`, 'warn');
+      toast(`Couldn’t confirm ${activeAction.senderName} — see Activity`, 'warn');
       invalidateAfterDecision(qc);
       holdUnconfirmed(activeAction.rowId, activeAction.verb);
       setActiveAction(null);
@@ -437,7 +437,7 @@ export function ScreenerScreen({
       if (activeAction.mailboxId === activeMailbox?.id) setExpandedRowId(null);
     } else {
       toast(
-        `Couldn't ${VERB_LABEL[activeAction.verb].toLowerCase()} ${activeAction.senderName} — see Activity`,
+        `Couldn’t ${VERB_LABEL[activeAction.verb].toLowerCase()} ${activeAction.senderName} — see Activity`,
         'warn',
       );
       invalidateAfterDecision(qc);
@@ -482,7 +482,7 @@ export function ScreenerScreen({
         surface: 'screener',
         reason: 'action_status_poll',
       });
-      toast(`Couldn't confirm ${overdueAction.senderName} — see Activity`, 'warn');
+      toast(`Couldn’t confirm ${overdueAction.senderName} — see Activity`, 'warn');
       invalidateAfterDecision(qc);
       holdUnconfirmed(overdueAction.rowId, overdueAction.verb);
       setOverdueAction(null);
@@ -492,7 +492,7 @@ export function ScreenerScreen({
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status !== 'done') {
       toast(
-        `Couldn't ${VERB_LABEL[overdueAction.verb].toLowerCase()} ${overdueAction.senderName} — see Activity`,
+        `Couldn’t ${VERB_LABEL[overdueAction.verb].toLowerCase()} ${overdueAction.senderName} — see Activity`,
         'warn',
       );
     }

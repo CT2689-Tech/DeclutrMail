@@ -331,7 +331,7 @@ describe('Screener paywall copy — D194 marketing-copy rule', () => {
   it('never uses a D194-forbidden framing', () => {
     const text = Object.values(SCREENER_GATE_COPY).join(' ');
     expect(text).toMatch(/keeps arriving until you choose/);
-    expect(text).not.toMatch(/won't surprise you/i);
+    expect(text).not.toMatch(/won’t surprise you/i);
     expect(text).not.toMatch(/block/i);
     expect(text).not.toMatch(/intercept/i);
     expect(text).not.toMatch(/quarantine/i);

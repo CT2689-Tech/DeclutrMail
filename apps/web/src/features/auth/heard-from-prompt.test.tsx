@@ -175,7 +175,7 @@ describe('HeardFromPrompt', () => {
     renderPrompt();
     await userEvent.click(await screen.findByRole('button', { name: 'Skip' }));
 
-    expect(await screen.findByRole('status')).toHaveTextContent("That didn't save. Try again.");
+    expect(await screen.findByRole('status')).toHaveTextContent('That didn’t save. Try again.');
     // Still mounted, still retryable — a dead-looking control was the bug.
     expect(screen.getByTestId('heard-from-prompt')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Skip' })).toBeEnabled();

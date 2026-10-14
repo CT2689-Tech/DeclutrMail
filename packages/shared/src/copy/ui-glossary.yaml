@@ -106,4 +106,4 @@ defs:
   'Active': 'An Autopilot rule applies its action automatically to new matching email. Active execution depends on your plan and can be paused.'
   'Gmail Trash recovery': 'Gmail’s separate recovery path for email moved to Trash. It lasts up to 30 days and is not the same as DeclutrMail’s Activity Undo window.'
   'Later': 'Moves matching email currently in Inbox to the DeclutrMail/Later label until the return time you choose. Future email from the sender is unchanged.'
-  'Activity Undo': "DeclutrMail's 30-day window for reversing an eligible Archive, Later, or Delete action. Activity shows the deadline and any available Undo control."
+  'Activity Undo': 'DeclutrMail’s 30-day window for reversing an eligible Archive, Later, or Delete action. Activity shows the deadline and any available Undo control.'

@@ -443,7 +443,7 @@ describe('BriefScreen — edge states', () => {
         screen.getByRole('heading', { name: /couldn[’']t load your brief/i }),
       ).toBeInTheDocument(),
     );
-    expect(screen.getByRole('alert')).toHaveTextContent(/couldn't load your Brief/i);
+    expect(screen.getByRole('alert')).toHaveTextContent(/couldn’t load your Brief/i);
     // The server answered with a failure, so the line can say so — and
     // never the raw "GET /api/… failed: 500" exception text.
     expect(screen.getByRole('alert')).toHaveTextContent(/server returned an error/i);
@@ -1123,7 +1123,7 @@ describe('BriefScreen — D61 history', () => {
         screen.getByRole('heading', { name: /noise .*messages yesterday/i }),
       ).toBeInTheDocument(),
     );
-    expect(String(useUiStore.getState().screenHelp?.body)).toMatch(/yesterday's email/i);
+    expect(String(useUiStore.getState().screenHelp?.body)).toMatch(/yesterday’s email/i);
 
     await user.selectOptions(await screen.findByLabelText('Brief day'), '2026-05-23');
 

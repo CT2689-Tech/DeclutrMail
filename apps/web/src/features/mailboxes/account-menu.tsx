@@ -419,7 +419,7 @@ export function AccountMenu() {
                         }
                         title={
                           reconnectBlocked
-                            ? "You can reconnect once we've finished erasing what we stored."
+                            ? 'You can reconnect once we’ve finished erasing what we stored.'
                             : undefined
                         }
                         onClick={() => startMailboxReactivation(m.id)}
@@ -493,7 +493,7 @@ export function AccountMenu() {
                     ? // Over-limit (e.g. after a downgrade) — existing
                       // connections keep working; only adding is blocked.
                       `${connectedInboxes} inboxes connected — your ${tierLabel(tier)} plan includes ${inboxLimit}.`
-                    : `${connectedInboxes} of ${inboxLimit} ${inboxLimit === 1 ? 'inbox' : 'inboxes'} connected — your ${tierLabel(tier)} plan's limit.`}
+                    : `${connectedInboxes} of ${inboxLimit} ${inboxLimit === 1 ? 'inbox' : 'inboxes'} connected — your ${tierLabel(tier)} plan’s limit.`}
                 </span>
                 {pricingV2 && tier === 'plus' ? (
                   <Link

@@ -429,8 +429,8 @@ export interface ActionRequest {
     peopleCount: number;
   };
   /**
-   * Protected senders from the selection. Unsubscribe confirm includes
-   * them so the result can name the skip. They are not actionable.
+   * Protected senders dropped before the preview opened. The confirm
+   * posts the preview's included ids, not this list.
    */
   protectedSenderIds?: string[];
   /**

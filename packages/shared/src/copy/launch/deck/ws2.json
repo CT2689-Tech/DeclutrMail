@@ -560,6 +560,11 @@
     "dismissAria": "Dismiss the AI explanations suggestion",
     "frequency": "At most once every 30 days, and never again after it’s been dismissed twice or the user has chosen on the card."
   },
+  "senders": {
+    "emptySteps": {
+      "confirm": "Confirm when you’re ready"
+    }
+  },
   "simplify": {
     "scan": {
       "progress": "Scanning your Gmail…",
@@ -767,6 +772,40 @@
     },
     "home": {
       "yourSenders": "Your senders"
+    }
+  },
+  "preview": {
+    "details": {
+      "includes": {
+        "label": "Includes",
+        "inbox": "Inbox only",
+        "all": "Inbox and archived email",
+        "window": {
+          "one": "(older than 1 day)",
+          "other": "(older than {n} days)"
+        },
+        "recheck": "We check again right before anything moves."
+      },
+      "deleted": {
+        "label": "Deleted email",
+        "value": "Goes to Gmail Trash for up to 30 days, unless you empty Trash sooner."
+      },
+      "whereNow": {
+        "label": "Where it is now",
+        "value": "{n} in your inbox · {m} elsewhere in Gmail"
+      },
+      "domain": {
+        "label": "Domain"
+      },
+      "sender": {
+        "label": "Sender"
+      },
+      "lastSeen": {
+        "label": "Last seen"
+      },
+      "whySuggested": {
+        "label": "Why suggested"
+      }
     }
   },
   "pr1019": {

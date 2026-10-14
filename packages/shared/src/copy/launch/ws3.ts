@@ -23,6 +23,8 @@ export const WS3_COPY = {
   'ws3.home.footerTagline':
     'Gmail stays your inbox. DeclutrMail helps you control it one sender at a time.',
   'ws3.home.notAffiliated': 'Works with Gmail. Not affiliated with or endorsed by Google.',
+  'ws3.home.walkthrough.openDetails':
+    'Open a sender’s details. Check recent subjects and the email your decision would affect.',
   'ws3.trust.short':
     'Google OAuth verification approved {OAUTH_DATE}, and CASA Tier 2 assessed by TAC Security · We never fetch or store full email contents.',
   'ws3.trust.aria': 'Security details: Google verification and independent assessment',
@@ -51,6 +53,8 @@ export const WS3_COPY = {
   'ws3.footer.legal': '{legalEntity} · {legalAddress}',
   'ws3.contact.legal': 'DeclutrMail is operated by {legalEntity}, {legalAddress}.',
   'ws3.howItWorks.h1': 'From one sender decision to a Gmail change.',
+  'ws3.howItWorks.lede':
+    'DeclutrMail puts recurring senders and their recent email in one place. Open a sender’s details, then preview what will change before any email moves.',
   'ws3.howItWorks.gmailOnly': 'DeclutrMail works with Gmail and Google Workspace only for now.',
   'ws3.faq.closing': 'Still unsure?',
   'ws3.faq.closing.links': ['Try the demo', 'Contact'],
@@ -418,6 +422,8 @@ export const WS3_COPY = {
     'Check whether it sends a request or opens a prefilled email in Gmail, and whether Archive or Delete for older email is selected. The sender decides whether and when their email stops.',
   'ws3.simulator.h1': 'Try DeclutrMail on made-up email.',
   'ws3.simulator.guide': 'How the demo works',
+  'ws3.demo.details.subjectsNote':
+    'The demo hides subjects for this age range. With your Gmail connected, you’ll see them.',
   'ws3.simulator.planLine':
     'Free includes {allowance} emails cleared a month. {plusName} has no monthly limit.',
   'ws3.brand.orgName': 'DeclutrMail',

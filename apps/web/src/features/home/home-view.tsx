@@ -221,7 +221,7 @@ function HomeBody({
       return (
         <ErrorState
           headingLevel={2}
-          title="We couldn't load Home"
+          title="We couldn’t load Home"
           description={loadErrorDescription(state.error)}
           onRetry={state.retry}
         />

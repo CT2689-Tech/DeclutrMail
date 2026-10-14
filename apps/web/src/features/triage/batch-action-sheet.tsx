@@ -1,5 +1,7 @@
 'use client';
 
+import { PREVIEW_UNAVAILABLE_MESSAGE } from '@declutrmail/shared/copy';
+
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import {
@@ -19,10 +21,12 @@ import {
 } from '@declutrmail/shared';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
 import { meterPreviewText } from '@declutrmail/shared/entitlements';
+import { WS5_COPY } from '@declutrmail/shared/copy/launch';
 import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 
 import { afterLead } from '@/lib/copy/after-lead';
 import type { TriageDecisionRow } from './data';
+import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 import type { DomainBatch } from './domain-batch';
 import type { BatchVerb } from './domain-batch-card';
 
@@ -193,10 +197,10 @@ export function BatchActionSheet({
   const status: ReactNode = wakeAtInvalid ? (
     'Choose a future return time before confirming Later.'
   ) : preview === 'loading' ? (
-    'Counting the inbox…'
+    WS5_COPY['f1.preview.backlog.loading']
   ) : preview === 'unavailable' ? (
     <StatusWithAction
-      message="Couldn’t load the preview. Nothing can move until it loads."
+      message={PREVIEW_UNAVAILABLE_MESSAGE}
       action={onRetryPreview ? { label: 'Retry preview', onClick: onRetryPreview } : undefined}
     />
   ) : nothingActionable ? (
@@ -218,7 +222,10 @@ export function BatchActionSheet({
   // ── Details ──────────────────────────────────────────────────────────
   const facts: SheetFactItem[] = [];
   if (total !== null && total > 0) {
-    facts.push({ label: 'Count', value: 'Inbox now, rechecked when it runs' });
+    facts.push({
+      label: PREVIEW_DETAILS.includes.label,
+      value: previewIncludesValue(false, null),
+    });
   }
   if (primary.schedule.kind === 'scheduled') {
     facts.push({

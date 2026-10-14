@@ -453,7 +453,7 @@ describe('SettingsScreen', () => {
     expect(reconnect).toBeDisabled();
     // The reason must be readable on the page, not hidden in a `title`
     // tooltip that touch + keyboard + screen readers never reach.
-    const reason = screen.getByText(/you can reconnect once we've finished erasing/i);
+    const reason = screen.getByText(/you can reconnect once we’ve finished erasing/i);
     expect(reason).toBeInTheDocument();
     expect(reconnect).toHaveAttribute('aria-describedby', reason.id);
   });

@@ -70,11 +70,11 @@ export function UnsubMailtoCallout({
           onStatusChanged?.(next);
           refreshProgress();
           if (next === 'user_marked_sent') {
-            toast(`Marked ${senderName}'s unsubscribe email as sent`, 'success');
+            toast(`Marked ${senderName}’s unsubscribe email as sent`, 'success');
           }
         },
         onError: () => {
-          toast("Couldn't record that unsubscribe step. Refresh and try again.", 'warn');
+          toast('Couldn’t record that unsubscribe step. Refresh and try again.', 'warn');
         },
       },
     );

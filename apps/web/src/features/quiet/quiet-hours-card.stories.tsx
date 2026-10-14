@@ -105,7 +105,7 @@ export const Loading: Story<typeof QuietHoursCard> = {
 export const ErrorState: Story<typeof QuietHoursCard> = {
   args: {
     ...baseArgs,
-    state: { kind: 'error', message: "We couldn't load quiet hours right now." },
+    state: { kind: 'error', message: 'We couldn’t load quiet hours right now.' },
     onRetry: noop,
   },
 };

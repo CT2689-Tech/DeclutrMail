@@ -287,6 +287,7 @@ for (const phase of ['checking', 'ready'] as const) {
       await trigger.click();
       const dialog = page.getByTestId('action-recovery-dialog');
       await expect(dialog).toBeVisible();
+      await expect.poll(() => verificationCalls).toBe(1);
       if (phase === 'ready')
         await expect(dialog.getByText('Still to do', { exact: true })).toBeVisible();
       await page.keyboard.press('Escape');
@@ -366,7 +367,7 @@ test('Privacy export distinguishes failures, announces preparation and permits a
   expect(path).not.toBeNull();
   expect(await readFile(path!, 'utf8')).toBe(contents);
   await expect(status).toHaveText(
-    "Senders CSV prepared. Check your browser's downloads for the file.",
+    'Senders CSV prepared. Check your browser’s downloads for the file.',
   );
   for (const button of await section.getByRole('button').all()) await expect(button).toBeEnabled();
   await expectNoBlockingAxeViolations(page);

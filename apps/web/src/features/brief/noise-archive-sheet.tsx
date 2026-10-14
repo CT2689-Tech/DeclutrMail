@@ -1,11 +1,15 @@
 'use client';
 
+import { PREVIEW_UNAVAILABLE_MESSAGE } from '@declutrmail/shared/copy';
+
 import { useActionPreviewAnalytics } from '@/lib/use-action-preview-analytics';
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 
 import { useEffect, type ReactNode } from 'react';
 import { Button, PreviewSheet, SheetFactList, tokens } from '@declutrmail/shared';
+import { WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
+import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 
@@ -97,12 +101,12 @@ export function NoiseArchiveSheet({
   // count needs no line: the title already says nothing is there.
   const status: ReactNode =
     preview === 'loading' ? (
-      'Counting the inbox…'
+      WS5_COPY['f1.preview.backlog.loading']
     ) : scopeConflict ? (
       'You switched Gmail accounts, so nothing was archived. Close this and start again.'
     ) : preview === 'unavailable' ? (
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        Couldn&rsquo;t load the preview. Nothing can move until it loads.
+        {PREVIEW_UNAVAILABLE_MESSAGE}
         <Button tone="default" size="sm" onClick={onRetryPreview}>
           Retry preview
         </Button>
@@ -130,7 +134,7 @@ export function NoiseArchiveSheet({
             {!confirmDisabled && (
               <span>
                 {UNIFORM_UNDO_WINDOW_DAYS === null
-                  ? "One undo reverses the whole batch during your plan's Activity window."
+                  ? 'One undo reverses the whole batch during your plan’s Activity window.'
                   : `One undo reverses the whole batch during the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity window.`}
               </span>
             )}
@@ -220,7 +224,12 @@ export function NoiseArchiveSheet({
           <SheetFactList
             facts={[
               ...(ready && !nothingToActOn
-                ? [{ label: 'Count', value: 'Inbox now, rechecked when it runs' }]
+                ? [
+                    {
+                      label: PREVIEW_DETAILS.includes.label,
+                      value: previewIncludesValue(false, null),
+                    },
+                  ]
                 : []),
             ]}
           />

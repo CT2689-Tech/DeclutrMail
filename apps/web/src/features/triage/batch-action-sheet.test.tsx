@@ -104,7 +104,9 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
       screen.getByRole('heading', { name: /Archive 3 emails from 3 senders\?/ }),
     ).toBeVisible();
     expect(screen.getByRole('button', { name: 'Archive 3 emails' })).toBeEnabled();
-    expect(screen.getByText(/Inbox now, rechecked when it runs/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Inbox only\. We check again right before anything moves/),
+    ).toBeInTheDocument();
     expect(screen.getByText(/From example\.com\./)).toBeInTheDocument();
     expect(screen.getByText(/One undo reverses the whole batch/)).toBeInTheDocument();
     const account = screen.getByRole('note', { name: 'Gmail account: active@gmail.com' });
@@ -383,7 +385,7 @@ describe('BatchActionSheet — PreviewSheet grammar', () => {
       />,
     );
     expect(screen.getByRole('heading', { name: 'Archive email from 3 senders?' })).toBeVisible();
-    expect(screen.getByText(/Counting the inbox/)).toBeInTheDocument();
+    expect(screen.getByText(/Counting the email you already have/)).toBeInTheDocument();
   });
 
   it('lists every sender with its own count in Details', () => {

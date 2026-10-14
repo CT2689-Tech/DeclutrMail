@@ -2,7 +2,7 @@ import { ToastHost } from '@declutrmail/shared';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { pluralCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import type { InboxReportDto } from '@declutrmail/shared/inbox-report';
 
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
@@ -103,7 +103,7 @@ describe('InboxReportFirstLanding', () => {
       await waitFor(() => expect(archive).toBeEnabled());
       if (mode === 'delete') {
         fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
-        fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
       }
       fireEvent.change(screen.getByRole('combobox', { name: 'How far back to act on' }), {
         target: { value: '180' },
@@ -182,12 +182,71 @@ describe('InboxReportFirstLanding', () => {
     const option = await screen.findByRole('radio', { name: '+ Delete 4' });
     await waitFor(() => expect(option).toBeEnabled());
     fireEvent.click(option);
-    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: WS2_COPY.simplify.confirm.includeArchived }),
+    );
     expect(screen.getByRole('dialog')).toHaveTextContent('delete 12 emails');
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Delete' }));
     await waitFor(() =>
       expect(submitted).toMatchObject({ mode: 'delete', reach: 'all_mail', senderIds: ['s1'] }),
     );
+  });
+
+  it('posts only the report senders the live preview included', async () => {
+    let submitted: { senderIds?: string[] } | null = null;
+    const two: InboxReportDto = {
+      ...report,
+      fix: { senderKeys: ['s1', 's2'], sendersCount: 2, inboxEmailCount: 9 },
+    };
+    const counts = { all: 4, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mb-1/inbox-report',
+        respond: () => jsonOk({ data: two }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/preview/bulk',
+        respond: () =>
+          jsonOk({
+            data: {
+              senders: [
+                { senderId: 's1', name: 'Kept', counts, protected: false },
+                {
+                  senderId: 's2',
+                  name: 'Protected',
+                  counts: { ...counts, all: 5 },
+                  protected: true,
+                },
+              ],
+              totals: counts,
+              protectedCount: 1,
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-backlog',
+        respond: async (req) => {
+          submitted = (await req.json()) as { senderIds?: string[] };
+          return jsonServerError();
+        },
+      },
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
+      </QueryWrapper>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
+    const archive = await screen.findByRole('radio', { name: '+ Archive 4' });
+    await waitFor(() => expect(archive).toBeEnabled());
+    fireEvent.click(archive);
+    const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+    await waitFor(() => expect(submitted?.senderIds).toEqual(['s1']));
   });
 
   it('undoes the latest archive when Activity has a token', async () => {
@@ -512,7 +571,7 @@ describe('InboxReportFirstLanding', () => {
     expect(screen.getByRole('radio', { name: '+ Archive' })).toBeDisabled();
     expect(screen.getByRole('radio', { name: '+ Delete' })).toBeDisabled();
     expect(screen.getByRole('dialog')).not.toHaveTextContent('archive 4 emails');
-    expect(screen.getByRole('dialog')).toHaveTextContent(/Counting existing inbox email/);
+    expect(screen.getByRole('dialog')).toHaveTextContent(WS5_COPY['f1.preview.backlog.loading']);
     expect(screen.getByRole('dialog')).not.toHaveTextContent('0 emails you already have');
     releasePreview(
       jsonOk({
@@ -551,7 +610,7 @@ describe('InboxReportFirstLanding', () => {
       'Unsubscribe from Acme and archive 7 emails?',
     );
     expect(screen.getByRole('dialog')).toHaveTextContent(
-      'Existing inbox email leaves your inbox and stays in Gmail.',
+      pluralCopy(WS5_COPY['f1.preview.backlog.archive'], 7, { n: 7 }),
     );
     fireEvent.click(archiveChoice);
     const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
@@ -581,6 +640,13 @@ describe('InboxReportFirstLanding', () => {
         respond: () =>
           jsonOk({
             data: {
+              sender: {
+                id: 's1',
+                name: 'Acme',
+                domain: 'acme.example',
+                lastSeenDays: 1,
+                wroteToCount: 0,
+              },
               counts: {
                 all: 7,
                 olderThan30d: 0,
@@ -631,6 +697,8 @@ describe('InboxReportFirstLanding', () => {
     );
     fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
     fireEvent.click(await screen.findByRole('radio', { name: 'Unsubscribe only' }));
+    // Confirm stays closed while the single-sender preview is still loading.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
     await waitFor(() =>
       expect(document.querySelector('[data-celebration]')).toHaveTextContent(

@@ -124,7 +124,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
         <GroupTitle as="div">Invoices</GroupTitle>
         <RecoverableErrorState
           headingLevel={2}
-          title="We couldn't load your invoices"
+          title="We couldn’t load your invoices"
           description="Try again to load your invoices."
           onRetry={() => invoices.refetch()}
         />

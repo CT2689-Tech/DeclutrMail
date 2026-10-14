@@ -20,7 +20,7 @@ export default function QuietError({
       error={error}
       reset={reset}
       boundary="quiet"
-      headline="We couldn't load quiet hours."
+      headline="We couldn’t load quiet hours."
       body="Try again, or head back to Senders."
       escape={{ href: '/senders', label: 'Back to Senders' }}
     />

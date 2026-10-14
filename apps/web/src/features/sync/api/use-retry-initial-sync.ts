@@ -105,7 +105,7 @@ export function useRetryInitialSync(
       if (data.outcome === 'requeued') {
         toast('Scan queued.', 'success');
       } else if (data.outcome === 'already_running') {
-        toast("Still scanning — we'll keep going.", 'success');
+        toast('Still scanning — we’ll keep going.', 'success');
       }
     },
     // QA-sync-20260831-10 item 4: this is the user's ONLY recovery
@@ -137,7 +137,7 @@ function retryErrorMessage(err: unknown): string {
     return 'This inbox is no longer connected to your account.';
   }
   if (err instanceof ApiError && err.status === 429) {
-    return "Couldn't start the scan — try again in a minute.";
+    return 'Couldn’t start the scan — try again in a minute.';
   }
-  return "Couldn't start the scan — try again.";
+  return 'Couldn’t start the scan — try again.';
 }

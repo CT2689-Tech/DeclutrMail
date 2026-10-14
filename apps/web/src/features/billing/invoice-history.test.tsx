@@ -95,7 +95,7 @@ describe('InvoiceHistory', () => {
   it('shows a real error state — never an empty list — when the read fails', async () => {
     apiGet.mockRejectedValue(new Error('boom'));
     wrap(<InvoiceHistory />);
-    expect(await screen.findByText(/couldn't load your invoices/i)).toBeInTheDocument();
+    expect(await screen.findByText(/couldn’t load your invoices/i)).toBeInTheDocument();
     // A provider failure is a 200 with `unavailableProviders`, so this
     // state is always OUR failure — never "the provider didn't answer".
     expect(screen.queryByText(/provider didn.t answer/i)).toBeNull();

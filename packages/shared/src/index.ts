@@ -44,6 +44,7 @@ export { DialogFrame } from './components/dialog-frame';
 export { Disclosure } from './components/disclosure';
 export { PreviewSheet } from './components/preview-sheet/preview-sheet';
 export {
+  SheetCheckbox,
   SheetFactList,
   SheetLinks,
   SheetSegmented,

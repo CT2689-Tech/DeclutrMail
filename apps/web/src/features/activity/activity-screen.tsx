@@ -2694,7 +2694,7 @@ function ActivityErrorState({
   // `dateFrom > dateTo` would loop the user back into the same broken
   // filter forever — flow-completeness-auditor 2026-06-05.
   const isClientInput = isFilterError || isActivityFilterValidationError(error);
-  const title = isClientInput ? 'Check your activity filters' : "We couldn't load your activity";
+  const title = isClientInput ? 'Check your activity filters' : 'We couldn’t load your activity';
   const message = isClientInput
     ? 'Activity could not load this filter. Use a valid outcome and a From date earlier than To, or reset the filters.'
     : 'Try again in a moment.';

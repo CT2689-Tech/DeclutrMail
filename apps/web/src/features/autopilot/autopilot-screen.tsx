@@ -727,7 +727,7 @@ export function AutopilotScreen({
         toast('Suggestion skipped', 'info');
       },
       onError: (err) => {
-        toast("Couldn't skip the suggestion. Try again.", 'warn');
+        toast('Couldn’t skip the suggestion. Try again.', 'warn');
         captureFeatureException(err, { surface: 'autopilot', reason: 'dismiss_failed' });
       },
     });
@@ -896,7 +896,7 @@ export function AutopilotScreen({
       )}
       {state.kind !== 'loading' && state.kind !== 'error' && patternState.kind === 'error' && (
         <ErrorState
-          title="Couldn't check rule suggestions"
+          title="Couldn’t check rule suggestions"
           description={patternState.message}
           onRetry={patternState.retry}
         />
@@ -1015,7 +1015,7 @@ export function AutopilotScreen({
       {state.kind === 'error' && (
         <ErrorState
           headingLevel={2}
-          title="We couldn't load your Autopilot"
+          title="We couldn’t load your Autopilot"
           description={state.message}
           onRetry={state.retry}
         />
@@ -1144,7 +1144,7 @@ export function AutopilotScreen({
               )}
               {suggestionsState.kind === 'error' && (
                 <ErrorState
-                  title="Couldn't load pending suggestions"
+                  title="Couldn’t load pending suggestions"
                   description={suggestionsState.message}
                   onRetry={suggestionsState.retry}
                 />
@@ -1306,7 +1306,7 @@ export function AutopilotScreen({
 
 /** PATCH failure toast copy — shared by toggle/threshold/resume. */
 function patchFailureMessage(_err: unknown): string {
-  return "Couldn't save the rule";
+  return 'Couldn’t save the rule';
 }
 
 /**

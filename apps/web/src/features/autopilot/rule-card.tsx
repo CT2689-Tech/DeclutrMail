@@ -330,7 +330,7 @@ function ruleModeExplanation(rule: AutopilotRuleDto, canActivate: boolean): stri
  * reports what the rule matched.
  */
 function lastRunSummary(rule: AutopilotRuleDto, localizeDate: boolean): ReactNode {
-  if (rule.lastRunAt == null) return "Hasn't run yet";
+  if (rule.lastRunAt == null) return 'Hasn’t run yet';
   const d = new Date(rule.lastRunAt);
   const validTime = !Number.isNaN(d.getTime());
   const when =

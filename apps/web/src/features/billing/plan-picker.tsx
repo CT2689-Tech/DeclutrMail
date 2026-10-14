@@ -1322,8 +1322,8 @@ function DowngradePanel({
     >
       <p style={{ margin: 0 }}>
         {end
-          ? `Your ${tierLabel} features will remain active until ${end}. Then you'll switch to Free.`
-          : `Your ${tierLabel} features will remain active until the end of the current period. Then you'll switch to Free.`}{' '}
+          ? `Your ${tierLabel} features will remain active until ${end}. Then you’ll switch to Free.`
+          : `Your ${tierLabel} features will remain active until the end of the current period. Then you’ll switch to Free.`}{' '}
         Downgrading to Free means canceling your subscription — the next step covers cancellation.
       </p>
       <PlanConsequences fromTier={currentTier} toTier="free" />

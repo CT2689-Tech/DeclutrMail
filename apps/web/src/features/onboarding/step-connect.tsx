@@ -56,7 +56,7 @@ export function StepConnect({
       title={variant === 'fresh' ? 'Connect your Gmail.' : 'Reconnect your Gmail.'}
       sub={
         variant === 'fresh'
-          ? "Google's consent screen is next."
+          ? 'Google’s consent screen is next.'
           : 'No mailbox is connected right now.'
       }
     >

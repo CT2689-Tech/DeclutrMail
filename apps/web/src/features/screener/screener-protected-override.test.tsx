@@ -212,7 +212,7 @@ describe('ScreenerScreen — the acknowledgement reaches the wire', () => {
     fireEvent.keyDown(window, { key: 'd' });
     // Wait for the live count — confirming before it lands would make a
     // "no override" assertion pass because nothing was posted at all.
-    await screen.findByText(/Inbox now.*rechecked/i);
+    await screen.findByText(/Inbox only.*We check again right before anything moves/i);
     fireEvent.keyDown(window, { key: 'Enter' });
     await waitFor(() => expect(bodies).toHaveLength(1));
     return bodies[0]!;
@@ -266,7 +266,7 @@ describe('ScreenerScreen — a conflict is named from its code, not its status',
       screen.getByRole('button', { name: new RegExp(`${protectedRow.senderName} — expand`) }),
     );
     fireEvent.keyDown(window, { key: 'd' });
-    await screen.findByText(/Inbox now.*rechecked/i);
+    await screen.findByText(/Inbox only.*We check again right before anything moves/i);
     fireEvent.keyDown(window, { key: 'Enter' });
 
     await waitFor(() => expect(h.toast).toHaveBeenCalled());
@@ -326,7 +326,7 @@ describe('ScreenerScreen — a conflict is named from its code, not its status',
       screen.getByRole('button', { name: new RegExp(`${plainRow.senderName} — expand`) }),
     );
     fireEvent.keyDown(window, { key: 'd' });
-    await screen.findByText(/Inbox now.*rechecked/i);
+    await screen.findByText(/Inbox only.*We check again right before anything moves/i);
     fireEvent.keyDown(window, { key: 'Enter' });
 
     const row = () => screen.getAllByText(plainRow.senderName)[0]!.closest('[aria-busy]');
@@ -364,12 +364,12 @@ describe('ScreenerScreen — a conflict is named from its code, not its status',
       screen.getByRole('button', { name: new RegExp(`${plainRow.senderName} — expand`) }),
     );
     fireEvent.keyDown(window, { key: 'd' });
-    await screen.findByText(/Inbox now.*rechecked/i);
+    await screen.findByText(/Inbox only.*We check again right before anything moves/i);
     fireEvent.keyDown(window, { key: 'Enter' });
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `Can't tell if Delete for ${plainRow.senderName} started — check Activity before retrying.`,
+        `Can’t tell if Delete for ${plainRow.senderName} started — check Activity before retrying.`,
         'warn',
       ),
     );
@@ -382,7 +382,9 @@ describe('ScreenerScreen — a conflict is named from its code, not its status',
     expect(within(row() as HTMLElement).getByText('Delete: unknown')).toBeInTheDocument();
     fireEvent.keyDown(window, { key: 'd' });
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(screen.queryByText(/Inbox now.*rechecked/i)).toBeNull();
+    expect(
+      screen.queryByText(/Inbox only.*We check again right before anything moves/i),
+    ).toBeNull();
   });
 });
 
@@ -460,7 +462,7 @@ describe('ScreenerScreen — overdue release (2026-08-12 incident)', () => {
       );
       fireEvent.keyDown(window, { key: 'd' });
       await tick(100);
-      screen.getByText(/Inbox now.*rechecked/i);
+      screen.getByText(/Inbox only.*We check again right before anything moves/i);
       fireEvent.keyDown(window, { key: 'Enter' });
       await tick(100);
       expect(bodies).toHaveLength(1);
