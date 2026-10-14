@@ -64,7 +64,7 @@ export const QuietHoursConfigSchema = z
   })
   .strict()
   .refine((c) => c.startLocal !== c.endLocal, {
-    message: "Start and end times can't be the same.",
+    message: 'Start and end times can’t be the same.',
     path: ['endLocal'],
   });
 export type QuietHoursConfig = z.infer<typeof QuietHoursConfigSchema>;

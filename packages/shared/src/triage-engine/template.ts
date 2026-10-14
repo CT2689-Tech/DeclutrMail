@@ -13,7 +13,7 @@
  *
  * For Phase A and Phase B (no scoring) the template degrades gracefully —
  * "{name} sends {N}/mo." is kept and the second clause swaps to the
- * cascade's audit phrase (e.g. "Kept because you've written to them.").
+ * cascade's audit phrase (e.g. "Kept because you’ve written to them.").
  */
 import type { CascadeResult, CascadeRuleId } from './cascade';
 import type { TriageVerdict } from '../contracts/triage-enums';
@@ -26,16 +26,16 @@ import type { TriageVerdict } from '../contracts/triage-enums';
  * is a compile error, not a silent fallthrough.
  */
 const RULE_PHRASE = {
-  protect_user_defined: "Kept because you've marked them as protected.",
+  protect_user_defined: 'Kept because you’ve marked them as protected.',
   protect_replied:
-    "Protected because you've written to this sender at least three times and heard back.",
-  protect_starred: "Protected because you've starred a message from this sender this year.",
+    'Protected because you’ve written to this sender at least three times and heard back.',
+  protect_starred: 'Protected because you’ve starred a message from this sender this year.',
   protect_gmail_important:
     'Protected because Gmail marked at least three of their messages important this year.',
-  wrote_to_at_least_once: "Kept because you've written to them.",
+  wrote_to_at_least_once: 'Kept because you’ve written to them.',
   gmail_primary:
     'Kept because Gmail puts them in your Primary inbox and they have no unsubscribe link.',
-  starred_recently: "Kept because you've starred a message from them this year.",
+  starred_recently: 'Kept because you’ve starred a message from them this year.',
   high_read_rate: 'Kept because at least half their mail from the last 90 days is marked read.',
   long_relationship_engaged:
     "Kept because they've emailed you for 5+ years and 30%+ of the last 90 days is marked read.",

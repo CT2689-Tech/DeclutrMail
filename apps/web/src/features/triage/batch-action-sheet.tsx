@@ -1,7 +1,5 @@
 'use client';
 
-import { PREVIEW_UNAVAILABLE_MESSAGE } from '@declutrmail/shared/copy';
-
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import {
@@ -21,7 +19,7 @@ import {
 } from '@declutrmail/shared';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
 import { meterPreviewText } from '@declutrmail/shared/entitlements';
-import { WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 
 import { afterLead } from '@/lib/copy/after-lead';
@@ -200,8 +198,10 @@ export function BatchActionSheet({
     WS5_COPY['f1.preview.backlog.loading']
   ) : preview === 'unavailable' ? (
     <StatusWithAction
-      message={PREVIEW_UNAVAILABLE_MESSAGE}
-      action={onRetryPreview ? { label: 'Retry preview', onClick: onRetryPreview } : undefined}
+      message={WS5_COPY['f1.preview.backlog.error']}
+      action={
+        onRetryPreview ? { label: WS2_COPY.home.failed.retry, onClick: onRetryPreview } : undefined
+      }
     />
   ) : nothingActionable ? (
     <StatusWithAction
@@ -366,7 +366,7 @@ function AvatarStack({ rows }: { rows: readonly TriageDecisionRow[] }) {
   );
 }
 
-/** A disabled-state line with its one way out ("Retry preview"). */
+/** A disabled-state line with its one way out ("Try again"). */
 function StatusWithAction({
   message,
   action,
