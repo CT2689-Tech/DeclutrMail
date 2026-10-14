@@ -4283,7 +4283,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
   it.each([
     ['archive', '+ Archive 30', 'Unsubscribe + Archive'],
-    ['delete', '+ Delete 30', 'Unsubscribe + Delete'],
+    ['delete', '+ Delete 30', 'Unsubscribe + Delete 30 emails'],
   ] as const)(
     'sends one unsubscribe-backlog request for bulk %s',
     async (mode, radioName, buttonName) => {

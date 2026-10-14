@@ -21,9 +21,7 @@ describe('SendersSimulator', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
       if (mode === 'Delete') {
         fireEvent.click(within(preview()).getByRole('radio', { name: '+ Delete 111' }));
-        fireEvent.click(
-          within(preview()).getByRole('checkbox', { name: 'Include archived email' }),
-        );
+        fireEvent.click(within(preview()).getByRole('radio', { name: /Inbox \+ archived/ }));
       }
       fireEvent.change(
         within(preview()).getByRole('combobox', { name: 'How far back to act on' }),
@@ -31,7 +29,12 @@ describe('SendersSimulator', () => {
       );
       const moved = mode === 'Delete' ? 155 : 45;
       expect(within(preview()).getByRole('heading')).toHaveTextContent(`${moved} emails`);
-      fireEvent.click(within(preview()).getByRole('button', { name: `Unsubscribe + ${mode}` }));
+      fireEvent.click(
+        within(preview()).getByRole('button', {
+          name:
+            mode === 'Delete' ? `Unsubscribe + Delete ${moved} emails` : 'Unsubscribe + Archive',
+        }),
+      );
       const activity = screen.getByRole('region', { name: 'Sample activity' });
       expect(activity).toHaveTextContent(
         `${mode === 'Delete' ? 'Deleted' : 'Archived'} ${moved} emails`,
@@ -49,16 +52,20 @@ describe('SendersSimulator', () => {
     render(<SendersSimulator />);
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
     fireEvent.click(within(preview()).getByRole('radio', { name: '+ Delete 111' }));
-    fireEvent.click(within(preview()).getByRole('checkbox', { name: 'Include archived email' }));
+    fireEvent.click(within(preview()).getByRole('radio', { name: /Inbox \+ archived/ }));
     expect(within(preview()).getByRole('heading')).toHaveTextContent('delete 273 emails');
-    fireEvent.click(within(preview()).getByRole('button', { name: 'Unsubscribe + Delete' }));
+    fireEvent.click(
+      within(preview()).getByRole('button', {
+        name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/,
+      }),
+    );
     const activity = screen.getByRole('region', { name: 'Sample activity' });
     expect(activity).toHaveTextContent('Deleted 273 emails');
     fireEvent.click(within(activity).getByRole('button', { name: 'Undo' }));
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
     fireEvent.click(within(preview()).getByRole('radio', { name: '+ Delete 111' }));
-    const includeArchived = within(preview()).getByRole('checkbox', {
-      name: 'Include archived email',
+    const includeArchived = within(preview()).getByRole('radio', {
+      name: /Inbox \+ archived/,
     });
     expect(includeArchived).not.toBeChecked();
     fireEvent.click(includeArchived);
@@ -258,7 +265,11 @@ describe('SendersSimulator — WS5 sample surfaces', () => {
       }),
     );
     fireEvent.click(within(preview()).getByRole('radio', { name: /\+ Delete 191/ }));
-    fireEvent.click(within(preview()).getByRole('button', { name: 'Unsubscribe + Delete' }));
+    fireEvent.click(
+      within(preview()).getByRole('button', {
+        name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/,
+      }),
+    );
     expect(
       screen
         .getAllByRole('status')
