@@ -16,7 +16,7 @@ import { readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { isPricingV2 } from '@declutrmail/shared/entitlements';
+import { LAUNCH_STAGE } from '@declutrmail/shared/copy/launch';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import sitemap from './sitemap';
@@ -78,13 +78,13 @@ describe('sitemap — D134', () => {
 
   it('recursively covers every indexable marketing route and dynamic route family', async () => {
     const patterns = marketingRoutePatternsFromFs();
-    // The pricing changelog page redirects to /pricing while the flag is
-    // off, so it is not a crawl target in that build.
+    // Recovery and thin history pages are noindexed or redirect after GA.
     const excludedFromSitemap = [
       '/demo',
       '/changelog',
       '/sign-in',
-      ...(isPricingV2() ? [] : ['/pricing/changelog']),
+      '/pricing/changelog',
+      ...(LAUNCH_STAGE === 'beta' ? [] : ['/beta']),
     ];
     const indexablePatterns = patterns.filter((pattern) => !excludedFromSitemap.includes(pattern));
     const routes = await sitemapPaths();
@@ -125,9 +125,13 @@ describe('sitemap — D134', () => {
     expect(await sitemapPaths()).not.toContain('/pricing/changelog');
   });
 
-  it('lists /pricing/changelog when PRICING_V2 is on', async () => {
+  it('omits the thin /pricing/changelog even when PRICING_V2 is on', async () => {
     vi.stubEnv('PRICING_V2', 'true');
-    expect(await sitemapPaths()).toContain('/pricing/changelog');
+    expect(await sitemapPaths()).not.toContain('/pricing/changelog');
+  });
+
+  it('omits retired organic beta after GA', async () => {
+    expect(await sitemapPaths()).not.toContain('/beta');
   });
 
   it('omits the noindexed sign-in page', async () => {
@@ -179,7 +183,6 @@ describe('sitemap — D134', () => {
         '/how-it-works',
         '/inbox-simulator',
         '/methodology',
-        '/beta',
         '/faq',
       ]) {
         expect(await entryFor(pathname)).toBeDefined();

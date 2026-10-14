@@ -460,6 +460,40 @@ describe('GoogleOAuthController.start — validated post-login billing intent', 
   });
 });
 
+describe('GoogleOAuthController.start — directory campaign handoff', () => {
+  it.each(['alternativeto', 'saashub'])(
+    'carries %s first touch through signed OAuth state without a legacy ref',
+    async (source) => {
+      const oauth = { getConsentUrl: vi.fn(() => 'https://accounts.google.test/consent') };
+      const res = { cookie: vi.fn(), redirect: vi.fn() };
+      const jwt = makeJwtService();
+      const controller = new GoogleOAuthController(
+        oauth as unknown as GoogleOAuthService,
+        {} as AuthSignupOrchestrator,
+        makeSecurityEvents().service,
+        makeMailboxAccounts() as unknown as MailboxAccountsService,
+        jwt,
+        makeSessions().service,
+      );
+      await controller.start(
+        {
+          cookies: { dm_attr: `utm_source=${source}&utm_medium=referral&landing=%2F` },
+        } as unknown as Request,
+        res as unknown as Response,
+      );
+      const state = decodeSignedState(jwt, res.cookie.mock.calls[0]?.[1] as string);
+      expect(state).toMatchObject({
+        mode: 'login',
+        utmSource: source,
+        utmMedium: 'referral',
+        landingPath: '/',
+      });
+      expect(state).not.toHaveProperty('ref');
+      expect(res.redirect).toHaveBeenCalledWith(302, 'https://accounts.google.test/consent');
+    },
+  );
+});
+
 describe('GoogleOAuthController.connectMailboxStart — targeted mailbox recovery', () => {
   const principal: SessionPrincipal = {
     userId: RECONNECT_USER_ID,

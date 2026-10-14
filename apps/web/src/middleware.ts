@@ -124,6 +124,7 @@ import {
 import {
   DM_ATTR_COOKIE,
   DM_ATTR_MAX_AGE_SEC,
+  parseDmAttr,
   resolveFirstTouchCampaign,
 } from '@declutrmail/shared/contracts/signup-attribution-attr';
 
@@ -390,12 +391,24 @@ const SIGNUP_REF_MAX_AGE_SEC = 60 * 60 * 24 * 30;
 /**
  * Set-once first-touch `ref` cookie. Query param wins; a bare
  * `/inbox-simulator` visit fills `simulator` only when the slot is empty.
- * Never inferred from Referer (Google OAuth would steal every signup).
+ * Directory sources use dm_attr, not this legacy enum. Never let a
+ * later demo visit replace their first touch with `simulator`.
  */
 function captureSignupRefCookie(request: NextRequest, response: NextResponse): void {
   const existing = request.cookies.get(SIGNUP_REF_COOKIE)?.value;
+  const campaign =
+    parseDmAttr(request.cookies.get(DM_ATTR_COOKIE)?.value) ??
+    parseDmAttr(
+      resolveFirstTouchCampaign({
+        existing: undefined,
+        searchParams: request.nextUrl.searchParams,
+        pathname: request.nextUrl.pathname,
+        referrer: request.headers.get('referer'),
+      }),
+    );
+  if (campaign && !campaign.ref && !parseSignupAttributionRef(existing)) return;
   const resolved = resolveFirstTouchRef({
-    existing,
+    existing: parseSignupAttributionRef(existing) ?? campaign?.ref,
     queryRef: request.nextUrl.searchParams.get('ref'),
     pathname: request.nextUrl.pathname,
   });
@@ -422,6 +435,7 @@ function captureDmAttrCookie(request: NextRequest, response: NextResponse): void
     existing: request.cookies.get(DM_ATTR_COOKIE)?.value,
     searchParams: request.nextUrl.searchParams,
     pathname: request.nextUrl.pathname,
+    referrer: request.headers.get('referer'),
   });
   if (!value) return;
   response.cookies.set({

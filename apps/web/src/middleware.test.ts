@@ -343,6 +343,31 @@ describe('signup first-touch cookie (Phase B)', () => {
 });
 
 describe('dm_attr first-touch cookie', () => {
+  it.each(['alternativeto.net', 'saashub.com'])(
+    'captures %s through a clean official URL without storing its URL',
+    (host) => {
+      const request = new NextRequest('https://declutrmail.com/inbox-simulator');
+      // happy-dom's Request strips Referer at construction as a forbidden
+      // client header. Real server requests receive it from the browser.
+      request.headers.set('referer', `https://${host}/software/example?private=secret`);
+      const response = middleware(request);
+      const value = response.cookies.get('dm_attr')?.value ?? '';
+      expect(value).toContain(`utm_source=${host === 'saashub.com' ? 'saashub' : 'alternativeto'}`);
+      expect(value).toContain('utm_medium=referral');
+      expect(value).not.toContain('secret');
+      expect(value).not.toContain('ref=simulator');
+      expect(response.cookies.get('dm_signup_ref')).toBeUndefined();
+    },
+  );
+
+  it('preserves a directory campaign when that visitor later opens the demo', () => {
+    const request = new NextRequest('https://declutrmail.com/inbox-simulator?ref=simulator');
+    request.cookies.set('dm_attr', 'utm_source=saashub&utm_medium=referral&landing=%2F');
+    const response = middleware(request);
+    expect(response.cookies.get('dm_attr')).toBeUndefined();
+    expect(response.cookies.get('dm_signup_ref')).toBeUndefined();
+  });
+
   it('sets utm, ref, and landing path once for 30 days on our domain', () => {
     const request = new NextRequest(
       'https://declutrmail.com/pricing?utm_source=hn&utm_medium=social&utm_campaign=launch&ref=hn',

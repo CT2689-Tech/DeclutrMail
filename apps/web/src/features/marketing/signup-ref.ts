@@ -12,12 +12,17 @@ import {
   SIGNUP_REF_COOKIE,
   type SignupAttributionRef,
 } from '@declutrmail/shared/contracts/signup-attribution-ref';
+import {
+  DM_ATTR_COOKIE,
+  parseDmAttr,
+  resolveFirstTouchCampaign,
+} from '@declutrmail/shared/contracts/signup-attribution-attr';
 
 const MAX_AGE_SEC = 60 * 60 * 24 * 30;
 
-function readCookieValue(): string | undefined {
+function readCookieValue(name = SIGNUP_REF_COOKIE): string | undefined {
   if (typeof document === 'undefined') return undefined;
-  const prefix = `${SIGNUP_REF_COOKIE}=`;
+  const prefix = `${name}=`;
   const part = document.cookie.split('; ').find((row) => row.startsWith(prefix));
   return part?.slice(prefix.length);
 }
@@ -61,8 +66,23 @@ export function captureSignupRef(
 ): SignupAttributionRef | undefined {
   const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
   const existing = readCapturedSignupRef();
+  let campaign;
+  try {
+    campaign = parseDmAttr(decodeURIComponent(readCookieValue(DM_ATTR_COOKIE) ?? ''));
+  } catch {
+    // A malformed cookie must not break the permission checkpoint.
+  }
+  campaign ??= parseDmAttr(
+    resolveFirstTouchCampaign({
+      existing: undefined,
+      searchParams: params,
+      pathname,
+      referrer: typeof document === 'undefined' ? undefined : document.referrer,
+    }),
+  );
+  if (campaign && !campaign.ref && !existing) return undefined;
   const resolved = resolveFirstTouchRef({
-    existing,
+    existing: existing ?? campaign?.ref,
     queryRef: params.get('ref'),
     pathname,
   });

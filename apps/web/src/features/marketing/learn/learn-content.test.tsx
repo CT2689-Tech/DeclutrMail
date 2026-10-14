@@ -105,6 +105,7 @@ describe('public learning content registry', () => {
   it('points each how-to at the approved guides, comparisons, and one answer', () => {
     const expected: Record<(typeof HOW_TO_SLUGS)[number], readonly string[]> = {
       'clean-gmail-by-sender': [
+        '/how-to/gmail-storage-full',
         '/how-to/bulk-delete-emails-from-one-sender',
         '/how-to/auto-archive-future-emails-in-gmail',
         '/how-to/unsubscribe-from-emails-gmail',
@@ -128,6 +129,7 @@ describe('public learning content registry', () => {
         '/answers/how-undo-works-for-gmail-cleanup',
       ],
       'auto-archive-future-emails-in-gmail': [
+        '/how-to/gmail-storage-full',
         '/how-to/bulk-delete-emails-from-one-sender',
         '/how-to/stop-promotional-emails-gmail',
         '/how-to/clean-gmail-by-sender',
@@ -144,6 +146,7 @@ describe('public learning content registry', () => {
         '/answers/is-it-safe-to-connect-gmail-app',
       ],
       'unsubscribe-from-emails-gmail': [
+        '/how-to/gmail-storage-full',
         '/how-to/stop-promotional-emails-gmail',
         '/how-to/bulk-delete-emails-from-one-sender',
         '/how-to/auto-archive-future-emails-in-gmail',
@@ -304,6 +307,19 @@ describe('shared learning surfaces', () => {
     ) as { '@type': string; name: string };
     expect(jsonLd).toMatchObject({ '@type': 'HowTo', name: article.title });
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('answers storage with native Gmail steps before the synthetic archive example', () => {
+    const article = HOW_TO_ARTICLES['gmail-storage-full'];
+    const { container } = render(<ArticlePage article={article} />);
+    const firstStep = container.querySelector(`#${article.sections[0]!.id}`)!;
+    const example = screen.getByLabelText('Made-up example');
+    expect(
+      firstStep.compareDocumentPosition(example) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(article.quickAnswer).toContain(
+      'Archiving and unsubscribing do not free existing storage',
+    );
   });
 
   it('carries the freshness dates into the structured data', () => {

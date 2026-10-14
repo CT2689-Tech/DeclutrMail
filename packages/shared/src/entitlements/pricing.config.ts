@@ -243,7 +243,7 @@ export const TIER_MANIFEST: TierManifest = {
   },
 };
 
-/** Launch pricing generation. Display and changelog read this, not a literal date. */
+/** Catalog generation identifier. It is not a public launch or publication date. */
 export const PRICING_VERSION = '2026-10-27';
 
 /**

@@ -161,9 +161,11 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
     slug: 'bulk-delete-emails-from-one-sender',
     path: '/how-to/bulk-delete-emails-from-one-sender',
     publishedAt: '2026-07-14',
-    updatedAt: '2026-09-22',
+    updatedAt: '2026-10-13',
     kind: 'How-to guide',
     title: 'How to delete all emails from one sender in Gmail',
+    quickAnswer:
+      'In Gmail on the web, search from:(sender@example.com), check a few results, select them, and choose “Select all conversations that match this search” before clicking Delete. Email moves to Trash; emptying Trash ends recovery. This does not unsubscribe you or delete future email.',
     description:
       'Delete all emails from one sender in Gmail using a verified search, with clear Trash and future-mail boundaries.',
     intro:
@@ -277,9 +279,11 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
     slug: 'gmail-storage-full',
     path: '/how-to/gmail-storage-full',
     publishedAt: '2026-08-13',
-    updatedAt: '2026-09-22',
+    updatedAt: '2026-10-13',
     kind: 'How-to guide',
     title: 'Gmail storage full? How to free up space',
+    quickAnswer:
+      'Check which of Gmail, Drive, or Photos is using your shared storage. In Gmail, review Spam and Trash, then search has:attachment larger:10M for large email you can delete. Trash still uses storage until emptied, and emptying it ends recovery. Archiving and unsubscribing do not free existing storage.',
     description:
       'Free space when Gmail says storage is full: empty Trash and Spam first, find large attachments with Gmail’s size operators, and see why archiving frees nothing.',
     intro:
@@ -811,6 +815,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
 
 const HOW_TO_RELATED_HREFS: Record<HowToSlug, readonly string[]> = {
   'clean-gmail-by-sender': [
+    '/how-to/gmail-storage-full',
     '/how-to/bulk-delete-emails-from-one-sender',
     '/how-to/auto-archive-future-emails-in-gmail',
     '/how-to/unsubscribe-from-emails-gmail',
@@ -834,6 +839,7 @@ const HOW_TO_RELATED_HREFS: Record<HowToSlug, readonly string[]> = {
     '/answers/how-undo-works-for-gmail-cleanup',
   ],
   'auto-archive-future-emails-in-gmail': [
+    '/how-to/gmail-storage-full',
     '/how-to/bulk-delete-emails-from-one-sender',
     '/how-to/stop-promotional-emails-gmail',
     '/how-to/clean-gmail-by-sender',
@@ -850,6 +856,7 @@ const HOW_TO_RELATED_HREFS: Record<HowToSlug, readonly string[]> = {
     '/answers/is-it-safe-to-connect-gmail-app',
   ],
   'unsubscribe-from-emails-gmail': [
+    '/how-to/gmail-storage-full',
     '/how-to/stop-promotional-emails-gmail',
     '/how-to/bulk-delete-emails-from-one-sender',
     '/how-to/auto-archive-future-emails-in-gmail',

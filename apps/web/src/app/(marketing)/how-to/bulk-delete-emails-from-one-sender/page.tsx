@@ -6,7 +6,7 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 const article = HOW_TO_ARTICLES['bulk-delete-emails-from-one-sender'];
 
 export const metadata: Metadata = marketingPageMetadata({
-  title: `${article.title} — DeclutrMail`,
+  title: 'Delete all emails from one sender in Gmail | DeclutrMail',
   description: article.description,
   path: article.path,
 });

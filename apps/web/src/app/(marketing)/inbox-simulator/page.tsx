@@ -8,7 +8,7 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 
 export const metadata: Metadata = marketingPageMetadata({
-  title: 'Interactive product demo — DeclutrMail',
+  title: 'Gmail cleanup demo — try before connecting | DeclutrMail',
   description: WS3_COPY['ws3.pr1019.simulator.description'],
   path: '/inbox-simulator',
   // This link gets shared into threads cold, so it unfurls as the preview

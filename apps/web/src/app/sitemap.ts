@@ -5,7 +5,7 @@
 // this list aligned with every indexable route in the marketing group.
 
 import type { MetadataRoute } from 'next';
-import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
+import { LAUNCH_STAGE } from '@declutrmail/shared/copy/launch';
 
 import {
   ALTERNATIVES_SLUGS,
@@ -26,7 +26,7 @@ export const MARKETING_PATHS = [
   '/inbox-simulator',
   '/methodology',
   '/pricing',
-  '/beta',
+  ...(LAUNCH_STAGE === 'beta' ? ['/beta' as const] : []),
   '/compare',
   ...COMPARISONS.map((comparison) => `/vs/${comparison.slug}` as const),
   ...ALTERNATIVES_SLUGS.map((slug) => `/alternatives/${slug}` as const),
@@ -85,25 +85,10 @@ const LAST_MODIFIED = new Map<string, string>([
   ...Object.entries(PAGE_LAST_UPDATED),
 ]);
 
-/**
- * `/pricing/changelog` exists as a page, and while `PRICING_V2` is off it
- * redirects to `/pricing`. Crawlers should see the URL only when the page
- * actually renders.
- */
-function indexableMarketingPaths(pricingV2: boolean): readonly string[] {
-  if (!pricingV2) return MARKETING_PATHS;
-  const pricingAt = MARKETING_PATHS.indexOf('/pricing');
-  return [
-    ...MARKETING_PATHS.slice(0, pricingAt + 1),
-    '/pricing/changelog',
-    ...MARKETING_PATHS.slice(pricingAt + 1),
-  ];
-}
-
-export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const flags = await loadPricingFlags();
+/** The single-entry pricing history is noindexed until there is useful history. */
+export default function sitemap(): MetadataRoute.Sitemap {
   const base = siteUrl();
-  return indexableMarketingPaths(flags.pricingV2).map((path) => {
+  return MARKETING_PATHS.map((path) => {
     const lastModified = LAST_MODIFIED.get(path);
     return {
       url: `${base}${path === '/' ? '' : path}`,
