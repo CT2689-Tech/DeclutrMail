@@ -74,6 +74,8 @@ vi.mock('@declutrmail/shared/copy/launch', async () => {
   };
 });
 
+import { OVERLAY_Z } from '@declutrmail/shared';
+
 import { HomeFixDialog } from './home-fix-dialog';
 import { HomeView } from './home-view';
 import type { HomeFixCandidate } from './home-next-steps';
@@ -155,6 +157,7 @@ describe('HomeFixDialog focus trap', () => {
 
     const dialog = screen.getByRole('alertdialog');
     expect(dialog).toHaveTextContent('Unsubscribe from 158 senders and archive 1,200 emails?');
+    expect(dialog.parentElement).toHaveStyle({ zIndex: String(OVERLAY_Z.modal) });
     const cancel = screen.getByRole('button', { name: 'Cancel' });
     const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
     await waitFor(() => expect(cancel).toHaveFocus());

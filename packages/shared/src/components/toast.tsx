@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
+import { UNDO_TRAY_INSET_VAR } from './undo-tray/undo-tray';
+import { OVERLAY_Z, bottomClearOfCookieBanner } from '../tokens/overlay-layers';
 import { color, font, radius, shadow, text } from '../tokens/tokens';
 
 export type ToastTone = 'info' | 'success' | 'warn' | 'danger';
@@ -56,6 +58,26 @@ const TONE_DOT: Record<ToastTone, string | null> = {
   danger: color.red,
 };
 
+/** Fixed stack: above the undo tray when it publishes, and never under the cookie banner. */
+export function toastStackPosition(): CSSProperties {
+  return {
+    position: 'fixed',
+    // Larger of the tray's occupied inset and the banner clearance
+    // (20px + tab bar + banner lift). A plain var() fallback would keep a
+    // short inset and, at z-index 200, cover Accept all and Essential only.
+    bottom: `max(var(${UNDO_TRAY_INSET_VAR}, 0px), ${bottomClearOfCookieBanner('20px + var(--dm-tabbar-inset, 0px)')})`,
+    maxWidth: 'calc(100vw - 32px)',
+    width: 'max-content',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    zIndex: OVERLAY_Z.toast,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+    pointerEvents: 'none',
+  };
+}
+
 export function ToastHost() {
   const [items, setItems] = useState<ToastItem[]>([]);
   const [mounted, setMounted] = useState(false);
@@ -73,24 +95,7 @@ export function ToastHost() {
   if (!mounted || items.length === 0) return null;
 
   return createPortal(
-    <div
-      style={{
-        position: 'fixed',
-        // Sit above the undo tray when it is mounted. The tray publishes
-        // its top-to-viewport distance; without that, fall back to the
-        // tab bar so a toast never covers the tray's Undo button.
-        bottom: 'var(--dm-undo-tray-inset, calc(20px + var(--dm-tabbar-inset, 0px)))',
-        maxWidth: 'calc(100vw - 32px)',
-        width: 'max-content',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        zIndex: 200,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-        pointerEvents: 'none',
-      }}
-    >
+    <div style={toastStackPosition()}>
       {items.map((t) => (
         <ToastAnnouncement
           key={t.id}

@@ -12,6 +12,7 @@ import { useEffect, type CSSProperties, type ReactNode } from 'react';
 import {
   Avatar,
   Button,
+  OVERLAY_Z,
   PreviewSheet,
   SheetFactList,
   tokens,
@@ -271,13 +272,13 @@ export function BatchActionSheet({
       : verbWord;
 
   return (
-    // Stacking context above the phone selection FAB, as the previous
-    // overlay was; `PreviewSheet` itself is fixed to the viewport.
+    // This wrapper, not PreviewSheet's own z-index, is the stacking
+    // context that competes with the cookie banner and the selection FAB.
     <div
       role="region"
       aria-label={`Preview · ${verb} ${batch.domain}`}
       data-dm-preview-mode="modal"
-      style={{ position: 'relative', zIndex: 151 }}
+      style={{ position: 'relative', zIndex: OVERLAY_Z.modal }}
     >
       <PreviewSheet
         context={

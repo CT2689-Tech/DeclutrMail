@@ -36,6 +36,7 @@ vi.mock('@/features/auth/auth-provider', () => ({
   }),
 }));
 
+import { OVERLAY_Z } from '@declutrmail/shared';
 import { fillStory } from '@declutrmail/shared/entitlements';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 
@@ -108,6 +109,7 @@ describe('UpgradeModal', () => {
     // pin the panel to the bottom edge with no post-hydration jump.
     expect(dialog).toHaveClass('dm-sheet-panel');
     expect(dialog.parentElement).toHaveClass('dm-sheet-layer');
+    expect(dialog.parentElement).toHaveStyle({ zIndex: String(OVERLAY_Z.modal) });
   });
 
   it('renders nothing without a gate hit', () => {

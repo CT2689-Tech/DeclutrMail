@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
-import { toast, UndoTray } from '@declutrmail/shared';
+import { bottomClearOfCookieBanner, toast, UndoTray } from '@declutrmail/shared';
 import type { UndoTrayDataSource, UndoTrayEntry, UndoTrayNotice } from '@declutrmail/shared';
 
 import { clearReportCelebration } from '@/features/inbox-report/seen';
@@ -489,7 +489,9 @@ export function ProductUndoTray({
       dataSource={dataSource}
       onViewActivity={() => router.push('/activity')}
       style={{
-        bottom: `calc(${floatingSurfaceLayout.undoTrayBottom}px + var(--dm-tabbar-inset, 0px))`,
+        bottom: bottomClearOfCookieBanner(
+          `${floatingSurfaceLayout.undoTrayBottom}px + var(--dm-tabbar-inset, 0px)`,
+        ),
         zIndex: floatingSurfaceLayout.undoTrayZIndex,
       }}
     />
