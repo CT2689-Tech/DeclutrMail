@@ -12,8 +12,8 @@ function markupFor(tone: ToastTone): string {
 describe('toast stack position', () => {
   it('sits above the undo tray, or above the cookie banner when the tray is absent', () => {
     const bottom = toastStackPosition().bottom;
-    expect(bottom).toContain(
-      `var(${UNDO_TRAY_INSET_VAR}, calc(20px + var(--dm-tabbar-inset, 0px) + var(${COOKIE_BANNER_LIFT_VAR}, 0px)))`,
+    expect(bottom).toBe(
+      `max(var(${UNDO_TRAY_INSET_VAR}, 0px), calc(20px + var(--dm-tabbar-inset, 0px) + var(${COOKIE_BANNER_LIFT_VAR}, 0px)))`,
     );
     expect(toastStackPosition().zIndex).toBeGreaterThan(150);
   });

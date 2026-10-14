@@ -58,13 +58,14 @@ const TONE_DOT: Record<ToastTone, string | null> = {
   danger: color.red,
 };
 
-/** Fixed stack: above the undo tray when it publishes, otherwise above the cookie banner. */
+/** Fixed stack: above the undo tray when it publishes, and never under the cookie banner. */
 export function toastStackPosition(): CSSProperties {
   return {
     position: 'fixed',
-    // The tray inset is measured from the tray's real top, so it already
-    // includes a cookie-banner lift. With no tray, clear the banner directly.
-    bottom: `var(${UNDO_TRAY_INSET_VAR}, ${bottomClearOfCookieBanner('20px + var(--dm-tabbar-inset, 0px)')})`,
+    // A published tray inset already includes the banner lift. A missing
+    // or shorter inset must not drop the stack into the banner, so the
+    // banner clearance is a floor rather than a var() fallback.
+    bottom: `max(var(${UNDO_TRAY_INSET_VAR}, 0px), ${bottomClearOfCookieBanner('20px + var(--dm-tabbar-inset, 0px)')})`,
     maxWidth: 'calc(100vw - 32px)',
     width: 'max-content',
     left: '50%',

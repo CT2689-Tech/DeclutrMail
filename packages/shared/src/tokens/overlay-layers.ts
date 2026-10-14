@@ -8,8 +8,9 @@
  *
  * The undo tray stays below the Senders selection bar, so it cannot also
  * paint over the banner. While the banner is mounted it publishes
- * `--dm-cookie-banner-lift` (its height plus a gap). Tray and toast
- * bottoms add that lift, so Undo stays clear and the banner stays tappable.
+ * `--dm-cookie-banner-lift` (its height plus a gap). The tray adds that
+ * lift. A toast uses the tray inset when that sits higher, and the same
+ * lift otherwise, so Undo stays clear and the banner stays tappable.
  */
 export const OVERLAY_Z = {
   cookieBanner: 150,

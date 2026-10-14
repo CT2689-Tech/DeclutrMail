@@ -4,9 +4,9 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import {
+  COOKIE_BANNER_CLEARANCE_PX,
   COOKIE_BANNER_LIFT_VAR,
   UNDO_TRAY_INSET_VAR,
-  cookieBannerLiftPx,
   undoTrayOccupiedPx,
 } from '@declutrmail/shared';
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -63,26 +63,24 @@ test('undo toast and tray stay tappable above the cookie banner at 360px', async
     const coveredTray = (await trayUndo.boundingBox())!;
     expect(intersects(coveredTray, bannerBox), 'Undo starts under the banner').toBe(true);
     expect(await hitButton(page, coveredTray)).not.toBe('Undo');
-    await page.screenshot({
-      path: '/opt/cursor/artifacts/cookie-banner-undo-covered-360.png',
-      fullPage: true,
-    });
+    await page.screenshot({ path: '/opt/cursor/artifacts/cookie-banner-undo-covered-360.png' });
 
     await publishClearance(page);
-    await page.screenshot({
-      path: '/opt/cursor/artifacts/cookie-banner-undo-clear-360.png',
-      fullPage: true,
-    });
 
     const liftedBanner = (await banner.boundingBox())!;
     const liftedTray = (await trayUndo.boundingBox())!;
     const liftedToast = (await toastUndo.boundingBox())!;
     expect(intersects(liftedTray, liftedBanner), 'tray Undo clears the banner').toBe(false);
     expect(intersects(liftedToast, liftedBanner), 'toast Undo clears the banner').toBe(false);
+    expect(
+      liftedToast.y + liftedToast.height,
+      'toast Undo sits above the tray',
+    ).toBeLessThanOrEqual(liftedTray.y);
     expect(await hitButton(page, liftedTray)).toBe('Undo');
     expect(await hitButton(page, liftedToast)).toBe('Undo');
     await expectTopmost(page, accept, 'Accept all');
     await expectTopmost(page, essential, 'Essential only');
+    await page.screenshot({ path: '/opt/cursor/artifacts/cookie-banner-undo-clear-360.png' });
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -90,26 +88,41 @@ test('undo toast and tray stay tappable above the cookie banner at 360px', async
 });
 
 async function publishClearance(page: Page): Promise<void> {
-  const banner = (await page.getByTestId('cookie-consent-banner').boundingBox())!;
-  const viewport = page.viewportSize()!;
+  // The tray's used bottom stays on the previous frame in the same turn
+  // the lift variable is set. Wait until after paint, then measure.
   await page.evaluate(
-    ({ name, value }) => {
-      document.documentElement.style.setProperty(name, value);
+    ({ liftName, clearance }) => {
+      const banner = document.querySelector('[data-testid="cookie-consent-banner"]');
+      if (!(banner instanceof HTMLElement)) throw new Error('cookie banner missing');
+      const lift = Math.ceil(banner.getBoundingClientRect().height) + clearance;
+      document.documentElement.style.setProperty(liftName, `${lift}px`);
     },
-    {
-      name: COOKIE_BANNER_LIFT_VAR,
-      value: `${cookieBannerLiftPx(banner.height)}px`,
-    },
+    { liftName: COOKIE_BANNER_LIFT_VAR, clearance: COOKIE_BANNER_CLEARANCE_PX },
   );
-  const tray = (await page.locator('[data-dm-undo-tray]').boundingBox())!;
+  await nextFrame(page);
+  const measured = await page.evaluate(() => {
+    const tray = document.querySelector('[data-dm-undo-tray]');
+    if (!(tray instanceof HTMLElement)) throw new Error('undo tray missing');
+    return { top: tray.getBoundingClientRect().top, innerHeight: window.innerHeight };
+  });
   await page.evaluate(
     ({ name, value }) => {
       document.documentElement.style.setProperty(name, value);
     },
     {
       name: UNDO_TRAY_INSET_VAR,
-      value: `${undoTrayOccupiedPx(tray.y, viewport.height)}px`,
+      value: `${undoTrayOccupiedPx(measured.top, measured.innerHeight)}px`,
     },
+  );
+  await nextFrame(page);
+}
+
+function nextFrame(page: Page): Promise<void> {
+  return page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
   );
 }
 

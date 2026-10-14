@@ -275,10 +275,18 @@ describe('TriageUndoTray (D35)', () => {
     const { container, unmount } = await renderTrayWithDecisions();
     const tray = container.querySelector<HTMLElement>('[data-dm-undo-tray]');
     expect(tray).not.toBeNull();
-    vi.spyOn(tray!, 'getBoundingClientRect').mockImplementation(() => ({ top: 480 }) as DOMRect);
+    let top = 541;
+    vi.spyOn(tray!, 'getBoundingClientRect').mockImplementation(() => ({ top }) as DOMRect);
     fireEvent(window, new Event(COOKIE_BANNER_INSET_EVENT));
     expect(document.documentElement.style.getPropertyValue('--dm-undo-tray-inset')).toBe(
-      `${undoTrayOccupiedPx(480, window.innerHeight)}px`,
+      `${undoTrayOccupiedPx(541, window.innerHeight)}px`,
+    );
+    top = 322;
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+    expect(document.documentElement.style.getPropertyValue('--dm-undo-tray-inset')).toBe(
+      `${undoTrayOccupiedPx(322, window.innerHeight)}px`,
     );
     unmount();
   });

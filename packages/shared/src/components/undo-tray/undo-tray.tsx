@@ -69,13 +69,29 @@ function useTrayInset(): (node: HTMLElement | null) => void {
     // the tray without changing its measured size. Layout, not passive
     // effect: the banner publishes in its own layout effect, and this
     // listener has to be attached first.
+    let generation = 0;
     const publish = () => publishRef.current?.();
+    // Chrome keeps the tray's used `bottom` on the previous frame when
+    // this event is dispatched in the same turn the lift variable is
+    // set. Measuring only then publishes a short inset and the toast
+    // stays inside the banner. Measure now, then again after paint.
+    const publishAfterLayout = () => {
+      const scheduled = ++generation;
+      publish();
+      if (typeof requestAnimationFrame !== 'function') return;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (scheduled === generation) publish();
+        });
+      });
+    };
     window.addEventListener('resize', publish);
-    window.addEventListener(COOKIE_BANNER_INSET_EVENT, publish);
+    window.addEventListener(COOKIE_BANNER_INSET_EVENT, publishAfterLayout);
     window.visualViewport?.addEventListener('resize', publish);
     return () => {
+      generation += 1;
       window.removeEventListener('resize', publish);
-      window.removeEventListener(COOKIE_BANNER_INSET_EVENT, publish);
+      window.removeEventListener(COOKIE_BANNER_INSET_EVENT, publishAfterLayout);
       window.visualViewport?.removeEventListener('resize', publish);
       observerRef.current?.disconnect();
       document.documentElement.style.removeProperty(UNDO_TRAY_INSET_VAR);
