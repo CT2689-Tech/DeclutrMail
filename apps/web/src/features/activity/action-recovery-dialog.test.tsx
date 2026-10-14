@@ -65,6 +65,51 @@ describe('recovery dismissal policy', () => {
     expect(opener.current).toHaveFocus();
   });
 
+  it('returns focus to Check and retry when the page body held focus', async () => {
+    const opener = createRef<HTMLButtonElement>();
+    document.body.tabIndex = -1;
+    document.body.focus();
+    const props = {
+      row,
+      preview: undefined,
+      isStarting: true,
+      startError: null,
+      confirmError: null,
+      isConfirming: false,
+      onRetryVerification: vi.fn(),
+      onConfirm: vi.fn(),
+      onReconnect: vi.fn(),
+      onClose: vi.fn(),
+      returnFocusRef: opener,
+    };
+    const background = <button ref={opener}>Check and retry</button>;
+    const { rerender } = render(
+      <div>
+        <section>{background}</section>
+      </div>,
+    );
+    expect(document.body).toHaveFocus();
+    rerender(
+      <div>
+        <section>{background}</section>
+        <ActionRecoveryDialog {...props} />
+      </div>,
+    );
+    expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus();
+    document.body.focus();
+    expect(document.body).toHaveFocus();
+    await userEvent.keyboard('{Escape}');
+    expect(props.onClose).toHaveBeenCalledOnce();
+    rerender(
+      <div>
+        <section>{background}</section>
+      </div>,
+    );
+    expect(opener.current).toHaveFocus();
+    expect(opener.current).toHaveTextContent('Check and retry');
+    document.body.removeAttribute('tabindex');
+  });
+
   it('keeps focus in the review when its last enabled control becomes disabled', async () => {
     const user = userEvent.setup();
     const props = {

@@ -566,6 +566,7 @@ export function AccountMenu() {
       {managedMailbox && (
         <MailboxDataControlsDialog
           mailbox={managedMailbox}
+          returnFocusRef={triggerRef}
           onCancel={() => {
             setManagedMailboxId(null);
             setDataControlsError(null);

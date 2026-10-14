@@ -32,5 +32,7 @@ import deck from './deck/ws2.json' with { type: 'json' };
  * email-count sentence. `simplify.settings.loading` is the settings
  * route label: capital S and one ellipsis character, same shape as
  * the Triage loading label.
+ * drop2-r45 adds `simplify.recovery.checking`, `checkFailed`, and
+ * `checkAgain`.
  */
 export const WS2_COPY = deck;

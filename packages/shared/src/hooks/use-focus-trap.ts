@@ -17,14 +17,24 @@ const FOCUSABLE =
  */
 export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
   active: boolean,
-  options?: { initialFocusSelector?: string; returnFocusRef?: RefObject<HTMLElement | null> },
+  options?: {
+    initialFocusSelector?: string;
+    returnFocusRef?: RefObject<HTMLElement | null> | undefined;
+  },
 ) {
   const ref = useRef<T>(null);
   const initialFocusSelector = options?.initialFocusSelector;
   const returnFocusRef = options?.returnFocusRef;
+  const activation = useRef(0);
+  const restoreFrame = useRef<number | null>(null);
 
   useEffect(() => {
     if (!active) return;
+    const owner = ++activation.current;
+    if (restoreFrame.current !== null) {
+      cancelAnimationFrame(restoreFrame.current);
+      restoreFrame.current = null;
+    }
     const node = ref.current;
     if (!node) return;
 
@@ -108,7 +118,35 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
       node.removeEventListener('keydown', onKey);
       observer.disconnect();
       if (addedTabIndex) node.removeAttribute('tabindex');
-      restoreTo?.focus?.();
+      const target = restoreTo?.isConnected ? restoreTo : null;
+      if (!target) return;
+      const closingModal = node.closest('[aria-modal="true"]');
+      const canRestore = () => {
+        if (activation.current !== owner || !target.isConnected) return false;
+        const current = document.activeElement;
+        if (current && current !== document.body && current !== target && !node.contains(current))
+          return false;
+        // Closing a surface must not move focus behind its successor.
+        return !Array.from(document.querySelectorAll('[aria-modal="true"]')).some(
+          (modal) => modal !== closingModal && !modal.contains(target),
+        );
+      };
+      const focusTarget = () => {
+        if (!canRestore() || target.matches(':disabled')) return false;
+        target.focus();
+        return document.activeElement === target;
+      };
+      if (focusTarget()) return;
+      // The return target can still be disabled in the commit that closes
+      // the dialog. Try again after that commit enables it.
+      queueMicrotask(() => {
+        if (!canRestore() || focusTarget()) return;
+        restoreFrame.current = requestAnimationFrame(() => {
+          if (activation.current !== owner) return;
+          restoreFrame.current = null;
+          focusTarget();
+        });
+      });
     };
   }, [active, initialFocusSelector, returnFocusRef]);
 

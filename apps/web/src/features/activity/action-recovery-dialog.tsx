@@ -8,6 +8,7 @@ import {
   protectionReasonClause,
   type ProtectionReasonId,
 } from '@declutrmail/shared/copy';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 
 import { apiErrorCode } from '@/lib/api/client';
@@ -241,7 +242,7 @@ export function ActionRecoveryDialog({
             {confirmNeedsRecheck && (
               <div style={{ marginTop: 8 }}>
                 <Button tone="default" onClick={onRetryVerification}>
-                  Check Gmail again
+                  {WS2_COPY.simplify.recovery.checkAgain}
                 </Button>
               </div>
             )}
@@ -283,7 +284,7 @@ function RecoveryPreviewBody({
   if (isStarting || preview?.status === 'verifying') {
     return (
       <div role="status" aria-live="polite" style={{ color: color.fgSoft, fontSize: text.base }}>
-        Checking Gmail’s current state…
+        {WS2_COPY.simplify.recovery.checking}
       </div>
     );
   }
@@ -359,10 +360,10 @@ function RecoveryVerificationFailure({
 }) {
   return (
     <div role="alert" style={{ color: color.amber, fontSize: text.base, lineHeight: 1.5 }}>
-      We couldn’t check Gmail’s current state.
+      {WS2_COPY.simplify.recovery.checkFailed}
       <div style={{ marginTop: 10 }}>
         <Button tone="default" onClick={onRetry}>
-          Check Gmail again
+          {WS2_COPY.simplify.recovery.checkAgain}
         </Button>
       </div>
       {error && (

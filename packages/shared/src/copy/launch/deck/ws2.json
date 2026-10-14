@@ -718,7 +718,10 @@
       "reconnect": "We can’t check Gmail until you reconnect. Reconnect, wait for the scan to finish, then come back and choose Check again.",
       "alreadyDone": "This already happened in Gmail. Confirming does it again for the same emails.",
       "partial": "This only partly happened in Gmail. Confirming finishes it.",
-      "finish": "Finish it"
+      "finish": "Finish it",
+      "checking": "Checking Gmail…",
+      "checkFailed": "We couldn’t check Gmail.",
+      "checkAgain": "Check Gmail again"
     },
     "followups": {
       "noTime": "Last check time unavailable.",

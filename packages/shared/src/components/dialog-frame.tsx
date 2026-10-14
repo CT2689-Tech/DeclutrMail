@@ -24,7 +24,8 @@ export function DialogFrame({
   testId,
   backdropTestId,
   maxWidth = 520,
-  zIndex = 150,
+  // Cookie consent stays at 150. Dialogs sit above that layer.
+  zIndex = 170,
   bodyStyle,
 }: DialogName & {
   children: ReactNode;
