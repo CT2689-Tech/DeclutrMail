@@ -313,7 +313,7 @@ export const GMAIL_CONNECTION_DATA_INVENTORY = [
   {
     id: 'oauth-credential',
     category: 'connection',
-    label: 'Encrypted Gmail access details',
+    label: WS2_COPY.liveFix.privacy.inventory.oauthLabel,
     fetchedFrom: ['Google OAuth token response'],
     storageRefs: [
       'mailbox_accounts.encrypted_refresh_token',
@@ -478,7 +478,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
   {
     id: 'processing-and-retry-records',
     category: 'derived',
-    label: 'Email processing, delivery, retry, and duplicate-notification records',
+    label: WS2_COPY.liveFix.privacy.inventory.processingLabel,
     fetchedFrom: ['message-identifiers', 'sender-identity', 'gmail-sync-state'],
     storageRefs: ['outbox_events.*', 'dead_letter_jobs.*', 'webhook_dedup.*', 'sync_runs.*'],
     derived: true,
@@ -584,7 +584,7 @@ export const GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY = [
   {
     id: 'mailbox-security-and-deletion-audit',
     category: 'connection',
-    label: 'Limited security and data-deletion records',
+    label: WS2_COPY.liveFix.privacy.inventory.auditLabel,
     fetchedFrom: ['DeclutrMail connection, security, and deletion events'],
     storageRefs: ['mailbox_data_deletion_requests.*', 'security_events.*'],
     derived: true,

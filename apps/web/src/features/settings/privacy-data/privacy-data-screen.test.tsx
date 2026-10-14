@@ -174,8 +174,14 @@ describe('PrivacyDataView', () => {
 
   it('states that encrypted OAuth credentials are excluded from exports', () => {
     renderView();
-    const credentialRow = screen.getByText('Encrypted Gmail access details').closest('div');
+    const credentialRow = screen
+      .getByText(WS2_COPY.liveFix.privacy.inventory.oauthLabel)
+      .closest('div');
     expect(screen.getByText(WS2_COPY.liveFix.privacy.inventory.visitLabel)).toBeInTheDocument();
+    expect(
+      screen.getByText(WS2_COPY.liveFix.privacy.inventory.processingLabel),
+    ).toBeInTheDocument();
+    expect(screen.getByText(WS2_COPY.liveFix.privacy.inventory.auditLabel)).toBeInTheDocument();
     expect(credentialRow).toHaveTextContent('Not currently included in a data export.');
     expect(screen.queryByText(/we don’t store them/i)).not.toBeInTheDocument();
   });
