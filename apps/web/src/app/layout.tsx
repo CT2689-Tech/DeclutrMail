@@ -20,7 +20,9 @@ const geistMono = Geist_Mono({
 const fraunces = Fraunces({
   subsets: ['latin'],
   variable: '--dm-font-display',
-  display: 'swap',
+  // Keep the existing preload, but avoid a late headline repaint when
+  // a slow first visit misses the font's initial rendering window.
+  display: 'optional',
 });
 
 /** Public commit marker for post-merge checks. Short SHA only. */
