@@ -7,6 +7,14 @@ export { clampLimit, decodeCursor, encodeCursor, ok, paginated, withMeta } from 
 
 export { tokens } from './tokens/tokens';
 export type { Tokens } from './tokens/tokens';
+export {
+  OVERLAY_Z,
+  COOKIE_BANNER_CLEARANCE_PX,
+  COOKIE_BANNER_INSET_EVENT,
+  COOKIE_BANNER_LIFT_VAR,
+  bottomClearOfCookieBanner,
+  cookieBannerLiftPx,
+} from './tokens/overlay-layers';
 
 // Branded identifiers (FOUNDER-FOLLOWUPS 2026-06-05).
 export type {
@@ -120,12 +128,17 @@ export type {
   EdgeStateInventory,
   ScreenId,
 } from './edge-states/inventory';
-export { ToastHost, toast } from './components/toast';
+export { ToastHost, toast, toastStackPosition } from './components/toast';
 export type { ToastTone } from './components/toast';
 
 // Persistent undo tray (D35, D58). Data is injected via the
 // `dataSource` prop — the host app owns transport (CSRF, base URL).
-export { TRAY_COMPACT_AFTER_MS, UndoTray } from './components/undo-tray';
+export {
+  TRAY_COMPACT_AFTER_MS,
+  UNDO_TRAY_INSET_VAR,
+  UndoTray,
+  undoTrayOccupiedPx,
+} from './components/undo-tray';
 export type {
   UndoActionKind,
   UndoTrayDataSource,

@@ -6,6 +6,7 @@
 
 import type { CSSProperties, KeyboardEventHandler, ReactNode, Ref } from 'react';
 
+import { OVERLAY_Z } from '../tokens/overlay-layers';
 import { color, font, shadow, space } from '../tokens/tokens';
 
 type DialogName = { titleId: string; label?: never } | { label: string; titleId?: never };
@@ -24,8 +25,7 @@ export function DialogFrame({
   testId,
   backdropTestId,
   maxWidth = 520,
-  // Cookie consent stays at 150. Dialogs sit above that layer.
-  zIndex = 170,
+  zIndex = OVERLAY_Z.modal,
   bodyStyle,
 }: DialogName & {
   children: ReactNode;

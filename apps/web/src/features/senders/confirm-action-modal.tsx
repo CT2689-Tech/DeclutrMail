@@ -11,6 +11,7 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   Avatar,
   Button,
+  OVERLAY_Z,
   PreviewSheet,
   SheetFactList,
   SheetLinks,
@@ -1437,9 +1438,9 @@ export function ConfirmActionModal({
   );
 
   return (
-    // Stacking context above the phone selection FAB (z 130), as the
-    // previous overlay was; `PreviewSheet` itself is fixed to the viewport.
-    <div style={{ position: 'relative', zIndex: 151 }}>
+    // This wrapper, not PreviewSheet's own z-index, is the stacking
+    // context that competes with the cookie banner and the selection FAB.
+    <div style={{ position: 'relative', zIndex: OVERLAY_Z.modal }}>
       <PreviewSheet
         context={
           activeMailboxEmail ? (

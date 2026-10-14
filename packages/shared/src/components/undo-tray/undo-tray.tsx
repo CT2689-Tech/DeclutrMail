@@ -1,10 +1,18 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 
 import { WS2_COPY } from '../../copy/launch/ws2';
 import { Button } from '../button';
 import { InlineProgress } from '../inline-progress/inline-progress';
+import { COOKIE_BANNER_INSET_EVENT, bottomClearOfCookieBanner } from '../../tokens/overlay-layers';
 import { color, font, radius, shadow, text } from '../../tokens/tokens';
 import { getActionSemantics } from '../../actions/action-semantics';
 import type {
@@ -31,6 +39,14 @@ export const UNDO_TRAY_INSET_VAR = '--dm-undo-tray-inset';
 /** Breathing room between the last scrolled content and the tray's top edge. */
 const TRAY_BOTTOM_GAP = 16;
 
+/** Default bottom anchor: above the mobile tab bar, and above the cookie banner when it is showing. */
+const TRAY_BOTTOM = bottomClearOfCookieBanner('16px + var(--dm-tabbar-inset, 0px)');
+
+/** Pixels from the viewport bottom through the tray's top edge, plus a gap for the toast. */
+export function undoTrayOccupiedPx(trayTop: number, viewportHeight: number): number {
+  return Math.ceil(viewportHeight - trayTop) + TRAY_BOTTOM_GAP;
+}
+
 /**
  * Publish the tray's measured height on the document root while it is
  * mounted, and clear it on unmount.
@@ -48,13 +64,34 @@ function useTrayInset(): (node: HTMLElement | null) => void {
   const observerRef = useRef<ResizeObserver | null>(null);
   const publishRef = useRef<(() => void) | null>(null);
 
-  useEffect(() => {
-    // A breakpoint can move the tray without changing its measured size.
+  useLayoutEffect(() => {
+    // A breakpoint, or the cookie banner publishing its inset, can move
+    // the tray without changing its measured size. Layout, not passive
+    // effect: the banner publishes in its own layout effect, and this
+    // listener has to be attached first.
+    let generation = 0;
     const publish = () => publishRef.current?.();
+    // Chrome keeps the tray's used `bottom` on the previous frame when
+    // this event is dispatched in the same turn the lift variable is
+    // set. Measuring only then publishes a short inset and the toast
+    // stays inside the banner. Measure now, then again after paint.
+    const publishAfterLayout = () => {
+      const scheduled = ++generation;
+      publish();
+      if (typeof requestAnimationFrame !== 'function') return;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (scheduled === generation) publish();
+        });
+      });
+    };
     window.addEventListener('resize', publish);
+    window.addEventListener(COOKIE_BANNER_INSET_EVENT, publishAfterLayout);
     window.visualViewport?.addEventListener('resize', publish);
     return () => {
+      generation += 1;
       window.removeEventListener('resize', publish);
+      window.removeEventListener(COOKIE_BANNER_INSET_EVENT, publishAfterLayout);
       window.visualViewport?.removeEventListener('resize', publish);
       observerRef.current?.disconnect();
       document.documentElement.style.removeProperty(UNDO_TRAY_INSET_VAR);
@@ -75,7 +112,7 @@ function useTrayInset(): (node: HTMLElement | null) => void {
         // height PLUS whatever `bottom` offset the host gave it (the app
         // floats it 78px up to clear the Senders selection bar; assuming
         // the default 16 left ~46px of content under the tray).
-        `${Math.ceil(window.innerHeight - node.getBoundingClientRect().top) + TRAY_BOTTOM_GAP}px`,
+        `${undoTrayOccupiedPx(node.getBoundingClientRect().top, window.innerHeight)}px`,
       );
     };
     publishRef.current = publish;
@@ -256,7 +293,7 @@ function UndoTrayBody({
           // See the note on the main tray below: `left: 50%` + translate
           // halves the available width for a shrink-to-fit fixed box.
           position: 'fixed',
-          bottom: 'calc(16px + var(--dm-tabbar-inset, 0px))',
+          bottom: TRAY_BOTTOM,
           left: 16,
           right: 16,
           marginInline: 'auto',
@@ -316,7 +353,7 @@ function UndoTrayBody({
     // is shrink-to-fit against `viewport - left`, so at `left: 50%` it can
     // never exceed half the screen (browser smoke, 2026-07-29).
     position: 'fixed',
-    bottom: 'calc(16px + var(--dm-tabbar-inset, 0px))',
+    bottom: TRAY_BOTTOM,
     left: 16,
     right: 16,
     marginInline: 'auto',

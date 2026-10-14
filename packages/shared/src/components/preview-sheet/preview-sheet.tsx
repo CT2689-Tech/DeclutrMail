@@ -2,6 +2,7 @@
 
 import { useEffect, useId, type ReactNode } from 'react';
 import { useFocusTrap } from '../../hooks/use-focus-trap';
+import { OVERLAY_Z } from '../../tokens/overlay-layers';
 import { color, font, shadow, space, text, typography } from '../../tokens/tokens';
 import { Button, type ButtonTone } from '../button';
 import { Disclosure } from '../disclosure';
@@ -104,7 +105,9 @@ export function PreviewSheet({
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 100,
+        // Above the cookie banner. This layer is the stacking context;
+        // a parent with its own z-index must stay at least this high.
+        zIndex: OVERLAY_Z.modal,
         display: 'flex',
         justifyContent: 'center',
         padding: space[4],

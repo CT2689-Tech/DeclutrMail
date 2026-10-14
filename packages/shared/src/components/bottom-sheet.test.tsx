@@ -8,6 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { OVERLAY_Z } from '../tokens/overlay-layers';
 import { BottomSheet } from './bottom-sheet';
 
 describe('<BottomSheet />', () => {
@@ -30,5 +31,7 @@ describe('<BottomSheet />', () => {
     expect(html).toContain('aria-modal="true"');
     expect(html).toContain('aria-label="Test sheet"');
     expect(html).toContain('content');
+    expect(html).toContain(`z-index:${OVERLAY_Z.modal}`);
+    expect(html).toContain(`z-index:${OVERLAY_Z.sheet}`);
   });
 });

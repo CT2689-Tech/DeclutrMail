@@ -326,6 +326,9 @@ describe('<UndoTray /> — one pill (static)', () => {
       />,
     );
     expect(html).toContain('data-dm-undo-tray="pill"');
+    expect(html).toContain(
+      'calc(16px + var(--dm-tabbar-inset, 0px) + var(--dm-cookie-banner-lift, 0px))',
+    );
     expect(html).toContain('Deleted 95 emails');
     expect(html).not.toMatch(/until|Trash|applied/);
   });

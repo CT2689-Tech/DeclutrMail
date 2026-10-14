@@ -12,7 +12,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useQuery } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import type { UndoTrayEntry } from '@declutrmail/shared';
+import {
+  COOKIE_BANNER_INSET_EVENT,
+  bottomClearOfCookieBanner,
+  undoTrayOccupiedPx,
+  type UndoTrayEntry,
+} from '@declutrmail/shared';
 
 import { addFetchHandlers, installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -264,6 +269,26 @@ describe('TriageUndoTray (D35)', () => {
     ).toBe(before + 64);
     unmount();
     expect(document.documentElement.style.getPropertyValue('--dm-undo-tray-inset')).toBe('');
+  });
+
+  it('republishes its occupied space when the cookie banner inset changes', async () => {
+    const { container, unmount } = await renderTrayWithDecisions();
+    const tray = container.querySelector<HTMLElement>('[data-dm-undo-tray]');
+    expect(tray).not.toBeNull();
+    let top = 541;
+    vi.spyOn(tray!, 'getBoundingClientRect').mockImplementation(() => ({ top }) as DOMRect);
+    fireEvent(window, new Event(COOKIE_BANNER_INSET_EVENT));
+    expect(document.documentElement.style.getPropertyValue('--dm-undo-tray-inset')).toBe(
+      `${undoTrayOccupiedPx(541, window.innerHeight)}px`,
+    );
+    top = 322;
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+    expect(document.documentElement.style.getPropertyValue('--dm-undo-tray-inset')).toBe(
+      `${undoTrayOccupiedPx(322, window.innerHeight)}px`,
+    );
+    unmount();
   });
 
   it('Z reverts the NEWEST entry (undo last) and polls to completion', async () => {
@@ -603,7 +628,9 @@ describe('TriageUndoTray (D35)', () => {
 
     const tray = container.querySelector<HTMLElement>('[data-dm-undo-tray]');
     expect(tray?.style.bottom).toBe(
-      `calc(${floatingSurfaceLayout.undoTrayBottom}px + var(--dm-tabbar-inset, 0px))`,
+      bottomClearOfCookieBanner(
+        `${floatingSurfaceLayout.undoTrayBottom}px + var(--dm-tabbar-inset, 0px)`,
+      ),
     );
     expect(floatingSurfaceLayout.undoTrayBottom).toBeGreaterThan(
       floatingSurfaceLayout.selectionBarBottom + floatingSurfaceLayout.selectionBarHeight,
