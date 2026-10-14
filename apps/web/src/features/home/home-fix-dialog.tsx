@@ -1,12 +1,11 @@
 'use client';
 
-import { Button, OVERLAY_Z } from '@declutrmail/shared';
+import { Button, DialogFrame, tokens } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 
 import { fillDeck, formatCount } from './home-deck-copy';
 import type { HomeFixCandidate } from './home-next-steps';
 import { homeFixCopy, type HomeFixCopy } from './home-ws5-copy';
-import styles from './home-view.module.css';
 
 function archivedEmails(count: number, copy: HomeFixCopy): string | null {
   const template = count === 1 ? copy.emailsOne : copy.emailsOther;
@@ -50,40 +49,41 @@ export function HomeFixDialog({
   });
   if (copy === null || title === null) return null;
   return (
-    <div
-      className={styles.dialogScrim}
-      role="presentation"
-      style={{ zIndex: OVERLAY_Z.modal }}
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onCancel();
+    <DialogFrame
+      panelRef={trapRef}
+      role="alertdialog"
+      titleId="home-fix-title"
+      descriptionId="home-fix-honesty"
+      onDismiss={onCancel}
+      onKeyDown={(event) => {
+        if (
+          event.key === 'Enter' &&
+          !(event.target instanceof Element && event.target.closest('#home-fix-cancel'))
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
       }}
-    >
-      <div
-        ref={trapRef}
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="home-fix-title"
-        aria-describedby="home-fix-honesty"
-        className={styles.dialog}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') {
-            event.preventDefault();
-            event.stopPropagation();
-          }
-          if (event.key === 'Escape') onCancel();
-        }}
-      >
-        <h2 id="home-fix-title">{title}</h2>
-        <p id="home-fix-honesty">{copy.honesty}</p>
-        <div className={styles.dialogActions}>
-          <Button tone="warn" size="lg" onClick={onConfirm}>
-            {copy.button}
-          </Button>
+      footer={
+        <>
           <Button id="home-fix-cancel" tone="ghost" size="lg" onClick={onCancel}>
             {copy.cancel}
           </Button>
-        </div>
-      </div>
-    </div>
+          <Button tone="warn" size="lg" onClick={onConfirm}>
+            {copy.button}
+          </Button>
+        </>
+      }
+    >
+      <h2 id="home-fix-title" style={{ ...tokens.typography.dialogTitle, margin: 0 }}>
+        {title}
+      </h2>
+      <p
+        id="home-fix-honesty"
+        style={{ color: tokens.color.fgSoft, fontSize: tokens.text.sm, lineHeight: 1.5 }}
+      >
+        {copy.honesty}
+      </p>
+    </DialogFrame>
   );
 }

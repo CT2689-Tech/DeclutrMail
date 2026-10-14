@@ -1434,7 +1434,7 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
 // with 753 total mail and 2 in the inbox showed "2 emails currently
 // match" with no way to reach the other 751 (founder report
 // 2026-08-31).
-describe('ConfirmActionModal — unsubscribe offers Delete reach without an age window', () => {
+describe('ConfirmActionModal — unsubscribe cleanup scope defaults', () => {
   it('offers reach only on Delete, with Inbox only as the default', () => {
     const onConfirm = vi.fn();
     render(
@@ -1447,7 +1447,7 @@ describe('ConfirmActionModal — unsubscribe offers Delete reach without an age 
     );
     expect(screen.queryByRole('radiogroup', { name: /Where it applies/i })).toBeNull();
     expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
-    expect(screen.queryByRole('combobox', { name: /How far back/i })).toBeNull();
+    expect(screen.getByRole('combobox', { name: /How far back/i })).toHaveValue('all');
 
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
     expect(screen.getByRole('checkbox', { name: 'Include archived email' })).not.toBeChecked();
@@ -2719,7 +2719,7 @@ describe('ConfirmActionModal — explicit period and scope choices', () => {
   });
 
   it.each(['archive', 'delete'] as const)(
-    'sends Unsubscribe + %s with no age window and no reach',
+    'defaults Unsubscribe + %s to all inbox mail even when age buckets tie',
     (secondary) => {
       const onConfirm = vi.fn();
       render(
@@ -2734,7 +2734,7 @@ describe('ConfirmActionModal — explicit period and scope choices', () => {
           }}
         />,
       );
-      expect(screen.queryByRole('combobox', { name: /How far back/i })).toBeNull();
+      expect(screen.getByRole('combobox', { name: /How far back/i })).toHaveValue('all');
       expect(screen.queryByRole('radiogroup', { name: /Where it applies/ })).toBeNull();
       fireEvent.click(
         screen.getByRole('radio', {

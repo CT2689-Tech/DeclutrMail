@@ -474,7 +474,7 @@ describe('Inbox Report action preview recovery', () => {
     fireEvent.click(confirm);
     fireEvent.click(confirm);
     expect(onFixConfirmed).toHaveBeenCalledTimes(1);
-    expect(onFixConfirmed).toHaveBeenCalledWith('archive', undefined, ['s1', 's2']);
+    expect(onFixConfirmed).toHaveBeenCalledWith('archive', undefined, ['s1', 's2'], undefined);
     rerender(
       <InboxReportPanel
         report={full}

@@ -19,7 +19,11 @@ import {
 } from '@declutrmail/shared/copy/screen-decisions';
 
 import { useVisitorPriceLocale } from '@/features/billing/billing-currency';
-import { UnsubscribeBacklogDialog } from '@/features/senders/unsubscribe-backlog/unsubscribe-backlog-dialog';
+import {
+  UnsubscribeBacklogDialog,
+  type UnsubscribeBacklogOptions,
+  type UnsubscribeSnapshotCounts,
+} from '@/features/senders/unsubscribe-backlog/unsubscribe-backlog-dialog';
 import type { ActionRequest } from '@/features/senders/data';
 import { useBulkActionPreview, useCompositePreview } from '@/lib/api/use-action';
 import { apiErrorCode } from '@/lib/api/client';
@@ -211,6 +215,7 @@ export function InboxReportPanel({
   onUndo,
   mailboxId,
   senderNames,
+  fixPreviewCounts,
   /** In-demo review. The signed-in app keeps the senders link. */
   onReview,
   /** Public demo uses `/privacy`. The signed-in app keeps settings. */
@@ -226,7 +231,10 @@ export function InboxReportPanel({
     mode: 'archive' | 'delete' | 'unsub_only',
     reach: 'all_mail' | undefined,
     senderIds: string[],
+    olderThanDays?: number,
   ) => void;
+  /** Synthetic demo buckets; live mailboxes always read a fresh preview. */
+  fixPreviewCounts?: UnsubscribeSnapshotCounts;
   /** True while the confirmed fix is still in flight. Blocks a second submit. */
   fixPending?: boolean;
   onReview?: () => void;
@@ -473,6 +481,7 @@ export function InboxReportPanel({
           senderNames={senderNames}
           mailboxId={mailboxId}
           mailboxEmail={mailboxEmail}
+          fixPreviewCounts={fixPreviewCounts}
           onCancel={() => setFixOpen(false)}
           submitting={fixPending}
           onConfirm={(opts) => {
@@ -483,7 +492,8 @@ export function InboxReportPanel({
             onFixConfirmed?.(
               mode,
               mode === 'delete' ? opts.reach : undefined,
-              opts.senderIds ?? [],
+              opts.senderIds,
+              opts.secondary?.olderThanDays ?? undefined,
             );
           }}
         />
@@ -509,17 +519,14 @@ function reportFixRequest(
   } as ActionRequest;
 }
 
-type FixConfirm = (opts: {
-  secondary: { type: 'archive' | 'delete'; olderThanDays: null } | null;
-  reach?: 'all_mail';
-  senderIds: string[];
-}) => void;
+type FixConfirm = (opts: UnsubscribeBacklogOptions) => void;
 
 function ReportFixDialog({
   report,
   senderNames,
   mailboxId,
   mailboxEmail,
+  fixPreviewCounts,
   submitting = false,
   onCancel,
   onConfirm,
@@ -528,6 +535,7 @@ function ReportFixDialog({
   senderNames: InboxReportPanelProps['senderNames'];
   mailboxId: string | undefined;
   mailboxEmail?: string | undefined;
+  fixPreviewCounts?: UnsubscribeSnapshotCounts | undefined;
   submitting?: boolean;
   onCancel: () => void;
   onConfirm: FixConfirm;
@@ -539,6 +547,7 @@ function ReportFixDialog({
         request={request}
         mailboxEmail={mailboxEmail}
         preferredInboxCount={report.fix.inboxEmailCount}
+        preferredCounts={fixPreviewCounts}
         preferArchive
         submitting={submitting}
         onCancel={onCancel}

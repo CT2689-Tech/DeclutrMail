@@ -48,6 +48,8 @@ export { useLongPress, LONG_PRESS_MS, LONG_PRESS_DRIFT_PX } from './hooks/use-lo
 
 export { Kbd } from './components/kbd';
 export { BottomSheet } from './components/bottom-sheet';
+export { DialogFrame } from './components/dialog-frame';
+export { Disclosure } from './components/disclosure';
 export { PreviewSheet } from './components/preview-sheet/preview-sheet';
 export {
   SheetCheckbox,

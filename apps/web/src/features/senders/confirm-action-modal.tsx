@@ -5,6 +5,7 @@ import type { Verb } from '@declutrmail/shared/observability';
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 import { UnsubscribeBacklogDialog } from './unsubscribe-backlog/unsubscribe-backlog-dialog';
 import { someProtectedSelectionCopy } from './unsubscribe-backlog/preview-copy';
+import { pickBucketCount, TIME_WINDOW_PRESETS } from './action-window';
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import {
@@ -120,22 +121,6 @@ export interface ConfirmOptions {
 }
 
 /**
- * Time-window presets (spec v1.2 Decision 15). Days values plumb to the
- * BE `olderThanDays` filter; the label is what the user reads. `null`
- * value = no time filter (act on all). Defaults per verb (handoff spec):
- *   - Archive primary → null    ("All inbox")
- *   - Delete primary  → 180     ("6 months+" — safer)
- *   - Unsub/Later secondary historic → null when first toggled on
- */
-const TIME_WINDOW_PRESETS = [
-  { label: 'All inbox', days: null as number | null },
-  { label: '30 days+', days: 30 },
-  { label: '3 months+', days: 90 },
-  { label: '6 months+', days: 180 },
-  { label: '1 year+', days: 365 },
-] as const;
-
-/**
  * Aggregated multi-sender preview state (D52). Drives the chip-row
  * bucket counts, the headline figure, and the per-sender breakdown for
  * a bulk action. `loading` gates confirm exactly like the single-sender
@@ -145,26 +130,6 @@ export interface BulkPreviewState {
   data: BulkActionPreviewResult | undefined;
   loading: boolean;
   error: boolean;
-}
-
-/**
- * Pick the right bucket count from the composite preview for a given
- * `olderThanDays`. Keeps the summary line + confirm button in step with
- * the active chip without a round-trip per chip.
- */
-function pickBucketCount(
-  counts: CompositeActionPreviewResult['counts'] | undefined,
-  olderThanDays: number | null,
-): number | undefined {
-  if (!counts) return undefined;
-  if (olderThanDays === null) return counts.all;
-  if (olderThanDays === 30) return counts.olderThan30d;
-  if (olderThanDays === 90) return counts.olderThan90d;
-  if (olderThanDays === 180) return counts.olderThan180d;
-  if (olderThanDays === 365) return counts.olderThan365d;
-  // Custom value (post-launch) — fall back to `all` until the
-  // server-side on-demand bucket query lands (Phase 1 BE PR-N polish).
-  return counts.all;
 }
 
 /**

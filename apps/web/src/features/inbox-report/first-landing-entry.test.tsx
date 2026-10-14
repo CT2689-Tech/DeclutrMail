@@ -37,6 +37,96 @@ afterEach(() => {
 });
 
 describe('InboxReportFirstLanding', () => {
+  it.each(['archive', 'delete'] as const)(
+    'forwards the selected age from the %s add-on to the cleanup request',
+    async (mode) => {
+      let submitted: unknown = null;
+      const counts = {
+        all: 4,
+        olderThan30d: 3,
+        olderThan90d: 2,
+        olderThan180d: 1,
+        olderThan365d: 0,
+      };
+      const recentMessages = {
+        all: [],
+        olderThan30d: [],
+        olderThan90d: [],
+        olderThan180d: [],
+        olderThan365d: [],
+      };
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/mailboxes/mb-1/inbox-report',
+          respond: () => jsonOk({ data: report }),
+        },
+        {
+          method: 'GET',
+          path: '/api/actions/preview',
+          respond: () =>
+            jsonOk({
+              data: {
+                sender: {
+                  id: 's1',
+                  name: 'Sample sender',
+                  domain: 'sample.example',
+                  lastSeenDays: 1,
+                  wroteToCount: 0,
+                },
+                counts,
+                recentMessages,
+                allMail: { counts: { ...counts, all: 12, olderThan180d: 6 }, recentMessages },
+                unsubAvailable: true,
+                protected: false,
+              },
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-backlog',
+          respond: async (req) => {
+            submitted = await req.json();
+            return jsonServerError();
+          },
+        },
+      ]);
+      render(
+        <QueryWrapper client={createTestQueryClient()}>
+          <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
+        </QueryWrapper>,
+      );
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'Unsubscribe + archive 1 sender' }),
+      );
+      const archive = await screen.findByRole('radio', { name: '+ Archive 4' });
+      await waitFor(() => expect(archive).toBeEnabled());
+      if (mode === 'delete') {
+        fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
+      }
+      fireEvent.change(screen.getByRole('combobox', { name: 'How far back to act on' }), {
+        target: { value: '180' },
+      });
+      expect(screen.getByRole('heading', { name: /Unsubscribe from/ })).toHaveTextContent(
+        mode === 'delete' ? 'delete 6 emails' : 'archive 1 email',
+      );
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: `Unsubscribe + ${mode === 'delete' ? 'Delete' : 'Archive'}`,
+        }),
+      );
+      await waitFor(() =>
+        expect(submitted).toMatchObject({
+          mode,
+          senderIds: ['s1'],
+          olderThanDays: 180,
+          ...(mode === 'delete' ? { reach: 'all_mail' } : {}),
+        }),
+      );
+    },
+  );
+
   it('forwards the widened Delete scope shown in the report preview', async () => {
     let submitted: unknown = null;
     const counts = { all: 4, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 };

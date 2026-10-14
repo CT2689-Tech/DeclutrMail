@@ -5,6 +5,7 @@ import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 
 import {
   Button,
+  Disclosure,
   SheetFactList,
   SheetSegmented,
   tokens,
@@ -443,16 +444,9 @@ export function DecidePreview({
       )}
 
       {facts.length > 0 && (
-        <details className="dm-disclosure" style={{ marginTop: space[2] }}>
-          <summary
-            style={{ cursor: 'pointer', fontSize: text.sm, fontWeight: 500, color: color.fgSoft }}
-          >
-            Details
-          </summary>
-          <div style={{ marginTop: space[2], fontSize: text.sm, color: color.fg }}>
-            <SheetFactList facts={facts} />
-          </div>
-        </details>
+        <Disclosure style={{ marginTop: space[2] }}>
+          <SheetFactList facts={facts} />
+        </Disclosure>
       )}
 
       <div className="dm-confirm-footer" style={{ marginTop: space[3] }}>

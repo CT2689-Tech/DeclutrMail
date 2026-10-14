@@ -123,6 +123,14 @@ export function AccountMenu() {
     me.mailboxes.find((m) => m.status === 'active');
   const activeLabel = activeMailbox?.email ?? me.user.email;
   const managedMailbox = me.mailboxes.find((mailbox) => mailbox.id === managedMailboxId) ?? null;
+  const openDataControls = (mailboxId: string) => {
+    // The menu entry unmounts. Let the modal remember the persistent
+    // account trigger as its return target before it takes focus.
+    triggerRef.current?.focus();
+    setManagedMailboxId(mailboxId);
+    setDataControlsError(null);
+    setOpen(false);
+  };
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
@@ -393,11 +401,7 @@ export function AccountMenu() {
                       <button
                         type="button"
                         aria-label={`Manage connection and data for ${m.email}`}
-                        onClick={() => {
-                          setManagedMailboxId(m.id);
-                          setDataControlsError(null);
-                          setOpen(false);
-                        }}
+                        onClick={() => openDataControls(m.id)}
                         style={mailboxActionStyle('muted')}
                       >
                         Manage
@@ -430,11 +434,7 @@ export function AccountMenu() {
                       <button
                         type="button"
                         aria-label={`Manage retained data for ${m.email}`}
-                        onClick={() => {
-                          setManagedMailboxId(m.id);
-                          setDataControlsError(null);
-                          setOpen(false);
-                        }}
+                        onClick={() => openDataControls(m.id)}
                         style={mailboxActionStyle('muted')}
                       >
                         Delete data
@@ -566,6 +566,7 @@ export function AccountMenu() {
       {managedMailbox && (
         <MailboxDataControlsDialog
           mailbox={managedMailbox}
+          returnFocusRef={triggerRef}
           onCancel={() => {
             setManagedMailboxId(null);
             setDataControlsError(null);

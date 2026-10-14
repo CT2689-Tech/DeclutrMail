@@ -1495,16 +1495,14 @@ function ReadyState({
           </p>
         )}
 
-        {/* 3. The five verbs (K/A/U/L/D). The fact-derived primary is the
-          one filled button (D245); the engine's read stays a separate,
-          quiet disclosure because the two are allowed to disagree. */}
+        {/* Keep the one decision toolbar beside current-mail context in
+          both layouts. Reserving it below the pane scroller squeezed
+          the evidence into a small viewport on shorter screens. */}
         <div className={styles.actionSection}>
-          {layout === 'page' && (
-            <>
-              <div className={styles.eyebrow}>Your next decision</div>
-              {actionToolbar}
-            </>
-          )}
+          <div role="group" aria-label="Sender actions" className={styles.actionSection}>
+            <h3 className={styles.actionHeading}>Choose an action</h3>
+            {actionToolbar}
+          </div>
           {recommendation != null && <RecommendationBanner recommendation={recommendation} />}
         </div>
 
@@ -1653,13 +1651,6 @@ function ReadyState({
           />
         </DetailSection>
       </div>
-      {layout === 'pane' && (
-        <div className={styles.paneActions} role="group" aria-label="Sender actions">
-          <div className={styles.eyebrow}>Your next decision</div>
-          {actionToolbar}
-        </div>
-      )}
-
       <ConfirmActionModal
         request={pendingAction}
         onCancel={closePending}

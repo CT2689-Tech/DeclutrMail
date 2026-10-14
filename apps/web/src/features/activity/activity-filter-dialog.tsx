@@ -1,29 +1,58 @@
 'use client';
 
-import type { CSSProperties } from 'react';
-import { Button, OVERLAY_Z, tokens } from '@declutrmail/shared';
+import type { CSSProperties, RefObject } from 'react';
+import { Button, DialogFrame, tokens } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { FilterFields, type FilterFieldsProps } from './activity-filter-fields';
 
-const { color, font, motion, radius, shadow } = tokens;
+const { color, motion, radius, shadow } = tokens;
 
 /** Loaded only when Filter opens; the normal Activity view needs neither dialog. */
 export function ActivityFilterDialog({
   isMobile,
   onClose,
+  returnFocusRef,
   ...fields
-}: FilterFieldsProps & { isMobile: boolean; onClose: () => void }) {
+}: FilterFieldsProps & {
+  isMobile: boolean;
+  onClose: () => void;
+  returnFocusRef?: RefObject<HTMLElement | null> | undefined;
+}) {
   if (isMobile) return <FilterSheet onClose={onClose} {...fields} />;
+  return <FilterPopover onClose={onClose} returnFocusRef={returnFocusRef} {...fields} />;
+}
+
+/** Desktop popover. A real modal so Tab cannot leave it for the page behind. */
+function FilterPopover({
+  onClose,
+  returnFocusRef,
+  ...fields
+}: FilterFieldsProps & {
+  onClose: () => void;
+  returnFocusRef?: RefObject<HTMLElement | null> | undefined;
+}) {
+  const trapRef = useFocusTrap<HTMLDivElement>(
+    true,
+    returnFocusRef ? { returnFocusRef } : undefined,
+  );
   return (
     <div
+      ref={trapRef}
       role="dialog"
+      aria-modal="true"
       aria-label="Activity filters"
+      tabIndex={-1}
       style={{
         position: 'absolute',
         top: 'calc(100% + 8px)',
         right: 0,
         zIndex: 20,
         width: 380,
+        maxWidth: 'calc(100vw - 32px)',
+        maxHeight: 'calc(100dvh - 112px)',
+        overflowY: 'auto',
+        overscrollBehavior: 'contain',
+        boxSizing: 'border-box',
         padding: 20,
         background: color.card,
         borderRadius: radius.xl,
@@ -34,6 +63,11 @@ export function ActivityFilterDialog({
     >
       <style>{`@keyframes dm-activity-pop-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }`}</style>
       <FilterFields {...fields} showVerbs={false} />
+      <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
+        <Button tone="primary" size="lg" onClick={onClose}>
+          View results
+        </Button>
+      </div>
     </div>
   );
 }
@@ -46,80 +80,45 @@ export function ActivityFilterDialog({
 function FilterSheet({ onClose, ...fields }: FilterFieldsProps & { onClose: () => void }) {
   const trapRef = useFocusTrap<HTMLDivElement>(true);
   return (
-    <>
-      <div
-        className="dm-scrim"
-        onClick={onClose}
-        style={{ position: 'fixed', inset: 0, zIndex: OVERLAY_Z.modal }}
-      />
-      <div
-        ref={trapRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Activity filters"
-        className="dm-sheet"
-        style={{
-          position: 'fixed',
-          left: 0,
-          right: 0,
-          bottom: 0,
-          maxHeight: '82vh',
-          overflow: 'auto',
-          background: color.card,
-          borderTopLeftRadius: radius['2xl'],
-          borderTopRightRadius: radius['2xl'],
-          boxShadow: shadow.modal,
-          zIndex: OVERLAY_Z.sheet,
-          fontFamily: font.sans,
-          padding: '10px 20px calc(20px + env(safe-area-inset-bottom))',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 12,
-        }}
-      >
-        {/* Grab handle */}
-        <div
-          aria-hidden="true"
-          style={{
-            width: 36,
-            height: 4,
-            borderRadius: radius.pill,
-            background: color.fillHover,
-            margin: '2px auto 4px',
-          }}
-        />
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-          }}
-        >
-          <span
-            style={{
-              ...tokens.typography.dialogTitle,
-              letterSpacing: '-0.02em',
-              color: color.fg,
-            }}
-          >
-            Filter
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close filters"
-            style={{ ...iconButtonStyle, width: 44, height: 44 }}
-          >
-            <CloseGlyph />
-          </button>
-        </div>
-        <FilterFields {...fields} touch showVerbs={false} />
+    <DialogFrame
+      panelRef={trapRef}
+      label="Activity filters"
+      onDismiss={onClose}
+      footer={
         <Button tone="primary" size="lg" onClick={onClose}>
           View results
         </Button>
+      }
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}
+      >
+        <h2
+          style={{
+            margin: 0,
+            ...tokens.typography.dialogTitle,
+            letterSpacing: '-0.02em',
+            color: color.fg,
+          }}
+        >
+          Filter
+        </h2>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close filters"
+          style={{ ...iconButtonStyle, width: 44, height: 44 }}
+        >
+          <CloseGlyph />
+        </button>
       </div>
-    </>
+      <FilterFields {...fields} touch showVerbs={false} />
+    </DialogFrame>
   );
 }
 

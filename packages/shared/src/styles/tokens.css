@@ -653,6 +653,21 @@ button {
 .dm-sheet-details[open] .dm-sheet-details-chevron {
   transform: rotate(180deg);
 }
+.dm-dialog-body {
+  padding: 28px 28px 20px;
+  overflow-wrap: anywhere;
+}
+.dm-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 28px 20px;
+  border-top: 1px solid var(--dm-line-soft);
+}
+.dm-dialog-footer > button {
+  min-height: 44px;
+}
 
 /* Autopilot reviews keep the commit visible while the evidence scrolls. */
 .dm-sheet-review {
@@ -694,6 +709,19 @@ button {
   background: transparent !important;
 }
 @media (max-width: 520px) {
+  .dm-dialog-body {
+    padding: 24px 20px 16px;
+  }
+  .dm-dialog-footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    padding: 12px 20px calc(24px + env(safe-area-inset-bottom, 0px));
+  }
+  .dm-dialog-footer > button {
+    width: 100%;
+    min-width: 0;
+    white-space: normal;
+  }
   .dm-sheet-layer {
     align-items: flex-end;
     padding: 0 !important;
@@ -947,6 +975,22 @@ button {
   padding-block: 10px !important;
   white-space: normal !important;
   text-wrap: pretty;
+}
+.dm-sheet-segment-group {
+  grid-auto-flow: column;
+  border-radius: 9999px;
+}
+.dm-sheet-segment-option {
+  padding: 0 12px;
+}
+@media (max-width: 360px) {
+  .dm-sheet-segment-group[data-option-count='3'] {
+    grid-auto-flow: row;
+    border-radius: 14px;
+  }
+  .dm-sheet-segment-option {
+    padding-inline: 4px;
+  }
 }
 @media (max-width: 760px) {
   [data-dm-button],

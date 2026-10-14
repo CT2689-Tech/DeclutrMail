@@ -102,6 +102,30 @@ describe('launch copy deck snapshots', () => {
     ]);
   });
 
+  it('pins the drop2-r45 data-control and inventory sentences', () => {
+    expect(WS2_COPY.simplify.dataControls.deleteBody).toBe(
+      'Permanently deletes this Gmail account\u2019s saved email details and related data from DeclutrMail.',
+    );
+    expect(WS2_COPY.simplify.dataControls.deleteBodyConnected).toBe(
+      'DeclutrMail stops accessing this Gmail account, then permanently deletes its saved email details and related data.',
+    );
+    expect(WS2_COPY.simplify.dataControls.deleteRemain).toBe(
+      'Your DeclutrMail account, your other Gmail accounts, and this Gmail address stay.',
+    );
+    expect(WS2_COPY.liveFix.privacy.inventory.oauthLabel).toBe(
+      'Encrypted key that lets DeclutrMail access your Gmail',
+    );
+    expect(WS2_COPY.liveFix.privacy.inventory.visitLabel).toBe(
+      'Visit times and counts of newly scanned email for each Gmail account',
+    );
+    expect(WS2_COPY.liveFix.privacy.inventory.processingLabel).toBe(
+      'Background task, delivery, and retry records for each Gmail account',
+    );
+    expect(WS2_COPY.liveFix.privacy.inventory.auditLabel).toBe(
+      'Minimal security and deletion records for each Gmail account',
+    );
+  });
+
   it('pins the drop2-r23 home scan-failed sentences', () => {
     expect(WS2_COPY.home.failed).toEqual({
       title: 'The scan stopped',

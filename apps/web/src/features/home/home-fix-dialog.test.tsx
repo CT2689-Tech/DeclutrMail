@@ -162,16 +162,30 @@ describe('HomeFixDialog focus trap', () => {
     const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
     await waitFor(() => expect(cancel).toHaveFocus());
 
-    fireEvent.keyDown(dialog, { key: 'Tab' });
+    await user.keyboard('{Tab}');
     expect(confirm).toHaveFocus();
-    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+    await user.keyboard('{Shift>}{Tab}{/Shift}');
     expect(cancel).toHaveFocus();
 
+    confirm.focus();
     await user.keyboard('{Enter}');
     expect(onConfirm).not.toHaveBeenCalled();
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
 
     fireEvent.keyDown(dialog, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    await waitFor(() => expect(open).toHaveFocus());
+  });
+
+  it('lets Enter activate Cancel without confirming and restores the entry point', async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    render(<Harness onConfirm={onConfirm} />);
+    const open = screen.getByRole('button', { name: 'Open fix' });
+    await user.click(open);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus());
+    await user.keyboard('{Enter}');
+    expect(onConfirm).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     await waitFor(() => expect(open).toHaveFocus());
   });
