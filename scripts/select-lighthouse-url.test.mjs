@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { selectLighthouseUrl } from './select-lighthouse-url.mjs';
 
@@ -10,18 +12,18 @@ const config = createRequire(import.meta.url)('../apps/web/lighthouserc.cjs');
 const urls = config.ci.collect.url;
 const script = fileURLToPath(new URL('./select-lighthouse-url.mjs', import.meta.url));
 
-test('the lighthouse matrix has exactly one leg per configured URL', () => {
+test('the Lighthouse groups cover every configured URL exactly once', () => {
   const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const job = workflow.split('\n  lighthouse:\n')[1].split('\n  test-units:')[0];
-  const legs = job
-    .match(/page: \[([^\]]+)\]/)[1]
-    .split(',')
-    .map((x) => Number(x.trim()));
+  const ranges = [...job.matchAll(/first: (\d+)\n +last: (\d+)/g)];
+  const pages = ranges.flatMap(([, first, last]) =>
+    Array.from({ length: Number(last) - Number(first) + 1 }, (_, i) => Number(first) + i),
+  );
   assert.deepEqual(
-    legs,
+    pages,
     urls.map((_, i) => i + 1),
   );
-  assert.match(job, /PAGES: \$\{\{ strategy\.job-total \}\}/);
+  assert.match(job, new RegExp(`PAGES: '${urls.length}'`));
   assert.match(job, /pnpm check:lighthouse --collect\.url="\$URL"/);
 });
 
@@ -82,7 +84,7 @@ test('missing Lighthouse reports fail the leg instead of uploading nothing', () 
   const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const job = workflow.split('\n  lighthouse:\n')[1].split('\n  test-units:')[0];
   const upload = job.split('- name: Upload Lighthouse reports\n')[1].split('\n      - ')[0];
-  assert.match(upload, /path: apps\/web\/\.lighthouseci\//);
+  assert.match(upload, /path: apps\/web\/lighthouse-reports\//);
   assert.match(upload, /include-hidden-files: true/);
   assert.match(upload, /if-no-files-found: error/);
 });
@@ -100,4 +102,46 @@ test('the CLI prints a GITHUB_OUTPUT line and exits non-zero on a bad leg', () =
   });
   assert.notEqual(bad.status, 0);
   assert.equal(bad.stdout, '');
+});
+
+test('group runner keeps every page failure and rejects missing reports while collecting siblings', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const step = workflow.split('- name: Audit every page in this group\n')[1].split('\n      - ')[0];
+  const shell = step
+    .split('run: |\n')[1]
+    .replace(/^ {10}/gm, '')
+    .replace('node scripts/select-lighthouse-url.mjs', 'node "$SELECT_SCRIPT"')
+    .replace('pnpm check:lighthouse --collect.url="$URL"', 'audit "$URL"');
+  const cwd = mkdtempSync(path.join(tmpdir(), 'lighthouse-group-'));
+  try {
+    for (const failure of ['none', 'assertion', 'missing']) {
+      const fake = `audit() {
+        mkdir -p apps/web/.lighthouseci
+        if [ "$1" != "http://localhost:4173/pricing" ] || [ "$FAILURE" != missing ]; then
+          echo '{}' > apps/web/.lighthouseci/manifest.json
+        fi
+        [ "$1" != "http://localhost:4173/pricing" ] || [ "$FAILURE" != assertion ]
+      }`;
+      const result = spawnSync('bash', ['-e', '-u', '-o', 'pipefail', '-c', `${fake}\n${shell}`], {
+        cwd,
+        env: {
+          ...process.env,
+          FIRST_PAGE: '2',
+          LAST_PAGE: '4',
+          PAGES: String(urls.length),
+          FAILURE: failure,
+          SELECT_SCRIPT: script,
+        },
+        encoding: 'utf8',
+      });
+      assert.equal(result.status === 0, failure === 'none', result.stdout + result.stderr);
+      assert.ok(
+        readFileSync(path.join(cwd, 'apps/web/lighthouse-reports/page-4/manifest.json'), 'utf8'),
+      );
+      rmSync(path.join(cwd, 'apps'), { recursive: true, force: true });
+      mkdirSync(path.join(cwd, 'apps'));
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
