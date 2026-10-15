@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { checkRequired } from './check-ci-required.mjs';
+import { reusedJobs } from './ci-queue-reuse.mjs';
 
 function fixture() {
   const jobs = [
@@ -90,6 +91,56 @@ test('push and manual runs require full suites and permit only the intentional l
     assert.ok(checkRequired(needs, event).length);
   }
   assert.ok(checkRequired(fixture(), 'unknown').length);
+});
+
+test('only independently verified main queue proof permits the declared reused suites to skip', () => {
+  const needs = fixture();
+  needs['impl-log'].result = 'skipped';
+  Object.assign(needs.changes.outputs, { reuse: 'true', reuse_run_id: '100', reuse_attempt: '1' });
+  for (const job of reusedJobs) needs[job].result = 'skipped';
+  const verifiedSource = { runId: 100, attempt: 1 };
+  assert.deepEqual(checkRequired(needs, 'push', { verifiedSource }), []);
+  assert.deepEqual(checkRequired(needs, 'push', { verifiedSource, testsOnly: true }), []);
+  for (const proof of [undefined, { runId: 99, attempt: 1 }, { runId: 100, attempt: 2 }]) {
+    assert.ok(checkRequired(needs, 'push', { verifiedSource: proof }).length);
+    assert.ok(checkRequired(needs, 'push', { verifiedSource: proof, testsOnly: true }).length);
+  }
+  for (const event of ['pull_request', 'merge_group', 'workflow_dispatch']) {
+    assert.ok(checkRequired(needs, event, { verifiedSource }).length);
+  }
+  for (const job of ['changes', 'typecheck', 'lint', 'format', 'build-web', 'web-types']) {
+    const bad = structuredClone(needs);
+    bad[job].result = 'skipped';
+    assert.ok(checkRequired(bad, 'push', { verifiedSource }).length, job);
+  }
+  for (const job of reusedJobs) {
+    for (const result of ['failure', 'cancelled', undefined]) {
+      const bad = structuredClone(needs);
+      bad[job].result = result;
+      assert.ok(checkRequired(bad, 'push', { verifiedSource }).length, `${job}: ${result}`);
+    }
+  }
+});
+
+test('test aggregate also rejects unexpected skips and an invalid path selection', () => {
+  const testsOnly = { testsOnly: true };
+  assert.deepEqual(checkRequired(fixture(), 'merge_group', testsOnly), []);
+  for (const job of [
+    'changes',
+    'impl-log',
+    'test-api',
+    'test-workers',
+    'test-db',
+    'test-web',
+    'test-units',
+  ]) {
+    const needs = fixture();
+    needs[job].result = 'skipped';
+    assert.ok(checkRequired(needs, 'merge_group', testsOnly).length, job);
+  }
+  const needs = fixture();
+  delete needs.changes.outputs.api;
+  assert.ok(checkRequired(needs, 'pull_request', testsOnly).length);
 });
 
 test('isolated browser matrix preserves every suite and its coverage assertion', () => {
