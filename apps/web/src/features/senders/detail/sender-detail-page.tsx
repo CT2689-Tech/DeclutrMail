@@ -1829,7 +1829,7 @@ function ProtectRow({
         <span style={{ fontSize: text.md, fontWeight: 500, color: color.fg }}>Protected</span>
         <span id={descriptionId} style={{ fontSize: text.sm, color: color.fgSoft }}>
           {checked
-            ? 'Excluded from bulk and automatic cleanup; individual actions still ask you to confirm.'
+            ? 'Excluded from bulk and automatic cleanup; manual email changes still ask you to confirm.'
             : 'Exclude this sender from bulk and automatic cleanup.'}
         </span>
         {reason !== null && (

@@ -89,7 +89,7 @@ export function unsubscribeUnavailableReason(
     case 'mailto':
       return null;
     case 'none':
-      return 'No unsubscribe link found in synced mail.';
+      return 'No unsubscribe link found in the emails checked.';
     case 'unknown':
       return 'Not checked for an unsubscribe option yet.';
   }

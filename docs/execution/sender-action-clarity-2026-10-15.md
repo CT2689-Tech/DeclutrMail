@@ -32,7 +32,7 @@ Before implementation, two new toolbar regressions failed against main: the Late
 
 ## Final checks and review
 
-- Scoped web suite: 916 passed, 3 existing skips across 60 files; shared semantics/notification/Undo suites: 102 passed across 4 files. Follow-up layout checks cover the final control grouping.
+- Scoped web suite: 916 passed, 3 existing skips across 60 files; shared semantics/notification/Undo suites: 102 passed across 4 files. Full shared suite: 920 passed across 86 files after the CI glossary identified two new phrases; both were replaced without expanding its shrink-only baseline. Follow-up layout checks cover the final control grouping.
 - Negative controls: original toolbar failed stable Later-label and zero-inbox assertions; failed Keep Undo had no Retry through the real ToastHost; compact recent-actions opener unmounted on hover/focus. Each regression passed with its corresponding repair.
 - Keep Undo is reconciled after server confirmation for every completed sender (hook-level callbacks work for bulk too). Failure retains saved Keep state, offers Retry for transient errors, and preserves the server's Unprotect-first instruction for `PROTECTED_SENDER`.
 - Independent reviewer: design-system gate and flow/copy/recovery review passed with no remaining blocker. Independent focused checks passed 32 tests, 8 Undo pill interactions, and 13 final row surface tests.

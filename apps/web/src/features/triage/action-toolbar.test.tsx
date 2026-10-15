@@ -141,7 +141,7 @@ describe('ActionToolbar — render (D29, D31)', () => {
 });
 
 describe('ActionToolbar — disabled verbs state their reason (W2, D209/D211)', () => {
-  const NO_CHANNEL_COPY = 'No unsubscribe link found in synced mail.';
+  const NO_CHANNEL_COPY = 'No unsubscribe link found in the emails checked.';
 
   it('verbDisabledReason truth-table — reason exactly when a gate is off', () => {
     const noChannel = rowById('t-shipping'); // unsubscribeMethod 'none', unprotected
