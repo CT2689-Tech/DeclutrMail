@@ -219,6 +219,33 @@ describe('<SenderRow compact /> — phone', () => {
     expect(screen.getAllByRole('button')).toHaveLength(1);
   });
 
+  it('retains a fresh unsubscribe swipe with zero current mail', () => {
+    const onAction = vi.fn();
+    const s = renderRow(
+      {
+        inboxCount: 0,
+        archivedCount: 0,
+        unsubscribeMethod: 'one_click',
+        policyType: null,
+        unsubStatus: null,
+      },
+      { compact: true, onAction },
+    );
+    swipeRight(screen.getByTestId(`sender-row-${s.id}`));
+    expect(onAction).toHaveBeenCalledOnce();
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ verb: 'Unsubscribe' }));
+  });
+
+  it('does not dispatch an empty-mail primary on swipe', () => {
+    const onAction = vi.fn();
+    const s = renderRow(
+      { inboxCount: 0, archivedCount: 0, lastDays: 250, unsubscribeMethod: 'none' },
+      { compact: true, onAction },
+    );
+    swipeRight(screen.getByTestId(`sender-row-${s.id}`));
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
   it('swipe-right fires the primary verb through onAction (the D226 preview path)', () => {
     const onAction = vi.fn();
     const s = renderRow({}, { compact: true, onAction });

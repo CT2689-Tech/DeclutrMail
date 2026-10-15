@@ -36,6 +36,7 @@ import { senderSizeCell } from './sender-size';
 import { derivePrimaryVerbId, legacyVerbFromId, SenderActionRow } from './action-row';
 import {
   blocksRepeatUnsubscribe,
+  canPerformSenderAction,
   isStandingProtected,
   senderAddressLine,
   type ActionRequest,
@@ -213,11 +214,18 @@ export function SenderRow({
     </div>
   );
 
-  const swipe = useSwipeRight(compact && !blocksRepeatUnsubscribe(s), () => {
-    // The same action the busy row's inert button refuses.
-    if (busy) return;
-    onAction({ verb: legacyVerbFromId(derivePrimaryVerbId(s)), senders: [s] });
-  });
+  const swipeVerb = legacyVerbFromId(derivePrimaryVerbId(s));
+  const swipe = useSwipeRight(
+    compact &&
+      !blocksRepeatUnsubscribe(s) &&
+      !(s.inboxCount === 0 && s.archivedCount === 0 && swipeVerb === 'Keep') &&
+      canPerformSenderAction(swipeVerb, s),
+    () => {
+      // The same action the busy row's inert button refuses.
+      if (busy) return;
+      onAction({ verb: swipeVerb, senders: [s] });
+    },
+  );
 
   return (
     <div

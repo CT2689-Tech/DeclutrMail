@@ -159,7 +159,9 @@ export function SelectionBar({
     const exclusionReason =
       verb === 'Unsubscribe'
         ? 'protected senders, recorded requests and senders without an unsubscribe option are excluded'
-        : 'protected senders are excluded from bulk actions';
+        : verb === 'Delete'
+          ? 'protected senders and senders with no current emails are excluded'
+          : 'protected senders and senders with no inbox emails are excluded';
     const unitTitle =
       n === senders.length
         ? `${label} ${n} sender${n === 1 ? '' : 's'}`
@@ -259,6 +261,14 @@ export function SelectionBar({
         </div>
         {multiSenderNote}
         {protectedLockNote(false)}
+        {protectedCount === 0 && eligible.Archive === 0 && eligible.Later === 0 && (
+          <span role="note">
+            {eligible.Delete === 0
+              ? 'No current emails to Archive, move to Later, or Delete.'
+              : 'No inbox emails to Archive or move to Later.'}
+          </span>
+        )}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {(['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete'] as const).map((verb) =>
             verbButton(verb, true),

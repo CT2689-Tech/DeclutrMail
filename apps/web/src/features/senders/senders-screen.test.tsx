@@ -3070,6 +3070,142 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.keyDown(document.body, { key });
   }
 
+  it.each(['Archive', 'Later', 'Delete'] as const)(
+    'refuses immediate zero list readback before %s confirmation',
+    async (verb) => {
+      let posts = 0;
+      installFetchStub([
+        oneSenderHandler(),
+        compositePreviewHandler(3),
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () => {
+            posts += 1;
+            return jsonOk({ data: { actionId: 'never', requestedCount: 0, status: 'queued' } });
+          },
+        },
+      ]);
+      renderScreen();
+      fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+      fireEvent.keyDown(document.body, { key: verb[0]!.toLowerCase() });
+      const dialog = await screen.findByRole('dialog');
+      if (verb === 'Delete') {
+        const window = await within(dialog).findByRole('combobox', {
+          name: 'How far back to act on',
+        });
+        fireEvent.change(window, { target: { value: 'all' } });
+      }
+      const confirm = await within(dialog).findByRole('button', {
+        name:
+          verb === 'Later' ? /^Move \d+ emails? to Later$/ : new RegExp(`^${verb} \\d+ emails?$`),
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      lastClient.setQueryData(sendersKeys.detail('a'), {
+        data: { ...ROW, inboxCount: 0, archivedCount: 0 },
+      });
+      fireEvent.click(confirm);
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(posts).toBe(0);
+    },
+  );
+
+  it.each([false, true])(
+    'explains empty-mail bulk exclusions with Protected=%s and posts only nonempty rows',
+    async (withProtected) => {
+      const posted: Array<{ selector: { senderIds: string[] } }> = [];
+      installFetchStub([
+        {
+          ...TWO_SENDER_LIST,
+          respond: () =>
+            jsonOk({
+              data: [
+                ROW,
+                ROW_B,
+                ...(withProtected
+                  ? [
+                      {
+                        ...ROW,
+                        id: 'protected',
+                        displayName: 'Protected',
+                        email: 'p@protected.test',
+                        domain: 'protected.test',
+                        protectionFlags: {
+                          isProtected: true,
+                          protectionReason: 'replied',
+                          protectionSetAt: null,
+                        },
+                      },
+                    ]
+                  : []),
+                {
+                  ...ROW,
+                  id: 'empty',
+                  name: 'Empty',
+                  displayName: 'Empty',
+                  email: 'empty@empty.test',
+                  domain: 'empty.test',
+                  inboxCount: 0,
+                  archivedCount: 0,
+                },
+              ],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+            }),
+        },
+        {
+          ...BULK_PREVIEW_OK,
+          respond: async () => {
+            const result = await BULK_PREVIEW_OK.respond().json();
+            if (withProtected) {
+              result.data.protectedCount = 1;
+              result.data.senders.push({
+                ...result.data.senders[0],
+                senderId: 'protected',
+                name: 'Protected',
+                protected: true,
+              });
+            }
+            return jsonOk(result);
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: async (req) => {
+            posted.push(await req.json());
+            return jsonOk({
+              data: {
+                batchId: 'batch-empty',
+                senderCount: 2,
+                skipped: withProtected ? [{ senderId: 'protected', reason: 'protected' }] : [],
+              },
+            });
+          },
+        },
+      ]);
+      renderScreen();
+      fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+      fireEvent.click(screen.getByRole('checkbox', { name: /select sender b/i }));
+      fireEvent.click(screen.getByRole('checkbox', { name: /select empty/i }));
+      if (withProtected)
+        fireEvent.click(screen.getByRole('checkbox', { name: /select protected/i }));
+      fireEvent.keyDown(document.body, { key: 'a' });
+      const dialog = await screen.findByRole('dialog');
+      expect(
+        await within(dialog).findByText(/1 sender with no inbox emails is skipped/),
+      ).toBeVisible();
+      expect(dialog).not.toHaveTextContent(/person|people/i);
+      if (withProtected) expect(dialog).toHaveTextContent('1 Protected sender is skipped.');
+      const confirm = await within(dialog).findByRole('button', { name: /^Archive \d+ emails?$/ });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      fireEvent.click(confirm);
+      await waitFor(() => expect(posted).toHaveLength(1));
+      expect(posted[0]!.selector.senderIds).toEqual(
+        withProtected ? ['a', 'b', 'protected'] : ['a', 'b'],
+      );
+    },
+  );
+
   it('excludes a recorded unsubscribe from a mixed selection and posts only the new request', async () => {
     const posted: Array<{ senderIds: string[] }> = [];
     installFetchStub([

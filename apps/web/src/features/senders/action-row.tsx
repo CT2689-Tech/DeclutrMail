@@ -22,6 +22,7 @@ import {
 import { isRowBusy, RowActivityPill, useRowActivity } from './row-activity';
 import {
   canArchive,
+  currentMailUnavailableReason,
   canDelete,
   canLater,
   canUnsubscribe,
@@ -159,8 +160,9 @@ export function SenderActionRow({
               unsubscribe: unsubscribeStatus
                 ? `${unsubscribeStatus.label}. ${unsubscribeStatus.title}`
                 : (unsubscribeUnavailableReason(sender.unsubscribeMethod) ?? ''),
-              archive: sender.inboxCount === 0 ? 'No inbox emails to move.' : '',
-              later: sender.inboxCount === 0 ? 'No inbox emails to move.' : '',
+              archive: currentMailUnavailableReason('Archive', sender) ?? '',
+              later: currentMailUnavailableReason('Later', sender) ?? '',
+              delete: currentMailUnavailableReason('Delete', sender) ?? '',
             }}
             dimmedVerb={primaryVerbId}
             onPick={(verbId) => {

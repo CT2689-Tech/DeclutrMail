@@ -279,19 +279,38 @@ export function canUnsubscribe(s: Sender): boolean {
   );
 }
 
-export function canArchive(_s: Sender): boolean {
-  return true;
+export function canArchive(s: Sender): boolean {
+  return s.inboxCount !== 0;
 }
 
 /** "Later" moves a sender's current inbox mail to the
  * DeclutrMail/Later label. */
-export function canLater(_s: Sender): boolean {
-  return true;
+export function canLater(s: Sender): boolean {
+  return s.inboxCount !== 0;
 }
 
 /** Delete (Gmail Trash, 30-day recovery, plus the tier undo window). */
-export function canDelete(_s: Sender): boolean {
-  return true;
+export function canDelete(s: Sender): boolean {
+  return s.inboxCount !== 0 || s.archivedCount !== 0;
+}
+
+export function isMailMovingVerb(verb: ActionVerb): verb is 'Archive' | 'Later' | 'Delete' {
+  return verb === 'Archive' || verb === 'Later' || verb === 'Delete';
+}
+
+/** Only confirmed current zeros are unavailable; unknown counts still need a preview. */
+export function currentMailUnavailableReason(verb: ActionVerb, sender: Sender): string | null {
+  if ((verb === 'Archive' || verb === 'Later') && sender.inboxCount === 0) {
+    return 'No inbox emails to move.';
+  }
+  if (verb === 'Delete' && !canDelete(sender)) return 'No current emails to delete.';
+  return null;
+}
+
+export function canPerformSenderAction(verb: ActionVerb, sender: Sender): boolean {
+  return verb === 'Unsubscribe'
+    ? canUnsubscribe(sender)
+    : currentMailUnavailableReason(verb, sender) === null;
 }
 
 /**
@@ -441,6 +460,8 @@ export interface ActionRequest {
     peopleCount: number;
     /** A pending, accepted or user-reported sent request is not submitted again. */
     recordedUnsubscribeCount?: number;
+    /** Confirmed empty for this verb’s current-mail scope. */
+    emptyMailCount?: number;
   };
   /**
    * Protected senders dropped before the preview opened. The confirm

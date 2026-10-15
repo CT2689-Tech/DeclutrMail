@@ -218,6 +218,34 @@ function FeedbackReview() {
 
 export const FeedbackConsistency: Story = { render: () => <FeedbackReview /> };
 
+export const NoCurrentMail: Story = {
+  render: () => (
+    <ActionToolbar
+      sender={makeSender({ inboxCount: 0, archivedCount: 0, totalReceived: 565 })}
+      onAction={() => {}}
+      shortcuts
+    />
+  ),
+};
+export const ArchivedMailOnly: Story = {
+  render: () => (
+    <ActionToolbar
+      sender={makeSender({ inboxCount: 0, archivedCount: 21 })}
+      onAction={() => {}}
+      shortcuts
+    />
+  ),
+};
+export const UnknownCurrentMail: Story = {
+  render: () => (
+    <ActionToolbar
+      sender={makeSender({ inboxCount: null, archivedCount: null })}
+      onAction={() => {}}
+      shortcuts
+    />
+  ),
+};
+
 export const NoUnsubscribeChannel: Story = {
   render: () => (
     <ActionToolbar sender={makeSender({ unsubscribeMethod: 'none' })} onAction={() => {}} />
