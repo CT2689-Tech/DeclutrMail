@@ -200,6 +200,17 @@ export function ActionToolbar({
           </span>
         );
       })}
+      <span
+        style={{
+          width: '100%',
+          gridColumn: '1 / -1',
+          textAlign: align === 'start' && !bar ? 'left' : 'center',
+          fontSize: text.sm,
+          color: color.fgSoft,
+        }}
+      >
+        Keep skips this sender in Triage; Protected excludes bulk and automatic cleanup.
+      </span>
       {unsubNoChannelReason != null && (
         <>
           <span

@@ -113,15 +113,13 @@ describe('unsubscribeUnavailableReason', () => {
   });
 
   it('claims we looked ONLY when the index actually recorded none', () => {
-    expect(unsubscribeUnavailableReason('none')).toBe(
-      'No unsubscribe channel found — Archive handles senders like this.',
-    );
+    expect(unsubscribeUnavailableReason('none')).toBe('No unsubscribe link found in synced mail.');
   });
 
   it('says not-yet-checked for a sender with no derived method', () => {
     const reason = unsubscribeUnavailableReason(null);
     expect(reason).toContain('Not checked');
-    expect(reason).toContain('Archive');
+    expect(reason).not.toContain('Archive');
     expect(reason).not.toContain('No unsubscribe channel found');
   });
 });

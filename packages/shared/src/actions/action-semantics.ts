@@ -335,6 +335,19 @@ export function getActionSemantics<Verb extends ActionVerb>(
   return ACTION_SEMANTICS[verb];
 }
 
+/** Short action help shared by sender controls and the product tour. */
+export function actionHelpCopy(verb: ActionVerb): string {
+  const semantics = getActionSemantics(verb);
+  if (verb === 'keep') {
+    return [semantics.futureMail.summary, ...semantics.unchanged.map((fact) => fact.summary)].join(
+      ' ',
+    );
+  }
+  return semantics.currentMail.scope === 'none'
+    ? semantics.futureMail.summary
+    : semantics.currentMail.summary;
+}
+
 /** Static preview facts; live previews prepend scope/count and append deadlines. */
 export function staticActionPreviewCopy(verb: ActionVerb): string {
   const semantics = ACTION_SEMANTICS[verb];

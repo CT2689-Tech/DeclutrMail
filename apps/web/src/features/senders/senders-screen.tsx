@@ -18,6 +18,7 @@ import {
   ScreenIntro,
   tokens,
   toast,
+  usePendingToast,
   useIsAtMost,
 } from '@declutrmail/shared';
 import {
@@ -799,7 +800,16 @@ function SendersScreenContent({
   // D40 — Keep is a standing-policy write (`policy_type='keep'`), not a
   // Gmail mutation. The hook owns the senders/activity invalidation.
   const setPolicy = useSetSenderPolicy();
-  const undoKeep = useUndoSenderKeep();
+  const pendingToast = usePendingToast(actionMailboxId);
+  const undoKeep = useUndoSenderKeep((result, senderId) => {
+    if (result.policyType === 'keep') return;
+    setSettled((current) => {
+      if (current.get(senderId)?.verb !== 'keep') return current;
+      const next = new Map(current);
+      next.delete(senderId);
+      return next;
+    });
+  });
   // D51 — saved filter views (users.preferences.senderViews). One
   // full-replace mutation covers save + delete; apply is client-side
   // (write the compose URL state + sort store).
@@ -1723,9 +1733,8 @@ function SendersScreenContent({
           for (const sender of senderRefs) next.set(sender.id, { phase: 'working', verb: 'keep' });
           return next;
         });
-        const dismissPendingKeep = toast(
+        const dismissPendingKeep = pendingToast(
           isBulk ? `Keeping ${senderRefs.length} senders…` : `Keeping ${senderRefs[0]!.name}…`,
-          'info',
         );
         // `mutateAsync`, not N × `mutate(…, { onSuccess })`: per-call
         // callbacks live on the hook's ONE observer, so each `mutate`
@@ -3255,7 +3264,7 @@ function BulkSelectButton({
       }
       ariaPressed={allSelected}
     >
-      {allSelected ? `Deselect all ${senders.length}` : `Select all ${senders.length}`}
+      {allSelected ? `Deselect all ${senders.length}` : `Select ${senders.length} shown`}
     </Button>
   );
 }

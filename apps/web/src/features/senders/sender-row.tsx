@@ -303,7 +303,7 @@ export function SenderRow({
           >
             {s.name}
           </Link>
-          {isStandingProtected(s) && (
+          {isStandingProtected(s) && !compact && (
             <span
               role="img"
               aria-label="Protected"
@@ -311,6 +311,7 @@ export function SenderRow({
               style={{ display: 'inline-flex', color: color.primary, flex: '0 0 auto' }}
             >
               {SHIELD}
+              <span style={{ fontSize: text.xs, marginLeft: 4 }}>Protected</span>
             </span>
           )}
           {unsub && !compact && (
@@ -342,7 +343,7 @@ export function SenderRow({
 
       <CountCell
         value={currentCount ?? s.totalReceived}
-        scope={currentCount == null ? 'received · all time' : 'current mail'}
+        scope={currentCount == null ? 'received · all time' : 'inbox + archived'}
         unit={(currentCount ?? s.totalReceived) === 1 ? 'email' : 'emails'}
         compact={compact}
       />
@@ -350,21 +351,24 @@ export function SenderRow({
       <div className={styles.rowActions}>
         <SenderActionRow sender={s} onAction={onAction} compact={compact} />
       </div>
-      {compact && (unsub || activity || evidence) && (
-        <div className={styles.compactRowContext}>
-          {(unsub || activity) && (
-            <div className={styles.compactRowStatus}>
-              {unsub && (
-                <span title={unsub.title}>
-                  <Pill>{unsub.label}</Pill>
-                </span>
-              )}
-              {activity && <RowActivityPill activity={activity} />}
-            </div>
-          )}
-          {evidence}
-        </div>
-      )}
+      {compact &&
+        (unsub || activity || isStandingProtected(s) || s.policyType === 'keep' || evidence) && (
+          <div className={styles.compactRowContext}>
+            {(unsub || activity || isStandingProtected(s) || s.policyType === 'keep') && (
+              <div className={styles.compactRowStatus}>
+                {isStandingProtected(s) && <Pill>Protected</Pill>}
+                {!activity && s.policyType === 'keep' && <Pill>Kept</Pill>}
+                {unsub && (
+                  <span title={unsub.title}>
+                    <Pill>{unsub.label}</Pill>
+                  </span>
+                )}
+                {activity && <RowActivityPill activity={activity} />}
+              </div>
+            )}
+            {evidence}
+          </div>
+        )}
 
       {/* Live gesture feedback: while a touch drag would resolve to the
           swipe, name the verb so releasing is informed. */}

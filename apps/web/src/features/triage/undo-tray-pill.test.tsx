@@ -90,6 +90,17 @@ describe('<UndoTray /> — one pill', () => {
     expect(screen.getAllByRole('button', { name: /^Undo / })).toHaveLength(1);
   });
 
+  it('keeps the compact opener mounted when hovered or focused, so the first click opens history', () => {
+    render(<UndoTray defaultCompact dataSource={source({ entries: [done] })} />);
+    const region = screen.getByRole('region', { name: 'Recent actions' });
+    const opener = screen.getByRole('button', { name: /Show 1 recent action/ });
+    fireEvent.mouseEnter(region);
+    fireEvent.focus(opener);
+    expect(opener).toBeInTheDocument();
+    fireEvent.click(opener);
+    expect(region).toHaveAttribute('data-dm-undo-tray', 'open');
+  });
+
   it('offers no expander when the pill already says everything', () => {
     render(<UndoTray dataSource={source({ entries: [done] })} />);
     expect(screen.queryByRole('button', { name: 'Show all recent actions' })).toBeNull();

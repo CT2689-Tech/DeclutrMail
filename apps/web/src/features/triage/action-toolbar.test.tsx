@@ -141,7 +141,7 @@ describe('ActionToolbar — render (D29, D31)', () => {
 });
 
 describe('ActionToolbar — disabled verbs state their reason (W2, D209/D211)', () => {
-  const NO_CHANNEL_COPY = 'No unsubscribe channel found — Archive handles senders like this.';
+  const NO_CHANNEL_COPY = 'No unsubscribe link found in synced mail.';
 
   it('verbDisabledReason truth-table — reason exactly when a gate is off', () => {
     const noChannel = rowById('t-shipping'); // unsubscribeMethod 'none', unprotected
@@ -200,13 +200,13 @@ describe('ActionToolbar — disabled verbs state their reason (W2, D209/D211)', 
     expect(html).toContain('role="note"');
     expect(html).not.toContain('.dm-toolbar-reason{display:none}');
     // Title attr, tooltip bubble, and the visible note.
-    expect(html.split('No unsubscribe channel found').length).toBeGreaterThanOrEqual(3);
+    expect(html.split('No unsubscribe link found').length).toBeGreaterThanOrEqual(3);
   });
 
   it('senders WITH a channel show no reason line', () => {
     for (const id of ['t-linkedin', 't-django', 't-groupon']) {
       const html = renderToStaticMarkup(<ActionToolbar row={rowById(id)} onAction={() => {}} />);
-      expect(html).not.toContain('No unsubscribe channel found');
+      expect(html).not.toContain('No unsubscribe link found');
       expect(html).not.toContain('role="note"');
     }
   });

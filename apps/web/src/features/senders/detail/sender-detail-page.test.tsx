@@ -44,7 +44,11 @@ import {
 const h = vi.hoisted(() => ({ toast: vi.fn(), dismissToast: vi.fn() }));
 vi.mock('@declutrmail/shared', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
-  return { ...actual, toast: h.toast };
+  return {
+    ...actual,
+    toast: h.toast,
+    usePendingToast: () => (msg: string) => h.toast(msg, 'info', undefined, { pending: true }),
+  };
 });
 
 // `useSearchParams` is read by the mount-event effect (D38 session-3).
@@ -498,7 +502,7 @@ describe('SenderDetailRoute', () => {
       /ago|today|yesterday/,
     );
     expect(stats.getByText('You wrote').nextElementSibling).toHaveTextContent('3×');
-    expect(screen.getByLabelText('Now')).toHaveTextContent('Currently in your inbox');
+    expect(screen.getByLabelText('Current email totals')).toHaveTextContent('In inbox');
     expect(screen.getByText('Monthly values').closest('details')).toHaveTextContent('Jan 2025');
   });
 
@@ -1486,6 +1490,63 @@ describe('SenderDetailRoute', () => {
       );
     });
 
+    it.each([true, false])(
+      'Keep Undo clears its result only after a confirmed reversal (success=%s)',
+      async (success) => {
+        installHappyPath();
+        installPolicyPatch(async () =>
+          jsonOk({
+            data: {
+              senderId: 'linkedin',
+              policyType: 'keep',
+              isProtected: false,
+              protectionReason: null,
+              protectionSetAt: null,
+              changed: true,
+            },
+          }),
+        );
+        addFetchHandlers([
+          {
+            method: 'POST',
+            path: '/api/senders/linkedin/keep/undo',
+            respond: () =>
+              success
+                ? jsonOk({
+                    data: {
+                      senderId: 'linkedin',
+                      policyType: null,
+                      isProtected: false,
+                      protectionReason: null,
+                      protectionSetAt: null,
+                      changed: true,
+                    },
+                  })
+                : jsonServerError(),
+          },
+        ]);
+        renderDetail();
+        fireEvent.click(await screen.findByRole('button', { name: 'Keep (K)' }));
+        await screen.findByText('Kept', { exact: true });
+        const undo = h.toast.mock.calls.find(([msg]) => msg === 'Kept LinkedIn')?.[2];
+        expect(undo).toBeDefined();
+        act(() => undo.onClick());
+        if (success) {
+          await waitFor(() => expect(screen.queryByText('Kept', { exact: true })).toBeNull());
+          expect(screen.queryByText('Kept · skipped in Triage')).toBeNull();
+        } else {
+          await waitFor(() =>
+            expect(h.toast).toHaveBeenCalledWith(
+              expect.stringContaining('Couldn’t undo Keep'),
+              'warn',
+              expect.objectContaining({ label: 'Retry' }),
+            ),
+          );
+          expect(screen.getByText('Kept', { exact: true })).toBeInTheDocument();
+        }
+      },
+    );
+
     it('Keep verb PATCHes { policyType: "keep" } (D40 — applies immediately, no preview)', async () => {
       installHappyPath();
       let capturedBody: unknown = null;
@@ -1650,7 +1711,7 @@ describe('SenderDetailRoute', () => {
         // why and its verbs are inert (founder report 2026-09-20 — nothing
         // on the page showed a job was still running).
         // The pressed verb has BECOME the status; it takes no second press.
-        const archiveAgain = screen.getByRole('button', { name: 'Archive: unknown' });
+        const archiveAgain = screen.getByRole('button', { name: 'Archive (A)' });
         expect(archiveAgain).toHaveAttribute('aria-disabled', 'true');
         expect(screen.getByRole('toolbar', { name: 'Sender actions' })).toHaveAttribute(
           'aria-busy',
@@ -1684,9 +1745,9 @@ describe('SenderDetailRoute', () => {
         // With the parked handle terminal the toolbar frees, and says how
         // it ended. A NEW action opens against a re-counted preview (D226
         // — the archive just moved mail) and dispatches.
-        expect(screen.getByText('Archived 12')).toBeInTheDocument();
+        expect(screen.getByText('Archived 12 emails')).toBeInTheDocument();
         const archiveFreed = screen.getByRole('button', {
-          name: 'Archived 12 — Archive again (A)',
+          name: 'Archive (A)',
         });
         expect(archiveFreed).not.toHaveAttribute('aria-disabled');
         fireEvent.click(archiveFreed);
@@ -1840,7 +1901,7 @@ describe('SenderDetailRoute', () => {
       // second action cannot start — no modal, no second POST.
       await screen.findByText('Archiving…');
       // The pressed verb has BECOME the status; it takes no second press.
-      const archiveAgain = screen.getByRole('button', { name: 'Archiving…' });
+      const archiveAgain = screen.getByRole('button', { name: 'Archive (A)' });
       expect(archiveAgain).toHaveAttribute('aria-disabled', 'true');
       fireEvent.click(archiveAgain);
       await new Promise((r) => setTimeout(r, 50));
@@ -1975,7 +2036,7 @@ describe('SenderDetailRoute', () => {
       it('marks a lost status poll as not confirmed, and keeps the verb locked', async () => {
         await archiveWith(() => jsonServerError());
         await waitFor(() => expect(pill('unconfirmed')).toHaveTextContent('Archive: unknown'));
-        expect(screen.getByRole('button', { name: 'Archive: unknown' })).toHaveAttribute(
+        expect(screen.getByRole('button', { name: 'Archive (A)' })).toHaveAttribute(
           'aria-disabled',
           'true',
         );
@@ -2147,7 +2208,7 @@ describe('SenderDetailRoute', () => {
       it('locks the verb when an Archive may have started', async () => {
         await archiveEnqueueFails(apiFailure(503, 'ENQUEUE_FAILED'));
         await waitFor(() => expect(pill('unconfirmed')).toHaveTextContent('Archive: unknown'));
-        expect(screen.getByRole('button', { name: 'Archive: unknown' })).toHaveAttribute(
+        expect(screen.getByRole('button', { name: 'Archive (A)' })).toHaveAttribute(
           'aria-disabled',
           'true',
         );

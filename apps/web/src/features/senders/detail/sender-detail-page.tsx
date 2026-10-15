@@ -4,7 +4,8 @@ import { reconcileAction } from '@/lib/api/reconcile-action';
 
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { useSenderInFlightLock } from '@/features/undo/in-flight';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
   Avatar,
@@ -16,6 +17,7 @@ import {
   ScreenIntro,
   tokens,
   toast,
+  usePendingToast,
 } from '@declutrmail/shared';
 import { buildActionReceiptResult } from '@declutrmail/shared/actions';
 import {
@@ -550,7 +552,13 @@ function ReadyState({
   const recordUnsubIntent = useRecordUnsubscribeIntent();
   const confirmBacklog = useConfirmUnsubscribeBacklog();
   const setPolicy = useSetSenderPolicy();
-  const undoKeep = useUndoSenderKeep();
+  const undoKeep = useUndoSenderKeep((result, senderId) => {
+    if (senderId !== initial.sender.id) return;
+    setDetail((d) => ({ ...d, policyType: result.policyType }));
+    if (result.policyType !== 'keep')
+      setSettled((current) => (current?.verb === 'keep' ? null : current));
+  });
+  const pendingToast = usePendingToast(actionMailboxId);
   const [activeAction, setActiveAction] = useState<{
     mailboxId: string | undefined;
     actionId: string;
@@ -790,7 +798,7 @@ function ReadyState({
         if (setPolicy.isPending) return;
         setPendingAction(null);
         setSettled({ phase: 'working', verb: 'keep' });
-        const dismissPendingKeep = toast(`Keeping ${sender.name}…`, 'info');
+        const dismissPendingKeep = pendingToast(`Keeping ${sender.name}…`);
         setPolicy.mutate(
           { senderId: sender.id, patch: { policyType: 'keep' } },
           {
@@ -1303,7 +1311,10 @@ function ReadyState({
             isProtected: res.isProtected,
             protectionReason: adaptProtectionReason(res.isProtected, res.protectionReason),
           }));
-          toast(next ? 'Protected' : 'Unprotected', 'success');
+          toast(
+            `${sender.name} ${res.isProtected ? 'is Protected' : 'is no longer Protected'}`,
+            'success',
+          );
         },
         onError: (err) => {
           setDetail((d) => ({ ...d, isProtected: !next, protectionReason: prevReason }));
@@ -1312,7 +1323,7 @@ function ReadyState({
         },
       },
     );
-  }, [detail.isProtected, detail.protectionReason, sender.id, setPolicy]);
+  }, [detail.isProtected, detail.protectionReason, sender.id, sender.name, setPolicy]);
 
   // Derived ROI sentence numbers. Reading-cost in minutes/month;
   // yearly savings if the user unsubscribes (cleanup cohort only).
@@ -1498,14 +1509,14 @@ function ReadyState({
           only when the sender never mailed at all, so it keys on
           `totalReceived`, never on an empty recent window. */}
         {sender.totalReceived > 0 ? (
-          <section aria-label="Now">
-            <div className={styles.eyebrow}>Now · Current mail</div>
+          <section aria-label="Current email totals">
+            <div className={styles.eyebrow}>Current email totals</div>
             <div className={styles.volumeSummary}>
               <div>
                 <span className={styles.volumeNumber} data-testid="sender-detail-inbox-count">
                   {sender.inboxCount != null ? sender.inboxCount.toLocaleString('en-US') : '—'}
                 </span>
-                <p className={styles.volumeLabel}>Currently in your inbox</p>
+                <p className={styles.volumeLabel}>In inbox</p>
               </div>
               <div>
                 <span className={styles.volumeNumber} data-testid="sender-detail-archived-count">
@@ -1513,9 +1524,13 @@ function ReadyState({
                     ? detail.archivedCount.toLocaleString('en-US')
                     : '—'}
                 </span>
-                <p className={styles.volumeLabel}>Currently archived</p>
+                <p className={styles.volumeLabel}>Archived (includes Later)</p>
               </div>
             </div>
+            <p style={{ margin: '8px 0 0', fontSize: text.sm, color: color.fgSoft }}>
+              Later emails stay archived under Gmail’s DeclutrMail/Later label until their chosen
+              return time. <Link href="/later">View Later</Link>
+            </p>
           </section>
         ) : (
           <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
@@ -1529,6 +1544,11 @@ function ReadyState({
         <div className={styles.actionSection}>
           <div role="group" aria-label="Sender actions" className={styles.actionSection}>
             <h3 className={styles.actionHeading}>Choose an action</h3>
+            {detail.policyType === 'keep' && (
+              <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>
+                Kept · skipped in Triage
+              </p>
+            )}
             {actionToolbar}
           </div>
           {recommendation != null && <RecommendationBanner recommendation={recommendation} />}
@@ -1772,12 +1792,14 @@ function ProtectRow({
   disabled: boolean;
   onToggle: () => void;
 }) {
+  const descriptionId = useId();
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
       aria-label="Protected"
+      aria-describedby={`${descriptionId}${reason !== null ? ` ${descriptionId}-reason` : ''}`}
       onClick={onToggle}
       disabled={disabled}
       title={
@@ -1805,6 +1827,11 @@ function ProtectRow({
     >
       <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
         <span style={{ fontSize: text.md, fontWeight: 500, color: color.fg }}>Protected</span>
+        <span id={descriptionId} style={{ fontSize: text.sm, color: color.fgSoft }}>
+          {checked
+            ? 'Excluded from bulk and automatic cleanup; individual actions still ask you to confirm.'
+            : 'Exclude this sender from bulk and automatic cleanup.'}
+        </span>
         {reason !== null && (
           <span data-testid="protection-reason" style={{ fontSize: text.sm, color: color.fgMuted }}>
             {reason}

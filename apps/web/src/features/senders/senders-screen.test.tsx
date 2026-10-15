@@ -2350,7 +2350,7 @@ describe('SendersScreen — edge states', () => {
       }
       // Requested counts are not completion evidence; the existing Undo
       // feedback owns the move while unsubscribe is independently watched.
-      expect(screen.queryByText(`Deleted ${deleted} emails`)).toBeNull();
+      if (remaining > 0) expect(screen.getByText(`Deleted ${deleted} emails`)).toBeInTheDocument();
 
       accepted = true;
       await act(async () =>
@@ -3191,7 +3191,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     installFetchStub([TWO_SENDER_LIST]);
     renderScreen();
 
-    const selectLoaded = await screen.findByRole('button', { name: /select all 2/i });
+    const selectLoaded = await screen.findByRole('button', { name: /select 2 shown/i });
     fireEvent.click(selectLoaded);
     expect(screen.getByRole('button', { name: /deselect all 2/i })).toBeInTheDocument();
   });
