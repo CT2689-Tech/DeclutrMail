@@ -41,3 +41,11 @@ Manual checks use only disposable `@synthetic.test` mailboxes, a dedicated local
 Independent source and visual review passed with no unresolved findings after correcting management touch targets, bounded loading placeholders and impact pluralization. First-cleanup and unknown-impact stories were added alongside the existing state matrix. Prototype-only comparison controls and the losing layout are excluded from product code.
 
 Provider mutation and billing tests are excluded: this presentation change does not alter those boundaries, and no real mail was changed to manufacture evidence. Local verification is not production deployment proof; PR, queue and release states must be recorded separately.
+
+## Production follow-up: metered header fit
+
+PR #1051 merged through the queue at `aaac48f6f03070c1e706a6ca1f53772618fade7b`; its PR, queue and post-merge CI passed. Vercel production deployment `dpl_A4aDj7BQdZ3nQYQcZxydvq7RpbdZ` became READY and the authenticated production Home reported build `aaac48f`. The first-cleanup recommendation rendered with real served impact and no historical total.
+
+That check found a missed combination: the Free quota text plus the wider avatar/caret crowded the narrow shell header. Document scroll width alone did not expose the clipped control. The follow-up keeps the full allowance on Home, hides the duplicate compact header allowance through 900px, and restores a 44px avatar trigger on phones. Its accessible email and expanded state remain intact. This chat owns the bounded shell wrapper/CSS, account-menu CSS and Home browser test; it depends only on the already-merged Focus change.
+
+The browser matrix now covers Free and Pro at 1280, 768, 375 and 320px, plus first-cleanup cancellation: all nine production-build cases pass. Tests assert the account button's actual bounds as well as menu bounds, visible full allowance, keyboard behavior, Axe and absence of mail-changing POSTs. Local meter flags match the CI journeys lane. The 183 affected unit tests, full monorepo typecheck, lint and formatting pass. At 320px, manual Free-account inspection measures the trigger at left 260/right 304 with a 44×44 hitbox, and the menu at left 8/right 304. No production preference or mailbox mutation was used for this check.

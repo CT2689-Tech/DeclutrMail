@@ -101,6 +101,13 @@
   }
 }
 @media (max-width: 760px) {
+  .trigger {
+    width: 44px;
+    padding: 0 !important;
+  }
+  .caret {
+    display: none;
+  }
   .triggerLabel {
     position: absolute;
     width: 1px;
