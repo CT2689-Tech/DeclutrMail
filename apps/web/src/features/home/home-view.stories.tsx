@@ -92,6 +92,20 @@ export const NewUser: Story<typeof HomeView> = {
   args: { state: { kind: 'empty', syncing: false, action } },
 };
 
+export const FirstCleanup: Story<typeof HomeView> = {
+  args: {
+    state: { kind: 'empty', syncing: false, action },
+    nextSteps: [steps[0]!],
+  },
+};
+
+export const UnknownImpact: Story<typeof HomeView> = {
+  args: {
+    state: ready,
+    nextSteps: [{ kind: 'unsub_archive', senderCount: 5, senderIds: ['a'] }],
+  },
+};
+
 export const Syncing: Story<typeof HomeView> = {
   args: { state: { kind: 'empty', syncing: true, action } },
 };
