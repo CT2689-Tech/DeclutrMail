@@ -4,14 +4,18 @@ import type { Envelope } from '@declutrmail/shared/contracts';
 
 import { fetchSenderDetail, type SenderDetailDto } from '@/lib/api/senders';
 import { useUserTimeZone } from '@/features/auth/api/use-me';
-import { senderDetailQueryOptions } from './api/query-options';
+import { sendersKeys } from './api/query-keys';
+import { retryUnless4xx } from './api/retry';
 import { enrichSenderRow, type Sender } from './data';
 import { mergePinnedRows, type PinnedRow } from './pinned-rows';
 
-/** Keep completed rows in place, but read their facts even after the list excludes them. */
+const NO_COMPLETED_SENDERS: ReadonlySet<string> = new Set();
+
+/** Refresh retained rows; release completed senders only after known zero current mail. */
 export function usePinnedSenders(
   rows: readonly Sender[],
   pinned: ReadonlyMap<string, PinnedRow<Sender>>,
+  completed: ReadonlySet<string> = NO_COMPLETED_SENDERS,
 ): readonly Sender[] {
   const timeZone = useUserTimeZone();
   const missing = useMemo(() => {
@@ -25,8 +29,8 @@ export function usePinnedSenders(
         isError: boolean;
       }[],
     ) => {
-      if (missing.length === 0) return mergePinnedRows(rows, pinned);
       const refreshed = new Map(pinned);
+      const confirmedEmpty = new Set<string>();
       missing.forEach((pin, index) => {
         const result = results[index];
         if (result?.isError) {
@@ -38,19 +42,38 @@ export function usePinnedSenders(
             row: { ...pin.row, inboxCount: null, archivedCount: null, unsubStatus: null },
           });
         } else if (result?.data) {
+          const detail = result.data.data;
+          if (
+            pin.completedAt !== undefined &&
+            detail.inboxCount === 0 &&
+            detail.archivedCount === 0
+          ) {
+            confirmedEmpty.add(pin.row.id);
+          }
           refreshed.set(pin.row.id, {
             ...pin,
             row: enrichSenderRow(result.data.data, Date.now(), timeZone),
           });
         }
       });
-      return mergePinnedRows(rows, refreshed);
+      const merged = mergePinnedRows(rows, refreshed);
+      return completed.size === 0
+        ? merged
+        : merged.filter((row) => !completed.has(row.id) || !confirmedEmpty.has(row.id));
     },
-    [rows, pinned, missing, timeZone],
+    [rows, pinned, missing, timeZone, completed],
   );
   return useQueries({
-    queries: missing.map(({ row }) => ({
-      ...senderDetailQueryOptions(row.id, (signal) => fetchSenderDetail(row.id, signal)),
+    queries: missing.map(({ row, completedAt }) => ({
+      queryFn: ({ signal }: { signal: AbortSignal }) => fetchSenderDetail(row.id, signal),
+      retry: retryUnless4xx,
+      // A terminal action must start a new read, not reuse cached zero
+      // counts or join a pre-completion GET. Prefix invalidation still
+      // reconciles the independently finishing unsubscribe and Undo.
+      queryKey:
+        completedAt === undefined
+          ? sendersKeys.detail(row.id)
+          : [...sendersKeys.detail(row.id), 'cleanup', completedAt],
       // Terminal action reconciliation explicitly invalidates this same
       // query, including the paired unsubscribe that may finish later.
       staleTime: 60_000,

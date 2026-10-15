@@ -2217,122 +2217,166 @@ describe('SendersScreen — edge states', () => {
     expect(posts).toEqual(['unsubscribe-backlog']);
   });
 
-  it('refreshes a retained row after Unsubscribe + Delete and announces only the unsubscribe outcome', async () => {
-    let moveFinished = false;
-    let accepted = false;
-    let finishUnsubscribe!: (response: Response) => void;
-    const unsubscribe = new Promise<Response>((resolve) => {
-      finishUnsubscribe = resolve;
-    });
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/senders',
-        respond: async () => {
-          const response = await oneSenderHandler().respond().json();
-          response.data = moveFinished
-            ? []
-            : [{ ...ROW, displayName: 'Cleanup Sender', inboxCount: 0, archivedCount: 21 }];
-          return jsonOk(response);
+  it.each([0, 7])(
+    'reconciles Unsubscribe + Delete with %i current emails remaining and one unsubscribe outcome',
+    async (remaining) => {
+      const deleted = 21 - remaining;
+      const senderName = `Cleanup Sender ${remaining}`;
+      let submittedBody: unknown;
+      const currentRow = () => ({
+        ...ROW,
+        displayName: senderName,
+        inboxCount: 0,
+        archivedCount: moveFinished ? remaining : 21,
+        policyType: moveFinished ? 'unsubscribe' : 'none',
+        unsubStatus: accepted ? 'endpoint_accepted' : 'requested',
+      });
+      let moveFinished = false;
+      let accepted = false;
+      let finishUnsubscribe!: (response: Response) => void;
+      const unsubscribe = new Promise<Response>((resolve) => {
+        finishUnsubscribe = resolve;
+      });
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/senders',
+          respond: async () => {
+            const response = await oneSenderHandler().respond().json();
+            response.data = moveFinished && remaining === 0 ? [] : [currentRow()];
+            return jsonOk(response);
+          },
         },
-      },
-      compositePreviewHandler(21),
-      {
-        method: 'POST',
-        path: '/api/actions/unsubscribe-backlog',
-        respond: () => {
-          return jsonOk({
-            data: {
-              mode: 'delete',
-              backlog: {
-                actionId: 'delete-past',
-                handle: 'action',
-                requestedCount: 21,
+        {
+          method: 'GET',
+          path: '/api/actions/preview',
+          respond: async () => {
+            const response = await compositePreviewHandler(0).respond().json();
+            response.data.allMail = {
+              counts: { ...response.data.counts, all: 21, olderThan30d: 14 },
+              recentMessages: response.data.recentMessages,
+            };
+            return jsonOk(response);
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-backlog',
+          respond: async (req) => {
+            submittedBody = await req.json();
+            return jsonOk({
+              data: {
+                mode: 'delete',
+                backlog: {
+                  actionId: 'delete-past',
+                  handle: 'action',
+                  requestedCount: deleted,
+                  verb: 'delete',
+                },
+                senders: [backlogSender('a', 'requested', { executionActionId: 'exec-a' })],
+              },
+            });
+          },
+        },
+        {
+          method: 'GET',
+          path: '/api/actions/delete-past',
+          respond: () => {
+            moveFinished = true;
+            return jsonOk({
+              data: {
+                ...archiveStatus({
+                  actionId: 'delete-past',
+                  requestedCount: deleted,
+                  affectedCount: deleted,
+                }),
                 verb: 'delete',
               },
-              senders: [backlogSender('a', 'requested', { executionActionId: 'exec-a' })],
-            },
-          });
+            });
+          },
         },
-      },
-      {
-        method: 'GET',
-        path: '/api/actions/delete-past',
-        respond: () => {
-          moveFinished = true;
-          return jsonOk({
-            data: {
-              ...archiveStatus({ actionId: 'delete-past', requestedCount: 21, affectedCount: 21 }),
-              verb: 'delete',
-            },
-          });
+        { method: 'GET', path: '/api/actions/exec-a', respond: () => unsubscribe },
+        {
+          method: 'GET',
+          path: '/api/senders/a',
+          respond: () =>
+            jsonOk({
+              data: currentRow(),
+            }),
         },
-      },
-      { method: 'GET', path: '/api/actions/exec-a', respond: () => unsubscribe },
-      {
-        method: 'GET',
-        path: '/api/senders/a',
-        respond: () =>
+      ]);
+      renderScreenWithToasts();
+      fireEvent.click(
+        await screen.findByRole('button', {
+          name: new RegExp(`More actions for ${senderName}`, 'i'),
+        }),
+      );
+      fireEvent.click(
+        within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Unsubscribe' }),
+      );
+      const dialog = await screen.findByRole('dialog');
+      const deleteChoice = await within(dialog).findByRole('radio', { name: /\+ Delete \d+/ });
+      await waitFor(() => expect(deleteChoice).toBeEnabled());
+      fireEvent.click(deleteChoice);
+      fireEvent.click(await screen.findByRole('radio', { name: 'Inbox + archived 21' }));
+      if (remaining > 0) {
+        fireEvent.change(screen.getByRole('combobox', { name: 'How far back to act on' }), {
+          target: { value: '30' },
+        });
+      }
+      const confirm = await screen.findByRole('button', {
+        name: `Unsubscribe + Delete ${deleted} emails`,
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      fireEvent.click(confirm);
+
+      await waitFor(() =>
+        expect(submittedBody).toEqual({
+          mode: 'delete',
+          senderIds: ['a'],
+          olderThanDays: remaining > 0 ? 30 : null,
+          reach: 'all_mail',
+        }),
+      );
+      if (remaining === 0) {
+        await waitFor(() => expect(screen.queryByTestId('sender-row-a')).toBeNull());
+      } else {
+        await waitFor(() =>
+          expect(screen.getByTestId('sender-row-a')).toHaveTextContent(`${remaining}emails`),
+        );
+        expect(screen.getByTestId('sender-row-a')).toHaveTextContent(
+          new RegExp(`Deleted.*${deleted}`),
+        );
+      }
+      // Requested counts are not completion evidence; the existing Undo
+      // feedback owns the move while unsubscribe is independently watched.
+      expect(screen.queryByText(`Deleted ${deleted} emails`)).toBeNull();
+
+      accepted = true;
+      await act(async () =>
+        finishUnsubscribe(
           jsonOk({
             data: {
-              ...ROW,
-              displayName: 'Cleanup Sender',
-              inboxCount: 0,
-              archivedCount: 0,
-              policyType: 'unsubscribe',
-              unsubStatus: accepted ? 'endpoint_accepted' : 'requested',
+              ...archiveStatus({
+                actionId: 'exec-a',
+                requestedCount: 1,
+                affectedCount: 1,
+                undoToken: null,
+              }),
+              verb: 'unsubscribe',
             },
           }),
-      },
-    ]);
-    renderScreenWithToasts();
-    fireEvent.click(
-      await screen.findByRole('button', { name: /More actions for Cleanup Sender/i }),
-    );
-    fireEvent.click(
-      within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Unsubscribe' }),
-    );
-    const dialog = await screen.findByRole('dialog');
-    const deleteChoice = await within(dialog).findByRole('radio', { name: /\+ Delete \d+/ });
-    await waitFor(() => expect(deleteChoice).toBeEnabled());
-    fireEvent.click(deleteChoice);
-    const confirm = await screen.findByRole('button', { name: /^Unsubscribe \+ Delete/ });
-    await waitFor(() => expect(confirm).toBeEnabled());
-    fireEvent.click(confirm);
-
-    await waitFor(() =>
-      expect(screen.getByTestId('sender-row-a')).toHaveTextContent(/Deleted.*21/),
-    );
-    // The move has its row and Undo pill. A submission response is not a
-    // second completion announcement, nor proof the requested count moved.
-    expect(screen.queryByText(/Deleted 21 emails/)).toBeNull();
-    await waitFor(() => expect(screen.getByTestId('sender-row-a')).toHaveTextContent('0emails'));
-    expect(screen.getByTestId('sender-row-a')).toHaveTextContent('Cleanup Sender');
-
-    accepted = true;
-    await act(async () =>
-      finishUnsubscribe(
-        jsonOk({
-          data: {
-            ...archiveStatus({
-              actionId: 'exec-a',
-              requestedCount: 1,
-              affectedCount: 1,
-              undoToken: null,
-            }),
-            verb: 'unsubscribe',
-          },
-        }),
-      ),
-    );
-    await screen.findByText('Request accepted');
-    expect(screen.queryByText('Requesting…')).toBeNull();
-    expect(
-      await screen.findByText(
-        'Cleanup Sender accepted the unsubscribe request — stopping is up to them.',
-      ),
-    ).toBeInTheDocument();
-  });
+        ),
+      );
+      if (remaining > 0) await screen.findByText('Request accepted');
+      expect(screen.queryByText('Requesting…')).toBeNull();
+      expect(
+        await screen.findByText(
+          `${senderName} accepted the unsubscribe request — stopping is up to them.`,
+        ),
+      ).toBeInTheDocument();
+    },
+  );
 
   it('says an unsubscribe already on its way was not sent again', async () => {
     installFetchStub([

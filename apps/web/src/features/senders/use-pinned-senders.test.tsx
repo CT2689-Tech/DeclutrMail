@@ -21,6 +21,135 @@ const row = makeSender({
 const pinned = new Map<string, PinnedRow<Sender>>([['a', { row, index: 0, refreshFacts: true }]]);
 
 describe('retained sender facts', () => {
+  it.each([0, 7])(
+    'removes a completed sender only when its fresh remaining count is zero (%i)',
+    async (remaining) => {
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/senders/a',
+          respond: () =>
+            jsonOk({
+              data: {
+                ...row,
+                inboxCount: 0,
+                archivedCount: remaining,
+              },
+            }),
+        },
+      ]);
+      const client = createTestQueryClient();
+      const completed = new Set(['a']);
+      const completedPins = new Map([['a', { row, index: 0, refreshFacts: true, completedAt: 1 }]]);
+      const { result } = renderHook(() => usePinnedSenders([], completedPins, completed), {
+        wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+      });
+      await waitFor(() =>
+        expect(client.getQueryState([...sendersKeys.detail('a'), 'cleanup', 1])?.status).toBe(
+          'success',
+        ),
+      );
+      await waitFor(() => expect(result.current).toHaveLength(remaining === 0 ? 0 : 1));
+      if (remaining > 0) expect(result.current[0]?.archivedCount).toBe(remaining);
+    },
+  );
+
+  it.each(['remaining', 'error'])(
+    'keeps cached zero counts until a post-completion read confirms them (%s)',
+    async (outcome) => {
+      let finish!: (response: Response) => void;
+      const fresh = new Promise<Response>((resolve) => {
+        finish = resolve;
+      });
+      installFetchStub([{ method: 'GET', path: '/api/senders/a', respond: () => fresh }]);
+      const client = createTestQueryClient();
+      client.setQueryData(sendersKeys.detail('a'), {
+        data: { ...row, inboxCount: 0, archivedCount: 0 },
+      });
+      const completed = new Set(['a']);
+      const completedPins = new Map([
+        [
+          'a',
+          {
+            row: { ...row, inboxCount: 0, archivedCount: 0 },
+            index: 0,
+            refreshFacts: true,
+            completedAt: Date.now(),
+          },
+        ],
+      ]);
+      const { result } = renderHook(() => usePinnedSenders([], completedPins, completed), {
+        wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+      });
+      expect(result.current).toHaveLength(1);
+      await act(async () =>
+        finish(
+          outcome === 'error'
+            ? jsonNotFound()
+            : jsonOk({ data: { ...row, inboxCount: 0, archivedCount: 7 } }),
+        ),
+      );
+      await waitFor(() =>
+        expect(result.current[0]?.archivedCount).toBe(outcome === 'error' ? null : 7),
+      );
+      expect(result.current).toHaveLength(1);
+    },
+  );
+
+  it('keeps zero-count rows while their action result is still unconfirmed', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders/a',
+        respond: () =>
+          jsonOk({
+            data: {
+              ...row,
+              inboxCount: 0,
+              archivedCount: 0,
+            },
+          }),
+      },
+    ]);
+    const client = createTestQueryClient();
+    const { result } = renderHook(() => usePinnedSenders([], pinned, new Set()), {
+      wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+    });
+    await waitFor(() => expect(result.current[0]?.archivedCount).toBe(0));
+    expect(result.current).toHaveLength(1);
+  });
+
+  it('shows restored or newly received current mail after a completed row disappeared', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders/a',
+        respond: () =>
+          jsonOk({
+            data: {
+              ...row,
+              inboxCount: 0,
+              archivedCount: 0,
+            },
+          }),
+      },
+    ]);
+    const client = createTestQueryClient();
+    const completed = new Set(['a']);
+    const completedPins = new Map([['a', { row, index: 0, refreshFacts: true, completedAt: 1 }]]);
+    const { result, rerender } = renderHook(
+      ({ rows }) => usePinnedSenders(rows, completedPins, completed),
+      {
+        initialProps: { rows: [] as Sender[] },
+        wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+      },
+    );
+    await waitFor(() => expect(result.current).toHaveLength(0));
+    rerender({ rows: [{ ...row, inboxCount: 0, archivedCount: 21 }] });
+    expect(result.current).toHaveLength(1);
+    expect(result.current[0]?.archivedCount).toBe(21);
+  });
+
   it('re-reads a dropped sender when the later unsubscribe invalidates its detail', async () => {
     let accepted = false;
     let reads = 0;
@@ -128,7 +257,8 @@ describe('retained sender facts', () => {
       },
     ]);
     const client = createTestQueryClient();
-    const { result } = renderHook(() => usePinnedSenders([], pinned), {
+    const completed = new Set(['a']);
+    const { result } = renderHook(() => usePinnedSenders([], pinned, completed), {
       wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
     });
     await waitFor(() => expect(client.getQueryData(sendersKeys.detail('a'))).toBeDefined());
@@ -140,5 +270,6 @@ describe('retained sender facts', () => {
     expect(result.current[0]?.inboxCount).toBeNull();
     expect(result.current[0]?.unsubStatus).toBeNull();
     expect(result.current[0]?.totalReceived).toBe(row.totalReceived);
+    expect(result.current).toHaveLength(1);
   });
 });

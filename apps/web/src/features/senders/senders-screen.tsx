@@ -695,10 +695,9 @@ function SendersScreenContent({
 
   // Row feedback (founder report 2026-09-20). `settled` is what a row
   // says once its job is terminal; `pinned*` keeps that row on screen in
-  // place even when the post-action refetch drops it (a sender with no
-  // mail left leaves the server's list) — founder decision: the list
-  // never jumps under the cursor. Both are released when the list is
-  // asked a different question, or the mailbox changes.
+  // place while results are pending, partial, or uncertain. The founder’s
+  // October 15 policy releases a completed row after a fresh zero-current
+  // count. Both are released when the list question or mailbox changes.
   const [settled, setSettled] = useState<ReadonlyMap<string, SenderRowActivity>>(new Map());
   // The confirmed request is on its way to the server. LOCAL to the open
   // request — a flag derived from the mutation hooks would also be true
@@ -728,7 +727,12 @@ function SendersScreenContent({
     setSettled(new Map());
     setPinnedSenders(new Map());
   }
-  const senders = usePinnedSenders(serverSenders, pinnedSenders) as Sender[];
+  const completedSenderIds = useMemo(
+    () =>
+      new Set([...settled].filter(([, activity]) => activity.phase === 'done').map(([id]) => id)),
+    [settled],
+  );
+  const senders = usePinnedSenders(serverSenders, pinnedSenders, completedSenderIds) as Sender[];
   const reportSenderNames = useMemo(() => {
     const names: Record<string, { name: string }> = {};
     for (const row of senders) {
@@ -992,7 +996,7 @@ function SendersScreenContent({
    * already pinned keeps its place.
    */
   const pinRows = useCallback(
-    (ids: readonly string[]) => {
+    (ids: readonly string[], completedAt?: number) => {
       // While a NEW question is loading, the rows on screen still belong
       // to the old one (`keepPreviousData`). Pinning them would carry the
       // old question's rows into the new results. The mark is recorded
@@ -1007,6 +1011,7 @@ function SendersScreenContent({
               row,
               index,
               refreshFacts: ids.length === 1 || prev.get(row.id)?.refreshFacts === true,
+              completedAt: completedAt ?? prev.get(row.id)?.completedAt,
             });
           }
         });
@@ -1023,7 +1028,7 @@ function SendersScreenContent({
         return next;
       });
       if (activity.phase === 'unconfirmed') holdRows(ids, activity.verb);
-      pinRows(ids);
+      pinRows(ids, activity.phase === 'done' ? Date.now() : undefined);
     },
     [pinRows, holdRows],
   );
