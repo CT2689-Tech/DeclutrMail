@@ -2217,6 +2217,167 @@ describe('SendersScreen — edge states', () => {
     expect(posts).toEqual(['unsubscribe-backlog']);
   });
 
+  it.each([0, 7])(
+    'reconciles Unsubscribe + Delete with %i current emails remaining and one unsubscribe outcome',
+    async (remaining) => {
+      const deleted = 21 - remaining;
+      const senderName = `Cleanup Sender ${remaining}`;
+      let submittedBody: unknown;
+      const currentRow = () => ({
+        ...ROW,
+        displayName: senderName,
+        inboxCount: 0,
+        archivedCount: moveFinished ? remaining : 21,
+        policyType: moveFinished ? 'unsubscribe' : 'none',
+        unsubStatus: accepted ? 'endpoint_accepted' : 'requested',
+      });
+      let moveFinished = false;
+      let accepted = false;
+      let finishUnsubscribe!: (response: Response) => void;
+      const unsubscribe = new Promise<Response>((resolve) => {
+        finishUnsubscribe = resolve;
+      });
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/senders',
+          respond: async () => {
+            const response = await oneSenderHandler().respond().json();
+            response.data = moveFinished && remaining === 0 ? [] : [currentRow()];
+            return jsonOk(response);
+          },
+        },
+        {
+          method: 'GET',
+          path: '/api/actions/preview',
+          respond: async () => {
+            const response = await compositePreviewHandler(0).respond().json();
+            response.data.allMail = {
+              counts: { ...response.data.counts, all: 21, olderThan30d: 14 },
+              recentMessages: response.data.recentMessages,
+            };
+            return jsonOk(response);
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-backlog',
+          respond: async (req) => {
+            submittedBody = await req.json();
+            return jsonOk({
+              data: {
+                mode: 'delete',
+                backlog: {
+                  actionId: 'delete-past',
+                  handle: 'action',
+                  requestedCount: deleted,
+                  verb: 'delete',
+                },
+                senders: [backlogSender('a', 'requested', { executionActionId: 'exec-a' })],
+              },
+            });
+          },
+        },
+        {
+          method: 'GET',
+          path: '/api/actions/delete-past',
+          respond: () => {
+            moveFinished = true;
+            return jsonOk({
+              data: {
+                ...archiveStatus({
+                  actionId: 'delete-past',
+                  requestedCount: deleted,
+                  affectedCount: deleted,
+                }),
+                verb: 'delete',
+              },
+            });
+          },
+        },
+        { method: 'GET', path: '/api/actions/exec-a', respond: () => unsubscribe },
+        {
+          method: 'GET',
+          path: '/api/senders/a',
+          respond: () =>
+            jsonOk({
+              data: currentRow(),
+            }),
+        },
+      ]);
+      renderScreenWithToasts();
+      fireEvent.click(
+        await screen.findByRole('button', {
+          name: new RegExp(`More actions for ${senderName}`, 'i'),
+        }),
+      );
+      fireEvent.click(
+        within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Unsubscribe' }),
+      );
+      const dialog = await screen.findByRole('dialog');
+      const deleteChoice = await within(dialog).findByRole('radio', { name: /\+ Delete \d+/ });
+      await waitFor(() => expect(deleteChoice).toBeEnabled());
+      fireEvent.click(deleteChoice);
+      fireEvent.click(await screen.findByRole('radio', { name: 'Inbox + archived 21' }));
+      if (remaining > 0) {
+        fireEvent.change(screen.getByRole('combobox', { name: 'How far back to act on' }), {
+          target: { value: '30' },
+        });
+      }
+      const confirm = await screen.findByRole('button', {
+        name: `Unsubscribe + Delete ${deleted} emails`,
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      fireEvent.click(confirm);
+
+      await waitFor(() =>
+        expect(submittedBody).toEqual({
+          mode: 'delete',
+          senderIds: ['a'],
+          olderThanDays: remaining > 0 ? 30 : null,
+          reach: 'all_mail',
+        }),
+      );
+      if (remaining === 0) {
+        await waitFor(() => expect(screen.queryByTestId('sender-row-a')).toBeNull());
+      } else {
+        await waitFor(() =>
+          expect(screen.getByTestId('sender-row-a')).toHaveTextContent(`${remaining}emails`),
+        );
+        expect(screen.getByTestId('sender-row-a')).toHaveTextContent(
+          new RegExp(`Deleted.*${deleted}`),
+        );
+      }
+      // Requested counts are not completion evidence; the existing Undo
+      // feedback owns the move while unsubscribe is independently watched.
+      expect(screen.queryByText(`Deleted ${deleted} emails`)).toBeNull();
+
+      accepted = true;
+      await act(async () =>
+        finishUnsubscribe(
+          jsonOk({
+            data: {
+              ...archiveStatus({
+                actionId: 'exec-a',
+                requestedCount: 1,
+                affectedCount: 1,
+                undoToken: null,
+              }),
+              verb: 'unsubscribe',
+            },
+          }),
+        ),
+      );
+      if (remaining > 0) await screen.findByText('Request accepted');
+      expect(screen.queryByText('Requesting…')).toBeNull();
+      expect(
+        await screen.findByText(
+          `${senderName} accepted the unsubscribe request — stopping is up to them.`,
+        ),
+      ).toBeInTheDocument();
+    },
+  );
+
   it('says an unsubscribe already on its way was not sent again', async () => {
     installFetchStub([
       oneSenderHandler(),
@@ -5800,6 +5961,7 @@ describe('SendersScreen — a Protected sender names the reason before override'
   async function runUnsubWithBacklog(
     handler: ReturnType<typeof oneSenderHandler>,
     protectedRow = false,
+    skipAtExecution = false,
   ) {
     const bodies: Record<string, unknown>[] = [];
     installFetchStub([
@@ -5827,8 +5989,9 @@ describe('SendersScreen — a Protected sender names the reason before override'
             data: archiveStatus({
               actionId: 'action-backlog',
               requestedCount: 3,
-              affectedCount: 3,
-              undoToken: 'undo-backlog',
+              affectedCount: skipAtExecution ? 0 : 3,
+              undoToken: skipAtExecution ? null : 'undo-backlog',
+              errorCode: skipAtExecution ? LABEL_SENDER_PROTECTED_ERROR_CODE : null,
             }),
           }),
       },
@@ -5890,6 +6053,22 @@ describe('SendersScreen — a Protected sender names the reason before override'
       olderThanDays: null,
       override: true,
     });
+  });
+
+  it('does not leave a paired backlog row busy when its worker skips newly Protected mail', async () => {
+    await runUnsubWithBacklog(oneSenderHandler(), false, true);
+    await waitFor(() =>
+      expect(
+        lastClient.getQueryData<{ status: string }>([
+          'action-status',
+          'action-backlog',
+          { mailboxId: 'mb-1' },
+        ])?.status,
+      ).toBe('done'),
+    );
+    await waitFor(() => expect(screen.queryByText('Archiving…')).toBeNull());
+    expect(screen.queryByText('Archived 3')).toBeNull();
+    expect(screen.getByTestId('sender-row-a')).not.toHaveAttribute('aria-busy', 'true');
   });
 
   it('omits override for an unprotected sender', async () => {

@@ -69,7 +69,7 @@ import { formatReadRatePct } from '../fact-language';
 import { relTime } from './data';
 import { senderSizeDetail } from '../sender-size';
 import { trackActionConfirmed } from '@/lib/action-analytics';
-import { unsubscribeBacklogToast } from '../unsubscribe-backlog/toast';
+import { unsubscribeBacklogSubmissionToast } from '../unsubscribe-backlog/toast';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 import {
@@ -954,7 +954,7 @@ function ReadyState({
               if (sent) trackActionConfirmed('unsubscribe');
               void qc.invalidateQueries({ queryKey: sendersKeys.all });
               void qc.invalidateQueries({ queryKey: activityKeys.all });
-              const line = unsubscribeBacklogToast(res);
+              const line = unsubscribeBacklogSubmissionToast(res);
               if (line !== '') toast(line, sent ? 'info' : 'warn');
               const outcome = res.senders[0];
               if (outcome?.unsubStatus === 'requested' && outcome.executionActionId) {

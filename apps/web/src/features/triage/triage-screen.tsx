@@ -56,7 +56,7 @@ import { useUnconfirmedHolds } from '@/features/undo/unconfirmed-holds';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { trackActionConfirmed } from '@/lib/action-analytics';
-import { unsubscribeBacklogToast } from '@/features/senders/unsubscribe-backlog/toast';
+import { unsubscribeBacklogSubmissionToast } from '@/features/senders/unsubscribe-backlog/toast';
 import { track } from '@/lib/posthog';
 import { useNow } from '@/lib/use-now';
 import { triageDaySubtitle } from './day-subtitle';
@@ -1156,7 +1156,7 @@ export function TriageScreen({
               invalidateAfterDecision(qc);
               if (currentMailboxRef.current === actionMailboxId) incrementSessionDecided();
               setExpandedRow(null);
-              const line = unsubscribeBacklogToast(res);
+              const line = unsubscribeBacklogSubmissionToast(res);
               if (line !== '') toast(line, sent ? 'info' : 'warn');
               const outcome = res.senders[0];
               if (outcome?.unsubStatus === 'requested' && outcome.executionActionId) {
