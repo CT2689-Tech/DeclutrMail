@@ -152,7 +152,7 @@ export function SelectionBar({
     const countLabel = n === senders.length ? `${n}` : `${n} of ${senders.length}`;
     const exclusionReason =
       verb === 'Unsubscribe'
-        ? 'protected senders and senders without an unsubscribe option are excluded'
+        ? 'protected senders, recorded requests and senders without an unsubscribe option are excluded'
         : 'protected senders are excluded from bulk actions';
     const unitTitle =
       n === senders.length

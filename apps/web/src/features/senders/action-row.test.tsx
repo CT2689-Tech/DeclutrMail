@@ -102,6 +102,28 @@ describe('derivePrimaryVerbId — ADR-0019 fact-rule primary (D227 verbs)', () =
 });
 
 describe('SenderActionRow — one-click unsub-ready row', () => {
+  it('shows accepted status after readback and keeps repeat unsubscribe inert in the menu', () => {
+    const onAction = vi.fn();
+    render(
+      <SenderActionRow
+        sender={sender({
+          unsubscribeMethod: 'one_click',
+          policyType: 'unsubscribe',
+          unsubStatus: 'endpoint_accepted',
+        })}
+        onAction={onAction}
+      />,
+    );
+    expect(screen.getByText('Request accepted').closest('button')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'More actions for Acme Deals' }));
+    const repeat = screen.getByRole('menuitem', { name: /Unsubscribe/ });
+    expect(repeat).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(repeat);
+    expect(onAction).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ verb: 'Keep' }));
+  });
   it('renders Unsubscribe as the primary CTA and the ⋯ popover still lists K/A/U/L/D', () => {
     const onAction = vi.fn();
     const row = sender({ unsubscribeMethod: 'one_click' });

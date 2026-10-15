@@ -12,7 +12,7 @@
  */
 
 import { useState } from 'react';
-import { ActionPopover, ActionPopoverTrigger, Button, tokens } from '@declutrmail/shared';
+import { ActionPopover, ActionPopoverTrigger, Button, Pill, tokens } from '@declutrmail/shared';
 import {
   actionHelpCopy,
   deriveDefaultPrimary,
@@ -30,6 +30,7 @@ import {
   type ActionVerb,
   type Sender,
 } from './data';
+import { unsubscribeControlStatus } from './unsub-status';
 
 const { color } = tokens;
 
@@ -52,8 +53,8 @@ const { color } = tokens;
 export function derivePrimaryVerbId(sender: Sender): VerbId {
   const primary = deriveDefaultPrimary({
     protected: isStandingProtected(sender),
-    // RECOMMENDATION, not availability — `canUnsubscribe` asks "is there
-    // a channel to use?"; this asks "should we put it forward?". There is
+    // The channel and current lifecycle govern availability; this asks
+    // whether a one-click request should be the lead action. There is
     // no Gmail-tab exemption: a one-click header marks mail sent through
     // a list or mailing system, and that outranks the Primary tab — the
     // engine's own rule since the founder decision of 2026-09-26 (Primary
@@ -85,6 +86,7 @@ export function SenderActionRow({
   // refuses it too; disabling here is what makes that refusal visible.
   const activity = useRowActivity(sender.id);
   const busy = isRowBusy(activity);
+  const unsubscribeStatus = unsubscribeControlStatus(sender);
 
   const primaryVerbId: VerbId = derivePrimaryVerbId(sender);
 
@@ -149,7 +151,9 @@ export function SenderActionRow({
             ariaLabel={`Actions for ${senderLabel}`}
             capabilities={capabilities}
             disabledReasons={{
-              unsubscribe: unsubscribeUnavailableReason(sender.unsubscribeMethod) ?? '',
+              unsubscribe: unsubscribeStatus
+                ? `${unsubscribeStatus.label}. ${unsubscribeStatus.title}`
+                : (unsubscribeUnavailableReason(sender.unsubscribeMethod) ?? ''),
               archive: sender.inboxCount === 0 ? 'No inbox emails to move.' : '',
               later: sender.inboxCount === 0 ? 'No inbox emails to move.' : '',
             }}
@@ -166,6 +170,11 @@ export function SenderActionRow({
         )}
       </div>
       {!compact && activity && <RowActivityPill activity={activity} />}
+      {!compact && unsubscribeStatus && (
+        <span title={unsubscribeStatus.title}>
+          <Pill>{unsubscribeStatus.label}</Pill>
+        </span>
+      )}
       {!compact && !activity && sender.policyType === 'keep' && (
         <span title="Keep recorded; skipped in Triage" style={{ color: color.fgSoft }}>
           Kept

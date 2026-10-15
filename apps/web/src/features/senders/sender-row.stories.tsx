@@ -102,6 +102,23 @@ export const Busy: Story = {
 
 export const UnsubscribeRequested: Story = { render: () => <Row s={OLD_NAVY} /> };
 
+export const RequestAccepted: Story = {
+  render: () => (
+    <Row
+      s={makeSender({ ...SUBSTACK, policyType: 'unsubscribe', unsubStatus: 'endpoint_accepted' })}
+    />
+  ),
+};
+
+export const CompactRequestAccepted: Story = {
+  render: () => (
+    <Row
+      s={makeSender({ ...SUBSTACK, policyType: 'unsubscribe', unsubStatus: 'endpoint_accepted' })}
+      compact
+    />
+  ),
+};
+
 export const Compact: Story = { render: () => <Row s={SUBSTACK} compact /> };
 
 export const CompactBusy: Story = {

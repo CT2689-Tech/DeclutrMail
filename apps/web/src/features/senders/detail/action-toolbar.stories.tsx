@@ -39,6 +39,35 @@ const withActivity = (activity: SenderRowActivity | null): ReactElement => (
 
 export const Idle: Story = { render: () => withActivity(null) };
 
+export const RequestAccepted: Story = {
+  render: () => (
+    <ActionToolbar
+      sender={makeSender({
+        ...sender,
+        unsubscribeMethod: 'one_click',
+        policyType: 'unsubscribe',
+        unsubStatus: 'endpoint_accepted',
+      })}
+      onAction={() => {}}
+      shortcuts
+    />
+  ),
+};
+
+export const ManualMarkedSent: Story = {
+  render: () => (
+    <ActionToolbar
+      sender={makeSender({
+        ...sender,
+        unsubscribeMethod: 'mailto',
+        policyType: 'unsubscribe',
+        unsubStatus: 'user_marked_sent',
+      })}
+      onAction={() => {}}
+    />
+  ),
+};
+
 /** Progress is separate; every verb is inert while the job runs. */
 export const Working: Story = {
   render: () => withActivity({ phase: 'working', verb: 'archive' }),

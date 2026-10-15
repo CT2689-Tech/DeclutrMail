@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useRef } from 'react';
-import { Button, Kbd, Tooltip, tokens } from '@declutrmail/shared';
+import { Button, Kbd, Pill, Tooltip, tokens } from '@declutrmail/shared';
 import { actionHelpCopy, unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
 import {
   canArchive,
@@ -15,6 +15,7 @@ import {
 import { isTypingTarget } from '../keyboard';
 import { isRowBusy, RowActivityPill, useRowActivity } from '../row-activity';
 import type { Verdict } from './types';
+import { unsubscribeControlStatus } from '../unsub-status';
 
 const { color, font } = tokens;
 
@@ -79,6 +80,7 @@ export function ActionToolbar({
 }) {
   const reasonId = useId();
   const unavailableReason = unsubscribeUnavailableReason(sender.unsubscribeMethod);
+  const unsubscribeStatus = unsubscribeControlStatus(sender);
   // This sender's own in-flight / finished action (see `row-activity`).
   const activity = useRowActivity(sender.id);
   const busy = isRowBusy(activity);
@@ -123,7 +125,9 @@ export function ActionToolbar({
         const disabled = isVerbUnavailable(verb, sender);
         const reason =
           verb === 'Unsubscribe'
-            ? unavailableReason
+            ? unsubscribeStatus
+              ? `${unsubscribeStatus.label}. ${unsubscribeStatus.title}`
+              : unavailableReason
             : (verb === 'Archive' || verb === 'Later') && sender.inboxCount === 0
               ? 'No inbox emails to move.'
               : null;
@@ -166,7 +170,12 @@ export function ActionToolbar({
           </span>
         );
       })}
-      {unavailableReason && (
+      {unsubscribeStatus && (
+        <span style={{ flexBasis: '100%', gridColumn: '1 / -1' }} title={unsubscribeStatus.title}>
+          <Pill>{unsubscribeStatus.label}</Pill>
+        </span>
+      )}
+      {unavailableReason && !unsubscribeStatus && (
         <span
           id={reasonId}
           role="note"

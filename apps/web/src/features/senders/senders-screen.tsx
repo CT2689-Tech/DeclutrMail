@@ -31,6 +31,8 @@ import {
   canBulkDelete,
   canBulkLater,
   canBulkUnsubscribe,
+  canUnsubscribe,
+  blocksRepeatUnsubscribe,
   canUseActionSelector,
   enrichSenderRow,
   isStandingProtected,
@@ -76,6 +78,8 @@ import {
 } from '@/lib/api/use-action';
 import { useSetSenderPolicy, useUndoSenderKeep } from './api/use-sender-policy';
 import { sendersKeys } from './api/query-keys';
+import type { fetchSenderDetail, SenderListEnvelope } from '@/lib/api/senders';
+import { unsubscribeControlStatus } from './unsub-status';
 import {
   actionLabel,
   enqueueMayHaveStarted,
@@ -478,6 +482,14 @@ export function SendersScreen() {
   return (
     <SendersScreenContent
       senders={allSenders}
+      senderQueryKey={sendersKeys.list(
+        sendersListQueryFromScreen({
+          compose: showingWidened ? EMPTY_COMPOSE : compose,
+          sort,
+          direction,
+          q: debouncedQuery,
+        }),
+      )}
       // The QUESTION the list is answering. Rows held on screen after
       // their action finished are released when it changes.
       listKey={JSON.stringify([compose, sort, direction, debouncedQuery, showingWidened])}
@@ -585,6 +597,7 @@ function describeNarrowedFilters(compose: ComposeState): string {
 /** Renders the screen once the senders list is loaded. */
 function SendersScreenContent({
   senders: serverSenders,
+  senderQueryKey,
   listKey,
   widenedFrom,
   widenedCount,
@@ -613,6 +626,7 @@ function SendersScreenContent({
   clearSearchAndFilters,
 }: {
   senders: Sender[];
+  senderQueryKey: ReturnType<typeof sendersKeys.list>;
   listKey: string;
   /**
    * F011 — set when the active filters starved a search and the results
@@ -1564,6 +1578,50 @@ function SendersScreenContent({
         // never the selection that was open when the sheet appeared.
         const postedIds = opts?.senderIds;
         if (!postedIds || postedIds.length === 0) return;
+        // Keep the confirmed scope intact: if any included request has since
+        // been recorded, close for a fresh preview rather than silently trim it.
+        const stale = senders.some((subject) => {
+          if (!postedIds.includes(subject.id)) return false;
+          // Read at dispatch, even before React commits a refetch render.
+          const listState = qc.getQueryState<{ pages: SenderListEnvelope[] }>(senderQueryKey);
+          const listed =
+            listState?.status === 'success' && !listState.isInvalidated
+              ? listState.data?.pages
+                  .flatMap((page) => page.data)
+                  .find((row) => row.id === subject.id)
+              : undefined;
+          let current = listed ? { ...subject, ...listed } : subject;
+          let readAt = listed ? listState!.dataUpdatedAt : 0;
+          let hasCurrentFacts = listed != null;
+          // A stale inactive detail must not overrule a newer failed/retry
+          // read. Completed zero-mail rows may instead have their newest
+          // facts in the completion-scoped detail, after leaving the list.
+          for (const [key, detail] of qc.getQueriesData<
+            Awaited<ReturnType<typeof fetchSenderDetail>>
+          >({
+            queryKey: sendersKeys.detail(subject.id),
+            predicate: (query) => query.queryKey.length === 3 || query.queryKey[3] === 'cleanup',
+          })) {
+            const state = qc.getQueryState(key);
+            if (
+              detail &&
+              state?.status === 'success' &&
+              !state.isInvalidated &&
+              (state.dataUpdatedAt > readAt ||
+                (state.dataUpdatedAt === readAt && blocksRepeatUnsubscribe(detail.data)))
+            ) {
+              current = { ...current, ...detail.data };
+              readAt = state.dataUpdatedAt;
+              hasCurrentFacts = true;
+            }
+          }
+          return !hasCurrentFacts || !canUnsubscribe(current);
+        });
+        if (stale) {
+          setPendingAction(null);
+          toast('Review this sender’s updated unsubscribe status before trying again.', 'info');
+          return;
+        }
         setSubmitting(true);
         setSelected(new Set());
         setBulkMailtoFollowups([]);
@@ -1923,7 +1981,16 @@ function SendersScreenContent({
       // bucket. Protect stays a standing-policy toggle on Sender
       // Detail; no Senders-screen surface emits it as a verb.
     },
-    [enqueueBulk, confirmBacklog, lockedSenderIds, anythingParked, actionMailboxId, unsettleRows],
+    [
+      enqueueBulk,
+      confirmBacklog,
+      lockedSenderIds,
+      anythingParked,
+      actionMailboxId,
+      unsettleRows,
+      senderQueryKey,
+      qc,
+    ],
   );
 
   // P6 — drive the Archive lifecycle off the polled status. On `done`,
@@ -2358,6 +2425,10 @@ function SendersScreenContent({
     (req: ActionRequest) => {
       if (resultsReadOnly) return;
       if (req.senders.length === 0) return;
+      if (req.verb === 'Unsubscribe' && req.senders.some((sender) => !canUnsubscribe(sender))) {
+        toast('Review the current unsubscribe status before making a new request.', 'info');
+        return;
+      }
       if (
         req.verb === 'Archive' ||
         req.verb === 'Unsubscribe' ||
@@ -2411,17 +2482,13 @@ function SendersScreenContent({
           toast(protectedSelectionLead(selectedSenders[0]!), 'warn');
           return;
         }
-        // Standing protection gates every bulk verb; the only other gate
-        // is Unsubscribe's people rule (canUnsubscribe), so a non-
-        // protected drop here can only mean primary-group senders.
-        // All-Protected uses the deck sentence. A mixed selection still
-        // opens the preview, which says the Protected senders are left.
+        const lifecycle = n === 1 ? unsubscribeControlStatus(selectedSenders[0]!) : null;
         toast(
           allProtected
             ? allProtectedSelectionCopy(n, selectedSenders[0]?.name ?? '')
-            : n === 1
-              ? `${selectedSenders[0]!.name} is a person — Unsubscribe doesn’t apply`
-              : 'Nothing to unsubscribe — these senders are protected or people',
+            : lifecycle
+              ? `${lifecycle.label}. ${lifecycle.title}`
+              : 'No new unsubscribe request is available for this selection.',
           'warn',
         );
         return;
@@ -2489,6 +2556,16 @@ function SendersScreenContent({
       const protectedCount = selectedSenders.filter(
         (s) => !ELIGIBLE[verb](s) && isStandingProtected(s),
       ).length;
+      const recordedUnsubscribeCount =
+        verb === 'Unsubscribe'
+          ? selectedSenders.filter((s) => blocksRepeatUnsubscribe(s) && !isStandingProtected(s))
+              .length
+          : 0;
+      const skipped = {
+        protectedCount,
+        peopleCount: skippedTotal - protectedCount - recordedUnsubscribeCount,
+        recordedUnsubscribeCount,
+      };
       // Over quota AND eligibility-narrowed. This combination used to
       // fall through to the disabled confirm — the dead end again, just
       // reached by a selection that happened to contain a protected
@@ -2507,7 +2584,7 @@ function SendersScreenContent({
           selectedCount: selectedSenders.length,
           actionableCount: remainingWithSkips,
           quotaCappedFrom: eligible.length,
-          skipped: { protectedCount, peopleCount: skippedTotal - protectedCount },
+          skipped,
           ...(protectedSenderIds.length > 0 ? { protectedSenderIds } : {}),
         });
         return;
@@ -2520,7 +2597,7 @@ function SendersScreenContent({
         senders: verb === 'Unsubscribe' ? eligible : selectedSenders,
         selectedCount: selectedSenders.length,
         actionableCount: eligible.length,
-        skipped: { protectedCount, peopleCount: skippedTotal - protectedCount },
+        skipped,
         ...(protectedSenderIds.length > 0 ? { protectedSenderIds } : {}),
       });
     },

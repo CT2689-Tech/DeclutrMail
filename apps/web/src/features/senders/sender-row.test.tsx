@@ -226,6 +226,20 @@ describe('<SenderRow compact /> — phone', () => {
     expect(onAction).toHaveBeenCalledTimes(1);
   });
 
+  it.each(['requested', 'endpoint_accepted', 'user_marked_sent'] as const)(
+    'does not turn a %s status into a different action through swipe',
+    (unsubStatus) => {
+      const onAction = vi.fn();
+      const s = renderRow(
+        { policyType: 'unsubscribe', unsubscribeMethod: 'one_click', unsubStatus },
+        { compact: true, onAction },
+      );
+      swipeRight(screen.getByTestId(`sender-row-${s.id}`));
+      expect(onAction).not.toHaveBeenCalled();
+      expect(screen.queryByText(/^→ /)).not.toBeInTheDocument();
+    },
+  );
+
   it('swipe is refused while the row is busy — the same action its inert button refuses', () => {
     const onAction = vi.fn();
     const s = makeSender();

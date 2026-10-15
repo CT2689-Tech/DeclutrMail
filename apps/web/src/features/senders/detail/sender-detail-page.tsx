@@ -22,6 +22,7 @@ import {
 import { buildActionReceiptResult } from '@declutrmail/shared/actions';
 import {
   daysSince,
+  canUnsubscribe,
   senderAddressLine,
   type ActionRequest,
   type ActionVerb,
@@ -57,9 +58,10 @@ import { activityKeys } from '@/features/activity/api/query-keys';
 import { isProtectedSkip, isTerminalStatus } from '@/lib/api/actions';
 import { useQueryClient } from '@tanstack/react-query';
 import { adaptProtectionReason, adaptSenderDetail } from '../api/adapters';
+import type { fetchSenderDetail } from '@/lib/api/senders';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { DecisionTimeline, type TimelineItem } from '../uplift-d';
-import { unsubscribeStatusCopy } from '../unsub-status';
+import { unsubscribeControlStatus, unsubscribeStatusCopy } from '../unsub-status';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { useUserTimeZone } from '@/features/auth/api/use-me';
@@ -450,6 +452,7 @@ export function SenderDetailRoute({
   return (
     <ReadyState
       initial={adapted}
+      initialQueryData={detail.data}
       layout={layout}
       onAction={onAction}
       sections={{
@@ -510,11 +513,13 @@ function DetailSection({
 
 function ReadyState({
   initial,
+  initialQueryData,
   layout,
   onAction,
   sections,
 }: {
   initial: SenderDetail;
+  initialQueryData?: Awaited<ReturnType<typeof fetchSenderDetail>> | undefined;
   layout: DetailLayout;
   sections?: DetailSections;
   onAction?: ((request: ActionRequest) => void) | undefined;
@@ -680,14 +685,26 @@ function ReadyState({
   // `initial` over the server-confirmed onSuccess reconcile — only a
   // genuinely NEW fetch result seeds.
   const lastSeededRef = useRef(initial);
+  const seededQueryData = useRef(initialQueryData);
   useEffect(() => {
     if (lastSeededRef.current === initial) return;
     if (setPolicy.isPending) return;
     lastSeededRef.current = initial;
+    seededQueryData.current = initialQueryData;
     setDetail(initial);
-  }, [initial, setPolicy.isPending]);
+  }, [initial, initialQueryData, setPolicy.isPending]);
 
-  const { sender, stats } = detail;
+  const { stats } = detail;
+  const currentSender = useMemo(
+    () => ({
+      ...detail.sender,
+      policyType: detail.policyType,
+      unsubStatus: detail.unsubStatus,
+      unsubscribeMethod: detail.unsubscribeMethod,
+    }),
+    [detail.sender, detail.policyType, detail.unsubStatus, detail.unsubscribeMethod],
+  );
+  const sender = currentSender;
   const recommendation = currentRecommendation(detail.recommendation, {
     isProtected: detail.isProtected,
     policyType: detail.policyType,
@@ -789,8 +806,29 @@ function ReadyState({
   const performAction = useCallback(
     (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
       if (senders.length === 0) return;
-      const sender = senders[0]!;
-
+      const target = senders[0]!;
+      let sender = verb === 'Unsubscribe' ? currentSender : target;
+      // Check readback at dispatch, including the gap before React re-seeds
+      // local policy state. The seed itself may predate a local policy edit.
+      if (verb === 'Unsubscribe') {
+        const cached = qc.getQueryState<Awaited<ReturnType<typeof fetchSenderDetail>>>(
+          sendersKeys.detail(currentSender.id),
+        );
+        if (
+          cached?.status === 'success' &&
+          !cached.isInvalidated &&
+          cached.data &&
+          cached.data !== seededQueryData.current
+        ) {
+          sender = { ...sender, ...cached.data.data };
+        }
+      }
+      // A preview can remain open while another surface records the request.
+      if (verb === 'Unsubscribe' && (target.id !== sender.id || !canUnsubscribe(sender))) {
+        setPendingAction(null);
+        toast(unsubscribeControlStatus(sender)?.label ?? 'Unsubscribe is unavailable.', 'info');
+        return;
+      }
       // Keep — non-destructive, no Gmail mutation, no receipt. Applies
       // immediately (D40) via the standing-policy write; the toast fires
       // on server confirmation, never optimistically.
@@ -1049,6 +1087,7 @@ function ReadyState({
       }
     },
     [
+      currentSender,
       enqueueComposite,
       confirmBacklog,
       recordUnsubIntent,
@@ -1068,6 +1107,7 @@ function ReadyState({
   const requestAction = useCallback(
     (req: ActionRequest) => {
       if (req.senders.length === 0) return;
+      if (req.verb === 'Unsubscribe' && !canUnsubscribe(sender)) return;
       if (
         req.verb === 'Archive' ||
         req.verb === 'Unsubscribe' ||
@@ -1079,7 +1119,7 @@ function ReadyState({
         performAction(req.verb, req.senders);
       }
     },
-    [performAction],
+    [performAction, sender],
   );
 
   // Cancel stays live while submitting — it closes the UI only.
@@ -1443,7 +1483,7 @@ function ReadyState({
               by the REAL execution outcome (`unsubStatus`) via the shared
               UNSUB_PILL map — never a static "queued" that outlives a
               terminal done/failed state. */}
-            {detail.policyType === 'unsubscribe' && (
+            {detail.policyType === 'unsubscribe' && !unsubscribeControlStatus(sender) && (
               <UnsubStatusPill status={detail.unsubStatus} method={detail.unsubscribeMethod} />
             )}
 
@@ -1833,7 +1873,11 @@ function ProtectRow({
             : 'Exclude this sender from bulk and automatic cleanup.'}
         </span>
         {reason !== null && (
-          <span data-testid="protection-reason" style={{ fontSize: text.sm, color: color.fgMuted }}>
+          <span
+            id={`${descriptionId}-reason`}
+            data-testid="protection-reason"
+            style={{ fontSize: text.sm, color: color.fgMuted }}
+          >
             {reason}
           </span>
         )}
