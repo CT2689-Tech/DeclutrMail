@@ -9,6 +9,7 @@ const selectedJobs = {
   'build-web': 'web',
   'web-types': 'web',
   lighthouse: 'web',
+  'build-browser': 'a11y',
   accessibility: 'a11y',
 };
 
