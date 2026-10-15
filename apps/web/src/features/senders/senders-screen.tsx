@@ -129,7 +129,8 @@ const SenderDetailPane = dynamic(
 import { SelectionFab } from './mobile/selection-fab';
 import { rollupByDomain } from './domain-rollup';
 import { useSendersStore } from './store';
-import { mergePinnedRows, type PinnedRow } from './pinned-rows';
+import { type PinnedRow } from './pinned-rows';
+import { usePinnedSenders } from './use-pinned-senders';
 import {
   isRowBusy,
   RowActivityProvider,
@@ -155,7 +156,7 @@ import type { SenderListDirection, SenderListSort } from '@/lib/api/senders';
 import { useSaveSenderViews, useSenderViews } from './api/use-sender-views';
 import { SENDER_VIEWS_CAP, type SavedSenderView } from '@declutrmail/shared/contracts';
 import { trackActionConfirmed } from '@/lib/action-analytics';
-import { unsubscribeBacklogToast } from './unsubscribe-backlog/toast';
+import { unsubscribeBacklogSubmissionToast } from './unsubscribe-backlog/toast';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 import type { Verb } from '@declutrmail/shared/observability';
@@ -727,10 +728,7 @@ function SendersScreenContent({
     setSettled(new Map());
     setPinnedSenders(new Map());
   }
-  const senders = useMemo(
-    () => mergePinnedRows(serverSenders, pinnedSenders) as Sender[],
-    [serverSenders, pinnedSenders],
-  );
+  const senders = usePinnedSenders(serverSenders, pinnedSenders) as Sender[];
   const reportSenderNames = useMemo(() => {
     const names: Record<string, { name: string }> = {};
     for (const row of senders) {
@@ -993,14 +991,8 @@ function SendersScreenContent({
    * they are. Snapshots come from the list AS RENDERED, so a row that was
    * already pinned keeps its place.
    */
-  const settleRows = useCallback(
-    (ids: readonly string[], activity: SenderRowActivity) => {
-      setSettled((prev) => {
-        const next = new Map(prev);
-        for (const id of ids) next.set(id, activity);
-        return next;
-      });
-      if (activity.phase === 'unconfirmed') holdRows(ids, activity.verb);
+  const pinRows = useCallback(
+    (ids: readonly string[]) => {
       // While a NEW question is loading, the rows on screen still belong
       // to the old one (`keepPreviousData`). Pinning them would carry the
       // old question's rows into the new results. The mark is recorded
@@ -1010,12 +1002,30 @@ function SendersScreenContent({
       setPinnedSenders((prev) => {
         const next = new Map(prev);
         senders.forEach((row, index) => {
-          if (wanted.has(row.id)) next.set(row.id, { row, index });
+          if (wanted.has(row.id)) {
+            next.set(row.id, {
+              row,
+              index,
+              refreshFacts: ids.length === 1 || prev.get(row.id)?.refreshFacts === true,
+            });
+          }
         });
         return next;
       });
     },
-    [senders, showingStaleRows, holdRows],
+    [senders, showingStaleRows],
+  );
+  const settleRows = useCallback(
+    (ids: readonly string[], activity: SenderRowActivity) => {
+      setSettled((prev) => {
+        const next = new Map(prev);
+        for (const id of ids) next.set(id, activity);
+        return next;
+      });
+      if (activity.phase === 'unconfirmed') holdRows(ids, activity.verb);
+      pinRows(ids);
+    },
+    [pinRows, holdRows],
   );
   /**
    * An undo was confirmed: nothing on a row may still say "Deleted". All
@@ -1059,6 +1069,8 @@ function SendersScreenContent({
   const keepInFlightRef = useRef(false);
   const settleRowsRef = useRef(settleRows);
   settleRowsRef.current = settleRows;
+  const pinRowsRef = useRef(pinRows);
+  pinRowsRef.current = pinRows;
 
   /** Any parked handle at all — bulk entry points refuse while one exists. */
   const anythingParked = useMemo(
@@ -1573,9 +1585,18 @@ function SendersScreenContent({
                 (sender) => sender.unsubStatus === 'requested' || sender.unsubStatus === 'manual',
               );
               if (sent) trackActionConfirmed('unsubscribe');
+              // The first refetch may already exclude this sender. Capture
+              // its position now so the terminal effect can still mark it.
+              if (res.backlog) {
+                pinRowsRef.current(
+                  res.senders
+                    .filter((row) => row.unsubStatus !== 'skipped')
+                    .map((row) => row.senderId),
+                );
+              }
               void qc.invalidateQueries({ queryKey: sendersKeys.all });
               void qc.invalidateQueries({ queryKey: activityKeys.all });
-              const line = unsubscribeBacklogToast(res);
+              const line = unsubscribeBacklogSubmissionToast(res);
               if (line !== '') toast(line, sent ? 'info' : 'warn');
               const nameById = new Map(senderRefs.map((sref) => [sref.id, sref] as const));
               if (!isBulk) {

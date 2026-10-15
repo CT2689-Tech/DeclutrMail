@@ -2,6 +2,8 @@
 export interface PinnedRow<T> {
   row: T;
   index: number;
+  /** Single-sender facts can be refreshed without a bulk fan-out of detail reads. */
+  refreshFacts?: boolean;
 }
 
 /**
