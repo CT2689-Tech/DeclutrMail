@@ -202,7 +202,6 @@ jobs:
               # The gate's own specs and helpers. Without this a PR that
               # edits only a11y-*.spec.ts never runs the lane it changes.
               - 'packages/e2e/**'
-              - 'scripts/browser-build-artifact*'
 
   typecheck:
     name: Typecheck
@@ -314,7 +313,7 @@ jobs:
       - name: Performance probes and release contract
         run: node --test scripts/check-sender-release-contract.test.mjs scripts/probe-db-latency.test.mjs scripts/summarize-performance.test.mjs
       - name: CI and release coordination contracts
-        run: node --test scripts/check-ci-required.test.mjs scripts/browser-build-artifact.test.mjs scripts/check-merge-queue-ready.test.mjs scripts/select-deployment.test.mjs scripts/select-lighthouse-url.test.mjs scripts/vitest-weighted-shard.test.mjs
+        run: node --test scripts/check-ci-required.test.mjs scripts/check-merge-queue-ready.test.mjs scripts/select-deployment.test.mjs scripts/select-lighthouse-url.test.mjs scripts/vitest-weighted-shard.test.mjs
       - name: Bundle budget contracts (served-HTML measure, fails closed)
         run: node --test scripts/check-web-bundle-budget.test.mjs
       # Re-renders every brand raster from the geometry in ADR-0036 and
@@ -847,7 +846,6 @@ jobs:
         build-web,
         web-types,
         lighthouse,
-        build-browser,
         accessibility,
       ]
     runs-on: ubuntu-latest
@@ -860,27 +858,61 @@ jobs:
           CI_EVENT: ${{ github.event_name }}
         run: node scripts/check-ci-required.mjs
 
-  # Build once per compile-time configuration, in this workflow run only.
-  # The production/marketing build is deliberately a separate artifact.
-  build-browser:
-    name: Build — isolated browser (${{ matrix.profile }})
+  accessibility:
+    name: Authenticated accessibility smoke (${{ matrix.lane }})
     needs: changes
     if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.a11y == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # Each lane gets its own Postgres, Redis, API and built web app. Keep
+    # tests serial inside a lane: their synthetic fixtures share state.
+    # All matrix results feed the existing CI required aggregate; a failed
+    # lane must not cancel siblings or hide their coverage evidence.
     strategy:
       fail-fast: false
       matrix:
         include:
-          - profile: classic
+          - lane: accessibility
             pricing_v2: 'false'
             meter_v2: 'false'
             billing_pass: 'false'
-          - profile: launch
+          - lane: responsive
+            pricing_v2: 'false'
+            meter_v2: 'false'
+            billing_pass: 'false'
+          - lane: hydration-billing
+            pricing_v2: 'false'
+            meter_v2: 'false'
+            billing_pass: 'false'
+          # Journeys exercise the launch pricing UI. The money-path lane
+          # stays on today's Pro catalog, so these flags stay off there.
+          - lane: journeys
             pricing_v2: 'true'
             meter_v2: 'true'
             billing_pass: 'true'
-    env: &browser-env
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: declutrmail_e2e
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d declutrmail_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/declutrmail_e2e
       REDIS_URL: redis://127.0.0.1:6379/12
       RATE_LIMIT_ENABLED: 'false'
@@ -911,7 +943,6 @@ jobs:
       PRICING_V2: ${{ matrix.pricing_v2 }}
       METER_V2: ${{ matrix.meter_v2 }}
       BILLING_PASS_ENABLED: ${{ matrix.billing_pass }}
-      BROWSER_BUILD_PROFILE: ${{ matrix.profile }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -920,108 +951,38 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Cache the isolated browser compiler
-        uses: actions/cache@v6
+      - name: Restore the isolated browser compiler
+        id: browser-cache
+        uses: actions/cache/restore@v6
         with:
           path: apps/web/.next/cache/webpack
-          key: ${{ runner.os }}-next-browser-v2-${{ matrix.profile }}-${{ hashFiles('pnpm-lock.yaml', '.nvmrc', 'apps/web/next.config.ts', 'tsconfig*.json', 'apps/web/tsconfig*.json', 'packages/shared/tsconfig*.json', 'pnpm-workspace.yaml', 'packages/config/**', '.github/workflows/ci.yml') }}-${{ hashFiles('apps/web/src/**', 'apps/web/public/**', 'packages/shared/src/**') }}
+          key: ${{ runner.os }}-next-browser-v1-${{ hashFiles('pnpm-lock.yaml', '.nvmrc', 'apps/web/next.config.ts', 'tsconfig*.json', 'apps/web/tsconfig*.json', 'packages/shared/tsconfig*.json', 'pnpm-workspace.yaml', 'packages/config/**', '.github/workflows/ci.yml') }}-${{ hashFiles('apps/web/src/**', 'apps/web/public/**', 'packages/shared/src/**') }}
           restore-keys: |
-            ${{ runner.os }}-next-browser-v2-${{ matrix.profile }}-${{ hashFiles('pnpm-lock.yaml', '.nvmrc', 'apps/web/next.config.ts', 'tsconfig*.json', 'apps/web/tsconfig*.json', 'packages/shared/tsconfig*.json', 'pnpm-workspace.yaml', 'packages/config/**', '.github/workflows/ci.yml') }}-
+            ${{ runner.os }}-next-browser-v1-${{ hashFiles('pnpm-lock.yaml', '.nvmrc', 'apps/web/next.config.ts', 'tsconfig*.json', 'apps/web/tsconfig*.json', 'packages/shared/tsconfig*.json', 'pnpm-workspace.yaml', 'packages/config/**', '.github/workflows/ci.yml') }}-
+      # A long-lived Next dev process accumulates every public/authenticated
+      # route compiler. Its memory-threshold restart severed a valid sender
+      # navigation in run 35972390743. Exercise the shipped rendering instead
+      # of weakening navigation assertions or retrying an interrupted page.
+      # The API remains in development mode for the isolated login harness.
+      #
+      # It cannot reuse build-web's output: NEXT_PUBLIC_API_URL and the
+      # PostHog key above are inlined at build time. It runs in the
+      # background while Chromium, the Postgres client and migrations
+      # install; "Wait for the web build" fails the lane on its exit code.
+      # Lint and type validity are skipped here; the `lint` and
+      # `web-types` jobs gate them. The status is captured with `|| rc=$?`
+      # because steps run under `bash -e`: a bare failing build would end
+      # the subshell before it wrote web-build.rc.
       - name: Build the web app for browser verification
-        run: pnpm --filter @declutrmail/web build --no-lint
         env:
           NEXT_SKIP_BUILD_TYPECHECK: '1'
-          NEXT_TELEMETRY_DISABLED: '1'
-      - name: Record the browser build's provenance
-        run: node scripts/browser-build-artifact.mjs stamp
-      - name: Upload the isolated browser build
-        uses: actions/upload-artifact@v7
-        with:
-          name: browser-build-${{ matrix.profile }}
-          path: |
-            apps/web/.next/
-            !apps/web/.next/cache/
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 1
-          overwrite: true
-
-  accessibility:
-    name: Authenticated accessibility smoke (${{ matrix.lane }})
-    needs: [changes, build-browser]
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.a11y == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    # Each lane gets its own Postgres, Redis, API and web process. Keep
-    # tests serial inside a lane: their synthetic fixtures share state.
-    # All matrix results feed the existing CI required aggregate; a failed
-    # lane must not cancel siblings or hide their coverage evidence.
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - lane: accessibility
-            profile: classic
-            pricing_v2: 'false'
-            meter_v2: 'false'
-            billing_pass: 'false'
-          - lane: responsive
-            profile: classic
-            pricing_v2: 'false'
-            meter_v2: 'false'
-            billing_pass: 'false'
-          - lane: hydration-billing
-            profile: classic
-            pricing_v2: 'false'
-            meter_v2: 'false'
-            billing_pass: 'false'
-          # Journeys exercise the launch pricing UI. The money-path lane
-          # stays on today's Pro catalog, so these flags stay off there.
-          - lane: journeys
-            profile: launch
-            pricing_v2: 'true'
-            meter_v2: 'true'
-            billing_pass: 'true'
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB: declutrmail_e2e
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d declutrmail_e2e"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-      redis:
-        image: redis:8-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env: *browser-env
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      # Same-run, exact-commit build only. Never fall back to a production
-      # artifact or rebuild under accidentally different public flags.
-      - name: Download the isolated browser build
-        uses: actions/download-artifact@v8
-        with:
-          name: browser-build-${{ matrix.profile }}
-          path: apps/web/.next
-      - name: Verify the browser build's provenance
-        run: node scripts/browser-build-artifact.mjs verify
+        run: |
+          (
+            rc=0
+            pnpm --filter @declutrmail/web build --no-lint > web-build.log 2>&1 || rc=$?
+            echo "$rc" > web-build.rc
+          ) &
+          echo $! > web-build.pid
       # RETRIED, because the failure it guards against is not ours and
       # not detectable from the result. `--with-deps` runs apt-get, and
       # an Ubuntu mirror that stalls mid-fetch does not fail — it hangs
@@ -1062,10 +1023,40 @@ jobs:
           for migration in packages/db/migrations/*.sql; do
             psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$migration"
           done
+      # A build process that is gone without a status is a failure now,
+      # not after 15 minutes.
+      - name: Wait for the web build
+        run: |
+          if [ ! -s web-build.pid ]; then
+            echo "::error::the web build was never started (no web-build.pid)"
+            exit 1
+          fi
+          pid=$(cat web-build.pid)
+          for _ in $(seq 1 900); do
+            [ -f web-build.rc ] && break
+            if ! kill -0 "$pid" 2>/dev/null; then
+              [ -f web-build.rc ] && break
+              cat web-build.log 2>/dev/null || true
+              echo "::error::the web build process exited without recording a status"
+              exit 1
+            fi
+            sleep 1
+          done
+          cat web-build.log
+          if [ ! -f web-build.rc ]; then
+            echo "::error::the web build did not finish within 15 minutes"
+            exit 1
+          fi
+          rc=$(cat web-build.rc)
+          if ! [[ "$rc" =~ ^[0-9]+$ ]]; then
+            echo "::error::web-build.rc holds no exit status ('$rc')"
+            exit 1
+          fi
+          exit "$rc"
       # Deliberately BEFORE the stack boots: these specs serve their own
       # page and stub endpoint, so needing nothing is a property worth
       # proving, and a paint regression fails in seconds rather than
-      # after a 3-minute stack start. After the artifact check,
+      # after a 3-minute stack start. After the build wait, not beside it,
       # so a paint check never competes with the compiler for CPU. They
       # exist because SSR markup
       # tests cannot see how an engine paints a FAILED image — which is
@@ -1076,6 +1067,14 @@ jobs:
         run: pnpm --filter @declutrmail/e2e run e2e:render
         env:
           E2E_JSON_REPORT: ${{ github.workspace }}/e2e-render-report.json
+      # One writer for the identical browser compiler cache. The other
+      # lanes only restore; they do not race to upload the same cache.
+      - name: Save the isolated browser compiler
+        if: matrix.lane == 'accessibility' && steps.browser-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: apps/web/.next/cache/webpack
+          key: ${{ steps.browser-cache.outputs.cache-primary-key }}
       - name: Start the API and web app
         run: |
           PORT=4104 pnpm --filter @declutrmail/api start > api-e2e.log 2>&1 &
