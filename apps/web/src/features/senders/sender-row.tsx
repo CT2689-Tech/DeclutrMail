@@ -364,7 +364,7 @@ export function SenderRow({
             {(unsub || activity || isStandingProtected(s) || s.policyType === 'keep') && (
               <div className={styles.compactRowStatus}>
                 {isStandingProtected(s) && <Pill>Protected</Pill>}
-                {!activity && s.policyType === 'keep' && <Pill>Kept</Pill>}
+                {!activity && s.policyType === 'keep' && <Pill>Skipped in Triage</Pill>}
                 {unsub && (
                   <span title={unsub.title}>
                     <Pill>{unsub.label}</Pill>

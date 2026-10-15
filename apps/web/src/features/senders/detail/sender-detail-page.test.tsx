@@ -1620,13 +1620,15 @@ describe('SenderDetailRoute', () => {
         ]);
         renderDetail();
         fireEvent.click(await screen.findByRole('button', { name: 'Keep (K)' }));
-        await screen.findByText('Kept', { exact: true });
+        await screen.findByText('Skipped in Triage', { exact: true });
         const undo = h.toast.mock.calls.find(([msg]) => msg === 'Kept LinkedIn')?.[2];
         expect(undo).toBeDefined();
         act(() => undo.onClick());
         if (success) {
-          await waitFor(() => expect(screen.queryByText('Kept', { exact: true })).toBeNull());
-          expect(screen.queryByText('Kept · skipped in Triage')).toBeNull();
+          await waitFor(() =>
+            expect(screen.queryByText('Skipped in Triage', { exact: true })).toBeNull(),
+          );
+          expect(screen.queryByText('Skipped in Triage')).toBeNull();
         } else {
           await waitFor(() =>
             expect(h.toast).toHaveBeenCalledWith(
@@ -1635,7 +1637,7 @@ describe('SenderDetailRoute', () => {
               expect.objectContaining({ label: 'Retry' }),
             ),
           );
-          expect(screen.getByText('Kept', { exact: true })).toBeInTheDocument();
+          expect(screen.getByText('Skipped in Triage', { exact: true })).toBeInTheDocument();
         }
       },
     );

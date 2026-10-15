@@ -14,6 +14,7 @@ const SENDER = makeSender({
   gmailCategory: 'updates',
   readRate: 0.5,
   lastDays: 1,
+  unsubscribeMethod: 'one_click',
 });
 
 describe('<SelectionBar /> floating-surface contract', () => {
@@ -171,4 +172,25 @@ describe('<SelectionBar /> — all-Protected selection (QA-senders-20260901-08)'
 
     expect(html).not.toContain('protected — unprotect');
   });
+});
+
+describe('SelectionBar — relevant actions', () => {
+  it.each(['bar', 'sheet'] as const)(
+    'omits Unsubscribe for an unsupported %s selection',
+    (variant) => {
+      render(
+        <SelectionBar
+          variant={variant}
+          senders={[
+            makeSender({ id: 'none', unsubscribeMethod: 'none' }),
+            makeSender({ id: 'unknown', unsubscribeMethod: null }),
+          ]}
+          onClear={vi.fn()}
+          onAct={vi.fn()}
+          tier="pro"
+        />,
+      );
+      expect(screen.queryByRole('button', { name: /^Unsubscribe/ })).toBeNull();
+    },
+  );
 });

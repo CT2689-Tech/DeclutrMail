@@ -149,6 +149,11 @@ export function SenderActionRow({
         {popoverOpen && !busy && (
           <ActionPopover
             ariaLabel={`Actions for ${senderLabel}`}
+            verbs={(['keep', 'archive', 'unsubscribe', 'later', 'delete'] as const).filter(
+              (verb) =>
+                verb !== 'unsubscribe' ||
+                unsubscribeUnavailableReason(sender.unsubscribeMethod) === null,
+            )}
             capabilities={capabilities}
             disabledReasons={{
               unsubscribe: unsubscribeStatus
@@ -176,9 +181,7 @@ export function SenderActionRow({
         </span>
       )}
       {!compact && !activity && sender.policyType === 'keep' && (
-        <span title="Keep recorded; skipped in Triage" style={{ color: color.fgSoft }}>
-          Kept
-        </span>
+        <span style={{ color: color.fgSoft }}>Skipped in Triage</span>
       )}
     </div>
   );

@@ -4,6 +4,7 @@ import Link from 'next/link';
 
 import { tokens } from '@declutrmail/shared';
 import type { TierId } from '@declutrmail/shared/entitlements';
+import { unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
 import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
 
 import {
@@ -132,6 +133,11 @@ export function SelectionBar({
     ) : null;
 
   const verbButton = (verb: SelectionBarVerb, stretch: boolean) => {
+    if (
+      verb === 'Unsubscribe' &&
+      !senders.some((sender) => unsubscribeUnavailableReason(sender.unsubscribeMethod) === null)
+    )
+      return null;
     const n = eligible[verb];
     const entitled = canUseActionSelector(tier, verb, selector);
     const disabled = n === 0 || busy || !entitled;

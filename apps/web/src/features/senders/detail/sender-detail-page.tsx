@@ -1585,9 +1585,7 @@ function ReadyState({
           <div role="group" aria-label="Sender actions" className={styles.actionSection}>
             <h3 className={styles.actionHeading}>Choose an action</h3>
             {detail.policyType === 'keep' && (
-              <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>
-                Kept · skipped in Triage
-              </p>
+              <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>Skipped in Triage</p>
             )}
             {actionToolbar}
           </div>

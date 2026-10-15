@@ -217,3 +217,15 @@ function FeedbackReview() {
 }
 
 export const FeedbackConsistency: Story = { render: () => <FeedbackReview /> };
+
+export const NoUnsubscribeChannel: Story = {
+  render: () => (
+    <ActionToolbar sender={makeSender({ unsubscribeMethod: 'none' })} onAction={() => {}} />
+  ),
+};
+
+export const UnsubscribeNotChecked: Story = {
+  render: () => (
+    <ActionToolbar sender={makeSender({ unsubscribeMethod: null })} onAction={() => {}} />
+  ),
+};
