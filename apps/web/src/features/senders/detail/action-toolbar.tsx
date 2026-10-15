@@ -5,6 +5,7 @@ import { Button, Kbd, Tooltip, tokens } from '@declutrmail/shared';
 import { unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
 import {
   canArchive,
+  currentMailUnavailableReason,
   canDelete,
   canLater,
   canUnsubscribe,
@@ -129,12 +130,15 @@ export function ActionToolbar({
       {VERBS.map(({ verb, shortcut }) => {
         const disabled = isVerbUnavailable(verb, sender);
         const lifecycle = verb === 'Unsubscribe' ? unsubscribeStatus : null;
-        const reason = lifecycle?.title ?? (verb === 'Unsubscribe' ? unavailableReason : null);
+        const reason =
+          lifecycle?.title ??
+          currentMailUnavailableReason(verb, sender) ??
+          (verb === 'Unsubscribe' ? unavailableReason : null);
         const status =
           activity && takesButtonSlot(activity) && activity.verb === verb.toLowerCase()
             ? activity
             : null;
-        const again = status?.phase === 'done';
+        const again = status?.phase === 'done' && !disabled;
         const button = (describedBy?: string) => (
           <Button
             tone={status || lifecycle ? 'ghost' : 'default'}
@@ -187,6 +191,17 @@ export function ActionToolbar({
           </span>
         );
       })}
+      {sender.inboxCount === 0 && (
+        <span
+          role="note"
+          className="dm-action-reason"
+          style={{ flexBasis: '100%', fontSize: tokens.text.sm, color: color.fgMuted }}
+        >
+          {sender.archivedCount === 0
+            ? 'No current emails to Archive, move to Later, or Delete.'
+            : 'No inbox emails to Archive or move to Later.'}
+        </span>
+      )}
       {unavailableReason && (
         <span
           id={reasonId}

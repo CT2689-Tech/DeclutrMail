@@ -800,7 +800,10 @@ export function ConfirmActionModal({
   const historic = senders.reduce((sum, s) => sum + s.totalReceived, 0);
   const requestedSenderCount = senders.length;
   const selectedCount = request.selectedCount ?? requestedSenderCount;
-  const skippedCount = (request.skipped?.protectedCount ?? 0) + (request.skipped?.peopleCount ?? 0);
+  const skippedCount =
+    (request.skipped?.protectedCount ?? 0) +
+    (request.skipped?.peopleCount ?? 0) +
+    (request.skipped?.emptyMailCount ?? 0);
   const eligibleCount = Math.max(0, selectedCount - skippedCount);
   // Prefer the live bulk preview's actionable count — it independently
   // re-resolves every sender id and can drop it (deleted since queued) or
@@ -922,7 +925,7 @@ export function ConfirmActionModal({
     ? protectedDroppedBeforePreview + bulkPreview.data.protectedCount
     : (request.skipped?.protectedCount ?? 0);
   const peopleSkipped = request.skipped?.peopleCount ?? 0;
-  const skipSentence =
+  const protectedPeopleSkipSentence =
     protectedSkipped > 0 && peopleSkipped > 0
       ? `${protectedSkipped} Protected sender${protectedSkipped === 1 ? '' : 's'} and ${peopleLabel(peopleSkipped)} are skipped.`
       : protectedSkipped > 0
@@ -930,6 +933,13 @@ export function ConfirmActionModal({
         : peopleSkipped > 0
           ? `${peopleLabel(peopleSkipped)} ${peopleSkipped === 1 ? 'is' : 'are'} skipped.`
           : null;
+  const emptyMailSkipped = request.skipped?.emptyMailCount ?? 0;
+  const emptyMailSkipSentence =
+    emptyMailSkipped > 0
+      ? `${emptyMailSkipped} sender${emptyMailSkipped === 1 ? '' : 's'} with no ${isDeleteVerb ? 'current' : 'inbox'} emails ${emptyMailSkipped === 1 ? 'is' : 'are'} skipped.`
+      : null;
+  const skipSentence =
+    [protectedPeopleSkipSentence, emptyMailSkipSentence].filter(Boolean).join(' ') || null;
   const undoNote = zeroTitle
     ? null
     : isUnsubVerb

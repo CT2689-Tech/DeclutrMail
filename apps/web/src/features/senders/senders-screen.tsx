@@ -31,6 +31,9 @@ import {
   canBulkLater,
   canBulkUnsubscribe,
   canUnsubscribe,
+  canPerformSenderAction,
+  currentMailUnavailableReason,
+  isMailMovingVerb,
   blocksRepeatUnsubscribe,
   canUseActionSelector,
   enrichSenderRow,
@@ -77,7 +80,7 @@ import {
 } from '@/lib/api/use-action';
 import { useSetSenderPolicy, useUndoSenderKeep } from './api/use-sender-policy';
 import { sendersKeys } from './api/query-keys';
-import type { fetchSenderDetail, SenderListEnvelope } from '@/lib/api/senders';
+import { currentListActionSender } from './api/current-action-sender';
 import { unsubscribeControlStatus } from './unsub-status';
 import {
   actionLabel,
@@ -1365,6 +1368,17 @@ function SendersScreenContent({
   const performAction = useCallback(
     (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
       if (senders.length === 0) return;
+      if (isMailMovingVerb(verb)) {
+        const unavailable = senders.find((subject) => {
+          const current = currentListActionSender(qc, senderQueryKey, subject, verb);
+          return !current || !canPerformSenderAction(verb, current);
+        });
+        if (unavailable) {
+          setPendingAction(null);
+          toast('Review this sender’s updated email counts before trying again.', 'info');
+          return;
+        }
+      }
       // One enqueue at a time. The confirm stays cancellable while a
       // request is out, so a second confirm must not start a second one
       // (same guard the sender detail page has).
@@ -1572,40 +1586,8 @@ function SendersScreenContent({
         // been recorded, close for a fresh preview rather than silently trim it.
         const stale = senders.some((subject) => {
           if (!postedIds.includes(subject.id)) return false;
-          // Read at dispatch, even before React commits a refetch render.
-          const listState = qc.getQueryState<{ pages: SenderListEnvelope[] }>(senderQueryKey);
-          const listed =
-            listState?.status === 'success' && !listState.isInvalidated
-              ? listState.data?.pages
-                  .flatMap((page) => page.data)
-                  .find((row) => row.id === subject.id)
-              : undefined;
-          let current = listed ? { ...subject, ...listed } : subject;
-          let readAt = listed ? listState!.dataUpdatedAt : 0;
-          let hasCurrentFacts = listed != null;
-          // A stale inactive detail must not overrule a newer failed/retry
-          // read. Completed zero-mail rows may instead have their newest
-          // facts in the completion-scoped detail, after leaving the list.
-          for (const [key, detail] of qc.getQueriesData<
-            Awaited<ReturnType<typeof fetchSenderDetail>>
-          >({
-            queryKey: sendersKeys.detail(subject.id),
-            predicate: (query) => query.queryKey.length === 3 || query.queryKey[3] === 'cleanup',
-          })) {
-            const state = qc.getQueryState(key);
-            if (
-              detail &&
-              state?.status === 'success' &&
-              !state.isInvalidated &&
-              (state.dataUpdatedAt > readAt ||
-                (state.dataUpdatedAt === readAt && blocksRepeatUnsubscribe(detail.data)))
-            ) {
-              current = { ...current, ...detail.data };
-              readAt = state.dataUpdatedAt;
-              hasCurrentFacts = true;
-            }
-          }
-          return !hasCurrentFacts || !canUnsubscribe(current);
+          const current = currentListActionSender(qc, senderQueryKey, subject, verb);
+          return !current || !canUnsubscribe(current);
         });
         if (stale) {
           setPendingAction(null);
@@ -2416,6 +2398,13 @@ function SendersScreenContent({
     (req: ActionRequest) => {
       if (resultsReadOnly) return;
       if (req.senders.length === 0) return;
+      if (
+        isMailMovingVerb(req.verb) &&
+        req.senders.some((sender) => !canPerformSenderAction(req.verb, sender))
+      ) {
+        toast('No emails in the current scope for this action.', 'info');
+        return;
+      }
       if (req.verb === 'Unsubscribe' && req.senders.some((sender) => !canUnsubscribe(sender))) {
         toast('Review the current unsubscribe status before making a new request.', 'info');
         return;
@@ -2473,13 +2462,20 @@ function SendersScreenContent({
           toast(protectedSelectionLead(selectedSenders[0]!), 'warn');
           return;
         }
-        const lifecycle = n === 1 ? unsubscribeControlStatus(selectedSenders[0]!) : null;
+        const lifecycle =
+          verb === 'Unsubscribe' && n === 1 ? unsubscribeControlStatus(selectedSenders[0]!) : null;
         toast(
           allProtected
             ? allProtectedSelectionCopy(n, selectedSenders[0]?.name ?? '')
             : lifecycle
               ? `${lifecycle.label}. ${lifecycle.title}`
-              : 'No new unsubscribe request is available for this selection.',
+              : verb === 'Unsubscribe'
+                ? 'No new unsubscribe request is available for this selection.'
+                : verb === 'Delete'
+                  ? 'No eligible current emails to delete in this selection.'
+                  : verb === 'Archive'
+                    ? 'No eligible inbox emails to archive in this selection.'
+                    : 'No eligible inbox emails to move to Later in this selection.',
           'warn',
         );
         return;
@@ -2552,9 +2548,15 @@ function SendersScreenContent({
           ? selectedSenders.filter((s) => blocksRepeatUnsubscribe(s) && !isStandingProtected(s))
               .length
           : 0;
+      const emptyMailCount = isMailMovingVerb(verb)
+        ? selectedSenders.filter(
+            (s) => !isStandingProtected(s) && currentMailUnavailableReason(verb, s) != null,
+          ).length
+        : 0;
       const skipped = {
+        emptyMailCount,
         protectedCount,
-        peopleCount: skippedTotal - protectedCount - recordedUnsubscribeCount,
+        peopleCount: skippedTotal - protectedCount - recordedUnsubscribeCount - emptyMailCount,
         recordedUnsubscribeCount,
       };
       // Over quota AND eligibility-narrowed. This combination used to
@@ -2585,7 +2587,10 @@ function SendersScreenContent({
         // A/L/D keep the original selection so preview and receipt can
         // report protected/raced rows individually. Unsubscribe fans
         // intent requests and therefore remains client-narrowed.
-        senders: verb === 'Unsubscribe' ? eligible : selectedSenders,
+        senders:
+          verb === 'Unsubscribe'
+            ? eligible
+            : selectedSenders.filter((s) => currentMailUnavailableReason(verb, s) === null),
         selectedCount: selectedSenders.length,
         actionableCount: eligible.length,
         skipped,

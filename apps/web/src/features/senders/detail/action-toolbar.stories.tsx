@@ -85,3 +85,31 @@ export const NotConfirmed: Story = {
 export const Failed: Story = {
   render: () => withActivity({ phase: 'failed', verb: 'delete' }),
 };
+
+export const NoCurrentMail: Story = {
+  render: () => (
+    <ActionToolbar
+      sender={makeSender({ inboxCount: 0, archivedCount: 0, totalReceived: 565 })}
+      onAction={() => {}}
+      shortcuts
+    />
+  ),
+};
+export const ArchivedMailOnly: Story = {
+  render: () => (
+    <ActionToolbar
+      sender={makeSender({ inboxCount: 0, archivedCount: 21 })}
+      onAction={() => {}}
+      shortcuts
+    />
+  ),
+};
+export const UnknownCurrentMail: Story = {
+  render: () => (
+    <ActionToolbar
+      sender={makeSender({ inboxCount: null, archivedCount: null })}
+      onAction={() => {}}
+      shortcuts
+    />
+  ),
+};

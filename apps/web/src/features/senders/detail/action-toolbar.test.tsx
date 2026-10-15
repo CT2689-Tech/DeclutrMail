@@ -17,6 +17,29 @@ const sender: typeof makeSender = (overrides = {}) =>
   });
 
 describe('ActionToolbar — neutral actions', () => {
+  it.each(['Archive', 'Later', 'Delete'] as const)(
+    'blocks %s click and shortcut when current mail is empty',
+    (verb) => {
+      const onAction = vi.fn();
+      render(
+        <ActionToolbar
+          sender={sender({ inboxCount: 0, archivedCount: 0, totalReceived: 565 })}
+          onAction={onAction}
+          shortcuts
+        />,
+      );
+      const control = screen.getByRole('button', { name: `${verb} (${verb[0]})` });
+      expect(control).toHaveAttribute('aria-disabled', 'true');
+      fireEvent.click(control);
+      fireEvent.keyDown(window, { key: verb[0]!.toLowerCase() });
+      expect(onAction).not.toHaveBeenCalled();
+      expect(
+        screen.getByText(/No current emails to Archive, move to Later, or Delete/),
+      ).toBeVisible();
+      fireEvent.click(screen.getByRole('button', { name: 'Keep (K)' }));
+      expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ verb: 'Keep' }));
+    },
+  );
   it.each([
     ['requested', 'Requesting…'],
     ['endpoint_accepted', 'Request accepted'],

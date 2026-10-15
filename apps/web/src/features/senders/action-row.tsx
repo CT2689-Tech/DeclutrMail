@@ -29,6 +29,7 @@ import {
 } from './row-activity';
 import {
   canArchive,
+  currentMailUnavailableReason,
   canDelete,
   canLater,
   canUnsubscribe,
@@ -128,8 +129,14 @@ export function SenderActionRow({
           // button lives in the detail pane and the confirm sheet.
           tone={status || unsubscribeStatus ? 'ghost' : 'default'}
           size="sm"
-          inert={busy || status != null || unsubscribeStatus != null}
-          {...(!status && unsubscribeStatus ? { title: unsubscribeStatus.title } : {})}
+          inert={
+            busy || status != null || unsubscribeStatus != null || !capabilities[primaryVerbId]
+          }
+          {...(!status && unsubscribeStatus
+            ? { title: unsubscribeStatus.title }
+            : currentMailUnavailableReason(primaryLegacy, sender)
+              ? { title: currentMailUnavailableReason(primaryLegacy, sender)! }
+              : {})}
           onClick={() => onAction({ verb: primaryLegacy, senders: [sender] })}
           style={{
             whiteSpace: 'nowrap',
@@ -166,6 +173,9 @@ export function SenderActionRow({
           ariaLabel={`Actions for ${senderLabel}`}
           capabilities={capabilities}
           disabledReasons={{
+            archive: currentMailUnavailableReason('Archive', sender) ?? '',
+            later: currentMailUnavailableReason('Later', sender) ?? '',
+            delete: currentMailUnavailableReason('Delete', sender) ?? '',
             unsubscribe: unsubscribeStatus
               ? `${unsubscribeStatus.label}. ${unsubscribeStatus.title}`
               : (unsubscribeUnavailableReason(sender.unsubscribeMethod) ?? ''),

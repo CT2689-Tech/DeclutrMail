@@ -102,6 +102,31 @@ describe('derivePrimaryVerbId — ADR-0019 fact-rule primary (D227 verbs)', () =
 });
 
 describe('SenderActionRow — one-click unsub-ready row', () => {
+  it('disables empty-mail menu actions and an empty primary without dispatching', () => {
+    const onAction = vi.fn();
+    render(
+      <SenderActionRow
+        sender={sender({
+          inboxCount: 0,
+          archivedCount: 0,
+          lastDays: 250,
+          unsubscribeMethod: 'none',
+        })}
+        onAction={onAction}
+      />,
+    );
+    const primary = screen.getByRole('button', { name: 'Archive' });
+    expect(primary).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(primary);
+    fireEvent.click(screen.getByRole('button', { name: 'More actions for Acme Deals' }));
+    for (const verb of ['Archive', 'Later', 'Delete']) {
+      const item = screen.getByRole('menuitem', { name: new RegExp(`^${verb}`) });
+      expect(item).toHaveAttribute('aria-disabled', 'true');
+      fireEvent.click(item);
+      fireEvent.keyDown(item, { key: verb[0]!.toLowerCase() });
+    }
+    expect(onAction).not.toHaveBeenCalled();
+  });
   it('shows accepted status after readback and keeps repeat unsubscribe inert in the menu', () => {
     const onAction = vi.fn();
     render(

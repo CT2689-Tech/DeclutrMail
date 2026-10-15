@@ -247,7 +247,7 @@ function detailPreviewHandler(opts: { count?: () => number; onFetch?: () => void
 
 let lastClient: ReturnType<typeof createTestQueryClient>;
 
-function renderDetail(id = 'linkedin', explanations?: 'allowed') {
+function renderDetail(id = 'linkedin', explanations?: 'allowed', layout: 'page' | 'pane' = 'page') {
   const client = createTestQueryClient();
   if (explanations === 'allowed') {
     client.setQueryData(['me-settings'], {
@@ -257,7 +257,7 @@ function renderDetail(id = 'linkedin', explanations?: 'allowed') {
   lastClient = client;
   return render(
     <QueryWrapper client={client}>
-      <SenderDetailRoute id={id} />
+      <SenderDetailRoute id={id} layout={layout} />
     </QueryWrapper>,
   );
 }
@@ -914,6 +914,63 @@ describe('SenderDetailRoute', () => {
         lastClient.setQueryData(sendersKeys.detail('linkedin'), { data: { ...current } });
         fireEvent.click(confirm);
       }
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(posts).toBe(0);
+    },
+  );
+
+  it.each(['page', 'pane'] as const)(
+    'renders confirmed empty mail with unavailable actions on the %s',
+    async (layout) => {
+      installHappyPath(MESSAGE, undefined, undefined, {
+        ...DETAIL,
+        inboxCount: 0,
+        archivedCount: 0,
+      });
+      renderDetail('linkedin', undefined, layout);
+      await screen.findByText('No current emails to Archive, move to Later, or Delete.');
+      for (const verb of ['Archive', 'Later', 'Delete']) {
+        expect(
+          screen.getByRole('button', { name: layout === 'page' ? `${verb} (${verb[0]})` : verb }),
+        ).toHaveAttribute('aria-disabled', 'true');
+      }
+    },
+  );
+
+  it.each(['Archive', 'Later', 'Delete'] as const)(
+    'refuses immediate zero readback before %s confirmation',
+    async (verb) => {
+      let posts = 0;
+      installHappyPath();
+      addFetchHandlers([
+        detailPreviewHandler(),
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () => {
+            posts += 1;
+            return jsonOk({ data: { actionId: 'never', requestedCount: 0, status: 'queued' } });
+          },
+        },
+      ]);
+      renderDetail();
+      fireEvent.click(await screen.findByRole('button', { name: `${verb} (${verb[0]})` }));
+      const dialog = await screen.findByRole('dialog');
+      if (verb === 'Delete') {
+        const window = await within(dialog).findByRole('combobox', {
+          name: 'How far back to act on',
+        });
+        fireEvent.change(window, { target: { value: 'all' } });
+      }
+      const confirm = await within(dialog).findByRole('button', {
+        name:
+          verb === 'Later' ? /^Move \d+ emails? to Later$/ : new RegExp(`^${verb} \\d+ emails?$`),
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      lastClient.setQueryData(sendersKeys.detail('linkedin'), {
+        data: { ...DETAIL, inboxCount: 0, archivedCount: 0 },
+      });
+      fireEvent.click(confirm);
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
       expect(posts).toBe(0);
     },
