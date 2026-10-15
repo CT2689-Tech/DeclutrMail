@@ -796,6 +796,107 @@ describe('SenderDetailRoute', () => {
     expect(screen.queryByText(/^op /)).not.toBeInTheDocument();
   });
 
+  it.each(['page', 'pane'] as const)(
+    'does not suggest Unsubscribe after endpoint acceptance in the %s',
+    async (layout) => {
+      installHappyPath(MESSAGE, undefined, undefined, {
+        ...DETAIL,
+        policyType: 'unsubscribe',
+        unsubStatus: 'endpoint_accepted',
+        inboxCount: 0,
+        archivedCount: 0,
+        recommendation: {
+          verdict: 'unsubscribe',
+          confidence: 0.9,
+          reasoning: 'High volume, rarely marked read.',
+          generatedBy: 'template',
+          scoredAt: '2026-05-20T10:00:00.000Z',
+          stale: false,
+        },
+      });
+      const client = createTestQueryClient();
+      render(
+        <QueryWrapper client={client}>
+          <SenderDetailRoute id="linkedin" layout={layout} />
+        </QueryWrapper>,
+      );
+      await screen.findByRole('status', { name: 'Request accepted' });
+      expect(
+        screen.queryByRole('group', { name: 'Optional suggestion: Unsubscribe' }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it.each([
+    { action: 'Keep', verdict: 'archive', policyType: 'keep', inbox: 21, archived: 0 },
+    { action: 'Archive', verdict: 'archive', policyType: null, inbox: 0, archived: 21 },
+    { action: 'Later', verdict: 'later', policyType: null, inbox: 0, archived: 0 },
+    { action: 'Delete', verdict: 'archive', policyType: null, inbox: 0, archived: 0 },
+    {
+      action: 'Unsubscribe',
+      verdict: 'unsubscribe',
+      policyType: 'unsubscribe',
+      inbox: 21,
+      archived: 0,
+    },
+  ] as const)(
+    'reconciles the suggestion after $action and restores eligible reads after Undo',
+    async ({ action, verdict, policyType, inbox, archived }) => {
+      const before: SenderDetailDto = {
+        ...DETAIL,
+        policyType: null,
+        unsubStatus: null,
+        inboxCount: 21,
+        archivedCount: 0,
+        recommendation: {
+          verdict,
+          confidence: 0.9,
+          reasoning: 'A stored engine read.',
+          generatedBy: 'template',
+          scoredAt: '2026-05-20T10:00:00.000Z',
+          stale: false,
+        },
+      };
+      // The same query receives the worker/policy readback, then Undo's
+      // restored facts. Both layouts share this route and render path.
+      const current = { ...before };
+      installHappyPath(MESSAGE, undefined, undefined, current);
+      renderDetail();
+      await screen.findByRole('group', { name: /Optional suggestion/ });
+      Object.assign(current, {
+        policyType,
+        inboxCount: inbox,
+        archivedCount: archived,
+        unsubStatus: action === 'Unsubscribe' ? 'endpoint_accepted' : null,
+      });
+      await act(async () => {
+        await lastClient.invalidateQueries({
+          queryKey: sendersKeys.detail('linkedin'),
+          exact: true,
+        });
+      });
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('group', { name: /Optional suggestion/ }),
+        ).not.toBeInTheDocument(),
+      );
+      // An unsubscribe cannot be recalled. Only the reversible choices
+      // return to their previous eligible state here.
+      if (action !== 'Unsubscribe') {
+        Object.assign(current, before);
+        await act(async () => {
+          await lastClient.invalidateQueries({
+            queryKey: sendersKeys.detail('linkedin'),
+            exact: true,
+          });
+        });
+        expect(
+          await screen.findByRole('group', { name: /Optional suggestion/ }),
+        ).toBeInTheDocument();
+      }
+    },
+  );
+
   it('shows no suggestion for a sender the engine has never scored', async () => {
     installHappyPath();
     renderDetail();
@@ -2361,6 +2462,99 @@ describe('SenderDetailRoute — refreshing an aged-out read (D25)', () => {
     await waitFor(() => expect(posted).toHaveLength(1));
     expect(posted[0]).toEqual({ senderId: 'linkedin', reason: 'stale' });
   });
+
+  it('does not buy another score for a fulfilled unsubscribe suggestion', async () => {
+    stubWithRecommendation(AGED);
+    // Override the detail GET before the first render; an empty visible
+    // projection must not be mistaken for a never-scored sender.
+    installFetchStub([
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+$/,
+        respond: () =>
+          jsonOk({
+            data: {
+              ...DETAIL,
+              policyType: 'unsubscribe',
+              unsubStatus: 'endpoint_accepted',
+              recommendation: AGED,
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/(messages|history)$/,
+        respond: () => jsonOk({ data: [], meta: { pagination: { nextCursor: null } } }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/timeseries$/,
+        respond: () => jsonOk({ data: [] }),
+      },
+      {
+        method: 'POST',
+        path: '/api/triage/score-sender',
+        respond: async (req) => {
+          posted.push(await req.json());
+          return jsonOk({ data: { idempotencyKey: 'k' } });
+        },
+      },
+    ]);
+    renderDetail();
+    await screen.findByRole('status', { name: 'Request accepted' });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+    expect(posted).toHaveLength(0);
+    expect(screen.queryByRole('group', { name: /Optional suggestion/ })).not.toBeInTheDocument();
+  });
+
+  it.each(['keep', 'protected'] as const)(
+    'does not score a never-scored sender whose current choice is %s',
+    async (choice) => {
+      stubWithRecommendation(null);
+      installFetchStub([
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+$/,
+          respond: () =>
+            jsonOk({
+              data: {
+                ...DETAIL,
+                policyType: choice === 'keep' ? 'keep' : null,
+                protectionFlags: { ...DETAIL.protectionFlags, isProtected: choice === 'protected' },
+                recommendation: null,
+              },
+            }),
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+\/(messages|history)$/,
+          respond: () => jsonOk({ data: [], meta: { pagination: { nextCursor: null } } }),
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+\/timeseries$/,
+          respond: () => jsonOk({ data: [] }),
+        },
+        {
+          method: 'POST',
+          path: '/api/triage/score-sender',
+          respond: async (req) => {
+            posted.push(await req.json());
+            return jsonOk({ data: { idempotencyKey: 'k' } });
+          },
+        },
+      ]);
+      renderDetail();
+      await screen.findByRole('heading', { name: /^LinkedIn$/ });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 60));
+      });
+      expect(posted).toHaveLength(0);
+      expect(screen.queryByRole('group', { name: /Optional suggestion/ })).not.toBeInTheDocument();
+    },
+  );
 
   it('leaves a read that is still inside its TTL alone', async () => {
     stubWithRecommendation({ ...AGED, stale: false });
