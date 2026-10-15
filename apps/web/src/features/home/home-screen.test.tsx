@@ -250,7 +250,7 @@ describe('HomeScreen', () => {
     });
     renderHome();
     const unsubscribe = await screen.findByRole('button', {
-      name: 'Unsubscribe + archive 2 senders',
+      name: 'Preview cleanup',
     });
     expect(screen.getByRole('region', { name: 'Suggested next steps' })).toBeInTheDocument();
     expect(screen.getByText(/Each of those 29 senders had less than 10%/)).toBeInTheDocument();
@@ -339,12 +339,12 @@ describe('HomeScreen', () => {
     renderHome(createTestQueryClient(), true);
     const copy = homeFixCopy();
     expect(copy).not.toBeNull();
-    fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Preview cleanup' }));
     expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: copy!.cancel }));
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(posts).toHaveLength(0);
-    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview cleanup' }));
     fireEvent.click(await screen.findByRole('button', { name: copy!.button }));
     await waitFor(() => expect(posts).toHaveLength(1));
     expect(posts[0]).toEqual({
@@ -773,9 +773,7 @@ describe('HomeScreen', () => {
       </QueryClientProvider>,
     );
 
-    expect(
-      await screen.findByRole('button', { name: 'Unsubscribe + archive 7 senders' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Preview cleanup' })).toBeInTheDocument();
     await waitFor(() => expect(client.getQueryData(undoKeys.tray('mb-1'))).toEqual([]));
     tray.rows = [
       {
@@ -809,7 +807,7 @@ describe('HomeScreen', () => {
     await waitFor(() =>
       expect(
         screen.getAllByRole('button', { name: 'Unsubscribe + archive 20 senders' }),
-      ).toHaveLength(2),
+      ).toHaveLength(1),
     );
     expect(document.querySelector('[data-dm-undo-tray]')).toBeNull();
     expect(localStorage.getItem(celebrationKey)).toBeNull();
@@ -910,9 +908,7 @@ describe('HomeScreen', () => {
       </QueryClientProvider>,
     );
 
-    expect(
-      await screen.findByRole('button', { name: 'Unsubscribe + archive 7 senders' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Preview cleanup' })).toBeInTheDocument();
     await waitFor(() => expect(client.getQueryData(undoKeys.tray('mb-1'))).toEqual([]));
     state.rows = [
       {
@@ -963,7 +959,7 @@ describe('HomeScreen', () => {
     await waitFor(
       () => {
         expect(
-          screen.getByRole('button', { name: 'Unsubscribe + archive 20 senders' }),
+          screen.getByRole('heading', { name: /A closer look at.*20 senders/ }),
         ).toBeInTheDocument();
         expect(client.getQueryData(undoKeys.tray('mb-1'))).toEqual([]);
         expect(client.getQueryData(undoKeys.inFlight('mb-1'))).toEqual([]);

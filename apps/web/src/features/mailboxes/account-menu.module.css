@@ -1,0 +1,121 @@
+.trigger {
+  max-width: 270px;
+  min-height: 44px;
+  background: transparent;
+  touch-action: manipulation;
+}
+.trigger:hover {
+  background: var(--dm-fill);
+}
+.triggerLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.caret {
+  font-size: 12px;
+}
+.panel {
+  animation: menuIn 120ms cubic-bezier(0.2, 0, 0, 1) both;
+  border: 1px solid var(--dm-line);
+}
+.menuHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 8px;
+}
+.menuHeader h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dm-fg);
+}
+.closeButton {
+  display: grid;
+  place-items: center;
+  height: 44px;
+  width: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  color: var(--dm-fg-muted);
+  background: transparent;
+  cursor: pointer;
+}
+.closeButton:hover {
+  background: var(--dm-fill);
+}
+.scope {
+  margin: 0;
+  padding: 0 8px 14px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dm-fg-muted);
+}
+.mailboxAvatar {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--dm-line);
+  border-radius: 50%;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--dm-fg-soft);
+}
+.activeCheck {
+  color: var(--dm-primary);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.divider {
+  height: 1px;
+  background: var(--dm-line);
+  margin: 6px 0;
+}
+.plan {
+  margin-left: auto;
+  padding: 2px 6px;
+  border: 1px solid var(--dm-primary-border);
+  border-radius: 4px;
+  font-size: 10px;
+  color: var(--dm-primary);
+}
+.trigger:focus-visible,
+.panel:focus-visible,
+.panel button:focus-visible,
+.panel a:focus-visible {
+  outline: 2px solid var(--dm-primary);
+  outline-offset: 3px;
+}
+@keyframes menuIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (max-width: 760px) {
+  .triggerLabel {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .panel {
+    max-height: calc(100dvh - 150px) !important;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    animation: none;
+  }
+}
