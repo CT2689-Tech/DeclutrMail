@@ -17,6 +17,51 @@ const sender: typeof makeSender = (overrides = {}) =>
   });
 
 describe('ActionToolbar — neutral actions', () => {
+  it.each([
+    ['requested', 'Requesting…'],
+    ['endpoint_accepted', 'Request accepted'],
+    ['user_marked_sent', 'Marked sent'],
+  ] as const)('shows %s as inert current status, including its shortcut', (unsubStatus, label) => {
+    const onAction = vi.fn();
+    render(
+      <ActionToolbar
+        sender={sender({
+          unsubscribeMethod: 'one_click',
+          policyType: 'unsubscribe',
+          unsubStatus,
+        })}
+        onAction={onAction}
+        shortcuts
+      />,
+    );
+    const accepted = screen.getByRole('button', { name: label });
+    expect(accepted).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(accepted);
+    fireEvent.keyDown(window, { key: 'u' });
+    expect(onAction).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Archive (A)' }));
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ verb: 'Archive' }));
+  });
+
+  it.each(['failed', 'unconfirmed', 'action_required', 'draft_opened', null] as const)(
+    'keeps explicit recovery available for %s',
+    (unsubStatus) => {
+      const onAction = vi.fn();
+      render(
+        <ActionToolbar
+          sender={sender({
+            unsubscribeMethod: 'one_click',
+            policyType: 'unsubscribe',
+            unsubStatus,
+          })}
+          onAction={onAction}
+          shortcuts
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe (U)' }));
+      expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ verb: 'Unsubscribe' }));
+    },
+  );
   it('does not describe unchecked unsubscribe availability as a missing link', () => {
     render(<ActionToolbar sender={sender({ unsubscribeMethod: null })} onAction={vi.fn()} />);
     const unsubscribe = screen.getByRole('button', { name: 'Unsubscribe' });

@@ -207,6 +207,44 @@ function installHappyPath(
   ]);
 }
 
+function detailPreviewHandler(opts: { count?: () => number; onFetch?: () => void } = {}) {
+  return {
+    method: 'GET' as const,
+    path: '/api/actions/preview',
+    respond: () => {
+      opts.onFetch?.();
+      return jsonOk({
+        data: {
+          sender: {
+            id: 'linkedin',
+            name: 'LinkedIn',
+            domain: 'linkedin.com',
+            lastSeenDays: 2,
+            wroteToCount: 0,
+            monthly: 64,
+          },
+          counts: {
+            all: opts.count?.() ?? 12,
+            olderThan30d: 0,
+            olderThan90d: 0,
+            olderThan180d: 0,
+            olderThan365d: 0,
+          },
+          recentMessages: {
+            all: [],
+            olderThan30d: [],
+            olderThan90d: [],
+            olderThan180d: [],
+            olderThan365d: [],
+          },
+          unsubAvailable: true,
+          protected: false,
+        },
+      });
+    },
+  };
+}
+
 let lastClient: ReturnType<typeof createTestQueryClient>;
 
 function renderDetail(id = 'linkedin', explanations?: 'allowed') {
@@ -820,10 +858,64 @@ describe('SenderDetailRoute', () => {
           <SenderDetailRoute id="linkedin" layout={layout} />
         </QueryWrapper>,
       );
-      await screen.findByRole('status', { name: 'Request accepted' });
+      await screen.findByRole('button', { name: 'Request accepted' });
+      const accepted = screen.getByRole('button', { name: 'Request accepted' });
+      expect(accepted).toHaveAttribute('aria-disabled', 'true');
+      fireEvent.click(accepted);
+      fireEvent.keyDown(window, { key: 'u' });
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       expect(
         screen.queryByRole('group', { name: 'Optional suggestion: Unsubscribe' }),
       ).not.toBeInTheDocument();
+    },
+  );
+
+  it.each(['rendered', 'immediate'] as const)(
+    'refuses a stale unsubscribe confirmation after %s accepted readback',
+    async (timing) => {
+      const current: SenderDetailDto = {
+        ...DETAIL,
+        policyType: null,
+        unsubStatus: null,
+        unsubscribeMethod: 'one_click',
+      };
+      let posts = 0;
+      installHappyPath(MESSAGE, undefined, undefined, current);
+      addFetchHandlers([
+        detailPreviewHandler(),
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-backlog',
+          respond: () => {
+            posts += 1;
+            return jsonOk({ data: { mode: 'unsub_only', backlog: null, senders: [] } });
+          },
+        },
+      ]);
+      renderDetail();
+      fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
+      const dialog = await screen.findByRole('dialog');
+      const confirm = await within(dialog).findByRole('button', {
+        name: /^Unsubscribe(?: \+ Archive)?$/,
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      Object.assign(current, { policyType: 'unsubscribe', unsubStatus: 'endpoint_accepted' });
+      if (timing === 'rendered') {
+        await act(async () => {
+          await lastClient.invalidateQueries({
+            queryKey: sendersKeys.detail('linkedin'),
+            exact: true,
+          });
+        });
+        await screen.findByRole('button', { name: 'Request accepted' });
+        fireEvent.click(confirm);
+      } else {
+        // Confirm before the query observer can commit a render/effect.
+        lastClient.setQueryData(sendersKeys.detail('linkedin'), { data: { ...current } });
+        fireEvent.click(confirm);
+      }
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(posts).toBe(0);
     },
   );
 
@@ -1521,43 +1613,6 @@ describe('SenderDetailRoute', () => {
 
   describe('action latch — overdue release + guard trip', () => {
     /** Live composite preview for the fixture sender — arms the D226 confirm. */
-    function detailPreviewHandler(opts: { count?: () => number; onFetch?: () => void } = {}) {
-      return {
-        method: 'GET' as const,
-        path: '/api/actions/preview',
-        respond: () => {
-          opts.onFetch?.();
-          return jsonOk({
-            data: {
-              sender: {
-                id: 'linkedin',
-                name: 'LinkedIn',
-                domain: 'linkedin.com',
-                lastSeenDays: 2,
-                wroteToCount: 0,
-                monthly: 64,
-              },
-              counts: {
-                all: opts.count?.() ?? 12,
-                olderThan30d: 0,
-                olderThan90d: 0,
-                olderThan180d: 0,
-                olderThan365d: 0,
-              },
-              recentMessages: {
-                all: [],
-                olderThan30d: [],
-                olderThan90d: [],
-                olderThan180d: [],
-                olderThan365d: [],
-              },
-              unsubAvailable: true,
-              protected: false,
-            },
-          });
-        },
-      };
-    }
 
     function actionStatusBody(id: string, done: boolean) {
       return {
@@ -2501,7 +2556,7 @@ describe('SenderDetailRoute — refreshing an aged-out read (D25)', () => {
       },
     ]);
     renderDetail();
-    await screen.findByRole('status', { name: 'Request accepted' });
+    await screen.findByRole('button', { name: 'Request accepted' });
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 60));
     });

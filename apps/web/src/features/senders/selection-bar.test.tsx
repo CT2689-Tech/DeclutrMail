@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { vi } from 'vitest';
 
 import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
 
@@ -15,6 +17,31 @@ const SENDER = makeSender({
 });
 
 describe('<SelectionBar /> floating-surface contract', () => {
+  it.each(['bar', 'sheet'] as const)(
+    'excludes recorded requests from the %s selection',
+    (variant) => {
+      const onAct = vi.fn();
+      render(
+        <SelectionBar
+          {...(variant === 'sheet' ? { variant: 'sheet' as const } : {})}
+          senders={[
+            makeSender({
+              unsubscribeMethod: 'one_click',
+              policyType: 'unsubscribe',
+              unsubStatus: 'endpoint_accepted',
+            }),
+          ]}
+          onClear={() => {}}
+          onAct={onAct}
+          tier="pro"
+        />,
+      );
+      const unsubscribe = screen.getByRole('button', { name: /^Unsubscribe 0 of 1/ });
+      expect(unsubscribe).toBeDisabled();
+      fireEvent.click(unsubscribe);
+      expect(onAct).not.toHaveBeenCalled();
+    },
+  );
   it('pins its footprint and stack order below the global undo tray offset', () => {
     const html = renderToStaticMarkup(
       <SelectionBar

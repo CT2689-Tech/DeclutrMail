@@ -4,7 +4,7 @@ import type { ToastTone } from '@declutrmail/shared';
 import type { ActionStatusResult } from '@/lib/api/actions';
 import { unsubscribeOutcomeToast as outcomeToast } from '@/lib/unsubscribe-outcome-copy';
 
-import type { Sender } from './data';
+import { blocksRepeatUnsubscribe, type Sender } from './data';
 
 /**
  * Unsubscribe status copy by execution state (D9 Wave 2 — honest states,
@@ -65,6 +65,15 @@ export function unsubscribeStatusCopy(
     status ??
     (method === 'mailto' ? 'action_required' : method === 'none' ? 'unavailable' : 'unconfirmed');
   return UNSUB_PILL[resolved];
+}
+
+/** The durable lifecycle owns this control until a new request is appropriate. */
+export function unsubscribeControlStatus(
+  sender: Pick<Sender, 'policyType' | 'unsubStatus' | 'unsubscribeMethod'>,
+): { label: string; title: string } | null {
+  return blocksRepeatUnsubscribe(sender)
+    ? unsubscribeStatusCopy(sender.unsubStatus, sender.unsubscribeMethod)
+    : null;
 }
 
 /** Object-shaped adapter for callers of the original status helper. */

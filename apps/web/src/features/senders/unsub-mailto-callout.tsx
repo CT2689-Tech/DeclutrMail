@@ -97,7 +97,9 @@ export function UnsubMailtoCallout({
       }}
     >
       <span style={{ flex: 1, fontSize: text.base, color: color.fg, lineHeight: 1.5 }}>
-        <strong style={{ fontWeight: 600 }}>One step left for {senderName}.</strong>{' '}
+        <strong style={{ fontWeight: 600 }}>
+          {markedSent ? `Marked sent for ${senderName}.` : `One step left for ${senderName}.`}
+        </strong>{' '}
         <span style={{ color: color.fgSoft }}>
           {markedSent
             ? 'You marked the unsubscribe email as sent — stopping is up to the sender.'
