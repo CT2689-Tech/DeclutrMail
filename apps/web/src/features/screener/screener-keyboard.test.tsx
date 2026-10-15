@@ -226,7 +226,7 @@ describe('Screener keyboard handler (#220, D226)', () => {
     expect(previewRegion(PREVIEW_KEEP)).not.toBeInTheDocument();
   });
 
-  it('disables click and U shortcut when the sender publishes no unsubscribe channel', () => {
+  it('disables click and U shortcut when no unsubscribe link was found', () => {
     renderReady();
     fireEvent.click(
       screen.getByRole('button', { name: new RegExp(`${noChannelRow.senderName} — expand`) }),
@@ -234,7 +234,9 @@ describe('Screener keyboard handler (#220, D226)', () => {
 
     const unsubscribe = screen.getByRole('button', { name: /^Unsubscribe$/ });
     expect(unsubscribe).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.getByRole('note')).toHaveTextContent(/No unsubscribe channel/i);
+    expect(screen.getByRole('note')).toHaveTextContent(
+      'No unsubscribe link found in the emails checked.',
+    );
     fireEvent.keyDown(window, { key: 'u' });
     expect(previewRegion(PREVIEW_KEEP)).not.toBeInTheDocument();
   });

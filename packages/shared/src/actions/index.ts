@@ -24,6 +24,7 @@ export {
   DEFAULT_LATER_WAKE_DAYS,
   LATER_BULK_RETURN_NOTICE_THRESHOLD,
   actionHasRecovery,
+  actionHelpCopy,
   buildActionPresentation,
   buildActionReceiptResult,
   composeRecoveryFacts,

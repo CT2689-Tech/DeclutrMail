@@ -193,9 +193,11 @@ describe('SenderDetailPane', () => {
     expect(screen.getByTestId('sender-detail-archived-count')).toHaveTextContent('137');
     expect(screen.getByTestId('sender-detail-window-count')).toHaveTextContent('64');
     expect(screen.getByText(/2,048 received · all time/)).toBeInTheDocument();
-    expect(screen.getByLabelText('Now')).toHaveTextContent('Currently in your inbox');
-    expect(screen.getByLabelText('Now')).toHaveTextContent('Currently archived');
-    expect(screen.getByLabelText('Now')).not.toHaveTextContent('2,048');
+    expect(screen.getByLabelText('Current email totals')).toHaveTextContent('In inbox');
+    expect(screen.getByLabelText('Current email totals')).toHaveTextContent(
+      'Archived (includes Later)',
+    );
+    expect(screen.getByLabelText('Current email totals')).not.toHaveTextContent('2,048');
   });
 
   it('advertises and binds no K/A/U/L/D key — the list owns those keys beside it', async () => {

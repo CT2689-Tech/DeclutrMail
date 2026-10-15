@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { color } from '../tokens/tokens';
 import { COOKIE_BANNER_LIFT_VAR } from '../tokens/overlay-layers';
 import { UNDO_TRAY_INSET_VAR } from './undo-tray/undo-tray';
 import { toast, ToastAnnouncement, toastStackPosition, type ToastTone } from './toast';
@@ -58,5 +59,24 @@ describe('toast dismissal', () => {
     vi.advanceTimersByTime(3600);
     expect(vi.getTimerCount()).toBe(0);
     expect(() => dismiss()).not.toThrow();
+  });
+});
+
+describe('action feedback consistency', () => {
+  it('uses the same card and foreground as progress/Undo in either theme', () => {
+    const markup = markupFor('success');
+    expect(markup).toContain(`background:${color.card}`);
+    expect(markup).toContain(`color:${color.fg}`);
+    expect(markup).not.toContain(`background:${color.fg};`);
+  });
+  it('shows the real pending indicator without an expiry timer until dismissed', () => {
+    vi.useFakeTimers();
+    const dismiss = toast('Keeping Acme…', 'info', undefined, { pending: true });
+    expect(vi.getTimerCount()).toBe(0);
+    expect(
+      renderToStaticMarkup(<ToastAnnouncement msg="Keeping Acme…" tone="info" pending />),
+    ).toContain('data-dm-spinner');
+    dismiss();
+    vi.useRealTimers();
   });
 });

@@ -89,9 +89,9 @@ export function unsubscribeUnavailableReason(
     case 'mailto':
       return null;
     case 'none':
-      return 'No unsubscribe channel found — Archive handles senders like this.';
+      return 'No unsubscribe link found in the emails checked.';
     case 'unknown':
-      return 'Not checked for an unsubscribe option yet — Archive works meanwhile.';
+      return 'Not checked for an unsubscribe option yet.';
   }
 }
 

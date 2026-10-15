@@ -128,7 +128,7 @@ export type {
   EdgeStateInventory,
   ScreenId,
 } from './edge-states/inventory';
-export { ToastHost, toast, toastStackPosition } from './components/toast';
+export { ToastHost, toast, toastStackPosition, usePendingToast } from './components/toast';
 export type { ToastTone } from './components/toast';
 
 // Persistent undo tray (D35, D58). Data is injected via the

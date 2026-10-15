@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { tokens } from '@declutrmail/shared';
 import { ActionToolbar } from './action-toolbar';
+import { RowActivityProvider } from '../row-activity';
 import { makeSender } from '../testing/make-sender';
 
 const sender: typeof makeSender = (overrides = {}) =>
@@ -21,7 +22,7 @@ describe('ActionToolbar — neutral actions', () => {
     ['requested', 'Requesting…'],
     ['endpoint_accepted', 'Request accepted'],
     ['user_marked_sent', 'Marked sent'],
-  ] as const)('shows %s as inert current status, including its shortcut', (unsubStatus, label) => {
+  ] as const)('separates %s from the disabled verb and shortcut', (unsubStatus, label) => {
     const onAction = vi.fn();
     render(
       <ActionToolbar
@@ -34,7 +35,8 @@ describe('ActionToolbar — neutral actions', () => {
         shortcuts
       />,
     );
-    const accepted = screen.getByRole('button', { name: label });
+    expect(screen.getByText(label).closest('button')).toBeNull();
+    const accepted = screen.getByRole('button', { name: 'Unsubscribe (U)' });
     expect(accepted).toHaveAttribute('aria-disabled', 'true');
     fireEvent.click(accepted);
     fireEvent.keyDown(window, { key: 'u' });
@@ -221,5 +223,34 @@ describe('ActionToolbar — K/A/U/L/D keys', () => {
     expect(onAction).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Archive' })).toBeInTheDocument();
     expect(screen.queryByText('A')).not.toBeInTheDocument();
+  });
+});
+
+describe('ActionToolbar — actions and results stay distinct', () => {
+  it('keeps Later named as an action after completion and counts the result separately', () => {
+    const row = sender();
+    render(
+      <RowActivityProvider
+        value={new Map([[row.id, { phase: 'done', verb: 'later', affectedCount: 212 }]])}
+      >
+        <ActionToolbar sender={row} onAction={vi.fn()} />
+      </RowActivityProvider>,
+    );
+    expect(screen.getByRole('button', { name: 'Later' })).toBeInTheDocument();
+    expect(screen.getByText(/Moved 212 emails to Later/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Moved 212/ })).not.toBeInTheDocument();
+  });
+
+  it('explains zero inbox eligibility without blocking Delete of archived mail', () => {
+    render(
+      <ActionToolbar sender={sender({ inboxCount: 0, archivedCount: 417 })} onAction={vi.fn()} />,
+    );
+    expect(screen.getByRole('button', { name: 'Archive' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Later' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('button', { name: 'Delete' })).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByText('No inbox emails to Archive or move to Later.')).toBeInTheDocument();
   });
 });

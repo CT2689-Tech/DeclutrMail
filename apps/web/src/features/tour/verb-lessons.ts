@@ -14,7 +14,7 @@
  * anyone what the button is for.
  */
 
-import { ACTION_SEMANTICS, VERB_REGISTRY, type VerbId } from '@declutrmail/shared/actions';
+import { actionHelpCopy, VERB_REGISTRY, type VerbId } from '@declutrmail/shared/actions';
 
 import type { ActionVerb } from '@/features/triage/types';
 
@@ -29,15 +29,11 @@ export interface VerbLesson {
 }
 
 export const VERB_LESSONS: readonly VerbLesson[] = VERB_REGISTRY.map((verb) => {
-  const semantics = ACTION_SEMANTICS[verb.id];
   return {
     id: verb.id,
     label: verb.label,
     shortcut: verb.shortcut,
-    effect:
-      semantics.currentMail.scope === 'none'
-        ? semantics.futureMail.summary
-        : semantics.currentMail.summary,
+    effect: actionHelpCopy(verb.id),
   };
 });
 

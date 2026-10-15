@@ -21,6 +21,7 @@ import {
   ScreenIntro,
   tokens,
   toast,
+  usePendingToast,
   useIsAtMost,
 } from '@declutrmail/shared';
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
@@ -325,6 +326,7 @@ export function TriageScreen({
 
   const keepIntent = useKeepIntent();
   const undoKeep = useUndoSenderKeep();
+  const pendingToast = usePendingToast(actionMailboxId);
   const unsubIntent = useRecordUnsubscribeIntent();
   const confirmBacklog = useConfirmUnsubscribeBacklog();
   const enqueueComposite = useEnqueueComposite();
@@ -1084,6 +1086,7 @@ export function TriageScreen({
       // Keep — policy/verdict-only (D40: applies immediately). Settles
       // on the POST; no worker, no undo token.
       if (verb === 'Keep') {
+        const dismissPendingKeep = pendingToast(`Keeping ${row.senderName}…`);
         setIntentRowId(row.id);
         keepIntent.mutate(
           { senderId: row.senderId },
@@ -1111,7 +1114,10 @@ export function TriageScreen({
               invalidateAfterDecision(qc);
               toast(`Couldn’t confirm Keep for ${row.senderName}.`, 'warn');
             },
-            onSettled: () => setIntentRowId(null),
+            onSettled: () => {
+              dismissPendingKeep();
+              setIntentRowId(null);
+            },
           },
         );
         return true;
