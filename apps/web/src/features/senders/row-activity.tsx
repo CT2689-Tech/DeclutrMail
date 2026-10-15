@@ -155,7 +155,9 @@ export function RowActivityPill({ activity }: { activity: SenderRowActivity }) {
       data-dm-row-activity={activity.phase}
       title={
         activity.phase === 'done' && activity.affectedCount !== 0
-          ? getActionSemantics(activity.verb).resultLabel
+          ? activity.verb === 'keep'
+            ? DONE.keep
+            : getActionSemantics(activity.verb).resultLabel
           : undefined
       }
       style={{
