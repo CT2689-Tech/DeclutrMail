@@ -8,3 +8,5 @@
 **Enforcement update:** Location-count matrix, component/menu/selection/swipe tests, immediate-zero page/list regressions, cache freshness tests, composed empty/eligible/Protected selection, synthetic browser checks; no global policy change.
 
 **Integration finding:** Review of the #1060 conflict repair caught an overbroad empty-row swipe gate that would have blocked future unsubscribe intent. Narrowed it to the fallback Keep case, retained mail-move/recorded-request gates, and added a zero-current fresh-unsubscribe gesture regression.
+
+**Queue copy-gate finding:** The shared glossary test scans web copy even when PR path selection skips the shared suite. It rejected two new generic “action” messages. Replaced both with the specific verb/scope and retained the shrink-only glossary baseline; run the full shared suite for copy changes before queueing.

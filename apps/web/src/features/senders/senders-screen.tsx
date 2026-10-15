@@ -2553,7 +2553,10 @@ function SendersScreenContent({
         isMailMovingVerb(req.verb) &&
         req.senders.some((sender) => !canPerformSenderAction(req.verb, sender))
       ) {
-        toast('No emails in the current scope for this action.', 'info');
+        toast(
+          req.verb === 'Delete' ? 'No current emails to delete.' : 'No inbox emails to move.',
+          'info',
+        );
         return;
       }
       if (req.verb === 'Unsubscribe' && req.senders.some((sender) => !canUnsubscribe(sender))) {

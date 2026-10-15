@@ -839,7 +839,7 @@ function ReadyState({
         toast(
           currentMailUnavailableReason(verb, sender) ??
             unsubscribeControlStatus(sender)?.label ??
-            'This action is unavailable.',
+            `${verb} is unavailable.`,
           'info',
         );
         return;
