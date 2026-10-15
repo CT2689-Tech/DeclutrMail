@@ -63,7 +63,6 @@ export const Full: Story<typeof HomeView> = {
     nextSteps: steps,
     senderSizeView: true,
     reportSizeLabel: '7.7 GB',
-    timeZone: 'UTC',
   },
 };
 
@@ -74,7 +73,6 @@ export const NoSizeView: Story<typeof HomeView> = {
     nextSteps: steps,
     senderSizeView: false,
     reportSizeLabel: '7.7 GB',
-    timeZone: 'UTC',
   },
 };
 
@@ -84,7 +82,6 @@ export const CaughtUp: Story<typeof HomeView> = {
     summary,
     nextSteps: [],
     indexedEmailCount: 47,
-    timeZone: 'UTC',
   },
 };
 

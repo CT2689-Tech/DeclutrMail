@@ -65,7 +65,6 @@ function homeNextStepEventKind(
 export function HomeView({
   state,
   tier = 'free',
-  timeZone = 'UTC',
   visitSummary,
   summary = null,
   nextSteps = [],
@@ -82,7 +81,6 @@ export function HomeView({
   state: HomeState;
   visitSummary?: ReactNode;
   tier?: TierId;
-  timeZone?: string;
   summary?: CleanupSummaryDto | null;
   nextSteps?: readonly HomeFixCandidate[];
   /** F2 size view. Largest is dropped by the ranker before it arrives here. */
@@ -143,7 +141,6 @@ export function HomeView({
       </header>
       <HomeBody
         state={state}
-        timeZone={timeZone}
         mode={mode}
         steps={steps}
         visitSummary={visitSummary}
@@ -192,7 +189,6 @@ function PlanLabel({ tier }: { tier: TierId }) {
 
 function HomeBody({
   state,
-  timeZone,
   mode,
   steps,
   visitSummary,
@@ -205,7 +201,6 @@ function HomeBody({
   onOpenFix,
 }: {
   state: HomeState;
-  timeZone: string;
   mode: HomeV1Mode;
   steps: readonly HomeFixCandidate[];
   visitSummary?: ReactNode;
@@ -264,7 +259,7 @@ function HomeBody({
               <section className={styles.progressLine} aria-label="Progress">
                 <h2 className={styles.progressHeading}>{HOME_DECK.focus.progress}</h2>
                 <p className={styles.firstProgress}>{HOME_DECK.emptyTitle}</p>
-                <Link href="/activity" className="dm-external-link dm-tap-target">
+                <Link href="/activity?window=all" className="dm-external-link dm-tap-target">
                   {HOME_DECK.activityLink}
                 </Link>
               </section>
@@ -323,7 +318,7 @@ function HomeBody({
                 </section>
               )}
             </div>
-            <Progress state={state} timeZone={timeZone} />
+            <Progress state={state} />
           </div>
           <section className={styles.contextSection} aria-label={HOME_DECK.focus.context}>
             <div className={styles.contextHeading}>
@@ -715,25 +710,14 @@ function LaterCard({ step }: { step: HomeFixCandidate }) {
   );
 }
 
-function Progress({
-  state,
-  timeZone,
-}: {
-  state: Extract<HomeState, { kind: 'ready' }>;
-  timeZone: string;
-}) {
+function Progress({ state }: { state: Extract<HomeState, { kind: 'ready' }> }) {
   return (
     <section className={styles.progressLine} aria-label="Progress">
       <h2 className={styles.progressHeading}>{HOME_DECK.focus.progress}</h2>
       <p className={styles.progressSentence}>
         <strong data-testid="home-hero">{state.hero.value.toLocaleString('en-US')}</strong>{' '}
         <span>{state.hero.label}</span>
-        {state.since !== null && (
-          <span className={styles.since}>
-            {' since '}
-            <time dateTime={state.since}>{formatSince(state.since, timeZone)}</time>
-          </span>
-        )}
+        <span className={styles.period}>{HOME_DECK.focus.allTime}</span>
       </p>
       {state.secondary.length > 0 && (
         <dl className={styles.progressDetails}>
@@ -745,7 +729,7 @@ function Progress({
           ))}
         </dl>
       )}
-      <Link href="/activity" className="dm-external-link dm-tap-target">
+      <Link href="/activity?window=all" className="dm-external-link dm-tap-target">
         {HOME_DECK.activityLink}
       </Link>
     </section>
@@ -776,8 +760,4 @@ function HomeSkeleton({ visitSummary }: { visitSummary?: ReactNode }) {
       visitSlot={visitSummary ?? <Skeleton variant="text" width={220} />}
     />
   );
-}
-
-function formatSince(iso: string, timeZone: string): string {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone });
 }

@@ -172,7 +172,6 @@ export function HomeScreen() {
     <HomeView
       state={resolve()}
       tier={tier}
-      timeZone={me.user.timezone ?? 'UTC'}
       visitSummary={<HomeArrivals />}
       summary={cleanup.data ?? null}
       nextSteps={nextSteps}
