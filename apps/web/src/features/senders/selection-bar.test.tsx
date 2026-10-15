@@ -18,6 +18,28 @@ const SENDER = makeSender({
 
 describe('<SelectionBar /> floating-surface contract', () => {
   it.each(['bar', 'sheet'] as const)(
+    'excludes empty current mail in the %s selection',
+    (variant) => {
+      const onAct = vi.fn();
+      render(
+        <SelectionBar
+          variant={variant}
+          senders={[makeSender({ inboxCount: 0, archivedCount: 0 })]}
+          onClear={() => {}}
+          onAct={onAct}
+          tier="pro"
+        />,
+      );
+      for (const verb of ['Archive', 'Later', 'Delete']) {
+        const control = screen.getByRole('button', { name: new RegExp(`^${verb} 0 of 1`) });
+        expect(control).toBeDisabled();
+        expect(control.title).toMatch(/no (?:current|inbox) emails/);
+        fireEvent.click(control);
+      }
+      expect(onAct).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['bar', 'sheet'] as const)(
     'excludes recorded requests from the %s selection',
     (variant) => {
       const onAct = vi.fn();

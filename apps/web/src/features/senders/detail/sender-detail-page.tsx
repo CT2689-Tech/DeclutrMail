@@ -22,7 +22,9 @@ import {
 import { buildActionReceiptResult } from '@declutrmail/shared/actions';
 import {
   daysSince,
-  canUnsubscribe,
+  canPerformSenderAction,
+  isMailMovingVerb,
+  currentMailUnavailableReason,
   senderAddressLine,
   type ActionRequest,
   type ActionVerb,
@@ -701,8 +703,15 @@ function ReadyState({
       policyType: detail.policyType,
       unsubStatus: detail.unsubStatus,
       unsubscribeMethod: detail.unsubscribeMethod,
+      archivedCount: detail.archivedCount ?? null,
     }),
-    [detail.sender, detail.policyType, detail.unsubStatus, detail.unsubscribeMethod],
+    [
+      detail.sender,
+      detail.policyType,
+      detail.unsubStatus,
+      detail.unsubscribeMethod,
+      detail.archivedCount,
+    ],
   );
   const sender = currentSender;
   const recommendation = currentRecommendation(detail.recommendation, {
@@ -807,10 +816,11 @@ function ReadyState({
     (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
       if (senders.length === 0) return;
       const target = senders[0]!;
-      let sender = verb === 'Unsubscribe' ? currentSender : target;
+      const needsCurrentFacts = verb === 'Unsubscribe' || isMailMovingVerb(verb);
+      let sender = needsCurrentFacts ? currentSender : target;
       // Check readback at dispatch, including the gap before React re-seeds
       // local policy state. The seed itself may predate a local policy edit.
-      if (verb === 'Unsubscribe') {
+      if (needsCurrentFacts) {
         const cached = qc.getQueryState<Awaited<ReturnType<typeof fetchSenderDetail>>>(
           sendersKeys.detail(currentSender.id),
         );
@@ -824,9 +834,14 @@ function ReadyState({
         }
       }
       // A preview can remain open while another surface records the request.
-      if (verb === 'Unsubscribe' && (target.id !== sender.id || !canUnsubscribe(sender))) {
+      if (needsCurrentFacts && (target.id !== sender.id || !canPerformSenderAction(verb, sender))) {
         setPendingAction(null);
-        toast(unsubscribeControlStatus(sender)?.label ?? 'Unsubscribe is unavailable.', 'info');
+        toast(
+          currentMailUnavailableReason(verb, sender) ??
+            unsubscribeControlStatus(sender)?.label ??
+            `${verb} is unavailable.`,
+          'info',
+        );
         return;
       }
       // Keep — non-destructive, no Gmail mutation, no receipt. Applies
@@ -1107,7 +1122,7 @@ function ReadyState({
   const requestAction = useCallback(
     (req: ActionRequest) => {
       if (req.senders.length === 0) return;
-      if (req.verb === 'Unsubscribe' && !canUnsubscribe(sender)) return;
+      if (!canPerformSenderAction(req.verb, sender)) return;
       if (
         req.verb === 'Archive' ||
         req.verb === 'Unsubscribe' ||

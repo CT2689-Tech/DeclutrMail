@@ -5,6 +5,7 @@ import { Button, Kbd, Pill, Tooltip, tokens } from '@declutrmail/shared';
 import { actionHelpCopy, unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
 import {
   canArchive,
+  currentMailUnavailableReason,
   canDelete,
   canLater,
   canUnsubscribe,
@@ -124,13 +125,14 @@ export function ActionToolbar({
       {VERBS.map(({ verb, shortcut }) => {
         const disabled = isVerbUnavailable(verb, sender);
         const reason =
-          verb === 'Unsubscribe'
+          currentMailUnavailableReason(verb, sender) ??
+          (verb === 'Unsubscribe'
             ? unsubscribeStatus
               ? `${unsubscribeStatus.label}. ${unsubscribeStatus.title}`
               : unavailableReason
             : (verb === 'Archive' || verb === 'Later') && sender.inboxCount === 0
               ? 'No inbox emails to move.'
-              : null;
+              : null);
         const help =
           reason ??
           actionHelpCopy(
@@ -200,7 +202,9 @@ export function ActionToolbar({
             color: color.fgMuted,
           }}
         >
-          No inbox emails to Archive or move to Later.
+          {sender.archivedCount === 0
+            ? 'No current emails to Archive, move to Later, or Delete.'
+            : 'No inbox emails to Archive or move to Later.'}
         </span>
       )}
       <span
