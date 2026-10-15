@@ -29,6 +29,7 @@ import { ConfirmActionModal, type ConfirmOptions } from '../confirm-action-modal
 import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 import type { ActionReceipt } from '../action-receipt';
 import { RecommendationBanner } from './recommendation-banner';
+import { currentRecommendation } from './current-recommendation';
 import { ActionToolbar } from './action-toolbar';
 import { RowActivityProvider, type RowActivityVerb, type SenderRowActivity } from '../row-activity';
 import { RecentMessages } from './recent-messages';
@@ -260,17 +261,37 @@ export function SenderDetailRoute({
   // `?? undefined` — as this call did — silently retired the
   // never-scored branch, so the one sender kind with no opinion at all
   // was the one kind that never asked for one. Preserve the distinction:
-  // undefined only while the query has no data.
-  useRefreshStaleRead(id, detail.data ? (detail.data.data.recommendation ?? null) : undefined, {
-    invalidate: sendersKeys.detail(id),
-  });
+  // undefined while the query has no data or the stored read is no longer
+  // applicable. A suppressed historical read must not trigger re-scoring.
+  const storedRecommendation = detail.data?.data.recommendation ?? null;
+  const recommendation = detail.data
+    ? currentRecommendation(storedRecommendation, {
+        isProtected: detail.data.data.protectionFlags.isProtected,
+        policyType: detail.data.data.policyType ?? null,
+        unsubStatus: detail.data.data.unsubStatus ?? null,
+        inboxCount: detail.data.data.inboxCount,
+        archivedCount: detail.data.data.archivedCount,
+      })
+    : null;
+  useRefreshStaleRead(
+    id,
+    detail.data && (storedRecommendation === null || recommendation !== null)
+      ? recommendation
+      : undefined,
+    {
+      invalidate: sendersKeys.detail(id),
+      enabled:
+        cachedDataIsTrustworthy &&
+        detail.data?.data.policyType !== 'keep' &&
+        detail.data?.data.protectionFlags.isProtected !== true,
+    },
+  );
   // D24 — explanations on demand (founder decision 2026-09-25). Opening a
   // sender whose reason is still the template asks for its sentence; the
   // template shows meanwhile. A stale read is the refresh above's — the
   // re-score buys its own sentence. The re-read is the detail query ALONE:
   // its key is the umbrella the messages, history and chart hang off, and
   // an explanation changes none of them.
-  const recommendation = detail.data?.data.recommendation ?? null;
   useExplainReasons(
     recommendation && recommendation.stale !== true
       ? [
@@ -658,7 +679,14 @@ function ReadyState({
     setDetail(initial);
   }, [initial, setPolicy.isPending]);
 
-  const { sender, recommendation, stats } = detail;
+  const { sender, stats } = detail;
+  const recommendation = currentRecommendation(detail.recommendation, {
+    isProtected: detail.isProtected,
+    policyType: detail.policyType,
+    unsubStatus: detail.unsubStatus,
+    inboxCount: sender.inboxCount,
+    archivedCount: detail.archivedCount,
+  });
   const sizeCopy = senderSizeDetail(sender.name, sender.sizeBytes);
   // Secondary reads have no optimistic local edits. Render their current
   // query snapshot directly, without one effect-frame of previous data.

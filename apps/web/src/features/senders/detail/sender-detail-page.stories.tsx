@@ -251,3 +251,86 @@ export const PaneUnknownInbox: Story<typeof SenderDetailPage> = {
     layout: 'pane',
   },
 };
+
+/** A stored engine read cannot repeat an already accepted unsubscribe. */
+export const UnsubscribeAccepted: Story<typeof SenderDetailPage> = {
+  args: {
+    state: {
+      kind: 'ready',
+      detail: {
+        ...buildSenderDetail(groupon),
+        policyType: 'unsubscribe',
+        unsubStatus: 'endpoint_accepted',
+        recommendation: {
+          verdict: 'unsubscribe',
+          confidence: 0.9,
+          reasoning: 'Stored read before the request.',
+          signals: [],
+        },
+      },
+    },
+  },
+  render: (args: PageArgs) => frame(<SenderDetailPage {...args} />),
+};
+
+/** Current Keep policy takes precedence over an older cleanup suggestion. */
+export const CompletedKeep: Story<typeof SenderDetailPage> = {
+  args: {
+    state: {
+      kind: 'ready',
+      detail: {
+        ...buildSenderDetail(groupon),
+        policyType: 'keep',
+        recommendation: {
+          verdict: 'unsubscribe',
+          confidence: 0.9,
+          reasoning: 'Stored read before Keep.',
+          signals: [],
+        },
+      },
+    },
+  },
+  render: (args: PageArgs) => frame(<SenderDetailPage {...args} />),
+};
+
+/** Archive finished; historical volume does not mean inbox mail remains. */
+export const InboxCleared: Story<typeof SenderDetailPage> = {
+  args: {
+    state: {
+      kind: 'ready',
+      detail: {
+        ...buildSenderDetail(groupon),
+        sender: { ...buildSenderDetail(groupon).sender, inboxCount: 0, archivedCount: 21 },
+        archivedCount: 21,
+        recommendation: {
+          verdict: 'archive',
+          confidence: 0.9,
+          reasoning: 'Stored read before Archive.',
+          signals: [],
+        },
+      },
+    },
+  },
+  render: (args: PageArgs) => frame(<SenderDetailPage {...args} />),
+};
+
+/** Partial cleanup still has actionable inbox mail and keeps the suggestion. */
+export const PartialCleanup: Story<typeof SenderDetailPage> = {
+  args: {
+    state: {
+      kind: 'ready',
+      detail: {
+        ...buildSenderDetail(groupon),
+        sender: { ...buildSenderDetail(groupon).sender, inboxCount: 7, archivedCount: 14 },
+        archivedCount: 14,
+        recommendation: {
+          verdict: 'archive',
+          confidence: 0.9,
+          reasoning: 'A useful read for the remaining inbox mail.',
+          signals: [],
+        },
+      },
+    },
+  },
+  render: (args: PageArgs) => frame(<SenderDetailPage {...args} />),
+};
