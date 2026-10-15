@@ -56,12 +56,8 @@ into one push, and push again only for an actual defect or integration conflict.
 CI runs browser verification in four independent lanes: WCAG accessibility,
 component paint plus 320px responsive layout, hydration and billing, and
 product/public journeys. Each lane has disposable Postgres/Redis services and
-its own API and production web process. Two upstream builds compile the
-classic and launch-pricing configurations once per workflow run; the three
-classic lanes share one artifact and journeys uses the launch artifact. Each
-lane validates the artifact against its exact commit, workflow run, public
-build inputs and build ID before starting. Missing or mismatched output fails
-closed. Neither output is a production deployment artifact. Lane builds and build-web
+its own API and production web build, which compiles in the background while
+the lane installs Chromium and migrates its database. Lane builds and build-web
 skip Next's lint and type pass: the `lint` job runs the same ESLint config, and
 `web-types` type-checks the route types build-web generated, which the
 `typecheck` job cannot see. Tests stay serial inside each lane; all lanes must
@@ -82,8 +78,8 @@ durations in `apps/api/vitest.shard-weights.json`; refresh them with
 runs (durations are averaged), when one shard becomes the tail. There are no
 test retries anywhere.
 
-Only Next.js Webpack compiler intermediates are cached. Marketing, classic synthetic browser and launch synthetic browser builds
-use separate compiler cache namespaces; current-source production builds
+Only Next.js Webpack compiler intermediates are cached. Marketing and synthetic
+browser builds use separate cache namespaces; current-source production builds
 always execute. Rendered output, request data, sessions and test results are
 never restored. See [Next.js CI build caching](https://nextjs.org/docs/app/guides/ci-build-caching).
 
