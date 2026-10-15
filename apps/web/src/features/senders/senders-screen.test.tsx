@@ -3070,6 +3070,163 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.keyDown(document.body, { key });
   }
 
+  it('excludes a recorded unsubscribe from a mixed selection and posts only the new request', async () => {
+    const posted: Array<{ senderIds: string[] }> = [];
+    installFetchStub([
+      {
+        ...TWO_SENDER_LIST,
+        respond: () =>
+          jsonOk({
+            data: [{ ...ROW, policyType: 'unsubscribe', unsubStatus: 'endpoint_accepted' }, ROW_B],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+          }),
+      },
+      compositePreviewHandler(3),
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-backlog',
+        respond: async (req) => {
+          posted.push(await req.json());
+          return jsonOk({ data: { mode: 'archive', backlog: null, senders: [] } });
+        },
+      },
+    ]);
+    renderScreen();
+    await selectBothAndPress('u');
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('1 sender with a recorded unsubscribe request is excluded.');
+    expect(dialog).not.toHaveTextContent(/person|people/i);
+    const confirm = await within(dialog).findByRole('button', {
+      name: /^Unsubscribe(?: \+ Archive)?$/,
+    });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]!.senderIds).toEqual(['b']);
+  });
+
+  it.each(['canonical', 'cleanup', 'invalidated cleanup', 'tied canonical'] as const)(
+    'refuses a stale list unsubscribe confirmation after accepted %s readback',
+    async (source) => {
+      let posts = 0;
+      let rows: SenderListRow[] = [ROW];
+      installFetchStub([
+        {
+          ...oneSenderHandler(),
+          respond: () =>
+            jsonOk({
+              data: rows,
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+            }),
+        },
+        compositePreviewHandler(3),
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-backlog',
+          respond: () => {
+            posts += 1;
+            return jsonOk({ data: { mode: 'unsub_only', backlog: null, senders: [] } });
+          },
+        },
+      ]);
+      renderScreen();
+      fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+      fireEvent.keyDown(document.body, { key: 'u' });
+      const dialog = await screen.findByRole('dialog');
+      const confirm = await within(dialog).findByRole('button', {
+        name: /^Unsubscribe(?: \+ Archive)?$/,
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      act(() => {
+        lastClient.setQueryData(
+          source.includes('canonical')
+            ? sendersKeys.detail('a')
+            : [...sendersKeys.detail('a'), 'cleanup', 123],
+          {
+            data: { ...ROW, policyType: 'unsubscribe', unsubStatus: 'endpoint_accepted' },
+          },
+          source === 'tied canonical'
+            ? {
+                updatedAt: Math.max(
+                  ...lastClient
+                    .getQueryCache()
+                    .findAll({ queryKey: ['senders', 'list'] })
+                    .map((query) => query.state.dataUpdatedAt),
+                ),
+              }
+            : undefined,
+        );
+      });
+      if (source.includes('cleanup')) {
+        if (source === 'invalidated cleanup') {
+          await lastClient.invalidateQueries({
+            queryKey: [...sendersKeys.detail('a'), 'cleanup', 123],
+            exact: true,
+            refetchType: 'none',
+          });
+        }
+        rows = [];
+        await act(async () => {
+          await lastClient.invalidateQueries({ queryKey: ['senders', 'list'] });
+        });
+      }
+      fireEvent.click(confirm);
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(posts).toBe(0);
+    },
+  );
+
+  it.each(['older', 'invalidated'] as const)(
+    'allows an explicit failed-request retry despite an %s inactive detail',
+    async (cached) => {
+      let posts = 0;
+      installFetchStub([
+        {
+          ...oneSenderHandler(),
+          respond: () =>
+            jsonOk({
+              data: [{ ...ROW, policyType: 'unsubscribe', unsubStatus: 'failed' }],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+            }),
+        },
+        compositePreviewHandler(3),
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-backlog',
+          respond: () => {
+            posts += 1;
+            return jsonOk({ data: { mode: 'unsub_only', backlog: null, senders: [] } });
+          },
+        },
+      ]);
+      renderScreen();
+      const select = await screen.findByRole('checkbox', { name: /select sender a/i });
+      act(() => {
+        lastClient.setQueryData(
+          sendersKeys.detail('a'),
+          { data: { ...ROW, policyType: 'unsubscribe', unsubStatus: 'requested' } },
+          cached === 'older' ? { updatedAt: 1 } : undefined,
+        );
+      });
+      if (cached === 'invalidated') {
+        await lastClient.invalidateQueries({
+          queryKey: sendersKeys.detail('a'),
+          exact: true,
+          refetchType: 'none',
+        });
+      }
+      fireEvent.click(select);
+      fireEvent.keyDown(document.body, { key: 'u' });
+      const dialog = await screen.findByRole('dialog');
+      const confirm = await within(dialog).findByRole('button', {
+        name: /^Unsubscribe(?: \+ Archive)?$/,
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      fireEvent.click(confirm);
+      await waitFor(() => expect(posts).toBe(1));
+    },
+  );
+
   it('posts only the senders the unsubscribe preview included', async () => {
     const posted: Array<{ senderIds?: string[] }> = [];
     installFetchStub([

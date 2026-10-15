@@ -24,6 +24,7 @@ import {
   useRowActivity,
 } from '../row-activity';
 import type { Verdict } from './types';
+import { unsubscribeControlStatus } from '../unsub-status';
 
 const { color, font } = tokens;
 
@@ -84,6 +85,7 @@ export function ActionToolbar({
 }) {
   const reasonId = useId();
   const unavailableReason = unsubscribeUnavailableReason(sender.unsubscribeMethod);
+  const unsubscribeStatus = unsubscribeControlStatus(sender);
   // This sender's own in-flight / finished action (see `row-activity`).
   const activity = useRowActivity(sender.id);
   const busy = isRowBusy(activity);
@@ -126,7 +128,8 @@ export function ActionToolbar({
     >
       {VERBS.map(({ verb, shortcut }) => {
         const disabled = isVerbUnavailable(verb, sender);
-        const reason = verb === 'Unsubscribe' ? unavailableReason : null;
+        const lifecycle = verb === 'Unsubscribe' ? unsubscribeStatus : null;
+        const reason = lifecycle?.title ?? (verb === 'Unsubscribe' ? unavailableReason : null);
         const status =
           activity && takesButtonSlot(activity) && activity.verb === verb.toLowerCase()
             ? activity
@@ -134,7 +137,7 @@ export function ActionToolbar({
         const again = status?.phase === 'done';
         const button = (describedBy?: string) => (
           <Button
-            tone={status ? 'ghost' : 'default'}
+            tone={status || lifecycle ? 'ghost' : 'default'}
             size="md"
             inert={busy || disabled}
             style={{
@@ -146,10 +149,11 @@ export function ActionToolbar({
                     ...(again ? { cursor: 'pointer' } : {}),
                   }
                 : {}),
+              ...(lifecycle ? { ...STATUS_BUTTON_STYLE, color: color.fgSoft } : {}),
             }}
             {...(describedBy ? { ariaDescribedBy: describedBy } : {})}
             onClick={() => onAction({ verb, senders: [sender] })}
-            {...(status || !shortcuts
+            {...(status || lifecycle || !shortcuts
               ? {}
               : {
                   iconRight: (
@@ -159,16 +163,18 @@ export function ActionToolbar({
                   ),
                 })}
             ariaLabel={
-              status
-                ? again
-                  ? `${rowStatusLabel(status)} — ${verb} again${shortcuts ? ` (${shortcut})` : ''}`
-                  : rowStatusLabel(status)
-                : shortcuts
-                  ? `${verb} (${shortcut})`
-                  : verb
+              lifecycle
+                ? lifecycle.label
+                : status
+                  ? again
+                    ? `${rowStatusLabel(status)} — ${verb} again${shortcuts ? ` (${shortcut})` : ''}`
+                    : rowStatusLabel(status)
+                  : shortcuts
+                    ? `${verb} (${shortcut})`
+                    : verb
             }
           >
-            {status ? <RowActivityStatus activity={status} /> : verb}
+            {lifecycle ? lifecycle.label : status ? <RowActivityStatus activity={status} /> : verb}
           </Button>
         );
         return (

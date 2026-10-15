@@ -127,6 +127,7 @@ export function UnsubscribeBacklogDialog({
   onConfirm: (opts: UnsubscribeBacklogOptions) => void;
 }) {
   const single = request.senders.length === 1;
+  const recordedUnsubscribeCount = request.skipped?.recordedUnsubscribeCount ?? 0;
   const auth = useOptionalAuth();
   const activeMailboxEmail = mailboxEmail ?? (auth ? getActiveMailboxEmail(auth.me) : null);
   const onlySender = request.senders[0];
@@ -472,6 +473,14 @@ export function UnsubscribeBacklogDialog({
                 {' '}
                 <span>{backlogDestination(mode, mode === 'unsub_only' ? null : cleanupCount)}</span>
               </>
+            )}
+            {recordedUnsubscribeCount > 0 && (
+              <span>
+                {' '}
+                {recordedUnsubscribeCount} sender
+                {recordedUnsubscribeCount === 1 ? '' : 's'} with a recorded unsubscribe request{' '}
+                {recordedUnsubscribeCount === 1 ? 'is' : 'are'} excluded.
+              </span>
             )}
           </>
         }

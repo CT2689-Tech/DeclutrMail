@@ -37,6 +37,7 @@ import {
   type ActionVerb,
   type Sender,
 } from './data';
+import { unsubscribeControlStatus } from './unsub-status';
 
 const { color } = tokens;
 
@@ -59,8 +60,8 @@ const { color } = tokens;
 export function derivePrimaryVerbId(sender: Sender): VerbId {
   return deriveDefaultPrimary({
     protected: isStandingProtected(sender),
-    // RECOMMENDATION, not availability — `canUnsubscribe` asks "is there
-    // a channel to use?"; this asks "should we put it forward?". There is
+    // The channel and current lifecycle govern availability; this asks
+    // whether a one-click request should be the lead action. There is
     // no Gmail-tab exemption: a one-click header marks mail sent through
     // a list or mailing system, and that outranks the Primary tab — the
     // engine's own rule since the founder decision of 2026-09-26 (Primary
@@ -92,6 +93,7 @@ export function SenderActionRow({
   const activity = useRowActivity(sender.id);
   const busy = isRowBusy(activity);
   const status = takesButtonSlot(activity) ? activity : undefined;
+  const unsubscribeStatus = unsubscribeControlStatus(sender);
 
   const primaryVerbId: VerbId = derivePrimaryVerbId(sender);
 
@@ -124,19 +126,28 @@ export function SenderActionRow({
           // Quiet at rest: a list of fifty filled buttons shouts. The verb
           // keeps its colour identity in the lettering; the ONE filled
           // button lives in the detail pane and the confirm sheet.
-          tone={status ? 'ghost' : 'default'}
+          tone={status || unsubscribeStatus ? 'ghost' : 'default'}
           size="sm"
-          inert={status != null}
+          inert={busy || status != null || unsubscribeStatus != null}
+          {...(!status && unsubscribeStatus ? { title: unsubscribeStatus.title } : {})}
           onClick={() => onAction({ verb: primaryLegacy, senders: [sender] })}
           style={{
             whiteSpace: 'nowrap',
             minWidth: 96,
             ...(status
               ? { ...STATUS_BUTTON_STYLE, color: rowStatusColor(status) }
-              : { color: LEAD_TEXT_COLOR[leadButtonTone(primaryLegacy)] }),
+              : unsubscribeStatus
+                ? { ...STATUS_BUTTON_STYLE, color: color.fgSoft }
+                : { color: LEAD_TEXT_COLOR[leadButtonTone(primaryLegacy)] }),
           }}
         >
-          {status ? <RowActivityStatus activity={status} /> : primaryLegacy}
+          {status ? (
+            <RowActivityStatus activity={status} />
+          ) : unsubscribeStatus ? (
+            unsubscribeStatus.label
+          ) : (
+            primaryLegacy
+          )}
         </Button>
       )}
       {/* Trigger opens the popover only — never toggles. Toggle pattern
@@ -155,9 +166,11 @@ export function SenderActionRow({
           ariaLabel={`Actions for ${senderLabel}`}
           capabilities={capabilities}
           disabledReasons={{
-            unsubscribe: unsubscribeUnavailableReason(sender.unsubscribeMethod) ?? '',
+            unsubscribe: unsubscribeStatus
+              ? `${unsubscribeStatus.label}. ${unsubscribeStatus.title}`
+              : (unsubscribeUnavailableReason(sender.unsubscribeMethod) ?? ''),
           }}
-          dimmedVerb={primaryVerbId}
+          {...(!unsubscribeStatus ? { dimmedVerb: primaryVerbId } : {})}
           onPick={(verbId) => {
             onAction({ verb: legacyVerbFromId(verbId), senders: [sender] });
             // Close on pick — the popover's contract ("self-closes on

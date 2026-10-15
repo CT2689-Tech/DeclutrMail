@@ -33,6 +33,22 @@ import { UnsubMailtoCallout, UnsubMailtoChecklist } from './unsub-mailto-callout
  * vanish rather than render a broken link for an unparseable mailto.
  */
 describe('UnsubMailtoCallout', () => {
+  it('describes a marked-sent step as complete without claiming delivery stopped', () => {
+    renderCallout(
+      <UnsubMailtoCallout
+        senderId="11111111-1111-4111-8111-111111111111"
+        senderName="Acme"
+        mailtoUrl="mailto:leave@acme.example"
+        status="user_marked_sent"
+      />,
+    );
+    const callout = screen.getByTestId('unsub-mailto-callout');
+    expect(callout).toHaveTextContent('Marked sent for Acme.');
+    expect(callout).toHaveTextContent('stopping is up to the sender');
+    expect(callout).not.toHaveTextContent('One step left');
+    expect(screen.queryByRole('button', { name: 'Mark sent' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Open email in Gmail' })).toBeNull();
+  });
   it('renders the compose link prefilled from the mailto URL', () => {
     renderCallout(
       <UnsubMailtoCallout

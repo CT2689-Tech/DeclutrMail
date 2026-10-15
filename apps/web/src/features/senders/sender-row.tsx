@@ -34,7 +34,13 @@ import Link from 'next/link';
 import { Avatar, Pill, tokens } from '@declutrmail/shared';
 import { senderSizeCell } from './sender-size';
 import { derivePrimaryVerbId, legacyVerbFromId, SenderActionRow } from './action-row';
-import { isStandingProtected, senderAddressLine, type ActionRequest, type Sender } from './data';
+import {
+  blocksRepeatUnsubscribe,
+  isStandingProtected,
+  senderAddressLine,
+  type ActionRequest,
+  type Sender,
+} from './data';
 import { RowCheckbox } from './row-checkbox';
 import { formatReadRatePct } from './fact-language';
 import styles from './sender-workspace.module.css';
@@ -42,6 +48,7 @@ import {
   isRowBusy,
   RowActivityPill,
   rowActivityLabel,
+  takesButtonSlot,
   useGroupActivitySummary,
   useRowActivity,
 } from './row-activity';
@@ -195,6 +202,7 @@ export function SenderRow({
     s.policyType === 'unsubscribe'
       ? unsubscribeStatusCopy(s.unsubStatus, s.unsubscribeMethod)
       : null;
+  const unsubscribeInButton = !compact && blocksRepeatUnsubscribe(s) && !takesButtonSlot(activity);
 
   const currentCount =
     s.inboxCount != null && s.archivedCount != null ? s.inboxCount + s.archivedCount : null;
@@ -206,7 +214,7 @@ export function SenderRow({
     </div>
   );
 
-  const swipe = useSwipeRight(compact, () => {
+  const swipe = useSwipeRight(compact && !blocksRepeatUnsubscribe(s), () => {
     // The same action the busy row's inert button refuses.
     if (busy) return;
     onAction({ verb: legacyVerbFromId(derivePrimaryVerbId(s)), senders: [s] });
@@ -313,7 +321,7 @@ export function SenderRow({
               {SHIELD}
             </span>
           )}
-          {unsub && !compact && (
+          {unsub && !compact && !unsubscribeInButton && (
             <span title={unsub.title} style={{ display: 'inline-flex', flex: '0 0 auto' }}>
               <Pill>{unsub.label}</Pill>
             </span>
