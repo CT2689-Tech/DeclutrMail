@@ -161,7 +161,7 @@
   font-size: 13px;
   line-height: 1.6;
 }
-.since {
+.period {
   display: block;
   white-space: nowrap;
   color: var(--dm-fg-muted);
@@ -779,7 +779,7 @@
   color: var(--dm-fg-muted);
 }
 
-.progressLine .since {
+.progressLine .period {
   display: block;
   white-space: normal;
 }

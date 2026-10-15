@@ -79,7 +79,6 @@ function fixture(state: HomePreviewState): Parameters<typeof HomeView>[0] {
         nextSteps: steps,
         senderSizeView: true,
         reportSizeLabel: '7.7 GB',
-        timeZone: 'UTC',
       };
     case 'no-size':
       return {
@@ -88,10 +87,9 @@ function fixture(state: HomePreviewState): Parameters<typeof HomeView>[0] {
         nextSteps: steps,
         senderSizeView: false,
         reportSizeLabel: '7.7 GB',
-        timeZone: 'UTC',
       };
     case 'caught-up':
-      return { state: ready, summary, nextSteps: [], indexedEmailCount: 47, timeZone: 'UTC' };
+      return { state: ready, summary, nextSteps: [], indexedEmailCount: 47 };
     case 'empty':
       return { state: { kind: 'empty', syncing: false, action } };
     case 'syncing':

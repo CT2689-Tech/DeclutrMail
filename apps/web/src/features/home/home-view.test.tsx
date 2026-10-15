@@ -105,20 +105,11 @@ const metered = {
 };
 
 describe('HomeView', () => {
-  it('formats the progress month in an explicit timezone on either side of hydration', () => {
-    const state = {
-      ...ready,
-      hero: { label: 'emails cleared', value: 12 },
-      since: '2026-01-01T00:00:00.000Z',
-    };
-    const { rerender } = render(<HomeView state={state} />);
-    expect(screen.getByRole('region', { name: 'Progress' })).toHaveTextContent(
-      'emails cleared since Jan 2026',
-    );
-    rerender(<HomeView state={state} timeZone="America/Los_Angeles" />);
-    expect(screen.getByRole('region', { name: 'Progress' })).toHaveTextContent(
-      'emails cleared since Dec 2025',
-    );
+  it.each([ready.since, null])('labels recorded progress as all time with since=%s', (since) => {
+    render(<HomeView state={{ ...ready, since }} />);
+    const progress = screen.getByRole('region', { name: 'Progress' });
+    expect(progress).toHaveTextContent('All time');
+    expect(progress.querySelector('time')).toBeNull();
   });
 
   it('uses Home as the only H1 and links Compare plans to billing', () => {
@@ -143,7 +134,7 @@ describe('HomeView', () => {
     expect(screen.getByText('Emails archived')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'See your activity' })).toHaveAttribute(
       'href',
-      '/activity',
+      '/activity?window=all',
     );
     expect(screen.getByRole('link', { name: 'See your activity' })).toHaveClass('dm-tap-target');
     expect(screen.queryByRole('link', { name: /Autopilot/ })).toBeNull();
@@ -190,14 +181,14 @@ describe('HomeView', () => {
   });
 
   it('renders the chip from server meter fields', () => {
-    render(<HomeView state={ready} summary={metered} timeZone="UTC" />);
+    render(<HomeView state={ready} summary={metered} />);
     expect(
       screen.getByLabelText('640 of 1,000 free emails left this month. Resets Nov 1.'),
     ).toHaveTextContent('640 of 1,000 free emails left · resets Nov 1');
   });
 
   it('hides the chip when the server says the workspace is not metered', () => {
-    render(<HomeView state={ready} summary={{ ...metered, metered: false }} timeZone="UTC" />);
+    render(<HomeView state={ready} summary={{ ...metered, metered: false }} />);
     expect(screen.queryByText(/free emails left/)).toBeNull();
   });
 
