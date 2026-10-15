@@ -40,6 +40,7 @@ import { SyncNowAnimationStyle, SyncNowButton } from '@/features/sync/sync-now-b
 import { ThemeToggle } from '@/features/theme/theme-toggle';
 import { ProductUndoTray } from '@/features/triage/triage-undo-tray';
 import { isFeatureEnabled } from '@/lib/flags';
+import styles from './app-chrome-layout.module.css';
 
 // Optional acquisition survey is only downloaded for accounts still awaiting it.
 const UnavailableSurvey = () => null;
@@ -328,7 +329,9 @@ function AppChrome({ children }: { children: ReactNode }) {
             }}
             topbarRight={
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                <QuotaChipSlot summary={cleanupSummary.data ?? null} compact />
+                <div className={styles.topbarQuota}>
+                  <QuotaChipSlot summary={cleanupSummary.data ?? null} compact />
+                </div>
                 {isFeatureEnabled('darkMode') && <ThemeToggle />}
                 {/* Same 409-storm guard as SyncErrorBanner — the button
                     polls session-scoped sync status, meaningless (and
