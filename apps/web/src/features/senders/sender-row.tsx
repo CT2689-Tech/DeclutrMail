@@ -49,7 +49,6 @@ import {
   isRowBusy,
   RowActivityPill,
   rowActivityLabel,
-  takesButtonSlot,
   useGroupActivitySummary,
   useRowActivity,
 } from './row-activity';
@@ -203,7 +202,7 @@ export function SenderRow({
     s.policyType === 'unsubscribe'
       ? unsubscribeStatusCopy(s.unsubStatus, s.unsubscribeMethod)
       : null;
-  const unsubscribeInButton = !compact && blocksRepeatUnsubscribe(s) && !takesButtonSlot(activity);
+  const unsubscribeInActionRow = !compact && blocksRepeatUnsubscribe(s);
 
   const currentCount =
     s.inboxCount != null && s.archivedCount != null ? s.inboxCount + s.archivedCount : null;
@@ -217,7 +216,10 @@ export function SenderRow({
 
   const swipeVerb = legacyVerbFromId(derivePrimaryVerbId(s));
   const swipe = useSwipeRight(
-    compact && !blocksRepeatUnsubscribe(s) && canPerformSenderAction(swipeVerb, s),
+    compact &&
+      !blocksRepeatUnsubscribe(s) &&
+      !(s.inboxCount === 0 && s.archivedCount === 0 && swipeVerb === 'Keep') &&
+      canPerformSenderAction(swipeVerb, s),
     () => {
       // The same action the busy row's inert button refuses.
       if (busy) return;
@@ -316,7 +318,7 @@ export function SenderRow({
           >
             {s.name}
           </Link>
-          {isStandingProtected(s) && (
+          {isStandingProtected(s) && !compact && (
             <span
               role="img"
               aria-label="Protected"
@@ -324,9 +326,10 @@ export function SenderRow({
               style={{ display: 'inline-flex', color: color.primary, flex: '0 0 auto' }}
             >
               {SHIELD}
+              <span style={{ fontSize: text.xs, marginLeft: 4 }}>Protected</span>
             </span>
           )}
-          {unsub && !compact && !unsubscribeInButton && (
+          {unsub && !compact && !unsubscribeInActionRow && (
             <span title={unsub.title} style={{ display: 'inline-flex', flex: '0 0 auto' }}>
               <Pill>{unsub.label}</Pill>
             </span>
@@ -355,7 +358,7 @@ export function SenderRow({
 
       <CountCell
         value={currentCount ?? s.totalReceived}
-        scope={currentCount == null ? 'received · all time' : 'current mail'}
+        scope={currentCount == null ? 'received · all time' : 'inbox + archived'}
         unit={(currentCount ?? s.totalReceived) === 1 ? 'email' : 'emails'}
         compact={compact}
       />
@@ -363,21 +366,24 @@ export function SenderRow({
       <div className={styles.rowActions}>
         <SenderActionRow sender={s} onAction={onAction} compact={compact} />
       </div>
-      {compact && (unsub || activity || evidence) && (
-        <div className={styles.compactRowContext}>
-          {(unsub || activity) && (
-            <div className={styles.compactRowStatus}>
-              {unsub && (
-                <span title={unsub.title}>
-                  <Pill>{unsub.label}</Pill>
-                </span>
-              )}
-              {activity && <RowActivityPill activity={activity} />}
-            </div>
-          )}
-          {evidence}
-        </div>
-      )}
+      {compact &&
+        (unsub || activity || isStandingProtected(s) || s.policyType === 'keep' || evidence) && (
+          <div className={styles.compactRowContext}>
+            {(unsub || activity || isStandingProtected(s) || s.policyType === 'keep') && (
+              <div className={styles.compactRowStatus}>
+                {isStandingProtected(s) && <Pill>Protected</Pill>}
+                {!activity && s.policyType === 'keep' && <Pill>Kept</Pill>}
+                {unsub && (
+                  <span title={unsub.title}>
+                    <Pill>{unsub.label}</Pill>
+                  </span>
+                )}
+                {activity && <RowActivityPill activity={activity} />}
+              </div>
+            )}
+            {evidence}
+          </div>
+        )}
 
       {/* Live gesture feedback: while a touch drag would resolve to the
           swipe, name the verb so releasing is informed. */}

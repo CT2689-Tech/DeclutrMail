@@ -6,3 +6,5 @@
 **Correct approach:** Define each action's current scope: Archive/Later need inbox mail; Delete can also target archived mail. Disable only exact current zeros, preserve unknown-count preview, and revalidate trustworthy readback on confirmation. Keep current counts separate from lifetime history, completion feedback and Undo. Give empty rows their own bulk exclusion explanation and retain Protected handling.
 **Rule:** Audit every action's eligible current scope, control, keyboard/menu entry and dispatch together after cleanup and recovery.
 **Enforcement update:** Location-count matrix, component/menu/selection/swipe tests, immediate-zero page/list regressions, cache freshness tests, composed empty/eligible/Protected selection, synthetic browser checks; no global policy change.
+
+**Integration finding:** Review of the #1060 conflict repair caught an overbroad empty-row swipe gate that would have blocked future unsubscribe intent. Narrowed it to the fallback Keep case, retained mail-move/recorded-request gates, and added a zero-current fresh-unsubscribe gesture regression.

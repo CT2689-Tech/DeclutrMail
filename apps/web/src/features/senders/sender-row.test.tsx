@@ -96,7 +96,7 @@ describe('<SenderRow /> — what the row says', () => {
       />,
     );
     expect(screen.getByText('850')).toBeInTheDocument();
-    expect(screen.getByText('current mail')).toBeInTheDocument();
+    expect(screen.getByText('inbox + archived')).toBeInTheDocument();
     expect(screen.getByText('0 in inbox')).toBeInTheDocument();
     expect(screen.getByText('850 archived')).toBeInTheDocument();
     expect(screen.queryByText('3,558')).not.toBeInTheDocument();
@@ -219,6 +219,23 @@ describe('<SenderRow compact /> — phone', () => {
     expect(screen.getAllByRole('button')).toHaveLength(1);
   });
 
+  it('retains a fresh unsubscribe swipe with zero current mail', () => {
+    const onAction = vi.fn();
+    const s = renderRow(
+      {
+        inboxCount: 0,
+        archivedCount: 0,
+        unsubscribeMethod: 'one_click',
+        policyType: null,
+        unsubStatus: null,
+      },
+      { compact: true, onAction },
+    );
+    swipeRight(screen.getByTestId(`sender-row-${s.id}`));
+    expect(onAction).toHaveBeenCalledOnce();
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ verb: 'Unsubscribe' }));
+  });
+
   it('does not dispatch an empty-mail primary on swipe', () => {
     const onAction = vi.fn();
     const s = renderRow(
@@ -298,4 +315,25 @@ describe('<DomainGroupRow />', () => {
     fireEvent.click(header);
     expect(onToggleExpand).toHaveBeenCalledTimes(1);
   });
+});
+
+it('shows a previously saved Keep decision after a compact row is revisited', () => {
+  renderRow({ policyType: 'keep' }, { compact: true });
+  expect(screen.getByText('Kept')).toBeInTheDocument();
+});
+
+it('keeps the compact Protected state below the sender identity so the name has room', () => {
+  renderRow(
+    {
+      displayName: 'Acme Updates',
+      protectionFlags: {
+        isProtected: true,
+        protectionReason: 'user_defined',
+        protectionSetAt: null,
+      },
+    },
+    { compact: true },
+  );
+  const name = screen.getByRole('link', { name: 'Acme Updates' });
+  expect(name.parentElement).not.toContainElement(screen.getByText('Protected'));
 });

@@ -18,6 +18,7 @@ import {
   ScreenIntro,
   tokens,
   toast,
+  usePendingToast,
   useIsAtMost,
 } from '@declutrmail/shared';
 import {
@@ -81,6 +82,7 @@ import {
 import { useSetSenderPolicy, useUndoSenderKeep } from './api/use-sender-policy';
 import { sendersKeys } from './api/query-keys';
 import { currentListActionSender } from './api/current-action-sender';
+import { fetchSenderDetail, type SenderListEnvelope } from '@/lib/api/senders';
 import { unsubscribeControlStatus } from './unsub-status';
 import {
   actionLabel,
@@ -720,6 +722,11 @@ function SendersScreenContent({
   // request — a flag derived from the mutation hooks would also be true
   // for someone else's in-flight enqueue and open the next modal frozen.
   const [submitting, setSubmitting] = useState(false);
+  const unsubscribeFactsCheck = useRef<AbortController | null>(null);
+  const cancelUnsubscribeCheck = useCallback(() => {
+    unsubscribeFactsCheck.current?.abort();
+    unsubscribeFactsCheck.current = null;
+  }, []);
   /**
    * The server answered: close the confirm. Called FIRST in every primary
    * `onSuccess` / `onError`, never from `onSettled` — the bulk Unsubscribe
@@ -736,6 +743,9 @@ function SendersScreenContent({
     new Map(),
   );
   const feedbackScope = `${listKey}\u0000${actionMailboxId ?? ''}`;
+  const currentFeedbackScope = useRef(feedbackScope);
+  currentFeedbackScope.current = feedbackScope;
+  useEffect(() => cancelUnsubscribeCheck, [feedbackScope, cancelUnsubscribeCheck]);
   const [feedbackScopeSeen, setFeedbackScopeSeen] = useState(feedbackScope);
   // Reset during render (not in an effect): an effect would paint one
   // frame of the OLD question's pinned rows inside the new list.
@@ -816,7 +826,16 @@ function SendersScreenContent({
   // D40 — Keep is a standing-policy write (`policy_type='keep'`), not a
   // Gmail mutation. The hook owns the senders/activity invalidation.
   const setPolicy = useSetSenderPolicy();
-  const undoKeep = useUndoSenderKeep();
+  const pendingToast = usePendingToast(actionMailboxId);
+  const undoKeep = useUndoSenderKeep((result, senderId) => {
+    if (result.policyType === 'keep') return;
+    setSettled((current) => {
+      if (current.get(senderId)?.verb !== 'keep') return current;
+      const next = new Map(current);
+      next.delete(senderId);
+      return next;
+    });
+  });
   // D51 — saved filter views (users.preferences.senderViews). One
   // full-replace mutation covers save + delete; apply is client-side
   // (write the compose URL state + sort store).
@@ -936,6 +955,7 @@ function SendersScreenContent({
   const { hold: holdRows, reset: resetHolds } = holds;
 
   const resetPendingScope = useCallback(() => {
+    cancelUnsubscribeCheck();
     setPendingAction(null);
     setSelected(new Set());
     setReceipt(null);
@@ -946,7 +966,7 @@ function SendersScreenContent({
     setSettled(new Map());
     setPinnedSenders(new Map());
     resetHolds();
-  }, [resetHolds]);
+  }, [resetHolds, cancelUnsubscribeCheck]);
   useMailboxScopeReset(actionMailboxId, resetPendingScope);
 
   // Senders an in-flight single handle still owns, plus every sender of
@@ -1099,6 +1119,8 @@ function SendersScreenContent({
     () => overdueAction != null || overdueBatch != null || overdueUnsubBatch != null,
     [overdueAction, overdueBatch, overdueUnsubBatch],
   );
+  const currentDispatchLocks = useRef({ ids: lockedSenderIds, anythingParked });
+  currentDispatchLocks.current = { ids: lockedSenderIds, anythingParked };
 
   // Overdue-release timers. The cleanup cancels the deadline whenever
   // the handle clears or is replaced, so only a genuinely stuck handle
@@ -1366,7 +1388,7 @@ function SendersScreenContent({
   );
 
   const performAction = useCallback(
-    (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
+    async (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
       if (senders.length === 0) return;
       if (isMailMovingVerb(verb)) {
         const unavailable = senders.find((subject) => {
@@ -1577,19 +1599,149 @@ function SendersScreenContent({
       // never auto-sends an opt-out). No undo token exists for a
       // network unsub (D58) — only a paired archive is reversible.
       if (verb === 'Unsubscribe') {
-        if (recordUnsubIntent.isPending || confirmBacklog.isPending) return;
+        if (
+          recordUnsubIntent.isPending ||
+          confirmBacklog.isPending ||
+          unsubscribeFactsCheck.current
+        )
+          return;
         // The dialog names who the preview included. Post that list,
         // never the selection that was open when the sheet appeared.
         const postedIds = opts?.senderIds;
         if (!postedIds || postedIds.length === 0) return;
         // Keep the confirmed scope intact: if any included request has since
         // been recorded, close for a fresh preview rather than silently trim it.
-        const stale = senders.some((subject) => {
-          if (!postedIds.includes(subject.id)) return false;
-          const current = currentListActionSender(qc, senderQueryKey, subject, verb);
-          return !current || !canUnsubscribe(current);
-        });
+        const controller = new AbortController();
+        unsubscribeFactsCheck.current = controller;
+        const pendingOwner = pendingActionRef.current;
+        const confirmedScope = currentFeedbackScope.current;
+        setSubmitting(true);
+        let stale: boolean;
+        try {
+          const readCurrentFacts = (
+            subject: Sender,
+            fallback?: { current: Sender; readAt: number },
+          ) => {
+            // Read at dispatch, even before React commits a refetch render.
+            const listState = qc.getQueryState<{ pages: SenderListEnvelope[] }>(senderQueryKey);
+            const listed =
+              listState?.status === 'success' && !listState.isInvalidated
+                ? listState.data?.pages
+                    .flatMap((page) => page.data)
+                    .find((row) => row.id === subject.id)
+                : undefined;
+            let current = fallback?.current ?? subject;
+            let readAt = fallback?.readAt ?? 0;
+            let hasCurrentFacts = fallback != null;
+            if (
+              listed &&
+              (listState!.dataUpdatedAt > readAt ||
+                (listState!.dataUpdatedAt === readAt && blocksRepeatUnsubscribe(listed)))
+            ) {
+              current = { ...current, ...listed };
+              readAt = listState!.dataUpdatedAt;
+              hasCurrentFacts = true;
+            }
+            // A stale inactive detail must not overrule a newer failed/retry
+            // read. Completed zero-mail rows may instead have their newest
+            // facts in the completion-scoped detail, after leaving the list.
+            for (const [key, detail] of qc.getQueriesData<
+              Awaited<ReturnType<typeof fetchSenderDetail>>
+            >({
+              queryKey: sendersKeys.detail(subject.id),
+              predicate: (query) => query.queryKey.length === 3 || query.queryKey[3] === 'cleanup',
+            })) {
+              const state = qc.getQueryState(key);
+              if (
+                detail &&
+                state?.status === 'success' &&
+                !state.isInvalidated &&
+                (state.dataUpdatedAt > readAt ||
+                  (state.dataUpdatedAt === readAt && blocksRepeatUnsubscribe(detail.data)))
+              ) {
+                current = { ...current, ...detail.data };
+                readAt = state.dataUpdatedAt;
+                hasCurrentFacts = true;
+              }
+            }
+            return { current, readAt, hasCurrentFacts };
+          };
+          const readDirect = async (subject: Sender) => {
+            const readAt = Date.now();
+            const fresh = await fetchSenderDetail(subject.id, controller.signal);
+            return { subject, current: { ...subject, ...fresh.data }, readAt, direct: true };
+          };
+          let snapshots = await Promise.all(
+            senders
+              .filter((subject) => postedIds.includes(subject.id))
+              .map(async (subject) => {
+                const cached = readCurrentFacts(subject);
+                if (!cached.hasCurrentFacts) {
+                  // Invalidation can mean an unrelated background refresh, not
+                  // a changed request. Read current facts before deciding.
+                  return readDirect(subject);
+                }
+                return { subject, ...cached, direct: false };
+              }),
+          );
+          // A cached row may lose trust while another row's read waits.
+          // Replace it with an owned read; bound repeats during heavy refreshes.
+          for (let pass = 0; pass < 2; pass += 1) {
+            const missing = snapshots.filter(
+              (snapshot) => !snapshot.direct && !readCurrentFacts(snapshot.subject).hasCurrentFacts,
+            );
+            if (missing.length === 0) break;
+            const refreshed = await Promise.all(missing.map(({ subject }) => readDirect(subject)));
+            snapshots = snapshots.map(
+              (snapshot) =>
+                refreshed.find(({ subject }) => subject.id === snapshot.subject.id) ?? snapshot,
+            );
+          }
+          // Other included senders can change while a missing read waits.
+          // Re-read at dispatch; an equally recent recorded request wins.
+          const current = snapshots.map((snapshot) => ({
+            snapshot,
+            latest: readCurrentFacts(snapshot.subject, snapshot.direct ? snapshot : undefined),
+          }));
+          if (current.some(({ latest }) => !latest.hasCurrentFacts)) {
+            throw new Error('Unsubscribe status is still refreshing');
+          }
+          stale = current.some(
+            ({ snapshot, latest }) =>
+              !canUnsubscribe(snapshot.current) || !canUnsubscribe(latest.current),
+          );
+        } catch {
+          if (
+            !controller.signal.aborted &&
+            pendingActionRef.current === pendingOwner &&
+            currentFeedbackScope.current === confirmedScope
+          ) {
+            setSubmitting(false);
+            toast('Couldn’t refresh unsubscribe status. Try again.', 'warn');
+          }
+          return;
+        } finally {
+          if (unsubscribeFactsCheck.current === controller) unsubscribeFactsCheck.current = null;
+        }
+        if (
+          controller.signal.aborted ||
+          pendingActionRef.current !== pendingOwner ||
+          currentFeedbackScope.current !== confirmedScope
+        )
+          return;
+        if (
+          senders.some(
+            (subject) =>
+              postedIds.includes(subject.id) && currentDispatchLocks.current.ids.has(subject.id),
+          ) ||
+          (postedIds.length > 1 && currentDispatchLocks.current.anythingParked)
+        ) {
+          setSubmitting(false);
+          toast('Still confirming earlier changes. Try again when they finish.', 'info');
+          return;
+        }
         if (stale) {
+          setSubmitting(false);
           setPendingAction(null);
           toast('Review this sender’s updated unsubscribe status before trying again.', 'info');
           return;
@@ -1763,9 +1915,8 @@ function SendersScreenContent({
           for (const sender of senderRefs) next.set(sender.id, { phase: 'working', verb: 'keep' });
           return next;
         });
-        const dismissPendingKeep = toast(
+        const dismissPendingKeep = pendingToast(
           isBulk ? `Keeping ${senderRefs.length} senders…` : `Keeping ${senderRefs[0]!.name}…`,
-          'info',
         );
         // `mutateAsync`, not N × `mutate(…, { onSuccess })`: per-call
         // callbacks live on the hook's ONE observer, so each `mutate`
@@ -2417,7 +2568,7 @@ function SendersScreenContent({
       ) {
         setPendingAction(req);
       } else {
-        performAction(req.verb, req.senders);
+        void performAction(req.verb, req.senders);
       }
     },
     [performAction, resultsReadOnly],
@@ -2603,13 +2754,14 @@ function SendersScreenContent({
   // Cancel stays live while submitting: it closes the UI only. If the
   // request lands anyway, the rows say so.
   const closePending = useCallback(() => {
+    cancelUnsubscribeCheck();
     setSubmitting(false);
     setPendingAction(null);
-  }, []);
+  }, [cancelUnsubscribeCheck]);
   const confirmPending = useCallback(
     (opts: ConfirmOptions) => {
       if (pendingAction && !resultsReadOnly) {
-        performAction(pendingAction.verb, pendingAction.senders, opts);
+        void performAction(pendingAction.verb, pendingAction.senders, opts);
       }
     },
     [pendingAction, performAction, resultsReadOnly],
@@ -3337,7 +3489,7 @@ function BulkSelectButton({
       }
       ariaPressed={allSelected}
     >
-      {allSelected ? `Deselect all ${senders.length}` : `Select all ${senders.length}`}
+      {allSelected ? `Deselect all ${senders.length}` : `Select ${senders.length} shown`}
     </Button>
   );
 }

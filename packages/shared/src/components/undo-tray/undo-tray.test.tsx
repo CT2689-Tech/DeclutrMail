@@ -474,3 +474,11 @@ describe('<UndoTray /> — unsubscribe note on the open tray', () => {
     expect(archiveOnly).not.toContain('data-dm-undo-unsub-note');
   });
 });
+
+it('names the compact control as recent actions, since clicking it opens a list', () => {
+  const html = renderToStaticMarkup(
+    <UndoTray defaultCompact dataSource={source({ entries: [entry()] })} />,
+  );
+  expect(html).toContain('Recent actions (1)');
+  expect(html).not.toContain('Undo · 1');
+});

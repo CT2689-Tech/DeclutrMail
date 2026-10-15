@@ -2350,7 +2350,7 @@ describe('SendersScreen — edge states', () => {
       }
       // Requested counts are not completion evidence; the existing Undo
       // feedback owns the move while unsubscribe is independently watched.
-      expect(screen.queryByText(`Deleted ${deleted} emails`)).toBeNull();
+      if (remaining > 0) expect(screen.getByText(`Deleted ${deleted} emails`)).toBeInTheDocument();
 
       accepted = true;
       await act(async () =>
@@ -3257,6 +3257,14 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
         },
         compositePreviewHandler(3),
         {
+          method: 'GET',
+          path: '/api/senders/a',
+          respond: () =>
+            jsonOk({
+              data: { ...ROW, policyType: 'unsubscribe', unsubStatus: 'endpoint_accepted' },
+            }),
+        },
+        {
           method: 'POST',
           path: '/api/actions/unsubscribe-backlog',
           respond: () => {
@@ -3309,6 +3317,172 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       fireEvent.click(confirm);
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
       expect(posts).toBe(0);
+    },
+  );
+
+  it.each(['eligible', 'recorded', 'failed', 'cancelled', 'mailbox changed', 'unmounted'] as const)(
+    'refreshes invalidated email-only facts safely when %s',
+    async (outcome) => {
+      let posts = 0;
+      let detailReads = 0;
+      let finishDetail!: (response: Response) => void;
+      const detail = new Promise<Response>((resolve) => {
+        finishDetail = resolve;
+      });
+      const row = { ...ROW, unsubscribeMethod: 'mailto' as const };
+      installFetchStub([
+        {
+          ...oneSenderHandler(),
+          respond: () =>
+            jsonOk({
+              data: [row],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+            }),
+        },
+        compositePreviewHandler(3),
+        {
+          method: 'GET',
+          path: '/api/senders/a',
+          respond: () => {
+            detailReads += 1;
+            return detail;
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-backlog',
+          respond: () => {
+            posts += 1;
+            return jsonOk({ data: { mode: 'unsub_only', backlog: null, senders: [] } });
+          },
+        },
+      ]);
+      const view = renderScreenWithToasts();
+      fireEvent.click(await screen.findByRole('button', { name: /More actions for Sender A/i }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Unsubscribe' }));
+      const dialog = await screen.findByRole('dialog');
+      fireEvent.click(await within(dialog).findByRole('radio', { name: 'Unsubscribe only' }));
+      const confirm = await within(dialog).findByRole('button', { name: 'Unsubscribe' });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      await lastClient.invalidateQueries({ queryKey: ['senders', 'list'], refetchType: 'none' });
+      fireEvent.click(confirm);
+      await waitFor(() => expect(detailReads).toBe(1));
+      // A second confirmation during the read cannot start another request.
+      fireEvent.click(confirm);
+      expect(detailReads).toBe(1);
+      expect(posts).toBe(0);
+      if (outcome === 'cancelled') {
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+      } else if (outcome === 'mailbox changed') {
+        mockAuth.activeMailboxId = 'mb-2';
+        view.rerender(
+          <QueryWrapper client={lastClient}>
+            <SendersScreen />
+            <ToastHost />
+          </QueryWrapper>,
+        );
+      } else if (outcome === 'unmounted') {
+        view.unmount();
+      }
+      await act(async () => {
+        finishDetail(
+          outcome === 'failed'
+            ? jsonServerError('status_unavailable')
+            : jsonOk({
+                data:
+                  outcome === 'recorded'
+                    ? { ...row, policyType: 'unsubscribe', unsubStatus: 'requested' }
+                    : row,
+              }),
+        );
+      });
+      if (outcome === 'eligible') {
+        await waitFor(() => expect(posts).toBe(1));
+      } else {
+        expect(posts).toBe(0);
+        if (outcome === 'failed') {
+          expect(dialog).toBeInTheDocument();
+          await waitFor(() => expect(confirm).toBeEnabled());
+          expect(
+            screen.getByText('Couldn’t refresh unsubscribe status. Try again.'),
+          ).toBeInTheDocument();
+        } else if (outcome === 'recorded') {
+          await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        }
+      }
+      expect(detailReads).toBe(1);
+    },
+  );
+
+  it.each(['accepted readback', 'invalidated facts'] as const)(
+    'rechecks %s while another included sender refreshes',
+    async (change) => {
+      let posts = 0;
+      let reads = 0;
+      let freshAReads = 0;
+      let finishDetail!: (response: Response) => void;
+      const detail = new Promise<Response>((resolve) => {
+        finishDetail = resolve;
+      });
+      installFetchStub([
+        TWO_SENDER_LIST,
+        BULK_PREVIEW_OK,
+        {
+          method: 'GET',
+          path: '/api/senders/a',
+          respond: () => {
+            freshAReads += 1;
+            return jsonOk({
+              data: { ...ROW, policyType: 'unsubscribe', unsubStatus: 'requested' },
+            });
+          },
+        },
+        {
+          method: 'GET',
+          path: '/api/senders/b',
+          respond: () => {
+            reads += 1;
+            return detail;
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-backlog',
+          respond: () => {
+            posts += 1;
+            return jsonOk({ data: { mode: 'unsub_only', backlog: null, senders: [] } });
+          },
+        },
+      ]);
+      renderScreen();
+      await selectBothAndPress('u');
+      const dialog = await screen.findByRole('dialog');
+      fireEvent.click(await within(dialog).findByRole('radio', { name: 'Unsubscribe only' }));
+      const confirm = await within(dialog).findByRole('button', { name: 'Unsubscribe' });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      act(() => {
+        lastClient.setQueryData(sendersKeys.detail('a'), { data: ROW });
+      });
+      await lastClient.invalidateQueries({ queryKey: ['senders', 'list'], refetchType: 'none' });
+      fireEvent.click(confirm);
+      await waitFor(() => expect(reads).toBe(1));
+      await act(async () => {
+        if (change === 'accepted readback') {
+          lastClient.setQueryData(sendersKeys.detail('a'), {
+            data: { ...ROW, policyType: 'unsubscribe', unsubStatus: 'endpoint_accepted' },
+          });
+        } else {
+          await lastClient.invalidateQueries({
+            queryKey: sendersKeys.detail('a'),
+            exact: true,
+            refetchType: 'none',
+          });
+        }
+        finishDetail(jsonOk({ data: ROW_B }));
+      });
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(posts).toBe(0);
+      expect(freshAReads).toBe(change === 'invalidated facts' ? 1 : 0);
     },
   );
 
@@ -3484,7 +3658,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     installFetchStub([TWO_SENDER_LIST]);
     renderScreen();
 
-    const selectLoaded = await screen.findByRole('button', { name: /select all 2/i });
+    const selectLoaded = await screen.findByRole('button', { name: /select 2 shown/i });
     fireEvent.click(selectLoaded);
     expect(screen.getByRole('button', { name: /deselect all 2/i })).toBeInTheDocument();
   });

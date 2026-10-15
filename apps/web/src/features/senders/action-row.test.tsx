@@ -102,7 +102,7 @@ describe('derivePrimaryVerbId — ADR-0019 fact-rule primary (D227 verbs)', () =
 });
 
 describe('SenderActionRow — one-click unsub-ready row', () => {
-  it('disables empty-mail menu actions and an empty primary without dispatching', () => {
+  it('disables empty-mail menu actions while retaining explicit Keep', () => {
     const onAction = vi.fn();
     render(
       <SenderActionRow
@@ -115,9 +115,11 @@ describe('SenderActionRow — one-click unsub-ready row', () => {
         onAction={onAction}
       />,
     );
-    const primary = screen.getByRole('button', { name: 'Archive' });
-    expect(primary).toHaveAttribute('aria-disabled', 'true');
-    fireEvent.click(primary);
+    expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Keep' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
     fireEvent.click(screen.getByRole('button', { name: 'More actions for Acme Deals' }));
     for (const verb of ['Archive', 'Later', 'Delete']) {
       const item = screen.getByRole('menuitem', { name: new RegExp(`^${verb}`) });
@@ -139,14 +141,15 @@ describe('SenderActionRow — one-click unsub-ready row', () => {
         onAction={onAction}
       />,
     );
-    const accepted = screen.getByRole('button', { name: 'Request accepted' });
-    expect(accepted).toHaveAttribute('aria-disabled', 'true');
-    fireEvent.click(accepted);
+    expect(screen.getByText('Request accepted').closest('button')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'More actions for Acme Deals' }));
     const repeat = screen.getByRole('menuitem', { name: /Unsubscribe/ });
     expect(repeat).toHaveAttribute('aria-disabled', 'true');
     fireEvent.click(repeat);
     expect(onAction).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ verb: 'Keep' }));
   });
   it('renders Unsubscribe as the primary CTA and the ⋯ popover still lists K/A/U/L/D', () => {
     const onAction = vi.fn();

@@ -10,6 +10,7 @@ import {
 } from 'react';
 
 import { WS2_COPY } from '../../copy/launch/ws2';
+import { FEEDBACK_SURFACE } from '../feedback-surface';
 import { Button } from '../button';
 import { InlineProgress } from '../inline-progress/inline-progress';
 import { COOKIE_BANNER_INSET_EVENT, bottomClearOfCookieBanner } from '../../tokens/overlay-layers';
@@ -259,13 +260,16 @@ function UndoTrayBody({
   // running or wrong stays put; so does a pill being read or reached for.
   const firstRun = useRef(true);
   useEffect(() => {
-    // `defaultCompact` holds until something actually changes.
+    // New results and opening/closing history reset the size. Hover or
+    // focus must not replace the compact opener before its click lands.
     if (!(firstRun.current && defaultCompact)) setCompact(false);
     firstRun.current = false;
+  }, [key, defaultCompact, open]);
+  useEffect(() => {
     if (!settled || held || open) return;
     const timer = setTimeout(() => setCompact(true), TRAY_COMPACT_AFTER_MS);
     return () => clearTimeout(timer);
-  }, [key, settled, held, open, defaultCompact]);
+  }, [key, settled, held, open]);
 
   // Render-order guards — order matters to avoid flicker between
   // an in-progress refetch and a transient error.
@@ -358,13 +362,7 @@ function UndoTrayBody({
     right: 16,
     marginInline: 'auto',
     minWidth: 0,
-    // A floating object: raised card, no outline.
-    background: color.card,
-    border: 'none',
-    boxShadow: shadow.pop,
-    fontFamily: font.sans,
-    fontSize: text.base,
-    color: color.fg,
+    ...FEEDBACK_SURFACE,
     zIndex: 50,
   };
 
@@ -399,7 +397,7 @@ function UndoTrayBody({
             onClick={() => setOpen(true)}
             ariaLabel={`Show ${source.entries.length} recent ${source.entries.length === 1 ? 'action' : 'actions'} — undo available`}
           >
-            Undo · {source.entries.length}
+            Recent actions ({source.entries.length})
           </Button>
         ) : (
           <>
