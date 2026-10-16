@@ -52,6 +52,7 @@ import {
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
   useActionStatus,
+  useUndoStatus,
 } from '@/lib/api/use-action';
 import { useSetSenderPolicy, useUndoSenderKeep } from '../api/use-sender-policy';
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
@@ -613,7 +614,12 @@ function ReadyState({
   // the duplicate toast, which is real and user-visible.
   const [externalRevertActionId, setExternalRevertActionId] = useState<string | null>(null);
   const [externalRevertMailboxId, setExternalRevertMailboxId] = useState<string | undefined>();
-  const externalRevertStatus = useActionStatus(externalRevertActionId, externalRevertMailboxId);
+  const [externalRevertActionIds, setExternalRevertActionIds] = useState<string[] | undefined>();
+  const externalRevertStatus = useUndoStatus(
+    externalRevertMailboxId === actionMailboxId ? externalRevertActionId : null,
+    externalRevertMailboxId,
+    externalRevertActionIds,
+  );
   // Overdue parking slot (ACTION_OVERDUE_MS, 2026-08-12 incident). A
   // handle that stays non-terminal past the deadline moves here; the
   // parked poll keeps running and its terminal side effects still land
@@ -657,6 +663,9 @@ function ReadyState({
     setSettled(null);
     setSubmitting(false);
     setMailtoFollowup(null);
+    setExternalRevertActionId(null);
+    setExternalRevertActionIds(undefined);
+    setExternalRevertMailboxId(undefined);
   }, []);
   useMailboxScopeReset(actionMailboxId, resetPendingScope);
 
@@ -1302,18 +1311,20 @@ function ReadyState({
       const variables = event.mutation.state.variables as
         { token?: string; memberToken?: string; mailboxId?: string } | undefined;
       const result = event.mutation.state.data as
-        { reverted?: boolean; actionId?: string | null } | undefined;
+        { reverted?: boolean; actionId?: string | null; actionIds?: string[] } | undefined;
       // The pill's per-sender Undo sends the same token as `memberToken`.
       if ((variables?.token ?? variables?.memberToken) !== token) return;
+      if (variables?.mailboxId !== undefined && variables.mailboxId !== actionMailboxId) return;
       if (result?.reverted) {
         setReceipt(null);
         setSettled(null);
       } else if (result?.actionId) {
-        setExternalRevertMailboxId(variables?.mailboxId ?? receipt?.mailboxId);
+        setExternalRevertActionIds(result.actionIds);
+        setExternalRevertMailboxId(variables?.mailboxId ?? receipt?.mailboxId ?? actionMailboxId);
         setExternalRevertActionId(result.actionId);
       }
     });
-  }, [receipt, qc]);
+  }, [receipt, qc, actionMailboxId]);
 
   // Quiet poll-to-terminal for an EXTERNALLY-triggered revert (see above) —
   // no toast, no cache invalidation: the tray's own completion already
@@ -1321,7 +1332,7 @@ function ReadyState({
   // This effect's only job is to stop the receipt strip lying once the
   // reverse job the tray enqueued actually finishes.
   useEffect(() => {
-    if (!externalRevertActionId) return;
+    if (!externalRevertActionId || externalRevertMailboxId !== actionMailboxId) return;
     const data = externalRevertStatus.data;
     if (externalRevertStatus.isError) {
       setExternalRevertActionId(null);
@@ -1333,7 +1344,13 @@ function ReadyState({
       setSettled(null);
     }
     setExternalRevertActionId(null);
-  }, [externalRevertActionId, externalRevertStatus.data, externalRevertStatus.isError]);
+  }, [
+    externalRevertActionId,
+    externalRevertMailboxId,
+    actionMailboxId,
+    externalRevertStatus.data,
+    externalRevertStatus.isError,
+  ]);
 
   /** Protect is the sole standing safety state. */
   const toggleProtect = useCallback(() => {

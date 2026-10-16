@@ -393,6 +393,16 @@ export type CompositeSecondaryVerb = (typeof COMPOSITE_SECONDARY_VERBS)[number];
  */
 export const BULK_SENDERS_MAX = 1000;
 
+/** One read for every reverse job, including an optional secondary per sender. */
+export const undoStatusRequestSchema = z
+  .object({
+    actionIds: z
+      .array(z.string().uuid())
+      .min(1)
+      .max(BULK_SENDERS_MAX * 2),
+  })
+  .strict();
+
 /**
  * Composite selector — the single-sender / messages selectors plus the
  * D52 multi-sender `senders` variant. `senders` fans out server-side to

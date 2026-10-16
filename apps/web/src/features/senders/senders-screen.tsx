@@ -71,6 +71,7 @@ import { useSendersSummary } from './api/use-senders-summary';
 
 import {
   useActionStatus,
+  useUndoStatus,
   useBatchStatus,
   useBulkActionPreview,
   useCompositePreview,
@@ -920,7 +921,12 @@ function SendersScreenContent({
   // duplicated here.
   const [externalRevertActionId, setExternalRevertActionId] = useState<string | null>(null);
   const [externalRevertMailboxId, setExternalRevertMailboxId] = useState<string | undefined>();
-  const externalRevertStatus = useActionStatus(externalRevertActionId, externalRevertMailboxId);
+  const [externalRevertActionIds, setExternalRevertActionIds] = useState<string[] | undefined>();
+  const externalRevertStatus = useUndoStatus(
+    externalRevertMailboxId === actionMailboxId ? externalRevertActionId : null,
+    externalRevertMailboxId,
+    externalRevertActionIds,
+  );
   // Overdue parking slots (ACTION_OVERDUE_MS, 2026-08-12 incident) —
   // one slot per latch, free-slot rule: a handle parks only while its
   // slot is EMPTY (an occupied slot holds the active timer instead, so
@@ -962,6 +968,9 @@ function SendersScreenContent({
     setMailtoFollowup(null);
     setBulkMailtoFollowups([]);
     setUnsubBatchReceipt(null);
+    setExternalRevertActionId(null);
+    setExternalRevertActionIds(undefined);
+    setExternalRevertMailboxId(undefined);
     setSubmitting(false);
     setSettled(new Map());
     setPinnedSenders(new Map());
@@ -2507,23 +2516,25 @@ function SendersScreenContent({
       const variables = event.mutation.state.variables as
         { token?: string; memberToken?: string; mailboxId?: string } | undefined;
       const result = event.mutation.state.data as
-        { reverted?: boolean; actionId?: string | null } | undefined;
+        { reverted?: boolean; actionId?: string | null; actionIds?: string[] } | undefined;
       if (!variables?.token && !variables?.memberToken) return;
+      if (variables?.mailboxId !== undefined && variables.mailboxId !== actionMailboxId) return;
       if (result?.reverted) {
         setReceipt(null);
         releaseSettledRows();
       } else if (result?.actionId) {
-        setExternalRevertMailboxId(variables?.mailboxId ?? receipt?.mailboxId);
+        setExternalRevertActionIds(result.actionIds);
+        setExternalRevertMailboxId(variables?.mailboxId ?? receipt?.mailboxId ?? actionMailboxId);
         setExternalRevertActionId(result.actionId);
       }
     });
-  }, [receipt, qc, releaseSettledRows]);
+  }, [receipt, qc, releaseSettledRows, actionMailboxId]);
 
   // Quiet poll-to-terminal for an EXTERNALLY-triggered revert (see above) —
   // no toast, no cache invalidation: the tray's own completion already
   // toasts and its own `invalidateAfterUndo` already covers Senders/Activity.
   useEffect(() => {
-    if (!externalRevertActionId) return;
+    if (!externalRevertActionId || externalRevertMailboxId !== actionMailboxId) return;
     const data = externalRevertStatus.data;
     if (externalRevertStatus.isError) {
       setExternalRevertActionId(null);
@@ -2537,6 +2548,8 @@ function SendersScreenContent({
     setExternalRevertActionId(null);
   }, [
     externalRevertActionId,
+    externalRevertMailboxId,
+    actionMailboxId,
     externalRevertStatus.data,
     externalRevertStatus.isError,
     releaseSettledRows,

@@ -2836,6 +2836,54 @@ export class ActionsService {
     return sender.senderKey;
   }
 
+  /** Whether a completed token still has unfinished work in its decision. */
+  async hasUnrevertedCompositeSiblings(token: string, mailboxAccountId: string): Promise<boolean> {
+    const [forward] = await this.db
+      .select({ id: actionJobs.id, compositeId: actionJobs.compositeId })
+      .from(actionJobs)
+      .where(
+        and(
+          eq(actionJobs.undoToken, token),
+          eq(actionJobs.direction, 'forward'),
+          eq(actionJobs.mailboxAccountId, mailboxAccountId),
+        ),
+      )
+      .limit(1);
+    // Legacy completed journals can exist without a forward job. Recorded
+    // completion stays readable without a queue or a new job.
+    if (!forward) return false;
+    const primaryId = forward.compositeId ?? forward.id;
+    const siblings = await this.db
+      .select({
+        token: actionJobs.undoToken,
+        revertedAt: undoJournal.revertedAt,
+        status: actionJobs.status,
+        verb: actionJobs.verb,
+      })
+      .from(actionJobs)
+      .leftJoin(
+        undoJournal,
+        and(
+          eq(undoJournal.token, actionJobs.undoToken),
+          eq(undoJournal.mailboxAccountId, mailboxAccountId),
+        ),
+      )
+      .where(
+        and(
+          eq(actionJobs.mailboxAccountId, mailboxAccountId),
+          eq(actionJobs.direction, 'forward'),
+          sql`(${actionJobs.id} = ${primaryId} OR ${actionJobs.compositeId} = ${primaryId})`,
+        ),
+      );
+    return siblings.some(
+      (sibling) =>
+        sibling.verb !== 'unsubscribe' &&
+        (sibling.status === 'queued' ||
+          sibling.status === 'executing' ||
+          (sibling.token !== null && sibling.revertedAt === null)),
+    );
+  }
+
   /**
    * Enqueue the reverse (undo) of a label action. Called by the undo
    * controller after it has validated the token. The reverse is its own
@@ -2859,9 +2907,9 @@ export class ActionsService {
    *      `reverted_at IS NULL` guard provide idempotency, so a repeat
    *      cascade is safe.
    *
-   * Returns the reverse-action handles in primary-then-secondary order
-   * — the FE polls the first entry as the user-visible undo progress;
-   * the rest tick over silently via the worker's local-mirror update.
+   * Returns every reverse handle in primary-then-secondary order. Clients
+   * poll this frozen set together; one completed member cannot prove the
+   * whole decision has restored.
    */
   async enqueueCompositeRevert(input: {
     mailboxAccountId: string;
@@ -2939,8 +2987,20 @@ export class ActionsService {
         ),
       );
 
-    // Order primary-first so the FE polls the primary's reverse as the
-    // user-visible progress signal.
+    if (
+      siblings.some(
+        (sibling) =>
+          sibling.verb !== 'unsubscribe' &&
+          (sibling.status === 'queued' || sibling.status === 'executing'),
+      )
+    ) {
+      throw new ConflictException({
+        code: 'ACTION_STILL_RUNNING',
+        message: 'Wait for this cleanup to finish before Undo.',
+      });
+    }
+
+    // Keep primary-first ordering for the backward-compatible single handle.
     siblings.sort((a, b) => (a.id === primaryId ? -1 : b.id === primaryId ? 1 : 0));
 
     const results: Array<{
@@ -3106,6 +3166,68 @@ export class ActionsService {
     }
     await this.enqueueJob(inserted.row.id, input.mailboxAccountId, idempotencyKey, { queueJobId });
     return { actionId: inserted.row.id, status: 'queued' };
+  }
+
+  /** Confirm the complete frozen reverse set without a request per sender. */
+  async getUndoStatus(actionIds: string[], mailboxAccountId: string): Promise<ActionStatusResult> {
+    const ids = [...new Set(actionIds)];
+    if (ids.length === 0)
+      throw new BadRequestException({
+        code: 'INVALID_REQUEST',
+        message: 'No reverse jobs to check.',
+      });
+    const rows = await this.db
+      .select({
+        actionId: actionJobs.id,
+        verb: actionJobs.verb,
+        status: actionJobs.status,
+        requestedCount: actionJobs.requestedCount,
+        affectedCount: actionJobs.affectedCount,
+        revertedAt: undoJournal.revertedAt,
+        errorCode: actionJobs.errorCode,
+      })
+      .from(actionJobs)
+      .leftJoin(
+        undoJournal,
+        and(
+          eq(actionJobs.undoToken, undoJournal.token),
+          eq(undoJournal.mailboxAccountId, mailboxAccountId),
+        ),
+      )
+      .where(
+        and(
+          inArray(actionJobs.id, ids),
+          eq(actionJobs.mailboxAccountId, mailboxAccountId),
+          eq(actionJobs.direction, 'reverse'),
+        ),
+      );
+    if (rows.length !== ids.length)
+      throw new NotFoundException({ code: 'ACTION_NOT_FOUND', message: 'Action not found.' });
+    const terminal = rows.every((row) => row.status === 'done' || row.status === 'failed');
+    const failed = rows.find((row) => row.status === 'failed');
+    if (terminal && !failed && rows.some((row) => row.revertedAt === null)) {
+      throw new ServiceUnavailableException({
+        code: 'UNDO_STATUS_UNCONFIRMED',
+        message: 'Couldn’t confirm Undo. Try again.',
+      });
+    }
+    return {
+      actionId: ids[0]!,
+      verb: rows[0]!.verb,
+      direction: 'reverse',
+      status: terminal ? (failed ? 'failed' : 'done') : 'executing',
+      requestedCount: rows.reduce((sum, row) => sum + row.requestedCount, 0),
+      affectedCount: rows.reduce((sum, row) => sum + row.affectedCount, 0),
+      wakeAt: null,
+      undoToken: null,
+      undoExpiresAt: null,
+      undoExecutedAt: null,
+      undoRevertedAt:
+        terminal && !failed
+          ? new Date(Math.max(...rows.map((row) => row.revertedAt!.getTime()))).toISOString()
+          : null,
+      errorCode: terminal ? (failed?.errorCode ?? null) : null,
+    };
   }
 
   /** Poll a job's status (scoped to the current mailbox → 404 if not owned). */

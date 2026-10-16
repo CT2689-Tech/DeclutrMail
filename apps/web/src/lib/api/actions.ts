@@ -174,6 +174,23 @@ export interface UndoRevertResult {
   revertedAt: string | null;
   /** Reverse `action_jobs` id to poll via `getActionStatus`; null when already reverted. */
   actionId: string | null;
+  /** Complete reverse set on current APIs; absent during a rolling deployment. */
+  actionIds?: string[];
+}
+
+/** Read-only aggregate Undo progress, with one request for the frozen job set. */
+export async function getUndoStatus(
+  actionIds: readonly string[],
+  options: ActionRequestOptions = {},
+): Promise<ActionStatusResult> {
+  const env = await apiPost<ActionStatusResult>(
+    '/api/actions/undo-status',
+    { actionIds },
+    {
+      ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
+    },
+  );
+  return env.data;
 }
 
 /**
