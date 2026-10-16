@@ -132,8 +132,9 @@ export class SnoozeService {
         .values({
           mailboxAccountId,
           senderKey,
-          // Fresh row: standing verdict takes its column default
-          // ('keep') — setting a timer is NOT a verdict change.
+          // A new timer has no standing verdict. Conflict updates below
+          // preserve an existing Keep/Unsubscribe choice.
+          policyType: null,
           snoozedUntil: targetUntil,
           snoozedAt,
           snoozedReason: targetReason,

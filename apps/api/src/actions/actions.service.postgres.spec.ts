@@ -3,6 +3,8 @@ import { join } from 'node:path';
 
 import {
   actionJobs,
+  activityLog,
+  senderPolicies,
   mailboxAccounts,
   mailMessages,
   providerSyncState,
@@ -24,6 +26,9 @@ import { MailboxAccountsService } from '../mailboxes/mailbox-accounts.service.js
 import { SyncService } from '../sync/sync.service.js';
 import { UsersService } from '../users/users.service.js';
 import { ActionsService } from './actions.service.js';
+import { SendersPolicyService } from '../senders/senders-policy.service.js';
+import { buildOutboxConsumer } from '../outbox/outbox-consumer-router.js';
+import { TOPICS } from '@declutrmail/events';
 
 /**
  * Runtime proof for workspace-scoped quota serialization against real
@@ -341,6 +346,97 @@ describe.skipIf(!pgUrl)('workspace quota serialization against real Postgres', (
       await cleanupClient.end({ timeout: 5 });
     }
   });
+
+  it.each([false, true])(
+    'a late Keep projection cannot reinstate an undone decision (timer=%s)',
+    async (timer) => {
+      const fixture = await seedQuotaFixture(databases[0]!, 0, `keep-race-${timer}`);
+      const [sender] = await databases[0]!
+        .select({ key: senders.senderKey })
+        .from(senders)
+        .where(eq(senders.id, fixture.senderId));
+      if (timer)
+        await databases[0]!.insert(senderPolicies).values({
+          mailboxAccountId: fixture.mailboxId,
+          senderKey: sender!.key,
+          policyType: null,
+          snoozedUntil: new Date('2099-01-01T09:00:00Z'),
+          snoozedAt: new Date('2026-10-15T09:00:00Z'),
+        });
+      await databases[0]!.insert(activityLog).values({
+        mailboxAccountId: fixture.mailboxId,
+        senderKey: sender!.key,
+        source: 'manual',
+        action: 'keep',
+        affectedCount: 0,
+        undoToken: null,
+      });
+      // Pause the actual upsert after the consumer has read an unreverted
+      // audit. BEFORE INSERT runs before ON CONFLICT locks the policy row.
+      await controlClient!.unsafe(
+        `CREATE FUNCTION hold_keep_projection() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.mailbox_account_id = '${fixture.mailboxId}'::uuid AND NEW.policy_type = 'keep' THEN PERFORM pg_advisory_xact_lock(209583, 1); END IF; RETURN NEW; END $$; CREATE TRIGGER hold_keep_projection BEFORE INSERT ON sender_policies FOR EACH ROW EXECUTE FUNCTION hold_keep_projection();`,
+      );
+      await controlClient!`SELECT pg_advisory_lock(209583, 1)`;
+      const [projectionPid] = await clients[0]!`SELECT pg_backend_pid()::int AS pid`;
+      const [undoPid] = await clients[1]!`SELECT pg_backend_pid()::int AS pid`;
+      const consume = buildOutboxConsumer(databases[0] as never);
+      let undo: ReturnType<SendersPolicyService['undoKeep']> | undefined;
+      const projection = consume({
+        id: `late-keep-${timer}`,
+        topic: TOPICS.TRIAGE_VERDICT_APPLIED,
+        aggregateId: fixture.senderId,
+        payload: {
+          mailboxAccountId: fixture.mailboxId,
+          senderKey: sender!.key,
+          verdict: 'keep',
+          source: 'manual',
+          undoToken: null,
+          affectedCount: 0,
+        },
+        attempts: 1,
+        createdAt: new Date(),
+      });
+      try {
+        try {
+          await waitForWorkspaceLockContention(controlClient!, [projectionPid!.pid]);
+          let undoFinished = false;
+          undo = new SendersPolicyService(databases[1] as never)
+            .undoKeep({ mailboxAccountId: fixture.mailboxId, senderId: fixture.senderId })
+            .finally(() => {
+              undoFinished = true;
+            });
+          const deadline = Date.now() + 10_000;
+          while (!undoFinished) {
+            const [waiting] =
+              await controlClient!`SELECT wait_event_type FROM pg_stat_activity WHERE pid = ${undoPid!.pid}`;
+            if (waiting?.wait_event_type === 'Lock') break;
+            if (Date.now() >= deadline)
+              throw new Error('Undo neither finished nor waited on the projection');
+            await new Promise<void>((resolve) => setTimeout(resolve, 25));
+          }
+        } finally {
+          await controlClient!`SELECT pg_advisory_unlock(209583, 1)`;
+        }
+        await Promise.all([projection, undo]);
+        const [policy] = await databases[2]!
+          .select()
+          .from(senderPolicies)
+          .where(eq(senderPolicies.mailboxAccountId, fixture.mailboxId));
+        expect(policy?.policyType ?? null).toBeNull();
+        if (timer) expect(policy!.snoozedUntil!.toISOString()).toBe('2099-01-01T09:00:00.000Z');
+        const [audit] = await databases[2]!
+          .select()
+          .from(activityLog)
+          .where(eq(activityLog.mailboxAccountId, fixture.mailboxId));
+        expect(audit!.revertedAt).not.toBeNull();
+      } finally {
+        await Promise.allSettled([projection, undo]);
+        await controlClient!.unsafe(
+          'DROP TRIGGER hold_keep_projection ON sender_policies; DROP FUNCTION hold_keep_projection();',
+        );
+      }
+    },
+  );
 
   it('admits only one mixed cleanup request when one Free unit remains', async () => {
     const backendPids = await Promise.all(

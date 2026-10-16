@@ -23,6 +23,7 @@ import { ActionsService } from '../actions/actions.service.js';
 import { UnsubscribeBacklogService } from '../actions/unsubscribe-backlog.service.js';
 import { InboxReportService } from './inbox-report.service.js';
 import { SendersPolicyService } from '../senders/senders-policy.service.js';
+import { SnoozeService } from '../senders/snooze.service.js';
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -140,6 +141,33 @@ describe('inbox report fix set after sender decisions', () => {
       .set({ occurredAt: at, createdAt: at })
       .where(eq(activityLog.mailboxAccountId, mailboxId));
   }
+
+  it('a timer-only row stays eligible; only an explicit Keep removes it from the report', async () => {
+    const mailboxId = await seedMailbox(db);
+    const alpha = await seedSender(db, mailboxId, 'a'.repeat(64), 'alpha@news.test', 4);
+    const calm = await seedSender(db, mailboxId, 'c'.repeat(64), 'calm@news.test', 3);
+    const timer = new SnoozeService(db as never, null);
+    await timer.setSnooze({
+      mailboxAccountId: mailboxId,
+      senderId: alpha,
+      until: '2026-10-18T09:00:00.000Z',
+    });
+    expect((await report.getForMailbox(mailboxId, NOW)).fix.senderKeys).toEqual([alpha, calm]);
+    const policies = new SendersPolicyService(db as never);
+    expect(
+      (
+        await policies.setPolicy({
+          mailboxAccountId: mailboxId,
+          senderId: alpha,
+          patch: { policyType: 'keep' },
+        })
+      ).changed,
+    ).toBe(true);
+    await policyClock(mailboxId, 1);
+    expect(
+      (await report.getForMailbox(mailboxId, new Date(NOW.getTime() + 2000))).fix.senderKeys,
+    ).toEqual([calm]);
+  });
 
   it('refreshes the cached fix after Keep without another mailbox sync', async () => {
     const mailboxId = await seedMailbox(db);
