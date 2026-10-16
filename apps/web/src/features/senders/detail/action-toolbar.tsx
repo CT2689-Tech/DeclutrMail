@@ -122,56 +122,58 @@ export function ActionToolbar({
         fontFamily: font.sans,
       }}
     >
-      {VERBS.map(({ verb, shortcut }) => {
-        const disabled = isVerbUnavailable(verb, sender);
-        const reason =
-          currentMailUnavailableReason(verb, sender) ??
-          (verb === 'Unsubscribe'
-            ? unsubscribeStatus
-              ? `${unsubscribeStatus.label}. ${unsubscribeStatus.title}`
-              : unavailableReason
-            : (verb === 'Archive' || verb === 'Later') && sender.inboxCount === 0
-              ? 'No inbox emails to move.'
-              : null);
-        const help =
-          reason ??
-          actionHelpCopy(
-            verb.toLowerCase() as 'keep' | 'archive' | 'later' | 'delete' | 'unsubscribe',
+      {VERBS.filter(({ verb }) => verb !== 'Unsubscribe' || unavailableReason === null).map(
+        ({ verb, shortcut }) => {
+          const disabled = isVerbUnavailable(verb, sender);
+          const reason =
+            currentMailUnavailableReason(verb, sender) ??
+            (verb === 'Unsubscribe'
+              ? unsubscribeStatus
+                ? `${unsubscribeStatus.label}. ${unsubscribeStatus.title}`
+                : unavailableReason
+              : (verb === 'Archive' || verb === 'Later') && sender.inboxCount === 0
+                ? 'No inbox emails to move.'
+                : null);
+          const help =
+            reason ??
+            actionHelpCopy(
+              verb.toLowerCase() as 'keep' | 'archive' | 'later' | 'delete' | 'unsubscribe',
+            );
+          const button = (describedBy?: string) => (
+            <Button
+              tone="default"
+              size="md"
+              inert={busy || disabled}
+              style={{
+                ...(verb === 'Delete' && !disabled ? { color: color.dangerText } : {}),
+              }}
+              {...(describedBy ? { ariaDescribedBy: describedBy } : {})}
+              onClick={() => onAction({ verb, senders: [sender] })}
+              {...(!shortcuts
+                ? {}
+                : {
+                    iconRight: (
+                      <span className="dm-key-hint">
+                        <Kbd>{shortcut}</Kbd>
+                      </span>
+                    ),
+                  })}
+              ariaLabel={shortcuts ? `${verb} (${shortcut})` : verb}
+            >
+              {verb}
+            </Button>
           );
-        const button = (describedBy?: string) => (
-          <Button
-            tone="default"
-            size="md"
-            inert={busy || disabled}
-            style={{
-              ...(verb === 'Delete' && !disabled ? { color: color.dangerText } : {}),
-            }}
-            {...(describedBy ? { ariaDescribedBy: describedBy } : {})}
-            onClick={() => onAction({ verb, senders: [sender] })}
-            {...(!shortcuts
-              ? {}
-              : {
-                  iconRight: (
-                    <span className="dm-key-hint">
-                      <Kbd>{shortcut}</Kbd>
-                    </span>
-                  ),
-                })}
-            ariaLabel={shortcuts ? `${verb} (${shortcut})` : verb}
-          >
-            {verb}
-          </Button>
-        );
-        return (
-          <span key={verb} data-action={verb.toLowerCase()}>
-            {help ? (
-              <Tooltip content={help}>{({ describedBy }) => button(describedBy)}</Tooltip>
-            ) : (
-              button()
-            )}
-          </span>
-        );
-      })}
+          return (
+            <span key={verb} data-action={verb.toLowerCase()}>
+              {help ? (
+                <Tooltip content={help}>{({ describedBy }) => button(describedBy)}</Tooltip>
+              ) : (
+                button()
+              )}
+            </span>
+          );
+        },
+      )}
       {unsubscribeStatus && (
         <span style={{ flexBasis: '100%', gridColumn: '1 / -1' }} title={unsubscribeStatus.title}>
           <Pill>{unsubscribeStatus.label}</Pill>
@@ -217,11 +219,16 @@ export function ActionToolbar({
       >
         Keep skips this sender in Triage; Protected excludes bulk and automatic cleanup.
       </span>
-      {activity && (
-        <span style={{ flexBasis: '100%', gridColumn: '1 / -1' }}>
-          <RowActivityPill activity={activity} />
-        </span>
-      )}
+      {activity &&
+        !(
+          activity.verb === 'keep' &&
+          activity.phase === 'done' &&
+          sender.policyType === 'keep'
+        ) && (
+          <span style={{ flexBasis: '100%', gridColumn: '1 / -1' }}>
+            <RowActivityPill activity={activity} />
+          </span>
+        )}
     </div>
   );
 }

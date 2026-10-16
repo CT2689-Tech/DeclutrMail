@@ -89,8 +89,7 @@ describe('ActionToolbar — neutral actions', () => {
   );
   it('does not describe unchecked unsubscribe availability as a missing link', () => {
     render(<ActionToolbar sender={sender({ unsubscribeMethod: null })} onAction={vi.fn()} />);
-    const unsubscribe = screen.getByRole('button', { name: 'Unsubscribe' });
-    expect(unsubscribe).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.queryByRole('button', { name: 'Unsubscribe' })).toBeNull();
     expect(screen.getByRole('note')).toHaveTextContent(/not checked|hasn’t been checked/i);
     expect(screen.getByRole('button', { name: 'Keep' }).title).not.toMatch(/offer no/);
   });
@@ -144,7 +143,13 @@ describe('ActionToolbar — neutral actions', () => {
     // told every user it lived on Sender Detail. Nothing pinned a
     // verb count on any surface, which is why the gap survived every gate
     // — this assertion is that missing tripwire.
-    render(<ActionToolbar sender={sender()} onAction={() => {}} shortcuts />);
+    render(
+      <ActionToolbar
+        sender={sender({ unsubscribeMethod: 'one_click' })}
+        onAction={() => {}}
+        shortcuts
+      />,
+    );
     for (const [verb, key] of [
       ['Keep', 'K'],
       ['Archive', 'A'],
@@ -189,7 +194,11 @@ describe('ActionToolbar — neutral actions', () => {
 describe('ActionToolbar — consistent neutral verbs', () => {
   it('uses the same neutral background for every action', () => {
     const html = renderToStaticMarkup(
-      <ActionToolbar sender={sender()} onAction={() => {}} shortcuts />,
+      <ActionToolbar
+        sender={sender({ unsubscribeMethod: 'one_click' })}
+        onAction={() => {}}
+        shortcuts
+      />,
     );
     // Keep is the primary for this sender; every other verb is a quiet
     // fill capsule (the key hints inside are not buttons).
@@ -275,5 +284,43 @@ describe('ActionToolbar — actions and results stay distinct', () => {
     expect(screen.getByRole('button', { name: 'Later' })).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByRole('button', { name: 'Delete' })).not.toHaveAttribute('aria-disabled');
     expect(screen.getByText('No inbox emails to Archive or move to Later.')).toBeInTheDocument();
+  });
+});
+
+describe('ActionToolbar — relevant actions', () => {
+  it.each(['none', null] as const)(
+    'omits unavailable Unsubscribe for %s and blocks U',
+    (unsubscribeMethod) => {
+      const onAction = vi.fn();
+      render(
+        <ActionToolbar sender={sender({ unsubscribeMethod })} onAction={onAction} shortcuts />,
+      );
+      expect(screen.queryByRole('button', { name: 'Unsubscribe (U)' })).toBeNull();
+      expect(screen.getByRole('note')).toHaveTextContent(
+        unsubscribeMethod === 'none' ? /No unsubscribe link/ : /Not checked/,
+      );
+      fireEvent.keyDown(window, { key: 'u' });
+      expect(onAction).not.toHaveBeenCalled();
+    },
+  );
+  it('preserves a request receipt after its channel disappears', () => {
+    render(
+      <ActionToolbar
+        sender={sender({
+          unsubscribeMethod: 'none',
+          policyType: 'unsubscribe',
+          unsubStatus: 'endpoint_accepted',
+        })}
+        onAction={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Request accepted')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Unsubscribe' })).toBeNull();
+  });
+  it('keeps manual mailto available', () => {
+    const onAction = vi.fn();
+    render(<ActionToolbar sender={sender({ unsubscribeMethod: 'mailto' })} onAction={onAction} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ verb: 'Unsubscribe' }));
   });
 });

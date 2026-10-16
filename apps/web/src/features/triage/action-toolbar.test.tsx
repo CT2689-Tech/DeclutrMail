@@ -130,13 +130,7 @@ describe('ActionToolbar — render (D29, D31)', () => {
       const section = buttonTag(verb);
       expect(section, `${verb} must stay enabled`).not.toMatch(/disabled=""|aria-disabled="true"/);
     }
-    // Two-sided: Unsubscribe on this row is still disabled — but by the
-    // CHANNEL fact (t-sarah has no List-Unsubscribe header), never by
-    // protection. A fact about the sender survives; a policy gate does not.
-    const unsub = buttonTag('Unsubscribe');
-    // Native `disabled`, or `aria-disabled` when the gated verb stays
-    // focusable so its reason tooltip can still be reached.
-    expect(unsub).toMatch(/disabled=""|aria-disabled="true"/);
+    expect(html).not.toContain('aria-label="Unsubscribe (U)"');
   });
 });
 
@@ -175,32 +169,27 @@ describe('ActionToolbar — disabled verbs state their reason (W2, D209/D211)', 
     expect(verbDisabledReason('Unsubscribe', protectedRow)).toBe(NO_CHANNEL_COPY);
   });
 
-  it('the unavailable Unsubscribe pill carries the reason as title + tooltip description', () => {
-    // The audit's dead end: chip says "Unsubscribe · 95% RECOMMENDED"
-    // while the U pill is disabled with no explanation.
-    const row = rowById('t-shipping');
-    const html = renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />);
-    expect(html).toContain(`title="${NO_CHANNEL_COPY}"`);
-    expect(html).toContain('aria-label="Unsubscribe (U)"');
-    // The reason is the tooltip the pill is DESCRIBED by — announced on
-    // focus, which works because the pill stays focusable (aria-disabled).
-    const button = html.slice(html.lastIndexOf('<button', html.indexOf('>Unsubscribe<')));
-    const describedBy = /aria-describedby="([^"]+)"/.exec(button)?.[1];
-    expect(describedBy).toBeTruthy();
-    expect(html).toMatch(
-      new RegExp(`id="${describedBy}" role="tooltip"[^>]*>${NO_CHANNEL_COPY.slice(0, 20)}`),
-    );
-    // And the pill really is unavailable (capability gate unchanged).
-    expect(button.slice(0, button.indexOf('>'))).toContain('aria-disabled="true"');
-  });
+  it.each(['none', null] as const)(
+    'omits Unsubscribe for %s while explaining availability',
+    (unsubscribeMethod) => {
+      const row = { ...rowById('t-shipping'), unsubscribeMethod };
+      const onAction = vi.fn();
+      render(<ActionToolbar row={row} onAction={onAction} />);
+      expect(screen.queryByRole('button', { name: 'Unsubscribe (U)' })).toBeNull();
+      expect(screen.getByRole('note')).toHaveTextContent(
+        unsubscribeMethod === 'none' ? /No unsubscribe link/ : /Not checked/,
+      );
+      fireEvent.keyDown(window, { key: 'u' });
+      expect(onAction).not.toHaveBeenCalled();
+    },
+  );
 
   it('renders the reason as visible text — not hover-only (disabled buttons leave the tab order)', () => {
     const row = rowById('t-shipping');
     const html = renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />);
     expect(html).toContain('role="note"');
     expect(html).not.toContain('.dm-toolbar-reason{display:none}');
-    // Title attr, tooltip bubble, and the visible note.
-    expect(html.split('No unsubscribe link found').length).toBeGreaterThanOrEqual(3);
+    expect(html.split('No unsubscribe link found')).toHaveLength(2);
   });
 
   it('senders WITH a channel show no reason line', () => {

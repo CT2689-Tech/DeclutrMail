@@ -34,9 +34,9 @@ export function resolveShortcut(event: {
 /**
  * Triage action toolbar (D29 — K/A/U/L/D per amended D227).
  *
- * The toolbar always renders the five canonical verbs. A verb is
- * `disabled` only when the row's capability gate fails (currently a
- * missing unsubscribe channel) or while an action is in flight.
+ * The toolbar renders the applicable canonical verbs. Unsubscribe is
+ * omitted when no supported channel is known; the reason stays visible.
+ * Controls are disabled while an action is in flight.
  * Protected rows still allow explicit actions; protection controls
  * their recommendation and automatic/bulk eligibility.
  *
@@ -84,6 +84,7 @@ export function ActionToolbar({
   // The capability reason is available on focus and visible below the
   // toolbar, including touch devices that do not have hover.
   const unsubNoChannelReason = verbDisabledReason('Unsubscribe', row);
+  const visibleVerbs = VERB_ORDER.filter((verb) => verb !== 'Unsubscribe' || canUnsubscribe(row));
 
   useEffect(() => {
     if (!keyboardEnabled || disabled) return;
@@ -127,7 +128,7 @@ export function ActionToolbar({
         fontFamily: font.sans,
       }}
     >
-      {VERB_ORDER.map((verb) => {
+      {visibleVerbs.map((verb) => {
         // Why this verb is unavailable (W2 — a disabled pill with no
         // reason is a dead end). Gate reasons only — the transient busy
         // state already announces via the row's SR status line.
@@ -174,7 +175,9 @@ export function ActionToolbar({
               display: 'flex',
               flexDirection: 'column',
               // Delete is a deliberate full-width final action.
-              ...(verb === 'Delete' ? { gridColumn: '1 / -1' } : null),
+              ...(verb === 'Delete' && visibleVerbs.length % 2 === 1
+                ? { gridColumn: '1 / -1' }
+                : null),
             } as const)
           : undefined;
         const content =

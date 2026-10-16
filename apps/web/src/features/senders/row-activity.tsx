@@ -47,7 +47,7 @@ const WORKING: Record<RowActivityVerb | 'keep', string> = {
 };
 
 const DONE: Record<RowActivityVerb | 'keep', string> = {
-  keep: 'Kept',
+  keep: 'Skipped in Triage',
   archive: 'Archived',
   later: 'Moved to Later',
   delete: 'Deleted',
@@ -155,7 +155,9 @@ export function RowActivityPill({ activity }: { activity: SenderRowActivity }) {
       data-dm-row-activity={activity.phase}
       title={
         activity.phase === 'done' && activity.affectedCount !== 0
-          ? getActionSemantics(activity.verb).resultLabel
+          ? activity.verb === 'keep'
+            ? DONE.keep
+            : getActionSemantics(activity.verb).resultLabel
           : undefined
       }
       style={{

@@ -168,3 +168,22 @@ describe('SenderActionRow — one-click unsub-ready row', () => {
     }
   });
 });
+
+describe('SenderActionRow — relevant actions', () => {
+  it.each(['none', null] as const)(
+    'omits unavailable Unsubscribe from the menu for %s',
+    (unsubscribeMethod) => {
+      const onAction = vi.fn();
+      render(<SenderActionRow sender={sender({ unsubscribeMethod })} onAction={onAction} />);
+      fireEvent.click(screen.getByRole('button', { name: 'More actions for Acme Deals' }));
+      expect(screen.queryByRole('menuitem', { name: /Unsubscribe/ })).toBeNull();
+      fireEvent.keyDown(window, { key: 'u' });
+      expect(onAction).not.toHaveBeenCalled();
+    },
+  );
+  it('states the saved Keep effect', () => {
+    render(<SenderActionRow sender={sender({ policyType: 'keep' })} onAction={vi.fn()} />);
+    expect(screen.getByText('Skipped in Triage')).toBeInTheDocument();
+    expect(screen.queryByText('Kept')).toBeNull();
+  });
+});
