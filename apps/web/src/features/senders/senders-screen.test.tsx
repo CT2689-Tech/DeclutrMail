@@ -1548,93 +1548,196 @@ describe('SendersScreen — edge states', () => {
     expect(archivePosted).toBe(false);
   });
 
-  it('confirms Delete, keeps the cleared card marked done, then returns it to normal after Undo', async () => {
-    let trashed = false;
-    let currentMailOnly: string | null = null;
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/senders',
-        respond: (_req, url) => {
-          currentMailOnly = url.searchParams.get('current_mail_only');
-          return jsonOk({
-            data: trashed ? [] : [ROW],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 50 },
-              query: {
-                totalMatching: trashed ? 0 : 1,
-                globalMaxTotal: 313,
-                asOf: '2026-09-06T00:00:00.000Z',
+  it.each([
+    { inbox: 3, archived: 2 },
+    { inbox: 0, archived: 21 },
+  ])(
+    'Delete removes a confirmed empty sender and Undo restores its $inbox/$archived counts without reload',
+    async ({ inbox, archived }) => {
+      let trashed = false;
+      let deleteCompleted = false;
+      let currentMailOnly: string | null = null;
+      const original = {
+        ...ROW,
+        inboxCount: inbox,
+        archivedCount: archived,
+        policyType: 'unsubscribe' as const,
+        unsubStatus: 'endpoint_accepted' as const,
+      };
+      const count = inbox + archived;
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/senders',
+          respond: (_req, url) => {
+            currentMailOnly = url.searchParams.get('current_mail_only');
+            return jsonOk({
+              data: trashed ? [] : [original],
+              meta: {
+                pagination: { nextCursor: null, hasMore: false, limit: 50 },
+                query: {
+                  totalMatching: trashed ? 0 : 1,
+                  globalMaxTotal: 313,
+                  asOf: '2026-09-06T00:00:00.000Z',
+                },
               },
-            },
-          });
+            });
+          },
         },
-      },
-      compositePreviewHandler(313),
-      {
-        method: 'POST',
-        path: '/api/actions',
-        respond: () =>
-          jsonOk({ data: { actionId: 'delete-1', requestedCount: 313, status: 'queued' } }),
-      },
-      {
-        method: 'GET',
-        path: /^\/api\/actions\/[^/]+$/,
-        respond: (_req, url) => {
-          const reverse = url.pathname.endsWith('reverse-1');
-          trashed = !reverse;
-          return jsonOk({
-            data: {
-              ...archiveStatus({
-                actionId: reverse ? 'reverse-1' : 'delete-1',
-                requestedCount: 313,
-                affectedCount: 313,
-              }),
-              verb: 'delete',
-              direction: reverse ? 'reverse' : 'forward',
-            },
-          });
+        {
+          method: 'GET',
+          path: '/api/senders/a',
+          respond: () =>
+            jsonOk({
+              data: {
+                ...original,
+                inboxCount: trashed ? 0 : inbox,
+                archivedCount: trashed ? 0 : archived,
+              },
+            }),
         },
-      },
-      {
-        method: 'POST',
-        path: '/api/undo/tok-1',
-        respond: () =>
-          jsonOk({
-            data: {
-              token: 'tok-1',
-              actionKind: 'delete',
-              reverted: false,
-              expired: false,
-              revertedAt: null,
-              actionId: 'reverse-1',
-            },
-          }),
-      },
-    ]);
-    renderScreen();
-    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
-    fireEvent.keyDown(document.body, { key: 'd' });
-    await screen.findByText(/We check again right before anything moves/);
-    fireEvent.change(
-      within(screen.getByRole('dialog')).getByRole('combobox', { name: /How far back/i }),
-      {
-        target: { value: 'all' },
-      },
-    );
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
-    await findRowStatus();
-    // Founder decision 2026-09-20: the row STAYS where it is, marked done,
-    // even though the refetch that follows dropped this sender (nothing
-    // left to clean) — the list must not jump under the cursor.
-    await screen.findByText(/^Deleted(?: ·)? 313(?: emails)?$/);
-    expect(screen.getByRole('checkbox', { name: /select sender a/i })).toBeEnabled();
-    expect(currentMailOnly).toBe('true');
-    await undoFromThePill('tok-1');
-    // A confirmed Undo takes the "done" mark off; the row is the server's again.
-    await waitFor(() => expect(screen.queryByText(/^Deleted /)).toBeNull());
-    await screen.findByRole('checkbox', { name: /select sender a/i });
-  });
+        {
+          method: 'GET',
+          path: '/api/actions/preview',
+          respond: () =>
+            jsonOk({
+              data: {
+                sender: {
+                  id: 'a',
+                  name: 'Sender A',
+                  domain: 'example.com',
+                  lastSeenDays: 2,
+                  wroteToCount: 0,
+                  monthly: 30,
+                },
+                counts: {
+                  all: inbox,
+                  olderThan30d: 0,
+                  olderThan90d: 0,
+                  olderThan180d: 0,
+                  olderThan365d: 0,
+                },
+                recentMessages: {
+                  all: [],
+                  olderThan30d: [],
+                  olderThan90d: [],
+                  olderThan180d: [],
+                  olderThan365d: [],
+                },
+                allMail: {
+                  counts: {
+                    all: count,
+                    olderThan30d: 0,
+                    olderThan90d: 0,
+                    olderThan180d: 0,
+                    olderThan365d: 0,
+                  },
+                  recentMessages: {
+                    all: [],
+                    olderThan30d: [],
+                    olderThan90d: [],
+                    olderThan180d: [],
+                    olderThan365d: [],
+                  },
+                },
+                unsubAvailable: true,
+                protected: false,
+              },
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () =>
+            jsonOk({ data: { actionId: 'delete-1', requestedCount: count, status: 'queued' } }),
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/actions\/(?:delete-1|reverse-1)$/,
+          respond: (_req, url) => {
+            const reverse = url.pathname.endsWith('reverse-1');
+            if (reverse) trashed = false;
+            else if (!deleteCompleted) {
+              trashed = true;
+              deleteCompleted = true;
+            }
+            return jsonOk({
+              data: {
+                ...archiveStatus({
+                  actionId: reverse ? 'reverse-1' : 'delete-1',
+                  requestedCount: count,
+                  affectedCount: count,
+                }),
+                verb: 'delete',
+                direction: reverse ? 'reverse' : 'forward',
+              },
+            });
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/undo/tok-1',
+          respond: () =>
+            jsonOk({
+              data: {
+                token: 'tok-1',
+                actionKind: 'delete',
+                reverted: false,
+                expired: false,
+                revertedAt: null,
+                actionId: 'reverse-1',
+              },
+            }),
+        },
+      ]);
+      renderScreen();
+      fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+      fireEvent.keyDown(document.body, { key: 'd' });
+      fireEvent.click(await screen.findByRole('radio', { name: /Inbox \+ archived/ }));
+      await screen.findByText(/We check again right before anything moves/);
+      fireEvent.change(
+        within(screen.getByRole('dialog')).getByRole('combobox', { name: /How far back/i }),
+        {
+          target: { value: 'all' },
+        },
+      );
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      await waitFor(() =>
+        expect(screen.queryByRole('checkbox', { name: /select sender a/i })).toBeNull(),
+      );
+      expect(trashed).toBe(true);
+      expect(currentMailOnly).toBe('true');
+      await undoFromThePill('tok-1');
+      // The real reverse-status hook invalidates the list; no manual cache
+      // update, reload, remount or synthetic focus event restores the row.
+      await waitFor(() => expect(screen.queryByText(/^Deleted /)).toBeNull());
+      const restored = (await screen.findByRole('checkbox', { name: /select sender a/i })).closest(
+        '[role="listitem"]',
+      ) as HTMLElement;
+      expect(trashed).toBe(false);
+      expect(restored).toHaveTextContent(`${inbox} in inbox`);
+      expect(restored).toHaveTextContent(`${archived} archived`);
+      expect(restored).toHaveTextContent('Request accepted');
+      fireEvent.click(within(restored).getByRole('button', { name: /More actions/ }));
+      const menu = await screen.findByRole('menu');
+      expect(within(menu).getByRole('menuitem', { name: /^Delete/ })).not.toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
+      expect(within(menu).getByRole('menuitem', { name: /^Unsubscribe/ })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
+      for (const verb of ['Archive', 'Later']) {
+        expect(
+          within(menu)
+            .getByRole('menuitem', { name: new RegExp(`^${verb}`) })
+            .getAttribute('aria-disabled'),
+        ).toBe(inbox === 0 ? 'true' : null);
+      }
+    },
+  );
 
   // QA-delete-20260829-05 — the same staleness gap `sender-detail-page.tsx`
   // had: this screen's `receipt` is local state that only heard about a
@@ -1642,90 +1745,97 @@ describe('SendersScreen — edge states', () => {
   // identical token through a SEPARATE `useRevertUndo()` instance, mounted
   // in a different component tree — simulated here the same way, sharing
   // only the QueryClient, never touching this screen's React tree.
-  it('clears the receipt when a DIFFERENT component’s useRevertUndo() reverts the same token (external undo)', async () => {
-    let archivePosted = false;
-    let undoPosted = false;
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/senders',
-        respond: () =>
-          jsonOk({
-            data: [ROW],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
-            },
-          }),
-      },
-      compositePreviewHandler(12),
-      {
-        method: 'POST',
-        path: '/api/actions',
-        respond: () => {
-          archivePosted = true;
-          return jsonOk({ data: { actionId: 'act-1', requestedCount: 12, status: 'queued' } });
-        },
-      },
-      {
-        method: 'GET',
-        path: /^\/api\/actions\/[^/]+$/,
-        respond: (_req, url) =>
-          jsonOk({
-            data: archiveStatus({
-              actionId: url.pathname.endsWith('rev-ext') ? 'rev-ext' : 'act-1',
-              undoToken: url.pathname.endsWith('rev-ext') ? null : 'tok-1',
-              undoExpiresAt: url.pathname.endsWith('rev-ext') ? null : '2027-06-16T14:35:00.000Z',
+  it.each([undefined, 'foreign-mailbox'])(
+    'handles external pending Undo only in its mailbox (%s)',
+    async (mailboxId) => {
+      let archivePosted = false;
+      let undoPosted = false;
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/senders',
+          respond: () =>
+            jsonOk({
+              data: [ROW],
+              meta: {
+                pagination: { nextCursor: null, hasMore: false, limit: 25 },
+                query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+              },
             }),
-          }),
-      },
-      {
-        method: 'POST',
-        path: '/api/undo/tok-1',
-        respond: () => {
-          undoPosted = true;
-          return jsonOk({
-            data: {
-              token: 'tok-1',
-              actionKind: 'archive',
-              reverted: false,
-              expired: false,
-              revertedAt: null,
-              actionId: 'rev-ext',
-            },
-          });
         },
-      },
-    ]);
+        compositePreviewHandler(12),
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () => {
+            archivePosted = true;
+            return jsonOk({ data: { actionId: 'act-1', requestedCount: 12, status: 'queued' } });
+          },
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/actions\/[^/]+$/,
+          respond: (_req, url) =>
+            jsonOk({
+              data: archiveStatus({
+                actionId: url.pathname.endsWith('rev-ext') ? 'rev-ext' : 'act-1',
+                undoToken: url.pathname.endsWith('rev-ext') ? null : 'tok-1',
+                undoExpiresAt: url.pathname.endsWith('rev-ext') ? null : '2027-06-16T14:35:00.000Z',
+              }),
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/undo/tok-1',
+          respond: () => {
+            undoPosted = true;
+            return jsonOk({
+              data: {
+                token: 'tok-1',
+                actionKind: 'archive',
+                reverted: false,
+                expired: false,
+                revertedAt: null,
+                actionId: 'rev-ext',
+              },
+            });
+          },
+        },
+      ]);
 
-    const client = createTestQueryClient();
-    render(
-      <QueryWrapper client={client}>
-        <SendersScreen />
-      </QueryWrapper>,
-    );
-    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
-    fireEvent.click(checkbox);
-    fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
-    await screen.findByText(/We check again right before anything moves/);
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      const client = createTestQueryClient();
+      render(
+        <QueryWrapper client={client}>
+          <SendersScreen />
+        </QueryWrapper>,
+      );
+      const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+      fireEvent.click(checkbox);
+      fireEvent.keyDown(document.body, { key: 'a' });
+      await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
+      await screen.findByText(/We check again right before anything moves/);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
-    await findRowStatus();
-    expect(archivePosted).toBe(true);
+      await findRowStatus();
+      expect(archivePosted).toBe(true);
 
-    // Simulate the tray: a SEPARATE `useRevertUndo()` instance.
-    const { result } = renderHook(() => useRevertUndo(), {
-      wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
-    });
-    await act(async () => {
-      result.current.mutate({ token: 'tok-1' });
-      await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    });
+      // Simulate the tray: a SEPARATE `useRevertUndo()` instance.
+      const { result } = renderHook(() => useRevertUndo(), {
+        wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+      });
+      await act(async () => {
+        result.current.mutate({ token: 'tok-1', ...(mailboxId ? { mailboxId } : {}) });
+        await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      });
 
-    expect(undoPosted).toBe(true);
-    await waitFor(() => expect(document.querySelector('[data-dm-row-activity]')).toBeNull());
-  });
+      expect(undoPosted).toBe(true);
+      await waitFor(() =>
+        mailboxId
+          ? expect(document.querySelector('[data-dm-row-activity]')).not.toBeNull()
+          : expect(document.querySelector('[data-dm-row-activity]')).toBeNull(),
+      );
+    },
+  );
 
   it('carries the chosen time window into a SINGLE-sender archive enqueue (D226)', async () => {
     // The chip row offers real per-bucket counts, so confirming "1 year+"

@@ -1051,6 +1051,201 @@ describe('SenderDetailRoute', () => {
     },
   );
 
+  it.each([
+    { layout: 'page' as const, inbox: 3, archived: 2 },
+    { layout: 'pane' as const, inbox: 3, archived: 2 },
+    { layout: 'page' as const, inbox: 0, archived: 21 },
+    { layout: 'pane' as const, inbox: 0, archived: 21 },
+  ])(
+    'Delete → Undo restores $inbox/$archived counts and controls in $layout without reload',
+    async ({ layout, inbox, archived }) => {
+      const original = {
+        ...DETAIL,
+        inboxCount: inbox,
+        archivedCount: archived,
+        policyType: 'unsubscribe' as const,
+        unsubStatus: 'endpoint_accepted' as const,
+      };
+      const current = { ...original };
+      let deleted = false;
+      const total = inbox + archived;
+      const counts = (all: number) => ({
+        all,
+        olderThan30d: 0,
+        olderThan90d: 0,
+        olderThan180d: 0,
+        olderThan365d: 0,
+      });
+      const recentMessages = {
+        all: [],
+        olderThan30d: [],
+        olderThan90d: [],
+        olderThan180d: [],
+        olderThan365d: [],
+      };
+      installHappyPath(MESSAGE, undefined, undefined, current);
+      addFetchHandlers([
+        {
+          method: 'GET',
+          path: '/api/actions/preview',
+          respond: () =>
+            jsonOk({
+              data: {
+                sender: {
+                  id: 'linkedin',
+                  name: 'LinkedIn',
+                  domain: 'linkedin.com',
+                  lastSeenDays: 2,
+                  wroteToCount: 0,
+                },
+                counts: counts(inbox),
+                recentMessages,
+                allMail: { counts: counts(total), recentMessages },
+                unsubAvailable: true,
+                protected: false,
+              },
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () =>
+            jsonOk({ data: { actionId: 'delete-cycle', requestedCount: total, status: 'queued' } }),
+        },
+        {
+          method: 'GET',
+          path: '/api/actions/delete-cycle',
+          respond: () => {
+            if (!deleted) {
+              Object.assign(current, { inboxCount: 0, archivedCount: 0 });
+              deleted = true;
+            }
+            return jsonOk({
+              data: {
+                actionId: 'delete-cycle',
+                verb: 'delete',
+                direction: 'forward',
+                status: 'done',
+                requestedCount: total,
+                affectedCount: total,
+                wakeAt: null,
+                undoToken: 'cycle-token',
+                undoExpiresAt: '2099-01-01T00:00:00.000Z',
+                undoExecutedAt: null,
+                undoRevertedAt: null,
+                errorCode: null,
+              },
+            });
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/undo/cycle-token',
+          respond: () =>
+            jsonOk({
+              data: {
+                token: 'cycle-token',
+                actionKind: 'delete',
+                reverted: false,
+                expired: false,
+                revertedAt: null,
+                actionId: 'reverse-cycle',
+                actionIds: ['reverse-cycle'],
+              },
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/actions/undo-status',
+          respond: () => {
+            Object.assign(current, original);
+            return jsonOk({
+              data: {
+                actionId: 'reverse-cycle',
+                verb: 'delete',
+                direction: 'reverse',
+                status: 'done',
+                requestedCount: total,
+                affectedCount: total,
+                wakeAt: null,
+                undoToken: null,
+                undoExpiresAt: null,
+                undoExecutedAt: null,
+                undoRevertedAt: '2026-10-15T12:00:00.000Z',
+                errorCode: null,
+              },
+            });
+          },
+        },
+      ]);
+      renderDetail('linkedin', undefined, layout);
+      const buttonName = (verb: string, key: string) =>
+        layout === 'page' ? `${verb} (${key})` : verb;
+      fireEvent.click(await screen.findByRole('button', { name: buttonName('Delete', 'D') }));
+      fireEvent.click(await screen.findByRole('radio', { name: /Inbox \+ archived/ }));
+      await screen.findByText(/We check again right before anything moves/);
+      fireEvent.change(
+        within(screen.getByRole('dialog')).getByRole('combobox', { name: /How far back/i }),
+        { target: { value: 'all' } },
+      );
+      fireEvent.click(
+        within(screen.getByRole('dialog')).getByRole('button', {
+          name: new RegExp(`^Delete ${total} emails$`),
+        }),
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId('sender-detail-inbox-count')).toHaveTextContent(/^0$/),
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId('sender-detail-archived-count')).toHaveTextContent(/^0$/),
+      );
+      for (const [verb, key] of [
+        ['Archive', 'A'],
+        ['Later', 'L'],
+        ['Delete', 'D'],
+      ]) {
+        expect(screen.getByRole('button', { name: buttonName(verb!, key!) })).toHaveAttribute(
+          'aria-disabled',
+          'true',
+        );
+      }
+      const { result } = renderHook(() => useRevertUndo(), {
+        wrapper: ({ children }) => <QueryWrapper client={lastClient}>{children}</QueryWrapper>,
+      });
+      await act(async () => {
+        await result.current.mutateAsync({ token: 'cycle-token', mailboxId: 'mailbox-active' });
+      });
+      await waitFor(() =>
+        expect(screen.getByTestId('sender-detail-archived-count')).toHaveTextContent(
+          new RegExp(`^${archived}$`),
+        ),
+      );
+      expect(screen.getByTestId('sender-detail-inbox-count')).toHaveTextContent(
+        new RegExp(`^${inbox}$`),
+      );
+      expect(screen.getByRole('button', { name: buttonName('Delete', 'D') })).not.toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
+      expect(screen.getByRole('button', { name: buttonName('Unsubscribe', 'U') })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
+      for (const [verb, key] of [
+        ['Archive', 'A'],
+        ['Later', 'L'],
+      ]) {
+        expect(
+          screen
+            .getByRole('button', { name: buttonName(verb!, key!) })
+            .getAttribute('aria-disabled'),
+        ).toBe(inbox === 0 ? 'true' : null);
+      }
+      expect(screen.queryByText(/^Deleted/)).toBeNull();
+      expect(screen.getByText('Request accepted')).toBeInTheDocument();
+    },
+  );
+
   it('shows no suggestion for a sender the engine has never scored', async () => {
     installHappyPath();
     renderDetail();
@@ -2423,65 +2618,72 @@ describe('SenderDetailRoute', () => {
       });
     });
 
-    it('clears the receipt when a DIFFERENT component’s useRevertUndo() reverts the same token (external undo, immediate)', async () => {
-      let actionPosts = 0;
-      let undoPosts = 0;
-      installHappyPath();
-      addFetchHandlers([
-        detailPreviewHandler(),
-        {
-          method: 'POST',
-          path: '/api/actions',
-          respond: () => {
-            actionPosts += 1;
-            return jsonOk({ data: { actionId: 'act-ext', requestedCount: 12, status: 'queued' } });
+    it.each([undefined, 'foreign-mailbox'])(
+      'handles external immediate Undo only in its mailbox (%s)',
+      async (mailboxId) => {
+        let actionPosts = 0;
+        let undoPosts = 0;
+        installHappyPath();
+        addFetchHandlers([
+          detailPreviewHandler(),
+          {
+            method: 'POST',
+            path: '/api/actions',
+            respond: () => {
+              actionPosts += 1;
+              return jsonOk({
+                data: { actionId: 'act-ext', requestedCount: 12, status: 'queued' },
+              });
+            },
           },
-        },
-        {
-          method: 'GET',
-          path: /^\/api\/actions\/[^/]+$/,
-          respond: () => jsonOk({ data: actionStatusBody('act-ext', true) }),
-        },
-        {
-          method: 'POST',
-          path: '/api/undo/tok-1',
-          respond: () => {
-            undoPosts += 1;
-            return jsonOk({ data: { verb: 'archive', reverted: true, actionId: null } });
+          {
+            method: 'GET',
+            path: /^\/api\/actions\/[^/]+$/,
+            respond: () => jsonOk({ data: actionStatusBody('act-ext', true) }),
           },
-        },
-      ]);
+          {
+            method: 'POST',
+            path: '/api/undo/tok-1',
+            respond: () => {
+              undoPosts += 1;
+              return jsonOk({ data: { verb: 'archive', reverted: true, actionId: null } });
+            },
+          },
+        ]);
 
-      const client = createTestQueryClient();
-      render(
-        <QueryWrapper client={client}>
-          <SenderDetailRoute id="linkedin" />
-        </QueryWrapper>,
-      );
+        const client = createTestQueryClient();
+        render(
+          <QueryWrapper client={client}>
+            <SenderDetailRoute id="linkedin" />
+          </QueryWrapper>,
+        );
 
-      const archiveButton = await screen.findByRole('button', { name: 'Archive (A)' });
-      fireEvent.click(archiveButton);
-      await screen.findByText(/We check again right before anything moves/);
-      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
-      await waitFor(() => expect(actionPosts).toBe(1));
+        const archiveButton = await screen.findByRole('button', { name: 'Archive (A)' });
+        fireEvent.click(archiveButton);
+        await screen.findByText(/We check again right before anything moves/);
+        fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+        await waitFor(() => expect(actionPosts).toBe(1));
 
-      // The page is holding the result, carrying the fixture's `undoToken: 'tok-1'`.
-      await waitFor(() => expect(doneMark()).not.toBeNull());
+        // The page is holding the result, carrying the fixture's `undoToken: 'tok-1'`.
+        await waitFor(() => expect(doneMark()).not.toBeNull());
 
-      // Simulate the tray: a SEPARATE `useRevertUndo()` instance, sharing
-      // only the QueryClient — never touching this page's React tree.
-      const { result } = renderHook(() => useRevertUndo(), {
-        wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
-      });
-      await act(async () => {
-        result.current.mutate({ token: 'tok-1' });
-        await waitFor(() => expect(result.current.isSuccess).toBe(true));
-      });
+        // Simulate the tray: a SEPARATE `useRevertUndo()` instance, sharing
+        // only the QueryClient — never touching this page's React tree.
+        const { result } = renderHook(() => useRevertUndo(), {
+          wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+        });
+        await act(async () => {
+          result.current.mutate({ token: 'tok-1', ...(mailboxId ? { mailboxId } : {}) });
+          await waitFor(() => expect(result.current.isSuccess).toBe(true));
+        });
 
-      expect(undoPosts).toBe(1);
-      await waitFor(() => expect(doneMark()).toBeNull());
-      expect(actionPosts).toBe(1);
-    });
+        expect(undoPosts).toBe(1);
+        await waitFor(() =>
+          mailboxId ? expect(doneMark()).not.toBeNull() : expect(doneMark()).toBeNull(),
+        );
+        expect(actionPosts).toBe(1);
+      },
+    );
 
     // Codex round 1: a FRESH token's revert normally returns `reverted:
     // false` with an `actionId` to poll, not the immediate `reverted: true`

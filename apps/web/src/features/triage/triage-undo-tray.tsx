@@ -18,7 +18,7 @@ import {
 import { undoKeys } from '@/features/undo/query-keys';
 import { ME_QUERY_KEY } from '@/features/auth/api/me-contract';
 import { undoEntriesQueryOptions, type UndoWireEntry } from '@/features/undo/query-options';
-import { useActionStatus, useRevertUndo, useRevertUndoMember } from '@/lib/api/use-action';
+import { useUndoStatus, useRevertUndo, useRevertUndoMember } from '@/lib/api/use-action';
 import { ApiError, apiGet } from '@/lib/api/client';
 import { getBatchStatus, isTerminalStatus, type InFlightActionGroup } from '@/lib/api/actions';
 import {
@@ -138,8 +138,9 @@ export function ProductUndoTray({
     /** Set when only ONE sender of the decision is being reverted. */
     memberToken: string | null;
     actionId: string | null;
+    actionIds?: string[] | undefined;
   } | null>(null);
-  const revertStatus = useActionStatus(inFlight?.actionId ?? null, mailboxId);
+  const revertStatus = useUndoStatus(inFlight?.actionId ?? null, mailboxId, inFlight?.actionIds);
   const mailboxGeneration = useRef(0);
 
   /**
@@ -318,7 +319,7 @@ export function ProductUndoTray({
           releaseAfterRefresh(generation);
         } else if (res.actionId) {
           // Reverse job enqueued — poll it (effect below).
-          setInFlight({ ...hidden, actionId: res.actionId });
+          setInFlight({ ...hidden, actionId: res.actionId, actionIds: res.actionIds });
         } else {
           // BE-designed terminal: nothing to revert.
           toast('Nothing to undo — already restored.', 'info');
