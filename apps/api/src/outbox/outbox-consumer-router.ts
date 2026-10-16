@@ -32,6 +32,7 @@ import type {
 } from '@declutrmail/events';
 import {
   AUTOPILOT_APPLY_JOB,
+  MAILBOX_ACTION_LOCK_NS,
   autopilotApplyJobOptions,
   seedAutopilotPresets,
   type AutopilotApplyJobData,
@@ -576,36 +577,45 @@ async function handleTriageVerdictApplied(
   if (payload.verdict !== 'keep') {
     return;
   }
-  // Undo marks the keep audit row reverted before this projection may
-  // run. Re-applying the policy would put Keep back after the user
-  // undid it. A newer unreverted keep (Keep again) still projects.
-  const [latestKeep] = await db
-    .select({ revertedAt: activityLog.revertedAt })
-    .from(activityLog)
-    .where(
-      and(
-        eq(activityLog.mailboxAccountId, payload.mailboxAccountId),
-        eq(activityLog.senderKey, payload.senderKey),
-        eq(activityLog.action, 'keep'),
-      ),
-    )
-    .orderBy(desc(activityLog.occurredAt))
-    .limit(1);
-  if (latestKeep?.revertedAt != null) return;
-  await db
-    .insert(senderPolicies)
-    .values({
-      mailboxAccountId: payload.mailboxAccountId,
-      senderKey: payload.senderKey,
-      policyType: 'keep',
-    })
-    .onConflictDoUpdate({
-      target: [senderPolicies.mailboxAccountId, senderPolicies.senderKey],
-      set: {
+  // The audit read and policy write must be one serialized operation
+  // with Undo, including when no policy row exists yet. Otherwise an
+  // already-started consumer can put Keep back after Undo reverted it.
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL lock_timeout = '10s'`);
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(${MAILBOX_ACTION_LOCK_NS}, hashtext(${payload.mailboxAccountId}))`,
+    );
+    // Undo marks the keep audit row reverted before this projection may
+    // run. Re-applying the policy would put Keep back after the user
+    // undid it. A newer unreverted keep (Keep again) still projects.
+    const [latestKeep] = await tx
+      .select({ revertedAt: activityLog.revertedAt })
+      .from(activityLog)
+      .where(
+        and(
+          eq(activityLog.mailboxAccountId, payload.mailboxAccountId),
+          eq(activityLog.senderKey, payload.senderKey),
+          eq(activityLog.action, 'keep'),
+        ),
+      )
+      .orderBy(desc(activityLog.occurredAt))
+      .limit(1);
+    if (latestKeep?.revertedAt != null) return;
+    await tx
+      .insert(senderPolicies)
+      .values({
+        mailboxAccountId: payload.mailboxAccountId,
+        senderKey: payload.senderKey,
         policyType: 'keep',
-        updatedAt: sql`now()`,
-      },
-    });
+      })
+      .onConflictDoUpdate({
+        target: [senderPolicies.mailboxAccountId, senderPolicies.senderKey],
+        set: {
+          policyType: 'keep',
+          updatedAt: sql`now()`,
+        },
+      });
+  });
 }
 
 /**

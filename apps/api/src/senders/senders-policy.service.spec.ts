@@ -177,11 +177,11 @@ describe('SendersPolicyService', () => {
   });
 
   describe('undo keep', () => {
-    it('deletes the keep policy and reverts the keep audit row', async () => {
+    it('clears the standing Keep decision and reverts the keep audit row', async () => {
       await svc.setPolicy({ mailboxAccountId: mailboxId, senderId, patch: { policyType: 'keep' } });
       const res = await svc.undoKeep({ mailboxAccountId: mailboxId, senderId });
       expect(res).toMatchObject({ policyType: null, changed: true, isProtected: false });
-      expect(await policyRow(db, mailboxId)).toBeNull();
+      expect((await policyRow(db, mailboxId))!.policyType).toBeNull();
       const [audit] = await db
         .select()
         .from(activityLog)
@@ -190,23 +190,68 @@ describe('SendersPolicyService', () => {
       expect(audit!.revertedAt).not.toBeNull();
     });
 
-    it('reverts a keep audit row before the policy projection lands', async () => {
-      await db.insert(activityLog).values({
+    it.each([false, true])(
+      'reverts a pending Keep audit without losing timer metadata (timer=%s)',
+      async (timer) => {
+        if (timer)
+          await db.insert(senderPolicies).values({
+            mailboxAccountId: mailboxId,
+            senderKey: SENDER_KEY,
+            policyType: null,
+            snoozedUntil: new Date('2099-01-01T09:00:00Z'),
+            snoozedAt: new Date('2026-10-15T09:00:00Z'),
+          });
+        await db.insert(activityLog).values({
+          mailboxAccountId: mailboxId,
+          senderKey: SENDER_KEY,
+          source: 'manual',
+          action: 'keep',
+          affectedCount: 0,
+          undoToken: null,
+        });
+        const res = await svc.undoKeep({ mailboxAccountId: mailboxId, senderId });
+        expect(res.changed).toBe(true);
+        const row = await policyRow(db, mailboxId);
+        if (timer) {
+          expect(row!.policyType).toBeNull();
+          expect(row!.snoozedUntil!.toISOString()).toBe('2099-01-01T09:00:00.000Z');
+        } else expect(row).toBeNull();
+        const [audit] = await db
+          .select()
+          .from(activityLog)
+          .where(eq(activityLog.mailboxAccountId, mailboxId));
+        expect(audit!.revertedAt).not.toBeNull();
+      },
+    );
+
+    it('Undo Keep preserves a Later timer, note and recovery state', async () => {
+      await db.insert(senderPolicies).values({
         mailboxAccountId: mailboxId,
         senderKey: SENDER_KEY,
-        source: 'manual',
-        action: 'keep',
-        affectedCount: 0,
-        undoToken: null,
+        policyType: null,
+        snoozedUntil: new Date('2099-01-01T09:00:00Z'),
+        snoozedAt: new Date('2026-10-15T09:00:00Z'),
+        snoozedReason: 'after launch',
+        snoozeWakeFailureCount: 1,
+        snoozeWakeLastAttemptAt: new Date('2026-10-15T09:01:00Z'),
+        snoozeWakeLastFailedAt: new Date('2026-10-15T09:01:00Z'),
+        snoozeWakeFailureKind: 'temporary',
       });
-      const res = await svc.undoKeep({ mailboxAccountId: mailboxId, senderId });
-      expect(res.changed).toBe(true);
-      expect(await policyRow(db, mailboxId)).toBeNull();
-      const [audit] = await db
-        .select()
-        .from(activityLog)
-        .where(eq(activityLog.mailboxAccountId, mailboxId));
-      expect(audit!.revertedAt).not.toBeNull();
+      await svc.setPolicy({ mailboxAccountId: mailboxId, senderId, patch: { policyType: 'keep' } });
+      const before = await policyRow(db, mailboxId);
+      const result = await svc.undoKeep({ mailboxAccountId: mailboxId, senderId });
+      expect(result).toMatchObject({ policyType: null, changed: true });
+      const after = await policyRow(db, mailboxId);
+      expect(after).toMatchObject({
+        policyType: null,
+        snoozedUntil: before!.snoozedUntil,
+        snoozedAt: before!.snoozedAt,
+        snoozedReason: 'after launch',
+        snoozeWakeFailureCount: 1,
+        snoozeWakeLastFailedAt: before!.snoozeWakeLastFailedAt,
+        snoozeWakeFailureKind: 'temporary',
+      });
+      expect((await svc.undoKeep({ mailboxAccountId: mailboxId, senderId })).changed).toBe(false);
     });
 
     it('refuses to undo a protected keep', async () => {

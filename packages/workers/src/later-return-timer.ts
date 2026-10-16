@@ -32,6 +32,8 @@ export async function scheduleLaterReturn(
     .values({
       mailboxAccountId: timer.mailboxAccountId,
       senderKey: timer.senderKey,
+      // A new timer does not imply a standing Keep choice.
+      policyType: null,
       snoozedUntil: timer.wakeAt,
       snoozedAt: timer.setAt,
     })

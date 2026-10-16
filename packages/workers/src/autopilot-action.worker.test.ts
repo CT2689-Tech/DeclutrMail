@@ -1025,8 +1025,8 @@ describe('AutopilotActionWorker', () => {
       );
     expect(policy?.snoozedUntil?.toISOString()).toBe('2026-06-17T08:00:00.000Z');
     expect(policy?.snoozedAt?.toISOString()).toBe(NOW.toISOString());
-    // A return timer is not a verdict and not Protect.
-    expect(policy?.policyType).toBe('keep');
+    // A return timer is not a standing Keep decision or Protect.
+    expect(policy?.policyType).toBeNull();
     expect(policy?.isProtected).toBe(false);
   });
 

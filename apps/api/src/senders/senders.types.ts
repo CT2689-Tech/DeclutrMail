@@ -249,8 +249,8 @@ export interface SenderListRow {
   protectionFlags: ProtectionFlags;
   /**
    * Standing policy verb (`keep | archive | unsubscribe | later`) from
-   * `sender_policies.policy_type`. `null` when no policy row exists
-   * (engine-default). The FE renders a "Unsub queued" pill when this
+   * `sender_policies.policy_type`. `null` means no standing decision,
+   * including when a row holds only Later metadata (engine-default). The FE renders a "Unsub queued" pill when this
    * equals `'unsubscribe'` (D38 2026-06-05 brainstorm). Will fold into
    * the unified action manifest once D230 lands.
    */
@@ -439,8 +439,8 @@ export type SenderPolicyPatch = z.infer<typeof senderPolicyPatchSchema>;
  * The resulting standing-policy state after the patch. Field names
  * mirror `ProtectionFlags` + `policyType` on the list/detail rows so
  * the FE can reconcile its caches without a refetch round-trip.
- * `policyType` is `null` when the sender still has no policy row
- * (a no-change patch never creates one).
+ * `policyType` is `null` when the sender has no standing decision,
+ * including a timer-only row (a no-change patch never creates one).
  */
 export interface SenderPolicyResult {
   senderId: string;

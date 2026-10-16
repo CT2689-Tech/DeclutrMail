@@ -17,8 +17,9 @@ import { mailboxAccounts } from './mailbox-accounts';
 /**
  * Sender policies — standing per-sender decisions and modifiers (D42).
  *
- * A row exists once the user has made a standing decision about a
- * sender. Senders with no row are engine-default.
+ * A row can hold a standing decision, a protection modifier or a Later
+ * timer. A null policy_type means no standing decision; timer metadata
+ * alone must not create Keep.
  *
  * `policy_type` is the standing verdict — the four canonical verbs of
  * D227 (Keep / Archive / Unsubscribe / Later).
@@ -113,7 +114,7 @@ export const senderPolicies = pgTable(
       .references(() => mailboxAccounts.id, { onDelete: 'cascade' }),
     /** sha256("v1|" + normalized_email), hex — matches senders.sender_key. */
     senderKey: text('sender_key').notNull(),
-    policyType: senderPolicyType('policy_type').notNull().default('keep'),
+    policyType: senderPolicyType('policy_type').default('keep'),
     isProtected: boolean('is_protected').notNull().default(false),
     /**
      * Why protection is set (D22). Populated whenever `is_protected = true`.
