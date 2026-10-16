@@ -4,6 +4,7 @@ import { activityKeys } from '@/features/activity/api/query-keys';
 import { homeKeys } from '@/features/home/api/query-keys';
 import { SCREENER_ALL_KEY } from '@/features/screener/api/query-keys';
 import { sendersKeys } from '@/features/senders/api/query-keys';
+import { snoozedKeys } from '@/features/snoozed/api/query-keys';
 import { TRIAGE_BOOTSTRAP_KEY } from '@/features/triage/api/query-keys';
 import type { InFlightActionGroup } from '@/lib/api/actions';
 
@@ -33,6 +34,7 @@ const UNDO_SURFACES: readonly QueryKey[] = [
   [...activityKeys.all, 'inbox-report'],
   undoKeys.all,
   sendersKeys.all,
+  snoozedKeys.all,
   TRIAGE_BOOTSTRAP_KEY,
   SCREENER_ALL_KEY,
 ];

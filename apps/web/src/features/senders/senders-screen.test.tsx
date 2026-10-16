@@ -1549,13 +1549,23 @@ describe('SendersScreen — edge states', () => {
   });
 
   it.each([
-    { inbox: 3, archived: 2 },
-    { inbox: 0, archived: 21 },
+    { verb: 'Delete' as const, inbox: 3, archived: 2, affected: 5, inboxOnly: false },
+    { verb: 'Delete' as const, inbox: 0, archived: 21, affected: 21, inboxOnly: false },
+    { verb: 'Archive' as const, inbox: 3, archived: 2, affected: 3, inboxOnly: false },
+    { verb: 'Archive' as const, inbox: 3, archived: 2, affected: 1, inboxOnly: false },
+    { verb: 'Later' as const, inbox: 3, archived: 2, affected: 3, inboxOnly: false },
+    { verb: 'Archive' as const, inbox: 3, archived: 2, affected: 3, inboxOnly: true },
+    { verb: 'Later' as const, inbox: 3, archived: 2, affected: 3, inboxOnly: true },
   ])(
-    'Delete removes a confirmed empty sender and Undo restores its $inbox/$archived counts without reload',
-    async ({ inbox, archived }) => {
-      let trashed = false;
-      let deleteCompleted = false;
+    '$verb → Undo reconciles row, $inbox/$archived counts and actions without reload ($affected moved, inboxOnly=$inboxOnly)',
+    async ({ verb, inbox, archived, affected, inboxOnly }) => {
+      let moved = false;
+      const primaryType = verb === 'Archive' ? 'archive' : verb === 'Later' ? 'later' : 'delete';
+      const remainingInbox = verb === 'Delete' ? 0 : inbox - affected;
+      const remainingArchived = verb === 'Delete' ? 0 : archived + affected;
+      let inboxFilter: string | null = null;
+      let listedCount = 1;
+      let moveCompleted = false;
       let currentMailOnly: string | null = null;
       const original = {
         ...ROW,
@@ -1571,12 +1581,22 @@ describe('SendersScreen — edge states', () => {
           path: '/api/senders',
           respond: (_req, url) => {
             currentMailOnly = url.searchParams.get('current_mail_only');
+            inboxFilter = url.searchParams.get('has_inbox_mail');
+            const current = {
+              ...original,
+              inboxCount: moved ? remainingInbox : inbox,
+              archivedCount: moved ? remainingArchived : archived,
+            };
+            const hidden =
+              current.inboxCount + current.archivedCount === 0 ||
+              (inboxFilter === 'true' && current.inboxCount === 0);
+            listedCount = hidden ? 0 : 1;
             return jsonOk({
-              data: trashed ? [] : [original],
+              data: hidden ? [] : [current],
               meta: {
                 pagination: { nextCursor: null, hasMore: false, limit: 50 },
                 query: {
-                  totalMatching: trashed ? 0 : 1,
+                  totalMatching: hidden ? 0 : 1,
                   globalMaxTotal: 313,
                   asOf: '2026-09-06T00:00:00.000Z',
                 },
@@ -1591,8 +1611,8 @@ describe('SendersScreen — edge states', () => {
             jsonOk({
               data: {
                 ...original,
-                inboxCount: trashed ? 0 : inbox,
-                archivedCount: trashed ? 0 : archived,
+                inboxCount: moved ? remainingInbox : inbox,
+                archivedCount: moved ? remainingArchived : archived,
               },
             }),
         },
@@ -1612,7 +1632,7 @@ describe('SendersScreen — edge states', () => {
                 },
                 counts: {
                   all: inbox,
-                  olderThan30d: 0,
+                  olderThan30d: verb === 'Archive' && affected < inbox ? affected : 0,
                   olderThan90d: 0,
                   olderThan180d: 0,
                   olderThan365d: 0,
@@ -1627,7 +1647,7 @@ describe('SendersScreen — edge states', () => {
                 allMail: {
                   counts: {
                     all: count,
-                    olderThan30d: 0,
+                    olderThan30d: verb === 'Archive' && affected < inbox ? affected : 0,
                     olderThan90d: 0,
                     olderThan180d: 0,
                     olderThan365d: 0,
@@ -1649,27 +1669,44 @@ describe('SendersScreen — edge states', () => {
           method: 'POST',
           path: '/api/actions',
           respond: () =>
-            jsonOk({ data: { actionId: 'delete-1', requestedCount: count, status: 'queued' } }),
+            jsonOk({ data: { actionId: 'move-1', requestedCount: affected, status: 'queued' } }),
         },
         {
           method: 'GET',
-          path: /^\/api\/actions\/(?:delete-1|reverse-1)$/,
-          respond: (_req, url) => {
-            const reverse = url.pathname.endsWith('reverse-1');
-            if (reverse) trashed = false;
-            else if (!deleteCompleted) {
-              trashed = true;
-              deleteCompleted = true;
+          path: '/api/actions/move-1',
+          respond: () => {
+            if (!moveCompleted) {
+              moved = true;
+              moveCompleted = true;
             }
             return jsonOk({
               data: {
                 ...archiveStatus({
-                  actionId: reverse ? 'reverse-1' : 'delete-1',
-                  requestedCount: count,
-                  affectedCount: count,
+                  actionId: 'move-1',
+                  requestedCount: affected,
+                  affectedCount: affected,
                 }),
-                verb: 'delete',
-                direction: reverse ? 'reverse' : 'forward',
+                verb: primaryType,
+                direction: 'forward',
+              },
+            });
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/actions/undo-status',
+          respond: () => {
+            moved = false;
+            return jsonOk({
+              data: {
+                ...archiveStatus({
+                  actionId: 'reverse-1',
+                  requestedCount: affected,
+                  affectedCount: affected,
+                }),
+                verb: primaryType,
+                direction: 'reverse',
+                undoRevertedAt: '2026-10-15T12:00:00.000Z',
               },
             });
           },
@@ -1681,41 +1718,85 @@ describe('SendersScreen — edge states', () => {
             jsonOk({
               data: {
                 token: 'tok-1',
-                actionKind: 'delete',
+                actionKind: primaryType,
                 reverted: false,
                 expired: false,
                 revertedAt: null,
                 actionId: 'reverse-1',
+                actionIds: ['reverse-1'],
               },
             }),
         },
       ]);
       renderScreen();
-      fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
-      fireEvent.keyDown(document.body, { key: 'd' });
-      fireEvent.click(await screen.findByRole('radio', { name: /Inbox \+ archived/ }));
+      await screen.findByRole('checkbox', { name: /select sender a/i });
+      if (inboxOnly) {
+        fireEvent.click(screen.getByRole('button', { name: 'Mail in Inbox' }));
+        await waitFor(() => expect(inboxFilter).toBe('true'));
+        await waitFor(() =>
+          expect(lastClient.isFetching({ queryKey: ['senders', 'list'] })).toBe(0),
+        );
+      }
+      fireEvent.click(screen.getByRole('checkbox', { name: /select sender a/i }));
+      fireEvent.keyDown(document.body, { key: verb[0]!.toLowerCase() });
+      if (verb === 'Delete')
+        fireEvent.click(await screen.findByRole('radio', { name: /Inbox \+ archived/ }));
       await screen.findByText(/We check again right before anything moves/);
-      fireEvent.change(
-        within(screen.getByRole('dialog')).getByRole('combobox', { name: /How far back/i }),
-        {
-          target: { value: 'all' },
-        },
-      );
-      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      if (verb !== 'Later') {
+        fireEvent.change(
+          within(screen.getByRole('dialog')).getByRole('combobox', { name: /How far back/i }),
+          { target: { value: affected < inbox ? '30' : 'all' } },
+        );
+      }
+      const confirm = await within(screen.getByRole('dialog')).findByRole('button', {
+        name:
+          verb === 'Later'
+            ? new RegExp(`^Move ${affected} emails? to Later$`)
+            : new RegExp(`^${verb} ${affected} emails?$`),
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      fireEvent.click(confirm);
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-      await waitFor(() =>
-        expect(screen.queryByRole('checkbox', { name: /select sender a/i })).toBeNull(),
-      );
-      expect(trashed).toBe(true);
+      await waitFor(() => expect(moved).toBe(true));
+      if (remainingInbox + remainingArchived === 0) {
+        await waitFor(() =>
+          expect(screen.queryByRole('checkbox', { name: /select sender a/i })).toBeNull(),
+        );
+      } else {
+        const remaining = screen
+          .getByRole('checkbox', { name: /select sender a/i })
+          .closest('[role="listitem"]') as HTMLElement;
+        await waitFor(() => expect(remaining).toHaveTextContent(`${remainingInbox} in inbox`));
+        expect(remaining).toHaveTextContent(`${remainingArchived} archived`);
+        // Preserve the approved completed-row rule: remaining current mail
+        // stays visible with fresh facts, even if the Inbox filter dropped it.
+        if (inboxOnly) expect(listedCount).toBe(0);
+        fireEvent.click(within(remaining).getByRole('button', { name: /More actions/ }));
+        const menu = await screen.findByRole('menu');
+        for (const action of ['Archive', 'Later']) {
+          expect(
+            within(menu)
+              .getByRole('menuitem', { name: new RegExp(`^${action}`) })
+              .getAttribute('aria-disabled'),
+          ).toBe(remainingInbox === 0 ? 'true' : null);
+        }
+        expect(within(menu).getByRole('menuitem', { name: /^Delete/ })).not.toHaveAttribute(
+          'aria-disabled',
+          'true',
+        );
+        fireEvent.click(within(remaining).getByRole('button', { name: /More actions/ }));
+      }
       expect(currentMailOnly).toBe('true');
       await undoFromThePill('tok-1');
       // The real reverse-status hook invalidates the list; no manual cache
       // update, reload, remount or synthetic focus event restores the row.
-      await waitFor(() => expect(screen.queryByText(/^Deleted /)).toBeNull());
+      await waitFor(() =>
+        expect(screen.queryByText(/^(?:Archived|Deleted) \d+$|^Moved \d+ to Later$/)).toBeNull(),
+      );
       const restored = (await screen.findByRole('checkbox', { name: /select sender a/i })).closest(
         '[role="listitem"]',
       ) as HTMLElement;
-      expect(trashed).toBe(false);
+      expect(moved).toBe(false);
       expect(restored).toHaveTextContent(`${inbox} in inbox`);
       expect(restored).toHaveTextContent(`${archived} archived`);
       expect(restored).toHaveTextContent('Request accepted');

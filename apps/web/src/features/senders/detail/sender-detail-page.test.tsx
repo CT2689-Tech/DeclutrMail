@@ -1052,13 +1052,18 @@ describe('SenderDetailRoute', () => {
   );
 
   it.each([
-    { layout: 'page' as const, inbox: 3, archived: 2 },
-    { layout: 'pane' as const, inbox: 3, archived: 2 },
-    { layout: 'page' as const, inbox: 0, archived: 21 },
-    { layout: 'pane' as const, inbox: 0, archived: 21 },
+    { layout: 'page' as const, verb: 'Delete' as const, inbox: 3, archived: 2, affected: 5 },
+    { layout: 'pane' as const, verb: 'Delete' as const, inbox: 3, archived: 2, affected: 5 },
+    { layout: 'page' as const, verb: 'Delete' as const, inbox: 0, archived: 21, affected: 21 },
+    { layout: 'pane' as const, verb: 'Delete' as const, inbox: 0, archived: 21, affected: 21 },
+    ...(['page', 'pane'] as const).flatMap((layout) => [
+      { layout, verb: 'Archive' as const, inbox: 3, archived: 2, affected: 3 },
+      { layout, verb: 'Archive' as const, inbox: 3, archived: 2, affected: 1 },
+      { layout, verb: 'Later' as const, inbox: 3, archived: 2, affected: 3 },
+    ]),
   ])(
-    'Delete → Undo restores $inbox/$archived counts and controls in $layout without reload',
-    async ({ layout, inbox, archived }) => {
+    '$verb → Undo restores $inbox/$archived counts and controls in $layout without reload ($affected moved)',
+    async ({ layout, verb, inbox, archived, affected }) => {
       const original = {
         ...DETAIL,
         inboxCount: inbox,
@@ -1067,11 +1072,16 @@ describe('SenderDetailRoute', () => {
         unsubStatus: 'endpoint_accepted' as const,
       };
       const current = { ...original };
-      let deleted = false;
+      let completed = false;
+      let posted:
+        { primary: { type: string; olderThanDays?: number | null; wakeAt?: string } } | undefined;
+      const primaryType = verb === 'Archive' ? 'archive' : verb === 'Later' ? 'later' : 'delete';
+      const remainingInbox = verb === 'Delete' ? 0 : inbox - affected;
+      const remainingArchived = verb === 'Delete' ? 0 : archived + affected;
       const total = inbox + archived;
       const counts = (all: number) => ({
         all,
-        olderThan30d: 0,
+        olderThan30d: verb === 'Archive' && affected < inbox ? affected : 0,
         olderThan90d: 0,
         olderThan180d: 0,
         olderThan365d: 0,
@@ -1109,26 +1119,33 @@ describe('SenderDetailRoute', () => {
         {
           method: 'POST',
           path: '/api/actions',
-          respond: () =>
-            jsonOk({ data: { actionId: 'delete-cycle', requestedCount: total, status: 'queued' } }),
+          respond: async (request) => {
+            posted = (await request.json()) as typeof posted;
+            return jsonOk({
+              data: { actionId: 'move-cycle', requestedCount: affected, status: 'queued' },
+            });
+          },
         },
         {
           method: 'GET',
-          path: '/api/actions/delete-cycle',
+          path: '/api/actions/move-cycle',
           respond: () => {
-            if (!deleted) {
-              Object.assign(current, { inboxCount: 0, archivedCount: 0 });
-              deleted = true;
+            if (!completed) {
+              Object.assign(current, {
+                inboxCount: remainingInbox,
+                archivedCount: remainingArchived,
+              });
+              completed = true;
             }
             return jsonOk({
               data: {
-                actionId: 'delete-cycle',
-                verb: 'delete',
+                actionId: 'move-cycle',
+                verb: primaryType,
                 direction: 'forward',
                 status: 'done',
-                requestedCount: total,
-                affectedCount: total,
-                wakeAt: null,
+                requestedCount: affected,
+                affectedCount: affected,
+                wakeAt: verb === 'Later' ? '2099-01-01T10:00:00.000Z' : null,
                 undoToken: 'cycle-token',
                 undoExpiresAt: '2099-01-01T00:00:00.000Z',
                 undoExecutedAt: null,
@@ -1145,7 +1162,7 @@ describe('SenderDetailRoute', () => {
             jsonOk({
               data: {
                 token: 'cycle-token',
-                actionKind: 'delete',
+                actionKind: primaryType,
                 reverted: false,
                 expired: false,
                 revertedAt: null,
@@ -1162,11 +1179,11 @@ describe('SenderDetailRoute', () => {
             return jsonOk({
               data: {
                 actionId: 'reverse-cycle',
-                verb: 'delete',
+                verb: primaryType,
                 direction: 'reverse',
                 status: 'done',
-                requestedCount: total,
-                affectedCount: total,
+                requestedCount: affected,
+                affectedCount: affected,
                 wakeAt: null,
                 undoToken: null,
                 undoExpiresAt: null,
@@ -1181,34 +1198,50 @@ describe('SenderDetailRoute', () => {
       renderDetail('linkedin', undefined, layout);
       const buttonName = (verb: string, key: string) =>
         layout === 'page' ? `${verb} (${key})` : verb;
-      fireEvent.click(await screen.findByRole('button', { name: buttonName('Delete', 'D') }));
-      fireEvent.click(await screen.findByRole('radio', { name: /Inbox \+ archived/ }));
+      fireEvent.click(await screen.findByRole('button', { name: buttonName(verb, verb[0]!) }));
+      if (verb === 'Delete')
+        fireEvent.click(await screen.findByRole('radio', { name: /Inbox \+ archived/ }));
       await screen.findByText(/We check again right before anything moves/);
-      fireEvent.change(
-        within(screen.getByRole('dialog')).getByRole('combobox', { name: /How far back/i }),
-        { target: { value: 'all' } },
-      );
-      fireEvent.click(
-        within(screen.getByRole('dialog')).getByRole('button', {
-          name: new RegExp(`^Delete ${total} emails$`),
-        }),
+      const dialog = screen.getByRole('dialog');
+      if (verb !== 'Later') {
+        fireEvent.change(within(dialog).getByRole('combobox', { name: /How far back/i }), {
+          target: { value: affected < inbox ? '30' : 'all' },
+        });
+      }
+      const confirm = await within(dialog).findByRole('button', {
+        name:
+          verb === 'Later'
+            ? new RegExp(`^Move ${affected} emails? to Later$`)
+            : new RegExp(`^${verb} ${affected} emails?$`),
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      fireEvent.click(confirm);
+      await waitFor(() =>
+        expect(screen.getByTestId('sender-detail-inbox-count')).toHaveTextContent(
+          new RegExp(`^${remainingInbox}$`),
+        ),
       );
       await waitFor(() =>
-        expect(screen.getByTestId('sender-detail-inbox-count')).toHaveTextContent(/^0$/),
-      );
-      await waitFor(() =>
-        expect(screen.getByTestId('sender-detail-archived-count')).toHaveTextContent(/^0$/),
+        expect(screen.getByTestId('sender-detail-archived-count')).toHaveTextContent(
+          new RegExp(`^${remainingArchived}$`),
+        ),
       );
       for (const [verb, key] of [
         ['Archive', 'A'],
         ['Later', 'L'],
         ['Delete', 'D'],
       ]) {
-        expect(screen.getByRole('button', { name: buttonName(verb!, key!) })).toHaveAttribute(
-          'aria-disabled',
-          'true',
-        );
+        const unavailable =
+          verb === 'Delete' ? remainingInbox + remainingArchived === 0 : remainingInbox === 0;
+        expect(
+          screen
+            .getByRole('button', { name: buttonName(verb!, key!) })
+            .getAttribute('aria-disabled'),
+        ).toBe(unavailable ? 'true' : null);
       }
+      expect(posted?.primary.type).toBe(primaryType);
+      if (verb === 'Archive' && affected < inbox) expect(posted?.primary.olderThanDays).toBe(30);
+      if (verb === 'Later') expect(typeof posted?.primary.wakeAt).toBe('string');
       const { result } = renderHook(() => useRevertUndo(), {
         wrapper: ({ children }) => <QueryWrapper client={lastClient}>{children}</QueryWrapper>,
       });
@@ -1241,7 +1274,11 @@ describe('SenderDetailRoute', () => {
             .getAttribute('aria-disabled'),
         ).toBe(inbox === 0 ? 'true' : null);
       }
-      expect(screen.queryByText(/^Deleted/)).toBeNull();
+      expect(
+        screen.queryByText(
+          /^(?:Archived|Deleted) \d+(?: emails?)?$|^Moved \d+(?: emails?)? to Later$/,
+        ),
+      ).toBeNull();
       expect(screen.getByText('Request accepted')).toBeInTheDocument();
     },
   );

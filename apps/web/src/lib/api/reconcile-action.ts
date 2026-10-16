@@ -2,6 +2,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { sendersKeys } from '@/features/senders/api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { undoKeys } from '@/features/undo/query-keys';
+import { snoozedKeys } from '@/features/snoozed/api/query-keys';
 
 const reconciled = new WeakMap<QueryClient, WeakSet<object>>();
 
@@ -36,6 +37,7 @@ export function reconcileAction(client: QueryClient, snapshot: object, actionId?
     void client.invalidateQueries({ queryKey: sendersKeys.all });
   }
   void client.invalidateQueries({ queryKey: undoKeys.all });
+  void client.invalidateQueries({ queryKey: snoozedKeys.all });
   void client.invalidateQueries({ queryKey: activityKeys.all });
   void client.invalidateQueries({ queryKey: ['composite-preview'] });
   void client.invalidateQueries({ queryKey: ['bulk-action-preview'] });
