@@ -40,6 +40,7 @@ import { apiErrorCode } from '@/lib/api/client';
 import { useOptionalAuth } from '@/features/auth/auth-provider';
 import { undoKeys } from '@/features/undo/query-keys';
 import { sendersKeys } from '@/features/senders/api/query-keys';
+import { snoozedKeys } from '@/features/snoozed/api/query-keys';
 
 import { SCREENER_ALL_KEY } from '@/features/screener/api/query-keys';
 import { TRIAGE_BOOTSTRAP_KEY } from '@/features/triage/api/query-keys';
@@ -104,6 +105,7 @@ export function useRevertActivity() {
       // A failure may have restored a subset; reconcile on both outcomes.
       void queryClient.invalidateQueries({ queryKey: activityKeys.all });
       void queryClient.invalidateQueries({ queryKey: sendersKeys.all });
+      void queryClient.invalidateQueries({ queryKey: snoozedKeys.all });
       void queryClient.invalidateQueries({ queryKey: undoKeys.all });
       void queryClient.invalidateQueries({ queryKey: TRIAGE_BOOTSTRAP_KEY });
       void queryClient.invalidateQueries({ queryKey: SCREENER_ALL_KEY });
