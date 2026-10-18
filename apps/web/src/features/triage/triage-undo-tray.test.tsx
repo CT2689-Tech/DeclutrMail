@@ -376,6 +376,7 @@ describe('TriageUndoTray (D35)', () => {
       fireEvent.keyDown(window, { key: 'z' });
       await waitFor(() => expect(groupReads).toBe(1));
       expect(h.toast).not.toHaveBeenCalled();
+      expect(document.querySelector('[data-dm-undo-tray]')).toHaveTextContent('Undoing…');
       finished = true;
       await waitFor(() => expect(h.toast).toHaveBeenCalled(), { timeout: 2500 });
       const [message, tone] = h.toast.mock.calls.at(-1) as [string, string];
@@ -837,7 +838,11 @@ describe('TriageUndoTray — a bulk action is one decision', () => {
     await waitFor(() => expect(state.posts).toEqual([`/api/undo/${T_RETAIL}/action`]));
     // While it confirms: that sender is gone from the decision, and the
     // headline no longer counts mail that is on its way back.
-    await waitFor(() => expect(screen.queryByText(/RetailMeNot/)).toBeNull());
+    await waitFor(() =>
+      expect(document.querySelector('[data-dm-undo-tray]')).toHaveTextContent(
+        'Undoing… · RetailMeNot',
+      ),
+    );
     // (Scoped to the visible tray: the screen-reader region repeats the headline.)
     const tray = document.querySelector<HTMLElement>('[data-dm-undo-tray]')!;
     expect(tray).toHaveTextContent(/251 emails/);

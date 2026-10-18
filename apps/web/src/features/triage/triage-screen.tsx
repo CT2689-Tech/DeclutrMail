@@ -10,7 +10,7 @@ import {
 
 import { AiInlinePrompt } from '@/features/ai-consent/ai-inline-prompt';
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
-import { useSenderInFlightLock } from '@/features/undo/in-flight';
+import { ACTION_OVERDUE_MS, useSenderInFlightLock } from '@/features/undo/in-flight';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
@@ -41,12 +41,7 @@ import {
 } from '@/lib/api/use-action';
 import { cleanupBatchStatus, isProtectedSkip, isTerminalStatus } from '@/lib/api/actions';
 import { isUnsubSendDisabled, UNSUB_SEND_DISABLED_MESSAGE } from './unsub-send-disabled';
-import {
-  actionLabel,
-  enqueueMayHaveStarted,
-  getActionFailureCopy,
-  stillRunningCopy,
-} from '@/lib/action-error-copy';
+import { actionLabel, enqueueMayHaveStarted, getActionFailureCopy } from '@/lib/action-error-copy';
 import { NO_ACTIONABLE_SENDERS_COPY, skippedAtClickCopy } from '@/lib/bulk-action-copy';
 import {
   isUnsubscribeInFlight,
@@ -192,7 +187,7 @@ function openPricing(plan: 'plus' | 'pro', pricingV2: boolean): void {
  * screen. Past this deadline the handle moves to a parking slot (still
  * polled — the outcome lands either way) and the latch releases.
  */
-export const ACTION_OVERDUE_MS = 120_000;
+export { ACTION_OVERDUE_MS } from '@/features/undo/in-flight';
 
 /**
  * Handle for one enqueued async action (enqueue → worker → poll).
@@ -476,12 +471,6 @@ export function TriageScreen({
         surface: 'triage',
         reason: 'batch_status_poll',
       });
-      toast(
-        getActionFailureCopy('status', {
-          action: actionLabel(batchAction.verb, `the ${batchAction.domain} batch`),
-        }),
-        'warn',
-      );
       // The job may still be running: its rows must not re-arm.
       holdUnconfirmed(batchAction.rowIds, batchAction.verb);
       setBatchAction(null);
@@ -496,28 +485,11 @@ export function TriageScreen({
     }
     if (data.status === 'done') {
       // Partial failures keep status 'done' and surface via failed > 0
-      // — those senders stay in the queue, so say so (failures DO
-      // toast; clean success stays silent per D35).
-      if (data.failed > 0) {
-        toast(
-          getActionFailureCopy('terminal', {
-            action: batchAction.verb,
-            partial: { done: data.done, total: data.total, unit: 'senders' },
-          }),
-          'warn',
-        );
-      }
+      // — the tray reports the partial result beside its Undo.
       invalidateAfterDecision(qc);
       incrementSessionDecided(data.done);
       addSessionMessagesMoved(data.affectedCount);
       setExpandedRow(null);
-    } else {
-      toast(
-        getActionFailureCopy('terminal', {
-          action: actionLabel(batchAction.verb, `the ${batchAction.domain} batch`),
-        }),
-        'warn',
-      );
     }
     setBatchAction(null);
   }, [
@@ -776,12 +748,6 @@ export function TriageScreen({
         surface: 'triage',
         reason: 'action_status_poll',
       });
-      toast(
-        getActionFailureCopy('status', {
-          action: actionLabel(activeAction.verb, activeAction.senderName),
-        }),
-        'warn',
-      );
       holdUnconfirmed([activeAction.rowId], activeAction.verb);
       setActiveAction(null);
       return;
@@ -804,13 +770,6 @@ export function TriageScreen({
       }
       addSessionMessagesMoved(data.affectedCount);
       setExpandedRow(null);
-    } else {
-      toast(
-        getActionFailureCopy('terminal', {
-          action: actionLabel(activeAction.verb, activeAction.senderName),
-        }),
-        'warn',
-      );
     }
     setActiveAction(null);
   }, [
@@ -840,7 +799,6 @@ export function TriageScreen({
     // fresh deadline) when the slot frees.
     if (!activeAction || overdueAction != null) return;
     const timer = setTimeout(() => {
-      toast(stillRunningCopy(activeAction.verb, activeAction.senderName), 'info');
       // Parking is the one moment the client KNOWS a backend hang
       // happened (the 2026-08-12 incident was invisible until a human
       // noticed) — measure recurrence.
@@ -855,7 +813,6 @@ export function TriageScreen({
     // Same free-slot rule as the single-action park above.
     if (!batchAction || overdueBatch != null) return;
     const timer = setTimeout(() => {
-      toast(stillRunningCopy(batchAction.verb, `the ${batchAction.domain} batch`), 'info');
       void track('action_overdue', { kind: 'batch', verb: batchAction.verb.toLowerCase() });
       setOverdueBatch(batchAction);
       setBatchAction(null);
@@ -874,12 +831,6 @@ export function TriageScreen({
         surface: 'triage',
         reason: 'action_status_poll',
       });
-      toast(
-        getActionFailureCopy('status', {
-          action: actionLabel(overdueAction.verb, overdueAction.senderName),
-        }),
-        'warn',
-      );
       holdUnconfirmed([overdueAction.rowId], overdueAction.verb);
       setOverdueAction(null);
       return;
@@ -897,13 +848,6 @@ export function TriageScreen({
         incrementSessionDecided();
       }
       addSessionMessagesMoved(data.affectedCount);
-    } else {
-      toast(
-        getActionFailureCopy('terminal', {
-          action: actionLabel(overdueAction.verb, overdueAction.senderName),
-        }),
-        'warn',
-      );
     }
     setOverdueAction(null);
   }, [
@@ -924,12 +868,6 @@ export function TriageScreen({
         surface: 'triage',
         reason: 'batch_status_poll',
       });
-      toast(
-        getActionFailureCopy('status', {
-          action: actionLabel(overdueBatch.verb, `the ${overdueBatch.domain} batch`),
-        }),
-        'warn',
-      );
       holdUnconfirmed(overdueBatch.rowIds, overdueBatch.verb);
       setOverdueBatch(null);
       return;
@@ -942,25 +880,9 @@ export function TriageScreen({
       return;
     }
     if (data.status === 'done') {
-      if (data.failed > 0) {
-        toast(
-          getActionFailureCopy('terminal', {
-            action: overdueBatch.verb,
-            partial: { done: data.done, total: data.total, unit: 'senders' },
-          }),
-          'warn',
-        );
-      }
       invalidateAfterDecision(qc);
       incrementSessionDecided(data.done);
       addSessionMessagesMoved(data.affectedCount);
-    } else {
-      toast(
-        getActionFailureCopy('terminal', {
-          action: actionLabel(overdueBatch.verb, `the ${overdueBatch.domain} batch`),
-        }),
-        'warn',
-      );
     }
     setOverdueBatch(null);
   }, [

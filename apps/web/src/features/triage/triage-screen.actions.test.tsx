@@ -15,7 +15,7 @@
  *   - Failure paths (the kill-the-worker class): terminal `failed`
  *     status, sustained poll error, Keep POST failure, the
  *     unsubscribe-then-archive partial failure, and the global
- *     single-in-flight re-entry guard. Each must warn-toast, release
+ *     single-in-flight re-entry guard. Each must preserve feedback, release
  *     the busy latch, and reconcile uncertain intent writes. A terminal job
  *     failure stays visible instead of assuming it changed nothing.
  */
@@ -46,9 +46,8 @@ import {
   UNSUB_SENDER_PROTECTED_ERROR_CODE,
 } from '@declutrmail/shared/contracts';
 
-// Toast is the ONLY user-visible failure surface in this flow (D35 —
-// decisions never success-toast), so failure tests must assert the
-// exact message + tone. Partial mock: everything else from the shared
+// Accepted decisions use the global tray. Preview/submission and Keep
+// failures still use local toasts, with exact message + tone. Partial mock: everything else from the shared
 // package stays real (Button, tokens, the sheet's primitives, …).
 const h = vi.hoisted(() => ({
   toast: vi.fn(),
@@ -1393,7 +1392,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
   });
 
-  it('terminal FAILED: warn toast, busy latch releases, row stays, no invalidation', async () => {
+  it('terminal FAILED: tray owns feedback, busy latch releases, row stays, no invalidation', async () => {
     addFetchHandlers([
       {
         method: 'POST',
@@ -1436,25 +1435,16 @@ describe('TriageScreen — D226 mutation wiring', () => {
     fireEvent.keyDown(window, { key: 'a' });
     await confirmOpenSheet('Archive');
 
-    // The failure is toasted (warn) — there is no other failure surface.
-    await waitFor(() =>
-      expect(h.toast).toHaveBeenCalledWith(
-        expect.stringContaining(`Archive for ${GROUPON.senderName} failed`),
-        'warn',
-      ),
-    );
-    // One sentence, and it still points at Activity before a retry.
-    expect(h.toast).toHaveBeenCalledWith(expect.stringContaining('Activity'), 'warn');
     // The latch releases so the queue is usable again; the row STAYS
     // (no invalidation — nothing moved server-side).
     await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
     expect(screen.getByText(GROUPON.senderName)).toBeDefined();
     // No success toast ever (D35 — the tray is the feedback channel).
-    expect(h.toast).not.toHaveBeenCalledWith(expect.anything(), 'success');
+    expect(h.toast).not.toHaveBeenCalled();
   });
 
-  it('poll error (worker/API down mid-action): warn toast, the screen frees, the row stays held', async () => {
+  it('poll error (worker/API down mid-action): tray owns feedback, the screen frees, the row stays held', async () => {
     addFetchHandlers([
       {
         method: 'POST',
@@ -1488,15 +1478,6 @@ describe('TriageScreen — D226 mutation wiring', () => {
     fireEvent.keyDown(window, { key: 'a' });
     await confirmOpenSheet('Archive');
 
-    await waitFor(() =>
-      expect(h.toast).toHaveBeenCalledWith(
-        expect.stringContaining(`Couldn’t confirm Archive for ${GROUPON.senderName}`),
-        'warn',
-      ),
-    );
-    // The outcome is unconfirmed, so the toast must send the user to
-    // Activity rather than invite a blind retry.
-    expect(h.toast).toHaveBeenCalledWith(expect.stringContaining('Activity'), 'warn');
     // The latch releases, so every OTHER row takes decisions again — but
     // this one's job may still be running: a second Archive would run it
     // twice, so the row stays held (flow-completeness 2026-09-27).
@@ -1505,7 +1486,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(rowOf(LINKEDIN.senderName)).toHaveAttribute('aria-busy', 'false');
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
     expect(screen.getByText(GROUPON.senderName)).toBeDefined();
-    expect(h.toast).not.toHaveBeenCalledWith(expect.anything(), 'success');
+    expect(h.toast).not.toHaveBeenCalled();
   });
 
   it('Keep uncertainty: neutral warning, reconciliation, no optimistic removal or success', async () => {
@@ -2756,12 +2737,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
       await act(async () => {
         vi.advanceTimersByTime(ACTION_OVERDUE_MS);
       });
-      await waitFor(() =>
-        expect(h.toast).toHaveBeenCalledWith(
-          `Archive for ${GROUPON.senderName} is still running — see Activity.`,
-          'info',
-        ),
-      );
+      expect(h.toast).not.toHaveBeenCalled();
       // The PARKED row stays busy — its job is still running server-side,
       // and re-dispatch would mint a second real Gmail job for the same
       // sender. Only the latch releases, not the row.
@@ -2829,12 +2805,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
       await act(async () => {
         vi.advanceTimersByTime(ACTION_OVERDUE_MS);
       });
-      await waitFor(() =>
-        expect(h.toast).toHaveBeenCalledWith(
-          `Archive for ${GROUPON.senderName} is still running — see Activity.`,
-          'info',
-        ),
-      );
+      expect(h.toast).not.toHaveBeenCalled();
 
       invalidateSpy.mockClear();
       h.toast.mockClear();
@@ -2975,12 +2946,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
       await act(async () => {
         vi.advanceTimersByTime(ACTION_OVERDUE_MS);
       });
-      await waitFor(() =>
-        expect(h.toast).toHaveBeenCalledWith(
-          'Archive for the Archive-recommended batch is still running — see Activity.',
-          'info',
-        ),
-      );
+      expect(h.toast).not.toHaveBeenCalledWith(expect.stringMatching(/still running/), 'info');
       expect(screen.getByRole('dialog')).toBeDefined();
 
       // Confirming now must be refused at the dispatch choke point —
@@ -3094,12 +3060,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
       await act(async () => {
         vi.advanceTimersByTime(ACTION_OVERDUE_MS);
       });
-      await waitFor(() =>
-        expect(h.toast).toHaveBeenCalledWith(
-          'Archive for the Archive-recommended batch is still running — see Activity.',
-          'info',
-        ),
-      );
+      expect(h.toast).not.toHaveBeenCalledWith(expect.stringMatching(/still running/), 'info');
       const rowOf = (name: string) =>
         screen
           .getByRole('button', { name: `${name} — expand triage detail` })
@@ -3232,12 +3193,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
       await act(async () => {
         vi.advanceTimersByTime(ACTION_OVERDUE_MS);
       });
-      await waitFor(() =>
-        expect(h.toast).toHaveBeenCalledWith(
-          'Archive for the Archive-recommended batch is still running — see Activity.',
-          'info',
-        ),
-      );
+      expect(h.toast).not.toHaveBeenCalledWith(expect.stringMatching(/still running/), 'info');
 
       finished = true;
       await act(async () => {

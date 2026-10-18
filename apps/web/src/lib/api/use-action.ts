@@ -22,6 +22,7 @@
 import { useEffect } from 'react';
 import { reconcileAction } from './reconcile-action';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { acceptActionFeedback } from '@/features/undo/feedback-store';
 
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 
@@ -239,7 +240,15 @@ export function useEnqueueComposite() {
         ...(override !== undefined ? { override } : {}),
         idempotencyKey: newIdempotencyKey(),
       }),
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      acceptActionFeedback(variables.mailboxId, {
+        groupId: _result.compositeId ?? _result.actionId,
+        verb: variables.primary.type,
+        mixedVerbs: variables.secondary !== undefined,
+        senderCount: 1,
+        senderIds: [variables.senderId],
+        startedAt: new Date().toISOString(),
+      });
       // The server debits the monthly cleanup quota at enqueue, so the
       // frozen `me.cleanupRemaining` is stale the moment this resolves —
       // without this, "N of 50 left" never counts down for a whole SPA
@@ -298,7 +307,18 @@ export function useEnqueueBulkAction() {
         ...(secondary ? { secondary } : {}),
         idempotencyKey: newIdempotencyKey(),
       }),
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      if (_result.senderCount > 0)
+        acceptActionFeedback(variables.mailboxId, {
+          groupId: _result.batchId,
+          verb: variables.primary.type,
+          mixedVerbs: variables.secondary !== undefined,
+          senderCount: _result.senderCount,
+          senderIds: variables.senderIds.filter(
+            (id) => !_result.skipped.some((item) => item.senderId === id),
+          ),
+          startedAt: new Date().toISOString(),
+        });
       // Bulk debits N quota units at enqueue — same staleness as the
       // composite hook above.
       void qc.invalidateQueries({ queryKey: ME_QUERY_KEY });

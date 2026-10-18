@@ -143,6 +143,8 @@ export function ProductUndoTray({
     memberToken: string | null;
     actionId: string | null;
     actionIds?: string[] | undefined;
+    who: string | null;
+    confirmed?: boolean;
   } | null>(null);
   const revertStatus = useUndoStatus(inFlight?.actionId ?? null, mailboxId, inFlight?.actionIds);
   const mailboxGeneration = useRef(0);
@@ -274,7 +276,9 @@ export function ProductUndoTray({
       // The Archived banner is local to the report panel. Undo from the
       // tray never mounts that panel's own release path, so clear it here.
       if (mailboxId) clearReportCelebration(mailboxId);
-      setInFlight((current) => (current ? { ...current, actionId: null } : current));
+      setInFlight((current) =>
+        current ? { ...current, actionId: null, confirmed: true } : current,
+      );
       void invalidateAfterUndo(qc, mailboxId, refreshAbort.current?.signal).finally(() => {
         if (mailboxGeneration.current !== generation) return;
         // Once Undo removes the decision, its attached unsubscribe result
@@ -322,6 +326,12 @@ export function ProductUndoTray({
       const hidden = {
         id: entry ? decisionId(entry) : token,
         memberToken: scope === 'member' ? token : null,
+        who:
+          scope === 'member'
+            ? (entry?.members?.find((m) => m.token === token)?.senderName ?? null)
+            : (entry?.senderCount ?? 0) > 1
+              ? `${entry!.senderCount} senders`
+              : (entry?.members?.[0]?.senderName ?? null),
       };
       setInFlight({ ...hidden, actionId: null });
       try {
@@ -501,6 +511,25 @@ export function ProductUndoTray({
   }, [enableShortcut, entries, pendingAction, revertToken]);
 
   const notices: UndoTrayNotice[] = [
+    ...(inFlightQuery.unconfirmedAcceptance && !(inFlightQuery.data ?? []).some(isRunning)
+      ? [
+          {
+            id: 'progress-unavailable',
+            tone: 'attention' as const,
+            label: 'Couldn’t load progress — check Activity before retrying.',
+          },
+        ]
+      : []),
+    ...(inFlight
+      ? [
+          {
+            id: `undo:${inFlight.id}`,
+            tone: 'working' as const,
+            label: inFlight.confirmed ? 'Refreshing…' : 'Undoing…',
+            who: inFlight.who,
+          },
+        ]
+      : []),
     ...outcomes
       .filter((notice) => notice.groupId !== inFlight?.id || inFlight?.memberToken !== null)
       .filter(

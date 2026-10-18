@@ -603,11 +603,10 @@ function Headline({
           <InlineProgress pending={working} mode="trailing" pendingLabel="Working">
             <span>
               {notice.label}
+              {notice.who ? ` · ${notice.who}` : null}
               {notice.detail ? (
                 // Ticks every poll; announcing each tick would bury a screen reader.
                 <span aria-live="off">{` · ${notice.detail}`}</span>
-              ) : notice.who ? (
-                ` · ${notice.who}`
               ) : null}
               {running > 1 ? ` · +${running - 1} more` : ''}
             </span>
@@ -894,8 +893,8 @@ function NoticeRow({ notice }: { notice: UndoTrayNotice }) {
   return (
     <li
       data-dm-tray-notice={notice.tone}
-      // A failure interrupts; progress and no-ops wait their turn.
-      role={attention ? 'alert' : 'status'}
+      // Progress/info use the tray's always-mounted announcer, once.
+      role={attention ? 'alert' : undefined}
       style={{
         display: 'flex',
         alignItems: 'center',

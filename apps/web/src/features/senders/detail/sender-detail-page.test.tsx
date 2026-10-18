@@ -2047,10 +2047,7 @@ describe('SenderDetailRoute', () => {
         // parks with the overdue toast — but this page is single-sender,
         // so the parked handle still owns the ONLY subject.
         await tick(ACTION_OVERDUE_MS);
-        expect(h.toast).toHaveBeenCalledWith(
-          expect.stringMatching(/^Archive for LinkedIn is still running/),
-          'info',
-        );
+        expect(h.toast).not.toHaveBeenCalledWith(expect.stringMatching(/still running/), 'info');
 
         // A second action on the SAME sender cannot even start (a
         // re-dispatch would mint a second real Gmail job). It used to be
@@ -2730,6 +2727,7 @@ describe('SenderDetailRoute', () => {
       h.toast.mockClear();
       let actionPosts = 0;
       let undoPosts = 0;
+      let restoreDone = false;
       installHappyPath();
       addFetchHandlers([
         detailPreviewHandler(),
@@ -2744,7 +2742,13 @@ describe('SenderDetailRoute', () => {
         {
           method: 'GET',
           path: /^\/api\/actions\/[^/]+$/,
-          respond: () => jsonOk({ data: actionStatusBody('act-ext2', true) }),
+          respond: (_request, url) =>
+            jsonOk({
+              data:
+                url.pathname.endsWith('/act-revert-1') && !restoreDone
+                  ? { ...actionStatusBody('act-revert-1', false), status: 'executing' }
+                  : actionStatusBody('act-ext2', true),
+            }),
         },
         {
           method: 'POST',
@@ -2788,6 +2792,7 @@ describe('SenderDetailRoute', () => {
       // performed this revert already told the user; this page repeating
       // the undo-completion toast would be a duplicate confirmation for
       // one action.
+      restoreDone = true;
       await waitFor(() => expect(doneMark()).toBeNull(), { timeout: 3000 });
       expect(actionPosts).toBe(1);
       expect(h.toast).not.toHaveBeenCalledWith(UNDO_DONE_TOAST, 'success');
