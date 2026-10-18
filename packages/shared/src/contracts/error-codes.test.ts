@@ -40,6 +40,12 @@ describe('ERROR_CODES registry (ADR-0014)', () => {
     });
     // Rate limiting is the one generic code that is retryable.
     expect(ERROR_CODES.RATE_LIMITED.retryable).toBe(true);
+    expect(ERROR_CODES.MAILBOX_NOT_OWNED.message).toBe(
+      'That Gmail account isn\u2019t connected to your DeclutrMail account.',
+    );
+    expect(ERROR_CODES.RECOVERY_ENQUEUE_FAILED.message).toBe(
+      "We couldn't confirm the retry started. Try again — it won\u2019t run twice.",
+    );
     expect(ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message).toContain(
       "moving a Gmail account between DeclutrMail accounts isn't supported.",
     );

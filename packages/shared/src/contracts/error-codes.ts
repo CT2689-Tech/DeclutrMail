@@ -105,7 +105,7 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: "That Gmail account isn't connected to your DeclutrMail account.",
+    message: 'That Gmail account isn’t connected to your DeclutrMail account.',
   },
   MAILBOX_OWNED_BY_OTHER_WORKSPACE: {
     status: 409,
@@ -788,7 +788,7 @@ export const ERROR_CODES = {
     status: 503,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: "We couldn't confirm the retry started. Try again — it won't run twice.",
+    message: "We couldn't confirm the retry started. Try again — it won’t run twice.",
   },
   SERVICE_UNAVAILABLE: {
     status: 503,
