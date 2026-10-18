@@ -130,7 +130,7 @@ export function SettingsGroup({
       aria-label={title}
       style={{ scrollMarginTop: 24, fontFamily: font.sans, ...style }}
     >
-      <GroupTitle inset tabIndex={headingTabIndex}>
+      <GroupTitle inset {...(headingTabIndex !== undefined ? { tabIndex: headingTabIndex } : {})}>
         {title}
       </GroupTitle>
       <style>{GROUP_CSS}</style>
