@@ -1,6 +1,6 @@
 {
   "snapshot_date": "2026-10-18",
-  "snapshot_ts": "2026-10-18T16:01:27Z",
+  "snapshot_ts": "2026-10-18T16:30:03Z",
   "gcp_project": "declutrmail-ai-prod",
   "cloud_run": {
     "api": {
@@ -8,20 +8,20 @@
       "latest_revision": [
         {
           "metadata": {
-            "creationTimestamp": "2026-10-18T16:00:37.730231Z",
-            "name": "declutrmail-api-00818-vum"
+            "creationTimestamp": "2026-10-18T16:27:14.303966Z",
+            "name": "declutrmail-api-00824-jey"
           },
           "spec": {
             "containers": [
               {
-                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:4e4cd68871ef4fa594e91063de0d9fffeef3b2edfcf81e39b6c221f2e8600322"
+                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:c0e54d992c3bc46809b6024695e1406cb894ef9e2902910960349fe969961fa7"
               }
             ]
           },
           "status": {
             "conditions": [
               {
-                "status": "Unknown"
+                "status": "True"
               }
             ]
           }
@@ -181,7 +181,7 @@
           "traffic": [
             {
               "percent": 100,
-              "revisionName": "declutrmail-api-00815-haj"
+              "revisionName": "declutrmail-api-00824-jey"
             }
           ]
         }
@@ -192,13 +192,13 @@
       "latest_revision": [
         {
           "metadata": {
-            "creationTimestamp": "2026-10-18T15:59:12.007720Z",
-            "name": "declutrmail-worker-00229-sl5"
+            "creationTimestamp": "2026-10-18T16:25:52.005085Z",
+            "name": "declutrmail-worker-00231-txb"
           },
           "spec": {
             "containers": [
               {
-                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:4e4cd68871ef4fa594e91063de0d9fffeef3b2edfcf81e39b6c221f2e8600322"
+                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:c0e54d992c3bc46809b6024695e1406cb894ef9e2902910960349fe969961fa7"
               }
             ]
           },
@@ -359,7 +359,7 @@
           "traffic": [
             {
               "percent": 100,
-              "revisionName": "declutrmail-worker-00229-sl5"
+              "revisionName": "declutrmail-worker-00231-txb"
             }
           ]
         }
