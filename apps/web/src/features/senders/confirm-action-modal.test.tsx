@@ -1212,16 +1212,66 @@ describe('ConfirmActionModal — preview trust affordances', () => {
 describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)', () => {
   const reachRow = () => screen.queryByRole('checkbox', { name: 'Include archived email' });
 
-  it('offers no reach choice against an API without the allMail block', () => {
+  it('keeps Include archived email visible and disabled when the archived count is missing', () => {
+    const onConfirm = vi.fn();
     render(
       <ConfirmActionModal
         request={request('Delete')}
         onCancel={() => {}}
-        onConfirm={() => {}}
+        onConfirm={onConfirm}
         compositePreview={livePreview}
       />,
     );
-    expect(reachRow()).toBeNull();
+    const includeArchived = screen.getByRole('checkbox', { name: 'Include archived email' });
+    expect(includeArchived).not.toBeChecked();
+    expect(includeArchived).toBeDisabled();
+    expect(screen.getByText(WS5_COPY['f1.preview.archived.unavailable'])).toBeInTheDocument();
+    fireEvent.click(includeArchived);
+    expect(includeArchived).not.toBeChecked();
+
+    const confirm = screen.getByRole('button', { name: 'Delete 1 email' });
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(onConfirm.mock.calls[0]?.[0]).not.toHaveProperty('reach');
+  });
+
+  it('stays fail-closed when the archived count disappears after Include archived email is on', () => {
+    const onConfirm = vi.fn();
+    const pending = request('Delete');
+    const { rerender } = render(
+      <ConfirmActionModal
+        request={pending}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        compositePreview={livePreviewWithAllMail}
+      />,
+    );
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
+    expect(screen.getByRole('checkbox', { name: 'Include archived email' })).toBeChecked();
+
+    rerender(
+      <ConfirmActionModal
+        request={pending}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        compositePreview={livePreview}
+      />,
+    );
+    const includeArchived = screen.getByRole('checkbox', { name: 'Include archived email' });
+    expect(includeArchived).toBeEnabled();
+    expect(includeArchived).toBeChecked();
+    expect(screen.getByText(WS5_COPY['f1.preview.archived.unavailable'])).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete 1 email' }));
+    expect(onConfirm).not.toHaveBeenCalled();
+
+    fireEvent.click(includeArchived);
+    expect(includeArchived).not.toBeChecked();
+    const confirm = screen.getByRole('button', { name: 'Delete 1 email' });
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(onConfirm.mock.calls[0]?.[0]).not.toHaveProperty('reach');
   });
 
   it.each(['Archive', 'Later'] as const)('offers no reach choice on %s', (verb) => {
@@ -1609,17 +1659,24 @@ describe('ConfirmActionModal — ADR-0028 reach on a bulk selection (amendment 2
     expect(onConfirm.mock.calls[0]?.[0]).not.toHaveProperty('reach');
   });
 
-  it('offers no bulk reach choice against an API without the all-mail totals', () => {
+  it('disables Include archived email on a bulk Delete when the all-mail totals are missing', () => {
+    const onConfirm = vi.fn();
     const senders = [sender, second];
     render(
       <ConfirmActionModal
         request={{ verb: 'Delete', senders }}
         onCancel={() => {}}
-        onConfirm={() => {}}
+        onConfirm={onConfirm}
         bulkPreview={{ data: bulkDataFor(senders, false), loading: false, error: false }}
       />,
     );
-    expect(reachRow()).toBeNull();
+    const includeArchived = screen.getByRole('checkbox', { name: 'Include archived email' });
+    expect(includeArchived).toBeDisabled();
+    expect(includeArchived).not.toBeChecked();
+    expect(screen.getByText(WS5_COPY['f1.preview.archived.unavailable'])).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Delete/ }));
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(onConfirm.mock.calls[0]?.[0]).not.toHaveProperty('reach');
   });
 
   it.each(['Archive', 'Later'] as const)('offers no bulk reach choice on %s', (verb) => {
