@@ -687,6 +687,6 @@ export function syncNotReady(): ConflictException {
   return new ConflictException({
     code: 'SYNC_NOT_READY',
     message:
-      'This mailbox has no finished scan to sync from — the scan is still running, or it stopped before completing.',
+      'This Gmail account hasn’t finished its scan yet. It may still be running, or it stopped early.',
   });
 }

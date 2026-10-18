@@ -424,7 +424,7 @@ describe('UnsubscribeBacklogService', () => {
     record.mockRejectedValueOnce(
       new NotFoundException({
         code: 'SENDER_NOT_FOUND',
-        message: 'Sender not found in the current mailbox.',
+        message: 'We couldn’t find this sender in this Gmail account.',
       }),
     );
     const missing = await svc.confirm({

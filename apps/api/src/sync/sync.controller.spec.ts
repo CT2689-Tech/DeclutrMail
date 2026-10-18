@@ -1,5 +1,5 @@
 import { ConflictException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
-import { SyncStatusSchema, type SyncStatus } from '@declutrmail/shared/contracts';
+import { ERROR_CODES, SyncStatusSchema, type SyncStatus } from '@declutrmail/shared/contracts';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { InitialSyncProgressReader } from './initial-sync-progress.reader.js';
@@ -197,6 +197,10 @@ describe('SyncController.postIncremental (D38 prod-ready pass — Sync now)', ()
 
     const err = await controller.postIncremental(MAILBOX).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ConflictException);
+    expect((err as ConflictException).getResponse()).toMatchObject({
+      code: 'SYNC_NOT_READY',
+      message: ERROR_CODES.SYNC_NOT_READY.message,
+    });
     // Lock the contract: HTTP 409, not 400. Architecture-guardian flagged
     // a prior draft that used BadRequestException (400) here; the 409 is
     // the canonical designed-state code per CLAUDE.md §8.
