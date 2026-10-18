@@ -80,7 +80,7 @@ describe('what the pill says about a running decision', () => {
   it('keeps a single composite free of internal job counters', () => {
     expect(
       workingNotice({ ...GROUP, mixedVerbs: true, total: 2, done: 0, failed: 1, senderCount: 1 }),
-    ).toMatchObject({ label: 'Cleaning up…', detail: null });
+    ).toMatchObject({ label: 'Working…', detail: null });
   });
 
   it('counts senders when none of them resolves to a name', () => {
@@ -409,7 +409,7 @@ describe('ProductUndoTray — live line', () => {
     async (outcome) => {
       active = [{ ...GROUP, mixedVerbs: true, senderCount: 1, total: 2, done: 1, failed: 0 }];
       const { reread, client } = mount();
-      await waitFor(() => expect(pillText()).toContain('Cleaning up…'));
+      await waitFor(() => expect(pillText()).toContain('Working…'));
       undoList = [
         {
           token: 'undo-delete',
@@ -514,7 +514,7 @@ describe('ProductUndoTray — live line', () => {
       active = [{ ...GROUP, running: true, mixedVerbs: true, total: 2, done: 1, failed: 0 }];
       if (observeRunning) {
         await reread();
-        await waitFor(() => expect(pillText()).toContain('Cleaning up…'));
+        await waitFor(() => expect(pillText()).toContain('Working…'));
       }
       undoList = [
         { ...ARCHIVE_UNDO, groupId: GROUP.groupId, actionKind: 'delete', affectedCount: 56 },

@@ -10,18 +10,18 @@ Observed sequence: confirmation said “Unsubscribing…”; row showed “Delet
 
 One confirmation must produce one persistent running/result surface, honest separate move and request outcomes, real email counts, and Undo for the move. Acceptance means endpoint acceptance, never proof future mail stops. Unsubscribe-only, manual instructions, and submission failures retain their existing feedback.
 
-| State / transition                                | UI and cache behavior                                                                                                   | Verification                            |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| Confirm accepted / both jobs running              | One “Cleaning up…” tray; no internal fraction for one sender, no premature Undo; redundant pending row label suppressed | component and browser                   |
-| Move finishes before request                      | Running group stays visible; real execution keeps group running                                                         | real service, component                 |
-| Request accepted                                  | Actual move count plus accepted-request note and Undo                                                                   | real service, component, browser        |
-| Request unconfirmed / failed / manual fallback    | Separate request outcome retained beside successful move; warning stays expanded                                        | real service, component, browser        |
-| Delete fails while request succeeds               | Delete failure remains explicit; sender count never becomes an email count                                              | contract tests                          |
-| Move-only group finishes before execution linkage | Reobserving running work reopens terminal reporting                                                                     | component regression                    |
-| Partial bulk / overdue                            | Label readers use move-only totals and failures; global tray tracks whole decision                                      | helper and existing surface regressions |
-| Status read fails                                 | Unknown/error remains distinct from success                                                                             | existing regression and browser         |
-| Undo / late warning / switch                      | No resurrected warning after Undo; late attention expands; mailbox state remains scoped                                 | component and browser                   |
-| Older API or older same-key execution             | Existing separate feedback remains; no intent row interpreted as acceptance                                             | API replay and web contract tests       |
+| State / transition                                | UI and cache behavior                                                                                               | Verification                            |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| Confirm accepted / both jobs running              | One “Working…” tray; no internal fraction for one sender, no premature Undo; redundant pending row label suppressed | component and browser                   |
+| Move finishes before request                      | Running group stays visible; real execution keeps group running                                                     | real service, component                 |
+| Request accepted                                  | Actual move count plus accepted-request note and Undo                                                               | real service, component, browser        |
+| Request unconfirmed / failed / manual fallback    | Separate request outcome retained beside successful move; warning stays expanded                                    | real service, component, browser        |
+| Delete fails while request succeeds               | Delete failure remains explicit; sender count never becomes an email count                                          | contract tests                          |
+| Move-only group finishes before execution linkage | Reobserving running work reopens terminal reporting                                                                 | component regression                    |
+| Partial bulk / overdue                            | Label readers use move-only totals and failures; global tray tracks whole decision                                  | helper and existing surface regressions |
+| Status read fails                                 | Unknown/error remains distinct from success                                                                         | existing regression and browser         |
+| Undo / late warning / switch                      | No resurrected warning after Undo; late attention expands; mailbox state remains scoped                             | component and browser                   |
+| Older API or older same-key execution             | Existing separate feedback remains; no intent row interpreted as acceptance                                         | API replay and web contract tests       |
 
 ## Repairs
 
@@ -37,4 +37,4 @@ New regressions failed against the original counter/outcome logic. Real-service 
 
 Priorities beyond this repair: Activity still exposes intent/move history and terminal execution as separate historical rows; a future combined history design should preserve both facts. Broader bulk/manual submission-copy tightening remains a separate scope. Neither requires new mailbox content collection.
 
-Final focused suites: 479 web tests, 281 API tests, and 24 shared tray tests passed. Two existing opt-in Activity performance benchmarks were skipped. Repository lint passes with six pre-existing unused-disable warnings. Independent design/architecture/flow review has no remaining actionable findings. Next production build, 51-route bundle budgets, 32-route prerender check, and sequential repository typecheck passed. Production provider changes were not repeated.
+Final focused suites: 479 web tests, 281 API tests, and all 920 shared tests passed. Two existing opt-in Activity performance benchmarks were skipped. Repository lint passes with six pre-existing unused-disable warnings. Independent design/architecture/flow review has no remaining actionable findings. Next production build, 51-route bundle budgets, 32-route prerender check, and sequential repository typecheck passed. A subsequent CI glossary failure on the initial running label was repaired by using “Working…”; the complete shared suite passes. Production provider changes were not repeated.

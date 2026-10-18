@@ -66,7 +66,7 @@ export function workingNotice(group: InFlightActionGroup, confirmed = true): Und
     id: `run:${group.groupId}`,
     tone: 'working',
     verb: group.verb,
-    label: group.mixedVerbs ? 'Cleaning up…' : WORKING[group.verb],
+    label: group.mixedVerbs ? 'Working…' : WORKING[group.verb],
     who: who(group),
     // Jobs, not senders: a composite runs two per sender. Unit-less on purpose.
     detail:
