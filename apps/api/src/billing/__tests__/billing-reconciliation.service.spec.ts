@@ -26,6 +26,7 @@ import {
   VERDICT_PASS_MAX_ROWS,
 } from '../billing-reconciliation.service.js';
 import { BillingWebhookService } from '../billing-webhook.service.js';
+import { runWithVerdictSignal } from '../provider-signal.js';
 import type { PaddleAdapter } from '../paddle.adapter.js';
 import type { RazorpayAdapter } from '../razorpay.adapter.js';
 import {
@@ -1599,6 +1600,70 @@ describe('BillingReconciliationService (D249)', () => {
     // Neither outcome wrote anything.
     const [row] = await db.select().from(subscriptions);
     expect(row!.status).toBe('active');
+    expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
+  });
+
+  it('a verdict deadline aborts before any provider cancel or entitlement write', async () => {
+    await seedVerdictRow({ cancelSource: 'refund' });
+    const deadline = new AbortController();
+    const canceled: string[] = [];
+    let factsCalled = false;
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async () => {
+          deadline.abort(new Error('BillingVerdictWorker exceeded 60000ms timeout'));
+          return {
+            kind: 'found',
+            subscription: activePlusSub('sub_verdict', new Date()),
+          };
+        },
+        providerCancellationFacts: async () => {
+          factsCalled = true;
+          return SETTLED_REFUND;
+        },
+        cancelSubscription: async (id) => {
+          canceled.push(id);
+        },
+      }),
+    );
+
+    await expect(
+      runWithVerdictSignal(deadline.signal, () => svc.enforceLocalVerdicts(0)),
+    ).rejects.toThrow(/exceeded/);
+    expect(factsCalled).toBe(false);
+    expect(canceled).toEqual([]);
+    const [row] = await db.select().from(subscriptions);
+    expect(row).toMatchObject({ status: 'active', cancelSource: 'refund' });
+    expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
+  });
+
+  it('a swallowed facts-read abort still does not cancel or settle', async () => {
+    await seedVerdictRow({ cancelSource: 'refund' });
+    const deadline = new AbortController();
+    const canceled: string[] = [];
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async () => ({
+          kind: 'found',
+          subscription: activePlusSub('sub_verdict', new Date()),
+        }),
+        providerCancellationFacts: async () => {
+          // The adapter catch returns null on a thrown read, including abort.
+          deadline.abort(new Error('BillingVerdictWorker exceeded 60000ms timeout'));
+          return null;
+        },
+        cancelSubscription: async (id) => {
+          canceled.push(id);
+        },
+      }),
+    );
+
+    await expect(
+      runWithVerdictSignal(deadline.signal, () => svc.enforceLocalVerdicts(0)),
+    ).rejects.toThrow(/exceeded/);
+    expect(canceled).toEqual([]);
+    const [row] = await db.select().from(subscriptions);
+    expect(row).toMatchObject({ status: 'active', cancelSource: 'refund' });
     expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
   });
 });

@@ -4,7 +4,10 @@ import type { Job } from 'bullmq';
 import { describe, expect, it, vi } from 'vitest';
 
 import { billingVerdictJobOptions } from './billing-verdict.queue.js';
-import { BillingVerdictWorker } from './billing-verdict.worker.js';
+import {
+  BILLING_VERDICT_STALE_RUNNING_MS,
+  BillingVerdictWorker,
+} from './billing-verdict.worker.js';
 import type {
   BillingVerdictDeps,
   BillingVerdictJobData,
@@ -12,6 +15,7 @@ import type {
 } from './billing-verdict.worker.js';
 import type { WorkerContext } from './worker-context.js';
 import type { WorkerObserver } from './worker-observer.js';
+import { WORKER_POLICIES } from './worker-policies.js';
 
 /**
  * BillingVerdictWorker integration tests (D253, D249, D225).
@@ -265,5 +269,205 @@ describe('BillingVerdictWorker', () => {
     // reintroducing the starvation one level up.
     expect(enforce1 - enforce0).toBe(1);
     expect(enforce2 - enforce1).toBe(1);
+  });
+
+  function verdictJob(minute: string): Job<BillingVerdictJobData, BillingVerdictResult> {
+    return {
+      id: `BillingVerdictWorker:${minute}`,
+      data: { scheduledAtMinute: minute },
+      attemptsMade: 0,
+      opts: { attempts: 3 },
+      queueName: 'billing-verdict',
+      timestamp: Date.now(),
+    } as unknown as Job<BillingVerdictJobData, BillingVerdictResult>;
+  }
+
+  async function claimRow(db: Awaited<ReturnType<typeof freshTestDb>>, runKey: string) {
+    const runs = await db.select().from(cronRuns);
+    return runs.find((row) => row.runKey === runKey);
+  }
+
+  it('a hung enforce pass ends at the cron deadline and the next minute can run', async () => {
+    const db = await freshTestDb();
+    let inflight = 0;
+    let maxInflight = 0;
+    const calls: string[] = [];
+    let hang = true;
+    const seams: Seams = {
+      enforceLocalVerdicts: (_runIndex, signal) => {
+        inflight += 1;
+        maxInflight = Math.max(maxInflight, inflight);
+        calls.push('enforce');
+        if (!hang) {
+          inflight -= 1;
+          return Promise.resolve({ enforced: 0, unenforced: 0, refuted: 0, settled: 0 });
+        }
+        // No signal: never settle. That is the production hang — the
+        // deadline aborts ctx.signal and withTimeout waits forever.
+        return new Promise((_resolve, reject) => {
+          const stop = () => {
+            hang = false;
+            inflight -= 1;
+            const reason = signal?.reason;
+            reject(reason instanceof Error ? reason : new Error('aborted'));
+          };
+          if (!signal) return;
+          if (signal.aborted) stop();
+          else signal.addEventListener('abort', stop, { once: true });
+        });
+      },
+      watchSettledRefunds: () => {
+        calls.push('watch');
+        return Promise.resolve({ watched: 0, rebilling: 0, unreadable: 0 });
+      },
+    };
+    const worker = new BillingVerdictWorker({ db: db as never, ...seams });
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    try {
+      const first = worker.run(verdictJob('2026-08-12T06:00')).then(
+        () => ({ ok: true as const }),
+        (error: unknown) => ({ ok: false as const, error }),
+      );
+      await vi.advanceTimersByTimeAsync(WORKER_POLICIES.cronPolicy.timeoutMs);
+      const outcome = await first;
+      expect(outcome.ok).toBe(false);
+      if (!outcome.ok) {
+        expect(outcome.error).toBeInstanceOf(Error);
+        expect((outcome.error as Error).message).toContain('exceeded');
+      }
+      expect(inflight).toBe(0);
+      expect(maxInflight).toBe(1);
+      expect(calls).toEqual(['enforce']);
+      expect((await claimRow(db, 'BillingVerdictWorker:2026-08-12T06:00'))?.status).toBe('failed');
+
+      vi.useRealTimers();
+      const second = await worker.processJob({ scheduledAtMinute: '2026-08-12T06:10' }, CTX);
+      expect(second.outcome).toBe('swept');
+      expect(calls).toEqual(['enforce', 'enforce', 'watch']);
+      expect(maxInflight).toBe(1);
+      expect((await claimRow(db, 'BillingVerdictWorker:2026-08-12T06:10'))?.status).toBe(
+        'succeeded',
+      );
+    } finally {
+      vi.useRealTimers();
+      errorLog.mockRestore();
+    }
+  });
+
+  it('a hung watch pass keeps the claim succeeded so the retry does not resend', async () => {
+    const db = await freshTestDb();
+    const calls: string[] = [];
+    const seams: Seams = {
+      enforceLocalVerdicts: () => {
+        calls.push('enforce');
+        return Promise.resolve({ enforced: 1, unenforced: 0, refuted: 0, settled: 0 });
+      },
+      watchSettledRefunds: (_runIndex, signal) => {
+        calls.push('watch');
+        return new Promise((_resolve, reject) => {
+          const stop = () => {
+            const reason = signal?.reason;
+            reject(reason instanceof Error ? reason : new Error('aborted'));
+          };
+          if (!signal) return;
+          if (signal.aborted) stop();
+          else signal.addEventListener('abort', stop, { once: true });
+        });
+      },
+    };
+    const worker = new BillingVerdictWorker({ db: db as never, ...seams });
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    try {
+      const first = worker.run(verdictJob(MINUTE)).then(
+        () => ({ ok: true as const }),
+        (error: unknown) => ({ ok: false as const, error }),
+      );
+      await vi.advanceTimersByTimeAsync(WORKER_POLICIES.cronPolicy.timeoutMs);
+      const outcome = await first;
+      expect(outcome.ok).toBe(false);
+      if (!outcome.ok) expect((outcome.error as Error).message).toContain('exceeded');
+      expect(calls).toEqual(['enforce', 'watch']);
+      const hung = await claimRow(db, `BillingVerdictWorker:${MINUTE}`);
+      expect(hung?.status).toBe('succeeded');
+      expect(hung?.finishedAt).not.toBeNull();
+
+      vi.useRealTimers();
+      const retry = await worker.processJob({ scheduledAtMinute: MINUTE }, { ...CTX, attempt: 2 });
+      expect(retry).toMatchObject({ outcome: 'duplicate_run_key', enforced: 0 });
+      expect(calls).toEqual(['enforce', 'watch']);
+    } finally {
+      vi.useRealTimers();
+      errorLog.mockRestore();
+    }
+  });
+
+  it('fails a stale running claim for another minute without calling the provider', async () => {
+    const db = await freshTestDb();
+    const staleKey = 'BillingVerdictWorker:2026-08-12T05:00';
+    const keptKey = 'BillingVerdictWorker:2026-08-12T05:50';
+    const doneKey = 'BillingVerdictWorker:2026-08-12T04:00';
+    await db.insert(cronRuns).values([
+      {
+        workerName: 'BillingVerdictWorker',
+        runKey: staleKey,
+        status: 'running',
+        startedAt: new Date(Date.now() - BILLING_VERDICT_STALE_RUNNING_MS - 60_000),
+      },
+      {
+        workerName: 'BillingVerdictWorker',
+        runKey: keptKey,
+        status: 'running',
+        startedAt: new Date(Date.now() - 30_000),
+      },
+      {
+        workerName: 'BillingVerdictWorker',
+        runKey: doneKey,
+        status: 'succeeded',
+        startedAt: new Date(Date.now() - BILLING_VERDICT_STALE_RUNNING_MS - 120_000),
+        finishedAt: new Date(Date.now() - BILLING_VERDICT_STALE_RUNNING_MS),
+      },
+    ]);
+    const { seams, calls } = makeSeams();
+    const worker = new BillingVerdictWorker({ db: db as never, ...seams });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const result = await worker.processJob({ scheduledAtMinute: MINUTE }, CTX);
+      expect(result.outcome).toBe('swept');
+      expect(calls).toEqual(['enforce', 'watch']);
+      expect((await claimRow(db, staleKey))?.status).toBe('failed');
+      expect((await claimRow(db, staleKey))?.finishedAt).not.toBeNull();
+      expect((await claimRow(db, keptKey))?.status).toBe('running');
+      expect((await claimRow(db, keptKey))?.finishedAt).toBeNull();
+      expect((await claimRow(db, doneKey))?.status).toBe('succeeded');
+      const recovered = warn.mock.calls
+        .map((call) => JSON.parse(String(call[0])) as { kind?: string; count?: number })
+        .find((line) => line.kind === 'billing.verdict.stale_running_recovered');
+      expect(recovered).toMatchObject({ count: 1 });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('reclaims a stale running claim for the SAME minute and calls each seam once', async () => {
+    const db = await freshTestDb();
+    const runKey = `BillingVerdictWorker:${MINUTE}`;
+    await db.insert(cronRuns).values({
+      workerName: 'BillingVerdictWorker',
+      runKey,
+      status: 'running',
+      startedAt: new Date(Date.now() - BILLING_VERDICT_STALE_RUNNING_MS - 60_000),
+    });
+    const { seams, calls } = makeSeams();
+    const worker = new BillingVerdictWorker({ db: db as never, ...seams });
+
+    const result = await worker.processJob({ scheduledAtMinute: MINUTE }, CTX);
+
+    expect(result.outcome).toBe('swept');
+    expect(calls).toEqual(['enforce', 'watch']);
+    const row = await claimRow(db, runKey);
+    expect(row?.status).toBe('succeeded');
+    expect(await db.select().from(cronRuns)).toHaveLength(1);
   });
 });

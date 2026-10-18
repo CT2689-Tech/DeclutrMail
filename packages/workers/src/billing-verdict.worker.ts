@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { cronRuns } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
@@ -6,6 +6,17 @@ import type { schema } from '@declutrmail/db';
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { BILLING_VERDICT_INTERVAL_MS } from './billing-verdict.queue.js';
 import type { WorkerContext } from './worker-context.js';
+import { WORKER_POLICIES } from './worker-policies.js';
+
+/**
+ * A `running` claim older than one live pass of this code, plus margin.
+ * `cronPolicy` aborts at 60s and one in-flight statement or provider call
+ * is at most 15s, so a pass that honors the deadline cannot still be
+ * inside it after three minutes. The sweep only flips those other rows
+ * to `failed`. It does not call the provider. A younger row is left
+ * alone so this cannot race an attempt that is still inside its deadline.
+ */
+export const BILLING_VERDICT_STALE_RUNNING_MS = WORKER_POLICIES.cronPolicy.timeoutMs + 2 * 60_000;
 
 /** The Drizzle client, bound to the full `@declutrmail/db` schema. */
 type WorkerDb = PostgresJsDatabase<typeof schema>;
@@ -78,7 +89,10 @@ export interface BillingVerdictDeps {
    * `BillingReconciliationService` (and its provider adapters, catalog
    * and Nest DI) lives. The composition root binds the method.
    */
-  enforceLocalVerdicts: (runIndex: number) => Promise<{
+  enforceLocalVerdicts: (
+    runIndex: number,
+    signal?: AbortSignal,
+  ) => Promise<{
     enforced: number;
     unenforced: number;
     refuted: number;
@@ -88,7 +102,10 @@ export interface BillingVerdictDeps {
    * The READ-ONLY half: detect a provider still billing a customer whose
    * subscription row we canceled locally. Same seam rationale as above.
    */
-  watchSettledRefunds: (runIndex: number) => Promise<{
+  watchSettledRefunds: (
+    runIndex: number,
+    signal?: AbortSignal,
+  ) => Promise<{
     watched: number;
     rebilling: number;
     unreadable: number;
@@ -118,10 +135,17 @@ export interface BillingVerdictDeps {
  *      status <> 'succeeded'` — a fresh run inserts, a RETRY of a
  *      crashed/failed run takes the slot back over, and a run that
  *      already succeeded returns no row → clean `duplicate_run_key`
- *      no-op. Both seams are convergence loops (they re-read state and
- *      stop matching once the provider agrees), so even a double pass is
- *      harmless — the claim exists to stop redundant provider traffic,
- *      not to protect correctness.
+ *      no-op. A `running` row is reclaimable on that SAME key. It does
+ *      not block later minutes; those have their own keys. What blocks
+ *      them is this job never returning. `cronPolicy`'s 60s deadline
+ *      only aborts `ctx.signal`, and `withTimeout` waits for the attempt
+ *      to finish, so the seams must observe that signal and reject.
+ *      Other `running` rows older than `BILLING_VERDICT_STALE_RUNNING_MS`
+ *      are marked `failed` here without calling either seam.
+ *      Both seams are convergence loops (they re-read state and
+ *      stop matching once the provider agrees), so a retry after an
+ *      aborted cancel is the same ambiguity as a provider timeout today.
+ *      The claim exists to stop redundant provider traffic.
  *
  * FAILURE ASYMMETRY, deliberate:
  *   - `enforceLocalVerdicts` throwing FAILS the job. It is the outbound
@@ -133,7 +157,10 @@ export interface BillingVerdictDeps {
  *     provider cancels — purely to re-run a detection pass. Instead it is
  *     logged, sent to the observer (Sentry), and reported as
  *     `watchFailed: true` so a permanently broken detector cannot read as
- *     a clean zero.
+ *     a clean zero. A deadline abort during that watch still rejects the
+ *     BullMQ attempt (`withTimeout` sees the aborted signal), but the
+ *     claim is already `succeeded`, so the retry is `duplicate_run_key`
+ *     and calls neither seam.
  */
 export class BillingVerdictWorker extends BaseDeclutrWorker<
   BillingVerdictJobData,
@@ -153,10 +180,11 @@ export class BillingVerdictWorker extends BaseDeclutrWorker<
 
   override async processJob(
     payload: BillingVerdictJobData,
-    _ctx: WorkerContext,
+    ctx: WorkerContext,
   ): Promise<BillingVerdictResult> {
     const startedAt = Date.now();
     const runKey = `${this.workerName}:${payload.scheduledAtMinute}`;
+    await this.recoverStaleRunningClaims(runKey);
 
     // A counter that advances by exactly ONE per scheduled run, derived
     // from the run's own minute rather than stored anywhere. Both passes
@@ -208,7 +236,7 @@ export class BillingVerdictWorker extends BaseDeclutrWorker<
 
     let verdicts: Awaited<ReturnType<BillingVerdictDeps['enforceLocalVerdicts']>>;
     try {
-      verdicts = await this.deps.enforceLocalVerdicts(runIndex);
+      verdicts = await this.deps.enforceLocalVerdicts(runIndex, ctx.signal);
     } catch (err) {
       // Release the slot as 'failed' before rethrowing: the base class
       // retries per cronPolicy and the retry must be able to re-claim
@@ -221,7 +249,7 @@ export class BillingVerdictWorker extends BaseDeclutrWorker<
     let watch = { watched: 0, rebilling: 0, unreadable: 0 };
     let watchFailed = false;
     try {
-      watch = await this.deps.watchSettledRefunds(runIndex);
+      watch = await this.deps.watchSettledRefunds(runIndex, ctx.signal);
     } catch (err) {
       watchFailed = true;
       const error = err instanceof Error ? err : new Error(String(err));
@@ -264,6 +292,35 @@ export class BillingVerdictWorker extends BaseDeclutrWorker<
       watchFailed,
       durationMs: Date.now() - startedAt,
     };
+  }
+
+  /**
+   * Mark OTHER minutes' stale `running` claims failed. Does not call
+   * either seam. The current key is excluded: the upsert below reclaims
+   * a crashed attempt of this same minute and runs it once.
+   */
+  private async recoverStaleRunningClaims(currentRunKey: string): Promise<void> {
+    const cutoffIso = new Date(Date.now() - BILLING_VERDICT_STALE_RUNNING_MS).toISOString();
+    const recovered = await this.deps.db
+      .update(cronRuns)
+      .set({ status: 'failed', finishedAt: sql`now()` })
+      .where(
+        and(
+          eq(cronRuns.workerName, this.workerName),
+          eq(cronRuns.status, 'running'),
+          ne(cronRuns.runKey, currentRunKey),
+          sql`${cronRuns.startedAt} < ${cutoffIso}::timestamptz`,
+        ),
+      )
+      .returning({ id: cronRuns.id });
+    if (recovered.length === 0) return;
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        kind: 'billing.verdict.stale_running_recovered',
+        count: recovered.length,
+      }),
+    );
   }
 
   private async releaseClaim(runKey: string, status: 'succeeded' | 'failed'): Promise<void> {

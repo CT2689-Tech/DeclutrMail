@@ -53,6 +53,11 @@ import {
 import { BillingCatalog } from './billing-catalog.js';
 import { BillingWebhookService, GRANTING_STATUSES } from './billing-webhook.service.js';
 import { PaddleAdapter } from './paddle.adapter.js';
+import {
+  currentVerdictSignal,
+  throwIfVerdictStopped,
+  VERDICT_DB_STATEMENT_TIMEOUT_MS,
+} from './provider-signal.js';
 import { RazorpayAdapter } from './razorpay.adapter.js';
 import { upgradeRecords } from './upgrade-intents.js';
 
@@ -256,14 +261,39 @@ export class BillingReconciliationService {
    * change bucket between runs; that is harmless, because the guarantee
    * is "examined within `buckets` runs", not "always in bucket k".
    */
+  /**
+   * Verdict-pass reads take a transaction-local statement timeout so a
+   * stuck query cannot pin the cron slot. Outside a verdict pass (no
+   * abort scope) this is the direct client — drift and on-demand reads
+   * are unchanged.
+   */
+  private async verdictQuery<T>(read: (db: DrizzleDb) => Promise<T>): Promise<T> {
+    if (!currentVerdictSignal()) return read(this.db);
+    throwIfVerdictStopped();
+    return this.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select set_config('statement_timeout', ${String(VERDICT_DB_STATEMENT_TIMEOUT_MS)}, true)`,
+      );
+      throwIfVerdictStopped();
+      return read(tx as unknown as DrizzleDb);
+    });
+  }
+
+  private rethrowIfVerdictStopped(err: unknown): void {
+    if (!currentVerdictSignal()?.aborted) return;
+    throw err instanceof Error ? err : new Error(String(err));
+  }
+
   private async bucketPredicate(
     where: SQL,
     runIndex: number,
   ): Promise<{ predicate: SQL | undefined; buckets: number; total: number }> {
-    const [row] = await this.db
-      .select({ total: sql<number>`count(*)::int` })
-      .from(subscriptions)
-      .where(where);
+    const [row] = await this.verdictQuery((db) =>
+      db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(subscriptions)
+        .where(where),
+    );
     const total = row?.total ?? 0;
     const buckets = Math.max(1, Math.ceil(total / BUCKET_TARGET_ROWS));
     if (buckets === 1) return { predicate: undefined, buckets, total };
@@ -615,6 +645,7 @@ export class BillingReconciliationService {
    * without an outbound call inside the webhook transaction.
    */
   async enforceLocalVerdicts(runIndex: number): Promise<VerdictPassResult> {
+    throwIfVerdictStopped();
     await this.enforceUpgradeRefunds(runIndex);
     const eligible = or(
       and(
@@ -624,17 +655,19 @@ export class BillingReconciliationService {
       settledRefundCandidates(),
     )!;
     const slice = await this.bucketPredicate(eligible, runIndex);
-    const rows = await this.db
-      .select({
-        provider: subscriptions.provider,
-        providerSubscriptionId: subscriptions.providerSubscriptionId,
-        cancelSource: subscriptions.cancelSource,
-        status: subscriptions.status,
-      })
-      .from(subscriptions)
-      .where(slice.predicate ? and(eligible, slice.predicate) : eligible)
-      .orderBy(RANDOM_ROW_ORDER)
-      .limit(VERDICT_PASS_MAX_ROWS);
+    const rows = await this.verdictQuery((db) =>
+      db
+        .select({
+          provider: subscriptions.provider,
+          providerSubscriptionId: subscriptions.providerSubscriptionId,
+          cancelSource: subscriptions.cancelSource,
+          status: subscriptions.status,
+        })
+        .from(subscriptions)
+        .where(slice.predicate ? and(eligible, slice.predicate) : eligible)
+        .orderBy(RANDOM_ROW_ORDER)
+        .limit(VERDICT_PASS_MAX_ROWS),
+    );
     this.warnIfCapped(rows.length, 'verdict', slice);
 
     let enforced = 0;
@@ -652,6 +685,7 @@ export class BillingReconciliationService {
     const factsCache = new CancellationFactsCache();
 
     for (const row of rows) {
+      throwIfVerdictStopped();
       if (consecutiveErrors[row.provider] >= DRIFT_SWEEP_TRIP_AFTER) {
         unenforced += 1;
         continue;
@@ -660,6 +694,7 @@ export class BillingReconciliationService {
         const fetched = await this.adapterFor(row.provider).fetchSubscription(
           row.providerSubscriptionId,
         );
+        throwIfVerdictStopped();
         // NOT reset here. A healthy subscriptions endpoint says nothing
         // about the adjustments endpoint, and this loop calls both — so
         // resetting on the first would let a persistently failing second
@@ -710,6 +745,10 @@ export class BillingReconciliationService {
           row.providerSubscriptionId,
           factsCache,
         );
+        // Facts reads swallow fetch failures and return null, including a
+        // deadline abort. Stop before that null is treated as "unreadable,
+        // try the next row" — the next row may send a cancel.
+        throwIfVerdictStopped();
         if (facts === null) {
           // A null here is a READ FAILURE, not "nothing settled" — the
           // adapter returns it on a 404, a malformed body, or a throw it
@@ -744,6 +783,7 @@ export class BillingReconciliationService {
         if (row.status === 'canceled') {
           if (facts.settled === 'refund') {
             if (!provider.cancelAtPeriodEnd) {
+              throwIfVerdictStopped();
               await this.adapterFor(row.provider).cancelSubscription(row.providerSubscriptionId);
               enforced += 1;
               this.logger.warn(
@@ -768,6 +808,7 @@ export class BillingReconciliationService {
           // provider mutation on every pass for a row that has already
           // converged — and this loop now revisits those rows by design.
           if (!provider.cancelAtPeriodEnd) {
+            throwIfVerdictStopped();
             await this.adapterFor(row.provider).cancelSubscription(row.providerSubscriptionId);
             enforced += 1;
             this.logger.warn(
@@ -865,6 +906,7 @@ export class BillingReconciliationService {
           `billing.reconcile.verdict_unsettled provider=${row.provider} sub=${row.providerSubscriptionId} local=${row.cancelSource} refuted_refund=${facts.refuted.refund} refuted_chargeback=${facts.refuted.chargeback} — nothing settled and our verdict is not contradicted; no action`,
         );
       } catch (err) {
+        this.rethrowIfVerdictStopped(err);
         consecutiveErrors[row.provider] += 1;
         unenforced += 1;
         this.logger.error(
@@ -895,6 +937,7 @@ export class BillingReconciliationService {
     },
     observedAtIso: string,
   ): Promise<void> {
+    throwIfVerdictStopped();
     // Through the ONE projector, like every other write this service
     // causes — dedup, the advisory lock, staleness ordering and the tier
     // recompute all apply unchanged. Writing the columns here instead
@@ -938,6 +981,7 @@ export class BillingReconciliationService {
     row: { provider: BillingProviderId; providerSubscriptionId: string },
     observedAtIso: string,
   ): Promise<void> {
+    throwIfVerdictStopped();
     const outcome = await this.webhookService.process(
       row.provider,
       {
@@ -957,9 +1001,11 @@ export class BillingReconciliationService {
     subscriptionId: string,
     facts: ProviderCancellationFacts,
   ): Promise<void> {
+    throwIfVerdictStopped();
     if ((await upgradeRecords(this.db, subscriptionId)).length > 0)
       await this.webhookService.recoverUpgradeOperation(subscriptionId);
     for (const reference of facts.upgradeRefunds ?? []) {
+      throwIfVerdictStopped();
       const enabled = process.env.BILLING_UPGRADE_REFUND_RESTORE_ENABLED === 'true';
       const base = {
         providerEventId: `recon:upgrade-refund:${reference.adjustmentId}:${reference.status}:${enabled ? 'restore' : 'hold'}`,
@@ -983,30 +1029,36 @@ export class BillingReconciliationService {
   /** Recovery for lost upgrade-adjustment webhooks. Only subscriptions with
    * durable new-policy intent/review evidence are enrolled; no historic backfill. */
   private async enforceUpgradeRefunds(runIndex: number): Promise<void> {
+    throwIfVerdictStopped();
     const eligible = and(
       eq(subscriptions.provider, 'paddle'),
       sql`EXISTS (SELECT 1 FROM ${subscriptionEvents} WHERE ${subscriptionEvents.provider}='paddle' AND ${subscriptionEvents.eventType} IN ('local.upgrade_requested','local.upgrade_refund_held') AND ${subscriptionEvents.payload}->>'provider_subscription_id'=${subscriptions.providerSubscriptionId})`,
     )!;
     const slice = await this.bucketPredicate(eligible, runIndex);
-    const rows = await this.db
-      .select({ id: subscriptions.providerSubscriptionId })
-      .from(subscriptions)
-      .where(slice.predicate ? and(eligible, slice.predicate) : eligible)
-      .orderBy(RANDOM_ROW_ORDER)
-      .limit(VERDICT_PASS_MAX_ROWS);
+    const rows = await this.verdictQuery((db) =>
+      db
+        .select({ id: subscriptions.providerSubscriptionId })
+        .from(subscriptions)
+        .where(slice.predicate ? and(eligible, slice.predicate) : eligible)
+        .orderBy(RANDOM_ROW_ORDER)
+        .limit(VERDICT_PASS_MAX_ROWS),
+    );
     this.warnIfCapped(rows.length, 'upgrade_refund', slice);
     let failures = 0;
     for (const row of rows) {
+      throwIfVerdictStopped();
       if (failures >= DRIFT_SWEEP_TRIP_AFTER) break;
       try {
         const facts = await this.paddle.providerCancellationFacts(row.id);
+        throwIfVerdictStopped();
         if (!facts) {
           failures += 1;
           continue;
         }
         await this.projectUpgradeRefunds(row.id, facts);
         failures = 0;
-      } catch {
+      } catch (err) {
+        this.rethrowIfVerdictStopped(err);
         failures += 1;
         this.logger.warn(
           `billing.reconcile.upgrade_refund_unavailable sub=${row.id} — no financial outcome asserted`,
@@ -1051,18 +1103,21 @@ export class BillingReconciliationService {
     rebilling: number;
     unreadable: number;
   }> {
+    throwIfVerdictStopped();
     const eligible = settledRefundCandidates();
     const slice = await this.bucketPredicate(eligible, runIndex);
-    const rows = await this.db
-      .select({
-        provider: subscriptions.provider,
-        providerSubscriptionId: subscriptions.providerSubscriptionId,
-        workspaceId: subscriptions.workspaceId,
-      })
-      .from(subscriptions)
-      .where(slice.predicate ? and(eligible, slice.predicate) : eligible)
-      .orderBy(RANDOM_ROW_ORDER)
-      .limit(VERDICT_PASS_MAX_ROWS);
+    const rows = await this.verdictQuery((db) =>
+      db
+        .select({
+          provider: subscriptions.provider,
+          providerSubscriptionId: subscriptions.providerSubscriptionId,
+          workspaceId: subscriptions.workspaceId,
+        })
+        .from(subscriptions)
+        .where(slice.predicate ? and(eligible, slice.predicate) : eligible)
+        .orderBy(RANDOM_ROW_ORDER)
+        .limit(VERDICT_PASS_MAX_ROWS),
+    );
     this.warnIfCapped(rows.length, 'refund_watch', slice);
 
     let watched = 0;
@@ -1071,6 +1126,7 @@ export class BillingReconciliationService {
     const consecutiveErrors: Record<BillingProviderId, number> = { paddle: 0, razorpay: 0 };
 
     for (const row of rows) {
+      throwIfVerdictStopped();
       if (consecutiveErrors[row.provider] >= DRIFT_SWEEP_TRIP_AFTER) {
         unreadable += 1;
         continue;
@@ -1079,6 +1135,7 @@ export class BillingReconciliationService {
         const fetched = await this.adapterFor(row.provider).fetchSubscription(
           row.providerSubscriptionId,
         );
+        throwIfVerdictStopped();
         if (fetched.kind !== 'found') {
           // `not_found` is the GOOD outcome here — the subscription is
           // gone at the provider, which is exactly what we want to be
@@ -1111,6 +1168,7 @@ export class BillingReconciliationService {
           );
         }
       } catch (err) {
+        this.rethrowIfVerdictStopped(err);
         consecutiveErrors[row.provider] += 1;
         unreadable += 1;
         this.logger.error(
