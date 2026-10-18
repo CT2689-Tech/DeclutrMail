@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useUpgradeReturnTo } from '@/features/billing/use-upgrade-return-to';
 import { billingIntentPath } from '@/features/billing/billing-intent';
 import {
+  planName,
   plusConnectCta,
   plusInboxLimitTitle,
   proWaitlistCta,
@@ -24,6 +25,7 @@ import { useDeleteMailboxIndexedData } from './api/use-delete-mailbox-indexed-da
 import { useDisconnectMailbox } from './api/use-disconnect-mailbox';
 import { useSetActiveMailbox } from './api/use-set-active-mailbox';
 import { loadMailboxDataControls } from './load-mailbox-data-controls';
+import styles from './account-menu.module.css';
 
 // The dialog lists what disconnect and deletion remove from the whole Gmail
 // data inventory. Loaded on demand: imported here, that registry rode every
@@ -123,40 +125,21 @@ export function AccountMenu() {
     me.mailboxes.find((m) => m.status === 'active');
   const activeLabel = activeMailbox?.email ?? me.user.email;
   const managedMailbox = me.mailboxes.find((mailbox) => mailbox.id === managedMailboxId) ?? null;
+  const openDataControls = (mailboxId: string) => {
+    // The menu entry unmounts. Let the modal remember the persistent
+    // account trigger as its return target before it takes focus.
+    triggerRef.current?.focus();
+    setManagedMailboxId(mailboxId);
+    setDataControlsError(null);
+    setOpen(false);
+  };
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      {/* The trigger is the avatar alone at every width — the menu it
-          opens states the address. Clipped, not display:none, so the
-          address stays the button's accessible name. */}
-      <style>{`
-        .dm-account-label {
-          position: absolute;
-          width: 1px;
-          height: 1px;
-          margin: -1px;
-          overflow: hidden;
-          clip: rect(0 0 0 0);
-          white-space: nowrap;
-        }
-        .dm-account-trigger { width: 36px; height: 36px; }
-        .dm-account-trigger:hover { background: var(--dm-fill); }
-        @media (max-width: 900px) {
-          .dm-account-trigger { width: 44px; height: 44px; }
-        }
-        .dm-account-menu { animation: dm-account-menu-in 120ms cubic-bezier(0.2, 0, 0, 1) both; }
-        @keyframes dm-account-menu-in {
-          from { opacity: 0; transform: scale(0.97); }
-          to { opacity: 1; transform: scale(1); }
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .dm-account-menu { animation: none; }
-        }
-      `}</style>
       <button
         ref={triggerRef}
         type="button"
-        className="dm-account-trigger"
+        className={styles.trigger}
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="dialog"
         aria-expanded={open}
@@ -167,7 +150,8 @@ export function AccountMenu() {
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: 0,
+          gap: 9,
+          padding: '4px 8px 4px 4px',
           border: 'none',
           borderRadius: radius.pill,
           color: color.fgSoft,
@@ -194,7 +178,10 @@ export function AccountMenu() {
         >
           {activeLabel.slice(0, 1).toUpperCase()}
         </span>
-        <span className="dm-account-label">{activeLabel}</span>
+        <span className={styles.triggerLabel}>{activeLabel}</span>
+        <span aria-hidden="true" className={styles.caret}>
+          ⌄
+        </span>
       </button>
 
       {open && (
@@ -204,40 +191,59 @@ export function AccountMenu() {
           role="dialog"
           aria-label="Gmail accounts"
           tabIndex={-1}
-          className="dm-account-menu"
+          className={styles.panel}
           style={{
             position: 'absolute',
             top: 44,
             right: 0,
             transformOrigin: 'top right',
-            width: 360,
+            width: 338,
             maxWidth: 'calc(100vw - 24px)',
-            maxHeight: 'calc(100vh - 72px)',
+            maxHeight: 'calc(100dvh - 100px)',
             overflowY: 'auto',
             overscrollBehavior: 'contain',
             boxSizing: 'border-box',
             background: color.card,
-            borderRadius: radius.xl,
+            borderRadius: radius.lg,
             boxShadow: shadow.pop,
-            padding: 8,
+            padding: 12,
             fontFamily: font.sans,
             fontSize: text.md,
             zIndex: 90,
-            outline: 'none',
           }}
         >
-          {/* -04: nothing else in this menu says switching rescopes every
-              screen, not just this pill — a first-timer switching by
-              accident had no way to know why their sender list changed. */}
-          <div style={{ padding: '8px 12px 10px', fontSize: text.sm, color: color.fgMuted }}>
-            Selected marks the Gmail account shown across the app.
+          <div className={styles.menuHeader}>
+            <h2>Gmail accounts</h2>
+            <button
+              type="button"
+              className={styles.closeButton}
+              aria-label="Close account menu"
+              onClick={() => {
+                setOpen(false);
+                triggerRef.current?.focus();
+              }}
+            >
+              <svg
+                aria-hidden="true"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
+                <path d="m6 6 12 12M6 18 18 6" />
+              </svg>
+            </button>
           </div>
+          <p className={styles.scope}>Switch the mailbox shown across the app.</p>
           {me.mailboxes.length === 0 && (
             <div style={{ padding: '6px 12px', color: color.fgMuted }}>
               No Gmail account connected.
             </div>
           )}
           {me.mailboxes.map((m) => {
+            const addressBreak = m.email.lastIndexOf('@');
             const isSelected = m.id === activeMailbox?.id;
             const isDisconnected = m.status === 'disconnected';
             const needsReconnect = !isDisconnected && healthById[m.id]?.needsReconnect === true;
@@ -260,7 +266,7 @@ export function AccountMenu() {
                     // current selection (not just a ✓) — the switch
                     // button is inert on the active row, which otherwise
                     // looked like "can't select it".
-                    background: isSelected ? color.fill : 'transparent',
+                    background: isSelected ? color.primarySoft : 'transparent',
                   }}
                 >
                   <button
@@ -284,7 +290,7 @@ export function AccountMenu() {
                       });
                     }}
                     style={{
-                      flex: '1 1 100%',
+                      flex: '1 1 0',
                       minWidth: 0,
                       flexWrap: 'wrap',
                       display: 'flex',
@@ -296,16 +302,17 @@ export function AccountMenu() {
                       color: isDisconnected ? color.fgMuted : color.fg,
                       cursor: isDisconnected ? 'not-allowed' : 'pointer',
                       fontFamily: font.sans,
-                      fontSize: text.md,
+                      fontSize: text.sm,
                       textAlign: 'left',
+                      minHeight: 44,
                     }}
                   >
-                    <span aria-hidden style={{ width: 14, color: color.primary }}>
-                      {isSelected ? '✓' : ' '}
+                    <span aria-hidden="true" className={styles.mailboxAvatar}>
+                      {m.email.slice(0, 1).toUpperCase()}
                     </span>
                     <span
                       style={{
-                        flex: '1 1 calc(100% - 22px)',
+                        flex: '1 1 0',
                         minWidth: 0,
                         display: 'block',
                         fontWeight: isSelected ? 600 : 500,
@@ -318,7 +325,15 @@ export function AccountMenu() {
                           overflowWrap: 'anywhere',
                         }}
                       >
-                        {m.email}
+                        {addressBreak > 0 ? (
+                          <>
+                            {m.email.slice(0, addressBreak)}
+                            <wbr />
+                            {m.email.slice(addressBreak)}
+                          </>
+                        ) : (
+                          m.email
+                        )}
                       </span>
                       {needsReconnect && (
                         <span
@@ -330,14 +345,10 @@ export function AccountMenu() {
                             marginTop: 2,
                           }}
                         >
-                          {isSelected && <MenuStatus tone="primary">Selected</MenuStatus>}
                           <MenuStatus tone="danger">Needs reconnect</MenuStatus>
                         </span>
                       )}
                     </span>
-                    {isSelected && !isDisconnected && !needsReconnect && (
-                      <MenuStatus tone="primary">Selected</MenuStatus>
-                    )}
                     {isDisconnected && (
                       <MenuStatus
                         tone={indexedDataState === 'deletion_delayed' ? 'danger' : 'muted'}
@@ -368,6 +379,11 @@ export function AccountMenu() {
                       healthById[m.id]?.hasSyncError && (
                         <MenuStatus tone="danger">Not updating</MenuStatus>
                       )}
+                    {isSelected && (
+                      <span aria-hidden="true" className={styles.activeCheck}>
+                        ✓
+                      </span>
+                    )}
                   </button>
                   <span
                     style={{
@@ -393,14 +409,21 @@ export function AccountMenu() {
                       <button
                         type="button"
                         aria-label={`Manage connection and data for ${m.email}`}
-                        onClick={() => {
-                          setManagedMailboxId(m.id);
-                          setDataControlsError(null);
-                          setOpen(false);
-                        }}
+                        title={`Manage connection and data for ${m.email}`}
+                        onClick={() => openDataControls(m.id)}
                         style={mailboxActionStyle('muted')}
                       >
-                        Manage
+                        <svg
+                          aria-hidden="true"
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="currentColor"
+                        >
+                          <circle cx="5" cy="12" r="1.6" />
+                          <circle cx="12" cy="12" r="1.6" />
+                          <circle cx="19" cy="12" r="1.6" />
+                        </svg>
                       </button>
                     ) : (
                       // Disconnected reactivation can consume a slot, so it
@@ -415,7 +438,7 @@ export function AccountMenu() {
                         }
                         title={
                           reconnectBlocked
-                            ? "You can reconnect once we've finished erasing what we stored."
+                            ? 'You can reconnect once we’ve finished erasing what we stored.'
                             : undefined
                         }
                         onClick={() => startMailboxReactivation(m.id)}
@@ -430,11 +453,7 @@ export function AccountMenu() {
                       <button
                         type="button"
                         aria-label={`Manage retained data for ${m.email}`}
-                        onClick={() => {
-                          setManagedMailboxId(m.id);
-                          setDataControlsError(null);
-                          setOpen(false);
-                        }}
+                        onClick={() => openDataControls(m.id)}
                         style={mailboxActionStyle('muted')}
                       >
                         Delete data
@@ -447,7 +466,6 @@ export function AccountMenu() {
           })}
           <div
             style={{
-              borderTop: `1px solid ${color.lineSoft}`,
               marginTop: 8,
               paddingTop: 8,
               display: 'flex',
@@ -493,7 +511,7 @@ export function AccountMenu() {
                     ? // Over-limit (e.g. after a downgrade) — existing
                       // connections keep working; only adding is blocked.
                       `${connectedInboxes} inboxes connected — your ${tierLabel(tier)} plan includes ${inboxLimit}.`
-                    : `${connectedInboxes} of ${inboxLimit} ${inboxLimit === 1 ? 'inbox' : 'inboxes'} connected — your ${tierLabel(tier)} plan's limit.`}
+                    : `${connectedInboxes} of ${inboxLimit} ${inboxLimit === 1 ? 'inbox' : 'inboxes'} connected — your ${tierLabel(tier)} plan’s limit.`}
                 </span>
                 {pricingV2 && tier === 'plus' ? (
                   <Link
@@ -535,6 +553,15 @@ export function AccountMenu() {
                 Add Gmail account
               </button>
             )}
+            <div className={styles.divider} />
+            <Link
+              href="/settings#mailboxes"
+              className="dm-nav-row"
+              onClick={() => setOpen(false)}
+              style={menuItemStyle()}
+            >
+              Manage accounts
+            </Link>
             <Link
               href="/settings"
               className="dm-nav-row"
@@ -550,7 +577,11 @@ export function AccountMenu() {
               style={menuItemStyle()}
             >
               Plan & billing
+              <span aria-hidden="true" className={styles.plan}>
+                {planName(tier)}
+              </span>
             </Link>
+            <div className={styles.divider} />
             <button
               type="button"
               className="dm-nav-row"
@@ -566,6 +597,7 @@ export function AccountMenu() {
       {managedMailbox && (
         <MailboxDataControlsDialog
           mailbox={managedMailbox}
+          returnFocusRef={triggerRef}
           onCancel={() => {
             setManagedMailboxId(null);
             setDataControlsError(null);
@@ -689,6 +721,8 @@ function mailboxActionStyle(tone: 'primary' | 'muted' | 'disabled') {
     fontSize: text.sm,
     fontWeight: tone === 'primary' ? 600 : 400,
     padding: '4px 6px',
+    minHeight: 44,
+    minWidth: 44,
     whiteSpace: 'nowrap' as const,
   };
 }
@@ -709,7 +743,7 @@ function menuItemStyle() {
     color: color.fg,
     cursor: 'pointer',
     fontFamily: font.sans,
-    fontSize: text.md,
+    fontSize: text.sm,
     textAlign: 'left' as const,
     textDecoration: 'none',
     fontWeight: 500,

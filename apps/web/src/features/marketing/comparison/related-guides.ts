@@ -81,6 +81,7 @@ export const COMPARISON_RELATED_GUIDES: Record<ComparisonSlug, readonly RelatedL
 
 /** Native Gmail guides linked from the /compare index, after the tool lists. */
 export const COMPARE_DIY_GUIDES: readonly RelatedLink[] = [
+  howTo('gmail-storage-full'),
   howTo('clean-gmail-by-sender'),
   howTo('bulk-delete-emails-from-one-sender'),
   howTo('auto-archive-future-emails-in-gmail'),

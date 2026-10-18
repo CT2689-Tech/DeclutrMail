@@ -490,7 +490,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     await waitFor(() => expect(confirm).toBeEnabled());
 
     expect(
-      within(dialog).queryByText(/reverses the whole batch during your plan's Activity window/i),
+      within(dialog).queryByText(/reverses the whole batch during your plan’s Activity window/i),
     ).not.toBeInTheDocument();
     if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
       expect(
@@ -516,7 +516,7 @@ describe('Brief Noise bulk archive (D65)', () => {
 
     const dialog = await openPreview();
     expect(within(dialog).getByRole('button', { name: /^Archive/ })).toBeDisabled();
-    expect(within(dialog).getByText(/counting the inbox/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/counting the email you already have/i)).toBeInTheDocument();
     expect(enqueued).toHaveLength(0);
   });
 
@@ -531,7 +531,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     const dialog = await openPreview();
     await within(dialog).findByText(/couldn’t load the preview/i);
     expect(within(dialog).getByRole('button', { name: /^Archive/ })).toBeDisabled();
-    expect(within(dialog).getByRole('button', { name: /retry preview/i })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
     expect(enqueued).toHaveLength(0);
   });
 
@@ -793,7 +793,7 @@ describe('Brief Noise bulk archive (D65)', () => {
 
   // The line says what the LAST attempt did. An archive that moved nothing
   // left the one before it on screen, reading as this click's result.
-  it("replaces the last archive's line when the next one is refused, keeping its ✓", async () => {
+  it('replaces the last archive’s line when the next one is refused, keeping its ✓', async () => {
     let posts = 0;
     installFetchStub([
       briefHandler(() => (posts > 1 ? [ID_SHOP] : [])),
@@ -919,7 +919,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     renderScreen();
     await confirmArchive();
 
-    await screen.findByText(/^Can't tell if Archive for those \d+ senders started/);
+    await screen.findByText(/^Can’t tell if Archive for those \d+ senders started/);
     await screen.findByText(/couldn.t confirm what that archive did/i);
     expect(archiveButton()).toHaveAccessibleName('Archive 0 senders');
     // …and they cannot be checked again: a second archive would run twice.
@@ -944,13 +944,13 @@ describe('Brief Noise bulk archive (D65)', () => {
     renderScreen();
     await confirmArchive();
 
-    await screen.findByText(/^Couldn't start Archive for those \d+ senders — nothing changed/);
+    await screen.findByText(/^Couldn’t start Archive for those \d+ senders — nothing changed/);
     await screen.findByText('Nothing was archived — try again.');
     expect(archiveButton()).not.toHaveAccessibleName('Archive 0 senders');
   });
 
   // A mailbox switch: the section now lists another mailbox's senders.
-  it("drops the last mailbox's receipt and ✓ marks on a mailbox switch", async () => {
+  it('drops the last mailbox’s receipt and ✓ marks on a mailbox switch', async () => {
     installFetchStub([
       briefHandler(),
       bulkPreviewHandler(),
@@ -1245,9 +1245,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     const dialog = await openPreview();
     await within(dialog).findByText(/You switched Gmail accounts, so nothing was archived/i);
     expect(within(dialog).getByRole('button', { name: /^Archive/ })).toBeDisabled();
-    expect(
-      within(dialog).queryByRole('button', { name: /retry preview/i }),
-    ).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
     expect(enqueued).toHaveLength(0);
   });
 
@@ -1327,7 +1325,7 @@ describe('Brief Noise bulk archive (D65)', () => {
           screen.queryAllByText('The Noise archive is still running — see Activity.').length;
         const before = parked();
         await tick(ACTION_OVERDUE_MS);
-        expect(parked()).toBe(before + 1);
+        expect(parked()).toBe(before);
 
         finished = true;
         await tick(2_500);
@@ -1385,7 +1383,7 @@ describe('Brief Noise bulk archive (D65)', () => {
           screen.queryAllByText('The Noise archive is still running — see Activity.').length;
         const before = parked();
         await tick(ACTION_OVERDUE_MS);
-        expect(parked()).toBe(before + 1);
+        expect(parked()).toBe(before);
 
         finished = true;
         await tick(2_500);
@@ -1398,7 +1396,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     });
   });
 
-  it('parks a stuck archive at ACTION_OVERDUE_MS: toast fires, busy stays, done still settles and frees (2026-08-12 incident)', async () => {
+  it('parks a stuck archive at ACTION_OVERDUE_MS: tray owns progress, busy stays, done still settles and frees (2026-08-12 incident)', async () => {
     // The worker hangs >2 min. The handle parks with the info toast —
     // but on THIS surface `busy` deliberately keeps covering the parked
     // handle: the whole section is one bulk entry point over the very
@@ -1473,7 +1471,7 @@ describe('Brief Noise bulk archive (D65)', () => {
         screen.queryAllByText('The Noise archive is still running — see Activity.').length;
       const before = parked();
       await tick(ACTION_OVERDUE_MS);
-      expect(parked()).toBe(before + 1);
+      expect(parked()).toBe(before);
       expect(screen.getByRole('button', { name: /Archiving…/ })).toBeDisabled();
 
       // Parked terminal `done` still settles: Done ✓ marks, the real

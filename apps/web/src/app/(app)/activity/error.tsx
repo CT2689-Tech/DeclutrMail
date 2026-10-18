@@ -22,7 +22,7 @@ export default function ActivityError({
       error={error}
       reset={reset}
       boundary="activity"
-      headline="We couldn't load your activity."
+      headline="We couldn’t load your activity."
       body="Try again, or head back to Triage."
       escape={{ href: '/triage', label: 'Back to Triage' }}
     />

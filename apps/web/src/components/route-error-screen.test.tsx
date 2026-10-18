@@ -44,7 +44,7 @@ describe('RouteErrorScreen', () => {
       render(<View error={new Error('private backend value')} reset={reset} />);
       expect(screen.getByRole('heading', { level: 1, name: title })).toBeInTheDocument();
       expect(screen.getAllByText(kicker)).toHaveLength(kicker === title ? 2 : 1);
-      expect(screen.getByRole('heading', { level: 2, name: /couldn't load/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 2, name: /couldn’t load/i })).toBeInTheDocument();
       expect(screen.getByRole('region')).toHaveStyle({ maxWidth: '1480px', gap: `${gap}px` });
       expect(document.body).not.toHaveTextContent('private backend value');
       fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
@@ -96,13 +96,13 @@ describe('RouteErrorScreen', () => {
         error={error}
         reset={reset}
         boundary="settings"
-        headline="We couldn't load your settings."
+        headline="We couldn’t load your settings."
         body="Nothing was changed."
         escape={{ href: '/senders', label: 'Back to Senders' }}
       />,
     );
 
-    expect(screen.getByRole('heading', { name: /couldn't load your settings/i })).toBeVisible();
+    expect(screen.getByRole('heading', { name: /couldn’t load your settings/i })).toBeVisible();
     const disclosure = screen.getByText('Show error code for support');
     expect(disclosure.closest('details')).not.toHaveAttribute('open');
     fireEvent.click(disclosure);

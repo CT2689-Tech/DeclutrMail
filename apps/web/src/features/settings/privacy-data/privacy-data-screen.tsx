@@ -182,7 +182,7 @@ export function PrivacyDataView({
             </>
           )}{' '}
           {UNIFORM_UNDO_WINDOW_DAYS === null
-            ? "Delete also uses your plan's Activity Undo window."
+            ? 'Delete also uses your plan’s Activity Undo window.'
             : `Delete also uses the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity Undo window.`}{' '}
           Gmail Trash recovery is separate and lasts up to 30 days; a delivered unsubscribe request
           cannot be recalled. Account deletion waits for open undo windows unless you waive them.
@@ -244,7 +244,7 @@ export function PrivacyDataView({
                 {exportPreparedFormat === 'json'
                   ? 'Selected data (JSON)'
                   : exportCopy.formats[exportPreparedFormat].buttonLabel}{' '}
-                prepared. Check your browser&apos;s downloads for the file.
+                prepared. Check your browser’s downloads for the file.
               </>
             )}
           </p>

@@ -77,6 +77,7 @@ test('Protect toggle persists across reload and restores on toggle-back', async 
   await page.goto(`/senders/${senderId}`);
   const protectChip = page.getByRole('switch', { name: 'Protected' });
   await expect(protectChip).toBeVisible({ timeout: 30_000 });
+  const senderName = await page.getByRole('heading', { level: 1 }).innerText();
   await expect(protectChip).toHaveAttribute('aria-checked', /true|false/);
   const initialPressed = (await protectChip.getAttribute('aria-checked')) === 'true';
   const checkedFor = (pressed: boolean) => (pressed ? 'true' : 'false');
@@ -87,7 +88,9 @@ test('Protect toggle persists across reload and restores on toggle-back', async 
   // The confirmation toast — scoped to live regions, because the Protected
   // row itself is labelled "Protected" in both states.
   await expect(
-    page.getByRole('status').filter({ hasText: initialPressed ? /^Unprotected$/ : /^Protected$/ }),
+    page.getByRole('status').filter({
+      hasText: `${senderName} ${initialPressed ? 'is no longer Protected' : 'is Protected'}`,
+    }),
   ).toBeVisible();
 
   // Server durability — the SET-STATE patch landed in sender_policies.

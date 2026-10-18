@@ -798,6 +798,35 @@ describe('ActivityScreen — Filter popover', () => {
     ).toEqual(['Source', 'Outcome', 'Time', 'View']);
   });
 
+  it('keeps keyboard focus inside the desktop filter dialog', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    const dialog = await openFilters();
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    const focusable = [
+      ...dialog.querySelectorAll<HTMLElement>('button, input, select, textarea, a[href]'),
+    ];
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    expect(first).toBeDefined();
+    expect(last).toBeDefined();
+    expect(last).not.toBe(first);
+    last!.focus();
+    await userEvent.tab();
+    expect(first).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(last).toHaveFocus();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'View results' }));
+    expect(screen.queryByRole('dialog', { name: 'Activity filters' })).toBeNull();
+    expect(screen.getByRole('button', { name: /^Filter/ })).toHaveFocus();
+  });
+
   it('closes on Escape, returning focus to the button, and on an outside click', async () => {
     installFetchStub([
       {
@@ -1591,7 +1620,7 @@ describe('ActivityScreen — D58 undo affordances', () => {
     ]);
     renderScreen();
     await userEvent.click(await screen.findByRole('button', { name: /^undo/i }));
-    expect(await screen.findByText("Can't tell if undo started — try again.")).toBeInTheDocument();
+    expect(await screen.findByText('Can’t tell if undo started — try again.')).toBeInTheDocument();
     expect(screen.queryByText(/undo-one|\/api\//)).toBeNull();
   });
 
@@ -2081,7 +2110,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     await waitFor(() => expect(recoveryPosts).toBe(1));
     expect(idempotencyKeys[0]!.length).toBeGreaterThanOrEqual(8);
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      /can't tell if the retry started.*won't run twice/i,
+      /can’t tell if the retry started.*won’t run twice/i,
     );
     await userEvent.click(confirm);
     await waitFor(() => expect(recoveryPosts).toBe(2));
@@ -2271,7 +2300,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
       const dialog = await openReview();
       await userEvent.click(await within(dialog).findByRole('button', { name: 'Delete 3' }));
       expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-        "Couldn't start the retry — nothing changed. Check Gmail again.",
+        'Couldn’t start the retry — nothing changed. Check Gmail again.',
       );
       expect(within(dialog).getByRole('button', { name: 'Check Gmail again' })).toBeEnabled();
     });
@@ -2811,6 +2840,67 @@ function recoveryPreview(
     ...partial,
   };
 }
+
+it.each(['checking', 'ready'] as const)(
+  'returns recovery focus to its persistent entry after cancellation while %s',
+  async (phase) => {
+    let release: ((response: Response) => void) | undefined;
+    let verificationPosts = 0;
+    const failedAction = row({
+      executionState: {
+        kind: 'failed',
+        actionId: '11111111-1111-1111-1111-111111111111',
+        rootActionId: '11111111-1111-1111-1111-111111111111',
+        requestedCount: 3,
+        errorCode: 'GMAIL_RATE_LIMITED',
+        resolution: 'review',
+      },
+    });
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [failedAction], meta: META_BASE }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/11111111-1111-1111-1111-111111111111/recovery-preview',
+        respond: () => {
+          verificationPosts += 1;
+          return new Promise<Response>((resolve) => {
+            release = resolve;
+          });
+        },
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/recovery-previews/22222222-2222-2222-2222-222222222222',
+        respond: () => jsonOk({ data: recoveryPreview({}) }),
+      },
+    ]);
+    renderScreen();
+    const user = userEvent.setup();
+    const trigger = await screen.findByRole('button', { name: 'Check and retry' });
+    await user.click(trigger);
+    const dialog = await screen.findByRole('dialog');
+    if (phase === 'ready') {
+      await act(async () => release?.(jsonOk({ data: recoveryPreview({}) })));
+      await within(dialog).findByText('Still to do');
+    }
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    if (phase === 'checking') {
+      expect(trigger).toHaveAttribute('aria-disabled', 'true');
+      await user.click(trigger);
+      expect(verificationPosts).toBe(1);
+      await act(async () => release?.(jsonOk({ data: recoveryPreview({}) })));
+      await waitFor(() => expect(trigger).toHaveTextContent('Check and retry'));
+      expect(trigger).toHaveFocus();
+    }
+    expect(verificationPosts).toBe(1);
+  },
+);
 
 describe('ActivityScreen — B8 verb filter', () => {
   it('verb chip click drives router.replace with ?verb=', async () => {

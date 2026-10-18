@@ -90,7 +90,7 @@ describe('renderTemplate', () => {
     const rendered = renderTemplate('Old eBay Feedback', result);
     expect(rendered).not.toContain('0/mo');
     expect(rendered).not.toContain('sends 0');
-    expect(rendered).toContain("hasn't sent anything in the last 90 days");
+    expect(rendered).toContain('hasn’t sent anything in the last 90 days');
   });
 
   it('rounds a fractional monthly cadence instead of printing a raw float', () => {
@@ -118,7 +118,7 @@ describe('renderTemplate', () => {
 
   // Codex adversarial review, round 2: rounding to one decimal BEFORE
   // checking for zero volume meant a positive-but-tiny raw value rounded
-  // to 0.0 and triggered the "hasn't sent anything" branch — false for a
+  // to 0.0 and triggered the "hasn’t sent anything" branch — false for a
   // sender who did send something. Not reachable from today's only
   // producer (score.worker.ts's `volume90 / 3`, whose smallest nonzero
   // result is 1/3), but the exported `CascadeResult` type permits it.
@@ -141,7 +141,7 @@ describe('renderTemplate', () => {
     });
 
     const rendered = renderTemplate('Tiny Volume Sender', result);
-    expect(rendered).not.toContain("hasn't sent anything");
+    expect(rendered).not.toContain('hasn’t sent anything');
     expect(rendered).toContain('0/mo');
   });
 });

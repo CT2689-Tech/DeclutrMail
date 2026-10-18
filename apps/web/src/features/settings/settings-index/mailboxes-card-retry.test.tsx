@@ -94,7 +94,7 @@ describe('MailboxesCard — failed-sync retry', () => {
     expect(screen.queryByText('Ready')).not.toBeInTheDocument();
   });
 
-  it("falls back to me's needsReconnect while the row's own status is not loaded", () => {
+  it('falls back to me’s needsReconnect while the row’s own status is not loaded', () => {
     // Triage, Senders, Home and the scan toast send these users to
     // "Reconnect it in Settings"; the loading (or failed) health read must
     // not show them a retry instead.

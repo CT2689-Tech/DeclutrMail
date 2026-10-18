@@ -75,7 +75,7 @@ describe('useMailboxSyncToasts', () => {
     h.me = meWith('failed');
     rerender();
     expect(h.toast).toHaveBeenCalledWith(
-      "b@example.com's scan didn't finish — scan again in Settings → Gmail accounts.",
+      'b@example.com’s scan didn’t finish — scan again in Settings → Gmail accounts.',
       'danger',
     );
   });
@@ -88,7 +88,7 @@ describe('useMailboxSyncToasts', () => {
     h.me = meWith('failed', true);
     rerender();
     expect(h.toast).toHaveBeenCalledWith(
-      "b@example.com's scan didn't finish — reconnect it in Settings → Gmail accounts.",
+      'b@example.com’s scan didn’t finish — reconnect it in Settings → Gmail accounts.',
       'danger',
     );
     expect(h.toast).not.toHaveBeenCalledWith(expect.stringContaining('scan again'), 'danger');

@@ -94,6 +94,8 @@ export interface UndoResult {
    * is then already true.
    */
   actionId: string | null;
+  /** Every reverse job in this Undo scope; poll together until all have restored. */
+  actionIds?: string[];
 }
 
 /**

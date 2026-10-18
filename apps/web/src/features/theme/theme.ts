@@ -7,10 +7,10 @@
  * property keyed off that attribute (packages/shared/styles/
  * tokens.css), so the swap needs no React re-render.
  *
- * The pre-paint resolver is a STATIC asset (apps/web/public/
- * theme-init.js, nonced per D175) because CSP forbids inline
- * markup injection here. It duplicates the storage key + fallback
- * rule — keep the two in sync.
+ * The pre-paint resolver is inline on public marketing pages and a
+ * nonced static asset on authenticated routes (D175 CSP split). Both
+ * duplicate the storage key + fallback rule; the behavior test keeps
+ * them in sync.
  */
 
 export type Theme = 'light' | 'dark';

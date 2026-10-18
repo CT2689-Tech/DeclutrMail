@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
   Param,
   Post,
   Query,
@@ -26,6 +27,7 @@ import {
   unsubscribeIntentRequestSchema,
   unsubscribeBacklogRequestSchema,
   unsubscribeManualStatusRequestSchema,
+  undoStatusRequestSchema,
   type ActionRecoveryEnqueueResult,
   type ActionRecoveryPreviewResult,
   type ActionStatusResult,
@@ -500,6 +502,25 @@ export class ActionsController {
     }
     const result = await this.actions.getBatchStatus(id, mailbox.id);
     return ok(result);
+  }
+
+  /** Read-only batched Undo polling; one request even for a large decision. */
+  @RateLimit({ bucket: 'triage-load', limit: 120, windowSec: 60 })
+  @Post('undo-status')
+  @HttpCode(200)
+  @UseGuards(CsrfGuard)
+  async undoStatus(
+    @CurrentMailbox() mailbox: { id: string },
+    @Body() body: unknown,
+  ): Promise<Envelope<ActionStatusResult>> {
+    const parsed = undoStatusRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: 'INVALID_REQUEST',
+        message: 'Provide the reverse job IDs to check Undo.',
+      });
+    }
+    return ok(await this.actions.getUndoStatus(parsed.data.actionIds, mailbox.id));
   }
 
   /**

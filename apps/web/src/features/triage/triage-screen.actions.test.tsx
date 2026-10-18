@@ -15,7 +15,7 @@
  *   - Failure paths (the kill-the-worker class): terminal `failed`
  *     status, sustained poll error, Keep POST failure, the
  *     unsubscribe-then-archive partial failure, and the global
- *     single-in-flight re-entry guard. Each must warn-toast, release
+ *     single-in-flight re-entry guard. Each must preserve feedback, release
  *     the busy latch, and reconcile uncertain intent writes. A terminal job
  *     failure stays visible instead of assuming it changed nothing.
  */
@@ -46,9 +46,8 @@ import {
   UNSUB_SENDER_PROTECTED_ERROR_CODE,
 } from '@declutrmail/shared/contracts';
 
-// Toast is the ONLY user-visible failure surface in this flow (D35 —
-// decisions never success-toast), so failure tests must assert the
-// exact message + tone. Partial mock: everything else from the shared
+// Accepted decisions use the global tray. Preview/submission and Keep
+// failures still use local toasts, with exact message + tone. Partial mock: everything else from the shared
 // package stays real (Button, tokens, the sheet's primitives, …).
 const h = vi.hoisted(() => ({
   toast: vi.fn(),
@@ -628,7 +627,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
         recentMessages: PREVIEW_BODY.recentMessages,
       },
     };
-    const reachRow = () => screen.queryByRole('radiogroup', { name: /Where it applies/i });
+    const reachRow = () => screen.queryByRole('radio', { name: /Inbox \+ archived/ });
     function installReachStub(enqueues: unknown[]) {
       resetFetchStub();
       installFetchStub([
@@ -680,25 +679,21 @@ describe('TriageScreen — D226 mutation wiring', () => {
       fireEvent.keyDown(window, { key: 'd' });
 
       const dialog = await screen.findByRole('dialog');
-      const archived = await within(dialog).findByRole('radio', { name: /Inbox \+ archived/ });
+      const archived = await within(dialog).findByRole('radio', {
+        name: /Inbox \+ archived/,
+      });
       // Safe default: inbox only, and the copy says so.
-      expect(within(dialog).getByRole('radio', { name: /Inbox only/ })).toHaveAttribute(
-        'aria-checked',
-        'true',
-      );
-      expect(within(dialog).getByText(/^Inbox now, rechecked/)).toBeDefined();
+      expect(archived).not.toBeChecked();
+      expect(within(dialog).getByText(/^Inbox only\. We check again/)).toBeDefined();
 
       fireEvent.click(archived);
       expect(
         within(dialog).getByText(/Inbox and archived email both move to Gmail Trash/),
       ).toBeDefined();
-      expect(within(dialog).getByText(/^Inbox \+ archived now, rechecked/)).toBeDefined();
-      // '412' = the chip AND the armed headline figure.
+      expect(within(dialog).getByText(/^Inbox and archived email\. We check again/)).toBeDefined();
+      // '412' is the armed headline figure once archived mail is included.
       expect(within(dialog).getByRole('heading', { name: 'Delete 412 emails?' })).toBeDefined();
-      expect(within(dialog).getByRole('radio', { name: /Inbox \+ archived 412/ })).toHaveAttribute(
-        'aria-checked',
-        'true',
-      );
+      expect(archived).toBeChecked();
 
       const confirm = within(dialog).getByRole('button', { name: /^Delete/i });
       await waitFor(() => expect(confirm).not.toBeDisabled());
@@ -717,10 +712,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
       await waitFor(() =>
         expect(screen.getByRole('heading', { name: 'Delete 47 emails?' })).toBeDefined(),
       );
-      expect(screen.getByRole('radio', { name: /Inbox only 47/ })).toHaveAttribute(
-        'aria-checked',
-        'true',
-      );
+      expect(screen.getByRole('radio', { name: /Inbox \+ archived/ })).not.toBeChecked();
       await confirmOpenSheet('Delete', false);
       await waitFor(() => expect(enqueues).toHaveLength(1));
       expect(enqueues[0]!.primary).not.toHaveProperty('reach');
@@ -751,17 +743,22 @@ describe('TriageScreen — D226 mutation wiring', () => {
       expandRow(GROUPON.senderName);
       fireEvent.keyDown(window, { key: 'd' });
       const dialog = await screen.findByRole('dialog');
-      const inboxOnly = await within(dialog).findByRole('radio', { name: /Inbox only/ });
-      expect(inboxOnly).toHaveAttribute('aria-checked', 'true');
-      expect(within(dialog).getByText(/Switch to Inbox \+ archived/)).toBeDefined();
-      expect(within(dialog).getByRole('radio', { name: /Inbox \+ archived 412/ })).toBeDefined();
+      const includeArchived = await within(dialog).findByRole('radio', {
+        name: /Inbox \+ archived/,
+      });
+      expect(includeArchived).not.toBeChecked();
+      expect(
+        within(dialog).getByText('Choose Inbox + archived to include archived email.'),
+      ).toBeDefined();
       const confirm = within(dialog).getByRole('button', { name: /^Delete/i });
       expect(confirm).toBeDisabled();
 
       // The wider delete is a deliberate click — and only then arms confirm.
-      fireEvent.click(within(dialog).getByRole('radio', { name: /Inbox \+ archived/ }));
+      fireEvent.click(includeArchived);
       await waitFor(() => expect(confirm).not.toBeDisabled());
-      expect(within(dialog).queryByText(/Switch to Inbox \+ archived/)).toBeNull();
+      expect(
+        within(dialog).queryByText('Choose Inbox + archived to include archived email.'),
+      ).toBeNull();
     });
 
     it('offers no reach choice on Archive', async () => {
@@ -776,7 +773,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
       expect(reachRow()).toBeNull();
     });
 
-    it("hides the choice during onboarding's first cleanup", async () => {
+    it('hides the choice during onboarding’s first cleanup', async () => {
       installReachStub([]);
       render(
         <QueryWrapper client={createTestQueryClient()}>
@@ -995,7 +992,9 @@ describe('TriageScreen — D226 mutation wiring', () => {
     await waitFor(() =>
       expect(within(dialog).getByRole('heading')).toHaveTextContent('delete 80 emails'),
     );
-    expect(dialog).toHaveTextContent('Existing inbox and archived email moves to Gmail Trash.');
+    expect(dialog).toHaveTextContent(
+      pluralCopy(WS5_COPY['f1.preview.backlog.delete'], 80, { n: 80 }),
+    );
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     await waitFor(() =>
       expect(submitted).toMatchObject({
@@ -1039,7 +1038,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
       expect(within(dialog).getByRole('heading')).toHaveTextContent('archive 47 emails'),
     );
     expect(within(dialog).getByRole('radio', { name: '+ Archive 47' })).toBeChecked();
-    expect(within(dialog).queryByRole('radiogroup', { name: 'Where it applies' })).toBeNull();
+    expect(within(dialog).queryByRole('radio', { name: /Inbox \+ archived/ })).toBeNull();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     act(() => useTriageStore.getState().setRememberPreference('Unsubscribe', true));
     fireEvent.keyDown(window, { key: 'u' });
@@ -1095,16 +1094,24 @@ describe('TriageScreen — D226 mutation wiring', () => {
     await act(async () => {
       await client.invalidateQueries({ queryKey: ['composite-preview'] });
     });
-    const scope = within(dialog).getByRole('radiogroup', { name: 'Where it applies' });
+    const includeArchived = within(dialog).getByRole('radio', {
+      name: /Inbox \+ archived/,
+    });
+    expect(includeArchived).toBeChecked();
     await waitFor(() =>
-      expect(within(scope).getByRole('radio', { name: /Inbox \+ archived/ })).toBeDisabled(),
+      expect(
+        within(dialog).getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+      ).toBeDisabled(),
     );
-    expect(within(dialog).getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
-    fireEvent.click(within(scope).getByRole('radio', { name: 'Inbox only 47' }));
+    fireEvent.click(within(dialog).getByRole('radio', { name: /Inbox only/ }));
     await waitFor(() =>
-      expect(within(dialog).getByRole('button', { name: 'Unsubscribe + Delete' })).toBeEnabled(),
+      expect(
+        within(dialog).getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+      ).toBeEnabled(),
     );
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Unsubscribe + Delete' }));
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+    );
     await waitFor(() => expect(submitted).toMatchObject({ mode: 'delete' }));
     expect(submitted).not.toHaveProperty('reach');
   });
@@ -1165,7 +1172,9 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(dialog).toHaveTextContent(WS5_COPY['f1.honesty.delete']);
     expect(dialog).toHaveTextContent(WS5_COPY['f1.deleteNote']);
     expect(dialog).not.toHaveTextContent(WS5_COPY['f1.meterFree']);
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Unsubscribe + Delete' }));
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+    );
 
     await waitFor(() =>
       expect(unsubscribeBody).toMatchObject({ mode: 'delete', senderIds: [LINKEDIN.senderId] }),
@@ -1383,7 +1392,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
   });
 
-  it('terminal FAILED: warn toast, busy latch releases, row stays, no invalidation', async () => {
+  it('terminal FAILED: tray owns feedback, busy latch releases, row stays, no invalidation', async () => {
     addFetchHandlers([
       {
         method: 'POST',
@@ -1426,25 +1435,16 @@ describe('TriageScreen — D226 mutation wiring', () => {
     fireEvent.keyDown(window, { key: 'a' });
     await confirmOpenSheet('Archive');
 
-    // The failure is toasted (warn) — there is no other failure surface.
-    await waitFor(() =>
-      expect(h.toast).toHaveBeenCalledWith(
-        expect.stringContaining(`Archive for ${GROUPON.senderName} failed`),
-        'warn',
-      ),
-    );
-    // One sentence, and it still points at Activity before a retry.
-    expect(h.toast).toHaveBeenCalledWith(expect.stringContaining('Activity'), 'warn');
     // The latch releases so the queue is usable again; the row STAYS
     // (no invalidation — nothing moved server-side).
     await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
     expect(screen.getByText(GROUPON.senderName)).toBeDefined();
     // No success toast ever (D35 — the tray is the feedback channel).
-    expect(h.toast).not.toHaveBeenCalledWith(expect.anything(), 'success');
+    expect(h.toast).not.toHaveBeenCalled();
   });
 
-  it('poll error (worker/API down mid-action): warn toast, the screen frees, the row stays held', async () => {
+  it('poll error (worker/API down mid-action): tray owns feedback, the screen frees, the row stays held', async () => {
     addFetchHandlers([
       {
         method: 'POST',
@@ -1478,15 +1478,6 @@ describe('TriageScreen — D226 mutation wiring', () => {
     fireEvent.keyDown(window, { key: 'a' });
     await confirmOpenSheet('Archive');
 
-    await waitFor(() =>
-      expect(h.toast).toHaveBeenCalledWith(
-        expect.stringContaining(`Couldn't confirm Archive for ${GROUPON.senderName}`),
-        'warn',
-      ),
-    );
-    // The outcome is unconfirmed, so the toast must send the user to
-    // Activity rather than invite a blind retry.
-    expect(h.toast).toHaveBeenCalledWith(expect.stringContaining('Activity'), 'warn');
     // The latch releases, so every OTHER row takes decisions again — but
     // this one's job may still be running: a second Archive would run it
     // twice, so the row stays held (flow-completeness 2026-09-27).
@@ -1495,7 +1486,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(rowOf(LINKEDIN.senderName)).toHaveAttribute('aria-busy', 'false');
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
     expect(screen.getByText(GROUPON.senderName)).toBeDefined();
-    expect(h.toast).not.toHaveBeenCalledWith(expect.anything(), 'success');
+    expect(h.toast).not.toHaveBeenCalled();
   });
 
   it('Keep uncertainty: neutral warning, reconciliation, no optimistic removal or success', async () => {
@@ -1516,7 +1507,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        expect.stringContaining(`Couldn't confirm Keep for ${GROUPON.senderName}`),
+        expect.stringContaining(`Couldn’t confirm Keep for ${GROUPON.senderName}`),
         'warn',
       ),
     );
@@ -1558,7 +1549,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `Couldn't start Unsubscribe for ${LINKEDIN.senderName} — no request was sent.`,
+        `Couldn’t start Unsubscribe for ${LINKEDIN.senderName} — no request was sent.`,
         'warn',
       ),
     );
@@ -1578,7 +1569,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `Can't tell if Unsubscribe for ${LINKEDIN.senderName} started — check Activity before retrying.`,
+        `Can’t tell if Unsubscribe for ${LINKEDIN.senderName} started — check Activity before retrying.`,
         'warn',
       ),
     );
@@ -1882,7 +1873,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     };
   }
 
-  it("D58: the sheet says a delivered unsubscribe request can't be recalled", async () => {
+  it('D58: the sheet says a delivered unsubscribe request can’t be recalled', async () => {
     const client = createTestQueryClient();
     renderScreen(client);
     expandRow(LINKEDIN.senderName);
@@ -2185,7 +2176,9 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     const deleteChoice = await within(again).findByRole('radio', { name: '+ Delete 47' });
     await waitFor(() => expect(deleteChoice).toBeEnabled());
     fireEvent.click(deleteChoice);
-    fireEvent.click(within(again).getByRole('button', { name: 'Unsubscribe + Delete' }));
+    fireEvent.click(
+      within(again).getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+    );
     await waitFor(() => expect(bodies).toHaveLength(2));
     expect(bodies[1]).toMatchObject({ mode: 'delete' });
   });
@@ -2296,7 +2289,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
 
-    await screen.findByText(/Couldn.t load the preview/i);
+    await screen.findByText(/couldn’t load the preview/i);
     const archive = screen.getByRole('button', { name: /Archive \(A\)/i });
     expect(archive).toBeDisabled();
     fireEvent.click(archive);
@@ -2333,7 +2326,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
 
-    await screen.findByText(/Inbox now, rechecked when it runs/i);
+    await screen.findByText(/Inbox only\. We check again right before anything moves/);
     expect(screen.getByRole('button', { name: /Archive \(A\)/i })).toBeEnabled();
     fireEvent.keyDown(window, { key: 'a' });
 
@@ -2744,12 +2737,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
       await act(async () => {
         vi.advanceTimersByTime(ACTION_OVERDUE_MS);
       });
-      await waitFor(() =>
-        expect(h.toast).toHaveBeenCalledWith(
-          `Archive for ${GROUPON.senderName} is still running — see Activity.`,
-          'info',
-        ),
-      );
+      expect(h.toast).not.toHaveBeenCalled();
       // The PARKED row stays busy — its job is still running server-side,
       // and re-dispatch would mint a second real Gmail job for the same
       // sender. Only the latch releases, not the row.
@@ -2817,12 +2805,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
       await act(async () => {
         vi.advanceTimersByTime(ACTION_OVERDUE_MS);
       });
-      await waitFor(() =>
-        expect(h.toast).toHaveBeenCalledWith(
-          `Archive for ${GROUPON.senderName} is still running — see Activity.`,
-          'info',
-        ),
-      );
+      expect(h.toast).not.toHaveBeenCalled();
 
       invalidateSpy.mockClear();
       h.toast.mockClear();
@@ -2963,12 +2946,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
       await act(async () => {
         vi.advanceTimersByTime(ACTION_OVERDUE_MS);
       });
-      await waitFor(() =>
-        expect(h.toast).toHaveBeenCalledWith(
-          'Archive for the Archive-recommended batch is still running — see Activity.',
-          'info',
-        ),
-      );
+      expect(h.toast).not.toHaveBeenCalledWith(expect.stringMatching(/still running/), 'info');
       expect(screen.getByRole('dialog')).toBeDefined();
 
       // Confirming now must be refused at the dispatch choke point —
@@ -3082,12 +3060,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
       await act(async () => {
         vi.advanceTimersByTime(ACTION_OVERDUE_MS);
       });
-      await waitFor(() =>
-        expect(h.toast).toHaveBeenCalledWith(
-          'Archive for the Archive-recommended batch is still running — see Activity.',
-          'info',
-        ),
-      );
+      expect(h.toast).not.toHaveBeenCalledWith(expect.stringMatching(/still running/), 'info');
       const rowOf = (name: string) =>
         screen
           .getByRole('button', { name: `${name} — expand triage detail` })
@@ -3132,7 +3105,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
     await confirmDomainBatch();
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        expect.stringMatching(/^Couldn't start Archive for the .* batch — nothing changed\.$/),
+        expect.stringMatching(/^Couldn’t start Archive for the .* batch — nothing changed\.$/),
         'warn',
       ),
     );
@@ -3153,7 +3126,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
     await confirmDomainBatch();
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        expect.stringMatching(/^Can't tell if Archive for the .* batch started/),
+        expect.stringMatching(/^Can’t tell if Archive for the .* batch started/),
         'warn',
       ),
     );
@@ -3220,12 +3193,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
       await act(async () => {
         vi.advanceTimersByTime(ACTION_OVERDUE_MS);
       });
-      await waitFor(() =>
-        expect(h.toast).toHaveBeenCalledWith(
-          'Archive for the Archive-recommended batch is still running — see Activity.',
-          'info',
-        ),
-      );
+      expect(h.toast).not.toHaveBeenCalledWith(expect.stringMatching(/still running/), 'info');
 
       finished = true;
       await act(async () => {

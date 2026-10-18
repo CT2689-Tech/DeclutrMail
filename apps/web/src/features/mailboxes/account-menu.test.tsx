@@ -208,6 +208,24 @@ describe('AccountMenu Gmail reconnect health', () => {
 
   // Orchestrator review (2026-09-27): loaded only on the click, a slow
   // connection showed nothing for a moment after pressing a delete control.
+  it.each([
+    [MAILBOX_A, 'Manage connection and data for'],
+    [MAILBOX_C, 'Manage retained data for'],
+  ] as const)(
+    'returns focus to the account trigger after reviewing %s data',
+    async (mailbox, label) => {
+      me = makeMe([MAILBOX_A, MAILBOX_C]);
+      const { user, trigger } = await renderOpenMenu();
+      await user.click(screen.getByRole('button', { name: `${label} ${mailbox.email}` }));
+      await screen.findByRole('button', { name: 'Keep current setup' });
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
+      expect(disconnectMutateSpy).not.toHaveBeenCalled();
+      expect(deleteIndexedDataMutateSpy).not.toHaveBeenCalled();
+    },
+  );
+
   it('starts loading the data dialog when the menu opens, and still opens it on the click', async () => {
     const user = userEvent.setup();
     render(<AccountMenu />);
@@ -272,7 +290,8 @@ describe('AccountMenu Gmail reconnect health', () => {
     const { user } = await renderOpenMenu();
     const row = screen.getByTestId(`account-mailbox-${MAILBOX_A.id}`);
 
-    expect(within(row).getAllByText('Selected')).toHaveLength(1);
+    expect(within(row).queryByText('Selected')).not.toBeInTheDocument();
+    expect(within(row).getAllByText('✓')).toHaveLength(1);
     expect(within(row).getByText('Needs reconnect')).toBeInTheDocument();
     expect(within(row).queryByText('Scan failed')).not.toBeInTheDocument();
     expect(
@@ -401,7 +420,8 @@ describe('AccountMenu Gmail reconnect health', () => {
     const healthyRow = screen.getByTestId(`account-mailbox-${MAILBOX_A.id}`);
     const disconnectedRow = screen.getByTestId(`account-mailbox-${MAILBOX_C.id}`);
 
-    expect(within(healthyRow).getByText('Selected')).toBeInTheDocument();
+    expect(within(healthyRow).queryByText('Selected')).not.toBeInTheDocument();
+    expect(within(healthyRow).getByText('✓')).toBeInTheDocument();
     expect(within(healthyRow).queryByText('Needs reconnect')).not.toBeInTheDocument();
     // -05: two similarly-truncated addresses need the full value on hover —
     // the pill trigger already has this; the dropdown row did not.
@@ -436,15 +456,17 @@ describe('AccountMenu Gmail reconnect health', () => {
     // -04: a first-timer switching by accident should learn, right here,
     // that it rescopes every screen — not just this menu.
     expect(
-      within(dialog).getByText('Selected marks the Gmail account shown across the app.'),
+      within(dialog).getByText('Switch the mailbox shown across the app.'),
     ).toBeInTheDocument();
     expect(useMailboxesHealthSpy).toHaveBeenLastCalledWith(me.mailboxes, { enabled: true });
-    expect(dialog.getAttribute('style')).toContain('width: 360px');
+    expect(dialog.getAttribute('style')).toContain('width: 338px');
     expect(dialog.getAttribute('style')).toContain('max-width: calc(100vw - 24px)');
-    expect(dialog.getAttribute('style')).toContain('max-height: calc(100vh - 72px)');
+    expect(dialog.getAttribute('style')).toContain('max-height: calc(100dvh - 100px)');
     expect(dialog.getAttribute('style')).toContain('overflow-y: auto');
     expect(dialog.getAttribute('style')).toContain('overscroll-behavior: contain');
 
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Close account menu' })).toHaveFocus();
     await user.tab();
     expect(
       screen.getByRole('button', { name: `Selected Gmail account ${MAILBOX_A.email}` }),

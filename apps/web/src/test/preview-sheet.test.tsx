@@ -27,7 +27,7 @@ describe('PreviewSheet keyboard focus', () => {
   it('cycles through visible controls when Details is closed', () => {
     renderPreview(true);
     const cancel = screen.getByRole('button', { name: 'Cancel' });
-    const details = screen.getByText('Details');
+    const details = screen.getByText('Details').closest('summary')!;
     fireEvent.keyDown(cancel, { key: 'Tab' });
     expect(details).toHaveFocus();
     fireEvent.keyDown(details, { key: 'Tab', shiftKey: true });

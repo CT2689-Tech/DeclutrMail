@@ -503,6 +503,12 @@ export const ERROR_CODES = {
     retryable: true,
     message: 'This sender already has an action running. Wait for it to finish.',
   },
+  ACTION_STILL_RUNNING: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: 'Wait for this cleanup to finish before Undo.',
+  },
   // The environment refuses to SEND unsubscribes (`UNSUB_SEND_ENABLED` is not
   // `true`), so the API refused before writing anything. `retryable: false` —
   // asking again cannot change it, and a retry affordance on a refusal is how
@@ -759,6 +765,12 @@ export const ERROR_CODES = {
     severityTier: 'inline_recoverable',
     retryable: true,
     message: 'Action recovery is temporarily unavailable. Your email is untouched.',
+  },
+  UNDO_STATUS_UNCONFIRMED: {
+    status: 503,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: 'Couldn’t confirm Undo. Try again.',
   },
   RECOVERY_QUEUE_UNAVAILABLE: {
     status: 503,

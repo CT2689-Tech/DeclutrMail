@@ -46,14 +46,14 @@ export function SheetSegmented<T extends string>({
       </span>
       <div
         role="radiogroup"
+        className="dm-sheet-segment-group"
+        data-option-count={options.length}
         aria-labelledby={labelId}
         style={{
           display: 'grid',
-          gridAutoFlow: 'column',
           gridAutoColumns: '1fr',
           gap: 2,
           padding: 3,
-          borderRadius: radius.pill,
           background: color.fill,
         }}
       >
@@ -63,6 +63,7 @@ export function SheetSegmented<T extends string>({
             <button
               key={opt.value}
               type="button"
+              className="dm-sheet-segment-option"
               role="radio"
               aria-checked={selected}
               tabIndex={opt === tabStop ? 0 : -1}
@@ -92,7 +93,6 @@ export function SheetSegmented<T extends string>({
               }}
               style={{
                 minHeight: 44,
-                padding: `0 ${space[3]}px`,
                 border: 'none',
                 borderRadius: radius.pill,
                 background: selected ? color.card : 'transparent',
@@ -159,7 +159,7 @@ export function SheetCheckbox({
         justifyContent: 'flex-start',
         gap: 10,
         width: '100%',
-        minHeight: 44,
+        minHeight: 48,
         padding: `${space[2]}px ${space[4]}px`,
         background: color.fill,
         border: 'none',

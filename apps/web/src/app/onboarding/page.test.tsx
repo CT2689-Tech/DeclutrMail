@@ -471,7 +471,7 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     ]);
     renderPage();
 
-    expect(await screen.findByText(/Couldn't load your first review/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Couldn’t load your first review/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Skip setup for now/i })).toBeInTheDocument();
   });
 
@@ -765,7 +765,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
         },
       ]);
       renderPage();
-      await screen.findByText("We couldn't check the scan.");
+      await screen.findByText('We couldn’t check the scan.');
       expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
       recovered = true;
       await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
@@ -812,7 +812,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
           await vi.advanceTimersByTimeAsync(SYNC_POLL_MS);
         });
         expect(reads).toBeGreaterThan(shown);
-        expect(screen.queryByText("We couldn't check the scan.")).not.toBeInTheDocument();
+        expect(screen.queryByText('We couldn’t check the scan.')).not.toBeInTheDocument();
         expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '40');
       } finally {
         vi.useRealTimers();
@@ -839,7 +839,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     ]);
     renderPage();
 
-    await screen.findByText("We couldn't check the scan.");
+    await screen.findByText('We couldn’t check the scan.');
     expect(replace).not.toHaveBeenCalledWith('/home');
   });
 });

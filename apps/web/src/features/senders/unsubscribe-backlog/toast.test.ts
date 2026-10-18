@@ -4,7 +4,11 @@ import { pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
 import type { UnsubscribeBacklogResult } from '@/lib/api/actions';
 
-import { unsubscribeBacklogActivityLine, unsubscribeBacklogToast } from './toast';
+import {
+  unsubscribeBacklogActivityLine,
+  unsubscribeBacklogSubmissionToast,
+  unsubscribeBacklogToast,
+} from './toast';
 
 function result(
   partial: Partial<UnsubscribeBacklogResult> & Pick<UnsubscribeBacklogResult, 'mode'>,
@@ -27,6 +31,23 @@ function result(
 }
 
 describe('unsubscribeBacklogToast', () => {
+  it.each(['archive', 'delete'] as const)(
+    'leaves watched single-sender %s completion to its result surfaces',
+    (verb) => {
+      const queued = result({ mode: verb, backlog: { actionId: 'b', requestedCount: 21, verb } });
+      queued.senders[0]!.executionActionId = 'execution-a';
+      expect(unsubscribeBacklogSubmissionToast(queued)).toBe('');
+      // Without a watcher, manual follow-ups and submission problems still
+      // need their existing feedback instead of disappearing silently.
+      queued.senders[0]!.executionActionId = null;
+      expect(unsubscribeBacklogSubmissionToast(queued)).toBe(unsubscribeBacklogToast(queued));
+      queued.senders[0]!.unsubStatus = 'failed';
+      expect(unsubscribeBacklogSubmissionToast(queued)).toContain('Unsubscribe failed');
+      queued.senders[0]!.unsubStatus = 'manual';
+      expect(unsubscribeBacklogSubmissionToast(queued)).toContain('Gmail');
+    },
+  );
+
   it('uses the archive and delete deck lines', () => {
     expect(
       unsubscribeBacklogToast(

@@ -19,7 +19,7 @@ export default function LaterError({
       error={error}
       reset={reset}
       boundary="snoozed"
-      headline="We couldn't load your Later items."
+      headline="We couldn’t load your Later items."
       body="Try again, or continue in Triage."
       escape={{ href: '/triage', label: 'Back to Triage' }}
     />

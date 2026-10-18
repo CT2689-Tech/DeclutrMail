@@ -74,7 +74,7 @@ describe('Mail in Inbox filter', () => {
 describe('FilterPanel · activity chip thresholds', () => {
   // QA-senders-20260901-04: active/quiet/dormant filtered a real cutoff
   // (WINDOWS.ACTIVE_DAYS/DORMANT_DAYS) that was stated nowhere on screen.
-  it("states each bucket's day cutoff in its title", () => {
+  it('states each bucket’s day cutoff in its title', () => {
     renderStrip();
 
     expect(screen.getByRole('radio', { name: /active/i })).toHaveAttribute(

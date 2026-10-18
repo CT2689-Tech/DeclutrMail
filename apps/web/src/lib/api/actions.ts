@@ -174,6 +174,23 @@ export interface UndoRevertResult {
   revertedAt: string | null;
   /** Reverse `action_jobs` id to poll via `getActionStatus`; null when already reverted. */
   actionId: string | null;
+  /** Complete reverse set on current APIs; absent during a rolling deployment. */
+  actionIds?: string[];
+}
+
+/** Read-only aggregate Undo progress, with one request for the frozen job set. */
+export async function getUndoStatus(
+  actionIds: readonly string[],
+  options: ActionRequestOptions = {},
+): Promise<ActionStatusResult> {
+  const env = await apiPost<ActionStatusResult>(
+    '/api/actions/undo-status',
+    { actionIds },
+    {
+      ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
+    },
+  );
+  return env.data;
 }
 
 /**
@@ -188,6 +205,7 @@ export function newIdempotencyKey(): string {
 /** Per-request options shared by the action calls. */
 interface ActionRequestOptions {
   mailboxId?: string | undefined;
+  signal?: AbortSignal | undefined;
 }
 
 /** Poll one action's status. Mailbox-scoped → 404 if not owned. */
@@ -530,6 +548,8 @@ export interface UnsubscribeBacklogSenderResult {
 }
 
 export interface UnsubscribeBacklogResult {
+  /** Execution-only combined feedback; absent on older API builds. */
+  feedbackVersion?: 2;
   mode: UnsubscribeBacklogMode;
   backlog: {
     actionId: string;
@@ -863,6 +883,8 @@ export type BulkSkipReason =
  * (ADR-0020 cascade-undo walks the `composite_id` siblings).
  */
 export interface BatchStatusResult {
+  /** Execution-only combined feedback; absent on older API builds. */
+  feedbackVersion?: 2;
   batchId: string;
   status: ActionJobStatus;
   total: number;
@@ -899,6 +921,28 @@ export interface BatchStatusResult {
    * renders (apps/web and apps/api deploy independently).
    */
   unsubscribeOutcomes?: UnsubscribeBatchOutcomes | null;
+}
+
+/** Move-only counts for label receipts/rows in a combined cleanup decision. */
+export function cleanupBatchStatus(data: BatchStatusResult): BatchStatusResult {
+  const unsub = data.unsubscribeOutcomes;
+  if (data.feedbackVersion !== 2 || !unsub) return data;
+  const unsubscribeTotal =
+    unsub.endpointAccepted + unsub.unconfirmed + unsub.failed + unsub.pending;
+  const total = data.total - unsubscribeTotal;
+  const done = data.done - unsub.endpointAccepted;
+  const failed = data.failed - unsub.unconfirmed - unsub.failed;
+  const terminal = done + failed === total;
+  return {
+    ...data,
+    total,
+    done,
+    failed,
+    status: terminal ? (total > 0 && failed === total ? 'failed' : 'done') : 'executing',
+    requestedCount: data.requestedCount - unsubscribeTotal,
+    affectedCount: data.affectedCount - unsub.endpointAccepted,
+    unsubscribeOutcomes: null,
+  };
 }
 
 /** Terminal one-click unsubscribe outcomes, counted across a batch. */
@@ -1028,6 +1072,7 @@ export async function getBatchStatus(
   options: ActionRequestOptions = {},
 ): Promise<BatchStatusResult> {
   const env = await apiGet<BatchStatusResult>(`/api/actions/batch/${batchId}`, {
+    ...(options.signal ? { signal: options.signal } : {}),
     ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
   });
   return env.data;

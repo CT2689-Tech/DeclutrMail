@@ -1,8 +1,6 @@
 import { ProductJourney } from '@/features/marketing/landing/product-journey';
 import type { Metadata } from 'next';
 
-import '@/features/marketing/landing/landing.css';
-import '@/features/marketing/landing/homepage-sections.css';
 import { Hero } from '@/features/marketing/landing/hero';
 import { HowItWorks, PrivacyDesk, ProductBreadth } from '@/features/marketing/landing/sections';
 import { PricingTeaserGate } from '@/features/marketing/landing/pricing-teaser-story';
@@ -25,7 +23,7 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
  * source-backed dedicated routes.
  */
 
-const TITLE = 'Clean up Gmail, one sender at a time — DeclutrMail';
+const TITLE = 'Gmail cleanup with preview and undo | DeclutrMail';
 const DESCRIPTION =
   'Clear Gmail clutter by sender. Preview which emails will move before you confirm. Start free, with 30-day undo on Archive, Later, and Delete.';
 

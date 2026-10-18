@@ -1,7 +1,7 @@
 'use client';
 
-import { Button, SheetFactList, tokens } from '@declutrmail/shared';
-import { isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { Button, Disclosure, SheetFactList, tokens } from '@declutrmail/shared';
+import { isPluralCopy, pluralCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import type { ReactNode } from 'react';
 
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
@@ -175,8 +175,8 @@ export function InlinePreviewBlock({
       {blocked && (
         <p style={{ margin: `${space[1]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
           {preview.inboxCount === 'unavailable'
-            ? 'Couldn’t load the preview. Nothing can move until it loads.'
-            : 'Counting the inbox…'}
+            ? WS2_COPY.preview.unavailable
+            : WS5_COPY['f1.preview.backlog.loading']}
         </p>
       )}
       {facts.note !== null && (
@@ -236,26 +236,10 @@ export function InlinePreviewBlock({
         <MeterPreviewLine requested={preview.inboxCount} summary={cleanupSummary.data} />
       ) : null}
       {hasDetails && (
-        <details className="dm-disclosure" style={{ marginTop: space[2] }}>
-          <summary
-            style={{ cursor: 'pointer', fontSize: text.sm, fontWeight: 500, color: color.fgSoft }}
-          >
-            Details
-          </summary>
-          <div
-            style={{
-              marginTop: space[2],
-              display: 'flex',
-              flexDirection: 'column',
-              gap: space[2],
-              fontSize: text.sm,
-              color: color.fg,
-            }}
-          >
-            <SheetFactList facts={facts.disclosures} />
-            {preview.detailSlot}
-          </div>
-        </details>
+        <Disclosure style={{ marginTop: space[2] }}>
+          <SheetFactList facts={facts.disclosures} />
+          {preview.detailSlot}
+        </Disclosure>
       )}
       {/* Protected acknowledgement (D245/D42) — the inline half of the
           same statement the sheet makes. D226 lets the sheet be skipped

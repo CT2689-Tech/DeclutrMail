@@ -272,6 +272,58 @@ describe('OutboxConsumerRouter — D204 senders projection', () => {
     expect(rows).toHaveLength(0);
   });
 
+  it('a newer Keep after Undo still projects and preserves a neutral timer', async () => {
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey: SENDER_KEY_A,
+      policyType: null,
+      snoozedUntil: new Date('2099-01-01T09:00:00Z'),
+      snoozedAt: new Date('2026-10-15T09:00:00Z'),
+    });
+    await db.insert(activityLog).values([
+      {
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_KEY_A,
+        source: 'manual',
+        action: 'keep',
+        affectedCount: 0,
+        undoToken: null,
+        occurredAt: new Date('2026-10-15T09:00:00Z'),
+        revertedAt: new Date('2026-10-15T09:01:00Z'),
+      },
+      {
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_KEY_A,
+        source: 'manual',
+        action: 'keep',
+        affectedCount: 0,
+        undoToken: null,
+        occurredAt: new Date('2026-10-15T09:02:00Z'),
+      },
+    ]);
+    await consume({
+      id: 'evt-keep-again',
+      topic: TOPICS.TRIAGE_VERDICT_APPLIED,
+      aggregateId: '00000000-0000-4000-8000-000000000016',
+      payload: {
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_KEY_A,
+        verdict: 'keep',
+        source: 'manual',
+        undoToken: null,
+        affectedCount: 0,
+      },
+      attempts: 1,
+      createdAt: new Date(),
+    });
+    const [row] = await db
+      .select()
+      .from(senderPolicies)
+      .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+    expect(row!.policyType).toBe('keep');
+    expect(row!.snoozedUntil!.toISOString()).toBe('2099-01-01T09:00:00.000Z');
+  });
+
   it('a non-keep verdict event is valid but projects nothing', async () => {
     await consume({
       id: 'evt-keep-2',

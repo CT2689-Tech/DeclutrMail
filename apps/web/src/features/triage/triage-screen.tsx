@@ -10,7 +10,7 @@ import {
 
 import { AiInlinePrompt } from '@/features/ai-consent/ai-inline-prompt';
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
-import { useSenderInFlightLock } from '@/features/undo/in-flight';
+import { ACTION_OVERDUE_MS, useSenderInFlightLock } from '@/features/undo/in-flight';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
@@ -21,6 +21,7 @@ import {
   ScreenIntro,
   tokens,
   toast,
+  usePendingToast,
   useIsAtMost,
 } from '@declutrmail/shared';
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
@@ -38,14 +39,9 @@ import {
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
 } from '@/lib/api/use-action';
-import { isProtectedSkip, isTerminalStatus } from '@/lib/api/actions';
+import { cleanupBatchStatus, isProtectedSkip, isTerminalStatus } from '@/lib/api/actions';
 import { isUnsubSendDisabled, UNSUB_SEND_DISABLED_MESSAGE } from './unsub-send-disabled';
-import {
-  actionLabel,
-  enqueueMayHaveStarted,
-  getActionFailureCopy,
-  stillRunningCopy,
-} from '@/lib/action-error-copy';
+import { actionLabel, enqueueMayHaveStarted, getActionFailureCopy } from '@/lib/action-error-copy';
 import { NO_ACTIONABLE_SENDERS_COPY, skippedAtClickCopy } from '@/lib/bulk-action-copy';
 import {
   isUnsubscribeInFlight,
@@ -56,7 +52,7 @@ import { useUnconfirmedHolds } from '@/features/undo/unconfirmed-holds';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { trackActionConfirmed } from '@/lib/action-analytics';
-import { unsubscribeBacklogToast } from '@/features/senders/unsubscribe-backlog/toast';
+import { unsubscribeBacklogSubmissionToast } from '@/features/senders/unsubscribe-backlog/toast';
 import { track } from '@/lib/posthog';
 import { useNow } from '@/lib/use-now';
 import { triageDaySubtitle } from './day-subtitle';
@@ -191,7 +187,7 @@ function openPricing(plan: 'plus' | 'pro', pricingV2: boolean): void {
  * screen. Past this deadline the handle moves to a parking slot (still
  * polled — the outcome lands either way) and the latch releases.
  */
-export const ACTION_OVERDUE_MS = 120_000;
+export { ACTION_OVERDUE_MS } from '@/features/undo/in-flight';
 
 /**
  * Handle for one enqueued async action (enqueue → worker → poll).
@@ -325,6 +321,7 @@ export function TriageScreen({
 
   const keepIntent = useKeepIntent();
   const undoKeep = useUndoSenderKeep();
+  const pendingToast = usePendingToast(actionMailboxId);
   const unsubIntent = useRecordUnsubscribeIntent();
   const confirmBacklog = useConfirmUnsubscribeBacklog();
   const enqueueComposite = useEnqueueComposite();
@@ -387,6 +384,7 @@ export function TriageScreen({
     mailboxId: string | undefined;
     actionId: string;
     senderName: string;
+    feedbackInTray: boolean;
   } | null>(null);
   const unsubExecStatus = useActionStatus(unsubWatch?.actionId ?? null, unsubWatch?.mailboxId);
   // D230 manual path — the "finish in Gmail" callout for a mailto
@@ -473,18 +471,12 @@ export function TriageScreen({
         surface: 'triage',
         reason: 'batch_status_poll',
       });
-      toast(
-        getActionFailureCopy('status', {
-          action: actionLabel(batchAction.verb, `the ${batchAction.domain} batch`),
-        }),
-        'warn',
-      );
       // The job may still be running: its rows must not re-arm.
       holdUnconfirmed(batchAction.rowIds, batchAction.verb);
       setBatchAction(null);
       return;
     }
-    const data = batchStatus.data;
+    const data = batchStatus.data ? cleanupBatchStatus(batchStatus.data) : undefined;
     if (!data || !isTerminalStatus(data.status)) return;
     if (batchAction.mailboxId !== actionMailboxId) {
       invalidateAfterDecision(qc);
@@ -493,28 +485,11 @@ export function TriageScreen({
     }
     if (data.status === 'done') {
       // Partial failures keep status 'done' and surface via failed > 0
-      // — those senders stay in the queue, so say so (failures DO
-      // toast; clean success stays silent per D35).
-      if (data.failed > 0) {
-        toast(
-          getActionFailureCopy('terminal', {
-            action: batchAction.verb,
-            partial: { done: data.done, total: data.total, unit: 'senders' },
-          }),
-          'warn',
-        );
-      }
+      // — the tray reports the partial result beside its Undo.
       invalidateAfterDecision(qc);
       incrementSessionDecided(data.done);
       addSessionMessagesMoved(data.affectedCount);
       setExpandedRow(null);
-    } else {
-      toast(
-        getActionFailureCopy('terminal', {
-          action: actionLabel(batchAction.verb, `the ${batchAction.domain} batch`),
-        }),
-        'warn',
-      );
     }
     setBatchAction(null);
   }, [
@@ -546,7 +521,7 @@ export function TriageScreen({
       setUnsubWatch(null);
       return;
     }
-    toast(...unsubscribeOutcomeToast(unsubWatch.senderName, data));
+    if (!unsubWatch.feedbackInTray) toast(...unsubscribeOutcomeToast(unsubWatch.senderName, data));
     if (data.status === 'done') invalidateAfterDecision(qc);
     setUnsubWatch(null);
   }, [
@@ -773,12 +748,6 @@ export function TriageScreen({
         surface: 'triage',
         reason: 'action_status_poll',
       });
-      toast(
-        getActionFailureCopy('status', {
-          action: actionLabel(activeAction.verb, activeAction.senderName),
-        }),
-        'warn',
-      );
       holdUnconfirmed([activeAction.rowId], activeAction.verb);
       setActiveAction(null);
       return;
@@ -801,13 +770,6 @@ export function TriageScreen({
       }
       addSessionMessagesMoved(data.affectedCount);
       setExpandedRow(null);
-    } else {
-      toast(
-        getActionFailureCopy('terminal', {
-          action: actionLabel(activeAction.verb, activeAction.senderName),
-        }),
-        'warn',
-      );
     }
     setActiveAction(null);
   }, [
@@ -837,7 +799,6 @@ export function TriageScreen({
     // fresh deadline) when the slot frees.
     if (!activeAction || overdueAction != null) return;
     const timer = setTimeout(() => {
-      toast(stillRunningCopy(activeAction.verb, activeAction.senderName), 'info');
       // Parking is the one moment the client KNOWS a backend hang
       // happened (the 2026-08-12 incident was invisible until a human
       // noticed) — measure recurrence.
@@ -852,7 +813,6 @@ export function TriageScreen({
     // Same free-slot rule as the single-action park above.
     if (!batchAction || overdueBatch != null) return;
     const timer = setTimeout(() => {
-      toast(stillRunningCopy(batchAction.verb, `the ${batchAction.domain} batch`), 'info');
       void track('action_overdue', { kind: 'batch', verb: batchAction.verb.toLowerCase() });
       setOverdueBatch(batchAction);
       setBatchAction(null);
@@ -871,12 +831,6 @@ export function TriageScreen({
         surface: 'triage',
         reason: 'action_status_poll',
       });
-      toast(
-        getActionFailureCopy('status', {
-          action: actionLabel(overdueAction.verb, overdueAction.senderName),
-        }),
-        'warn',
-      );
       holdUnconfirmed([overdueAction.rowId], overdueAction.verb);
       setOverdueAction(null);
       return;
@@ -894,13 +848,6 @@ export function TriageScreen({
         incrementSessionDecided();
       }
       addSessionMessagesMoved(data.affectedCount);
-    } else {
-      toast(
-        getActionFailureCopy('terminal', {
-          action: actionLabel(overdueAction.verb, overdueAction.senderName),
-        }),
-        'warn',
-      );
     }
     setOverdueAction(null);
   }, [
@@ -921,17 +868,11 @@ export function TriageScreen({
         surface: 'triage',
         reason: 'batch_status_poll',
       });
-      toast(
-        getActionFailureCopy('status', {
-          action: actionLabel(overdueBatch.verb, `the ${overdueBatch.domain} batch`),
-        }),
-        'warn',
-      );
       holdUnconfirmed(overdueBatch.rowIds, overdueBatch.verb);
       setOverdueBatch(null);
       return;
     }
-    const data = overdueBatchStatus.data;
+    const data = overdueBatchStatus.data ? cleanupBatchStatus(overdueBatchStatus.data) : undefined;
     if (!data || !isTerminalStatus(data.status)) return;
     if (overdueBatch.mailboxId !== actionMailboxId) {
       invalidateAfterDecision(qc);
@@ -939,25 +880,9 @@ export function TriageScreen({
       return;
     }
     if (data.status === 'done') {
-      if (data.failed > 0) {
-        toast(
-          getActionFailureCopy('terminal', {
-            action: overdueBatch.verb,
-            partial: { done: data.done, total: data.total, unit: 'senders' },
-          }),
-          'warn',
-        );
-      }
       invalidateAfterDecision(qc);
       incrementSessionDecided(data.done);
       addSessionMessagesMoved(data.affectedCount);
-    } else {
-      toast(
-        getActionFailureCopy('terminal', {
-          action: actionLabel(overdueBatch.verb, `the ${overdueBatch.domain} batch`),
-        }),
-        'warn',
-      );
     }
     setOverdueBatch(null);
   }, [
@@ -1084,6 +1009,7 @@ export function TriageScreen({
       // Keep — policy/verdict-only (D40: applies immediately). Settles
       // on the POST; no worker, no undo token.
       if (verb === 'Keep') {
+        const dismissPendingKeep = pendingToast(`Keeping ${row.senderName}…`);
         setIntentRowId(row.id);
         keepIntent.mutate(
           { senderId: row.senderId },
@@ -1109,9 +1035,12 @@ export function TriageScreen({
             onError: (err) => {
               captureFeatureException(err, { surface: 'triage', reason: 'keep_intent' });
               invalidateAfterDecision(qc);
-              toast(`Couldn't confirm Keep for ${row.senderName}.`, 'warn');
+              toast(`Couldn’t confirm Keep for ${row.senderName}.`, 'warn');
             },
-            onSettled: () => setIntentRowId(null),
+            onSettled: () => {
+              dismissPendingKeep();
+              setIntentRowId(null);
+            },
           },
         );
         return true;
@@ -1156,7 +1085,7 @@ export function TriageScreen({
               invalidateAfterDecision(qc);
               if (currentMailboxRef.current === actionMailboxId) incrementSessionDecided();
               setExpandedRow(null);
-              const line = unsubscribeBacklogToast(res);
+              const line = unsubscribeBacklogSubmissionToast(res);
               if (line !== '') toast(line, sent ? 'info' : 'warn');
               const outcome = res.senders[0];
               if (outcome?.unsubStatus === 'requested' && outcome.executionActionId) {
@@ -1164,6 +1093,7 @@ export function TriageScreen({
                   mailboxId: actionMailboxId,
                   actionId: outcome.executionActionId,
                   senderName: row.senderName,
+                  feedbackInTray: res.backlog !== null && res.feedbackVersion === 2,
                 });
               } else if (outcome?.unsubStatus === 'manual' && outcome.mailtoUrl) {
                 setMailtoFollowup({
@@ -1590,7 +1520,7 @@ export function TriageScreen({
     if (pendingAction == null || pendingAction.surface !== 'inline') return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
-      if (document.querySelector('[role="dialog"]')) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
       // Don't hijack Escape inside inputs / textareas / contentEditable
       // (same convention as the toolbar's verb shortcuts).
       const target = e.target as HTMLElement | null;

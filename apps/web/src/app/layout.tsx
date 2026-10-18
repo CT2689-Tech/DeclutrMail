@@ -15,6 +15,9 @@ const geistMono = Geist_Mono({
   subsets: ['latin'],
   variable: '--dm-font-mono',
   display: 'swap',
+  // Small mono details can request the face when used. The public hero
+  // uses Geist and Fraunces, so do not compete with their first paint.
+  preload: false,
 });
 
 const fraunces = Fraunces({

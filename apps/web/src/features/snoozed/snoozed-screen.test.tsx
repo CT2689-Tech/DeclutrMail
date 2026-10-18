@@ -123,8 +123,8 @@ describe('SnoozedScreen — edge states', () => {
       },
     ]);
     renderScreen();
-    expect(await screen.findByText(/couldn't load Later/i)).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent(/couldn't load Later/i);
+    expect(await screen.findByText(/couldn’t load Later/i)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(/couldn’t load Later/i);
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
   });
 
@@ -437,7 +437,7 @@ describe('SnoozedScreen — wake now flow', () => {
     const confirmButtons = screen.getAllByRole('button', { name: 'Bring back now' });
     await user.click(confirmButtons[confirmButtons.length - 1]!);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/return schedule isn't available/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/return schedule isn’t available/i);
   });
 });
 
@@ -572,7 +572,7 @@ describe('Later — custom timezone and retained refresh', () => {
     await view.client.invalidateQueries({ queryKey: ['snoozed'] });
     expect(await screen.findByText(/Couldn’t refresh Later\./)).toBeInTheDocument();
     expect(screen.getByText('Quarterly Newsletter')).toBeInTheDocument();
-    expect(screen.queryByText(/couldn't load Later/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/couldn’t load Later/i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 });

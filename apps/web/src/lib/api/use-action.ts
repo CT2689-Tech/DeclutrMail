@@ -22,6 +22,7 @@
 import { useEffect } from 'react';
 import { reconcileAction } from './reconcile-action';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { acceptActionFeedback } from '@/features/undo/feedback-store';
 
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 
@@ -30,6 +31,7 @@ import {
   enqueueBulkAction,
   enqueueCompositeAction,
   getActionStatus,
+  getUndoStatus,
   getBatchStatus,
   getBulkActionPreview,
   getCompositePreview,
@@ -119,10 +121,43 @@ export function useActionStatus(actionId: string | null, mailboxId?: string) {
   return query;
 }
 
+/** Undo completes only after its complete frozen reverse set has settled. */
+export function useUndoStatus(
+  actionId: string | null,
+  mailboxId?: string,
+  actionIds?: readonly string[],
+) {
+  const qc = useQueryClient();
+  const aggregate = actionId !== null && actionIds !== undefined;
+  const ids = aggregate ? [...new Set([actionId, ...actionIds])] : [];
+  const single = useActionStatus(aggregate ? null : actionId, mailboxId);
+  const group = useQuery({
+    queryKey: ['undo-status', ids, { mailboxId: mailboxId ?? null }],
+    queryFn: () => getUndoStatus(ids, mailboxId ? { mailboxId } : undefined),
+    enabled: aggregate,
+    refetchInterval: (query) =>
+      actionRefetchInterval(query.state.data, query.state.status === 'error'),
+    refetchIntervalInBackground: true,
+    retry: false,
+  });
+  const query = aggregate ? group : single;
+  useEffect(() => {
+    if (aggregate && query.data && isTerminalStatus(query.data.status)) {
+      reconcileAction(qc, query.data);
+    }
+    // A failed status read can follow partial restoration. Refresh the
+    // mirror without inventing completion or discarding the retry route.
+    if (query.isError) reconcileAction(qc, query.error);
+  }, [aggregate, qc, query.data, query.error, query.isError]);
+  return query;
+}
+
 /** Reverse a completed action by its undo token (the D226 undo loop). */
 export function useRevertUndo() {
+  const qc = useQueryClient();
   return useMutation<UndoRevertResult, Error, { token: string; mailboxId?: string | undefined }>({
     mutationFn: ({ token, mailboxId }) => revertUndo(token, mailboxId ? { mailboxId } : undefined),
+    onSuccess: (result, variables) => resetUndoProgress(qc, result, variables.mailboxId),
   });
 }
 
@@ -135,6 +170,7 @@ export function useRevertUndo() {
  * reverts. A one-sender undo must not read as the whole batch undone.
  */
 export function useRevertUndoMember() {
+  const qc = useQueryClient();
   return useMutation<
     UndoRevertResult,
     Error,
@@ -142,6 +178,29 @@ export function useRevertUndoMember() {
   >({
     mutationFn: ({ memberToken, mailboxId }) =>
       revertUndoMember(memberToken, mailboxId ? { mailboxId } : undefined),
+    onSuccess: (result, variables) => resetUndoProgress(qc, result, variables.mailboxId),
+  });
+}
+
+function resetUndoProgress(
+  qc: ReturnType<typeof useQueryClient>,
+  result: UndoRevertResult,
+  mailboxId?: string,
+): void {
+  if (result.reverted || !result.actionId) return;
+  const ids = new Set([result.actionId, ...(result.actionIds ?? [])]);
+  // Retry reuses the same server jobs. Clear a previous terminal/error
+  // snapshot before success subscribers enable the new poll, even when
+  // production staleTime would otherwise keep it fresh.
+  void qc.resetQueries({
+    predicate: (query) => {
+      const key = query.queryKey;
+      const scope = key[2] as { mailboxId?: string | null } | undefined;
+      if (mailboxId !== undefined && scope?.mailboxId !== mailboxId) return false;
+      if (key[0] === 'action-status') return key[1] === result.actionId;
+      if (key[0] !== 'undo-status' || !Array.isArray(key[1])) return false;
+      return key[1].length === ids.size && key[1].every((id) => ids.has(id));
+    },
   });
 }
 
@@ -181,7 +240,15 @@ export function useEnqueueComposite() {
         ...(override !== undefined ? { override } : {}),
         idempotencyKey: newIdempotencyKey(),
       }),
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      acceptActionFeedback(variables.mailboxId, {
+        groupId: _result.compositeId ?? _result.actionId,
+        verb: variables.primary.type,
+        mixedVerbs: variables.secondary !== undefined,
+        senderCount: 1,
+        senderIds: [variables.senderId],
+        startedAt: new Date().toISOString(),
+      });
       // The server debits the monthly cleanup quota at enqueue, so the
       // frozen `me.cleanupRemaining` is stale the moment this resolves —
       // without this, "N of 50 left" never counts down for a whole SPA
@@ -240,7 +307,18 @@ export function useEnqueueBulkAction() {
         ...(secondary ? { secondary } : {}),
         idempotencyKey: newIdempotencyKey(),
       }),
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      if (_result.senderCount > 0)
+        acceptActionFeedback(variables.mailboxId, {
+          groupId: _result.batchId,
+          verb: variables.primary.type,
+          mixedVerbs: variables.secondary !== undefined,
+          senderCount: _result.senderCount,
+          senderIds: variables.senderIds.filter(
+            (id) => !_result.skipped.some((item) => item.senderId === id),
+          ),
+          startedAt: new Date().toISOString(),
+        });
       // Bulk debits N quota units at enqueue — same staleness as the
       // composite hook above.
       void qc.invalidateQueries({ queryKey: ME_QUERY_KEY });

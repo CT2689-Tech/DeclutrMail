@@ -783,7 +783,7 @@ describe('TriageRow — the inline preview only advertises live shortcuts', () =
     expect(container.textContent).toMatch(/Esc cancels/);
     expect(inlineConfirm(/^Archive$/)).toBeDisabled();
     // …and says why, or a dead button reads as a broken one.
-    expect(container.textContent).toMatch(/Counting the inbox/);
+    expect(container.textContent).toMatch(/Counting the email you already have/);
   });
 
   it('EXPANDED with a resolved count: confirm is enabled', () => {

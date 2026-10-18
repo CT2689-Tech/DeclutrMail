@@ -34,6 +34,16 @@ import styles from './home-view.module.css';
 
 const BILLING_HREF = '/billing?from=%2Fhome';
 
+function canPreviewFix(step: HomeFixCandidate): boolean {
+  return (
+    step.kind === 'unsub_archive' &&
+    step.senderIds.length > 0 &&
+    step.emailCount !== undefined &&
+    Number.isFinite(step.emailCount) &&
+    step.emailCount > 0
+  );
+}
+
 function homeNextStepEventKind(
   kind: HomeFixCandidate['kind'],
 ): 'unsubscribe_archive' | 'largest_senders' | 'later_due' {
@@ -55,7 +65,6 @@ function homeNextStepEventKind(
 export function HomeView({
   state,
   tier = 'free',
-  timeZone = 'UTC',
   visitSummary,
   summary = null,
   nextSteps = [],
@@ -63,6 +72,7 @@ export function HomeView({
   reportSizeLabel = null,
   indexedEmailCount = null,
   mailboxId = '',
+  mailboxEmail = null,
   previewReport = null,
   reportLead = null,
   supportText = null,
@@ -71,7 +81,6 @@ export function HomeView({
   state: HomeState;
   visitSummary?: ReactNode;
   tier?: TierId;
-  timeZone?: string;
   summary?: CleanupSummaryDto | null;
   nextSteps?: readonly HomeFixCandidate[];
   /** F2 size view. Largest is dropped by the ranker before it arrives here. */
@@ -81,6 +90,7 @@ export function HomeView({
   indexedEmailCount?: number | null;
   /** Passed through to `InboxReportCard`. Empty until a mailbox is in scope. */
   mailboxId?: string;
+  mailboxEmail?: string | null;
   /** Preview route only. Production Home leaves this null. */
   previewReport?: HomePreviewReport | null;
   /** Filled report headline. Preview uses `previewReport.headline` instead. */
@@ -94,8 +104,7 @@ export function HomeView({
   const [pendingFix, setPendingFix] = useState<HomeFixCandidate | null>(null);
   const fixCopy = previewReport?.fix ?? homeFixCopy();
   const namesSenders = previewReport !== null || homeReportNamesSenders();
-  const fixReady =
-    fixCopy !== null && namesSenders && steps.some((step) => step.kind === 'unsub_archive');
+  const fixReady = fixCopy !== null && namesSenders && steps.some(canPreviewFix);
   useHomeSurfaceEvents(mode);
   const openFix = (step: HomeFixCandidate) => {
     void track('home_next_step_clicked', { kind: homeNextStepEventKind(step.kind) });
@@ -111,20 +120,27 @@ export function HomeView({
       data-home-fix-expected={fixReady ? 'true' : 'false'}
     >
       <header className={styles.header}>
-        <h1>{HOME_DECK.homeTitle}</h1>
-        <div className={styles.planLine} data-home-slot="plan">
-          <QuotaChipSlot summary={summary} />
-          <span>
-            <PlanLabel tier={tier} />
-            <Link href={BILLING_HREF} className="dm-external-link dm-tap-target">
-              {HOME_DECK.compare}
-            </Link>
-          </span>
+        <div>
+          <h1>{HOME_DECK.homeTitle}</h1>
+          {mailboxEmail && <p className={styles.mailboxIdentity}>{mailboxEmail}</p>}
+        </div>
+        <div className={styles.headerTools}>
+          <Link href="/senders" className={styles.reportLink}>
+            {HOME_DECK.focus.report}
+          </Link>
+          <div className={styles.planLine} data-home-slot="plan">
+            <QuotaChipSlot summary={summary} />
+            <span>
+              <PlanLabel tier={tier} />
+              <Link href={BILLING_HREF} className="dm-external-link dm-tap-target">
+                {HOME_DECK.compare}
+              </Link>
+            </span>
+          </div>
         </div>
       </header>
       <HomeBody
         state={state}
-        timeZone={timeZone}
         mode={mode}
         steps={steps}
         visitSummary={visitSummary}
@@ -173,7 +189,6 @@ function PlanLabel({ tier }: { tier: TierId }) {
 
 function HomeBody({
   state,
-  timeZone,
   mode,
   steps,
   visitSummary,
@@ -186,7 +201,6 @@ function HomeBody({
   onOpenFix,
 }: {
   state: HomeState;
-  timeZone: string;
   mode: HomeV1Mode;
   steps: readonly HomeFixCandidate[];
   visitSummary?: ReactNode;
@@ -198,7 +212,8 @@ function HomeBody({
   supportText: string | null;
   onOpenFix: (step: HomeFixCandidate) => void;
 }) {
-  const [primary, ...secondary] = state.kind === 'ready' ? steps : [];
+  const [primary, ...secondary] =
+    state.kind === 'ready' || (state.kind === 'empty' && !state.syncing) ? steps : [];
   const visit = (
     <div className={styles.visitSlot} data-home-slot="visit">
       {visitSummary}
@@ -212,6 +227,7 @@ function HomeBody({
       mailboxId={mailboxId}
       previewReport={previewReport}
       reportLead={reportLead}
+      supportText={previewReport?.fix.supportOther ?? supportText}
     />
   );
   switch (state.kind) {
@@ -221,17 +237,43 @@ function HomeBody({
       return (
         <ErrorState
           headingLevel={2}
-          title="We couldn't load Home"
+          title="We couldn’t load Home"
           description={loadErrorDescription(state.error)}
           onRetry={state.retry}
         />
       );
     case 'empty':
+      if (!state.syncing && primary) {
+        return (
+          <>
+            <div className={styles.focusGrid}>
+              <div className={styles.focusLead}>
+                <NextSteps
+                  primary={primary}
+                  secondary={[]}
+                  previewReport={previewReport}
+                  supportText={supportText}
+                  onOpenFix={onOpenFix}
+                />
+              </div>
+              <section className={styles.progressLine} aria-label="Progress">
+                <h2 className={styles.progressHeading}>{HOME_DECK.focus.progress}</h2>
+                <p className={styles.firstProgress}>{HOME_DECK.emptyTitle}</p>
+                <Link href="/activity?window=all" className="dm-external-link dm-tap-target">
+                  {HOME_DECK.activityLink}
+                </Link>
+              </section>
+            </div>
+            {visit}
+            {report}
+          </>
+        );
+      }
       return (
         <>
+          <EmptyCopy state={state} />
           {visit}
           {report}
-          <EmptyCopy state={state} />
         </>
       );
     case 'sync-failed':
@@ -258,18 +300,47 @@ function HomeBody({
     case 'ready':
       return (
         <>
-          {primary ? (
-            <NextSteps
-              primary={primary}
-              secondary={secondary}
-              previewReport={previewReport}
-              supportText={supportText}
-              onOpenFix={onOpenFix}
-            />
-          ) : null}
-          {visit}
-          {report}
-          <Progress state={state} timeZone={timeZone} />
+          <div className={styles.focusGrid}>
+            <div className={styles.focusLead}>
+              {primary ? (
+                <NextSteps
+                  primary={primary}
+                  secondary={[]}
+                  previewReport={previewReport}
+                  supportText={supportText}
+                  onOpenFix={onOpenFix}
+                />
+              ) : (
+                <section aria-label="Your next step" className={styles.calmStart}>
+                  <h2>{HOME_DECK.focus.calmTitle}</h2>
+                  <p>{HOME_DECK.focus.calmBody}</p>
+                  <PrimaryLink action={state.action} />
+                </section>
+              )}
+            </div>
+            <Progress state={state} />
+          </div>
+          <section className={styles.contextSection} aria-label={HOME_DECK.focus.context}>
+            <div className={styles.contextHeading}>
+              <h2>{HOME_DECK.focus.context}</h2>
+              {visit}
+            </div>
+            {secondary.length > 0 && (
+              <div className={styles.secondarySteps}>
+                {secondary.map((step) => (
+                  <FixCard
+                    key={step.kind}
+                    step={step}
+                    primary={false}
+                    previewReport={previewReport}
+                    supportText={supportText}
+                    onOpenFix={onOpenFix}
+                  />
+                ))}
+              </div>
+            )}
+            {report}
+          </section>
         </>
       );
     default: {
@@ -311,6 +382,7 @@ function ReportCard({
   mailboxId,
   previewReport,
   reportLead,
+  supportText,
 }: {
   mode: HomeV1Mode;
   reportSizeLabel: string | null;
@@ -318,6 +390,7 @@ function ReportCard({
   mailboxId: string;
   previewReport: HomePreviewReport | null;
   reportLead: string | null;
+  supportText: string | null;
 }) {
   const deck = homeReportCopy();
   const copy = previewReport ?? deck;
@@ -356,7 +429,13 @@ function ReportCard({
   const trust = previewReport?.trust ?? deck?.trust ?? null;
   const trustLink = previewReport?.trustLink ?? deck?.trustLink ?? null;
   const headline = previewReport?.headline ?? reportLead;
-  const lead = headline !== null && headline !== '' ? <LeadLine headline={headline} /> : null;
+  const lead =
+    headline !== null && headline !== '' ? (
+      <>
+        <LeadLine headline={headline} />
+        {supportText && <p className={styles.reportSupport}>{supportText}</p>}
+      </>
+    ) : null;
   if (copy === null) {
     return (
       <div hidden>
@@ -452,7 +531,7 @@ function NextSteps({
 }) {
   return (
     <section className={styles.steps} aria-label={HOME_DECK.nextSteps} data-home-slot="primary">
-      <h2 className={styles.eyebrow}>{HOME_DECK.nextSteps}</h2>
+      <h2 className={styles.srOnly}>{HOME_DECK.nextSteps}</h2>
       <div className={styles.stepGrid}>
         <FixCard
           step={primary}
@@ -506,27 +585,64 @@ function FixCard({
     if (heading === null || label === null) return null;
     return (
       <article className={primary ? styles.fixCard : styles.secondaryCard} data-step={step.kind}>
-        <h3>{heading}</h3>
-        {support !== null && <p>{support}</p>}
+        {primary ? (
+          <>
+            <p className={styles.cleanupAction}>
+              {HOME_DECK.focus.nextCleanup}
+              <span aria-hidden="true"> · </span>
+              {HOME_DECK.focus.action}
+            </p>
+            <h3 className={styles.focusTitle}>
+              {HOME_DECK.focus.title}
+              <br />
+              {fillDeck(
+                step.senderCount === 1
+                  ? HOME_DECK.focus.senders.one
+                  : HOME_DECK.focus.senders.other,
+                { n: formatCount(step.senderCount) },
+              )}
+            </h3>
+            {canPreviewFix(step) && (
+              <p className={styles.focusImpact} data-home-impact="">
+                {fillDeck(
+                  step.emailCount === 1 ? HOME_DECK.focus.impact.one : HOME_DECK.focus.impact.other,
+                  { n: formatCount(step.emailCount!) },
+                )}
+              </p>
+            )}
+          </>
+        ) : (
+          <>
+            <h3>{heading}</h3>
+            {support !== null && <p>{support}</p>}
+          </>
+        )}
         {primary ? (
           <div className={styles.fixActions}>
-            <button
-              type="button"
-              data-dm-button=""
-              className={`dm-button-link ${styles.primaryAction}`}
-              onClick={() => onOpenFix(step)}
-            >
-              {label}
-            </button>
-            <Link href="/senders" className="dm-external-link dm-tap-target">
-              {copy.review}
-            </Link>
+            {canPreviewFix(step) ? (
+              <button
+                type="button"
+                data-dm-button=""
+                className={`dm-button-link ${styles.primaryAction}`}
+                onClick={() => onOpenFix(step)}
+              >
+                {HOME_DECK.focus.preview}
+              </button>
+            ) : (
+              <PrimaryLink action={{ label: HOME_DECK.focus.review, href: '/senders' }} />
+            )}
+            {canPreviewFix(step) && (
+              <Link href="/senders" className="dm-external-link dm-tap-target">
+                {HOME_DECK.focus.review}
+              </Link>
+            )}
           </div>
         ) : (
           <button type="button" className={styles.textButton} onClick={() => onOpenFix(step)}>
             {label}
           </button>
         )}
+        {primary && <p className={styles.reviewNote}>{HOME_DECK.focus.safety}</p>}
       </article>
     );
   }
@@ -594,26 +710,26 @@ function LaterCard({ step }: { step: HomeFixCandidate }) {
   );
 }
 
-function Progress({
-  state,
-  timeZone,
-}: {
-  state: Extract<HomeState, { kind: 'ready' }>;
-  timeZone: string;
-}) {
+function Progress({ state }: { state: Extract<HomeState, { kind: 'ready' }> }) {
   return (
     <section className={styles.progressLine} aria-label="Progress">
+      <h2 className={styles.progressHeading}>{HOME_DECK.focus.progress}</h2>
       <p className={styles.progressSentence}>
         <strong data-testid="home-hero">{state.hero.value.toLocaleString('en-US')}</strong>{' '}
         <span>{state.hero.label}</span>
-        {state.since !== null && (
-          <span className={styles.since}>
-            {' since '}
-            <time dateTime={state.since}>{formatSince(state.since, timeZone)}</time>
-          </span>
-        )}
+        <span className={styles.period}>{HOME_DECK.focus.allTime}</span>
       </p>
-      <Link href="/activity" className="dm-external-link dm-tap-target">
+      {state.secondary.length > 0 && (
+        <dl className={styles.progressDetails}>
+          {state.secondary.map((stat) => (
+            <div key={stat.label}>
+              <dt>{stat.label}</dt>
+              <dd>{formatCount(stat.value)}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      <Link href="/activity?window=all" className="dm-external-link dm-tap-target">
         {HOME_DECK.activityLink}
       </Link>
     </section>
@@ -644,8 +760,4 @@ function HomeSkeleton({ visitSummary }: { visitSummary?: ReactNode }) {
       visitSlot={visitSummary ?? <Skeleton variant="text" width={220} />}
     />
   );
-}
-
-function formatSince(iso: string, timeZone: string): string {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone });
 }

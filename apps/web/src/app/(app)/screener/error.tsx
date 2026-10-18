@@ -20,7 +20,7 @@ export default function ScreenerError({
       error={error}
       reset={reset}
       boundary="screener"
-      headline="We couldn't load the Screener."
+      headline="We couldn’t load the Screener."
       body="Try again, or continue in Triage."
       escape={{ href: '/triage', label: 'Back to Triage' }}
     />

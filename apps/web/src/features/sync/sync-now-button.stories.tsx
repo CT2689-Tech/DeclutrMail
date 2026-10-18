@@ -96,7 +96,7 @@ const meta: StoryMeta<typeof SyncNowButton> = {
     docs: {
       description: {
         component:
-          "The app-shell header's manual sync trigger. Hidden while an initial sync is " +
+          'The app-shell header’s manual sync trigger. Hidden while an initial sync is ' +
           'queued/syncing (the onboarding gate owns that state) or while a live incremental ' +
           'auth error routes to the persistent reconnect banner instead. Renders a failed-scan ' +
           "indicator (QA-sync-20260831-03) for readiness='failed' — the only chrome surface an " +
@@ -124,7 +124,7 @@ export const HiddenWhileSyncing: Story<typeof SyncNowButton> = {
   render: () =>
     frame(
       statusOf({ readiness_status: 'syncing', current_stage: 'building_sender_index' }),
-      "queued/syncing renders nothing — the onboarding gate is this state's chrome.",
+      'queued/syncing renders nothing — the onboarding gate is this state’s chrome.',
     ),
 };
 

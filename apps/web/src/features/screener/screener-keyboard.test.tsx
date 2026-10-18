@@ -111,11 +111,11 @@ function expandFirstRow() {
 }
 
 describe('Screener keyboard handler (#220, D226)', () => {
-  it('does not open a decision behind a nonmodal account dialog', () => {
+  it.each(['dialog', 'alertdialog'])('does not open a decision behind a %s', (role) => {
     renderReady();
     expandFirstRow();
     const accountDialog = document.createElement('div');
-    accountDialog.setAttribute('role', 'dialog');
+    accountDialog.setAttribute('role', role);
     accountDialog.setAttribute('aria-label', 'Gmail accounts');
     document.body.append(accountDialog);
     try {
@@ -129,7 +129,49 @@ describe('Screener keyboard handler (#220, D226)', () => {
     }
   });
 
-  it('preserves an inline decision and makes no write while an account dialog owns Enter/Escape', async () => {
+  it.each(['dialog', 'alertdialog'])(
+    'preserves an inline decision and makes no write while a %s owns Details Enter/Escape',
+    async (role) => {
+      const writes = vi.fn();
+      installFetchStub([
+        {
+          method: 'POST',
+          path: '/api/screener/decide',
+          respond: () => {
+            writes();
+            return jsonServerError('must_not_run');
+          },
+        },
+      ]);
+      renderReady();
+      expandFirstRow();
+      fireEvent.keyDown(window, { key: 'k' });
+      const accountDialog = document.createElement('div');
+      accountDialog.setAttribute('role', role);
+      accountDialog.setAttribute('aria-label', 'Gmail accounts');
+      const details = document.createElement('details');
+      const summary = document.createElement('summary');
+      summary.textContent = 'Details';
+      details.append(summary);
+      accountDialog.append(details);
+      document.body.append(accountDialog);
+      try {
+        summary.focus();
+        fireEvent.keyDown(summary, { key: 'Enter' });
+        fireEvent.keyDown(summary, { key: 'Escape' });
+        await Promise.resolve();
+        expect(writes).not.toHaveBeenCalled();
+        expect(previewRegion(PREVIEW_KEEP)).toBeInTheDocument();
+        accountDialog.remove();
+        fireEvent.keyDown(window, { key: 'Escape' });
+        expect(previewRegion(PREVIEW_KEEP)).not.toBeInTheDocument();
+      } finally {
+        accountDialog.remove();
+      }
+    },
+  );
+
+  it('does not confirm when Enter is pressed on the live inline Details summary', async () => {
     const writes = vi.fn();
     installFetchStub([
       {
@@ -144,22 +186,14 @@ describe('Screener keyboard handler (#220, D226)', () => {
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'k' });
-    const accountDialog = document.createElement('div');
-    accountDialog.setAttribute('role', 'dialog');
-    accountDialog.setAttribute('aria-label', 'Gmail accounts');
-    document.body.append(accountDialog);
-    try {
-      fireEvent.keyDown(accountDialog, { key: 'Enter' });
-      fireEvent.keyDown(accountDialog, { key: 'Escape' });
-      await Promise.resolve();
-      expect(writes).not.toHaveBeenCalled();
-      expect(previewRegion(PREVIEW_KEEP)).toBeInTheDocument();
-      accountDialog.remove();
-      fireEvent.keyDown(window, { key: 'Escape' });
-      expect(previewRegion(PREVIEW_KEEP)).not.toBeInTheDocument();
-    } finally {
-      accountDialog.remove();
-    }
+    const summary = screen.getByText('Details').closest('summary');
+    expect(summary).not.toBeNull();
+    summary?.focus();
+    fireEvent.keyDown(summary!, { key: 'Enter' });
+    await Promise.resolve();
+    expect(writes).not.toHaveBeenCalled();
+    expect(previewRegion(PREVIEW_KEEP)).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('K on the EXPANDED row opens the mandatory preview (never a direct mutation)', () => {
@@ -192,15 +226,16 @@ describe('Screener keyboard handler (#220, D226)', () => {
     expect(previewRegion(PREVIEW_KEEP)).not.toBeInTheDocument();
   });
 
-  it('disables click and U shortcut when the sender publishes no unsubscribe channel', () => {
+  it('omits Unsubscribe and blocks U when no unsubscribe link was found', () => {
     renderReady();
     fireEvent.click(
       screen.getByRole('button', { name: new RegExp(`${noChannelRow.senderName} — expand`) }),
     );
 
-    const unsubscribe = screen.getByRole('button', { name: /^Unsubscribe$/ });
-    expect(unsubscribe).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.getByRole('note')).toHaveTextContent(/No unsubscribe channel/i);
+    expect(screen.queryByRole('button', { name: /^Unsubscribe$/ })).toBeNull();
+    expect(screen.getByRole('note')).toHaveTextContent(
+      'No unsubscribe link found in the emails checked.',
+    );
     fireEvent.keyDown(window, { key: 'u' });
     expect(previewRegion(PREVIEW_KEEP)).not.toBeInTheDocument();
   });
@@ -226,7 +261,7 @@ describe('Screener keyboard handler (#220, D226)', () => {
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'a' });
-    await screen.findByText(/Couldn.t load the preview/i);
+    await screen.findByText(/couldn’t load the preview/i);
 
     fireEvent.keyDown(window, { key: 'Enter' });
     await Promise.resolve();
@@ -274,7 +309,7 @@ describe('Screener keyboard handler (#220, D226)', () => {
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'a' });
-    await screen.findByText(/Inbox now.*rechecked/i);
+    await screen.findByText(/Inbox only.*We check again right before anything moves/i);
 
     fireEvent.keyDown(window, { key: 'Enter' });
     await waitFor(() => expect(decidePosted).toBe(true));
@@ -392,7 +427,7 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'd' });
-    await screen.findByText(/Inbox now.*rechecked/i);
+    await screen.findByText(/Inbox only.*We check again right before anything moves/i);
     expect(screen.queryByRole('radiogroup', { name: 'Where it applies' })).toBeNull();
 
     fireEvent.keyDown(window, { key: 'Enter' });

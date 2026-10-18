@@ -156,7 +156,19 @@ describe('SenderDetailPane', () => {
     expect(pane.getByTestId('sender-detail-window-count')).toHaveTextContent('64');
     expect(pane.getByTestId('sender-detail-inbox-count')).toHaveTextContent('—');
     expect(pane.getByRole('switch', { name: 'Protected' })).toBeInTheDocument();
-    const actions = within(pane.getByRole('group', { name: 'Sender actions' }));
+    const actionGroup = pane.getByRole('group', { name: 'Sender actions' });
+    const actions = within(actionGroup);
+    expect(actions.getByRole('heading', { name: 'Choose an action', level: 3 })).toBeVisible();
+    const currentMail = pane.getByTestId('sender-detail-inbox-count');
+    const history = pane.getByTestId('sender-detail-window-count');
+    // Decisions sit in the same reading flow, between current mail and
+    // history, rather than reserving a second viewport below it.
+    expect(
+      currentMail.compareDocumentPosition(actionGroup) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      actionGroup.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     for (const verb of ['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete']) {
       expect(actions.getByRole('button', { name: verb })).toBeInTheDocument();
       expect(pane.getAllByRole('button', { name: verb })).toHaveLength(1);
@@ -181,9 +193,11 @@ describe('SenderDetailPane', () => {
     expect(screen.getByTestId('sender-detail-archived-count')).toHaveTextContent('137');
     expect(screen.getByTestId('sender-detail-window-count')).toHaveTextContent('64');
     expect(screen.getByText(/2,048 received · all time/)).toBeInTheDocument();
-    expect(screen.getByLabelText('Now')).toHaveTextContent('Currently in your inbox');
-    expect(screen.getByLabelText('Now')).toHaveTextContent('Currently archived');
-    expect(screen.getByLabelText('Now')).not.toHaveTextContent('2,048');
+    expect(screen.getByLabelText('Current email totals')).toHaveTextContent('In inbox');
+    expect(screen.getByLabelText('Current email totals')).toHaveTextContent(
+      'Archived (includes Later)',
+    );
+    expect(screen.getByLabelText('Current email totals')).not.toHaveTextContent('2,048');
   });
 
   it('advertises and binds no K/A/U/L/D key — the list owns those keys beside it', async () => {

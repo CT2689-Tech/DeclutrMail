@@ -196,7 +196,7 @@ describe('the simulator carries its own share card — playbook G7', () => {
   });
 });
 
-describe("meta description length — stays inside Google's display limit", () => {
+describe('meta description length — stays inside Google’s display limit', () => {
   it('keeps /pricing and /compare descriptions at 160 characters or fewer', () => {
     expect(pricing.description!.length).toBeLessThanOrEqual(160);
     expect(compare.description!.length).toBeLessThanOrEqual(160);
@@ -279,19 +279,24 @@ describe('marketing metadata guards', () => {
     expect(signIn.alternates?.canonical).toBe('/sign-in');
   });
 
+  it('noindexes pricing history and retired beta while keeping links followable', () => {
+    expect(pricingChangelog.robots).toEqual({ index: false, follow: true });
+    expect(beta.robots).toEqual({ index: false, follow: true });
+  });
+
   it('uses the approved title and description for the twelve change rows', async () => {
     const unroll = await metadataForPath('/vs/unroll-me');
-    expect(titleText(unroll)).toBe('DeclutrMail vs Unroll.Me: how each uses your email data');
+    expect(titleText(unroll)).toBe('Unroll.Me vs DeclutrMail — Gmail cleanup and privacy');
     expect(unroll.description).toBe(
       'A source-backed comparison: Unroll.Me is free and uses email data for market research; DeclutrMail never fetches or stores full email contents.',
     );
 
     const gmail = await metadataForPath('/vs/gmail');
     expect(titleText(gmail)).toBe(
-      "DeclutrMail vs Gmail's built-in cleanup — compared, October 2026",
+      'DeclutrMail vs Gmail’s built-in cleanup — compared, October 2026',
     );
     expect(gmail.description).toBe(
-      "A source-backed comparison of DeclutrMail and Gmail's cleanup tools (Manage subscriptions, bulk search, unsubscribe): preview, recovery and control by sender.",
+      'A source-backed comparison of DeclutrMail and Gmail’s cleanup tools (Manage subscriptions, bulk search, unsubscribe): preview, recovery and control by sender.',
     );
 
     const muse = await metadataForPath('/vs/meta-muse');
@@ -308,7 +313,7 @@ describe('marketing metadata guards', () => {
       ['/alternatives/trimbox', 'Trimbox'],
     ] as const) {
       const metadata = await metadataForPath(path);
-      expect(titleText(metadata)).toBe(`${name} alternatives — DeclutrMail`);
+      expect(titleText(metadata)).toBe(`${name} alternatives for Gmail — DeclutrMail`);
       expect(metadata.description).toBe(
         `Source-backed alternatives to ${name}: what each tool is for, when to stay with ${name}, and where DeclutrMail fits. No rankings, no affiliates.`,
       );
@@ -333,7 +338,7 @@ describe('marketing metadata guards', () => {
       'A source-backed comparison of DeclutrMail and Unroll.Me on Gmail cleanup, blocking, digests, email-data access, the market-research business model and cost.',
     );
     expect(comparisonBySlug('gmail')?.description).toBe(
-      "A source-backed comparison of DeclutrMail and Gmail's own cleanup tools — Manage subscriptions, bulk search actions, and unsubscribe — for preview, recovery, and control by sender.",
+      'A source-backed comparison of DeclutrMail and Gmail’s own cleanup tools — Manage subscriptions, bulk search actions, and unsubscribe — for preview, recovery, and control by sender.',
     );
     expect(comparisonBySlug('meta-muse')?.description).toBe(
       'A source-backed comparison of DeclutrMail and Meta Muse for Gmail: a narrow cleanup tool that never fetches full message contents versus a general AI agent that can read and send mail.',
@@ -341,7 +346,7 @@ describe('marketing metadata guards', () => {
   });
 
   it('keeps the seven rows the founder left unchanged', () => {
-    expect(titleText(landing)).toBe('Clean up Gmail, one sender at a time — DeclutrMail');
+    expect(titleText(landing)).toBe('Gmail cleanup with preview and undo | DeclutrMail');
     expect(landing.description).toBe(
       'Clear Gmail clutter by sender. Preview which emails will move before you confirm. Start free, with 30-day undo on Archive, Later, and Delete.',
     );

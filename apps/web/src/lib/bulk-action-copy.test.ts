@@ -22,17 +22,17 @@ describe('backlogAfterUnsubFailureCopy', () => {
     expect(
       backlogAfterUnsubFailureCopy({ verb: 'Archive', senderName: 'Acme', error: refused }),
     ).toBe(
-      "Unsubscribe requested, but older email from Acme wasn't archived — Archive it separately.",
+      'Unsubscribe requested, but older email from Acme wasn’t archived — Archive it separately.',
     );
     expect(backlogAfterUnsubFailureCopy({ verb: 'Delete', error: refused })).toBe(
-      "Unsubscribe requests recorded, but older email wasn't deleted — Delete it separately.",
+      'Unsubscribe requests recorded, but older email wasn’t deleted — Delete it separately.',
     );
   });
 
   it('sends a start it cannot confirm to Activity before a retry', () => {
     for (const error of [apiError(503, 'ENQUEUE_FAILED'), new TypeError('Failed to fetch')]) {
       expect(backlogAfterUnsubFailureCopy({ verb: 'Delete', senderName: 'Acme', error })).toBe(
-        "Unsubscribe requested, but can't tell if Delete started for older email from Acme — check Activity before retrying.",
+        'Unsubscribe requested, but can’t tell if Delete started for older email from Acme — check Activity before retrying.',
       );
     }
   });

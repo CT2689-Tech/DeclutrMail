@@ -572,7 +572,7 @@ export function complimentaryNote(view: BillingPlanView): string | null {
   const name = TIER_MANIFEST[comp.tier].name;
   const until = formatBillingDate(comp.expiresAt);
   if (until === null) {
-    return `${name} is complimentary on this account, granted by DeclutrMail. There's nothing to pay for it.`;
+    return `${name} is complimentary on this account, granted by DeclutrMail. There’s nothing to pay for it.`;
   }
   return `${name} is complimentary on this account through ${until}, granted by DeclutrMail. After that your plan reverts to your paid subscription, or to ${TIER_MANIFEST.free.name} if you have none.`;
 }

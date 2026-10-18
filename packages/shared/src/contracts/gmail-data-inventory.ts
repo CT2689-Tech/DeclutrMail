@@ -9,6 +9,7 @@
  */
 
 import { UNIFORM_UNDO_WINDOW_DAYS } from '../entitlements';
+import { WS2_COPY } from '../copy/launch/ws2';
 
 export const GMAIL_DATA_RETENTION = {
   mailboxIndex:
@@ -312,7 +313,7 @@ export const GMAIL_CONNECTION_DATA_INVENTORY = [
   {
     id: 'oauth-credential',
     category: 'connection',
-    label: 'Encrypted Google OAuth credential',
+    label: WS2_COPY.liveFix.privacy.inventory.oauthLabel,
     fetchedFrom: ['Google OAuth token response'],
     storageRefs: [
       'mailbox_accounts.encrypted_refresh_token',
@@ -387,7 +388,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
   {
     id: 'mailbox-visit-summary',
     category: 'derived',
-    label: 'Mailbox visit times and counts of newly scanned email',
+    label: WS2_COPY.liveFix.privacy.inventory.visitLabel,
     fetchedFrom: ['sender-profile-and-stats', 'message-identifiers'],
     storageRefs: ['users.preferences.mailboxVisits'],
     derived: true,
@@ -422,7 +423,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
   {
     id: 'actions-activity-and-undo',
     category: 'derived',
-    label: 'Action jobs, Activity records, results, and available Undo data',
+    label: 'Cleanup history, results, and available Undo data',
     fetchedFrom: ['message-identifiers', 'sender-identity', 'choices-rules-and-suggestions'],
     storageRefs: ['action_jobs.*', 'activity_log.*', 'undo_journal.*'],
     derived: true,
@@ -477,7 +478,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
   {
     id: 'processing-and-retry-records',
     category: 'derived',
-    label: 'mailbox processing, delivery, retry, and webhook deduplication records',
+    label: WS2_COPY.liveFix.privacy.inventory.processingLabel,
     fetchedFrom: ['message-identifiers', 'sender-identity', 'gmail-sync-state'],
     storageRefs: ['outbox_events.*', 'dead_letter_jobs.*', 'webhook_dedup.*', 'sync_runs.*'],
     derived: true,
@@ -583,7 +584,7 @@ export const GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY = [
   {
     id: 'mailbox-security-and-deletion-audit',
     category: 'connection',
-    label: 'Minimal mailbox security and deletion audit records',
+    label: WS2_COPY.liveFix.privacy.inventory.auditLabel,
     fetchedFrom: ['DeclutrMail connection, security, and deletion events'],
     storageRefs: ['mailbox_data_deletion_requests.*', 'security_events.*'],
     derived: true,

@@ -389,7 +389,7 @@ describe('StepProtectionReview — the edges', () => {
 
     renderReview();
 
-    expect(screen.getByText(/Couldn't load your protection summary/)).toBeInTheDocument();
+    expect(screen.getByText(/Couldn’t load your protection summary/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Try again/i })).toBeInTheDocument();
     // Never a "nothing is protected" claim on a failed read — that is
     // the surface asserting what it does not know.
@@ -410,7 +410,7 @@ describe('StepProtectionReview — states the flow audit found unpinned (2026-08
 
     expect(screen.getByText(/Your Gmail account changed/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Refresh/i })).toBeInTheDocument();
-    expect(screen.queryByText(/Couldn't load your protection summary/)).toBeNull();
+    expect(screen.queryByText(/Couldn’t load your protection summary/)).toBeNull();
   });
 
   it('disables both exits while the completion POST is in flight', () => {

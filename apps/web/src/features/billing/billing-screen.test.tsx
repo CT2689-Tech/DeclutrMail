@@ -297,7 +297,7 @@ describe('BillingScreen — designed states', () => {
     expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
     expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Compare plans' })).toHaveAttribute('href', '/pricing');
-    expect(screen.queryByText(/couldn't load/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/couldn’t load/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
@@ -311,7 +311,7 @@ describe('BillingScreen — designed states', () => {
 
     const alert = await screen.findByRole('alert');
     expect(
-      within(alert).getByRole('heading', { name: "We couldn't load your billing details" }),
+      within(alert).getByRole('heading', { name: 'We couldn’t load your billing details' }),
     ).toBeInTheDocument();
     expect(
       within(alert).getByText(/try again to confirm your current billing details/i),
@@ -1199,7 +1199,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // immediate refetch and let the failure land.
     failReads = true;
     act(() => capturedCheckoutEvents().onCompleted?.());
-    await waitFor(() => expect(screen.queryByText(/couldn't load/i)).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText(/couldn’t load/i)).not.toBeInTheDocument());
     expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
     expect(screen.queryByText(/no charge or plan change was made/i)).not.toBeInTheDocument();
   });
@@ -1370,7 +1370,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
   });
 
-  it("another workspace's pending record does not lock this one", async () => {
+  it('another workspace’s pending record does not lock this one', async () => {
     writePendingCheckout('someone-elses-workspace', 'checkout', 'free', null, 'plus', 'monthly');
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
     renderScreen();
@@ -2168,7 +2168,7 @@ describe('BillingScreen — paid subscriber', () => {
     expect(within(card).getByRole('button', { name: 'Review cancellation' })).toBeInTheDocument();
   });
 
-  it("a deep link naming the subscriber's own current tier does not auto-open the confirm panel", async () => {
+  it('a deep link naming the subscriber’s own current tier does not auto-open the confirm panel', async () => {
     mockTier = 'pro';
     stubSubscription(() => jsonOk({ data: PRO_SUB }));
     renderScreen({ plan: 'pro', cycle: 'monthly' });
@@ -5264,7 +5264,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     // invented card or picker — the honest read-failed-grade state.
     const alert = await screen.findByRole('alert');
     expect(
-      within(alert).getByRole('heading', { name: "We couldn't read your billing details" }),
+      within(alert).getByRole('heading', { name: 'We couldn’t read your billing details' }),
     ).toBeInTheDocument();
     expect(screen.queryByTestId('current-plan-card')).not.toBeInTheDocument();
     expect(screen.queryByTestId('plan-picker')).not.toBeInTheDocument();

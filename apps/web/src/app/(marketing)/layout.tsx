@@ -31,7 +31,7 @@ import { SignupRefCapture } from '@/features/marketing/signup-ref-capture';
 import { SiteAnalytics } from '@/features/marketing/site-analytics';
 import { ThemeScript } from '@/features/theme/theme-script';
 import { softwareApplicationDescription } from './site-json-ld-description';
-import '@/features/marketing/public-shell/public-shell.css';
+import '@/features/marketing/public-styles.css';
 
 const { color, font } = tokens;
 
@@ -89,12 +89,10 @@ const SITE_JSON_LD = {
 export default function MarketingLayout({ children }: { children: ReactNode }) {
   return (
     <>
-      {/* Un-nonced on purpose: this group's CSP is `script-src 'self'
-          'unsafe-inline'` with NO 'strict-dynamic', so 'self' authorizes
-          the same-origin asset by itself. A nonce here would be stale the
-          moment the page is prerendered. Rendered ABOVE the wrapper div
-          so it still executes before anything paints. */}
-      <ThemeScript />
+      {/* This group's existing CSP permits inline scripts. Resolve the
+          theme before paint without a parser-blocking network request.
+          The authenticated layouts keep their nonced external resolver. */}
+      <ThemeScript inline />
       <MarketingShell>{children}</MarketingShell>
     </>
   );

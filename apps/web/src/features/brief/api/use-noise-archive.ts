@@ -50,7 +50,7 @@ import { activityKeys } from '@/features/activity/api/query-keys';
 import { useOptionalAuth } from '@/features/auth/auth-provider';
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { sendersKeys } from '@/features/senders/api/query-keys';
-import { useSenderInFlightLock } from '@/features/undo/in-flight';
+import { ACTION_OVERDUE_MS, useSenderInFlightLock } from '@/features/undo/in-flight';
 import { undoKeys } from '@/features/undo/query-keys';
 import {
   enqueueMayHaveStarted,
@@ -219,18 +219,18 @@ export type NoiseArchiveOutcome =
  * action hung >8 min server-side and every single-slot latch polling
  * `useActionStatus`/`useBatchStatus` bricked silently — the poll has no
  * time cap and only a terminal status released it. At this deadline the
- * handle parks: the overdue toast fires and the parked poll keeps
+ * handle parks: the tray owns slow progress and the parked poll keeps
  * running (settle/failure side effects still land). Unlike the sibling
  * screens, `busy` deliberately KEEPS covering the parked handle — this
  * whole section is one bulk entry point over the very senders the
  * parked archive may still be moving, so "released but refusing every
  * confirm" would just assert idle mid-archive and open previews whose
- * confirm is always dead. The park's value here is the honest toast +
+ * confirm is always dead. The park's value here is the durable progress +
  * terminal side effects that survive past the deadline; `busy` frees
  * when the parked handle reaches a terminal state, which the parked
  * poll guarantees is no longer "never".
  */
-export const ACTION_OVERDUE_MS = 120_000;
+export { ACTION_OVERDUE_MS } from '@/features/undo/in-flight';
 
 // A long generated list can contain important mail. Require an explicit
 // selection before previewing a large batch instead of arming it on load.
@@ -489,7 +489,6 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     if (!inFlight) return;
     const t = setTimeout(() => {
       void track('action_overdue', { kind: inFlight.kind, verb: 'archive' });
-      toast('The Noise archive is still running — see Activity.', 'info');
       setOverdueInFlight(inFlight);
       setInFlight(null);
     }, ACTION_OVERDUE_MS);
@@ -737,7 +736,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
 
     if (senderIds.length === 1) {
       enqueueComposite.mutate(
-        { senderId: senderIds[0]!, primary },
+        { mailboxId: activeMailboxId ?? undefined, senderId: senderIds[0]!, primary },
         {
           onSuccess: (res) => {
             trackActionConfirmed('archive');
@@ -756,7 +755,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     }
 
     enqueueBulk.mutate(
-      { senderIds, primary },
+      { mailboxId: activeMailboxId ?? undefined, senderIds, primary },
       {
         onSuccess: (res) => {
           if (res.senderCount > 0) trackActionConfirmed('archive');
@@ -869,7 +868,6 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         surface: 'brief',
         reason: 'noise_archive_status',
       });
-      toast(getActionFailureCopy('status', { action: 'the Noise archive' }), 'warn');
       holdUnconfirmed(inFlight.senderKeys);
       setFailureOutcome({ kind: 'unconfirmed' });
       setInFlight(null);
@@ -900,7 +898,6 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       setInFlight(null);
       return;
     }
-    toast(getActionFailureCopy('terminal', { action: 'the Noise archive' }), 'warn');
     // The job has ended, so the senders stay checked and a retry cannot
     // overlap it; part of the mail may have moved (see `failed`).
     setFailureOutcome({ kind: 'failed' });
@@ -927,7 +924,6 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         surface: 'brief',
         reason: 'noise_archive_batch_status',
       });
-      toast(getActionFailureCopy('status', { action: 'the Noise archive' }), 'warn');
       holdUnconfirmed(inFlight.senderKeys);
       setFailureOutcome({ kind: 'unconfirmed' });
       setInFlight(null);
@@ -945,7 +941,6 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       refreshRows();
     }
     if (data.status === 'failed') {
-      toast(getActionFailureCopy('terminal', { action: 'the Noise archive' }), 'warn');
       setFailureOutcome({ kind: 'failed' });
       setInFlight(null);
       return;
@@ -956,13 +951,6 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     // selection is cleared so the user cannot blind-retry the ones that
     // already archived.
     if (data.failed > 0) {
-      toast(
-        getActionFailureCopy('terminal', {
-          action: 'the Noise archive',
-          partial: { done: data.done, total: data.total, unit: 'senders' },
-        }),
-        'warn',
-      );
       clearSelection(inFlight.senderKeys);
       setFailureOutcome({
         kind: 'partial',
@@ -1015,7 +1003,6 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         surface: 'brief',
         reason: 'noise_archive_status',
       });
-      toast(getActionFailureCopy('status', { action: 'the Noise archive' }), 'warn');
       holdUnconfirmed(overdueInFlight.senderKeys);
       setFailureOutcome({ kind: 'unconfirmed' });
       setOverdueInFlight(null);
@@ -1047,7 +1034,6 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       setOverdueInFlight(null);
       return;
     }
-    toast(getActionFailureCopy('terminal', { action: 'the Noise archive' }), 'warn');
     setFailureOutcome({ kind: 'failed' });
     setOverdueInFlight(null);
   }, [
@@ -1073,7 +1059,6 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         surface: 'brief',
         reason: 'noise_archive_batch_status',
       });
-      toast(getActionFailureCopy('status', { action: 'the Noise archive' }), 'warn');
       holdUnconfirmed(overdueInFlight.senderKeys);
       setFailureOutcome({ kind: 'unconfirmed' });
       setOverdueInFlight(null);
@@ -1091,19 +1076,11 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       refreshRows();
     }
     if (data.status === 'failed') {
-      toast(getActionFailureCopy('terminal', { action: 'the Noise archive' }), 'warn');
       setFailureOutcome({ kind: 'failed' });
       setOverdueInFlight(null);
       return;
     }
     if (data.failed > 0) {
-      toast(
-        getActionFailureCopy('terminal', {
-          action: 'the Noise archive',
-          partial: { done: data.done, total: data.total, unit: 'senders' },
-        }),
-        'warn',
-      );
       clearSelection(overdueInFlight.senderKeys);
       setFailureOutcome({
         kind: 'partial',

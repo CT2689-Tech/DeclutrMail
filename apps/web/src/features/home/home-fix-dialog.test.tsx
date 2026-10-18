@@ -74,6 +74,8 @@ vi.mock('@declutrmail/shared/copy/launch', async () => {
   };
 });
 
+import { OVERLAY_Z } from '@declutrmail/shared';
+
 import { HomeFixDialog } from './home-fix-dialog';
 import { HomeView } from './home-view';
 import type { HomeFixCandidate } from './home-next-steps';
@@ -122,7 +124,7 @@ describe('full Home when the WS5 keys exist', () => {
       gate.showReport = true;
       rerender(<HomeView state={ready} nextSteps={[step]} senderSizeView={senderSizeView} />);
       expect(screen.getAllByRole('heading', { name: 'Your Inbox Report' })).toHaveLength(1);
-      const fix = await screen.findByRole('button', { name: 'Unsubscribe + archive 158 senders' });
+      const fix = await screen.findByRole('button', { name: 'Preview cleanup' });
       expect(fix.className.split(/\s+/)).toContain('dm-button-link');
     },
   );
@@ -133,10 +135,8 @@ describe('Home unsubscribe step', () => {
     gate.showReport = false;
     const { rerender } = render(<HomeView state={ready} nextSteps={[step]} />);
     expect(screen.getAllByRole('heading', { name: 'Your Inbox Report' })).toHaveLength(1);
-    expect(
-      screen.getByRole('button', { name: 'Unsubscribe + archive 158 senders' }),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/158 of these senders/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Preview cleanup' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /158 senders/ })).toBeInTheDocument();
 
     gate.showReport = true;
     rerender(<HomeView state={ready} nextSteps={[step]} />);
@@ -155,20 +155,35 @@ describe('HomeFixDialog focus trap', () => {
 
     const dialog = screen.getByRole('alertdialog');
     expect(dialog).toHaveTextContent('Unsubscribe from 158 senders and archive 1,200 emails?');
+    expect(dialog.parentElement).toHaveStyle({ zIndex: String(OVERLAY_Z.modal) });
     const cancel = screen.getByRole('button', { name: 'Cancel' });
     const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
     await waitFor(() => expect(cancel).toHaveFocus());
 
-    fireEvent.keyDown(dialog, { key: 'Tab' });
+    await user.keyboard('{Tab}');
     expect(confirm).toHaveFocus();
-    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+    await user.keyboard('{Shift>}{Tab}{/Shift}');
     expect(cancel).toHaveFocus();
 
+    confirm.focus();
     await user.keyboard('{Enter}');
     expect(onConfirm).not.toHaveBeenCalled();
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
 
     fireEvent.keyDown(dialog, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    await waitFor(() => expect(open).toHaveFocus());
+  });
+
+  it('lets Enter activate Cancel without confirming and restores the entry point', async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    render(<Harness onConfirm={onConfirm} />);
+    const open = screen.getByRole('button', { name: 'Open fix' });
+    await user.click(open);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus());
+    await user.keyboard('{Enter}');
+    expect(onConfirm).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     await waitFor(() => expect(open).toHaveFocus());
   });

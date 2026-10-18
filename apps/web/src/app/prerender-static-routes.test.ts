@@ -100,9 +100,9 @@ describe('static prerendering of the public site (Option A′)', () => {
 
   it('the public group renders the theme script WITHOUT a nonce', () => {
     // A nonce baked into prerendered HTML is stale by definition; the
-    // public CSP authorizes the script by 'self' instead.
+    // public CSP permits this inline resolver.
     const source = read('src/app/(marketing)/layout.tsx');
-    expect(source).toContain('<ThemeScript />');
+    expect(source).toContain('<ThemeScript inline />');
     expect(source).not.toContain('x-nonce');
   });
 });

@@ -63,7 +63,6 @@ export const Full: Story<typeof HomeView> = {
     nextSteps: steps,
     senderSizeView: true,
     reportSizeLabel: '7.7 GB',
-    timeZone: 'UTC',
   },
 };
 
@@ -74,7 +73,6 @@ export const NoSizeView: Story<typeof HomeView> = {
     nextSteps: steps,
     senderSizeView: false,
     reportSizeLabel: '7.7 GB',
-    timeZone: 'UTC',
   },
 };
 
@@ -84,12 +82,25 @@ export const CaughtUp: Story<typeof HomeView> = {
     summary,
     nextSteps: [],
     indexedEmailCount: 47,
-    timeZone: 'UTC',
   },
 };
 
 export const NewUser: Story<typeof HomeView> = {
   args: { state: { kind: 'empty', syncing: false, action } },
+};
+
+export const FirstCleanup: Story<typeof HomeView> = {
+  args: {
+    state: { kind: 'empty', syncing: false, action },
+    nextSteps: [steps[0]!],
+  },
+};
+
+export const UnknownImpact: Story<typeof HomeView> = {
+  args: {
+    state: ready,
+    nextSteps: [{ kind: 'unsub_archive', senderCount: 5, senderIds: ['a'] }],
+  },
 };
 
 export const Syncing: Story<typeof HomeView> = {

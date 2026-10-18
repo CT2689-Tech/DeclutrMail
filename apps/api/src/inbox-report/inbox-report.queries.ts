@@ -161,7 +161,9 @@ function backlogHandledSenders(mailboxId: string): SQL {
 /**
  * True when the cached report must be recomputed.
  *
- * A newer archive, delete, unsubscribe, or revert misses. So does a fix
+ * A newer archive, delete, unsubscribe, policy change, or revert misses.
+ * Keep Undo removes the policy row, so its reverted audit row must also
+ * invalidate a report computed while Keep was active. So does a fix
  * set that still lists a sender the backlog now covers. A row written
  * after those jobs is newer than updated_at, so the timestamp check
  * alone would serve it again.
@@ -187,8 +189,19 @@ export function backlogChangedSinceQuery(
     select 1
     from activity_log al
     where al.mailbox_account_id = ${mailboxId}
-      and al.action in ('archive', 'delete', 'unsubscribe')
+      and al.action in ('archive', 'delete', 'unsubscribe', 'keep')
       and al.reverted_at > ${generatedAtIso}::timestamptz
+    union all
+    select 1
+    from sender_policies p
+    where p.mailbox_account_id = ${mailboxId}
+      and p.updated_at > ${generatedAtIso}::timestamptz
+    union all
+    select 1
+    from activity_log al
+    where al.mailbox_account_id = ${mailboxId}
+      and al.action in ('keep', 'marked_protected', 'unmarked_protected')
+      and al.created_at > ${generatedAtIso}::timestamptz
   `;
   if (cachedSenderIds.length === 0) {
     return sql`${changedSince} limit 1`;

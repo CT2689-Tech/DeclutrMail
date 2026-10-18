@@ -49,6 +49,8 @@ export interface UndoTrayEntry {
    * skipped" (D245): said once, where the Undo is, not on a line of its own.
    */
   note?: string | null;
+  /** Keep an unresolved outcome visible beside its Undo. */
+  noteTone?: 'attention' | 'info';
 }
 
 /**
@@ -71,6 +73,8 @@ export type UndoTrayNoticeVerb = 'archive' | 'later' | 'delete' | 'unsubscribe';
  */
 export interface UndoTrayNotice {
   id: string;
+  /** When set, attach this outcome to the matching Undo decision. */
+  groupId?: string;
   /** `working` still running · `attention` ended badly · `info` ended, nothing changed. */
   tone: 'working' | 'attention' | 'info';
   /**

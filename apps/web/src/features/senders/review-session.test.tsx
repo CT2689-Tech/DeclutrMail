@@ -26,7 +26,7 @@ describe('ReviewSession — commit bar (D245)', () => {
     );
 
     expect(
-      screen.queryByText(/Archive, Later, and Delete use your plan's Activity Undo window/i),
+      screen.queryByText(/Archive, Later, and Delete use your plan’s Activity Undo window/i),
     ).not.toBeInTheDocument();
     if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
       expect(

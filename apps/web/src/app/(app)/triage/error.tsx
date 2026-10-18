@@ -25,7 +25,7 @@ export default function TriageError({
       error={error}
       reset={reset}
       boundary="triage"
-      headline="We couldn't load your triage queue."
+      headline="We couldn’t load your triage queue."
       body="Try again, or review senders."
       escape={{ href: '/senders', label: 'Back to Senders' }}
     />

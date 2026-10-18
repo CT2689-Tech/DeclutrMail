@@ -116,7 +116,7 @@ export const Error: Story<typeof AutopilotScreen> = {
   args: {
     state: {
       kind: 'error',
-      message: "We couldn't load Autopilot right now.",
+      message: 'We couldn’t load Autopilot right now.',
       retry: () => undefined,
     },
   },

@@ -211,24 +211,33 @@ export const Pane: Story<typeof SenderDetailPage> = {
     },
     layout: 'pane',
   },
-  render: (args: PageArgs) =>
-    frame(
-      <div
-        style={{
-          width: 440,
-          maxWidth: '100%',
-          height: 'min(760px, calc(100vh - 24px))',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          background: color.card,
-          border: `1px solid ${color.line}`,
-          borderRadius: 12,
-        }}
-      >
-        <SenderDetailPage {...args} />
-      </div>,
-    ),
+  render: (args: PageArgs) => paneFrame(args, 'min(760px, calc(100vh - 24px))'),
+};
+
+function paneFrame(args: PageArgs, height: string | number) {
+  return frame(
+    <div
+      style={{
+        width: 440,
+        maxWidth: '100%',
+        height,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        background: color.card,
+        border: `1px solid ${color.line}`,
+        borderRadius: 12,
+      }}
+    >
+      <SenderDetailPage {...args} />
+    </div>,
+  );
+}
+
+/** A short desktop inspector still gives its content the full scroll area. */
+export const PaneShortScreen: Story<typeof SenderDetailPage> = {
+  ...Pane,
+  render: (args: PageArgs) => paneFrame(args, 300),
 };
 
 /** Explicit deploy-skew/unknown count variant; never invent an empty inbox. */
@@ -241,4 +250,87 @@ export const PaneUnknownInbox: Story<typeof SenderDetailPage> = {
     },
     layout: 'pane',
   },
+};
+
+/** A stored engine read cannot repeat an already accepted unsubscribe. */
+export const UnsubscribeAccepted: Story<typeof SenderDetailPage> = {
+  args: {
+    state: {
+      kind: 'ready',
+      detail: {
+        ...buildSenderDetail(groupon),
+        policyType: 'unsubscribe',
+        unsubStatus: 'endpoint_accepted',
+        recommendation: {
+          verdict: 'unsubscribe',
+          confidence: 0.9,
+          reasoning: 'Stored read before the request.',
+          signals: [],
+        },
+      },
+    },
+  },
+  render: (args: PageArgs) => frame(<SenderDetailPage {...args} />),
+};
+
+/** Current Keep policy takes precedence over an older cleanup suggestion. */
+export const CompletedKeep: Story<typeof SenderDetailPage> = {
+  args: {
+    state: {
+      kind: 'ready',
+      detail: {
+        ...buildSenderDetail(groupon),
+        policyType: 'keep',
+        recommendation: {
+          verdict: 'unsubscribe',
+          confidence: 0.9,
+          reasoning: 'Stored read before Keep.',
+          signals: [],
+        },
+      },
+    },
+  },
+  render: (args: PageArgs) => frame(<SenderDetailPage {...args} />),
+};
+
+/** Archive finished; historical volume does not mean inbox mail remains. */
+export const InboxCleared: Story<typeof SenderDetailPage> = {
+  args: {
+    state: {
+      kind: 'ready',
+      detail: {
+        ...buildSenderDetail(groupon),
+        sender: { ...buildSenderDetail(groupon).sender, inboxCount: 0, archivedCount: 21 },
+        archivedCount: 21,
+        recommendation: {
+          verdict: 'archive',
+          confidence: 0.9,
+          reasoning: 'Stored read before Archive.',
+          signals: [],
+        },
+      },
+    },
+  },
+  render: (args: PageArgs) => frame(<SenderDetailPage {...args} />),
+};
+
+/** Partial cleanup still has actionable inbox mail and keeps the suggestion. */
+export const PartialCleanup: Story<typeof SenderDetailPage> = {
+  args: {
+    state: {
+      kind: 'ready',
+      detail: {
+        ...buildSenderDetail(groupon),
+        sender: { ...buildSenderDetail(groupon).sender, inboxCount: 7, archivedCount: 14 },
+        archivedCount: 14,
+        recommendation: {
+          verdict: 'archive',
+          confidence: 0.9,
+          reasoning: 'A useful read for the remaining inbox mail.',
+          signals: [],
+        },
+      },
+    },
+  },
+  render: (args: PageArgs) => frame(<SenderDetailPage {...args} />),
 };

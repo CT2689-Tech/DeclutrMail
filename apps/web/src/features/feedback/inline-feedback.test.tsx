@@ -119,7 +119,7 @@ describe('InlineFeedback', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Not useful' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      "We couldn't confirm your feedback was saved. Try again.",
+      'We couldn’t confirm your feedback was saved. Try again.',
     );
     expect(screen.queryByText(/Nothing changed|Feedback saved\./i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Useful' })).toHaveAttribute('aria-pressed', 'true');

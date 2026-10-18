@@ -83,7 +83,7 @@ export function TriageFocusStack({
       if (!isSkipKey(e) || isTypingTarget(e.target)) return;
       // A sheet owns the keyboard while it is open — Skip must not pull
       // the sender out from under a D226 preview.
-      if (document.querySelector('[role="dialog"]')) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
       e.preventDefault();
       onSkip();
     };

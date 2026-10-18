@@ -64,7 +64,7 @@ export function useDismissFollowup() {
       // An old snapshot can contain another mailbox or a sibling already dismissed.
       // Only a fresh read of the active scope can restore the correct rows.
       void qc.invalidateQueries({ queryKey: followupsKeys.all });
-      toast("Couldn't mark resolved in DeclutrMail. Try again.", 'danger');
+      toast('Couldn’t mark resolved in DeclutrMail. Try again.', 'danger');
     },
     onSuccess: (result, row) => {
       void track('followup_dismissed', {

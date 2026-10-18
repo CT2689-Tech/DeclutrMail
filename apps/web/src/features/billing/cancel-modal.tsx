@@ -115,8 +115,8 @@ export function CancelModal({
     <>
       <span>
         {end
-          ? `Your ${tierLabel} subscription ends at the end of its paid period (${end}) and won't renew.`
-          : `Your ${tierLabel} subscription ends at the end of its paid period and won't renew.`}
+          ? `Your ${tierLabel} subscription ends at the end of its paid period (${end}) and won’t renew.`
+          : `Your ${tierLabel} subscription ends at the end of its paid period and won’t renew.`}
       </span>{' '}
       <span>
         Your account is on {entitlementName} today — that plan isn&rsquo;t granted by this

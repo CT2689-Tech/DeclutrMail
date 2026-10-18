@@ -5,10 +5,23 @@ import Link from 'next/link';
 
 import { Avatar, Button, PreviewSheet, SheetSegmented, tokens } from '@declutrmail/shared';
 import { normalizeProtectionReason, protectionReasonClause } from '@declutrmail/shared/copy';
-import { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import {
+  fillCopy,
+  isPluralCopy,
+  pluralCopy,
+  WS2_COPY,
+  WS5_COPY,
+} from '@declutrmail/shared/copy/launch';
 
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
-import { backlogDestination, bulkUnsubscribeTitle, unnamedUnsubscribeTitle } from './preview-copy';
+import {
+  allProtectedSelectionCopy,
+  backlogDestination,
+  bulkUnsubscribeTitle,
+  someProtectedSelectionCopy,
+  unnamedUnsubscribeTitle,
+  unsubscribeButton,
+} from './preview-copy';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { MailboxActionContextView } from '@/features/auth/mailbox-action-context-view';
@@ -16,6 +29,33 @@ import { track } from '@/lib/posthog';
 import type { CompositeActionPreviewResult } from '@/lib/api/use-action';
 
 import type { ActionRequest } from '../data';
+import {
+  ActionReachControl,
+  ActionWindowControl,
+  DELETE_ARCHIVED_HINT,
+} from '@/components/action-scope-controls';
+import {
+  pickBucketCount,
+  sumBucketCounts,
+  TIME_WINDOW_PRESETS,
+  type ActionWindowCounts,
+} from '../action-window';
+
+/** Synthetic snapshots only; signed-in callers use fresh server previews. */
+export type UnsubscribeSnapshotCounts = {
+  inbox: ActionWindowCounts;
+  allMail?: ActionWindowCounts;
+};
+
+export type UnsubscribeBacklogOptions = {
+  secondary: { type: 'archive' | 'delete'; olderThanDays: number | null } | null;
+  archiveHistoric: boolean;
+  /** Set only by the explicit "anyway" click on a Protected sender. */
+  override?: boolean;
+  reach?: 'all_mail';
+  /** Senders named by the preview, including future-only unsubscribe targets. */
+  senderIds: string[];
+};
 
 type Mode = 'unsub_only' | 'archive' | 'delete';
 
@@ -46,6 +86,7 @@ export function UnsubscribeBacklogDialog({
   /** Report fix set: the archive count until the live preview resolves. */
   preferredInboxCount,
   preferredAllMailCount,
+  preferredCounts,
   /** Report CTA already says Archive, so the dialog opens on that choice. */
   preferArchive = false,
   submitting = false,
@@ -68,8 +109,8 @@ export function UnsubscribeBacklogDialog({
                 senderId: string;
                 name: string;
                 protected: boolean;
-                counts: { all: number };
-                allMailCounts?: { all: number };
+                counts: ActionWindowCounts;
+                allMailCounts?: ActionWindowCounts;
               }>;
             }
           | undefined;
@@ -79,18 +120,14 @@ export function UnsubscribeBacklogDialog({
     | undefined;
   preferredInboxCount?: number | undefined;
   preferredAllMailCount?: number | undefined;
+  preferredCounts?: UnsubscribeSnapshotCounts | undefined;
   preferArchive?: boolean | undefined;
   submitting?: boolean | undefined;
   onCancel: () => void;
-  onConfirm: (opts: {
-    secondary: { type: 'archive' | 'delete'; olderThanDays: null } | null;
-    archiveHistoric: boolean;
-    /** Set only by the explicit "anyway" click on a Protected sender. */
-    override?: boolean;
-    reach?: 'all_mail';
-  }) => void;
+  onConfirm: (opts: UnsubscribeBacklogOptions) => void;
 }) {
   const single = request.senders.length === 1;
+  const recordedUnsubscribeCount = request.skipped?.recordedUnsubscribeCount ?? 0;
   const auth = useOptionalAuth();
   const activeMailboxEmail = mailboxEmail ?? (auth ? getActiveMailboxEmail(auth.me) : null);
   const onlySender = request.senders[0];
@@ -99,15 +136,35 @@ export function UnsubscribeBacklogDialog({
     ? normalizeProtectionReason(onlySender?.protectionFlags.protectionReason)
     : null;
   const bulkRows = bulkPreview?.data?.senders.filter((row) => !row.protected) ?? [];
-  const snapshotCount = single
-    ? (compositePreview?.counts.all ?? preferredInboxCount ?? null)
-    : bulkPreview?.data
-      ? bulkRows.reduce((sum, row) => sum + row.counts.all, 0)
-      : (preferredInboxCount ?? null);
+  const inboxSnapshot = (days: number | null) =>
+    single
+      ? (pickBucketCount(compositePreview?.counts ?? preferredCounts?.inbox, days) ??
+        (days === null ? preferredInboxCount : undefined))
+      : bulkPreview?.data
+        ? sumBucketCounts(
+            bulkRows.map((row) => row.counts),
+            days,
+          )
+        : (pickBucketCount(preferredCounts?.inbox, days) ??
+          (days === null ? preferredInboxCount : undefined));
+  const allMailSnapshot = (days: number | null) =>
+    single
+      ? (pickBucketCount(compositePreview?.allMail?.counts ?? preferredCounts?.allMail, days) ??
+        (days === null ? preferredAllMailCount : undefined))
+      : bulkPreview?.data
+        ? sumBucketCounts(
+            bulkRows.map((row) => row.allMailCounts),
+            days,
+          )
+        : (pickBucketCount(preferredCounts?.allMail, days) ??
+          (days === null ? preferredAllMailCount : undefined));
+  const snapshotCount = inboxSnapshot(null) ?? null;
   const loading = single ? compositePreviewLoading : (bulkPreview?.loading ?? false);
   const failed = single ? compositePreviewError : (bulkPreview?.error ?? false);
   // Cached counts during a refetch or failed read never arm a cleanup.
-  const inboxCount = loading || failed || previewSenderGone ? null : snapshotCount;
+  const invalidPreview = loading || failed || previewSenderGone;
+  const allInboxCount = invalidPreview ? null : snapshotCount;
+  const allReachCount = invalidPreview ? null : (allMailSnapshot(null) ?? null);
   const bulkReady = !single && bulkPreview?.data != null && !loading && !failed;
   const nothingActionable = bulkReady && bulkRows.length === 0;
   const includedIds = new Set(bulkRows.map((row) => row.senderId));
@@ -128,13 +185,12 @@ export function UnsubscribeBacklogDialog({
   );
   const [deleteReach, setDeleteReach] = useState<'inbox_only' | 'all_mail'>('inbox_only');
   const [reachRequestKey, setReachRequestKey] = useState(requestKey);
-  const allMailSnapshot = single
-    ? (compositePreview?.allMail?.counts.all ?? preferredAllMailCount ?? null)
-    : bulkReady && bulkRows.every((row) => row.allMailCounts != null)
-      ? bulkRows.reduce((sum, row) => sum + row.allMailCounts!.all, 0)
-      : null;
-  const allMailCount = loading || failed || previewSenderGone ? null : allMailSnapshot;
-  const offersReach = inboxCount !== null && allMailCount !== null;
+  const [olderThanDays, setOlderThanDays] = useState<number | null>(null);
+  const [windowRequestKey, setWindowRequestKey] = useState(requestKey);
+  const activeWindow = windowRequestKey === requestKey ? olderThanDays : null;
+  const inboxCount = invalidPreview ? null : (inboxSnapshot(activeWindow) ?? null);
+  const allMailCount = invalidPreview ? null : (allMailSnapshot(activeWindow) ?? null);
+  const offersReach = allInboxCount !== null && allReachCount !== null;
   const activeReach =
     mode === 'delete' && reachRequestKey === requestKey ? deleteReach : 'inbox_only';
   const cleanupCount = activeReach === 'all_mail' ? allMailCount : inboxCount;
@@ -143,20 +199,22 @@ export function UnsubscribeBacklogDialog({
     armed.current = false;
     setDeleteReach('inbox_only');
     setReachRequestKey(requestKey);
+    setOlderThanDays(null);
+    setWindowRequestKey(requestKey);
     // The count often arrives after the dialog is open. Changing the
     // selected option then moves the primary button under the pointer.
     setMode(openingMode(protectedSingle, countAtOpen.current, preferArchive));
   }, [requestKey, protectedSingle, preferArchive]);
 
   useEffect(() => {
-    if (inboxCount === null) return;
-    const modeDefault: Mode = inboxCount > 0 ? 'archive' : 'unsub_only';
+    if (allInboxCount === null) return;
+    const modeDefault: Mode = allInboxCount > 0 ? 'archive' : 'unsub_only';
     void track('unsub_backlog_choice_shown', {
       mode_default: modeDefault,
       sender_count: request.senders.length,
-      email_count: inboxCount,
+      email_count: allInboxCount,
     });
-  }, [requestKey, inboxCount, request.senders.length]);
+  }, [requestKey, allInboxCount, request.senders.length]);
 
   const countKnown = cleanupCount !== null;
   const n = cleanupCount ?? 0;
@@ -164,11 +222,38 @@ export function UnsubscribeBacklogDialog({
   const k = includedSenders.length;
   const singleName =
     request.senders[0]?.name?.trim() || compositePreview?.sender.name?.trim() || '';
+  const protectedSkipped = bulkReady
+    ? (bulkPreview?.data?.senders.filter(
+        (row) => row.protected && request.senders.some((sender) => sender.id === row.senderId),
+      ).length ?? 0)
+    : 0;
+  // A preview that is still loading or failed has not named the mail.
+  // Posting from that state would include ids the preview never confirmed.
+  // A dialog with no preview at all (a known inbox count, nothing in flight)
+  // is separate.
+  const previewUnresolved = loading || failed;
+  const senderIds = previewUnresolved ? [] : includedSenders.map((sender) => sender.id);
+  const includeArchived = mode === 'delete' && activeReach === 'all_mail' && allMailCount !== null;
+  const zeroDeleteInbox =
+    mode === 'delete' &&
+    countKnown &&
+    n === 0 &&
+    offersReach &&
+    allMailCount !== null &&
+    allMailCount > 0 &&
+    !includeArchived;
   const title = (() => {
-    if (nothingActionable) return 'No senders available to unsubscribe';
+    if (nothingActionable) {
+      return allProtectedSelectionCopy(
+        request.senders.length,
+        request.senders[0]?.name?.trim() || '',
+      );
+    }
     // A live count of 0 is a real empty set. Null is still loading, and
-    // "archive 0 emails" would be a count we have not read.
-    if (!countKnown && mode !== 'unsub_only') {
+    // "archive 0 emails" would be a count we have not read. Inbox 0 with
+    // archived mail still waiting on the checkbox is the same: no delete
+    // clause until that mail is actually included.
+    if (zeroDeleteInbox || (!countKnown && mode !== 'unsub_only')) {
       if (!single) return bulkUnsubscribeTitle('unsub_only', k, 0);
       if (singleName === '') return unnamedUnsubscribeTitle('unsub_only', 0);
       return fillCopy(WS5_COPY['f1.title.unsubOnly'], { Sender: singleName });
@@ -193,25 +278,23 @@ export function UnsubscribeBacklogDialog({
   const visibleBulk = bulkRows.slice(0, BULK_PREVIEW_CAP);
   const hidden = Math.max(0, bulkRows.length - visibleBulk.length);
   const previewLines: ReactNode[] = [];
-  const methods = new Set(includedSenders.map((sender) => sender.unsubscribeMethod));
-  const futureSummary = single
-    ? senderFuture(singleName, onlySender?.unsubscribeMethod)
-    : [
-        methods.has('one_click') ? 'We’ll send one-click unsubscribe requests.' : null,
-        methods.has('mailto') ? 'Email requests need you to send from Gmail.' : null,
-        methods.has('none') ? 'Senders without a link can’t receive an unsubscribe request.' : null,
-      ]
-        .filter(Boolean)
-        .join(' ');
+  const futureLines = (single ? request.senders.slice(0, 1) : includedSenders)
+    .map((sender) =>
+      senderFuture(single ? singleName : sender.name.trim(), sender.unsubscribeMethod),
+    )
+    .filter((line): line is string => line !== null);
+  const futureSummary =
+    futureLines.length > 0
+      ? [...new Set(futureLines)].join(' ')
+      : WS5_COPY['f1.preview.future.unchecked'];
   const rowCopy = WS5_COPY['f1.preview.bulkRow'];
   for (const row of visibleBulk) {
-    const sender = request.senders.find((item) => item.id === row.senderId);
-    const future = senderFuture(row.name, sender?.unsubscribeMethod);
-    const rowCount = activeReach === 'all_mail' ? (row.allMailCounts?.all ?? null) : row.counts.all;
+    const rowCount = invalidPreview
+      ? undefined
+      : pickBucketCount(activeReach === 'all_mail' ? row.allMailCounts : row.counts, activeWindow);
     previewLines.push(
       <p key={row.senderId} style={{ margin: 0 }}>
-        {future ? `${future} ` : ''}
-        {isPluralCopy(rowCopy) && rowCount !== null
+        {isPluralCopy(rowCopy) && rowCount !== undefined
           ? pluralCopy(rowCopy, rowCount, { n: shown(rowCount), Sender: row.name })
           : row.name}
       </p>,
@@ -231,29 +314,50 @@ export function UnsubscribeBacklogDialog({
       : mode === 'archive'
         ? WS5_COPY['f1.honesty.archive']
         : WS5_COPY['f1.honesty.unsubOnly'];
-  const button = protectedButton(mode, protectedSingle);
+  const button = unsubscribeButton(mode, cleanupCount, protectedSingle);
 
   const confirm = useCallback(() => {
+    if (previewUnresolved) return;
     const secondary = mode === 'unsub_only' ? null : mode;
     void track('unsub_backlog_confirmed', {
       mode,
       sender_count: k,
       email_count: n,
     });
+    const includeArchived =
+      mode === 'delete' && activeReach === 'all_mail' && allMailCount !== null;
     onConfirm({
       ...(secondary
-        ? { secondary: { type: secondary, olderThanDays: null } }
+        ? { secondary: { type: secondary, olderThanDays: activeWindow } }
         : { secondary: null }),
       archiveHistoric: mode === 'archive',
-      ...(mode === 'delete' && activeReach === 'all_mail' ? { reach: activeReach } : {}),
+      ...(includeArchived ? { reach: 'all_mail' as const } : {}),
       ...(protectedSingle ? { override: true } : {}),
+      senderIds,
     });
-  }, [mode, activeReach, k, n, protectedSingle, onConfirm]);
+  }, [
+    mode,
+    activeReach,
+    activeWindow,
+    allMailCount,
+    k,
+    n,
+    protectedSingle,
+    onConfirm,
+    senderIds,
+    previewUnresolved,
+  ]);
 
-  // A missing backlog count must not block the future-only request.
-  // Archive and Delete stay disabled until that count is known.
+  // Archive and Delete stay disabled until the backlog count is known.
+  // Unsubscribe stays closed while the preview is loading or failed.
+  const archivedRequested = mode === 'delete' && activeReach === 'all_mail';
   const confirmDisabled =
-    submitting || previewSenderGone || nothingActionable || (mode !== 'unsub_only' && backlogOff);
+    submitting ||
+    previewSenderGone ||
+    nothingActionable ||
+    (mode === 'unsub_only' && previewUnresolved) ||
+    (archivedRequested && allMailCount === null) ||
+    (mode !== 'unsub_only' && backlogOff);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Tab' || event.key.startsWith('Arrow')) armed.current = true;
@@ -283,38 +387,40 @@ export function UnsubscribeBacklogDialog({
   const status =
     previewSenderGone || nothingActionable ? (
       <>
-        <span>
-          {nothingActionable
-            ? 'Every selected sender is now Protected or no longer in this mailbox.'
-            : 'This sender is no longer in this mailbox.'}
-        </span>
+        {nothingActionable ? null : <span>{WS2_COPY.simplify.senders.gone}</span>}
         {onRefreshSenders ? (
           <Button tone="default" size="sm" onClick={onRefreshSenders}>
-            Refresh senders
+            {WS5_COPY['f1.preview.button.refreshSenders']}
           </Button>
         ) : (
           <Link href="/senders" prefetch={false} onClick={onCancel}>
-            Review senders
+            {WS5_COPY['f1.preview.button.reviewSenders']}
           </Link>
         )}
       </>
     ) : failed ? (
       <>
-        <span>Couldn’t load the cleanup preview. Retry to archive or delete existing email.</span>
+        <span>{WS5_COPY['f1.preview.backlog.error']}</span>
         {onRetryPreview && (
           <Button tone="default" size="sm" onClick={onRetryPreview}>
-            Retry preview
+            {WS2_COPY.home.failed.retry}
           </Button>
         )}
       </>
-    ) : activeReach === 'all_mail' && allMailCount === null && inboxCount !== null ? (
-      'The Inbox + archived preview is unavailable. Choose Inbox only.'
+    ) : archivedRequested && allMailCount === null && inboxCount !== null ? (
+      WS5_COPY['f1.preview.archived.unavailable']
+    ) : mode !== 'unsub_only' && cleanupCount === null && !loading ? (
+      'The cleanup preview for this range is unavailable. Choose another range.'
     ) : inboxCount === null ? (
-      'Counting existing inbox email…'
-    ) : mode === 'delete' && n === 0 && offersReach && allMailCount > 0 ? (
-      'Switch to Inbox + archived to reach the archived email.'
+      WS5_COPY['f1.preview.backlog.loading']
+    ) : mode === 'delete' &&
+      n === 0 &&
+      offersReach &&
+      (allMailCount ?? 0) > 0 &&
+      !includeArchived ? (
+      DELETE_ARCHIVED_HINT
     ) : mode !== 'unsub_only' && n === 0 ? (
-      'No existing inbox email to move. Choose Unsubscribe only.'
+      'No existing email matches this range. Choose another range or Unsubscribe only.'
     ) : null;
 
   return (
@@ -361,8 +467,21 @@ export function UnsubscribeBacklogDialog({
         title={title}
         subtitle={
           <>
-            <span>{futureSummary || 'The unsubscribe method hasn’t been checked yet.'}</span>{' '}
-            <span>{backlogDestination(mode, activeReach)}</span>
+            <span>{futureSummary}</span>
+            {zeroDeleteInbox ? null : (
+              <>
+                {' '}
+                <span>{backlogDestination(mode, mode === 'unsub_only' ? null : cleanupCount)}</span>
+              </>
+            )}
+            {recordedUnsubscribeCount > 0 && (
+              <span>
+                {' '}
+                {recordedUnsubscribeCount} sender
+                {recordedUnsubscribeCount === 1 ? '' : 's'} with a recorded unsubscribe request{' '}
+                {recordedUnsubscribeCount === 1 ? 'is' : 'are'} excluded.
+              </span>
+            )}
           </>
         }
         note={note}
@@ -399,70 +518,80 @@ export function UnsubscribeBacklogDialog({
         }
         cancelLabel={WS5_COPY['f1.button.cancel']}
         primary={{
-          label: submitting ? 'Submitting…' : button,
+          label: submitting ? WS5_COPY['f1.button.busy'] : button,
           onClick: confirm,
           tone: mode === 'delete' ? 'danger' : 'warn',
           disabled: confirmDisabled,
         }}
       >
-        {protectedSingle ? <p>{protectedLead(onlySender?.name ?? '', protectedReason)}</p> : null}
-        <SheetSegmented
-          label="Existing email"
-          value={mode}
-          onChange={(next) => {
-            setMode(next);
-            setDeleteReach('inbox_only');
-          }}
-          options={[
-            { value: 'unsub_only', label: WS5_COPY['f1.segment.unsubOnly'] },
-            {
-              value: 'archive',
-              disabled: inboxCount === null || inboxCount === 0,
-              label:
-                inboxCount === null
-                  ? WS5_COPY['f1.segment.archive.loading']
-                  : isPluralCopy(archiveLabel)
-                    ? pluralCopy(archiveLabel, inboxCount, { n: shown(inboxCount) })
-                    : '',
-            },
-            {
-              value: 'delete',
-              disabled: inboxCount === null || (inboxCount === 0 && !(allMailCount ?? 0)),
-              label:
-                cleanupCount === null
-                  ? WS5_COPY['f1.segment.delete.loading']
-                  : isPluralCopy(deleteLabel)
-                    ? pluralCopy(deleteLabel, n, { n: shown(n) })
-                    : '',
-            },
-          ]}
-        />
-        {mode === 'delete' && (offersReach || activeReach === 'all_mail') && (
-          <div style={{ marginTop: space[3] }}>
-            <SheetSegmented
-              label="Where it applies"
+        <div style={{ display: 'flex', flexDirection: 'column', gap: space[3] }}>
+          {protectedSingle ? <p>{protectedLead(onlySender?.name ?? '', protectedReason)}</p> : null}
+          {protectedSkipped > 0 && includedSenders.length > 0 ? (
+            <p>{someProtectedSelectionCopy(protectedSkipped)}</p>
+          ) : null}
+          <SheetSegmented
+            label={WS5_COPY['f1.preview.existing.label']}
+            value={mode}
+            onChange={(next) => {
+              setMode(next);
+              setDeleteReach('inbox_only');
+            }}
+            options={[
+              { value: 'unsub_only', label: WS5_COPY['f1.segment.unsubOnly'] },
+              {
+                value: 'archive',
+                disabled: allInboxCount === null || allInboxCount === 0,
+                label:
+                  inboxCount === null
+                    ? WS5_COPY['f1.segment.archive.loading']
+                    : isPluralCopy(archiveLabel)
+                      ? pluralCopy(archiveLabel, inboxCount, { n: shown(inboxCount) })
+                      : '',
+              },
+              {
+                value: 'delete',
+                disabled: allInboxCount === null || (allInboxCount === 0 && !(allReachCount ?? 0)),
+                label:
+                  cleanupCount === null
+                    ? WS5_COPY['f1.segment.delete.loading']
+                    : isPluralCopy(deleteLabel)
+                      ? pluralCopy(deleteLabel, n, { n: shown(n) })
+                      : '',
+              },
+            ]}
+          />
+          {mode === 'delete' && (offersReach || archivedRequested || inboxCount !== null) && (
+            <ActionReachControl
               value={activeReach}
+              inboxCount={inboxCount}
+              allMailCount={allMailCount}
               onChange={(next) => {
+                if (next === 'all_mail' && allMailCount === null) return;
                 setDeleteReach(next);
                 setReachRequestKey(requestKey);
               }}
-              options={[
-                {
-                  value: 'inbox_only',
-                  label: 'Inbox only',
-                  count: inboxCount ?? undefined,
-                  disabled: inboxCount === null,
-                },
-                {
-                  value: 'all_mail',
-                  label: 'Inbox + archived',
-                  count: allMailCount ?? undefined,
-                  disabled: allMailCount === null,
-                },
-              ]}
             />
-          </div>
-        )}
+          )}
+          {mode !== 'unsub_only' && (
+            <ActionWindowControl
+              value={activeWindow}
+              onChange={(next) => {
+                setOlderThanDays(next);
+                setWindowRequestKey(requestKey);
+              }}
+              options={TIME_WINDOW_PRESETS.map((preset) => ({
+                days: preset.days,
+                label:
+                  preset.days === null && activeReach === 'all_mail' ? 'All mail' : preset.label,
+                count: invalidPreview
+                  ? undefined
+                  : activeReach === 'all_mail'
+                    ? allMailSnapshot(preset.days)
+                    : inboxSnapshot(preset.days),
+              }))}
+            />
+          )}
+        </div>
       </PreviewSheet>
     </div>
   );
@@ -481,20 +610,6 @@ function openingMode(
   if (preferArchive && inboxCount !== 0) return 'archive';
   if (inboxCount !== null && inboxCount > 0) return 'archive';
   return 'unsub_only';
-}
-
-function protectedButton(mode: Mode, protectedSingle: boolean): string {
-  if (mode === 'delete') {
-    return protectedSingle ? WS5_COPY['f1.button.delete.protected'] : WS5_COPY['f1.button.delete'];
-  }
-  if (mode === 'archive') {
-    return protectedSingle
-      ? WS5_COPY['f1.button.archive.protected']
-      : WS5_COPY['f1.button.archive'];
-  }
-  return protectedSingle
-    ? WS5_COPY['f1.button.unsubOnly.protected']
-    : WS5_COPY['f1.button.unsubOnly'];
 }
 
 function protectedLead(

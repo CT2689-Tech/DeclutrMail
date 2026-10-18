@@ -37,6 +37,7 @@ function homeSyncingStages(lines: readonly string[]): Record<HomeStageKey, strin
 
 export const HOME_DECK = {
   homeTitle: WS2_COPY.names.home,
+  focus: WS2_COPY.home.focus,
   nextSteps: WS2_COPY.names.homeNextSteps,
   retrying: WS2_COPY.banners.home.retrying,
   reconnect: WS2_COPY.banners.home.reconnect,

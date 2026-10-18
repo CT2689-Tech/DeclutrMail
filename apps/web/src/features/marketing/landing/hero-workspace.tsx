@@ -1,4 +1,4 @@
-import './hero-workspace.css';
+// Styles are loaded by the public route group through public-styles.css.
 
 /** A labelled, static view of the real sender-list + right-inspector pattern. */
 const SENDERS = [

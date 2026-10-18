@@ -123,7 +123,7 @@ export function AutopilotObservePreview() {
         )}
         {rules.isError && (
           <ErrorState
-            title="Couldn't load your preset rules"
+            title="Couldn’t load your preset rules"
             description="Try again in a moment."
             onRetry={() => void rules.refetch()}
           />

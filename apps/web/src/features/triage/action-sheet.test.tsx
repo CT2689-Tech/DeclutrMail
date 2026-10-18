@@ -17,7 +17,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { fillCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { fillCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { installFetchStub, resetFetchStub } from '@/test/fetch-stub';
@@ -107,22 +107,28 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
     expect(html).toBe('');
   });
 
-  it('blocks confirmation and offers retry when the live preview is unavailable', () => {
-    const html = renderToStaticMarkup(
-      <ActionSheet
-        open={true}
-        verb="Archive"
-        row={row}
-        inboxCount="unavailable"
-        onCancel={() => {}}
-        onConfirm={() => {}}
-        onRetryPreview={() => {}}
-      />,
-    );
+  it.each(['Archive', 'Later', 'Delete'] as const)(
+    'blocks %s on preview failure without suggesting another action',
+    (verb) => {
+      const html = renderToStaticMarkup(
+        <ActionSheet
+          open={true}
+          verb={verb}
+          wakeAt={new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()}
+          row={row}
+          inboxCount="unavailable"
+          onCancel={() => {}}
+          onConfirm={() => {}}
+          onRetryPreview={() => {}}
+        />,
+      );
 
-    expect(html).toContain('Retry preview');
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Archive/);
-  });
+      expect(html).toContain('Try again');
+      expect(html).toContain('Nothing can move until it loads.');
+      expect(html).not.toContain('Try again to archive or delete');
+      expect(html).toMatch(/<button[^>]*disabled=""/);
+    },
+  );
 
   it('blocks confirmation while the live preview is still loading', () => {
     const html = renderToStaticMarkup(
@@ -136,8 +142,25 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
       />,
     );
 
-    expect(html).toContain('Counting the inbox');
+    expect(html).toContain(WS5_COPY['f1.preview.backlog.loading']);
+    expect(html).not.toContain('Counting the inbox');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Archive/);
+  });
+
+  it('names a disappeared sender with the deck sentence', () => {
+    const html = renderToStaticMarkup(
+      <ActionSheet
+        open={true}
+        verb="Archive"
+        row={row}
+        inboxCount={2}
+        previewSenderGone
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+    expect(html).toContain(WS2_COPY.simplify.senders.gone);
+    expect(html).not.toContain('This sender is no longer in this mailbox.');
   });
 });
 
@@ -431,7 +454,9 @@ describe('ActionSheet — live-preview confirm gate', () => {
 
     // The count lives in the title, once; "current" in the Details line.
     expect(screen.getByRole('heading', { name: 'Archive 2 emails?' })).toBeInTheDocument();
-    expect(screen.getByText(/^Inbox now, rechecked when it runs$/)).toBeInTheDocument();
+    expect(
+      screen.getByText('Inbox only. We check again right before anything moves.'),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/will move out of the inbox/i)).not.toBeInTheDocument();
   });
 });
@@ -987,10 +1012,14 @@ describe('ActionSheet choice survives a preview refresh', () => {
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
     rerender(<ActionSheet {...props} inboxCount={2} />);
     expect(screen.getByRole('radio', { name: '+ Delete 2' })).toBeChecked();
-    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Delete' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+    );
     expect(onConfirm).toHaveBeenLastCalledWith(expect.objectContaining({ backlogMode: 'delete' }));
     rerender(<ActionSheet {...props} inboxCount="unavailable" />);
-    expect(screen.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+    ).toBeDisabled();
     expect(screen.getByRole('heading')).not.toHaveTextContent('0 emails');
   });
 });
@@ -1010,7 +1039,7 @@ describe('ActionSheet Unsubscribe preview recovery', () => {
       />,
     );
     expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Retry preview' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetryPreview).toHaveBeenCalledOnce();
   });
   it('shows a completed zero count as a way to choose Unsubscribe only', () => {
@@ -1024,8 +1053,10 @@ describe('ActionSheet Unsubscribe preview recovery', () => {
     const { rerender } = render(<ActionSheet {...props} inboxCount={4} />);
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
     rerender(<ActionSheet {...props} inboxCount={0} />);
-    expect(screen.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
-    expect(screen.getByText(/No existing inbox email to move/)).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+    ).toBeDisabled();
+    expect(screen.getByText(WS5_COPY['f1.preview.backlog.none'])).toBeVisible();
     expect(screen.queryByText(/Counting the inbox/)).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
     expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();

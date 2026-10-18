@@ -273,6 +273,28 @@
       },
       "body": "Email you moved to Later comes back to your inbox at the time you picked.",
       "cta": "Open Later"
+    },
+    "focus": {
+      "nextCleanup": "Your next cleanup",
+      "action": "Unsubscribe + archive",
+      "title": "A closer look at",
+      "senders": {
+        "one": "1 sender.",
+        "other": "{n} senders."
+      },
+      "impact": {
+        "one": "1 email in your inbox.",
+        "other": "{n} emails in your inbox."
+      },
+      "preview": "Preview cleanup",
+      "review": "Review the senders",
+      "safety": "You choose what happens before any email moves.",
+      "progress": "Your progress",
+      "allTime": "All time",
+      "context": "A little more context",
+      "calmTitle": "Choose your next cleanup.",
+      "calmBody": "Review your senders or open your Inbox Report to decide what to work on.",
+      "report": "Inbox Report"
     }
   },
   "liveFix": {
@@ -341,7 +363,10 @@
     "privacy": {
       "inventory": {
         "purpose": "Scan the listed Gmail details and provide the features you ask for.",
-        "visitLabel": "Mailbox visit times and counts of newly scanned email",
+        "oauthLabel": "Encrypted key that lets DeclutrMail access your Gmail",
+        "visitLabel": "Visit times and counts of newly scanned email for each Gmail account",
+        "processingLabel": "Background task, delivery, and retry records for each Gmail account",
+        "auditLabel": "Minimal security and deletion records for each Gmail account",
         "purgeClause": "failed jobs stay until resolved or removed when this inbox’s saved data or the account is deleted",
         "senderListClause": "names and addresses come from the saved sender list, one page at a time"
       }
@@ -560,6 +585,11 @@
     "dismissAria": "Dismiss the AI explanations suggestion",
     "frequency": "At most once every 30 days, and never again after it’s been dismissed twice or the user has chosen on the card."
   },
+  "senders": {
+    "emptySteps": {
+      "confirm": "Confirm when you’re ready"
+    }
+  },
   "simplify": {
     "scan": {
       "progress": "Scanning your Gmail…",
@@ -672,7 +702,10 @@
       "keptAfterDisconnect": "Kept after disconnecting",
       "keptAfterDelete": "Kept after deleting",
       "undoEnds": "Changes already made in Gmail stay. Undo for this account ends when the deletion finishes. Your email and labels in Gmail don’t change.",
-      "inventoryToggle": "What’s kept and deleted"
+      "inventoryToggle": "What’s kept and deleted",
+      "deleteBody": "Permanently deletes this Gmail account’s saved email details and related data from DeclutrMail.",
+      "deleteBodyConnected": "DeclutrMail stops accessing this Gmail account, then permanently deletes its saved email details and related data.",
+      "deleteRemain": "Your DeclutrMail account, your other Gmail accounts, and this Gmail address stay."
     },
     "screener": {
       "crumb": "New senders",
@@ -713,7 +746,10 @@
       "reconnect": "We can’t check Gmail until you reconnect. Reconnect, wait for the scan to finish, then come back and choose Check again.",
       "alreadyDone": "This already happened in Gmail. Confirming does it again for the same emails.",
       "partial": "This only partly happened in Gmail. Confirming finishes it.",
-      "finish": "Finish it"
+      "finish": "Finish it",
+      "checking": "Checking Gmail…",
+      "checkFailed": "We couldn’t check Gmail.",
+      "checkAgain": "Check Gmail again"
     },
     "followups": {
       "noTime": "Last check time unavailable.",
@@ -767,6 +803,41 @@
     },
     "home": {
       "yourSenders": "Your senders"
+    }
+  },
+  "preview": {
+    "unavailable": "Couldn’t load the preview. Nothing can move until it loads.",
+    "details": {
+      "includes": {
+        "label": "Includes",
+        "inbox": "Inbox only",
+        "all": "Inbox and archived email",
+        "window": {
+          "one": "(older than 1 day)",
+          "other": "(older than {n} days)"
+        },
+        "recheck": "We check again right before anything moves."
+      },
+      "deleted": {
+        "label": "Deleted email",
+        "value": "Goes to Gmail Trash for up to 30 days, unless you empty Trash sooner."
+      },
+      "whereNow": {
+        "label": "Where it is now",
+        "value": "{n} in your inbox · {m} elsewhere in Gmail"
+      },
+      "domain": {
+        "label": "Domain"
+      },
+      "sender": {
+        "label": "Sender"
+      },
+      "lastSeen": {
+        "label": "Last seen"
+      },
+      "whySuggested": {
+        "label": "Why suggested"
+      }
     }
   },
   "pr1019": {

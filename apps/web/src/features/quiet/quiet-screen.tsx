@@ -100,7 +100,7 @@ function QuietHoursCardContainer({ mailbox, active }: { mailbox: MeMailbox; acti
   const state: QuietHoursCardState = query.isError
     ? {
         kind: 'error',
-        message: "We couldn't load quiet hours right now.",
+        message: 'We couldn’t load quiet hours right now.',
       }
     : query.data
       ? {

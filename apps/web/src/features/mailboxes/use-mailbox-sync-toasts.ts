@@ -41,7 +41,7 @@ export function useMailboxSyncToasts(): void {
         // The same step Triage, Senders and Home name, in the same words.
         const step = failedScanSettingsStep(mailbox.needsReconnect === true);
         toast(
-          `${mailbox.email}'s scan didn't finish — ${step.charAt(0).toLowerCase()}${step.slice(1)}`,
+          `${mailbox.email}’s scan didn’t finish — ${step.charAt(0).toLowerCase()}${step.slice(1)}`,
           'danger',
         );
       }

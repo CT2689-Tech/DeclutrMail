@@ -44,7 +44,11 @@ import {
 const h = vi.hoisted(() => ({ toast: vi.fn(), dismissToast: vi.fn() }));
 vi.mock('@declutrmail/shared', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
-  return { ...actual, toast: h.toast };
+  return {
+    ...actual,
+    toast: h.toast,
+    usePendingToast: () => (msg: string) => h.toast(msg, 'info', undefined, { pending: true }),
+  };
 });
 
 // `useSearchParams` is read by the mount-event effect (D38 session-3).
@@ -207,9 +211,47 @@ function installHappyPath(
   ]);
 }
 
+function detailPreviewHandler(opts: { count?: () => number; onFetch?: () => void } = {}) {
+  return {
+    method: 'GET' as const,
+    path: '/api/actions/preview',
+    respond: () => {
+      opts.onFetch?.();
+      return jsonOk({
+        data: {
+          sender: {
+            id: 'linkedin',
+            name: 'LinkedIn',
+            domain: 'linkedin.com',
+            lastSeenDays: 2,
+            wroteToCount: 0,
+            monthly: 64,
+          },
+          counts: {
+            all: opts.count?.() ?? 12,
+            olderThan30d: 0,
+            olderThan90d: 0,
+            olderThan180d: 0,
+            olderThan365d: 0,
+          },
+          recentMessages: {
+            all: [],
+            olderThan30d: [],
+            olderThan90d: [],
+            olderThan180d: [],
+            olderThan365d: [],
+          },
+          unsubAvailable: true,
+          protected: false,
+        },
+      });
+    },
+  };
+}
+
 let lastClient: ReturnType<typeof createTestQueryClient>;
 
-function renderDetail(id = 'linkedin', explanations?: 'allowed') {
+function renderDetail(id = 'linkedin', explanations?: 'allowed', layout: 'page' | 'pane' = 'page') {
   const client = createTestQueryClient();
   if (explanations === 'allowed') {
     client.setQueryData(['me-settings'], {
@@ -219,7 +261,7 @@ function renderDetail(id = 'linkedin', explanations?: 'allowed') {
   lastClient = client;
   return render(
     <QueryWrapper client={client}>
-      <SenderDetailRoute id={id} />
+      <SenderDetailRoute id={id} layout={layout} />
     </QueryWrapper>,
   );
 }
@@ -498,7 +540,7 @@ describe('SenderDetailRoute', () => {
       /ago|today|yesterday/,
     );
     expect(stats.getByText('You wrote').nextElementSibling).toHaveTextContent('3×');
-    expect(screen.getByLabelText('Now')).toHaveTextContent('Currently in your inbox');
+    expect(screen.getByLabelText('Current email totals')).toHaveTextContent('In inbox');
     expect(screen.getByText('Monthly values').closest('details')).toHaveTextContent('Jan 2025');
   });
 
@@ -572,7 +614,7 @@ describe('SenderDetailRoute', () => {
     expect(screen.queryByText(/Hasn.t mailed you yet\./)).not.toBeInTheDocument();
   });
 
-  it('keeps "Hasn\'t mailed you yet." for a sender who genuinely never mailed', async () => {
+  it('keeps "Hasn’t mailed you yet." for a sender who genuinely never mailed', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -796,6 +838,451 @@ describe('SenderDetailRoute', () => {
     expect(screen.queryByText(/^op /)).not.toBeInTheDocument();
   });
 
+  it.each(['page', 'pane'] as const)(
+    'does not suggest Unsubscribe after endpoint acceptance in the %s',
+    async (layout) => {
+      installHappyPath(MESSAGE, undefined, undefined, {
+        ...DETAIL,
+        policyType: 'unsubscribe',
+        unsubStatus: 'endpoint_accepted',
+        inboxCount: 0,
+        archivedCount: 0,
+        recommendation: {
+          verdict: 'unsubscribe',
+          confidence: 0.9,
+          reasoning: 'High volume, rarely marked read.',
+          generatedBy: 'template',
+          scoredAt: '2026-05-20T10:00:00.000Z',
+          stale: false,
+        },
+      });
+      const client = createTestQueryClient();
+      render(
+        <QueryWrapper client={client}>
+          <SenderDetailRoute id="linkedin" layout={layout} />
+        </QueryWrapper>,
+      );
+      await screen.findByText('Request accepted');
+      expect(screen.getByText('Request accepted').closest('button')).toBeNull();
+      const accepted = screen.getByRole('button', { name: /^Unsubscribe(?: \(U\))?$/ });
+      expect(accepted).toHaveAttribute('aria-disabled', 'true');
+      fireEvent.click(accepted);
+      fireEvent.keyDown(window, { key: 'u' });
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('group', { name: 'Optional suggestion: Unsubscribe' }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it.each(['rendered', 'immediate'] as const)(
+    'refuses a stale unsubscribe confirmation after %s accepted readback',
+    async (timing) => {
+      const current: SenderDetailDto = {
+        ...DETAIL,
+        policyType: null,
+        unsubStatus: null,
+        unsubscribeMethod: 'one_click',
+      };
+      let posts = 0;
+      installHappyPath(MESSAGE, undefined, undefined, current);
+      addFetchHandlers([
+        detailPreviewHandler(),
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-backlog',
+          respond: () => {
+            posts += 1;
+            return jsonOk({ data: { mode: 'unsub_only', backlog: null, senders: [] } });
+          },
+        },
+      ]);
+      renderDetail();
+      fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
+      const dialog = await screen.findByRole('dialog');
+      const confirm = await within(dialog).findByRole('button', {
+        name: /^Unsubscribe(?: \+ Archive)?$/,
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      Object.assign(current, { policyType: 'unsubscribe', unsubStatus: 'endpoint_accepted' });
+      if (timing === 'rendered') {
+        await act(async () => {
+          await lastClient.invalidateQueries({
+            queryKey: sendersKeys.detail('linkedin'),
+            exact: true,
+          });
+        });
+        await screen.findByText('Request accepted');
+        fireEvent.click(confirm);
+      } else {
+        // Confirm before the query observer can commit a render/effect.
+        lastClient.setQueryData(sendersKeys.detail('linkedin'), { data: { ...current } });
+        fireEvent.click(confirm);
+      }
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(posts).toBe(0);
+    },
+  );
+
+  it.each(['page', 'pane'] as const)(
+    'renders confirmed empty mail with unavailable actions on the %s',
+    async (layout) => {
+      installHappyPath(MESSAGE, undefined, undefined, {
+        ...DETAIL,
+        inboxCount: 0,
+        archivedCount: 0,
+      });
+      renderDetail('linkedin', undefined, layout);
+      await screen.findByText('No current emails to Archive, move to Later, or Delete.');
+      for (const verb of ['Archive', 'Later', 'Delete']) {
+        expect(
+          screen.getByRole('button', { name: layout === 'page' ? `${verb} (${verb[0]})` : verb }),
+        ).toHaveAttribute('aria-disabled', 'true');
+      }
+    },
+  );
+
+  it.each(['Archive', 'Later', 'Delete'] as const)(
+    'refuses immediate zero readback before %s confirmation',
+    async (verb) => {
+      let posts = 0;
+      installHappyPath();
+      addFetchHandlers([
+        detailPreviewHandler(),
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () => {
+            posts += 1;
+            return jsonOk({ data: { actionId: 'never', requestedCount: 0, status: 'queued' } });
+          },
+        },
+      ]);
+      renderDetail();
+      fireEvent.click(await screen.findByRole('button', { name: `${verb} (${verb[0]})` }));
+      const dialog = await screen.findByRole('dialog');
+      if (verb === 'Delete') {
+        const window = await within(dialog).findByRole('combobox', {
+          name: 'How far back to act on',
+        });
+        fireEvent.change(window, { target: { value: 'all' } });
+      }
+      const confirm = await within(dialog).findByRole('button', {
+        name:
+          verb === 'Later' ? /^Move \d+ emails? to Later$/ : new RegExp(`^${verb} \\d+ emails?$`),
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      lastClient.setQueryData(sendersKeys.detail('linkedin'), {
+        data: { ...DETAIL, inboxCount: 0, archivedCount: 0 },
+      });
+      fireEvent.click(confirm);
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(posts).toBe(0);
+    },
+  );
+
+  it.each([
+    { action: 'Keep', verdict: 'archive', policyType: 'keep', inbox: 21, archived: 0 },
+    { action: 'Archive', verdict: 'archive', policyType: null, inbox: 0, archived: 21 },
+    { action: 'Later', verdict: 'later', policyType: null, inbox: 0, archived: 0 },
+    { action: 'Delete', verdict: 'archive', policyType: null, inbox: 0, archived: 0 },
+    {
+      action: 'Unsubscribe',
+      verdict: 'unsubscribe',
+      policyType: 'unsubscribe',
+      inbox: 21,
+      archived: 0,
+    },
+  ] as const)(
+    'reconciles the suggestion after $action and restores eligible reads after Undo',
+    async ({ action, verdict, policyType, inbox, archived }) => {
+      const before: SenderDetailDto = {
+        ...DETAIL,
+        policyType: null,
+        unsubStatus: null,
+        inboxCount: 21,
+        archivedCount: 0,
+        recommendation: {
+          verdict,
+          confidence: 0.9,
+          reasoning: 'A stored engine read.',
+          generatedBy: 'template',
+          scoredAt: '2026-05-20T10:00:00.000Z',
+          stale: false,
+        },
+      };
+      // The same query receives the worker/policy readback, then Undo's
+      // restored facts. Both layouts share this route and render path.
+      const current = { ...before };
+      installHappyPath(MESSAGE, undefined, undefined, current);
+      renderDetail();
+      await screen.findByRole('group', { name: /Optional suggestion/ });
+      Object.assign(current, {
+        policyType,
+        inboxCount: inbox,
+        archivedCount: archived,
+        unsubStatus: action === 'Unsubscribe' ? 'endpoint_accepted' : null,
+      });
+      await act(async () => {
+        await lastClient.invalidateQueries({
+          queryKey: sendersKeys.detail('linkedin'),
+          exact: true,
+        });
+      });
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('group', { name: /Optional suggestion/ }),
+        ).not.toBeInTheDocument(),
+      );
+      // An unsubscribe cannot be recalled. Only the reversible choices
+      // return to their previous eligible state here.
+      if (action !== 'Unsubscribe') {
+        Object.assign(current, before);
+        await act(async () => {
+          await lastClient.invalidateQueries({
+            queryKey: sendersKeys.detail('linkedin'),
+            exact: true,
+          });
+        });
+        expect(
+          await screen.findByRole('group', { name: /Optional suggestion/ }),
+        ).toBeInTheDocument();
+      }
+    },
+  );
+
+  it.each([
+    { layout: 'page' as const, verb: 'Delete' as const, inbox: 3, archived: 2, affected: 5 },
+    { layout: 'pane' as const, verb: 'Delete' as const, inbox: 3, archived: 2, affected: 5 },
+    { layout: 'page' as const, verb: 'Delete' as const, inbox: 0, archived: 21, affected: 21 },
+    { layout: 'pane' as const, verb: 'Delete' as const, inbox: 0, archived: 21, affected: 21 },
+    ...(['page', 'pane'] as const).flatMap((layout) => [
+      { layout, verb: 'Archive' as const, inbox: 3, archived: 2, affected: 3 },
+      { layout, verb: 'Archive' as const, inbox: 3, archived: 2, affected: 1 },
+      { layout, verb: 'Later' as const, inbox: 3, archived: 2, affected: 3 },
+    ]),
+  ])(
+    '$verb → Undo restores $inbox/$archived counts and controls in $layout without reload ($affected moved)',
+    async ({ layout, verb, inbox, archived, affected }) => {
+      const original = {
+        ...DETAIL,
+        inboxCount: inbox,
+        archivedCount: archived,
+        policyType: 'unsubscribe' as const,
+        unsubStatus: 'endpoint_accepted' as const,
+      };
+      const current = { ...original };
+      let completed = false;
+      let posted:
+        { primary: { type: string; olderThanDays?: number | null; wakeAt?: string } } | undefined;
+      const primaryType = verb === 'Archive' ? 'archive' : verb === 'Later' ? 'later' : 'delete';
+      const remainingInbox = verb === 'Delete' ? 0 : inbox - affected;
+      const remainingArchived = verb === 'Delete' ? 0 : archived + affected;
+      const total = inbox + archived;
+      const counts = (all: number) => ({
+        all,
+        olderThan30d: verb === 'Archive' && affected < inbox ? affected : 0,
+        olderThan90d: 0,
+        olderThan180d: 0,
+        olderThan365d: 0,
+      });
+      const recentMessages = {
+        all: [],
+        olderThan30d: [],
+        olderThan90d: [],
+        olderThan180d: [],
+        olderThan365d: [],
+      };
+      installHappyPath(MESSAGE, undefined, undefined, current);
+      addFetchHandlers([
+        {
+          method: 'GET',
+          path: '/api/actions/preview',
+          respond: () =>
+            jsonOk({
+              data: {
+                sender: {
+                  id: 'linkedin',
+                  name: 'LinkedIn',
+                  domain: 'linkedin.com',
+                  lastSeenDays: 2,
+                  wroteToCount: 0,
+                },
+                counts: counts(inbox),
+                recentMessages,
+                allMail: { counts: counts(total), recentMessages },
+                unsubAvailable: true,
+                protected: false,
+              },
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: async (request) => {
+            posted = (await request.json()) as typeof posted;
+            return jsonOk({
+              data: { actionId: 'move-cycle', requestedCount: affected, status: 'queued' },
+            });
+          },
+        },
+        {
+          method: 'GET',
+          path: '/api/actions/move-cycle',
+          respond: () => {
+            if (!completed) {
+              Object.assign(current, {
+                inboxCount: remainingInbox,
+                archivedCount: remainingArchived,
+              });
+              completed = true;
+            }
+            return jsonOk({
+              data: {
+                actionId: 'move-cycle',
+                verb: primaryType,
+                direction: 'forward',
+                status: 'done',
+                requestedCount: affected,
+                affectedCount: affected,
+                wakeAt: verb === 'Later' ? '2099-01-01T10:00:00.000Z' : null,
+                undoToken: 'cycle-token',
+                undoExpiresAt: '2099-01-01T00:00:00.000Z',
+                undoExecutedAt: null,
+                undoRevertedAt: null,
+                errorCode: null,
+              },
+            });
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/undo/cycle-token',
+          respond: () =>
+            jsonOk({
+              data: {
+                token: 'cycle-token',
+                actionKind: primaryType,
+                reverted: false,
+                expired: false,
+                revertedAt: null,
+                actionId: 'reverse-cycle',
+                actionIds: ['reverse-cycle'],
+              },
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/actions/undo-status',
+          respond: () => {
+            Object.assign(current, original);
+            return jsonOk({
+              data: {
+                actionId: 'reverse-cycle',
+                verb: primaryType,
+                direction: 'reverse',
+                status: 'done',
+                requestedCount: affected,
+                affectedCount: affected,
+                wakeAt: null,
+                undoToken: null,
+                undoExpiresAt: null,
+                undoExecutedAt: null,
+                undoRevertedAt: '2026-10-15T12:00:00.000Z',
+                errorCode: null,
+              },
+            });
+          },
+        },
+      ]);
+      renderDetail('linkedin', undefined, layout);
+      const buttonName = (verb: string, key: string) =>
+        layout === 'page' ? `${verb} (${key})` : verb;
+      fireEvent.click(await screen.findByRole('button', { name: buttonName(verb, verb[0]!) }));
+      if (verb === 'Delete')
+        fireEvent.click(await screen.findByRole('radio', { name: /Inbox \+ archived/ }));
+      await screen.findByText(/We check again right before anything moves/);
+      const dialog = screen.getByRole('dialog');
+      if (verb !== 'Later') {
+        fireEvent.change(within(dialog).getByRole('combobox', { name: /How far back/i }), {
+          target: { value: affected < inbox ? '30' : 'all' },
+        });
+      }
+      const confirm = await within(dialog).findByRole('button', {
+        name:
+          verb === 'Later'
+            ? new RegExp(`^Move ${affected} emails? to Later$`)
+            : new RegExp(`^${verb} ${affected} emails?$`),
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      fireEvent.click(confirm);
+      await waitFor(() =>
+        expect(screen.getByTestId('sender-detail-inbox-count')).toHaveTextContent(
+          new RegExp(`^${remainingInbox}$`),
+        ),
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId('sender-detail-archived-count')).toHaveTextContent(
+          new RegExp(`^${remainingArchived}$`),
+        ),
+      );
+      for (const [verb, key] of [
+        ['Archive', 'A'],
+        ['Later', 'L'],
+        ['Delete', 'D'],
+      ]) {
+        const unavailable =
+          verb === 'Delete' ? remainingInbox + remainingArchived === 0 : remainingInbox === 0;
+        expect(
+          screen
+            .getByRole('button', { name: buttonName(verb!, key!) })
+            .getAttribute('aria-disabled'),
+        ).toBe(unavailable ? 'true' : null);
+      }
+      expect(posted?.primary.type).toBe(primaryType);
+      if (verb === 'Archive' && affected < inbox) expect(posted?.primary.olderThanDays).toBe(30);
+      if (verb === 'Later') expect(typeof posted?.primary.wakeAt).toBe('string');
+      const { result } = renderHook(() => useRevertUndo(), {
+        wrapper: ({ children }) => <QueryWrapper client={lastClient}>{children}</QueryWrapper>,
+      });
+      await act(async () => {
+        await result.current.mutateAsync({ token: 'cycle-token', mailboxId: 'mailbox-active' });
+      });
+      await waitFor(() =>
+        expect(screen.getByTestId('sender-detail-archived-count')).toHaveTextContent(
+          new RegExp(`^${archived}$`),
+        ),
+      );
+      expect(screen.getByTestId('sender-detail-inbox-count')).toHaveTextContent(
+        new RegExp(`^${inbox}$`),
+      );
+      expect(screen.getByRole('button', { name: buttonName('Delete', 'D') })).not.toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
+      expect(screen.getByRole('button', { name: buttonName('Unsubscribe', 'U') })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
+      for (const [verb, key] of [
+        ['Archive', 'A'],
+        ['Later', 'L'],
+      ]) {
+        expect(
+          screen
+            .getByRole('button', { name: buttonName(verb!, key!) })
+            .getAttribute('aria-disabled'),
+        ).toBe(inbox === 0 ? 'true' : null);
+      }
+      expect(
+        screen.queryByText(
+          /^(?:Archived|Deleted) \d+(?: emails?)?$|^Moved \d+(?: emails?)? to Later$/,
+        ),
+      ).toBeNull();
+      expect(screen.getByText('Request accepted')).toBeInTheDocument();
+    },
+  );
+
   it('shows no suggestion for a sender the engine has never scored', async () => {
     installHappyPath();
     renderDetail();
@@ -895,13 +1382,13 @@ describe('SenderDetailRoute', () => {
     // not-found UI, never the generic "We couldn't load this sender"
     // retry state.
     await waitFor(() => expect(screen.getByText(/sender not found/i)).toBeInTheDocument());
-    expect(screen.queryByText(/we couldn't load this sender/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/we couldn’t load this sender/i)).not.toBeInTheDocument();
 
     // Release `detail`'s own 404 and confirm the page stays correct —
     // no flash back to a loading or error state once it settles too.
     releaseDetail();
     await waitFor(() => expect(screen.getByText(/sender not found/i)).toBeInTheDocument());
-    expect(screen.queryByText(/we couldn't load this sender/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/we couldn’t load this sender/i)).not.toBeInTheDocument();
   });
 
   // D38 session-3 — instrument coverage.
@@ -1184,7 +1671,7 @@ describe('SenderDetailRoute', () => {
    * pending, `history.error` is still B's 404, dated BEFORE the second
    * reset — the fix must not treat it as authoritative for A.
    */
-  it("does not go not-found on a sibling's stale 404 from before the last mailbox switch", async () => {
+  it('does not go not-found on a sibling’s stale 404 from before the last mailbox switch', async () => {
     let historyCallCount = 0;
     let releaseThirdHistoryCall!: () => void;
     const thirdHistoryCallPending = new Promise<void>((resolve) => {
@@ -1385,6 +1872,65 @@ describe('SenderDetailRoute', () => {
       );
     });
 
+    it.each([true, false])(
+      'Keep Undo clears its result only after a confirmed reversal (success=%s)',
+      async (success) => {
+        installHappyPath();
+        installPolicyPatch(async () =>
+          jsonOk({
+            data: {
+              senderId: 'linkedin',
+              policyType: 'keep',
+              isProtected: false,
+              protectionReason: null,
+              protectionSetAt: null,
+              changed: true,
+            },
+          }),
+        );
+        addFetchHandlers([
+          {
+            method: 'POST',
+            path: '/api/senders/linkedin/keep/undo',
+            respond: () =>
+              success
+                ? jsonOk({
+                    data: {
+                      senderId: 'linkedin',
+                      policyType: null,
+                      isProtected: false,
+                      protectionReason: null,
+                      protectionSetAt: null,
+                      changed: true,
+                    },
+                  })
+                : jsonServerError(),
+          },
+        ]);
+        renderDetail();
+        fireEvent.click(await screen.findByRole('button', { name: 'Keep (K)' }));
+        await screen.findByText('Skipped in Triage', { exact: true });
+        const undo = h.toast.mock.calls.find(([msg]) => msg === 'Kept LinkedIn')?.[2];
+        expect(undo).toBeDefined();
+        act(() => undo.onClick());
+        if (success) {
+          await waitFor(() =>
+            expect(screen.queryByText('Skipped in Triage', { exact: true })).toBeNull(),
+          );
+          expect(screen.queryByText('Skipped in Triage')).toBeNull();
+        } else {
+          await waitFor(() =>
+            expect(h.toast).toHaveBeenCalledWith(
+              expect.stringContaining('Couldn’t undo Keep'),
+              'warn',
+              expect.objectContaining({ label: 'Retry' }),
+            ),
+          );
+          expect(screen.getByText('Skipped in Triage', { exact: true })).toBeInTheDocument();
+        }
+      },
+    );
+
     it('Keep verb PATCHes { policyType: "keep" } (D40 — applies immediately, no preview)', async () => {
       installHappyPath();
       let capturedBody: unknown = null;
@@ -1420,43 +1966,6 @@ describe('SenderDetailRoute', () => {
 
   describe('action latch — overdue release + guard trip', () => {
     /** Live composite preview for the fixture sender — arms the D226 confirm. */
-    function detailPreviewHandler(opts: { count?: () => number; onFetch?: () => void } = {}) {
-      return {
-        method: 'GET' as const,
-        path: '/api/actions/preview',
-        respond: () => {
-          opts.onFetch?.();
-          return jsonOk({
-            data: {
-              sender: {
-                id: 'linkedin',
-                name: 'LinkedIn',
-                domain: 'linkedin.com',
-                lastSeenDays: 2,
-                wroteToCount: 0,
-                monthly: 64,
-              },
-              counts: {
-                all: opts.count?.() ?? 12,
-                olderThan30d: 0,
-                olderThan90d: 0,
-                olderThan180d: 0,
-                olderThan365d: 0,
-              },
-              recentMessages: {
-                all: [],
-                olderThan30d: [],
-                olderThan90d: [],
-                olderThan180d: [],
-                olderThan365d: [],
-              },
-              unsubAvailable: true,
-              protected: false,
-            },
-          });
-        },
-      };
-    }
 
     function actionStatusBody(id: string, done: boolean) {
       return {
@@ -1529,7 +2038,7 @@ describe('SenderDetailRoute', () => {
         await tick(200);
         fireEvent.click(screen.getByRole('button', { name: 'Archive (A)' }));
         await tick(200);
-        screen.getByText(/rechecked when it runs/i);
+        screen.getByText(/We check again right before anything moves/);
         fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
         await tick(200);
         expect(actionPosts).toBe(1);
@@ -1538,10 +2047,7 @@ describe('SenderDetailRoute', () => {
         // parks with the overdue toast — but this page is single-sender,
         // so the parked handle still owns the ONLY subject.
         await tick(ACTION_OVERDUE_MS);
-        expect(h.toast).toHaveBeenCalledWith(
-          expect.stringMatching(/^Archive for LinkedIn is still running/),
-          'info',
-        );
+        expect(h.toast).not.toHaveBeenCalledWith(expect.stringMatching(/still running/), 'info');
 
         // A second action on the SAME sender cannot even start (a
         // re-dispatch would mint a second real Gmail job). It used to be
@@ -1549,7 +2055,7 @@ describe('SenderDetailRoute', () => {
         // why and its verbs are inert (founder report 2026-09-20 — nothing
         // on the page showed a job was still running).
         // The pressed verb has BECOME the status; it takes no second press.
-        const archiveAgain = screen.getByRole('button', { name: 'Archive: unknown' });
+        const archiveAgain = screen.getByRole('button', { name: 'Archive (A)' });
         expect(archiveAgain).toHaveAttribute('aria-disabled', 'true');
         expect(screen.getByRole('toolbar', { name: 'Sender actions' })).toHaveAttribute(
           'aria-busy',
@@ -1583,9 +2089,9 @@ describe('SenderDetailRoute', () => {
         // With the parked handle terminal the toolbar frees, and says how
         // it ended. A NEW action opens against a re-counted preview (D226
         // — the archive just moved mail) and dispatches.
-        expect(screen.getByText('Archived 12')).toBeInTheDocument();
+        expect(screen.getByText('Archived 12 emails')).toBeInTheDocument();
         const archiveFreed = screen.getByRole('button', {
-          name: 'Archived 12 — Archive again (A)',
+          name: 'Archive (A)',
         });
         expect(archiveFreed).not.toHaveAttribute('aria-disabled');
         fireEvent.click(archiveFreed);
@@ -1642,7 +2148,7 @@ describe('SenderDetailRoute', () => {
         await tick(200);
         fireEvent.click(screen.getByRole('button', { name: 'Archive (A)' }));
         await tick(200);
-        screen.getByText(/rechecked when it runs/i);
+        screen.getByText(/We check again right before anything moves/);
         fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
         await tick(200);
         await tick(ACTION_OVERDUE_MS);
@@ -1683,7 +2189,7 @@ describe('SenderDetailRoute', () => {
       ]);
       renderDetail();
       fireEvent.click(await screen.findByRole('button', { name: 'Archive (A)' }));
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
       // It used to close before the request was even sent.
@@ -1729,7 +2235,7 @@ describe('SenderDetailRoute', () => {
 
       const archiveButton = await screen.findByRole('button', { name: 'Archive (A)' });
       fireEvent.click(archiveButton);
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(actionPosts).toBe(1));
       // The latch is armed once its status poll starts.
@@ -1739,7 +2245,7 @@ describe('SenderDetailRoute', () => {
       // second action cannot start — no modal, no second POST.
       await screen.findByText('Archiving…');
       // The pressed verb has BECOME the status; it takes no second press.
-      const archiveAgain = screen.getByRole('button', { name: 'Archiving…' });
+      const archiveAgain = screen.getByRole('button', { name: 'Archive (A)' });
       expect(archiveAgain).toHaveAttribute('aria-disabled', 'true');
       fireEvent.click(archiveAgain);
       await new Promise((r) => setTimeout(r, 50));
@@ -1795,7 +2301,7 @@ describe('SenderDetailRoute', () => {
       const archiveButton = await screen.findByRole('button', { name: 'Archive (A)' });
       expect(archiveButton).not.toHaveAttribute('aria-disabled', 'true');
       fireEvent.click(archiveButton);
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
       await waitFor(() =>
@@ -1837,7 +2343,7 @@ describe('SenderDetailRoute', () => {
         ]);
         renderDetail();
         fireEvent.click(await screen.findByRole('button', { name: 'Archive (A)' }));
-        await screen.findByText(/rechecked when it runs/i);
+        await screen.findByText(/We check again right before anything moves/);
         fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       }
 
@@ -1874,7 +2380,7 @@ describe('SenderDetailRoute', () => {
       it('marks a lost status poll as not confirmed, and keeps the verb locked', async () => {
         await archiveWith(() => jsonServerError());
         await waitFor(() => expect(pill('unconfirmed')).toHaveTextContent('Archive: unknown'));
-        expect(screen.getByRole('button', { name: 'Archive: unknown' })).toHaveAttribute(
+        expect(screen.getByRole('button', { name: 'Archive (A)' })).toHaveAttribute(
           'aria-disabled',
           'true',
         );
@@ -2037,7 +2543,7 @@ describe('SenderDetailRoute', () => {
         ]);
         renderDetail();
         fireEvent.click(await screen.findByRole('button', { name: 'Archive (A)' }));
-        await screen.findByText(/rechecked when it runs/i);
+        await screen.findByText(/We check again right before anything moves/);
         fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       }
 
@@ -2046,7 +2552,7 @@ describe('SenderDetailRoute', () => {
       it('locks the verb when an Archive may have started', async () => {
         await archiveEnqueueFails(apiFailure(503, 'ENQUEUE_FAILED'));
         await waitFor(() => expect(pill('unconfirmed')).toHaveTextContent('Archive: unknown'));
-        expect(screen.getByRole('button', { name: 'Archive: unknown' })).toHaveAttribute(
+        expect(screen.getByRole('button', { name: 'Archive (A)' })).toHaveAttribute(
           'aria-disabled',
           'true',
         );
@@ -2056,7 +2562,7 @@ describe('SenderDetailRoute', () => {
         await archiveEnqueueFails(apiFailure(400, 'VALIDATION_FAILED'));
         await waitFor(() =>
           expect(h.toast).toHaveBeenCalledWith(
-            expect.stringMatching(/^Couldn't start Archive/),
+            expect.stringMatching(/^Couldn’t start Archive/),
             'warn',
           ),
         );
@@ -2071,7 +2577,7 @@ describe('SenderDetailRoute', () => {
         await unsubscribeThenBacklog(apiFailure(400, 'VALIDATION_FAILED'));
         await waitFor(() =>
           expect(h.toast).toHaveBeenCalledWith(
-            "Couldn't start Unsubscribe for LinkedIn — no request was sent.",
+            'Couldn’t start Unsubscribe for LinkedIn — no request was sent.',
             'warn',
           ),
         );
@@ -2085,7 +2591,7 @@ describe('SenderDetailRoute', () => {
         await waitFor(() => expect(pill('unconfirmed')).toHaveTextContent('Archive: unknown'));
         expect(pill('failed')).toBeNull();
         expect(h.toast).toHaveBeenCalledWith(
-          "Can't tell if Unsubscribe for LinkedIn started — check Activity before retrying.",
+          'Can’t tell if Unsubscribe for LinkedIn started — check Activity before retrying.',
           'warn',
         );
       });
@@ -2118,7 +2624,7 @@ describe('SenderDetailRoute', () => {
         // Mid-request: the last Archive mark clears and the sheet names
         // the in-flight request while preventing another confirmation.
         await waitFor(() => expect(confirm).toBeDisabled());
-        expect(within(dialog).getByRole('button', { name: 'Submitting…' })).toBeDisabled();
+        expect(within(dialog).getByRole('button', { name: 'Unsubscribing…' })).toBeDisabled();
         expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeEnabled();
         expect(pill('done')).toBeNull();
         release();
@@ -2146,65 +2652,72 @@ describe('SenderDetailRoute', () => {
       });
     });
 
-    it("clears the receipt when a DIFFERENT component's useRevertUndo() reverts the same token (external undo, immediate)", async () => {
-      let actionPosts = 0;
-      let undoPosts = 0;
-      installHappyPath();
-      addFetchHandlers([
-        detailPreviewHandler(),
-        {
-          method: 'POST',
-          path: '/api/actions',
-          respond: () => {
-            actionPosts += 1;
-            return jsonOk({ data: { actionId: 'act-ext', requestedCount: 12, status: 'queued' } });
+    it.each([undefined, 'foreign-mailbox'])(
+      'handles external immediate Undo only in its mailbox (%s)',
+      async (mailboxId) => {
+        let actionPosts = 0;
+        let undoPosts = 0;
+        installHappyPath();
+        addFetchHandlers([
+          detailPreviewHandler(),
+          {
+            method: 'POST',
+            path: '/api/actions',
+            respond: () => {
+              actionPosts += 1;
+              return jsonOk({
+                data: { actionId: 'act-ext', requestedCount: 12, status: 'queued' },
+              });
+            },
           },
-        },
-        {
-          method: 'GET',
-          path: /^\/api\/actions\/[^/]+$/,
-          respond: () => jsonOk({ data: actionStatusBody('act-ext', true) }),
-        },
-        {
-          method: 'POST',
-          path: '/api/undo/tok-1',
-          respond: () => {
-            undoPosts += 1;
-            return jsonOk({ data: { verb: 'archive', reverted: true, actionId: null } });
+          {
+            method: 'GET',
+            path: /^\/api\/actions\/[^/]+$/,
+            respond: () => jsonOk({ data: actionStatusBody('act-ext', true) }),
           },
-        },
-      ]);
+          {
+            method: 'POST',
+            path: '/api/undo/tok-1',
+            respond: () => {
+              undoPosts += 1;
+              return jsonOk({ data: { verb: 'archive', reverted: true, actionId: null } });
+            },
+          },
+        ]);
 
-      const client = createTestQueryClient();
-      render(
-        <QueryWrapper client={client}>
-          <SenderDetailRoute id="linkedin" />
-        </QueryWrapper>,
-      );
+        const client = createTestQueryClient();
+        render(
+          <QueryWrapper client={client}>
+            <SenderDetailRoute id="linkedin" />
+          </QueryWrapper>,
+        );
 
-      const archiveButton = await screen.findByRole('button', { name: 'Archive (A)' });
-      fireEvent.click(archiveButton);
-      await screen.findByText(/rechecked when it runs/i);
-      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
-      await waitFor(() => expect(actionPosts).toBe(1));
+        const archiveButton = await screen.findByRole('button', { name: 'Archive (A)' });
+        fireEvent.click(archiveButton);
+        await screen.findByText(/We check again right before anything moves/);
+        fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+        await waitFor(() => expect(actionPosts).toBe(1));
 
-      // The page is holding the result, carrying the fixture's `undoToken: 'tok-1'`.
-      await waitFor(() => expect(doneMark()).not.toBeNull());
+        // The page is holding the result, carrying the fixture's `undoToken: 'tok-1'`.
+        await waitFor(() => expect(doneMark()).not.toBeNull());
 
-      // Simulate the tray: a SEPARATE `useRevertUndo()` instance, sharing
-      // only the QueryClient — never touching this page's React tree.
-      const { result } = renderHook(() => useRevertUndo(), {
-        wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
-      });
-      await act(async () => {
-        result.current.mutate({ token: 'tok-1' });
-        await waitFor(() => expect(result.current.isSuccess).toBe(true));
-      });
+        // Simulate the tray: a SEPARATE `useRevertUndo()` instance, sharing
+        // only the QueryClient — never touching this page's React tree.
+        const { result } = renderHook(() => useRevertUndo(), {
+          wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+        });
+        await act(async () => {
+          result.current.mutate({ token: 'tok-1', ...(mailboxId ? { mailboxId } : {}) });
+          await waitFor(() => expect(result.current.isSuccess).toBe(true));
+        });
 
-      expect(undoPosts).toBe(1);
-      await waitFor(() => expect(doneMark()).toBeNull());
-      expect(actionPosts).toBe(1);
-    });
+        expect(undoPosts).toBe(1);
+        await waitFor(() =>
+          mailboxId ? expect(doneMark()).not.toBeNull() : expect(doneMark()).toBeNull(),
+        );
+        expect(actionPosts).toBe(1);
+      },
+    );
 
     // Codex round 1: a FRESH token's revert normally returns `reverted:
     // false` with an `actionId` to poll, not the immediate `reverted: true`
@@ -2214,6 +2727,7 @@ describe('SenderDetailRoute', () => {
       h.toast.mockClear();
       let actionPosts = 0;
       let undoPosts = 0;
+      let restoreDone = false;
       installHappyPath();
       addFetchHandlers([
         detailPreviewHandler(),
@@ -2228,7 +2742,13 @@ describe('SenderDetailRoute', () => {
         {
           method: 'GET',
           path: /^\/api\/actions\/[^/]+$/,
-          respond: () => jsonOk({ data: actionStatusBody('act-ext2', true) }),
+          respond: (_request, url) =>
+            jsonOk({
+              data:
+                url.pathname.endsWith('/act-revert-1') && !restoreDone
+                  ? { ...actionStatusBody('act-revert-1', false), status: 'executing' }
+                  : actionStatusBody('act-ext2', true),
+            }),
         },
         {
           method: 'POST',
@@ -2249,7 +2769,7 @@ describe('SenderDetailRoute', () => {
 
       const archiveButton = await screen.findByRole('button', { name: 'Archive (A)' });
       fireEvent.click(archiveButton);
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(actionPosts).toBe(1));
       await waitFor(() => expect(doneMark()).not.toBeNull());
@@ -2272,6 +2792,7 @@ describe('SenderDetailRoute', () => {
       // performed this revert already told the user; this page repeating
       // the undo-completion toast would be a duplicate confirmation for
       // one action.
+      restoreDone = true;
       await waitFor(() => expect(doneMark()).toBeNull(), { timeout: 3000 });
       expect(actionPosts).toBe(1);
       expect(h.toast).not.toHaveBeenCalledWith(UNDO_DONE_TOAST, 'success');
@@ -2361,6 +2882,99 @@ describe('SenderDetailRoute — refreshing an aged-out read (D25)', () => {
     await waitFor(() => expect(posted).toHaveLength(1));
     expect(posted[0]).toEqual({ senderId: 'linkedin', reason: 'stale' });
   });
+
+  it('does not buy another score for a fulfilled unsubscribe suggestion', async () => {
+    stubWithRecommendation(AGED);
+    // Override the detail GET before the first render; an empty visible
+    // projection must not be mistaken for a never-scored sender.
+    installFetchStub([
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+$/,
+        respond: () =>
+          jsonOk({
+            data: {
+              ...DETAIL,
+              policyType: 'unsubscribe',
+              unsubStatus: 'endpoint_accepted',
+              recommendation: AGED,
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/(messages|history)$/,
+        respond: () => jsonOk({ data: [], meta: { pagination: { nextCursor: null } } }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/timeseries$/,
+        respond: () => jsonOk({ data: [] }),
+      },
+      {
+        method: 'POST',
+        path: '/api/triage/score-sender',
+        respond: async (req) => {
+          posted.push(await req.json());
+          return jsonOk({ data: { idempotencyKey: 'k' } });
+        },
+      },
+    ]);
+    renderDetail();
+    await screen.findByText('Request accepted');
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+    expect(posted).toHaveLength(0);
+    expect(screen.queryByRole('group', { name: /Optional suggestion/ })).not.toBeInTheDocument();
+  });
+
+  it.each(['keep', 'protected'] as const)(
+    'does not score a never-scored sender whose current choice is %s',
+    async (choice) => {
+      stubWithRecommendation(null);
+      installFetchStub([
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+$/,
+          respond: () =>
+            jsonOk({
+              data: {
+                ...DETAIL,
+                policyType: choice === 'keep' ? 'keep' : null,
+                protectionFlags: { ...DETAIL.protectionFlags, isProtected: choice === 'protected' },
+                recommendation: null,
+              },
+            }),
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+\/(messages|history)$/,
+          respond: () => jsonOk({ data: [], meta: { pagination: { nextCursor: null } } }),
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+\/timeseries$/,
+          respond: () => jsonOk({ data: [] }),
+        },
+        {
+          method: 'POST',
+          path: '/api/triage/score-sender',
+          respond: async (req) => {
+            posted.push(await req.json());
+            return jsonOk({ data: { idempotencyKey: 'k' } });
+          },
+        },
+      ]);
+      renderDetail();
+      await screen.findByRole('heading', { name: /^LinkedIn$/ });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 60));
+      });
+      expect(posted).toHaveLength(0);
+      expect(screen.queryByRole('group', { name: /Optional suggestion/ })).not.toBeInTheDocument();
+    },
+  );
 
   it('leaves a read that is still inside its TTL alone', async () => {
     stubWithRecommendation({ ...AGED, stale: false });

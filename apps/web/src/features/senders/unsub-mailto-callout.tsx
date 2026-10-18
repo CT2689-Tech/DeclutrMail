@@ -70,11 +70,11 @@ export function UnsubMailtoCallout({
           onStatusChanged?.(next);
           refreshProgress();
           if (next === 'user_marked_sent') {
-            toast(`Marked ${senderName}'s unsubscribe email as sent`, 'success');
+            toast(`Marked ${senderName}’s unsubscribe email as sent`, 'success');
           }
         },
         onError: () => {
-          toast("Couldn't record that unsubscribe step. Refresh and try again.", 'warn');
+          toast('Couldn’t record that unsubscribe step. Refresh and try again.', 'warn');
         },
       },
     );
@@ -97,7 +97,9 @@ export function UnsubMailtoCallout({
       }}
     >
       <span style={{ flex: 1, fontSize: text.base, color: color.fg, lineHeight: 1.5 }}>
-        <strong style={{ fontWeight: 600 }}>One step left for {senderName}.</strong>{' '}
+        <strong style={{ fontWeight: 600 }}>
+          {markedSent ? `Marked sent for ${senderName}.` : `One step left for ${senderName}.`}
+        </strong>{' '}
         <span style={{ color: color.fgSoft }}>
           {markedSent
             ? 'You marked the unsubscribe email as sent — stopping is up to the sender.'

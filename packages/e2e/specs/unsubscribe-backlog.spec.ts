@@ -309,9 +309,8 @@ test('a sender with no unsubscribe link reports the failure', async ({ page }) =
   await expect(card).toBeVisible({ timeout: 30_000 });
   await card.getByRole('button', { name: 'More actions' }).click();
   const item = card.getByRole('menuitem', { name: /Unsubscribe/ });
-  await expect(item).toBeVisible();
-  await expect(item).toContainText('No unsubscribe channel found');
-  await expect(item).toHaveAttribute('aria-disabled', 'true');
+  await expect(item).toHaveCount(0);
+  await page.keyboard.press('u');
   await expect(confirmSheet(page)).toHaveCount(0);
   expect(posts).toEqual([]);
 });

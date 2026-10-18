@@ -1,0 +1,9 @@
+/* Public route styles share one entry so the first paint does not wait
+   on a separate stylesheet request for each illustrated component.
+   Preserve the existing homepage cascade order. */
+@import './public-shell/public-shell.css';
+@import './landing/sender-walkthrough.css';
+@import './landing/landing.css';
+@import './landing/homepage-sections.css';
+@import './landing/hero-workspace.css';
+@import './trust/trust-row.css';

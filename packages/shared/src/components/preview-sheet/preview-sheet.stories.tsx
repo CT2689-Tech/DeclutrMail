@@ -15,6 +15,9 @@ import { Avatar } from '../avatar';
 import { WS3_COPY } from '../../copy/launch/ws3';
 import { PreviewSheet } from './preview-sheet';
 import { SheetFactList, SheetLinks, SheetSegmented, SheetTextAction } from './sheet-parts';
+import { WS2_COPY } from '../../copy/launch/ws2';
+
+const previewDetails = WS2_COPY.preview.details;
 
 type StoryMeta<C extends (...args: never) => unknown> = {
   title: string;
@@ -41,7 +44,14 @@ const noop = () => undefined;
 // a row of their own. Never a stack of full sentences.
 const details = (
   <>
-    <SheetFactList facts={[{ label: 'Count', value: 'Inbox now, rechecked when it runs' }]} />
+    <SheetFactList
+      facts={[
+        {
+          label: previewDetails.includes.label,
+          value: `${previewDetails.includes.inbox}. ${previewDetails.includes.recheck}`,
+        },
+      ]}
+    />
     <SheetLinks>
       <SheetTextAction href="https://mail.google.com/">
         Check in Gmail <span aria-hidden="true">↗</span>
@@ -55,11 +65,17 @@ const deleteDetails = (
   <>
     <SheetFactList
       facts={[
-        { label: 'Where it is now', value: '0 in your inbox · 6,728 elsewhere in Gmail' },
-        { label: 'Count', value: 'Inbox + archived now, rechecked when it runs' },
+        {
+          label: previewDetails.whereNow.label,
+          value: '0 in your inbox · 6,728 elsewhere in Gmail',
+        },
+        {
+          label: previewDetails.includes.label,
+          value: `${previewDetails.includes.all}. ${previewDetails.includes.recheck}`,
+        },
         { label: 'Never touched', value: 'Trash, Spam, Drafts, Chat' },
         { label: 'Undo', value: 'Puts each email back where it was' },
-        { label: 'Gmail Trash', value: 'Kept up to 30 days, then deleted for good' },
+        { label: previewDetails.deleted.label, value: previewDetails.deleted.value },
       ]}
     />
     <SheetLinks>

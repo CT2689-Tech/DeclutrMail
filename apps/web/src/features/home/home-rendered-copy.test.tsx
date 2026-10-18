@@ -37,7 +37,7 @@ const steps = [
  */
 const ALLOWED = new Set<string>([
   'Loading Home',
-  "We couldn't load Home",
+  'We couldn’t load Home',
   'Review senders',
   'Open Settings',
   'Try again',
@@ -108,8 +108,8 @@ describe('rendered Home text', () => {
     deckPhrases(STAGE_SENTENCE, phrases);
 
     const views = [
-      <HomeView key="ready" state={ready} nextSteps={steps} senderSizeView timeZone="UTC" />,
-      <HomeView key="flag" state={ready} nextSteps={steps} timeZone="UTC" tier="plus" />,
+      <HomeView key="ready" state={ready} nextSteps={steps} senderSizeView />,
+      <HomeView key="flag" state={ready} nextSteps={steps} tier="plus" />,
       <HomeView key="empty" state={{ kind: 'empty', syncing: false, action }} />,
       <HomeView key="syncing" state={{ kind: 'empty', syncing: true, action }} />,
       <HomeView

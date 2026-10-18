@@ -59,7 +59,7 @@ export const Brief: Story<typeof RoutePlaceholder> = {
     status: 'Planned for V2.1',
     title: 'Daily Brief',
     description:
-      "A 60-second summary of yesterday's mail — Reply, FYI, and Noise — ready every morning at 8am local.",
+      'A 60-second summary of yesterday’s mail — Reply, FYI, and Noise — ready every morning at 8am local.',
     decisions: ['D61', 'D62', 'D63', 'D67', 'D69', 'D70'],
     primaryCta: { href: '/triage', label: 'Open Triage' },
   },

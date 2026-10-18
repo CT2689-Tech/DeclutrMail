@@ -1476,7 +1476,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.keyDown(document.body, { key: 'a' });
     await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
     // Wait for the REAL inbox count to load so confirm is no longer gated.
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     // The real endpoint was hit, and the REAL receipt appears only after the
@@ -1541,100 +1541,284 @@ describe('SendersScreen — edge states', () => {
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
     await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await screen.findByText(/still confirming your last action/i);
     expect(archivePosted).toBe(false);
   });
 
-  it('confirms Delete, keeps the cleared card marked done, then returns it to normal after Undo', async () => {
-    let trashed = false;
-    let currentMailOnly: string | null = null;
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/senders',
-        respond: (_req, url) => {
-          currentMailOnly = url.searchParams.get('current_mail_only');
-          return jsonOk({
-            data: trashed ? [] : [ROW],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 50 },
-              query: {
-                totalMatching: trashed ? 0 : 1,
-                globalMaxTotal: 313,
-                asOf: '2026-09-06T00:00:00.000Z',
+  it.each([
+    { verb: 'Delete' as const, inbox: 3, archived: 2, affected: 5, inboxOnly: false },
+    { verb: 'Delete' as const, inbox: 0, archived: 21, affected: 21, inboxOnly: false },
+    { verb: 'Archive' as const, inbox: 3, archived: 2, affected: 3, inboxOnly: false },
+    { verb: 'Archive' as const, inbox: 3, archived: 2, affected: 1, inboxOnly: false },
+    { verb: 'Later' as const, inbox: 3, archived: 2, affected: 3, inboxOnly: false },
+    { verb: 'Archive' as const, inbox: 3, archived: 2, affected: 3, inboxOnly: true },
+    { verb: 'Later' as const, inbox: 3, archived: 2, affected: 3, inboxOnly: true },
+  ])(
+    '$verb → Undo reconciles row, $inbox/$archived counts and actions without reload ($affected moved, inboxOnly=$inboxOnly)',
+    async ({ verb, inbox, archived, affected, inboxOnly }) => {
+      let moved = false;
+      const primaryType = verb === 'Archive' ? 'archive' : verb === 'Later' ? 'later' : 'delete';
+      const remainingInbox = verb === 'Delete' ? 0 : inbox - affected;
+      const remainingArchived = verb === 'Delete' ? 0 : archived + affected;
+      let inboxFilter: string | null = null;
+      let listedCount = 1;
+      let moveCompleted = false;
+      let currentMailOnly: string | null = null;
+      const original = {
+        ...ROW,
+        inboxCount: inbox,
+        archivedCount: archived,
+        policyType: 'unsubscribe' as const,
+        unsubStatus: 'endpoint_accepted' as const,
+      };
+      const count = inbox + archived;
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/senders',
+          respond: (_req, url) => {
+            currentMailOnly = url.searchParams.get('current_mail_only');
+            inboxFilter = url.searchParams.get('has_inbox_mail');
+            const current = {
+              ...original,
+              inboxCount: moved ? remainingInbox : inbox,
+              archivedCount: moved ? remainingArchived : archived,
+            };
+            const hidden =
+              current.inboxCount + current.archivedCount === 0 ||
+              (inboxFilter === 'true' && current.inboxCount === 0);
+            listedCount = hidden ? 0 : 1;
+            return jsonOk({
+              data: hidden ? [] : [current],
+              meta: {
+                pagination: { nextCursor: null, hasMore: false, limit: 50 },
+                query: {
+                  totalMatching: hidden ? 0 : 1,
+                  globalMaxTotal: 313,
+                  asOf: '2026-09-06T00:00:00.000Z',
+                },
               },
-            },
-          });
+            });
+          },
         },
-      },
-      compositePreviewHandler(313),
-      {
-        method: 'POST',
-        path: '/api/actions',
-        respond: () =>
-          jsonOk({ data: { actionId: 'delete-1', requestedCount: 313, status: 'queued' } }),
-      },
-      {
-        method: 'GET',
-        path: /^\/api\/actions\/[^/]+$/,
-        respond: (_req, url) => {
-          const reverse = url.pathname.endsWith('reverse-1');
-          trashed = !reverse;
-          return jsonOk({
-            data: {
-              ...archiveStatus({
-                actionId: reverse ? 'reverse-1' : 'delete-1',
-                requestedCount: 313,
-                affectedCount: 313,
-              }),
-              verb: 'delete',
-              direction: reverse ? 'reverse' : 'forward',
-            },
-          });
+        {
+          method: 'GET',
+          path: '/api/senders/a',
+          respond: () =>
+            jsonOk({
+              data: {
+                ...original,
+                inboxCount: moved ? remainingInbox : inbox,
+                archivedCount: moved ? remainingArchived : archived,
+              },
+            }),
         },
-      },
-      {
-        method: 'POST',
-        path: '/api/undo/tok-1',
-        respond: () =>
-          jsonOk({
-            data: {
-              token: 'tok-1',
-              actionKind: 'delete',
-              reverted: false,
-              expired: false,
-              revertedAt: null,
-              actionId: 'reverse-1',
-            },
-          }),
-      },
-    ]);
-    renderScreen();
-    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
-    fireEvent.keyDown(document.body, { key: 'd' });
-    await screen.findByText(/rechecked when it runs/i);
-    fireEvent.change(
-      within(screen.getByRole('dialog')).getByRole('combobox', { name: /How far back/i }),
-      {
-        target: { value: 'all' },
-      },
-    );
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
-    await findRowStatus();
-    // Founder decision 2026-09-20: the row STAYS where it is, marked done,
-    // even though the refetch that follows dropped this sender (nothing
-    // left to clean) — the list must not jump under the cursor.
-    await screen.findByText(/^Deleted(?: ·)? 313(?: emails)?$/);
-    expect(screen.getByRole('checkbox', { name: /select sender a/i })).toBeEnabled();
-    expect(currentMailOnly).toBe('true');
-    await undoFromThePill('tok-1');
-    // A confirmed Undo takes the "done" mark off; the row is the server's again.
-    await waitFor(() => expect(screen.queryByText(/^Deleted /)).toBeNull());
-    await screen.findByRole('checkbox', { name: /select sender a/i });
-  });
+        {
+          method: 'GET',
+          path: '/api/actions/preview',
+          respond: () =>
+            jsonOk({
+              data: {
+                sender: {
+                  id: 'a',
+                  name: 'Sender A',
+                  domain: 'example.com',
+                  lastSeenDays: 2,
+                  wroteToCount: 0,
+                  monthly: 30,
+                },
+                counts: {
+                  all: inbox,
+                  olderThan30d: verb === 'Archive' && affected < inbox ? affected : 0,
+                  olderThan90d: 0,
+                  olderThan180d: 0,
+                  olderThan365d: 0,
+                },
+                recentMessages: {
+                  all: [],
+                  olderThan30d: [],
+                  olderThan90d: [],
+                  olderThan180d: [],
+                  olderThan365d: [],
+                },
+                allMail: {
+                  counts: {
+                    all: count,
+                    olderThan30d: verb === 'Archive' && affected < inbox ? affected : 0,
+                    olderThan90d: 0,
+                    olderThan180d: 0,
+                    olderThan365d: 0,
+                  },
+                  recentMessages: {
+                    all: [],
+                    olderThan30d: [],
+                    olderThan90d: [],
+                    olderThan180d: [],
+                    olderThan365d: [],
+                  },
+                },
+                unsubAvailable: true,
+                protected: false,
+              },
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () =>
+            jsonOk({ data: { actionId: 'move-1', requestedCount: affected, status: 'queued' } }),
+        },
+        {
+          method: 'GET',
+          path: '/api/actions/move-1',
+          respond: () => {
+            if (!moveCompleted) {
+              moved = true;
+              moveCompleted = true;
+            }
+            return jsonOk({
+              data: {
+                ...archiveStatus({
+                  actionId: 'move-1',
+                  requestedCount: affected,
+                  affectedCount: affected,
+                }),
+                verb: primaryType,
+                direction: 'forward',
+              },
+            });
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/actions/undo-status',
+          respond: () => {
+            moved = false;
+            return jsonOk({
+              data: {
+                ...archiveStatus({
+                  actionId: 'reverse-1',
+                  requestedCount: affected,
+                  affectedCount: affected,
+                }),
+                verb: primaryType,
+                direction: 'reverse',
+                undoRevertedAt: '2026-10-15T12:00:00.000Z',
+              },
+            });
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/undo/tok-1',
+          respond: () =>
+            jsonOk({
+              data: {
+                token: 'tok-1',
+                actionKind: primaryType,
+                reverted: false,
+                expired: false,
+                revertedAt: null,
+                actionId: 'reverse-1',
+                actionIds: ['reverse-1'],
+              },
+            }),
+        },
+      ]);
+      renderScreen();
+      await screen.findByRole('checkbox', { name: /select sender a/i });
+      if (inboxOnly) {
+        fireEvent.click(screen.getByRole('button', { name: 'Mail in Inbox' }));
+        await waitFor(() => expect(inboxFilter).toBe('true'));
+        await waitFor(() =>
+          expect(lastClient.isFetching({ queryKey: ['senders', 'list'] })).toBe(0),
+        );
+      }
+      fireEvent.click(screen.getByRole('checkbox', { name: /select sender a/i }));
+      fireEvent.keyDown(document.body, { key: verb[0]!.toLowerCase() });
+      if (verb === 'Delete')
+        fireEvent.click(await screen.findByRole('radio', { name: /Inbox \+ archived/ }));
+      await screen.findByText(/We check again right before anything moves/);
+      if (verb !== 'Later') {
+        fireEvent.change(
+          within(screen.getByRole('dialog')).getByRole('combobox', { name: /How far back/i }),
+          { target: { value: affected < inbox ? '30' : 'all' } },
+        );
+      }
+      const confirm = await within(screen.getByRole('dialog')).findByRole('button', {
+        name:
+          verb === 'Later'
+            ? new RegExp(`^Move ${affected} emails? to Later$`)
+            : new RegExp(`^${verb} ${affected} emails?$`),
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      fireEvent.click(confirm);
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      await waitFor(() => expect(moved).toBe(true));
+      if (remainingInbox + remainingArchived === 0) {
+        await waitFor(() =>
+          expect(screen.queryByRole('checkbox', { name: /select sender a/i })).toBeNull(),
+        );
+      } else {
+        const remaining = screen
+          .getByRole('checkbox', { name: /select sender a/i })
+          .closest('[role="listitem"]') as HTMLElement;
+        await waitFor(() => expect(remaining).toHaveTextContent(`${remainingInbox} in inbox`));
+        expect(remaining).toHaveTextContent(`${remainingArchived} archived`);
+        // Preserve the approved completed-row rule: remaining current mail
+        // stays visible with fresh facts, even if the Inbox filter dropped it.
+        if (inboxOnly) expect(listedCount).toBe(0);
+        fireEvent.click(within(remaining).getByRole('button', { name: /More actions/ }));
+        const menu = await screen.findByRole('menu');
+        for (const action of ['Archive', 'Later']) {
+          expect(
+            within(menu)
+              .getByRole('menuitem', { name: new RegExp(`^${action}`) })
+              .getAttribute('aria-disabled'),
+          ).toBe(remainingInbox === 0 ? 'true' : null);
+        }
+        expect(within(menu).getByRole('menuitem', { name: /^Delete/ })).not.toHaveAttribute(
+          'aria-disabled',
+          'true',
+        );
+        fireEvent.click(within(remaining).getByRole('button', { name: /More actions/ }));
+      }
+      expect(currentMailOnly).toBe('true');
+      await undoFromThePill('tok-1');
+      // The real reverse-status hook invalidates the list; no manual cache
+      // update, reload, remount or synthetic focus event restores the row.
+      await waitFor(() =>
+        expect(screen.queryByText(/^(?:Archived|Deleted) \d+$|^Moved \d+ to Later$/)).toBeNull(),
+      );
+      const restored = (await screen.findByRole('checkbox', { name: /select sender a/i })).closest(
+        '[role="listitem"]',
+      ) as HTMLElement;
+      expect(moved).toBe(false);
+      expect(restored).toHaveTextContent(`${inbox} in inbox`);
+      expect(restored).toHaveTextContent(`${archived} archived`);
+      expect(restored).toHaveTextContent('Request accepted');
+      fireEvent.click(within(restored).getByRole('button', { name: /More actions/ }));
+      const menu = await screen.findByRole('menu');
+      expect(within(menu).getByRole('menuitem', { name: /^Delete/ })).not.toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
+      expect(within(menu).getByRole('menuitem', { name: /^Unsubscribe/ })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
+      for (const verb of ['Archive', 'Later']) {
+        expect(
+          within(menu)
+            .getByRole('menuitem', { name: new RegExp(`^${verb}`) })
+            .getAttribute('aria-disabled'),
+        ).toBe(inbox === 0 ? 'true' : null);
+      }
+    },
+  );
 
   // QA-delete-20260829-05 — the same staleness gap `sender-detail-page.tsx`
   // had: this screen's `receipt` is local state that only heard about a
@@ -1642,90 +1826,97 @@ describe('SendersScreen — edge states', () => {
   // identical token through a SEPARATE `useRevertUndo()` instance, mounted
   // in a different component tree — simulated here the same way, sharing
   // only the QueryClient, never touching this screen's React tree.
-  it("clears the receipt when a DIFFERENT component's useRevertUndo() reverts the same token (external undo)", async () => {
-    let archivePosted = false;
-    let undoPosted = false;
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/senders',
-        respond: () =>
-          jsonOk({
-            data: [ROW],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
-            },
-          }),
-      },
-      compositePreviewHandler(12),
-      {
-        method: 'POST',
-        path: '/api/actions',
-        respond: () => {
-          archivePosted = true;
-          return jsonOk({ data: { actionId: 'act-1', requestedCount: 12, status: 'queued' } });
-        },
-      },
-      {
-        method: 'GET',
-        path: /^\/api\/actions\/[^/]+$/,
-        respond: (_req, url) =>
-          jsonOk({
-            data: archiveStatus({
-              actionId: url.pathname.endsWith('rev-ext') ? 'rev-ext' : 'act-1',
-              undoToken: url.pathname.endsWith('rev-ext') ? null : 'tok-1',
-              undoExpiresAt: url.pathname.endsWith('rev-ext') ? null : '2027-06-16T14:35:00.000Z',
+  it.each([undefined, 'foreign-mailbox'])(
+    'handles external pending Undo only in its mailbox (%s)',
+    async (mailboxId) => {
+      let archivePosted = false;
+      let undoPosted = false;
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/senders',
+          respond: () =>
+            jsonOk({
+              data: [ROW],
+              meta: {
+                pagination: { nextCursor: null, hasMore: false, limit: 25 },
+                query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+              },
             }),
-          }),
-      },
-      {
-        method: 'POST',
-        path: '/api/undo/tok-1',
-        respond: () => {
-          undoPosted = true;
-          return jsonOk({
-            data: {
-              token: 'tok-1',
-              actionKind: 'archive',
-              reverted: false,
-              expired: false,
-              revertedAt: null,
-              actionId: 'rev-ext',
-            },
-          });
         },
-      },
-    ]);
+        compositePreviewHandler(12),
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () => {
+            archivePosted = true;
+            return jsonOk({ data: { actionId: 'act-1', requestedCount: 12, status: 'queued' } });
+          },
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/actions\/[^/]+$/,
+          respond: (_req, url) =>
+            jsonOk({
+              data: archiveStatus({
+                actionId: url.pathname.endsWith('rev-ext') ? 'rev-ext' : 'act-1',
+                undoToken: url.pathname.endsWith('rev-ext') ? null : 'tok-1',
+                undoExpiresAt: url.pathname.endsWith('rev-ext') ? null : '2027-06-16T14:35:00.000Z',
+              }),
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/undo/tok-1',
+          respond: () => {
+            undoPosted = true;
+            return jsonOk({
+              data: {
+                token: 'tok-1',
+                actionKind: 'archive',
+                reverted: false,
+                expired: false,
+                revertedAt: null,
+                actionId: 'rev-ext',
+              },
+            });
+          },
+        },
+      ]);
 
-    const client = createTestQueryClient();
-    render(
-      <QueryWrapper client={client}>
-        <SendersScreen />
-      </QueryWrapper>,
-    );
-    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
-    fireEvent.click(checkbox);
-    fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
-    await screen.findByText(/rechecked when it runs/i);
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      const client = createTestQueryClient();
+      render(
+        <QueryWrapper client={client}>
+          <SendersScreen />
+        </QueryWrapper>,
+      );
+      const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+      fireEvent.click(checkbox);
+      fireEvent.keyDown(document.body, { key: 'a' });
+      await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
+      await screen.findByText(/We check again right before anything moves/);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
-    await findRowStatus();
-    expect(archivePosted).toBe(true);
+      await findRowStatus();
+      expect(archivePosted).toBe(true);
 
-    // Simulate the tray: a SEPARATE `useRevertUndo()` instance.
-    const { result } = renderHook(() => useRevertUndo(), {
-      wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
-    });
-    await act(async () => {
-      result.current.mutate({ token: 'tok-1' });
-      await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    });
+      // Simulate the tray: a SEPARATE `useRevertUndo()` instance.
+      const { result } = renderHook(() => useRevertUndo(), {
+        wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+      });
+      await act(async () => {
+        result.current.mutate({ token: 'tok-1', ...(mailboxId ? { mailboxId } : {}) });
+        await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      });
 
-    expect(undoPosted).toBe(true);
-    await waitFor(() => expect(document.querySelector('[data-dm-row-activity]')).toBeNull());
-  });
+      expect(undoPosted).toBe(true);
+      await waitFor(() =>
+        mailboxId
+          ? expect(document.querySelector('[data-dm-row-activity]')).not.toBeNull()
+          : expect(document.querySelector('[data-dm-row-activity]')).toBeNull(),
+      );
+    },
+  );
 
   it('carries the chosen time window into a SINGLE-sender archive enqueue (D226)', async () => {
     // The chip row offers real per-bucket counts, so confirming "1 year+"
@@ -1804,7 +1995,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
     await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
 
     // Pick the narrowest window — the chip states 12 of the 250.
     const dialog = screen.getByRole('dialog');
@@ -1869,7 +2060,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
     await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await waitFor(() => expect(statusPolled).toBe(true));
@@ -1911,7 +2102,7 @@ describe('SendersScreen — edge states', () => {
     renderScreen();
     fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await waitFor(() => expect(statusPolled).toBe(true));
@@ -1961,7 +2152,7 @@ describe('SendersScreen — edge states', () => {
     for (const _attempt of [1, 2]) {
       fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
       fireEvent.keyDown(document.body, { key: 'a' });
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() =>
         expect(document.querySelector('[data-dm-row-activity="working"]')).toBeNull(),
@@ -2012,7 +2203,7 @@ describe('SendersScreen — edge states', () => {
     await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
 
     // Preview resolves to 0 current matches and the confirm is disabled.
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByRole('button', { name: /archive/i })).toBeDisabled();
 
@@ -2075,7 +2266,7 @@ describe('SendersScreen — edge states', () => {
     await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
 
     // Count check failed → explicit no-change state and a blocked confirm.
-    await screen.findByText(/couldn't load the preview/i);
+    await screen.findByText(/couldn’t load the preview/i);
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByRole('button', { name: /archive/i })).toBeDisabled();
     fireEvent.click(within(dialog).getByRole('button', { name: /retry preview/i }));
@@ -2114,7 +2305,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'u' });
     const dialog = await screen.findByRole('dialog');
-    await within(dialog).findByRole('radiogroup', { name: 'Existing email' });
+    await within(dialog).findByRole('radiogroup', { name: 'Email you already have' });
     expect(within(dialog).getAllByText('Unsubscribe only')).toHaveLength(1);
     expect(within(dialog).getByRole('radio', { name: '+ Archive 3' })).toBeEnabled();
     expect(within(dialog).getByText('+ Archive 3')).toBeInTheDocument();
@@ -2216,6 +2407,168 @@ describe('SendersScreen — edge states', () => {
     );
     expect(posts).toEqual(['unsubscribe-backlog']);
   });
+
+  it.each([0, 7])(
+    'reconciles Unsubscribe + Delete with %i current emails remaining and one unsubscribe outcome',
+    async (remaining) => {
+      const deleted = 21 - remaining;
+      const senderName = `Cleanup Sender ${remaining}`;
+      let submittedBody: unknown;
+      const currentRow = () => ({
+        ...ROW,
+        displayName: senderName,
+        inboxCount: 0,
+        archivedCount: moveFinished ? remaining : 21,
+        policyType: moveFinished ? 'unsubscribe' : 'none',
+        unsubStatus: accepted ? 'endpoint_accepted' : 'requested',
+      });
+      let moveFinished = false;
+      let accepted = false;
+      let finishUnsubscribe!: (response: Response) => void;
+      const unsubscribe = new Promise<Response>((resolve) => {
+        finishUnsubscribe = resolve;
+      });
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/senders',
+          respond: async () => {
+            const response = await oneSenderHandler().respond().json();
+            response.data = moveFinished && remaining === 0 ? [] : [currentRow()];
+            return jsonOk(response);
+          },
+        },
+        {
+          method: 'GET',
+          path: '/api/actions/preview',
+          respond: async () => {
+            const response = await compositePreviewHandler(0).respond().json();
+            response.data.allMail = {
+              counts: { ...response.data.counts, all: 21, olderThan30d: 14 },
+              recentMessages: response.data.recentMessages,
+            };
+            return jsonOk(response);
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-backlog',
+          respond: async (req) => {
+            submittedBody = await req.json();
+            return jsonOk({
+              data: {
+                mode: 'delete',
+                feedbackVersion: 2,
+                backlog: {
+                  actionId: 'delete-past',
+                  handle: 'action',
+                  requestedCount: deleted,
+                  verb: 'delete',
+                },
+                senders: [backlogSender('a', 'requested', { executionActionId: 'exec-a' })],
+              },
+            });
+          },
+        },
+        {
+          method: 'GET',
+          path: '/api/actions/delete-past',
+          respond: () => {
+            moveFinished = true;
+            return jsonOk({
+              data: {
+                ...archiveStatus({
+                  actionId: 'delete-past',
+                  requestedCount: deleted,
+                  affectedCount: deleted,
+                }),
+                verb: 'delete',
+              },
+            });
+          },
+        },
+        { method: 'GET', path: '/api/actions/exec-a', respond: () => unsubscribe },
+        {
+          method: 'GET',
+          path: '/api/senders/a',
+          respond: () =>
+            jsonOk({
+              data: currentRow(),
+            }),
+        },
+      ]);
+      renderScreenWithToasts();
+      fireEvent.click(
+        await screen.findByRole('button', {
+          name: new RegExp(`More actions for ${senderName}`, 'i'),
+        }),
+      );
+      fireEvent.click(
+        within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Unsubscribe' }),
+      );
+      const dialog = await screen.findByRole('dialog');
+      const deleteChoice = await within(dialog).findByRole('radio', { name: /\+ Delete \d+/ });
+      await waitFor(() => expect(deleteChoice).toBeEnabled());
+      fireEvent.click(deleteChoice);
+      fireEvent.click(await screen.findByRole('radio', { name: 'Inbox + archived 21' }));
+      if (remaining > 0) {
+        fireEvent.change(screen.getByRole('combobox', { name: 'How far back to act on' }), {
+          target: { value: '30' },
+        });
+      }
+      const confirm = await screen.findByRole('button', {
+        name: `Unsubscribe + Delete ${deleted} emails`,
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      fireEvent.click(confirm);
+
+      await waitFor(() =>
+        expect(submittedBody).toEqual({
+          mode: 'delete',
+          senderIds: ['a'],
+          olderThanDays: remaining > 0 ? 30 : null,
+          reach: 'all_mail',
+        }),
+      );
+      if (remaining === 0) {
+        await waitFor(() => expect(screen.queryByTestId('sender-row-a')).toBeNull());
+      } else {
+        await waitFor(() =>
+          expect(screen.getByTestId('sender-row-a')).toHaveTextContent(`${remaining}emails`),
+        );
+        expect(screen.getByTestId('sender-row-a')).toHaveTextContent(
+          new RegExp(`Deleted.*${deleted}`),
+        );
+      }
+      // Requested counts are not completion evidence; the existing Undo
+      // feedback owns the move while unsubscribe is independently watched.
+      if (remaining > 0) expect(screen.getByText(`Deleted ${deleted} emails`)).toBeInTheDocument();
+
+      accepted = true;
+      await act(async () =>
+        finishUnsubscribe(
+          jsonOk({
+            data: {
+              ...archiveStatus({
+                actionId: 'exec-a',
+                requestedCount: 1,
+                affectedCount: 1,
+                undoToken: null,
+              }),
+              verb: 'unsubscribe',
+            },
+          }),
+        ),
+      );
+      if (remaining > 0) await screen.findByText('Request accepted');
+      expect(screen.queryByText('Requesting…')).toBeNull();
+      expect(
+        screen.queryByText(
+          `${senderName} accepted the unsubscribe request — stopping is up to them.`,
+        ),
+      ).toBeNull();
+    },
+  );
 
   it('says an unsubscribe already on its way was not sent again', async () => {
     installFetchStub([
@@ -2347,7 +2700,7 @@ describe('SendersScreen — edge states', () => {
       });
 
       expect(
-        screen.getByText("Couldn't confirm the unsubscribe from Sender A"),
+        screen.getByText('Couldn’t confirm the unsubscribe from Sender A'),
       ).toBeInTheDocument();
       expect(screen.queryByText(/chip/)).toBeNull();
     });
@@ -2662,7 +3015,7 @@ describe('SendersScreen — edge states', () => {
       fireEvent.click(screen.getByRole('checkbox', { name: /select overdue alpha/i }));
       fireEvent.keyDown(document.body, { key: 'a' });
       await tick(200);
-      screen.getByText(/rechecked when it runs/i);
+      screen.getByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await tick(200);
       expect(actionPosts).toBe(1);
@@ -2670,7 +3023,7 @@ describe('SendersScreen — edge states', () => {
       // The poll keeps answering `executing`. At the deadline the latch
       // parks: overdue toast, active slot freed.
       await tick(ACTION_OVERDUE_MS);
-      screen.getByText(/Archive for Overdue Alpha is still running/);
+      expect(screen.queryByText(/Archive for Overdue Alpha is still running/)).toBeNull();
 
       // The parked handle still OWNS Overdue Alpha. It used to be
       // re-selectable, with the second dispatch refused by a toast; now
@@ -2769,7 +3122,7 @@ describe('SendersScreen — edge states', () => {
       fireEvent.click(screen.getByRole('checkbox', { name: /select sender a/i }));
       fireEvent.keyDown(document.body, { key: 'a' });
       await tick(200);
-      screen.getByText(/rechecked when it runs/i);
+      screen.getByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await tick(200);
       await tick(ACTION_OVERDUE_MS);
@@ -2909,10 +3262,556 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.keyDown(document.body, { key });
   }
 
+  it.each(['Archive', 'Later', 'Delete'] as const)(
+    'refuses immediate zero list readback before %s confirmation',
+    async (verb) => {
+      let posts = 0;
+      installFetchStub([
+        oneSenderHandler(),
+        compositePreviewHandler(3),
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () => {
+            posts += 1;
+            return jsonOk({ data: { actionId: 'never', requestedCount: 0, status: 'queued' } });
+          },
+        },
+      ]);
+      renderScreen();
+      fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+      fireEvent.keyDown(document.body, { key: verb[0]!.toLowerCase() });
+      const dialog = await screen.findByRole('dialog');
+      if (verb === 'Delete') {
+        const window = await within(dialog).findByRole('combobox', {
+          name: 'How far back to act on',
+        });
+        fireEvent.change(window, { target: { value: 'all' } });
+      }
+      const confirm = await within(dialog).findByRole('button', {
+        name:
+          verb === 'Later' ? /^Move \d+ emails? to Later$/ : new RegExp(`^${verb} \\d+ emails?$`),
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      lastClient.setQueryData(sendersKeys.detail('a'), {
+        data: { ...ROW, inboxCount: 0, archivedCount: 0 },
+      });
+      fireEvent.click(confirm);
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(posts).toBe(0);
+    },
+  );
+
+  it.each([false, true])(
+    'explains empty-mail bulk exclusions with Protected=%s and posts only nonempty rows',
+    async (withProtected) => {
+      const posted: Array<{ selector: { senderIds: string[] } }> = [];
+      installFetchStub([
+        {
+          ...TWO_SENDER_LIST,
+          respond: () =>
+            jsonOk({
+              data: [
+                ROW,
+                ROW_B,
+                ...(withProtected
+                  ? [
+                      {
+                        ...ROW,
+                        id: 'protected',
+                        displayName: 'Protected',
+                        email: 'p@protected.test',
+                        domain: 'protected.test',
+                        protectionFlags: {
+                          isProtected: true,
+                          protectionReason: 'replied',
+                          protectionSetAt: null,
+                        },
+                      },
+                    ]
+                  : []),
+                {
+                  ...ROW,
+                  id: 'empty',
+                  name: 'Empty',
+                  displayName: 'Empty',
+                  email: 'empty@empty.test',
+                  domain: 'empty.test',
+                  inboxCount: 0,
+                  archivedCount: 0,
+                },
+              ],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+            }),
+        },
+        {
+          ...BULK_PREVIEW_OK,
+          respond: async () => {
+            const result = await BULK_PREVIEW_OK.respond().json();
+            if (withProtected) {
+              result.data.protectedCount = 1;
+              result.data.senders.push({
+                ...result.data.senders[0],
+                senderId: 'protected',
+                name: 'Protected',
+                protected: true,
+              });
+            }
+            return jsonOk(result);
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: async (req) => {
+            posted.push(await req.json());
+            return jsonOk({
+              data: {
+                batchId: 'batch-empty',
+                senderCount: 2,
+                skipped: withProtected ? [{ senderId: 'protected', reason: 'protected' }] : [],
+              },
+            });
+          },
+        },
+      ]);
+      renderScreen();
+      fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+      fireEvent.click(screen.getByRole('checkbox', { name: /select sender b/i }));
+      fireEvent.click(screen.getByRole('checkbox', { name: /select empty/i }));
+      if (withProtected)
+        fireEvent.click(screen.getByRole('checkbox', { name: /select protected/i }));
+      fireEvent.keyDown(document.body, { key: 'a' });
+      const dialog = await screen.findByRole('dialog');
+      expect(
+        await within(dialog).findByText(/1 sender with no inbox emails is skipped/),
+      ).toBeVisible();
+      expect(dialog).not.toHaveTextContent(/person|people/i);
+      if (withProtected) expect(dialog).toHaveTextContent('1 Protected sender is skipped.');
+      const confirm = await within(dialog).findByRole('button', { name: /^Archive \d+ emails?$/ });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      fireEvent.click(confirm);
+      await waitFor(() => expect(posted).toHaveLength(1));
+      expect(posted[0]!.selector.senderIds).toEqual(
+        withProtected ? ['a', 'b', 'protected'] : ['a', 'b'],
+      );
+    },
+  );
+
+  it('excludes a recorded unsubscribe from a mixed selection and posts only the new request', async () => {
+    const posted: Array<{ senderIds: string[] }> = [];
+    installFetchStub([
+      {
+        ...TWO_SENDER_LIST,
+        respond: () =>
+          jsonOk({
+            data: [{ ...ROW, policyType: 'unsubscribe', unsubStatus: 'endpoint_accepted' }, ROW_B],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+          }),
+      },
+      compositePreviewHandler(3),
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-backlog',
+        respond: async (req) => {
+          posted.push(await req.json());
+          return jsonOk({ data: { mode: 'archive', backlog: null, senders: [] } });
+        },
+      },
+    ]);
+    renderScreen();
+    await selectBothAndPress('u');
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('1 sender with a recorded unsubscribe request is excluded.');
+    expect(dialog).not.toHaveTextContent(/person|people/i);
+    const confirm = await within(dialog).findByRole('button', {
+      name: /^Unsubscribe(?: \+ Archive)?$/,
+    });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]!.senderIds).toEqual(['b']);
+  });
+
+  it.each(['canonical', 'cleanup', 'invalidated cleanup', 'tied canonical'] as const)(
+    'refuses a stale list unsubscribe confirmation after accepted %s readback',
+    async (source) => {
+      let posts = 0;
+      let rows: SenderListRow[] = [ROW];
+      installFetchStub([
+        {
+          ...oneSenderHandler(),
+          respond: () =>
+            jsonOk({
+              data: rows,
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+            }),
+        },
+        compositePreviewHandler(3),
+        {
+          method: 'GET',
+          path: '/api/senders/a',
+          respond: () =>
+            jsonOk({
+              data: { ...ROW, policyType: 'unsubscribe', unsubStatus: 'endpoint_accepted' },
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-backlog',
+          respond: () => {
+            posts += 1;
+            return jsonOk({ data: { mode: 'unsub_only', backlog: null, senders: [] } });
+          },
+        },
+      ]);
+      renderScreen();
+      fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+      fireEvent.keyDown(document.body, { key: 'u' });
+      const dialog = await screen.findByRole('dialog');
+      const confirm = await within(dialog).findByRole('button', {
+        name: /^Unsubscribe(?: \+ Archive)?$/,
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      act(() => {
+        lastClient.setQueryData(
+          source.includes('canonical')
+            ? sendersKeys.detail('a')
+            : [...sendersKeys.detail('a'), 'cleanup', 123],
+          {
+            data: { ...ROW, policyType: 'unsubscribe', unsubStatus: 'endpoint_accepted' },
+          },
+          source === 'tied canonical'
+            ? {
+                updatedAt: Math.max(
+                  ...lastClient
+                    .getQueryCache()
+                    .findAll({ queryKey: ['senders', 'list'] })
+                    .map((query) => query.state.dataUpdatedAt),
+                ),
+              }
+            : undefined,
+        );
+      });
+      if (source.includes('cleanup')) {
+        if (source === 'invalidated cleanup') {
+          await lastClient.invalidateQueries({
+            queryKey: [...sendersKeys.detail('a'), 'cleanup', 123],
+            exact: true,
+            refetchType: 'none',
+          });
+        }
+        rows = [];
+        await act(async () => {
+          await lastClient.invalidateQueries({ queryKey: ['senders', 'list'] });
+        });
+      }
+      fireEvent.click(confirm);
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(posts).toBe(0);
+    },
+  );
+
+  it.each(['eligible', 'recorded', 'failed', 'cancelled', 'mailbox changed', 'unmounted'] as const)(
+    'refreshes invalidated email-only facts safely when %s',
+    async (outcome) => {
+      let posts = 0;
+      let detailReads = 0;
+      let finishDetail!: (response: Response) => void;
+      const detail = new Promise<Response>((resolve) => {
+        finishDetail = resolve;
+      });
+      const row = { ...ROW, unsubscribeMethod: 'mailto' as const };
+      installFetchStub([
+        {
+          ...oneSenderHandler(),
+          respond: () =>
+            jsonOk({
+              data: [row],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+            }),
+        },
+        compositePreviewHandler(3),
+        {
+          method: 'GET',
+          path: '/api/senders/a',
+          respond: () => {
+            detailReads += 1;
+            return detail;
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-backlog',
+          respond: () => {
+            posts += 1;
+            return jsonOk({ data: { mode: 'unsub_only', backlog: null, senders: [] } });
+          },
+        },
+      ]);
+      const view = renderScreenWithToasts();
+      fireEvent.click(await screen.findByRole('button', { name: /More actions for Sender A/i }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Unsubscribe' }));
+      const dialog = await screen.findByRole('dialog');
+      fireEvent.click(await within(dialog).findByRole('radio', { name: 'Unsubscribe only' }));
+      const confirm = await within(dialog).findByRole('button', { name: 'Unsubscribe' });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      await lastClient.invalidateQueries({ queryKey: ['senders', 'list'], refetchType: 'none' });
+      fireEvent.click(confirm);
+      await waitFor(() => expect(detailReads).toBe(1));
+      // A second confirmation during the read cannot start another request.
+      fireEvent.click(confirm);
+      expect(detailReads).toBe(1);
+      expect(posts).toBe(0);
+      if (outcome === 'cancelled') {
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+      } else if (outcome === 'mailbox changed') {
+        mockAuth.activeMailboxId = 'mb-2';
+        view.rerender(
+          <QueryWrapper client={lastClient}>
+            <SendersScreen />
+            <ToastHost />
+          </QueryWrapper>,
+        );
+      } else if (outcome === 'unmounted') {
+        view.unmount();
+      }
+      await act(async () => {
+        finishDetail(
+          outcome === 'failed'
+            ? jsonServerError('status_unavailable')
+            : jsonOk({
+                data:
+                  outcome === 'recorded'
+                    ? { ...row, policyType: 'unsubscribe', unsubStatus: 'requested' }
+                    : row,
+              }),
+        );
+      });
+      if (outcome === 'eligible') {
+        await waitFor(() => expect(posts).toBe(1));
+      } else {
+        expect(posts).toBe(0);
+        if (outcome === 'failed') {
+          expect(dialog).toBeInTheDocument();
+          await waitFor(() => expect(confirm).toBeEnabled());
+          expect(
+            screen.getByText('Couldn’t refresh unsubscribe status. Try again.'),
+          ).toBeInTheDocument();
+        } else if (outcome === 'recorded') {
+          await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        }
+      }
+      expect(detailReads).toBe(1);
+    },
+  );
+
+  it.each(['accepted readback', 'invalidated facts'] as const)(
+    'rechecks %s while another included sender refreshes',
+    async (change) => {
+      let posts = 0;
+      let reads = 0;
+      let freshAReads = 0;
+      let finishDetail!: (response: Response) => void;
+      const detail = new Promise<Response>((resolve) => {
+        finishDetail = resolve;
+      });
+      installFetchStub([
+        TWO_SENDER_LIST,
+        BULK_PREVIEW_OK,
+        {
+          method: 'GET',
+          path: '/api/senders/a',
+          respond: () => {
+            freshAReads += 1;
+            return jsonOk({
+              data: { ...ROW, policyType: 'unsubscribe', unsubStatus: 'requested' },
+            });
+          },
+        },
+        {
+          method: 'GET',
+          path: '/api/senders/b',
+          respond: () => {
+            reads += 1;
+            return detail;
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-backlog',
+          respond: () => {
+            posts += 1;
+            return jsonOk({ data: { mode: 'unsub_only', backlog: null, senders: [] } });
+          },
+        },
+      ]);
+      renderScreen();
+      await selectBothAndPress('u');
+      const dialog = await screen.findByRole('dialog');
+      fireEvent.click(await within(dialog).findByRole('radio', { name: 'Unsubscribe only' }));
+      const confirm = await within(dialog).findByRole('button', { name: 'Unsubscribe' });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      act(() => {
+        lastClient.setQueryData(sendersKeys.detail('a'), { data: ROW });
+      });
+      await lastClient.invalidateQueries({ queryKey: ['senders', 'list'], refetchType: 'none' });
+      fireEvent.click(confirm);
+      await waitFor(() => expect(reads).toBe(1));
+      await act(async () => {
+        if (change === 'accepted readback') {
+          lastClient.setQueryData(sendersKeys.detail('a'), {
+            data: { ...ROW, policyType: 'unsubscribe', unsubStatus: 'endpoint_accepted' },
+          });
+        } else {
+          await lastClient.invalidateQueries({
+            queryKey: sendersKeys.detail('a'),
+            exact: true,
+            refetchType: 'none',
+          });
+        }
+        finishDetail(jsonOk({ data: ROW_B }));
+      });
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(posts).toBe(0);
+      expect(freshAReads).toBe(change === 'invalidated facts' ? 1 : 0);
+    },
+  );
+
+  it.each(['older', 'invalidated'] as const)(
+    'allows an explicit failed-request retry despite an %s inactive detail',
+    async (cached) => {
+      let posts = 0;
+      installFetchStub([
+        {
+          ...oneSenderHandler(),
+          respond: () =>
+            jsonOk({
+              data: [{ ...ROW, policyType: 'unsubscribe', unsubStatus: 'failed' }],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+            }),
+        },
+        compositePreviewHandler(3),
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-backlog',
+          respond: () => {
+            posts += 1;
+            return jsonOk({ data: { mode: 'unsub_only', backlog: null, senders: [] } });
+          },
+        },
+      ]);
+      renderScreen();
+      const select = await screen.findByRole('checkbox', { name: /select sender a/i });
+      act(() => {
+        lastClient.setQueryData(
+          sendersKeys.detail('a'),
+          { data: { ...ROW, policyType: 'unsubscribe', unsubStatus: 'requested' } },
+          cached === 'older' ? { updatedAt: 1 } : undefined,
+        );
+      });
+      if (cached === 'invalidated') {
+        await lastClient.invalidateQueries({
+          queryKey: sendersKeys.detail('a'),
+          exact: true,
+          refetchType: 'none',
+        });
+      }
+      fireEvent.click(select);
+      fireEvent.keyDown(document.body, { key: 'u' });
+      const dialog = await screen.findByRole('dialog');
+      const confirm = await within(dialog).findByRole('button', {
+        name: /^Unsubscribe(?: \+ Archive)?$/,
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      fireEvent.click(confirm);
+      await waitFor(() => expect(posts).toBe(1));
+    },
+  );
+
+  it('posts only the senders the unsubscribe preview included', async () => {
+    const posted: Array<{ senderIds?: string[] }> = [];
+    installFetchStub([
+      TWO_SENDER_LIST,
+      {
+        method: 'POST',
+        path: '/api/actions/preview/bulk',
+        respond: () =>
+          jsonOk({
+            data: {
+              senders: [
+                {
+                  senderId: 'a',
+                  name: 'Sender A',
+                  counts: {
+                    all: 12,
+                    olderThan30d: 8,
+                    olderThan90d: 5,
+                    olderThan180d: 3,
+                    olderThan365d: 1,
+                  },
+                  protected: false,
+                },
+                {
+                  senderId: 'b',
+                  name: 'Sender B',
+                  counts: {
+                    all: 18,
+                    olderThan30d: 9,
+                    olderThan90d: 6,
+                    olderThan180d: 4,
+                    olderThan365d: 2,
+                  },
+                  protected: true,
+                },
+              ],
+              totals: {
+                all: 12,
+                olderThan30d: 8,
+                olderThan90d: 5,
+                olderThan180d: 3,
+                olderThan365d: 1,
+              },
+              protectedCount: 1,
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-backlog',
+        respond: async (req) => {
+          posted.push((await req.json()) as { senderIds?: string[] });
+          return jsonOk({
+            data: {
+              mode: 'archive',
+              backlog: { actionId: 'batch-narrow', requestedCount: 12, verb: 'archive' },
+              senders: [backlogSender('a', 'requested')],
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+    await selectBothAndPress('u');
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      await within(dialog).findByText('1 selected sender is Protected and will be left as it is.'),
+    ).toBeVisible();
+    fireEvent.click(await within(dialog).findByRole('radio', { name: '+ Archive 12' }));
+    expect(within(dialog).getByRole('heading')).toHaveTextContent(
+      'Unsubscribe from 1 sender and archive 12 emails',
+    );
+    const confirm = within(dialog).getByRole('button', { name: 'Unsubscribe + Archive' });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]?.senderIds).toEqual(['a']);
+  });
+
   it.each([
     ['UNSUB_SEND_DISABLED', /nothing was sent/i, /archive/i],
     ['NO_ACTIONABLE_SENDERS', /no request was sent/i, /archive|has an unsubscribe/i],
-    ['NO_ACTIVE_MAILBOX', /couldn't start Unsubscribe/i, /has an unsubscribe/i],
+    ['NO_ACTIVE_MAILBOX', /couldn’t start Unsubscribe/i, /has an unsubscribe/i],
   ] as const)(
     'a %s refusal on bulk Unsubscribe says only what that code proves',
     async (code, says, neverSays) => {
@@ -2951,7 +3850,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     installFetchStub([TWO_SENDER_LIST]);
     renderScreen();
 
-    const selectLoaded = await screen.findByRole('button', { name: /select all 2/i });
+    const selectLoaded = await screen.findByRole('button', { name: /select 2 shown/i });
     fireEvent.click(selectLoaded);
     expect(screen.getByRole('button', { name: /deselect all 2/i })).toBeInTheDocument();
   });
@@ -3213,7 +4112,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       ]);
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(donePills()).toEqual(['Archived', 'Archived']), { timeout: 4000 });
 
@@ -3250,7 +4149,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       });
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(screen.getAllByText('Archiving…')).toHaveLength(2));
 
@@ -3269,7 +4168,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       bulkStub(() => state);
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
       await waitFor(() => expect(screen.getAllByText('Archiving…')).toHaveLength(2));
@@ -3335,7 +4234,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       ]);
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
       const dialog = screen.getByRole('dialog');
@@ -3374,7 +4273,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       ]);
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
       await waitFor(() => expect(screen.getAllByText('Archive: unknown')).toHaveLength(2), {
@@ -3421,7 +4320,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       });
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(screen.getAllByText('Archiving…')).toHaveLength(2));
 
@@ -3529,6 +4428,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       installFetchStub([
         TWO_SENDER_LIST,
         BULK_PREVIEW_OK,
+        compositePreviewHandler(12),
         {
           method: 'POST',
           path: '/api/actions/unsubscribe-backlog',
@@ -3582,9 +4482,13 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
       fireEvent.keyDown(document.body, { key: 'u' });
       await screen.findByRole('heading', { name: /^Unsubscribe from .+\?$/ });
-      fireEvent.click(
-        within(screen.getByRole('dialog')).getByRole('button', { name: /unsubscribe/i }),
-      );
+      // A single sender stays closed until its preview settles. The click
+      // below is the settled confirm, which must still post.
+      const singleConfirm = within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'Unsubscribe',
+      });
+      await waitFor(() => expect(singleConfirm).toBeEnabled());
+      fireEvent.click(singleConfirm);
       await waitFor(() => expect(intents).toHaveLength(2));
       expect(intents[1]).toMatchObject({ mode: 'unsub_only', senderIds: ['a'] });
       expect(screen.queryAllByText(/Still confirming your last action/)).toHaveLength(held);
@@ -3674,7 +4578,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
         expect(patches).toBe(2);
         release();
         const result =
-          outcome === 'success' ? 'Kept 2 senders' : "Couldn't keep 2 senders — try again";
+          outcome === 'success' ? 'Kept 2 senders' : 'Couldn’t keep 2 senders — try again';
         expect((await screen.findAllByText(result)).length).toBeGreaterThan(0);
         expect(screen.queryAllByText('Keeping 2 senders…')).toHaveLength(0);
         expect(screen.queryAllByText('Keeping…')).toHaveLength(0);
@@ -3693,7 +4597,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       renderScreenWithToasts();
       await selectBothAndPress('k');
       // (The toast store outlives a test, so absence of an earlier "Kept…" is not assertable here.)
-      await screen.findByText(/Couldn't keep 2 senders/);
+      await screen.findByText(/Couldn’t keep 2 senders/);
       expect(trackMock.mock.calls.filter(([name]) => name === 'action_confirmed')).toHaveLength(0);
     });
 
@@ -3708,7 +4612,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       }));
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       // No outcome claimed per row — but never left looking untouched.
       await waitFor(
@@ -3738,7 +4642,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       }));
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(donePills()).toEqual(['Archived']), { timeout: 4000 });
       expect(rowOf(/select sender a/i).querySelector('[data-dm-row-activity]')).toBeNull();
@@ -3791,7 +4695,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       ]);
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(
         () => expect(document.querySelectorAll('[data-dm-row-activity="failed"]')).toHaveLength(2),
@@ -3799,7 +4703,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       );
 
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(posts).toBe(2));
       await waitFor(
@@ -3858,14 +4762,14 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       ]);
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(
         () => expect(document.querySelectorAll('[data-dm-row-activity="failed"]')).toHaveLength(2),
         { timeout: 4000 },
       );
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(posts).toBe(2));
     }
@@ -3919,7 +4823,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       );
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(donePills()).toEqual(['Archived']), { timeout: 4000 });
       expect(rowOf(/select sender a/i).querySelector('[data-dm-row-activity]')).toBeNull();
@@ -3936,7 +4840,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       const skipToasts = () => screen.queryAllByText('Archive: 1 Protected sender skipped').length;
       const before = skipToasts();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
       await waitFor(() => expect(skipToasts()).toBe(before + 1));
@@ -3975,7 +4879,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
         fireEvent.click(screen.getByRole('checkbox', { name: /select sender b/i }));
         fireEvent.keyDown(document.body, { key: 'a' });
         await tick(200);
-        screen.getByText(/rechecked when it runs/i);
+        screen.getByText(/We check again right before anything moves/);
         fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
         await tick(200);
         await tick(ACTION_OVERDUE_MS);
@@ -4063,7 +4967,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       );
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       acted = true;
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       // The batch poll ticks every 1s — the default 1s waitFor races it.
@@ -4163,7 +5067,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     await selectBothAndPress('a');
     // Mandatory D226 preview with the AGGREGATED real count (never the
     // fabricated tracer numbers).
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     // The aggregated total (12 + 18) is the title's count.
     expect(
       within(screen.getByRole('dialog')).getByRole('heading', {
@@ -4199,7 +5103,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
   it.each([
     ['archive', '+ Archive 30', 'Unsubscribe + Archive'],
-    ['delete', '+ Delete 30', 'Unsubscribe + Delete'],
+    ['delete', '+ Delete 30', 'Unsubscribe + Delete 30 emails'],
   ] as const)(
     'sends one unsubscribe-backlog request for bulk %s',
     async (mode, radioName, buttonName) => {
@@ -4271,7 +5175,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       expect(
         within(dialog).queryByRole('radio', { name: /Archive them|Delete them|Leave alone/i }),
       ).toBeNull();
-      expect(within(dialog).queryByText(/rechecked when it runs/i)).toBeNull();
+      expect(within(dialog).queryByText(/We check again right before anything moves/)).toBeNull();
       fireEvent.click(await within(dialog).findByRole('radio', { name: radioName }));
       const confirm = within(dialog).getByRole('button', { name: buttonName });
       await waitFor(() => expect(confirm).toBeEnabled());
@@ -4430,7 +5334,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(screen.queryByText(/Not sent: 1 Protected sender/)).toBeNull();
   });
 
-  it('includes a Protected sender in the request so the mixed toast can name it', async () => {
+  it('omits a Protected sender from the request and still names the skip the server reports', async () => {
     const bodies: Array<{ senderIds?: string[] }> = [];
     installFetchStub([
       {
@@ -4512,7 +5416,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     await waitFor(() => expect(confirm).toBeEnabled());
     fireEvent.click(confirm);
     await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0]?.senderIds).toEqual(['a', 'b']);
+    expect(bodies[0]?.senderIds).toEqual(['a']);
     expect(
       await screen.findByText(
         'Unsubscribe requested from 1 sender · Archived 12 emails · 1 Protected sender left as it is',
@@ -4643,7 +5547,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     const listReads = refusedBulk('NO_ACTIONABLE_SENDERS');
     await confirmBulk('u');
     const before = listReads();
-    await screen.findByText("Couldn't start Unsubscribe for 2 senders — no request was sent.");
+    await screen.findByText('Couldn’t start Unsubscribe for 2 senders — no request was sent.');
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
@@ -4674,14 +5578,14 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     ]);
     await confirmBulk('u');
     await screen.findByText(
-      "Can't tell if Unsubscribe for 2 senders started — check Activity before retrying.",
+      'Can’t tell if Unsubscribe for 2 senders started — check Activity before retrying.',
     );
   });
 
   it('blames no sender for a mailbox conflict', async () => {
     refusedBulk('SELECT_MAILBOX');
     await confirmBulk('u');
-    await screen.findByText("Couldn't start Unsubscribe for 2 senders — no request was sent.");
+    await screen.findByText('Couldn’t start Unsubscribe for 2 senders — no request was sent.');
   });
 
   it('re-reads the list when an Archive refused every sender', async () => {
@@ -4711,11 +5615,11 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     renderScreenWithToasts();
     fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await screen.findByText(
-      "Can't tell if Archive for Sender A started — check Activity before retrying.",
+      'Can’t tell if Archive for Sender A started — check Activity before retrying.',
     );
     expect(await screen.findByText('Archive: unknown')).toBeInTheDocument();
   });
@@ -4758,7 +5662,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     renderScreenWithToasts();
     fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(await screen.findByText('Archive: unknown')).toBeInTheDocument();
 
@@ -4794,7 +5698,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       renderScreenWithToasts();
       fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
       fireEvent.keyDown(document.body, { key: 'a' });
-      await screen.findByText(/rechecked when it runs/i);
+      await screen.findByText(/We check again right before anything moves/);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       expect(await screen.findByText('Archive: unknown')).toBeInTheDocument();
 
@@ -4831,7 +5735,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
     renderScreen();
     await selectBothAndPress('a');
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await waitFor(() => expect(enqueueAttempted).toBe(true));
@@ -4852,11 +5756,11 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
     renderScreenWithToasts();
     await selectBothAndPress('a');
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await screen.findByText(
-      "Can't tell if Archive for 2 senders started — check Activity before retrying.",
+      'Can’t tell if Archive for 2 senders started — check Activity before retrying.',
     );
     expect(await screen.findAllByText('Archive: unknown')).toHaveLength(2);
     expect(screen.queryByText(/senders selected/i)).toBeNull();
@@ -4901,7 +5805,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
     renderScreen();
     await selectBothAndPress('a');
-    await screen.findByText(/rechecked when it runs/i);
+    await screen.findByText(/We check again right before anything moves/);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     // This screen claims no per-row outcome it cannot know (the batch
@@ -4930,7 +5834,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     await screen.findByText(/delete email from 2 senders/i);
     await screen.findByText(/move to gmail trash/i);
     // D226: a failed preview must BLOCK the destructive confirm.
-    await screen.findByText(/couldn't load the preview/i);
+    await screen.findByText(/couldn’t load the preview/i);
     const dialog = screen.getByRole('dialog');
     const confirmBtn = within(dialog).getByRole('button', { name: /delete/i });
     expect(confirmBtn).toBeDisabled();
@@ -5716,6 +6620,7 @@ describe('SendersScreen — a Protected sender names the reason before override'
   async function runUnsubWithBacklog(
     handler: ReturnType<typeof oneSenderHandler>,
     protectedRow = false,
+    skipAtExecution = false,
   ) {
     const bodies: Record<string, unknown>[] = [];
     installFetchStub([
@@ -5743,8 +6648,9 @@ describe('SendersScreen — a Protected sender names the reason before override'
             data: archiveStatus({
               actionId: 'action-backlog',
               requestedCount: 3,
-              affectedCount: 3,
-              undoToken: 'undo-backlog',
+              affectedCount: skipAtExecution ? 0 : 3,
+              undoToken: skipAtExecution ? null : 'undo-backlog',
+              errorCode: skipAtExecution ? LABEL_SENDER_PROTECTED_ERROR_CODE : null,
             }),
           }),
       },
@@ -5806,6 +6712,22 @@ describe('SendersScreen — a Protected sender names the reason before override'
       olderThanDays: null,
       override: true,
     });
+  });
+
+  it('does not leave a paired backlog row busy when its worker skips newly Protected mail', async () => {
+    await runUnsubWithBacklog(oneSenderHandler(), false, true);
+    await waitFor(() =>
+      expect(
+        lastClient.getQueryData<{ status: string }>([
+          'action-status',
+          'action-backlog',
+          { mailboxId: 'mb-1' },
+        ])?.status,
+      ).toBe('done'),
+    );
+    await waitFor(() => expect(screen.queryByText('Archiving…')).toBeNull());
+    expect(screen.queryByText('Archived 3')).toBeNull();
+    expect(screen.getByTestId('sender-row-a')).not.toHaveAttribute('aria-busy', 'true');
   });
 
   it('omits override for an unprotected sender', async () => {

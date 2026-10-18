@@ -33,7 +33,7 @@ export default function HowItWorksPage() {
           ? 'See the sender. Know what will change.'
           : WS3_COPY['ws3.howItWorks.h1']
       }
-      lede="DeclutrMail puts recurring senders and their recent email in one place. Open a sender's details, then preview the scope before moving mail."
+      lede={WS3_COPY['ws3.howItWorks.lede']}
       visual={<HeroWorkspace />}
     >
       <nav className="dm-story-jumps dm-story-shell" aria-label="Explore how it works">
@@ -207,6 +207,11 @@ export default function HowItWorksPage() {
         title="Bring the sender view to your Gmail."
         body="Connect Gmail, let the first scan finish, and make your first decision with the affected emails in view."
       />
+      <p className="dm-story-note">
+        Trying to recover storage?{' '}
+        <Link href="/how-to/gmail-storage-full">Follow the Gmail storage cleanup guide</Link>.
+        Archiving clears the inbox but frees no storage.
+      </p>
     </ProductStoryShell>
   );
 }

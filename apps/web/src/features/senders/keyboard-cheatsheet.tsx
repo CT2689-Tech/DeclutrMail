@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Kbd, tokens } from '@declutrmail/shared';
+import { Button, DialogFrame, Kbd, tokens } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import {
   CANONICAL_SHORTCUTS,
@@ -11,7 +11,7 @@ import {
 
 import { isTypingTarget } from './keyboard';
 
-const { color, font, radius, shadow, text } = tokens;
+const { color, radius, text } = tokens;
 
 /**
  * Keyboard cheatsheet (§3.1) — the premium-app pattern: shortcuts stay
@@ -47,7 +47,7 @@ export function KeyboardCheatsheet() {
         // Don't stack the cheatsheet over another modal (e.g. the mandatory
         // action preview). When already open, `?` still closes it — the
         // guard only blocks OPENING on top of an existing dialog.
-        if (!open && document.querySelector('[role="dialog"]')) return;
+        if (!open && document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
         e.preventDefault();
         setOpen((v) => !v);
       }
@@ -69,111 +69,90 @@ export function CheatsheetPanel({ onClose }: { onClose: () => void }) {
   const trapRef = useFocusTrap<HTMLDivElement>(true);
 
   return (
-    <div
-      className="dm-scrim dm-sheet-layer"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 200,
-        display: 'flex',
-        justifyContent: 'center',
-        padding: 16,
-        overflowY: 'auto',
-      }}
+    <DialogFrame
+      panelRef={trapRef}
+      titleId="dm-cheatsheet-title"
+      onDismiss={onClose}
+      maxWidth={460}
+      zIndex={200}
+      footer={
+        <Button tone="ghost" onClick={onClose}>
+          Close
+        </Button>
+      }
     >
       <div
-        ref={trapRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="dm-cheatsheet-title"
-        className="dm-sheet dm-sheet-panel"
         style={{
-          width: '100%',
-          maxWidth: 460,
-          boxSizing: 'border-box',
-          padding: '28px 28px 20px',
-          background: color.card,
-          boxShadow: shadow.modal,
-          fontFamily: font.sans,
-          color: color.fg,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          marginBottom: 4,
         }}
       >
-        <div
+        <h2
+          id="dm-cheatsheet-title"
+          style={{ fontSize: text.xl, fontWeight: 600, letterSpacing: '-0.02em', margin: 0 }}
+        >
+          Keyboard shortcuts
+        </h2>
+        <button
+          type="button"
+          aria-label="Close shortcuts"
+          onClick={onClose}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = color.fill;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+          }}
           style={{
-            display: 'flex',
+            width: 44,
+            height: 44,
+            display: 'inline-flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            marginBottom: 4,
+            justifyContent: 'center',
+            flexShrink: 0,
+            background: 'transparent',
+            border: 'none',
+            borderRadius: radius.pill,
+            color: color.fgMuted,
+            cursor: 'pointer',
           }}
         >
-          <h2
-            id="dm-cheatsheet-title"
-            style={{ fontSize: text.xl, fontWeight: 600, letterSpacing: '-0.02em', margin: 0 }}
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+            aria-hidden="true"
           >
-            Keyboard shortcuts
-          </h2>
-          <button
-            type="button"
-            aria-label="Close shortcuts"
-            onClick={onClose}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = color.fill;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-            }}
-            style={{
-              width: 36,
-              height: 36,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              background: 'transparent',
-              border: 'none',
-              borderRadius: radius.pill,
-              color: color.fgMuted,
-              cursor: 'pointer',
-            }}
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.4"
-              strokeLinecap="round"
-              aria-hidden="true"
-            >
-              <path d="M6 6l12 12M18 6 6 18" />
-            </svg>
-          </button>
-        </div>
-
-        <div>
-          <SectionLabel>Selected senders</SectionLabel>
-          {CANONICAL_VERBS.map((verb) => {
-            const { copy, shortcut } = getActionDescriptor(verb);
-            return <ShortcutRow key={verb} keys={shortcut ?? '—'} label={copy.primary} />;
-          })}
-
-          <SectionLabel>Sender list</SectionLabel>
-          <ShortcutRow keys="J / ↓" label="Next sender" />
-          <ShortcutRow keys="K / ↑" label="Previous sender" />
-          <ShortcutRow keys="Esc" label="Close sender details" />
-
-          <SectionLabel>In a preview</SectionLabel>
-          <ShortcutRow keys="⌘⏎" label="Confirm the action" />
-          <ShortcutRow keys="Esc" label="Cancel / close" />
-          <ShortcutRow keys="?" label="Toggle this cheatsheet" />
-        </div>
+            <path d="M6 6l12 12M18 6 6 18" />
+          </svg>
+        </button>
       </div>
-    </div>
+
+      <div>
+        <SectionLabel>Selected senders</SectionLabel>
+        {CANONICAL_VERBS.map((verb) => {
+          const { copy, shortcut } = getActionDescriptor(verb);
+          return <ShortcutRow key={verb} keys={shortcut ?? '—'} label={copy.primary} />;
+        })}
+
+        <SectionLabel>Sender list</SectionLabel>
+        <ShortcutRow keys="J / ↓" label="Next sender" />
+        <ShortcutRow keys="K / ↑" label="Previous sender" />
+        <ShortcutRow keys="Esc" label="Close sender details" />
+
+        <SectionLabel>In a preview</SectionLabel>
+        <ShortcutRow keys="⌘⏎" label="Confirm the action" />
+        <ShortcutRow keys="Esc" label="Cancel / close" />
+        <ShortcutRow keys="?" label="Toggle this cheatsheet" />
+      </div>
+    </DialogFrame>
   );
 }
 

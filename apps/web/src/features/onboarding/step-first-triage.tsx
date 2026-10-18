@@ -105,8 +105,8 @@ export function StepFirstTriage({
       <PanelShell corner={corner}>
         <ErrorState
           headingLevel={2}
-          title="Couldn't load your first review"
-          description="We couldn't load the senders for your first review. Try again in a moment."
+          title="Couldn’t load your first review"
+          description="We couldn’t load the senders for your first review. Try again in a moment."
           onRetry={() => void firstTriage.refetch()}
         />
       </PanelShell>

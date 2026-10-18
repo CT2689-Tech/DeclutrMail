@@ -235,6 +235,9 @@ export function urlFor(route, prerendered) {
     .slice(1, -1)
     .filter((segment) => !/^\(.+\)$/.test(segment))
     .join('/')}`;
+  // Organic beta retires at GA, but the OAuth denial page still renders.
+  // Measure that recovery variant and verify its own chunks as usual.
+  if (url === '/beta') return '/beta?reason=not_invited';
   if (!url.includes('[')) return url;
   const built = Object.entries(prerendered).find(([, entry]) => entry.srcRoute === url);
   return built?.[0] ?? url.replace(/\[[^\]]+\]+/g, 'budget-probe');

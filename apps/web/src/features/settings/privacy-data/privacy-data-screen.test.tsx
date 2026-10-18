@@ -119,7 +119,7 @@ describe('PrivacyDataView', () => {
     ).toBeGreaterThan(0);
     expect(screen.getAllByText(/Disconnect & delete saved data/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/What we keep to fix problems/i)).toBeInTheDocument();
-    expect(screen.getByText(/Disconnect & delete one mailbox's saved data/i)).toBeInTheDocument();
+    expect(screen.getByText(/Disconnect & delete one mailbox’s saved data/i)).toBeInTheDocument();
     expect(
       screen.getByText(/other mailboxes.*disconnected Gmail address.*remain/i),
     ).toBeInTheDocument();
@@ -145,7 +145,7 @@ describe('PrivacyDataView', () => {
     // itself diverge". The ladder is currently uniform, so this must state
     // the number even while `undoDays` is null.
     expect(
-      screen.queryByText(/Delete also uses your plan's Activity Undo window/i),
+      screen.queryByText(/Delete also uses your plan’s Activity Undo window/i),
     ).not.toBeInTheDocument();
     if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
       expect(
@@ -174,9 +174,16 @@ describe('PrivacyDataView', () => {
 
   it('states that encrypted OAuth credentials are excluded from exports', () => {
     renderView();
-    const credentialRow = screen.getByText('Encrypted Google OAuth credential').closest('div');
+    const credentialRow = screen
+      .getByText(WS2_COPY.liveFix.privacy.inventory.oauthLabel)
+      .closest('div');
+    expect(screen.getByText(WS2_COPY.liveFix.privacy.inventory.visitLabel)).toBeInTheDocument();
+    expect(
+      screen.getByText(WS2_COPY.liveFix.privacy.inventory.processingLabel),
+    ).toBeInTheDocument();
+    expect(screen.getByText(WS2_COPY.liveFix.privacy.inventory.auditLabel)).toBeInTheDocument();
     expect(credentialRow).toHaveTextContent('Not currently included in a data export.');
-    expect(screen.queryByText(/we don't store them/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/we don’t store them/i)).not.toBeInTheDocument();
   });
 
   it('describes the actual mailbox datasets without promising a full account export', () => {

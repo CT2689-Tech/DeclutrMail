@@ -173,7 +173,7 @@ describe('Autopilot evaluation freshness', () => {
       ]),
     );
     openAllRuleDetails();
-    expect(screen.getByText("Hasn't run yet")).toBeInTheDocument();
+    expect(screen.getByText('Hasn’t run yet')).toBeInTheDocument();
     expect(screen.getByText(/Evaluation time unavailable/)).toBeInTheDocument();
     expect(screen.queryByText(/invalid-fixture-value/)).not.toBeInTheDocument();
   });
@@ -275,12 +275,12 @@ describe('Autopilot pending pages', () => {
     );
     expect(screen.queryByText('Older fixture')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Older suggestions' }));
-    expect(await screen.findByText("Couldn't load pending suggestions")).toBeInTheDocument();
+    expect(await screen.findByText('Couldn’t load pending suggestions')).toBeInTheDocument();
     // Failed pages expose recovery; no stale first-page rows become actionable.
     expect(screen.queryByRole('checkbox', { name: /Select suggestion/ })).not.toBeInTheDocument();
     fireEvent.click(
       within(
-        screen.getByText("Couldn't load pending suggestions").closest('[role="alert"]')!,
+        screen.getByText('Couldn’t load pending suggestions').closest('[role="alert"]')!,
       ).getByRole('button', { name: /Retry|Try again/i }),
     );
     expect(await screen.findByText('Older fixture')).toBeInTheDocument();
@@ -385,7 +385,7 @@ describe('AutopilotScreen — edge states', () => {
     ]);
     renderRoute();
     expect(
-      await screen.findByRole('heading', { name: "Couldn't load pending suggestions" }),
+      await screen.findByRole('heading', { name: 'Couldn’t load pending suggestions' }),
     ).toBeInTheDocument();
     expect(screen.getByRole('list', { name: 'Autopilot rules' })).toBeInTheDocument();
     expect(screen.queryByText('No pending suggestions')).not.toBeInTheDocument();
@@ -404,7 +404,7 @@ describe('AutopilotScreen — edge states', () => {
     const retry = vi.fn();
     const user = userEvent.setup();
     renderScreen({ kind: 'error', message: 'API down for maintenance.', retry });
-    expect(screen.getAllByRole('heading', { name: /couldn't load your autopilot/i })).toHaveLength(
+    expect(screen.getAllByRole('heading', { name: /couldn’t load your autopilot/i })).toHaveLength(
       1,
     );
     expect(screen.getByText(/api down for maintenance/i)).toBeInTheDocument();
@@ -2086,7 +2086,7 @@ describe('AutopilotScreen — approvals blocked on paused/off rules + Resume pre
   beforeEach(() => installFetchStub([]));
   afterEach(() => resetFetchStub());
 
-  it("hides Approve buttons on a paused rule's suggestion group, explaining why", () => {
+  it('hides Approve buttons on a paused rule’s suggestion group, explaining why', () => {
     const paused = { ...AUTO_ARCHIVE_LOW_ENGAGEMENT, mode: 'paused' as const };
     const suggestions: SuggestionWithRule[] = PENDING_SUGGESTIONS.filter(
       (m) => m.ruleId === AUTO_ARCHIVE_LOW_ENGAGEMENT.id,
@@ -2101,7 +2101,7 @@ describe('AutopilotScreen — approvals blocked on paused/off rules + Resume pre
     expect(within(group).getByText(/paused.*resume the rule above/i)).toBeInTheDocument();
   });
 
-  it("hides Approve buttons on a disabled rule's suggestion group, explaining why", () => {
+  it('hides Approve buttons on a disabled rule’s suggestion group, explaining why', () => {
     const off = { ...AUTO_ARCHIVE_LOW_ENGAGEMENT, enabled: false };
     const suggestions: SuggestionWithRule[] = PENDING_SUGGESTIONS.filter(
       (m) => m.ruleId === AUTO_ARCHIVE_LOW_ENGAGEMENT.id,

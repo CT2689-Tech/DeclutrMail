@@ -140,7 +140,7 @@ function ObservationFeedback(props: InlineFeedbackProps) {
         style={{ minHeight: 14, fontSize: 11, color: color.fgMuted }}
       >
         {mutation.isError
-          ? "We couldn't confirm your feedback was saved. Try again."
+          ? 'We couldn’t confirm your feedback was saved. Try again.'
           : savedNow
             ? 'Feedback saved.'
             : ''}

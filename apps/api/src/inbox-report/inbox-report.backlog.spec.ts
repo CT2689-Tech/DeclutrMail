@@ -8,6 +8,7 @@ import {
   mailMessages,
   mailboxAccounts,
   senders,
+  senderPolicies,
   undoJournal,
   users,
   workspaces,
@@ -21,6 +22,8 @@ import { EntitlementsService } from '../common/entitlements/entitlements.service
 import { ActionsService } from '../actions/actions.service.js';
 import { UnsubscribeBacklogService } from '../actions/unsubscribe-backlog.service.js';
 import { InboxReportService } from './inbox-report.service.js';
+import { SendersPolicyService } from '../senders/senders-policy.service.js';
+import { SnoozeService } from '../senders/snooze.service.js';
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -98,7 +101,7 @@ async function seedSender(
   return row!.id;
 }
 
-describe('inbox report fix set after unsubscribe-backlog', () => {
+describe('inbox report fix set after sender decisions', () => {
   let db: Db;
   let report: InboxReportService;
   let backlog: UnsubscribeBacklogService;
@@ -127,6 +130,143 @@ describe('inbox report fix set after unsubscribe-backlog', () => {
   afterEach(() => {
     process.env.UNSUB_SEND_ENABLED = 'true';
     delete process.env.METER_V2;
+  });
+
+  // Normalize audit timestamps to the report fixture clock after the real
+  // writer runs. The policy touch trigger retains the database clock.
+  async function policyClock(mailboxId: string, seconds: number) {
+    const at = new Date(NOW.getTime() + seconds * 1000);
+    await db
+      .update(activityLog)
+      .set({ occurredAt: at, createdAt: at })
+      .where(eq(activityLog.mailboxAccountId, mailboxId));
+  }
+
+  it('a timer-only row stays eligible; only an explicit Keep removes it from the report', async () => {
+    const mailboxId = await seedMailbox(db);
+    const alpha = await seedSender(db, mailboxId, 'a'.repeat(64), 'alpha@news.test', 4);
+    const calm = await seedSender(db, mailboxId, 'c'.repeat(64), 'calm@news.test', 3);
+    const timer = new SnoozeService(db as never, null);
+    await timer.setSnooze({
+      mailboxAccountId: mailboxId,
+      senderId: alpha,
+      until: '2026-10-18T09:00:00.000Z',
+    });
+    expect((await report.getForMailbox(mailboxId, NOW)).fix.senderKeys).toEqual([alpha, calm]);
+    const policies = new SendersPolicyService(db as never);
+    expect(
+      (
+        await policies.setPolicy({
+          mailboxAccountId: mailboxId,
+          senderId: alpha,
+          patch: { policyType: 'keep' },
+        })
+      ).changed,
+    ).toBe(true);
+    await policyClock(mailboxId, 1);
+    expect(
+      (await report.getForMailbox(mailboxId, new Date(NOW.getTime() + 2000))).fix.senderKeys,
+    ).toEqual([calm]);
+  });
+
+  it('refreshes the cached fix after Keep without another mailbox sync', async () => {
+    const mailboxId = await seedMailbox(db);
+    const alpha = await seedSender(db, mailboxId, 'a'.repeat(64), 'alpha@news.test', 4);
+    const calm = await seedSender(db, mailboxId, 'c'.repeat(64), 'calm@news.test', 3);
+    const policies = new SendersPolicyService(db as never);
+    expect((await report.getForMailbox(mailboxId, NOW)).fix.senderKeys).toEqual([alpha, calm]);
+
+    await policies.setPolicy({
+      mailboxAccountId: mailboxId,
+      senderId: alpha,
+      patch: { policyType: 'keep' },
+    });
+    await policyClock(mailboxId, 1);
+    const after = await report.getForMailbox(mailboxId, new Date(NOW.getTime() + 2000));
+    expect(after.fix.senderKeys).toEqual([calm]);
+    expect(after.fix.sendersCount).toBe(1);
+    expect(after.fix.inboxEmailCount).toBe(3);
+  });
+
+  it('Undo Keep restores a cached fix set and leaves another mailbox cache alone', async () => {
+    const mailboxId = await seedMailbox(db);
+    const otherId = await seedMailbox(db);
+    const alpha = await seedSender(db, mailboxId, 'a'.repeat(64), 'alpha@news.test', 4);
+    const calm = await seedSender(db, mailboxId, 'c'.repeat(64), 'calm@news.test', 3);
+    const other = await seedSender(db, otherId, 'a'.repeat(64), 'other@news.test', 5);
+    const otherReport = await report.getForMailbox(otherId, NOW);
+    const policies = new SendersPolicyService(db as never);
+    await policies.setPolicy({
+      mailboxAccountId: mailboxId,
+      senderId: alpha,
+      patch: { policyType: 'keep' },
+    });
+    await policyClock(mailboxId, 1);
+    const cached = await report.getForMailbox(mailboxId, new Date(NOW.getTime() + 2000));
+    expect(cached.fix.senderKeys).toEqual([calm]);
+
+    await policies.undoKeep({ mailboxAccountId: mailboxId, senderId: alpha });
+    await db
+      .update(activityLog)
+      .set({ revertedAt: new Date(NOW.getTime() + 3000) })
+      .where(eq(activityLog.mailboxAccountId, mailboxId));
+    const restored = await report.getForMailbox(mailboxId, new Date(NOW.getTime() + 4000));
+    expect(restored.fix.senderKeys).toEqual([alpha, calm]);
+    expect(restored.fix.sendersCount).toBe(2);
+    expect(restored.fix.inboxEmailCount).toBe(7);
+    const [stored] = await db
+      .select()
+      .from(inboxReportCache)
+      .where(eq(inboxReportCache.mailboxAccountId, mailboxId));
+    expect(stored!.sourceSyncRunId).toBeNull();
+    expect(await report.getForMailbox(otherId, new Date(NOW.getTime() + 4000))).toEqual(
+      otherReport,
+    );
+    expect(otherReport.fix.senderKeys).toEqual([other]);
+  });
+
+  it('Protect and Unprotect refresh cached eligibility without changing the standing verdict', async () => {
+    const mailboxId = await seedMailbox(db);
+    const alpha = await seedSender(db, mailboxId, 'a'.repeat(64), 'alpha@news.test', 4);
+    const calm = await seedSender(db, mailboxId, 'c'.repeat(64), 'calm@news.test', 3);
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey: 'a'.repeat(64),
+      policyType: 'unsubscribe',
+      updatedAt: NOW,
+    });
+    const policies = new SendersPolicyService(db as never);
+    expect((await report.getForMailbox(mailboxId, NOW)).fix.senderKeys).toEqual([alpha, calm]);
+
+    await policies.setPolicy({
+      mailboxAccountId: mailboxId,
+      senderId: alpha,
+      patch: { isProtected: true },
+    });
+    await policyClock(mailboxId, 1);
+    expect(
+      (await report.getForMailbox(mailboxId, new Date(NOW.getTime() + 2000))).fix.senderKeys,
+    ).toEqual([calm]);
+    await policies.setPolicy({
+      mailboxAccountId: mailboxId,
+      senderId: alpha,
+      patch: { isProtected: false },
+    });
+    await policyClock(mailboxId, 3);
+    const restored = await report.getForMailbox(mailboxId, new Date(NOW.getTime() + 4000));
+    expect(restored.fix.senderKeys).toEqual([alpha, calm]);
+    const [policy] = await db
+      .select()
+      .from(senderPolicies)
+      .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+    expect(policy!.policyType).toBe('unsubscribe');
+    expect(policy!.isProtected).toBe(false);
+    // A snapshot newer than the database's policy timestamp stays cached;
+    // the fix must not turn every report read into a recomputation.
+    const settledAt = new Date(policy!.updatedAt.getTime() + 1000);
+    const settled = await report.getForMailbox(mailboxId, settledAt);
+    const unchanged = await report.getForMailbox(mailboxId, new Date(settledAt.getTime() + 1000));
+    expect(unchanged.generatedAt).toBe(settled.generatedAt);
   });
 
   it('confirm drops the senders, the Undo window keeps them out, and Undo brings them back', async () => {
