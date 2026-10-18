@@ -722,7 +722,7 @@ export function SendersSimulator() {
                 <p className="dm-senders-demo-status">Keep decision recorded.</p>
               ) : null}
               <div className="dm-senders-demo-actions">
-                <span>Your next decision</span>
+                <span>{WS2_COPY.senders.detail.actionHeading}</span>
                 <div>
                   {(['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete'] as const).map((verb) => (
                     <button

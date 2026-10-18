@@ -588,6 +588,9 @@
   "senders": {
     "emptySteps": {
       "confirm": "Confirm when you’re ready"
+    },
+    "detail": {
+      "actionHeading": "What do you want to do?"
     }
   },
   "simplify": {
