@@ -1154,12 +1154,12 @@ describe('METER_V2 emails-cleared meter', () => {
     vi.unstubAllEnvs();
   });
 
-  async function issueUndo(): Promise<string> {
+  async function issueUndo(actionKind: 'archive' | 'later' = 'archive'): Promise<string> {
     const [row] = await db
       .insert(undoJournal)
       .values({
         mailboxAccountId: mailboxId,
-        actionKind: 'archive',
+        actionKind,
         payload: { messageIds: [] },
       })
       .returning({ token: undoJournal.token });
@@ -1189,6 +1189,69 @@ describe('METER_V2 emails-cleared meter', () => {
       undoToken: token,
     });
     expect(await svc.cleanupUnitsUsed(workspaceId)).toBe(60);
+  });
+
+  it('does not refund unrelated Archive usage when free Later is undone', async () => {
+    await seedJob(db, mailboxId, {
+      verb: 'archive',
+      key: 'charged-archive',
+      quotaUnits: 900,
+      affectedCount: 900,
+    });
+    const token = await issueUndo('later');
+    await seedJob(db, mailboxId, {
+      verb: 'later',
+      key: 'free-later',
+      quotaUnits: 0,
+      affectedCount: 100,
+      undoToken: token,
+    });
+    await seedJob(db, mailboxId, {
+      verb: 'later',
+      key: 'undo-free-later',
+      direction: 'reverse',
+      quotaUnits: 0,
+      affectedCount: 100,
+      undoToken: token,
+    });
+
+    expect(await svc.cleanupSummary(workspaceId)).toMatchObject({
+      used: 900,
+      remaining: METER.free.limit - 900,
+    });
+    await expect(svc.assertCleanupCapacity(mailboxId, 101)).rejects.toMatchObject({
+      code: 'FREE_CAP_REACHED',
+    });
+  });
+
+  it('never refunds more than the forward charge when more emails were restored', async () => {
+    await seedJob(db, mailboxId, {
+      verb: 'archive',
+      key: 'unrelated-archive',
+      quotaUnits: 900,
+      affectedCount: 900,
+    });
+    const token = await issueUndo();
+    await seedJob(db, mailboxId, {
+      verb: 'archive',
+      key: 'settled-at-reservation',
+      quotaUnits: 40,
+      affectedCount: 100,
+      undoToken: token,
+    });
+    await seedJob(db, mailboxId, {
+      verb: 'archive',
+      key: 'undo-reservation',
+      direction: 'reverse',
+      affectedCount: 100,
+      quotaUnits: 0,
+      undoToken: token,
+    });
+
+    expect(await svc.cleanupSummary(workspaceId)).toMatchObject({
+      used: 900,
+      remaining: METER.free.limit - 900,
+    });
   });
 
   it('does not refund an undo whose forward row is in an earlier period', async () => {

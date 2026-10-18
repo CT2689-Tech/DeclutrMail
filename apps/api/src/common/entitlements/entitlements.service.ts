@@ -270,7 +270,9 @@ export class EntitlementsService {
   /**
    * Emails held against the Free meter. Forward stamps minus same-period
    * undo restorations. A reverse row refunds only when its forward row
-   * was created in the period being counted.
+   * was charged in the period being counted. Free actions such as Later,
+   * or actions performed on an unlimited tier, cannot refund other usage.
+   * A refund never exceeds the forward stamp, even if more emails moved.
    */
   private async meteredEmailsUsed(
     workspaceId: string,
@@ -296,7 +298,7 @@ export class EntitlementsService {
     const refundPeriod = periodStart ? [gte(forward.createdAt, periodStart)] : [];
     const [restored] = await executor
       .select({
-        used: sql<number>`coalesce(sum(${actionJobs.affectedCount}), 0)::int`,
+        used: sql<number>`coalesce(sum(least(${actionJobs.affectedCount}, ${forward.quotaUnits})), 0)::int`,
       })
       .from(actionJobs)
       .innerJoin(
