@@ -14,7 +14,7 @@
 
 import type { Metadata } from 'next';
 
-import { WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { WS3_COPY, WS6_COPY } from '@declutrmail/shared/copy/launch';
 import { fillStory, isPricingV2 } from '@declutrmail/shared/entitlements';
 
 import { faqAnswer } from '@/features/marketing/learn/faq-content';
@@ -70,8 +70,8 @@ const FAQS: ReadonlyArray<{
   },
   {
     id: 'disconnect-mailbox',
-    q: 'How do I disconnect a mailbox?',
-    a: 'Open the Gmail account menu in the app’s top bar and choose Disconnect for that mailbox. That revokes DeclutrMail’s Google access and stops all syncing and actions for it immediately; your historical activity log is kept so you can reconnect later. You can also revoke access directly from your Google account permissions page.',
+    q: WS6_COPY['ws6.privacy.help.disconnectQ'],
+    a: WS6_COPY['ws6.privacy.help.disconnectA'],
   },
   {
     id: 'delete-account',

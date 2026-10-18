@@ -199,18 +199,6 @@
   },
   {
     "file": "apps/web/src/app/(marketing)/help/page.tsx",
-    "line": 76,
-    "id": "action_word",
-    "text": "Open the Gmail account menu in the app\u2019s top bar and choose Disconnect for that mailbox. That revokes DeclutrMail\u2019s Google access and stops all syncing and actions for it immediately; your historical activity log is kept so you can reconnect later. You can also revoke access directly from your Google account permissions page."
-  },
-  {
-    "file": "apps/web/src/app/(marketing)/help/page.tsx",
-    "line": 76,
-    "id": "sync_word",
-    "text": "Open the Gmail account menu in the app\u2019s top bar and choose Disconnect for that mailbox. That revokes DeclutrMail\u2019s Google access and stops all syncing and actions for it immediately; your historical activity log is kept so you can reconnect later. You can also revoke access directly from your Google account permissions page."
-  },
-  {
-    "file": "apps/web/src/app/(marketing)/help/page.tsx",
     "line": 81,
     "id": "action_word",
     "text": "Settings \u2192 Privacy & Data \u2192 Delete account. Deletion has a 7-day grace period during which you can change your mind. If you have actions still inside a longer undo window, deletion is scheduled after the latest window expires \u2014 so undo keeps working for its full window."
@@ -1264,18 +1252,6 @@
     "line": 42,
     "id": "sync_word",
     "text": "@/features/onboarding/api/use-sync-status"
-  },
-  {
-    "file": "apps/web/src/features/settings/privacy-data/privacy-data-content.tsx",
-    "line": 254,
-    "id": "action_word",
-    "text": "Removes DeclutrMail’s saved Google credential and stops sync and Gmail actions. Saved Gmail and DeclutrMail data stays so reconnecting can continue its history; Gmail is unchanged. Choose Manage in the top-bar account menu."
-  },
-  {
-    "file": "apps/web/src/features/settings/privacy-data/privacy-data-content.tsx",
-    "line": 254,
-    "id": "sync_word",
-    "text": "Removes DeclutrMail’s saved Google credential and stops sync and Gmail actions. Saved Gmail and DeclutrMail data stays so reconnecting can continue its history; Gmail is unchanged. Choose Manage in the top-bar account menu."
   },
   {
     "file": "apps/web/src/features/settings/privacy-data/privacy-data-content.tsx",

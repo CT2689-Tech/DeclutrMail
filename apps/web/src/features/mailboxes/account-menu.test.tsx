@@ -456,7 +456,7 @@ describe('AccountMenu Gmail reconnect health', () => {
     // -04: a first-timer switching by accident should learn, right here,
     // that it rescopes every screen — not just this menu.
     expect(
-      within(dialog).getByText('Switch the mailbox shown across the app.'),
+      within(dialog).getByText('Switch which Gmail account you see across the app.'),
     ).toBeInTheDocument();
     expect(useMailboxesHealthSpy).toHaveBeenLastCalledWith(me.mailboxes, { enabled: true });
     expect(dialog.getAttribute('style')).toContain('width: 338px');

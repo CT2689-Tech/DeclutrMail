@@ -9,6 +9,7 @@ import {
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, ScreenIntro, tokens } from '@declutrmail/shared';
+import { WS6_COPY } from '@declutrmail/shared/copy/launch';
 import { MIN_UNDO_WINDOW_DAYS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import type { DataExportFormat } from '@declutrmail/shared/contracts';
@@ -128,7 +129,7 @@ export function PrivacyDataView({
       </EditorialDescription>
       <EditorialContents
         items={[
-          { href: '#privacy-connected-mailboxes', label: 'Connected inboxes' },
+          { href: '#privacy-connected-mailboxes', label: WS6_COPY['ws6.privacy.connectedTitle'] },
           { href: '#privacy-gmail-data-inventory', label: 'Data inventory' },
           { href: '#privacy-undo-retention', label: 'Recovery' },
           { href: '#privacy-export-my-data', label: 'Export' },
@@ -146,7 +147,7 @@ export function PrivacyDataView({
       {privacyContent}
 
       {/* 2 — which mailboxes the storage list applies to. */}
-      <Section title="Connected mailboxes">
+      <Section title={WS6_COPY['ws6.privacy.connectedTitle']}>
         {mailboxes.length === 0 ? (
           <p className="dm-settings-row" style={{ ...bodyTextStyle, ...blockRowStyle }}>
             No mailboxes connected — no Gmail data is being saved right now.

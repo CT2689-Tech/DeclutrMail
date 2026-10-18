@@ -67,12 +67,12 @@ export const GMAIL_DATA_PROCESSORS = {
   },
   Brandfetch: {
     purpose:
-      "Find a logo for a sender's email domain when neither the sender's own published logo record (BIMI) nor its website gives us a usable one. Receives the domain only.",
+      'Find a logo for a sender’s email domain when neither the sender’s own published logo record (BIMI) nor its website gives us a usable one. Receives the domain only.',
     // Read 2026-09-19: Brandfetch's policy states a general retention
     // principle and no figure for API request logs. `unknown` stays
     // unknown — do not round it to a number.
     retention:
-      "Brandfetch's privacy policy does not state a retention period for API request logs (read 2026-09-19). A domain is looked up for all DeclutrMail users at once rather than once per user, and re-checked after its cache period.",
+      'Brandfetch’s privacy policy does not state a retention period for API request logs (read 2026-09-19). A domain is looked up for all DeclutrMail users at once rather than once per user, and re-checked after its cache period.',
     privacyUrl: 'https://brandfetch.com/privacy',
   },
 } as const satisfies Record<
@@ -365,7 +365,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
   {
     id: 'inbox-report-cache',
     category: 'derived',
-    label: 'Inbox Report totals and the sender ids offered for a fix',
+    label: WS6_COPY['ws6.inventory.inboxReportCache.label'],
     fetchedFrom: [
       'message-size-estimate',
       'received-date',
@@ -558,7 +558,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     storageRefs: ['domain_icons.*'],
     derived: true,
     purpose:
-      "Show a logo beside a sender. The email domain of a sender shown in the app may be looked up, whether or not it is a brand — first against the sender's own published logo record and website, and only when neither of those gives us a usable logo, the Brandfetch logo service. Only the domain is sent: never your address, your account, or any message.",
+      'Show a logo beside a sender. The email domain of a sender shown in the app may be looked up, whether or not it is a brand — first against the sender’s own published logo record and website, and only when neither of those gives us a usable logo, the Brandfetch logo service. Only the domain is sent: never your address, your account, or any message.',
     // Every verb here names a mechanism that exists. There is no sweep and
     // no DELETE against `domain_icons`: a row is re-resolved in place the
     // next time someone views that domain after its cache window, and a

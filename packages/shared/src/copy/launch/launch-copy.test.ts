@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { GMAIL_DATA_INVENTORY, GMAIL_DATA_RETENTION } from '../../contracts/gmail-data-inventory';
+import { DATA_EXPORT_FORMAT_MANIFEST, DATA_EXPORT_LIMITATION } from '../../contracts/data-export';
+import {
+  GMAIL_DATA_INVENTORY,
+  GMAIL_DATA_PROCESSORS,
+  GMAIL_DATA_RETENTION,
+} from '../../contracts/gmail-data-inventory';
 import { expectMatchesDeck } from './expect-matches-deck';
 import { WS1_COPY, WS2_COPY, WS3_COPY, WS4_COPY, WS5_COPY, WS6_COPY } from './index';
 
@@ -167,6 +172,55 @@ describe('launch copy deck snapshots', () => {
     expect(rendered['initial-sync-job-status']?.retention).toBe(
       WS6_COPY['ws6.inventory.scanStatus.retention'],
     );
+  });
+
+  it('pins the drop2-r50 privacy sentences and the surfaces that render them', () => {
+    expect(WS6_COPY['ws6.inventory.inboxReportCache.label']).toBe(
+      'Inbox Report totals and the senders suggested for a fix',
+    );
+    expect(WS6_COPY['ws6.privacy.connectedTitle']).toBe('Connected Gmail accounts');
+    expect(WS6_COPY['ws6.privacy.disconnect.label']).toBe('Disconnect a Gmail account');
+    expect(WS6_COPY['ws6.privacy.disconnect.detail']).toBe(
+      'Deletes the key that lets DeclutrMail access your Gmail, and stops scanning and changes in Gmail. Your saved data stays, so if you reconnect, your history picks up where it left off. Your email in Gmail is unchanged. Choose Manage in the account menu at the top.',
+    );
+    expect(WS6_COPY['ws6.privacy.disconnectDelete.label']).toBe(
+      'Disconnect & delete one Gmail account\u2019s saved data',
+    );
+    expect(WS6_COPY['ws6.privacy.disconnectDelete.detail']).toBe(
+      'Also permanently deletes that Gmail account\u2019s saved email details, sender data, decisions, rules, Activity and Undo data. Your DeclutrMail account, your other Gmail accounts, the disconnected Gmail address and your email in Gmail stay. Choose Manage in the account menu at the top.',
+    );
+    expect(WS6_COPY['ws6.privacy.export.jsonDescription']).toBe(
+      'Gmail account addresses and status, sender profiles and decisions, listed email details (sender, subject, Gmail preview snippet, date, labels and read state), Activity history, visit summaries and product feedback.',
+    );
+    expect(WS6_COPY['ws6.privacy.export.limitation']).toBe(
+      'These downloads are copies of the data listed above, not a complete copy of every DeclutrMail record. The key that lets DeclutrMail access your Gmail is never exported.',
+    );
+    expect(WS6_COPY['ws6.privacy.accountMenu.switchHint']).toBe(
+      'Switch which Gmail account you see across the app.',
+    );
+    expect(WS6_COPY['ws6.privacy.help.disconnectQ']).toBe('How do I disconnect a Gmail account?');
+    expect(WS6_COPY['ws6.privacy.help.disconnectA']).toBe(
+      'Open the Gmail account menu at the top of the app and choose Disconnect for that Gmail account. That removes DeclutrMail\u2019s access to it and stops all scanning and changes right away. Your history is kept, so you can reconnect later. You can also remove DeclutrMail\u2019s access from your Google Account\u2019s permissions page.',
+    );
+    expect(WS6_COPY['ws6.privacy.contact.disconnectLine']).toBe(
+      'The Help & FAQ page answers the most common questions \u2014 what DeclutrMail stores, how undo works, and how to disconnect a Gmail account or delete your account.',
+    );
+    const rendered = Object.fromEntries(GMAIL_DATA_INVENTORY.map((item) => [item.id, item]));
+    expect(rendered['inbox-report-cache']?.label).toBe(
+      WS6_COPY['ws6.inventory.inboxReportCache.label'],
+    );
+    expect(DATA_EXPORT_FORMAT_MANIFEST.json.description).toBe(
+      WS6_COPY['ws6.privacy.export.jsonDescription'],
+    );
+    expect(DATA_EXPORT_LIMITATION).toBe(WS6_COPY['ws6.privacy.export.limitation']);
+    const logo = GMAIL_DATA_INVENTORY.find((item) => item.id === 'sender-logo-lookup');
+    expect(logo?.purpose).toContain('sender\u2019s own published logo record');
+    expect(logo?.purpose).not.toContain("sender's");
+    expect(GMAIL_DATA_PROCESSORS.Brandfetch.purpose).not.toContain("sender's");
+    expect(GMAIL_DATA_PROCESSORS.Brandfetch.retention).toContain(
+      'Brandfetch\u2019s privacy policy',
+    );
+    expect(GMAIL_DATA_PROCESSORS.Brandfetch.retention).not.toContain("Brandfetch's");
   });
 
   it('pins the drop2-r45 data-control and inventory sentences', () => {

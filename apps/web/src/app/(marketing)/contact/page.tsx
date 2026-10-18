@@ -13,7 +13,7 @@ import { PAGE_LAST_UPDATED } from '@/features/marketing/page-dates';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 import { BUSINESS_POSTAL_ADDRESS, hasPostalAddress } from '@declutrmail/shared/copy';
 import { hasLegalEntity } from '@declutrmail/shared/copy/legal-entity';
-import { fillWs3, WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { fillWs3, WS3_COPY, WS6_COPY } from '@declutrmail/shared/copy/launch';
 
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Contact — DeclutrMail',
@@ -23,6 +23,12 @@ export const metadata: Metadata = marketingPageMetadata({
 });
 
 const LAST_UPDATED = PAGE_LAST_UPDATED['/contact'];
+
+const HELP_FAQ_LINK = 'Help & FAQ page';
+const disconnectLine = WS6_COPY['ws6.privacy.contact.disconnectLine'];
+const helpFaqAt = disconnectLine.indexOf(HELP_FAQ_LINK);
+const beforeHelpFaq = disconnectLine.slice(0, helpFaqAt);
+const afterHelpFaq = disconnectLine.slice(helpFaqAt + HELP_FAQ_LINK.length);
 
 const TOC = [
   { id: 'support', label: 'General questions and support' },
@@ -81,9 +87,9 @@ export default function ContactPage() {
 
       <LegalSection id="before-you-write" title="Before you write">
         <p>
-          The <a href="/help">Help &amp; FAQ page</a> answers the most common questions — what
-          DeclutrMail stores, how undo works, and how to disconnect a mailbox or delete your
-          account.
+          {beforeHelpFaq}
+          <a href="/help">{HELP_FAQ_LINK}</a>
+          {afterHelpFaq}
         </p>
       </LegalSection>
     </LegalPageLayout>

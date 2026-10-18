@@ -119,9 +119,13 @@ describe('PrivacyDataView', () => {
     ).toBeGreaterThan(0);
     expect(screen.getAllByText(/Disconnect & delete saved data/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/What we keep to fix problems/i)).toBeInTheDocument();
-    expect(screen.getByText(/Disconnect & delete one mailbox’s saved data/i)).toBeInTheDocument();
+    expect(screen.getAllByText('Connected Gmail accounts').length).toBeGreaterThan(0);
+    expect(screen.getByText('Disconnect a Gmail account')).toBeInTheDocument();
     expect(
-      screen.getByText(/other mailboxes.*disconnected Gmail address.*remain/i),
+      screen.getByText('Disconnect & delete one Gmail account’s saved data'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/other Gmail accounts.*disconnected Gmail address.*stay/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/Delete account and data/i)).toBeInTheDocument();
   });
@@ -190,7 +194,7 @@ describe('PrivacyDataView', () => {
     const { container } = renderView();
     const text = (container.textContent ?? '').replace(/\s+/g, ' ');
 
-    expect(text).toContain('mailbox addresses and status');
+    expect(text).toContain('Gmail account addresses and status');
     expect(text).toContain('sender profiles and decisions');
     expect(text).toContain('Activity history');
     expect(text).toContain('App preferences and billing records are not included');
