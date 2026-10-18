@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { WS6_COPY } from '@declutrmail/shared/copy/launch';
+import { WS3_COPY, WS6_COPY } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import { ANSWER_ARTICLES, ANSWER_SLUGS } from './answer-content';
@@ -441,6 +441,12 @@ describe('shared learning surfaces', () => {
     expect(answers.map((item) => item.acceptedAnswer.text)).toContain(
       WS6_COPY['ws6.privacy.faq.disconnectDeleteA'],
     );
+    const whereUndo = FAQ_ENTRIES.find((entry) => entry.id === 'where-undo');
+    expect(whereUndo?.answer).toContain(WS3_COPY['ws3.learn.undo.followsYou']);
+    expect(answers.map((item) => item.acceptedAnswer.text)).toContain(whereUndo?.answer);
+    const undoArticle = ANSWER_ARTICLES['how-undo-works-for-gmail-cleanup'];
+    const archiveLater = undoArticle.sections.find((section) => section.id === 'archive-later');
+    expect(archiveLater?.paragraphs[1]).toContain(WS3_COPY['ws3.learn.undo.followsYou']);
   });
 
   it('renders every changelog entry', () => {

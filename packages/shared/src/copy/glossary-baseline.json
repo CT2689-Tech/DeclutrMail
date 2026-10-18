@@ -1254,12 +1254,6 @@
     "text": "@/features/onboarding/api/use-sync-status"
   },
   {
-    "file": "apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx",
-    "line": 157,
-    "id": "sync_word",
-    "text": "disconnected \u2014 sync stopped"
-  },
-  {
     "file": "apps/web/src/features/settings/settings-index/action-sheet-prefs-card.tsx",
     "line": 105,
     "id": "action_word",

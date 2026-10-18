@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync';
 import { useNow } from '@/lib/use-now';
 import { Button, Pill, tokens } from '@declutrmail/shared';
+import { WS6_COPY } from '@declutrmail/shared/copy/launch';
 import type { MeMailbox } from '@/features/auth/api/use-me';
 import type { MailboxHealth } from '../api/use-mailbox-health';
 import { SettingsGroup } from '../settings-list';
@@ -100,7 +101,7 @@ export function MailboxesCard({
             padding: '17px 16px',
           }}
         >
-          No mailboxes connected yet.
+          {WS6_COPY['ws6.settings.gmailAccountsCard.empty']}
         </p>
       ) : (
         <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>

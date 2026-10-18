@@ -96,7 +96,8 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'where-undo',
     question: 'Where do I find an active undo?',
     answer:
-      'Activity is the dependable place to review completed actions and use Undo when it is available. Recent-action recovery also follows you across mailbox screens; it stays off account surfaces such as Billing and Settings.',
+      'Activity is the dependable place to review completed actions and use Undo when it is available. ' +
+      WS3_COPY['ws3.learn.undo.followsYou'],
   },
   {
     id: 'unsubscribe',

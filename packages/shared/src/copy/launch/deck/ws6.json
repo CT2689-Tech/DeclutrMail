@@ -1,7 +1,7 @@
 {
   "_meta": {
-    "revision": "drop2-r51",
-    "issued": "2026-10-18T10:25:00-07:00",
+    "revision": "drop2-r52",
+    "issued": "2026-10-18T11:00:00-07:00",
     "section": "ws6"
   },
   "ws6.inventory.retention.savedData": "Until you delete this Gmail account’s saved data or delete your DeclutrMail account.",
@@ -32,5 +32,8 @@
   "ws6.privacy.description": "See what DeclutrMail can access and what it keeps for each connected Gmail account, download your data, or delete it. To check that a Gmail account is being scanned normally, go to Settings.",
   "ws6.privacy.inventory.connectionTitle": "Connection and scanning data",
   "ws6.privacy.faq.disconnectDeleteA": "Open the Gmail account menu at the top of the app and choose Disconnect for that Gmail account. That removes DeclutrMail’s access to it and stops all scanning and changes right away. Your history is kept, so you can reconnect later. In Settings › Privacy & data, you can download your data or delete your whole DeclutrMail account. Deleting your DeclutrMail account doesn’t delete any email in Gmail, and changes you already approved, like archiving or moving email to Trash, stay as they are.",
-  "ws6.privacy.faq.securityLinkDesc": "Removing access, encryption and deletion."
+  "ws6.privacy.faq.securityLinkDesc": "Removing access, encryption and deletion.",
+  "ws6.privacy.connected.empty": "No Gmail accounts connected yet. DeclutrMail isn’t saving any Gmail data right now.",
+  "ws6.privacy.connected.status.disconnected": "disconnected · not scanning",
+  "ws6.settings.gmailAccountsCard.empty": "No Gmail accounts connected yet."
 }

@@ -198,7 +198,7 @@ export function PrivacyDataView({
       <Section id="privacy-connected-mailboxes" title={WS6_COPY['ws6.privacy.connectedTitle']}>
         {mailboxes.length === 0 ? (
           <p className="dm-settings-row" style={{ ...bodyTextStyle, ...blockRowStyle }}>
-            No mailboxes connected — no Gmail data is being saved right now.
+            {WS6_COPY['ws6.privacy.connected.empty']}
           </p>
         ) : (
           mailboxes.map((m) => (
@@ -209,7 +209,9 @@ export function PrivacyDataView({
               }
             >
               <span style={{ fontSize: text.sm, color: color.fgMuted }}>
-                {m.status === 'disconnected' ? 'disconnected — sync stopped' : 'data saved'}
+                {m.status === 'disconnected'
+                  ? WS6_COPY['ws6.privacy.connected.status.disconnected']
+                  : 'data saved'}
               </span>
             </SettingsRow>
           ))

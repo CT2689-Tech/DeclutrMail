@@ -218,6 +218,18 @@ describe('launch copy deck snapshots', () => {
     expect(WS6_COPY['ws6.privacy.faq.securityLinkDesc']).toBe(
       'Removing access, encryption and deletion.',
     );
+    expect(WS6_COPY['ws6.privacy.connected.empty']).toBe(
+      'No Gmail accounts connected yet. DeclutrMail isn\u2019t saving any Gmail data right now.',
+    );
+    expect(WS6_COPY['ws6.privacy.connected.status.disconnected']).toBe(
+      'disconnected \u00b7 not scanning',
+    );
+    expect(WS6_COPY['ws6.settings.gmailAccountsCard.empty']).toBe(
+      'No Gmail accounts connected yet.',
+    );
+    expect(WS3_COPY['ws3.learn.undo.followsYou']).toBe(
+      'The option to undo a recent change follows you as you move between your email screens, like Senders, Triage and Activity. It doesn\u2019t show on account pages such as Plan & billing, Privacy & data and Help.',
+    );
     const rendered = Object.fromEntries(GMAIL_DATA_INVENTORY.map((item) => [item.id, item]));
     expect(rendered['inbox-report-cache']?.label).toBe(
       WS6_COPY['ws6.inventory.inboxReportCache.label'],

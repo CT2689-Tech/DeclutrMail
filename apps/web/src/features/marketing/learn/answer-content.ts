@@ -253,7 +253,8 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'Archive and Later are inverse label changes',
         paragraphs: [
           'Archive removes the Inbox label. Undo adds Inbox back. Later removes Inbox and adds DeclutrMail/Later; undo adds Inbox and removes that Later label. These are current-mail changes, not permanent future sender rules.',
-          'Activity is the dependable recovery destination. Recent-action recovery also follows you across mailbox screens; it stays off account surfaces such as Billing and Settings.',
+          'Activity is the dependable recovery destination. ' +
+            WS3_COPY['ws3.learn.undo.followsYou'],
         ],
       },
       {

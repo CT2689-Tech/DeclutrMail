@@ -1,7 +1,7 @@
 {
   "_meta": {
-    "revision": "drop2-r41",
-    "issued": "2026-10-13T11:25:00-07:00",
+    "revision": "drop2-r52",
+    "issued": "2026-10-18T11:00:00-07:00",
     "section": "ws3"
   },
   "ws3.home.title": "Clean up Gmail, one sender at a time — DeclutrMail",
@@ -358,5 +358,6 @@
   "ws3.demo.details.includes.inbox": "Inbox only",
   "ws3.demo.details.includes.all": "Inbox and archived email",
   "ws3.demo.details.deleted.label": "Deleted email",
-  "ws3.demo.details.deleted.value": "Goes to Gmail Trash for up to 30 days, unless you empty Trash sooner."
+  "ws3.demo.details.deleted.value": "Goes to Gmail Trash for up to 30 days, unless you empty Trash sooner.",
+  "ws3.learn.undo.followsYou": "The option to undo a recent change follows you as you move between your email screens, like Senders, Triage and Activity. It doesn’t show on account pages such as Plan & billing, Privacy & data and Help."
 }

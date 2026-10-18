@@ -93,7 +93,7 @@ describe('PrivacyDataView', () => {
       mailboxes: [TWO_MAILBOXES[0]!, { ...TWO_MAILBOXES[1]!, status: 'disconnected' }],
     });
     expect(screen.getByText('chintan.a.thakkar@gmail.com')).toBeInTheDocument();
-    expect(screen.getByText(/disconnected — sync stopped/i)).toBeInTheDocument();
+    expect(screen.getByText('disconnected · not scanning')).toBeInTheDocument();
   });
 
   it('states what remains after deletion with the approved sentences', () => {
@@ -179,7 +179,11 @@ describe('PrivacyDataView', () => {
 
   it('renders the no-mailboxes empty state', () => {
     renderView({ mailboxes: [] });
-    expect(screen.getByText(/no mailboxes connected/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'No Gmail accounts connected yet. DeclutrMail isn’t saving any Gmail data right now.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('shows the tier-resolved undo window, and generic copy when tier is unknown', () => {
