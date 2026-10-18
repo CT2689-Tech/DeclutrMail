@@ -19,7 +19,7 @@ export function CookiePreferences() {
           fontFamily: font.sans,
         }}
       >
-        <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: color.fg }}>
+        <h3 tabIndex={-1} style={{ fontSize: 15, fontWeight: 600, margin: 0, color: color.fg }}>
           Cookie preferences
         </h3>
         <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: color.fgSoft }}>

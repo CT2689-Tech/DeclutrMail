@@ -13,8 +13,8 @@
  * vs unknown), export buttons → onExport(format), export-failed alert.
  */
 
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
@@ -40,6 +40,10 @@ const TWO_MAILBOXES = [
   mailbox('11111111-1111-4111-8111-111111111111', 'chintan.a.thakkar@gmail.com'),
   mailbox('22222222-2222-4222-8222-222222222222', 'chintan.a.thakkar.crypt@gmail.com'),
 ];
+
+afterEach(() => {
+  window.location.hash = '';
+});
 
 function renderView(overrides: Partial<Parameters<typeof PrivacyDataView>[0]> = {}) {
   return render(
@@ -145,13 +149,32 @@ describe('PrivacyDataView', () => {
     for (const link of links) {
       const href = link.getAttribute('href') ?? '';
       expect(href.startsWith('#')).toBe(true);
-      expect(document.getElementById(href.slice(1))).not.toBeNull();
+      const region = document.getElementById(href.slice(1));
+      expect(region).not.toBeNull();
+      expect(region?.querySelector('h1, h2, h3, h4, h5, h6')).toHaveAttribute('tabindex', '-1');
     }
     expect(within(nav).getByRole('link', { name: 'Connected Gmail accounts' })).toHaveAttribute(
       'href',
       '#privacy-connected-mailboxes',
     );
     expect(document.getElementById('privacy-connected-gmail-accounts')).toBeNull();
+  });
+
+  it('focuses the Connected Gmail accounts heading from its On this page link', async () => {
+    renderView();
+    const nav = screen.getByRole('navigation', { name: 'On this page' });
+    await userEvent.click(within(nav).getByRole('link', { name: 'Connected Gmail accounts' }));
+    const heading = screen.getByRole('heading', { name: 'Connected Gmail accounts' });
+    expect(heading).toHaveAttribute('tabindex', '-1');
+    await waitFor(() => expect(heading).toHaveFocus());
+  });
+
+  it('focuses the matching section heading when the hash changes', async () => {
+    renderView();
+    window.location.hash = '#privacy-export-my-data';
+    const heading = screen.getByRole('heading', { name: 'Export my data' });
+    expect(heading).toHaveAttribute('tabindex', '-1');
+    await waitFor(() => expect(heading).toHaveFocus());
   });
 
   it('renders the no-mailboxes empty state', () => {

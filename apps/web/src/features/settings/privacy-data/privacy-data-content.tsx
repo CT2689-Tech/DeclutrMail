@@ -62,7 +62,11 @@ export function PrivacyDataContent() {
       />
 
       <div id="what-we-store" style={{ scrollMarginTop: 24 }}>
-        <SettingsGroup id="privacy-gmail-data-inventory" title="Gmail data inventory">
+        <SettingsGroup
+          id="privacy-gmail-data-inventory"
+          title="Gmail data inventory"
+          headingTabIndex={-1}
+        >
           <InventoryGroup
             title="Access granted"
             items={GMAIL_OAUTH_ACCESS.map((item) => ({
@@ -271,7 +275,7 @@ export function PrivacyDataFooter() {
       </div>
 
       {/* 5 — leave cleanly (D116's exits, pointing at the owning flows). */}
-      <SettingsGroup id="privacy-leave-cleanly" title="Leave cleanly">
+      <SettingsGroup id="privacy-leave-cleanly" title="Leave cleanly" headingTabIndex={-1}>
         <SettingsRow
           label={WS6_COPY['ws6.privacy.disconnect.label']}
           detail={WS6_COPY['ws6.privacy.disconnect.detail']}
@@ -284,7 +288,7 @@ export function PrivacyDataFooter() {
       </SettingsGroup>
 
       {/* 6 — legal & evidence (CASA row: static copy per plan). */}
-      <SettingsGroup id="privacy-legal-evidence" title="Legal & evidence">
+      <SettingsGroup id="privacy-legal-evidence" title="Legal & evidence" headingTabIndex={-1}>
         <SettingsRow
           label="CASA Tier 2 verification"
           detail={fillWs3(WS2_COPY.liveFix.settingsPrivacy.casa, {
