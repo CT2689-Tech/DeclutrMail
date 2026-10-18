@@ -1540,11 +1540,8 @@ export class BillingWebhookService {
       );
       return { kind: 'unresolved', reason: 'unattributable' };
     }
-    await this.recomputeWorkspaceTier(this.db, event.workspaceId);
-    await this.db
-      .delete(pendingCheckouts)
-      .where(eq(pendingCheckouts.workspaceId, event.workspaceId));
-    await this.markProcessed(eventRowId);
+    // The committed grant is the purchase fact. Record it before later
+    // writes can fail; recovery sees a duplicate grant and must not count twice.
     if (granted.status !== 'duplicate') {
       recordProductEvent(
         this.productEvents,
@@ -1553,6 +1550,11 @@ export class BillingWebhookService {
         granted.userId,
       );
     }
+    await this.recomputeWorkspaceTier(this.db, event.workspaceId);
+    await this.db
+      .delete(pendingCheckouts)
+      .where(eq(pendingCheckouts.workspaceId, event.workspaceId));
+    await this.markProcessed(eventRowId);
     this.logger.log(
       `billing.webhook.pass_${granted.status} workspace=${event.workspaceId} txn=${event.providerTransactionId}`,
     );

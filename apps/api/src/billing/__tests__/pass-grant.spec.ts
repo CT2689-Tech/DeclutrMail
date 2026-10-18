@@ -1,4 +1,10 @@
-import { entitlementGrants, productEvents, users, workspaces } from '@declutrmail/db';
+import {
+  entitlementGrants,
+  productEvents,
+  subscriptionEvents,
+  users,
+  workspaces,
+} from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -139,6 +145,43 @@ describe('Backlog Pass grants', () => {
       await withoutAnalytics.process('paddle', paddle.mapWebhookEvent(fixture), fixture),
     ).toEqual({ kind: 'processed', effect: 'pass:granted' });
     expect(await db.select().from(entitlementGrants)).toHaveLength(1);
+    const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(workspace!.tier).toBe('plus');
+  });
+
+  it('keeps the attributed purchase when a committed grant needs webhook recovery', async () => {
+    vi.spyOn(
+      service as unknown as {
+        recomputeWorkspaceTier(db: DrizzleDb, workspaceId: string): Promise<void>;
+      },
+      'recomputeWorkspaceTier',
+    ).mockRejectedValueOnce(new Error('tier refresh temporarily unavailable'));
+    const fixture = completed('txn_recoverable_pass');
+    const event = paddle.mapWebhookEvent(fixture);
+    await expect(service.process('paddle', event, fixture)).rejects.toThrow(
+      'tier refresh temporarily unavailable',
+    );
+
+    expect(await db.select().from(entitlementGrants)).toHaveLength(1);
+    const [unprocessed] = await db.select().from(subscriptionEvents);
+    expect(unprocessed!.processedAt).toBeNull();
+    await vi.waitFor(async () => {
+      const events = await db.select().from(productEvents);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        userId,
+        event: 'purchase_confirmed',
+        props: { plan: 'pass' },
+      });
+    });
+
+    expect(await service.process('paddle', event, fixture)).toEqual({
+      kind: 'processed',
+      effect: 'pass:duplicate',
+    });
+    expect(await db.select().from(productEvents)).toHaveLength(1);
+    const [processed] = await db.select().from(subscriptionEvents);
+    expect(processed!.processedAt).not.toBeNull();
     const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
     expect(workspace!.tier).toBe('plus');
   });
