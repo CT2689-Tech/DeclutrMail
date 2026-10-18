@@ -39,7 +39,7 @@ import { mailLocationValue } from '@/features/triage/action-preview-detail';
 import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 import { afterLead } from '@/lib/copy/after-lead';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
-import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { pluralCopy, WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { fillStory, meterPreviewText, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
@@ -529,11 +529,12 @@ export function ConfirmActionModal({
   // local on purpose: the shared notice is also rendered by surfaces
   // that may have no reach control to point at (the Screener's chips
   // carry their own live counts instead of this hint).
+  const archivedReachCount = allMailCounts?.all ?? 0;
   const archivedReachHint =
-    inboxScopeNotice.kind === 'empty-inbox' && reachAvailable && (allMailCounts?.all ?? 0) > 0
-      ? `Switch to "Inbox + archived" to reach ${(allMailCounts?.all ?? 0).toLocaleString(
-          'en-US',
-        )} archived email${(allMailCounts?.all ?? 0) === 1 ? '' : 's'}.`
+    inboxScopeNotice.kind === 'empty-inbox' && reachAvailable && archivedReachCount > 0
+      ? pluralCopy(WS2_COPY.preview.archivedReachHint, archivedReachCount, {
+          n: archivedReachCount.toLocaleString('en-US'),
+        })
       : null;
   // Founder report 2026-08-25 — "how much is where", on every verb.
   //

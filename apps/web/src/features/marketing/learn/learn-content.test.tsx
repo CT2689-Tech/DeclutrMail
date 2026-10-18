@@ -76,7 +76,7 @@ describe('public learning content registry', () => {
     for (const text of [senderText, deleteText]) {
       expect(text).toMatch(/sender inspector/);
       expect(text).toContain('How far back');
-      expect(text).toContain('Inbox only or Inbox + archived');
+      expect(text).toContain('Include archived email');
     }
     if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
       expect(senderText).toContain(`${UNIFORM_UNDO_WINDOW_DAYS}-day window on every plan`);

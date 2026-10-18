@@ -1,13 +1,14 @@
 'use client';
 
-import { SheetSegmented, tokens } from '@declutrmail/shared';
+import { SheetCheckbox, tokens } from '@declutrmail/shared';
 import type { ActionReach } from '@declutrmail/shared/contracts';
+import { WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
 const { color, radius, space, text } = tokens;
 
-export const DELETE_ARCHIVED_HINT = 'Choose Inbox + archived to include archived email.';
+export const DELETE_ARCHIVED_HINT = WS5_COPY['f1.preview.archived.hint'];
 
-/** The same explicit, counted scope choice for every manual Delete preview. */
+/** The same explicit scope choice for every manual Delete preview. */
 export function ActionReachControl({
   value,
   inboxCount,
@@ -19,27 +20,26 @@ export function ActionReachControl({
   allMailCount: number | null | undefined;
   onChange: (reach: ActionReach) => void;
 }) {
+  const countsMatch =
+    typeof inboxCount === 'number' &&
+    typeof allMailCount === 'number' &&
+    inboxCount === allMailCount;
+  if (countsMatch) return null;
+
+  const archivedUnavailable = allMailCount == null;
   return (
     <>
-      <SheetSegmented
-        label="Where it applies"
-        value={value}
-        onChange={onChange}
-        options={[
-          { value: 'inbox_only', label: 'Inbox only', count: inboxCount ?? undefined },
-          {
-            value: 'all_mail',
-            label: allMailCount == null ? 'Inbox + archived (unavailable)' : 'Inbox + archived',
-            count: allMailCount ?? undefined,
-            disabled: allMailCount == null && value !== 'all_mail',
-          },
-        ]}
+      <SheetCheckbox
+        label={WS2_COPY.simplify.confirm.includeArchived}
+        checked={value === 'all_mail'}
+        disabled={archivedUnavailable && value !== 'all_mail'}
+        onChange={(checked) => onChange(checked ? 'all_mail' : 'inbox_only')}
       />
-      {inboxCount != null && allMailCount != null && inboxCount === allMailCount && (
+      {archivedUnavailable ? (
         <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
-          Both choices cover the same emails right now.
+          {WS5_COPY['f1.preview.archived.unavailable']}
         </p>
-      )}
+      ) : null}
     </>
   );
 }

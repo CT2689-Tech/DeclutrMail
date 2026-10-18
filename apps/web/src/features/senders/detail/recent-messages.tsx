@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { EmptyState, tokens } from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { adaptMailMessageRow } from '../api/adapters';
 import { useSenderMessages } from '../api/use-sender-messages';
 import { absoluteFromIso, fmtSize, relTimeFromIso } from './data';
@@ -64,7 +65,7 @@ export function RecentMessages({
       ? messages
       : (scopedQuery.data?.pages.flatMap((page) => page.data.map(adaptMailMessageRow)) ?? []);
   const scopeLabels = [
-    { value: 'all_mail', label: 'Inbox + archived' },
+    { value: 'all_mail', label: WS2_COPY.senders.detail.recent.filter.all },
     { value: 'inbox', label: 'Inbox' },
     { value: 'archived', label: 'Archived' },
   ] as const;
@@ -145,7 +146,7 @@ export function RecentMessages({
           }
           body={
             scope === 'inbox'
-              ? 'Try Inbox + archived to see earlier mail from this sender.'
+              ? WS2_COPY.senders.detail.recent.inboxEmpty.body
               : scope === 'archived'
                 ? 'Messages outside your Inbox will show up here.'
                 : 'No current Inbox or archived mail from this sender.'

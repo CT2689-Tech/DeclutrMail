@@ -366,7 +366,7 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'd' });
-    const allMailChip = await screen.findByRole('radio', { name: /Inbox \+ archived/ });
+    const allMailChip = await screen.findByRole('checkbox', { name: 'Include archived email' });
     allMailChip.focus();
     await user.keyboard('{Enter}');
     expect(allMailChip).toHaveAttribute('aria-checked', 'true');
@@ -381,7 +381,7 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'd' });
-    await screen.findByRole('radio', { name: /Inbox only/ });
+    await screen.findByRole('checkbox', { name: 'Include archived email' });
     screen.getByRole('button', { name: 'Cancel' }).focus();
     await user.keyboard('{Enter}');
     expect(bodies).toHaveLength(0);
@@ -395,7 +395,7 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'd' });
-    await screen.findByRole('radio', { name: /Inbox only/ });
+    await screen.findByRole('checkbox', { name: 'Include archived email' });
 
     fireEvent.keyDown(window, { key: 'Enter' });
     await waitFor(() => expect(bodies).toHaveLength(1));
@@ -428,7 +428,9 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'd' });
     await screen.findByText(/Inbox only.*We check again right before anything moves/i);
-    expect(screen.queryByRole('radiogroup', { name: 'Where it applies' })).toBeNull();
+    const includeArchived = screen.getByRole('checkbox', { name: 'Include archived email' });
+    expect(includeArchived).toBeDisabled();
+    expect(screen.getByText(/Archived email can’t be counted right now/)).toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: 'Enter' });
     await waitFor(() => expect(bodies).toHaveLength(1));

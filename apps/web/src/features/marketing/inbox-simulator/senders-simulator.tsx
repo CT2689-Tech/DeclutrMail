@@ -1,18 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Avatar,
-  PreviewSheet,
-  SheetCheckbox,
-  SheetFactList,
-  ToastHost,
-  toast,
-} from '@declutrmail/shared';
+import { Avatar, PreviewSheet, SheetFactList, ToastHost, toast } from '@declutrmail/shared';
 import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import { WS2_COPY, WS3_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
+import { ActionReachControl } from '@/components/action-scope-controls';
 import { InboxReportPanel } from '@/features/inbox-report/panel';
 import type { ActionRequest } from '@/features/senders/data';
 import { UnsubscribeBacklogDialog } from '@/features/senders/unsubscribe-backlog/unsubscribe-backlog-dialog';
@@ -921,10 +915,11 @@ export function SendersSimulator() {
               </p>
             )}
             {canWiden && (
-              <SheetCheckbox
-                label={WS2_COPY.simplify.confirm.includeArchived}
-                checked={reach === 'all_mail'}
-                onChange={(next) => setReach(next ? 'all_mail' : 'inbox_only')}
+              <ActionReachControl
+                value={reach}
+                inboxCount={totalCount(pendingSenders, 'inbox_only', olderThanDays)}
+                allMailCount={totalCount(pendingSenders, 'all_mail', olderThanDays)}
+                onChange={setReach}
               />
             )}
             {(mailVerb === 'archive' || mailVerb === 'delete') && (

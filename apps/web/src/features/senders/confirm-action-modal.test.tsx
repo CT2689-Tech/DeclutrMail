@@ -1007,7 +1007,7 @@ describe('ConfirmActionModal — a zero inbox leaves unsubscribe confirmable', (
     expect(screen.getByRole('radio', { name: '+ Archive 0' })).toBeDisabled();
     expect(screen.getByRole('radio', { name: '+ Delete 0' })).toBeDisabled();
     expect(screen.queryByText(/Unsubscribe only acts on email still in the inbox/)).toBeNull();
-    expect(screen.queryByRole('radiogroup', { name: /Where it applies/i })).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
     const confirm = screen.getByRole('button', { name: 'Unsubscribe' });
     expect(confirm).toBeEnabled();
     fireEvent.click(confirm);
@@ -1210,7 +1210,7 @@ describe('ConfirmActionModal — preview trust affordances', () => {
 });
 
 describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)', () => {
-  const reachRow = () => screen.queryByRole('radiogroup', { name: /Where it applies/i });
+  const reachRow = () => screen.queryByRole('checkbox', { name: 'Include archived email' });
 
   it('offers no reach choice against an API without the allMail block', () => {
     render(
@@ -1236,7 +1236,7 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
     expect(reachRow()).toBeNull();
   });
 
-  it('defaults Delete to Inbox only and labels both chips with window-scoped counts', () => {
+  it('defaults Delete with Include archived email off, and the headline uses the inbox count', () => {
     render(
       <ConfirmActionModal
         request={request('Delete')}
@@ -1245,14 +1245,11 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
         compositePreview={livePreviewWithAllMail}
       />,
     );
-    const inboxChip = screen.getByRole('radio', { name: /Inbox only/ });
-    const archivedChip = screen.getByRole('radio', { name: /Inbox \+ archived/ });
-    expect(inboxChip).toHaveAttribute('aria-checked', 'true');
-    expect(archivedChip).toHaveAttribute('aria-checked', 'false');
-    // Delete defaults to the 180d window — each chip carries ITS reach's
-    // count for that window, so the pair is comparable at a glance.
-    expect(inboxChip.textContent).toContain('1');
-    expect(archivedChip.textContent).toContain('700');
+    const includeArchived = screen.getByRole('checkbox', { name: 'Include archived email' });
+    expect(includeArchived).not.toBeChecked();
+    expect(includeArchived).toHaveStyle({ minHeight: '48px' });
+    expect(screen.getByRole('heading', { name: 'Delete 1 email?' })).toBeInTheDocument();
+    expect(screen.queryByText('Both choices cover the same emails right now.')).toBeNull();
   });
 
   it('confirms with reach all_mail only after the archived chip is chosen', () => {
@@ -1268,7 +1265,7 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
     fireEvent.click(screen.getByRole('button', { name: /Delete/ }));
     expect(onConfirm).toHaveBeenLastCalledWith(expect.not.objectContaining({ reach: 'all_mail' }));
 
-    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     fireEvent.click(screen.getByRole('button', { name: /Delete/ }));
     expect(onConfirm).toHaveBeenLastCalledWith(expect.objectContaining({ reach: 'all_mail' }));
   });
@@ -1282,11 +1279,11 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
         compositePreview={livePreviewWithAllMail}
       />,
     );
-    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     // 180d default window over the all-mail buckets — the figure appears
     // on both the chip and the title, so assert the pair.
     expect(screen.getByRole('heading', { name: 'Delete 700 emails?' })).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: /Inbox \+ archived/ })).toHaveTextContent('700');
+    expect(screen.getByRole('checkbox', { name: 'Include archived email' })).toBeChecked();
     expect(
       screen.getByText(
         'Inbox and archived email (older than 180 days). We check again right before anything moves.',
@@ -1312,7 +1309,7 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
         mailboxEmail="chintan@example.com"
       />,
     );
-    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     const href = decodeURIComponent(
       screen.getByRole('link', { name: /Check in Gmail/ }).getAttribute('href') ?? '',
     );
@@ -1345,7 +1342,7 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
     expect(screen.queryByRole('combobox', { name: /How far back/i })).toBeNull();
     expect(reachRow()).not.toBeNull();
     expect(
-      screen.getByText(/Switch to "Inbox \+ archived" to reach 977 archived emails\./),
+      screen.getByText('Turn on Include archived email to reach 977 archived emails.'),
     ).toBeInTheDocument();
     // With the reach control on screen, the notice must NOT claim Delete
     // "only acts on" inbox mail — the next sentence disproves it.
@@ -1354,7 +1351,7 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
     // Flipping the chip clears the inbox-scope narration AND arms the
     // exact figure the chip advertised: the hidden 180d default resets
     // to "All mail", so the user gets 977, not a silently-shaved 700.
-    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     expect(screen.queryByText(/in your inbox now/)).toBeNull();
     expect((screen.getByRole('option', { name: /All mail/ }) as HTMLOptionElement).selected).toBe(
       true,
@@ -1386,12 +1383,10 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
         compositePreview={nothingAnywhere}
       />,
     );
-    // Scope stays inspectable even at zero; neither selection can arm a
-    // mutation without matching mail.
-    expect(reachRow()).not.toBeNull();
+    // Matching zeros hide the checkbox. Confirm stays blocked either way.
+    expect(reachRow()).toBeNull();
+    expect(screen.queryByText('Both choices cover the same emails right now.')).toBeNull();
     expect(screen.getByRole('heading', { name: /Nothing in your inbox from/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Delete/ })).toBeDisabled();
-    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
     expect(screen.getByRole('button', { name: /Delete/ })).toBeDisabled();
   });
 
@@ -1405,8 +1400,8 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
         compositePreview={livePreviewWithAllMail}
       />,
     );
-    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
-    expect(screen.getByRole('radio', { name: /Inbox \+ archived/ })).toHaveAttribute(
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
+    expect(screen.getByRole('checkbox', { name: 'Include archived email' })).toHaveAttribute(
       'aria-checked',
       'true',
     );
@@ -1418,10 +1413,7 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
         compositePreview={livePreviewWithAllMail}
       />,
     );
-    expect(screen.getByRole('radio', { name: /Inbox only/ })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
+    expect(screen.getByRole('checkbox', { name: 'Include archived email' })).not.toBeChecked();
   });
 });
 
@@ -1445,12 +1437,12 @@ describe('ConfirmActionModal — unsubscribe cleanup scope defaults', () => {
         compositePreview={livePreviewWithAllMail}
       />,
     );
-    expect(screen.queryByRole('radiogroup', { name: /Where it applies/i })).toBeNull();
-    expect(screen.queryByRole('radio', { name: /Inbox \+ archived/ })).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
     expect(screen.getByRole('combobox', { name: /How far back/i })).toHaveValue('all');
 
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
-    expect(screen.getByRole('radio', { name: /Inbox \+ archived/ })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Include archived email' })).not.toBeChecked();
     expect(
       screen.getByRole('heading', {
         name: 'Unsubscribe from Acme Newsletter and delete 4 emails?',
@@ -1500,7 +1492,7 @@ describe('ConfirmActionModal — ADR-0028 reach on a bulk selection (amendment 2
     ...(withAllMail ? { allMailTotals: doubled(allMailBuckets) } : {}),
     protectedCount: 0,
   });
-  const reachRow = () => screen.queryByRole('radiogroup', { name: /Where it applies/i });
+  const reachRow = () => screen.queryByRole('checkbox', { name: 'Include archived email' });
 
   it('offers the reach choice on a bulk Delete and confirms all_mail only once chosen', () => {
     const onConfirm = vi.fn();
@@ -1514,15 +1506,17 @@ describe('ConfirmActionModal — ADR-0028 reach on a bulk selection (amendment 2
       />,
     );
     expect(reachRow()).not.toBeNull();
-    // Each chip carries the AGGREGATE for its reach at the default window.
-    const archived = screen.getByRole('radio', { name: /Inbox \+ archived/ });
-    expect(archived).toHaveTextContent((allMailBuckets.olderThan180d * 2).toLocaleString('en-US'));
+    const archived = screen.getByRole('checkbox', { name: 'Include archived email' });
+    expect(archived).not.toBeChecked();
 
     fireEvent.click(screen.getByRole('button', { name: /Delete/ }));
     expect(onConfirm).toHaveBeenLastCalledWith(expect.not.objectContaining({ reach: 'all_mail' }));
 
     expect(screen.getByText('They move to Gmail Trash.')).toBeInTheDocument();
     fireEvent.click(archived);
+    expect(
+      screen.getByRole('heading', { name: 'Delete 1,400 emails from 2 senders?' }),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(
         'Inbox and archived email (older than 180 days). We check again right before anything moves.',
@@ -1603,7 +1597,7 @@ describe('ConfirmActionModal — ADR-0028 reach on a bulk selection (amendment 2
         bulkPreview={{ data: bulkDataFor(senders, true), loading: false, error: false }}
       />,
     );
-    expect(screen.queryByRole('radiogroup', { name: /Where it applies/i })).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 8' }));
     fireEvent.click(screen.getByRole('radio', { name: '+ Archive 8' }));
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Archive' }));
@@ -1654,7 +1648,7 @@ describe('ConfirmActionModal — ADR-0028 reach on a bulk selection (amendment 2
     );
     expect(reachRow()).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 8' }));
-    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     expect(screen.queryByText(/^Inbox \+ archived now/)).toBeNull();
     fireEvent.click(
       screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
@@ -1921,7 +1915,7 @@ describe('ConfirmActionModal — where the sender’s mail actually is', () => {
         compositePreview={emptyInbox}
       />,
     );
-    expect(screen.getByText(/Switch to "Inbox \+ archived"/)).toBeInTheDocument();
+    expect(screen.getByText(/Turn on Include archived email to reach/)).toBeInTheDocument();
     expect(screen.queryByTestId('mail-location-line')).not.toBeInTheDocument();
   });
 
@@ -2696,7 +2690,7 @@ describe('ConfirmActionModal — explicit period and scope choices', () => {
     },
   );
 
-  it('keeps Delete reach explicit when inbox and all-mail counts tie', () => {
+  it('hides Include archived email when inbox and all-mail counts match', () => {
     const onConfirm = vi.fn();
     render(
       <ConfirmActionModal
@@ -2710,16 +2704,10 @@ describe('ConfirmActionModal — explicit period and scope choices', () => {
         }}
       />,
     );
-    const wider = screen.getByRole('radio', { name: /Inbox \+ archived/ });
-    expect(screen.getByRole('radio', { name: /Inbox only/ })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
-    fireEvent.click(wider);
+    expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
+    expect(screen.queryByText('Both choices cover the same emails right now.')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /Delete 7/ }));
-    expect(onConfirm).toHaveBeenLastCalledWith(
-      expect.objectContaining({ reach: 'all_mail', olderThanDays: 180 }),
-    );
+    expect(onConfirm).toHaveBeenLastCalledWith(expect.not.objectContaining({ reach: 'all_mail' }));
   });
 
   it.each(['archive', 'delete'] as const)(
@@ -2739,7 +2727,7 @@ describe('ConfirmActionModal — explicit period and scope choices', () => {
         />,
       );
       expect(screen.getByRole('combobox', { name: /How far back/i })).toHaveValue('all');
-      expect(screen.queryByRole('radiogroup', { name: /Where it applies/ })).toBeNull();
+      expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
       fireEvent.click(
         screen.getByRole('radio', {
           name: secondary === 'archive' ? '+ Archive 7' : '+ Delete 7',

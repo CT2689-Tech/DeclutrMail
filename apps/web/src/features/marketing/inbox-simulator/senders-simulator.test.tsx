@@ -27,7 +27,9 @@ describe('SendersSimulator', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
       if (mode === 'Delete') {
         fireEvent.click(within(preview()).getByRole('radio', { name: '+ Delete 111' }));
-        fireEvent.click(within(preview()).getByRole('radio', { name: /Inbox \+ archived/ }));
+        fireEvent.click(
+          within(preview()).getByRole('checkbox', { name: 'Include archived email' }),
+        );
       }
       fireEvent.change(
         within(preview()).getByRole('combobox', { name: 'How far back to act on' }),
@@ -58,7 +60,7 @@ describe('SendersSimulator', () => {
     render(<SendersSimulator />);
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
     fireEvent.click(within(preview()).getByRole('radio', { name: '+ Delete 111' }));
-    fireEvent.click(within(preview()).getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(within(preview()).getByRole('checkbox', { name: 'Include archived email' }));
     expect(within(preview()).getByRole('heading')).toHaveTextContent('delete 273 emails');
     fireEvent.click(
       within(preview()).getByRole('button', {
@@ -70,8 +72,8 @@ describe('SendersSimulator', () => {
     fireEvent.click(within(activity).getByRole('button', { name: 'Undo' }));
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
     fireEvent.click(within(preview()).getByRole('radio', { name: '+ Delete 111' }));
-    const includeArchived = within(preview()).getByRole('radio', {
-      name: /Inbox \+ archived/,
+    const includeArchived = within(preview()).getByRole('checkbox', {
+      name: 'Include archived email',
     });
     expect(includeArchived).not.toBeChecked();
     fireEvent.click(includeArchived);
