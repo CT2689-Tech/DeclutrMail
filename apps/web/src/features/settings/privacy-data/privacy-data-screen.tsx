@@ -144,7 +144,7 @@ export function PrivacyDataView({
       {privacyContent}
 
       {/* 2 — which mailboxes the storage list applies to. */}
-      <Section title={WS6_COPY['ws6.privacy.connectedTitle']}>
+      <Section id="privacy-connected-mailboxes" title={WS6_COPY['ws6.privacy.connectedTitle']}>
         {mailboxes.length === 0 ? (
           <p className="dm-settings-row" style={{ ...bodyTextStyle, ...blockRowStyle }}>
             No mailboxes connected — no Gmail data is being saved right now.
@@ -256,13 +256,24 @@ export function PrivacyDataView({
 
 const EXPORT_FORMATS = ['json', 'csv', 'senders-csv', 'decisions-csv'] as const;
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  const id = `privacy-${title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/-$/, '')}`;
+function Section({
+  id,
+  title,
+  children,
+}: {
+  /** Stable deep-link id. Omit it and the id follows the title. */
+  id?: string;
+  title: string;
+  children: React.ReactNode;
+}) {
+  const anchor =
+    id ??
+    `privacy-${title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/-$/, '')}`;
   return (
-    <SettingsGroup id={id} title={title}>
+    <SettingsGroup id={anchor} title={title}>
       {children}
     </SettingsGroup>
   );

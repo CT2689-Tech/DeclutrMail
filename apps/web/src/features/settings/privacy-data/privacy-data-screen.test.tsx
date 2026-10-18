@@ -137,6 +137,23 @@ describe('PrivacyDataView', () => {
     expect(screen.getByText(/Delete account and data/i)).toBeInTheDocument();
   });
 
+  it('points every On this page link at a section that exists', () => {
+    renderView();
+    const nav = screen.getByRole('navigation', { name: 'On this page' });
+    const links = within(nav).getAllByRole('link');
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) {
+      const href = link.getAttribute('href') ?? '';
+      expect(href.startsWith('#')).toBe(true);
+      expect(document.getElementById(href.slice(1))).not.toBeNull();
+    }
+    expect(within(nav).getByRole('link', { name: 'Connected Gmail accounts' })).toHaveAttribute(
+      'href',
+      '#privacy-connected-mailboxes',
+    );
+    expect(document.getElementById('privacy-connected-gmail-accounts')).toBeNull();
+  });
+
   it('renders the no-mailboxes empty state', () => {
     renderView({ mailboxes: [] });
     expect(screen.getByText(/no mailboxes connected/i)).toBeInTheDocument();
