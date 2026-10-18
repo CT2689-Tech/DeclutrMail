@@ -230,7 +230,7 @@ export class ActionsService {
     if (!sender) {
       throw new NotFoundException({
         code: 'SENDER_NOT_FOUND',
-        message: 'Sender not found in the current mailbox.',
+        message: 'We couldn’t find this sender in this Gmail account.',
       });
     }
 
@@ -1886,7 +1886,7 @@ export class ActionsService {
     if (!senderRow) {
       throw new NotFoundException({
         code: 'SENDER_NOT_FOUND',
-        message: 'Sender not found in the current mailbox.',
+        message: 'We couldn’t find this sender in this Gmail account.',
       });
     }
     const senderKey = senderRow.senderKey;
@@ -1901,7 +1901,7 @@ export class ActionsService {
     if (unsubscribeCapabilityOf(senderRow.unsubscribeMethod) === 'unknown') {
       throw new ConflictException({
         code: 'UNSUBSCRIBE_CHANNEL_UNKNOWN',
-        message: "This sender hasn't been checked for an unsubscribe option yet.",
+        message: 'This sender hasn’t been checked for an unsubscribe option yet.',
       });
     }
     // ADR-0006 invariant: `(method, url)` always agree. Defensive
@@ -2604,7 +2604,7 @@ export class ActionsService {
     if (!sender) {
       throw new NotFoundException({
         code: 'SENDER_NOT_FOUND',
-        message: 'Sender not found in the current mailbox.',
+        message: 'We couldn’t find this sender in this Gmail account.',
       });
     }
     // D252 — a one_click sender whose POST the endpoint refused is
@@ -2834,7 +2834,7 @@ export class ActionsService {
     if (!sender) {
       throw new NotFoundException({
         code: 'SENDER_NOT_FOUND',
-        message: 'Sender not found in the current mailbox.',
+        message: 'We couldn’t find this sender in this Gmail account.',
       });
     }
     return sender.senderKey;

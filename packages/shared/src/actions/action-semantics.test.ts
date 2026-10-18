@@ -21,6 +21,9 @@ describe('D245 action semantics', () => {
 
   it('makes Later a timed current-mail move and leaves future mail unchanged', () => {
     const later = ACTION_SEMANTICS.later;
+    expect(later.currentMail.summary).toBe(
+      'Moves to Gmail\u2019s DeclutrMail/Later label until the time you pick.',
+    );
     expect(later.currentMail).toMatchObject({
       scope: 'matching-current-inbox',
       destination: 'declutrmail-later',
@@ -56,7 +59,9 @@ describe('D245 action semantics', () => {
     // derive through `activityUndoSummary` exactly like the live-preview
     // path does, and state the window instead of hedging.
     expect(UNIFORM_UNDO_WINDOW_DAYS).not.toBeNull();
-    expect(staticActionPreviewCopy('delete')).not.toContain("plan's Undo window");
+    expect(staticActionPreviewCopy('delete').replace(/’/g, "'")).not.toContain(
+      "plan's Undo window",
+    );
     expect(staticActionPreviewCopy('delete')).toContain(
       `Undo from Activity for ${UNIFORM_UNDO_WINDOW_DAYS} days.`,
     );
@@ -199,7 +204,7 @@ describe('D245 action semantics', () => {
     // reachable only by hand-editing pricing.config.ts. Parameterizing on
     // the window (instead of reading UNIFORM_UNDO_WINDOW_DAYS internally)
     // lets all three paths be driven directly, permanently, here.
-    const planDependentFallback = "Undo from Activity during your plan's Undo window.";
+    const planDependentFallback = 'Undo from Activity during your plan’s Undo window.';
 
     it('states the exact deadline when one is known, even if the ladder has diverged', () => {
       const deadline = '2026-07-21T16:00:00.000Z';
@@ -239,6 +244,21 @@ describe('D245 action semantics', () => {
     // finding was filed) — this closes the coverage gap the finding
     // correctly named, without changing behavior that was already right.
     const PLAN_WINDOW_VERBS = ['archive', 'later', 'unarchive', 'delete'] as const;
+
+    it('spells the plan-window hedge with a curly apostrophe', () => {
+      expect(ACTION_SEMANTICS.archive.activityUndo.summary).toBe(
+        'Undo from Activity during your plan\u2019s Undo window.',
+      );
+      expect(ACTION_SEMANTICS.later.activityUndo.summary).toBe(
+        'Undo from Activity during your plan\u2019s Undo window.',
+      );
+      expect(ACTION_SEMANTICS.unarchive.activityUndo.summary).toBe(
+        'Undo from Activity during your plan\u2019s Undo window.',
+      );
+      expect(ACTION_SEMANTICS.delete.activityUndo.summary).toBe(
+        'DeclutrMail Undo is available from Activity during your plan\u2019s Undo window.',
+      );
+    });
 
     it('has a raw registry hedge to guard against for every plan-window verb', () => {
       // Starve check (CLAUDE.md §8, "a guard that cannot fail is not a

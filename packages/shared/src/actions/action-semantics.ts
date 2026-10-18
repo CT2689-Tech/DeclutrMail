@@ -189,7 +189,7 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
     schedule: { kind: 'none' },
     activityUndo: {
       kind: 'plan-window',
-      summary: "Undo from Activity during your plan's Undo window.",
+      summary: 'Undo from Activity during your plan’s Undo window.',
     },
     providerRecovery: { kind: 'none' },
     finality: {
@@ -204,7 +204,7 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
     currentMail: {
       scope: 'matching-current-inbox',
       destination: 'declutrmail-later',
-      summary: "Moves to Gmail's DeclutrMail/Later label until the time you pick.",
+      summary: 'Moves to Gmail’s DeclutrMail/Later label until the time you pick.',
     },
     futureMail: { effect: 'unchanged', summary: 'Future email is unchanged.', inPreview: false },
     unchanged: [
@@ -219,7 +219,7 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
     },
     activityUndo: {
       kind: 'plan-window',
-      summary: "Undo from Activity during your plan's Undo window.",
+      summary: 'Undo from Activity during your plan’s Undo window.',
     },
     providerRecovery: { kind: 'none' },
     finality: {
@@ -278,7 +278,7 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
     schedule: { kind: 'none' },
     activityUndo: {
       kind: 'plan-window',
-      summary: "Undo from Activity during your plan's Undo window.",
+      summary: 'Undo from Activity during your plan’s Undo window.',
     },
     providerRecovery: { kind: 'none' },
     finality: {
@@ -305,7 +305,7 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
     schedule: { kind: 'none' },
     activityUndo: {
       kind: 'plan-window',
-      summary: "DeclutrMail Undo is available from Activity during your plan's Undo window.",
+      summary: 'DeclutrMail Undo is available from Activity during your plan’s Undo window.',
     },
     providerRecovery: {
       kind: 'gmail-trash',
