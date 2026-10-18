@@ -119,6 +119,13 @@ describe('PrivacyDataView', () => {
     ).toBeGreaterThan(0);
     expect(screen.getAllByText(/Disconnect & delete saved data/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/What we keep to fix problems/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/each connected Gmail account, download your data, or delete it/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Connection and scanning data')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Scan and change your Gmail only while the account is connected\./),
+    ).toBeInTheDocument();
     expect(screen.getAllByText('Connected Gmail accounts').length).toBeGreaterThan(0);
     expect(screen.getByText('Disconnect a Gmail account')).toBeInTheDocument();
     expect(

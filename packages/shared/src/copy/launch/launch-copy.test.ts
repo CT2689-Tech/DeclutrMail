@@ -205,9 +205,25 @@ describe('launch copy deck snapshots', () => {
     expect(WS6_COPY['ws6.privacy.contact.disconnectLine']).toBe(
       'The Help & FAQ page answers the most common questions \u2014 what DeclutrMail stores, how undo works, and how to disconnect a Gmail account or delete your account.',
     );
+    expect(WS6_COPY['ws6.inventory.credential.purpose']).toBe(
+      'Scan and change your Gmail only while the account is connected.',
+    );
+    expect(WS6_COPY['ws6.privacy.description']).toBe(
+      'See what DeclutrMail can access and what it keeps for each connected Gmail account, download your data, or delete it. To check that a Gmail account is being scanned normally, go to Settings.',
+    );
+    expect(WS6_COPY['ws6.privacy.inventory.connectionTitle']).toBe('Connection and scanning data');
+    expect(WS6_COPY['ws6.privacy.faq.disconnectDeleteA']).toBe(
+      'Open the Gmail account menu at the top of the app and choose Disconnect for that Gmail account. That removes DeclutrMail\u2019s access to it and stops all scanning and changes right away. Your history is kept, so you can reconnect later. In Settings \u203a Privacy & data, you can download your data or delete your whole DeclutrMail account. Deleting your DeclutrMail account doesn\u2019t delete any email in Gmail, and changes you already approved, like archiving or moving email to Trash, stay as they are.',
+    );
+    expect(WS6_COPY['ws6.privacy.faq.securityLinkDesc']).toBe(
+      'Removing access, encryption and deletion.',
+    );
     const rendered = Object.fromEntries(GMAIL_DATA_INVENTORY.map((item) => [item.id, item]));
     expect(rendered['inbox-report-cache']?.label).toBe(
       WS6_COPY['ws6.inventory.inboxReportCache.label'],
+    );
+    expect(rendered['oauth-credential']?.purpose).toBe(
+      WS6_COPY['ws6.inventory.credential.purpose'],
     );
     expect(DATA_EXPORT_FORMAT_MANIFEST.json.description).toBe(
       WS6_COPY['ws6.privacy.export.jsonDescription'],

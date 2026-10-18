@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { WS6_COPY } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import { ANSWER_ARTICLES, ANSWER_SLUGS } from './answer-content';
@@ -433,6 +434,13 @@ describe('shared learning surfaces', () => {
     ) as { '@type': string; mainEntity: unknown[] };
     expect(jsonLd['@type']).toBe('FAQPage');
     expect(jsonLd.mainEntity).toHaveLength(FAQ_ENTRIES.length);
+    const disconnect = FAQ_ENTRIES.find((entry) => entry.id === 'disconnect-delete');
+    expect(disconnect?.answer).toBe(WS6_COPY['ws6.privacy.faq.disconnectDeleteA']);
+    expect(disconnect?.link?.description).toBe(WS6_COPY['ws6.privacy.faq.securityLinkDesc']);
+    const answers = jsonLd.mainEntity as Array<{ acceptedAnswer: { text: string } }>;
+    expect(answers.map((item) => item.acceptedAnswer.text)).toContain(
+      WS6_COPY['ws6.privacy.faq.disconnectDeleteA'],
+    );
   });
 
   it('renders every changelog entry', () => {

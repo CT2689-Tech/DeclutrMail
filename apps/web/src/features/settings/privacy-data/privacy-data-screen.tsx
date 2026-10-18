@@ -123,10 +123,7 @@ export function PrivacyDataView({
     >
       <EditorialKicker>Settings</EditorialKicker>
       <PageHeader title="Privacy & data" backToSettings />
-      <EditorialDescription>
-        Review access and stored data for all connected inboxes, export your records, or manage
-        retention and deletion. Connection status is separate from sync health in Settings.
-      </EditorialDescription>
+      <EditorialDescription>{WS6_COPY['ws6.privacy.description']}</EditorialDescription>
       <EditorialContents
         items={[
           { href: '#privacy-connected-mailboxes', label: WS6_COPY['ws6.privacy.connectedTitle'] },

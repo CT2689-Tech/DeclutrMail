@@ -1254,12 +1254,6 @@
     "text": "@/features/onboarding/api/use-sync-status"
   },
   {
-    "file": "apps/web/src/features/settings/privacy-data/privacy-data-content.tsx",
-    "line": 72,
-    "id": "sync_word",
-    "text": "Connection and sync data"
-  },
-  {
     "file": "apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx",
     "line": 157,
     "id": "sync_word",
@@ -1858,12 +1852,6 @@
     "line": 121,
     "id": "action_word",
     "text": "Avoid duplicate records, group email, open the original email, and apply actions."
-  },
-  {
-    "file": "packages/shared/src/contracts/gmail-data-inventory.ts",
-    "line": 322,
-    "id": "sync_word",
-    "text": "Sync and change Gmail only while the account is connected."
   },
   {
     "file": "packages/shared/src/contracts/gmail-data-inventory.ts",

@@ -319,7 +319,7 @@ export const GMAIL_CONNECTION_DATA_INVENTORY = [
       'mailbox_accounts.key_version',
     ],
     derived: false,
-    purpose: 'Sync and change Gmail only while the account is connected.',
+    purpose: WS6_COPY['ws6.inventory.credential.purpose'],
     retention: GMAIL_DATA_RETENTION.connection,
     removalTrigger: 'disconnect',
     exportedIn: [],

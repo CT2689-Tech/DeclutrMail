@@ -5,7 +5,7 @@ import {
   PROVIDER_SWITCH_NOTE,
   RAZORPAY_LIMITATIONS_NOTE,
 } from '@/features/billing/billing-copy';
-import { fillWs3, WS1_COPY, WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { fillWs3, WS1_COPY, WS3_COPY, WS6_COPY } from '@declutrmail/shared/copy/launch';
 import { fillStory, isPricingV2 } from '@declutrmail/shared/entitlements';
 import { PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
@@ -156,12 +156,11 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
   {
     id: 'disconnect-delete',
     question: 'How do I disconnect Gmail or delete DeclutrMail data?',
-    answer:
-      'Disconnect a mailbox from the top-bar mailbox menu; that revokes DeclutrMail’s Google access and stops future sync while preserving its historical DeclutrMail record for reconnection. Settings → Privacy & Data provides export and whole-account deletion. Deleting your DeclutrMail account does not itself delete the emails in Gmail, although email actions you previously approved remain part of Gmail’s state.',
+    answer: WS6_COPY['ws6.privacy.faq.disconnectDeleteA'],
     link: {
       href: '/security',
       label: 'Review the exit and security controls',
-      description: 'OAuth revocation, encryption, and deletion.',
+      description: WS6_COPY['ws6.privacy.faq.securityLinkDesc'],
     },
   },
   {

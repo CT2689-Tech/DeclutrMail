@@ -72,7 +72,7 @@ export function PrivacyDataContent() {
             }))}
           />
           <InventoryGroup
-            title="Connection and sync data"
+            title={WS6_COPY['ws6.privacy.inventory.connectionTitle']}
             items={GMAIL_CONNECTION_DATA_INVENTORY.map(inventoryDisplayItem)}
           />
           <InventoryGroup
