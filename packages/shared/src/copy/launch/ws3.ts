@@ -482,6 +482,7 @@ export const WS3_COPY = {
     'Goes to Gmail Trash for up to 30 days, unless you empty Trash sooner.',
   'ws3.demo.activity.empty':
     'Pick what to do with a sender. If any email would move, check the preview and confirm. What you did shows up here.',
+  'ws3.demo.senders.note': 'Sample inbox · made-up senders and counts · no Gmail connection',
   'ws3.howItWorks.archiveDelete.body':
     'Choose how far back to go. By default, only email in your Inbox is included. For Delete, turn on Include archived email to include email you’ve archived too. The count in the preview updates before you confirm.',
   'ws3.howTo.preview.reach':

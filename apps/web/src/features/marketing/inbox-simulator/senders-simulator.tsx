@@ -513,9 +513,7 @@ export function SendersSimulator() {
 
   return (
     <div className="dm-senders-demo">
-      <div className="dm-senders-demo-note">
-        Sample mailbox · made-up senders and counts · no Gmail connection
-      </div>
+      <div className="dm-senders-demo-note">{WS3_COPY['ws3.demo.senders.note']}</div>
       <InboxReportPanel
         report={report}
         mailboxEmail="you@example.com"
