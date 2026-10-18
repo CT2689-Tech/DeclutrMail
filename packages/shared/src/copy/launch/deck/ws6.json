@@ -1,0 +1,19 @@
+{
+  "_meta": {
+    "revision": "drop2-r48",
+    "issued": "2026-10-18T09:35:00-07:00",
+    "section": "ws6"
+  },
+  "ws6.inventory.retention.savedData": "Until you delete this Gmail account’s saved data or delete your DeclutrMail account.",
+  "ws6.inventory.retention.identity": "Your disconnected Gmail address, and whether its saved data was deleted, stay until you delete your DeclutrMail account, so you can recognize and reconnect that Gmail account.",
+  "ws6.inventory.accountIdentity.purpose": "Identify, switch, disconnect and reconnect a Gmail account.",
+  "ws6.inventory.syncState.purpose": "Keep your Gmail up to date without scanning all of it again.",
+  "ws6.inventory.visitSummary.purpose": "Show what changed since your last visit, for each Gmail account. We keep at most 32 of these per Gmail account.",
+  "ws6.inventory.processing.purpose": "Run background work once, recover failed tasks, avoid handling the same Gmail notice twice, and keep counts and timings for each Gmail account’s scans so slow or failed scans can be looked into.",
+  "ws6.inventory.scanProgress.retention": "Cleared right away when this Gmail account’s saved data is deleted. Otherwise gone within 30 minutes of the scan’s last update.",
+  "ws6.inventory.scanStatus.label": "Scan status and result",
+  "ws6.inventory.scanStatus.purpose": "Avoid starting a second full scan for a Gmail account that already has one waiting or running, and let a slow or failed scan be looked into.",
+  "ws6.inventory.scanStatus.retention": "Cleared right away when this Gmail account’s saved data is deleted. Otherwise, a finished scan’s result is dropped within 24 hours, or sooner if this Gmail account is scanned again. A failed scan’s reason stays until this Gmail account is scanned again or its saved data is deleted.",
+  "ws6.inventory.audit.retention": "These pseudonymous security and compliance records stay after a Gmail account’s saved data or your DeclutrMail account is deleted, under DeclutrMail’s operational retention policy. They don’t contain full email contents or attachments.",
+  "ws6.inventory.logo.retention": "Cache rows are keyed by domain, shared across all users, and hold no link to you or your Gmail, so deleting your data has nothing of yours to remove from them. A row may be looked up again when that sender is shown after its cache period has passed; rows are never deleted."
+}

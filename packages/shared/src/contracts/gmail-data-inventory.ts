@@ -10,15 +10,13 @@
 
 import { UNIFORM_UNDO_WINDOW_DAYS } from '../entitlements';
 import { WS2_COPY } from '../copy/launch/ws2';
+import { WS6_COPY } from '../copy/launch/ws6';
 
 export const GMAIL_DATA_RETENTION = {
-  mailboxIndex:
-    'Until you delete this Gmail account’s saved data or delete your DeclutrMail account.',
-  mailboxIdentity:
-    'Your disconnected Gmail address, and whether its saved data was deleted, stay until you delete your DeclutrMail account, so you can recognize and reconnect that Gmail account.',
+  mailboxIndex: WS6_COPY['ws6.inventory.retention.savedData'],
+  mailboxIdentity: WS6_COPY['ws6.inventory.retention.identity'],
   connection: 'Until the Gmail account is disconnected or the DeclutrMail account is deleted.',
-  derivedMailboxData:
-    'Until you delete this Gmail account’s saved data or delete your DeclutrMail account.',
+  derivedMailboxData: WS6_COPY['ws6.inventory.retention.savedData'],
   undoJournal:
     UNIFORM_UNDO_WINDOW_DAYS === null
       ? 'Until the plan-based Undo window expires, followed by the operational cleanup period.'
@@ -303,7 +301,7 @@ export const GMAIL_CONNECTION_DATA_INVENTORY = [
     fetchedFrom: ['Google sign-in profile', 'OAuth connection result'],
     storageRefs: ['mailbox_accounts.provider_account_id', 'mailbox_accounts.status'],
     derived: false,
-    purpose: 'Identify, switch, disconnect and reconnect a Gmail account.',
+    purpose: WS6_COPY['ws6.inventory.accountIdentity.purpose'],
     retention: GMAIL_DATA_RETENTION.mailboxIdentity,
     removalTrigger: 'delete-account',
     exportedIn: ['json', 'csv', 'senders-csv', 'decisions-csv', 'activity-support-bundle'],
@@ -340,7 +338,7 @@ export const GMAIL_CONNECTION_DATA_INVENTORY = [
       'provider_sync_state.readiness_status',
     ],
     derived: false,
-    purpose: 'Keep your Gmail up to date without scanning all of it again.',
+    purpose: WS6_COPY['ws6.inventory.syncState.purpose'],
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
@@ -392,8 +390,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     fetchedFrom: ['sender-profile-and-stats', 'message-identifiers'],
     storageRefs: ['users.preferences.mailboxVisits'],
     derived: true,
-    purpose:
-      'Show what changed since your last visit, for each Gmail account. We keep at most 32 of these per Gmail account.',
+    purpose: WS6_COPY['ws6.inventory.visitSummary.purpose'],
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
     removalTrigger: 'delete-indexed-data',
     exportedIn: ['json'],
@@ -482,8 +479,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     fetchedFrom: ['message-identifiers', 'sender-identity', 'gmail-sync-state'],
     storageRefs: ['outbox_events.*', 'dead_letter_jobs.*', 'webhook_dedup.*', 'sync_runs.*'],
     derived: true,
-    purpose:
-      'Run background work once, recover failed tasks, avoid handling the same Gmail notice twice, and keep counts and timings for each Gmail account’s scans so slow or failed scans can be looked into.',
+    purpose: WS6_COPY['ws6.inventory.processing.purpose'],
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
@@ -498,8 +494,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     storageRefs: ['redis:declutr:scan-progress:{mailboxAccountId}'],
     derived: true,
     purpose: 'Show how far a running scan has read, and its time left.',
-    retention:
-      'Cleared right away when this Gmail account’s saved data is deleted. Otherwise gone within 30 minutes of the scan’s last update.',
+    retention: WS6_COPY['ws6.inventory.scanProgress.retention'],
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
     transmittedTo: ['DeclutrMail'],
@@ -523,14 +518,12 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
   {
     id: 'initial-sync-job-status',
     category: 'derived',
-    label: 'Scan status and result',
+    label: WS6_COPY['ws6.inventory.scanStatus.label'],
     fetchedFrom: ['message-identifiers'],
     storageRefs: ['redis:bull:initial-sync:{mailboxAccountId}', 'redis:bull:initial-sync:events'],
     derived: true,
-    purpose:
-      'Avoid starting a second full scan for a Gmail account that already has one waiting or running, and let a slow or failed scan be looked into.',
-    retention:
-      'Cleared right away when this Gmail account’s saved data is deleted. Otherwise, a finished scan’s result is dropped within 24 hours, or sooner if this Gmail account is scanned again. A failed scan’s reason stays until this Gmail account is scanned again or its saved data is deleted.',
+    purpose: WS6_COPY['ws6.inventory.scanStatus.purpose'],
+    retention: WS6_COPY['ws6.inventory.scanStatus.retention'],
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
     transmittedTo: ['DeclutrMail'],

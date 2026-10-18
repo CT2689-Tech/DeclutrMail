@@ -49,3 +49,4 @@ export {
 } from './ws4-fill.js';
 export { fillCopy, isPluralCopy, pluralCopy, WS5_COPY } from './ws5.js';
 export type { PluralCopy } from './ws5.js';
+export { WS6_COPY } from './ws6.js';
