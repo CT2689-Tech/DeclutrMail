@@ -39,7 +39,7 @@ import {
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
 } from '@/lib/api/use-action';
-import { isProtectedSkip, isTerminalStatus } from '@/lib/api/actions';
+import { cleanupBatchStatus, isProtectedSkip, isTerminalStatus } from '@/lib/api/actions';
 import { isUnsubSendDisabled, UNSUB_SEND_DISABLED_MESSAGE } from './unsub-send-disabled';
 import {
   actionLabel,
@@ -389,6 +389,7 @@ export function TriageScreen({
     mailboxId: string | undefined;
     actionId: string;
     senderName: string;
+    feedbackInTray: boolean;
   } | null>(null);
   const unsubExecStatus = useActionStatus(unsubWatch?.actionId ?? null, unsubWatch?.mailboxId);
   // D230 manual path — the "finish in Gmail" callout for a mailto
@@ -486,7 +487,7 @@ export function TriageScreen({
       setBatchAction(null);
       return;
     }
-    const data = batchStatus.data;
+    const data = batchStatus.data ? cleanupBatchStatus(batchStatus.data) : undefined;
     if (!data || !isTerminalStatus(data.status)) return;
     if (batchAction.mailboxId !== actionMailboxId) {
       invalidateAfterDecision(qc);
@@ -548,7 +549,7 @@ export function TriageScreen({
       setUnsubWatch(null);
       return;
     }
-    toast(...unsubscribeOutcomeToast(unsubWatch.senderName, data));
+    if (!unsubWatch.feedbackInTray) toast(...unsubscribeOutcomeToast(unsubWatch.senderName, data));
     if (data.status === 'done') invalidateAfterDecision(qc);
     setUnsubWatch(null);
   }, [
@@ -933,7 +934,7 @@ export function TriageScreen({
       setOverdueBatch(null);
       return;
     }
-    const data = overdueBatchStatus.data;
+    const data = overdueBatchStatus.data ? cleanupBatchStatus(overdueBatchStatus.data) : undefined;
     if (!data || !isTerminalStatus(data.status)) return;
     if (overdueBatch.mailboxId !== actionMailboxId) {
       invalidateAfterDecision(qc);
@@ -1170,6 +1171,7 @@ export function TriageScreen({
                   mailboxId: actionMailboxId,
                   actionId: outcome.executionActionId,
                   senderName: row.senderName,
+                  feedbackInTray: res.backlog !== null && res.feedbackVersion === 2,
                 });
               } else if (outcome?.unsubStatus === 'manual' && outcome.mailtoUrl) {
                 setMailtoFollowup({

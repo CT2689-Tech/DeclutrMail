@@ -51,6 +51,59 @@ describe('<UndoTray /> — one pill', () => {
     expect(revert).toHaveBeenCalledWith(done.token);
   });
 
+  it('keeps an unresolved unsubscribe visible with the successful Delete and its Undo', () => {
+    vi.useFakeTimers();
+    render(
+      <UndoTray
+        dataSource={source({
+          entries: [
+            {
+              ...done,
+              noteTone: 'attention',
+              note: 'Unsubscribe unconfirmed — watch for new email.',
+            },
+          ],
+        })}
+      />,
+    );
+    act(() => vi.advanceTimersByTime(TRAY_COMPACT_AFTER_MS + 1));
+    expect(screen.getByRole('region', { name: 'Recent actions' })).toHaveTextContent(
+      'Unsubscribe unconfirmed',
+    );
+    expect(screen.getByRole('button', { name: /^Undo Delete/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Show .* recent/ })).toBeNull();
+  });
+
+  it('reopens the same decision if an unsubscribe warning arrives after compaction', () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<UndoTray dataSource={source({ entries: [done] })} />);
+    act(() => vi.advanceTimersByTime(TRAY_COMPACT_AFTER_MS + 1));
+    expect(screen.getByRole('region', { name: 'Recent actions' })).toHaveAttribute(
+      'data-dm-undo-tray',
+      'compact',
+    );
+    rerender(
+      <UndoTray
+        dataSource={source({
+          entries: [
+            {
+              ...done,
+              noteTone: 'attention',
+              note: 'Unsubscribe unconfirmed — watch for new email.',
+            },
+          ],
+        })}
+      />,
+    );
+    expect(screen.getByRole('region', { name: 'Recent actions' })).toHaveAttribute(
+      'data-dm-undo-tray',
+      'pill',
+    );
+    expect(screen.getByRole('region', { name: 'Recent actions' })).toHaveTextContent(
+      'Unsubscribe unconfirmed',
+    );
+  });
+
   it('puts a running action ahead of everything, with its progress and no Undo', () => {
     render(<UndoTray dataSource={source({ entries: [done], notices: [failed, running] })} />);
     const pill = screen.getByRole('region', { name: 'Recent actions' });

@@ -102,6 +102,7 @@ import { activityKeys } from '@/features/activity/api/query-keys';
 import { undoKeys } from '@/features/undo/query-keys';
 import {
   isProtectedSkip,
+  cleanupBatchStatus,
   isTerminalStatus,
   type UnsubscribeBatchOutcomes,
 } from '@/lib/api/actions';
@@ -881,6 +882,7 @@ function SendersScreenContent({
     actionId: string;
     senderName: string;
     domain: string;
+    feedbackInTray: boolean;
   } | null>(null);
   // D230 manual path — the post-confirm "finish in Gmail" callout for
   // a mailto sender. Dismissible; rendered next to the receipt strip.
@@ -1814,6 +1816,7 @@ function SendersScreenContent({
                     actionId: outcome.executionActionId,
                     senderName: sref.name,
                     domain: sref.domain,
+                    feedbackInTray: res.backlog !== null && res.feedbackVersion === 2,
                   });
                 } else if (outcome?.unsubStatus === 'manual' && outcome.mailtoUrl) {
                   setMailtoFollowup({
@@ -2254,13 +2257,15 @@ function SendersScreenContent({
       captureFeatureException(err, { surface: 'senders', reason: 'unsub_status_poll' });
       // No promise about where the result appears: nothing refetches the
       // list after a failed poll, so the row can keep its last state.
-      toast(`Couldn’t confirm the unsubscribe from ${activeUnsub.senderName}`, 'warn');
+      if (!activeUnsub.feedbackInTray)
+        toast(`Couldn’t confirm the unsubscribe from ${activeUnsub.senderName}`, 'warn');
       setActiveUnsub(null);
       return;
     }
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    toast(...unsubscribeOutcomeToast(activeUnsub.senderName, data));
+    if (!activeUnsub.feedbackInTray)
+      toast(...unsubscribeOutcomeToast(activeUnsub.senderName, data));
     reconcileAction(qc, data, data.actionId);
     setActiveUnsub(null);
   }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, activeUnsub, qc]);
@@ -2370,7 +2375,7 @@ function SendersScreenContent({
       setActiveBatch(null);
       return;
     }
-    const data = batchStatus.data;
+    const data = batchStatus.data ? cleanupBatchStatus(batchStatus.data) : undefined;
     if (!data || !isTerminalStatus(data.status)) return;
     // A batch reports totals only. All-failed and all-succeeded say the
     // same thing about every member; a PARTIAL failure does not say which
@@ -2436,7 +2441,7 @@ function SendersScreenContent({
       setOverdueBatch(null);
       return;
     }
-    const data = overdueBatchStatus.data;
+    const data = overdueBatchStatus.data ? cleanupBatchStatus(overdueBatchStatus.data) : undefined;
     if (!data || !isTerminalStatus(data.status)) return;
     // A batch reports totals only. All-failed and all-succeeded say the
     // same thing about every member; a PARTIAL failure does not say which

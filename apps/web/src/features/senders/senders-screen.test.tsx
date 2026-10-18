@@ -2458,6 +2458,7 @@ describe('SendersScreen — edge states', () => {
             return jsonOk({
               data: {
                 mode: 'delete',
+                feedbackVersion: 2,
                 backlog: {
                   actionId: 'delete-past',
                   handle: 'action',
@@ -2562,10 +2563,10 @@ describe('SendersScreen — edge states', () => {
       if (remaining > 0) await screen.findByText('Request accepted');
       expect(screen.queryByText('Requesting…')).toBeNull();
       expect(
-        await screen.findByText(
+        screen.queryByText(
           `${senderName} accepted the unsubscribe request — stopping is up to them.`,
         ),
-      ).toBeInTheDocument();
+      ).toBeNull();
     },
   );
 

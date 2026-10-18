@@ -100,6 +100,8 @@ export interface UnsubscribeBacklogSenderResult {
 }
 
 export interface UnsubscribeBacklogResult {
+  /** Execution-only combined feedback; absent on older API builds. */
+  feedbackVersion?: 2;
   mode: 'unsub_only' | 'archive' | 'delete';
   backlog: {
     actionId: string;
@@ -660,6 +662,8 @@ export interface BulkActionPreviewResult {
  * failures surface via `failed`).
  */
 export interface BatchStatusResult {
+  /** Execution-only combined feedback; absent on older API builds. */
+  feedbackVersion?: 2;
   batchId: string;
   status: ActionJobStatus;
   /** Forward sibling rows in the batch (primaries + any secondaries). */

@@ -199,7 +199,7 @@ export function SenderRow({
   const addressLine = senderAddressLine(s);
   const sizeCell = senderSizeCell(s.sizeBytes);
   const unsub =
-    s.policyType === 'unsubscribe'
+    s.policyType === 'unsubscribe' && !(busy && s.unsubStatus === 'requested')
       ? unsubscribeStatusCopy(s.unsubStatus, s.unsubscribeMethod)
       : null;
   const unsubscribeInActionRow = !compact && blocksRepeatUnsubscribe(s);

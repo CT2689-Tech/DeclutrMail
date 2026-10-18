@@ -547,6 +547,8 @@ export interface UnsubscribeBacklogSenderResult {
 }
 
 export interface UnsubscribeBacklogResult {
+  /** Execution-only combined feedback; absent on older API builds. */
+  feedbackVersion?: 2;
   mode: UnsubscribeBacklogMode;
   backlog: {
     actionId: string;
@@ -880,6 +882,8 @@ export type BulkSkipReason =
  * (ADR-0020 cascade-undo walks the `composite_id` siblings).
  */
 export interface BatchStatusResult {
+  /** Execution-only combined feedback; absent on older API builds. */
+  feedbackVersion?: 2;
   batchId: string;
   status: ActionJobStatus;
   total: number;
@@ -916,6 +920,28 @@ export interface BatchStatusResult {
    * renders (apps/web and apps/api deploy independently).
    */
   unsubscribeOutcomes?: UnsubscribeBatchOutcomes | null;
+}
+
+/** Move-only counts for label receipts/rows in a combined cleanup decision. */
+export function cleanupBatchStatus(data: BatchStatusResult): BatchStatusResult {
+  const unsub = data.unsubscribeOutcomes;
+  if (data.feedbackVersion !== 2 || !unsub) return data;
+  const unsubscribeTotal =
+    unsub.endpointAccepted + unsub.unconfirmed + unsub.failed + unsub.pending;
+  const total = data.total - unsubscribeTotal;
+  const done = data.done - unsub.endpointAccepted;
+  const failed = data.failed - unsub.unconfirmed - unsub.failed;
+  const terminal = done + failed === total;
+  return {
+    ...data,
+    total,
+    done,
+    failed,
+    status: terminal ? (total > 0 && failed === total ? 'failed' : 'done') : 'executing',
+    requestedCount: data.requestedCount - unsubscribeTotal,
+    affectedCount: data.affectedCount - unsub.endpointAccepted,
+    unsubscribeOutcomes: null,
+  };
 }
 
 /** Terminal one-click unsubscribe outcomes, counted across a batch. */

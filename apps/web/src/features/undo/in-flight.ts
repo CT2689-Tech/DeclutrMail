@@ -5,6 +5,7 @@ import type { UndoTrayNotice } from '@declutrmail/shared';
 
 import { protectedSkippedCopy } from '@/lib/action-error-copy';
 import {
+  cleanupBatchStatus,
   getInFlightActions,
   type BatchStatusResult,
   type InFlightActionGroup,
@@ -65,12 +66,12 @@ export function workingNotice(group: InFlightActionGroup, confirmed = true): Und
     id: `run:${group.groupId}`,
     tone: 'working',
     verb: group.verb,
-    label: WORKING[group.verb],
+    label: group.mixedVerbs ? 'Cleaning up…' : WORKING[group.verb],
     who: who(group),
     // Jobs, not senders: a composite runs two per sender. Unit-less on purpose.
     detail:
-      group.total > 1
-        ? `${(group.done + group.failed).toLocaleString('en-US')} of ${group.total.toLocaleString('en-US')}`
+      group.senderCount > 1 && group.total > 1
+        ? `${(group.done + group.failed).toLocaleString('en-US')} of ${group.total.toLocaleString('en-US')}${group.mixedVerbs ? ' steps' : ''}`
         : null,
   };
 }
@@ -95,6 +96,24 @@ export function outcomeNotice(
   }
   // Still running server-side (it only aged out of the list): say nothing.
   if (status.status !== 'done' && status.status !== 'failed') return null;
+  // One confirmation, two independent outcomes. Job failure counts include
+  // unconfirmed unsubscribes; they must never label a successful move failed.
+  const unsub = status.unsubscribeOutcomes;
+  if (status.feedbackVersion === 2 && unsub && unsub.pending === 0) {
+    const unsubscribeTotal = unsub.endpointAccepted + unsub.unconfirmed + unsub.failed;
+    if (unsubscribeTotal > 0) {
+      const move = outcomeNotice(group, cleanupBatchStatus(status));
+      const label = combinedUnsubscribeLine(unsub);
+      return move
+        ? { ...move, label: `${move.label} · ${label}` }
+        : {
+            id,
+            groupId: group.groupId,
+            tone: unsub.unconfirmed + unsub.failed > 0 ? 'attention' : 'info',
+            label,
+          };
+    }
+  }
   // D245: senders found Protected when their job ran were skipped, exactly
   // like ones protected at the click. Their jobs are left out of every
   // count here — so a one-sender skip is 0 of 0, which is not "all failed".
@@ -152,6 +171,26 @@ export function outcomeNotice(
   // was left behind: the decision's own line has the real number, and a
   // notice here would sit above its Undo.
   return null;
+}
+
+function combinedUnsubscribeLine(
+  outcomes: NonNullable<BatchStatusResult['unsubscribeOutcomes']>,
+): string {
+  const { endpointAccepted, unconfirmed, failed } = outcomes;
+  const manual = outcomes.actionRequired ?? 0;
+  const total = endpointAccepted + unconfirmed + failed;
+  if (total === 1) {
+    if (unconfirmed) return 'Unsubscribe unconfirmed — watch for new email.';
+    if (manual) return 'Unsubscribe needs an email from Gmail.';
+    if (failed) return 'Unsubscribe failed — see Activity.';
+    return 'Unsubscribe request accepted.';
+  }
+  return [
+    ...(endpointAccepted ? [`${endpointAccepted} unsubscribe requests accepted`] : []),
+    ...(unconfirmed ? [`${unconfirmed} unconfirmed — watch for new email`] : []),
+    ...(manual ? [`${manual} need an email from Gmail`] : []),
+    ...(failed > manual ? [`${failed - manual} unsubscribe requests failed`] : []),
+  ].join(' · ');
 }
 
 /**

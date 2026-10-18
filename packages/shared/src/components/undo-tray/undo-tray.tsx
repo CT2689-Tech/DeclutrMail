@@ -193,7 +193,7 @@ function headlineSpeech(headline: TrayHeadline | null): string {
     typeof entry.affectedCount === 'number' && entry.mixedKinds !== true
       ? emailCount(entry.affectedCount)
       : null;
-  const note = entry.note ? ` ${entry.note}.` : '';
+  const note = entry.note ? ` ${entry.note.replace(/[.!?]$/, '')}.` : '';
   return `${doneLine(entry.actionKind, total)}.${note} Undo available.`;
 }
 
@@ -255,7 +255,8 @@ function UndoTrayBody({
   const [held, setHeld] = useState(false);
   const [compact, setCompact] = useState(defaultCompact);
   const key = headlineKey(pickHeadline(notices, source.entries));
-  const settled = key.startsWith('d:');
+  const headline = pickHeadline(notices, source.entries);
+  const settled = headline?.kind === 'decision' && headline.entry.noteTone !== 'attention';
   // A finished action says its piece, then gets out of the way. Anything
   // running or wrong stays put; so does a pill being read or reached for.
   const firstRun = useRef(true);
@@ -346,7 +347,6 @@ function UndoTrayBody({
     );
   }
 
-  const headline = pickHeadline(notices, source.entries);
   const hasMore =
     notices.length + source.entries.length > 1 ||
     (headline?.kind === 'decision' && isBulkDecision(headline.entry));
@@ -529,7 +529,7 @@ const headlineKey = (h: TrayHeadline | null): string =>
     ? ''
     : h.kind === 'notice'
       ? `n:${h.notice.id}`
-      : `d:${h.entry.groupId ?? h.entry.token}`;
+      : `d:${h.entry.groupId ?? h.entry.token}:${h.entry.noteTone ?? ''}:${h.entry.note ?? ''}`;
 
 function decisionSenderCount(entry: UndoTrayEntry): number {
   const members = entry.members ?? [];
@@ -644,7 +644,11 @@ function Headline({
       <span style={{ minWidth: 0 }}>
         {doneLine(entry.actionKind, total)}
         {whose ? <span style={{ color: color.fgSoft }}>{` · ${whose}`}</span> : null}
-        {entry.note ? <span style={{ color: color.fgSoft }}>{` · ${entry.note}`}</span> : null}
+        {entry.note ? (
+          <span
+            style={{ color: entry.noteTone === 'attention' ? color.fg : color.fgSoft }}
+          >{` · ${entry.note}`}</span>
+        ) : null}
       </span>
       <span
         style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}
