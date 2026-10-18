@@ -1545,7 +1545,14 @@ export class BillingWebhookService {
       .delete(pendingCheckouts)
       .where(eq(pendingCheckouts.workspaceId, event.workspaceId));
     await this.markProcessed(eventRowId);
-    recordProductEvent(this.productEvents, 'purchase_confirmed', { plan: 'pass' });
+    if (granted.status !== 'duplicate') {
+      recordProductEvent(
+        this.productEvents,
+        'purchase_confirmed',
+        { plan: 'pass' },
+        granted.userId,
+      );
+    }
     this.logger.log(
       `billing.webhook.pass_${granted.status} workspace=${event.workspaceId} txn=${event.providerTransactionId}`,
     );

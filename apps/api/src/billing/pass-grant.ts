@@ -10,7 +10,8 @@ import type { DrizzleDb } from '../db/db.module.js';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type PassGrantResult =
-  { status: 'granted' | 'extended' | 'duplicate'; expiresAt: Date } | { status: 'no_email' };
+  | { status: 'granted' | 'extended' | 'duplicate'; expiresAt: Date; userId: string }
+  | { status: 'no_email' };
 
 /**
  * Insert one Pass grant for the workspace's earliest user.
@@ -23,10 +24,10 @@ export async function grantPassFromTransaction(
 ): Promise<PassGrantResult> {
   const now = args.now ?? new Date();
   const [owner] = await db
-    .select({ email: users.email })
+    .select({ id: users.id, email: users.email })
     .from(users)
     .where(eq(users.workspaceId, args.workspaceId))
-    .orderBy(asc(users.createdAt))
+    .orderBy(asc(users.createdAt), asc(users.id))
     .limit(1);
   if (!owner) return { status: 'no_email' };
 
@@ -71,9 +72,9 @@ export async function grantPassFromTransaction(
       .from(entitlementGrants)
       .where(eq(entitlementGrants.providerTransactionId, args.providerTransactionId))
       .limit(1);
-    return { status: 'duplicate', expiresAt: existing?.expiresAt ?? expiresAt };
+    return { status: 'duplicate', expiresAt: existing?.expiresAt ?? expiresAt, userId: owner.id };
   }
-  return { status: extended ? 'extended' : 'granted', expiresAt: row.expiresAt };
+  return { status: extended ? 'extended' : 'granted', expiresAt: row.expiresAt, userId: owner.id };
 }
 
 /** Revoke the Pass grant for one provider transaction. Missing stays missing so a retry can land. */
