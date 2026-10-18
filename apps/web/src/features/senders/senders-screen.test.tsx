@@ -3023,7 +3023,7 @@ describe('SendersScreen — edge states', () => {
       // The poll keeps answering `executing`. At the deadline the latch
       // parks: overdue toast, active slot freed.
       await tick(ACTION_OVERDUE_MS);
-      screen.getByText(/Archive for Overdue Alpha is still running/);
+      expect(screen.queryByText(/Archive for Overdue Alpha is still running/)).toBeNull();
 
       // The parked handle still OWNS Overdue Alpha. It used to be
       // re-selectable, with the second dispatch refused by a toast; now

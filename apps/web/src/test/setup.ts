@@ -15,6 +15,7 @@
 
 import '@testing-library/jest-dom/vitest';
 import { afterEach } from 'vitest';
+import { useActionFeedbackStore } from '@/features/undo/feedback-store';
 import { cleanup, screen, waitFor } from '@testing-library/react';
 import type { ByRoleOptions } from '@testing-library/dom';
 import { resetFetchStub } from './fetch-stub';
@@ -64,6 +65,7 @@ screen.findByRole = ((role: string, options?: ByRoleOptions, waitOptions?: objec
 }) as typeof screen.findByRole;
 
 afterEach(() => {
+  useActionFeedbackStore.setState({ scopes: {} });
   cleanup();
   resetFetchStub();
 });

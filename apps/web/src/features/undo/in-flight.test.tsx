@@ -16,6 +16,8 @@ import { outcomeNotice, useSenderInFlightLock, workingNotice } from './in-flight
 import { undoKeys } from './query-keys';
 import { ME_QUERY_KEY } from '@/features/auth/api/me-contract';
 import { SCREENER_ALL_KEY } from '@/features/screener/api/query-keys';
+import { useEnqueueBulkAction, useEnqueueComposite } from '@/lib/api/use-action';
+import { pendingActionFeedback } from './feedback-store';
 
 vi.mock('@declutrmail/shared', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -36,7 +38,7 @@ const GROUP: InFlightActionGroup = {
   failed: 1,
   senderCount: 13,
   leadSenderName: 'Yankee Candle',
-  startedAt: '2026-09-20T10:00:00.000Z',
+  startedAt: new Date().toISOString(),
 };
 
 /** `n` distinct sender ids, as the batch status lists skipped senders. */
@@ -56,6 +58,182 @@ const status = (over: Partial<BatchStatusResult>): BatchStatusResult => ({
   ...over,
 });
 
+describe('accepted-action feedback before the first progress read', () => {
+  afterEach(resetFetchStub);
+
+  it.each(['pending first read', 'aged-out recovery'] as const)(
+    'resolves the accepted handle when discovery returns an old empty list: %s',
+    async (scenario) => {
+      let release!: (response: Response) => void;
+      const held = new Promise<Response>((resolve) => {
+        release = resolve;
+      });
+      let readable = scenario === 'pending first read';
+      let batchReads = 0;
+      installFetchStub([
+        { method: 'GET', path: '/api/undo', respond: () => jsonOk({ data: [] }) },
+        {
+          method: 'GET',
+          path: '/api/actions/active',
+          respond: () =>
+            scenario === 'pending first read'
+              ? held
+              : readable
+                ? jsonOk({ data: [] })
+                : jsonServerError(),
+        },
+        {
+          method: 'GET',
+          path: `/api/actions/batch/${GROUP.groupId}`,
+          respond: () => {
+            batchReads += 1;
+            return jsonOk({
+              data: status({ total: 1, done: 0, failed: 1, status: 'failed', affectedCount: 0 }),
+            });
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () =>
+            jsonOk({
+              data: { actionId: GROUP.groupId, compositeId: GROUP.groupId, status: 'queued' },
+            }),
+        },
+      ]);
+      function Start() {
+        const action = useEnqueueComposite();
+        return (
+          <button onClick={() => action.mutate({ senderId: 'one', primary: { type: 'archive' } })}>
+            Start
+          </button>
+        );
+      }
+      const client = createTestQueryClient();
+      render(
+        <QueryWrapper client={client}>
+          <Start />
+          <ProductUndoTray />
+        </QueryWrapper>,
+      );
+      if (!readable)
+        await waitFor(() =>
+          expect(client.getQueryState(undoKeys.inFlight())?.status).toBe('error'),
+        );
+      fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+      await waitFor(() => expect(pendingActionFeedback()).toHaveLength(1));
+      if (scenario === 'pending first read') {
+        await act(async () => {
+          release(jsonOk({ data: [] }));
+        });
+      } else {
+        expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t load progress');
+        readable = true;
+        await act(async () => {
+          await client.invalidateQueries({ queryKey: undoKeys.inFlight() });
+        });
+      }
+      expect(await screen.findByRole('alert')).toHaveTextContent('Archive failed');
+      expect(batchReads).toBeGreaterThan(0);
+      expect(pendingActionFeedback()).toHaveLength(0);
+    },
+  );
+
+  it.each(['archive', 'delete', 'later'] as const)(
+    'retains and recovers feedback for single and bulk %s when discovery is unavailable',
+    async (verb) => {
+      let readable = false;
+      const mailboxId = 'test-mailbox';
+      installFetchStub([
+        { method: 'GET', path: '/api/undo', respond: () => jsonOk({ data: [] }) },
+        {
+          method: 'GET',
+          path: '/api/actions/active',
+          respond: () => (readable ? jsonOk({ data: [{ ...GROUP, verb }] }) : jsonServerError()),
+        },
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () =>
+            jsonOk({
+              data: {
+                actionId: GROUP.groupId,
+                compositeId: GROUP.groupId,
+                batchId: GROUP.groupId,
+                status: 'queued',
+                senderCount: 2,
+                skipped: [],
+                accepted: ['one', 'two'],
+              },
+            }),
+        },
+      ]);
+      function Start() {
+        const single = useEnqueueComposite();
+        const bulk = useEnqueueBulkAction();
+        return (
+          <>
+            <button
+              onClick={() => single.mutate({ mailboxId, senderId: 'one', primary: { type: verb } })}
+            >
+              Single
+            </button>
+            <button
+              onClick={() =>
+                bulk.mutate({ mailboxId, senderIds: ['one', 'two'], primary: { type: verb } })
+              }
+            >
+              Bulk
+            </button>
+          </>
+        );
+      }
+      const client = createTestQueryClient();
+      const view = render(
+        <QueryWrapper client={client}>
+          <Start />
+          <ProductUndoTray mailboxId={mailboxId} />
+        </QueryWrapper>,
+      );
+      await waitFor(() =>
+        expect(client.getQueryState(undoKeys.inFlight(mailboxId))?.status).toBe('error'),
+      );
+      // A boot-time read failure alone must not invent a running decision.
+      expect(screen.queryByRole('alert')).toBeNull();
+      for (const button of ['Single', 'Bulk']) {
+        fireEvent.click(screen.getByRole('button', { name: button }));
+        expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t load progress');
+        readable = true;
+        await act(async () => {
+          await client.invalidateQueries({ queryKey: undoKeys.inFlight(mailboxId) });
+        });
+        await waitFor(() =>
+          expect(document.querySelector('[data-dm-undo-tray]')).toHaveTextContent(
+            verb === 'archive'
+              ? 'Archiving…'
+              : verb === 'delete'
+                ? 'Deleting…'
+                : 'Moving to Later…',
+          ),
+        );
+        expect(screen.queryByRole('alert')).toBeNull();
+        // Start the next iteration without a server group to fall back on.
+        readable = false;
+        act(() => client.setQueryData(undoKeys.inFlight(mailboxId), []));
+      }
+      view.rerender(
+        <QueryWrapper client={client}>
+          <ProductUndoTray mailboxId="other-mailbox" />
+        </QueryWrapper>,
+      );
+      await waitFor(() =>
+        expect(client.getQueryState(undoKeys.inFlight('other-mailbox'))?.status).toBe('error'),
+      );
+      expect(screen.queryByRole('alert')).toBeNull();
+    },
+  );
+});
+
 describe('what the pill says about a running decision', () => {
   it('names the verb, who, and how far along a bulk is', () => {
     expect(workingNotice(GROUP)).toMatchObject({
@@ -63,7 +241,7 @@ describe('what the pill says about a running decision', () => {
       verb: 'delete',
       label: 'Deleting…',
       who: 'Yankee Candle + 12 others',
-      detail: '4 of 13',
+      detail: '4 of 13 senders',
     });
     expect(workingNotice({ ...GROUP, verb: 'unsubscribe' })).toMatchObject({
       tone: 'working',
@@ -75,6 +253,28 @@ describe('what the pill says about a running decision', () => {
   it('gives a single-sender job no fraction to watch', () => {
     const one = workingNotice({ ...GROUP, total: 1, done: 0, failed: 0, senderCount: 1 });
     expect(one).toMatchObject({ label: 'Deleting…', who: 'Yankee Candle', detail: null });
+  });
+
+  it.each(['archive', 'delete', 'later'] as const)('keeps slow %s progress in the tray', (verb) => {
+    const slow = workingNotice({
+      ...GROUP,
+      verb,
+      startedAt: new Date(Date.now() - 121_000).toISOString(),
+    });
+    expect(slow.tone).toBe('working');
+    expect(slow.label).toContain('Taking longer than usual');
+    expect(slow.who).toContain('Yankee Candle');
+  });
+
+  it('never labels multiple jobs for one sender as sender progress', () => {
+    expect(workingNotice({ ...GROUP, senderCount: 3, total: 6 }).detail).toBe('4 of 6 steps');
+  });
+
+  it('provides a recovery direction instead of a spinner when the progress read fails', () => {
+    expect(workingNotice(GROUP, false)).toMatchObject({
+      tone: 'attention',
+      label: 'Couldn’t confirm Delete — check Activity before retrying.',
+    });
   });
 
   it('keeps a single composite free of internal job counters', () => {
@@ -168,9 +368,9 @@ describe('what the pill says once a decision stops', () => {
       'attention',
       'Delete failed',
     ],
-    [status({ done: 11, failed: 2 }), 'attention', 'Delete: 2 of 13 failed'],
+    [status({ done: 11, failed: 2 }), 'attention', 'Delete: 2 of 13 senders failed'],
     [status({ affectedCount: 0 }), 'info', 'Nothing to delete'],
-    [null, 'attention', 'Delete: unknown'],
+    [null, 'attention', 'Couldn’t confirm Delete — check Activity before retrying.'],
     // D245: a sender protected after the click is skipped, like one
     // protected before it — never "nothing to delete", never a failure.
     // Skipped senders are left out of every count the batch reports.
@@ -227,6 +427,28 @@ describe('what the pill says once a decision stops', () => {
       tone: 'info',
       label: 'Nothing to move to Later',
     });
+  });
+
+  it.each(['archive', 'delete', 'later'] as const)(
+    'attaches a partial %s warning to its available Undo',
+    (verb) => {
+      expect(
+        outcomeNotice(
+          { ...GROUP, verb },
+          status({ done: 11, failed: 2, undoToken: 'undo-partial' }),
+        ),
+      ).toMatchObject({
+        groupId: GROUP.groupId,
+        tone: 'attention',
+      });
+    },
+  );
+
+  it('does not expose a job fraction as failed senders for a composite', () => {
+    expect(
+      outcomeNotice({ ...GROUP, mixedVerbs: true }, status({ total: 26, done: 24, failed: 2 }))
+        ?.label,
+    ).toBe('Delete partly failed — check Activity.');
   });
 
   // Fewer moved than the preview counted means mail had already left the
@@ -560,7 +782,9 @@ describe('ProductUndoTray — live line', () => {
   it('shows a decision already running when the page loads — nothing local knows about it', async () => {
     mount();
     const pill = await screen.findByRole('region', { name: 'Recent actions' });
-    await waitFor(() => expect(pill).toHaveTextContent('Deleting… · 4 of 13'));
+    await waitFor(() =>
+      expect(pill).toHaveTextContent('Deleting… · Yankee Candle + 12 others · 4 of 13 senders'),
+    );
   });
 
   it('drops the line when it worked, and re-reads what can be undone', async () => {
@@ -604,7 +828,7 @@ describe('ProductUndoTray — live line', () => {
     active = [];
     await reread();
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Delete: 2 of 13 failed');
+    expect(alert).toHaveTextContent('Delete: 2 of 13 senders failed');
     act(() => screen.getByRole('button', { name: /^Dismiss/ }).click());
     expect(screen.queryByRole('alert')).toBeNull();
   });
@@ -620,16 +844,17 @@ describe('ProductUndoTray — live line', () => {
     );
     // Not ended — and not spinning as if it were live either: the line says
     // it is the last thing we knew. (It used to freeze on "Deleting…".)
-    await waitFor(() => expect(pillText()).toMatch(/Delete: unknown/));
+    await waitFor(() => expect(pillText()).toMatch(/Couldn’t confirm Delete/));
     expect(pillText()).not.toMatch(/Deleting…/);
-    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('alert')).toHaveTextContent('Couldn’t confirm Delete');
+    expect(screen.getByRole('button', { name: 'View Activity' })).toBeInTheDocument();
   });
 
   it('reports a job it never saw running — quicker than a poll, or ended while away', async () => {
     batch = status({ done: 11, failed: 2 });
     active = [{ ...GROUP, running: false, done: 11, failed: 2 }];
     mount();
-    expect(await screen.findByRole('alert')).toHaveTextContent('Delete: 2 of 13 failed');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Delete: 2 of 13 senders failed');
     expect(pillText()).not.toMatch(/Deleting…/);
   });
 

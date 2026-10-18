@@ -963,6 +963,9 @@ describe('HomeScreen', () => {
         ).toBeInTheDocument();
         expect(client.getQueryData(undoKeys.tray('mb-1'))).toEqual([]);
         expect(client.getQueryData(undoKeys.inFlight('mb-1'))).toEqual([]);
+        // Restoration keeps its progress line until reconciliation releases
+        // the latch, which can finish after the fresh query data renders.
+        expect(document.querySelectorAll('[data-dm-tray-notice="working"]')).toHaveLength(0);
       },
       // Shorter than the tray's own 2s job poll. That poll would eventually
       // re-read the report when the jobs stop; this wait ends first, so a
@@ -970,7 +973,6 @@ describe('HomeScreen', () => {
       { timeout: 1_200 },
     );
     expect(screen.queryByText(/Skyline Airways/)).toBeNull();
-    expect(document.querySelectorAll('[data-dm-tray-notice="working"]')).toHaveLength(0);
     expect(localStorage.getItem(celebrationKey)).toBeNull();
     localStorage.removeItem(celebrationKey);
   });
@@ -1147,11 +1149,11 @@ describe('HomeScreen', () => {
         expect(document.querySelector('[data-celebration]')).toBeNull();
         expect(client.getQueryData(undoKeys.tray('mb-1'))).toEqual([]);
         expect(client.getQueryData(undoKeys.inFlight('mb-1'))).toEqual([]);
+        expect(document.querySelectorAll('[data-dm-tray-notice="working"]')).toHaveLength(0);
       },
       { timeout: 1_200 },
     );
     expect(screen.queryByText(/Pixel Games Store/)).toBeNull();
-    expect(document.querySelectorAll('[data-dm-tray-notice="working"]')).toHaveLength(0);
     expect(localStorage.getItem(celebrationKey)).toBeNull();
     localStorage.removeItem(celebrationKey);
   });

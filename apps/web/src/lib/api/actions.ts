@@ -205,6 +205,7 @@ export function newIdempotencyKey(): string {
 /** Per-request options shared by the action calls. */
 interface ActionRequestOptions {
   mailboxId?: string | undefined;
+  signal?: AbortSignal | undefined;
 }
 
 /** Poll one action's status. Mailbox-scoped → 404 if not owned. */
@@ -1071,6 +1072,7 @@ export async function getBatchStatus(
   options: ActionRequestOptions = {},
 ): Promise<BatchStatusResult> {
   const env = await apiGet<BatchStatusResult>(`/api/actions/batch/${batchId}`, {
+    ...(options.signal ? { signal: options.signal } : {}),
     ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
   });
   return env.data;

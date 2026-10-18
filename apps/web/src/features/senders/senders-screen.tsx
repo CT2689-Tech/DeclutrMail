@@ -7,7 +7,7 @@ import { reconcileAction } from '@/lib/api/reconcile-action';
 
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { useHydrated } from '@/lib/use-hydrated';
-import { useSenderInFlightLock } from '@/features/undo/in-flight';
+import { ACTION_OVERDUE_MS, useSenderInFlightLock } from '@/features/undo/in-flight';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import {
@@ -85,12 +85,7 @@ import { sendersKeys } from './api/query-keys';
 import { currentListActionSender } from './api/current-action-sender';
 import { fetchSenderDetail, type SenderListEnvelope } from '@/lib/api/senders';
 import { unsubscribeControlStatus } from './unsub-status';
-import {
-  actionLabel,
-  enqueueMayHaveStarted,
-  getActionFailureCopy,
-  stillRunningCopy,
-} from '@/lib/action-error-copy';
+import { actionLabel, enqueueMayHaveStarted, getActionFailureCopy } from '@/lib/action-error-copy';
 import { NO_ACTIONABLE_SENDERS_COPY, skippedAtClickCopy } from '@/lib/bulk-action-copy';
 import {
   isUnsubscribeInFlight,
@@ -185,7 +180,7 @@ const { color, font, motion, text } = tokens;
  * side effects still run) and the active slot frees so the screen
  * stays usable.
  */
-export const ACTION_OVERDUE_MS = 120_000;
+export { ACTION_OVERDUE_MS } from '@/features/undo/in-flight';
 
 /** The report card does not take the first-landing slot. */
 function noteReportResolved(shown: boolean) {
@@ -1145,7 +1140,6 @@ function SendersScreenContent({
     if (!activeAction || overdueAction != null) return;
     const t = setTimeout(() => {
       void track('action_overdue', { kind: 'single', verb: activeAction.verb.toLowerCase() });
-      toast(stillRunningCopy(activeAction.verb, activeAction.senderName), 'info');
       setOverdueAction(activeAction);
       setActiveAction(null);
     }, ACTION_OVERDUE_MS);
@@ -1155,13 +1149,6 @@ function SendersScreenContent({
     if (!activeBatch) return;
     const t = setTimeout(() => {
       void track('action_overdue', { kind: 'batch', verb: activeBatch.verb.toLowerCase() });
-      toast(
-        stillRunningCopy(
-          activeBatch.verb,
-          `${activeBatch.senderCount} sender${activeBatch.senderCount === 1 ? '' : 's'}`,
-        ),
-        'info',
-      );
       setOverdueBatch(activeBatch);
       setActiveBatch(null);
     }, ACTION_OVERDUE_MS);

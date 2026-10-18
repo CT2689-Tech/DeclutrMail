@@ -905,10 +905,7 @@ export function NoiseArchiveBar({
       {/* Every terminal state gets a PERSISTENT line here. A toast is
           gone in 3.6s, and a bar that reverts to its neutral invite
           re-arms senders that already archived. */}
-      <span
-        role={outcome ? 'status' : undefined}
-        style={{ fontSize: text.sm, color: color.fgMuted, lineHeight: 1.5 }}
-      >
+      <span style={{ fontSize: text.sm, color: color.fgMuted, lineHeight: 1.5 }}>
         {outcome ? (
           <NoiseOutcomeLine outcome={outcome} />
         ) : selectedCount === 0 ? (
