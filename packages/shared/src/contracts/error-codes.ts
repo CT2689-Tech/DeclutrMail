@@ -49,7 +49,7 @@ export const ERROR_CODES = {
     status: 400,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: "Something about that didn't look right. Check the details and try again.",
+    message: 'Something about that didn’t look right. Check the details and try again.',
   },
   UNAUTHORIZED: {
     status: 401,
@@ -61,7 +61,7 @@ export const ERROR_CODES = {
     status: 403,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: "You don't have access to that.",
+    message: 'You don’t have access to that.',
   },
   NOT_FOUND: {
     status: 404,
@@ -73,7 +73,7 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: "That didn't apply — something changed since this page loaded. Refresh and try again.",
+    message: 'That didn’t apply — something changed since this page loaded. Refresh and try again.',
   },
   RATE_LIMITED: {
     status: 429,
@@ -105,7 +105,7 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: "That Gmail account isn't connected to your DeclutrMail account.",
+    message: 'That Gmail account isn’t connected to your DeclutrMail account.',
   },
   MAILBOX_OWNED_BY_OTHER_WORKSPACE: {
     status: 409,
@@ -116,7 +116,7 @@ export const ERROR_CODES = {
     // DeclutrMail account is refused here too.
     message:
       'This Gmail account is linked to a different DeclutrMail account. ' +
-      "Sign in to that one to use it — moving a Gmail account between DeclutrMail accounts isn't supported.",
+      'Sign in to that one to use it — moving a Gmail account between DeclutrMail accounts isn’t supported.',
   },
 
   // --- domain: tier entitlements (D19, D77, D81) ---
@@ -197,7 +197,7 @@ export const ERROR_CODES = {
     // Also raised when the provider WAS reached — a non-2xx refusal or a
     // malformed answer — so the message claims neither reach nor refusal.
     message:
-      "The payment provider didn't confirm this. Try again, or email support@declutrmail.com.",
+      'The payment provider didn’t confirm this. Try again, or email support@declutrmail.com.',
   },
   /**
    * States the FACT and stops. It must not name a remedy.
@@ -461,7 +461,7 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: "This mailbox's saved data is still being deleted. Reconnect after it finishes.",
+    message: 'We’re still deleting this Gmail account’s saved data. Reconnect once it’s done.',
   },
 
   // --- domain codes recovered by the 2026-08-21 audit (ADR-0014) ---
@@ -618,7 +618,7 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: "This sender hasn't been checked for an unsubscribe option yet.",
+    message: 'This sender hasn’t been checked for an unsubscribe option yet.',
   },
   // A one-click request to this sender is still queued or sending; a second
   // would be one more send nobody can recall (D58).
@@ -638,7 +638,7 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: "That unsubscribe step doesn't follow from the current progress.",
+    message: 'That unsubscribe step doesn’t follow from the current progress.',
   },
   UNSUBSCRIBE_MANUAL_NOT_AVAILABLE: {
     status: 409,
@@ -682,14 +682,14 @@ export const ERROR_CODES = {
     // `message` never reaches the wire; also flagged by
     // architecture-guardian as a real but separate follow-up).
     message:
-      'This mailbox has no finished scan to sync from — the scan is still running, or it stopped before completing.',
+      'This Gmail account hasn’t finished its scan yet. It may still be running, or it stopped early.',
   },
   // not found — scoped to the current mailbox
   SENDER_NOT_FOUND: {
     status: 404,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: 'Sender not found in the current mailbox.',
+    message: 'We couldn’t find this sender in this Gmail account.',
   },
   ACTION_NOT_FOUND: {
     status: 404,
@@ -708,7 +708,7 @@ export const ERROR_CODES = {
     status: 400,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: "Something about that request didn't look right. Check the details and try again.",
+    message: 'Something about that request didn’t look right. Check the details and try again.',
   },
   INVALID_ID: {
     status: 400,
@@ -782,13 +782,13 @@ export const ERROR_CODES = {
     status: 503,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: "We couldn't confirm that started. Check Activity before trying again.",
+    message: 'We couldn’t confirm that started. Check Activity before trying again.',
   },
   RECOVERY_ENQUEUE_FAILED: {
     status: 503,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: "We couldn't confirm the retry started. Try again — it won't run twice.",
+    message: 'We couldn’t confirm the retry started. Try again — it won’t run twice.',
   },
   SERVICE_UNAVAILABLE: {
     status: 503,
@@ -807,7 +807,7 @@ export const ERROR_CODES = {
     status: 501,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: "Undo isn't available for that action yet.",
+    message: 'Undo isn’t available for that action yet.',
   },
 } as const satisfies Record<string, ErrorCodeSpec>;
 

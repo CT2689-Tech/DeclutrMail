@@ -103,7 +103,7 @@ describe('InboxReportFirstLanding', () => {
       await waitFor(() => expect(archive).toBeEnabled());
       if (mode === 'delete') {
         fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
-        fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
       }
       fireEvent.change(screen.getByRole('combobox', { name: 'How far back to act on' }), {
         target: { value: '180' },
@@ -182,7 +182,7 @@ describe('InboxReportFirstLanding', () => {
     const option = await screen.findByRole('radio', { name: '+ Delete 4' });
     await waitFor(() => expect(option).toBeEnabled());
     fireEvent.click(option);
-    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     expect(screen.getByRole('dialog')).toHaveTextContent('delete 12 emails');
     fireEvent.click(
       screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),

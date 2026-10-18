@@ -1739,14 +1739,21 @@ describe('SendersScreen — edge states', () => {
       }
       fireEvent.click(screen.getByRole('checkbox', { name: /select sender a/i }));
       fireEvent.keyDown(document.body, { key: verb[0]!.toLowerCase() });
-      if (verb === 'Delete')
-        fireEvent.click(await screen.findByRole('radio', { name: /Inbox \+ archived/ }));
       await screen.findByText(/We check again right before anything moves/);
+      const dialog = screen.getByRole('dialog');
+      const includeArchived = () =>
+        within(dialog).queryByRole('checkbox', { name: 'Include archived email' });
+      if (verb === 'Delete' && includeArchived()) fireEvent.click(includeArchived()!);
       if (verb !== 'Later') {
-        fireEvent.change(
-          within(screen.getByRole('dialog')).getByRole('combobox', { name: /How far back/i }),
-          { target: { value: affected < inbox ? '30' : 'all' } },
-        );
+        const windowControl = within(dialog).queryByRole('combobox', { name: /How far back/i });
+        if (windowControl) {
+          fireEvent.change(windowControl, {
+            target: { value: affected < inbox ? '30' : 'all' },
+          });
+        }
+      }
+      if (verb === 'Delete' && includeArchived()?.getAttribute('aria-checked') !== 'true') {
+        fireEvent.click(includeArchived()!);
       }
       const confirm = await within(screen.getByRole('dialog')).findByRole('button', {
         name:
@@ -2510,7 +2517,7 @@ describe('SendersScreen — edge states', () => {
       const deleteChoice = await within(dialog).findByRole('radio', { name: /\+ Delete \d+/ });
       await waitFor(() => expect(deleteChoice).toBeEnabled());
       fireEvent.click(deleteChoice);
-      fireEvent.click(await screen.findByRole('radio', { name: 'Inbox + archived 21' }));
+      fireEvent.click(await screen.findByRole('checkbox', { name: 'Include archived email' }));
       if (remaining > 0) {
         fireEvent.change(screen.getByRole('combobox', { name: 'How far back to act on' }), {
           target: { value: '30' },
@@ -5904,7 +5911,9 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     renderScreen();
     await selectBothAndPress('d');
     const dialog = await screen.findByRole('dialog');
-    fireEvent.click(await within(dialog).findByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(
+      await within(dialog).findByRole('checkbox', { name: 'Include archived email' }),
+    );
     fireEvent.click(within(dialog).getByRole('button', { name: /delete/i }));
 
     await waitFor(() => expect(posted).toHaveLength(1));

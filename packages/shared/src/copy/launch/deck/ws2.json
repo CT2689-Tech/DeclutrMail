@@ -588,6 +588,17 @@
   "senders": {
     "emptySteps": {
       "confirm": "Confirm when you’re ready"
+    },
+    "detail": {
+      "actionHeading": "What do you want to do?",
+      "recent": {
+        "filter": {
+          "all": "All"
+        },
+        "inboxEmpty": {
+          "body": "Choose All to see earlier email from this sender."
+        }
+      }
     }
   },
   "simplify": {
@@ -807,6 +818,10 @@
   },
   "preview": {
     "loadFailed": "Couldn’t load the preview. Nothing can move until it loads.",
+    "archivedReachHint": {
+      "one": "Turn on Include archived email to reach 1 archived email.",
+      "other": "Turn on Include archived email to reach {n} archived emails."
+    },
     "details": {
       "includes": {
         "label": "Includes",

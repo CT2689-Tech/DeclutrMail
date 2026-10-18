@@ -3,14 +3,7 @@
 import { useActionPreviewAnalytics } from '@/lib/use-action-preview-analytics';
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 
-import {
-  Button,
-  Disclosure,
-  SheetFactList,
-  SheetSegmented,
-  tokens,
-  type SheetFactItem,
-} from '@declutrmail/shared';
+import { Button, Disclosure, SheetFactList, tokens, type SheetFactItem } from '@declutrmail/shared';
 import {
   buildActionPresentation,
   describeInboxScope,
@@ -22,6 +15,7 @@ import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-pro
 import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 import { afterLead } from '@/lib/copy/after-lead';
 import { useNow } from '@/lib/use-now';
+import { ActionReachControl } from '@/components/action-scope-controls';
 import type { ActionReach } from '@/lib/api/actions';
 
 import {
@@ -119,9 +113,8 @@ export function DecidePreview({
 }) {
   useActionPreviewAnalytics(row.senderId, verb, typeof inboxCount === 'number');
   const name = row.senderName;
-  // ADR-0028 reach. Offered only where the server accepts it — a Delete
-  // — and only when the preview actually carries the all-mail block
-  // (mirrors the senders confirm modal's `reachAvailable` gate).
+  // ADR-0028 reach. Widening stays possible only when the preview carries
+  // the all-mail count. Without that count the checkbox stays disabled.
   const reachAvailable = verb === 'delete' && allMailCount != null;
   const activeReach: ActionReach = reachAvailable ? reach : 'inbox_only';
   // The ONE count the preview arms — under the SELECTED reach.
@@ -371,23 +364,14 @@ export function DecidePreview({
 
       <p style={mutedLine}>{note}</p>
 
-      {/* ADR-0028 reach — Delete only. The options carry the live counts
-          so "Inbox + archived" is discoverable exactly when the inbox
-          count reads low. */}
-      {reachAvailable && (
+      {/* ADR-0028 reach — Delete only. Unchecked stays inbox-only. */}
+      {verb === 'delete' && liveInboxNumber(inboxCount) != null && (
         <div style={{ marginTop: space[3] }}>
-          <SheetSegmented
-            label="Where it applies"
+          <ActionReachControl
             value={activeReach}
+            inboxCount={liveInboxNumber(inboxCount)}
+            allMailCount={allMailCount}
             onChange={(next) => onReachChange?.(next)}
-            options={[
-              {
-                value: 'inbox_only',
-                label: 'Inbox only',
-                count: liveInboxNumber(inboxCount) ?? undefined,
-              },
-              { value: 'all_mail', label: 'Inbox + archived', count: allMailCount ?? undefined },
-            ]}
           />
         </div>
       )}

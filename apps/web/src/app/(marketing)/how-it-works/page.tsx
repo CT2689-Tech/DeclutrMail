@@ -138,10 +138,7 @@ export default function HowItWorksPage() {
           </div>
           <div>
             <h3>Archive or Delete it</h3>
-            <p>
-              Choose how far back to act. For Delete, choose Inbox only or Inbox + archived. The
-              affected count updates in the preview before you confirm.
-            </p>
+            <p>{WS3_COPY['ws3.howItWorks.archiveDelete.body']}</p>
           </div>
         </div>
         <p className="dm-story-note">

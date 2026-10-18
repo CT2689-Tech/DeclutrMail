@@ -1839,7 +1839,7 @@
     "file": "packages/shared/src/contracts/error-codes.ts",
     "line": 787,
     "id": "action_word",
-    "text": "Undo isn't available for that action yet."
+    "text": "Undo isn’t available for that action yet."
   },
   {
     "file": "packages/shared/src/contracts/gmail-data-inventory.ts",

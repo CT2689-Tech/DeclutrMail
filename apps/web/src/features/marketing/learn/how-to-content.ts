@@ -112,7 +112,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           },
           {
             name: 'Preview the email-moving action',
-            text: 'Archive, Later, Delete, and Unsubscribe show their scope before you confirm. For historical cleanup, check How far back. Delete lets you choose Inbox only or Inbox + archived. Unsubscribe can leave old mail alone or include an explicit Archive or Delete action; inspect that secondary scope separately.',
+            text: WS3_COPY['ws3.howTo.preview.reach'],
           },
           {
             name: 'Verify in Activity and Gmail',
@@ -241,7 +241,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           },
           {
             name: 'Read the preview',
-            text: 'Confirm the sender, How far back, and whether the scope is Inbox only or Inbox + archived. Check the affected count and sample again after changing a control. The preview explains Activity Undo and its deadline. Gmail Trash offers a separate fallback, normally up to 30 days unless emptied sooner.',
+            text: WS3_COPY['ws3.howTo.preview.checklist'],
           },
           {
             name: 'Confirm and inspect Activity',
@@ -755,7 +755,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
         title: 'Unsubscribe by sender in DeclutrMail',
         paragraphs: [
           'DeclutrMail reads the sender’s unsubscribe information along with the other listed Gmail details. When a sender offers the standard one-click method, DeclutrMail can submit the request. When it offers only an email address, DeclutrMail opens a Gmail draft with the supplied address and text; you remain the person who sends it.',
-          'Unsubscribe alone leaves existing email in place. In the preview, you can instead choose a secondary Archive or Delete of old mail. Check its How far back period and count; Delete also offers Inbox only or Inbox + archived. A bulk selection keeps these controls and each sender’s own unsubscribe method.',
+          WS3_COPY['ws3.howTo.unsubscribe.olderEmail'],
         ],
         steps: [
           {

@@ -63,7 +63,7 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
     summary:
       'Delete can now reach mail that never touched your inbox. Account email and wording across the app were reworked alongside it.',
     added: [
-      'Delete can now include archived mail. If a Gmail filter sends a sender straight past your inbox, that backlog was previously untouchable. Inbox only stays the default; including archived mail is a deliberate choice you make per sender.',
+      WS3_COPY['ws3.changelog.2026-07-28.archived'],
       'Undo puts every message back exactly where it was — inbox mail to the inbox, archived mail to the archive.',
       'A sender now tells you how much of its mail is still in your inbox before you act.',
       'A failed first sync has an explicit way out rather than a dead end.',

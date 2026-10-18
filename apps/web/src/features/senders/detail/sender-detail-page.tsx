@@ -1613,7 +1613,7 @@ function ReadyState({
           the evidence into a small viewport on shorter screens. */}
         <div className={styles.actionSection}>
           <div role="group" aria-label="Sender actions" className={styles.actionSection}>
-            <h3 className={styles.actionHeading}>Choose an action</h3>
+            <h3 className={styles.actionHeading}>{WS2_COPY.senders.detail.actionHeading}</h3>
             {detail.policyType === 'keep' && (
               <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>Skipped in Triage</p>
             )}

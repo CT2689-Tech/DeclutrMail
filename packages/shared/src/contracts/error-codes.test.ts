@@ -40,9 +40,27 @@ describe('ERROR_CODES registry (ADR-0014)', () => {
     });
     // Rate limiting is the one generic code that is retryable.
     expect(ERROR_CODES.RATE_LIMITED.retryable).toBe(true);
-    expect(ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message).toContain(
-      "moving a Gmail account between DeclutrMail accounts isn't supported.",
+    expect(ERROR_CODES.MAILBOX_NOT_OWNED.message).toBe(
+      'That Gmail account isn\u2019t connected to your DeclutrMail account.',
     );
+    expect(ERROR_CODES.RECOVERY_ENQUEUE_FAILED.message).toBe(
+      'We couldn\u2019t confirm the retry started. Try again — it won\u2019t run twice.',
+    );
+    expect(ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message).toContain(
+      'moving a Gmail account between DeclutrMail accounts isn\u2019t supported.',
+    );
+    expect(ERROR_CODES.MAILBOX_DATA_DELETION_IN_PROGRESS.message).toBe(
+      'We\u2019re still deleting this Gmail account\u2019s saved data. Reconnect once it\u2019s done.',
+    );
+    expect(ERROR_CODES.SYNC_NOT_READY.message).toBe(
+      'This Gmail account hasn\u2019t finished its scan yet. It may still be running, or it stopped early.',
+    );
+    expect(ERROR_CODES.SENDER_NOT_FOUND.message).toBe(
+      'We couldn\u2019t find this sender in this Gmail account.',
+    );
+    for (const [code, spec] of Object.entries(ERROR_CODES)) {
+      expect(spec.message, code).not.toContain("'");
+    }
     expect(ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message).not.toContain('disconnect');
     // The ownership check reads the row whatever its status, so the
     // message cannot claim the Gmail account is still CONNECTED there.

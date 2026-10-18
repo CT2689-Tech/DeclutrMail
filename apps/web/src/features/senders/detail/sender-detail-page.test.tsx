@@ -418,13 +418,13 @@ describe('SenderDetailRoute', () => {
       expect(screen.getByText('Top notifications this week')).toBeInTheDocument(),
     );
     expect(screen.getAllByText('Archived').length).toBeGreaterThan(1);
-    expect(screen.getByRole('button', { name: 'Inbox + archived' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
 
     fireEvent.click(screen.getByRole('button', { name: /^Inbox$/ }));
     await waitFor(() => expect(screen.getByText('No Inbox messages')).toBeInTheDocument());
+    expect(
+      screen.getByText('Choose All to see earlier email from this sender.'),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /^Archived$/ }));
     await waitFor(() =>
       expect(screen.getByText('Top notifications this week')).toBeInTheDocument(),
@@ -1199,14 +1199,23 @@ describe('SenderDetailRoute', () => {
       const buttonName = (verb: string, key: string) =>
         layout === 'page' ? `${verb} (${key})` : verb;
       fireEvent.click(await screen.findByRole('button', { name: buttonName(verb, verb[0]!) }));
-      if (verb === 'Delete')
-        fireEvent.click(await screen.findByRole('radio', { name: /Inbox \+ archived/ }));
       await screen.findByText(/We check again right before anything moves/);
       const dialog = screen.getByRole('dialog');
+      const includeArchived = () =>
+        within(dialog).queryByRole('checkbox', { name: 'Include archived email' });
+      // An empty inbox hides How far back until archived email is included.
+      // A tied age window hides the checkbox until the window changes.
+      if (verb === 'Delete' && includeArchived()) fireEvent.click(includeArchived()!);
       if (verb !== 'Later') {
-        fireEvent.change(within(dialog).getByRole('combobox', { name: /How far back/i }), {
-          target: { value: affected < inbox ? '30' : 'all' },
-        });
+        const windowControl = within(dialog).queryByRole('combobox', { name: /How far back/i });
+        if (windowControl) {
+          fireEvent.change(windowControl, {
+            target: { value: affected < inbox ? '30' : 'all' },
+          });
+        }
+      }
+      if (verb === 'Delete' && includeArchived()?.getAttribute('aria-checked') !== 'true') {
+        fireEvent.click(includeArchived()!);
       }
       const confirm = await within(dialog).findByRole('button', {
         name:
