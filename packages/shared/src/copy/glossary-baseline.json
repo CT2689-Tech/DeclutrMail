@@ -1903,33 +1903,9 @@
   },
   {
     "file": "packages/shared/src/contracts/gmail-data-inventory.ts",
-    "line": 463,
-    "id": "sync_word",
-    "text": "Deliver background work once, recover failed jobs, avoid processing the same Gmail notification twice, and keep counts and timings for each mailbox sync so slow or failed syncs can be investigated."
-  },
-  {
-    "file": "packages/shared/src/contracts/gmail-data-inventory.ts",
-    "line": 503,
-    "id": "sync_word",
-    "text": "Sync status and result"
-  },
-  {
-    "file": "packages/shared/src/contracts/gmail-data-inventory.ts",
     "line": 505,
     "id": "sync_word",
     "text": "redis:bull:initial-sync:{mailboxAccountId}"
-  },
-  {
-    "file": "packages/shared/src/contracts/gmail-data-inventory.ts",
-    "line": 508,
-    "id": "sync_word",
-    "text": "Avoid starting a second backfill for a mailbox that already has one queued or running, and let a slow or failed sync be investigated."
-  },
-  {
-    "file": "packages/shared/src/contracts/gmail-data-inventory.ts",
-    "line": 510,
-    "id": "sync_word",
-    "text": "Cleared immediately when this mailbox\u2019s saved data is deleted. Otherwise, a completed attempt\u2019s result is dropped automatically within 24 hours, sooner if this mailbox syncs again; a failed attempt\u2019s reason has no automatic expiry and stays until this mailbox syncs again or its data is deleted."
   },
   {
     "file": "packages/shared/src/copy/action-safety.ts",

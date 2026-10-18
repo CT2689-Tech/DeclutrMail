@@ -13,12 +13,12 @@ import { WS2_COPY } from '../copy/launch/ws2';
 
 export const GMAIL_DATA_RETENTION = {
   mailboxIndex:
-    "Until the user deletes this mailbox's saved data or deletes their DeclutrMail account.",
+    'Until you delete this Gmail account’s saved data or delete your DeclutrMail account.',
   mailboxIdentity:
-    'The disconnected Gmail address and mailbox deletion status remain until the DeclutrMail account is deleted, so the user can identify and reconnect the mailbox.',
+    'Your disconnected Gmail address, and whether its saved data was deleted, stay until you delete your DeclutrMail account, so you can recognize and reconnect that Gmail account.',
   connection: 'Until the Gmail account is disconnected or the DeclutrMail account is deleted.',
   derivedMailboxData:
-    "Until the user deletes this mailbox's saved data or deletes their DeclutrMail account.",
+    'Until you delete this Gmail account’s saved data or delete your DeclutrMail account.',
   undoJournal:
     UNIFORM_UNDO_WINDOW_DAYS === null
       ? 'Until the plan-based Undo window expires, followed by the operational cleanup period.'
@@ -303,7 +303,7 @@ export const GMAIL_CONNECTION_DATA_INVENTORY = [
     fetchedFrom: ['Google sign-in profile', 'OAuth connection result'],
     storageRefs: ['mailbox_accounts.provider_account_id', 'mailbox_accounts.status'],
     derived: false,
-    purpose: 'Identify, switch, disconnect, and reconnect a mailbox.',
+    purpose: 'Identify, switch, disconnect and reconnect a Gmail account.',
     retention: GMAIL_DATA_RETENTION.mailboxIdentity,
     removalTrigger: 'delete-account',
     exportedIn: ['json', 'csv', 'senders-csv', 'decisions-csv', 'activity-support-bundle'],
@@ -340,7 +340,7 @@ export const GMAIL_CONNECTION_DATA_INVENTORY = [
       'provider_sync_state.readiness_status',
     ],
     derived: false,
-    purpose: 'Continue updating without scanning the entire mailbox again.',
+    purpose: 'Keep your Gmail up to date without scanning all of it again.',
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
@@ -393,7 +393,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     storageRefs: ['users.preferences.mailboxVisits'],
     derived: true,
     purpose:
-      'Show a stable per-mailbox summary since the previous visit; at most 32 snapshots per mailbox.',
+      'Show what changed since your last visit, for each Gmail account. We keep at most 32 of these per Gmail account.',
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
     removalTrigger: 'delete-indexed-data',
     exportedIn: ['json'],
@@ -483,7 +483,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     storageRefs: ['outbox_events.*', 'dead_letter_jobs.*', 'webhook_dedup.*', 'sync_runs.*'],
     derived: true,
     purpose:
-      'Deliver background work once, recover failed jobs, avoid processing the same Gmail notification twice, and keep counts and timings for each mailbox sync so slow or failed syncs can be investigated.',
+      'Run background work once, recover failed tasks, avoid handling the same Gmail notice twice, and keep counts and timings for each Gmail account’s scans so slow or failed scans can be looked into.',
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
@@ -499,7 +499,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     derived: true,
     purpose: 'Show how far a running scan has read, and its time left.',
     retention:
-      'Cleared immediately when this mailbox’s saved data is deleted; otherwise gone within 30 minutes of the scan’s last update.',
+      'Cleared right away when this Gmail account’s saved data is deleted. Otherwise gone within 30 minutes of the scan’s last update.',
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
     transmittedTo: ['DeclutrMail'],
@@ -523,14 +523,14 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
   {
     id: 'initial-sync-job-status',
     category: 'derived',
-    label: 'Sync status and result',
+    label: 'Scan status and result',
     fetchedFrom: ['message-identifiers'],
     storageRefs: ['redis:bull:initial-sync:{mailboxAccountId}', 'redis:bull:initial-sync:events'],
     derived: true,
     purpose:
-      'Avoid starting a second backfill for a mailbox that already has one queued or running, and let a slow or failed sync be investigated.',
+      'Avoid starting a second full scan for a Gmail account that already has one waiting or running, and let a slow or failed scan be looked into.',
     retention:
-      'Cleared immediately when this mailbox’s saved data is deleted. Otherwise, a completed attempt’s result is dropped automatically within 24 hours, sooner if this mailbox syncs again; a failed attempt’s reason has no automatic expiry and stays until this mailbox syncs again or its data is deleted.',
+      'Cleared right away when this Gmail account’s saved data is deleted. Otherwise, a finished scan’s result is dropped within 24 hours, or sooner if this Gmail account is scanned again. A failed scan’s reason stays until this Gmail account is scanned again or its saved data is deleted.',
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
     transmittedTo: ['DeclutrMail'],
