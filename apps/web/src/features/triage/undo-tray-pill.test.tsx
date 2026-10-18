@@ -107,7 +107,7 @@ describe('<UndoTray /> — one pill', () => {
   it('puts a running action ahead of everything, with its progress and no Undo', () => {
     render(<UndoTray dataSource={source({ entries: [done], notices: [failed, running] })} />);
     const pill = screen.getByRole('region', { name: 'Recent actions' });
-    expect(pill).toHaveTextContent('Deleting… · 4 of 13');
+    expect(pill).toHaveTextContent('Deleting… · Yankee Candle + 12 others · 4 of 13');
     expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
     expect(screen.getByLabelText('Working')).toBeInTheDocument();
   });

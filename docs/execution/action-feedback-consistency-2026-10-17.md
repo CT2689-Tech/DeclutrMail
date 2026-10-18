@@ -68,10 +68,14 @@ they do not establish a new Gmail provider outcome.
 
 - Initial red regressions reproduced missing Undo progress and ambiguous bulk
   feedback against the prior code.
-- Ten affected web suites: 706 tests passed, including real screen/API wiring,
+- Ten initial affected web suites: 706 tests passed, including real screen/API wiring,
   action previews and the shared global tray. One timing-sensitive existing
   external-Undo test was made deterministic by holding reverse status until the
   pending-state assertion completes.
+- Two further Home/pill suites: 33 passed after full CI exposed three old
+  assertions. Bulk progress now expects the visible sender; Home waits for
+  reconciliation to release its progress line inside the existing 1.2-second
+  deadline. No completion assertion was removed.
 - Full shared suite: 921 tests passed after the final announcement regression.
 - Production Next build and all 51 route bundle budgets passed. Root lint passed
   with six existing unused-disable warnings; root typecheck passed.
