@@ -177,7 +177,7 @@ export function SenderActionRow({
         )}
       </div>
       {!compact && activity && <RowActivityPill activity={activity} />}
-      {!compact && unsubscribeStatus && (
+      {!compact && unsubscribeStatus && !(busy && sender.unsubStatus === 'requested') && (
         <span title={unsubscribeStatus.title}>
           <Pill>{unsubscribeStatus.label}</Pill>
         </span>

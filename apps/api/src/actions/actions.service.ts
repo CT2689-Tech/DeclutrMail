@@ -1444,7 +1444,7 @@ export class ActionsService {
       const seen = latest.get(lineage);
       if (!seen || row.recoveryAttempt > seen.recoveryAttempt) latest.set(lineage, row);
     }
-    const current = [...latest.values()];
+    const current = [...latest.values()].filter((row) => !isUnsubscribeIntentRow(row));
     const live = current.filter((r) => !isProtectedSkip(r));
     const total = live.length;
     const done = live.filter((r) => r.status === 'done').length;
@@ -1493,6 +1493,7 @@ export class ActionsService {
     const allReverted = revertedAts.length > 0 && revertedAts.every((at) => at !== null);
     return {
       batchId,
+      feedbackVersion: 2,
       status,
       total,
       done,
@@ -1549,6 +1550,7 @@ export class ActionsService {
         from action_jobs
         where mailbox_account_id = ${mailboxAccountId}
           and direction = 'forward'
+          and not (verb = 'unsubscribe' and idempotency_key like 'unsub:%')
           and created_at > now() - make_interval(hours => ${IN_FLIGHT_MAX_AGE_HOURS}::int)
           and (
             status in ('queued', 'executing')
@@ -1579,6 +1581,7 @@ export class ActionsService {
         ) aj on true
         where aj.mailbox_account_id = ${mailboxAccountId}
           and aj.direction = 'forward'
+          and not (aj.verb = 'unsubscribe' and aj.idempotency_key like 'unsub:%')
           -- Only the latest attempt of each lineage: a retry from Activity
           -- joins its batch, and the failure it replaced no longer counts.
           -- (A later attempt always carries root_action_id — indexed.)
@@ -2304,6 +2307,7 @@ export class ActionsService {
             requestedCount: 1,
             status: 'queued',
             idempotencyKey: executionKey,
+            ...(compositeId ? { compositeId } : {}),
           })
           .onConflictDoNothing({ target: actionJobs.idempotencyKey })
           .returning({ id: actionJobs.id });
@@ -3524,6 +3528,13 @@ function protectedSkippedSenderIds(rows: ReadonlyArray<typeof actionJobs.$inferS
   return [...allSkipped].flatMap(([id, skipped]) => (skipped ? [id] : []));
 }
 
+/** Intent reservations record consent/quota bookkeeping, never endpoint delivery. */
+function isUnsubscribeIntentRow(
+  row: Pick<typeof actionJobs.$inferSelect, 'verb' | 'idempotencyKey'>,
+): boolean {
+  return row.verb === 'unsubscribe' && row.idempotencyKey.startsWith('unsub:');
+}
+
 /**
  * Aggregate the terminal one-click outcomes across a batch's
  * unsubscribe rows (D248). Returns `null` for a batch with no
@@ -3532,7 +3543,9 @@ function protectedSkippedSenderIds(rows: ReadonlyArray<typeof actionJobs.$inferS
 function summarizeUnsubscribeOutcomes(
   rows: ReadonlyArray<typeof actionJobs.$inferSelect>,
 ): UnsubscribeBatchOutcomes | null {
-  const unsubRows = rows.filter((row) => row.verb === 'unsubscribe');
+  const unsubRows = rows.filter(
+    (row) => row.verb === 'unsubscribe' && !isUnsubscribeIntentRow(row),
+  );
   if (unsubRows.length === 0) return null;
   const outcomes: UnsubscribeBatchOutcomes = {
     endpointAccepted: 0,

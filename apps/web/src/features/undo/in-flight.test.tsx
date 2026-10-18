@@ -44,6 +44,7 @@ const ids = (n: number): string[] => Array.from({ length: n }, (_, i) => `sender
 
 const status = (over: Partial<BatchStatusResult>): BatchStatusResult => ({
   batchId: GROUP.groupId,
+  feedbackVersion: 2,
   status: 'done',
   total: 13,
   done: 13,
@@ -76,9 +77,84 @@ describe('what the pill says about a running decision', () => {
     expect(one).toMatchObject({ label: 'Deleting…', who: 'Yankee Candle', detail: null });
   });
 
+  it('keeps a single composite free of internal job counters', () => {
+    expect(
+      workingNotice({ ...GROUP, mixedVerbs: true, total: 2, done: 0, failed: 1, senderCount: 1 }),
+    ).toMatchObject({ label: 'Working…', detail: null });
+  });
+
   it('counts senders when none of them resolves to a name', () => {
     expect(workingNotice({ ...GROUP, leadSenderName: null }).who).toBe('13 senders');
   });
+});
+
+describe('combined unsubscribe and cleanup outcomes', () => {
+  const combined = { ...GROUP, mixedVerbs: true, total: 2, senderCount: 1 };
+  const unsub = { endpointAccepted: 0, unconfirmed: 1, failed: 0, actionRequired: 0, pending: 0 };
+
+  it('attaches an unconfirmed unsubscribe to the successful move, without calling Delete failed', () => {
+    expect(
+      outcomeNotice(
+        combined,
+        status({
+          total: 2,
+          done: 1,
+          failed: 1,
+          affectedCount: 56,
+          undoToken: 'undo-delete',
+          unsubscribeOutcomes: unsub,
+        }),
+      ),
+    ).toMatchObject({
+      groupId: GROUP.groupId,
+      tone: 'attention',
+      label: 'Unsubscribe unconfirmed — watch for new email.',
+    });
+  });
+
+  it('uses the fetched combined result even when the captured group predates execution linkage', () => {
+    expect(
+      outcomeNotice(
+        { ...combined, mixedVerbs: false },
+        status({ total: 2, done: 1, failed: 1, affectedCount: 56, unsubscribeOutcomes: unsub }),
+      ),
+    ).toMatchObject({
+      groupId: GROUP.groupId,
+      label: 'Unsubscribe unconfirmed — watch for new email.',
+    });
+  });
+
+  it('does not count an accepted unsubscribe as moved mail or hide a failed Delete', () => {
+    const notice = outcomeNotice(
+      combined,
+      status({
+        total: 2,
+        done: 1,
+        failed: 1,
+        affectedCount: 1,
+        unsubscribeOutcomes: { ...unsub, endpointAccepted: 1, unconfirmed: 0 },
+      }),
+    );
+    expect(notice?.label).toContain('Delete failed');
+    expect(notice?.label).toContain('Unsubscribe request accepted');
+    expect(notice?.groupId).toBeUndefined();
+  });
+});
+
+it('never interprets an older API intent tally as delivery acceptance', () => {
+  const oldStatus = status({
+    unsubscribeOutcomes: {
+      endpointAccepted: 1,
+      failed: 0,
+      pending: 0,
+      unconfirmed: 0,
+      actionRequired: 0,
+    },
+  });
+  delete oldStatus.feedbackVersion;
+  expect(outcomeNotice({ ...GROUP, mixedVerbs: true }, oldStatus)?.label ?? '').not.toContain(
+    'Unsubscribe request accepted',
+  );
 });
 
 describe('what the pill says once a decision stops', () => {
@@ -274,6 +350,7 @@ describe('ProductUndoTray — live line', () => {
   let undoList: unknown[];
   let batch: BatchStatusResult | 'error';
   let undoReads: number;
+  let revertReply: Promise<Response> | null;
 
   beforeEach(() => {
     resetTriageStore();
@@ -281,7 +358,13 @@ describe('ProductUndoTray — live line', () => {
     undoList = [];
     batch = status({});
     undoReads = 0;
+    revertReply = null;
     installFetchStub([
+      {
+        method: 'POST',
+        path: /^\/api\/undo\//,
+        respond: () => revertReply ?? jsonOk({ data: { reverted: true } }),
+      },
       {
         method: 'GET',
         path: '/api/undo',
@@ -320,6 +403,143 @@ describe('ProductUndoTray — live line', () => {
       });
     return { ...view, client, reread };
   }
+
+  it.each(['unconfirmed', 'accepted', 'manual', 'failed'] as const)(
+    'keeps one combined decision through an early Undo and the %s unsubscribe result',
+    async (outcome) => {
+      active = [{ ...GROUP, mixedVerbs: true, senderCount: 1, total: 2, done: 1, failed: 0 }];
+      const { reread, client } = mount();
+      await waitFor(() => expect(pillText()).toContain('Working…'));
+      undoList = [
+        {
+          token: 'undo-delete',
+          groupId: GROUP.groupId,
+          actionKind: 'delete',
+          affectedCount: 56,
+          senderCount: 1,
+          createdAt: '2026-10-17T00:00:00Z',
+          expiresAt: '2026-11-16T00:00:00Z',
+          members: [
+            {
+              token: 'undo-delete',
+              actionKind: 'delete',
+              senderName: 'Sample sender',
+              affectedCount: 56,
+            },
+          ],
+        },
+      ];
+      await act(async () => {
+        await client.invalidateQueries({ queryKey: undoKeys.all });
+      });
+      expect(screen.queryByRole('button', { name: /^Undo Delete/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Show all recent actions' })).toBeNull();
+      const accepted = outcome === 'accepted';
+      batch = status({
+        total: 2,
+        done: accepted ? 2 : 1,
+        failed: accepted ? 0 : 1,
+        affectedCount: accepted ? 57 : 56,
+        undoToken: 'undo-delete',
+        unsubscribeOutcomes: {
+          endpointAccepted: accepted ? 1 : 0,
+          unconfirmed: outcome === 'unconfirmed' ? 1 : 0,
+          failed: outcome === 'failed' || outcome === 'manual' ? 1 : 0,
+          actionRequired: outcome === 'manual' ? 1 : 0,
+          pending: 0,
+        },
+      });
+      active = active.map((group) => ({ ...group, running: false }));
+      await reread();
+      await waitFor(() => expect(pillText()).toContain('Deleted 56 emails'));
+      const expected =
+        outcome === 'unconfirmed'
+          ? 'Unsubscribe unconfirmed'
+          : accepted
+            ? 'Unsubscribe request accepted'
+            : outcome === 'manual'
+              ? 'Unsubscribe needs an email from Gmail'
+              : 'Unsubscribe failed';
+      await waitFor(() => expect(pillText()).toContain(expected));
+      expect(screen.getByRole('button', { name: /^Undo Delete/ })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Show all recent actions' })).toBeNull();
+      expect(pillText()).not.toContain('Delete: 1 of 2 failed');
+      expect(pillText()).not.toContain('57 emails');
+    },
+  );
+
+  it('does not resurrect the attached outcome while or after the whole decision is undone', async () => {
+    active = [{ ...GROUP, running: false, mixedVerbs: true, senderCount: 1, total: 2 }];
+    undoList = [
+      { ...ARCHIVE_UNDO, groupId: GROUP.groupId, actionKind: 'delete', affectedCount: 56 },
+    ];
+    batch = status({
+      total: 2,
+      done: 1,
+      failed: 1,
+      affectedCount: 56,
+      unsubscribeOutcomes: {
+        endpointAccepted: 0,
+        unconfirmed: 1,
+        failed: 0,
+        actionRequired: 0,
+        pending: 0,
+      },
+    });
+    let release!: (response: Response) => void;
+    const response = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    revertReply = response;
+    mount();
+    const undo = await screen.findByRole('button', { name: /^Undo Delete/ });
+    await waitFor(() => expect(pillText()).toContain('Unsubscribe unconfirmed'));
+    fireEvent.click(undo);
+    await waitFor(() => expect(pillText()).not.toContain('Unsubscribe unconfirmed'));
+    undoList = [];
+    await act(async () => {
+      release(jsonOk({ data: { reverted: true } }));
+    });
+    await waitFor(() => expect(undoReads).toBeGreaterThan(1));
+    await waitFor(() => expect(pillText()).toBe(''));
+  });
+
+  it.each([true, false])(
+    'reports a fast execution added to a completed move (observed running=%s)',
+    async (observeRunning) => {
+      active = [{ ...GROUP, running: false, mixedVerbs: false, total: 1, done: 1, failed: 0 }];
+      batch = status({ total: 1, done: 1, failed: 0, unsubscribeOutcomes: null });
+      const { reread, client } = mount();
+      await waitFor(() => expect(undoReads).toBeGreaterThan(1));
+      active = [{ ...GROUP, running: true, mixedVerbs: true, total: 2, done: 1, failed: 0 }];
+      if (observeRunning) {
+        await reread();
+        await waitFor(() => expect(pillText()).toContain('Working…'));
+      }
+      undoList = [
+        { ...ARCHIVE_UNDO, groupId: GROUP.groupId, actionKind: 'delete', affectedCount: 56 },
+      ];
+      batch = status({
+        total: 2,
+        done: 1,
+        failed: 1,
+        affectedCount: 56,
+        unsubscribeOutcomes: {
+          endpointAccepted: 0,
+          unconfirmed: 1,
+          failed: 0,
+          actionRequired: 0,
+          pending: 0,
+        },
+      });
+      active = active.map((group) => ({ ...group, running: false }));
+      await act(async () => {
+        await client.invalidateQueries({ queryKey: undoKeys.all });
+      });
+      await waitFor(() => expect(pillText()).toContain('Unsubscribe unconfirmed'));
+      expect(pillText()).toContain('Deleted 56 emails');
+    },
+  );
 
   it('says it to a screen reader from a region that existed BEFORE the first message', async () => {
     active = [];

@@ -592,6 +592,7 @@ function ReadyState({
     mailboxId: string | undefined;
     actionId: string;
     senderName: string;
+    feedbackInTray: boolean;
   } | null>(null);
   // Transient mailto callout right after THIS tab's confirm — covers
   // the gap until the invalidation refetch flips `detail.policyType`
@@ -1060,6 +1061,7 @@ function ReadyState({
                   mailboxId: actionMailboxId,
                   actionId: outcome.executionActionId,
                   senderName: sender.name,
+                  feedbackInTray: res.backlog !== null && res.feedbackVersion === 2,
                 });
               } else if (outcome?.unsubStatus === 'manual' && outcome.mailtoUrl) {
                 setMailtoFollowup({
@@ -1271,13 +1273,15 @@ function ReadyState({
         surface: 'senders',
         reason: 'unsub_status_poll',
       });
-      toast(`Couldn’t confirm the unsubscribe from ${activeUnsub.senderName}`, 'warn');
+      if (!activeUnsub.feedbackInTray)
+        toast(`Couldn’t confirm the unsubscribe from ${activeUnsub.senderName}`, 'warn');
       setActiveUnsub(null);
       return;
     }
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    toast(...unsubscribeOutcomeToast(activeUnsub.senderName, data));
+    if (!activeUnsub.feedbackInTray)
+      toast(...unsubscribeOutcomeToast(activeUnsub.senderName, data));
     reconcileAction(qc, data, data.actionId);
     setActiveUnsub(null);
   }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, activeUnsub, qc]);

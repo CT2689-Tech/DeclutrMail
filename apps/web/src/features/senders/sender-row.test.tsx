@@ -156,6 +156,19 @@ describe('<SenderRow /> — what the row says', () => {
     expect(name.parentElement).not.toContainElement(screen.getByText('Archiving…'));
   });
 
+  it.each([false, true])(
+    'shows one pending row status at compact=%s during combined cleanup',
+    (compact) => {
+      renderRow(
+        { id: 'working', policyType: 'unsubscribe', unsubStatus: 'requested' },
+        { compact },
+        new Map([['working', { phase: 'working', verb: 'delete' }]]),
+      );
+      expect(screen.getAllByText('Deleting…')).toHaveLength(1);
+      expect(screen.queryByText('Requesting…')).toBeNull();
+    },
+  );
+
   it('states the unsubscribe lifecycle once it exists', () => {
     renderRow({ policyType: 'unsubscribe', unsubStatus: 'endpoint_accepted' });
     expect(screen.getByText('Request accepted')).toBeInTheDocument();

@@ -1843,7 +1843,7 @@ function activityVerbFilter(verbs: readonly ActivityLogEntry['action'][]): SQL {
  * Drop the unsubscribe decision once its move row exists.
  * Production stores composite_id on the intent job and the activity id
  * in that job's resolved_message_ids. The activity row's action_job_id
- * points at the one-click execution job, which has no composite_id.
+ * points at the one-click execution job, also grouped for new cleanups.
  * Mailto has no execution job and also writes unsubscribe_action_required
  * in the same transaction, so those companions share occurred_at.
  */
