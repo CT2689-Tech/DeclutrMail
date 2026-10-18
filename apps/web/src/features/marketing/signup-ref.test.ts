@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { SIGNUP_REF_COOKIE } from '@declutrmail/shared/contracts';
+import { DM_ATTR_COOKIE } from '@declutrmail/shared/contracts/signup-attribution-attr';
 
 import { oauthStartUrl } from './landing/urls';
 import {
@@ -12,6 +13,7 @@ import {
 
 afterEach(() => {
   document.cookie = `${SIGNUP_REF_COOKIE}=; Path=/; Max-Age=0`;
+  document.cookie = `${DM_ATTR_COOKIE}=; Path=/; Max-Age=0`;
   sessionStorage.clear();
 });
 
@@ -40,6 +42,18 @@ describe('captureSignupRef (set-once)', () => {
     expect(captureSignupRef('/', '?ref=hn')).toBe('hn');
     expect(captureSignupRef('/inbox-simulator', '')).toBe('hn');
     expect(readCapturedSignupRef()).toBe('hn');
+  });
+
+  it('does not relabel a directory campaign on a later demo visit', () => {
+    document.cookie = `${DM_ATTR_COOKIE}=utm_source=alternativeto&utm_medium=referral&landing=%2F; Path=/`;
+    expect(captureSignupRef('/inbox-simulator', '')).toBeUndefined();
+    expect(readCapturedSignupRef()).toBeUndefined();
+  });
+
+  it('does not relabel an explicit UTM campaign that lands on the demo', () => {
+    expect(
+      captureSignupRef('/inbox-simulator', '?utm_source=saashub&utm_medium=referral'),
+    ).toBeUndefined();
   });
 
   it('attributes a bare simulator visit when nothing is captured yet', () => {

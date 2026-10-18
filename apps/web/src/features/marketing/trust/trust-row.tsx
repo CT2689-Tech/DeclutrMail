@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { CASA_VERIFICATION_APPROVED_ON, formatVerificationDate } from '@declutrmail/shared';
 import { fillWs3, TRUST_ROW_VARIANT, WS3_COPY } from '@declutrmail/shared/copy/launch';
 
-import './trust-row.css';
+// Styles are loaded by the public route group through public-styles.css.
 
 /**
  * One trust line. The date is `CASA_VERIFICATION_APPROVED_ON`, formatted at render.

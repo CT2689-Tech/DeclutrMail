@@ -160,6 +160,101 @@ describe('UnsubscribeBacklogService', () => {
     expect(await entitlements.cleanupUnitsUsed(workspaceId)).toBe(1);
   });
 
+  it.each(['accepted', 'unconfirmed', 'failed'] as const)(
+    'groups real one-click execution with Delete, excluding the intent (%s)',
+    async (outcome) => {
+      await seedInbox(db, mailboxId, 1);
+      const result = await svc.confirm({
+        mailboxAccountId: mailboxId,
+        idempotencyKey: 'feedback-real',
+        mode: 'delete',
+        senderIds: [senderId],
+      });
+      const groupId = result.backlog!.actionId;
+      const executionId = result.senders[0]!.executionActionId!;
+      expect(result.feedbackVersion).toBe(2);
+      expect(await actions.listInFlight(mailboxId)).toMatchObject([
+        { groupId, mixedVerbs: true, total: 2, done: 0, failed: 0, running: true },
+      ]);
+      expect((await actions.getBatchStatus(groupId, mailboxId)).unsubscribeOutcomes).toMatchObject({
+        endpointAccepted: 0,
+        pending: 1,
+      });
+      await db
+        .update(actionJobs)
+        .set({ status: 'done', affectedCount: 1 })
+        .where(eq(actionJobs.id, groupId));
+      expect((await actions.listInFlight(mailboxId))[0]).toMatchObject({
+        total: 2,
+        done: 1,
+        running: true,
+      });
+      await db
+        .update(actionJobs)
+        .set({
+          status: outcome === 'accepted' ? 'done' : 'failed',
+          affectedCount: outcome === 'accepted' ? 1 : 0,
+          errorCode:
+            outcome === 'unconfirmed'
+              ? 'UNSUB_AMBIGUOUS_REDIRECT'
+              : outcome === 'failed'
+                ? 'HTTP_500'
+                : null,
+        })
+        .where(eq(actionJobs.id, executionId));
+      expect(await actions.getBatchStatus(groupId, mailboxId)).toMatchObject({
+        feedbackVersion: 2,
+        total: 2,
+        done: outcome === 'accepted' ? 2 : 1,
+        failed: outcome === 'accepted' ? 0 : 1,
+        affectedCount: outcome === 'accepted' ? 2 : 1,
+        unsubscribeOutcomes: {
+          endpointAccepted: outcome === 'accepted' ? 1 : 0,
+          unconfirmed: outcome === 'unconfirmed' ? 1 : 0,
+          failed: outcome === 'failed' ? 1 : 0,
+          pending: 0,
+        },
+      });
+    },
+  );
+
+  it('leaves an older ungrouped execution on independent feedback after same-key replay', async () => {
+    await seedInbox(db, mailboxId, 1);
+    const input = {
+      mailboxAccountId: mailboxId,
+      idempotencyKey: 'feedback-older',
+      mode: 'delete' as const,
+      senderIds: [senderId],
+    };
+    const first = await svc.confirm(input);
+    await db
+      .update(actionJobs)
+      .set({ compositeId: null })
+      .where(eq(actionJobs.id, first.senders[0]!.executionActionId!));
+    expect((await svc.confirm(input)).feedbackVersion).toBeUndefined();
+    expect(labelQueue.count).toBe(1);
+    expect(unsubQueue.count).toBe(1);
+  });
+
+  it('never treats a manual unsubscribe intent as endpoint acceptance', async () => {
+    await db
+      .update(senders)
+      .set({ unsubscribeMethod: 'mailto', unsubscribeUrl: 'mailto:leave@shop.example' })
+      .where(eq(senders.id, senderId));
+    await seedInbox(db, mailboxId, 1);
+    const result = await svc.confirm({
+      mailboxAccountId: mailboxId,
+      idempotencyKey: 'feedback-manual',
+      mode: 'delete',
+      senderIds: [senderId],
+    });
+    expect(result.senders[0]?.unsubStatus).toBe('manual');
+    expect(
+      (await actions.getBatchStatus(result.backlog!.actionId, mailboxId)).unsubscribeOutcomes,
+    ).toBeNull();
+    expect(await actions.listInFlight(mailboxId)).toMatchObject([{ total: 1, mixedVerbs: false }]);
+  });
+
   it('402s on the email count under METER_V2 and sends no unsubscribe', async () => {
     process.env.METER_V2 = 'true';
     const alreadyCleared = METER.free.limit - 3;

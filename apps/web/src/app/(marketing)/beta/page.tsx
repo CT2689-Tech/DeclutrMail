@@ -8,10 +8,8 @@
 //      when the beta gate denies a brand-new signup (the redirect
 //      contract lives in `@declutrmail/shared/contracts` beta-gate.ts).
 //      That variant mounts `BetaDeniedTracker` → `beta_gate_denied`.
-//      It can only fire while BETA_GATE_ENABLED=true — the gate is OFF
-//      in production (open signup), so the organic variant is the one
-//      visitors see and its copy says so honestly.
-//   2. Organic navigation — same page, no event.
+//   2. Organic navigation redirects to /how-it-works after GA.
+//      The explicit denial route remains available for recovery.
 //
 // Copy is calm and never apologetic (D209) and uses no banned verbs
 // (D227). Token-only styling; the headline carries the beta state, and
@@ -23,22 +21,25 @@ import { OAUTH_SCOPE_DISCLOSURE, tokens } from '@declutrmail/shared';
 import { BETA_DENIED_REASON, BETA_DENIED_REASON_PARAM } from '@declutrmail/shared/contracts';
 
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
+import { LAUNCH_STAGE } from '@declutrmail/shared/copy/launch';
+import { redirect } from 'next/navigation';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 import { permissionEntryUrl } from '@/features/marketing/landing/urls';
 import { BetaDeniedTracker } from './beta-denied-tracker';
 
 const { color, font, radius, shadow } = tokens;
 
-// Open beta is the live signup funnel, so /beta is indexable — routed
-// through marketingPageMetadata for the same canonical + OG/Twitter block
-// every marketing page carries. The `?reason=not_invited` variant is the
-// same URL, so the canonical `/beta` collapses it (no duplicate).
-export const metadata: Metadata = marketingPageMetadata({
-  title: 'Open beta — DeclutrMail',
-  description:
-    'DeclutrMail is in open beta. Sign in with Google and start your first Gmail cleanup — no invite needed.',
-  path: '/beta',
-});
+// After GA, keep the OAuth denial route available without advertising
+// the retired organic beta status to search engines.
+export const metadata: Metadata = {
+  ...marketingPageMetadata({
+    title: 'Open beta — DeclutrMail',
+    description:
+      'DeclutrMail is in open beta. Sign in with Google and start your first Gmail cleanup — no invite needed.',
+    path: '/beta',
+  }),
+  robots: { index: LAUNCH_STAGE === 'beta', follow: true },
+};
 
 // support@ is the address the legal pages already publish (D146);
 // the mailbox itself is a tracked FOUNDER-FOLLOWUPS launch item. Was
@@ -93,6 +94,9 @@ export default async function BetaPage({
 }) {
   const params = await searchParams;
   const denied = params[BETA_DENIED_REASON_PARAM] === BETA_DENIED_REASON;
+  // Keep the account-scoped OAuth recovery page, but retire organic beta
+  // visits once the product's declared launch stage is general availability.
+  if (LAUNCH_STAGE === 'ga' && !denied) redirect('/how-it-works');
 
   return (
     <ReadingLayout

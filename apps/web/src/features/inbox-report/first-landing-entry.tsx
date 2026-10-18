@@ -13,6 +13,7 @@ import { getActionFailureCopy } from '@/lib/action-error-copy';
 import { apiGet } from '@/lib/api/client';
 import { isTerminalStatus, type UndoRevertResult } from '@/lib/api/actions';
 import {
+  useUndoStatus,
   useActionStatus,
   useBatchStatus,
   useConfirmUnsubscribeBacklog,
@@ -67,11 +68,31 @@ export function InboxReportFirstLanding(props: {
   const [celebration, setCelebration] = useState<ReportCelebration | null>(null);
   const [undoHidden, setUndoHidden] = useState(false);
   const [revertActionId, setRevertActionId] = useState<string | null>(null);
+  const [revertActionIds, setRevertActionIds] = useState<string[] | undefined>();
+  const [revertMailboxId, setRevertMailboxId] = useState(mailboxId);
+  const ownRevertActionId = useRef<string | null>(null);
+  const mailboxScope = useRef({ id: mailboxId, generation: 0 });
+  if (mailboxScope.current.id !== mailboxId) {
+    mailboxScope.current = { id: mailboxId, generation: mailboxScope.current.generation + 1 };
+  }
   const undoToken = useCelebrationUndoToken(mailboxId, undoHidden ? null : celebration);
   const undoTokenRef = useRef<string | null>(null);
   undoTokenRef.current = undoToken;
   const releaseRef = useRef<() => void>(() => {});
   const refreshAbort = useRef<AbortController | null>(null);
+
+  useEffect(
+    () => () => {
+      mailboxScope.current.generation += 1;
+    },
+    [],
+  );
+  useEffect(() => {
+    setRevertActionId(null);
+    setRevertActionIds(undefined);
+    ownRevertActionId.current = null;
+    setUndoHidden(false);
+  }, [mailboxId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -84,6 +105,7 @@ export function InboxReportFirstLanding(props: {
     setCelebration(null);
     setUndoHidden(true);
     setRevertActionId(null);
+    ownRevertActionId.current = null;
     // The undo POST can resolve before the report rebuild. Refresh again
     // until the count settles, or Home and this panel keep the mid-rebuild read.
     // Unmount and a mailbox switch abort the wait.
@@ -131,43 +153,73 @@ export function InboxReportFirstLanding(props: {
     setUndoHidden(false);
   }, [celebration?.actionId]);
 
-  const revertStatus = useActionStatus(revertActionId, mailboxId);
+  const revertStatus = useUndoStatus(
+    revertMailboxId === mailboxId ? revertActionId : null,
+    mailboxId,
+    revertActionIds,
+  );
   useEffect(() => {
-    if (!revertActionId) return;
+    if (!revertActionId || revertMailboxId !== mailboxId) return;
     if (revertStatus.isError) {
+      if (ownRevertActionId.current === revertActionId)
+        toast(getActionFailureCopy('revert-status'), 'warn');
+      ownRevertActionId.current = null;
       setRevertActionId(null);
+      setUndoHidden(false);
       return;
     }
     const data = revertStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') releaseRef.current();
-    else setRevertActionId(null);
-  }, [revertActionId, revertStatus.data, revertStatus.isError]);
+    else {
+      if (ownRevertActionId.current === revertActionId)
+        toast(getActionFailureCopy('revert-terminal'), 'warn');
+      ownRevertActionId.current = null;
+      setRevertActionId(null);
+      setUndoHidden(false);
+    }
+  }, [revertActionId, revertMailboxId, mailboxId, revertStatus.data, revertStatus.isError]);
 
   useEffect(() => {
     return queryClient.getMutationCache().subscribe((event) => {
       if (event.type !== 'updated' || event.mutation.state.status !== 'success') return;
-      const variables = event.mutation.state.variables as { token?: string } | undefined;
+      const variables = event.mutation.state.variables as
+        { token?: string; mailboxId?: string } | undefined;
       const result = event.mutation.state.data as UndoRevertResult | undefined;
       const token = variables?.token;
       if (!token || token !== undoTokenRef.current || !result) return;
+      if (variables?.mailboxId !== undefined && variables.mailboxId !== mailboxScope.current.id)
+        return;
       if (result.reverted) releaseRef.current();
-      else if (result.actionId) setRevertActionId(result.actionId);
+      else if (result.actionId) {
+        setRevertMailboxId(mailboxScope.current.id);
+        setRevertActionIds(result.actionIds);
+        setRevertActionId(result.actionId);
+      }
     });
   }, [queryClient]);
 
   const watchRevert = (result: UndoRevertResult) => {
     setUndoHidden(true);
     if (result.reverted) releaseRef.current();
-    else if (result.actionId) setRevertActionId(result.actionId);
+    else if (result.actionId) {
+      ownRevertActionId.current = result.actionId;
+      setRevertMailboxId(mailboxId);
+      setRevertActionIds(result.actionIds);
+      setRevertActionId(result.actionId);
+    }
   };
 
   const undoArchive = (token: string) => {
+    const generation = mailboxScope.current.generation;
     revertUndo.mutate(
       { token, mailboxId },
       {
-        onSuccess: (result) => watchRevert(result),
+        onSuccess: (result) => {
+          if (generation === mailboxScope.current.generation) watchRevert(result);
+        },
         onError: (err) => {
+          if (generation !== mailboxScope.current.generation) return;
           toast(getActionFailureCopy('revert-enqueue', { error: err }), 'warn');
         },
       },

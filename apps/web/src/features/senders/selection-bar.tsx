@@ -4,6 +4,7 @@ import Link from 'next/link';
 
 import { tokens } from '@declutrmail/shared';
 import type { TierId } from '@declutrmail/shared/entitlements';
+import { unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
 import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
 
 import {
@@ -132,6 +133,11 @@ export function SelectionBar({
     ) : null;
 
   const verbButton = (verb: SelectionBarVerb, stretch: boolean) => {
+    if (
+      verb === 'Unsubscribe' &&
+      !senders.some((sender) => unsubscribeUnavailableReason(sender.unsubscribeMethod) === null)
+    )
+      return null;
     const n = eligible[verb];
     const entitled = canUseActionSelector(tier, verb, selector);
     const disabled = n === 0 || busy || !entitled;
@@ -152,8 +158,10 @@ export function SelectionBar({
     const countLabel = n === senders.length ? `${n}` : `${n} of ${senders.length}`;
     const exclusionReason =
       verb === 'Unsubscribe'
-        ? 'protected senders and senders without an unsubscribe option are excluded'
-        : 'protected senders are excluded from bulk actions';
+        ? 'protected senders, recorded requests and senders without an unsubscribe option are excluded'
+        : verb === 'Delete'
+          ? 'protected senders and senders with no current emails are excluded'
+          : 'protected senders and senders with no inbox emails are excluded';
     const unitTitle =
       n === senders.length
         ? `${label} ${n} sender${n === 1 ? '' : 's'}`
@@ -253,6 +261,14 @@ export function SelectionBar({
         </div>
         {multiSenderNote}
         {protectedLockNote(false)}
+        {protectedCount === 0 && eligible.Archive === 0 && eligible.Later === 0 && (
+          <span role="note">
+            {eligible.Delete === 0
+              ? 'No current emails to Archive, move to Later, or Delete.'
+              : 'No inbox emails to Archive or move to Later.'}
+          </span>
+        )}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {(['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete'] as const).map((verb) =>
             verbButton(verb, true),

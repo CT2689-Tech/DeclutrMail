@@ -218,6 +218,21 @@ export function unsubscribeBacklogToast(result: UnsubscribeBacklogResult): strin
   return withSkipClauses(base, skipped);
 }
 
+/** A watched one-click result and the move's Undo pill own completion feedback. */
+export function unsubscribeBacklogSubmissionToast(result: UnsubscribeBacklogResult): string {
+  const sender = result.senders[0];
+  if (
+    result.backlog &&
+    result.senders.length === 1 &&
+    sender?.unsubStatus === 'requested' &&
+    sender.executionActionId
+  ) {
+    return '';
+  }
+  // Manual instructions, skips and failed submissions still need a surface.
+  return unsubscribeBacklogToast(result);
+}
+
 /**
  * Activity summary for the same confirmation. One row covers every
  * sender, so any mailto handoff uses the neutral Send wording.

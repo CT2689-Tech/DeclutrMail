@@ -102,6 +102,55 @@ describe('derivePrimaryVerbId — ADR-0019 fact-rule primary (D227 verbs)', () =
 });
 
 describe('SenderActionRow — one-click unsub-ready row', () => {
+  it('disables empty-mail menu actions while retaining explicit Keep', () => {
+    const onAction = vi.fn();
+    render(
+      <SenderActionRow
+        sender={sender({
+          inboxCount: 0,
+          archivedCount: 0,
+          lastDays: 250,
+          unsubscribeMethod: 'none',
+        })}
+        onAction={onAction}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Keep' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'More actions for Acme Deals' }));
+    for (const verb of ['Archive', 'Later', 'Delete']) {
+      const item = screen.getByRole('menuitem', { name: new RegExp(`^${verb}`) });
+      expect(item).toHaveAttribute('aria-disabled', 'true');
+      fireEvent.click(item);
+      fireEvent.keyDown(item, { key: verb[0]!.toLowerCase() });
+    }
+    expect(onAction).not.toHaveBeenCalled();
+  });
+  it('shows accepted status after readback and keeps repeat unsubscribe inert in the menu', () => {
+    const onAction = vi.fn();
+    render(
+      <SenderActionRow
+        sender={sender({
+          unsubscribeMethod: 'one_click',
+          policyType: 'unsubscribe',
+          unsubStatus: 'endpoint_accepted',
+        })}
+        onAction={onAction}
+      />,
+    );
+    expect(screen.getByText('Request accepted').closest('button')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'More actions for Acme Deals' }));
+    const repeat = screen.getByRole('menuitem', { name: /Unsubscribe/ });
+    expect(repeat).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(repeat);
+    expect(onAction).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ verb: 'Keep' }));
+  });
   it('renders Unsubscribe as the primary CTA and the ⋯ popover still lists K/A/U/L/D', () => {
     const onAction = vi.fn();
     const row = sender({ unsubscribeMethod: 'one_click' });
@@ -117,5 +166,24 @@ describe('SenderActionRow — one-click unsub-ready row', () => {
     for (const label of ['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete']) {
       expect(within(menu).getByRole('menuitem', { name: label })).toBeInTheDocument();
     }
+  });
+});
+
+describe('SenderActionRow — relevant actions', () => {
+  it.each(['none', null] as const)(
+    'omits unavailable Unsubscribe from the menu for %s',
+    (unsubscribeMethod) => {
+      const onAction = vi.fn();
+      render(<SenderActionRow sender={sender({ unsubscribeMethod })} onAction={onAction} />);
+      fireEvent.click(screen.getByRole('button', { name: 'More actions for Acme Deals' }));
+      expect(screen.queryByRole('menuitem', { name: /Unsubscribe/ })).toBeNull();
+      fireEvent.keyDown(window, { key: 'u' });
+      expect(onAction).not.toHaveBeenCalled();
+    },
+  );
+  it('states the saved Keep effect', () => {
+    render(<SenderActionRow sender={sender({ policyType: 'keep' })} onAction={vi.fn()} />);
+    expect(screen.getByText('Skipped in Triage')).toBeInTheDocument();
+    expect(screen.queryByText('Kept')).toBeNull();
   });
 });

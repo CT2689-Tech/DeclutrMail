@@ -648,3 +648,23 @@ export const ErrorState: Story<typeof UndoTray> = {
       />,
     ),
 };
+
+/** One confirmed cleanup, with the unresolved request retained beside Undo. */
+export const DeleteWithUnconfirmedUnsubscribe: Story<typeof UndoTray> = {
+  render: () =>
+    frame(
+      <UndoTray
+        dataSource={staticSource([
+          {
+            token: '11111111-1111-4111-8111-111111111111',
+            actionKind: 'delete',
+            createdAt: ISO_NOW,
+            expiresAt: SEVEN_DAYS_OUT,
+            affectedCount: 56,
+            note: 'Unsubscribe unconfirmed — watch for new email.',
+            noteTone: 'attention',
+          },
+        ])}
+      />,
+    ),
+};

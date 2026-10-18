@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useId, useRef } from 'react';
-import { Button, Kbd, Tooltip, tokens } from '@declutrmail/shared';
-import { unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
+import { Button, Kbd, Pill, Tooltip, tokens } from '@declutrmail/shared';
+import { actionHelpCopy, unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
 import {
   canArchive,
+  currentMailUnavailableReason,
   canDelete,
   canLater,
   canUnsubscribe,
@@ -13,17 +14,9 @@ import {
   type Sender,
 } from '../data';
 import { isTypingTarget } from '../keyboard';
-import {
-  isRowBusy,
-  RowActivityPill,
-  RowActivityStatus,
-  rowStatusColor,
-  rowStatusLabel,
-  STATUS_BUTTON_STYLE,
-  takesButtonSlot,
-  useRowActivity,
-} from '../row-activity';
+import { isRowBusy, RowActivityPill, useRowActivity } from '../row-activity';
 import type { Verdict } from './types';
+import { unsubscribeControlStatus } from '../unsub-status';
 
 const { color, font } = tokens;
 
@@ -49,7 +42,11 @@ const { color, font } = tokens;
  * "Always-Keep" button is intentionally absent; Protect already serves
  * that safety intent more clearly.
  */
-const VERBS: ReadonlyArray<{ verb: ActionVerb; shortcut: string; verdict: Verdict }> = [
+const VERBS: ReadonlyArray<{
+  verb: Exclude<ActionVerb, 'Protect'>;
+  shortcut: string;
+  verdict: Verdict;
+}> = [
   { verb: 'Keep', shortcut: 'K', verdict: 'keep' },
   { verb: 'Archive', shortcut: 'A', verdict: 'archive' },
   { verb: 'Unsubscribe', shortcut: 'U', verdict: 'unsubscribe' },
@@ -84,6 +81,7 @@ export function ActionToolbar({
 }) {
   const reasonId = useId();
   const unavailableReason = unsubscribeUnavailableReason(sender.unsubscribeMethod);
+  const unsubscribeStatus = unsubscribeControlStatus(sender);
   // This sender's own in-flight / finished action (see `row-activity`).
   const activity = useRowActivity(sender.id);
   const busy = isRowBusy(activity);
@@ -124,64 +122,64 @@ export function ActionToolbar({
         fontFamily: font.sans,
       }}
     >
-      {VERBS.map(({ verb, shortcut }) => {
-        const disabled = isVerbUnavailable(verb, sender);
-        const reason = verb === 'Unsubscribe' ? unavailableReason : null;
-        const status =
-          activity && takesButtonSlot(activity) && activity.verb === verb.toLowerCase()
-            ? activity
-            : null;
-        const again = status?.phase === 'done';
-        const button = (describedBy?: string) => (
-          <Button
-            tone={status ? 'ghost' : 'default'}
-            size="md"
-            inert={busy || disabled}
-            style={{
-              ...(verb === 'Delete' && !disabled ? { color: color.dangerText } : {}),
-              ...(status
-                ? {
-                    ...STATUS_BUTTON_STYLE,
-                    color: rowStatusColor(status),
-                    ...(again ? { cursor: 'pointer' } : {}),
-                  }
-                : {}),
-            }}
-            {...(describedBy ? { ariaDescribedBy: describedBy } : {})}
-            onClick={() => onAction({ verb, senders: [sender] })}
-            {...(status || !shortcuts
-              ? {}
-              : {
-                  iconRight: (
-                    <span className="dm-key-hint">
-                      <Kbd>{shortcut}</Kbd>
-                    </span>
-                  ),
-                })}
-            ariaLabel={
-              status
-                ? again
-                  ? `${rowStatusLabel(status)} — ${verb} again${shortcuts ? ` (${shortcut})` : ''}`
-                  : rowStatusLabel(status)
-                : shortcuts
-                  ? `${verb} (${shortcut})`
-                  : verb
-            }
-          >
-            {status ? <RowActivityStatus activity={status} /> : verb}
-          </Button>
-        );
-        return (
-          <span key={verb} data-action={verb.toLowerCase()}>
-            {reason ? (
-              <Tooltip content={reason}>{({ describedBy }) => button(describedBy)}</Tooltip>
-            ) : (
-              button()
-            )}
-          </span>
-        );
-      })}
-      {unavailableReason && (
+      {VERBS.filter(({ verb }) => verb !== 'Unsubscribe' || unavailableReason === null).map(
+        ({ verb, shortcut }) => {
+          const disabled = isVerbUnavailable(verb, sender);
+          const reason =
+            currentMailUnavailableReason(verb, sender) ??
+            (verb === 'Unsubscribe'
+              ? unsubscribeStatus
+                ? `${unsubscribeStatus.label}. ${unsubscribeStatus.title}`
+                : unavailableReason
+              : (verb === 'Archive' || verb === 'Later') && sender.inboxCount === 0
+                ? 'No inbox emails to move.'
+                : null);
+          const help =
+            reason ??
+            actionHelpCopy(
+              verb.toLowerCase() as 'keep' | 'archive' | 'later' | 'delete' | 'unsubscribe',
+            );
+          const button = (describedBy?: string) => (
+            <Button
+              tone="default"
+              size="md"
+              inert={busy || disabled}
+              style={{
+                ...(verb === 'Delete' && !disabled ? { color: color.dangerText } : {}),
+              }}
+              {...(describedBy ? { ariaDescribedBy: describedBy } : {})}
+              onClick={() => onAction({ verb, senders: [sender] })}
+              {...(!shortcuts
+                ? {}
+                : {
+                    iconRight: (
+                      <span className="dm-key-hint">
+                        <Kbd>{shortcut}</Kbd>
+                      </span>
+                    ),
+                  })}
+              ariaLabel={shortcuts ? `${verb} (${shortcut})` : verb}
+            >
+              {verb}
+            </Button>
+          );
+          return (
+            <span key={verb} data-action={verb.toLowerCase()}>
+              {help ? (
+                <Tooltip content={help}>{({ describedBy }) => button(describedBy)}</Tooltip>
+              ) : (
+                button()
+              )}
+            </span>
+          );
+        },
+      )}
+      {unsubscribeStatus && (
+        <span style={{ flexBasis: '100%', gridColumn: '1 / -1' }} title={unsubscribeStatus.title}>
+          <Pill>{unsubscribeStatus.label}</Pill>
+        </span>
+      )}
+      {unavailableReason && !unsubscribeStatus && (
         <span
           id={reasonId}
           role="note"
@@ -196,16 +194,50 @@ export function ActionToolbar({
           {unavailableReason}
         </span>
       )}
-      {activity && !takesButtonSlot(activity) && <RowActivityPill activity={activity} />}
+      {sender.inboxCount === 0 && (
+        <span
+          className="dm-action-reason"
+          style={{
+            flexBasis: '100%',
+            gridColumn: '1 / -1',
+            fontSize: tokens.text.sm,
+            color: color.fgMuted,
+          }}
+        >
+          {sender.archivedCount === 0
+            ? 'No current emails to Archive, move to Later, or Delete.'
+            : 'No inbox emails to Archive or move to Later.'}
+        </span>
+      )}
+      <span
+        style={{
+          flexBasis: '100%',
+          gridColumn: '1 / -1',
+          fontSize: tokens.text.sm,
+          color: color.fgSoft,
+        }}
+      >
+        Keep skips this sender in Triage; Protected excludes bulk and automatic cleanup.
+      </span>
+      {activity &&
+        !(
+          activity.verb === 'keep' &&
+          activity.phase === 'done' &&
+          sender.policyType === 'keep'
+        ) && (
+          <span style={{ flexBasis: '100%', gridColumn: '1 / -1' }}>
+            <RowActivityPill activity={activity} />
+          </span>
+        )}
     </div>
   );
 }
 
 function isVerbUnavailable(verb: ActionVerb, sender: Sender): boolean {
   return (
-    (verb === 'Archive' && !canArchive(sender)) ||
+    (verb === 'Archive' && (!canArchive(sender) || sender.inboxCount === 0)) ||
     (verb === 'Unsubscribe' && !canUnsubscribe(sender)) ||
-    (verb === 'Later' && !canLater(sender)) ||
+    (verb === 'Later' && (!canLater(sender) || sender.inboxCount === 0)) ||
     (verb === 'Delete' && !canDelete(sender))
   );
 }

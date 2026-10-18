@@ -308,6 +308,86 @@ describe('TriageUndoTray (D35)', () => {
     expect(message).not.toMatch(/inbox/i);
   });
 
+  it.each(['done', 'failed'] as const)(
+    'does not announce Undo until every restore job ends (%s)',
+    async (outcome) => {
+      await renderTrayWithDecisions();
+      let finished = false;
+      let groupReads = 0;
+      resetFetchStub();
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/undo',
+          respond: () =>
+            jsonOk({
+              data: finished ? [ENTRY_OLDER] : [ENTRY_NEWEST, ENTRY_OLDER],
+              meta: { nextCursor: null, limit: 50 },
+            }),
+        },
+        {
+          method: 'POST',
+          path: `/api/undo/${ENTRY_NEWEST.token}`,
+          respond: () =>
+            jsonOk({
+              data: {
+                token: ENTRY_NEWEST.token,
+                actionKind: 'delete',
+                reverted: false,
+                expired: false,
+                revertedAt: null,
+                actionId: 'primary-reverse',
+                actionIds: ['primary-reverse', 'sibling-reverse'],
+              },
+            }),
+        },
+        // The old primary-only watcher would immediately say "Undone".
+        {
+          method: 'GET',
+          path: '/api/actions/primary-reverse',
+          respond: () =>
+            jsonOk({
+              data: {
+                actionId: 'primary-reverse',
+                status: 'done',
+                undoRevertedAt: '2026-10-15T12:00:00.000Z',
+              },
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/actions/undo-status',
+          respond: () => {
+            groupReads += 1;
+            return jsonOk({
+              data: {
+                actionId: 'primary-reverse',
+                status: finished ? outcome : 'executing',
+                direction: 'reverse',
+                requestedCount: 2,
+                affectedCount: finished ? 2 : 1,
+                undoRevertedAt: finished && outcome === 'done' ? '2026-10-15T12:00:00.000Z' : null,
+                errorCode: finished && outcome === 'failed' ? 'GmailError' : null,
+              },
+            });
+          },
+        },
+      ]);
+      fireEvent.keyDown(window, { key: 'z' });
+      await waitFor(() => expect(groupReads).toBe(1));
+      expect(h.toast).not.toHaveBeenCalled();
+      expect(document.querySelector('[data-dm-undo-tray]')).toHaveTextContent('Undoing…');
+      finished = true;
+      await waitFor(() => expect(h.toast).toHaveBeenCalled(), { timeout: 2500 });
+      const [message, tone] = h.toast.mock.calls.at(-1) as [string, string];
+      expect(tone).toBe(outcome === 'done' ? 'success' : 'warn');
+      expect(/undone/i.test(message)).toBe(outcome === 'done');
+      expect(h.toast.mock.calls.filter(([, callTone]) => callTone === 'success')).toHaveLength(
+        outcome === 'done' ? 1 : 0,
+      );
+    },
+  );
+
   it('per-row Undo click reverts that token', async () => {
     const { posts } = await renderTrayWithDecisions();
 
@@ -758,7 +838,11 @@ describe('TriageUndoTray — a bulk action is one decision', () => {
     await waitFor(() => expect(state.posts).toEqual([`/api/undo/${T_RETAIL}/action`]));
     // While it confirms: that sender is gone from the decision, and the
     // headline no longer counts mail that is on its way back.
-    await waitFor(() => expect(screen.queryByText(/RetailMeNot/)).toBeNull());
+    await waitFor(() =>
+      expect(document.querySelector('[data-dm-undo-tray]')).toHaveTextContent(
+        'Undoing… · RetailMeNot',
+      ),
+    );
     // (Scoped to the visible tray: the screen-reader region repeats the headline.)
     const tray = document.querySelector<HTMLElement>('[data-dm-undo-tray]')!;
     expect(tray).toHaveTextContent(/251 emails/);

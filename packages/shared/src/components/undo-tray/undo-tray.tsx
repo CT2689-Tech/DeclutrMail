@@ -10,6 +10,7 @@ import {
 } from 'react';
 
 import { WS2_COPY } from '../../copy/launch/ws2';
+import { FEEDBACK_SURFACE } from '../feedback-surface';
 import { Button } from '../button';
 import { InlineProgress } from '../inline-progress/inline-progress';
 import { COOKIE_BANNER_INSET_EVENT, bottomClearOfCookieBanner } from '../../tokens/overlay-layers';
@@ -192,7 +193,7 @@ function headlineSpeech(headline: TrayHeadline | null): string {
     typeof entry.affectedCount === 'number' && entry.mixedKinds !== true
       ? emailCount(entry.affectedCount)
       : null;
-  const note = entry.note ? ` ${entry.note}.` : '';
+  const note = entry.note ? ` ${entry.note.replace(/[.!?]$/, '')}.` : '';
   return `${doneLine(entry.actionKind, total)}.${note} Undo available.`;
 }
 
@@ -254,18 +255,22 @@ function UndoTrayBody({
   const [held, setHeld] = useState(false);
   const [compact, setCompact] = useState(defaultCompact);
   const key = headlineKey(pickHeadline(notices, source.entries));
-  const settled = key.startsWith('d:');
+  const headline = pickHeadline(notices, source.entries);
+  const settled = headline?.kind === 'decision' && headline.entry.noteTone !== 'attention';
   // A finished action says its piece, then gets out of the way. Anything
   // running or wrong stays put; so does a pill being read or reached for.
   const firstRun = useRef(true);
   useEffect(() => {
-    // `defaultCompact` holds until something actually changes.
+    // New results and opening/closing history reset the size. Hover or
+    // focus must not replace the compact opener before its click lands.
     if (!(firstRun.current && defaultCompact)) setCompact(false);
     firstRun.current = false;
+  }, [key, defaultCompact, open]);
+  useEffect(() => {
     if (!settled || held || open) return;
     const timer = setTimeout(() => setCompact(true), TRAY_COMPACT_AFTER_MS);
     return () => clearTimeout(timer);
-  }, [key, settled, held, open, defaultCompact]);
+  }, [key, settled, held, open]);
 
   // Render-order guards — order matters to avoid flicker between
   // an in-progress refetch and a transient error.
@@ -342,7 +347,6 @@ function UndoTrayBody({
     );
   }
 
-  const headline = pickHeadline(notices, source.entries);
   const hasMore =
     notices.length + source.entries.length > 1 ||
     (headline?.kind === 'decision' && isBulkDecision(headline.entry));
@@ -358,13 +362,7 @@ function UndoTrayBody({
     right: 16,
     marginInline: 'auto',
     minWidth: 0,
-    // A floating object: raised card, no outline.
-    background: color.card,
-    border: 'none',
-    boxShadow: shadow.pop,
-    fontFamily: font.sans,
-    fontSize: text.base,
-    color: color.fg,
+    ...FEEDBACK_SURFACE,
     zIndex: 50,
   };
 
@@ -399,7 +397,7 @@ function UndoTrayBody({
             onClick={() => setOpen(true)}
             ariaLabel={`Show ${source.entries.length} recent ${source.entries.length === 1 ? 'action' : 'actions'} — undo available`}
           >
-            Undo · {source.entries.length}
+            Recent actions ({source.entries.length})
           </Button>
         ) : (
           <>
@@ -531,7 +529,7 @@ const headlineKey = (h: TrayHeadline | null): string =>
     ? ''
     : h.kind === 'notice'
       ? `n:${h.notice.id}`
-      : `d:${h.entry.groupId ?? h.entry.token}`;
+      : `d:${h.entry.groupId ?? h.entry.token}:${h.entry.noteTone ?? ''}:${h.entry.note ?? ''}`;
 
 function decisionSenderCount(entry: UndoTrayEntry): number {
   const members = entry.members ?? [];
@@ -605,11 +603,10 @@ function Headline({
           <InlineProgress pending={working} mode="trailing" pendingLabel="Working">
             <span>
               {notice.label}
+              {notice.who ? ` · ${notice.who}` : null}
               {notice.detail ? (
                 // Ticks every poll; announcing each tick would bury a screen reader.
                 <span aria-live="off">{` · ${notice.detail}`}</span>
-              ) : notice.who ? (
-                ` · ${notice.who}`
               ) : null}
               {running > 1 ? ` · +${running - 1} more` : ''}
             </span>
@@ -646,7 +643,11 @@ function Headline({
       <span style={{ minWidth: 0 }}>
         {doneLine(entry.actionKind, total)}
         {whose ? <span style={{ color: color.fgSoft }}>{` · ${whose}`}</span> : null}
-        {entry.note ? <span style={{ color: color.fgSoft }}>{` · ${entry.note}`}</span> : null}
+        {entry.note ? (
+          <span
+            style={{ color: entry.noteTone === 'attention' ? color.fg : color.fgSoft }}
+          >{` · ${entry.note}`}</span>
+        ) : null}
       </span>
       <span
         style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}
@@ -892,8 +893,8 @@ function NoticeRow({ notice }: { notice: UndoTrayNotice }) {
   return (
     <li
       data-dm-tray-notice={notice.tone}
-      // A failure interrupts; progress and no-ops wait their turn.
-      role={attention ? 'alert' : 'status'}
+      // Progress/info use the tray's always-mounted announcer, once.
+      role={attention ? 'alert' : undefined}
       style={{
         display: 'flex',
         alignItems: 'center',

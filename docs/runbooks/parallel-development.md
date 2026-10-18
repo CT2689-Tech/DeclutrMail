@@ -64,11 +64,14 @@ skip Next's lint and type pass: the `lint` job runs the same ESLint config, and
 pass `CI required`, with coverage assertions rejecting missing, empty or skipped
 reports.
 
-Lighthouse runs in its own `lighthouse` job, one leg per URL in
-`apps/web/lighthouserc.cjs`, against build-web's uploaded build. Every leg keeps
-three measurements per page and the same thresholds, and the job fails if its
-legs and the config's URL list disagree, if a URL has no assertions or lacks
-D160's performance floor, or if a leg writes no reports. API and worker tests
+Lighthouse uses two `lighthouse` runners against build-web's uploaded build:
+the slower homepage runs alone; pricing, security and the how-to page run
+serially on the other runner. Every URL in `apps/web/lighthouserc.cjs` keeps
+three measurements and the same thresholds. The selector and contract tests
+reject a partition that disagrees with the configured URLs or leaves a URL
+without assertions or D160's performance floor. Each page keeps its own report
+directory; an assertion failure or missing report fails the group while the
+remaining pages still collect evidence. API and worker tests
 run in three shards each and web tests in two. API shards split by the per-file
 durations in `apps/api/vitest.shard-weights.json`; refresh them with
 `scripts/vitest-weighted-shard.mjs --update`, passing reports from at least two
@@ -162,9 +165,40 @@ present, because a second deployment posts pending and the queue waits on it.
 Creating one remains the recovery path when Vercel has posted nothing. CI
 still gates the merge.
 
-Full post-merge CI remains enabled. A queue candidate and a squash commit have
-separate identities, and there is no verified artifact-reuse mechanism yet.
-Never skip post-merge validation just because a PR or a nearby commit was green.
+Post-merge CI remains enabled and reports the same required checks. The queue
+and main sometimes use the **exact same commit SHA** (observed in queue run
+38691424940 and main run 38692088406). On the first push attempt only, main may
+reuse the tests, browser lanes and Lighthouse results from that commit's newest
+successful merge-group CI run. It never uses a PR head, equivalent tree, nearby
+commit, arbitrary status, or a previous main run as proof.
+
+`scripts/ci-queue-reuse.mjs` checks the repository IDs, active workflow ID/path,
+exact commit, main queue ref, successful completed run less than 24 hours old,
+and all 25 expected jobs from the same attempt. Every job must succeed; both
+aggregate steps must have passed, and the source queue's reuse lookup must have
+been skipped. An incomplete inventory, changed matrix, older green behind a
+newer failed run, mixed attempts, expired proof or API error selects full CI.
+PR and queue execution retain their existing coverage, and manual dispatch or
+rerunning all push CI jobs forces fresh execution.
+
+`Test` and `CI required` independently re-read the source and compare the receipt
+before allowing those declared jobs to skip. If evidence changes or disappears
+after selection, the aggregate fails; use **Re-run all jobs** or dispatch CI manually to
+execute everything. Re-running only failed jobs can retain the successful
+selector's old receipt, so it is not a full-execution recovery path. Main still runs typecheck, lint and its push-base guard
+hooks, formatting, the production build/bundle/prerender budgets and generated
+route types. Its bundle baseline continues to be freshly published. CodeQL
+remains separately required. No branch requirement, token write permission,
+assertion threshold or release gate changes. Run summaries link the source
+attempt and identify reused validation rather than claiming new execution.
+
+The readers of this relocated validation are the initial suite selector, both
+required aggregates, branch protection/merge queue and the exact-push-CI release
+waiter. The selector falls back to full execution on stale/unreadable evidence;
+aggregates block on it. Branch protection still requires the same producers,
+and the release waiter still requires a successful CI push on its exact SHA.
+It never treats the queue run alone as permission to deploy. Review this reader
+chain whenever changing the reuse contract.
 
 Automatic Cloud Run releases wait for successful push CI on their exact main
 commit. While waiting, an intermediate release may skip itself only if a newer

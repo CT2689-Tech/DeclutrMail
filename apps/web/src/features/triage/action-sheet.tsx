@@ -3,16 +3,13 @@
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import {
-  Avatar,
-  Button,
-  PreviewSheet,
-  SheetCheckbox,
-  SheetSegmented,
-  tokens,
-} from '@declutrmail/shared';
+import { Avatar, Button, PreviewSheet, SheetSegmented, tokens } from '@declutrmail/shared';
 import { isPluralCopy, pluralCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
-import { unsubscribeTitle } from '@/features/senders/unsubscribe-backlog/preview-copy';
+import {
+  unsubscribeButton,
+  unsubscribeTitle,
+} from '@/features/senders/unsubscribe-backlog/preview-copy';
+import { ActionReachControl, DELETE_ARCHIVED_HINT } from '@/components/action-scope-controls';
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import type { ActionReach } from '@declutrmail/shared/contracts';
@@ -286,7 +283,7 @@ export function ActionSheet({
     reachControl.reach === 'inbox_only' &&
     reachControl.inboxCount === 0 &&
     (reachControl.allMailCount ?? 0) > 0
-      ? WS5_COPY['f1.preview.archived.hint']
+      ? DELETE_ARCHIVED_HINT
       : null;
 
   const emailMeter = cleanupSummary.data?.metered === true;
@@ -382,13 +379,7 @@ export function ActionSheet({
         primary={{
           label:
             verb === 'Unsubscribe'
-              ? effectiveMode === 'delete'
-                ? WS5_COPY[isProtectedRow ? 'f1.button.delete.protected' : 'f1.button.delete']
-                : effectiveMode === 'archive'
-                  ? WS5_COPY[isProtectedRow ? 'f1.button.archive.protected' : 'f1.button.archive']
-                  : WS5_COPY[
-                      isProtectedRow ? 'f1.button.unsubOnly.protected' : 'f1.button.unsubOnly'
-                    ]
+              ? unsubscribeButton(effectiveMode, countKnown, isProtectedRow)
               : isProtectedRow
                 ? `${verb} anyway`
                 : facts.primaryLabel,
@@ -536,14 +527,11 @@ export function ActionSheet({
             )}
 
             {showReach && (
-              <SheetCheckbox
-                label={WS2_COPY.simplify.confirm.includeArchived}
-                checked={reachControl.reach === 'all_mail'}
-                disabled={reachControl.allMailCount === null && reachControl.reach !== 'all_mail'}
-                onChange={(next) => {
-                  if (next && reachControl.allMailCount === null) return;
-                  reachControl.onChange(next ? 'all_mail' : 'inbox_only');
-                }}
+              <ActionReachControl
+                value={reachControl.reach}
+                inboxCount={reachControl.inboxCount}
+                allMailCount={reachControl.allMailCount}
+                onChange={reachControl.onChange}
               />
             )}
 

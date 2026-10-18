@@ -18,7 +18,7 @@ import {
 import { undoKeys } from '@/features/undo/query-keys';
 import { ME_QUERY_KEY } from '@/features/auth/api/me-contract';
 import { undoEntriesQueryOptions, type UndoWireEntry } from '@/features/undo/query-options';
-import { useActionStatus, useRevertUndo, useRevertUndoMember } from '@/lib/api/use-action';
+import { useUndoStatus, useRevertUndo, useRevertUndoMember } from '@/lib/api/use-action';
 import { ApiError, apiGet } from '@/lib/api/client';
 import { getBatchStatus, isTerminalStatus, type InFlightActionGroup } from '@/lib/api/actions';
 import {
@@ -60,6 +60,10 @@ const INFO_NOTICE_MS = 10_000;
  * decision-grouped list sends no `groupId`; there one token IS one row.
  */
 const decisionId = (entry: UndoTrayEntry): string => entry.groupId ?? entry.token;
+
+/** Membership can grow after the move committed, even between two terminal polls. */
+const groupSignature = (group: InFlightActionGroup): string =>
+  `${group.total}:${group.done}:${group.failed}:${group.mixedVerbs}`;
 
 /**
  * Active undo tokens for the current mailbox (D35 tray data source).
@@ -138,8 +142,11 @@ export function ProductUndoTray({
     /** Set when only ONE sender of the decision is being reverted. */
     memberToken: string | null;
     actionId: string | null;
+    actionIds?: string[] | undefined;
+    who: string | null;
+    confirmed?: boolean;
   } | null>(null);
-  const revertStatus = useActionStatus(inFlight?.actionId ?? null, mailboxId);
+  const revertStatus = useUndoStatus(inFlight?.actionId ?? null, mailboxId, inFlight?.actionIds);
   const mailboxGeneration = useRef(0);
 
   /**
@@ -161,7 +168,7 @@ export function ProductUndoTray({
   });
 
   /** Endings already handled — a just-ended group stays listed for ~60s. */
-  const reported = useRef(new Set<string>());
+  const reported = useRef(new Map<string, string>());
   /**
    * Decisions this SESSION saw in flight. They are exempt from the
    * per-screen baseline below: with Undo living only in the pill, opening
@@ -192,6 +199,7 @@ export function ProductUndoTray({
     mailboxGeneration.current += 1;
     setInFlight(null);
     setOutcomes([]);
+    reported.current.clear();
     return () => {
       mailboxGeneration.current += 1;
     };
@@ -205,6 +213,9 @@ export function ProductUndoTray({
     const generation = mailboxGeneration.current;
     const running = new Map(groups.filter(isRunning).map((g) => [g.groupId, g]));
     const listed = new Set(groups.map((g) => g.groupId));
+    // The move can finish before its unsubscribe execution is linked.
+    // Seeing the same decision running again reopens its terminal report.
+    for (const id of running.keys()) reported.current.delete(id);
     const before = seenRunning.current.mailboxId === mailboxId ? seenRunning.current.groups : null;
     seenRunning.current = { mailboxId, groups: running };
     setSessionGroups((prev) =>
@@ -218,9 +229,9 @@ export function ProductUndoTray({
       // …or listed as just ended — including one never seen running (quicker
       // than a poll, or finished while this tray was not mounted).
       ...groups.filter((g) => !isRunning(g)),
-    ].filter((g) => !reported.current.has(g.groupId));
+    ].filter((g) => reported.current.get(g.groupId) !== groupSignature(g));
     if (stopped.length === 0) return;
-    for (const g of stopped) reported.current.add(g.groupId);
+    for (const g of stopped) reported.current.set(g.groupId, groupSignature(g));
     // Whatever it changed, every list that shows mail or undo is stale now.
     void invalidateAfterUndo(qc, mailboxId, refreshAbort.current?.signal);
     // …and so is the cleanup allowance: a skip as Protected gives a Free
@@ -231,12 +242,16 @@ export function ProductUndoTray({
         .catch(() => null)
         .then((status) => {
           if (mailboxGeneration.current !== generation) return;
+          if (status && !isTerminalStatus(status.status)) {
+            reported.current.delete(group.groupId);
+            return;
+          }
           const notice = outcomeNotice(group, status);
           if (!notice) return;
           setOutcomes((prev) => [notice, ...prev.filter((n) => n.id !== notice.id)].slice(0, 3));
           // "Nothing to archive" is a note, not a problem: it must not sit
           // on the pill forever, ahead of the next action's Undo.
-          if (notice.tone === 'info') {
+          if (notice.tone === 'info' && !notice.groupId) {
             setTimeout(
               () => setOutcomes((prev) => prev.filter((n) => n.id !== notice.id)),
               INFO_NOTICE_MS,
@@ -261,9 +276,22 @@ export function ProductUndoTray({
       // The Archived banner is local to the report panel. Undo from the
       // tray never mounts that panel's own release path, so clear it here.
       if (mailboxId) clearReportCelebration(mailboxId);
-      setInFlight((current) => (current ? { ...current, actionId: null } : current));
+      setInFlight((current) =>
+        current ? { ...current, actionId: null, confirmed: true } : current,
+      );
       void invalidateAfterUndo(qc, mailboxId, refreshAbort.current?.signal).finally(() => {
-        if (mailboxGeneration.current === generation) setInFlight(null);
+        if (mailboxGeneration.current !== generation) return;
+        // Once Undo removes the decision, its attached unsubscribe result
+        // must not turn into a standalone headline ahead of the next action.
+        const remaining = qc.getQueryData<UndoWireEntry[]>(undoKeys.tray(mailboxId));
+        if (remaining)
+          setOutcomes((prev) =>
+            prev.filter(
+              (notice) =>
+                !notice.groupId || remaining.some((entry) => decisionId(entry) === notice.groupId),
+            ),
+          );
+        setInFlight(null);
       });
     },
     [mailboxId, qc],
@@ -298,6 +326,12 @@ export function ProductUndoTray({
       const hidden = {
         id: entry ? decisionId(entry) : token,
         memberToken: scope === 'member' ? token : null,
+        who:
+          scope === 'member'
+            ? (entry?.members?.find((m) => m.token === token)?.senderName ?? null)
+            : (entry?.senderCount ?? 0) > 1
+              ? `${entry!.senderCount} senders`
+              : (entry?.members?.[0]?.senderName ?? null),
       };
       setInFlight({ ...hidden, actionId: null });
       try {
@@ -318,7 +352,7 @@ export function ProductUndoTray({
           releaseAfterRefresh(generation);
         } else if (res.actionId) {
           // Reverse job enqueued — poll it (effect below).
-          setInFlight({ ...hidden, actionId: res.actionId });
+          setInFlight({ ...hidden, actionId: res.actionId, actionIds: res.actionIds });
         } else {
           // BE-designed terminal: nothing to revert.
           toast('Nothing to undo — already restored.', 'info');
@@ -408,6 +442,24 @@ export function ProductUndoTray({
     .filter(
       (entry) => !baseline?.tokens.has(decisionId(entry)) || sessionGroups.has(decisionId(entry)),
     )
+    // A move may earn Undo before its linked unsubscribe finishes. The
+    // running line owns the decision until BOTH outcomes are known.
+    .filter(
+      (entry) =>
+        !(inFlightQuery.data ?? []).some(
+          (group) => isRunning(group) && group.groupId === decisionId(entry),
+        ),
+    )
+    .map((entry): UndoTrayEntry => {
+      const outcome = outcomes.find((notice) => notice.groupId === decisionId(entry));
+      return outcome
+        ? {
+            ...entry,
+            note: [entry.note, outcome.label].filter(Boolean).join(' · '),
+            noteTone: outcome.tone === 'attention' ? 'attention' : 'info',
+          }
+        : entry;
+    })
     .flatMap((entry): UndoTrayEntry[] => {
       if (inFlight == null || decisionId(entry) !== inFlight.id) return [entry];
       if (inFlight.memberToken === null) return [];
@@ -459,10 +511,35 @@ export function ProductUndoTray({
   }, [enableShortcut, entries, pendingAction, revertToken]);
 
   const notices: UndoTrayNotice[] = [
-    ...outcomes.map((notice) => ({
-      ...notice,
-      onDismiss: () => setOutcomes((prev) => prev.filter((n) => n.id !== notice.id)),
-    })),
+    ...(inFlightQuery.unconfirmedAcceptance && !(inFlightQuery.data ?? []).some(isRunning)
+      ? [
+          {
+            id: 'progress-unavailable',
+            tone: 'attention' as const,
+            label: 'Couldn’t load progress — check Activity before retrying.',
+          },
+        ]
+      : []),
+    ...(inFlight
+      ? [
+          {
+            id: `undo:${inFlight.id}`,
+            tone: 'working' as const,
+            label: inFlight.confirmed ? 'Refreshing…' : 'Undoing…',
+            who: inFlight.who,
+          },
+        ]
+      : []),
+    ...outcomes
+      .filter((notice) => notice.groupId !== inFlight?.id || inFlight?.memberToken !== null)
+      .filter(
+        (notice) =>
+          !notice.groupId || !entries.some((entry) => decisionId(entry) === notice.groupId),
+      )
+      .map((notice) => ({
+        ...notice,
+        onDismiss: () => setOutcomes((prev) => prev.filter((n) => n.id !== notice.id)),
+      })),
     ...(inFlightQuery.data ?? [])
       .filter(isRunning)
       // A failed read: what we hold is the last thing we knew.

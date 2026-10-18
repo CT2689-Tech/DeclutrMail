@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { tokens } from '@declutrmail/shared';
 import { ActionToolbar } from './action-toolbar';
+import { RowActivityProvider } from '../row-activity';
 import { makeSender } from '../testing/make-sender';
 
 const sender: typeof makeSender = (overrides = {}) =>
@@ -17,10 +18,78 @@ const sender: typeof makeSender = (overrides = {}) =>
   });
 
 describe('ActionToolbar — neutral actions', () => {
+  it.each(['Archive', 'Later', 'Delete'] as const)(
+    'blocks %s click and shortcut when current mail is empty',
+    (verb) => {
+      const onAction = vi.fn();
+      render(
+        <ActionToolbar
+          sender={sender({ inboxCount: 0, archivedCount: 0, totalReceived: 565 })}
+          onAction={onAction}
+          shortcuts
+        />,
+      );
+      const control = screen.getByRole('button', { name: `${verb} (${verb[0]})` });
+      expect(control).toHaveAttribute('aria-disabled', 'true');
+      fireEvent.click(control);
+      fireEvent.keyDown(window, { key: verb[0]!.toLowerCase() });
+      expect(onAction).not.toHaveBeenCalled();
+      expect(
+        screen.getByText(/No current emails to Archive, move to Later, or Delete/),
+      ).toBeVisible();
+      fireEvent.click(screen.getByRole('button', { name: 'Keep (K)' }));
+      expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ verb: 'Keep' }));
+    },
+  );
+  it.each([
+    ['requested', 'Requesting…'],
+    ['endpoint_accepted', 'Request accepted'],
+    ['user_marked_sent', 'Marked sent'],
+  ] as const)('separates %s from the disabled verb and shortcut', (unsubStatus, label) => {
+    const onAction = vi.fn();
+    render(
+      <ActionToolbar
+        sender={sender({
+          unsubscribeMethod: 'one_click',
+          policyType: 'unsubscribe',
+          unsubStatus,
+        })}
+        onAction={onAction}
+        shortcuts
+      />,
+    );
+    expect(screen.getByText(label).closest('button')).toBeNull();
+    const accepted = screen.getByRole('button', { name: 'Unsubscribe (U)' });
+    expect(accepted).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(accepted);
+    fireEvent.keyDown(window, { key: 'u' });
+    expect(onAction).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Archive (A)' }));
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ verb: 'Archive' }));
+  });
+
+  it.each(['failed', 'unconfirmed', 'action_required', 'draft_opened', null] as const)(
+    'keeps explicit recovery available for %s',
+    (unsubStatus) => {
+      const onAction = vi.fn();
+      render(
+        <ActionToolbar
+          sender={sender({
+            unsubscribeMethod: 'one_click',
+            policyType: 'unsubscribe',
+            unsubStatus,
+          })}
+          onAction={onAction}
+          shortcuts
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe (U)' }));
+      expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ verb: 'Unsubscribe' }));
+    },
+  );
   it('does not describe unchecked unsubscribe availability as a missing link', () => {
     render(<ActionToolbar sender={sender({ unsubscribeMethod: null })} onAction={vi.fn()} />);
-    const unsubscribe = screen.getByRole('button', { name: 'Unsubscribe' });
-    expect(unsubscribe).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.queryByRole('button', { name: 'Unsubscribe' })).toBeNull();
     expect(screen.getByRole('note')).toHaveTextContent(/not checked|hasn’t been checked/i);
     expect(screen.getByRole('button', { name: 'Keep' }).title).not.toMatch(/offer no/);
   });
@@ -74,7 +143,13 @@ describe('ActionToolbar — neutral actions', () => {
     // told every user it lived on Sender Detail. Nothing pinned a
     // verb count on any surface, which is why the gap survived every gate
     // — this assertion is that missing tripwire.
-    render(<ActionToolbar sender={sender()} onAction={() => {}} shortcuts />);
+    render(
+      <ActionToolbar
+        sender={sender({ unsubscribeMethod: 'one_click' })}
+        onAction={() => {}}
+        shortcuts
+      />,
+    );
     for (const [verb, key] of [
       ['Keep', 'K'],
       ['Archive', 'A'],
@@ -119,7 +194,11 @@ describe('ActionToolbar — neutral actions', () => {
 describe('ActionToolbar — consistent neutral verbs', () => {
   it('uses the same neutral background for every action', () => {
     const html = renderToStaticMarkup(
-      <ActionToolbar sender={sender()} onAction={() => {}} shortcuts />,
+      <ActionToolbar
+        sender={sender({ unsubscribeMethod: 'one_click' })}
+        onAction={() => {}}
+        shortcuts
+      />,
     );
     // Keep is the primary for this sender; every other verb is a quiet
     // fill capsule (the key hints inside are not buttons).
@@ -176,5 +255,72 @@ describe('ActionToolbar — K/A/U/L/D keys', () => {
     expect(onAction).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Archive' })).toBeInTheDocument();
     expect(screen.queryByText('A')).not.toBeInTheDocument();
+  });
+});
+
+describe('ActionToolbar — actions and results stay distinct', () => {
+  it('keeps Later named as an action after completion and counts the result separately', () => {
+    const row = sender();
+    render(
+      <RowActivityProvider
+        value={new Map([[row.id, { phase: 'done', verb: 'later', affectedCount: 212 }]])}
+      >
+        <ActionToolbar sender={row} onAction={vi.fn()} />
+      </RowActivityProvider>,
+    );
+    expect(screen.getByRole('button', { name: 'Later' })).toBeInTheDocument();
+    expect(screen.getByText(/Moved 212 emails to Later/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Moved 212/ })).not.toBeInTheDocument();
+  });
+
+  it('explains zero inbox eligibility without blocking Delete of archived mail', () => {
+    render(
+      <ActionToolbar sender={sender({ inboxCount: 0, archivedCount: 417 })} onAction={vi.fn()} />,
+    );
+    expect(screen.getByRole('button', { name: 'Archive' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Later' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('button', { name: 'Delete' })).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByText('No inbox emails to Archive or move to Later.')).toBeInTheDocument();
+  });
+});
+
+describe('ActionToolbar — relevant actions', () => {
+  it.each(['none', null] as const)(
+    'omits unavailable Unsubscribe for %s and blocks U',
+    (unsubscribeMethod) => {
+      const onAction = vi.fn();
+      render(
+        <ActionToolbar sender={sender({ unsubscribeMethod })} onAction={onAction} shortcuts />,
+      );
+      expect(screen.queryByRole('button', { name: 'Unsubscribe (U)' })).toBeNull();
+      expect(screen.getByRole('note')).toHaveTextContent(
+        unsubscribeMethod === 'none' ? /No unsubscribe link/ : /Not checked/,
+      );
+      fireEvent.keyDown(window, { key: 'u' });
+      expect(onAction).not.toHaveBeenCalled();
+    },
+  );
+  it('preserves a request receipt after its channel disappears', () => {
+    render(
+      <ActionToolbar
+        sender={sender({
+          unsubscribeMethod: 'none',
+          policyType: 'unsubscribe',
+          unsubStatus: 'endpoint_accepted',
+        })}
+        onAction={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Request accepted')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Unsubscribe' })).toBeNull();
+  });
+  it('keeps manual mailto available', () => {
+    const onAction = vi.fn();
+    render(<ActionToolbar sender={sender({ unsubscribeMethod: 'mailto' })} onAction={onAction} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ verb: 'Unsubscribe' }));
   });
 });

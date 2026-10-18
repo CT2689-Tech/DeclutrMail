@@ -371,13 +371,36 @@ describe('<UndoTray /> — one pill (static)', () => {
     const html = renderToStaticMarkup(
       <UndoTray
         dataSource={source({
-          notices: [{ id: 'g1', tone: 'working', label: 'Deleting…', detail: '4 of 13' }],
+          notices: [
+            {
+              id: 'g1',
+              tone: 'working',
+              label: 'Deleting…',
+              who: 'Example + 12 others',
+              detail: '4 of 13 senders',
+            },
+          ],
         })}
       />,
     );
     expect(html).toContain('Deleting…');
-    expect(html).toContain('4 of 13');
+    expect(html).toContain('4 of 13 senders');
+    // The visible headline must preserve the target as the fraction ticks.
+    expect(html).toContain('Deleting… · Example + 12 others');
     expect(html).not.toContain('>Undo');
+  });
+
+  it('uses one tray announcer for progress when history is expanded', () => {
+    const html = renderToStaticMarkup(
+      <UndoTray
+        defaultOpen
+        dataSource={source({
+          notices: [{ id: 'progress', tone: 'working', label: 'Undoing…' }],
+        })}
+      />,
+    );
+    expect(html).toContain('data-dm-undo-tray-speech');
+    expect(html).not.toMatch(/<li[^>]*role="status"/);
   });
 });
 
@@ -473,4 +496,12 @@ describe('<UndoTray /> — unsubscribe note on the open tray', () => {
     expect(archiveOnly).not.toContain(UNSUBSCRIBE_NOTE);
     expect(archiveOnly).not.toContain('data-dm-undo-unsub-note');
   });
+});
+
+it('names the compact control as recent actions, since clicking it opens a list', () => {
+  const html = renderToStaticMarkup(
+    <UndoTray defaultCompact dataSource={source({ entries: [entry()] })} />,
+  );
+  expect(html).toContain('Recent actions (1)');
+  expect(html).not.toContain('Undo · 1');
 });

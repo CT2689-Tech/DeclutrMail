@@ -216,9 +216,9 @@ describe('landing page — D134', () => {
     }
   });
 
-  it('carries sender cleanup and preview positioning into page metadata', () => {
+  it('carries Gmail cleanup, preview and undo into page metadata', () => {
     expect(metadata.description).toContain('Preview which emails will move before you confirm');
-    expect(JSON.stringify(metadata.title)).toContain('Clean up Gmail, one sender at a time');
+    expect(JSON.stringify(metadata.title)).toContain('Gmail cleanup with preview and undo');
   });
 
   describe('D138 verification claim — the item the visitor can check', () => {

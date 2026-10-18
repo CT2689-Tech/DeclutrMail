@@ -124,7 +124,7 @@ describe('full Home when the WS5 keys exist', () => {
       gate.showReport = true;
       rerender(<HomeView state={ready} nextSteps={[step]} senderSizeView={senderSizeView} />);
       expect(screen.getAllByRole('heading', { name: 'Your Inbox Report' })).toHaveLength(1);
-      const fix = await screen.findByRole('button', { name: 'Unsubscribe + archive 158 senders' });
+      const fix = await screen.findByRole('button', { name: 'Preview cleanup' });
       expect(fix.className.split(/\s+/)).toContain('dm-button-link');
     },
   );
@@ -135,10 +135,8 @@ describe('Home unsubscribe step', () => {
     gate.showReport = false;
     const { rerender } = render(<HomeView state={ready} nextSteps={[step]} />);
     expect(screen.getAllByRole('heading', { name: 'Your Inbox Report' })).toHaveLength(1);
-    expect(
-      screen.getByRole('button', { name: 'Unsubscribe + archive 158 senders' }),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/158 of these senders/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Preview cleanup' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /158 senders/ })).toBeInTheDocument();
 
     gate.showReport = true;
     rerender(<HomeView state={ready} nextSteps={[step]} />);

@@ -1033,7 +1033,7 @@ button {
   gap: 8px;
 }
 @media (max-width: 760px) {
-  .dm-action-toolbar > [data-action='delete'] {
+  .dm-action-toolbar > [data-action='delete']:nth-child(odd) {
     grid-column: 1 / -1;
   }
 }

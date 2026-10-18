@@ -49,3 +49,28 @@ describe('ActionsController route order', () => {
     expect(handlers.indexOf('batchStatus')).toBeLessThan(handlers.indexOf('status'));
   });
 });
+
+describe('ActionsController.undoStatus', () => {
+  it('forwards one mailbox-scoped batch read', async () => {
+    const getUndoStatus = vi.fn().mockResolvedValue({ status: 'executing' });
+    const controller = new ActionsController({ getUndoStatus } as never, {} as never, {} as never);
+    await expect(
+      controller.undoStatus({ id: MAILBOX_ID }, { actionIds: [SENDER_ID] }),
+    ).resolves.toEqual({ data: { status: 'executing' } });
+    expect(getUndoStatus).toHaveBeenCalledExactlyOnceWith([SENDER_ID], MAILBOX_ID);
+  });
+
+  it.each([
+    { actionIds: [] },
+    { actionIds: ['invalid'] },
+    { actionIds: Array(2001).fill(SENDER_ID) },
+    { actionIds: [SENDER_ID], mailboxId: 'foreign' },
+  ])('rejects invalid or unbounded input', async (body) => {
+    const getUndoStatus = vi.fn();
+    const controller = new ActionsController({ getUndoStatus } as never, {} as never, {} as never);
+    await expect(controller.undoStatus({ id: MAILBOX_ID }, body)).rejects.toMatchObject({
+      response: { code: 'INVALID_REQUEST' },
+    });
+    expect(getUndoStatus).not.toHaveBeenCalled();
+  });
+});

@@ -273,6 +273,28 @@
       },
       "body": "Email you moved to Later comes back to your inbox at the time you picked.",
       "cta": "Open Later"
+    },
+    "focus": {
+      "nextCleanup": "Your next cleanup",
+      "action": "Unsubscribe + archive",
+      "title": "A closer look at",
+      "senders": {
+        "one": "1 sender.",
+        "other": "{n} senders."
+      },
+      "impact": {
+        "one": "1 email in your inbox.",
+        "other": "{n} emails in your inbox."
+      },
+      "preview": "Preview cleanup",
+      "review": "Review the senders",
+      "safety": "You choose what happens before any email moves.",
+      "progress": "Your progress",
+      "allTime": "All time",
+      "context": "A little more context",
+      "calmTitle": "Choose your next cleanup.",
+      "calmBody": "Review your senders or open your Inbox Report to decide what to work on.",
+      "report": "Inbox Report"
     }
   },
   "liveFix": {
@@ -566,6 +588,9 @@
   "senders": {
     "emptySteps": {
       "confirm": "Confirm when you’re ready"
+    },
+    "detail": {
+      "actionHeading": "What do you want to do?"
     }
   },
   "simplify": {

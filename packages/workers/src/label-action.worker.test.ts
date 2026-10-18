@@ -607,6 +607,87 @@ describe('LabelActionWorker', () => {
   });
 
   describe('later — label name→id resolution (live-smoke fix 2026-06-09)', () => {
+    it.each([undefined, 'keep' as const, 'unsubscribe' as const])(
+      'Later → Undo preserves the standing decision (%s), including no prior policy',
+      async (standing) => {
+        await seedMessage(db, mailboxId, 'neutral-later', ['INBOX', 'UNREAD']);
+        if (standing) {
+          await db.insert(senderPolicies).values({
+            mailboxAccountId: mailboxId,
+            senderKey: SENDER_KEY,
+            policyType: standing,
+            unsubStatus: standing === 'unsubscribe' ? 'endpoint_accepted' : null,
+          });
+        }
+        const wakeAt = new Date('2099-07-21T09:00:00Z');
+        const [forward] = await db
+          .insert(actionJobs)
+          .values({
+            mailboxAccountId: mailboxId,
+            verb: 'later',
+            direction: 'forward',
+            selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
+            idempotencyKey: 'neutral-later',
+            wakeAt,
+          })
+          .returning();
+        const result = await worker.processJob(
+          {
+            actionId: forward!.id,
+            mailboxAccountId: mailboxId,
+            idempotencyKey: 'neutral-later',
+          },
+          CTX,
+        );
+        expect(result.affectedCount).toBe(1);
+        const [during] = await db
+          .select()
+          .from(senderPolicies)
+          .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+        expect(during!.policyType).toBe(standing ?? null);
+        expect(during!.snoozedUntil?.toISOString()).toBe(wakeAt.toISOString());
+        const [reverse] = await db
+          .insert(actionJobs)
+          .values({
+            mailboxAccountId: mailboxId,
+            verb: 'later',
+            direction: 'reverse',
+            selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
+            resolvedMessageIds: ['neutral-later'],
+            undoToken: result.undoToken!,
+            idempotencyKey: 'neutral-later-reverse',
+            wakeAt,
+          })
+          .returning();
+        await worker.processJob(
+          {
+            actionId: reverse!.id,
+            mailboxAccountId: mailboxId,
+            idempotencyKey: 'neutral-later-reverse',
+          },
+          CTX,
+        );
+        const [after] = await db
+          .select()
+          .from(senderPolicies)
+          .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+        expect(after!.policyType).toBe(standing ?? null);
+        expect(after!.snoozedUntil).toBeNull();
+        expect(after!.snoozedAt).toBeNull();
+        expect(after!.unsubStatus).toBe(standing === 'unsubscribe' ? 'endpoint_accepted' : null);
+        const [message] = await db
+          .select()
+          .from(mailMessages)
+          .where(eq(mailMessages.providerMessageId, 'neutral-later'));
+        expect(message!.labelIds.sort()).toEqual(['INBOX', 'UNREAD']);
+        const history = await db
+          .select({ action: activityLog.action })
+          .from(activityLog)
+          .where(eq(activityLog.mailboxAccountId, mailboxId));
+        expect(history.some((row) => row.action === 'keep')).toBe(false);
+      },
+    );
+
     // The registry's buildLabelChange emits the symbolic NAME
     // `DeclutrMail/Later`; Gmail's batchModify accepts only IDS (live
     // result: `Gmail returned 400: Invalid label: DeclutrMail/Later`).

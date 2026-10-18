@@ -1,9 +1,16 @@
-import { entitlementGrants, users, workspaces } from '@declutrmail/db';
+import {
+  entitlementGrants,
+  productEvents,
+  subscriptionEvents,
+  users,
+  workspaces,
+} from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AutopilotReadService } from '../../autopilot/autopilot.read-service.js';
+import { ProductEventsWriter } from '../../analytics/product-events.writer.js';
 import type { DrizzleDb } from '../../db/db.module.js';
 import { BillingCatalog } from '../billing-catalog.js';
 import { BillingWebhookService } from '../billing-webhook.service.js';
@@ -31,6 +38,7 @@ describe('Backlog Pass grants', () => {
   let db: DrizzleDb;
   let service: BillingWebhookService;
   let workspaceId: string;
+  let userId: string;
 
   beforeEach(async () => {
     db = await freshDb();
@@ -39,13 +47,18 @@ describe('Backlog Pass grants', () => {
       new BillingCatalog([], 0, PASS_PRICE),
       new AutopilotReadService(db),
       ordinaryRefundPolicy,
+      new ProductEventsWriter(db),
     );
     const [ws] = await db
       .insert(workspaces)
       .values({ name: 'Pass WS' })
       .returning({ id: workspaces.id });
     workspaceId = ws!.id;
-    await db.insert(users).values({ workspaceId, email: 'owner@example.test' });
+    const [owner] = await db
+      .insert(users)
+      .values({ workspaceId, email: 'owner@example.test' })
+      .returning({ id: users.id });
+    userId = owner!.id;
   });
 
   function completed(transactionId: string, priceId = PASS_PRICE) {
@@ -57,6 +70,121 @@ describe('Backlog Pass grants', () => {
       priceIds: [priceId],
     });
   }
+
+  it('records the Pass purchase against the member receiving the grant', async () => {
+    await db.insert(users).values({
+      workspaceId,
+      email: 'later@example.test',
+      createdAt: new Date(Date.now() + 1000),
+    });
+    const fixture = completed('txn_attributed_pass');
+    await service.process('paddle', paddle.mapWebhookEvent(fixture), fixture);
+
+    await vi.waitFor(async () => {
+      const events = await db.select().from(productEvents);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        event: 'purchase_confirmed',
+        userId,
+        props: { plan: 'pass' },
+      });
+      expect(JSON.stringify(events)).not.toContain('@');
+    });
+  });
+
+  it('records one purchase per transaction and counts a paid extension separately', async () => {
+    const first = completed('txn_unique_pass');
+    await service.process('paddle', paddle.mapWebhookEvent(first), first);
+    expect(await service.process('paddle', paddle.mapWebhookEvent(first), first)).toEqual({
+      kind: 'duplicate',
+    });
+
+    const repeatedTransaction = paddleTransactionCompleted({
+      eventId: 'evt_second_notification_for_same_pass',
+      subscriptionId: null,
+      workspaceId,
+      transactionId: 'txn_unique_pass',
+      priceIds: [PASS_PRICE],
+    });
+    expect(
+      await service.process(
+        'paddle',
+        paddle.mapWebhookEvent(repeatedTransaction),
+        repeatedTransaction,
+      ),
+    ).toEqual({ kind: 'processed', effect: 'pass:duplicate' });
+
+    const extension = completed('txn_paid_extension');
+    expect(await service.process('paddle', paddle.mapWebhookEvent(extension), extension)).toEqual({
+      kind: 'processed',
+      effect: 'pass:extended',
+    });
+    await vi.waitFor(async () => {
+      const events = await db.select().from(productEvents);
+      expect(events).toHaveLength(2);
+      expect(events.every((event) => event.userId === userId && event.props.plan === 'pass')).toBe(
+        true,
+      );
+    });
+  });
+
+  it('still grants the Pass when the analytics recorder fails', async () => {
+    const withoutAnalytics = new BillingWebhookService(
+      db,
+      new BillingCatalog([], 0, PASS_PRICE),
+      new AutopilotReadService(db),
+      ordinaryRefundPolicy,
+      {
+        record() {
+          throw new Error('analytics unavailable');
+        },
+      },
+    );
+    const fixture = completed('txn_optional_analytics');
+    expect(
+      await withoutAnalytics.process('paddle', paddle.mapWebhookEvent(fixture), fixture),
+    ).toEqual({ kind: 'processed', effect: 'pass:granted' });
+    expect(await db.select().from(entitlementGrants)).toHaveLength(1);
+    const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(workspace!.tier).toBe('plus');
+  });
+
+  it('keeps the attributed purchase when a committed grant needs webhook recovery', async () => {
+    vi.spyOn(
+      service as unknown as {
+        recomputeWorkspaceTier(db: DrizzleDb, workspaceId: string): Promise<void>;
+      },
+      'recomputeWorkspaceTier',
+    ).mockRejectedValueOnce(new Error('tier refresh temporarily unavailable'));
+    const fixture = completed('txn_recoverable_pass');
+    const event = paddle.mapWebhookEvent(fixture);
+    await expect(service.process('paddle', event, fixture)).rejects.toThrow(
+      'tier refresh temporarily unavailable',
+    );
+
+    expect(await db.select().from(entitlementGrants)).toHaveLength(1);
+    const [unprocessed] = await db.select().from(subscriptionEvents);
+    expect(unprocessed!.processedAt).toBeNull();
+    await vi.waitFor(async () => {
+      const events = await db.select().from(productEvents);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        userId,
+        event: 'purchase_confirmed',
+        props: { plan: 'pass' },
+      });
+    });
+
+    expect(await service.process('paddle', event, fixture)).toEqual({
+      kind: 'processed',
+      effect: 'pass:duplicate',
+    });
+    expect(await db.select().from(productEvents)).toHaveLength(1);
+    const [processed] = await db.select().from(subscriptionEvents);
+    expect(processed!.processedAt).not.toBeNull();
+    const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(workspace!.tier).toBe('plus');
+  });
 
   it('grants Plus from a one-off transaction and ignores a replay', async () => {
     const fixture = completed('txn_pass_1');

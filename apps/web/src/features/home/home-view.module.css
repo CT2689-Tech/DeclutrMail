@@ -103,9 +103,9 @@
   color: var(--dm-fg);
   width: 100%;
   min-width: 0;
-  max-width: 760px;
+  max-width: 1172px;
   margin: 0 auto;
-  padding: 16px clamp(16px, 3vw, 24px) 32px;
+  padding: 24px 36px 40px;
   font-family: var(--dm-font-sans);
 }
 .page a:not(:global(.dm-button-link)) {
@@ -120,7 +120,7 @@
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  padding: 0 0 4px;
+  padding: 0 0 28px;
   align-items: center;
   margin-bottom: 0;
   border: 0;
@@ -129,7 +129,7 @@
   font-family: var(--dm-font-display);
   font-weight: 400;
   letter-spacing: -0.035em;
-  font-size: var(--dm-type-home-title);
+  font-size: 38px;
   line-height: 1.1;
   margin: 2px 0;
 }
@@ -161,7 +161,7 @@
   font-size: 13px;
   line-height: 1.6;
 }
-.since {
+.period {
   display: block;
   white-space: nowrap;
   color: var(--dm-fg-muted);
@@ -686,7 +686,7 @@
 }
 
 .steps {
-  margin-top: 8px;
+  margin-top: 0;
 }
 
 .stepGrid {
@@ -768,31 +768,28 @@
 }
 
 .progressLine {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px 16px;
-  margin-top: 16px;
-  padding: 16px 20px;
-  border: 1px solid var(--dm-border);
-  border-radius: var(--dm-radius-lg);
-  background: var(--dm-card);
+  min-width: 0;
+  padding: 18px 0 0;
 }
 
 .progressSentence {
   margin: 0;
-  font-size: 16px;
-  line-height: 1.4;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dm-fg-muted);
 }
 
-.progressLine .since {
-  display: inline;
+.progressLine .period {
+  display: block;
   white-space: normal;
 }
 
 .progressLine strong {
+  display: block;
+  margin: 22px 0 7px;
+  color: var(--dm-fg);
   font-family: var(--dm-font-display);
-  font-size: var(--dm-type-stat);
+  font-size: 44px;
   font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
@@ -917,5 +914,280 @@
 @container home-report (max-width: 40rem) {
   .reportFacts {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Focus: one recommendation, with recorded progress in a quiet margin. */
+.focusGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 285px;
+  gap: 50px;
+  align-items: start;
+}
+.focusLead {
+  min-width: 0;
+  min-height: 346px;
+  padding: 30px 32px;
+  border: 1px solid var(--dm-primary-border);
+  border-radius: 16px;
+  background: var(--dm-primary-soft);
+}
+.focusLead .fixCard {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.fixCard .focusTitle,
+.calmStart h2 {
+  margin: 24px 0 18px;
+  font-family: var(--dm-font-display);
+  font-size: clamp(32px, 3.4vw, 43px);
+  font-weight: 400;
+  line-height: 1.13;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+.fixCard .cleanupAction {
+  color: var(--dm-primary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.fixCard .focusImpact,
+.calmStart p {
+  max-width: 430px;
+  color: var(--dm-fg-soft);
+  font-size: 15px;
+  line-height: 1.7;
+  margin: 0;
+}
+.focusLead .fixActions {
+  margin-top: 26px;
+  gap: 10px 22px;
+}
+.fixCard .reviewNote {
+  margin-top: 18px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dm-fg-muted);
+}
+.progressHeading {
+  margin: 0;
+  color: var(--dm-fg-soft);
+  font-size: 13px;
+  font-weight: 500;
+}
+.progressDetails {
+  display: grid;
+  gap: 14px;
+  margin: 24px 0 15px;
+  padding-top: 20px;
+  border-top: 1px solid var(--dm-line);
+}
+.progressDetails > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.progressDetails dt {
+  color: var(--dm-fg-muted);
+  font-size: 12px;
+}
+.progressDetails dd {
+  margin: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.progressLine > a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 12px;
+}
+.contextSection {
+  margin-top: 32px;
+}
+.contextHeading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.contextHeading > h2 {
+  margin: 0;
+  font-family: var(--dm-font-display);
+  font-size: 24px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+.contextHeading .visitSlot {
+  min-height: 0;
+}
+.contextHeading .visitSlot:empty {
+  display: none;
+}
+.contextHeading .arrivals {
+  padding: 0;
+}
+.contextHeading .arrivals .eyebrow {
+  font-size: 10px;
+}
+.contextHeading .arrivals h2 {
+  font-size: 13px;
+}
+.secondarySteps {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.secondarySteps .secondaryCard {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--dm-line);
+  border-radius: 0;
+  padding: 16px 0;
+}
+.mailboxIdentity {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--dm-fg-muted);
+}
+.calmStart .primaryAction {
+  margin-top: 24px;
+}
+.page button:focus-visible,
+.page a:focus-visible {
+  outline: 2px solid var(--dm-primary);
+  outline-offset: 4px;
+}
+@media (max-width: 1100px) {
+  .focusGrid {
+    grid-template-columns: minmax(0, 1fr) 235px;
+    gap: 30px;
+  }
+  .focusLead {
+    padding: 28px;
+  }
+}
+@media (max-width: 900px) {
+  .page {
+    padding: 24px;
+  }
+  .focusGrid {
+    grid-template-columns: minmax(0, 1fr) 200px;
+    gap: 24px;
+  }
+  .focusLead {
+    padding: 26px;
+  }
+  .contextHeading {
+    flex-direction: column;
+    gap: 12px;
+  }
+}
+@media (max-width: 760px) {
+  .page {
+    padding: 20px 16px 32px;
+  }
+  .header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    padding-bottom: 24px;
+  }
+  .header h1 {
+    font-size: 36px;
+  }
+  .focusGrid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+  .focusLead {
+    min-height: 0;
+    padding: 26px 24px;
+  }
+  .fixCard .focusTitle,
+  .calmStart h2 {
+    font-size: 36px;
+  }
+  .progressLine {
+    padding: 4px 2px 0;
+  }
+  .progressLine strong {
+    font-size: 36px;
+    margin-top: 14px;
+  }
+  .contextSection {
+    margin-top: 26px;
+  }
+}
+@media (max-width: 420px) {
+  .focusLead {
+    padding: 24px 20px;
+  }
+  .fixCard .focusTitle,
+  .calmStart h2 {
+    font-size: 33px;
+  }
+  .fixCard .focusImpact {
+    font-size: 14px;
+  }
+  .focusLead .fixActions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .fixActions > a:not(:global(.dm-button-link)) {
+    align-self: center;
+  }
+}
+
+.reportSupport {
+  margin: 8px 0 16px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dm-fg-muted);
+  max-width: 70ch;
+}
+
+.firstProgress {
+  margin: 20px 0 10px;
+  font-family: var(--dm-font-display);
+  font-size: 26px;
+  line-height: 1.3;
+  color: var(--dm-fg-soft);
+}
+
+.headerTools {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 7px;
+  min-width: 0;
+}
+.page .reportLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  border: 1px solid var(--dm-line);
+  border-radius: 9px;
+  padding: 0 14px;
+  font-size: 12px;
+  color: var(--dm-fg-soft);
+  text-decoration: none;
+}
+.page .reportLink:hover {
+  background: var(--dm-fill);
+  color: var(--dm-fg);
+  text-decoration: none;
+}
+@media (max-width: 760px) {
+  .headerTools {
+    align-items: flex-start;
+  }
+  .headerTools .reportLink {
+    display: none;
   }
 }

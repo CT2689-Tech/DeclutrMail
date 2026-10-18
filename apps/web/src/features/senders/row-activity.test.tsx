@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
-import {
-  RowActivityPill,
-  RowActivityStatus,
-  rowActivityLabel,
-  rowStatusLabel,
-  type SenderRowActivity,
-} from './row-activity';
+import { RowActivityPill, rowActivityLabel, type SenderRowActivity } from './row-activity';
 
 // Founder report 2026-09-20: "After selecting any action … I did not have
 // any clue if request submitted, went through. Rows stay as-is for long
@@ -15,13 +9,13 @@ import {
 describe('row activity — what a sender row says about its own action', () => {
   it.each([
     [{ phase: 'working', verb: 'keep' }, 'Keeping…'],
-    [{ phase: 'done', verb: 'keep', affectedCount: null }, 'Kept'],
+    [{ phase: 'done', verb: 'keep', affectedCount: null }, 'Skipped in Triage'],
     [{ phase: 'failed', verb: 'keep' }, 'Keep failed'],
     [{ phase: 'working', verb: 'archive' }, 'Archiving…'],
     [{ phase: 'working', verb: 'later' }, 'Moving to Later…'],
     [{ phase: 'working', verb: 'delete' }, 'Deleting…'],
-    [{ phase: 'done', verb: 'archive', affectedCount: 12 }, 'Archived · 12 emails'],
-    [{ phase: 'done', verb: 'delete', affectedCount: 1 }, 'Deleted · 1 email'],
+    [{ phase: 'done', verb: 'archive', affectedCount: 12 }, 'Archived 12 emails'],
+    [{ phase: 'done', verb: 'delete', affectedCount: 1 }, 'Deleted 1 email'],
     [{ phase: 'done', verb: 'later', affectedCount: null }, 'Moved to Later'],
     [{ phase: 'done', verb: 'delete', affectedCount: 0 }, 'Nothing to change'],
     [{ phase: 'failed', verb: 'delete' }, 'Delete failed'],
@@ -44,26 +38,12 @@ describe('row activity — what a sender row says about its own action', () => {
     expect(pill).not.toHaveAttribute('role');
   });
 
-  // Founder feedback 2026-09-20: the mark beside the name was "not
-  // highlighted" — the button the user pressed becomes the status.
-  it.each([
-    [{ phase: 'working', verb: 'delete' }, 'Deleting…'],
-    [{ phase: 'done', verb: 'delete', affectedCount: 95 }, 'Deleted 95'],
-    [{ phase: 'done', verb: 'archive', affectedCount: null }, 'Archived'],
-    [{ phase: 'done', verb: 'later', affectedCount: 0 }, 'Nothing to change'],
-    [{ phase: 'unconfirmed', verb: 'archive' }, 'Archive: unknown'],
-    // Later names a destination: its count goes first, as on the pill.
-    [{ phase: 'done', verb: 'later', affectedCount: 240 }, 'Moved 240 to Later'],
-  ] as Array<[SenderRowActivity, string]>)('button slot: %o reads "%s"', (activity, label) => {
-    expect(rowStatusLabel(activity)).toBe(label);
-  });
-
   it('spins silently while working — never a live region per row', () => {
     const { container } = render(
-      <RowActivityStatus activity={{ phase: 'working', verb: 'delete' }} />,
+      <RowActivityPill activity={{ phase: 'working', verb: 'delete' }} />,
     );
     expect(container.querySelector('[role="status"], [aria-live]')).toBeNull();
-    expect(container.querySelector('[aria-hidden="true"]')).not.toBeNull();
+    expect(container.querySelector('.dm-spinner[aria-hidden="true"]')).not.toBeNull();
   });
 
   it('tints a part-failed bulk as a caution, not a neutral note', () => {

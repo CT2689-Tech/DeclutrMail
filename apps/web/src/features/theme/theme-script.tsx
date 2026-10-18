@@ -7,8 +7,8 @@
 // sites with different nonce needs:
 //
 //   `(marketing)` — no nonce. Its CSP is `script-src 'self'
-//     'unsafe-inline'` with no 'strict-dynamic', so 'self' authorizes
-//     this same-origin asset on its own. Passing a nonce here would be
+//     'unsafe-inline'` with no 'strict-dynamic', which authorizes
+//     the inline resolver without a separate request. A nonce would be
 //     worse than useless: it would be stale on prerendered HTML.
 //   `(app)` and `/onboarding` — nonce REQUIRED. Their CSP keeps
 //     'strict-dynamic', which makes CSP3 browsers ignore host-source
@@ -19,12 +19,28 @@
 // so a stored dark preference applies before first paint.
 
 import { isFeatureEnabled } from '@/lib/flags';
+import { THEME_INIT_SOURCE } from './theme-init-source';
 
-export function ThemeScript({ nonce }: { nonce?: string | undefined }) {
+export function ThemeScript({
+  nonce,
+  inline = false,
+}: {
+  nonce?: string | undefined;
+  inline?: boolean;
+}) {
   // darkMode flag off ⇒ skip the resolver entirely: `data-theme` is
   // never set, so the app renders light even for users with a stored
   // dark preference (ADR-0025 kill-switch semantics).
   if (!isFeatureEnabled('darkMode')) return null;
+  if (inline) {
+    return (
+      <script
+        nonce={nonce}
+        suppressHydrationWarning
+        dangerouslySetInnerHTML={{ __html: THEME_INIT_SOURCE }}
+      />
+    );
+  }
   // suppressHydrationWarning: browsers hide the nonce attribute from DOM
   // reads, so the client always sees "" — a known, harmless mismatch on
   // any nonced tag.

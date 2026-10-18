@@ -47,7 +47,7 @@ const WORKING: Record<RowActivityVerb | 'keep', string> = {
 };
 
 const DONE: Record<RowActivityVerb | 'keep', string> = {
-  keep: 'Kept',
+  keep: 'Skipped in Triage',
   archive: 'Archived',
   later: 'Moved to Later',
   delete: 'Deleted',
@@ -75,7 +75,8 @@ export function rowActivityLabel(activity: SenderRowActivity): string {
       const result = DONE[activity.verb];
       if (activity.affectedCount === null) return result;
       const n = activity.affectedCount;
-      return `${result} · ${n.toLocaleString('en-US')} email${n === 1 ? '' : 's'}`;
+      const count = `${n.toLocaleString('en-US')} email${n === 1 ? '' : 's'}`;
+      return activity.verb === 'later' ? `Moved ${count} to Later` : `${result} ${count}`;
     }
   }
 }
@@ -127,97 +128,6 @@ export function useGroupActivitySummary(
   return parts.length === 0 ? null : { busy: unconfirmed > 0, label: parts.join(' · ') };
 }
 
-/**
- * The words for the BUTTON SLOT — the control the user pressed becomes
- * the status, because that is where their eyes are (founder feedback
- * 2026-09-20: the small mark beside the name was "not highlighted").
- * Shorter than the pill: it has a button's width, not a name cell's.
- */
-export function rowStatusLabel(activity: SenderRowActivity): string {
-  if (activity.phase !== 'done') return rowActivityLabel(activity);
-  if (activity.affectedCount === 0) return 'Nothing to change';
-  const result = DONE[activity.verb];
-  if (activity.affectedCount === null) return result;
-  const n = activity.affectedCount.toLocaleString('en-US');
-  // Later names a destination, so its count goes before it, as on the pill.
-  return activity.verb === 'later' ? `Moved ${n} to Later` : `${result} ${n}`;
-}
-
-/** Text colour for the button-slot status. Body-strength, never faded. */
-export function rowStatusColor(activity: SenderRowActivity): string {
-  if (activity.phase === 'failed') return color.dangerText;
-  if (activity.phase === 'done' && activity.affectedCount !== 0) return color.primary;
-  return color.fg;
-}
-
-/**
- * Button-slot content: a spinner while it runs, a check once it worked.
- * Rendered INSIDE the pressed button (kept mounted, made inert) so focus
- * never falls to <body> when the verb turns into its own status.
- */
-export function RowActivityStatus({ activity }: { activity: SenderRowActivity }) {
-  const worked = activity.phase === 'done' && activity.affectedCount !== 0;
-  return (
-    <span
-      data-dm-row-activity={activity.phase}
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}
-    >
-      {worked && (
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="3"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <polyline points="20 6 9 17 4 12" />
-        </svg>
-      )}
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-        {rowStatusLabel(activity)}
-      </span>
-      {activity.phase === 'working' && (
-        // Decorative, and NOT a live region: a 50-sender bulk is 50 of these.
-        <span
-          aria-hidden="true"
-          // The class, not an inline `animation`: tokens.css stops `.dm-spinner`
-          // under prefers-reduced-motion, and an inline style would outrank it.
-          className="dm-spinner"
-          style={{
-            width: 10,
-            height: 10,
-            flex: '0 0 auto',
-            borderRadius: 999,
-            border: `1.5px solid ${color.line}`,
-            borderTopColor: color.fg,
-          }}
-        />
-      )}
-    </span>
-  );
-}
-
-/**
- * Whether the pressed verb should BECOME the status. Not when it ended
- * badly: the next step after "Delete failed" is to try again, so the verb
- * stays a working button and the failure is stated beside it.
- */
-export const takesButtonSlot = (activity: SenderRowActivity | undefined): boolean =>
-  activity != null && activity.phase !== 'failed' && activity.phase !== 'mixed';
-
-/** Button props that turn a pressed verb into its own status. */
-export const STATUS_BUTTON_STYLE = {
-  // `inert` dims to 0.5 — fine for "unavailable", wrong for the one thing
-  // on the row the user is reading.
-  opacity: 1,
-  cursor: 'default',
-  fontWeight: 500,
-} as const;
-
 /** True while the row must not take another action (and reads as busy). */
 export const isRowBusy = (activity: SenderRowActivity | undefined): boolean =>
   activity?.phase === 'working' || activity?.phase === 'unconfirmed';
@@ -245,7 +155,9 @@ export function RowActivityPill({ activity }: { activity: SenderRowActivity }) {
       data-dm-row-activity={activity.phase}
       title={
         activity.phase === 'done' && activity.affectedCount !== 0
-          ? getActionSemantics(activity.verb).resultLabel
+          ? activity.verb === 'keep'
+            ? DONE.keep
+            : getActionSemantics(activity.verb).resultLabel
           : undefined
       }
       style={{
@@ -258,10 +170,25 @@ export function RowActivityPill({ activity }: { activity: SenderRowActivity }) {
         borderRadius: 999,
         padding: '1px 6px',
         flex: '0 0 auto',
-        whiteSpace: 'nowrap',
+        whiteSpace: 'normal',
       }}
     >
       {rowActivityLabel(activity)}
+      {activity.phase === 'working' && (
+        <span
+          aria-hidden="true"
+          className="dm-spinner"
+          style={{
+            display: 'inline-block',
+            width: 10,
+            height: 10,
+            marginLeft: 6,
+            borderRadius: 999,
+            border: `1.5px solid ${color.line}`,
+            borderTopColor: color.fg,
+          }}
+        />
+      )}
     </span>
   );
 }

@@ -11,7 +11,7 @@ import {
 } from '@declutrmail/shared';
 import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
-import { WS3_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { WS2_COPY, WS3_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
 import { InboxReportPanel } from '@/features/inbox-report/panel';
 import type { ActionRequest } from '@/features/senders/data';
@@ -722,7 +722,7 @@ export function SendersSimulator() {
                 <p className="dm-senders-demo-status">Keep decision recorded.</p>
               ) : null}
               <div className="dm-senders-demo-actions">
-                <span>Your next decision</span>
+                <span>{WS2_COPY.senders.detail.actionHeading}</span>
                 <div>
                   {(['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete'] as const).map((verb) => (
                     <button

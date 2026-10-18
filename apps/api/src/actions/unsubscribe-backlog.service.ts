@@ -2,6 +2,7 @@ import { HttpException, Inject, Injectable } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import {
+  actionJobs,
   invalidateInboxReportCache,
   mailMessages,
   senderActionWhere,
@@ -110,7 +111,34 @@ export class UnsubscribeBacklogService {
       sendersOut.push(await this.recordOne(input, row.id, backlog?.actionId ?? null));
     }
     await invalidateInboxReportCache(this.db, input.mailboxAccountId);
-    return { mode: input.mode, backlog, senders: sendersOut };
+    // A same-key retry may refer to a pre-deploy execution that was not
+    // grouped. Opt into tray feedback only after verifying actual linkage.
+    const executionIds = sendersOut.flatMap((sender) =>
+      sender.executionActionId ? [sender.executionActionId] : [],
+    );
+    const grouped =
+      backlog && executionIds.length > 0
+        ? await this.db
+            .select({ id: actionJobs.id, compositeId: actionJobs.compositeId })
+            .from(actionJobs)
+            .where(
+              and(
+                eq(actionJobs.mailboxAccountId, input.mailboxAccountId),
+                inArray(actionJobs.id, executionIds),
+              ),
+            )
+        : [];
+    const combinedFeedback =
+      executionIds.length > 0 &&
+      executionIds.every((id) =>
+        grouped.some((row) => row.id === id && row.compositeId === backlog?.actionId),
+      );
+    return {
+      mode: input.mode,
+      backlog,
+      senders: sendersOut,
+      ...(combinedFeedback ? { feedbackVersion: 2 as const } : {}),
+    };
   }
 
   private async enqueueBacklog(

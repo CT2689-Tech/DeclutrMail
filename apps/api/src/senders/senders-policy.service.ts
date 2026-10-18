@@ -2,6 +2,7 @@ import { ConflictException, Inject, Injectable, NotFoundException } from '@nestj
 import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import { activityLog, senderPolicies, senders } from '@declutrmail/db';
+import { MAILBOX_ACTION_LOCK_NS } from '@declutrmail/workers';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type { SenderPolicyPatch, SenderPolicyResult } from './senders.types.js';
@@ -172,10 +173,9 @@ export class SendersPolicyService {
   }
 
   /**
-   * Undo a standing Keep. Deletes the policy row when it is keep and
-   * not protected, and marks the unreverted keep audit rows reverted so
-   * Triage can show the sender again. A protected row stays: deleting
-   * it would drop the safety state.
+   * Undo a standing Keep without dropping independent timer or modifier
+   * metadata. Revert its audit under the same bounded lock as delayed
+   * projection so a background update cannot reinstate the undone choice.
    */
   async undoKeep(input: {
     mailboxAccountId: string;
@@ -194,6 +194,12 @@ export class SendersPolicyService {
       });
     }
     return await this.db.transaction(async (tx) => {
+      // Also covers the missing-row case, which a row lock cannot lock.
+      // Share the projection/timer boundary and keep HTTP lock waits bounded.
+      await tx.execute(sql`SET LOCAL lock_timeout = '10s'`);
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(${MAILBOX_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`,
+      );
       const [existing] = await tx
         .select()
         .from(senderPolicies)
@@ -203,7 +209,8 @@ export class SendersPolicyService {
             eq(senderPolicies.senderKey, sender.senderKey),
           ),
         )
-        .limit(1);
+        .limit(1)
+        .for('update');
       if (existing?.policyType === 'keep' && existing.isProtected) {
         throw new ConflictException({
           code: 'PROTECTED_SENDER',
@@ -213,19 +220,26 @@ export class SendersPolicyService {
       // Triage Keep writes the audit row first and projects the policy
       // through the outbox. Undo has to revert that row even when the
       // policy has not landed yet, or the sender stays out of the queue.
-      // A non-keep policy is a later decision — leave it alone.
-      if (existing && existing.policyType !== 'keep') {
+      // A neutral timer row is not a later standing decision.
+      if (existing?.policyType != null && existing.policyType !== 'keep') {
         return projectResult(senderId, existing, false);
       }
-      if (existing) {
-        await tx
-          .delete(senderPolicies)
+      let resultRow = existing ?? null;
+      if (existing?.policyType === 'keep') {
+        // Clear only the standing decision. The row can also own a Later
+        // timer, recovery state or protection provenance; deleting it would
+        // strand that mail or discard the user's independent choices.
+        const [neutral] = await tx
+          .update(senderPolicies)
+          .set({ policyType: null, updatedAt: sql`now()` })
           .where(
             and(
               eq(senderPolicies.mailboxAccountId, mailboxAccountId),
               eq(senderPolicies.senderKey, sender.senderKey),
             ),
-          );
+          )
+          .returning();
+        resultRow = neutral ?? null;
       }
       const reverted = await tx
         .update(activityLog)
@@ -239,7 +253,11 @@ export class SendersPolicyService {
           ),
         )
         .returning({ id: activityLog.id });
-      return projectResult(senderId, null, existing != null || reverted.length > 0);
+      return projectResult(
+        senderId,
+        resultRow,
+        existing?.policyType === 'keep' || reverted.length > 0,
+      );
     });
   }
 }

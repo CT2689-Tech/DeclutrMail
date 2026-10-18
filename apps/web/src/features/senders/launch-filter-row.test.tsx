@@ -12,10 +12,12 @@ vi.mock('@/lib/posthog', () => ({ track: vi.fn() }));
 describe('LaunchFilterRow phone targets', () => {
   it('marks each saved filter for a 44px phone hit area', () => {
     render(<LaunchFilterRow mailboxId={null} onApply={() => undefined} />);
-    expect(screen.getByRole('button', { name: 'Mostly unread (90 days)' })).toHaveClass(
+    expect(
+      screen.getByRole('button', { name: 'Apply filter: Mostly unread (90 days)' }),
+    ).toHaveClass('dm-tap-44');
+    expect(screen.getByRole('button', { name: 'Apply filter: Has unsubscribe link' })).toHaveClass(
       'dm-tap-44',
     );
-    expect(screen.getByRole('button', { name: 'Has unsubscribe link' })).toHaveClass('dm-tap-44');
   });
 
   it('marks Mail in Inbox for the same phone hit area', () => {

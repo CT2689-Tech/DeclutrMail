@@ -29,6 +29,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
+import { toast } from '@declutrmail/shared';
 import type { EventProps } from '@declutrmail/shared/observability';
 
 import {
@@ -37,6 +38,7 @@ import {
   type SenderPolicyPatch,
   type SenderPolicyResultDto,
 } from '@/lib/api/senders';
+import { apiErrorCode } from '@/lib/api/client';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { SCREENER_QUEUE_KEY } from '@/features/screener/api/query-keys';
 import { TRIAGE_BOOTSTRAP_KEY } from '@/features/triage/api/query-keys';
@@ -93,14 +95,17 @@ export function useSetSenderPolicy() {
   });
 }
 
-export function useUndoSenderKeep() {
+export function useUndoSenderKeep(
+  onSuccess?: (result: SenderPolicyResultDto, senderId: string) => void,
+) {
   const qc = useQueryClient();
-  return useMutation<SenderPolicyResultDto, Error, { senderId: string }>({
+  const mutation = useMutation<SenderPolicyResultDto, Error, { senderId: string }>({
     mutationFn: async ({ senderId }) => {
       const env = await undoSenderKeep(senderId);
       return env.data;
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: (data, variables) => {
+      onSuccess?.(data, variables.senderId);
       void qc.invalidateQueries({ queryKey: ['senders', 'list'] });
       void qc.invalidateQueries({ queryKey: ['senders', 'summary'] });
       void qc.invalidateQueries({ queryKey: sendersKeys.detail(variables.senderId), exact: true });
@@ -109,7 +114,18 @@ export function useUndoSenderKeep() {
       void qc.invalidateQueries({ queryKey: TRIAGE_BOOTSTRAP_KEY });
       void qc.invalidateQueries({ queryKey: SCREENER_QUEUE_KEY });
     },
+    onError: (error, variables) => {
+      if (apiErrorCode(error) === 'PROTECTED_SENDER') {
+        toast('Unprotect this sender before undoing Keep.', 'warn');
+        return;
+      }
+      toast('Couldn’t undo Keep — try again.', 'warn', {
+        label: 'Retry',
+        onClick: () => mutation.mutate(variables),
+      });
+    },
   });
+  return mutation;
 }
 
 /** Re-export the wire types so consumers don't import from the lib layer. */

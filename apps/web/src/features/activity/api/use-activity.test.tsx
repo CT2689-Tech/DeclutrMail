@@ -4,6 +4,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 
 import { SCREENER_QUEUE_KEY } from '@/features/screener/api/query-keys';
 import { TRIAGE_BOOTSTRAP_KEY } from '@/features/triage/api/query-keys';
+import { snoozedKeys } from '@/features/snoozed/api/query-keys';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { useRevertActivity } from './use-activity';
@@ -12,10 +13,15 @@ afterEach(() => resetFetchStub());
 
 describe('Activity Undo queue reconciliation', () => {
   it.each(['done', 'failed'] as const)(
-    'refreshes fresh Triage and Screener queues after the reverse job ends %s',
+    'refreshes fresh Triage, Screener and Later readers after the reverse job ends %s',
     async (status) => {
       const client = createTestQueryClient();
-      const queueKeys = [TRIAGE_BOOTSTRAP_KEY, SCREENER_QUEUE_KEY] as const;
+      const queueKeys = [
+        TRIAGE_BOOTSTRAP_KEY,
+        SCREENER_QUEUE_KEY,
+        snoozedKeys.list(),
+        snoozedKeys.recovery(),
+      ] as const;
       const unsubscribe: Array<() => void> = [];
       let restoredSenders = 0;
       let undoRequests = 0;

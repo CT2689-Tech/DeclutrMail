@@ -172,12 +172,12 @@ export function HomeScreen() {
     <HomeView
       state={resolve()}
       tier={tier}
-      timeZone={me.user.timezone ?? 'UTC'}
       visitSummary={<HomeArrivals />}
       summary={cleanup.data ?? null}
       nextSteps={nextSteps}
       senderSizeView={SENDER_SIZE_VIEW}
       mailboxId={activeMailbox?.id ?? ''}
+      mailboxEmail={activeMailbox?.email ?? null}
       reportLead={presentation.lead}
       supportText={presentation.support}
       onConfirmFix={(step) => confirmHomeFix(step)}

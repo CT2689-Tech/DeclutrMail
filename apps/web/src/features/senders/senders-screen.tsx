@@ -7,7 +7,7 @@ import { reconcileAction } from '@/lib/api/reconcile-action';
 
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { useHydrated } from '@/lib/use-hydrated';
-import { useSenderInFlightLock } from '@/features/undo/in-flight';
+import { ACTION_OVERDUE_MS, useSenderInFlightLock } from '@/features/undo/in-flight';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import {
@@ -18,6 +18,7 @@ import {
   ScreenIntro,
   tokens,
   toast,
+  usePendingToast,
   useIsAtMost,
 } from '@declutrmail/shared';
 import {
@@ -30,6 +31,11 @@ import {
   canBulkDelete,
   canBulkLater,
   canBulkUnsubscribe,
+  canUnsubscribe,
+  canPerformSenderAction,
+  currentMailUnavailableReason,
+  isMailMovingVerb,
+  blocksRepeatUnsubscribe,
   canUseActionSelector,
   enrichSenderRow,
   isStandingProtected,
@@ -65,6 +71,7 @@ import { useSendersSummary } from './api/use-senders-summary';
 
 import {
   useActionStatus,
+  useUndoStatus,
   useBatchStatus,
   useBulkActionPreview,
   useCompositePreview,
@@ -75,12 +82,10 @@ import {
 } from '@/lib/api/use-action';
 import { useSetSenderPolicy, useUndoSenderKeep } from './api/use-sender-policy';
 import { sendersKeys } from './api/query-keys';
-import {
-  actionLabel,
-  enqueueMayHaveStarted,
-  getActionFailureCopy,
-  stillRunningCopy,
-} from '@/lib/action-error-copy';
+import { currentListActionSender } from './api/current-action-sender';
+import { fetchSenderDetail, type SenderListEnvelope } from '@/lib/api/senders';
+import { unsubscribeControlStatus } from './unsub-status';
+import { actionLabel, enqueueMayHaveStarted, getActionFailureCopy } from '@/lib/action-error-copy';
 import { NO_ACTIONABLE_SENDERS_COPY, skippedAtClickCopy } from '@/lib/bulk-action-copy';
 import {
   isUnsubscribeInFlight,
@@ -92,6 +97,7 @@ import { activityKeys } from '@/features/activity/api/query-keys';
 import { undoKeys } from '@/features/undo/query-keys';
 import {
   isProtectedSkip,
+  cleanupBatchStatus,
   isTerminalStatus,
   type UnsubscribeBatchOutcomes,
 } from '@/lib/api/actions';
@@ -129,7 +135,8 @@ const SenderDetailPane = dynamic(
 import { SelectionFab } from './mobile/selection-fab';
 import { rollupByDomain } from './domain-rollup';
 import { useSendersStore } from './store';
-import { mergePinnedRows, type PinnedRow } from './pinned-rows';
+import { type PinnedRow } from './pinned-rows';
+import { usePinnedSenders } from './use-pinned-senders';
 import {
   isRowBusy,
   RowActivityProvider,
@@ -155,7 +162,7 @@ import type { SenderListDirection, SenderListSort } from '@/lib/api/senders';
 import { useSaveSenderViews, useSenderViews } from './api/use-sender-views';
 import { SENDER_VIEWS_CAP, type SavedSenderView } from '@declutrmail/shared/contracts';
 import { trackActionConfirmed } from '@/lib/action-analytics';
-import { unsubscribeBacklogToast } from './unsubscribe-backlog/toast';
+import { unsubscribeBacklogSubmissionToast } from './unsubscribe-backlog/toast';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 import type { Verb } from '@declutrmail/shared/observability';
@@ -173,7 +180,7 @@ const { color, font, motion, text } = tokens;
  * side effects still run) and the active slot frees so the screen
  * stays usable.
  */
-export const ACTION_OVERDUE_MS = 120_000;
+export { ACTION_OVERDUE_MS } from '@/features/undo/in-flight';
 
 /** The report card does not take the first-landing slot. */
 function noteReportResolved(shown: boolean) {
@@ -476,6 +483,14 @@ export function SendersScreen() {
   return (
     <SendersScreenContent
       senders={allSenders}
+      senderQueryKey={sendersKeys.list(
+        sendersListQueryFromScreen({
+          compose: showingWidened ? EMPTY_COMPOSE : compose,
+          sort,
+          direction,
+          q: debouncedQuery,
+        }),
+      )}
       // The QUESTION the list is answering. Rows held on screen after
       // their action finished are released when it changes.
       listKey={JSON.stringify([compose, sort, direction, debouncedQuery, showingWidened])}
@@ -583,6 +598,7 @@ function describeNarrowedFilters(compose: ComposeState): string {
 /** Renders the screen once the senders list is loaded. */
 function SendersScreenContent({
   senders: serverSenders,
+  senderQueryKey,
   listKey,
   widenedFrom,
   widenedCount,
@@ -611,6 +627,7 @@ function SendersScreenContent({
   clearSearchAndFilters,
 }: {
   senders: Sender[];
+  senderQueryKey: ReturnType<typeof sendersKeys.list>;
   listKey: string;
   /**
    * F011 — set when the active filters starved a search and the results
@@ -694,15 +711,19 @@ function SendersScreenContent({
 
   // Row feedback (founder report 2026-09-20). `settled` is what a row
   // says once its job is terminal; `pinned*` keeps that row on screen in
-  // place even when the post-action refetch drops it (a sender with no
-  // mail left leaves the server's list) — founder decision: the list
-  // never jumps under the cursor. Both are released when the list is
-  // asked a different question, or the mailbox changes.
+  // place while results are pending, partial, or uncertain. The founder’s
+  // October 15 policy releases a completed row after a fresh zero-current
+  // count. Both are released when the list question or mailbox changes.
   const [settled, setSettled] = useState<ReadonlyMap<string, SenderRowActivity>>(new Map());
   // The confirmed request is on its way to the server. LOCAL to the open
   // request — a flag derived from the mutation hooks would also be true
   // for someone else's in-flight enqueue and open the next modal frozen.
   const [submitting, setSubmitting] = useState(false);
+  const unsubscribeFactsCheck = useRef<AbortController | null>(null);
+  const cancelUnsubscribeCheck = useCallback(() => {
+    unsubscribeFactsCheck.current?.abort();
+    unsubscribeFactsCheck.current = null;
+  }, []);
   /**
    * The server answered: close the confirm. Called FIRST in every primary
    * `onSuccess` / `onError`, never from `onSettled` — the bulk Unsubscribe
@@ -719,6 +740,9 @@ function SendersScreenContent({
     new Map(),
   );
   const feedbackScope = `${listKey}\u0000${actionMailboxId ?? ''}`;
+  const currentFeedbackScope = useRef(feedbackScope);
+  currentFeedbackScope.current = feedbackScope;
+  useEffect(() => cancelUnsubscribeCheck, [feedbackScope, cancelUnsubscribeCheck]);
   const [feedbackScopeSeen, setFeedbackScopeSeen] = useState(feedbackScope);
   // Reset during render (not in an effect): an effect would paint one
   // frame of the OLD question's pinned rows inside the new list.
@@ -727,10 +751,12 @@ function SendersScreenContent({
     setSettled(new Map());
     setPinnedSenders(new Map());
   }
-  const senders = useMemo(
-    () => mergePinnedRows(serverSenders, pinnedSenders) as Sender[],
-    [serverSenders, pinnedSenders],
+  const completedSenderIds = useMemo(
+    () =>
+      new Set([...settled].filter(([, activity]) => activity.phase === 'done').map(([id]) => id)),
+    [settled],
   );
+  const senders = usePinnedSenders(serverSenders, pinnedSenders, completedSenderIds) as Sender[];
   const reportSenderNames = useMemo(() => {
     const names: Record<string, { name: string }> = {};
     for (const row of senders) {
@@ -797,7 +823,16 @@ function SendersScreenContent({
   // D40 — Keep is a standing-policy write (`policy_type='keep'`), not a
   // Gmail mutation. The hook owns the senders/activity invalidation.
   const setPolicy = useSetSenderPolicy();
-  const undoKeep = useUndoSenderKeep();
+  const pendingToast = usePendingToast(actionMailboxId);
+  const undoKeep = useUndoSenderKeep((result, senderId) => {
+    if (result.policyType === 'keep') return;
+    setSettled((current) => {
+      if (current.get(senderId)?.verb !== 'keep') return current;
+      const next = new Map(current);
+      next.delete(senderId);
+      return next;
+    });
+  });
   // D51 — saved filter views (users.preferences.senderViews). One
   // full-replace mutation covers save + delete; apply is client-side
   // (write the compose URL state + sort store).
@@ -842,6 +877,7 @@ function SendersScreenContent({
     actionId: string;
     senderName: string;
     domain: string;
+    feedbackInTray: boolean;
   } | null>(null);
   // D230 manual path — the post-confirm "finish in Gmail" callout for
   // a mailto sender. Dismissible; rendered next to the receipt strip.
@@ -882,7 +918,12 @@ function SendersScreenContent({
   // duplicated here.
   const [externalRevertActionId, setExternalRevertActionId] = useState<string | null>(null);
   const [externalRevertMailboxId, setExternalRevertMailboxId] = useState<string | undefined>();
-  const externalRevertStatus = useActionStatus(externalRevertActionId, externalRevertMailboxId);
+  const [externalRevertActionIds, setExternalRevertActionIds] = useState<string[] | undefined>();
+  const externalRevertStatus = useUndoStatus(
+    externalRevertMailboxId === actionMailboxId ? externalRevertActionId : null,
+    externalRevertMailboxId,
+    externalRevertActionIds,
+  );
   // Overdue parking slots (ACTION_OVERDUE_MS, 2026-08-12 incident) —
   // one slot per latch, free-slot rule: a handle parks only while its
   // slot is EMPTY (an occupied slot holds the active timer instead, so
@@ -917,17 +958,21 @@ function SendersScreenContent({
   const { hold: holdRows, reset: resetHolds } = holds;
 
   const resetPendingScope = useCallback(() => {
+    cancelUnsubscribeCheck();
     setPendingAction(null);
     setSelected(new Set());
     setReceipt(null);
     setMailtoFollowup(null);
     setBulkMailtoFollowups([]);
     setUnsubBatchReceipt(null);
+    setExternalRevertActionId(null);
+    setExternalRevertActionIds(undefined);
+    setExternalRevertMailboxId(undefined);
     setSubmitting(false);
     setSettled(new Map());
     setPinnedSenders(new Map());
     resetHolds();
-  }, [resetHolds]);
+  }, [resetHolds, cancelUnsubscribeCheck]);
   useMailboxScopeReset(actionMailboxId, resetPendingScope);
 
   // Senders an in-flight single handle still owns, plus every sender of
@@ -993,14 +1038,8 @@ function SendersScreenContent({
    * they are. Snapshots come from the list AS RENDERED, so a row that was
    * already pinned keeps its place.
    */
-  const settleRows = useCallback(
-    (ids: readonly string[], activity: SenderRowActivity) => {
-      setSettled((prev) => {
-        const next = new Map(prev);
-        for (const id of ids) next.set(id, activity);
-        return next;
-      });
-      if (activity.phase === 'unconfirmed') holdRows(ids, activity.verb);
+  const pinRows = useCallback(
+    (ids: readonly string[], completedAt?: number) => {
       // While a NEW question is loading, the rows on screen still belong
       // to the old one (`keepPreviousData`). Pinning them would carry the
       // old question's rows into the new results. The mark is recorded
@@ -1010,12 +1049,31 @@ function SendersScreenContent({
       setPinnedSenders((prev) => {
         const next = new Map(prev);
         senders.forEach((row, index) => {
-          if (wanted.has(row.id)) next.set(row.id, { row, index });
+          if (wanted.has(row.id)) {
+            next.set(row.id, {
+              row,
+              index,
+              refreshFacts: ids.length === 1 || prev.get(row.id)?.refreshFacts === true,
+              completedAt: completedAt ?? prev.get(row.id)?.completedAt,
+            });
+          }
         });
         return next;
       });
     },
-    [senders, showingStaleRows, holdRows],
+    [senders, showingStaleRows],
+  );
+  const settleRows = useCallback(
+    (ids: readonly string[], activity: SenderRowActivity) => {
+      setSettled((prev) => {
+        const next = new Map(prev);
+        for (const id of ids) next.set(id, activity);
+        return next;
+      });
+      if (activity.phase === 'unconfirmed') holdRows(ids, activity.verb);
+      pinRows(ids, activity.phase === 'done' ? Date.now() : undefined);
+    },
+    [pinRows, holdRows],
   );
   /**
    * An undo was confirmed: nothing on a row may still say "Deleted". All
@@ -1059,12 +1117,16 @@ function SendersScreenContent({
   const keepInFlightRef = useRef(false);
   const settleRowsRef = useRef(settleRows);
   settleRowsRef.current = settleRows;
+  const pinRowsRef = useRef(pinRows);
+  pinRowsRef.current = pinRows;
 
   /** Any parked handle at all — bulk entry points refuse while one exists. */
   const anythingParked = useMemo(
     () => overdueAction != null || overdueBatch != null || overdueUnsubBatch != null,
     [overdueAction, overdueBatch, overdueUnsubBatch],
   );
+  const currentDispatchLocks = useRef({ ids: lockedSenderIds, anythingParked });
+  currentDispatchLocks.current = { ids: lockedSenderIds, anythingParked };
 
   // Overdue-release timers. The cleanup cancels the deadline whenever
   // the handle clears or is replaced, so only a genuinely stuck handle
@@ -1078,7 +1140,6 @@ function SendersScreenContent({
     if (!activeAction || overdueAction != null) return;
     const t = setTimeout(() => {
       void track('action_overdue', { kind: 'single', verb: activeAction.verb.toLowerCase() });
-      toast(stillRunningCopy(activeAction.verb, activeAction.senderName), 'info');
       setOverdueAction(activeAction);
       setActiveAction(null);
     }, ACTION_OVERDUE_MS);
@@ -1088,13 +1149,6 @@ function SendersScreenContent({
     if (!activeBatch) return;
     const t = setTimeout(() => {
       void track('action_overdue', { kind: 'batch', verb: activeBatch.verb.toLowerCase() });
-      toast(
-        stillRunningCopy(
-          activeBatch.verb,
-          `${activeBatch.senderCount} sender${activeBatch.senderCount === 1 ? '' : 's'}`,
-        ),
-        'info',
-      );
       setOverdueBatch(activeBatch);
       setActiveBatch(null);
     }, ACTION_OVERDUE_MS);
@@ -1332,8 +1386,19 @@ function SendersScreenContent({
   );
 
   const performAction = useCallback(
-    (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
+    async (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
       if (senders.length === 0) return;
+      if (isMailMovingVerb(verb)) {
+        const unavailable = senders.find((subject) => {
+          const current = currentListActionSender(qc, senderQueryKey, subject, verb);
+          return !current || !canPerformSenderAction(verb, current);
+        });
+        if (unavailable) {
+          setPendingAction(null);
+          toast('Review this sender’s updated email counts before trying again.', 'info');
+          return;
+        }
+      }
       // One enqueue at a time. The confirm stays cancellable while a
       // request is out, so a second confirm must not start a second one
       // (same guard the sender detail page has).
@@ -1532,11 +1597,153 @@ function SendersScreenContent({
       // never auto-sends an opt-out). No undo token exists for a
       // network unsub (D58) — only a paired archive is reversible.
       if (verb === 'Unsubscribe') {
-        if (recordUnsubIntent.isPending || confirmBacklog.isPending) return;
+        if (
+          recordUnsubIntent.isPending ||
+          confirmBacklog.isPending ||
+          unsubscribeFactsCheck.current
+        )
+          return;
         // The dialog names who the preview included. Post that list,
         // never the selection that was open when the sheet appeared.
         const postedIds = opts?.senderIds;
         if (!postedIds || postedIds.length === 0) return;
+        // Keep the confirmed scope intact: if any included request has since
+        // been recorded, close for a fresh preview rather than silently trim it.
+        const controller = new AbortController();
+        unsubscribeFactsCheck.current = controller;
+        const pendingOwner = pendingActionRef.current;
+        const confirmedScope = currentFeedbackScope.current;
+        setSubmitting(true);
+        let stale: boolean;
+        try {
+          const readCurrentFacts = (
+            subject: Sender,
+            fallback?: { current: Sender; readAt: number },
+          ) => {
+            // Read at dispatch, even before React commits a refetch render.
+            const listState = qc.getQueryState<{ pages: SenderListEnvelope[] }>(senderQueryKey);
+            const listed =
+              listState?.status === 'success' && !listState.isInvalidated
+                ? listState.data?.pages
+                    .flatMap((page) => page.data)
+                    .find((row) => row.id === subject.id)
+                : undefined;
+            let current = fallback?.current ?? subject;
+            let readAt = fallback?.readAt ?? 0;
+            let hasCurrentFacts = fallback != null;
+            if (
+              listed &&
+              (listState!.dataUpdatedAt > readAt ||
+                (listState!.dataUpdatedAt === readAt && blocksRepeatUnsubscribe(listed)))
+            ) {
+              current = { ...current, ...listed };
+              readAt = listState!.dataUpdatedAt;
+              hasCurrentFacts = true;
+            }
+            // A stale inactive detail must not overrule a newer failed/retry
+            // read. Completed zero-mail rows may instead have their newest
+            // facts in the completion-scoped detail, after leaving the list.
+            for (const [key, detail] of qc.getQueriesData<
+              Awaited<ReturnType<typeof fetchSenderDetail>>
+            >({
+              queryKey: sendersKeys.detail(subject.id),
+              predicate: (query) => query.queryKey.length === 3 || query.queryKey[3] === 'cleanup',
+            })) {
+              const state = qc.getQueryState(key);
+              if (
+                detail &&
+                state?.status === 'success' &&
+                !state.isInvalidated &&
+                (state.dataUpdatedAt > readAt ||
+                  (state.dataUpdatedAt === readAt && blocksRepeatUnsubscribe(detail.data)))
+              ) {
+                current = { ...current, ...detail.data };
+                readAt = state.dataUpdatedAt;
+                hasCurrentFacts = true;
+              }
+            }
+            return { current, readAt, hasCurrentFacts };
+          };
+          const readDirect = async (subject: Sender) => {
+            const readAt = Date.now();
+            const fresh = await fetchSenderDetail(subject.id, controller.signal);
+            return { subject, current: { ...subject, ...fresh.data }, readAt, direct: true };
+          };
+          let snapshots = await Promise.all(
+            senders
+              .filter((subject) => postedIds.includes(subject.id))
+              .map(async (subject) => {
+                const cached = readCurrentFacts(subject);
+                if (!cached.hasCurrentFacts) {
+                  // Invalidation can mean an unrelated background refresh, not
+                  // a changed request. Read current facts before deciding.
+                  return readDirect(subject);
+                }
+                return { subject, ...cached, direct: false };
+              }),
+          );
+          // A cached row may lose trust while another row's read waits.
+          // Replace it with an owned read; bound repeats during heavy refreshes.
+          for (let pass = 0; pass < 2; pass += 1) {
+            const missing = snapshots.filter(
+              (snapshot) => !snapshot.direct && !readCurrentFacts(snapshot.subject).hasCurrentFacts,
+            );
+            if (missing.length === 0) break;
+            const refreshed = await Promise.all(missing.map(({ subject }) => readDirect(subject)));
+            snapshots = snapshots.map(
+              (snapshot) =>
+                refreshed.find(({ subject }) => subject.id === snapshot.subject.id) ?? snapshot,
+            );
+          }
+          // Other included senders can change while a missing read waits.
+          // Re-read at dispatch; an equally recent recorded request wins.
+          const current = snapshots.map((snapshot) => ({
+            snapshot,
+            latest: readCurrentFacts(snapshot.subject, snapshot.direct ? snapshot : undefined),
+          }));
+          if (current.some(({ latest }) => !latest.hasCurrentFacts)) {
+            throw new Error('Unsubscribe status is still refreshing');
+          }
+          stale = current.some(
+            ({ snapshot, latest }) =>
+              !canUnsubscribe(snapshot.current) || !canUnsubscribe(latest.current),
+          );
+        } catch {
+          if (
+            !controller.signal.aborted &&
+            pendingActionRef.current === pendingOwner &&
+            currentFeedbackScope.current === confirmedScope
+          ) {
+            setSubmitting(false);
+            toast('Couldn’t refresh unsubscribe status. Try again.', 'warn');
+          }
+          return;
+        } finally {
+          if (unsubscribeFactsCheck.current === controller) unsubscribeFactsCheck.current = null;
+        }
+        if (
+          controller.signal.aborted ||
+          pendingActionRef.current !== pendingOwner ||
+          currentFeedbackScope.current !== confirmedScope
+        )
+          return;
+        if (
+          senders.some(
+            (subject) =>
+              postedIds.includes(subject.id) && currentDispatchLocks.current.ids.has(subject.id),
+          ) ||
+          (postedIds.length > 1 && currentDispatchLocks.current.anythingParked)
+        ) {
+          setSubmitting(false);
+          toast('Still confirming earlier changes. Try again when they finish.', 'info');
+          return;
+        }
+        if (stale) {
+          setSubmitting(false);
+          setPendingAction(null);
+          toast('Review this sender’s updated unsubscribe status before trying again.', 'info');
+          return;
+        }
         setSubmitting(true);
         setSelected(new Set());
         setBulkMailtoFollowups([]);
@@ -1573,9 +1780,18 @@ function SendersScreenContent({
                 (sender) => sender.unsubStatus === 'requested' || sender.unsubStatus === 'manual',
               );
               if (sent) trackActionConfirmed('unsubscribe');
+              // The first refetch may already exclude this sender. Capture
+              // its position now so the terminal effect can still mark it.
+              if (res.backlog) {
+                pinRowsRef.current(
+                  res.senders
+                    .filter((row) => row.unsubStatus !== 'skipped')
+                    .map((row) => row.senderId),
+                );
+              }
               void qc.invalidateQueries({ queryKey: sendersKeys.all });
               void qc.invalidateQueries({ queryKey: activityKeys.all });
-              const line = unsubscribeBacklogToast(res);
+              const line = unsubscribeBacklogSubmissionToast(res);
               if (line !== '') toast(line, sent ? 'info' : 'warn');
               const nameById = new Map(senderRefs.map((sref) => [sref.id, sref] as const));
               if (!isBulk) {
@@ -1587,6 +1803,7 @@ function SendersScreenContent({
                     actionId: outcome.executionActionId,
                     senderName: sref.name,
                     domain: sref.domain,
+                    feedbackInTray: res.backlog !== null && res.feedbackVersion === 2,
                   });
                 } else if (outcome?.unsubStatus === 'manual' && outcome.mailtoUrl) {
                   setMailtoFollowup({
@@ -1697,9 +1914,8 @@ function SendersScreenContent({
           for (const sender of senderRefs) next.set(sender.id, { phase: 'working', verb: 'keep' });
           return next;
         });
-        const dismissPendingKeep = toast(
+        const dismissPendingKeep = pendingToast(
           isBulk ? `Keeping ${senderRefs.length} senders…` : `Keeping ${senderRefs[0]!.name}…`,
-          'info',
         );
         // `mutateAsync`, not N × `mutate(…, { onSuccess })`: per-call
         // callbacks live on the hook's ONE observer, so each `mutate`
@@ -1888,7 +2104,16 @@ function SendersScreenContent({
       // bucket. Protect stays a standing-policy toggle on Sender
       // Detail; no Senders-screen surface emits it as a verb.
     },
-    [enqueueBulk, confirmBacklog, lockedSenderIds, anythingParked, actionMailboxId, unsettleRows],
+    [
+      enqueueBulk,
+      confirmBacklog,
+      lockedSenderIds,
+      anythingParked,
+      actionMailboxId,
+      unsettleRows,
+      senderQueryKey,
+      qc,
+    ],
   );
 
   // P6 — drive the Archive lifecycle off the polled status. On `done`,
@@ -2019,13 +2244,15 @@ function SendersScreenContent({
       captureFeatureException(err, { surface: 'senders', reason: 'unsub_status_poll' });
       // No promise about where the result appears: nothing refetches the
       // list after a failed poll, so the row can keep its last state.
-      toast(`Couldn’t confirm the unsubscribe from ${activeUnsub.senderName}`, 'warn');
+      if (!activeUnsub.feedbackInTray)
+        toast(`Couldn’t confirm the unsubscribe from ${activeUnsub.senderName}`, 'warn');
       setActiveUnsub(null);
       return;
     }
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    toast(...unsubscribeOutcomeToast(activeUnsub.senderName, data));
+    if (!activeUnsub.feedbackInTray)
+      toast(...unsubscribeOutcomeToast(activeUnsub.senderName, data));
     reconcileAction(qc, data, data.actionId);
     setActiveUnsub(null);
   }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, activeUnsub, qc]);
@@ -2135,7 +2362,7 @@ function SendersScreenContent({
       setActiveBatch(null);
       return;
     }
-    const data = batchStatus.data;
+    const data = batchStatus.data ? cleanupBatchStatus(batchStatus.data) : undefined;
     if (!data || !isTerminalStatus(data.status)) return;
     // A batch reports totals only. All-failed and all-succeeded say the
     // same thing about every member; a PARTIAL failure does not say which
@@ -2201,7 +2428,7 @@ function SendersScreenContent({
       setOverdueBatch(null);
       return;
     }
-    const data = overdueBatchStatus.data;
+    const data = overdueBatchStatus.data ? cleanupBatchStatus(overdueBatchStatus.data) : undefined;
     if (!data || !isTerminalStatus(data.status)) return;
     // A batch reports totals only. All-failed and all-succeeded say the
     // same thing about every member; a PARTIAL failure does not say which
@@ -2281,23 +2508,25 @@ function SendersScreenContent({
       const variables = event.mutation.state.variables as
         { token?: string; memberToken?: string; mailboxId?: string } | undefined;
       const result = event.mutation.state.data as
-        { reverted?: boolean; actionId?: string | null } | undefined;
+        { reverted?: boolean; actionId?: string | null; actionIds?: string[] } | undefined;
       if (!variables?.token && !variables?.memberToken) return;
+      if (variables?.mailboxId !== undefined && variables.mailboxId !== actionMailboxId) return;
       if (result?.reverted) {
         setReceipt(null);
         releaseSettledRows();
       } else if (result?.actionId) {
-        setExternalRevertMailboxId(variables?.mailboxId ?? receipt?.mailboxId);
+        setExternalRevertActionIds(result.actionIds);
+        setExternalRevertMailboxId(variables?.mailboxId ?? receipt?.mailboxId ?? actionMailboxId);
         setExternalRevertActionId(result.actionId);
       }
     });
-  }, [receipt, qc, releaseSettledRows]);
+  }, [receipt, qc, releaseSettledRows, actionMailboxId]);
 
   // Quiet poll-to-terminal for an EXTERNALLY-triggered revert (see above) —
   // no toast, no cache invalidation: the tray's own completion already
   // toasts and its own `invalidateAfterUndo` already covers Senders/Activity.
   useEffect(() => {
-    if (!externalRevertActionId) return;
+    if (!externalRevertActionId || externalRevertMailboxId !== actionMailboxId) return;
     const data = externalRevertStatus.data;
     if (externalRevertStatus.isError) {
       setExternalRevertActionId(null);
@@ -2311,6 +2540,8 @@ function SendersScreenContent({
     setExternalRevertActionId(null);
   }, [
     externalRevertActionId,
+    externalRevertMailboxId,
+    actionMailboxId,
     externalRevertStatus.data,
     externalRevertStatus.isError,
     releaseSettledRows,
@@ -2324,6 +2555,20 @@ function SendersScreenContent({
       if (resultsReadOnly) return;
       if (req.senders.length === 0) return;
       if (
+        isMailMovingVerb(req.verb) &&
+        req.senders.some((sender) => !canPerformSenderAction(req.verb, sender))
+      ) {
+        toast(
+          req.verb === 'Delete' ? 'No current emails to delete.' : 'No inbox emails to move.',
+          'info',
+        );
+        return;
+      }
+      if (req.verb === 'Unsubscribe' && req.senders.some((sender) => !canUnsubscribe(sender))) {
+        toast('Review the current unsubscribe status before making a new request.', 'info');
+        return;
+      }
+      if (
         req.verb === 'Archive' ||
         req.verb === 'Unsubscribe' ||
         req.verb === 'Later' ||
@@ -2331,7 +2576,7 @@ function SendersScreenContent({
       ) {
         setPendingAction(req);
       } else {
-        performAction(req.verb, req.senders);
+        void performAction(req.verb, req.senders);
       }
     },
     [performAction, resultsReadOnly],
@@ -2376,17 +2621,20 @@ function SendersScreenContent({
           toast(protectedSelectionLead(selectedSenders[0]!), 'warn');
           return;
         }
-        // Standing protection gates every bulk verb; the only other gate
-        // is Unsubscribe's people rule (canUnsubscribe), so a non-
-        // protected drop here can only mean primary-group senders.
-        // All-Protected uses the deck sentence. A mixed selection still
-        // opens the preview, which says the Protected senders are left.
+        const lifecycle =
+          verb === 'Unsubscribe' && n === 1 ? unsubscribeControlStatus(selectedSenders[0]!) : null;
         toast(
           allProtected
             ? allProtectedSelectionCopy(n, selectedSenders[0]?.name ?? '')
-            : n === 1
-              ? `${selectedSenders[0]!.name} is a person — Unsubscribe doesn’t apply`
-              : 'Nothing to unsubscribe — these senders are protected or people',
+            : lifecycle
+              ? `${lifecycle.label}. ${lifecycle.title}`
+              : verb === 'Unsubscribe'
+                ? 'No new unsubscribe request is available for this selection.'
+                : verb === 'Delete'
+                  ? 'No eligible current emails to delete in this selection.'
+                  : verb === 'Archive'
+                    ? 'No eligible inbox emails to archive in this selection.'
+                    : 'No eligible inbox emails to move to Later in this selection.',
           'warn',
         );
         return;
@@ -2454,6 +2702,22 @@ function SendersScreenContent({
       const protectedCount = selectedSenders.filter(
         (s) => !ELIGIBLE[verb](s) && isStandingProtected(s),
       ).length;
+      const recordedUnsubscribeCount =
+        verb === 'Unsubscribe'
+          ? selectedSenders.filter((s) => blocksRepeatUnsubscribe(s) && !isStandingProtected(s))
+              .length
+          : 0;
+      const emptyMailCount = isMailMovingVerb(verb)
+        ? selectedSenders.filter(
+            (s) => !isStandingProtected(s) && currentMailUnavailableReason(verb, s) != null,
+          ).length
+        : 0;
+      const skipped = {
+        emptyMailCount,
+        protectedCount,
+        peopleCount: skippedTotal - protectedCount - recordedUnsubscribeCount - emptyMailCount,
+        recordedUnsubscribeCount,
+      };
       // Over quota AND eligibility-narrowed. This combination used to
       // fall through to the disabled confirm — the dead end again, just
       // reached by a selection that happened to contain a protected
@@ -2472,7 +2736,7 @@ function SendersScreenContent({
           selectedCount: selectedSenders.length,
           actionableCount: remainingWithSkips,
           quotaCappedFrom: eligible.length,
-          skipped: { protectedCount, peopleCount: skippedTotal - protectedCount },
+          skipped,
           ...(protectedSenderIds.length > 0 ? { protectedSenderIds } : {}),
         });
         return;
@@ -2482,10 +2746,13 @@ function SendersScreenContent({
         // A/L/D keep the original selection so preview and receipt can
         // report protected/raced rows individually. Unsubscribe fans
         // intent requests and therefore remains client-narrowed.
-        senders: verb === 'Unsubscribe' ? eligible : selectedSenders,
+        senders:
+          verb === 'Unsubscribe'
+            ? eligible
+            : selectedSenders.filter((s) => currentMailUnavailableReason(verb, s) === null),
         selectedCount: selectedSenders.length,
         actionableCount: eligible.length,
-        skipped: { protectedCount, peopleCount: skippedTotal - protectedCount },
+        skipped,
         ...(protectedSenderIds.length > 0 ? { protectedSenderIds } : {}),
       });
     },
@@ -2495,13 +2762,14 @@ function SendersScreenContent({
   // Cancel stays live while submitting: it closes the UI only. If the
   // request lands anyway, the rows say so.
   const closePending = useCallback(() => {
+    cancelUnsubscribeCheck();
     setSubmitting(false);
     setPendingAction(null);
-  }, []);
+  }, [cancelUnsubscribeCheck]);
   const confirmPending = useCallback(
     (opts: ConfirmOptions) => {
       if (pendingAction && !resultsReadOnly) {
-        performAction(pendingAction.verb, pendingAction.senders, opts);
+        void performAction(pendingAction.verb, pendingAction.senders, opts);
       }
     },
     [pendingAction, performAction, resultsReadOnly],
@@ -3229,7 +3497,7 @@ function BulkSelectButton({
       }
       ariaPressed={allSelected}
     >
-      {allSelected ? `Deselect all ${senders.length}` : `Select all ${senders.length}`}
+      {allSelected ? `Deselect all ${senders.length}` : `Select ${senders.length} shown`}
     </Button>
   );
 }
