@@ -55,17 +55,14 @@ describe('Unsubscribe uses the action preview contract', () => {
       />,
     );
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
-    const inbox = screen.getByRole('radio', { name: 'Inbox only 4' });
-    expect(inbox).toHaveAttribute('aria-checked', 'true');
-    expect(screen.getByRole('radio', { name: 'Inbox + archived 9' })).toBeVisible();
+    const includeArchived = screen.getByRole('checkbox', { name: 'Include archived email' });
+    expect(includeArchived).not.toBeChecked();
     fireEvent.change(screen.getByRole('combobox', { name: 'How far back to act on' }), {
       target: { value: '180' },
     });
-    expect(screen.getByRole('radio', { name: 'Inbox only 1' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Unsubscribe + Delete 1 email' })).toBeEnabled();
-    const widerScope = screen.getByRole('radio', { name: 'Inbox + archived 3' });
-    fireEvent.keyDown(screen.getByRole('radio', { name: 'Inbox only 1' }), { key: 'ArrowRight' });
-    expect(widerScope).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(includeArchived);
+    expect(includeArchived).toBeChecked();
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Delete 3 emails' }));
     expect(onConfirm).toHaveBeenCalledWith({
       secondary: { type: 'delete', olderThanDays: 180 },
@@ -92,7 +89,7 @@ describe('Unsubscribe uses the action preview contract', () => {
       );
       if (mode === 'delete') {
         fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
-        fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
       }
       const window = screen.getByRole('combobox', { name: 'How far back to act on' });
       expect(window).toHaveValue('all');
@@ -106,7 +103,7 @@ describe('Unsubscribe uses the action preview contract', () => {
         expect(screen.getByRole('option', { name: '6 months+ · 1' })).toBeInTheDocument();
       } else {
         expect(screen.getByRole('option', { name: '6 months+ · 3' })).toBeInTheDocument();
-        expect(screen.getByRole('radio', { name: /Inbox \+ archived/ })).toBeChecked();
+        expect(screen.getByRole('checkbox', { name: 'Include archived email' })).toBeChecked();
       }
       fireEvent.click(
         screen.getByRole('button', {
@@ -287,10 +284,10 @@ describe('Unsubscribe uses the action preview contract', () => {
         onConfirm={onConfirm}
       />,
     );
-    expect(screen.queryByRole('radio', { name: /Inbox \+ archived/ })).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
-    const includeArchived = screen.getByRole('radio', {
-      name: /Inbox \+ archived/,
+    const includeArchived = screen.getByRole('checkbox', {
+      name: 'Include archived email',
     });
     expect(includeArchived).not.toBeChecked();
     fireEvent.click(includeArchived);
@@ -311,7 +308,7 @@ describe('Unsubscribe uses the action preview contract', () => {
     expect(onConfirm.mock.calls.at(-1)![0]).not.toHaveProperty('reach');
     expect(onConfirm.mock.calls.at(-1)![0]).toMatchObject({ senderIds: [sender.id] });
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
-    expect(screen.getByRole('radio', { name: /Inbox \+ archived/ })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Include archived email' })).not.toBeChecked();
   });
 
   it('lets an empty inbox reach archived email through an explicit Delete choice', () => {
@@ -329,8 +326,10 @@ describe('Unsubscribe uses the action preview contract', () => {
     expect(screen.queryByRole('button', { name: 'Unsubscribe only' })).toBeNull();
     expect(screen.getByRole('heading')).not.toHaveTextContent(/delete 0 emails/);
     expect(screen.queryByText(/0 emails you already have/)).toBeNull();
-    expect(screen.getByText('Choose Inbox + archived to include archived email.')).toBeVisible();
-    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    expect(
+      screen.getByText('To include email you’ve archived, turn on Include archived email.'),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     expect(
       screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
     ).toBeEnabled();
@@ -341,12 +340,12 @@ describe('Unsubscribe uses the action preview contract', () => {
     const props = { request, onCancel: vi.fn(), onConfirm: vi.fn() };
     const { rerender } = render(<ConfirmActionModal {...props} compositePreview={widePreview} />);
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
-    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     rerender(<ConfirmActionModal {...props} compositePreview={preview} />);
     expect(
       screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
     ).toBeDisabled();
-    expect(screen.getByRole('radio', { name: /Inbox \+ archived/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Include archived email' })).toBeChecked();
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(props.onConfirm).not.toHaveBeenCalled();
     rerender(
@@ -361,8 +360,7 @@ describe('Unsubscribe uses the action preview contract', () => {
         compositePreview={{ ...widePreview, allMail: { ...widePreview.allMail, counts } }}
       />,
     );
-    expect(screen.getByRole('radio', { name: /Inbox \+ archived/ })).toBeChecked();
-    expect(screen.getByRole('radio', { name: /Inbox \+ archived/ })).toBeEnabled();
+    expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
   });
 
   it('uses only eligible bulk archived counts and blocks incomplete all-mail coverage', () => {
@@ -397,7 +395,7 @@ describe('Unsubscribe uses the action preview contract', () => {
       <ConfirmActionModal {...props} bulkPreview={{ data, loading: false, error: false }} />,
     );
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
-    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     expect(screen.getByRole('heading')).toHaveTextContent('1 sender and delete 9 emails');
     rerender(
       <ConfirmActionModal

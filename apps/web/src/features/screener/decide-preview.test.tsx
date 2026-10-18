@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { SCREENER_QUEUE } from './data';
 import { DecidePreview } from './decide-preview';
 
@@ -121,7 +122,7 @@ describe('DecidePreview — live-preview confirm gate', () => {
 });
 
 describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
-  it('renders the chip pair with both live counts, defaulting to Inbox only', () => {
+  it('renders Include archived email off by default, with the inbox count in the headline', () => {
     render(
       <DecidePreview
         verb="delete"
@@ -136,21 +137,34 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
       />,
     );
 
-    expect(screen.getByRole('radiogroup', { name: 'Where it applies' })).toBeInTheDocument();
-    const inboxChip = screen.getByRole('radio', { name: /Inbox only/ });
-    const allMailChip = screen.getByRole('radio', { name: /Inbox \+ archived/ });
-    expect(inboxChip).toHaveAttribute('aria-checked', 'true');
-    expect(allMailChip).toHaveAttribute('aria-checked', 'false');
-    expect(inboxChip).toHaveTextContent('2');
-    expect(allMailChip).toHaveTextContent('9');
-    // Default reach keeps the inbox-scoped headline + count scope.
+    const includeArchived = screen.getByRole('checkbox', { name: 'Include archived email' });
+    expect(includeArchived).not.toBeChecked();
+    expect(includeArchived).toHaveStyle({ minHeight: '48px' });
+    expect(screen.getByRole('heading', { name: 'Delete 2 emails?' })).toBeInTheDocument();
+    expect(screen.queryByText('Both choices cover the same emails right now.')).toBeNull();
     expect(screen.getByText(/They move to Gmail Trash\./)).toBeInTheDocument();
     expect(
       screen.getByText(/^Inbox only\. We check again right before anything moves/),
     ).toBeInTheDocument();
   });
 
-  it('hides the chips on a non-Delete verb and when the all-mail block is absent', () => {
+  it('hides the checkbox when the inbox and all-mail counts match', () => {
+    render(
+      <DecidePreview
+        verb="delete"
+        row={row}
+        inboxCount={4}
+        allMailCount={4}
+        reach="inbox_only"
+        confirming={false}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
+  });
+
+  it('hides the checkbox on a non-Delete verb and disables it when archived mail cannot be counted', () => {
     const { rerender } = render(
       <DecidePreview
         verb="archive"
@@ -162,10 +176,8 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
         onCancel={() => {}}
       />,
     );
-    expect(screen.queryByRole('radiogroup')).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
 
-    // Delete against an API predating the field (deploy skew) — the
-    // choice simply does not appear.
     rerender(
       <DecidePreview
         verb="delete"
@@ -177,7 +189,10 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
         onCancel={() => {}}
       />,
     );
-    expect(screen.queryByRole('radiogroup')).toBeNull();
+    const includeArchived = screen.getByRole('checkbox', { name: 'Include archived email' });
+    expect(includeArchived).toBeDisabled();
+    expect(includeArchived).not.toBeChecked();
+    expect(screen.getByText(WS5_COPY['f1.preview.archived.unavailable'])).toBeInTheDocument();
   });
 
   it('reports a chip click and, at the widened reach, restates the headline, count scope, exclusions', () => {
@@ -194,7 +209,7 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
     };
     const { rerender } = render(<DecidePreview {...props} reach="inbox_only" />);
 
-    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     expect(onReachChange).toHaveBeenCalledWith('all_mail');
 
     rerender(<DecidePreview {...props} reach="all_mail" />);

@@ -39,7 +39,7 @@ import { mailLocationValue } from '@/features/triage/action-preview-detail';
 import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 import { afterLead } from '@/lib/copy/after-lead';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
-import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { pluralCopy, WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { fillStory, meterPreviewText, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
@@ -324,17 +324,17 @@ export function ConfirmActionModal({
     ? bulkPreview?.data?.allMailTotals
     : compositePreview?.allMail?.counts;
 
-  // ADR-0028 reach. Offered only where the server accepts it — a
-  // Delete, whether it is the primary verb or the Unsubscribe
-  // composite's "Delete them" secondary (2026-08-31 amendment: the
-  // secondary re-dispatches as its own Delete primary, which already
-  // accepts `reach`), for one sender or a bulk selection (2026-09-19
-  // amendment: the `senders` fan-out persists the reach on every
-  // per-sender row). And only when the preview actually carries the
-  // all-mail block — it is absent against an API predating the field,
-  // so during a deploy skew the choice simply does not appear.
-  const reachAvailable =
-    (isDeleteVerb || (hasSecondaryAction && secondaryVerb === 'delete')) && allMailCounts != null;
+  // ADR-0028 reach. Widening is accepted only for a Delete — the primary
+  // verb or the Unsubscribe composite's "Delete them" secondary
+  // (2026-08-31 amendment: the secondary re-dispatches as its own Delete
+  // primary, which already accepts `reach`), for one sender or a bulk
+  // selection (2026-09-19 amendment: the `senders` fan-out persists the
+  // reach on every per-sender row) — and only when the preview carries
+  // the all-mail block. Without that count the checkbox stays visible
+  // and disabled at inbox_only. A box already set to all_mail stays
+  // enabled so the user can narrow, and confirm stays closed.
+  const deleteReachOffered = isDeleteVerb || (hasSecondaryAction && secondaryVerb === 'delete');
+  const reachAvailable = deleteReachOffered && allMailCounts != null;
   const activeReach: ActionReach = reachAvailable ? reach : 'inbox_only';
 
   const bucketCounts = activeReach === 'all_mail' ? allMailCounts : inboxCounts;
@@ -529,11 +529,12 @@ export function ConfirmActionModal({
   // local on purpose: the shared notice is also rendered by surfaces
   // that may have no reach control to point at (the Screener's chips
   // carry their own live counts instead of this hint).
+  const archivedReachCount = allMailCounts?.all ?? 0;
   const archivedReachHint =
-    inboxScopeNotice.kind === 'empty-inbox' && reachAvailable && (allMailCounts?.all ?? 0) > 0
-      ? `Switch to "Inbox + archived" to reach ${(allMailCounts?.all ?? 0).toLocaleString(
-          'en-US',
-        )} archived email${(allMailCounts?.all ?? 0) === 1 ? '' : 's'}.`
+    inboxScopeNotice.kind === 'empty-inbox' && reachAvailable && archivedReachCount > 0
+      ? pluralCopy(WS2_COPY.preview.archivedReachHint, archivedReachCount, {
+          n: archivedReachCount.toLocaleString('en-US'),
+        })
       : null;
   // Founder report 2026-08-25 — "how much is where", on every verb.
   //
@@ -673,12 +674,17 @@ export function ConfirmActionModal({
     isBulk &&
     bulkPreview?.data !== undefined &&
     (bulkUnsubExecutableCount ?? bulkActionableSenderCount) === 0;
+  // All-mail was armed, then its count disappeared. The checkbox stays
+  // checked so the user can narrow; confirm stays closed until they do,
+  // and the wire below never sends all_mail without the count.
+  const archivedUncounted = deleteReachOffered && reach === 'all_mail' && allMailCounts == null;
   const confirmDisabled =
     livePreviewBlocksConfirm ||
     nothingToActOn ||
     wakeAtInvalid ||
     unsubNothingToSend ||
     nothingActionableBulk ||
+    archivedUncounted ||
     (quotaShort && !quotaCappedFrom) ||
     submitting;
 
@@ -1012,9 +1018,11 @@ export function ConfirmActionModal({
   const reachWindow = showWindowChips ? olderThanDays : null;
   const inboxReachCount = pickBucketCount(inboxCounts, reachWindow);
   const allMailReachCount = pickBucketCount(allMailCounts, reachWindow);
-  // Scope remains an explicit decision even when this snapshot's counts
-  // happen to tie. Preserve main's server-capability and verb gates.
-  const showReach = reachAvailable;
+  // Delete keeps the checkbox when the archived count is missing, so the
+  // unavailable sentence can say why widening is off. Equal numeric
+  // counts still hide it inside ActionReachControl. Widening itself
+  // stays behind `reachAvailable`.
+  const showReach = deleteReachOffered && inboxReachCount != null;
   const windowOptions = TIME_WINDOW_PRESETS.map((preset) => ({
     value: preset.days === null ? 'all' : String(preset.days),
     days: preset.days,
@@ -1052,10 +1060,13 @@ export function ConfirmActionModal({
     controls.push(
       <ActionReachControl
         key="reach"
-        value={activeReach}
+        value={reach}
         inboxCount={inboxReachCount}
         allMailCount={allMailReachCount}
         onChange={(next) => {
+          // A missing archived count cannot arm all_mail. An already
+          // checked box stays enabled so the user can narrow.
+          if (next === 'all_mail' && allMailCounts == null) return;
           // Choosing the option that advertised its UN-WINDOWED count (the
           // window was hidden for an empty inbox) must arm exactly that
           // number — so the window resets to "All mail" instead of a hidden

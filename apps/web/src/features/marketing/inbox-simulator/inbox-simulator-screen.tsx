@@ -1124,10 +1124,7 @@ export function InboxSimulatorScreen() {
               </div>
 
               {decisions.length === 0 ? (
-                <p className="dm-simulator-activity-empty">
-                  Choose an action. If mail would move, inspect the preview and confirm it. Outcomes
-                  appear here only after the decision is recorded.
-                </p>
+                <p className="dm-simulator-activity-empty">{WS3_COPY['ws3.demo.activity.empty']}</p>
               ) : (
                 <ol>
                   {decisions

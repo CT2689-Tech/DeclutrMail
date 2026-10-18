@@ -69,8 +69,8 @@ export function SenderWalkthrough({
           <PanelHeading>Archive 128 emails?</PanelHeading>
           <dl>
             <div>
-              <dt>Where</dt>
-              <dd>Inbox only</dd>
+              <dt>{WS3_COPY['ws3.demo.details.includes.label']}</dt>
+              <dd>{WS3_COPY['ws3.demo.details.includes.inbox']}</dd>
             </div>
             <div>
               <dt>Age</dt>

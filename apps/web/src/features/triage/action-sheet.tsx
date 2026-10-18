@@ -267,7 +267,7 @@ export function ActionSheet({
       wakeAt: verb === 'Later' ? selectedWakeAt : null,
     });
 
-  // ADR-0028 — show the same explicit Delete scope even when counts tie.
+  // The checkbox hides itself when the inbox and all-mail counts match.
   const movesMail = actionMovesMail(verb, effectiveMode !== 'unsub_only');
   const reachControl =
     detail !== undefined &&
