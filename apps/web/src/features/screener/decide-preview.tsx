@@ -5,6 +5,7 @@ import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 
 import {
   Button,
+  Disclosure,
   SheetFactList,
   SheetSegmented,
   tokens,
@@ -16,7 +17,7 @@ import {
   inboxScopeNoticeCopy,
 } from '@declutrmail/shared/actions';
 import { scoredAgeLabel } from '@declutrmail/shared/copy';
-import { WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 import { afterLead } from '@/lib/copy/after-lead';
@@ -359,7 +360,7 @@ export function DecidePreview({
         <p style={mutedLine}>{WS5_COPY['f1.preview.backlog.loading']}</p>
       )}
       {moves && effectiveCount === 'unavailable' && (
-        <p style={mutedLine}>{WS5_COPY['f1.preview.backlog.error']}</p>
+        <p style={mutedLine}>{WS2_COPY.preview.loadFailed}</p>
       )}
 
       {scopeCopy && (
@@ -443,16 +444,9 @@ export function DecidePreview({
       )}
 
       {facts.length > 0 && (
-        <details className="dm-disclosure" style={{ marginTop: space[2] }}>
-          <summary
-            style={{ cursor: 'pointer', fontSize: text.sm, fontWeight: 500, color: color.fgSoft }}
-          >
-            Details
-          </summary>
-          <div style={{ marginTop: space[2], fontSize: text.sm, color: color.fg }}>
-            <SheetFactList facts={facts} />
-          </div>
-        </details>
+        <Disclosure style={{ marginTop: space[2] }}>
+          <SheetFactList facts={facts} />
+        </Disclosure>
       )}
 
       <div className="dm-confirm-footer" style={{ marginTop: space[3] }}>

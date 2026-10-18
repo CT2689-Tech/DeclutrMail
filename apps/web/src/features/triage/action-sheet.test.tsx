@@ -124,7 +124,8 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
       );
 
       expect(html).toContain('Try again');
-      expect(html).toContain('Couldn’t count the email you already have.');
+      expect(html).toContain('Nothing can move until it loads.');
+      expect(html).not.toContain('Try again to archive or delete');
       expect(html).toMatch(/<button[^>]*disabled=""/);
     },
   );
@@ -1011,10 +1012,14 @@ describe('ActionSheet choice survives a preview refresh', () => {
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
     rerender(<ActionSheet {...props} inboxCount={2} />);
     expect(screen.getByRole('radio', { name: '+ Delete 2' })).toBeChecked();
-    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Delete' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+    );
     expect(onConfirm).toHaveBeenLastCalledWith(expect.objectContaining({ backlogMode: 'delete' }));
     rerender(<ActionSheet {...props} inboxCount="unavailable" />);
-    expect(screen.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+    ).toBeDisabled();
     expect(screen.getByRole('heading')).not.toHaveTextContent('0 emails');
   });
 });
@@ -1048,7 +1053,9 @@ describe('ActionSheet Unsubscribe preview recovery', () => {
     const { rerender } = render(<ActionSheet {...props} inboxCount={4} />);
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
     rerender(<ActionSheet {...props} inboxCount={0} />);
-    expect(screen.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+    ).toBeDisabled();
     expect(screen.getByText(WS5_COPY['f1.preview.backlog.none'])).toBeVisible();
     expect(screen.queryByText(/Counting the inbox/)).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));

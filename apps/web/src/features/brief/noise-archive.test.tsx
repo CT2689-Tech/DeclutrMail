@@ -529,7 +529,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     renderScreen();
 
     const dialog = await openPreview();
-    await within(dialog).findByText(/couldn’t count the email you already have/i);
+    await within(dialog).findByText(/couldn’t load the preview/i);
     expect(within(dialog).getByRole('button', { name: /^Archive/ })).toBeDisabled();
     expect(within(dialog).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
     expect(enqueued).toHaveLength(0);
@@ -1325,7 +1325,7 @@ describe('Brief Noise bulk archive (D65)', () => {
           screen.queryAllByText('The Noise archive is still running — see Activity.').length;
         const before = parked();
         await tick(ACTION_OVERDUE_MS);
-        expect(parked()).toBe(before + 1);
+        expect(parked()).toBe(before);
 
         finished = true;
         await tick(2_500);
@@ -1383,7 +1383,7 @@ describe('Brief Noise bulk archive (D65)', () => {
           screen.queryAllByText('The Noise archive is still running — see Activity.').length;
         const before = parked();
         await tick(ACTION_OVERDUE_MS);
-        expect(parked()).toBe(before + 1);
+        expect(parked()).toBe(before);
 
         finished = true;
         await tick(2_500);
@@ -1396,7 +1396,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     });
   });
 
-  it('parks a stuck archive at ACTION_OVERDUE_MS: toast fires, busy stays, done still settles and frees (2026-08-12 incident)', async () => {
+  it('parks a stuck archive at ACTION_OVERDUE_MS: tray owns progress, busy stays, done still settles and frees (2026-08-12 incident)', async () => {
     // The worker hangs >2 min. The handle parks with the info toast —
     // but on THIS surface `busy` deliberately keeps covering the parked
     // handle: the whole section is one bulk entry point over the very
@@ -1471,7 +1471,7 @@ describe('Brief Noise bulk archive (D65)', () => {
         screen.queryAllByText('The Noise archive is still running — see Activity.').length;
       const before = parked();
       await tick(ACTION_OVERDUE_MS);
-      expect(parked()).toBe(before + 1);
+      expect(parked()).toBe(before);
       expect(screen.getByRole('button', { name: /Archiving…/ })).toBeDisabled();
 
       // Parked terminal `done` still settles: Done ✓ marks, the real

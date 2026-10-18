@@ -12,6 +12,7 @@
 
 import { useEffect, type ReactNode } from 'react';
 import { useFocusTrap } from '../hooks/use-focus-trap';
+import { OVERLAY_Z } from '../tokens/overlay-layers';
 import { tokens } from '../tokens/tokens';
 
 const { color, radius, shadow, space } = tokens;
@@ -49,7 +50,7 @@ export function BottomSheet({
       <div
         className="dm-scrim"
         onClick={onClose}
-        style={{ position: 'fixed', inset: 0, zIndex: 140 }}
+        style={{ position: 'fixed', inset: 0, zIndex: OVERLAY_Z.modal }}
       />
       <div
         ref={trapRef}
@@ -66,10 +67,11 @@ export function BottomSheet({
           boxSizing: 'border-box',
           maxHeight: `${maxHeightVh}vh`,
           overflow: 'auto',
+          overscrollBehavior: 'contain',
           background: color.card,
           borderRadius: `${radius['2xl']}px ${radius['2xl']}px 0 0`,
           boxShadow: shadow.modal,
-          zIndex: 141,
+          zIndex: OVERLAY_Z.sheet,
           padding: `${space[2]}px ${space[5]}px calc(${space[5]}px + env(safe-area-inset-bottom))`,
         }}
       >

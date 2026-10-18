@@ -3,8 +3,9 @@
 import { reconcileAction } from '@/lib/api/reconcile-action';
 
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
-import { useSenderInFlightLock } from '@/features/undo/in-flight';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ACTION_OVERDUE_MS, useSenderInFlightLock } from '@/features/undo/in-flight';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
   Avatar,
@@ -16,10 +17,14 @@ import {
   ScreenIntro,
   tokens,
   toast,
+  usePendingToast,
 } from '@declutrmail/shared';
 import { buildActionReceiptResult } from '@declutrmail/shared/actions';
 import {
   daysSince,
+  canPerformSenderAction,
+  isMailMovingVerb,
+  currentMailUnavailableReason,
   senderAddressLine,
   type ActionRequest,
   type ActionVerb,
@@ -29,6 +34,7 @@ import { ConfirmActionModal, type ConfirmOptions } from '../confirm-action-modal
 import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 import type { ActionReceipt } from '../action-receipt';
 import { RecommendationBanner } from './recommendation-banner';
+import { currentRecommendation } from './current-recommendation';
 import { ActionToolbar } from './action-toolbar';
 import { RowActivityProvider, type RowActivityVerb, type SenderRowActivity } from '../row-activity';
 import { RecentMessages } from './recent-messages';
@@ -46,6 +52,7 @@ import {
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
   useActionStatus,
+  useUndoStatus,
 } from '@/lib/api/use-action';
 import { useSetSenderPolicy, useUndoSenderKeep } from '../api/use-sender-policy';
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
@@ -54,9 +61,10 @@ import { activityKeys } from '@/features/activity/api/query-keys';
 import { isProtectedSkip, isTerminalStatus } from '@/lib/api/actions';
 import { useQueryClient } from '@tanstack/react-query';
 import { adaptProtectionReason, adaptSenderDetail } from '../api/adapters';
+import type { fetchSenderDetail } from '@/lib/api/senders';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { DecisionTimeline, type TimelineItem } from '../uplift-d';
-import { unsubscribeStatusCopy } from '../unsub-status';
+import { unsubscribeControlStatus, unsubscribeStatusCopy } from '../unsub-status';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { useUserTimeZone } from '@/features/auth/api/use-me';
@@ -69,15 +77,10 @@ import { formatReadRatePct } from '../fact-language';
 import { relTime } from './data';
 import { senderSizeDetail } from '../sender-size';
 import { trackActionConfirmed } from '@/lib/action-analytics';
-import { unsubscribeBacklogToast } from '../unsubscribe-backlog/toast';
+import { unsubscribeBacklogSubmissionToast } from '../unsubscribe-backlog/toast';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
-import {
-  actionLabel,
-  enqueueMayHaveStarted,
-  getActionFailureCopy,
-  stillRunningCopy,
-} from '@/lib/action-error-copy';
+import { actionLabel, enqueueMayHaveStarted, getActionFailureCopy } from '@/lib/action-error-copy';
 import {
   isUnsubscribeInFlight,
   unsubscribeInFlightCopy,
@@ -149,7 +152,7 @@ export function SenderDetailPage({
  * — it frees when the parked handle reaches a terminal state, which
  * the parked poll guarantees is no longer "never".
  */
-export const ACTION_OVERDUE_MS = 120_000;
+export { ACTION_OVERDUE_MS } from '@/features/undo/in-flight';
 
 /**
  * Reading-cost coefficient — average minutes per email scanned. Matches
@@ -260,17 +263,37 @@ export function SenderDetailRoute({
   // `?? undefined` — as this call did — silently retired the
   // never-scored branch, so the one sender kind with no opinion at all
   // was the one kind that never asked for one. Preserve the distinction:
-  // undefined only while the query has no data.
-  useRefreshStaleRead(id, detail.data ? (detail.data.data.recommendation ?? null) : undefined, {
-    invalidate: sendersKeys.detail(id),
-  });
+  // undefined while the query has no data or the stored read is no longer
+  // applicable. A suppressed historical read must not trigger re-scoring.
+  const storedRecommendation = detail.data?.data.recommendation ?? null;
+  const recommendation = detail.data
+    ? currentRecommendation(storedRecommendation, {
+        isProtected: detail.data.data.protectionFlags.isProtected,
+        policyType: detail.data.data.policyType ?? null,
+        unsubStatus: detail.data.data.unsubStatus ?? null,
+        inboxCount: detail.data.data.inboxCount,
+        archivedCount: detail.data.data.archivedCount,
+      })
+    : null;
+  useRefreshStaleRead(
+    id,
+    detail.data && (storedRecommendation === null || recommendation !== null)
+      ? recommendation
+      : undefined,
+    {
+      invalidate: sendersKeys.detail(id),
+      enabled:
+        cachedDataIsTrustworthy &&
+        detail.data?.data.policyType !== 'keep' &&
+        detail.data?.data.protectionFlags.isProtected !== true,
+    },
+  );
   // D24 — explanations on demand (founder decision 2026-09-25). Opening a
   // sender whose reason is still the template asks for its sentence; the
   // template shows meanwhile. A stale read is the refresh above's — the
   // re-score buys its own sentence. The re-read is the detail query ALONE:
   // its key is the umbrella the messages, history and chart hang off, and
   // an explanation changes none of them.
-  const recommendation = detail.data?.data.recommendation ?? null;
   useExplainReasons(
     recommendation && recommendation.stale !== true
       ? [
@@ -427,6 +450,7 @@ export function SenderDetailRoute({
   return (
     <ReadyState
       initial={adapted}
+      initialQueryData={detail.data}
       layout={layout}
       onAction={onAction}
       sections={{
@@ -487,11 +511,13 @@ function DetailSection({
 
 function ReadyState({
   initial,
+  initialQueryData,
   layout,
   onAction,
   sections,
 }: {
   initial: SenderDetail;
+  initialQueryData?: Awaited<ReturnType<typeof fetchSenderDetail>> | undefined;
   layout: DetailLayout;
   sections?: DetailSections;
   onAction?: ((request: ActionRequest) => void) | undefined;
@@ -529,7 +555,13 @@ function ReadyState({
   const recordUnsubIntent = useRecordUnsubscribeIntent();
   const confirmBacklog = useConfirmUnsubscribeBacklog();
   const setPolicy = useSetSenderPolicy();
-  const undoKeep = useUndoSenderKeep();
+  const undoKeep = useUndoSenderKeep((result, senderId) => {
+    if (senderId !== initial.sender.id) return;
+    setDetail((d) => ({ ...d, policyType: result.policyType }));
+    if (result.policyType !== 'keep')
+      setSettled((current) => (current?.verb === 'keep' ? null : current));
+  });
+  const pendingToast = usePendingToast(actionMailboxId);
   const [activeAction, setActiveAction] = useState<{
     mailboxId: string | undefined;
     actionId: string;
@@ -555,6 +587,7 @@ function ReadyState({
     mailboxId: string | undefined;
     actionId: string;
     senderName: string;
+    feedbackInTray: boolean;
   } | null>(null);
   // Transient mailto callout right after THIS tab's confirm — covers
   // the gap until the invalidation refetch flips `detail.policyType`
@@ -577,7 +610,12 @@ function ReadyState({
   // the duplicate toast, which is real and user-visible.
   const [externalRevertActionId, setExternalRevertActionId] = useState<string | null>(null);
   const [externalRevertMailboxId, setExternalRevertMailboxId] = useState<string | undefined>();
-  const externalRevertStatus = useActionStatus(externalRevertActionId, externalRevertMailboxId);
+  const [externalRevertActionIds, setExternalRevertActionIds] = useState<string[] | undefined>();
+  const externalRevertStatus = useUndoStatus(
+    externalRevertMailboxId === actionMailboxId ? externalRevertActionId : null,
+    externalRevertMailboxId,
+    externalRevertActionIds,
+  );
   // Overdue parking slot (ACTION_OVERDUE_MS, 2026-08-12 incident). A
   // handle that stays non-terminal past the deadline moves here; the
   // parked poll keeps running and its terminal side effects still land
@@ -621,6 +659,9 @@ function ReadyState({
     setSettled(null);
     setSubmitting(false);
     setMailtoFollowup(null);
+    setExternalRevertActionId(null);
+    setExternalRevertActionIds(undefined);
+    setExternalRevertMailboxId(undefined);
   }, []);
   useMailboxScopeReset(actionMailboxId, resetPendingScope);
 
@@ -630,7 +671,6 @@ function ReadyState({
     if (!activeAction) return;
     const t = setTimeout(() => {
       void track('action_overdue', { kind: 'single', verb: activeAction.verb.toLowerCase() });
-      toast(stillRunningCopy(activeAction.verb, activeAction.senderName), 'info');
       setOverdueAction(activeAction);
       setActiveAction(null);
     }, ACTION_OVERDUE_MS);
@@ -651,14 +691,40 @@ function ReadyState({
   // `initial` over the server-confirmed onSuccess reconcile — only a
   // genuinely NEW fetch result seeds.
   const lastSeededRef = useRef(initial);
+  const seededQueryData = useRef(initialQueryData);
   useEffect(() => {
     if (lastSeededRef.current === initial) return;
     if (setPolicy.isPending) return;
     lastSeededRef.current = initial;
+    seededQueryData.current = initialQueryData;
     setDetail(initial);
-  }, [initial, setPolicy.isPending]);
+  }, [initial, initialQueryData, setPolicy.isPending]);
 
-  const { sender, recommendation, stats } = detail;
+  const { stats } = detail;
+  const currentSender = useMemo(
+    () => ({
+      ...detail.sender,
+      policyType: detail.policyType,
+      unsubStatus: detail.unsubStatus,
+      unsubscribeMethod: detail.unsubscribeMethod,
+      archivedCount: detail.archivedCount ?? null,
+    }),
+    [
+      detail.sender,
+      detail.policyType,
+      detail.unsubStatus,
+      detail.unsubscribeMethod,
+      detail.archivedCount,
+    ],
+  );
+  const sender = currentSender;
+  const recommendation = currentRecommendation(detail.recommendation, {
+    isProtected: detail.isProtected,
+    policyType: detail.policyType,
+    unsubStatus: detail.unsubStatus,
+    inboxCount: sender.inboxCount,
+    archivedCount: detail.archivedCount,
+  });
   const sizeCopy = senderSizeDetail(sender.name, sender.sizeBytes);
   // Secondary reads have no optimistic local edits. Render their current
   // query snapshot directly, without one effect-frame of previous data.
@@ -753,8 +819,35 @@ function ReadyState({
   const performAction = useCallback(
     (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
       if (senders.length === 0) return;
-      const sender = senders[0]!;
-
+      const target = senders[0]!;
+      const needsCurrentFacts = verb === 'Unsubscribe' || isMailMovingVerb(verb);
+      let sender = needsCurrentFacts ? currentSender : target;
+      // Check readback at dispatch, including the gap before React re-seeds
+      // local policy state. The seed itself may predate a local policy edit.
+      if (needsCurrentFacts) {
+        const cached = qc.getQueryState<Awaited<ReturnType<typeof fetchSenderDetail>>>(
+          sendersKeys.detail(currentSender.id),
+        );
+        if (
+          cached?.status === 'success' &&
+          !cached.isInvalidated &&
+          cached.data &&
+          cached.data !== seededQueryData.current
+        ) {
+          sender = { ...sender, ...cached.data.data };
+        }
+      }
+      // A preview can remain open while another surface records the request.
+      if (needsCurrentFacts && (target.id !== sender.id || !canPerformSenderAction(verb, sender))) {
+        setPendingAction(null);
+        toast(
+          currentMailUnavailableReason(verb, sender) ??
+            unsubscribeControlStatus(sender)?.label ??
+            `${verb} is unavailable.`,
+          'info',
+        );
+        return;
+      }
       // Keep — non-destructive, no Gmail mutation, no receipt. Applies
       // immediately (D40) via the standing-policy write; the toast fires
       // on server confirmation, never optimistically.
@@ -762,7 +855,7 @@ function ReadyState({
         if (setPolicy.isPending) return;
         setPendingAction(null);
         setSettled({ phase: 'working', verb: 'keep' });
-        const dismissPendingKeep = toast(`Keeping ${sender.name}…`, 'info');
+        const dismissPendingKeep = pendingToast(`Keeping ${sender.name}…`);
         setPolicy.mutate(
           { senderId: sender.id, patch: { policyType: 'keep' } },
           {
@@ -954,7 +1047,7 @@ function ReadyState({
               if (sent) trackActionConfirmed('unsubscribe');
               void qc.invalidateQueries({ queryKey: sendersKeys.all });
               void qc.invalidateQueries({ queryKey: activityKeys.all });
-              const line = unsubscribeBacklogToast(res);
+              const line = unsubscribeBacklogSubmissionToast(res);
               if (line !== '') toast(line, sent ? 'info' : 'warn');
               const outcome = res.senders[0];
               if (outcome?.unsubStatus === 'requested' && outcome.executionActionId) {
@@ -962,6 +1055,7 @@ function ReadyState({
                   mailboxId: actionMailboxId,
                   actionId: outcome.executionActionId,
                   senderName: sender.name,
+                  feedbackInTray: res.backlog !== null && res.feedbackVersion === 2,
                 });
               } else if (outcome?.unsubStatus === 'manual' && outcome.mailtoUrl) {
                 setMailtoFollowup({
@@ -1013,6 +1107,7 @@ function ReadyState({
       }
     },
     [
+      currentSender,
       enqueueComposite,
       confirmBacklog,
       recordUnsubIntent,
@@ -1032,6 +1127,7 @@ function ReadyState({
   const requestAction = useCallback(
     (req: ActionRequest) => {
       if (req.senders.length === 0) return;
+      if (!canPerformSenderAction(req.verb, sender)) return;
       if (
         req.verb === 'Archive' ||
         req.verb === 'Unsubscribe' ||
@@ -1043,7 +1139,7 @@ function ReadyState({
         performAction(req.verb, req.senders);
       }
     },
-    [performAction],
+    [performAction, sender],
   );
 
   // Cancel stays live while submitting — it closes the UI only.
@@ -1171,13 +1267,15 @@ function ReadyState({
         surface: 'senders',
         reason: 'unsub_status_poll',
       });
-      toast(`Couldn’t confirm the unsubscribe from ${activeUnsub.senderName}`, 'warn');
+      if (!activeUnsub.feedbackInTray)
+        toast(`Couldn’t confirm the unsubscribe from ${activeUnsub.senderName}`, 'warn');
       setActiveUnsub(null);
       return;
     }
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    toast(...unsubscribeOutcomeToast(activeUnsub.senderName, data));
+    if (!activeUnsub.feedbackInTray)
+      toast(...unsubscribeOutcomeToast(activeUnsub.senderName, data));
     reconcileAction(qc, data, data.actionId);
     setActiveUnsub(null);
   }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, activeUnsub, qc]);
@@ -1211,18 +1309,20 @@ function ReadyState({
       const variables = event.mutation.state.variables as
         { token?: string; memberToken?: string; mailboxId?: string } | undefined;
       const result = event.mutation.state.data as
-        { reverted?: boolean; actionId?: string | null } | undefined;
+        { reverted?: boolean; actionId?: string | null; actionIds?: string[] } | undefined;
       // The pill's per-sender Undo sends the same token as `memberToken`.
       if ((variables?.token ?? variables?.memberToken) !== token) return;
+      if (variables?.mailboxId !== undefined && variables.mailboxId !== actionMailboxId) return;
       if (result?.reverted) {
         setReceipt(null);
         setSettled(null);
       } else if (result?.actionId) {
-        setExternalRevertMailboxId(variables?.mailboxId ?? receipt?.mailboxId);
+        setExternalRevertActionIds(result.actionIds);
+        setExternalRevertMailboxId(variables?.mailboxId ?? receipt?.mailboxId ?? actionMailboxId);
         setExternalRevertActionId(result.actionId);
       }
     });
-  }, [receipt, qc]);
+  }, [receipt, qc, actionMailboxId]);
 
   // Quiet poll-to-terminal for an EXTERNALLY-triggered revert (see above) —
   // no toast, no cache invalidation: the tray's own completion already
@@ -1230,7 +1330,7 @@ function ReadyState({
   // This effect's only job is to stop the receipt strip lying once the
   // reverse job the tray enqueued actually finishes.
   useEffect(() => {
-    if (!externalRevertActionId) return;
+    if (!externalRevertActionId || externalRevertMailboxId !== actionMailboxId) return;
     const data = externalRevertStatus.data;
     if (externalRevertStatus.isError) {
       setExternalRevertActionId(null);
@@ -1242,7 +1342,13 @@ function ReadyState({
       setSettled(null);
     }
     setExternalRevertActionId(null);
-  }, [externalRevertActionId, externalRevertStatus.data, externalRevertStatus.isError]);
+  }, [
+    externalRevertActionId,
+    externalRevertMailboxId,
+    actionMailboxId,
+    externalRevertStatus.data,
+    externalRevertStatus.isError,
+  ]);
 
   /** Protect is the sole standing safety state. */
   const toggleProtect = useCallback(() => {
@@ -1275,7 +1381,10 @@ function ReadyState({
             isProtected: res.isProtected,
             protectionReason: adaptProtectionReason(res.isProtected, res.protectionReason),
           }));
-          toast(next ? 'Protected' : 'Unprotected', 'success');
+          toast(
+            `${sender.name} ${res.isProtected ? 'is Protected' : 'is no longer Protected'}`,
+            'success',
+          );
         },
         onError: (err) => {
           setDetail((d) => ({ ...d, isProtected: !next, protectionReason: prevReason }));
@@ -1284,7 +1393,7 @@ function ReadyState({
         },
       },
     );
-  }, [detail.isProtected, detail.protectionReason, sender.id, setPolicy]);
+  }, [detail.isProtected, detail.protectionReason, sender.id, sender.name, setPolicy]);
 
   // Derived ROI sentence numbers. Reading-cost in minutes/month;
   // yearly savings if the user unsubscribes (cleanup cohort only).
@@ -1404,7 +1513,7 @@ function ReadyState({
               by the REAL execution outcome (`unsubStatus`) via the shared
               UNSUB_PILL map — never a static "queued" that outlives a
               terminal done/failed state. */}
-            {detail.policyType === 'unsubscribe' && (
+            {detail.policyType === 'unsubscribe' && !unsubscribeControlStatus(sender) && (
               <UnsubStatusPill status={detail.unsubStatus} method={detail.unsubscribeMethod} />
             )}
 
@@ -1470,14 +1579,14 @@ function ReadyState({
           only when the sender never mailed at all, so it keys on
           `totalReceived`, never on an empty recent window. */}
         {sender.totalReceived > 0 ? (
-          <section aria-label="Now">
-            <div className={styles.eyebrow}>Now · Current mail</div>
+          <section aria-label="Current email totals">
+            <div className={styles.eyebrow}>Current email totals</div>
             <div className={styles.volumeSummary}>
               <div>
                 <span className={styles.volumeNumber} data-testid="sender-detail-inbox-count">
                   {sender.inboxCount != null ? sender.inboxCount.toLocaleString('en-US') : '—'}
                 </span>
-                <p className={styles.volumeLabel}>Currently in your inbox</p>
+                <p className={styles.volumeLabel}>In inbox</p>
               </div>
               <div>
                 <span className={styles.volumeNumber} data-testid="sender-detail-archived-count">
@@ -1485,9 +1594,13 @@ function ReadyState({
                     ? detail.archivedCount.toLocaleString('en-US')
                     : '—'}
                 </span>
-                <p className={styles.volumeLabel}>Currently archived</p>
+                <p className={styles.volumeLabel}>Archived (includes Later)</p>
               </div>
             </div>
+            <p style={{ margin: '8px 0 0', fontSize: text.sm, color: color.fgSoft }}>
+              Later emails stay archived under Gmail’s DeclutrMail/Later label until their chosen
+              return time. <Link href="/later">View Later</Link>
+            </p>
           </section>
         ) : (
           <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
@@ -1495,16 +1608,17 @@ function ReadyState({
           </p>
         )}
 
-        {/* 3. The five verbs (K/A/U/L/D). The fact-derived primary is the
-          one filled button (D245); the engine's read stays a separate,
-          quiet disclosure because the two are allowed to disagree. */}
+        {/* Keep the one decision toolbar beside current-mail context in
+          both layouts. Reserving it below the pane scroller squeezed
+          the evidence into a small viewport on shorter screens. */}
         <div className={styles.actionSection}>
-          {layout === 'page' && (
-            <>
-              <div className={styles.eyebrow}>Your next decision</div>
-              {actionToolbar}
-            </>
-          )}
+          <div role="group" aria-label="Sender actions" className={styles.actionSection}>
+            <h3 className={styles.actionHeading}>Choose an action</h3>
+            {detail.policyType === 'keep' && (
+              <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>Skipped in Triage</p>
+            )}
+            {actionToolbar}
+          </div>
           {recommendation != null && <RecommendationBanner recommendation={recommendation} />}
         </div>
 
@@ -1653,13 +1767,6 @@ function ReadyState({
           />
         </DetailSection>
       </div>
-      {layout === 'pane' && (
-        <div className={styles.paneActions} role="group" aria-label="Sender actions">
-          <div className={styles.eyebrow}>Your next decision</div>
-          {actionToolbar}
-        </div>
-      )}
-
       <ConfirmActionModal
         request={pendingAction}
         onCancel={closePending}
@@ -1753,12 +1860,14 @@ function ProtectRow({
   disabled: boolean;
   onToggle: () => void;
 }) {
+  const descriptionId = useId();
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
       aria-label="Protected"
+      aria-describedby={`${descriptionId}${reason !== null ? ` ${descriptionId}-reason` : ''}`}
       onClick={onToggle}
       disabled={disabled}
       title={
@@ -1786,8 +1895,17 @@ function ProtectRow({
     >
       <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
         <span style={{ fontSize: text.md, fontWeight: 500, color: color.fg }}>Protected</span>
+        <span id={descriptionId} style={{ fontSize: text.sm, color: color.fgSoft }}>
+          {checked
+            ? 'Excluded from bulk and automatic cleanup; manual email changes still ask you to confirm.'
+            : 'Exclude this sender from bulk and automatic cleanup.'}
+        </span>
         {reason !== null && (
-          <span data-testid="protection-reason" style={{ fontSize: text.sm, color: color.fgMuted }}>
+          <span
+            id={`${descriptionId}-reason`}
+            data-testid="protection-reason"
+            style={{ fontSize: text.sm, color: color.fgMuted }}
+          >
             {reason}
           </span>
         )}

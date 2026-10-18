@@ -253,6 +253,21 @@ test('a dynamic route is fetched at a path built from it, else at a placeholder'
   assert.match(out, /ok .*\/\(app\)\/zz-things\/\[id\]\/page/);
 });
 
+test('beta recovery is measured even when organic beta redirects', (t) => {
+  const own = 'app/(marketing)/beta/page-1.js';
+  const { code, out } = run(
+    fixture(t, {
+      pages: { '/(marketing)/beta/page': ['webpack-1.js', own] },
+      site: {
+        '/beta': { status: 307, location: '/how-it-works' },
+        '/beta?reason=not_invited': page(...PUBLIC, own),
+      },
+    }),
+  );
+  assert.equal(code, 0, out);
+  assert.match(out, /ok .*\/\(marketing\)\/beta\/page/);
+});
+
 test('a declared redirect is verified, not measured, and fails once it renders instead', (t) => {
   const demo = 'app/(marketing)/demo/page-1.js';
   const pages = { '/(marketing)/demo/page': ['webpack-1.js', demo] };

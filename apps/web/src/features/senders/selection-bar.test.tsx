@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { vi } from 'vitest';
 
 import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
 
@@ -12,9 +14,57 @@ const SENDER = makeSender({
   gmailCategory: 'updates',
   readRate: 0.5,
   lastDays: 1,
+  unsubscribeMethod: 'one_click',
 });
 
 describe('<SelectionBar /> floating-surface contract', () => {
+  it.each(['bar', 'sheet'] as const)(
+    'excludes empty current mail in the %s selection',
+    (variant) => {
+      const onAct = vi.fn();
+      render(
+        <SelectionBar
+          variant={variant}
+          senders={[makeSender({ inboxCount: 0, archivedCount: 0 })]}
+          onClear={() => {}}
+          onAct={onAct}
+          tier="pro"
+        />,
+      );
+      for (const verb of ['Archive', 'Later', 'Delete']) {
+        const control = screen.getByRole('button', { name: new RegExp(`^${verb} 0 of 1`) });
+        expect(control).toBeDisabled();
+        expect(control.title).toMatch(/no (?:current|inbox) emails/);
+        fireEvent.click(control);
+      }
+      expect(onAct).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['bar', 'sheet'] as const)(
+    'excludes recorded requests from the %s selection',
+    (variant) => {
+      const onAct = vi.fn();
+      render(
+        <SelectionBar
+          {...(variant === 'sheet' ? { variant: 'sheet' as const } : {})}
+          senders={[
+            makeSender({
+              unsubscribeMethod: 'one_click',
+              policyType: 'unsubscribe',
+              unsubStatus: 'endpoint_accepted',
+            }),
+          ]}
+          onClear={() => {}}
+          onAct={onAct}
+          tier="pro"
+        />,
+      );
+      const unsubscribe = screen.getByRole('button', { name: /^Unsubscribe 0 of 1/ });
+      expect(unsubscribe).toBeDisabled();
+      fireEvent.click(unsubscribe);
+      expect(onAct).not.toHaveBeenCalled();
+    },
+  );
   it('pins its footprint and stack order below the global undo tray offset', () => {
     const html = renderToStaticMarkup(
       <SelectionBar
@@ -144,4 +194,25 @@ describe('<SelectionBar /> — all-Protected selection (QA-senders-20260901-08)'
 
     expect(html).not.toContain('protected — unprotect');
   });
+});
+
+describe('SelectionBar — relevant actions', () => {
+  it.each(['bar', 'sheet'] as const)(
+    'omits Unsubscribe for an unsupported %s selection',
+    (variant) => {
+      render(
+        <SelectionBar
+          variant={variant}
+          senders={[
+            makeSender({ id: 'none', unsubscribeMethod: 'none' }),
+            makeSender({ id: 'unknown', unsubscribeMethod: null }),
+          ]}
+          onClear={vi.fn()}
+          onAct={vi.fn()}
+          tier="pro"
+        />,
+      );
+      expect(screen.queryByRole('button', { name: /^Unsubscribe/ })).toBeNull();
+    },
+  );
 });

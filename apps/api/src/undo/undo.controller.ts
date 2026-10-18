@@ -186,7 +186,11 @@ export class UndoController {
       // (D210); the server signals via HTTP 410.
       throw new GoneException({ code: 'GONE', message: 'Undo window has expired.' });
     }
-    if (found.outcome === 'already-reverted') {
+    if (
+      found.outcome === 'already-reverted' &&
+      (scope === 'action' ||
+        !(await this.actions.hasUnrevertedCompositeSiblings(token, mailbox.id)))
+    ) {
       // Recorded success — no new reverse job.
       return ok({
         token: found.entry.token,
@@ -195,6 +199,7 @@ export class UndoController {
         expired: false,
         revertedAt: found.entry.revertedAt ? found.entry.revertedAt.toISOString() : null,
         actionId: null,
+        actionIds: [],
       });
     }
 
@@ -219,20 +224,25 @@ export class UndoController {
       token,
       ...(scope === 'action' ? { scope: 'action' as const } : {}),
     });
-    // The primary (or single-verb) row's reverse is first by design — the
-    // FE polls this `actionId` as the user-visible progress signal. The
-    // secondary reverse(s) tick over in the background; their results
-    // surface through the worker's local-mirror update + the activity
-    // log so cache invalidation is automatic.
+    // Retain the first handle for rolling web/API deploys. Current clients
+    // poll the whole frozen set in one read; the first job cannot confirm
+    // restoration of its siblings.
     const primary = reverts[0];
     const allDone = reverts.length > 0 && reverts.every((r) => r.status === 'done');
+    const completed = allDone
+      ? await this.actions.getUndoStatus(
+          reverts.map((revert) => revert.actionId),
+          mailbox.id,
+        )
+      : null;
     return ok({
       token,
       actionKind: found.entry.actionKind,
       reverted: allDone,
       expired: false,
-      revertedAt: null,
+      revertedAt: completed?.undoRevertedAt ?? null,
       actionId: primary?.actionId ?? null,
+      actionIds: reverts.map((revert) => revert.actionId),
     });
   }
 }

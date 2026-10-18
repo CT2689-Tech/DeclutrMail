@@ -100,6 +100,8 @@ export interface UnsubscribeBacklogSenderResult {
 }
 
 export interface UnsubscribeBacklogResult {
+  /** Execution-only combined feedback; absent on older API builds. */
+  feedbackVersion?: 2;
   mode: 'unsub_only' | 'archive' | 'delete';
   backlog: {
     actionId: string;
@@ -393,6 +395,16 @@ export type CompositeSecondaryVerb = (typeof COMPOSITE_SECONDARY_VERBS)[number];
  */
 export const BULK_SENDERS_MAX = 1000;
 
+/** One read for every reverse job, including an optional secondary per sender. */
+export const undoStatusRequestSchema = z
+  .object({
+    actionIds: z
+      .array(z.string().uuid())
+      .min(1)
+      .max(BULK_SENDERS_MAX * 2),
+  })
+  .strict();
+
 /**
  * Composite selector — the single-sender / messages selectors plus the
  * D52 multi-sender `senders` variant. `senders` fans out server-side to
@@ -650,6 +662,8 @@ export interface BulkActionPreviewResult {
  * failures surface via `failed`).
  */
 export interface BatchStatusResult {
+  /** Execution-only combined feedback; absent on older API builds. */
+  feedbackVersion?: 2;
   batchId: string;
   status: ActionJobStatus;
   /** Forward sibling rows in the batch (primaries + any secondaries). */

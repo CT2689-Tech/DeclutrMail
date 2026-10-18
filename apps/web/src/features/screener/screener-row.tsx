@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Avatar, Button, Kbd, Pill, Tooltip, tokens, useIsAtMost } from '@declutrmail/shared';
+import { Avatar, Button, Kbd, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
 import type { PillTone } from '@declutrmail/shared';
 import { unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
 import { confidenceBand, scoredAgeLabel } from '@declutrmail/shared/copy';
@@ -293,55 +293,37 @@ export function ScreenerRow({
             aria-label={`Decide ${row.senderName}`}
             style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}
           >
-            {VERB_ORDER.map((verb) => {
-              const active = pendingVerb === verb;
-              // D248 — the tooltip names WHICH capability state the
-              // sender is in. "No unsubscribe channel found" is only
-              // true once the index has looked; a sender it has not
-              // derived a method for reads as not-yet-checked.
-              const unsubscribeBlockedReason =
-                verb === 'unsubscribe' && !canScreenerUnsubscribe(row)
-                  ? unsubscribeUnavailableReason(row.unsubscribeMethod)
-                  : null;
-              const noUnsubscribeChannel = unsubscribeBlockedReason !== null;
-              const button = (describedBy?: string) => (
-                <Button
-                  tone="default"
-                  size="md"
-                  disabled={busy}
-                  inert={!busy && noUnsubscribeChannel}
-                  onClick={() => onVerbClick(verb)}
-                  ariaPressed={active}
-                  {...(describedBy ? { ariaDescribedBy: describedBy } : {})}
-                  style={{
-                    ...(active
-                      ? {
-                          boxShadow: `inset 0 0 0 1.5px ${verb === 'delete' ? color.danger : color.primary}`,
-                        }
-                      : {}),
-                    ...(verb === 'delete' ? { color: color.dangerText } : {}),
-                  }}
-                  iconRight={
-                    <span aria-hidden="true" className="dm-key-hint">
-                      <Kbd>{VERB_KEY_HINT[verb]}</Kbd>
-                    </span>
-                  }
-                >
-                  {VERB_LABEL[verb]}
-                </Button>
-              );
-              return (
-                <span key={verb} data-action={verb}>
-                  {unsubscribeBlockedReason ? (
-                    <Tooltip content={unsubscribeBlockedReason}>
-                      {({ describedBy }) => button(describedBy)}
-                    </Tooltip>
-                  ) : (
-                    button()
-                  )}
-                </span>
-              );
-            })}
+            {VERB_ORDER.filter((verb) => verb !== 'unsubscribe' || canScreenerUnsubscribe(row)).map(
+              (verb) => {
+                const active = pendingVerb === verb;
+                return (
+                  <span key={verb} data-action={verb}>
+                    <Button
+                      tone="default"
+                      size="md"
+                      disabled={busy}
+                      onClick={() => onVerbClick(verb)}
+                      ariaPressed={active}
+                      style={{
+                        ...(active
+                          ? {
+                              boxShadow: `inset 0 0 0 1.5px ${verb === 'delete' ? color.danger : color.primary}`,
+                            }
+                          : {}),
+                        ...(verb === 'delete' ? { color: color.dangerText } : {}),
+                      }}
+                      iconRight={
+                        <span aria-hidden="true" className="dm-key-hint">
+                          <Kbd>{VERB_KEY_HINT[verb]}</Kbd>
+                        </span>
+                      }
+                    >
+                      {VERB_LABEL[verb]}
+                    </Button>
+                  </span>
+                );
+              },
+            )}
             {!canScreenerUnsubscribe(row) && (
               <span
                 role="note"

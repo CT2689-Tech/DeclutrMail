@@ -1,11 +1,24 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { toast, ToastAnnouncement, type ToastTone } from './toast';
+import { color } from '../tokens/tokens';
+import { COOKIE_BANNER_LIFT_VAR } from '../tokens/overlay-layers';
+import { UNDO_TRAY_INSET_VAR } from './undo-tray/undo-tray';
+import { toast, ToastAnnouncement, toastStackPosition, type ToastTone } from './toast';
 
 function markupFor(tone: ToastTone): string {
   return renderToStaticMarkup(<ToastAnnouncement msg={`${tone} message`} tone={tone} />);
 }
+
+describe('toast stack position', () => {
+  it('sits above the undo tray, or above the cookie banner when the tray is absent', () => {
+    const bottom = toastStackPosition().bottom;
+    expect(bottom).toBe(
+      `max(var(${UNDO_TRAY_INSET_VAR}, 0px), calc(20px + var(--dm-tabbar-inset, 0px) + var(${COOKIE_BANNER_LIFT_VAR}, 0px)))`,
+    );
+    expect(toastStackPosition().zIndex).toBeGreaterThan(150);
+  });
+});
 
 describe('ToastAnnouncement accessibility', () => {
   it.each(['info', 'success'] as const)('%s is a polite status update', (tone) => {
@@ -46,5 +59,24 @@ describe('toast dismissal', () => {
     vi.advanceTimersByTime(3600);
     expect(vi.getTimerCount()).toBe(0);
     expect(() => dismiss()).not.toThrow();
+  });
+});
+
+describe('action feedback consistency', () => {
+  it('uses the same card and foreground as progress/Undo in either theme', () => {
+    const markup = markupFor('success');
+    expect(markup).toContain(`background:${color.card}`);
+    expect(markup).toContain(`color:${color.fg}`);
+    expect(markup).not.toContain(`background:${color.fg};`);
+  });
+  it('shows the real pending indicator without an expiry timer until dismissed', () => {
+    vi.useFakeTimers();
+    const dismiss = toast('Keeping Acme…', 'info', undefined, { pending: true });
+    expect(vi.getTimerCount()).toBe(0);
+    expect(
+      renderToStaticMarkup(<ToastAnnouncement msg="Keeping Acme…" tone="info" pending />),
+    ).toContain('data-dm-spinner');
+    dismiss();
+    vi.useRealTimers();
   });
 });

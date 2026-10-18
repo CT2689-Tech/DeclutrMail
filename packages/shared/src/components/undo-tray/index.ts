@@ -1,4 +1,9 @@
-export { TRAY_COMPACT_AFTER_MS, UndoTray } from './undo-tray';
+export {
+  TRAY_COMPACT_AFTER_MS,
+  UNDO_TRAY_INSET_VAR,
+  UndoTray,
+  undoTrayOccupiedPx,
+} from './undo-tray';
 export type {
   UndoActionKind,
   UndoTrayDataSource,

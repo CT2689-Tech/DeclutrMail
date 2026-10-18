@@ -27,7 +27,7 @@ describe('DecidePreview — live-preview confirm gate', () => {
       expect(confirm).toBeDisabled();
       fireEvent.click(confirm);
       expect(onConfirm).not.toHaveBeenCalled();
-      expect(screen.getByText(/couldn’t count the email you already have/i)).toBeInTheDocument();
+      expect(screen.getByText(/couldn’t load the preview/i)).toBeInTheDocument();
     },
   );
 

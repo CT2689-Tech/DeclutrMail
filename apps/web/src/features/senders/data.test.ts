@@ -5,8 +5,8 @@
 
 import { describe, expect, it } from 'vitest';
 import type { SenderListRow } from '@/lib/api/senders';
-import { daysSince, enrichSenderRow, monthsSince } from './data';
-import { makeSenderRow } from './testing/make-sender';
+import { canArchive, canLater, canDelete, daysSince, enrichSenderRow, monthsSince } from './data';
+import { makeSender, makeSenderRow } from './testing/make-sender';
 
 const NOW = Date.parse('2026-07-01T00:00:00.000Z');
 const UTC = 'UTC';
@@ -132,5 +132,31 @@ describe('daysSince — zone-explicit calendar days (DECLUTRMAIL-WEB-2C)', () =>
 
   it('falls back to UTC when the IANA id is invalid', () => {
     expect(daysSince(yesterdayInLa, now, 'Not/AZone')).toBe(daysSince(yesterdayInLa, now, UTC));
+  });
+});
+
+describe('mail-moving eligibility uses current location counts', () => {
+  it('disables all moves for confirmed empty current mail despite lifetime history', () => {
+    const sender = makeSender({ inboxCount: 0, archivedCount: 0, totalReceived: 565 });
+    expect(canArchive(sender)).toBe(false);
+    expect(canLater(sender)).toBe(false);
+    expect(canDelete(sender)).toBe(false);
+  });
+  it('keeps Delete available for archived-only mail', () => {
+    const sender = makeSender({ inboxCount: 0, archivedCount: 21 });
+    expect(canArchive(sender)).toBe(false);
+    expect(canLater(sender)).toBe(false);
+    expect(canDelete(sender)).toBe(true);
+  });
+  it.each([
+    { inboxCount: null, archivedCount: null },
+    { inboxCount: null, archivedCount: 0 },
+    { inboxCount: 0, archivedCount: null },
+    { inboxCount: 1, archivedCount: 0 },
+  ])('preserves preview for unknown or positive counts: %j', (counts) => {
+    const sender = makeSender(counts);
+    expect(canArchive(sender)).toBe(counts.inboxCount !== 0);
+    expect(canLater(sender)).toBe(counts.inboxCount !== 0);
+    expect(canDelete(sender)).toBe(true);
   });
 });

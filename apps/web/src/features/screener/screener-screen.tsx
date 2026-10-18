@@ -727,7 +727,7 @@ export function ScreenerScreen({
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
       // Account/help dialogs own keys even when this row has an inline preview.
-      if (document.querySelector('[role="dialog"], [role="menu"]')) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"]')) return;
       const target = e.target instanceof HTMLElement ? e.target : null;
       if (target) {
         const tag = target.tagName;
@@ -739,7 +739,10 @@ export function ScreenerScreen({
         if (e.key === 'Enter') {
           // Native controls own Enter: activating Cancel or changing a
           // scope chip must never submit the pending destructive action.
-          if (target?.closest('button, a, select, [role="button"], [role="radio"]')) return;
+          if (
+            target?.closest('button, a, select, summary, details, [role="button"], [role="radio"]')
+          )
+            return;
           e.preventDefault();
           if (!pendingPreviewBlocked) onConfirm(pendingRow);
         } else if (e.key === 'Escape') {

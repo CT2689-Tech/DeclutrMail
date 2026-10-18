@@ -12,23 +12,17 @@
  */
 
 import { useState } from 'react';
-import { ActionPopover, ActionPopoverTrigger, Button, tokens } from '@declutrmail/shared';
+import { ActionPopover, ActionPopoverTrigger, Button, Pill, tokens } from '@declutrmail/shared';
 import {
+  actionHelpCopy,
   deriveDefaultPrimary,
   unsubscribeUnavailableReason,
   type VerbId,
 } from '@declutrmail/shared/actions';
-import {
-  isRowBusy,
-  RowActivityPill,
-  RowActivityStatus,
-  rowStatusColor,
-  STATUS_BUTTON_STYLE,
-  takesButtonSlot,
-  useRowActivity,
-} from './row-activity';
+import { isRowBusy, RowActivityPill, useRowActivity } from './row-activity';
 import {
   canArchive,
+  currentMailUnavailableReason,
   canDelete,
   canLater,
   canUnsubscribe,
@@ -37,6 +31,7 @@ import {
   type ActionVerb,
   type Sender,
 } from './data';
+import { unsubscribeControlStatus } from './unsub-status';
 
 const { color } = tokens;
 
@@ -57,10 +52,10 @@ const { color } = tokens;
  * be disclosed separately but never selects the primary action.
  */
 export function derivePrimaryVerbId(sender: Sender): VerbId {
-  return deriveDefaultPrimary({
+  const primary = deriveDefaultPrimary({
     protected: isStandingProtected(sender),
-    // RECOMMENDATION, not availability — `canUnsubscribe` asks "is there
-    // a channel to use?"; this asks "should we put it forward?". There is
+    // The channel and current lifecycle govern availability; this asks
+    // whether a one-click request should be the lead action. There is
     // no Gmail-tab exemption: a one-click header marks mail sent through
     // a list or mailing system, and that outranks the Primary tab — the
     // engine's own rule since the founder decision of 2026-09-26 (Primary
@@ -70,6 +65,7 @@ export function derivePrimaryVerbId(sender: Sender): VerbId {
     unsubReady: sender.unsubscribeMethod === 'one_click' && canUnsubscribe(sender),
     lastSeenDays: sender.lastDays,
   });
+  return primary === 'archive' && sender.inboxCount === 0 ? 'keep' : primary;
 }
 
 export function SenderActionRow({
@@ -91,7 +87,7 @@ export function SenderActionRow({
   // refuses it too; disabling here is what makes that refusal visible.
   const activity = useRowActivity(sender.id);
   const busy = isRowBusy(activity);
-  const status = takesButtonSlot(activity) ? activity : undefined;
+  const unsubscribeStatus = unsubscribeControlStatus(sender);
 
   const primaryVerbId: VerbId = derivePrimaryVerbId(sender);
 
@@ -99,8 +95,8 @@ export function SenderActionRow({
   // (data.ts). Delete follows `canDelete` (blocked for standing-
   // protected senders).
   const capabilities: Record<VerbId, boolean> = {
-    archive: canArchive(sender),
-    later: canLater(sender),
+    archive: canArchive(sender) && sender.inboxCount !== 0,
+    later: canLater(sender) && sender.inboxCount !== 0,
     unsubscribe: canUnsubscribe(sender),
     keep: true,
     delete: canDelete(sender),
@@ -110,63 +106,84 @@ export function SenderActionRow({
   const senderLabel = sender.name.trim() || sender.domain;
 
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center', position: 'relative' }}>
-      {/* Ended badly: say so, and leave the verb live — retrying is the next step. */}
-      {activity && !status && !compact && <RowActivityPill activity={activity} />}
-      {/* ONE button element for both states: while an action's result is on
-          the row, the verb the user reached for BECOMES that result. Kept
-          mounted (never swapped for a span) so focus stays put. Once the job
-          has ENDED the ⋯ menu is the way to act again; while it is running
-          or unconfirmed the whole row stays locked — a second job for the
-          same sender is the thing being prevented. */}
-      {!compact && (
-        <Button
-          // Quiet at rest: a list of fifty filled buttons shouts. The verb
-          // keeps its colour identity in the lettering; the ONE filled
-          // button lives in the detail pane and the confirm sheet.
-          tone={status ? 'ghost' : 'default'}
-          size="sm"
-          inert={status != null}
-          onClick={() => onAction({ verb: primaryLegacy, senders: [sender] })}
-          style={{
-            whiteSpace: 'nowrap',
-            minWidth: 96,
-            ...(status
-              ? { ...STATUS_BUTTON_STYLE, color: rowStatusColor(status) }
-              : { color: LEAD_TEXT_COLOR[leadButtonTone(primaryLegacy)] }),
-          }}
-        >
-          {status ? <RowActivityStatus activity={status} /> : primaryLegacy}
-        </Button>
-      )}
-      {/* Trigger opens the popover only — never toggles. Toggle pattern
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        alignItems: 'flex-end',
+        maxWidth: 180,
+        minWidth: 0,
+      }}
+    >
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', position: 'relative' }}>
+        {!compact && (
+          <Button
+            // Quiet at rest: a list of fifty filled buttons shouts. The verb
+            // keeps its colour identity in the lettering; the ONE filled
+            // button lives in the detail pane and the confirm sheet.
+            tone="default"
+            size="sm"
+            inert={busy || !capabilities[primaryVerbId]}
+            title={actionHelpCopy(primaryVerbId)}
+            onClick={() => onAction({ verb: primaryLegacy, senders: [sender] })}
+            style={{
+              whiteSpace: 'nowrap',
+              minWidth: 96,
+              color: LEAD_TEXT_COLOR[leadButtonTone(primaryLegacy)],
+            }}
+          >
+            {primaryLegacy}
+          </Button>
+        )}
+        {/* Trigger opens the popover only — never toggles. Toggle pattern
           races against the popover's click-outside listener (which sees
           the trigger as 'outside' and closes, then the trigger's
           onClick re-opens). Open-only + ESC/click-outside close is the
           standard menu-button affordance (silent-failure-hunter
           2026-06-03 advisory). */}
-      <ActionPopoverTrigger
-        onClick={() => setPopoverOpen(true)}
-        ariaLabel={`More actions for ${senderLabel}`}
-        disabled={busy}
-      />
-      {popoverOpen && !busy && (
-        <ActionPopover
-          ariaLabel={`Actions for ${senderLabel}`}
-          capabilities={capabilities}
-          disabledReasons={{
-            unsubscribe: unsubscribeUnavailableReason(sender.unsubscribeMethod) ?? '',
-          }}
-          dimmedVerb={primaryVerbId}
-          onPick={(verbId) => {
-            onAction({ verb: legacyVerbFromId(verbId), senders: [sender] });
-            // Close on pick — the popover's contract ("self-closes on
-            // pick") only auto-fires on the keyboard-shortcut path;
-            // the click path leaves closing to the consumer.
-            setPopoverOpen(false);
-          }}
-          onClose={() => setPopoverOpen(false)}
+        <ActionPopoverTrigger
+          onClick={() => setPopoverOpen(true)}
+          ariaLabel={`More actions for ${senderLabel}`}
+          disabled={busy}
         />
+        {popoverOpen && !busy && (
+          <ActionPopover
+            ariaLabel={`Actions for ${senderLabel}`}
+            verbs={(['keep', 'archive', 'unsubscribe', 'later', 'delete'] as const).filter(
+              (verb) =>
+                verb !== 'unsubscribe' ||
+                unsubscribeUnavailableReason(sender.unsubscribeMethod) === null,
+            )}
+            capabilities={capabilities}
+            disabledReasons={{
+              unsubscribe: unsubscribeStatus
+                ? `${unsubscribeStatus.label}. ${unsubscribeStatus.title}`
+                : (unsubscribeUnavailableReason(sender.unsubscribeMethod) ?? ''),
+              archive: currentMailUnavailableReason('Archive', sender) ?? '',
+              later: currentMailUnavailableReason('Later', sender) ?? '',
+              delete: currentMailUnavailableReason('Delete', sender) ?? '',
+            }}
+            dimmedVerb={primaryVerbId}
+            onPick={(verbId) => {
+              onAction({ verb: legacyVerbFromId(verbId), senders: [sender] });
+              // Close on pick — the popover's contract ("self-closes on
+              // pick") only auto-fires on the keyboard-shortcut path;
+              // the click path leaves closing to the consumer.
+              setPopoverOpen(false);
+            }}
+            onClose={() => setPopoverOpen(false)}
+          />
+        )}
+      </div>
+      {!compact && activity && <RowActivityPill activity={activity} />}
+      {!compact && unsubscribeStatus && !(busy && sender.unsubStatus === 'requested') && (
+        <span title={unsubscribeStatus.title}>
+          <Pill>{unsubscribeStatus.label}</Pill>
+        </span>
+      )}
+      {!compact && !activity && sender.policyType === 'keep' && (
+        <span style={{ color: color.fgSoft }}>Skipped in Triage</span>
       )}
     </div>
   );

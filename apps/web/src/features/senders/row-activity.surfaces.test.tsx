@@ -65,7 +65,7 @@ describe('SenderActionRow — a busy sender takes no second action', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  it('turns the pressed verb INTO the status — same element, so focus stays', () => {
+  it('keeps the pressed verb stable and shows progress separately without losing focus', () => {
     const { rerender } = render(
       <Wrap activity={new Map()}>
         <SenderActionRow sender={sender} onAction={() => {}} />
@@ -79,7 +79,8 @@ describe('SenderActionRow — a busy sender takes no second action', () => {
       </Wrap>,
     );
     expect(verb).toHaveFocus();
-    expect(verb).toHaveTextContent('Deleting…');
+    expect(verb).toHaveTextContent('Keep');
+    expect(screen.getByText('Deleting…')).toBeInTheDocument();
   });
 
   it('ended badly: says so BESIDE a verb that still works — retrying is the next step', () => {
@@ -96,7 +97,7 @@ describe('SenderActionRow — a busy sender takes no second action', () => {
     expect(onAction).toHaveBeenCalledTimes(1);
   });
 
-  it('once done: the slot says so, and the ⋯ menu is how to act again', () => {
+  it('once done: the result is separate and both controls remain available', () => {
     const onAction = vi.fn();
     render(
       <Wrap activity={done}>
@@ -104,9 +105,10 @@ describe('SenderActionRow — a busy sender takes no second action', () => {
       </Wrap>,
     );
     const [slot, more] = screen.getAllByRole('button');
-    expect(slot).toHaveTextContent('Deleted 251');
+    expect(slot).toHaveTextContent('Keep');
+    expect(screen.getByText('Deleted 251 emails')).toBeInTheDocument();
     fireEvent.click(slot!);
-    expect(onAction).not.toHaveBeenCalled();
+    expect(onAction).toHaveBeenCalledTimes(1);
     expect(more).not.toHaveAttribute('aria-disabled');
   });
 });
@@ -138,7 +140,7 @@ describe('list row', () => {
     row(done);
     const root = screen.getByTestId('sender-row-sender-1');
     expect(root).not.toHaveAttribute('aria-busy', 'true');
-    expect(within(root).getByText('Deleted 251')).toBeInTheDocument();
+    expect(within(root).getByText('Deleted 251 emails')).toBeInTheDocument();
   });
 
   it('says it in the name link, which is what a screen reader lands on', () => {

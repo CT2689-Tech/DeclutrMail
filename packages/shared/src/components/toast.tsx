@@ -1,8 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { InlineProgress } from './inline-progress/inline-progress';
+import { FEEDBACK_SURFACE } from './feedback-surface';
 import { createPortal } from 'react-dom';
-import { color, font, radius, shadow, text } from '../tokens/tokens';
+import { UNDO_TRAY_INSET_VAR } from './undo-tray/undo-tray';
+import { OVERLAY_Z, bottomClearOfCookieBanner } from '../tokens/overlay-layers';
+import { color, radius } from '../tokens/tokens';
 
 export type ToastTone = 'info' | 'success' | 'warn' | 'danger';
 
@@ -16,6 +20,7 @@ interface ToastItem {
   msg: string;
   tone: ToastTone;
   action?: ToastAction;
+  pending?: boolean;
 }
 
 /**
@@ -31,9 +36,33 @@ function emit() {
 }
 
 /** Return an idempotent dismiss callback for notifications tied to a pending request. */
-export function toast(msg: string, tone: ToastTone = 'info', action?: ToastAction): () => void {
+export function toast(
+  msg: string,
+  tone: ToastTone = 'info',
+  action?: ToastAction,
+  options?: { pending?: boolean },
+): () => void {
   const id = Math.random().toString(36).slice(2);
-  queue = [...queue, { id, msg, tone, ...(action == null ? {} : { action }) }];
+  queue = [
+    ...queue,
+    {
+      id,
+      msg,
+      tone,
+      pending: options?.pending ?? false,
+      ...(action == null
+        ? {}
+        : {
+            action: {
+              ...action,
+              onClick: () => {
+                dismiss();
+                action.onClick();
+              },
+            },
+          }),
+    },
+  ];
   emit();
   let dismissed = false;
   const dismiss = () => {
@@ -43,18 +72,58 @@ export function toast(msg: string, tone: ToastTone = 'info', action?: ToastActio
     queue = queue.filter((t) => t.id !== id);
     emit();
   };
-  const timer = setTimeout(dismiss, 3600);
+  const timer = options?.pending ? undefined : setTimeout(dismiss, action ? 10_000 : 3600);
   return dismiss;
 }
 
-// Every toast is the same inverse surface (fg ink: near-black on light,
-// light on dark); the tone rides as a small dot, never a coloured slab.
+/** A pending request owns its notice; unmount or a scope change dismisses it. */
+export function usePendingToast(scope?: string) {
+  const active = useRef(new Set<() => void>());
+  useEffect(() => {
+    const notices = active.current;
+    return () => {
+      for (const dismiss of notices) dismiss();
+      notices.clear();
+    };
+  }, [scope]);
+  return useCallback((msg: string) => {
+    const dismissToast = toast(msg, 'info', undefined, { pending: true });
+    const dismiss = () => {
+      dismissToast();
+      active.current.delete(dismiss);
+    };
+    active.current.add(dismiss);
+    return dismiss;
+  }, []);
+}
+
+// Notifications share the cleanup/Undo card surface; tone is a small dot.
 const TONE_DOT: Record<ToastTone, string | null> = {
   info: null,
   success: color.emerald,
   warn: color.amber,
   danger: color.red,
 };
+
+/** Fixed stack: above the undo tray when it publishes, and never under the cookie banner. */
+export function toastStackPosition(): CSSProperties {
+  return {
+    position: 'fixed',
+    // Larger of the tray's occupied inset and the banner clearance
+    // (20px + tab bar + banner lift). A plain var() fallback would keep a
+    // short inset and, at z-index 200, cover Accept all and Essential only.
+    bottom: `max(var(${UNDO_TRAY_INSET_VAR}, 0px), ${bottomClearOfCookieBanner('20px + var(--dm-tabbar-inset, 0px)')})`,
+    maxWidth: 'calc(100vw - 32px)',
+    width: 'max-content',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    zIndex: OVERLAY_Z.toast,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+    pointerEvents: 'none',
+  };
+}
 
 export function ToastHost() {
   const [items, setItems] = useState<ToastItem[]>([]);
@@ -73,29 +142,13 @@ export function ToastHost() {
   if (!mounted || items.length === 0) return null;
 
   return createPortal(
-    <div
-      style={{
-        position: 'fixed',
-        // Sit above the undo tray when it is mounted. The tray publishes
-        // its top-to-viewport distance; without that, fall back to the
-        // tab bar so a toast never covers the tray's Undo button.
-        bottom: 'var(--dm-undo-tray-inset, calc(20px + var(--dm-tabbar-inset, 0px)))',
-        maxWidth: 'calc(100vw - 32px)',
-        width: 'max-content',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        zIndex: 200,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-        pointerEvents: 'none',
-      }}
-    >
+    <div style={toastStackPosition()}>
       {items.map((t) => (
         <ToastAnnouncement
           key={t.id}
           msg={t.msg}
           tone={t.tone}
+          pending={t.pending ?? false}
           {...(t.action == null ? {} : { action: t.action })}
         />
       ))}
@@ -116,10 +169,12 @@ export function ToastAnnouncement({
   msg,
   tone,
   action,
+  pending = false,
 }: {
   msg: string;
   tone: ToastTone;
   action?: ToastAction;
+  pending?: boolean;
 }) {
   const assertive = tone === 'warn' || tone === 'danger';
 
@@ -132,14 +187,10 @@ export function ToastAnnouncement({
         display: 'flex',
         alignItems: 'center',
         gap: 10,
-        padding: '12px 18px',
-        background: color.fg,
-        color: color.fgInverse,
-        borderRadius: radius.lg,
-        fontFamily: font.sans,
-        fontSize: text.base,
-        fontWeight: 500,
-        boxShadow: shadow.pop,
+        padding: '10px 18px',
+        flexWrap: 'wrap',
+        ...FEEDBACK_SURFACE,
+        fontWeight: 400,
         pointerEvents: 'auto',
         animation: 'dm-toast-in 0.22s cubic-bezier(0.2,0.7,0.3,1)',
       }}
@@ -156,7 +207,9 @@ export function ToastAnnouncement({
           }}
         />
       )}
-      <span>{msg}</span>
+      <InlineProgress pending={pending} mode="trailing" pendingLabel="Working">
+        <span style={{ overflowWrap: 'anywhere' }}>{msg}</span>
+      </InlineProgress>
       {action == null ? null : (
         <button
           type="button"

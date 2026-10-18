@@ -5,11 +5,14 @@ import type { Verb } from '@declutrmail/shared/observability';
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 import { UnsubscribeBacklogDialog } from './unsubscribe-backlog/unsubscribe-backlog-dialog';
 import { someProtectedSelectionCopy } from './unsubscribe-backlog/preview-copy';
+import { pickBucketCount, TIME_WINDOW_PRESETS } from './action-window';
+import { ActionReachControl, ActionWindowControl } from '@/components/action-scope-controls';
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   Avatar,
   Button,
+  OVERLAY_Z,
   PreviewSheet,
   SheetFactList,
   SheetLinks,
@@ -119,22 +122,6 @@ export interface ConfirmOptions {
 }
 
 /**
- * Time-window presets (spec v1.2 Decision 15). Days values plumb to the
- * BE `olderThanDays` filter; the label is what the user reads. `null`
- * value = no time filter (act on all). Defaults per verb (handoff spec):
- *   - Archive primary → null    ("All inbox")
- *   - Delete primary  → 180     ("6 months+" — safer)
- *   - Unsub/Later secondary historic → null when first toggled on
- */
-const TIME_WINDOW_PRESETS = [
-  { label: 'All inbox', days: null as number | null },
-  { label: '30 days+', days: 30 },
-  { label: '3 months+', days: 90 },
-  { label: '6 months+', days: 180 },
-  { label: '1 year+', days: 365 },
-] as const;
-
-/**
  * Aggregated multi-sender preview state (D52). Drives the chip-row
  * bucket counts, the headline figure, and the per-sender breakdown for
  * a bulk action. `loading` gates confirm exactly like the single-sender
@@ -144,26 +131,6 @@ export interface BulkPreviewState {
   data: BulkActionPreviewResult | undefined;
   loading: boolean;
   error: boolean;
-}
-
-/**
- * Pick the right bucket count from the composite preview for a given
- * `olderThanDays`. Keeps the summary line + confirm button in step with
- * the active chip without a round-trip per chip.
- */
-function pickBucketCount(
-  counts: CompositeActionPreviewResult['counts'] | undefined,
-  olderThanDays: number | null,
-): number | undefined {
-  if (!counts) return undefined;
-  if (olderThanDays === null) return counts.all;
-  if (olderThanDays === 30) return counts.olderThan30d;
-  if (olderThanDays === 90) return counts.olderThan90d;
-  if (olderThanDays === 180) return counts.olderThan180d;
-  if (olderThanDays === 365) return counts.olderThan365d;
-  // Custom value (post-launch) — fall back to `all` until the
-  // server-side on-demand bucket query lands (Phase 1 BE PR-N polish).
-  return counts.all;
 }
 
 /**
@@ -833,7 +800,10 @@ export function ConfirmActionModal({
   const historic = senders.reduce((sum, s) => sum + s.totalReceived, 0);
   const requestedSenderCount = senders.length;
   const selectedCount = request.selectedCount ?? requestedSenderCount;
-  const skippedCount = (request.skipped?.protectedCount ?? 0) + (request.skipped?.peopleCount ?? 0);
+  const skippedCount =
+    (request.skipped?.protectedCount ?? 0) +
+    (request.skipped?.peopleCount ?? 0) +
+    (request.skipped?.emptyMailCount ?? 0);
   const eligibleCount = Math.max(0, selectedCount - skippedCount);
   // Prefer the live bulk preview's actionable count — it independently
   // re-resolves every sender id and can drop it (deleted since queued) or
@@ -955,7 +925,7 @@ export function ConfirmActionModal({
     ? protectedDroppedBeforePreview + bulkPreview.data.protectedCount
     : (request.skipped?.protectedCount ?? 0);
   const peopleSkipped = request.skipped?.peopleCount ?? 0;
-  const skipSentence =
+  const protectedPeopleSkipSentence =
     protectedSkipped > 0 && peopleSkipped > 0
       ? `${protectedSkipped} Protected sender${protectedSkipped === 1 ? '' : 's'} and ${peopleLabel(peopleSkipped)} are skipped.`
       : protectedSkipped > 0
@@ -963,6 +933,13 @@ export function ConfirmActionModal({
         : peopleSkipped > 0
           ? `${peopleLabel(peopleSkipped)} ${peopleSkipped === 1 ? 'is' : 'are'} skipped.`
           : null;
+  const emptyMailSkipped = request.skipped?.emptyMailCount ?? 0;
+  const emptyMailSkipSentence =
+    emptyMailSkipped > 0
+      ? `${emptyMailSkipped} sender${emptyMailSkipped === 1 ? '' : 's'} with no ${isDeleteVerb ? 'current' : 'inbox'} emails ${emptyMailSkipped === 1 ? 'is' : 'are'} skipped.`
+      : null;
+  const skipSentence =
+    [protectedPeopleSkipSentence, emptyMailSkipSentence].filter(Boolean).join(' ') || null;
   const undoNote = zeroTitle
     ? null
     : isUnsubVerb
@@ -1073,10 +1050,11 @@ export function ConfirmActionModal({
   }
   if (showReach) {
     controls.push(
-      <SheetSegmented
+      <ActionReachControl
         key="reach"
-        label="Where it applies"
         value={activeReach}
+        inboxCount={inboxReachCount}
+        allMailCount={allMailReachCount}
         onChange={(next) => {
           // Choosing the option that advertised its UN-WINDOWED count (the
           // window was hidden for an empty inbox) must arm exactly that
@@ -1085,41 +1063,17 @@ export function ConfirmActionModal({
           if (next === 'all_mail' && !showWindowChips) setOlderThanDays(null);
           setReach(next);
         }}
-        options={[
-          { value: 'inbox_only', label: 'Inbox only', count: inboxReachCount },
-          { value: 'all_mail', label: 'Inbox + archived', count: allMailReachCount },
-        ]}
       />,
-    );
-  }
-  if (reachAvailable && inboxReachCount != null && inboxReachCount === allMailReachCount) {
-    controls.push(
-      <p key="equal-reach" style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
-        Both choices cover the same emails right now.
-      </p>,
     );
   }
   if (showWindowSelect) {
     controls.push(
-      <label key="window" style={wellStyle}>
-        <span>How far back</span>
-        <select
-          aria-label="How far back to act on"
-          value={olderThanDays === null ? 'all' : String(olderThanDays)}
-          onChange={(event) => {
-            const value = event.currentTarget.value;
-            setOlderThanDays(value === 'all' ? null : Number(value));
-          }}
-          className="dm-field"
-          style={{ ...tokens.field, width: '100%', minWidth: 0 }}
-        >
-          {windowOptions.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.count === undefined ? o.label : `${o.label} · ${fmt(o.count)}`}
-            </option>
-          ))}
-        </select>
-      </label>,
+      <ActionWindowControl
+        key="window"
+        value={olderThanDays}
+        options={windowOptions}
+        onChange={setOlderThanDays}
+      />,
     );
   }
   if (isLaterVerb) {
@@ -1472,9 +1426,9 @@ export function ConfirmActionModal({
   );
 
   return (
-    // Stacking context above the phone selection FAB (z 130), as the
-    // previous overlay was; `PreviewSheet` itself is fixed to the viewport.
-    <div style={{ position: 'relative', zIndex: 151 }}>
+    // This wrapper, not PreviewSheet's own z-index, is the stacking
+    // context that competes with the cookie banner and the selection FAB.
+    <div style={{ position: 'relative', zIndex: OVERLAY_Z.modal }}>
       <PreviewSheet
         context={
           activeMailboxEmail ? (

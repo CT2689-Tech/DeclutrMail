@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { ConflictException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import {
+  activityLog,
   mailMessages,
   mailboxAccounts,
   schema,
@@ -23,6 +24,8 @@ import {
   CAPABILITY_METADATA,
 } from '../common/entitlements/capability.guard.js';
 import { SnoozeService } from './snooze.service.js';
+import { SendersReadService } from './senders.read-service.js';
+import { SendersPolicyService } from './senders-policy.service.js';
 import { SnoozedController } from './snoozed.controller.js';
 import { SnoozedReadService } from './snoozed.read-service.js';
 
@@ -364,8 +367,18 @@ describe('SnoozeService.setSnooze', () => {
 
     const row = await policyRow();
     expect(row!.snoozedUntil!.toISOString()).toBe('2026-06-12T09:00:00.000Z');
-    expect(row!.policyType).toBe('keep'); // column default — not a verdict write
+    expect(row!.policyType).toBeNull(); // timer-only row has no standing decision
     expect(row!.isProtected).toBe(false);
+    const read = new SendersReadService(db as never);
+    expect((await read.getSenderDetail(mailboxId, senderAId))!.policyType).toBeNull();
+    const list = await read.listSenders({
+      mailboxAccountId: mailboxId,
+      category: null,
+      cursor: null,
+      limit: 10,
+      currentMailOnly: false,
+    });
+    expect(list.find((sender) => sender.id === senderAId)!.policyType).toBeNull();
   });
 
   it('extends an existing timer and replaces the note', async () => {
@@ -400,6 +413,35 @@ describe('SnoozeService.setSnooze', () => {
     const row = await policyRow();
     expect(row!.policyType).toBe('unsubscribe');
     expect(row!.snoozedUntil).not.toBeNull();
+  });
+
+  it('records explicit Keep after a neutral timer and preserves it when rescheduled', async () => {
+    await service.setSnooze({
+      mailboxAccountId: mailboxId,
+      senderId: senderAId,
+      until: '2026-06-12T09:00:00.000Z',
+    });
+    const policies = new SendersPolicyService(db as never);
+    const input = {
+      mailboxAccountId: mailboxId,
+      senderId: senderAId,
+      patch: { policyType: 'keep' as const },
+    };
+    expect((await policies.setPolicy(input)).changed).toBe(true);
+    expect((await policies.setPolicy(input)).changed).toBe(false);
+    await service.setSnooze({
+      mailboxAccountId: mailboxId,
+      senderId: senderAId,
+      until: '2026-06-19T09:00:00.000Z',
+    });
+    const row = await policyRow();
+    expect(row!.policyType).toBe('keep');
+    expect(row!.snoozedUntil!.toISOString()).toBe('2026-06-19T09:00:00.000Z');
+    const history = await db
+      .select({ action: activityLog.action })
+      .from(activityLog)
+      .where(eq(activityLog.mailboxAccountId, mailboxId));
+    expect(history.filter((entry) => entry.action === 'keep')).toHaveLength(1);
   });
 
   it('idempotent replay — same until + reason is changed:false', async () => {

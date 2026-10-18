@@ -104,7 +104,7 @@ export function NoiseArchiveSheet({
       'You switched Gmail accounts, so nothing was archived. Close this and start again.'
     ) : preview === 'unavailable' ? (
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        {WS5_COPY['f1.preview.backlog.error']}
+        {WS2_COPY.preview.loadFailed}
         <Button tone="default" size="sm" onClick={onRetryPreview}>
           {WS2_COPY.home.failed.retry}
         </Button>

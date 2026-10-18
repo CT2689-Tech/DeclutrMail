@@ -279,9 +279,14 @@ describe('marketing metadata guards', () => {
     expect(signIn.alternates?.canonical).toBe('/sign-in');
   });
 
+  it('noindexes pricing history and retired beta while keeping links followable', () => {
+    expect(pricingChangelog.robots).toEqual({ index: false, follow: true });
+    expect(beta.robots).toEqual({ index: false, follow: true });
+  });
+
   it('uses the approved title and description for the twelve change rows', async () => {
     const unroll = await metadataForPath('/vs/unroll-me');
-    expect(titleText(unroll)).toBe('DeclutrMail vs Unroll.Me: how each uses your email data');
+    expect(titleText(unroll)).toBe('Unroll.Me vs DeclutrMail — Gmail cleanup and privacy');
     expect(unroll.description).toBe(
       'A source-backed comparison: Unroll.Me is free and uses email data for market research; DeclutrMail never fetches or stores full email contents.',
     );
@@ -308,7 +313,7 @@ describe('marketing metadata guards', () => {
       ['/alternatives/trimbox', 'Trimbox'],
     ] as const) {
       const metadata = await metadataForPath(path);
-      expect(titleText(metadata)).toBe(`${name} alternatives — DeclutrMail`);
+      expect(titleText(metadata)).toBe(`${name} alternatives for Gmail — DeclutrMail`);
       expect(metadata.description).toBe(
         `Source-backed alternatives to ${name}: what each tool is for, when to stay with ${name}, and where DeclutrMail fits. No rankings, no affiliates.`,
       );
@@ -341,7 +346,7 @@ describe('marketing metadata guards', () => {
   });
 
   it('keeps the seven rows the founder left unchanged', () => {
-    expect(titleText(landing)).toBe('Clean up Gmail, one sender at a time — DeclutrMail');
+    expect(titleText(landing)).toBe('Gmail cleanup with preview and undo | DeclutrMail');
     expect(landing.description).toBe(
       'Clear Gmail clutter by sender. Preview which emails will move before you confirm. Start free, with 30-day undo on Archive, Later, and Delete.',
     );

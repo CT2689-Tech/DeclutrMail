@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import {
   GMAIL_DISCONNECT_DATA_INVENTORY,
   GMAIL_INDEXED_DATA_DELETION_INVENTORY,
-  GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY,
 } from '@declutrmail/shared';
+import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 
 import type { MeMailbox } from '@/features/auth/api/use-me';
 import { MailboxDataControlsDialog } from './mailbox-data-controls-dialog';
@@ -98,24 +98,39 @@ describe('MailboxDataControlsDialog', () => {
     expect(
       screen.getByRole('heading', { name: /disconnect & delete saved data/i }),
     ).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: /disconnect person@example\.com/i });
+    expect(dialog.textContent?.toLowerCase()).not.toContain('mailbox');
+    expect(dialog).toHaveTextContent(
+      `${WS2_COPY.simplify.dataControls.deleteBodyConnected} ${WS2_COPY.simplify.dataControls.deleteRemain} ${WS2_COPY.liveFix.mailboxes.deleteReconnect}`,
+    );
+    expect(dialog).not.toHaveTextContent(WS2_COPY.simplify.dataControls.deleteBody);
+    expect(screen.queryByText(/Removed on disconnect/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Deleted from DeclutrMail/)).not.toBeInTheDocument();
+    const summaries = screen.getAllByText(WS2_COPY.simplify.dataControls.inventoryToggle);
+    expect(summaries).toHaveLength(2);
+
+    const disconnectDetails = summaries[0]?.closest('details');
+    const deleteDetails = summaries[1]?.closest('details');
+    expect(disconnectDetails).not.toBeNull();
+    expect(deleteDetails).not.toBeNull();
+    fireEvent.click(summaries[0]!);
+    fireEvent.click(summaries[1]!);
     expect(
-      screen.getByText(
-        `Removed on disconnect (${GMAIL_DISCONNECT_DATA_INVENTORY.length} ${GMAIL_DISCONNECT_DATA_INVENTORY.length === 1 ? 'category' : 'categories'})`,
-      ),
+      within(disconnectDetails as HTMLElement).getByRole('heading', {
+        name: WS2_COPY.simplify.dataControls.keptAfterDisconnect,
+      }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(
-        `Deleted from DeclutrMail (${GMAIL_INDEXED_DATA_DELETION_INVENTORY.length} categories)`,
-      ),
+      within(disconnectDetails as HTMLElement).getByText(GMAIL_DISCONNECT_DATA_INVENTORY[0]!.label),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(
-        `Kept after disconnecting (${GMAIL_INDEXED_DATA_DELETION_INVENTORY.length + GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY.length} categories)`,
-      ),
+      within(deleteDetails as HTMLElement).getByRole('heading', {
+        name: WS2_COPY.simplify.dataControls.keptAfterDelete,
+      }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(
-        `Kept after deleting (${GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY.length} categories)`,
+      within(deleteDetails as HTMLElement).getByText(
+        GMAIL_INDEXED_DATA_DELETION_INVENTORY[0]!.label,
       ),
     ).toBeInTheDocument();
     expect(screen.getByText(/Changes already made in Gmail stay/i)).toBeInTheDocument();
@@ -163,6 +178,12 @@ describe('MailboxDataControlsDialog', () => {
       screen.queryByRole('heading', { name: /disconnect and keep saved data/i }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /^delete saved data$/i })).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: /manage data for person@example\.com/i });
+    expect(dialog.textContent?.toLowerCase()).not.toContain('mailbox');
+    expect(dialog).toHaveTextContent(
+      `${WS2_COPY.simplify.dataControls.deleteBody} ${WS2_COPY.simplify.dataControls.deleteRemain} ${WS2_COPY.liveFix.mailboxes.deleteReconnect}`,
+    );
+    expect(dialog).not.toHaveTextContent(WS2_COPY.simplify.dataControls.deleteBodyConnected);
   });
 
   it('surfaces an error and disables cancellation while a request is in flight', () => {

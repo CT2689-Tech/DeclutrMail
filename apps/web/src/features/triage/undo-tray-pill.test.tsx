@@ -51,10 +51,63 @@ describe('<UndoTray /> — one pill', () => {
     expect(revert).toHaveBeenCalledWith(done.token);
   });
 
+  it('keeps an unresolved unsubscribe visible with the successful Delete and its Undo', () => {
+    vi.useFakeTimers();
+    render(
+      <UndoTray
+        dataSource={source({
+          entries: [
+            {
+              ...done,
+              noteTone: 'attention',
+              note: 'Unsubscribe unconfirmed — watch for new email.',
+            },
+          ],
+        })}
+      />,
+    );
+    act(() => vi.advanceTimersByTime(TRAY_COMPACT_AFTER_MS + 1));
+    expect(screen.getByRole('region', { name: 'Recent actions' })).toHaveTextContent(
+      'Unsubscribe unconfirmed',
+    );
+    expect(screen.getByRole('button', { name: /^Undo Delete/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Show .* recent/ })).toBeNull();
+  });
+
+  it('reopens the same decision if an unsubscribe warning arrives after compaction', () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<UndoTray dataSource={source({ entries: [done] })} />);
+    act(() => vi.advanceTimersByTime(TRAY_COMPACT_AFTER_MS + 1));
+    expect(screen.getByRole('region', { name: 'Recent actions' })).toHaveAttribute(
+      'data-dm-undo-tray',
+      'compact',
+    );
+    rerender(
+      <UndoTray
+        dataSource={source({
+          entries: [
+            {
+              ...done,
+              noteTone: 'attention',
+              note: 'Unsubscribe unconfirmed — watch for new email.',
+            },
+          ],
+        })}
+      />,
+    );
+    expect(screen.getByRole('region', { name: 'Recent actions' })).toHaveAttribute(
+      'data-dm-undo-tray',
+      'pill',
+    );
+    expect(screen.getByRole('region', { name: 'Recent actions' })).toHaveTextContent(
+      'Unsubscribe unconfirmed',
+    );
+  });
+
   it('puts a running action ahead of everything, with its progress and no Undo', () => {
     render(<UndoTray dataSource={source({ entries: [done], notices: [failed, running] })} />);
     const pill = screen.getByRole('region', { name: 'Recent actions' });
-    expect(pill).toHaveTextContent('Deleting… · 4 of 13');
+    expect(pill).toHaveTextContent('Deleting… · Yankee Candle + 12 others · 4 of 13');
     expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
     expect(screen.getByLabelText('Working')).toBeInTheDocument();
   });
@@ -88,6 +141,17 @@ describe('<UndoTray /> — one pill', () => {
     expect(screen.getAllByRole('button', { name: /^Undo / })).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: 'Collapse recent actions' }));
     expect(screen.getAllByRole('button', { name: /^Undo / })).toHaveLength(1);
+  });
+
+  it('keeps the compact opener mounted when hovered or focused, so the first click opens history', () => {
+    render(<UndoTray defaultCompact dataSource={source({ entries: [done] })} />);
+    const region = screen.getByRole('region', { name: 'Recent actions' });
+    const opener = screen.getByRole('button', { name: /Show 1 recent action/ });
+    fireEvent.mouseEnter(region);
+    fireEvent.focus(opener);
+    expect(opener).toBeInTheDocument();
+    fireEvent.click(opener);
+    expect(region).toHaveAttribute('data-dm-undo-tray', 'open');
   });
 
   it('offers no expander when the pill already says everything', () => {

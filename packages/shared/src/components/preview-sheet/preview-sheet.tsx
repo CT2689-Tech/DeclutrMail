@@ -2,8 +2,10 @@
 
 import { useEffect, useId, type ReactNode } from 'react';
 import { useFocusTrap } from '../../hooks/use-focus-trap';
-import { color, font, motion, radius, shadow, space, text, typography } from '../../tokens/tokens';
+import { OVERLAY_Z } from '../../tokens/overlay-layers';
+import { color, font, shadow, space, text, typography } from '../../tokens/tokens';
 import { Button, type ButtonTone } from '../button';
+import { Disclosure } from '../disclosure';
 
 /**
  * The one confirmation surface (ADR-0042). A preview owes the user three
@@ -103,7 +105,9 @@ export function PreviewSheet({
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 100,
+        // Above the cookie banner. This layer is the stacking context;
+        // a parent with its own z-index must stay at least this high.
+        zIndex: OVERLAY_Z.modal,
         display: 'flex',
         justifyContent: 'center',
         padding: space[4],
@@ -195,68 +199,9 @@ export function PreviewSheet({
           )}
 
           {details != null && (
-            <details
-              className="dm-sheet-details"
-              style={{
-                marginTop: space[4],
-                width: '100%',
-                borderRadius: radius.lg,
-                textAlign: 'left',
-              }}
-            >
-              <summary
-                style={{
-                  cursor: 'pointer',
-                  listStyle: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  boxSizing: 'border-box',
-                  width: '100%',
-                  gap: space[3],
-                  minHeight: 44,
-                  padding: `0 ${space[4]}px`,
-                  borderRadius: radius.lg,
-                  fontSize: text.sm,
-                  fontWeight: 500,
-                  color: color.fgSoft,
-                }}
-              >
-                {detailsLabel}
-                <svg
-                  className="dm-sheet-details-chevron"
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                  style={{ transition: `transform ${motion.fast} ${motion.ease}` }}
-                >
-                  <path d="m6 9 6 6 6-6" />
-                </svg>
-              </summary>
-              <div
-                className="dm-sheet-details-content"
-                style={{
-                  padding: `0 ${space[4]}px ${space[4]}px`,
-                  textAlign: 'left',
-                  fontSize: text.sm,
-                  lineHeight: 1.5,
-                  // Values read in full contrast; `SheetFactList` mutes only
-                  // its labels. Grey-on-grey was unreadable in dark mode.
-                  color: color.fg,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: space[3],
-                }}
-              >
-                {details}
-              </div>
-            </details>
+            <Disclosure summary={detailsLabel} style={{ marginTop: space[4] }}>
+              {details}
+            </Disclosure>
           )}
         </div>
         <div

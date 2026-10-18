@@ -715,7 +715,7 @@ describe('ConfirmActionModal — backlog secondary belongs to Unsubscribe only',
       '+ Delete 4',
       'Unsubscribe from Acme Newsletter and delete 4 emails?',
       backlogMail('delete', 4),
-      'Unsubscribe + Delete',
+      'Unsubscribe + Delete 4 emails',
     ],
   ] as const)(
     'renders deck copy for the backlog verb when %s is picked',
@@ -1434,7 +1434,7 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
 // with 753 total mail and 2 in the inbox showed "2 emails currently
 // match" with no way to reach the other 751 (founder report
 // 2026-08-31).
-describe('ConfirmActionModal — unsubscribe offers Delete reach without an age window', () => {
+describe('ConfirmActionModal — unsubscribe cleanup scope defaults', () => {
   it('offers reach only on Delete, with Inbox only as the default', () => {
     const onConfirm = vi.fn();
     render(
@@ -1446,11 +1446,11 @@ describe('ConfirmActionModal — unsubscribe offers Delete reach without an age 
       />,
     );
     expect(screen.queryByRole('radiogroup', { name: /Where it applies/i })).toBeNull();
-    expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
-    expect(screen.queryByRole('combobox', { name: /How far back/i })).toBeNull();
+    expect(screen.queryByRole('radio', { name: /Inbox \+ archived/ })).toBeNull();
+    expect(screen.getByRole('combobox', { name: /How far back/i })).toHaveValue('all');
 
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
-    expect(screen.getByRole('checkbox', { name: 'Include archived email' })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: /Inbox \+ archived/ })).not.toBeChecked();
     expect(
       screen.getByRole('heading', {
         name: 'Unsubscribe from Acme Newsletter and delete 4 emails?',
@@ -1461,7 +1461,9 @@ describe('ConfirmActionModal — unsubscribe offers Delete reach without an age 
         /Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash\./,
       ),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Delete' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+    );
     expect(onConfirm).toHaveBeenCalledWith({
       secondary: { type: 'delete', olderThanDays: null },
       archiveHistoric: false,
@@ -1652,9 +1654,11 @@ describe('ConfirmActionModal — ADR-0028 reach on a bulk selection (amendment 2
     );
     expect(reachRow()).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete 8' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
     expect(screen.queryByText(/^Inbox \+ archived now/)).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Delete' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+    );
     expect(onConfirm).toHaveBeenCalledWith({
       secondary: { type: 'delete', olderThanDays: null },
       archiveHistoric: false,
@@ -2719,7 +2723,7 @@ describe('ConfirmActionModal — explicit period and scope choices', () => {
   });
 
   it.each(['archive', 'delete'] as const)(
-    'sends Unsubscribe + %s with no age window and no reach',
+    'defaults Unsubscribe + %s to all inbox mail even when age buckets tie',
     (secondary) => {
       const onConfirm = vi.fn();
       render(
@@ -2734,7 +2738,7 @@ describe('ConfirmActionModal — explicit period and scope choices', () => {
           }}
         />,
       );
-      expect(screen.queryByRole('combobox', { name: /How far back/i })).toBeNull();
+      expect(screen.getByRole('combobox', { name: /How far back/i })).toHaveValue('all');
       expect(screen.queryByRole('radiogroup', { name: /Where it applies/ })).toBeNull();
       fireEvent.click(
         screen.getByRole('radio', {
@@ -2743,7 +2747,7 @@ describe('ConfirmActionModal — explicit period and scope choices', () => {
       );
       fireEvent.click(
         screen.getByRole('button', {
-          name: secondary === 'archive' ? 'Unsubscribe + Archive' : 'Unsubscribe + Delete',
+          name: secondary === 'archive' ? 'Unsubscribe + Archive' : 'Unsubscribe + Delete 7 emails',
         }),
       );
       expect(onConfirm).toHaveBeenCalledWith({

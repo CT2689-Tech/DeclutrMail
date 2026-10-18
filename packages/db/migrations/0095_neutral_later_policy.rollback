@@ -1,0 +1,6 @@
+-- Roll back application writers first. A NULL row represents no standing
+-- decision; never coerce it to Keep. If any remain, this rollback must fail
+-- until a separately reviewed cleanup preserves their timers/modifiers.
+SET lock_timeout = '3s';
+ALTER TABLE "sender_policies" ALTER COLUMN "policy_type" SET NOT NULL;
+RESET lock_timeout;

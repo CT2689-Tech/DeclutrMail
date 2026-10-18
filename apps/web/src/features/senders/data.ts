@@ -257,28 +257,60 @@ export function isStandingProtected(s: Pick<Sender, 'protectionFlags'>): boolean
  * so the blocked set was every sender the user actually corresponds
  * with — the whole product went read-only for exactly those.
  */
+/** Current intent already owns delivery; uncertain/failed and manual work retain recovery. */
+export function blocksRepeatUnsubscribe(s: Pick<Sender, 'policyType' | 'unsubStatus'>): boolean {
+  return (
+    s.policyType === 'unsubscribe' &&
+    (s.unsubStatus === 'requested' ||
+      s.unsubStatus === 'endpoint_accepted' ||
+      s.unsubStatus === 'user_marked_sent')
+  );
+}
+
 export function canUnsubscribe(s: Sender): boolean {
-  // Channel requirement only: no List-Unsubscribe header means there is
+  // No List-Unsubscribe header means there is
   // nothing to send, which is a fact about the sender rather than a
   // policy. The former `gmailCategory !== 'primary'` term is gone — it
   // had no server, worker, or scoring counterpart and greyed the button
   // with no reason text.
-  return s.unsubscribeMethod === 'one_click' || s.unsubscribeMethod === 'mailto';
+  return (
+    !blocksRepeatUnsubscribe(s) &&
+    (s.unsubscribeMethod === 'one_click' || s.unsubscribeMethod === 'mailto')
+  );
 }
 
-export function canArchive(_s: Sender): boolean {
-  return true;
+export function canArchive(s: Sender): boolean {
+  return s.inboxCount !== 0;
 }
 
 /** "Later" moves a sender's current inbox mail to the
  * DeclutrMail/Later label. */
-export function canLater(_s: Sender): boolean {
-  return true;
+export function canLater(s: Sender): boolean {
+  return s.inboxCount !== 0;
 }
 
 /** Delete (Gmail Trash, 30-day recovery, plus the tier undo window). */
-export function canDelete(_s: Sender): boolean {
-  return true;
+export function canDelete(s: Sender): boolean {
+  return s.inboxCount !== 0 || s.archivedCount !== 0;
+}
+
+export function isMailMovingVerb(verb: ActionVerb): verb is 'Archive' | 'Later' | 'Delete' {
+  return verb === 'Archive' || verb === 'Later' || verb === 'Delete';
+}
+
+/** Only confirmed current zeros are unavailable; unknown counts still need a preview. */
+export function currentMailUnavailableReason(verb: ActionVerb, sender: Sender): string | null {
+  if ((verb === 'Archive' || verb === 'Later') && sender.inboxCount === 0) {
+    return 'No inbox emails to move.';
+  }
+  if (verb === 'Delete' && !canDelete(sender)) return 'No current emails to delete.';
+  return null;
+}
+
+export function canPerformSenderAction(verb: ActionVerb, sender: Sender): boolean {
+  return verb === 'Unsubscribe'
+    ? canUnsubscribe(sender)
+    : currentMailUnavailableReason(verb, sender) === null;
 }
 
 /**
@@ -419,14 +451,17 @@ export interface ActionRequest {
   /**
    * Senders the eligibility gate dropped from the user's selection
    * before this request was built (D226 honesty — the preview must say
-   * why it covers fewer senders than the selection bar showed). Only
-   * two gates exist: standing protection (every bulk verb, D42/D43)
-   * and the people rule (Unsubscribe never applies to primary-group
-   * senders). Omitted when the request covers the full selection.
+   * why it covers fewer senders than the selection bar showed).
+   * Protection, channel eligibility and recorded requests narrow scope.
+   * Omitted when the request covers the full selection.
    */
   skipped?: {
     protectedCount: number;
     peopleCount: number;
+    /** A pending, accepted or user-reported sent request is not submitted again. */
+    recordedUnsubscribeCount?: number;
+    /** Confirmed empty for this verb’s current-mail scope. */
+    emptyMailCount?: number;
   };
   /**
    * Protected senders dropped before the preview opened. The confirm

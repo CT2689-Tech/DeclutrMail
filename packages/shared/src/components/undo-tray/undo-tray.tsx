@@ -1,10 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 
 import { WS2_COPY } from '../../copy/launch/ws2';
+import { FEEDBACK_SURFACE } from '../feedback-surface';
 import { Button } from '../button';
 import { InlineProgress } from '../inline-progress/inline-progress';
+import { COOKIE_BANNER_INSET_EVENT, bottomClearOfCookieBanner } from '../../tokens/overlay-layers';
 import { color, font, radius, shadow, text } from '../../tokens/tokens';
 import { getActionSemantics } from '../../actions/action-semantics';
 import type {
@@ -31,6 +40,14 @@ export const UNDO_TRAY_INSET_VAR = '--dm-undo-tray-inset';
 /** Breathing room between the last scrolled content and the tray's top edge. */
 const TRAY_BOTTOM_GAP = 16;
 
+/** Default bottom anchor: above the mobile tab bar, and above the cookie banner when it is showing. */
+const TRAY_BOTTOM = bottomClearOfCookieBanner('16px + var(--dm-tabbar-inset, 0px)');
+
+/** Pixels from the viewport bottom through the tray's top edge, plus a gap for the toast. */
+export function undoTrayOccupiedPx(trayTop: number, viewportHeight: number): number {
+  return Math.ceil(viewportHeight - trayTop) + TRAY_BOTTOM_GAP;
+}
+
 /**
  * Publish the tray's measured height on the document root while it is
  * mounted, and clear it on unmount.
@@ -48,13 +65,34 @@ function useTrayInset(): (node: HTMLElement | null) => void {
   const observerRef = useRef<ResizeObserver | null>(null);
   const publishRef = useRef<(() => void) | null>(null);
 
-  useEffect(() => {
-    // A breakpoint can move the tray without changing its measured size.
+  useLayoutEffect(() => {
+    // A breakpoint, or the cookie banner publishing its inset, can move
+    // the tray without changing its measured size. Layout, not passive
+    // effect: the banner publishes in its own layout effect, and this
+    // listener has to be attached first.
+    let generation = 0;
     const publish = () => publishRef.current?.();
+    // Chrome keeps the tray's used `bottom` on the previous frame when
+    // this event is dispatched in the same turn the lift variable is
+    // set. Measuring only then publishes a short inset and the toast
+    // stays inside the banner. Measure now, then again after paint.
+    const publishAfterLayout = () => {
+      const scheduled = ++generation;
+      publish();
+      if (typeof requestAnimationFrame !== 'function') return;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (scheduled === generation) publish();
+        });
+      });
+    };
     window.addEventListener('resize', publish);
+    window.addEventListener(COOKIE_BANNER_INSET_EVENT, publishAfterLayout);
     window.visualViewport?.addEventListener('resize', publish);
     return () => {
+      generation += 1;
       window.removeEventListener('resize', publish);
+      window.removeEventListener(COOKIE_BANNER_INSET_EVENT, publishAfterLayout);
       window.visualViewport?.removeEventListener('resize', publish);
       observerRef.current?.disconnect();
       document.documentElement.style.removeProperty(UNDO_TRAY_INSET_VAR);
@@ -75,7 +113,7 @@ function useTrayInset(): (node: HTMLElement | null) => void {
         // height PLUS whatever `bottom` offset the host gave it (the app
         // floats it 78px up to clear the Senders selection bar; assuming
         // the default 16 left ~46px of content under the tray).
-        `${Math.ceil(window.innerHeight - node.getBoundingClientRect().top) + TRAY_BOTTOM_GAP}px`,
+        `${undoTrayOccupiedPx(node.getBoundingClientRect().top, window.innerHeight)}px`,
       );
     };
     publishRef.current = publish;
@@ -155,7 +193,7 @@ function headlineSpeech(headline: TrayHeadline | null): string {
     typeof entry.affectedCount === 'number' && entry.mixedKinds !== true
       ? emailCount(entry.affectedCount)
       : null;
-  const note = entry.note ? ` ${entry.note}.` : '';
+  const note = entry.note ? ` ${entry.note.replace(/[.!?]$/, '')}.` : '';
   return `${doneLine(entry.actionKind, total)}.${note} Undo available.`;
 }
 
@@ -217,18 +255,22 @@ function UndoTrayBody({
   const [held, setHeld] = useState(false);
   const [compact, setCompact] = useState(defaultCompact);
   const key = headlineKey(pickHeadline(notices, source.entries));
-  const settled = key.startsWith('d:');
+  const headline = pickHeadline(notices, source.entries);
+  const settled = headline?.kind === 'decision' && headline.entry.noteTone !== 'attention';
   // A finished action says its piece, then gets out of the way. Anything
   // running or wrong stays put; so does a pill being read or reached for.
   const firstRun = useRef(true);
   useEffect(() => {
-    // `defaultCompact` holds until something actually changes.
+    // New results and opening/closing history reset the size. Hover or
+    // focus must not replace the compact opener before its click lands.
     if (!(firstRun.current && defaultCompact)) setCompact(false);
     firstRun.current = false;
+  }, [key, defaultCompact, open]);
+  useEffect(() => {
     if (!settled || held || open) return;
     const timer = setTimeout(() => setCompact(true), TRAY_COMPACT_AFTER_MS);
     return () => clearTimeout(timer);
-  }, [key, settled, held, open, defaultCompact]);
+  }, [key, settled, held, open]);
 
   // Render-order guards — order matters to avoid flicker between
   // an in-progress refetch and a transient error.
@@ -256,7 +298,7 @@ function UndoTrayBody({
           // See the note on the main tray below: `left: 50%` + translate
           // halves the available width for a shrink-to-fit fixed box.
           position: 'fixed',
-          bottom: 'calc(16px + var(--dm-tabbar-inset, 0px))',
+          bottom: TRAY_BOTTOM,
           left: 16,
           right: 16,
           marginInline: 'auto',
@@ -305,7 +347,6 @@ function UndoTrayBody({
     );
   }
 
-  const headline = pickHeadline(notices, source.entries);
   const hasMore =
     notices.length + source.entries.length > 1 ||
     (headline?.kind === 'decision' && isBulkDecision(headline.entry));
@@ -316,18 +357,12 @@ function UndoTrayBody({
     // is shrink-to-fit against `viewport - left`, so at `left: 50%` it can
     // never exceed half the screen (browser smoke, 2026-07-29).
     position: 'fixed',
-    bottom: 'calc(16px + var(--dm-tabbar-inset, 0px))',
+    bottom: TRAY_BOTTOM,
     left: 16,
     right: 16,
     marginInline: 'auto',
     minWidth: 0,
-    // A floating object: raised card, no outline.
-    background: color.card,
-    border: 'none',
-    boxShadow: shadow.pop,
-    fontFamily: font.sans,
-    fontSize: text.base,
-    color: color.fg,
+    ...FEEDBACK_SURFACE,
     zIndex: 50,
   };
 
@@ -362,7 +397,7 @@ function UndoTrayBody({
             onClick={() => setOpen(true)}
             ariaLabel={`Show ${source.entries.length} recent ${source.entries.length === 1 ? 'action' : 'actions'} — undo available`}
           >
-            Undo · {source.entries.length}
+            Recent actions ({source.entries.length})
           </Button>
         ) : (
           <>
@@ -494,7 +529,7 @@ const headlineKey = (h: TrayHeadline | null): string =>
     ? ''
     : h.kind === 'notice'
       ? `n:${h.notice.id}`
-      : `d:${h.entry.groupId ?? h.entry.token}`;
+      : `d:${h.entry.groupId ?? h.entry.token}:${h.entry.noteTone ?? ''}:${h.entry.note ?? ''}`;
 
 function decisionSenderCount(entry: UndoTrayEntry): number {
   const members = entry.members ?? [];
@@ -568,11 +603,10 @@ function Headline({
           <InlineProgress pending={working} mode="trailing" pendingLabel="Working">
             <span>
               {notice.label}
+              {notice.who ? ` · ${notice.who}` : null}
               {notice.detail ? (
                 // Ticks every poll; announcing each tick would bury a screen reader.
                 <span aria-live="off">{` · ${notice.detail}`}</span>
-              ) : notice.who ? (
-                ` · ${notice.who}`
               ) : null}
               {running > 1 ? ` · +${running - 1} more` : ''}
             </span>
@@ -609,7 +643,11 @@ function Headline({
       <span style={{ minWidth: 0 }}>
         {doneLine(entry.actionKind, total)}
         {whose ? <span style={{ color: color.fgSoft }}>{` · ${whose}`}</span> : null}
-        {entry.note ? <span style={{ color: color.fgSoft }}>{` · ${entry.note}`}</span> : null}
+        {entry.note ? (
+          <span
+            style={{ color: entry.noteTone === 'attention' ? color.fg : color.fgSoft }}
+          >{` · ${entry.note}`}</span>
+        ) : null}
       </span>
       <span
         style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}
@@ -855,8 +893,8 @@ function NoticeRow({ notice }: { notice: UndoTrayNotice }) {
   return (
     <li
       data-dm-tray-notice={notice.tone}
-      // A failure interrupts; progress and no-ops wait their turn.
-      role={attention ? 'alert' : 'status'}
+      // Progress/info use the tray's always-mounted announcer, once.
+      role={attention ? 'alert' : undefined}
       style={{
         display: 'flex',
         alignItems: 'center',

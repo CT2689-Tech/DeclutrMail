@@ -2297,8 +2297,9 @@ describe('ActionsService', () => {
             .where(eq(undoJournal.token, selectedToken));
         }
 
-        if (scope) await controller.revertAction({ id: mailboxId }, selectedToken);
-        else await controller.revert({ id: mailboxId }, selectedToken);
+        const undo = scope
+          ? await controller.revertAction({ id: mailboxId }, selectedToken)
+          : await controller.revert({ id: mailboxId }, selectedToken);
         const expectedTokens = scope ? [selectedToken] : [u1!.token, u2!.token];
         expect([...queue.jobIds].sort()).toEqual(expectedTokens.map(reverseQueueJobId).sort());
         const reversed = await db
@@ -2309,6 +2310,76 @@ describe('ActionsService', () => {
         expect(reversed.flatMap((r) => r.resolvedMessageIds).sort()).toEqual(
           scope === 'other-action' ? ['s2-a'] : scope ? ['s1-a'] : ['s1-a', 's2-a'],
         );
+        expect(undo.data.actionIds?.slice().sort()).toEqual(reversed.map((r) => r.id).sort());
+        if (!scope) {
+          const primary = reversed.find((r) => r.undoToken === u1!.token)!;
+          const sibling = reversed.find((r) => r.undoToken === u2!.token)!;
+          await db
+            .update(actionJobs)
+            .set({ status: 'done', affectedCount: 1 })
+            .where(eq(actionJobs.id, primary.id));
+          await db
+            .update(undoJournal)
+            .set({ revertedAt: new Date() })
+            .where(eq(undoJournal.token, u1!.token));
+          // Replaying the primary token must not hide a sibling still to restore.
+          const replay = await controller.revert({ id: mailboxId }, selectedToken);
+          expect(replay.data.reverted).toBe(false);
+          expect(replay.data.actionIds?.slice().sort()).toEqual([primary.id, sibling.id].sort());
+          await expect(
+            svc.getUndoStatus([primary.id, sibling.id], mailboxId),
+          ).resolves.toMatchObject({ status: 'executing', undoRevertedAt: null });
+          await db
+            .update(actionJobs)
+            .set({ status: 'failed', errorCode: 'GmailError' })
+            .where(eq(actionJobs.id, sibling.id));
+          await expect(
+            svc.getUndoStatus([primary.id, sibling.id], mailboxId),
+          ).resolves.toMatchObject({ status: 'failed', affectedCount: 1, undoRevertedAt: null });
+          await db
+            .update(actionJobs)
+            .set({ status: 'done', affectedCount: 1, errorCode: null })
+            .where(eq(actionJobs.id, sibling.id));
+          // A job flag without its committed journal is not restoration proof.
+          await expect(
+            svc.getUndoStatus([primary.id, sibling.id], mailboxId),
+          ).rejects.toMatchObject({ response: { code: 'UNDO_STATUS_UNCONFIRMED' } });
+          await db
+            .update(undoJournal)
+            .set({ revertedAt: new Date() })
+            .where(eq(undoJournal.token, u2!.token));
+          await expect(
+            svc.getUndoStatus([primary.id, sibling.id], mailboxId),
+          ).resolves.toMatchObject({
+            status: 'done',
+            affectedCount: 2,
+            undoRevertedAt: expect.any(String),
+          });
+          // A completed replay stays readable with no queue dependency.
+          const offlineController = new UndoController(
+            new UndoService(db as never),
+            new ActionsService(db as never, null),
+          );
+          await expect(
+            offlineController.revert({ id: mailboxId }, selectedToken),
+          ).resolves.toMatchObject({ data: { reverted: true, actionIds: [] } });
+          // A later forward sibling with no token must not be silently
+          // excluded from a whole-decision Undo started too early.
+          await db
+            .update(actionJobs)
+            .set({ status: 'executing', undoToken: null })
+            .where(eq(actionJobs.id, otherId));
+          await expect(controller.revert({ id: mailboxId }, selectedToken)).rejects.toMatchObject({
+            response: { code: 'ACTION_STILL_RUNNING' },
+          });
+          await expect(
+            svc.getUndoStatus([primary.id, sibling.id], '00000000-0000-0000-0000-000000000000'),
+          ).rejects.toMatchObject({ response: { code: 'ACTION_NOT_FOUND' } });
+          await expect(svc.getUndoStatus([anchorId], mailboxId)).rejects.toMatchObject({
+            response: { code: 'ACTION_NOT_FOUND' },
+          });
+          await expect(svc.getUndoStatus([], mailboxId)).rejects.toThrow();
+        }
       },
     );
   });

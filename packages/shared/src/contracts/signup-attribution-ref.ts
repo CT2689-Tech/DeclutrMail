@@ -42,12 +42,17 @@ export function resolveFirstTouchRef(input: {
   existing?: unknown;
   queryRef?: unknown;
   pathname: string;
+  /** A captured campaign must not be relabeled as a visit to the demo. */
+  allowSimulatorFallback?: boolean;
 }): SignupAttributionRef | undefined {
   const existing = parseSignupAttributionRef(input.existing);
   if (existing) return existing;
   const fromQuery = parseSignupAttributionRef(input.queryRef);
   if (fromQuery) return fromQuery;
-  if (input.pathname === '/inbox-simulator' || input.pathname === '/demo') {
+  if (
+    input.allowSimulatorFallback !== false &&
+    (input.pathname === '/inbox-simulator' || input.pathname === '/demo')
+  ) {
     return 'simulator';
   }
   return undefined;

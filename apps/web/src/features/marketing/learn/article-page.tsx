@@ -98,6 +98,19 @@ function faqJsonLd(article: LearnArticle) {
 
 export function ArticlePage({ article }: { article: LearnArticle }) {
   const faq = faqJsonLd(article);
+  const examples = (
+    <>
+      {article.example ? <SyntheticPanel example={article.example} /> : null}
+      {[
+        'clean-gmail-by-sender',
+        'bulk-delete-emails-from-one-sender',
+        'gmail-storage-full',
+        'is-it-safe-to-connect-gmail-app',
+      ].includes(article.slug) ? (
+        <SenderWalkthrough id={`guide-${article.slug}`} headingLevel={2} />
+      ) : null}
+    </>
+  );
   return (
     <ReadingLayout
       breadcrumb={
@@ -137,16 +150,7 @@ export function ArticlePage({ article }: { article: LearnArticle }) {
 
       {article.slug === 'is-it-safe-to-connect-gmail-app' ? <TrustRow /> : null}
 
-      {article.example ? <SyntheticPanel example={article.example} /> : null}
-
-      {[
-        'clean-gmail-by-sender',
-        'bulk-delete-emails-from-one-sender',
-        'gmail-storage-full',
-        'is-it-safe-to-connect-gmail-app',
-      ].includes(article.slug) ? (
-        <SenderWalkthrough id={`guide-${article.slug}`} headingLevel={2} />
-      ) : null}
+      {article.kind !== 'How-to guide' ? examples : null}
 
       {article.sections.map((section) => (
         <section key={section.id} id={section.id}>
@@ -174,6 +178,8 @@ export function ArticlePage({ article }: { article: LearnArticle }) {
           {section.callout ? <Callout callout={section.callout} /> : null}
         </section>
       ))}
+
+      {article.kind === 'How-to guide' ? examples : null}
 
       {article.sources?.length ? (
         <section aria-labelledby="primary-sources">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 
 const FOCUSABLE =
   'summary,a[href],button:not([disabled]):not([tabindex="-1"]),input:not([disabled]):not([tabindex="-1"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
@@ -17,17 +17,30 @@ const FOCUSABLE =
  */
 export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
   active: boolean,
-  options?: { initialFocusSelector?: string },
+  options?: {
+    initialFocusSelector?: string;
+    returnFocusRef?: RefObject<HTMLElement | null> | undefined;
+  },
 ) {
   const ref = useRef<T>(null);
   const initialFocusSelector = options?.initialFocusSelector;
+  const returnFocusRef = options?.returnFocusRef;
+  const activation = useRef(0);
+  const restoreFrame = useRef<number | null>(null);
 
   useEffect(() => {
     if (!active) return;
+    const owner = ++activation.current;
+    if (restoreFrame.current !== null) {
+      cancelAnimationFrame(restoreFrame.current);
+      restoreFrame.current = null;
+    }
     const node = ref.current;
     if (!node) return;
 
-    const restoreTo = document.activeElement as HTMLElement | null;
+    // An async/lazy host can mount after the opener lost focus. Its
+    // persistent trigger is the explicit return point when supplied.
+    const restoreTo = returnFocusRef?.current ?? (document.activeElement as HTMLElement | null);
     const focusable = () =>
       Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((element) => {
         // Descendants of a closed disclosure are in the DOM but cannot
@@ -47,15 +60,51 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
     const preferred = initialFocusSelector
       ? node.querySelector<HTMLElement>(initialFocusSelector)
       : null;
-    (preferred ?? focusable()[0])?.focus();
+    let addedTabIndex = false;
+    const focusPanel = () => {
+      if (!node.hasAttribute('tabindex')) {
+        node.tabIndex = -1;
+        addedTabIndex = true;
+      }
+      node.focus();
+    };
+    const initialItems = focusable();
+    const initialTarget =
+      preferred && initialItems.includes(preferred) ? preferred : initialItems[0];
+    if (initialTarget) initialTarget.focus();
+    else focusPanel();
+
+    // Disabling the last control can return focus to the page. Keep a
+    // busy dialog focused without taking focus from another open surface.
+    const observer = new MutationObserver(() => {
+      if (
+        focusable().length === 0 &&
+        (document.activeElement === document.body || node.contains(document.activeElement))
+      ) {
+        focusPanel();
+      }
+    });
+    observer.observe(node, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['disabled', 'hidden', 'open', 'tabindex'],
+    });
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Tab') return;
       const items = focusable();
-      if (items.length === 0) return;
+      if (items.length === 0) {
+        e.preventDefault();
+        focusPanel();
+        return;
+      }
       const first = items[0]!;
       const last = items[items.length - 1]!;
-      if (e.shiftKey && document.activeElement === first) {
+      if (!items.includes(document.activeElement as HTMLElement)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
         last.focus();
       } else if (!e.shiftKey && document.activeElement === last) {
@@ -67,9 +116,39 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
     node.addEventListener('keydown', onKey);
     return () => {
       node.removeEventListener('keydown', onKey);
-      restoreTo?.focus?.();
+      observer.disconnect();
+      if (addedTabIndex) node.removeAttribute('tabindex');
+      const target = restoreTo?.isConnected ? restoreTo : null;
+      if (!target) return;
+      const closingModal = node.closest('[aria-modal="true"]');
+      const canRestore = () => {
+        if (activation.current !== owner || !target.isConnected) return false;
+        const current = document.activeElement;
+        if (current && current !== document.body && current !== target && !node.contains(current))
+          return false;
+        // Closing a surface must not move focus behind its successor.
+        return !Array.from(document.querySelectorAll('[aria-modal="true"]')).some(
+          (modal) => modal !== closingModal && !modal.contains(target),
+        );
+      };
+      const focusTarget = () => {
+        if (!canRestore() || target.matches(':disabled')) return false;
+        target.focus();
+        return document.activeElement === target;
+      };
+      if (focusTarget()) return;
+      // The return target can still be disabled in the commit that closes
+      // the dialog. Try again after that commit enables it.
+      queueMicrotask(() => {
+        if (!canRestore() || focusTarget()) return;
+        restoreFrame.current = requestAnimationFrame(() => {
+          if (activation.current !== owner) return;
+          restoreFrame.current = null;
+          focusTarget();
+        });
+      });
     };
-  }, [active, initialFocusSelector]);
+  }, [active, initialFocusSelector, returnFocusRef]);
 
   return ref;
 }

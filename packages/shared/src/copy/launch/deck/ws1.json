@@ -87,6 +87,7 @@
   "pricing.promise.changelogLink": "See every price change",
   "pricing.changelog.h1": "Pricing changelog",
   "pricing.changelog.intro": "Every change to DeclutrMail’s prices and plans, newest first.",
+  "pricing.changelog.current": "Current launch pricing",
   "pricing.changelog.entry.2026-10-27": "Launch pricing: {freeName} with {allowance} emails cleared a month, {passName} {passPrice} once, {plusName} {plusPrice} a year with up to {plusInboxes} {CONNECTION_TERM_PLURAL}.",
   "pricing.teaser.cta": "See plans",
   "refunds.toc.window": "{refundDays}-day money-back guarantee",

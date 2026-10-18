@@ -725,7 +725,7 @@ const unrollMe: ComparisonDefinition = {
   category: 'Digest and blocking',
   verifiedIso: '2026-10-13',
   title: 'DeclutrMail vs Unroll.Me',
-  metaTitle: 'DeclutrMail vs Unroll.Me: how each uses your email data',
+  metaTitle: 'Unroll.Me vs DeclutrMail — Gmail cleanup and privacy',
   description:
     'A source-backed comparison of DeclutrMail and Unroll.Me on Gmail cleanup, blocking, digests, email-data access, the market-research business model and cost.',
   metaDescription:

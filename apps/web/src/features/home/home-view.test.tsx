@@ -105,20 +105,11 @@ const metered = {
 };
 
 describe('HomeView', () => {
-  it('formats the progress month in an explicit timezone on either side of hydration', () => {
-    const state = {
-      ...ready,
-      hero: { label: 'emails cleared', value: 12 },
-      since: '2026-01-01T00:00:00.000Z',
-    };
-    const { rerender } = render(<HomeView state={state} />);
-    expect(screen.getByRole('region', { name: 'Progress' })).toHaveTextContent(
-      'emails cleared since Jan 2026',
-    );
-    rerender(<HomeView state={state} timeZone="America/Los_Angeles" />);
-    expect(screen.getByRole('region', { name: 'Progress' })).toHaveTextContent(
-      'emails cleared since Dec 2025',
-    );
+  it.each([ready.since, null])('labels recorded progress as all time with since=%s', (since) => {
+    render(<HomeView state={{ ...ready, since }} />);
+    const progress = screen.getByRole('region', { name: 'Progress' });
+    expect(progress).toHaveTextContent('All time');
+    expect(progress.querySelector('time')).toBeNull();
   });
 
   it('uses Home as the only H1 and links Compare plans to billing', () => {
@@ -139,11 +130,11 @@ describe('HomeView', () => {
   it('keeps recorded progress and activity, and does not promote Pro', () => {
     render(<HomeView state={ready} tier="plus" />);
     expect(screen.getByTestId('home-hero')).toHaveTextContent('1,234');
-    expect(screen.getByRole('region', { name: 'Progress' }).querySelector('dl')).toBeNull();
-    expect(screen.queryByText('Emails archived')).toBeNull();
+    expect(screen.getByRole('region', { name: 'Progress' }).querySelector('dl')).not.toBeNull();
+    expect(screen.getByText('Emails archived')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'See your activity' })).toHaveAttribute(
       'href',
-      '/activity',
+      '/activity?window=all',
     );
     expect(screen.getByRole('link', { name: 'See your activity' })).toHaveClass('dm-tap-target');
     expect(screen.queryByRole('link', { name: /Autopilot/ })).toBeNull();
@@ -153,15 +144,51 @@ describe('HomeView', () => {
     expect(screen.queryByText('Review 8 today')).toBeNull();
   });
 
+  it('shows the recommendation inbox count separately from recorded progress', () => {
+    render(<HomeView state={ready} nextSteps={[unsub]} mailboxEmail="selected@synthetic.test" />);
+    expect(screen.getByText('selected@synthetic.test')).toBeInTheDocument();
+    expect(document.querySelector('[data-home-impact]')).toHaveTextContent(
+      '1,200 emails in your inbox',
+    );
+    expect(screen.getByRole('region', { name: 'Progress' })).toHaveTextContent('1,234');
+    expect(screen.getByRole('button', { name: 'Preview cleanup' })).toBeInTheDocument();
+  });
+
+  it.each([undefined, 0, Number.NaN])(
+    'offers sender review when a preview count is unavailable: %s',
+    (emailCount) => {
+      const step: HomeFixCandidate = { ...unsub };
+      if (emailCount === undefined) delete step.emailCount;
+      else step.emailCount = emailCount;
+      render(<HomeView state={ready} nextSteps={[step]} />);
+      expect(document.querySelector('[data-home-impact]')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Preview cleanup' })).toBeNull();
+      expect(screen.getByRole('link', { name: 'Review the senders' })).toHaveAttribute(
+        'href',
+        '/senders',
+      );
+      expect(document.querySelector('[data-home-fix-expected="false"]')).not.toBeNull();
+    },
+  );
+
+  it('offers the first cleanup before any recorded progress exists', () => {
+    render(<HomeView state={{ kind: 'empty', syncing: false, action }} nextSteps={[unsub]} />);
+    expect(screen.getByRole('button', { name: 'Preview cleanup' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Progress' })).toHaveTextContent(
+      HOME_DECK.emptyTitle,
+    );
+    expect(screen.queryByTestId('home-hero')).toBeNull();
+  });
+
   it('renders the chip from server meter fields', () => {
-    render(<HomeView state={ready} summary={metered} timeZone="UTC" />);
+    render(<HomeView state={ready} summary={metered} />);
     expect(
       screen.getByLabelText('640 of 1,000 free emails left this month. Resets Nov 1.'),
     ).toHaveTextContent('640 of 1,000 free emails left · resets Nov 1');
   });
 
   it('hides the chip when the server says the workspace is not metered', () => {
-    render(<HomeView state={ready} summary={{ ...metered, metered: false }} timeZone="UTC" />);
+    render(<HomeView state={ready} summary={{ ...metered, metered: false }} />);
     expect(screen.queryByText(/free emails left/)).toBeNull();
   });
 
@@ -175,7 +202,7 @@ describe('HomeView', () => {
       />,
     );
     expect(screen.getByRole('region', { name: 'Suggested next steps' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Unsubscribe/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Preview cleanup' })).toBeInTheDocument();
     const laterLink = screen.getByRole('link', { name: HOME_DECK.laterCta });
     const laterCard = laterLink.closest('article');
     expect(laterLink).toHaveAttribute('href', '/later');
@@ -218,7 +245,7 @@ describe('HomeView', () => {
       'dm-external-link',
       'dm-tap-target',
     );
-    expect(screen.getByRole('link', { name: 'Review them first' })).toHaveClass(
+    expect(screen.getByRole('link', { name: 'Review the senders' })).toHaveClass(
       'dm-external-link',
       'dm-tap-target',
     );
@@ -231,7 +258,7 @@ describe('HomeView', () => {
     expect(homePreviewReport('full')?.fix.supportOne).toMatch(/^That sender had less than 10%/);
     expect(screen.getByText('≈ 7.7 GB')).toBeInTheDocument();
     expect(screen.getByText(/We never fetch or store full email contents/)).toBeInTheDocument();
-    const unsubscribe = screen.getByRole('button', { name: 'Unsubscribe + archive 158 senders' });
+    const unsubscribe = screen.getByRole('button', { name: 'Preview cleanup' });
     const tile = screen.getByText('≈ 7.7 GB');
     expect(unsubscribe.compareDocumentPosition(tile) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
@@ -250,16 +277,16 @@ describe('HomeView', () => {
   });
 
   it('keeps the compact home slots while the shell reserves the tab bar', () => {
-    const narrowOf = (css: string) => css.slice(css.lastIndexOf('@media (max-width: 760px)'));
+    const narrowOf = (css: string) => css.slice(css.indexOf('@media (max-width: 760px)'));
     const dir = dirname(fileURLToPath(import.meta.url));
     const home = readFileSync(join(dir, 'home-view.module.css'), 'utf8');
     const card = readFileSync(join(dir, '../inbox-report/card.module.css'), 'utf8');
     const narrow = narrowOf(home);
-    expect(narrow).toContain('padding: 12px 16px 16px');
-    expect(narrow).not.toContain('min-height: 0');
-    expect(narrow).toContain('margin-bottom: var(--dm-tabbar-inset)');
-    expect(narrow).toContain('min-height: 28px');
-    expect(home).toMatch(/max-width:\s*760px/);
+    expect(narrow).toContain('grid-template-columns: minmax(0, 1fr)');
+    expect(narrow).not.toMatch(/\.page\s*\{[^}]*min-height: 0/s);
+    expect(home).toContain('margin-bottom: var(--dm-tabbar-inset)');
+    expect(home).toContain('min-height: 28px');
+    expect(home).toMatch(/max-width:\s*1172px/);
     expect(home).toMatch(/\.leadFigure\s*\{[^}]*font-size:\s*28px/s);
     expect(home).toMatch(/\.planLine\s*\{[^}]*min-height:\s*28px/s);
     expect(home).toMatch(/\.fixActions\s*\{[^}]*margin-top:\s*8px/);

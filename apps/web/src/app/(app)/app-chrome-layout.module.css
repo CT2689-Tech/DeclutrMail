@@ -1,0 +1,13 @@
+.topbarQuota {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Home and cleanup previews retain the full allowance. Keep the narrow
+   shell's navigation, theme, sync and account controls within reach. */
+@media (max-width: 900px) {
+  .topbarQuota {
+    display: none;
+  }
+}

@@ -15,13 +15,15 @@ import { sendersKeys } from '@/features/senders/api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { undoKeys } from '@/features/undo/query-keys';
 import type { ActionStatusResult } from '@/lib/api/actions';
-import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
+import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient } from '@/test/query-wrapper';
 
 import {
   actionRefetchInterval,
   ACTION_POLL_MS,
   useActionStatus,
+  useUndoStatus,
+  useRevertUndo,
   useBatchStatus,
   useRecordUnsubscribeIntent,
   useCompositePreview,
@@ -85,6 +87,171 @@ function status(s: ActionStatusResult['status']): ActionStatusResult {
     errorCode: null,
   };
 }
+
+describe('complete Undo progress', () => {
+  afterEach(() => resetFetchStub());
+
+  it.each(['failed', 'unavailable'] as const)(
+    'retries the same reverse IDs after %s without using stale progress',
+    async (first) => {
+      let attempt = 0;
+      let release!: (response: Response) => void;
+      const freshRead = new Promise<Response>((resolve) => {
+        release = resolve;
+      });
+      installFetchStub([
+        {
+          method: 'POST',
+          path: '/api/actions/undo-status',
+          respond: () =>
+            attempt === 0
+              ? first === 'unavailable'
+                ? jsonServerError()
+                : jsonOk({ data: status('failed') })
+              : freshRead,
+        },
+        {
+          method: 'POST',
+          path: '/api/undo/retry-token',
+          respond: () => {
+            attempt += 1;
+            return jsonOk({
+              data: {
+                token: 'retry-token',
+                actionKind: 'delete',
+                reverted: false,
+                expired: false,
+                revertedAt: null,
+                actionId: 'primary',
+                actionIds: ['primary', 'sibling'],
+              },
+            });
+          },
+        },
+      ]);
+      const client = createTestQueryClient();
+      client.setDefaultOptions({ queries: { staleTime: 30_000, retry: false } });
+      const wrapper = ({ children }: { children: ReactNode }) =>
+        createElement(QueryClientProvider, { client }, children);
+      const view = renderHook(
+        ({ id }: { id: string | null }) => useUndoStatus(id, 'mailbox-a', ['primary', 'sibling']),
+        { wrapper, initialProps: { id: 'primary' as string | null } },
+      );
+      await waitFor(() =>
+        first === 'unavailable'
+          ? expect(view.result.current.isError).toBe(true)
+          : expect(view.result.current.data?.status).toBe('failed'),
+      );
+      view.rerender({ id: null });
+      const mutation = renderHook(() => useRevertUndo(), { wrapper });
+      await act(async () => {
+        await mutation.result.current.mutateAsync({ token: 'retry-token', mailboxId: 'mailbox-a' });
+      });
+      view.rerender({ id: 'primary' });
+      expect(view.result.current.data).toBeUndefined();
+      expect(view.result.current.isError).toBe(false);
+      await act(async () => {
+        release(
+          jsonOk({
+            data: {
+              ...status('done'),
+              direction: 'reverse',
+              undoRevertedAt: '2026-10-15T12:00:00.000Z',
+            },
+          }),
+        );
+      });
+      await waitFor(() => expect(view.result.current.data?.status).toBe('done'));
+    },
+  );
+
+  it.each(['done', 'failed', 'unavailable'] as const)(
+    'waits for the whole reverse set, then reconciles %s',
+    async (outcome) => {
+      let finished = false;
+      const calls: Array<{ ids: string[]; mailbox: string | null }> = [];
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/actions/primary',
+          respond: () => jsonOk({ data: status('done') }),
+        },
+        {
+          method: 'POST',
+          path: '/api/actions/undo-status',
+          respond: async (req) => {
+            calls.push({
+              ids: ((await req.json()) as { actionIds: string[] }).actionIds,
+              mailbox: req.headers.get('X-Active-Mailbox-Id'),
+            });
+            if (finished && outcome === 'unavailable') return jsonServerError();
+            return jsonOk({
+              data: {
+                ...status(finished ? (outcome === 'failed' ? 'failed' : 'done') : 'executing'),
+                direction: 'reverse',
+                undoRevertedAt: finished && outcome === 'done' ? '2026-10-15T12:00:00.000Z' : null,
+              },
+            });
+          },
+        },
+      ]);
+      const client = createTestQueryClient();
+      client.setQueryData(sendersKeys.detail('restored'), {});
+      const wrapper = ({ children }: { children: ReactNode }) =>
+        createElement(QueryClientProvider, { client }, children);
+      const { result } = renderHook(
+        () => useUndoStatus('primary', 'mailbox-a', ['primary', 'sibling']),
+        { wrapper },
+      );
+      await waitFor(() => expect(result.current.data?.status).toBe('executing'));
+      expect(client.getQueryState(sendersKeys.detail('restored'))?.isInvalidated).toBe(false);
+      finished = true;
+      await waitFor(
+        () =>
+          outcome === 'unavailable'
+            ? expect(result.current.isError).toBe(true)
+            : expect(result.current.data?.status).toBe(outcome),
+        { timeout: 2500 },
+      );
+      await waitFor(() =>
+        expect(client.getQueryState(sendersKeys.detail('restored'))?.isInvalidated).toBe(true),
+      );
+      expect(
+        calls.every(
+          (call) => call.ids.join(',') === 'primary,sibling' && call.mailbox === 'mailbox-a',
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it('reads a thousand reverse jobs in one request rather than per sender', async () => {
+    let reads = 0;
+    const ids = Array.from({ length: 1000 }, (_, index) => `reverse-${index}`);
+    installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/actions/undo-status',
+        respond: async (req) => {
+          reads += 1;
+          expect(((await req.json()) as { actionIds: string[] }).actionIds).toEqual(ids);
+          return jsonOk({
+            data: {
+              ...status('done'),
+              direction: 'reverse',
+              undoRevertedAt: '2026-10-15T12:00:00.000Z',
+            },
+          });
+        },
+      },
+    ]);
+    const client = createTestQueryClient();
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client }, children);
+    const { result } = renderHook(() => useUndoStatus(ids[0]!, 'mailbox-a', ids), { wrapper });
+    await waitFor(() => expect(result.current.data?.status).toBe('done'));
+    expect(reads).toBe(1);
+  });
+});
 
 describe('actionRefetchInterval', () => {
   it('polls before the first result', () => {

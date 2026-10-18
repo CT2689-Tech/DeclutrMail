@@ -60,10 +60,10 @@ jobs:
   #     manifests, tsconfig, .nvmrc, packages/config, and THIS file). A
   #     dependency bump or a change to CI itself must re-run everything —
   #     the whole point of a filter is lost if it can hide a broken lockfile.
-  #   * Filters gate `pull_request` ONLY. A push to main always runs the
-  #     full suite (see each `if:`), so the protected branch is never
-  #     validated by a subset. Skipping on a PR is an optimisation;
-  #     skipping on main would be a coverage hole.
+  #   * Filters gate `pull_request` ONLY. Queue/manual runs execute every
+  #     suite. Main can reuse expensive suites only from a fully successful
+  #     queue CI run on this exact commit, verified below and again by both
+  #     aggregates. Missing/untrusted proof selects the full suite.
   #
   # Typecheck / Lint / Format stay ungated on purpose: ~2 min combined, and
   # they are the checks that cover scripts/ and *.md — exactly the files a
@@ -72,6 +72,9 @@ jobs:
     name: Detect changed paths
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     # In the MERGE QUEUE, every shard runs — no path filtering.
     #
     # The queue tests a state no PR was ever green against: main plus the
@@ -86,6 +89,9 @@ jobs:
     # OPEN — an empty diff reads as "nothing changed, skip everything",
     # which is a green that verified nothing.
     outputs:
+      reuse: ${{ steps.queue.outputs.reuse || 'false' }}
+      reuse_run_id: ${{ steps.queue.outputs.reuse_run_id }}
+      reuse_attempt: ${{ steps.queue.outputs.reuse_attempt }}
       api: ${{ steps.filter.outputs.api || github.event_name == 'merge_group' }}
       workers: ${{ steps.filter.outputs.workers || github.event_name == 'merge_group' }}
       db: ${{ steps.filter.outputs.db || github.event_name == 'merge_group' }}
@@ -94,6 +100,14 @@ jobs:
       a11y: ${{ steps.filter.outputs.a11y || github.event_name == 'merge_group' }}
     steps:
       - uses: actions/checkout@v7
+      - name: Find reusable queue validation
+        id: queue
+        # PRs and queue candidates always run normally. A manual dispatch or
+        # rerunning all push jobs forces fresh verification for recovery.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt == 1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci-queue-reuse.mjs
       # A `!` pattern here does not subtract — it makes the rule ALWAYS
       # TRUE. dorny/paths-filter compiles each pattern separately and ORs
       # them (`patterns.some(...)`), so `!foo/**` matches every path
@@ -122,6 +136,7 @@ jobs:
               - 'packages/config/**'
               - '.github/workflows/ci.yml'
               - 'scripts/check-ci-required*'
+              - 'scripts/ci-queue-reuse*'
               - 'scripts/required-checks.json'
             # UI-only shared paths must not boot the API/worker PGlite
             # suites — a Button.tsx tweak was paying the full API run.
@@ -313,7 +328,7 @@ jobs:
       - name: Performance probes and release contract
         run: node --test scripts/check-sender-release-contract.test.mjs scripts/probe-db-latency.test.mjs scripts/summarize-performance.test.mjs
       - name: CI and release coordination contracts
-        run: node --test scripts/check-ci-required.test.mjs scripts/check-merge-queue-ready.test.mjs scripts/select-deployment.test.mjs scripts/select-lighthouse-url.test.mjs scripts/vitest-weighted-shard.test.mjs
+        run: node --test scripts/check-ci-required.test.mjs scripts/ci-queue-reuse.test.mjs scripts/check-merge-queue-ready.test.mjs scripts/select-deployment.test.mjs scripts/select-lighthouse-url.test.mjs scripts/vitest-weighted-shard.test.mjs
       - name: Bundle budget contracts (served-HTML measure, fails closed)
         run: node --test scripts/check-web-bundle-budget.test.mjs
       # Re-renders every brand raster from the geometry in ADR-0036 and
@@ -343,7 +358,7 @@ jobs:
   test-api:
     name: Tests — API
     needs: changes
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.api == 'true' }}
+    if: ${{ needs.changes.outputs.reuse != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.api == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -396,7 +411,7 @@ jobs:
   test-workers:
     name: Tests — Workers
     needs: changes
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.workers == 'true' }}
+    if: ${{ needs.changes.outputs.reuse != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.workers == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -459,7 +474,7 @@ jobs:
   test-db:
     name: Tests — Database
     needs: changes
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.db == 'true' }}
+    if: ${{ needs.changes.outputs.reuse != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.db == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -475,7 +490,7 @@ jobs:
   test-web:
     name: Tests — Web
     needs: changes
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.web == 'true' }}
+    if: ${{ needs.changes.outputs.reuse != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.web == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # 302 files, dominated by per-file environment setup rather than a few
@@ -647,18 +662,24 @@ jobs:
 
   # D160's remaining unbuilt gate, against build-web's own build via
   # `next start` — a `next dev` score measures nothing production has.
-  # One leg per URL in lighthouserc.cjs, each with its full three runs and
-  # thresholds; the select step fails if the legs and the config disagree.
+  # Keep the slow homepage separate; run the other pages serially on one
+  # runner. Every URL retains three measurements and its existing thresholds.
   lighthouse:
-    name: Lighthouse — marketing page ${{ matrix.page }} (D160 ≥90)
+    name: Lighthouse — marketing ${{ matrix.group }} (D160 ≥90)
     needs: [changes, build-web]
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.web == 'true' }}
+    if: ${{ needs.changes.outputs.reuse != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.web == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        page: [1, 2, 3, 4]
+        include:
+          - group: home
+            first: 1
+            last: 1
+          - group: other-pages
+            first: 2
+            last: 4
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -667,12 +688,6 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Select this leg's page
-        id: page
-        env:
-          PAGE: ${{ matrix.page }}
-          PAGES: ${{ strategy.job-total }}
-        run: node scripts/select-lighthouse-url.mjs >> "$GITHUB_OUTPUT"
       - name: Download the built web app
         id: download
         continue-on-error: true
@@ -687,31 +702,46 @@ jobs:
           pnpm --filter @declutrmail/web build
         env:
           NEXT_TELEMETRY_DISABLED: '1'
-      - name: Lighthouse — ${{ steps.page.outputs.url }}
-        run: pnpm check:lighthouse --collect.url="$URL"
+      - name: Audit every page in this group
         env:
-          URL: ${{ steps.page.outputs.url }}
+          FIRST_PAGE: ${{ matrix.first }}
+          LAST_PAGE: ${{ matrix.last }}
+          PAGES: '4'
           NEXT_TELEMETRY_DISABLED: '1'
+        run: |
+          rc=0
+          for page in $(seq "$FIRST_PAGE" "$LAST_PAGE"); do
+            selected=$(PAGE="$page" node scripts/select-lighthouse-url.mjs)
+            URL=${selected#url=}
+            # Continue collecting sibling evidence after an assertion failure,
+            # but never turn that failure into a green group.
+            if ! pnpm check:lighthouse --collect.url="$URL"; then
+              rc=1
+            fi
+            if [ ! -s apps/web/.lighthouseci/manifest.json ]; then
+              echo "::error::Lighthouse page $page wrote no report manifest"
+              rc=1
+            fi
+            if [ -d apps/web/.lighthouseci ]; then
+              mkdir -p apps/web/lighthouse-reports
+              mv apps/web/.lighthouseci "apps/web/lighthouse-reports/page-$page"
+            fi
+          done
+          exit "$rc"
       - name: Upload Lighthouse reports
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: lighthouse-reports-${{ matrix.page }}
-          path: apps/web/.lighthouseci/
+          name: lighthouse-reports-${{ matrix.group }}
+          path: apps/web/lighthouse-reports/
           retention-days: 7
-          # `.lighthouseci` is a DOTFILE directory, and upload-artifact
-          # skips hidden paths by default — the first run reported
-          # "No files were found" seconds after LHCI logged "Done writing
-          # reports to disk". Without this the gate passes but leaves no
-          # evidence of the numbers it passed on.
           include-hidden-files: true
-          # The reports are the gate's evidence: a leg that wrote none fails.
           if-no-files-found: error
 
   test-units:
     name: Tests — Shared units
     needs: changes
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.units == 'true' }}
+    if: ${{ needs.changes.outputs.reuse != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.units == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -748,70 +778,17 @@ jobs:
     needs: [changes, impl-log, test-api, test-workers, test-db, test-web, test-units]
     runs-on: ubuntu-latest
     timeout-minutes: 2
+    permissions:
+      contents: read
+      actions: read
     steps:
+      - uses: actions/checkout@v7
       - name: Require every selected test shard
         env:
-          CHANGES_RESULT: ${{ needs.changes.result }}
-          EVENT_NAME: ${{ github.event_name }}
-          IMPL_LOG_RESULT: ${{ needs.impl-log.result }}
-          API_RESULT: ${{ needs.test-api.result }}
-          WORKERS_RESULT: ${{ needs.test-workers.result }}
-          DB_RESULT: ${{ needs.test-db.result }}
-          WEB_RESULT: ${{ needs.test-web.result }}
-          UNITS_RESULT: ${{ needs.test-units.result }}
-        run: |
-          set -euo pipefail
-
-          # Path detection failing must never read as "nothing to test".
-          if [ "$CHANGES_RESULT" != success ]; then
-            echo "::error::path detection did not succeed ($CHANGES_RESULT) —" \
-                 "shard selection is unknown, so this cannot pass"
-            exit 1
-          fi
-
-          # The derived implementation log is a MUST-PASS on pull requests:
-          # a stale log means a merged PR's Closes flip was not committed.
-          # On push-to-main the job is skipped by design (see its `if`) —
-          # only an outright failure or a PR-context skip is an error.
-          if [ "$IMPL_LOG_RESULT" != success ]; then
-            if [ "$EVENT_NAME" = pull_request ] || [ "$IMPL_LOG_RESULT" != skipped ]; then
-              if [ "$IMPL_LOG_RESULT" = cancelled ]; then
-                echo "::error::implementation log check was cancelled — a newer push superseded this run"
-              else
-                echo "::error::implementation log check did not succeed ($IMPL_LOG_RESULT) —" \
-                     "run 'pnpm generate-impl-log' and commit the result"
-              fi
-              exit 1
-            fi
-          fi
-
-          ran=''; skipped=''; bad=''
-          classify() {
-            case "$2" in
-              success) ran="$ran $1" ;;
-              skipped) skipped="$skipped $1" ;;
-              *) bad="$bad $1=$2" ;;
-            esac
-          }
-          classify api "$API_RESULT"
-          classify workers "$WORKERS_RESULT"
-          classify db "$DB_RESULT"
-          classify web "$WEB_RESULT"
-          classify units "$UNITS_RESULT"
-
-          {
-            echo "### Test shards"
-            echo
-            echo "- **ran:**${ran:- none}"
-            echo "- **skipped** (no matching path changed):${skipped:- none}"
-          } >> "$GITHUB_STEP_SUMMARY"
-          echo "ran:${ran:- none}"
-          echo "skipped:${skipped:- none}"
-
-          if [ -n "$bad" ]; then
-            echo "::error::test shard(s) did not succeed:$bad"
-            exit 1
-          fi
+          GH_TOKEN: ${{ github.token }}
+          CI_NEEDS: ${{ toJSON(needs) }}
+          CI_EVENT: ${{ github.event_name }}
+        run: node scripts/check-ci-required.mjs --tests-only
 
   required:
     name: CI required
@@ -835,10 +812,14 @@ jobs:
       ]
     runs-on: ubuntu-latest
     timeout-minutes: 2
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
       - name: Require all selected release checks
         env:
+          GH_TOKEN: ${{ github.token }}
           CI_NEEDS: ${{ toJSON(needs) }}
           CI_EVENT: ${{ github.event_name }}
         run: node scripts/check-ci-required.mjs
@@ -846,7 +827,7 @@ jobs:
   accessibility:
     name: Authenticated accessibility smoke (${{ matrix.lane }})
     needs: changes
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.a11y == 'true' }}
+    if: ${{ needs.changes.outputs.reuse != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.a11y == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     # Each lane gets its own Postgres, Redis, API and built web app. Keep

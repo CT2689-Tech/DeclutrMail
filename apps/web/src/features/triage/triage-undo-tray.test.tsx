@@ -12,7 +12,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useQuery } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import type { UndoTrayEntry } from '@declutrmail/shared';
+import {
+  COOKIE_BANNER_INSET_EVENT,
+  bottomClearOfCookieBanner,
+  undoTrayOccupiedPx,
+  type UndoTrayEntry,
+} from '@declutrmail/shared';
 
 import { addFetchHandlers, installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -266,6 +271,26 @@ describe('TriageUndoTray (D35)', () => {
     expect(document.documentElement.style.getPropertyValue('--dm-undo-tray-inset')).toBe('');
   });
 
+  it('republishes its occupied space when the cookie banner inset changes', async () => {
+    const { container, unmount } = await renderTrayWithDecisions();
+    const tray = container.querySelector<HTMLElement>('[data-dm-undo-tray]');
+    expect(tray).not.toBeNull();
+    let top = 541;
+    vi.spyOn(tray!, 'getBoundingClientRect').mockImplementation(() => ({ top }) as DOMRect);
+    fireEvent(window, new Event(COOKIE_BANNER_INSET_EVENT));
+    expect(document.documentElement.style.getPropertyValue('--dm-undo-tray-inset')).toBe(
+      `${undoTrayOccupiedPx(541, window.innerHeight)}px`,
+    );
+    top = 322;
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+    expect(document.documentElement.style.getPropertyValue('--dm-undo-tray-inset')).toBe(
+      `${undoTrayOccupiedPx(322, window.innerHeight)}px`,
+    );
+    unmount();
+  });
+
   it('Z reverts the NEWEST entry (undo last) and polls to completion', async () => {
     const { posts } = await renderTrayWithDecisions();
 
@@ -282,6 +307,86 @@ describe('TriageUndoTray (D35)', () => {
     expect(message).toMatch(/undone/i);
     expect(message).not.toMatch(/inbox/i);
   });
+
+  it.each(['done', 'failed'] as const)(
+    'does not announce Undo until every restore job ends (%s)',
+    async (outcome) => {
+      await renderTrayWithDecisions();
+      let finished = false;
+      let groupReads = 0;
+      resetFetchStub();
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/undo',
+          respond: () =>
+            jsonOk({
+              data: finished ? [ENTRY_OLDER] : [ENTRY_NEWEST, ENTRY_OLDER],
+              meta: { nextCursor: null, limit: 50 },
+            }),
+        },
+        {
+          method: 'POST',
+          path: `/api/undo/${ENTRY_NEWEST.token}`,
+          respond: () =>
+            jsonOk({
+              data: {
+                token: ENTRY_NEWEST.token,
+                actionKind: 'delete',
+                reverted: false,
+                expired: false,
+                revertedAt: null,
+                actionId: 'primary-reverse',
+                actionIds: ['primary-reverse', 'sibling-reverse'],
+              },
+            }),
+        },
+        // The old primary-only watcher would immediately say "Undone".
+        {
+          method: 'GET',
+          path: '/api/actions/primary-reverse',
+          respond: () =>
+            jsonOk({
+              data: {
+                actionId: 'primary-reverse',
+                status: 'done',
+                undoRevertedAt: '2026-10-15T12:00:00.000Z',
+              },
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/actions/undo-status',
+          respond: () => {
+            groupReads += 1;
+            return jsonOk({
+              data: {
+                actionId: 'primary-reverse',
+                status: finished ? outcome : 'executing',
+                direction: 'reverse',
+                requestedCount: 2,
+                affectedCount: finished ? 2 : 1,
+                undoRevertedAt: finished && outcome === 'done' ? '2026-10-15T12:00:00.000Z' : null,
+                errorCode: finished && outcome === 'failed' ? 'GmailError' : null,
+              },
+            });
+          },
+        },
+      ]);
+      fireEvent.keyDown(window, { key: 'z' });
+      await waitFor(() => expect(groupReads).toBe(1));
+      expect(h.toast).not.toHaveBeenCalled();
+      expect(document.querySelector('[data-dm-undo-tray]')).toHaveTextContent('Undoing…');
+      finished = true;
+      await waitFor(() => expect(h.toast).toHaveBeenCalled(), { timeout: 2500 });
+      const [message, tone] = h.toast.mock.calls.at(-1) as [string, string];
+      expect(tone).toBe(outcome === 'done' ? 'success' : 'warn');
+      expect(/undone/i.test(message)).toBe(outcome === 'done');
+      expect(h.toast.mock.calls.filter(([, callTone]) => callTone === 'success')).toHaveLength(
+        outcome === 'done' ? 1 : 0,
+      );
+    },
+  );
 
   it('per-row Undo click reverts that token', async () => {
     const { posts } = await renderTrayWithDecisions();
@@ -603,7 +708,9 @@ describe('TriageUndoTray (D35)', () => {
 
     const tray = container.querySelector<HTMLElement>('[data-dm-undo-tray]');
     expect(tray?.style.bottom).toBe(
-      `calc(${floatingSurfaceLayout.undoTrayBottom}px + var(--dm-tabbar-inset, 0px))`,
+      bottomClearOfCookieBanner(
+        `${floatingSurfaceLayout.undoTrayBottom}px + var(--dm-tabbar-inset, 0px)`,
+      ),
     );
     expect(floatingSurfaceLayout.undoTrayBottom).toBeGreaterThan(
       floatingSurfaceLayout.selectionBarBottom + floatingSurfaceLayout.selectionBarHeight,
@@ -731,7 +838,11 @@ describe('TriageUndoTray — a bulk action is one decision', () => {
     await waitFor(() => expect(state.posts).toEqual([`/api/undo/${T_RETAIL}/action`]));
     // While it confirms: that sender is gone from the decision, and the
     // headline no longer counts mail that is on its way back.
-    await waitFor(() => expect(screen.queryByText(/RetailMeNot/)).toBeNull());
+    await waitFor(() =>
+      expect(document.querySelector('[data-dm-undo-tray]')).toHaveTextContent(
+        'Undoing… · RetailMeNot',
+      ),
+    );
     // (Scoped to the visible tray: the screen-reader region repeats the headline.)
     const tray = document.querySelector<HTMLElement>('[data-dm-undo-tray]')!;
     expect(tray).toHaveTextContent(/251 emails/);
