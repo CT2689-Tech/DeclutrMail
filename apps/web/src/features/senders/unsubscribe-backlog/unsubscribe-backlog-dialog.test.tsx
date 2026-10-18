@@ -567,6 +567,8 @@ describe('Unsubscribe uses the action preview contract', () => {
       expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeDisabled();
       expect(screen.getByRole('heading')).not.toHaveTextContent('4 emails');
       if (state === 'error') {
+        expect(screen.getByText(WS5_COPY['f1.preview.backlog.error'])).toBeVisible();
+        expect(screen.queryByText(WS2_COPY.preview.loadFailed)).not.toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: WS2_COPY.home.failed.retry }));
         expect(onRetryPreview).toHaveBeenCalledOnce();
       }

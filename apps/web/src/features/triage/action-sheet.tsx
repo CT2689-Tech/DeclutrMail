@@ -320,7 +320,7 @@ export function ActionSheet({
     'Pick a future return time.'
   ) : previewUnavailable ? (
     <StatusWithAction
-      message={WS2_COPY.preview.unavailable}
+      message={WS2_COPY.preview.loadFailed}
       action={
         onRetryPreview ? { label: WS2_COPY.home.failed.retry, onClick: onRetryPreview } : undefined
       }

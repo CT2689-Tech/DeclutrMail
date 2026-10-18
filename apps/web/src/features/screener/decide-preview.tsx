@@ -360,7 +360,7 @@ export function DecidePreview({
         <p style={mutedLine}>{WS5_COPY['f1.preview.backlog.loading']}</p>
       )}
       {moves && effectiveCount === 'unavailable' && (
-        <p style={mutedLine}>{WS2_COPY.preview.unavailable}</p>
+        <p style={mutedLine}>{WS2_COPY.preview.loadFailed}</p>
       )}
 
       {scopeCopy && (
