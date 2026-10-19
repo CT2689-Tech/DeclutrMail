@@ -42,6 +42,7 @@ import type {
   SubscriptionSearchResult,
 } from './billing-provider.interface.js';
 import { providerErrorBody } from './provider-error-body.js';
+import { billingProviderSignal, currentVerdictSignal } from './provider-signal.js';
 
 const API_BASE = 'https://api.razorpay.com';
 const API_TIMEOUT_MS = 10_000;
@@ -418,7 +419,7 @@ export class RazorpayAdapter implements BillingProvider {
           // workspace from these notes on first contact (D117).
           notes: { workspace_id: input.workspaceId },
         }),
-        signal: AbortSignal.timeout(API_TIMEOUT_MS),
+        signal: billingProviderSignal(API_TIMEOUT_MS),
       });
     } catch (err) {
       this.logger.error(
@@ -458,7 +459,7 @@ export class RazorpayAdapter implements BillingProvider {
           method: 'POST',
           headers: { Authorization: auth, 'Content-Type': 'application/json' },
           body: JSON.stringify({ cancel_at_cycle_end: 1 }),
-          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+          signal: billingProviderSignal(API_TIMEOUT_MS),
         },
       );
     } catch (err) {
@@ -549,9 +550,10 @@ export class RazorpayAdapter implements BillingProvider {
       try {
         res = await fetch(url, {
           headers: { Authorization: auth },
-          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+          signal: billingProviderSignal(API_TIMEOUT_MS),
         });
       } catch (err) {
+        if (currentVerdictSignal()?.aborted) throw err;
         this.logger.error(
           `razorpay.${subsystem}.network_error ${label} err=${err instanceof Error ? err.message : String(err)}`,
         );
@@ -566,7 +568,8 @@ export class RazorpayAdapter implements BillingProvider {
       let batch: unknown;
       try {
         batch = ((await res.json()) as { items?: unknown }).items;
-      } catch {
+      } catch (err) {
+        if (currentVerdictSignal()?.aborted) throw err;
         batch = undefined;
       }
       if (!Array.isArray(batch)) {
@@ -717,7 +720,9 @@ export class RazorpayAdapter implements BillingProvider {
       };
     } catch (err) {
       // Missing API keys land here too (`authHeader`), and a thrown read
-      // is still an unmade one.
+      // is still an unmade one. A verdict deadline must not look like that
+      // unread result — the pass would move on to the next provider write.
+      if (currentVerdictSignal()?.aborted) throw err;
       this.logger.error(
         `razorpay.cancellation_facts.unreadable sub=${providerSubscriptionId} err=${err instanceof Error ? err.message : String(err)}`,
       );
@@ -729,7 +734,7 @@ export class RazorpayAdapter implements BillingProvider {
   async deletionBillingState(id: string): Promise<'stopped' | 'billable' | 'unknown'> {
     const res = await fetch(`${API_BASE}/v1/subscriptions/${encodeURIComponent(id)}`, {
       headers: { Authorization: this.authHeader() },
-      signal: AbortSignal.timeout(API_TIMEOUT_MS),
+      signal: billingProviderSignal(API_TIMEOUT_MS),
     });
     if (res.status === 404) return 'unknown';
     if (!res.ok) throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
@@ -752,7 +757,7 @@ export class RazorpayAdapter implements BillingProvider {
         `${API_BASE}/v1/subscriptions/${encodeURIComponent(providerSubscriptionId)}`,
         {
           headers: { Authorization: auth },
-          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+          signal: billingProviderSignal(API_TIMEOUT_MS),
         },
       );
     } catch (err) {
@@ -817,7 +822,7 @@ export class RazorpayAdapter implements BillingProvider {
         try {
           res = await fetch(`${API_BASE}/v1/subscriptions?${params.toString()}`, {
             headers: { Authorization: auth },
-            signal: AbortSignal.timeout(API_TIMEOUT_MS),
+            signal: billingProviderSignal(API_TIMEOUT_MS),
           });
         } catch (err) {
           this.logger.error(
@@ -902,7 +907,7 @@ export class RazorpayAdapter implements BillingProvider {
     try {
       res = await fetch(`${API_BASE}/v1/invoices/${encodeURIComponent(invoiceId)}`, {
         headers: { Authorization: auth },
-        signal: AbortSignal.timeout(API_TIMEOUT_MS),
+        signal: billingProviderSignal(API_TIMEOUT_MS),
       });
     } catch (err) {
       this.logger.error(

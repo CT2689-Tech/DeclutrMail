@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { DrizzleDb } from '../../db/db.module.js';
 import type { BillingReconciliationService } from '../billing-reconciliation.service.js';
 import { billingVerdictDeps } from '../billing-verdict.deps.js';
+import { currentVerdictSignal } from '../provider-signal.js';
 
 /**
  * The production boundary between the reconciliation service and the
@@ -94,5 +95,36 @@ describe('billingVerdictDeps — the production wiring', () => {
     const [a, b, c] = seen.enforce as [number, number, number];
     expect(b - a).toBe(1);
     expect(c - b).toBe(1);
+  });
+
+  it('enters the job abort scope with the worker deadline', async () => {
+    const db = (await freshTestDb()) as unknown as DrizzleDb;
+    const seen: Array<AbortSignal | undefined> = [];
+    const service = {
+      enforceLocalVerdicts: async () => {
+        seen.push(currentVerdictSignal());
+        return { enforced: 0, unenforced: 0, refuted: 0, settled: 0 };
+      },
+      watchSettledRefunds: async () => {
+        seen.push(currentVerdictSignal());
+        return { watched: 0, rebilling: 0, unreadable: 0 };
+      },
+    };
+    const signal = new AbortController().signal;
+    const worker = new BillingVerdictWorker(
+      billingVerdictDeps(
+        db,
+        service as unknown as Pick<
+          BillingReconciliationService,
+          'enforceLocalVerdicts' | 'watchSettledRefunds'
+        >,
+      ),
+    );
+
+    await worker.processJob({ scheduledAtMinute: '2026-08-12T06:00' }, { ...CTX, signal });
+
+    // `(runIndex) => service.x(runIndex)` type-checks and drops the signal.
+    // Both passes must observe the SAME deadline the worker was given.
+    expect(seen).toEqual([signal, signal]);
   });
 });

@@ -19,21 +19,31 @@
 //   type-checks perfectly and reproduces the identical bug, and a future
 //   default value would remove the guard silently.
 //
+//   Round 5 — the job deadline is the same shape. `(runIndex) =>
+//   service.enforceLocalVerdicts(runIndex)` type-checks and drops
+//   `signal`. The pass then ignores the 60s cron deadline, one hung
+//   provider or lock wait holds the BullMQ slot, and later minutes never
+//   start. The signal has to be entered here, as an async scope, because
+//   the service and the adapters do not take it as a parameter.
+//
 // So the boundary is a plain exported function with a spec that drives a
-// real `BillingVerdictWorker` and asserts the index the service actually
-// receives. What remains untested in `worker.ts` is one call to this
-// factory, with no logic in it.
+// real `BillingVerdictWorker` and asserts the index AND the signal the
+// service actually receives. What remains untested in `worker.ts` is one
+// call to this factory, with no logic in it.
 
 import type { BillingVerdictDeps } from '@declutrmail/workers';
 
 import type { DrizzleDb } from '../db/db.module.js';
 import type { BillingReconciliationService } from './billing-reconciliation.service.js';
+import { runWithVerdictSignal } from './provider-signal.js';
 
 /**
- * Both seams forward `runIndex` VERBATIM. It selects which hash bucket
- * of verdict rows this run examines, so any constant — including the
- * plausible-looking `0` — collapses the round-robin back to a single
- * bucket and permanently starves the rest.
+ * Both seams forward `runIndex` VERBATIM and enter the job's abort
+ * scope. The index selects which hash bucket of verdict rows this run
+ * examines, so any constant — including the plausible-looking `0` —
+ * collapses the round-robin back to a single bucket and permanently
+ * starves the rest. Dropping the signal leaves the cron deadline
+ * cooperative in name only.
  */
 export function billingVerdictDeps(
   db: DrizzleDb,
@@ -41,7 +51,9 @@ export function billingVerdictDeps(
 ): BillingVerdictDeps {
   return {
     db: db as unknown as BillingVerdictDeps['db'],
-    enforceLocalVerdicts: (runIndex) => service.enforceLocalVerdicts(runIndex),
-    watchSettledRefunds: (runIndex) => service.watchSettledRefunds(runIndex),
+    enforceLocalVerdicts: (runIndex, signal) =>
+      runWithVerdictSignal(signal, () => service.enforceLocalVerdicts(runIndex)),
+    watchSettledRefunds: (runIndex, signal) =>
+      runWithVerdictSignal(signal, () => service.watchSettledRefunds(runIndex)),
   };
 }

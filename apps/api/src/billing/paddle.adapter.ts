@@ -49,6 +49,7 @@ import type {
   SubscriptionSearchResult,
 } from './billing-provider.interface.js';
 import { providerErrorBody } from './provider-error-body.js';
+import { billingProviderSignal, currentVerdictSignal } from './provider-signal.js';
 import type {
   PaddleRefundTransaction,
   PaddleUpgradeState,
@@ -529,7 +530,7 @@ export class PaddleAdapter implements BillingProvider {
           'Paddle-Version': '1',
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(API_TIMEOUT_MS),
+        signal: billingProviderSignal(API_TIMEOUT_MS),
       });
     } catch (err) {
       this.logger.error(
@@ -590,7 +591,7 @@ export class PaddleAdapter implements BillingProvider {
           'Paddle-Version': '1',
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        signal: AbortSignal.timeout(API_TIMEOUT_MS),
+        signal: billingProviderSignal(API_TIMEOUT_MS),
       });
       httpStatus = response.status;
       if (!response.ok) {
@@ -783,7 +784,7 @@ export class PaddleAdapter implements BillingProvider {
             'Paddle-Version': '1',
           },
           body: JSON.stringify({ effective_from: 'next_billing_period' }),
-          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+          signal: billingProviderSignal(API_TIMEOUT_MS),
         },
       );
     } catch (err) {
@@ -833,7 +834,7 @@ export class PaddleAdapter implements BillingProvider {
             'Paddle-Version': '1',
           },
           body: JSON.stringify({ scheduled_change: null }),
-          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+          signal: billingProviderSignal(API_TIMEOUT_MS),
         },
       );
     } catch (err) {
@@ -873,7 +874,7 @@ export class PaddleAdapter implements BillingProvider {
             'Paddle-Version': '1',
           },
           body: JSON.stringify({ effective_from: 'immediately', resume_at: resumeAt }),
-          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+          signal: billingProviderSignal(API_TIMEOUT_MS),
         },
       );
     } catch (err) {
@@ -931,7 +932,7 @@ export class PaddleAdapter implements BillingProvider {
                 }
               : {}),
           }),
-          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+          signal: billingProviderSignal(API_TIMEOUT_MS),
         },
       );
     } catch (err) {
@@ -1005,7 +1006,7 @@ export class PaddleAdapter implements BillingProvider {
             proration_billing_mode:
               timing.kind === 'immediate_prorated' ? 'prorated_immediately' : 'do_not_bill',
           }),
-          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+          signal: billingProviderSignal(API_TIMEOUT_MS),
         },
       );
     } catch (err) {
@@ -1089,7 +1090,7 @@ export class PaddleAdapter implements BillingProvider {
             effective_from: 'immediately',
             on_resume: 'continue_existing_billing_period',
           }),
-          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+          signal: billingProviderSignal(API_TIMEOUT_MS),
         },
       );
     } catch (err) {
@@ -1139,7 +1140,7 @@ export class PaddleAdapter implements BillingProvider {
     try {
       res = await fetch(`${this.baseUrl}${path}`, {
         headers: { Authorization: `Bearer ${apiKey}`, 'Paddle-Version': '1' },
-        signal: AbortSignal.timeout(API_TIMEOUT_MS),
+        signal: billingProviderSignal(API_TIMEOUT_MS),
       });
     } catch (err) {
       this.logger.error(
@@ -1533,7 +1534,7 @@ export class PaddleAdapter implements BillingProvider {
             : { next_billed_at: change.nextBilledAt }),
           proration_billing_mode: 'do_not_bill',
         }),
-        signal: AbortSignal.timeout(API_TIMEOUT_MS),
+        signal: billingProviderSignal(API_TIMEOUT_MS),
       },
     );
     if (!res.ok) throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
@@ -1634,9 +1635,12 @@ export class PaddleAdapter implements BillingProvider {
       let body: unknown | null;
       try {
         body = await this.authedGet(path, `adjustments sub=${providerSubscriptionId}`);
-      } catch {
+      } catch (err) {
         // Already logged by authedGet. A read we could not make is
-        // never grounds for an outbound write.
+        // never grounds for an outbound write. A verdict deadline is
+        // different: returning null lets the pass continue into the
+        // next row's cancel.
+        if (currentVerdictSignal()?.aborted) throw err;
         return null;
       }
       if (body === null) return null;
@@ -2030,7 +2034,7 @@ export class PaddleAdapter implements BillingProvider {
             'Paddle-Version': '1',
           },
           body: JSON.stringify({ subscription_ids: [input.providerSubscriptionId] }),
-          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+          signal: billingProviderSignal(API_TIMEOUT_MS),
         },
       );
     } catch (err) {
