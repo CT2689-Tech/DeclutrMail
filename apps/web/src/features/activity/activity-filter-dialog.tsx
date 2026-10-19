@@ -1,7 +1,7 @@
 'use client';
 
 import type { CSSProperties, RefObject } from 'react';
-import { Button, DialogFrame, tokens } from '@declutrmail/shared';
+import { Button, DialogFrame, OVERLAY_Z, tokens } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { FilterFields, type FilterFieldsProps } from './activity-filter-fields';
 
@@ -46,7 +46,7 @@ function FilterPopover({
         position: 'absolute',
         top: 'calc(100% + 8px)',
         right: 0,
-        zIndex: 20,
+        zIndex: OVERLAY_Z.modal,
         width: 380,
         maxWidth: 'calc(100vw - 32px)',
         maxHeight: 'calc(100dvh - 112px)',

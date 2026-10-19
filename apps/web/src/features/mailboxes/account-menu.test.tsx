@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { OVERLAY_Z } from '@declutrmail/shared';
 
 import type { Me, MeMailbox } from '@/features/auth/api/use-me';
 import type { TierEntitlements } from '@/features/auth/api/use-tier';
@@ -499,5 +500,12 @@ describe('AccountMenu Gmail reconnect health', () => {
 
     await user.click(billing);
     expect(screen.queryByRole('dialog', { name: 'Gmail accounts' })).not.toBeInTheDocument();
+  });
+
+  it('stacks the account menu above the cookie banner', async () => {
+    await renderOpenMenu();
+    const dialog = screen.getByRole('dialog', { name: 'Gmail accounts' });
+    expect(dialog).toHaveStyle({ zIndex: String(OVERLAY_Z.modal) });
+    expect(Number(dialog.style.zIndex)).toBeGreaterThan(OVERLAY_Z.cookieBanner);
   });
 });
