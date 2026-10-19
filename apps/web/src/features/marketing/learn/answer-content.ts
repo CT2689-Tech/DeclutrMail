@@ -236,12 +236,12 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     sections: [
       {
         id: 'model',
-        title: 'Undo records the inverse, not a copy of your email',
+        title: 'Undo remembers the change, not your email',
         paragraphs: [
-          'For a reversible email-moving action, DeclutrMail records the Gmail message identifiers and the label change needed to reverse the action. It does not copy the message body into an undo store. The token is a capability tied to one mailbox and expires after ' +
+          'Undo doesn’t save a copy of your email. It only remembers which emails were moved or labeled and how to put them back. It works only for your own Gmail account, and ' +
             (UNIFORM_UNDO_WINDOW_DAYS === null
-              ? 'the plan’s configured window.'
-              : `${UNIFORM_UNDO_WINDOW_DAYS} days.`),
+              ? 'it expires when your plan’s Undo window ends.'
+              : `it expires after ${UNIFORM_UNDO_WINDOW_DAYS} days.`),
           (UNIFORM_UNDO_WINDOW_DAYS === null
             ? 'Every plan currently offers Undo in Activity, though the exact window depends on which plan.'
             : `Every plan currently offers Undo in Activity for ${UNIFORM_UNDO_WINDOW_DAYS} days.`) +
