@@ -16,8 +16,12 @@ import { outcomeNotice, useSenderInFlightLock, workingNotice } from './in-flight
 import { undoKeys } from './query-keys';
 import { ME_QUERY_KEY } from '@/features/auth/api/me-contract';
 import { SCREENER_ALL_KEY } from '@/features/screener/api/query-keys';
-import { useEnqueueBulkAction, useEnqueueComposite } from '@/lib/api/use-action';
-import { pendingActionFeedback } from './feedback-store';
+import {
+  useConfirmUnsubscribeBacklog,
+  useEnqueueBulkAction,
+  useEnqueueComposite,
+} from '@/lib/api/use-action';
+import { pendingActionFeedback, useActionFeedbackStore } from './feedback-store';
 
 vi.mock('@declutrmail/shared', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -232,6 +236,185 @@ describe('accepted-action feedback before the first progress read', () => {
       expect(screen.queryByRole('alert')).toBeNull();
     },
   );
+});
+
+describe('empty active list while a decision is still running', () => {
+  afterEach(() => {
+    resetFetchStub();
+    useActionFeedbackStore.setState({ scopes: {} });
+  });
+
+  const RUNNING_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+  function runningStatus() {
+    return jsonOk({
+      data: status({
+        batchId: RUNNING_ID,
+        status: 'executing',
+        total: 1,
+        done: 0,
+        failed: 0,
+        requestedCount: 4,
+        affectedCount: 0,
+      }),
+    });
+  }
+
+  it('keeps a running recovered archive locked by sender key across another empty active read', async () => {
+    let activeReads = 0;
+    installFetchStub([
+      { method: 'GET', path: '/api/undo', respond: () => jsonOk({ data: [] }) },
+      {
+        method: 'GET',
+        path: '/api/actions/active',
+        respond: () => {
+          activeReads += 1;
+          return jsonOk({ data: [] });
+        },
+      },
+      { method: 'GET', path: `/api/actions/batch/${RUNNING_ID}`, respond: runningStatus },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          jsonOk({
+            data: { actionId: RUNNING_ID, compositeId: RUNNING_ID, status: 'queued' },
+          }),
+      },
+    ]);
+    function Start() {
+      const action = useEnqueueComposite();
+      const lock = useSenderInFlightLock();
+      return (
+        <>
+          <button
+            onClick={() =>
+              action.mutate({
+                senderId: 's-news',
+                senderKeys: ['sk-news'],
+                primary: { type: 'archive' },
+              })
+            }
+          >
+            Start
+          </button>
+          <output data-testid="locked-keys">{[...lock.senderKeys].join(',')}</output>
+        </>
+      );
+    }
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <Start />
+        <ProductUndoTray />
+      </QueryWrapper>,
+    );
+    await waitFor(() => expect(client.getQueryState(undoKeys.inFlight())?.status).toBe('success'));
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await waitFor(() =>
+      expect(client.getQueryData<InFlightActionGroup[]>(undoKeys.inFlight())?.[0]).toMatchObject({
+        groupId: RUNNING_ID,
+        running: true,
+        senderIds: ['s-news'],
+        senderKeys: ['sk-news'],
+      }),
+    );
+    expect(screen.getByTestId('locked-keys')).toHaveTextContent('sk-news');
+    expect(document.querySelector('[data-dm-undo-tray]')).toHaveTextContent('Archiving…');
+    expect(pendingActionFeedback()).toHaveLength(1);
+    const readsBeforeRefresh = activeReads;
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: undoKeys.inFlight() });
+    });
+    await waitFor(() => expect(activeReads).toBeGreaterThan(readsBeforeRefresh));
+    expect(
+      client.getQueryData<InFlightActionGroup[]>(undoKeys.inFlight())?.[0]?.senderKeys,
+    ).toEqual(['sk-news']);
+    expect(screen.getByTestId('locked-keys')).toHaveTextContent('sk-news');
+    expect(document.querySelector('[data-dm-undo-tray]')).toHaveTextContent('Archiving…');
+    expect(pendingActionFeedback()).toHaveLength(1);
+  });
+
+  it('polls combined cleanup when the first active list is empty', async () => {
+    let activeReads = 0;
+    let batchReads = 0;
+    installFetchStub([
+      { method: 'GET', path: '/api/undo', respond: () => jsonOk({ data: [] }) },
+      {
+        method: 'GET',
+        path: '/api/actions/active',
+        respond: () => {
+          activeReads += 1;
+          return jsonOk({ data: [] });
+        },
+      },
+      {
+        method: 'GET',
+        path: `/api/actions/batch/${RUNNING_ID}`,
+        respond: () => {
+          batchReads += 1;
+          return runningStatus();
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-backlog',
+        respond: () =>
+          jsonOk({
+            data: {
+              feedbackVersion: 2,
+              mode: 'archive',
+              backlog: {
+                actionId: RUNNING_ID,
+                handle: 'batch',
+                requestedCount: 4,
+                verb: 'archive',
+              },
+              senders: [
+                {
+                  senderId: 's1',
+                  method: 'one_click',
+                  mailtoUrl: null,
+                  executionActionId: 'exec-1',
+                  lifecycleStatus: 'requested',
+                  unsubStatus: 'requested',
+                  reasonCode: null,
+                },
+              ],
+            },
+          }),
+      },
+    ]);
+    function Start() {
+      const action = useConfirmUnsubscribeBacklog();
+      return (
+        <button onClick={() => action.mutate({ mode: 'archive', senderIds: ['s1', 's2'] })}>
+          Clean up
+        </button>
+      );
+    }
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <Start />
+        <ProductUndoTray />
+      </QueryWrapper>,
+    );
+    await waitFor(() => expect(client.getQueryState(undoKeys.inFlight())?.status).toBe('success'));
+    expect(pendingActionFeedback()).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Clean up' }));
+    await waitFor(() => expect(batchReads).toBeGreaterThan(0));
+    expect(document.querySelector('[data-dm-undo-tray]')).toHaveTextContent('Working…');
+    expect(pendingActionFeedback()).toHaveLength(1);
+    const readsBeforeRefresh = activeReads;
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: undoKeys.inFlight() });
+    });
+    await waitFor(() => expect(activeReads).toBeGreaterThan(readsBeforeRefresh));
+    expect(batchReads).toBeGreaterThan(1);
+    expect(document.querySelector('[data-dm-undo-tray]')).toHaveTextContent('Working…');
+    expect(pendingActionFeedback()).toHaveLength(1);
+  });
 });
 
 describe('what the pill says about a running decision', () => {

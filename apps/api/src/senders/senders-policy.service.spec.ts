@@ -254,6 +254,34 @@ describe('SendersPolicyService', () => {
       expect((await svc.undoKeep({ mailboxAccountId: mailboxId, senderId })).changed).toBe(false);
     });
 
+    it('maps a mailbox lock timeout to a retryable conflict and leaves Keep in place', async () => {
+      await svc.setPolicy({ mailboxAccountId: mailboxId, senderId, patch: { policyType: 'keep' } });
+      const timeout = Object.assign(new Error('Failed query: select pg_advisory_xact_lock'), {
+        cause: Object.assign(new Error('canceling statement due to lock timeout'), {
+          code: '55P03',
+        }),
+      });
+      const busyDb = new Proxy(db, {
+        get(target, prop, receiver) {
+          if (prop === 'transaction') return async () => Promise.reject(timeout);
+          const value = Reflect.get(target, prop, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+      const busy = new SendersPolicyService(busyDb as never);
+      await expect(busy.undoKeep({ mailboxAccountId: mailboxId, senderId })).rejects.toMatchObject({
+        code: 'ACTION_STILL_RUNNING',
+        retryable: true,
+        status: 409,
+      });
+      expect((await policyRow(db, mailboxId))!.policyType).toBe('keep');
+      const [audit] = await db
+        .select({ revertedAt: activityLog.revertedAt })
+        .from(activityLog)
+        .where(eq(activityLog.mailboxAccountId, mailboxId));
+      expect(audit!.revertedAt).toBeNull();
+    });
+
     it('refuses to undo a protected keep', async () => {
       await svc.setPolicy({
         mailboxAccountId: mailboxId,

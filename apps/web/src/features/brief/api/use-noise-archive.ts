@@ -736,7 +736,12 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
 
     if (senderIds.length === 1) {
       enqueueComposite.mutate(
-        { mailboxId: activeMailboxId ?? undefined, senderId: senderIds[0]!, primary },
+        {
+          mailboxId: activeMailboxId ?? undefined,
+          senderId: senderIds[0]!,
+          senderKeys,
+          primary,
+        },
         {
           onSuccess: (res) => {
             trackActionConfirmed('archive');
@@ -755,7 +760,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     }
 
     enqueueBulk.mutate(
-      { mailboxId: activeMailboxId ?? undefined, senderIds, primary },
+      { mailboxId: activeMailboxId ?? undefined, senderIds, senderKeys, primary },
       {
         onSuccess: (res) => {
           if (res.senderCount > 0) trackActionConfirmed('archive');

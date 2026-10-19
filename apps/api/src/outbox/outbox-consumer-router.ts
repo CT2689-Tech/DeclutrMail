@@ -33,6 +33,7 @@ import type {
 import {
   AUTOPILOT_APPLY_JOB,
   MAILBOX_ACTION_LOCK_NS,
+  TransientError,
   autopilotApplyJobOptions,
   seedAutopilotPresets,
   type AutopilotApplyJobData,
@@ -40,6 +41,7 @@ import {
 } from '@declutrmail/workers';
 
 import type { DrizzleDb } from '../db/db.module.js';
+import { isPostgresLockTimeout } from '../db/postgres-lock-timeout.js';
 
 /**
  * Optional consumer dependencies beyond the db handle, injected by the
@@ -556,6 +558,14 @@ async function handleActionLabelApplied(
 }
 
 /**
+ * Two attempts stay inside the outbox consumer timeout (30s). Each waits
+ * at most the 10s `lock_timeout`. A label action can hold the same lock
+ * for 45s, so a still-busy mailbox throws `TransientError` and the
+ * dispatcher's attempt cap finishes the bound.
+ */
+const MAILBOX_ACTION_LOCK_ATTEMPTS = 2;
+
+/**
  * Senders projection — `sender_policies.policy_type = 'keep'`.
  *
  * Produced by `ActionsService.recordKeepIntent` (the user's Keep
@@ -580,6 +590,22 @@ async function handleTriageVerdictApplied(
   // The audit read and policy write must be one serialized operation
   // with Undo, including when no policy row exists yet. Otherwise an
   // already-started consumer can put Keep back after Undo reverted it.
+  for (let attempt = 1; attempt <= MAILBOX_ACTION_LOCK_ATTEMPTS; attempt += 1) {
+    try {
+      await projectKeep(db, payload);
+      return;
+    } catch (error) {
+      if (!isPostgresLockTimeout(error) || attempt === MAILBOX_ACTION_LOCK_ATTEMPTS) {
+        if (isPostgresLockTimeout(error)) {
+          throw new TransientError('Mailbox action lock timed out');
+        }
+        throw error;
+      }
+    }
+  }
+}
+
+async function projectKeep(db: DrizzleDb, payload: TriageVerdictAppliedPayload): Promise<void> {
   await db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL lock_timeout = '10s'`);
     await tx.execute(
