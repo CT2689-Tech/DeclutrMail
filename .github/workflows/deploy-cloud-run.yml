@@ -1,6 +1,8 @@
 # Build + push container images, then deploy both Cloud Run services.
 #
-# Trigger: every push to `main`. Manual via `workflow_dispatch`.
+# Trigger: push to `main`. A push deploys unless every file is the web
+# app, docs, markdown, or `.github` other than this workflow. Manual via
+# `workflow_dispatch` (no path filter).
 # Cost: GitHub Actions free OSS minutes; Cloud Build is the docker
 # builder under the hood (10s of free build-minutes/day).
 #
@@ -57,21 +59,21 @@ name: Deploy to Cloud Run
 on:
   push:
     branches: [main]
-    # Skip when only docs / non-runtime files change. Faster CI + fewer
-    # spurious deploys. List files Cloud Run cares about.
+    # `**` includes every file, so an unrecognized path deploys. A later
+    # `!` drops only paths that cannot change the image or this file.
+    # Order matters: `!.github/**` would also drop this workflow, so its
+    # path is listed again after that exclusion. A push that mixes a
+    # skipped path with a worker, API, package, migration, or lockfile
+    # change still deploys both Cloud Run services exactly as below.
+    # Keep this list identical to PUSH_PATH_PATTERNS in
+    # scripts/cloud-run-deploy-paths.mjs.
     paths:
-      - 'apps/api/**'
-      - 'packages/**'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'pnpm-workspace.yaml'
-      - 'tsconfig.base.json'
-      - '.dockerignore'
+      - '**'
+      - '!apps/web/**'
+      - '!docs/**'
+      - '!**.md'
+      - '!.github/**'
       - '.github/workflows/deploy-cloud-run.yml'
-      - 'scripts/select-deployment.mjs'
-      - 'scripts/deploy-api-safely*'
-      - 'scripts/live-india-billing-env*'
-      - 'scripts/check-billing-queue-runtime*'
   workflow_dispatch:
     # Allow manual re-deploys (e.g. after a Secret Manager rotation
     # where the IMAGE hasn't changed but the env needs to be repulled).
