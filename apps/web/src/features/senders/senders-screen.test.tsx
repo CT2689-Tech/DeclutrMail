@@ -3309,6 +3309,88 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     },
   );
 
+  it.each(['Archive', 'Later', 'Delete'] as const)(
+    'posts %s when the list is invalidated and a live read still has mail',
+    async (verb) => {
+      let posts = 0;
+      let detailReads = 0;
+      installFetchStub([
+        oneSenderHandler(),
+        compositePreviewHandler(12),
+        {
+          method: 'GET',
+          path: '/api/senders/a',
+          respond: () => {
+            detailReads += 1;
+            return jsonOk({ data: { ...ROW, inboxCount: 12, archivedCount: 0 } });
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () => {
+            posts += 1;
+            return jsonOk({ data: { actionId: 'act-live', requestedCount: 12, status: 'queued' } });
+          },
+        },
+      ]);
+      renderScreen();
+      fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+      fireEvent.keyDown(document.body, { key: verb[0]!.toLowerCase() });
+      const dialog = await screen.findByRole('dialog');
+      if (verb === 'Delete') {
+        const window = await within(dialog).findByRole('combobox', {
+          name: 'How far back to act on',
+        });
+        fireEvent.change(window, { target: { value: 'all' } });
+      }
+      const confirm = await within(dialog).findByRole('button', {
+        name:
+          verb === 'Later' ? /^Move \d+ emails? to Later$/ : new RegExp(`^${verb} \\d+ emails?$`),
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      await lastClient.invalidateQueries({ queryKey: ['senders', 'list'], refetchType: 'none' });
+      fireEvent.click(confirm);
+      await waitFor(() => expect(posts).toBe(1));
+      expect(detailReads).toBe(1);
+    },
+  );
+
+  it('closes Archive when the live read says the inbox is empty', async () => {
+    let posts = 0;
+    installFetchStub([
+      oneSenderHandler(),
+      compositePreviewHandler(3),
+      {
+        method: 'GET',
+        path: '/api/senders/a',
+        respond: () => jsonOk({ data: { ...ROW, inboxCount: 0, archivedCount: 0 } }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => {
+          posts += 1;
+          return jsonOk({ data: { actionId: 'never', requestedCount: 0, status: 'queued' } });
+        },
+      },
+    ]);
+    renderScreenWithToasts();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+    fireEvent.keyDown(document.body, { key: 'a' });
+    const dialog = await screen.findByRole('dialog');
+    const confirm = await within(dialog).findByRole('button', { name: /^Archive \d+ emails?$/ });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    await lastClient.invalidateQueries({ queryKey: ['senders', 'list'], refetchType: 'none' });
+    const countsNotice = 'Review this sender’s updated email counts before trying again.';
+    const noticesBefore = screen.queryAllByText(countsNotice).length;
+    fireEvent.click(confirm);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(posts).toBe(0);
+    // The toast bus outlives a single render, so count the new notice.
+    expect(screen.getAllByText(countsNotice)).toHaveLength(noticesBefore + 1);
+  });
+
   it.each([false, true])(
     'explains empty-mail bulk exclusions with Protected=%s and posts only nonempty rows',
     async (withProtected) => {
@@ -4499,6 +4581,83 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       await waitFor(() => expect(intents).toHaveLength(2));
       expect(intents[1]).toMatchObject({ mode: 'unsub_only', senderIds: ['a'] });
       expect(screen.queryAllByText(/Still confirming your last action/)).toHaveLength(held);
+    });
+
+    it('Keep Undo posts /keep/undo and drops Skipped in Triage when the list refetch fails', async () => {
+      let phase: 'initial' | 'kept' | 'undo' = 'initial';
+      let undoPosts = 0;
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/senders',
+          respond: () => {
+            if (phase === 'undo') return jsonServerError('list_down');
+            return jsonOk({
+              data: [phase === 'kept' ? { ...ROW, policyType: 'keep' as const } : ROW],
+              meta: {
+                pagination: { nextCursor: null, hasMore: false, limit: 25 },
+                query: {
+                  totalMatching: 1,
+                  globalMaxTotal: 120,
+                  asOf: '2026-05-29T12:00:00.000Z',
+                },
+              },
+            });
+          },
+        },
+        {
+          method: 'PATCH',
+          path: /^\/api\/senders\/a\/policy$/,
+          respond: () => {
+            phase = 'kept';
+            return jsonOk({
+              data: {
+                senderId: 'a',
+                policyType: 'keep',
+                isProtected: false,
+                protectionReason: null,
+                protectionSetAt: null,
+                changed: true,
+              },
+            });
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/senders/a/keep/undo',
+          respond: () => {
+            undoPosts += 1;
+            phase = 'undo';
+            return jsonOk({
+              data: {
+                senderId: 'a',
+                policyType: null,
+                isProtected: false,
+                protectionReason: null,
+                protectionSetAt: null,
+                changed: true,
+              },
+            });
+          },
+        },
+      ]);
+      renderScreenWithToasts();
+      fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+      fireEvent.keyDown(document.body, { key: 'k' });
+      await screen.findByText('Skipped in Triage');
+      await waitFor(() => {
+        const lists = lastClient.getQueriesData<{
+          pages: Array<{ data: Array<{ policyType?: string | null }> }>;
+        }>({ queryKey: ['senders', 'list'] });
+        expect(
+          lists.some(([, data]) =>
+            data?.pages.some((page) => page.data.some((row) => row.policyType === 'keep')),
+          ),
+        ).toBe(true);
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+      await waitFor(() => expect(undoPosts).toBe(1));
+      await waitFor(() => expect(screen.queryByText('Skipped in Triage')).toBeNull());
     });
 
     it('says so when SEVERAL senders are kept — it used to say nothing at all', async () => {
