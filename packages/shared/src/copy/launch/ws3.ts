@@ -1,8 +1,8 @@
-/** WS3 copy. Values equal deck/ws3.json (drop2-r41). */
+/** WS3 copy. Values equal deck/ws3.json (drop2-r52). */
 export const WS3_COPY = {
   _meta: {
-    revision: 'drop2-r41',
-    issued: '2026-10-13T11:25:00-07:00',
+    revision: 'drop2-r52',
+    issued: '2026-10-18T11:00:00-07:00',
     section: 'ws3',
   },
   'ws3.home.title': 'Clean up Gmail, one sender at a time — DeclutrMail',
@@ -493,4 +493,6 @@ export const WS3_COPY = {
     'Unsubscribe on its own leaves the email you already have where it is. In the preview, you can also archive or delete older email. Check its How far back period and count; for Delete, you can also turn on Include archived email. A bulk selection keeps these controls and each sender’s own way to unsubscribe.',
   'ws3.changelog.2026-07-28.archived':
     'Delete can now include archived email. If a Gmail filter sent a sender’s email straight past your Inbox, you couldn’t reach it before. Only Inbox email is included unless you turn on Include archived email.',
+  'ws3.learn.undo.followsYou':
+    'The option to undo a recent change follows you as you move between your email screens, like Senders, Triage and Activity. It doesn’t show on account pages such as Plan & billing, Privacy & data and Help.',
 } as const;

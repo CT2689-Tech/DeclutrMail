@@ -12,6 +12,7 @@ import {
   proWaitlistCta,
 } from '@declutrmail/shared/entitlements';
 import { tokens, toast } from '@declutrmail/shared';
+import { WS6_COPY } from '@declutrmail/shared/copy/launch';
 
 import { useAuth } from '@/features/auth/auth-provider';
 import type { MeMailbox } from '@/features/auth/api/use-me';
@@ -236,7 +237,7 @@ export function AccountMenu() {
               </svg>
             </button>
           </div>
-          <p className={styles.scope}>Switch the mailbox shown across the app.</p>
+          <p className={styles.scope}>{WS6_COPY['ws6.privacy.accountMenu.switchHint']}</p>
           {me.mailboxes.length === 0 && (
             <div style={{ padding: '6px 12px', color: color.fgMuted }}>
               No Gmail account connected.

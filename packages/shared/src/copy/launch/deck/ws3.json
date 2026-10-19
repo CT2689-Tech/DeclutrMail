@@ -1,7 +1,7 @@
 {
   "_meta": {
-    "revision": "drop2-r41",
-    "issued": "2026-10-13T11:25:00-07:00",
+    "revision": "drop2-r52",
+    "issued": "2026-10-18T11:00:00-07:00",
     "section": "ws3"
   },
   "ws3.home.title": "Clean up Gmail, one sender at a time — DeclutrMail",
@@ -365,5 +365,6 @@
   "ws3.howTo.preview.reach": "Archive, Later, Delete and Unsubscribe show what will change before you confirm. For older email, check How far back. By default, only email in your Inbox is included; for Delete, turn on Include archived email to include email you’ve archived too. Unsubscribe can leave older email alone or also archive or delete it, so check that part of the preview too.",
   "ws3.howTo.preview.checklist": "Check the sender, How far back, and whether Include archived email is on. Check the count and sample again after you change anything. The preview explains Undo in Activity, which lasts 30 days. Gmail Trash is a separate fallback, usually up to 30 days unless you empty it sooner.",
   "ws3.howTo.unsubscribe.olderEmail": "Unsubscribe on its own leaves the email you already have where it is. In the preview, you can also archive or delete older email. Check its How far back period and count; for Delete, you can also turn on Include archived email. A bulk selection keeps these controls and each sender’s own way to unsubscribe.",
-  "ws3.changelog.2026-07-28.archived": "Delete can now include archived email. If a Gmail filter sent a sender’s email straight past your Inbox, you couldn’t reach it before. Only Inbox email is included unless you turn on Include archived email."
+  "ws3.changelog.2026-07-28.archived": "Delete can now include archived email. If a Gmail filter sent a sender’s email straight past your Inbox, you couldn’t reach it before. Only Inbox email is included unless you turn on Include archived email.",
+  "ws3.learn.undo.followsYou": "The option to undo a recent change follows you as you move between your email screens, like Senders, Triage and Activity. It doesn’t show on account pages such as Plan & billing, Privacy & data and Help."
 }

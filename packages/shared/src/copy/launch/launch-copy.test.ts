@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
+import { DATA_EXPORT_FORMAT_MANIFEST, DATA_EXPORT_LIMITATION } from '../../contracts/data-export';
+import {
+  GMAIL_DATA_INVENTORY,
+  GMAIL_DATA_PROCESSORS,
+  GMAIL_DATA_RETENTION,
+} from '../../contracts/gmail-data-inventory';
 import { expectMatchesDeck } from './expect-matches-deck';
-import { WS1_COPY, WS2_COPY, WS3_COPY, WS4_COPY, WS5_COPY } from './index';
+import { WS1_COPY, WS2_COPY, WS3_COPY, WS4_COPY, WS5_COPY, WS6_COPY } from './index';
 
 describe('launch copy deck snapshots', () => {
   it.each([
@@ -10,6 +16,7 @@ describe('launch copy deck snapshots', () => {
     ['ws3', WS3_COPY],
     ['ws4', WS4_COPY],
     ['ws5', WS5_COPY],
+    ['ws6', WS6_COPY],
   ] as const)('%s matches its checked-in deck section', (section, copy) => {
     expectMatchesDeck(section, copy);
   });
@@ -100,6 +107,148 @@ describe('launch copy deck snapshots', () => {
       'dismissAria',
       'frequency',
     ]);
+  });
+
+  it('pins the drop2-r48 inventory sentences and the rows Settings renders', () => {
+    expect(WS6_COPY['ws6.inventory.retention.savedData']).toBe(
+      'Until you delete this Gmail account\u2019s saved data or delete your DeclutrMail account.',
+    );
+    expect(WS6_COPY['ws6.inventory.retention.identity']).toBe(
+      'Your disconnected Gmail address, and whether its saved data was deleted, stay until you delete your DeclutrMail account, so you can recognize and reconnect that Gmail account.',
+    );
+    expect(WS6_COPY['ws6.inventory.accountIdentity.purpose']).toBe(
+      'Identify, switch, disconnect and reconnect a Gmail account.',
+    );
+    expect(WS6_COPY['ws6.inventory.syncState.purpose']).toBe(
+      'Keep your Gmail up to date without scanning all of it again.',
+    );
+    expect(WS6_COPY['ws6.inventory.visitSummary.purpose']).toBe(
+      'Show what changed since your last visit, for each Gmail account. We keep at most 32 of these per Gmail account.',
+    );
+    expect(WS6_COPY['ws6.inventory.processing.purpose']).toBe(
+      'Run background work once, recover failed tasks, avoid handling the same Gmail notice twice, and keep counts and timings for each Gmail account\u2019s scans so slow or failed scans can be looked into.',
+    );
+    expect(WS6_COPY['ws6.inventory.scanProgress.retention']).toBe(
+      'Cleared right away when this Gmail account\u2019s saved data is deleted. Otherwise gone within 30 minutes of the scan\u2019s last update.',
+    );
+    expect(WS6_COPY['ws6.inventory.scanStatus.label']).toBe('Scan status and result');
+    expect(WS6_COPY['ws6.inventory.scanStatus.purpose']).toBe(
+      'Avoid starting a second full scan for a Gmail account that already has one waiting or running, and let a slow or failed scan be looked into.',
+    );
+    expect(WS6_COPY['ws6.inventory.scanStatus.retention']).toBe(
+      'Cleared right away when this Gmail account\u2019s saved data is deleted. Otherwise, a finished scan\u2019s result is dropped within 24 hours, or sooner if this Gmail account is scanned again. A failed scan\u2019s reason stays until this Gmail account is scanned again or its saved data is deleted.',
+    );
+    expect(WS6_COPY['ws6.inventory.audit.retention']).toBe(
+      'These pseudonymous security and compliance records stay after a Gmail account\u2019s saved data or your DeclutrMail account is deleted, under DeclutrMail\u2019s operational retention policy. They don\u2019t contain full email contents or attachments.',
+    );
+    expect(WS6_COPY['ws6.inventory.logo.retention']).toBe(
+      'Cache rows are keyed by domain, shared across all users, and hold no link to you or your Gmail, so deleting your data has nothing of yours to remove from them. A row may be looked up again when that sender is shown after its cache period has passed; rows are never deleted.',
+    );
+    expect(GMAIL_DATA_RETENTION.mailboxIndex).toBe(WS6_COPY['ws6.inventory.retention.savedData']);
+    expect(GMAIL_DATA_RETENTION.derivedMailboxData).toBe(
+      WS6_COPY['ws6.inventory.retention.savedData'],
+    );
+    expect(GMAIL_DATA_RETENTION.mailboxIdentity).toBe(WS6_COPY['ws6.inventory.retention.identity']);
+    const rendered = Object.fromEntries(GMAIL_DATA_INVENTORY.map((item) => [item.id, item]));
+    expect(rendered['gmail-account-identity']?.purpose).toBe(
+      WS6_COPY['ws6.inventory.accountIdentity.purpose'],
+    );
+    expect(rendered['gmail-sync-state']?.purpose).toBe(WS6_COPY['ws6.inventory.syncState.purpose']);
+    expect(rendered['mailbox-visit-summary']?.purpose).toBe(
+      WS6_COPY['ws6.inventory.visitSummary.purpose'],
+    );
+    expect(rendered['processing-and-retry-records']?.purpose).toBe(
+      WS6_COPY['ws6.inventory.processing.purpose'],
+    );
+    expect(rendered['scan-progress-counts']?.retention).toBe(
+      WS6_COPY['ws6.inventory.scanProgress.retention'],
+    );
+    expect(rendered['initial-sync-job-status']?.label).toBe(
+      WS6_COPY['ws6.inventory.scanStatus.label'],
+    );
+    expect(rendered['initial-sync-job-status']?.purpose).toBe(
+      WS6_COPY['ws6.inventory.scanStatus.purpose'],
+    );
+    expect(rendered['initial-sync-job-status']?.retention).toBe(
+      WS6_COPY['ws6.inventory.scanStatus.retention'],
+    );
+  });
+
+  it('pins the drop2-r50 privacy sentences and the surfaces that render them', () => {
+    expect(WS6_COPY['ws6.inventory.inboxReportCache.label']).toBe(
+      'Inbox Report totals and the senders suggested for a fix',
+    );
+    expect(WS6_COPY['ws6.privacy.connectedTitle']).toBe('Connected Gmail accounts');
+    expect(WS6_COPY['ws6.privacy.disconnect.label']).toBe('Disconnect a Gmail account');
+    expect(WS6_COPY['ws6.privacy.disconnect.detail']).toBe(
+      'Deletes the key that lets DeclutrMail access your Gmail, and stops scanning and changes in Gmail. Your saved data stays, so if you reconnect, your history picks up where it left off. Your email in Gmail is unchanged. Choose Manage in the account menu at the top.',
+    );
+    expect(WS6_COPY['ws6.privacy.disconnectDelete.label']).toBe(
+      'Disconnect & delete one Gmail account\u2019s saved data',
+    );
+    expect(WS6_COPY['ws6.privacy.disconnectDelete.detail']).toBe(
+      'Also permanently deletes that Gmail account\u2019s saved email details, sender data, decisions, rules, Activity and Undo data. Your DeclutrMail account, your other Gmail accounts, the disconnected Gmail address and your email in Gmail stay. Choose Manage in the account menu at the top.',
+    );
+    expect(WS6_COPY['ws6.privacy.export.jsonDescription']).toBe(
+      'Gmail account addresses and status, sender profiles and decisions, listed email details (sender, subject, Gmail preview snippet, date, labels and read state), Activity history, visit summaries and product feedback.',
+    );
+    expect(WS6_COPY['ws6.privacy.export.limitation']).toBe(
+      'These downloads are copies of the data listed above, not a complete copy of every DeclutrMail record. The key that lets DeclutrMail access your Gmail is never exported.',
+    );
+    expect(WS6_COPY['ws6.privacy.accountMenu.switchHint']).toBe(
+      'Switch which Gmail account you see across the app.',
+    );
+    expect(WS6_COPY['ws6.privacy.help.disconnectQ']).toBe('How do I disconnect a Gmail account?');
+    expect(WS6_COPY['ws6.privacy.help.disconnectA']).toBe(
+      'Open the Gmail account menu at the top of the app and choose Disconnect for that Gmail account. That removes DeclutrMail\u2019s access to it and stops all scanning and changes right away. Your history is kept, so you can reconnect later. You can also remove DeclutrMail\u2019s access from your Google Account\u2019s permissions page.',
+    );
+    expect(WS6_COPY['ws6.privacy.contact.disconnectLine']).toBe(
+      'The Help & FAQ page answers the most common questions \u2014 what DeclutrMail stores, how undo works, and how to disconnect a Gmail account or delete your account.',
+    );
+    expect(WS6_COPY['ws6.inventory.credential.purpose']).toBe(
+      'Scan and change your Gmail only while the account is connected.',
+    );
+    expect(WS6_COPY['ws6.privacy.description']).toBe(
+      'See what DeclutrMail can access and what it keeps for each connected Gmail account, download your data, or delete it. To check that a Gmail account is being scanned normally, go to Settings.',
+    );
+    expect(WS6_COPY['ws6.privacy.inventory.connectionTitle']).toBe('Connection and scanning data');
+    expect(WS6_COPY['ws6.privacy.faq.disconnectDeleteA']).toBe(
+      'Open the Gmail account menu at the top of the app and choose Disconnect for that Gmail account. That removes DeclutrMail\u2019s access to it and stops all scanning and changes right away. Your history is kept, so you can reconnect later. In Settings \u203a Privacy & data, you can download your data or delete your whole DeclutrMail account. Deleting your DeclutrMail account doesn\u2019t delete any email in Gmail, and changes you already approved, like archiving or moving email to Trash, stay as they are.',
+    );
+    expect(WS6_COPY['ws6.privacy.faq.securityLinkDesc']).toBe(
+      'Removing access, encryption and deletion.',
+    );
+    expect(WS6_COPY['ws6.privacy.connected.empty']).toBe(
+      'No Gmail accounts connected yet. DeclutrMail isn\u2019t saving any Gmail data right now.',
+    );
+    expect(WS6_COPY['ws6.privacy.connected.status.disconnected']).toBe(
+      'disconnected \u00b7 not scanning',
+    );
+    expect(WS6_COPY['ws6.settings.gmailAccountsCard.empty']).toBe(
+      'No Gmail accounts connected yet.',
+    );
+    expect(WS3_COPY['ws3.learn.undo.followsYou']).toBe(
+      'The option to undo a recent change follows you as you move between your email screens, like Senders, Triage and Activity. It doesn\u2019t show on account pages such as Plan & billing, Privacy & data and Help.',
+    );
+    const rendered = Object.fromEntries(GMAIL_DATA_INVENTORY.map((item) => [item.id, item]));
+    expect(rendered['inbox-report-cache']?.label).toBe(
+      WS6_COPY['ws6.inventory.inboxReportCache.label'],
+    );
+    expect(rendered['oauth-credential']?.purpose).toBe(
+      WS6_COPY['ws6.inventory.credential.purpose'],
+    );
+    expect(DATA_EXPORT_FORMAT_MANIFEST.json.description).toBe(
+      WS6_COPY['ws6.privacy.export.jsonDescription'],
+    );
+    expect(DATA_EXPORT_LIMITATION).toBe(WS6_COPY['ws6.privacy.export.limitation']);
+    const logo = GMAIL_DATA_INVENTORY.find((item) => item.id === 'sender-logo-lookup');
+    expect(logo?.purpose).toContain('sender\u2019s own published logo record');
+    expect(logo?.purpose).not.toContain("sender's");
+    expect(GMAIL_DATA_PROCESSORS.Brandfetch.purpose).not.toContain("sender's");
+    expect(GMAIL_DATA_PROCESSORS.Brandfetch.retention).toContain(
+      'Brandfetch\u2019s privacy policy',
+    );
+    expect(GMAIL_DATA_PROCESSORS.Brandfetch.retention).not.toContain("Brandfetch's");
   });
 
   it('pins the drop2-r45 data-control and inventory sentences', () => {

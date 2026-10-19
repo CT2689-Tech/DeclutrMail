@@ -1416,8 +1416,8 @@ describe('SettingsScreen', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Privacy & data' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /billing/i })).toBeInTheDocument();
-    // The "no mailboxes connected" empty state, not a broken list.
-    expect(screen.getByText(/no mailboxes connected/i)).toBeInTheDocument();
+    // The empty Gmail-accounts state, not a broken list.
+    expect(screen.getByText('No Gmail accounts connected yet.')).toBeInTheDocument();
     // No active mailbox ⇒ no session-scoped sync poll ⇒ no 409 risk.
     expect(syncSpy).not.toHaveBeenCalled();
   });

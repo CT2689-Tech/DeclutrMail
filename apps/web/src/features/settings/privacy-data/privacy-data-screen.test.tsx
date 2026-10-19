@@ -13,8 +13,8 @@
  * vs unknown), export buttons → onExport(format), export-failed alert.
  */
 
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
@@ -40,6 +40,10 @@ const TWO_MAILBOXES = [
   mailbox('11111111-1111-4111-8111-111111111111', 'chintan.a.thakkar@gmail.com'),
   mailbox('22222222-2222-4222-8222-222222222222', 'chintan.a.thakkar.crypt@gmail.com'),
 ];
+
+afterEach(() => {
+  window.location.hash = '';
+});
 
 function renderView(overrides: Partial<Parameters<typeof PrivacyDataView>[0]> = {}) {
   return render(
@@ -89,7 +93,7 @@ describe('PrivacyDataView', () => {
       mailboxes: [TWO_MAILBOXES[0]!, { ...TWO_MAILBOXES[1]!, status: 'disconnected' }],
     });
     expect(screen.getByText('chintan.a.thakkar@gmail.com')).toBeInTheDocument();
-    expect(screen.getByText(/disconnected — sync stopped/i)).toBeInTheDocument();
+    expect(screen.getByText('disconnected · not scanning')).toBeInTheDocument();
   });
 
   it('states what remains after deletion with the approved sentences', () => {
@@ -119,16 +123,67 @@ describe('PrivacyDataView', () => {
     ).toBeGreaterThan(0);
     expect(screen.getAllByText(/Disconnect & delete saved data/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/What we keep to fix problems/i)).toBeInTheDocument();
-    expect(screen.getByText(/Disconnect & delete one mailbox’s saved data/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/other mailboxes.*disconnected Gmail address.*remain/i),
+      screen.getByText(/each connected Gmail account, download your data, or delete it/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Connection and scanning data')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Scan and change your Gmail only while the account is connected\./),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Connected Gmail accounts').length).toBeGreaterThan(0);
+    expect(screen.getByText('Disconnect a Gmail account')).toBeInTheDocument();
+    expect(
+      screen.getByText('Disconnect & delete one Gmail account’s saved data'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/other Gmail accounts.*disconnected Gmail address.*stay/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/Delete account and data/i)).toBeInTheDocument();
   });
 
+  it('points every On this page link at a section that exists', () => {
+    renderView();
+    const nav = screen.getByRole('navigation', { name: 'On this page' });
+    const links = within(nav).getAllByRole('link');
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) {
+      const href = link.getAttribute('href') ?? '';
+      expect(href.startsWith('#')).toBe(true);
+      const region = document.getElementById(href.slice(1));
+      expect(region).not.toBeNull();
+      expect(region?.querySelector('h1, h2, h3, h4, h5, h6')).toHaveAttribute('tabindex', '-1');
+    }
+    expect(within(nav).getByRole('link', { name: 'Connected Gmail accounts' })).toHaveAttribute(
+      'href',
+      '#privacy-connected-mailboxes',
+    );
+    expect(document.getElementById('privacy-connected-gmail-accounts')).toBeNull();
+  });
+
+  it('focuses the Connected Gmail accounts heading from its On this page link', async () => {
+    renderView();
+    const nav = screen.getByRole('navigation', { name: 'On this page' });
+    await userEvent.click(within(nav).getByRole('link', { name: 'Connected Gmail accounts' }));
+    const heading = screen.getByRole('heading', { name: 'Connected Gmail accounts' });
+    expect(heading).toHaveAttribute('tabindex', '-1');
+    await waitFor(() => expect(heading).toHaveFocus());
+  });
+
+  it('focuses the matching section heading when the hash changes', async () => {
+    renderView();
+    window.location.hash = '#privacy-export-my-data';
+    const heading = screen.getByRole('heading', { name: 'Export my data' });
+    expect(heading).toHaveAttribute('tabindex', '-1');
+    await waitFor(() => expect(heading).toHaveFocus());
+  });
+
   it('renders the no-mailboxes empty state', () => {
     renderView({ mailboxes: [] });
-    expect(screen.getByText(/no mailboxes connected/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'No Gmail accounts connected yet. DeclutrMail isn’t saving any Gmail data right now.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('shows the tier-resolved undo window, and generic copy when tier is unknown', () => {
@@ -190,7 +245,7 @@ describe('PrivacyDataView', () => {
     const { container } = renderView();
     const text = (container.textContent ?? '').replace(/\s+/g, ' ');
 
-    expect(text).toContain('mailbox addresses and status');
+    expect(text).toContain('Gmail account addresses and status');
     expect(text).toContain('sender profiles and decisions');
     expect(text).toContain('Activity history');
     expect(text).toContain('App preferences and billing records are not included');

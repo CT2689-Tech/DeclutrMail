@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { WS6_COPY } from '../copy/launch/ws6';
 import { GMAIL_DATA_INVENTORY, type GmailDataExportFormat } from './gmail-data-inventory';
 
 /**
@@ -64,8 +65,7 @@ export const DATA_EXPORT_FORMAT_MANIFEST = {
     // below already names the Gmail preview snippet explicitly; this one
     // didn't, which is what let the settings screen's blanket "Exports
     // never contain message bodies" sentence go unnoticed next to it.
-    description:
-      'mailbox addresses and status, sender profiles and decisions, listed email details (sender, subject, Gmail preview snippet, date, labels, and read state), Activity history, visit summaries, and product feedback.',
+    description: WS6_COPY['ws6.privacy.export.jsonDescription'],
     includedInventoryIds: includedInventoryIds('json'),
     completeAccountExport: false,
   },
@@ -97,5 +97,4 @@ export const DATA_EXPORT_FORMAT_MANIFEST = {
   },
 } as const satisfies Record<DataExportFormat, DataExportFormatDefinition>;
 
-export const DATA_EXPORT_LIMITATION =
-  'These downloads are portable views of the listed datasets, not a complete copy of every DeclutrMail record. OAuth credentials are never exported.' as const;
+export const DATA_EXPORT_LIMITATION = WS6_COPY['ws6.privacy.export.limitation'];

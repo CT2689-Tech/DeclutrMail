@@ -10,15 +10,13 @@
 
 import { UNIFORM_UNDO_WINDOW_DAYS } from '../entitlements';
 import { WS2_COPY } from '../copy/launch/ws2';
+import { WS6_COPY } from '../copy/launch/ws6';
 
 export const GMAIL_DATA_RETENTION = {
-  mailboxIndex:
-    "Until the user deletes this mailbox's saved data or deletes their DeclutrMail account.",
-  mailboxIdentity:
-    'The disconnected Gmail address and mailbox deletion status remain until the DeclutrMail account is deleted, so the user can identify and reconnect the mailbox.',
+  mailboxIndex: WS6_COPY['ws6.inventory.retention.savedData'],
+  mailboxIdentity: WS6_COPY['ws6.inventory.retention.identity'],
   connection: 'Until the Gmail account is disconnected or the DeclutrMail account is deleted.',
-  derivedMailboxData:
-    "Until the user deletes this mailbox's saved data or deletes their DeclutrMail account.",
+  derivedMailboxData: WS6_COPY['ws6.inventory.retention.savedData'],
   undoJournal:
     UNIFORM_UNDO_WINDOW_DAYS === null
       ? 'Until the plan-based Undo window expires, followed by the operational cleanup period.'
@@ -69,12 +67,12 @@ export const GMAIL_DATA_PROCESSORS = {
   },
   Brandfetch: {
     purpose:
-      "Find a logo for a sender's email domain when neither the sender's own published logo record (BIMI) nor its website gives us a usable one. Receives the domain only.",
+      'Find a logo for a sender’s email domain when neither the sender’s own published logo record (BIMI) nor its website gives us a usable one. Receives the domain only.',
     // Read 2026-09-19: Brandfetch's policy states a general retention
     // principle and no figure for API request logs. `unknown` stays
     // unknown — do not round it to a number.
     retention:
-      "Brandfetch's privacy policy does not state a retention period for API request logs (read 2026-09-19). A domain is looked up for all DeclutrMail users at once rather than once per user, and re-checked after its cache period.",
+      'Brandfetch’s privacy policy does not state a retention period for API request logs (read 2026-09-19). A domain is looked up for all DeclutrMail users at once rather than once per user, and re-checked after its cache period.',
     privacyUrl: 'https://brandfetch.com/privacy',
   },
 } as const satisfies Record<
@@ -303,7 +301,7 @@ export const GMAIL_CONNECTION_DATA_INVENTORY = [
     fetchedFrom: ['Google sign-in profile', 'OAuth connection result'],
     storageRefs: ['mailbox_accounts.provider_account_id', 'mailbox_accounts.status'],
     derived: false,
-    purpose: 'Identify, switch, disconnect, and reconnect a mailbox.',
+    purpose: WS6_COPY['ws6.inventory.accountIdentity.purpose'],
     retention: GMAIL_DATA_RETENTION.mailboxIdentity,
     removalTrigger: 'delete-account',
     exportedIn: ['json', 'csv', 'senders-csv', 'decisions-csv', 'activity-support-bundle'],
@@ -321,7 +319,7 @@ export const GMAIL_CONNECTION_DATA_INVENTORY = [
       'mailbox_accounts.key_version',
     ],
     derived: false,
-    purpose: 'Sync and change Gmail only while the account is connected.',
+    purpose: WS6_COPY['ws6.inventory.credential.purpose'],
     retention: GMAIL_DATA_RETENTION.connection,
     removalTrigger: 'disconnect',
     exportedIn: [],
@@ -340,7 +338,7 @@ export const GMAIL_CONNECTION_DATA_INVENTORY = [
       'provider_sync_state.readiness_status',
     ],
     derived: false,
-    purpose: 'Continue updating without scanning the entire mailbox again.',
+    purpose: WS6_COPY['ws6.inventory.syncState.purpose'],
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
@@ -367,7 +365,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
   {
     id: 'inbox-report-cache',
     category: 'derived',
-    label: 'Inbox Report totals and the sender ids offered for a fix',
+    label: WS6_COPY['ws6.inventory.inboxReportCache.label'],
     fetchedFrom: [
       'message-size-estimate',
       'received-date',
@@ -392,8 +390,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     fetchedFrom: ['sender-profile-and-stats', 'message-identifiers'],
     storageRefs: ['users.preferences.mailboxVisits'],
     derived: true,
-    purpose:
-      'Show a stable per-mailbox summary since the previous visit; at most 32 snapshots per mailbox.',
+    purpose: WS6_COPY['ws6.inventory.visitSummary.purpose'],
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
     removalTrigger: 'delete-indexed-data',
     exportedIn: ['json'],
@@ -482,8 +479,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     fetchedFrom: ['message-identifiers', 'sender-identity', 'gmail-sync-state'],
     storageRefs: ['outbox_events.*', 'dead_letter_jobs.*', 'webhook_dedup.*', 'sync_runs.*'],
     derived: true,
-    purpose:
-      'Deliver background work once, recover failed jobs, avoid processing the same Gmail notification twice, and keep counts and timings for each mailbox sync so slow or failed syncs can be investigated.',
+    purpose: WS6_COPY['ws6.inventory.processing.purpose'],
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
@@ -498,8 +494,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     storageRefs: ['redis:declutr:scan-progress:{mailboxAccountId}'],
     derived: true,
     purpose: 'Show how far a running scan has read, and its time left.',
-    retention:
-      'Cleared immediately when this mailbox’s saved data is deleted; otherwise gone within 30 minutes of the scan’s last update.',
+    retention: WS6_COPY['ws6.inventory.scanProgress.retention'],
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
     transmittedTo: ['DeclutrMail'],
@@ -523,14 +518,12 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
   {
     id: 'initial-sync-job-status',
     category: 'derived',
-    label: 'Sync status and result',
+    label: WS6_COPY['ws6.inventory.scanStatus.label'],
     fetchedFrom: ['message-identifiers'],
     storageRefs: ['redis:bull:initial-sync:{mailboxAccountId}', 'redis:bull:initial-sync:events'],
     derived: true,
-    purpose:
-      'Avoid starting a second backfill for a mailbox that already has one queued or running, and let a slow or failed sync be investigated.',
-    retention:
-      'Cleared immediately when this mailbox’s saved data is deleted. Otherwise, a completed attempt’s result is dropped automatically within 24 hours, sooner if this mailbox syncs again; a failed attempt’s reason has no automatic expiry and stays until this mailbox syncs again or its data is deleted.',
+    purpose: WS6_COPY['ws6.inventory.scanStatus.purpose'],
+    retention: WS6_COPY['ws6.inventory.scanStatus.retention'],
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
     transmittedTo: ['DeclutrMail'],
@@ -565,7 +558,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     storageRefs: ['domain_icons.*'],
     derived: true,
     purpose:
-      "Show a logo beside a sender. The email domain of a sender shown in the app may be looked up, whether or not it is a brand — first against the sender's own published logo record and website, and only when neither of those gives us a usable logo, the Brandfetch logo service. Only the domain is sent: never your address, your account, or any message.",
+      'Show a logo beside a sender. The email domain of a sender shown in the app may be looked up, whether or not it is a brand — first against the sender’s own published logo record and website, and only when neither of those gives us a usable logo, the Brandfetch logo service. Only the domain is sent: never your address, your account, or any message.',
     // Every verb here names a mechanism that exists. There is no sweep and
     // no DELETE against `domain_icons`: a row is re-resolved in place the
     // next time someone views that domain after its cache window, and a

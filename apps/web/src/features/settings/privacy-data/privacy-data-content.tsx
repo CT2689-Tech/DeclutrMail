@@ -14,7 +14,7 @@ import {
   type GmailDataProcessor,
 } from '@declutrmail/shared';
 import type { DataExportFormat } from '@declutrmail/shared/contracts';
-import { fillWs3, WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { fillWs3, WS2_COPY, WS6_COPY } from '@declutrmail/shared/copy/launch';
 
 import { CookiePreferences } from '@/features/consent/cookie-preferences';
 import { DrillRow, SettingsGroup, SettingsRow } from '../settings-list';
@@ -62,7 +62,11 @@ export function PrivacyDataContent() {
       />
 
       <div id="what-we-store" style={{ scrollMarginTop: 24 }}>
-        <SettingsGroup id="privacy-gmail-data-inventory" title="Gmail data inventory">
+        <SettingsGroup
+          id="privacy-gmail-data-inventory"
+          title="Gmail data inventory"
+          headingTabIndex={-1}
+        >
           <InventoryGroup
             title="Access granted"
             items={GMAIL_OAUTH_ACCESS.map((item) => ({
@@ -72,7 +76,7 @@ export function PrivacyDataContent() {
             }))}
           />
           <InventoryGroup
-            title="Connection and sync data"
+            title={WS6_COPY['ws6.privacy.inventory.connectionTitle']}
             items={GMAIL_CONNECTION_DATA_INVENTORY.map(inventoryDisplayItem)}
           />
           <InventoryGroup
@@ -271,20 +275,20 @@ export function PrivacyDataFooter() {
       </div>
 
       {/* 5 — leave cleanly (D116's exits, pointing at the owning flows). */}
-      <SettingsGroup id="privacy-leave-cleanly" title="Leave cleanly">
+      <SettingsGroup id="privacy-leave-cleanly" title="Leave cleanly" headingTabIndex={-1}>
         <SettingsRow
-          label="Disconnect a mailbox"
-          detail="Removes DeclutrMail’s saved Google credential and stops sync and Gmail actions. Saved Gmail and DeclutrMail data stays so reconnecting can continue its history; Gmail is unchanged. Choose Manage in the top-bar account menu."
+          label={WS6_COPY['ws6.privacy.disconnect.label']}
+          detail={WS6_COPY['ws6.privacy.disconnect.detail']}
         />
         <SettingsRow
-          label="Disconnect & delete one mailbox’s saved data"
-          detail="Also permanently deletes that mailbox’s saved email details, sender data, decisions, rules, Activity, and Undo data. Your DeclutrMail account, other mailboxes, disconnected Gmail address, and your email in Gmail remain. Choose Manage in the top-bar account menu."
+          label={WS6_COPY['ws6.privacy.disconnectDelete.label']}
+          detail={WS6_COPY['ws6.privacy.disconnectDelete.detail']}
         />
         <DrillRow href="/settings#account" label="Delete account and data" />
       </SettingsGroup>
 
       {/* 6 — legal & evidence (CASA row: static copy per plan). */}
-      <SettingsGroup id="privacy-legal-evidence" title="Legal & evidence">
+      <SettingsGroup id="privacy-legal-evidence" title="Legal & evidence" headingTabIndex={-1}>
         <SettingsRow
           label="CASA Tier 2 verification"
           detail={fillWs3(WS2_COPY.liveFix.settingsPrivacy.casa, {

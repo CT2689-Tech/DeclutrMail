@@ -77,15 +77,19 @@ export function PageHeader({
 export function GroupTitle({
   as: Tag = 'h2',
   inset = false,
+  tabIndex,
   children,
 }: {
   as?: 'h2' | 'div';
   /** Align with the rows of a raised group (which sit 16px inside it). */
   inset?: boolean;
+  /** Lets a deep link move focus to the heading without putting it in tab order. */
+  tabIndex?: number;
   children: ReactNode;
 }) {
   return (
     <Tag
+      tabIndex={tabIndex}
       style={{
         margin: '0 0 8px',
         paddingLeft: inset ? ROW_INSET : 0,
@@ -102,6 +106,7 @@ export function SettingsGroup({
   id,
   title,
   focusable = false,
+  headingTabIndex,
   children,
   footer,
   style,
@@ -111,6 +116,8 @@ export function SettingsGroup({
   title: string;
   /** Lets a deep link move keyboard focus to the group. */
   focusable?: boolean;
+  /** Lets a deep link move focus to the heading. `-1` keeps it out of tab order. */
+  headingTabIndex?: number;
   children: ReactNode;
   /** Rendered under the rows — a failed-save line, a limit note. */
   footer?: ReactNode;
@@ -123,7 +130,9 @@ export function SettingsGroup({
       aria-label={title}
       style={{ scrollMarginTop: 24, fontFamily: font.sans, ...style }}
     >
-      <GroupTitle inset>{title}</GroupTitle>
+      <GroupTitle inset {...(headingTabIndex !== undefined ? { tabIndex: headingTabIndex } : {})}>
+        {title}
+      </GroupTitle>
       <style>{GROUP_CSS}</style>
       <div
         className="dm-settings-rows"

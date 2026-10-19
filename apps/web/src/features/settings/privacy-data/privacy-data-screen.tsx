@@ -7,8 +7,9 @@ import {
   EditorialDescription,
 } from '@/features/editorial/page';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, ScreenIntro, tokens } from '@declutrmail/shared';
+import { WS6_COPY } from '@declutrmail/shared/copy/launch';
 import { MIN_UNDO_WINDOW_DAYS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import type { DataExportFormat } from '@declutrmail/shared/contracts';
@@ -22,6 +23,34 @@ import { PageHeader, SettingsGroup, SettingsRow } from '../settings-list';
 import type { PrivacyDataExportCopy } from './privacy-data-content';
 
 const { color, font, text } = tokens;
+
+const PRIVACY_CONTENTS = [
+  { href: '#privacy-connected-mailboxes', label: WS6_COPY['ws6.privacy.connectedTitle'] },
+  { href: '#privacy-gmail-data-inventory', label: 'Data inventory' },
+  { href: '#privacy-undo-retention', label: 'Recovery' },
+  { href: '#privacy-export-my-data', label: 'Export' },
+  { href: '#privacy-cookie-preferences', label: 'Cookies' },
+  { href: '#privacy-leave-cleanly', label: 'Disconnect or delete' },
+  { href: '#privacy-legal-evidence', label: 'Policies' },
+] as const;
+
+const PRIVACY_CONTENTS_IDS = new Set<string>(PRIVACY_CONTENTS.map((item) => item.href.slice(1)));
+
+/**
+ * In-page links scroll on their own. The heading has to take focus after
+ * that, or the next Tab starts at the top of the page. `focusVisible`
+ * stays off so a script focus does not paint the keyboard ring.
+ */
+function focusPrivacyContentsHeading(hash: string) {
+  const id = hash.startsWith('#') ? hash.slice(1) : hash;
+  if (!PRIVACY_CONTENTS_IDS.has(id)) return;
+  const region = document.getElementById(id);
+  const heading = region?.querySelector('h1, h2, h3, h4, h5, h6');
+  if (!(heading instanceof HTMLElement)) return;
+  heading.focus({ preventScroll: true, focusVisible: false } as FocusOptions & {
+    focusVisible: boolean;
+  });
+}
 
 /**
  * Settings → Privacy & Data (D116 + D217 + D228) — the dedicated
@@ -106,8 +135,27 @@ export function PrivacyDataView({
   exportPreparedFormat?: DataExportFormat | null;
   onExport: (format: DataExportFormat) => void;
 }) {
+  const scheduleFocus = useRef<(hash: string) => void>(() => undefined);
+
   useEffect(() => {
     void track('page_viewed', { page: 'settings', mailbox_id: null });
+  }, []);
+
+  useEffect(() => {
+    let timer = 0;
+    const schedule = (hash: string) => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => focusPrivacyContentsHeading(hash), 0);
+    };
+    scheduleFocus.current = schedule;
+    schedule(window.location.hash);
+    const onHashChange = () => schedule(window.location.hash);
+    window.addEventListener('hashchange', onHashChange);
+    return () => {
+      window.clearTimeout(timer);
+      scheduleFocus.current = () => undefined;
+      window.removeEventListener('hashchange', onHashChange);
+    };
   }, []);
 
   return (
@@ -122,21 +170,22 @@ export function PrivacyDataView({
     >
       <EditorialKicker>Settings</EditorialKicker>
       <PageHeader title="Privacy & data" backToSettings />
-      <EditorialDescription>
-        Review access and stored data for all connected inboxes, export your records, or manage
-        retention and deletion. Connection status is separate from sync health in Settings.
-      </EditorialDescription>
-      <EditorialContents
-        items={[
-          { href: '#privacy-connected-mailboxes', label: 'Connected inboxes' },
-          { href: '#privacy-gmail-data-inventory', label: 'Data inventory' },
-          { href: '#privacy-undo-retention', label: 'Recovery' },
-          { href: '#privacy-export-my-data', label: 'Export' },
-          { href: '#privacy-cookie-preferences', label: 'Cookies' },
-          { href: '#privacy-leave-cleanly', label: 'Disconnect or delete' },
-          { href: '#privacy-legal-evidence', label: 'Policies' },
-        ]}
-      />
+      <EditorialDescription>{WS6_COPY['ws6.privacy.description']}</EditorialDescription>
+      <div
+        onClick={(event) => {
+          const target = event.target;
+          const origin =
+            target instanceof Element
+              ? target
+              : target instanceof Node
+                ? target.parentElement
+                : null;
+          const href = origin?.closest('a')?.getAttribute('href');
+          if (href?.startsWith('#')) scheduleFocus.current(href);
+        }}
+      >
+        <EditorialContents items={PRIVACY_CONTENTS} />
+      </div>
       <ScreenIntro
         id="settings-privacy"
         title="Privacy & data"
@@ -146,10 +195,10 @@ export function PrivacyDataView({
       {privacyContent}
 
       {/* 2 — which mailboxes the storage list applies to. */}
-      <Section title="Connected mailboxes">
+      <Section id="privacy-connected-mailboxes" title={WS6_COPY['ws6.privacy.connectedTitle']}>
         {mailboxes.length === 0 ? (
           <p className="dm-settings-row" style={{ ...bodyTextStyle, ...blockRowStyle }}>
-            No mailboxes connected — no Gmail data is being saved right now.
+            {WS6_COPY['ws6.privacy.connected.empty']}
           </p>
         ) : (
           mailboxes.map((m) => (
@@ -160,7 +209,9 @@ export function PrivacyDataView({
               }
             >
               <span style={{ fontSize: text.sm, color: color.fgMuted }}>
-                {m.status === 'disconnected' ? 'disconnected — sync stopped' : 'data saved'}
+                {m.status === 'disconnected'
+                  ? WS6_COPY['ws6.privacy.connected.status.disconnected']
+                  : 'data saved'}
               </span>
             </SettingsRow>
           ))
@@ -258,13 +309,24 @@ export function PrivacyDataView({
 
 const EXPORT_FORMATS = ['json', 'csv', 'senders-csv', 'decisions-csv'] as const;
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  const id = `privacy-${title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/-$/, '')}`;
+function Section({
+  id,
+  title,
+  children,
+}: {
+  /** Stable deep-link id. Omit it and the id follows the title. */
+  id?: string;
+  title: string;
+  children: React.ReactNode;
+}) {
+  const anchor =
+    id ??
+    `privacy-${title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/-$/, '')}`;
   return (
-    <SettingsGroup id={id} title={title}>
+    <SettingsGroup id={anchor} title={title} headingTabIndex={-1}>
       {children}
     </SettingsGroup>
   );
