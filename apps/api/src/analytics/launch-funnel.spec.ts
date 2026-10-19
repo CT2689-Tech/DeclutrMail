@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import {
   actionJobs,
+  activityLog,
   mailboxAccounts,
   productEvents,
   subscriptions,
@@ -17,7 +18,12 @@ import { EntitlementsService } from '../common/entitlements/entitlements.service
 import { earliestWorkspaceUserId } from './earliest-workspace-user.js';
 import { ProductEventsWriter } from './product-events.writer.js';
 import { scheduleProductEvent } from './schedule-product-event.js';
-import { assertLocalFunnelDsn, funnelSql } from '../../../../scripts/launch-funnel-sql';
+import {
+  assertLocalFunnelDsn,
+  funnelSql,
+  funnelWindowFromEnv,
+} from '../../../../scripts/launch-funnel-sql';
+import { formatFunnelReport } from '../../../../scripts/launch-funnel-report';
 
 const FREE_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth!;
 
@@ -167,15 +173,255 @@ describe('product event writer', () => {
 });
 
 describe('launch funnel sql', () => {
-  it('pins the free allowance to the pricing manifest', () => {
-    const source = readFileSync(
-      join(process.cwd(), '../../scripts/sql/launch-funnel-report.sql'),
-      'utf8',
+  it('uses elapsed-hour D7 windows across daylight-saving changes', async () => {
+    const db = await freshTestDb();
+    await db.execute("SET TIME ZONE 'America/Los_Angeles'");
+    const account = await seedUser(db, 'dst@example.test', new Date('2026-10-28T12:00:00Z'));
+    const [action] = await db
+      .insert(actionJobs)
+      .values(job(account.mailboxId, new Date('2026-11-04T12:00:00Z'), 10, 'dst'))
+      .returning();
+    await db.insert(activityLog).values({
+      mailboxAccountId: account.mailboxId,
+      actionJobId: action!.id,
+      source: 'manual',
+      action: 'archive',
+      affectedCount: 10,
+      occurredAt: new Date('2026-11-04T12:30:00Z'),
+    });
+    const row = oneRow(
+      await db.execute(funnelSql({ observedAt: new Date('2026-11-05T12:00:00Z') })),
     );
-    expect(source).toContain(`${FREE_LIMIT}::int AS free_allowance`);
+    expect(Number(row.d7_eligible_accounts)).toBe(1);
+    expect(Number(row.d7_completed_cleanup_accounts)).toBe(1);
   });
 
-  it('leaves paid at 0 when purchase_confirmed has no user id', async () => {
+  it('rejects an impossible calendar date instead of normalizing it', () => {
+    expect(() =>
+      funnelWindowFromEnv({ LAUNCH_FUNNEL_OBSERVED_AT: '2026-02-30T00:00:00Z' }),
+    ).toThrow(/invalid/);
+  });
+
+  it('prints unknown rates when no account has a mature window', async () => {
+    const db = await freshTestDb();
+    const signup = new Date('2026-01-10T00:00:00Z');
+    await seedUser(db, 'young@example.test', signup);
+    const row = oneRow(
+      await db.execute(funnelSql({ observedAt: new Date('2026-01-10T00:01:00Z') })),
+    );
+    expect(Number(row.eligible_accounts)).toBe(1);
+    for (const key of [
+      'first_sync_ready_2h_event_rate',
+      'first_completed_cleanup_24h_rate',
+      'd7_completed_cleanup_rate',
+      'connection_to_completed_cleanup_24h_rate',
+      'recorded_sync_success_rate',
+    ]) {
+      expect(row[key]).toBeNull();
+    }
+  });
+
+  it('excludes immature D7 accounts from both numerator and denominator', async () => {
+    const db = await freshTestDb();
+    const mature = await seedUser(db, 'mature@example.test', new Date('2026-01-03T00:00:00Z'));
+    const young = await seedUser(db, 'not-mature@example.test', new Date('2026-01-03T00:01:00Z'));
+    for (const account of [mature, young]) {
+      const [action] = await db
+        .insert(actionJobs)
+        .values(job(account.mailboxId, new Date('2026-01-10T01:00:00Z'), 10, account.userId))
+        .returning();
+      await db.insert(activityLog).values({
+        mailboxAccountId: account.mailboxId,
+        actionJobId: action!.id,
+        source: 'manual',
+        action: 'archive',
+        affectedCount: 10,
+        occurredAt: new Date('2026-01-10T01:01:00Z'),
+      });
+    }
+    const row = oneRow(
+      await db.execute(funnelSql({ observedAt: new Date('2026-01-11T00:00:00Z') })),
+    );
+    expect(Number(row.d7_eligible_accounts)).toBe(1);
+    expect(Number(row.d7_completed_cleanup_accounts)).toBe(1);
+    expect(Number(row.d7_completed_cleanup_rate)).toBe(1);
+  });
+
+  it('does not invent a completion time from a done job without matching manual activity', async () => {
+    const db = await freshTestDb();
+    const account = await seedUser(db, 'untimed@example.test', new Date('2026-01-01T00:00:00Z'));
+    await db
+      .insert(actionJobs)
+      .values(job(account.mailboxId, new Date('2026-01-01T01:00:00Z'), 10, 'untimed'));
+    const row = oneRow(await db.execute(funnelSql()));
+    expect(Number(row.first_completed_cleanup_24h_accounts)).toBe(0);
+    expect(Number(row.cleanup_jobs_without_observed_manual_completion)).toBe(1);
+  });
+
+  it('does not reset the conversion clock at a later reconnection', async () => {
+    const db = await freshTestDb();
+    const account = await seedUser(db, 'reconnect@example.test', new Date('2026-01-01T00:00:00Z'));
+    await db.insert(productEvents).values([
+      {
+        userId: account.userId,
+        event: 'gmail_connected',
+        occurredAt: new Date('2026-01-01T01:00:00Z'),
+      },
+      {
+        userId: account.userId,
+        event: 'gmail_connected',
+        occurredAt: new Date('2026-01-02T03:00:00Z'),
+      },
+    ]);
+    const [action] = await db
+      .insert(actionJobs)
+      .values(job(account.mailboxId, new Date('2026-01-02T03:30:00Z'), 10, 'after-reconnect'))
+      .returning();
+    await db.insert(activityLog).values({
+      mailboxAccountId: account.mailboxId,
+      actionJobId: action!.id,
+      source: 'manual',
+      action: 'archive',
+      affectedCount: 10,
+      occurredAt: new Date('2026-01-02T04:00:00Z'),
+    });
+    expect(
+      Number(oneRow(await db.execute(funnelSql())).connection_to_completed_cleanup_24h_accounts),
+    ).toBe(0);
+  });
+
+  it('applies exclusive cohort/cutoff bounds and explicit exclusions', async () => {
+    const db = await freshTestDb();
+    const inside = await seedUser(db, 'inside@example.test', new Date('2026-01-02T00:00:00Z'));
+    const excluded = await seedUser(db, 'excluded@example.test', new Date('2026-01-02T00:00:00Z'));
+    await seedUser(db, 'outside@example.test', new Date('2026-01-01T23:59:59Z'));
+    await seedUser(db, 'at-end@example.test', new Date('2026-01-03T00:00:00Z'));
+    await db.insert(productEvents).values([
+      {
+        userId: inside.userId,
+        event: 'purchase_confirmed',
+        props: { plan: 'pass' },
+        occurredAt: new Date('2026-01-04T00:00:00Z'),
+      },
+      {
+        userId: excluded.userId,
+        event: 'purchase_confirmed',
+        props: { plan: 'pass' },
+        occurredAt: new Date('2026-01-03T00:00:00Z'),
+      },
+    ]);
+    const row = oneRow(
+      await db.execute(
+        funnelSql({
+          cohortStart: new Date('2026-01-02T00:00:00Z'),
+          cohortEnd: new Date('2026-01-03T00:00:00Z'),
+          observedAt: new Date('2026-01-04T00:00:00Z'),
+          extraUserIds: [excluded.userId],
+        }),
+      ),
+    );
+    expect(Number(row.eligible_accounts)).toBe(1);
+    expect(Number(row.purchase_event_accounts)).toBe(0);
+    expect(Number(row.cleanup_24h_eligible_accounts)).toBe(1);
+  });
+
+  it('rejects ambiguous timestamps, invalid ranges and malformed exclusion IDs', () => {
+    expect(() => funnelWindowFromEnv({ LAUNCH_FUNNEL_OBSERVED_AT: '2026-01-01' })).toThrow(
+      /timezone/,
+    );
+    expect(() => funnelWindowFromEnv({ LAUNCH_FUNNEL_OBSERVED_AT: 'not-a-date' })).toThrow(
+      /timestamp/,
+    );
+    expect(() =>
+      funnelSql({ cohortStart: new Date('2026-01-02'), cohortEnd: new Date('2026-01-01') }),
+    ).toThrow(/require cohort/);
+    expect(() =>
+      funnelSql({ cohortEnd: new Date('2026-01-03'), observedAt: new Date('2026-01-02') }),
+    ).toThrow(/require cohort/);
+    expect(() => funnelSql({ observedAt: new Date('invalid') })).toThrow(
+      /invalid report timestamp/,
+    );
+    expect(() => funnelSql({ extraUserIds: ["x'); SELECT 1; --"] })).toThrow(/uuid/);
+    const env = funnelWindowFromEnv({ LAUNCH_FUNNEL_OBSERVED_AT: '2026-01-10T01:00:00+01:00' });
+    expect(env.observedAt.toISOString()).toBe('2026-01-10T00:00:00.000Z');
+    expect(() => formatFunnelReport({ email: 'private@example.test' })).toThrow(/unexpected email/);
+  });
+
+  it('does not treat queued, executing, failed or zero-effect work as first cleanup', async () => {
+    const db = await freshTestDb();
+    const signup = new Date('2026-01-01T00:00:00Z');
+    for (const status of ['queued', 'executing', 'failed', 'done'] as const) {
+      const account = await seedUser(db, `${status}@example.test`, signup);
+      await db.insert(actionJobs).values({
+        ...job(
+          account.mailboxId,
+          new Date('2026-01-01T01:00:00Z'),
+          status === 'done' ? 0 : 10,
+          status,
+        ),
+        status,
+      });
+    }
+    expect(Number(oneRow(await db.execute(funnelSql())).first_completed_cleanup_24h_accounts)).toBe(
+      0,
+    );
+  });
+
+  it('does not count cleanup before the first recorded Gmail connection', async () => {
+    const db = await freshTestDb();
+    const account = await seedUser(db, 'chronology@example.test', new Date('2026-01-01T00:00:00Z'));
+    await db.insert(productEvents).values({
+      userId: account.userId,
+      event: 'gmail_connected',
+      occurredAt: new Date('2026-01-01T04:00:00Z'),
+    });
+    const [action] = await db
+      .insert(actionJobs)
+      .values(job(account.mailboxId, new Date('2026-01-01T01:00:00Z'), 10, 'before-connect'))
+      .returning();
+    await db.insert(activityLog).values({
+      mailboxAccountId: account.mailboxId,
+      actionJobId: action!.id,
+      source: 'manual',
+      action: 'archive',
+      affectedCount: 10,
+      occurredAt: new Date('2026-01-01T01:30:00Z'),
+    });
+    expect(
+      Number(oneRow(await db.execute(funnelSql())).connection_to_completed_cleanup_24h_accounts),
+    ).toBe(0);
+  });
+
+  it('uses completion time instead of enqueue time for first cleanup', async () => {
+    const db = await freshTestDb();
+    const account = await seedUser(db, 'completion@example.test', new Date('2026-01-01T00:00:00Z'));
+    const [action] = await db
+      .insert(actionJobs)
+      .values(job(account.mailboxId, new Date('2026-01-01T01:00:00Z'), 10, 'slow-completion'))
+      .returning();
+    await db.insert(activityLog).values({
+      mailboxAccountId: account.mailboxId,
+      actionJobId: action!.id,
+      source: 'manual',
+      action: 'archive',
+      affectedCount: 10,
+      occurredAt: new Date('2026-01-02T01:00:00Z'),
+    });
+    expect(Number(oneRow(await db.execute(funnelSql())).first_completed_cleanup_24h_accounts)).toBe(
+      0,
+    );
+  });
+
+  it('does not count an unobserved future D7 action', async () => {
+    const db = await freshTestDb();
+    const signup = new Date();
+    const account = await seedUser(db, 'immature@example.test', signup);
+    const future = new Date(signup.getTime() + 7 * 86400_000 + 3600_000);
+    await db.insert(actionJobs).values(job(account.mailboxId, future, 10, 'future-d7'));
+    expect(Number(oneRow(await db.execute(funnelSql())).d7_completed_cleanup_accounts)).toBe(0);
+  });
+
+  it('separates unattributed telemetry from purchase-event accounts and unknown paying customers', async () => {
     const db = await freshTestDb();
     const ada = await seedUser(db, 'ada@example.com');
     const now = new Date();
@@ -185,9 +431,11 @@ describe('launch funnel sql', () => {
       props: { plan: 'plus' },
       occurredAt: now,
     });
-    const missing = oneRow(await db.execute(funnelSql(FREE_LIMIT, [])));
-    expect(Number(missing.paid)).toBe(0);
-    expect(Number(missing.plus_purchases)).toBe(0);
+    const missing = oneRow(await db.execute(funnelSql()));
+    expect(Number(missing.purchase_event_accounts)).toBe(0);
+    expect(Number(missing.unattributed_purchase_events_in_observation_range)).toBe(1);
+    expect(missing.verified_external_paying_customers).toBeNull();
+    expect(Number(missing.plus_purchase_events)).toBe(0);
 
     await db.insert(productEvents).values({
       userId: ada.userId,
@@ -195,9 +443,10 @@ describe('launch funnel sql', () => {
       props: { plan: 'plus' },
       occurredAt: now,
     });
-    const counted = oneRow(await db.execute(funnelSql(FREE_LIMIT, [])));
-    expect(Number(counted.paid)).toBe(1);
-    expect(Number(counted.plus_purchases)).toBe(1);
+    const counted = oneRow(await db.execute(funnelSql()));
+    expect(Number(counted.purchase_event_accounts)).toBe(1);
+    expect(counted.verified_external_paying_customers).toBeNull();
+    expect(Number(counted.plus_purchase_events)).toBe(1);
   });
 
   it('refuses a non-local database', () => {
@@ -214,11 +463,12 @@ describe('launch funnel sql', () => {
 
   it('excludes internal accounts and never returns an email', async () => {
     const db = await freshTestDb();
-    const now = new Date();
+    const signup = new Date('2026-01-01T00:00:00Z');
+    const now = new Date('2026-01-01T01:00:00Z');
     const week = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000);
-    const ada = await seedUser(db, 'ada@example.com');
-    const bob = await seedUser(db, 'bob@example.com');
-    const internal = await seedUser(db, 'chintan@example.com');
+    const ada = await seedUser(db, 'ada@example.com', signup);
+    const bob = await seedUser(db, 'bob@example.com', signup);
+    const internal = await seedUser(db, 'chintan@example.com', signup);
 
     await db.insert(productEvents).values([
       { userId: ada.userId, event: 'gmail_connected', props: { mode: 'login' }, occurredAt: now },
@@ -256,13 +506,24 @@ describe('launch funnel sql', () => {
         occurredAt: now,
       },
     ]);
-    await db
+    const actions = await db
       .insert(actionJobs)
       .values([
         job(ada.mailboxId, now, 40, 'ada-now'),
         job(ada.mailboxId, week, 1, 'ada-d7'),
         job(internal.mailboxId, now, 40, 'internal-now'),
-      ]);
+      ])
+      .returning();
+    await db.insert(activityLog).values(
+      actions.map((action) => ({
+        mailboxAccountId: action.mailboxAccountId,
+        actionJobId: action.id,
+        source: 'manual' as const,
+        action: 'archive' as const,
+        affectedCount: action.affectedCount,
+        occurredAt: action.createdAt,
+      })),
+    );
     await db.insert(subscriptions).values({
       workspaceId: ada.workspaceId,
       provider: 'paddle',
@@ -274,30 +535,41 @@ describe('launch funnel sql', () => {
       cancelSource: 'refund',
     });
 
-    const rows = await db.execute(funnelSql(FREE_LIMIT, []));
+    const rows = await db.execute(funnelSql());
     const row = oneRow(rows);
     expect(JSON.stringify(row)).not.toContain('@');
-    expect(Number(row.signups)).toBe(2);
-    expect(Number(row.connected)).toBe(1);
-    expect(Number(row.first_sync_ready_2h)).toBe(1);
-    expect(Number(row.first_action_24h)).toBe(1);
-    expect(Number(row.d7_action)).toBe(1);
-    expect(Number(row.checkout_created)).toBe(1);
-    expect(Number(row.paid)).toBe(2);
-    expect(Number(row.first_sync_success_rate)).toBeCloseTo(0.5);
-    expect(Number(row.first_sync_p50_s)).toBe(60);
-    expect(Number(row.connected_to_action_24h)).toBe(1);
-    expect(Number(row.free_near_allowance_7d)).toBe(1);
-    expect(Number(row.free_cap_hit)).toBe(1);
-    expect(Number(row.pass_purchases)).toBe(1);
-    expect(Number(row.plus_purchases)).toBe(1);
-    expect(Number(row.refunds)).toBe(1);
+    expect(Number(row.eligible_accounts)).toBe(2);
+    expect(Number(row.connection_event_accounts)).toBe(1);
+    expect(Number(row.first_sync_ready_2h_event_accounts)).toBe(1);
+    expect(Number(row.first_completed_cleanup_24h_accounts)).toBe(1);
+    expect(Number(row.d7_completed_cleanup_accounts)).toBe(1);
+    expect(Number(row.checkout_event_accounts)).toBe(1);
+    expect(Number(row.purchase_event_accounts)).toBe(2);
+    expect(Number(row.recorded_sync_success_rate)).toBeCloseTo(0.5);
+    expect(Number(row.recorded_first_sync_p50_s)).toBe(60);
+    expect(Number(row.connection_to_completed_cleanup_24h_accounts)).toBe(1);
+    expect(Number(row.archive_delete_emails_completed_7d)).toBe(40);
+    expect(row).not.toHaveProperty('free_near_allowance_7d');
+    expect(Number(row.free_cap_hit_events)).toBe(1);
+    expect(Number(row.pass_purchase_events)).toBe(1);
+    expect(Number(row.plus_purchase_events)).toBe(1);
+    expect(row.verified_external_paying_customers).toBeNull();
+    expect(Number(row.cleanup_24h_eligible_accounts)).toBe(2);
+    expect(Number(row.first_completed_cleanup_24h_rate)).toBeCloseTo(0.5);
+    expect(Number(row.d7_eligible_accounts)).toBe(2);
+    expect(Number(row.d7_completed_cleanup_rate)).toBeCloseTo(0.5);
+    const rendered = formatFunnelReport(row);
+    expect(rendered).toContain('not verified customers');
+    expect(rendered).toContain('not monthly quota');
+    expect(rendered).toContain('verified_external_paying_customers: null');
+    expect(rendered).not.toContain('@');
   });
 });
 
 async function seedUser(
   db: Awaited<ReturnType<typeof freshTestDb>>,
   email: string,
+  createdAt = new Date(),
 ): Promise<{ userId: string; workspaceId: string; mailboxId: string }> {
   const [ws] = await db
     .insert(workspaces)
@@ -305,7 +577,7 @@ async function seedUser(
     .returning({ id: workspaces.id });
   const [user] = await db
     .insert(users)
-    .values({ workspaceId: ws!.id, email })
+    .values({ workspaceId: ws!.id, email, createdAt })
     .returning({ id: users.id });
   const [mailbox] = await db
     .insert(mailboxAccounts)
