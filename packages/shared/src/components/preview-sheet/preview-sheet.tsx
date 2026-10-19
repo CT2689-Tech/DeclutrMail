@@ -38,6 +38,8 @@ export type PreviewSheetProps = {
   /** Everything else. Collapsed. */
   details?: ReactNode;
   detailsLabel?: string;
+  /** Optional decision summary kept with the actions when the review body scrolls. */
+  summary?: ReactNode;
   primary: {
     label: string;
     onClick: () => void;
@@ -65,6 +67,7 @@ export function PreviewSheet({
   note,
   details,
   detailsLabel = 'Details',
+  summary,
   primary,
   cancelLabel = 'Cancel',
   footer,
@@ -73,6 +76,10 @@ export function PreviewSheet({
 }: PreviewSheetProps) {
   const titleId = useId();
   const subtitleId = useId();
+  const summaryId = useId();
+  const descriptionIds = [subtitle == null ? null : subtitleId, summary == null ? null : summaryId]
+    .filter(Boolean)
+    .join(' ');
   const busy = primary.busyLabel != null;
   const review = layout === 'review';
   // Unsubscribe (warn) and Delete (danger) are irreversible from the
@@ -119,7 +126,7 @@ export function PreviewSheet({
         role={irreversible ? 'alertdialog' : 'dialog'}
         aria-modal="true"
         aria-labelledby={titleId}
-        {...(subtitle == null ? {} : { 'aria-describedby': subtitleId })}
+        {...(descriptionIds === '' ? {} : { 'aria-describedby': descriptionIds })}
         className={`dm-sheet dm-sheet-panel${review ? ' dm-sheet-review' : ''}`}
         style={{
           width: '100%',
@@ -208,6 +215,11 @@ export function PreviewSheet({
           className="dm-sheet-footer"
           style={review ? undefined : { padding: `${space[4]}px ${space[6]}px ${space[6]}px` }}
         >
+          {summary != null && (
+            <div id={summaryId} style={{ marginBottom: space[4] }}>
+              {summary}
+            </div>
+          )}
           <div
             className="dm-sheet-actions"
             style={{

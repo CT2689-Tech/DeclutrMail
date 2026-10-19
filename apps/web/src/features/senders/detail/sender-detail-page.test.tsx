@@ -963,13 +963,17 @@ describe('SenderDetailRoute', () => {
       const dialog = await screen.findByRole('dialog');
       if (verb === 'Delete') {
         const window = await within(dialog).findByRole('combobox', {
-          name: 'How far back to act on',
+          name: 'Email age',
         });
         fireEvent.change(window, { target: { value: 'all' } });
       }
       const confirm = await within(dialog).findByRole('button', {
         name:
-          verb === 'Later' ? /^Move \d+ emails? to Later$/ : new RegExp(`^${verb} \\d+ emails?$`),
+          verb === 'Delete'
+            ? /^Delete$/
+            : verb === 'Later'
+              ? /^Move \d+ emails? to Later$/
+              : new RegExp(`^${verb} \\d+ emails?$`),
       });
       await waitFor(() => expect(confirm).toBeEnabled());
       lastClient.setQueryData(sendersKeys.detail('linkedin'), {
@@ -1207,7 +1211,9 @@ describe('SenderDetailRoute', () => {
       // A tied age window hides the checkbox until the window changes.
       if (verb === 'Delete' && includeArchived()) fireEvent.click(includeArchived()!);
       if (verb !== 'Later') {
-        const windowControl = within(dialog).queryByRole('combobox', { name: /How far back/i });
+        const windowControl = within(dialog).queryByRole('combobox', {
+          name: verb === 'Delete' ? 'Email age' : /How far back/i,
+        });
         if (windowControl) {
           fireEvent.change(windowControl, {
             target: { value: affected < inbox ? '30' : 'all' },
@@ -1219,9 +1225,11 @@ describe('SenderDetailRoute', () => {
       }
       const confirm = await within(dialog).findByRole('button', {
         name:
-          verb === 'Later'
-            ? new RegExp(`^Move ${affected} emails? to Later$`)
-            : new RegExp(`^${verb} ${affected} emails?$`),
+          verb === 'Delete'
+            ? /^Delete$/
+            : verb === 'Later'
+              ? new RegExp(`^Move ${affected} emails? to Later$`)
+              : new RegExp(`^${verb} ${affected} emails?$`),
       });
       await waitFor(() => expect(confirm).toBeEnabled());
       fireEvent.click(confirm);

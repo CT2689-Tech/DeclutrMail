@@ -1745,7 +1745,9 @@ describe('SendersScreen — edge states', () => {
         within(dialog).queryByRole('checkbox', { name: 'Include archived email' });
       if (verb === 'Delete' && includeArchived()) fireEvent.click(includeArchived()!);
       if (verb !== 'Later') {
-        const windowControl = within(dialog).queryByRole('combobox', { name: /How far back/i });
+        const windowControl = within(dialog).queryByRole('combobox', {
+          name: verb === 'Delete' ? 'Email age' : /How far back/i,
+        });
         if (windowControl) {
           fireEvent.change(windowControl, {
             target: { value: affected < inbox ? '30' : 'all' },
@@ -1757,9 +1759,11 @@ describe('SendersScreen — edge states', () => {
       }
       const confirm = await within(screen.getByRole('dialog')).findByRole('button', {
         name:
-          verb === 'Later'
-            ? new RegExp(`^Move ${affected} emails? to Later$`)
-            : new RegExp(`^${verb} ${affected} emails?$`),
+          verb === 'Delete'
+            ? /^Delete$/
+            : verb === 'Later'
+              ? new RegExp(`^Move ${affected} emails? to Later$`)
+              : new RegExp(`^${verb} ${affected} emails?$`),
       });
       await waitFor(() => expect(confirm).toBeEnabled());
       fireEvent.click(confirm);
@@ -3291,13 +3295,17 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       const dialog = await screen.findByRole('dialog');
       if (verb === 'Delete') {
         const window = await within(dialog).findByRole('combobox', {
-          name: 'How far back to act on',
+          name: 'Email age',
         });
         fireEvent.change(window, { target: { value: 'all' } });
       }
       const confirm = await within(dialog).findByRole('button', {
         name:
-          verb === 'Later' ? /^Move \d+ emails? to Later$/ : new RegExp(`^${verb} \\d+ emails?$`),
+          verb === 'Delete'
+            ? /^Delete$/
+            : verb === 'Later'
+              ? /^Move \d+ emails? to Later$/
+              : new RegExp(`^${verb} \\d+ emails?$`),
       });
       await waitFor(() => expect(confirm).toBeEnabled());
       lastClient.setQueryData(sendersKeys.detail('a'), {
@@ -5838,7 +5846,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     renderScreen();
     await selectBothAndPress('d');
     // Destructive treatment — same Trash copy as single-sender Delete.
-    await screen.findByText(/delete email from 2 senders/i);
+    await screen.findByRole('heading', { name: 'Delete emails from 2 senders?' });
     await screen.findByText(/move to gmail trash/i);
     // D226: a failed preview must BLOCK the destructive confirm.
     await screen.findByText(/couldn’t load the preview/i);

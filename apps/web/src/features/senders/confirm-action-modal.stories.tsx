@@ -5,6 +5,7 @@
 // subtitle, how to undo it in the note — each once — with only the
 // supported scope/period controls in the body and other facts behind
 // "Details". Same grammar as Triage's ActionSheet.
+// Delete uses layout A: count/destination in one impact summary and a short button.
 
 import type { ComponentProps } from 'react';
 import type { CompositeActionPreviewResult } from '@/lib/api/use-action';
@@ -144,6 +145,33 @@ export const DeleteWithReach: Story<typeof ConfirmActionModal> = {
     request: { verb: 'Delete', senders: [macys] },
     compositePreview: preview,
   } satisfies Args,
+};
+
+/** Delete-only layout A: loading never displays a cached impact count. */
+export const DeleteLoading: Story<typeof ConfirmActionModal> = {
+  args: {
+    ...DeleteWithReach.args!,
+    compositePreviewLoading: true,
+  },
+};
+
+export const DeletePreviewFailed: Story<typeof ConfirmActionModal> = {
+  args: {
+    ...DeleteWithReach.args!,
+    compositePreviewError: true,
+    onRetryPreview: noop,
+  },
+};
+
+/** The date control stays available when only the selected age has no matches. */
+export const DeleteEmptyAge: Story<typeof ConfirmActionModal> = {
+  args: {
+    ...DeleteWithReach.args!,
+    compositePreview: {
+      ...preview,
+      counts: { ...buckets, olderThan180d: 0 },
+    },
+  },
 };
 
 /** Unsubscribe — the backlog chooser; the note says a sent request can't be recalled. */

@@ -6,6 +6,7 @@ import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 import { UnsubscribeBacklogDialog } from './unsubscribe-backlog/unsubscribe-backlog-dialog';
 import { someProtectedSelectionCopy } from './unsubscribe-backlog/preview-copy';
 import { pickBucketCount, TIME_WINDOW_PRESETS } from './action-window';
+import { DeleteImpact, DeletePreview } from './delete-preview';
 import { ActionReachControl, ActionWindowControl } from '@/components/action-scope-controls';
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
@@ -954,9 +955,6 @@ export function ConfirmActionModal({
         }`
       : [
           primary.activityUndo.summary,
-          // Delete is the one verb where the reader plausibly fears the
-          // opposite (CLAUDE.md §2.3).
-          ...(isDeleteVerb && primary.futureMail.inPreview ? [primary.futureMail.summary] : []),
           ...(primary.bulkReturnNotice === null ? [] : [primary.bulkReturnNotice]),
         ].join(' ');
   const note = [undoNote, skipSentence].filter((s): s is string => s !== null).join(' ');
@@ -966,6 +964,7 @@ export function ConfirmActionModal({
     // Name the override in the button itself — the click IS the
     // acknowledgement, so it must not read like an ordinary confirm.
     if (needsProtectedOverride && !hasSecondaryAction) return `${verbWord} anyway`;
+    if (isDeleteVerb) return 'Delete';
     if (hasSecondaryAction)
       return `Unsubscribe + ${secondaryVerb === 'delete' ? 'Delete' : 'Archive'}`;
     if (primaryActsOnInbox && liveCount !== null && liveCount > 0) {
@@ -1077,7 +1076,7 @@ export function ConfirmActionModal({
       />,
     );
   }
-  if (showWindowSelect) {
+  if (showWindowSelect && !isDeleteVerb) {
     controls.push(
       <ActionWindowControl
         key="window"
@@ -1441,6 +1440,7 @@ export function ConfirmActionModal({
     // context that competes with the cookie banner and the selection FAB.
     <div style={{ position: 'relative', zIndex: OVERLAY_Z.modal }}>
       <PreviewSheet
+        layout={isDeleteVerb ? 'review' : 'compact'}
         context={
           activeMailboxEmail ? (
             <MailboxActionContextView mailboxEmail={activeMailboxEmail} />
@@ -1460,15 +1460,27 @@ export function ConfirmActionModal({
             <AvatarStack senders={senders} />
           )
         }
-        title={title}
+        title={isDeleteVerb && !zeroTitle ? `Delete emails from ${fromWho}?` : title}
         subtitle={
-          subtitle === null ? undefined : (
+          isDeleteVerb && !zeroTitle ? (
+            <span id="dm-confirm-lead">{primary.futureMail.summary}</span>
+          ) : subtitle === null ? undefined : (
             <span id="dm-confirm-lead" style={{ textWrap: 'balance' }}>
               {subtitle}
             </span>
           )
         }
-        note={note === '' ? undefined : note}
+        note={isDeleteVerb || note === '' ? undefined : note}
+        summary={
+          isDeleteVerb ? (
+            <DeleteImpact
+              count={archivedUncounted ? null : liveCount}
+              includesArchived={allMailScope}
+              olderThanDays={olderThanDays}
+              note={note}
+            />
+          ) : undefined
+        }
         details={details}
         primary={
           quotaShort
@@ -1515,10 +1527,21 @@ export function ConfirmActionModal({
           )
         }
       >
-        {selectionSummary || controls.length > 0 ? (
+        {isDeleteVerb || selectionSummary || controls.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: space[3] }}>
             {selectionSummary}
-            {controls}
+            {isDeleteVerb ? (
+              <DeletePreview
+                olderThanDays={olderThanDays}
+                options={windowOptions}
+                onWindowChange={setOlderThanDays}
+                showWindow={showWindowSelect}
+              >
+                {controls}
+              </DeletePreview>
+            ) : (
+              controls
+            )}
           </div>
         ) : undefined}
       </PreviewSheet>
