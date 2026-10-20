@@ -18,7 +18,11 @@ const CATEGORY_ROWS: ReadonlyArray<{
   label: string;
   detail?: string;
 }> = [
-  { wire: 'syncComplete', label: 'Sync completion alerts' },
+  {
+    wire: 'syncComplete',
+    label: 'Inbox ready email',
+    detail: 'One email when we finish scanning a Gmail account you connect.',
+  },
   { wire: 'reminders', label: 'Reminder emails' },
   {
     wire: 'briefReady',

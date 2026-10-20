@@ -1272,12 +1272,6 @@
     "text": "Action previews"
   },
   {
-    "file": "apps/web/src/features/settings/settings-index/email-prefs-card.tsx",
-    "line": 21,
-    "id": "sync_word",
-    "text": "Sync completion alerts"
-  },
-  {
     "file": "apps/web/src/features/settings/settings-index/mailboxes-card.tsx",
     "line": 4,
     "id": "sync_word",
