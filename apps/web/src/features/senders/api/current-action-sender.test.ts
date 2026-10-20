@@ -44,13 +44,14 @@ describe('current list action scope', () => {
       );
     },
   );
-  it('uses completion detail for a vanished row; ignores invalidated detail', async () => {
+  it('uses completion detail for a vanished row; invalidated detail is not a current refusal', async () => {
     const qc = new QueryClient();
     const detailKey = [...sendersKeys.detail(subject.id), 'cleanup', 123];
     qc.setQueryData(key, { pages: [{ data: [] }] });
     qc.setQueryData(detailKey, { data: empty });
     expect(currentListActionSender(qc, key, subject, 'Delete')?.inboxCount).toBe(0);
     await qc.invalidateQueries({ queryKey: detailKey, exact: true, refetchType: 'none' });
+    // Null is the gap the confirm live-reads. It is not "Delete is unavailable".
     expect(currentListActionSender(qc, key, subject, 'Delete')).toBeNull();
   });
   it('does not fall back to a different list or a frozen confirmation', () => {

@@ -169,6 +169,7 @@ function installHappyPath(
   messageResponse?: (url: URL) => (typeof MESSAGE)[],
   delayed?: { endpoint: string; response: () => Response | Promise<Response> },
   detail: SenderDetailDto = DETAIL,
+  onDetail?: () => Response | void,
 ) {
   installFetchStub([
     ...(delayed
@@ -183,7 +184,7 @@ function installHappyPath(
     {
       method: 'GET',
       path: /^\/api\/senders\/[^/]+$/,
-      respond: () => jsonOk({ data: detail }),
+      respond: () => onDetail?.() ?? jsonOk({ data: detail }),
     },
     {
       method: 'GET',
@@ -923,6 +924,115 @@ describe('SenderDetailRoute', () => {
       expect(posts).toBe(0);
     },
   );
+
+  it.each(['finished', 'still open'] as const)(
+    'live-fetches an invalidated detail before a second unsubscribe confirm (%s)',
+    async (outcome) => {
+      const current: SenderDetailDto = {
+        ...DETAIL,
+        policyType: null,
+        unsubStatus: null,
+        unsubscribeMethod: 'one_click',
+        inboxCount: 21,
+        archivedCount: 0,
+      };
+      let posts = 0;
+      let detailReads = 0;
+      let readsAtPost = 0;
+      installHappyPath(MESSAGE, undefined, undefined, current, () => {
+        detailReads += 1;
+      });
+      addFetchHandlers([
+        detailPreviewHandler(),
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-backlog',
+          respond: () => {
+            posts += 1;
+            readsAtPost = detailReads;
+            return jsonOk({ data: { mode: 'unsub_only', backlog: null, senders: [] } });
+          },
+        },
+      ]);
+      renderDetail();
+      fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
+      const dialog = await screen.findByRole('dialog');
+      const confirm = await within(dialog).findByRole('button', {
+        name: /^Unsubscribe(?: \+ Archive)?$/,
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      const readsBeforeConfirm = detailReads;
+      if (outcome === 'finished') {
+        Object.assign(current, { policyType: 'unsubscribe', unsubStatus: 'endpoint_accepted' });
+      }
+      await lastClient.invalidateQueries({
+        queryKey: sendersKeys.detail('linkedin'),
+        exact: true,
+        refetchType: 'none',
+      });
+      fireEvent.click(confirm);
+      if (outcome === 'finished') {
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        expect(posts).toBe(0);
+        expect(detailReads).toBe(readsBeforeConfirm + 1);
+      } else {
+        await waitFor(() => expect(posts).toBe(1));
+        // The live GET is the read that exists when the POST starts.
+        // Success invalidates the detail and may fetch again after that.
+        expect(readsAtPost).toBe(readsBeforeConfirm + 1);
+      }
+    },
+  );
+
+  it('keeps the unsubscribe confirm when an invalidated detail cannot be refreshed', async () => {
+    const current: SenderDetailDto = {
+      ...DETAIL,
+      policyType: null,
+      unsubStatus: null,
+      unsubscribeMethod: 'one_click',
+      inboxCount: 21,
+      archivedCount: 0,
+    };
+    let posts = 0;
+    let failDetail = false;
+    installHappyPath(MESSAGE, undefined, undefined, current, () => {
+      if (failDetail) return jsonServerError('status_unavailable');
+    });
+    addFetchHandlers([
+      detailPreviewHandler(),
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-backlog',
+        respond: () => {
+          posts += 1;
+          return jsonOk({ data: { mode: 'unsub_only', backlog: null, senders: [] } });
+        },
+      },
+    ]);
+    renderDetail();
+    fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
+    const dialog = await screen.findByRole('dialog');
+    const confirm = await within(dialog).findByRole('button', {
+      name: /^Unsubscribe(?: \+ Archive)?$/,
+    });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    failDetail = true;
+    await lastClient.invalidateQueries({
+      queryKey: sendersKeys.detail('linkedin'),
+      exact: true,
+      refetchType: 'none',
+    });
+    fireEvent.click(confirm);
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        'Couldn’t refresh unsubscribe status. Try again.',
+        'warn',
+      ),
+    );
+    expect(dialog).toBeInTheDocument();
+    expect(posts).toBe(0);
+    await waitFor(() => expect(confirm).toBeEnabled());
+  });
 
   it.each(['page', 'pane'] as const)(
     'renders confirmed empty mail with unavailable actions on the %s',

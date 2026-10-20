@@ -11,6 +11,8 @@ export function currentListActionSender(
   verb: ActionVerb,
 ): Sender | null {
   const list = qc.getQueryState<{ pages: SenderListEnvelope[] }>(key);
+  // Invalidated success is omitted on purpose. Null means "not a current
+  // read" — the confirm live-reads — and is not itself a refusal.
   const listed =
     list?.status === 'success' && !list.isInvalidated
       ? list.data?.pages.flatMap((page) => page.data).find((row) => row.id === subject.id)

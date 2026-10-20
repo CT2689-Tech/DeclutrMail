@@ -41,7 +41,7 @@ export function usePinnedSenders(
             ...pin,
             row: { ...pin.row, inboxCount: null, archivedCount: null, unsubStatus: null },
           });
-        } else if (result?.data) {
+        } else if (result?.data?.data) {
           const detail = result.data.data;
           if (
             pin.completedAt !== undefined &&
@@ -82,10 +82,17 @@ export function usePinnedSenders(
       // snapshot reflects the independently completing unsubscribe.
       refetchInterval: (query: {
         state: { status: string; data: Envelope<SenderDetailDto, unknown> | undefined };
-      }) =>
-        query.state.status !== 'error' && query.state.data?.data.unsubStatus === 'requested'
+      }) => {
+        const detail = query.state.data?.data;
+        // A confirmed-zero hide already dropped the row. Keep polling only
+        // while that row is still on screen and the unsubscribe is in flight.
+        if (completedAt !== undefined && detail?.inboxCount === 0 && detail.archivedCount === 0) {
+          return false;
+        }
+        return query.state.status !== 'error' && detail?.unsubStatus === 'requested'
           ? 2_000
-          : false,
+          : false;
+      },
       refetchIntervalInBackground: true,
     })),
     combine,

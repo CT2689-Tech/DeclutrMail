@@ -61,7 +61,7 @@ import { activityKeys } from '@/features/activity/api/query-keys';
 import { isProtectedSkip, isTerminalStatus } from '@/lib/api/actions';
 import { useQueryClient } from '@tanstack/react-query';
 import { adaptProtectionReason, adaptSenderDetail } from '../api/adapters';
-import type { fetchSenderDetail } from '@/lib/api/senders';
+import { fetchSenderDetail } from '@/lib/api/senders';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { DecisionTimeline, type TimelineItem } from '../uplift-d';
 import { unsubscribeControlStatus, unsubscribeStatusCopy } from '../unsub-status';
@@ -541,6 +541,9 @@ function ReadyState({
   // refetch of `initial` agreeing with it is a no-op.
   const [detail, setDetail] = useState<SenderDetail>(initial);
   const [pendingAction, setPendingAction] = useState<ActionRequest | null>(null);
+  const pendingActionRef = useRef(pendingAction);
+  pendingActionRef.current = pendingAction;
+  const detailFactsCheck = useRef<AbortController | null>(null);
   const [receipt, setReceipt] = useState<
     (ActionReceipt & { mailboxId: string | undefined }) | null
   >(null);
@@ -654,6 +657,8 @@ function ReadyState({
   );
 
   const resetPendingScope = useCallback(() => {
+    detailFactsCheck.current?.abort();
+    detailFactsCheck.current = null;
     setPendingAction(null);
     setReceipt(null);
     setSettled(null);
@@ -817,17 +822,19 @@ function ReadyState({
    * but the receipt strip never showed.
    */
   const performAction = useCallback(
-    (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
+    async (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
       if (senders.length === 0) return;
       const target = senders[0]!;
       const needsCurrentFacts = verb === 'Unsubscribe' || isMailMovingVerb(verb);
       let sender = needsCurrentFacts ? currentSender : target;
       // Check readback at dispatch, including the gap before React re-seeds
       // local policy state. The seed itself may predate a local policy edit.
+      let detailInvalidated = false;
       if (needsCurrentFacts) {
         const cached = qc.getQueryState<Awaited<ReturnType<typeof fetchSenderDetail>>>(
           sendersKeys.detail(currentSender.id),
         );
+        detailInvalidated = cached?.isInvalidated === true;
         if (
           cached?.status === 'success' &&
           !cached.isInvalidated &&
@@ -835,6 +842,29 @@ function ReadyState({
           cached.data !== seededQueryData.current
         ) {
           sender = { ...sender, ...cached.data.data };
+        }
+      }
+      // An invalidated detail is not a current read. The list confirm GETs
+      // /api/senders/:id in that gap; dispatching from `currentSender` here
+      // can send a second one-click after the job has already finished.
+      if (verb === 'Unsubscribe' && detailInvalidated) {
+        if (detailFactsCheck.current) return;
+        const controller = new AbortController();
+        detailFactsCheck.current = controller;
+        const owner = pendingActionRef.current;
+        setSubmitting(true);
+        try {
+          const fresh = await fetchSenderDetail(currentSender.id, controller.signal);
+          if (controller.signal.aborted || pendingActionRef.current !== owner) return;
+          sender = { ...currentSender, ...fresh.data };
+        } catch {
+          if (!controller.signal.aborted && pendingActionRef.current === owner) {
+            setSubmitting(false);
+            toast('Couldn’t refresh unsubscribe status. Try again.', 'warn');
+          }
+          return;
+        } finally {
+          if (detailFactsCheck.current === controller) detailFactsCheck.current = null;
         }
       }
       // A preview can remain open while another surface records the request.
@@ -1144,6 +1174,8 @@ function ReadyState({
 
   // Cancel stays live while submitting — it closes the UI only.
   const closePending = useCallback(() => {
+    detailFactsCheck.current?.abort();
+    detailFactsCheck.current = null;
     setSubmitting(false);
     setPendingAction(null);
   }, []);
