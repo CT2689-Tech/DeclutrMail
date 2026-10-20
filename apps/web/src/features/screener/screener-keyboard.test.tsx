@@ -271,13 +271,15 @@ describe('Screener keyboard handler (#220, D226)', () => {
 
   it('Enter confirms Archive after the current-match preview resolves', async () => {
     let decidePosted = false;
+    let decideBody: unknown;
     const actionId = '99999999-9999-4999-8999-999999999999';
     installFetchStub([
       livePreviewHandler(2),
       {
         method: 'POST',
         path: '/api/screener/decide',
-        respond: () => {
+        respond: async (req) => {
+          decideBody = await req.json();
           decidePosted = true;
           return jsonOk({
             data: {
@@ -313,6 +315,9 @@ describe('Screener keyboard handler (#220, D226)', () => {
 
     fireEvent.keyDown(window, { key: 'Enter' });
     await waitFor(() => expect(decidePosted).toBe(true));
+    expect(decideBody).toMatchObject({ verb: 'archive', senderId: firstRow.senderId });
+    expect(decideBody).not.toHaveProperty('olderThanDays');
+    expect(decideBody).not.toHaveProperty('reach');
   });
 });
 

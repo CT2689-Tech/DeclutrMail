@@ -33,6 +33,43 @@ beforeEach(() => {
 const row = TRIAGE_QUEUE[0]!; // Groupon — high-confidence Archive
 
 describe('ActionSheet — D226 mandatory preview surface', () => {
+  it('keeps Archive inbox-only and any age with the same confirmation details', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ActionSheet
+        open
+        verb="Archive"
+        row={row}
+        inboxCount={128}
+        detail={{
+          reachControl: {
+            reach: 'inbox_only',
+            inboxCount: 128,
+            allMailCount: 146,
+            onChange: vi.fn(),
+          },
+        }}
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole('heading', { name: `Archive emails from ${row.senderName}?` }),
+    ).toBeVisible();
+    expect(screen.getByRole('dialog')).toHaveAccessibleDescription(
+      /128 emails will leave your inbox and stay in Gmail.*Inbox only.*Any age/,
+    );
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
+    expect(screen.queryByText(/Approximate cutoff/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    expect(onConfirm).toHaveBeenCalledWith({
+      archiveHistoric: false,
+      wakeAt: null,
+      rememberPreference: false,
+    });
+  });
+
   it('uses the Delete review layout without adding an age choice or changing confirmation details', () => {
     const onConfirm = vi.fn();
     render(
@@ -74,6 +111,7 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
     expect(account.closest('details')).toBeNull();
     expect(account).toBeVisible();
     expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
+    expect(screen.queryByRole('region', { name: 'Archive impact' })).toBeNull();
     expect(screen.getByRole('dialog')).toContainElement(document.activeElement as HTMLElement);
   });
   it('renders the modal title + preview body when open=true', () => {
@@ -477,8 +515,13 @@ describe('ActionSheet — live-preview confirm gate', () => {
       />,
     );
 
-    // The count lives in the title, once; "current" in the Details line.
-    expect(screen.getByRole('heading', { name: 'Archive 2 emails?' })).toBeInTheDocument();
+    // The stable title names the sender; the impact summary contains the count.
+    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+      '2 emails will leave your inbox and stay in Gmail.',
+    );
+    expect(
+      screen.getByRole('heading', { name: `Archive emails from ${row.senderName}?` }),
+    ).toBeInTheDocument();
     expect(
       screen.getByText('Inbox only. We check again right before anything moves.'),
     ).toBeInTheDocument();

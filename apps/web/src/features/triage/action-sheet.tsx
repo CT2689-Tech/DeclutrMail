@@ -59,9 +59,9 @@ export interface ConfirmDetails {
  * allows skipping; the preview never is — `inline-preview.tsx` renders
  * the same facts (`buildPreviewFacts`) in the row when it is skipped.
  *
- * Layout is the shared `PreviewSheet` (ADR-0042): the count in the
- * title, where the email goes in the subtitle, how to undo it in the
- * note — each once — and every other fact behind "Details".
+ * Archive/Delete use the reviewed PreviewSheet layout: sender title,
+ * count/destination and recovery beside the final action. Other verbs
+ * retain the compact grammar (ADR-0042); remaining facts stay in Details.
  *
  * Keyboard: Escape cancels (owned by `PreviewSheet`); Cmd/Ctrl-Enter
  * confirms — same shortcuts as `confirm-action-modal.tsx` in the senders
@@ -257,17 +257,17 @@ export function ActionSheet({
     wakeAt: selectedWakeAt,
     reach: verb === 'Unsubscribe' && effectiveMode !== 'delete' ? 'inbox_only' : reach,
   });
-  const deleteEffect =
-    verb === 'Delete'
-      ? buildActionPresentation({
-          verb: 'delete',
-          liveCount: countKnown,
-          planUndoDeadline: null,
-          unsubscribeChannel: null,
-          wakeAt: null,
-          reach,
-        }).primary
-      : null;
+  const isCleanupAction = verb === 'Archive' || verb === 'Delete';
+  const cleanupEffect = isCleanupAction
+    ? buildActionPresentation({
+        verb: verb === 'Archive' ? 'archive' : 'delete',
+        liveCount: countKnown,
+        planUndoDeadline: null,
+        unsubscribeChannel: null,
+        wakeAt: null,
+        reach,
+      }).primary
+    : null;
   const confirm = () =>
     onConfirm({
       archiveHistoric: effectiveArchiveHistoric,
@@ -355,7 +355,7 @@ export function ActionSheet({
       data-dm-preview-mode="modal"
     >
       <PreviewSheet
-        layout={verb === 'Delete' ? 'review' : 'compact'}
+        layout={isCleanupAction ? 'review' : 'compact'}
         context={
           mailboxEmail ? <MailboxActionContextView mailboxEmail={mailboxEmail} /> : undefined
         }
@@ -378,17 +378,19 @@ export function ActionSheet({
                 row.senderName,
                 countKnown ?? 0,
               )
-            : verb === 'Delete' && !facts.nothingToMove
-              ? `Delete emails from ${row.senderName}?`
+            : isCleanupAction && !facts.nothingToMove
+              ? `${verb} emails from ${row.senderName}?`
               : facts.title
         }
         subtitle={
-          deleteEffect && !facts.nothingToMove
-            ? deleteEffect.futureMail.summary
-            : (reachHint ?? facts.subtitle ?? undefined)
+          verb === 'Archive' && !facts.nothingToMove
+            ? undefined
+            : cleanupEffect && !facts.nothingToMove
+              ? cleanupEffect.futureMail.summary
+              : (reachHint ?? facts.subtitle ?? undefined)
         }
         note={
-          verb === 'Delete'
+          isCleanupAction
             ? undefined
             : verb === 'Unsubscribe'
               ? effectiveMode === 'delete'
@@ -399,13 +401,19 @@ export function ActionSheet({
               : (facts.note ?? undefined)
         }
         summary={
-          deleteEffect ? (
+          cleanupEffect ? (
             <CleanupImpact
-              action="Delete"
+              action={verb === 'Archive' ? 'Archive' : 'Delete'}
               count={archivedUncounted || previewSenderGone ? null : countKnown}
-              includesArchived={reach === 'all_mail'}
+              includesArchived={verb === 'Delete' && reach === 'all_mail'}
               olderThanDays={null}
-              note={facts.nothingToMove ? '' : deleteEffect.activityUndo.summary}
+              note={
+                facts.nothingToMove
+                  ? ''
+                  : verb === 'Archive'
+                    ? (facts.note ?? '')
+                    : cleanupEffect.activityUndo.summary
+              }
             />
           ) : undefined
         }
@@ -415,8 +423,8 @@ export function ActionSheet({
               ? unsubscribeButton(effectiveMode, countKnown, isProtectedRow)
               : isProtectedRow
                 ? `${verb} anyway`
-                : verb === 'Delete'
-                  ? 'Delete'
+                : isCleanupAction
+                  ? verb
                   : facts.primaryLabel,
           onClick: confirm,
           tone:

@@ -166,7 +166,10 @@ describe('InboxSimulatorScreen', () => {
     // the dialog's own name is the sender, and its eyebrow names the verb.
     const dialog = sheetFor(firstRow.senderName);
     // The count lives in the question the sheet is named by (ADR-0042).
-    expect(dialog).toHaveAccessibleName(/^Archive \d[\d,]* emails?\?$/);
+    expect(dialog).toHaveAccessibleName(`Archive emails from ${firstRow.senderName}?`);
+    expect(within(dialog).getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+      /emails will leave your inbox and stay in Gmail/,
+    );
     expect(screen.getByText(WS3_COPY['ws3.demo.activity.empty'])).toBeInTheDocument();
     expect(
       screen.getByText('What actually happened').parentElement?.parentElement,
@@ -355,7 +358,7 @@ describe('InboxSimulatorScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: /Archive all 4/i }));
     const sheet = sheetFor('amazon.com');
     expect(
-      within(sheet).getByRole('heading', { name: /^Archive [\d,]+ emails from 4 senders\?$/ }),
+      within(sheet).getByRole('heading', { name: /^Archive emails from 4 senders\?$/ }),
     ).toBeInTheDocument();
     // The real product previews only the eligible IDs selected by the
     // batch card. Protected and low-signal senders are excluded before
@@ -363,7 +366,7 @@ describe('InboxSimulatorScreen', () => {
     expect(within(sheet).getAllByRole('listitem')).toHaveLength(4);
     expect(within(sheet).queryByText('Amazon Orders')).toBeNull();
 
-    fireEvent.click(within(sheet).getByRole('button', { name: /^Archive [\d,]+ emails?$/ }));
+    fireEvent.click(within(sheet).getByRole('button', { name: /^Archive$/ }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByText('1 of 4 decisions complete')).toBeInTheDocument();
 
@@ -531,7 +534,7 @@ describe('InboxSimulatorScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: /Archive all 4/i }));
     fireEvent.click(
       within(sheetFor('amazon.com')).getByRole('button', {
-        name: /^Archive [\d,]+ emails?$/,
+        name: /^Archive$/,
       }),
     );
     fireEvent.click(screen.getByRole('button', { name: /Unsubscribe \(U\)/ }));
@@ -742,7 +745,7 @@ describe('InboxSimulatorScreen', () => {
         fireEvent.click(screen.getByRole('button', { name: /Archive all 4/i }));
         fireEvent.click(
           within(sheetFor('amazon.com')).getByRole('button', {
-            name: /^Archive [\d,]+ emails?$/,
+            name: /^Archive$/,
           }),
         );
         vi.setSystemTime(Date.now() + gapMs);
@@ -865,7 +868,7 @@ describe('InboxSimulatorScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: /Archive all 4/i }));
     fireEvent.click(
       within(sheetFor('amazon.com')).getByRole('button', {
-        name: /^Archive [\d,]+ emails?$/,
+        name: /^Archive$/,
       }),
     );
     expect(screen.getByText('1 of 4 decisions complete')).toBeInTheDocument();

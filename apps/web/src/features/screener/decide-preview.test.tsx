@@ -7,6 +7,34 @@ import { DecidePreview } from './decide-preview';
 const row = SCREENER_QUEUE[0]!;
 
 describe('DecidePreview — live-preview confirm gate', () => {
+  it('keeps Archive inbox-only and any age without adding Delete scope or age controls', () => {
+    const onConfirm = vi.fn();
+    render(
+      <DecidePreview
+        verb="archive"
+        row={row}
+        inboxCount={128}
+        allMailCount={146}
+        onWindowChange={vi.fn()}
+        onReachChange={vi.fn()}
+        confirming={false}
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole('heading', { name: `Archive emails from ${row.senderName}?` }),
+    ).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+      '128 emails will leave your inbox and stay in Gmail.Inbox only · Any age',
+    );
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
+    expect(screen.queryByText(/Approximate cutoff/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: `Archive for ${row.senderName}` }));
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['archive', 'later', 'delete'] as const)(
     'blocks %s click confirmation while the mail-moving preview is unavailable',
     (verb) => {
@@ -31,7 +59,7 @@ describe('DecidePreview — live-preview confirm gate', () => {
   );
 
   // The verb and the count, as on the Senders and Triage confirms.
-  it('names the verb and the live count on the confirm', () => {
+  it('names the action on the confirm and keeps the live count in the impact summary', () => {
     render(
       <DecidePreview
         verb="archive"
@@ -44,8 +72,11 @@ describe('DecidePreview — live-preview confirm gate', () => {
     );
     // The accessible name contains the visible label, so "click Archive
     // 1,400" finds it (WCAG 2.5.3).
-    const confirm = screen.getByRole('button', { name: /^Archive 1,400 emails for/ });
-    expect(confirm).toHaveTextContent('Archive 1,400');
+    const confirm = screen.getByRole('button', { name: /^Archive for/ });
+    expect(confirm).toHaveTextContent(/^Archive$/);
+    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+      '1,400 emails will leave your inbox and stay in Gmail.',
+    );
   });
 
   it('blocks click confirmation while a required preview is still loading', () => {
@@ -107,7 +138,9 @@ describe('DecidePreview — live-preview confirm gate', () => {
     const confirm = screen.getByRole('button', { name: /^Archive/i });
     expect(confirm).toBeEnabled();
     // One bold line: the count and where it goes. Its scope sits in Details.
-    expect(screen.getByRole('heading', { name: 'Archive 2 emails?' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: `Archive emails from ${row.senderName}?` }),
+    ).toBeInTheDocument();
     expect(
       screen.getByText('Inbox only. We check again right before anything moves.'),
     ).toBeInTheDocument();

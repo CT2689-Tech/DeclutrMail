@@ -16,9 +16,11 @@ const sampleRow = {
   brandMark: false,
 };
 
-function DeleteStory(args: ComponentProps<typeof DecidePreview>) {
+function CleanupStory(args: ComponentProps<typeof DecidePreview>) {
   const [open, setOpen] = useState(true);
-  const [days, setDays] = useState<number | null>(DEFAULT_DELETE_WINDOW_DAYS);
+  const isDelete = args.verb === 'delete';
+  const defaultDays = isDelete ? DEFAULT_DELETE_WINDOW_DAYS : null;
+  const [days, setDays] = useState<number | null>(defaultDays);
   const [reach, setReach] = useState<ActionReach>('inbox_only');
   const [result, setResult] = useState('');
   const bucket = (days ?? 'all') as keyof typeof inbox;
@@ -26,18 +28,21 @@ function DeleteStory(args: ComponentProps<typeof DecidePreview>) {
   const allMailCount = count + archived[bucket];
   return (
     <div style={{ maxWidth: 680, margin: '24px auto', padding: 16 }}>
-      <p>Fictional mailbox · no Gmail changes. Screener keeps its 180-day default.</p>
+      <p>
+        Fictional mailbox · no Gmail changes. Screener{' '}
+        {isDelete ? 'Delete keeps its 180-day default' : 'Archive keeps Inbox only · Any age'}.
+      </p>
       {result && <p role="status">{result}</p>}
       {open ? (
         <DecidePreview
           {...args}
           inboxCount={typeof args.inboxCount === 'number' ? count : args.inboxCount}
-          inboxTotal={inbox.all}
+          inboxTotal={isDelete ? inbox.all : count}
           allMailCount={typeof args.inboxCount === 'number' ? allMailCount : null}
           allMailTotal={inbox.all + archived.all}
           windowDays={days}
           reach={reach}
-          onWindowChange={setDays}
+          onWindowChange={isDelete ? setDays : undefined}
           onReachChange={setReach}
           onCancel={() => setOpen(false)}
           onConfirm={() => {
@@ -50,12 +55,12 @@ function DeleteStory(args: ComponentProps<typeof DecidePreview>) {
       ) : (
         <Button
           onClick={() => {
-            setDays(DEFAULT_DELETE_WINDOW_DAYS);
+            setDays(defaultDays);
             setReach('inbox_only');
             setOpen(true);
           }}
         >
-          Review Delete
+          Review {isDelete ? 'Delete' : 'Archive'}
         </Button>
       )}
     </div>
@@ -65,7 +70,7 @@ function DeleteStory(args: ComponentProps<typeof DecidePreview>) {
 const meta = {
   title: 'Screener/DecidePreview',
   component: DecidePreview,
-  render: (args) => <DeleteStory {...args} />,
+  render: (args) => <CleanupStory {...args} />,
   args: {
     verb: 'delete',
     row: sampleRow,
@@ -84,4 +89,15 @@ export const DeleteUnavailable: Story = { args: { inboxCount: 'unavailable' } };
 export const DeleteEmptyAge: Story = { args: { inboxCount: 0 } };
 export const DeleteProtected: Story = {
   args: { row: { ...sampleRow, isProtected: true, protectionReason: 'user_defined' } },
+};
+
+export const ArchiveDefault: Story = { args: { verb: 'archive', inboxCount: 128 } };
+export const ArchiveLoading: Story = { args: { verb: 'archive', inboxCount: 'loading' } };
+export const ArchiveUnavailable: Story = { args: { verb: 'archive', inboxCount: 'unavailable' } };
+export const ArchiveEmptyInbox: Story = { args: { verb: 'archive', inboxCount: 0 } };
+export const ArchiveProtected: Story = {
+  args: {
+    verb: 'archive',
+    row: { ...sampleRow, isProtected: true, protectionReason: 'user_defined' },
+  },
 };

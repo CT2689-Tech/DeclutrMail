@@ -99,11 +99,12 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Archive( [\d,]+ emails?)?$/ }));
     fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
     expect(onConfirm).toHaveBeenCalledTimes(2);
-    // The count is the title and the button; its scope sits in Details.
-    expect(
-      screen.getByRole('heading', { name: /Archive 3 emails from 3 senders\?/ }),
-    ).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Archive 3 emails' })).toBeEnabled();
+    // The count is in the impact summary; the title names the live selection.
+    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+      '3 emails will leave your inbox and stay in Gmail.',
+    );
+    expect(screen.getByRole('heading', { name: /Archive emails from 3 senders\?/ })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeEnabled();
     expect(
       screen.getByText(/Inbox only\. We check again right before anything moves/),
     ).toBeInTheDocument();
@@ -384,7 +385,7 @@ describe('BatchActionSheet — PreviewSheet grammar', () => {
         onConfirm={() => {}}
       />,
     );
-    expect(screen.getByRole('heading', { name: 'Archive email from 3 senders?' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Archive emails from 3 senders?' })).toBeVisible();
     expect(screen.getByText(/Counting the email you already have/)).toBeInTheDocument();
   });
 

@@ -40,10 +40,10 @@ export type DecidePreviewCount = number | 'loading' | 'unavailable';
  * The mandatory pre-mutation preview for a Screener decision (D226).
  *
  * Mounts inline inside the expanded row when a verb is pending, in the
- * compact grammar of Triage's `InlinePreviewBlock` (ADR-0042): one bold
- * line with the count and where the email goes, one muted line for how to
- * undo it, only the controls that change the count, everything else
- * behind "Details", then the confirm. Confirm dispatches the decision;
+ * grammar of Triage's `InlinePreviewBlock` (ADR-0042). Archive/Delete
+ * name the sender in the title and put the count/destination and recovery
+ * beside the action; other verbs retain their compact presentation.
+ * Supported controls remain visible; other facts stay behind Details. Confirm dispatches the decision;
  * Cancel clears it. Copy per verb is literal and true to the pipeline
  * the verb rides:
  *
@@ -115,6 +115,7 @@ export function DecidePreview({
 }) {
   useActionPreviewAnalytics(row.senderId, verb, typeof inboxCount === 'number');
   const name = row.senderName;
+  const isCleanupAction = verb === 'archive' || verb === 'delete';
   // ADR-0028 reach. Widening stays possible only when the preview carries
   // the all-mail count. Without that count the checkbox stays disabled.
   const reachAvailable = verb === 'delete' && allMailCount != null;
@@ -190,23 +191,24 @@ export function DecidePreview({
       ? `Keep ${name}?`
       : verb === 'unsubscribe'
         ? `Unsubscribe from ${name}?`
-        : verb === 'delete'
-          ? `Delete emails from ${name}?`
+        : isCleanupAction
+          ? `${VERB_LABEL[verb]} emails from ${name}?`
           : verb === 'later'
             ? `Move ${liveCount === null ? 'email' : emailsLabel(liveCount)} to Later?`
             : `${VERB_LABEL[verb]} ${liveCount === null ? 'email' : emailsLabel(liveCount)}?`;
-  const explanation = zero
-    ? null
-    : verb === 'unsubscribe'
-      ? primary.unsubscribeChannel.kind === 'not-applicable' ||
-        primary.unsubscribeChannel.kind === 'varies'
-        ? primary.futureMail.summary
-        : primary.unsubscribeChannel.summary
-      : verb === 'keep'
-        ? 'No email moves.'
-        : verb === 'delete'
+  const explanation =
+    zero || verb === 'archive'
+      ? null
+      : verb === 'unsubscribe'
+        ? primary.unsubscribeChannel.kind === 'not-applicable' ||
+          primary.unsubscribeChannel.kind === 'varies'
           ? primary.futureMail.summary
-          : `From ${name}. ${destination ?? ''}`;
+          : primary.unsubscribeChannel.summary
+        : verb === 'keep'
+          ? 'No email moves.'
+          : verb === 'delete'
+            ? primary.futureMail.summary
+            : `From ${name}. ${destination ?? ''}`;
 
   // ── One muted line: how to undo it ──────────────────────────────────
   // Keep records an app-only decision when there is no email to move.
@@ -231,11 +233,11 @@ export function DecidePreview({
   // the confirm carry the acknowledgement, so the user is never sent
   // away to unprotect a sender they are about to act on anyway.
   const overriding = needsProtectedOverride(row, verb);
-  // The verb and the count, as on the Senders and Triage confirms.
+  // Archive/Delete keep short labels; their live counts stay in the impact summary.
   const restingLabel = overriding
     ? `${VERB_LABEL[verb]} anyway`
-    : verb === 'delete'
-      ? 'Delete'
+    : isCleanupAction
+      ? VERB_LABEL[verb]
       : moves && liveCount !== null && liveCount > 0
         ? verb === 'later'
           ? `Move ${emailsLabel(liveCount)} to Later`
@@ -370,7 +372,7 @@ export function DecidePreview({
         </p>
       )}
 
-      {verb !== 'delete' && <p style={mutedLine}>{note}</p>}
+      {!isCleanupAction && <p style={mutedLine}>{note}</p>}
 
       {verb === 'delete' && (
         <div style={{ marginTop: space[3] }}>
@@ -411,10 +413,10 @@ export function DecidePreview({
         </Disclosure>
       )}
 
-      {verb === 'delete' && (
+      {isCleanupAction && (
         <div style={{ marginTop: space[3] }}>
           <CleanupImpact
-            action="Delete"
+            action={verb === 'archive' ? 'Archive' : 'Delete'}
             count={previewBlocked ? null : liveCount}
             includesArchived={allMailReach}
             olderThanDays={windowDays}

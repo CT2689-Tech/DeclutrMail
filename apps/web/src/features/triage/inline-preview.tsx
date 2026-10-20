@@ -3,6 +3,7 @@
 import { Button, Disclosure, SheetFactList, tokens } from '@declutrmail/shared';
 import { isPluralCopy, pluralCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import type { ReactNode } from 'react';
+import { CleanupImpact } from '@/components/cleanup-preview';
 
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
@@ -154,9 +155,11 @@ export function InlinePreviewBlock({
     >
       {accountContext != null && <div style={{ marginBottom: space[3] }}>{accountContext}</div>}
       <h3 style={{ ...tokens.typography.dialogTitle, margin: 0, color: color.fg }}>
-        {facts.title}
+        {preview.verb === 'Archive' && !facts.nothingToMove
+          ? `Archive emails from ${row.senderName}?`
+          : facts.title}
       </h3>
-      {facts.subtitle && (
+      {preview.verb !== 'Archive' && facts.subtitle && (
         <p
           style={{
             margin: `${space[2]}px 0 0`,
@@ -179,7 +182,7 @@ export function InlinePreviewBlock({
             : WS5_COPY['f1.preview.backlog.loading']}
         </p>
       )}
-      {facts.note !== null && (
+      {preview.verb !== 'Archive' && facts.note !== null && (
         <p style={{ margin: `${space[1]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
           {facts.note}
         </p>
@@ -260,6 +263,17 @@ export function InlinePreviewBlock({
           />
         </div>
       )}
+      {preview.verb === 'Archive' && (
+        <div style={{ marginTop: space[3] }}>
+          <CleanupImpact
+            action="Archive"
+            count={countKnown}
+            includesArchived={false}
+            olderThanDays={null}
+            note={facts.note ?? ''}
+          />
+        </div>
+      )}
       {/* Explicit confirm affordance (2026-07-16 audit): before this bar,
           confirming meant an UNDOCUMENTED second click on the same verb —
           users read the preview and believed the action fired. Fails
@@ -284,7 +298,9 @@ export function InlinePreviewBlock({
         >
           {row.protectionReason != null && preview.verb !== 'Unsubscribe'
             ? `${preview.verb} anyway`
-            : facts.primaryLabel}
+            : preview.verb === 'Archive'
+              ? 'Archive'
+              : facts.primaryLabel}
         </Button>
         <span className="dm-key-hint" style={{ fontSize: text.xs, color: color.fgMuted }}>
           {/* A zero count is the third case: the screen refuses that

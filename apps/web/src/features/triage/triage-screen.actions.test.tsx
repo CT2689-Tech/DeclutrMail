@@ -488,6 +488,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
       selector: { type: 'sender', senderId: GROUPON.senderId },
       primary: { type: 'archive', olderThanDays: null },
     });
+    expect(enqueues[0]!.body).not.toHaveProperty('reach');
     // One fresh Idempotency-Key per confirm (D202).
     expect(enqueues[0]!.idempotencyKey ?? '').toMatch(/[0-9a-f-]{8,}/);
 
@@ -776,7 +777,11 @@ describe('TriageScreen — D226 mutation wiring', () => {
       fireEvent.keyDown(window, { key: 'a' });
       const dialog = await screen.findByRole('dialog');
       await waitFor(() =>
-        expect(within(dialog).getByRole('heading', { name: / 47 emails\?$/ })).toBeDefined(),
+        expect(
+          within(dialog).getByRole('heading', {
+            name: `Archive emails from ${GROUPON.senderName}?`,
+          }),
+        ).toBeDefined(),
       );
       expect(reachRow()).toBeNull();
     });

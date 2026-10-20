@@ -304,7 +304,7 @@ describe('focus mode — deciding runs the EXISTING lifecycle (D226)', () => {
     const sheet = await screen.findByRole('dialog');
     await waitFor(() =>
       expect(
-        within(sheet).getByRole('heading', { name: 'Archive 47 emails?' }),
+        within(sheet).getByRole('heading', { name: `Archive emails from ${GROUPON.senderName}?` }),
       ).toBeInTheDocument(),
     );
     fireEvent.keyDown(window, { key: 'Escape' });

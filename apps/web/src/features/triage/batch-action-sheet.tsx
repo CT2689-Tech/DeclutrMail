@@ -24,6 +24,7 @@ import { WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 
 import { afterLead } from '@/lib/copy/after-lead';
+import { CleanupImpact } from '@/components/cleanup-preview';
 import type { TriageDecisionRow } from './data';
 import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 import type { DomainBatch } from './domain-batch';
@@ -40,9 +41,10 @@ const { color, radius, space } = tokens;
  * selector (ADR-0020) — one batch, one cascade undo token.
  *
  * Layout is the shared `PreviewSheet` (ADR-0042), in the same grammar as
- * the senders bulk sheet: the count in the title, where the email goes in
- * the subtitle, how to undo it in the note — each once — and the
- * per-sender list plus every other fact behind "Details". Esc, the
+ * the senders bulk sheet: Archive names the selection in the title and
+ * puts count/destination/recovery beside the short action button. Later
+ * retains its count title and recovery note. The per-sender list and
+ * remaining facts stay behind "Details". Esc, the
  * backdrop and focus are the sheet's; ⌘⏎ confirms here.
  *
  * No remember-preference toggle here: D34's skip-sheet path is a
@@ -156,15 +158,13 @@ export function BatchActionSheet({
   const { primary } = presentation;
   const who = sendersLabel(actionableCount);
 
-  // ── The count (title) ────────────────────────────────────────────────
+  // ── Selection or count (title) ────────────────────────────────────────────────
   const title = nothingActionable
     ? 'No senders left to act on'
     : nothingToMove
       ? 'Nothing in your inbox from these senders'
       : verb === 'Archive'
-        ? total === null
-          ? `Archive email from ${who}?`
-          : `Archive ${emailsLabel(total)} from ${who}?`
+        ? `Archive emails from ${who}?`
         : total === null
           ? `Move email from ${who} to Later?`
           : `Move ${emailsLabel(total)} from ${who} to Later?`;
@@ -175,7 +175,11 @@ export function BatchActionSheet({
       ? 'They leave your inbox and stay in Gmail.'
       : 'They wait in Gmail’s DeclutrMail/Later label, then return to your inbox.';
   const subtitle =
-    nothingActionable || nothingToMove ? null : `From ${batch.domain}. ${destination}`;
+    nothingActionable || nothingToMove
+      ? null
+      : verb === 'Archive'
+        ? `From ${batch.domain}.`
+        : `From ${batch.domain}. ${destination}`;
 
   // ── How to undo it (note) + Protected senders skipped, said once ─────
   const protectedCount = loaded?.protectedCount ?? 0;
@@ -265,11 +269,11 @@ export function BatchActionSheet({
 
   const verbWord = verb === 'Archive' ? 'Archive' : 'Later';
   const primaryLabel =
-    total !== null && total > 0
-      ? verb === 'Later'
+    verb === 'Archive'
+      ? 'Archive'
+      : total !== null && total > 0
         ? `Move ${emailsLabel(total)} to Later`
-        : `${verbWord} ${emailsLabel(total)}`
-      : verbWord;
+        : verbWord;
 
   return (
     // This wrapper, not PreviewSheet's own z-index, is the stacking
@@ -281,6 +285,7 @@ export function BatchActionSheet({
       style={{ position: 'relative', zIndex: OVERLAY_Z.modal }}
     >
       <PreviewSheet
+        layout={verb === 'Archive' ? 'review' : 'compact'}
         context={
           mailboxEmail ? <MailboxActionContextView mailboxEmail={mailboxEmail} /> : undefined
         }
@@ -291,7 +296,18 @@ export function BatchActionSheet({
         }
         title={title}
         subtitle={subtitle ?? undefined}
-        note={note === '' ? undefined : note}
+        note={verb === 'Archive' || note === '' ? undefined : note}
+        summary={
+          verb === 'Archive' ? (
+            <CleanupImpact
+              action="Archive"
+              count={nothingActionable ? 0 : total}
+              includesArchived={false}
+              olderThanDays={null}
+              note={note}
+            />
+          ) : undefined
+        }
         details={details}
         primary={{
           label: primaryLabel,

@@ -613,7 +613,7 @@ describe('TriageRow — inline preview Protected acknowledgement (D245/D42)', ()
   it('says nothing about protection on an unprotected row', () => {
     const { container } = renderInline(rowById('t-groupon'));
     expect(container.textContent).not.toMatch(/stays Protected/);
-    expect(inlineConfirm(/^Archive 2 emails$/)).toBeInTheDocument();
+    expect(inlineConfirm(/^Archive$/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Unprotect$/i })).toBeNull();
   });
 });
@@ -789,7 +789,7 @@ describe('TriageRow — the inline preview only advertises live shortcuts', () =
   it('EXPANDED with a resolved count: confirm is enabled', () => {
     // Two-sided: a disabled state only ever observed disabled proves nothing.
     renderPreview(true);
-    expect(inlineConfirm(/^Archive 2 emails$/)).toBeEnabled();
+    expect(inlineConfirm(/^Archive$/)).toBeEnabled();
   });
 
   it('COLLAPSED: offers Esc only — the verb key fires nothing on a closed row', () => {
@@ -852,7 +852,13 @@ describe('TriageRow — inline zero-count no-op gate', () => {
       );
       expect(
         inlineConfirm(
-          new RegExp(verb === 'Later' ? '^Move 1 email to Later$' : `^${verb} 1 email$`),
+          new RegExp(
+            verb === 'Later'
+              ? '^Move 1 email to Later$'
+              : verb === 'Archive'
+                ? '^Archive$'
+                : `^${verb} 1 email$`,
+          ),
         ),
       ).toBeEnabled();
       expect(screen.queryByText(/Nothing in your inbox/i)).toBeNull();
