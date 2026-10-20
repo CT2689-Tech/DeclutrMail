@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "revision": "drop2-r52",
+    "revision": "drop2-r55",
     "issued": "2026-10-18T11:00:00-07:00",
     "section": "ws6"
   },
@@ -35,5 +35,7 @@
   "ws6.privacy.faq.securityLinkDesc": "Removing access, encryption and deletion.",
   "ws6.privacy.connected.empty": "No Gmail accounts connected yet. DeclutrMail isn’t saving any Gmail data right now.",
   "ws6.privacy.connected.status.disconnected": "disconnected · not scanning",
-  "ws6.settings.gmailAccountsCard.empty": "No Gmail accounts connected yet."
+  "ws6.settings.gmailAccountsCard.empty": "No Gmail accounts connected yet.",
+  "ws6.settings.notifications.syncComplete.label": "Inbox ready email",
+  "ws6.settings.notifications.syncComplete.detail": "One email when we finish scanning a Gmail account you connect."
 }

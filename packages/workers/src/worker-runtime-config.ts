@@ -9,8 +9,8 @@ export function workerRuntimeConfig(env: Record<string, string | undefined>) {
     return value;
   };
   return {
-    dbPoolMax: integer('WORKER_DB_POOL_MAX', 10, 100),
-    lockPoolMax: integer('WORKER_LOCK_POOL_MAX', 10, 100),
+    dbPoolMax: integer('WORKER_DB_POOL_MAX', 3, 100),
+    lockPoolMax: integer('WORKER_LOCK_POOL_MAX', 3, 100),
     // Applies to the bounded reconciliation transaction, not initial backfill rebuilds.
     sweepStatementTimeoutMs: integer('WORKER_SWEEP_STATEMENT_TIMEOUT_MS', 25_000, 55_000),
   };

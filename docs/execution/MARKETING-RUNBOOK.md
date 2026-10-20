@@ -4,9 +4,15 @@
 Open this when you are confused. Do the next unchecked box. Do not re-read the
 69-tactic catalog until a box in this file tells you to.
 
-**If a skill, draft, or old checklist conflicts with this file, this file wins.**
+**User instructions, verified runtime behavior, current public pricing, and primary platform
+documentation take precedence over this runbook and third-party skills.** Historical drafts
+and unchecked launch tasks are not current product facts.
 
-Last updated: 2026-09-22 (branch facts and launch-gate reconciliation).
+Last updated: 2026-10-20 (current pricing, skill inventory, and autonomous execution plan).
+
+The current autonomous workflow is [the marketing execution plan](marketing-system/plan.md).
+It extends the existing growth loop with evidence requirements, channel-specific skills,
+ownership, and reviewable drafts. It does not clear the founder launch gates below.
 
 Repository completion is not production verification. See [current founder gates](founder-launch-checklist.md), [September delivery audit](implementation-delivery-audit-2026-09-22.md), and [performance evidence](performance-delivery-audit-2026-09-22.md). No launch slot, live provider check, or published release is implied by these edits.
 
@@ -25,7 +31,7 @@ Today:
 2. Complete the production verification gates in the founder checklist, then address the unchecked launch-copy tasks below.
 3. Every day, run **the community loop** even if launch is not booked.
 
-Do not: re-edit the hero, install more marketing skills, start a Discord, buy ads,
+Do not: re-edit the hero without evidence, install duplicate marketing skills, start a Discord, buy ads,
 or wait for SEO. Search Console (`sc-domain:declutrmail.com`, 24 May–21 Aug 2026)
 showed how-tos getting impressions and **zero clicks**. Re-query before repeating
 that sentence.
@@ -51,17 +57,18 @@ Homepage only when they asked for the company, not the product.
 
 ## 2. Locked facts (do not paraphrase upward)
 
-| Thing     | Say this                                                                              | Never say                                                                             |
-| --------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Privacy   | **We never fetch or store full email contents.** + the generated storage list         | `Full bodies fetched: 0`, `Bodies read: 0`, "privacy-first", "never reads your email" |
-| Hero      | Current `landing/hero.tsx`: “Clear years of clutter, one sender at a time.”           | Reusing the old locked headline without checking the rendered page                    |
-| Verbs     | Keep · Archive · Unsubscribe · Later · Delete                                         | "Screen" in UI or posts                                                               |
-| Undo      | Archive / Later / Delete; 30-day window on every tier; Delete requires retained Trash | "Every action is reversible" (unsubscribe cannot be recalled)                         |
-| Autopilot | Plus and Pro: preview, then Act now or Watch first; no mandatory Observe wait         | "auto-clean", "AI-powered", predicted categories                                      |
-| Proof     | Founder mailbox only, labeled as yours, numbers re-queried at publish                 | Fake users, testimonials, MAU                                                         |
-| CASA      | Google approved a verification (21 Apr 2026)                                          | "Google certified us"                                                                 |
-| Offer     | Founding Pro $129/yr, first 250, locked while active                                  | "X left" unless it reads live redemptions                                             |
-| Free      | 50 actions/month, 1 inbox — untargeted copy must be true here                         | Promising Plus/Pro-only features as the default                                       |
+| Thing     | Say this                                                                                             | Never say                                                                             |
+| --------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Privacy   | **We never fetch or store full email contents.** + the generated storage list                        | `Full bodies fetched: 0`, `Bodies read: 0`, "privacy-first", "never reads your email" |
+| Hero      | Current `landing/hero.tsx`: “Clear years of clutter, one sender at a time.”                          | Reusing the old locked headline without checking the rendered page                    |
+| Verbs     | Keep · Archive · Unsubscribe · Later · Delete                                                        | "Screen" in UI or posts                                                               |
+| Undo      | Archive / Later / Delete; 30-day window on every tier; Delete requires retained Trash                | "Every action is reversible" (unsubscribe cannot be recalled)                         |
+| Autopilot | Backlog Pass while active, and Plus: preview, then Act now or Watch first                            | Advertising Pro as currently purchasable; predicted categories                        |
+| Proof     | Founder mailbox only, labeled as yours, numbers re-queried at publish                                | Fake users, testimonials, MAU                                                         |
+| CASA      | Google approved a verification (21 Apr 2026)                                                         | "Google certified us"                                                                 |
+| Offer     | Backlog Pass $19 once for 30 days; Plus $59/year; Pro is coming                                      | Former monthly prices, Founding Pro, or invented remaining availability               |
+| Free      | 1,000 Archive/Delete emails per signup month, 1 Gmail account; Unsubscribe, Keep and Later unlimited | Calling the allowance 50 actions or counting unsubscribes against it                  |
+| Refund    | Published 14-day refund policy, once per customer                                                    | Reusing an older 30-day money-back promise                                            |
 
 Do not list in AI-tool directories (category prediction is banned).
 
@@ -168,12 +175,14 @@ survives the API/app hop, do not rebuild that. Close only the OAuth `ref` hole.
 - [x] Exclude `accounts.google.com` (and our own hosts / localhost) from referrer classification — code never infers a channel from `Referer`; PostHog project filter is a founder follow-up
 - [x] `posthog.identify` at signup with a stable id (audit first). Consent-gated; no mailbox content
 - [x] Skippable self-report pick-list + Other, same session as first login — separate column, not a overwrite of `ref`
-- [x] Copy both fields onto the first paid event (Founding Pro). Optimizing only for signups will lie about revenue
+- [x] Copy both fields onto the first paid event (historical implementation checkbox; verify the current Pass/Plus journey before using it as acquisition evidence). Optimizing only for signups will lie about revenue
 - [x] Simulator end-card: decision tally, "Do this on your real inbox", copyable link that sets `ref=simulator` **only if ref is still empty**
 
-Do not build a referral program. Do not A/B test. Do not build multi-touch or MMM.
-Under ~1,000 signups every variant is noise. Small-budget default: first-touch +
-self-report side by side.
+Do not build a referral program or multi-touch/MMM machinery at this stage.
+Before a randomized experiment, calculate sample size and duration from qualified
+traffic, the primary conversion baseline, and a worthwhile effect. Keep tests deferred
+when that design is infeasible; a signup-count threshold alone is not a statistical rule.
+Small-budget default: first-touch and self-report side by side.
 
 ### Phase C — Copy that is safe to post (agent)
 
@@ -226,7 +235,7 @@ Calendar (solo founder cannot staff two comment sections the same day):
 | Day 2–3   | Reply tail. Recycle top questions into `/answers`                                                                                                                         |
 | Day 4     | If <10 points: second-chance email to hn@ycombinator.com. Finalize PH gallery from real questions                                                                         |
 | Day 5–7   | Rest + community loop. Sleep-shift for PH                                                                                                                                 |
-| Day 8 Tue | **Product Hunt** 12:01am PT = 12:31pm IST. Founding Pro stated as a fact. Ask for feedback, never votes                                                                   |
+| Day 8 Tue | **Product Hunt** at the platform's verified launch time. State only the current published offer. Ask for feedback, never votes                                            |
 | Day 9     | r/SideProject: try the simulator, one question — "does the preview feel like enough to trust a bulk delete?"                                                              |
 
 If HN <10 points: one retitled retry after 1–2 weeks, then stop. Mid-pack PH is acceptable. Never buy upvote pods.
@@ -242,8 +251,11 @@ If HN <10 points: one retitled retry after 1–2 weeks, then stop. Mid-pack PH i
 
 ## 6. Which skill to invoke
 
-Installed globally 2026-08-25 from [coreyhaines31/marketingskills](https://skills.sh/coreyhaines31/marketingskills).
-Do **not** install the rest of the pack. Do **not** re-run the nine lenses — the playbook _is_ that run.
+Reuse existing skills. Ten missing specialists were installed and verified on 2026-10-20
+from a pinned [coreyhaines31/marketingskills](https://skills.sh/coreyhaines31/marketingskills)
+revision; versions, scope, and deferred alternatives are recorded in the
+[skill manifest](marketing-system/skills.json) and [execution plan](marketing-system/plan.md).
+Install instructions do not establish account access or authorize external actions.
 
 Reddit stays on the **custom** skill. Do not install a second Reddit automation skill.
 
@@ -253,10 +265,10 @@ Reddit stays on the **custom** skill. Do not install a second Reddit automation 
 | Safer public copy                  | "Phase C. Use copy-editing."                                       | `copy-editing`          | Locked privacy headline                                                           |
 | New HN/PH/X words                  | "Write the Show HN body. Use copywriting."                         | `copywriting`           | Simulator first, no kicker copy on HN                                             |
 | X or LinkedIn post                 | "Turn this cleanup session into one X post. Use the social skill." | `social`                | 1 original/day, not 3–10. Link in LinkedIn first comment                          |
-| Simulator / pricing convert better | "CRO the simulator end-card."                                      | `cro`                   | No A/B. Ship one version                                                          |
+| Simulator / pricing convert better | "CRO the simulator end-card."                                      | `cro`, `ab-testing`     | Diagnose first; a randomized test needs a feasible, predeclared design            |
 | AlternativeTo blurb                | "Directory copy for AlternativeTo. Skip AI directories."           | `directory-submissions` | After Phase B                                                                     |
 | First user interviews              | "Draft 5 interview prompts."                                       | `customer-research`     | After users exist                                                                 |
-| Blog/social chrome                 | "Generate a blog hero. Not a fake Gmail screenshot."               | `image`                 | Real product shots via Playwright/simulator                                       |
+| Blog/social chrome                 | "Generate a blog hero. Not a fake Gmail screenshot."               | `image`                 | Real product shots via the built-in browser; identify synthetic simulator content |
 | Shot list for the 20s clip         | "Shot list for preview→confirm→undo. Screen recording, no avatar." | `video`                 | Real capture. No talking-head                                                     |
 | Reddit reply                       | Paste URL + "draft a comment"                                      | `ct-reddit`             | You click submit. ≤2/day                                                          |
 
@@ -302,8 +314,12 @@ goal.
 1. New users this week (Postgres) split by **tracked `ref`** and, separately, by **self-report**. Large "direct" + empty `ref` is a measurement hole (stripped Reddit/HN referrers, OAuth overwrite), not a channel
 2. Simulator funnel in PostHog: view → preview opened → decision confirmed → completed → CTA. Directional; persons ≠ people
 3. Signup → first real preview→confirm within 24h (activation — the aha on a real mailbox)
-4. Founding Pro seats claimed (of 250) + 30-day refund rate, **broken down by the same two attribution fields** copied at payment
-5. Monthly AI-visibility rung on a fixed 20-query list (cited / mentioned / recommended / recommended-against)
+4. Distinct verified Pass/Plus purchases, settled refunds, and retained paid cohorts,
+   **broken down separately by the same two attribution fields**. Exclude comp grants;
+   keep founder/test/customer classification unknown until resolved
+5. Monthly AI-visibility rung on a fixed prompt list (cited / mentioned / recommended /
+   recommended-against), alongside the available Search Console AI-features report.
+   AI impressions are not recommendations, clicks, customers, or incremental traffic
 
 Ignore until 100 users: PH rank, HN karma, followers, likes, pageviews, keyword rank, A/B, email metrics.
 

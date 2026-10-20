@@ -365,4 +365,12 @@ describe('launch copy deck snapshots', () => {
       other: '{k} Protected senders left as they are',
     });
   });
+
+  it('pins the drop2-r55 inbox-ready notification lines', () => {
+    expect(WS6_COPY._meta.revision).toBe('drop2-r55');
+    expect(WS6_COPY['ws6.settings.notifications.syncComplete.label']).toBe('Inbox ready email');
+    expect(WS6_COPY['ws6.settings.notifications.syncComplete.detail']).toBe(
+      'One email when we finish scanning a Gmail account you connect.',
+    );
+  });
 });

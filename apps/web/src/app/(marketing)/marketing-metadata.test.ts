@@ -22,6 +22,7 @@ import { WS3_COPY } from '@declutrmail/shared/copy/launch';
 import { MARKETING_PATHS } from '@/app/sitemap';
 import { comparisonBySlug } from '@/features/marketing/comparison/comparison-data';
 
+import { alt as defaultCardAlt, size as defaultCardSize } from '../opengraph-image';
 import { metadata as landing } from './page';
 import { metadata as beta } from './beta/page';
 import { pricingPageMetadata } from '@/features/marketing/pricing/pricing-metadata';
@@ -345,8 +346,8 @@ describe('marketing metadata guards', () => {
     );
   });
 
-  it('keeps the seven rows the founder left unchanged', () => {
-    expect(titleText(landing)).toBe('Gmail cleanup with preview and undo | DeclutrMail');
+  it('keeps the approved page titles and descriptions', () => {
+    expect(titleText(landing)).toBe('Gmail cleanup tool with preview and undo | DeclutrMail');
     expect(landing.description).toBe(
       'Clear Gmail clutter by sender. Preview which emails will move before you confirm. Start free, with 30-day undo on Archive, Later, and Delete.',
     );
@@ -374,6 +375,35 @@ describe('marketing metadata guards', () => {
     expect(changelog.description).toBe(
       'What changed in DeclutrMail and when, listed by date with Added, Improved, and Fixed notes.',
     );
+  });
+});
+
+describe('homepage share card — Content deck drop2-r54 share.home', () => {
+  const SOCIAL_TITLE = 'Clear years of Gmail clutter. See every move first.';
+  const CARD_ALT = 'DeclutrMail: Clear years of Gmail clutter. See every move first.';
+
+  it('keeps the SEO document title and uses the approved social title', () => {
+    expect(titleText(landing)).toBe('Gmail cleanup tool with preview and undo | DeclutrMail');
+    expect(landing.openGraph).toMatchObject({ title: SOCIAL_TITLE });
+    expect(landing.twitter).toMatchObject({ title: SOCIAL_TITLE });
+  });
+
+  it('uses the approved alt on the image route and the shared card helper', () => {
+    expect(defaultCardAlt).toBe(CARD_ALT);
+    expect(defaultCardSize).toEqual({ width: 1200, height: 630 });
+    expect(landing.openGraph).toMatchObject({
+      images: [{ url: '/opengraph-image', width: 1200, height: 630, alt: CARD_ALT }],
+    });
+    expect(landing.twitter).toMatchObject({
+      images: [{ url: '/opengraph-image', alt: CARD_ALT }],
+    });
+
+    const source = readFileSync(
+      nodePath.join(nodePath.dirname(fileURLToPath(import.meta.url)), '../opengraph-image.tsx'),
+      'utf8',
+    );
+    expect(source).toContain('>Clear years of Gmail clutter.</span>');
+    expect(source).toContain('>See every move first.</span>');
   });
 });
 

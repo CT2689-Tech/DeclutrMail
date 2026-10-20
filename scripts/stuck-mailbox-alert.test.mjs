@@ -50,13 +50,15 @@ test('each stuck mailbox is its own alert, so one already open cannot hide a new
   );
 });
 
-test('an alert closes once its mailbox stops being stuck, so breaking again pages again', () => {
+test('event-window closure is never announced as verified mailbox recovery', () => {
   const policy = stuckMailboxPolicy();
   assert.equal(
     policy.conditions[0].conditionThreshold.evaluationMissingData,
     'EVALUATION_MISSING_DATA_INACTIVE',
   );
   assert.ok(Number.parseInt(policy.alertStrategy.autoClose, 10) <= 1800);
+  assert.deepEqual(policy.alertStrategy.notificationPrompts, ['OPENED']);
+  assert.match(policy.documentation.content, /Closure is not verified recovery/);
 });
 
 test('every policy it creates obeys the API limits that refused one live', () => {

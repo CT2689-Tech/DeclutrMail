@@ -23,13 +23,14 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
  * source-backed dedicated routes.
  */
 
-const TITLE = 'Gmail cleanup with preview and undo | DeclutrMail';
+const TITLE = 'Gmail cleanup tool with preview and undo | DeclutrMail';
 const DESCRIPTION =
   'Clear Gmail clutter by sender. Preview which emails will move before you confirm. Start free, with 30-day undo on Archive, Later, and Delete.';
 
 // metadataBase is inherited from the root layout (D128 origin).
 export const metadata: Metadata = marketingPageMetadata({
   title: TITLE,
+  socialTitle: 'Clear years of Gmail clutter. See every move first.',
   description: DESCRIPTION,
   path: '/',
 });
