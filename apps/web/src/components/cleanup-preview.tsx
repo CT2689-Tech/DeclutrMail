@@ -142,7 +142,7 @@ export function CleanupPreview({
   );
 }
 
-/** The affected count and recovery stay visible beside the final cleanup action. */
+/** The affected count and recovery stay visible beside the final confirmation. */
 export function CleanupImpact({
   action,
   count,
