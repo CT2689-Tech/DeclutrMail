@@ -5357,6 +5357,9 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       selector: { type: 'senders', senderIds: ['a', 'b'] },
       primary: { type: 'archive' },
     });
+    expect(
+      (bulkBody as { primary?: { olderThanDays?: number | null } }).primary?.olderThanDays ?? null,
+    ).toBeNull();
     // Selection cleared on server confirmation (the bar is gone).
     expect(screen.queryByText(/senders selected/i)).toBeNull();
 

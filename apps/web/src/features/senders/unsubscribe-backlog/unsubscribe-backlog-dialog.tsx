@@ -375,7 +375,7 @@ export function UnsubscribeBacklogDialog({
     ) : archivedRequested && allMailCount === null && inboxCount !== null ? (
       WS5_COPY['f1.preview.archived.unavailable']
     ) : mode !== 'unsub_only' && cleanupCount === null && !loading ? (
-      'The cleanup preview for this range is unavailable. Choose another range.'
+      WS5_COPY['f1.preview.backlog.rangeUnavailable']
     ) : inboxCount === null ? (
       WS5_COPY['f1.preview.backlog.loading']
     ) : mode === 'delete' &&
@@ -385,7 +385,7 @@ export function UnsubscribeBacklogDialog({
       !includeArchived ? (
       DELETE_ARCHIVED_HINT
     ) : mode !== 'unsub_only' && n === 0 ? (
-      'Choose another age or Unsubscribe only.'
+      WS5_COPY['f1.preview.backlog.emptyChoice']
     ) : null;
 
   return (

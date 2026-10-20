@@ -2,6 +2,7 @@
 
 import { useId, type ReactNode } from 'react';
 import { SheetSegmented } from '@declutrmail/shared';
+import { fillCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { useNow } from '@/lib/use-now';
 import { CleanupSelect } from './cleanup-select';
 import styles from './cleanup-preview.module.css';
@@ -29,13 +30,21 @@ export function UnsubscribeChoices({
   return (
     <div className={styles.unsubscribeChoices}>
       <SheetSegmented
-        label="Email you already have"
+        label={WS5_COPY['f1.preview.existing.label']}
         value={value}
         onChange={onChange}
         options={[
-          { value: 'unsub_only', label: 'Unsubscribe only' },
-          { value: 'archive', label: '+ Archive', disabled: archiveDisabled },
-          { value: 'delete', label: '+ Delete', disabled: deleteDisabled },
+          { value: 'unsub_only', label: WS5_COPY['f1.segment.unsubOnly'] },
+          {
+            value: 'archive',
+            label: pluralCopy(WS5_COPY['f1.segment.archive'], 2),
+            disabled: archiveDisabled,
+          },
+          {
+            value: 'delete',
+            label: pluralCopy(WS5_COPY['f1.segment.delete'], 2),
+            disabled: deleteDisabled,
+          },
         ]}
       />
     </div>
@@ -58,7 +67,7 @@ export function UnsubscribeImpact({
   return mode === 'unsub_only' ? (
     <>
       <div className={styles.impact} role="region" aria-label="Unsubscribe impact">
-        <p>Existing email stays where it is.</p>
+        <p>{WS5_COPY['f1.preview.backlog.unsubOnly']}</p>
       </div>
       <p className={styles.recovery}>{note}</p>
     </>
@@ -178,7 +187,7 @@ export function CleanupImpact({
           <p>
             {count === 0
               ? 'No emails match this scope.'
-              : `${count.toLocaleString('en-US')} ${count === 1 ? 'email' : 'emails'} will ${destination}.`}
+              : positiveCleanupLine(action, count, destination)}
           </p>
           <span>
             {includesArchived ? 'Inbox and archived email' : 'Inbox only'} ·{' '}
@@ -192,6 +201,27 @@ export function CleanupImpact({
 }
 
 export function cleanupAgeLabel(days: number | null): string {
-  if (days === null) return 'Any age';
-  return days === 365 ? 'Older than 1 year' : `Older than ${days} days`;
+  if (days === null) return WS5_COPY['f1.preview.age.any'];
+  if (days === 365) return WS5_COPY['f1.preview.age.year'];
+  return fillCopy(WS5_COPY['f1.preview.age.days'], { n: days });
+}
+
+function positiveCleanupLine(
+  action: 'Archive' | 'Delete' | 'Later',
+  count: number,
+  destination: string,
+): string {
+  const shown = count.toLocaleString('en-US');
+  switch (action) {
+    case 'Archive':
+      return pluralCopy(WS5_COPY['f1.preview.backlog.archive'], count, { n: shown });
+    case 'Delete':
+      return pluralCopy(WS5_COPY['f1.preview.backlog.delete'], count, { n: shown });
+    case 'Later':
+      return `${shown} ${count === 1 ? 'email' : 'emails'} will ${destination}.`;
+    default: {
+      const unreachable: never = action;
+      return unreachable;
+    }
+  }
 }

@@ -110,11 +110,22 @@ export function unsubscribeButton(
   _emailCount: number | null = null,
   protectedSender = false,
 ): string {
-  const label =
-    mode === 'delete'
-      ? 'Unsubscribe & delete'
-      : mode === 'archive'
-        ? 'Unsubscribe & archive'
-        : 'Unsubscribe';
-  return `${label}${protectedSender ? ' anyway' : ''}`;
+  switch (mode) {
+    case 'delete':
+      return protectedSender
+        ? WS5_COPY['f1.button.delete.protected']
+        : WS5_COPY['f1.button.delete'];
+    case 'archive':
+      return protectedSender
+        ? WS5_COPY['f1.button.archive.protected']
+        : WS5_COPY['f1.button.archive'];
+    case 'unsub_only':
+      return protectedSender
+        ? WS5_COPY['f1.button.unsubOnly.protected']
+        : WS5_COPY['f1.button.unsubOnly'];
+    default: {
+      const unreachable: never = mode;
+      return unreachable;
+    }
+  }
 }

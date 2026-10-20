@@ -1026,6 +1026,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
       expect(submitted).toMatchObject({
         mode: 'delete',
         reach: 'all_mail',
+        olderThanDays: null,
         senderIds: [LINKEDIN.senderId],
       }),
     );
@@ -1214,7 +1215,11 @@ describe('TriageScreen — D226 mutation wiring', () => {
     );
 
     await waitFor(() =>
-      expect(unsubscribeBody).toMatchObject({ mode: 'delete', senderIds: [LINKEDIN.senderId] }),
+      expect(unsubscribeBody).toMatchObject({
+        mode: 'delete',
+        olderThanDays: 180,
+        senderIds: [LINKEDIN.senderId],
+      }),
     );
     expect(h.toast).toHaveBeenCalledWith(
       pluralCopy(WS5_COPY['f1.toast.both.delete'], 47, { n: 47 }),

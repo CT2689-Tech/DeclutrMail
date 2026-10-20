@@ -176,6 +176,13 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
   expect(triageResponse.ok()).toBe(true);
   const triageBody = (await triageResponse.json()) as { data?: { mode?: string } };
   expect(triageBody.data?.mode).toBe('archive');
+  const triageRequest = triageResponse.request().postDataJSON() as {
+    mode?: string;
+    olderThanDays?: number | null;
+    reach?: string | null;
+  };
+  expect(triageRequest).toMatchObject({ mode: 'archive', olderThanDays: null });
+  expect(triageRequest.reach ?? null).toBeNull();
   await expect(page.getByText(ARCHIVE_TOAST)).toBeVisible();
 
   // The default lane has no Gmail worker, so the archive job stays queued

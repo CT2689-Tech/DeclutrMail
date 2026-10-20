@@ -371,7 +371,7 @@ export function ActionSheet({
   ) : archivedUncounted ? (
     WS5_COPY['f1.preview.archived.unavailable']
   ) : verb === 'Unsubscribe' && requiresLivePreview && inboxCount === 0 ? (
-    'Choose another age or Unsubscribe only.'
+    WS5_COPY['f1.preview.backlog.emptyChoice']
   ) : confirmDisabled ? (
     WS5_COPY['f1.preview.backlog.loading']
   ) : null;
