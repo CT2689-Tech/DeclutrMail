@@ -11,7 +11,7 @@ import { ogFonts } from '@/features/marketing/og/fonts';
  * route (marketing + legal) inherits it until a page overrides.
  */
 
-export const alt = 'DeclutrMail — Clear Gmail clutter. See what moves first.';
+export const alt = 'DeclutrMail: Clear years of Gmail clutter. See every move first.';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -111,8 +111,8 @@ export default async function OpenGraphImage() {
           letterSpacing: -2,
         }}
       >
-        <span>Clear Gmail clutter.</span>
-        <span style={{ color: PLUM }}>See what moves first.</span>
+        <span>Clear years of Gmail clutter.</span>
+        <span style={{ color: PLUM }}>See every move first.</span>
       </div>
 
       <div

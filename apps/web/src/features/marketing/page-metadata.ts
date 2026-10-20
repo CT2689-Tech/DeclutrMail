@@ -19,7 +19,7 @@ const OG_IMAGE = {
   url: '/opengraph-image',
   width: 1200,
   height: 630,
-  alt: 'DeclutrMail — Clear years of clutter. One sender at a time.',
+  alt: 'DeclutrMail: Clear years of Gmail clutter. See every move first.',
 } as const;
 
 export function marketingPageMetadata({
