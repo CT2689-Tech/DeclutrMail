@@ -30,6 +30,7 @@ const DESCRIPTION =
 // metadataBase is inherited from the root layout (D128 origin).
 export const metadata: Metadata = marketingPageMetadata({
   title: TITLE,
+  socialTitle: 'Clear years of Gmail clutter. See every move first.',
   description: DESCRIPTION,
   path: '/',
 });
