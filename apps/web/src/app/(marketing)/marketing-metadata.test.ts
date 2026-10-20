@@ -347,7 +347,7 @@ describe('marketing metadata guards', () => {
   });
 
   it('keeps the approved page titles and descriptions', () => {
-    expect(titleText(landing)).toBe('Gmail Cleanup Tool with Preview & Undo | DeclutrMail');
+    expect(titleText(landing)).toBe('Gmail cleanup tool with preview and undo | DeclutrMail');
     expect(landing.description).toBe(
       'Clear Gmail clutter by sender. Preview which emails will move before you confirm. Start free, with 30-day undo on Archive, Later, and Delete.',
     );
@@ -383,7 +383,7 @@ describe('homepage share card — Content deck drop2-r54 share.home', () => {
   const CARD_ALT = 'DeclutrMail: Clear years of Gmail clutter. See every move first.';
 
   it('keeps the SEO document title and uses the approved social title', () => {
-    expect(titleText(landing)).toBe('Gmail Cleanup Tool with Preview & Undo | DeclutrMail');
+    expect(titleText(landing)).toBe('Gmail cleanup tool with preview and undo | DeclutrMail');
     expect(landing.openGraph).toMatchObject({ title: SOCIAL_TITLE });
     expect(landing.twitter).toMatchObject({ title: SOCIAL_TITLE });
   });
