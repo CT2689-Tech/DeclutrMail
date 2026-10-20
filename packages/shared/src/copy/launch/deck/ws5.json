@@ -1,16 +1,16 @@
 {
   "f1.segment.unsubOnly": "Unsubscribe only",
   "f1.segment.archive": {
-    "one": "+ Archive 1",
-    "other": "+ Archive {n}"
+    "one": "+ Archive",
+    "other": "+ Archive"
   },
   "f1.segment.archive.aria": {
     "one": "Unsubscribe and archive 1 email",
     "other": "Unsubscribe and archive {n} emails"
   },
   "f1.segment.delete": {
-    "one": "+ Delete 1",
-    "other": "+ Delete {n}"
+    "one": "+ Delete",
+    "other": "+ Delete"
   },
   "f1.segment.delete.aria": {
     "one": "Unsubscribe and delete 1 email",
@@ -58,16 +58,16 @@
   "f1.preview.future.none": "Future emails: {Sender} has no unsubscribe link, so we can’t send a request.",
   "f1.preview.future.unchecked": "Future emails: we haven’t checked how to unsubscribe yet.",
   "f1.preview.backlog.archive": {
-    "one": "1 email you already have: moved out of Inbox (Archive)",
-    "other": "{n} emails you already have: moved out of Inbox (Archive)"
+    "one": "{n} email will leave your inbox and stay in Gmail.",
+    "other": "{n} emails will leave your inbox and stay in Gmail."
   },
   "f1.preview.backlog.delete": {
-    "one": "1 email you already have: moved to Gmail Trash (Delete)",
-    "other": "{n} emails you already have: moved to Gmail Trash (Delete)"
+    "one": "{n} email will move to Gmail Trash.",
+    "other": "{n} emails will move to Gmail Trash."
   },
   "f1.preview.backlog.loading": "Counting the email you already have…",
   "f1.preview.backlog.error": "Couldn’t count the email you already have. Try again to archive or delete it.",
-  "f1.preview.backlog.unsubOnly": "Email you already have stays where it is.",
+  "f1.preview.backlog.unsubOnly": "Existing email stays where it is.",
   "f1.preview.backlog.none": "There’s no email in your Inbox to move. Choose Unsubscribe only.",
   "f1.preview.existing.label": "Email you already have",
   "f1.preview.archived.unavailable": "Archived email can’t be counted right now, so only email in your Inbox is included.",
@@ -89,11 +89,11 @@
   "f1.deleteNote": "Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash.",
   "f1.button.unsubOnly": "Unsubscribe",
   "f1.button.busy": "Unsubscribing…",
-  "f1.button.archive": "Unsubscribe + Archive",
-  "f1.button.delete": "Unsubscribe + Delete",
+  "f1.button.archive": "Unsubscribe & archive",
+  "f1.button.delete": "Unsubscribe & delete",
   "f1.button.unsubOnly.protected": "Unsubscribe anyway",
-  "f1.button.archive.protected": "Unsubscribe + Archive anyway",
-  "f1.button.delete.protected": "Unsubscribe + Delete anyway",
+  "f1.button.archive.protected": "Unsubscribe & archive anyway",
+  "f1.button.delete.protected": "Unsubscribe & delete anyway",
   "f1.protected.lead": "{Sender} is Protected because {reason}.",
   "f1.protected.leadNoReason": "{Sender} is Protected.",
   "f1.button.cancel": "Cancel",

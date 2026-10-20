@@ -107,15 +107,14 @@ export function unsubscribeHonesty(mode: UnsubscribeBacklogMode): string {
 
 export function unsubscribeButton(
   mode: UnsubscribeBacklogMode,
-  emailCount: number | null = null,
+  _emailCount: number | null = null,
   protectedSender = false,
 ): string {
-  if (mode === 'delete' && emailCount !== null) {
-    return `${WS5_COPY['f1.button.delete']} ${emailCountPhrase(emailCount)}${protectedSender ? ' anyway' : ''}`;
-  }
-  if (mode === 'delete')
-    return WS5_COPY[protectedSender ? 'f1.button.delete.protected' : 'f1.button.delete'];
-  if (mode === 'archive')
-    return WS5_COPY[protectedSender ? 'f1.button.archive.protected' : 'f1.button.archive'];
-  return WS5_COPY[protectedSender ? 'f1.button.unsubOnly.protected' : 'f1.button.unsubOnly'];
+  const label =
+    mode === 'delete'
+      ? 'Unsubscribe & delete'
+      : mode === 'archive'
+        ? 'Unsubscribe & archive'
+        : 'Unsubscribe';
+  return `${label}${protectedSender ? ' anyway' : ''}`;
 }

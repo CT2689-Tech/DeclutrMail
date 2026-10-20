@@ -464,7 +464,7 @@ describe('InboxSimulatorScreen', () => {
     expect(within(dialog).getByRole('button', { name: /^Later$/ })).toBeEnabled();
   });
 
-  it('records Unsubscribe + Delete at the chosen scope and preserves its receipt and Undo after reload', async () => {
+  it('records Unsubscribe & delete at the chosen scope and preserves its receipt and Undo after reload', async () => {
     const linkedin = TRIAGE_QUEUE.find((row) => row.id === 't-linkedin')!;
     const total = syntheticInboxCount(linkedin) + syntheticArchivedCount(linkedin);
     const { unmount } = render(<InboxSimulatorScreen />);
@@ -474,9 +474,11 @@ describe('InboxSimulatorScreen', () => {
     const dialog = sheetFor('LinkedIn');
     fireEvent.click(within(dialog).getByRole('radio', { name: /\+ Delete/ }));
     fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Include archived email' }));
-    expect(dialog).toHaveAccessibleName(new RegExp(`delete ${total} emails`));
+    expect(within(dialog).getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+      `${total} emails`,
+    );
     fireEvent.click(
-      within(dialog).getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+      within(dialog).getByRole('button', { name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/ }),
     );
     expect(
       screen.getByText(new RegExp(`${total} sample messages also moved to Gmail Trash`)),

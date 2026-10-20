@@ -125,6 +125,53 @@ describe('UnsubscribeBacklogService', () => {
     delete process.env.METER_V2;
   });
 
+  it.each([
+    { mode: 'archive' as const, reach: 'inbox_only' as const, olderThanDays: 180, expected: 1 },
+    { mode: 'archive' as const, reach: 'inbox_only' as const, olderThanDays: null, expected: 2 },
+    { mode: 'delete' as const, reach: 'all_mail' as const, olderThanDays: 180, expected: 2 },
+    { mode: 'delete' as const, reach: 'all_mail' as const, olderThanDays: null, expected: 4 },
+  ])(
+    'persists the previewed age and reach for $mode at $olderThanDays days',
+    async ({ mode, reach, olderThanDays, expected }) => {
+      const rows = [
+        { id: 'old-inbox', days: 250, labels: ['INBOX'] },
+        { id: 'recent-inbox', days: 10, labels: ['INBOX'] },
+        { id: 'old-archived', days: 300, labels: [] },
+        { id: 'recent-archived', days: 10, labels: [] },
+        { id: 'old-trash', days: 300, labels: ['TRASH'] },
+      ];
+      await db.insert(mailMessages).values(
+        rows.map((row) => ({
+          mailboxAccountId: mailboxId,
+          providerMessageId: row.id,
+          providerThreadId: row.id,
+          senderKey: SENDER_KEY,
+          internalDate: new Date(Date.now() - row.days * 86400000),
+          labelIds: row.labels,
+          isOutbound: false,
+          isUnread: false,
+        })),
+      );
+      const result = await svc.confirm({
+        mailboxAccountId: mailboxId,
+        idempotencyKey: `age-${mode}-${olderThanDays}`,
+        mode,
+        senderIds: [senderId],
+        olderThanDays,
+        reach,
+      });
+      expect(result.backlog?.requestedCount).toBe(expected);
+      expect(labelQueue.count).toBe(1);
+      expect(unsubQueue.count).toBe(1);
+      const jobs = await db
+        .select()
+        .from(actionJobs)
+        .where(eq(actionJobs.mailboxAccountId, mailboxId));
+      const cleanup = jobs.find((job) => job.verb === mode);
+      expect(cleanup).toMatchObject({ olderThanDays, reach, requestedCount: expected });
+    },
+  );
+
   it('enqueues the backlog before any unsubscribe intent', async () => {
     await seedInbox(db, mailboxId, 4);
     const events: string[] = [];

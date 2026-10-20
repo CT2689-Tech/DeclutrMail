@@ -16,7 +16,12 @@ import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy'
 import { afterLead } from '@/lib/copy/after-lead';
 import { useNow } from '@/lib/use-now';
 import { ActionReachControl } from '@/components/action-scope-controls';
-import { CleanupImpact, CleanupPreview, cleanupAgeLabel } from '@/components/cleanup-preview';
+import {
+  CleanupImpact,
+  CleanupPreview,
+  UnsubscribeImpact,
+  cleanupAgeLabel,
+} from '@/components/cleanup-preview';
 import { LaterReturnControl, isFutureReturnTime } from '@/components/later-return-control';
 import type { ActionReach } from '@/lib/api/actions';
 
@@ -307,9 +312,6 @@ export function DecidePreview({
       })),
     );
   }
-  if (verb === 'unsubscribe') {
-    facts.push({ label: 'Past email', value: 'Stays where it is' });
-  }
   if (primary.schedule.kind === 'scheduled') {
     facts.push({
       label: 'Returns',
@@ -380,7 +382,7 @@ export function DecidePreview({
         </p>
       )}
 
-      {!isCleanupAction && <p style={mutedLine}>{note}</p>}
+      {!isCleanupAction && verb !== 'unsubscribe' && <p style={mutedLine}>{note}</p>}
 
       {isCleanupAction && (
         <div style={{ marginTop: space[3] }}>
@@ -440,6 +442,17 @@ export function DecidePreview({
             includesArchived={allMailReach}
             olderThanDays={windowDays}
             note={note}
+          />
+        </div>
+      )}
+
+      {verb === 'unsubscribe' && (
+        <div style={{ marginTop: space[3] }}>
+          <UnsubscribeImpact
+            mode="unsub_only"
+            count={null}
+            olderThanDays={null}
+            note={WS5_COPY['f1.honesty.unsubOnly']}
           />
         </div>
       )}

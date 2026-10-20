@@ -421,7 +421,7 @@ describe('ActionSheet — live-preview confirm gate', () => {
     expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ rememberPreference: true }));
   });
 
-  it('keeps the match sample and Gmail check on Unsubscribe + Delete', () => {
+  it('keeps the match sample and Gmail check on Unsubscribe & delete', () => {
     render(
       <ActionSheet
         open
@@ -442,7 +442,7 @@ describe('ActionSheet — live-preview confirm gate', () => {
     );
     expect(screen.getByText('Weekly deals')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Check in Gmail/ })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
     expect(screen.getByText('Weekly deals')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Check in Gmail/ })).toBeInTheDocument();
     expect(
@@ -496,11 +496,12 @@ describe('ActionSheet — live-preview confirm gate', () => {
     );
 
     expect(screen.getByRole('radio', { name: 'Unsubscribe only' })).toBeChecked();
-    fireEvent.click(screen.getByRole('radio', { name: '+ Archive 2' }));
-    const archiveConfirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
+    fireEvent.click(screen.getByRole('radio', { name: '+ Archive' }));
+    const archiveConfirm = screen.getByRole('button', { name: 'Unsubscribe & archive' });
     expect(archiveConfirm).toBeEnabled();
     fireEvent.click(archiveConfirm);
     expect(onConfirm).toHaveBeenLastCalledWith({
+      olderThanDays: null,
       archiveHistoric: true,
       backlogMode: 'archive',
       rememberPreference: false,
@@ -557,7 +558,7 @@ describe('ActionSheet — toggle a11y and checked parity (2026-08-12)', () => {
   it('exposes the backlog choice as radios and remember as a checkbox', () => {
     renderUnsubSheet();
 
-    const archive = screen.getByRole('radio', { name: '+ Archive 2' });
+    const archive = screen.getByRole('radio', { name: '+ Archive' });
     expect(archive).toBeChecked();
     fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
     expect(archive).not.toBeChecked();
@@ -992,8 +993,9 @@ describe('ActionSheet — the cleanup cost is stated whenever it can be spent', 
       screen.getByText(/This clears 1 email. You have 34 free this month/),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Uses 2 /)).toBeNull();
-    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 12' }));
-    expect(screen.getByText(WS5_COPY['f1.deleteNote'], { exact: false })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
+    fireEvent.click(screen.getByText('Details'));
+    expect(screen.getByText(/Gmail.*30 days/)).toBeInTheDocument();
     expect(
       screen.getByText(/This clears 1 email. You have 34 free this month/),
     ).toBeInTheDocument();
@@ -1043,11 +1045,11 @@ describe('ActionSheet choice survives a preview refresh', () => {
     const first = TRIAGE_QUEUE[0]!;
     const second = { ...first, id: 'another-row', senderId: 'another-sender' };
     const { rerender } = render(<ActionSheet {...props} row={first} inboxCount={4} />);
-    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
     rerender(<ActionSheet {...props} row={second} inboxCount={4} />);
-    expect(screen.getByRole('radio', { name: '+ Archive 4' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: '+ Archive' })).toBeChecked();
     rerender(<ActionSheet {...props} row={first} inboxCount={4} />);
-    expect(screen.getByRole('radio', { name: '+ Archive 4' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: '+ Archive' })).toBeChecked();
   });
 
   it('uses the existing Archive default when the initial live count arrives', () => {
@@ -1060,7 +1062,7 @@ describe('ActionSheet choice survives a preview refresh', () => {
     };
     const { rerender } = render(<ActionSheet {...props} inboxCount="loading" />);
     rerender(<ActionSheet {...props} inboxCount={4} />);
-    expect(screen.getByRole('radio', { name: '+ Archive 4' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: '+ Archive' })).toBeChecked();
   });
 
   it('preserves Unsubscribe only chosen while the live count is loading', () => {
@@ -1087,16 +1089,16 @@ describe('ActionSheet choice survives a preview refresh', () => {
       onConfirm,
     };
     const { rerender } = render(<ActionSheet {...props} inboxCount={4} />);
-    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
     rerender(<ActionSheet {...props} inboxCount={2} />);
-    expect(screen.getByRole('radio', { name: '+ Delete 2' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: '+ Delete' })).toBeChecked();
     fireEvent.click(
-      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+      screen.getByRole('button', { name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/ }),
     );
     expect(onConfirm).toHaveBeenLastCalledWith(expect.objectContaining({ backlogMode: 'delete' }));
     rerender(<ActionSheet {...props} inboxCount="unavailable" />);
     expect(
-      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+      screen.getByRole('button', { name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/ }),
     ).toBeDisabled();
     expect(screen.getByRole('heading')).not.toHaveTextContent('0 emails');
   });
@@ -1129,12 +1131,12 @@ describe('ActionSheet Unsubscribe preview recovery', () => {
       onConfirm: vi.fn(),
     };
     const { rerender } = render(<ActionSheet {...props} inboxCount={4} />);
-    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
     rerender(<ActionSheet {...props} inboxCount={0} />);
     expect(
-      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+      screen.getByRole('button', { name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/ }),
     ).toBeDisabled();
-    expect(screen.getByText(WS5_COPY['f1.preview.backlog.none'])).toBeVisible();
+    expect(screen.getByText('Choose another age or Unsubscribe only.')).toBeVisible();
     expect(screen.queryByText(/Counting the inbox/)).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
     expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();

@@ -2507,14 +2507,14 @@ describe('SenderDetailRoute', () => {
         expect(
           await within(dialog).findByText(/is Protected because you marked it Protected\./),
         ).toBeInTheDocument();
-        expect(within(dialog).queryByRole('button', { name: 'Unsubscribe + Archive' })).toBeNull();
+        expect(within(dialog).queryByRole('button', { name: 'Unsubscribe & archive' })).toBeNull();
         const archiveChoice = await within(dialog).findByRole('radio', {
-          name: /\+ Archive \d+/,
+          name: /^\+ Archive$/,
         });
         await waitFor(() => expect(archiveChoice).toBeEnabled());
         fireEvent.click(archiveChoice);
         const confirm = await within(dialog).findByRole('button', {
-          name: 'Unsubscribe + Archive anyway',
+          name: 'Unsubscribe & archive anyway',
         });
         await waitFor(() => expect(confirm).toBeEnabled());
         expect(intents).toEqual([]);
@@ -2541,12 +2541,12 @@ describe('SenderDetailRoute', () => {
         fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
         const dialog = await screen.findByRole('dialog');
         const archiveChoice = await within(dialog).findByRole('radio', {
-          name: /\+ Archive \d+/,
+          name: /^\+ Archive$/,
         });
         await waitFor(() => expect(archiveChoice).toBeEnabled());
         fireEvent.click(archiveChoice);
         const confirm = await within(dialog).findByRole('button', {
-          name: 'Unsubscribe + Archive',
+          name: 'Unsubscribe & archive',
         });
         await waitFor(() => expect(confirm).toBeEnabled());
         fireEvent.click(confirm);
@@ -2638,9 +2638,9 @@ describe('SenderDetailRoute', () => {
         await waitFor(() => expect(pill('done')).not.toBeNull());
         fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe (U)' }));
         const dialog = await screen.findByRole('dialog');
-        fireEvent.click(await within(dialog).findByRole('radio', { name: /\+ Archive \d+/ }));
+        fireEvent.click(await within(dialog).findByRole('radio', { name: /^\+ Archive$/ }));
         const confirm = await within(dialog).findByRole('button', {
-          name: 'Unsubscribe + Archive',
+          name: 'Unsubscribe & archive',
         });
         await waitFor(() => expect(confirm).toBeEnabled());
         fireEvent.click(confirm);

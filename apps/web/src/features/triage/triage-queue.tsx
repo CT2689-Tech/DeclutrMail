@@ -45,14 +45,16 @@ export function inlinePreviewFor(
   const count = typeof preview.inboxCount === 'number' ? preview.inboxCount : null;
   const backlogMode =
     pendingAction.verb === 'Unsubscribe'
-      ? (pendingAction.backlogMode ?? (count !== null && count > 0 ? 'archive' : 'unsub_only'))
+      ? (pendingAction.backlogMode ??
+        ((preview.detail?.inboxTotal ?? count ?? 0) > 0 ? 'archive' : 'unsub_only'))
       : 'unsub_only';
   return {
     verb: pendingAction.verb,
     ageControl:
       pendingAction.verb === 'Archive' ||
       pendingAction.verb === 'Delete' ||
-      pendingAction.verb === 'Later'
+      pendingAction.verb === 'Later' ||
+      (pendingAction.verb === 'Unsubscribe' && backlogMode !== 'unsub_only')
         ? preview.detail?.ageControl
         : undefined,
     onCancel: preview.onCancel,

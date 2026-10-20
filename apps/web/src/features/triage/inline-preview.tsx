@@ -3,17 +3,23 @@
 import { LaterReturnControl, isFutureReturnTime } from '@/components/later-return-control';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
 import { Button, Disclosure, SheetFactList, tokens } from '@declutrmail/shared';
-import { isPluralCopy, pluralCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import type { ReactNode } from 'react';
 import {
   CleanupImpact,
+  UnsubscribeChoices,
+  UnsubscribeImpact,
   CleanupPreview,
   type CleanupAgeControl,
 } from '@/components/cleanup-preview';
 
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
-import type { UnsubscribeBacklogMode } from '@/features/senders/unsubscribe-backlog/preview-copy';
+import {
+  futureMailLine,
+  unsubscribeButton,
+  type UnsubscribeBacklogMode,
+} from '@/features/senders/unsubscribe-backlog/preview-copy';
 
 import {
   buildPreviewFacts,
@@ -82,7 +88,12 @@ export function inlinePreviewGates(preview: InlinePreview | null | undefined): {
           (preview.archiveHistoric ||
             (preview.backlogMode !== undefined && preview.backlogMode !== 'unsub_only')))) &&
       typeof preview.inboxCount !== 'number',
-    nothingToActOn: movesInbox && preview.inboxCount === 0,
+    nothingToActOn:
+      (movesInbox ||
+        (preview.verb === 'Unsubscribe' &&
+          (preview.backlogMode ?? (preview.archiveHistoric ? 'archive' : 'unsub_only')) !==
+            'unsub_only')) &&
+      preview.inboxCount === 0,
   };
 }
 
@@ -137,7 +148,10 @@ export function InlinePreviewBlock({
   const isCleanupAction =
     preview.verb === 'Archive' || preview.verb === 'Delete' || preview.verb === 'Later';
   const facts = buildPreviewFacts({
-    olderThanDays: isCleanupAction ? (preview.ageControl?.olderThanDays ?? null) : null,
+    olderThanDays:
+      isCleanupAction || (preview.verb === 'Unsubscribe' && backlogMode !== 'unsub_only')
+        ? (preview.ageControl?.olderThanDays ?? null)
+        : null,
     verb: preview.verb,
     row,
     archiveHistoric: preview.archiveHistoric || backlogMode === 'archive',
@@ -176,11 +190,13 @@ export function InlinePreviewBlock({
     >
       {accountContext != null && <div style={{ marginBottom: space[3] }}>{accountContext}</div>}
       <h3 style={{ ...tokens.typography.dialogTitle, margin: 0, color: color.fg }}>
-        {isCleanupAction && !facts.nothingToMove
-          ? preview.verb === 'Later'
-            ? `Move emails from ${row.senderName} to Later?`
-            : `${preview.verb} emails from ${row.senderName}?`
-          : facts.title}
+        {preview.verb === 'Unsubscribe'
+          ? `Unsubscribe from ${row.senderName}?`
+          : isCleanupAction && !facts.nothingToMove
+            ? preview.verb === 'Later'
+              ? `Move emails from ${row.senderName} to Later?`
+              : `${preview.verb} emails from ${row.senderName}?`
+            : facts.title}
       </h3>
       {preview.verb !== 'Archive' && preview.verb !== 'Later' && facts.subtitle && (
         <p
@@ -192,7 +208,12 @@ export function InlinePreviewBlock({
             textWrap: 'balance',
           }}
         >
-          {preview.verb === 'Delete' ? cleanupEffect?.futureMail.summary : facts.subtitle}
+          {preview.verb === 'Unsubscribe'
+            ? (futureMailLine(row.senderName, row.unsubscribeMethod) ??
+              WS5_COPY['f1.preview.future.unchecked'])
+            : preview.verb === 'Delete'
+              ? cleanupEffect?.futureMail.summary
+              : facts.subtitle}
         </p>
       )}
       {/* Why confirm is disabled while the live count is not a number —
@@ -205,48 +226,23 @@ export function InlinePreviewBlock({
             : WS5_COPY['f1.preview.backlog.loading']}
         </p>
       )}
-      {!isCleanupAction && facts.note !== null && (
+      {!isCleanupAction && preview.verb !== 'Unsubscribe' && facts.note !== null && (
         <p style={{ margin: `${space[1]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
           {facts.note}
         </p>
       )}
       {preview.verb === 'Unsubscribe' ? (
-        <div role="radiogroup" aria-label={WS5_COPY['f1.segment.unsubOnly']}>
-          <InlineBacklogChoice
-            checked={backlogMode === 'unsub_only'}
-            label={WS5_COPY['f1.segment.unsubOnly']}
-            onSelect={() => preview.onBacklogMode?.('unsub_only')}
-          />
-          <InlineBacklogChoice
-            checked={backlogMode === 'archive'}
-            disabled={countKnown === null || countKnown === 0}
-            label={
-              isPluralCopy(WS5_COPY['f1.segment.archive'])
-                ? pluralCopy(WS5_COPY['f1.segment.archive'], countKnown ?? 0, {
-                    n: countKnown ?? 0,
-                  })
-                : ''
-            }
-            onSelect={() => preview.onBacklogMode?.('archive')}
-          />
-          <InlineBacklogChoice
-            checked={backlogMode === 'delete'}
-            disabled={countKnown === null || countKnown === 0}
-            label={
-              isPluralCopy(WS5_COPY['f1.segment.delete'])
-                ? pluralCopy(WS5_COPY['f1.segment.delete'], countKnown ?? 0, { n: countKnown ?? 0 })
-                : ''
-            }
-            onSelect={() => preview.onBacklogMode?.('delete')}
+        <div style={{ marginTop: space[3] }}>
+          <UnsubscribeChoices
+            value={backlogMode}
+            onChange={(mode) => preview.onBacklogMode?.(mode)}
+            archiveDisabled={countKnown === null}
+            deleteDisabled={countKnown === null}
           />
           {emailMeter && backlogMode !== 'unsub_only' ? <p>{WS5_COPY['f1.meterFree']}</p> : null}
           {emailMeter && backlogMode !== 'unsub_only' && cleanupSummary.data ? (
             <MeterPreviewLine requested={countKnown ?? 0} summary={cleanupSummary.data} />
           ) : null}
-          <p>
-            {WS5_COPY['f1.footer']}
-            {backlogMode === 'delete' ? ` ${WS5_COPY['f1.deleteNote']}` : ''}
-          </p>
         </div>
       ) : null}
       {costLine !== null && (
@@ -261,16 +257,17 @@ export function InlinePreviewBlock({
       preview.inboxCount > 0 ? (
         <MeterPreviewLine requested={preview.inboxCount} summary={cleanupSummary.data} />
       ) : null}
-      {isCleanupAction && preview.ageControl && (
-        <CleanupPreview
-          olderThanDays={preview.ageControl.olderThanDays}
-          options={preview.ageControl.options}
-          onWindowChange={preview.ageControl.onChange}
-          showWindow
-        >
-          {null}
-        </CleanupPreview>
-      )}
+      {(isCleanupAction || (preview.verb === 'Unsubscribe' && backlogMode !== 'unsub_only')) &&
+        preview.ageControl && (
+          <CleanupPreview
+            olderThanDays={preview.ageControl.olderThanDays}
+            options={preview.ageControl.options}
+            onWindowChange={preview.ageControl.onChange}
+            showWindow
+          >
+            {null}
+          </CleanupPreview>
+        )}
       {preview.verb === 'Later' && preview.onWakeAtChange && (
         <div style={{ marginTop: space[3] }}>
           <LaterReturnControl value={preview.wakeAt ?? null} onChange={preview.onWakeAtChange} />
@@ -321,6 +318,24 @@ export function InlinePreviewBlock({
           />
         </div>
       )}
+      {preview.verb === 'Unsubscribe' && (
+        <div style={{ marginTop: space[3] }}>
+          <UnsubscribeImpact
+            mode={backlogMode}
+            count={countKnown}
+            olderThanDays={preview.ageControl?.olderThanDays ?? null}
+            note={
+              WS5_COPY[
+                backlogMode === 'delete'
+                  ? 'f1.honesty.delete'
+                  : backlogMode === 'archive'
+                    ? 'f1.honesty.archive'
+                    : 'f1.honesty.unsubOnly'
+              ]
+            }
+          />
+        </div>
+      )}
       {/* Explicit confirm affordance (2026-07-16 audit): before this bar,
           confirming meant an UNDOCUMENTED second click on the same verb —
           users read the preview and believed the action fired. Fails
@@ -333,7 +348,8 @@ export function InlinePreviewBlock({
         )}
         <Button
           tone={
-            preview.verb === 'Delete'
+            preview.verb === 'Delete' ||
+            (preview.verb === 'Unsubscribe' && backlogMode === 'delete')
               ? 'danger'
               : preview.verb === 'Unsubscribe'
                 ? 'warn'
@@ -343,11 +359,13 @@ export function InlinePreviewBlock({
           disabled={confirmDisabled}
           onClick={onConfirm}
         >
-          {row.protectionReason != null && preview.verb !== 'Unsubscribe'
-            ? `${preview.verb} anyway`
-            : isCleanupAction
-              ? preview.verb
-              : facts.primaryLabel}
+          {preview.verb === 'Unsubscribe'
+            ? unsubscribeButton(backlogMode, countKnown, row.protectionReason != null)
+            : row.protectionReason != null
+              ? `${preview.verb} anyway`
+              : isCleanupAction
+                ? preview.verb
+                : facts.primaryLabel}
         </Button>
         <span className="dm-key-hint" style={{ fontSize: text.xs, color: color.fgMuted }}>
           {/* A zero count is the third case: the screen refuses that
@@ -361,31 +379,9 @@ export function InlinePreviewBlock({
           )}
         </span>
       </div>
+      {preview.verb === 'Unsubscribe' && (
+        <p style={{ fontSize: text.sm, color: color.fgMuted }}>{WS5_COPY['f1.footer']}</p>
+      )}
     </div>
-  );
-}
-
-function InlineBacklogChoice({
-  checked,
-  disabled = false,
-  label,
-  onSelect,
-}: {
-  checked: boolean;
-  disabled?: boolean;
-  label: string;
-  onSelect: () => void;
-}) {
-  return (
-    <label style={{ display: 'flex', gap: 8, minHeight: 44, alignItems: 'center' }}>
-      <input
-        type="radio"
-        name="triage-inline-unsubscribe-backlog"
-        checked={checked}
-        disabled={disabled}
-        onChange={onSelect}
-      />
-      {label}
-    </label>
   );
 }

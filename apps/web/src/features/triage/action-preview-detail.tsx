@@ -31,6 +31,8 @@ const { color, space, text } = tokens;
  * render or an auth edge into a host that server-renders.
  */
 export interface ActionPreviewDetail {
+  /** Unfiltered inbox count keeps the opening cleanup mode stable as age changes. */
+  inboxTotal?: number | null;
   /** The owner keeps count, sample and request on this same age selection. */
   ageControl?: CleanupAgeControl | undefined;
   /**

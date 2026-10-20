@@ -605,13 +605,16 @@ export function TriageScreen({
   const hasAgeControl =
     pendingAction?.verb === 'Archive' ||
     pendingAction?.verb === 'Delete' ||
-    pendingAction?.verb === 'Later';
+    pendingAction?.verb === 'Later' ||
+    pendingAction?.verb === 'Unsubscribe';
   const previewAge =
     pendingAction?.verb === 'Delete'
       ? pendingAction.olderThanDays === undefined
         ? DEFAULT_DELETE_WINDOW_DAYS
         : pendingAction.olderThanDays
-      : pendingAction?.verb === 'Archive' || pendingAction?.verb === 'Later'
+      : pendingAction?.verb === 'Archive' ||
+          pendingAction?.verb === 'Later' ||
+          pendingAction?.verb === 'Unsubscribe'
         ? (pendingAction.olderThanDays ?? null)
         : null;
   // The ONE count the preview arms — at the SELECTED reach.
@@ -638,6 +641,7 @@ export function TriageScreen({
    */
   const cleanupRemaining = auth?.me.cleanupRemaining ?? null;
 
+  const unsubscribeInboxTotal = compositePreview.data?.counts.all ?? null;
   const previewDetail: ActionPreviewDetail | undefined = (() => {
     const data = compositePreview.data;
     const ageControl = hasAgeControl
@@ -671,13 +675,22 @@ export function TriageScreen({
       : undefined;
     if (pendingRow == null) return undefined;
     if (data == null || (ageControl && (compositePreview.isFetching || compositePreview.isError)))
-      return { ageControl, ...(reachControl ? { reachControl } : {}) };
+      return {
+        inboxTotal: unsubscribeInboxTotal,
+        ageControl,
+        ...(reachControl ? { reachControl } : {}),
+      };
     // Match the selected cleanup age and reach in the Gmail handoff.
     // Delete can widen reach; Archive stays in the inbox. Approximate — see
     // `buildActionScopeSearchLink`.
     const atAllMail = activeReach === 'all_mail';
     const armedTotal = pickBucketCount(atAllMail ? data.allMail?.counts : data.counts, previewAge);
-    if (armedTotal === undefined) return { ageControl, ...(reachControl ? { reachControl } : {}) };
+    if (armedTotal === undefined)
+      return {
+        inboxTotal: unsubscribeInboxTotal,
+        ageControl,
+        ...(reachControl ? { reachControl } : {}),
+      };
     const gmailScopeSearch = activeEmail
       ? GmailOpenLinkService.buildActionScopeSearchLink({
           mailboxEmail: activeEmail,
@@ -722,6 +735,7 @@ export function TriageScreen({
       receivedTotal: null,
     });
     return {
+      inboxTotal: unsubscribeInboxTotal,
       ageControl,
       ...(mailLocationLine === null ? {} : { mailLocationLine }),
       ...(sampleRows.length > 0 ? { matchSample: { rows: sampleRows, total: armedTotal } } : {}),
@@ -757,7 +771,10 @@ export function TriageScreen({
     pendingAction?.surface === 'inline' &&
     (pendingAction.verb === 'Archive' ||
       pendingAction.verb === 'Later' ||
-      pendingAction.verb === 'Delete') &&
+      pendingAction.verb === 'Delete' ||
+      (pendingAction.verb === 'Unsubscribe' &&
+        (pendingAction.backlogMode ??
+          ((unsubscribeInboxTotal ?? 0) > 0 ? 'archive' : 'unsub_only')) !== 'unsub_only')) &&
     (typeof previewInboxCount !== 'number' || previewInboxCount === 0);
 
   // Drive the async-action lifecycle off the polled status. On `done`
@@ -1037,6 +1054,17 @@ export function TriageScreen({
           (details?.olderThanDays ?? null) !== previewAge)
       )
         return false;
+      if (
+        verb === 'Unsubscribe' &&
+        (details?.backlogMode ?? (details?.archiveHistoric ? 'archive' : 'unsub_only')) !==
+          'unsub_only' &&
+        (pendingAction?.verb !== verb ||
+          pendingAction.rowId !== row.id ||
+          typeof previewInboxCount !== 'number' ||
+          previewInboxCount === 0 ||
+          (details?.olderThanDays ?? null) !== previewAge)
+      )
+        return false;
       if (verb === 'Later' && !isFutureReturnTime(details?.wakeAt)) return false;
       clearPending();
 
@@ -1099,6 +1127,7 @@ export function TriageScreen({
           {
             mailboxId: actionMailboxId,
             mode,
+            ...(mode !== 'unsub_only' ? { olderThanDays: details?.olderThanDays ?? null } : {}),
             senderIds: [row.senderId],
             ...(mode === 'delete' && details?.reach === 'all_mail' ? { reach: details.reach } : {}),
             ...(row.protectionReason !== null ? { override: true } : {}),
@@ -1374,11 +1403,10 @@ export function TriageScreen({
         pendingAction.verb === verb
       ) {
         if (inlinePreviewBlocked) return;
-        const count = typeof previewInboxCount === 'number' ? previewInboxCount : null;
         const backlogMode =
           verb === 'Unsubscribe'
             ? (pendingAction.backlogMode ??
-              (count !== null && count > 0 ? 'archive' : 'unsub_only'))
+              ((unsubscribeInboxTotal ?? 0) > 0 ? 'archive' : 'unsub_only'))
             : undefined;
         // Second click on the same verb confirms the choice on screen.
         dispatchAction(
@@ -1389,7 +1417,10 @@ export function TriageScreen({
             ...(backlogMode ? { backlogMode } : {}),
             rememberPreference: true,
             wakeAt: pendingAction.wakeAt,
-            ...(verb === 'Archive' || verb === 'Delete' || verb === 'Later'
+            ...(verb === 'Archive' ||
+            verb === 'Delete' ||
+            verb === 'Later' ||
+            (verb === 'Unsubscribe' && backlogMode !== 'unsub_only')
               ? { olderThanDays: previewAge }
               : {}),
           },
@@ -1402,6 +1433,7 @@ export function TriageScreen({
     [
       pendingAction,
       previewAge,
+      unsubscribeInboxTotal,
       previewInboxCount,
       inlinePreviewBlocked,
       dispatchAction,
@@ -1828,6 +1860,10 @@ export function TriageScreen({
         row={pendingRow}
         inboxCount={previewInboxCount}
         onReachChange={setDeleteReach}
+        onBacklogModeChange={(mode) => {
+          useTriageStore.getState().setPendingBacklogMode(mode);
+          setDeleteReach('inbox_only');
+        }}
         wakeAt={pendingAction?.wakeAt ?? null}
         mailboxEmail={activeEmail}
         // Constructed here (not inside ActionSheet) so the sheet never

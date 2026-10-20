@@ -1,6 +1,7 @@
 'use client';
 
 import { useId, type ReactNode } from 'react';
+import { SheetSegmented } from '@declutrmail/shared';
 import { useNow } from '@/lib/use-now';
 import { CleanupSelect } from './cleanup-select';
 import styles from './cleanup-preview.module.css';
@@ -9,6 +10,65 @@ export interface CleanupAgeControl {
   olderThanDays: number | null;
   options: readonly { days: number | null; disabled?: boolean }[];
   onChange: (days: number | null) => void;
+}
+
+export type UnsubscribeCleanupMode = 'unsub_only' | 'archive' | 'delete';
+
+/** Choices name the action; the live count belongs in the impact summary. */
+export function UnsubscribeChoices({
+  value,
+  onChange,
+  archiveDisabled,
+  deleteDisabled,
+}: {
+  value: UnsubscribeCleanupMode;
+  onChange: (mode: UnsubscribeCleanupMode) => void;
+  archiveDisabled: boolean;
+  deleteDisabled: boolean;
+}) {
+  return (
+    <SheetSegmented
+      label="Email you already have"
+      value={value}
+      onChange={onChange}
+      options={[
+        { value: 'unsub_only', label: 'Unsubscribe only' },
+        { value: 'archive', label: '+ Archive', disabled: archiveDisabled },
+        { value: 'delete', label: '+ Delete', disabled: deleteDisabled },
+      ]}
+    />
+  );
+}
+
+export function UnsubscribeImpact({
+  mode,
+  count,
+  olderThanDays,
+  includesArchived = false,
+  note,
+}: {
+  mode: UnsubscribeCleanupMode;
+  count: number | null;
+  olderThanDays: number | null;
+  includesArchived?: boolean;
+  note: string;
+}) {
+  return mode === 'unsub_only' ? (
+    <>
+      <div className={styles.impact} role="region" aria-label="Unsubscribe impact">
+        <p>Existing email stays where it is.</p>
+      </div>
+      <p className={styles.recovery}>{note}</p>
+    </>
+  ) : (
+    <CleanupImpact
+      action={mode === 'archive' ? 'Archive' : 'Delete'}
+      count={count}
+      olderThanDays={olderThanDays}
+      includesArchived={includesArchived}
+      note={note}
+    />
+  );
 }
 
 /** Presentation only. The existing confirmation owns scope, counts and submission. */

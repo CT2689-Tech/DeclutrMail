@@ -3,14 +3,19 @@
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { Avatar, Button, PreviewSheet, SheetSegmented, tokens } from '@declutrmail/shared';
-import { isPluralCopy, pluralCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { Avatar, Button, PreviewSheet, tokens } from '@declutrmail/shared';
+import { WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import {
+  futureMailLine,
   unsubscribeButton,
-  unsubscribeTitle,
 } from '@/features/senders/unsubscribe-backlog/preview-copy';
 import { ActionReachControl, DELETE_ARCHIVED_HINT } from '@/components/action-scope-controls';
-import { CleanupImpact, CleanupPreview } from '@/components/cleanup-preview';
+import {
+  CleanupImpact,
+  CleanupPreview,
+  UnsubscribeChoices,
+  UnsubscribeImpact,
+} from '@/components/cleanup-preview';
 import { LaterReturnControl, isFutureReturnTime } from '@/components/later-return-control';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
@@ -85,8 +90,10 @@ export function ActionSheet({
   detail,
   reach = 'inbox_only',
   onReachChange,
+  onBacklogModeChange,
   quotaRemaining,
 }: {
+  onBacklogModeChange?: ((mode: 'unsub_only' | 'archive' | 'delete') => void) | undefined;
   open: boolean;
   /** Sheetable verbs only — Keep is never previewed. */
   verb: SheetableVerb;
@@ -145,7 +152,11 @@ export function ActionSheet({
   // Cmd/Ctrl-Enter could observe the previous action's `false` toggle.
   const countKnown = typeof inboxCount === 'number' ? inboxCount : null;
   const inboxOptionCount =
-    countKnown === null ? null : (detail?.reachControl?.inboxCount ?? countKnown);
+    detail?.inboxTotal !== undefined
+      ? detail.inboxTotal
+      : countKnown === null
+        ? null
+        : (detail?.reachControl?.inboxCount ?? countKnown);
   const defaultBacklog =
     verb === 'Unsubscribe' &&
     row?.protectionReason == null &&
@@ -157,7 +168,12 @@ export function ActionSheet({
     actionKey !== null && chosenActionKey === actionKey ? backlogMode : defaultBacklog;
   const effectiveArchiveHistoric = effectiveMode === 'archive';
   const ageControl =
-    verb === 'Archive' || verb === 'Delete' || verb === 'Later' ? detail?.ageControl : undefined;
+    verb === 'Archive' ||
+    verb === 'Delete' ||
+    verb === 'Later' ||
+    (verb === 'Unsubscribe' && effectiveMode !== 'unsub_only')
+      ? detail?.ageControl
+      : undefined;
   const olderThanDays = ageControl?.olderThanDays ?? null;
 
   // Archive/Later/Delete always move inbox mail. Unsubscribe only does when the
@@ -222,7 +238,12 @@ export function ActionSheet({
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
         e.preventDefault();
         onConfirm({
-          ...(verb === 'Archive' || verb === 'Delete' || verb === 'Later' ? { olderThanDays } : {}),
+          ...(verb === 'Archive' ||
+          verb === 'Delete' ||
+          verb === 'Later' ||
+          (verb === 'Unsubscribe' && effectiveMode !== 'unsub_only')
+            ? { olderThanDays }
+            : {}),
           archiveHistoric: effectiveArchiveHistoric,
           ...(verb === 'Unsubscribe' ? { backlogMode: effectiveMode } : {}),
           ...((verb === 'Delete' || (verb === 'Unsubscribe' && effectiveMode === 'delete')) &&
@@ -257,10 +278,7 @@ export function ActionSheet({
     row,
     archiveHistoric: effectiveArchiveHistoric,
     ...(verb === 'Unsubscribe' ? { backlogMode: effectiveMode } : {}),
-    inboxCount:
-      verb === 'Unsubscribe' && effectiveMode !== 'delete' && typeof inboxCount === 'number'
-        ? (inboxOptionCount ?? inboxCount)
-        : inboxCount,
+    inboxCount,
     wakeAt: selectedWakeAt,
     reach: verb === 'Unsubscribe' && effectiveMode !== 'delete' ? 'inbox_only' : reach,
   });
@@ -277,7 +295,12 @@ export function ActionSheet({
     : null;
   const confirm = () =>
     onConfirm({
-      ...(verb === 'Archive' || verb === 'Delete' || verb === 'Later' ? { olderThanDays } : {}),
+      ...(verb === 'Archive' ||
+      verb === 'Delete' ||
+      verb === 'Later' ||
+      (verb === 'Unsubscribe' && effectiveMode !== 'unsub_only')
+        ? { olderThanDays }
+        : {}),
       archiveHistoric: effectiveArchiveHistoric,
       ...(verb === 'Unsubscribe' ? { backlogMode: effectiveMode } : {}),
       ...((verb === 'Delete' || (verb === 'Unsubscribe' && effectiveMode === 'delete')) &&
@@ -349,7 +372,7 @@ export function ActionSheet({
   ) : archivedUncounted ? (
     WS5_COPY['f1.preview.archived.unavailable']
   ) : verb === 'Unsubscribe' && requiresLivePreview && inboxCount === 0 ? (
-    WS5_COPY['f1.preview.backlog.none']
+    'Choose another age or Unsubscribe only.'
   ) : confirmDisabled ? (
     WS5_COPY['f1.preview.backlog.loading']
   ) : null;
@@ -368,7 +391,7 @@ export function ActionSheet({
       data-dm-preview-mode="modal"
     >
       <PreviewSheet
-        layout={isCleanupAction ? 'review' : 'compact'}
+        layout={isCleanupAction || verb === 'Unsubscribe' ? 'review' : 'compact'}
         context={
           mailboxEmail ? <MailboxActionContextView mailboxEmail={mailboxEmail} /> : undefined
         }
@@ -386,11 +409,7 @@ export function ActionSheet({
         }
         title={
           verb === 'Unsubscribe'
-            ? unsubscribeTitle(
-                countKnown === null ? 'unsub_only' : effectiveMode,
-                row.senderName,
-                countKnown ?? 0,
-              )
+            ? `Unsubscribe from ${row.senderName}?`
             : isCleanupAction && !facts.nothingToMove
               ? verb === 'Later'
                 ? `Move emails from ${row.senderName} to Later?`
@@ -398,25 +417,34 @@ export function ActionSheet({
               : facts.title
         }
         subtitle={
-          (verb === 'Archive' || verb === 'Later') && !facts.nothingToMove
-            ? undefined
-            : cleanupEffect && !facts.nothingToMove
-              ? cleanupEffect.futureMail.summary
-              : (reachHint ?? facts.subtitle ?? undefined)
+          verb === 'Unsubscribe'
+            ? (futureMailLine(row.senderName, row.unsubscribeMethod) ??
+              WS5_COPY['f1.preview.future.unchecked'])
+            : (verb === 'Archive' || verb === 'Later') && !facts.nothingToMove
+              ? undefined
+              : cleanupEffect && !facts.nothingToMove
+                ? cleanupEffect.futureMail.summary
+                : (reachHint ?? facts.subtitle ?? undefined)
         }
-        note={
-          isCleanupAction
-            ? undefined
-            : verb === 'Unsubscribe'
-              ? effectiveMode === 'delete'
-                ? WS5_COPY['f1.honesty.delete']
-                : effectiveMode === 'archive'
-                  ? WS5_COPY['f1.honesty.archive']
-                  : WS5_COPY['f1.honesty.unsubOnly']
-              : (facts.note ?? undefined)
-        }
+        note={isCleanupAction || verb === 'Unsubscribe' ? undefined : (facts.note ?? undefined)}
         summary={
-          cleanupEffect ? (
+          verb === 'Unsubscribe' ? (
+            <UnsubscribeImpact
+              mode={effectiveMode}
+              count={archivedUncounted || previewSenderGone ? null : countKnown}
+              olderThanDays={olderThanDays}
+              includesArchived={effectiveMode === 'delete' && reach === 'all_mail'}
+              note={
+                WS5_COPY[
+                  effectiveMode === 'delete'
+                    ? 'f1.honesty.delete'
+                    : effectiveMode === 'archive'
+                      ? 'f1.honesty.archive'
+                      : 'f1.honesty.unsubOnly'
+                ]
+              }
+            />
+          ) : cleanupEffect ? (
             <CleanupImpact
               action={verb === 'Archive' ? 'Archive' : verb === 'Later' ? 'Later' : 'Delete'}
               count={archivedUncounted || previewSenderGone ? null : countKnown}
@@ -455,12 +483,7 @@ export function ActionSheet({
         footer={
           costLine === null && verb === 'Delete' ? undefined : (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-              {verb === 'Unsubscribe' ? (
-                <span>
-                  {WS5_COPY['f1.footer']}
-                  {effectiveMode === 'delete' ? ` ${WS5_COPY['f1.deleteNote']}` : ''}
-                </span>
-              ) : null}
+              {verb === 'Unsubscribe' ? <span>{WS5_COPY['f1.footer']}</span> : null}
               {costLine !== null && <span>{costLine}</span>}
               {emailMeter &&
               cleanupSummary.data &&
@@ -489,6 +512,34 @@ export function ActionSheet({
       >
         {hasControls ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: space[3] }}>
+            {/* Unsubscribe only: Archive/Later already move every inbox
+                message from the sender, so the backlog toggle exists only
+                where the primary verb does NOT touch past mail. */}
+            {verb === 'Unsubscribe' && (
+              <div>
+                <UnsubscribeChoices
+                  value={effectiveMode}
+                  onChange={(mode) => {
+                    setBacklogMode(mode);
+                    setChosenActionKey(actionKey);
+                    onBacklogModeChange?.(mode);
+                    (onReachChange ?? detail?.reachControl?.onChange)?.('inbox_only');
+                  }}
+                  archiveDisabled={inboxOptionCount === null}
+                  deleteDisabled={countKnown === null}
+                />
+                {emailMeter && effectiveMode !== 'unsub_only' ? (
+                  <p>{WS5_COPY['f1.meterFree']}</p>
+                ) : null}
+                {emailMeter &&
+                effectiveMode !== 'unsub_only' &&
+                cleanupSummary.data &&
+                countKnown !== null ? (
+                  <MeterPreviewLine requested={countKnown} summary={cleanupSummary.data} />
+                ) : null}
+              </div>
+            )}
+
             {ageControl && (
               <CleanupPreview
                 olderThanDays={olderThanDays}
@@ -501,61 +552,6 @@ export function ActionSheet({
             )}
             {verb === 'Later' && (
               <LaterReturnControl value={selectedWakeAt} onChange={setSelectedWakeAt} />
-            )}
-
-            {/* Unsubscribe only: Archive/Later already move every inbox
-                message from the sender, so the backlog toggle exists only
-                where the primary verb does NOT touch past mail. */}
-            {verb === 'Unsubscribe' && (
-              <div>
-                <SheetSegmented
-                  label={WS5_COPY['f1.preview.existing.label']}
-                  value={effectiveMode}
-                  onChange={(mode) => {
-                    setBacklogMode(mode);
-                    setChosenActionKey(actionKey);
-                    (onReachChange ?? detail?.reachControl?.onChange)?.('inbox_only');
-                  }}
-                  options={[
-                    { value: 'unsub_only', label: WS5_COPY['f1.segment.unsubOnly'] },
-                    {
-                      value: 'archive',
-                      disabled: inboxOptionCount === null || inboxOptionCount === 0,
-                      label:
-                        inboxOptionCount === null
-                          ? WS5_COPY['f1.segment.archive.loading']
-                          : isPluralCopy(WS5_COPY['f1.segment.archive'])
-                            ? pluralCopy(WS5_COPY['f1.segment.archive'], inboxOptionCount, {
-                                n: inboxOptionCount.toLocaleString('en-US'),
-                              })
-                            : '',
-                    },
-                    {
-                      value: 'delete',
-                      disabled:
-                        countKnown === null ||
-                        (countKnown === 0 && !(detail?.reachControl?.allMailCount ?? 0)),
-                      label:
-                        countKnown === null
-                          ? WS5_COPY['f1.segment.delete.loading']
-                          : isPluralCopy(WS5_COPY['f1.segment.delete'])
-                            ? pluralCopy(WS5_COPY['f1.segment.delete'], countKnown, {
-                                n: countKnown.toLocaleString('en-US'),
-                              })
-                            : '',
-                    },
-                  ]}
-                />
-                {emailMeter && effectiveMode !== 'unsub_only' ? (
-                  <p>{WS5_COPY['f1.meterFree']}</p>
-                ) : null}
-                {emailMeter &&
-                effectiveMode !== 'unsub_only' &&
-                cleanupSummary.data &&
-                countKnown !== null ? (
-                  <MeterPreviewLine requested={countKnown} summary={cleanupSummary.data} />
-                ) : null}
-              </div>
             )}
 
             {showReach && (

@@ -124,3 +124,43 @@ export const LaterProtected: Story = {
     row: { ...sampleRow, isProtected: true, protectionReason: 'user_defined' },
   },
 };
+
+function UnsubscribeStory(args: ComponentProps<typeof DecidePreview>) {
+  const [open, setOpen] = useState(true);
+  const [result, setResult] = useState('');
+  return (
+    <div style={{ maxWidth: 680, padding: 24, margin: 'auto' }}>
+      <p>Fictional mailbox · no Gmail changes. Screener Unsubscribe affects future email.</p>
+      {open ? (
+        <DecidePreview
+          {...args}
+          onCancel={() => {
+            setResult('Preview canceled.');
+            setOpen(false);
+          }}
+          onConfirm={() => {
+            setResult(
+              args.row.unsubscribeMethod === 'mailto'
+                ? 'Sample confirmation: manual Gmail step; existing email stays where it is.'
+                : 'Sample confirmation: unsubscribe request; existing email stays where it is.',
+            );
+            setOpen(false);
+          }}
+        />
+      ) : (
+        <>
+          <p role="status">{result}</p>
+          <Button onClick={() => setOpen(true)}>Review Unsubscribe</Button>
+        </>
+      )}
+    </div>
+  );
+}
+export const UnsubscribeDefault: Story = {
+  args: { verb: 'unsubscribe', row: { ...sampleRow, unsubscribeMethod: 'one_click' } },
+  render: (args) => <UnsubscribeStory {...args} />,
+};
+export const UnsubscribeMailto: Story = {
+  ...UnsubscribeDefault,
+  args: { verb: 'unsubscribe', row: { ...sampleRow, unsubscribeMethod: 'mailto' } },
+};

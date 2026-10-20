@@ -174,7 +174,16 @@ export const useTriageStore = create<TriageState & TriageActions>((set) => ({
 
   setPendingBacklogMode: (mode) =>
     set((s) =>
-      s.pendingAction ? { pendingAction: { ...s.pendingAction, backlogMode: mode } } : s,
+      s.pendingAction?.verb === 'Unsubscribe'
+        ? {
+            pendingAction: {
+              ...s.pendingAction,
+              backlogMode: mode,
+              olderThanDays: mode === 'delete' ? DEFAULT_DELETE_WINDOW_DAYS : null,
+              reach: 'inbox_only',
+            },
+          }
+        : s,
     ),
 
   clearPending: () => set({ pendingAction: null }),
@@ -183,7 +192,8 @@ export const useTriageStore = create<TriageState & TriageActions>((set) => ({
     set((s) =>
       s.pendingAction?.verb === 'Archive' ||
       s.pendingAction?.verb === 'Delete' ||
-      s.pendingAction?.verb === 'Later'
+      s.pendingAction?.verb === 'Later' ||
+      s.pendingAction?.verb === 'Unsubscribe'
         ? { pendingAction: { ...s.pendingAction, olderThanDays } }
         : s,
     ),

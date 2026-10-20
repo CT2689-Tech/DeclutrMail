@@ -226,7 +226,12 @@ export function buildPreviewFacts({
       label: PREVIEW_DETAILS.includes.label,
       value: previewIncludesValue(
         allMail,
-        verb === 'Archive' || verb === 'Delete' || verb === 'Later' ? olderThanDays : null,
+        verb === 'Archive' ||
+          verb === 'Delete' ||
+          verb === 'Later' ||
+          (verb === 'Unsubscribe' && backlogMode !== 'unsub_only')
+          ? olderThanDays
+          : null,
       ),
     });
   }
@@ -250,7 +255,10 @@ export function buildPreviewFacts({
       });
     }
   }
-  if (primary.providerRecovery.kind === 'gmail-trash') {
+  if (
+    primary.providerRecovery.kind === 'gmail-trash' ||
+    (verb === 'Unsubscribe' && unsubMode === 'delete')
+  ) {
     disclosures.push({
       label: PREVIEW_DETAILS.deleted.label,
       value: PREVIEW_DETAILS.deleted.value,
