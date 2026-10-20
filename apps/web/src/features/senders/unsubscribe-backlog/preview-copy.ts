@@ -30,38 +30,18 @@ export function backlogMailLine(mode: UnsubscribeBacklogMode, n: number): string
   return WS5_COPY['f1.preview.backlog.unsubOnly'];
 }
 
-/** "{n} emails" / "1 email", for the bulk title's {emailCount} token. */
-function emailCountPhrase(emailCount: number): string {
-  const forms = WS5_COPY['f1.part.emails'];
-  if (!isPluralCopy(forms)) return '';
-  return pluralCopy(forms, emailCount, { n: emailCount.toLocaleString('en-US') });
-}
-
 /**
- * Bulk titles pick `one` from the sender count, so one sender never reads
- * "1 senders". Archive and delete fill {emailCount} from `f1.part.emails`.
+ * Bulk titles count senders, never emails, and do not change with the
+ * segment. `one` is a single sender, so it never reads "1 senders".
  */
 export function bulkUnsubscribeTitle(
-  mode: UnsubscribeBacklogMode,
+  _mode: UnsubscribeBacklogMode,
   senderCount: number,
-  emailCount: number,
+  _emailCount: number,
 ): string {
-  const k = senderCount.toLocaleString('en-US');
-  const emailCountLabel = emailCountPhrase(emailCount);
-  if (mode === 'delete') {
-    const forms = WS5_COPY['f1.title.bulk.delete'];
-    return isPluralCopy(forms)
-      ? pluralCopy(forms, senderCount, { k, emailCount: emailCountLabel })
-      : '';
-  }
-  if (mode === 'archive') {
-    const forms = WS5_COPY['f1.title.bulk.archive'];
-    return isPluralCopy(forms)
-      ? pluralCopy(forms, senderCount, { k, emailCount: emailCountLabel })
-      : '';
-  }
-  const forms = WS5_COPY['f1.title.bulk.unsubOnly'];
-  return isPluralCopy(forms) ? pluralCopy(forms, senderCount, { k }) : '';
+  return pluralCopy(WS5_COPY['preview.title.bulk.unsub'], senderCount, {
+    k: senderCount.toLocaleString('en-US'),
+  });
 }
 
 /** Count titles do not need a sender name. One unnamed sender uses the `one` form. */
@@ -83,20 +63,13 @@ export function someProtectedSelectionCopy(protectedCount: number): string {
   return pluralCopy(forms, protectedCount, { k: protectedCount.toLocaleString('en-US') });
 }
 
+/** One sender. The segment does not change the title, and the title does not count email. */
 export function unsubscribeTitle(
-  mode: UnsubscribeBacklogMode,
-  senderName: string,
-  n: number,
+  _mode: UnsubscribeBacklogMode,
+  _senderName: string,
+  _n: number,
 ): string {
-  if (senderName.trim() === '') return unnamedUnsubscribeTitle(mode, n);
-  const shown = n.toLocaleString('en-US');
-  if (mode === 'archive' && isPluralCopy(WS5_COPY['f1.title.archive'])) {
-    return pluralCopy(WS5_COPY['f1.title.archive'], n, { n: shown, Sender: senderName });
-  }
-  if (mode === 'delete' && isPluralCopy(WS5_COPY['f1.title.delete'])) {
-    return pluralCopy(WS5_COPY['f1.title.delete'], n, { n: shown, Sender: senderName });
-  }
-  return fillCopy(WS5_COPY['f1.title.unsubOnly'], { Sender: senderName });
+  return WS5_COPY['preview.title.unsubThisSender'];
 }
 
 export function unsubscribeHonesty(mode: UnsubscribeBacklogMode): string {

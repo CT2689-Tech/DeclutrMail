@@ -400,7 +400,7 @@ describe('InboxSimulatorScreen', () => {
 
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByRole('radio', { name: 'Unsubscribe only' })).not.toBeChecked();
-    expect(within(dialog).getByRole('radio', { name: /\+ Archive/ })).toBeChecked();
+    expect(within(dialog).getByRole('radio', { name: 'Unsubscribe and archive' })).toBeChecked();
     expect(within(dialog).getAllByText('Unsubscribe only')).toHaveLength(1);
   });
 
@@ -424,7 +424,7 @@ describe('InboxSimulatorScreen', () => {
     );
 
     const dialog = sheetFor(unsubscribableRow.senderName);
-    expect(within(dialog).getByRole('radio', { name: /\+ Archive/ })).toBeChecked();
+    expect(within(dialog).getByRole('radio', { name: 'Unsubscribe and archive' })).toBeChecked();
     fireEvent.click(within(dialog).getByRole('button', { name: /^Unsubscribe/ }));
 
     const expectedCount = syntheticInboxCount(unsubscribableRow);
@@ -472,7 +472,7 @@ describe('InboxSimulatorScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'LinkedIn — expand triage detail' }));
     fireEvent.click(screen.getByRole('button', { name: /Unsubscribe \(U\)/ }));
     const dialog = sheetFor('LinkedIn');
-    fireEvent.click(within(dialog).getByRole('radio', { name: /\+ Delete/ }));
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Unsubscribe and delete' }));
     fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Include archived email' }));
     expect(within(dialog).getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
       `${total} emails`,

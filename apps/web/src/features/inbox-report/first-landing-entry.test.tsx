@@ -99,10 +99,10 @@ describe('InboxReportFirstLanding', () => {
       fireEvent.click(
         await screen.findByRole('button', { name: 'Unsubscribe + archive 1 sender' }),
       );
-      const archive = await screen.findByRole('radio', { name: '+ Archive' });
+      const archive = await screen.findByRole('radio', { name: 'Unsubscribe and archive' });
       await waitFor(() => expect(archive).toBeEnabled());
       if (mode === 'delete') {
-        fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
+        fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe and delete' }));
         fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
       }
       fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
@@ -181,7 +181,7 @@ describe('InboxReportFirstLanding', () => {
       </QueryWrapper>,
     );
     fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
-    const option = await screen.findByRole('radio', { name: '+ Delete' });
+    const option = await screen.findByRole('radio', { name: 'Unsubscribe and delete' });
     await waitFor(() => expect(option).toBeEnabled());
     fireEvent.click(option);
     fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
@@ -245,7 +245,7 @@ describe('InboxReportFirstLanding', () => {
       </QueryWrapper>,
     );
     fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
-    const archive = await screen.findByRole('radio', { name: '+ Archive' });
+    const archive = await screen.findByRole('radio', { name: 'Unsubscribe and archive' });
     await waitFor(() => expect(archive).toBeEnabled());
     fireEvent.click(archive);
     const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
@@ -729,8 +729,8 @@ describe('InboxReportFirstLanding', () => {
     expect(await screen.findByText(/mostly leave unread/)).toBeInTheDocument();
     await waitFor(() => expect(onResolved).toHaveBeenCalledWith(true));
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
-    expect(screen.getByRole('radio', { name: '+ Archive' })).toBeDisabled();
-    expect(screen.getByRole('radio', { name: '+ Delete' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: 'Unsubscribe and archive' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: 'Unsubscribe and delete' })).toBeDisabled();
     expect(screen.getByRole('dialog')).not.toHaveTextContent('archive 4 emails');
     expect(screen.getByRole('dialog')).toHaveTextContent(WS5_COPY['f1.preview.backlog.loading']);
     expect(screen.getByRole('dialog')).not.toHaveTextContent('0 emails you already have');
@@ -758,7 +758,7 @@ describe('InboxReportFirstLanding', () => {
       }),
     );
     const archiveChoice = await screen.findByRole('radio', {
-      name: '+ Archive',
+      name: 'Unsubscribe and archive',
     });
     await waitFor(() => expect(archiveChoice).toBeEnabled());
     expect(archiveChoice).toBeChecked();
@@ -767,7 +767,9 @@ describe('InboxReportFirstLanding', () => {
     expect(screen.getByRole('dialog')).not.toHaveTextContent(
       WS5_COPY['f1.preview.backlog.loading'],
     );
-    expect(screen.getByRole('dialog')).toHaveTextContent('Unsubscribe from Acme?');
+    expect(
+      screen.getByRole('heading', { name: 'Unsubscribe from this sender?' }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('dialog')).toHaveTextContent(
       pluralCopy(WS5_COPY['f1.preview.backlog.archive'], 7, { n: 7 }),
     );

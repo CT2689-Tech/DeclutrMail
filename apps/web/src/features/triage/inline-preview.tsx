@@ -200,7 +200,7 @@ export function InlinePreviewBlock({
       {accountContext != null && <div style={{ marginBottom: space[3] }}>{accountContext}</div>}
       <h3 style={{ ...tokens.typography.dialogTitle, margin: 0, color: color.fg }}>
         {preview.verb === 'Unsubscribe'
-          ? `Unsubscribe from ${row.senderName}?`
+          ? WS5_COPY['preview.title.unsubThisSender']
           : isCleanupAction && !facts.nothingToMove
             ? cleanupActionTitle(
                 preview.verb === 'Later'

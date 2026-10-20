@@ -99,9 +99,9 @@ describe('InboxReportPanel', () => {
       </QueryWrapper>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
-    const archive = screen.getByRole('radio', { name: '+ Archive' });
+    const archive = screen.getByRole('radio', { name: 'Unsubscribe and archive' });
     expect(archive).toBeDisabled();
-    expect(screen.getByRole('radio', { name: '+ Delete' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: 'Unsubscribe and delete' })).toBeDisabled();
     expect(screen.getByRole('dialog')).not.toHaveTextContent('archive 10 emails');
     expect(screen.getByRole('dialog')).not.toHaveTextContent('Archive 0');
     expect(screen.getByRole('dialog')).toHaveTextContent(WS5_COPY['f1.preview.backlog.loading']);
@@ -140,9 +140,11 @@ describe('InboxReportPanel', () => {
         },
       }),
     );
-    await waitFor(() => expect(screen.getByRole('radio', { name: '+ Archive' })).toBeEnabled());
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: 'Unsubscribe and archive' })).toBeEnabled(),
+    );
     expect(screen.getByRole('dialog')).toHaveTextContent('Unsubscribe from 2 senders?');
-    expect(screen.getByRole('radio', { name: '+ Archive' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Unsubscribe and archive' })).toBeChecked();
   });
 
   it('uses the calm fallback without a fix, a share card, or a celebration', () => {
@@ -302,7 +304,7 @@ describe('InboxReportPanel', () => {
     expect(screen.getByRole('button', { name: 'Undo' })).toHaveAccessibleName('Undo');
   });
 
-  it('uses the loaded sender name for a one-sender fix title', () => {
+  it('titles a named one-sender fix without the sender name', () => {
     render(
       <InboxReportPanel
         report={{ ...full, fix: { senderKeys: ['s1'], sendersCount: 1, inboxEmailCount: 4 } }}
@@ -312,7 +314,10 @@ describe('InboxReportPanel', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
-    expect(screen.getByRole('dialog')).toHaveTextContent('Unsubscribe from Acme?');
+    expect(
+      screen.getByRole('heading', { name: 'Unsubscribe from this sender?' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('heading')).not.toHaveTextContent('Acme');
     expect(screen.getByRole('dialog')).not.toHaveTextContent('1 senders');
   });
 

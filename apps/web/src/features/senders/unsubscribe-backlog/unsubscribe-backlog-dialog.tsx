@@ -28,8 +28,10 @@ import {
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import {
   allProtectedSelectionCopy,
+  bulkUnsubscribeTitle,
   someProtectedSelectionCopy,
   unsubscribeButton,
+  unsubscribeTitle,
 } from './preview-copy';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
@@ -247,10 +249,8 @@ export function UnsubscribeBacklogDialog({
   const title = nothingActionable
     ? allProtectedSelectionCopy(request.senders.length, singleName)
     : single
-      ? singleName === ''
-        ? WS5_COPY['preview.title.unsubThisSender']
-        : fillCopy(WS5_COPY['f1.title.unsubOnly'], { Sender: singleName })
-      : `Unsubscribe from ${k.toLocaleString('en-US')} ${k === 1 ? 'sender' : 'senders'}?`;
+      ? unsubscribeTitle(mode, singleName, n)
+      : bulkUnsubscribeTitle(mode, k, n);
 
   const visibleBulk = bulkRows.slice(0, BULK_PREVIEW_CAP);
   const hidden = Math.max(0, bulkRows.length - visibleBulk.length);
@@ -420,7 +420,7 @@ export function UnsubscribeBacklogDialog({
     ) : archivedRequested && allMailCount === null && inboxCount !== null ? (
       WS5_COPY['f1.preview.archived.unavailable']
     ) : mode !== 'unsub_only' && cleanupCount === null && !loading ? (
-      'The cleanup preview for this range is unavailable. Choose another range.'
+      WS5_COPY['preview.age.rangeUnavailable']
     ) : inboxCount === null ? (
       !single && mode === 'unsub_only' && loading ? (
         WS5_COPY['preview.state.checkingSenders']

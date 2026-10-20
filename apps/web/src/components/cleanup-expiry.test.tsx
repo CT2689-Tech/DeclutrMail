@@ -95,7 +95,7 @@ describe('Later return expiry across cleanup previews', () => {
               onConfirm={onConfirm}
             />,
           );
-          fireEvent.change(screen.getByLabelText('Later return time'), {
+          fireEvent.change(screen.getByLabelText('When to return to your inbox'), {
             target: { value: '2026-10-20T10:01' },
           });
         } else if (surface === 'Triage dialog') {

@@ -38,11 +38,13 @@ export function UnsubscribeChoices({
           {
             value: 'archive',
             label: pluralCopy(WS5_COPY['f1.segment.archive'], 2),
+            ariaLabel: WS5_COPY['f1.segment.archive.aria'],
             disabled: archiveDisabled,
           },
           {
             value: 'delete',
             label: pluralCopy(WS5_COPY['f1.segment.delete'], 2),
+            ariaLabel: WS5_COPY['f1.segment.delete.aria'],
             disabled: deleteDisabled,
           },
         ]}

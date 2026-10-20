@@ -60,7 +60,7 @@ export function LaterReturnControl({
       <input
         className="dm-field"
         type="datetime-local"
-        aria-label="Later return time"
+        aria-label={WS5_COPY['preview.later.returnTimeLabel']}
         value={value === null ? '' : toLocalDateTimeInput(value)}
         min={now === null ? undefined : toLocalDateTimeInput(new Date(now + 60_000).toISOString())}
         onChange={(event) => {

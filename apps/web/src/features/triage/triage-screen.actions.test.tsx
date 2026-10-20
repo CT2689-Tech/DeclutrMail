@@ -971,7 +971,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     fireEvent.keyDown(window, { key: 'u' });
     const dialog = await screen.findByRole('dialog');
     await waitFor(() =>
-      expect(within(dialog).getByRole('radio', { name: '+ Archive' })).toBeEnabled(),
+      expect(within(dialog).getByRole('radio', { name: 'Unsubscribe and archive' })).toBeEnabled(),
     );
     expect(dialog).toHaveTextContent(WS5_COPY['f1.honesty.archive']);
     expect(dialog).not.toHaveTextContent(WS5_COPY['f1.meterFree']);
@@ -1022,7 +1022,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
     const dialog = await screen.findByRole('dialog');
-    const option = await within(dialog).findByRole('radio', { name: '+ Delete' });
+    const option = await within(dialog).findByRole('radio', { name: 'Unsubscribe and delete' });
     await waitFor(() => expect(option).toBeEnabled());
     fireEvent.click(option);
     fireEvent.change(within(dialog).getByRole('combobox', { name: 'How far back' }), {
@@ -1069,7 +1069,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
     let dialog = await screen.findByRole('dialog');
-    const deletion = await within(dialog).findByRole('radio', { name: '+ Delete' });
+    const deletion = await within(dialog).findByRole('radio', { name: 'Unsubscribe and delete' });
     await waitFor(() => expect(deletion).toBeEnabled());
     fireEvent.click(deletion);
     fireEvent.change(within(dialog).getByRole('combobox', { name: 'How far back' }), {
@@ -1087,7 +1087,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
         '47 emails',
       ),
     );
-    expect(within(dialog).getByRole('radio', { name: '+ Archive' })).toBeChecked();
+    expect(within(dialog).getByRole('radio', { name: 'Unsubscribe and archive' })).toBeChecked();
     expect(within(dialog).queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     act(() => useTriageStore.getState().setRememberPreference('Unsubscribe', true));
@@ -1095,7 +1095,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     const inline = await screen.findByRole('region', { name: /^Preview · Unsubscribe / });
     expect(screen.queryByRole('dialog')).toBeNull();
     await waitFor(() =>
-      expect(within(inline).getByRole('radio', { name: '+ Archive' })).toBeEnabled(),
+      expect(within(inline).getByRole('radio', { name: 'Unsubscribe and archive' })).toBeEnabled(),
     );
     expect(inline).not.toHaveTextContent('80 emails');
   });
@@ -1136,7 +1136,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
     const dialog = await screen.findByRole('dialog');
-    const deletion = await within(dialog).findByRole('radio', { name: '+ Delete' });
+    const deletion = await within(dialog).findByRole('radio', { name: 'Unsubscribe and delete' });
     await waitFor(() => expect(deletion).toBeEnabled());
     fireEvent.click(deletion);
     fireEvent.change(within(dialog).getByRole('combobox', { name: 'How far back' }), {
@@ -1219,7 +1219,9 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
     const dialog = await screen.findByRole('dialog');
-    const deleteChoice = await within(dialog).findByRole('radio', { name: '+ Delete' });
+    const deleteChoice = await within(dialog).findByRole('radio', {
+      name: 'Unsubscribe and delete',
+    });
     await waitFor(() => expect(deleteChoice).toBeEnabled());
     fireEvent.click(deleteChoice);
     expect(dialog).toHaveTextContent(WS5_COPY['f1.honesty.delete']);
@@ -1871,7 +1873,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
     const dialog = await screen.findByRole('dialog');
-    const archive = await within(dialog).findByRole('radio', { name: '+ Archive' });
+    const archive = await within(dialog).findByRole('radio', { name: 'Unsubscribe and archive' });
     await waitFor(() => expect(archive).toBeEnabled());
     fireEvent.click(within(dialog).getByRole('radio', { name: 'Unsubscribe only' }));
     await confirmOpenSheet('Unsubscribe', false);
@@ -2218,7 +2220,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     const preview = await screen.findByRole('region', { name: /^Preview · Unsubscribe / });
     expect(screen.queryByRole('dialog')).toBeNull();
     await waitFor(() =>
-      expect(within(preview).getByRole('radio', { name: '+ Archive' })).toBeEnabled(),
+      expect(within(preview).getByRole('radio', { name: 'Unsubscribe and archive' })).toBeEnabled(),
     );
     expect(preview).toHaveTextContent(WS5_COPY['f1.footer']);
     expect(preview).not.toHaveTextContent(WS5_COPY['f1.meterFree']);
@@ -2231,7 +2233,9 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
     const again = await screen.findByRole('region', { name: /^Preview · Unsubscribe / });
-    const deleteChoice = await within(again).findByRole('radio', { name: '+ Delete' });
+    const deleteChoice = await within(again).findByRole('radio', {
+      name: 'Unsubscribe and delete',
+    });
     await waitFor(() => expect(deleteChoice).toBeEnabled());
     fireEvent.click(deleteChoice);
     fireEvent.click(
@@ -2457,7 +2461,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     const retry = await within(region).findByRole('button', { name: 'Try again' });
     const confirm = within(region).getByRole('button', { name: 'Unsubscribe' });
     expect(confirm).toBeDisabled();
-    expect(within(region).getByRole('radio', { name: '+ Archive' })).toBeDisabled();
+    expect(within(region).getByRole('radio', { name: 'Unsubscribe and archive' })).toBeDisabled();
     act(() => useTriageStore.getState().setPendingBacklogMode('unsub_only'));
     fireEvent.keyDown(window, { key: 'u' });
     expect(writes).toBe(0);
@@ -2465,7 +2469,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     failing = false;
     fireEvent.click(retry);
     await waitFor(() =>
-      expect(within(region).getByRole('radio', { name: '+ Archive' })).toBeEnabled(),
+      expect(within(region).getByRole('radio', { name: 'Unsubscribe and archive' })).toBeEnabled(),
     );
     expect(reads).toBeGreaterThan(failedReads);
     expect(within(region).getByRole('radio', { name: 'Unsubscribe only' })).toBeChecked();
@@ -2680,7 +2684,7 @@ describe('TriageScreen — Protected rows act with an explicit override (D245/D4
     expandRow(row.senderName);
     fireEvent.keyDown(window, { key: 'u' });
     const dialog = await screen.findByRole('dialog');
-    const archive = await within(dialog).findByRole('radio', { name: '+ Archive' });
+    const archive = await within(dialog).findByRole('radio', { name: 'Unsubscribe and archive' });
     await waitFor(() => expect(archive).toBeEnabled());
     fireEvent.click(archive);
     await confirmOpenSheet('Unsubscribe', false);
@@ -3844,7 +3848,7 @@ describe('Archive Email age — preview and dispatch share one scope', () => {
     expect(screen.getByRole('button', { name: 'Later' })).toBeDisabled();
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(bodies).toHaveLength(0);
-    fireEvent.change(screen.getByLabelText('Later return time'), {
+    fireEvent.change(screen.getByLabelText('When to return to your inbox'), {
       target: { value: '2099-11-01T10:30' },
     });
     fireEvent.change(age, { target: { value: '30' } });
@@ -4199,7 +4203,7 @@ describe('Later Email age and return time requests', () => {
       fireEvent.keyDown(window, { key: 'l' });
       const age = await screen.findByRole('combobox', { name: 'How far back' });
       expect(age).toHaveValue('all');
-      const time = screen.getByLabelText('Later return time') as HTMLInputElement;
+      const time = screen.getByLabelText('When to return to your inbox') as HTMLInputElement;
       expect(new Date(time.value).getTime()).toBeGreaterThanOrEqual(before + 7 * 86400000 - 60000);
       await waitFor(() =>
         expect(screen.getByRole('region', { name: 'Later impact' })).toHaveTextContent(
@@ -4246,7 +4250,9 @@ describe('Later Email age and return time requests', () => {
     fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
     expect(bodies).toHaveLength(0);
     fireEvent.change(age, { target: { value: 'all' } });
-    fireEvent.change(screen.getByLabelText('Later return time'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('When to return to your inbox'), {
+      target: { value: '' },
+    });
     expect(screen.getByRole('button', { name: 'Later' })).toBeDisabled();
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(bodies).toHaveLength(0);
@@ -4325,7 +4331,7 @@ describe('Unsubscribe cleanup age requests', () => {
       const age = await open(submit.startsWith('inline'));
       expect(age).toHaveValue('all');
       expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent('47 emails');
-      fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
+      fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe and delete' }));
       expect(age).toHaveValue('180');
       expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent('5 emails');
       fireEvent.click(screen.getByText('Details', { exact: true }));
@@ -4350,7 +4356,7 @@ describe('Unsubscribe cleanup age requests', () => {
 
   it('keeps archived scope when choosing All time and submits that exact cleanup', async () => {
     const age = await open();
-    fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe and delete' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent('9 emails');
     fireEvent.change(age, { target: { value: 'all' } });
@@ -4364,9 +4370,9 @@ describe('Unsubscribe cleanup age requests', () => {
     const age = await open(true);
     fireEvent.change(age, { target: { value: '90' } });
     expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent('12 emails');
-    fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe and delete' }));
     expect(age).toHaveValue('180');
-    fireEvent.click(screen.getByRole('radio', { name: '+ Archive' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe and archive' }));
     expect(age).toHaveValue('all');
     fireEvent.change(age, { target: { value: '90' } });
     fireEvent.keyDown(window, { key: 'u' });
@@ -4378,7 +4384,7 @@ describe('Unsubscribe cleanup age requests', () => {
     'blocks zero cleanup on click and keyboard but permits future-only unsubscribe (inline=%s)',
     async (inline) => {
       const age = await open(inline);
-      fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
+      fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe and delete' }));
       fireEvent.change(age, { target: { value: '365' } });
       const confirm = screen.getByRole('button', { name: 'Unsubscribe + Delete' });
       expect(confirm).toBeDisabled();
@@ -4399,7 +4405,7 @@ describe('Unsubscribe cleanup age requests', () => {
     async (inline) => {
       const age = await open(inline);
       fireEvent.change(age, { target: { value: '365' } });
-      expect(screen.getByRole('radio', { name: '+ Archive' })).toBeChecked();
+      expect(screen.getByRole('radio', { name: 'Unsubscribe and archive' })).toBeChecked();
       expect(age).toBeVisible();
       await waitFor(() =>
         expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeDisabled(),
@@ -4411,7 +4417,7 @@ describe('Unsubscribe cleanup age requests', () => {
       await act(async () => {
         await client.invalidateQueries({ queryKey: ['composite-preview'] });
       });
-      expect(screen.getByRole('radio', { name: '+ Archive' })).toBeChecked();
+      expect(screen.getByRole('radio', { name: 'Unsubscribe and archive' })).toBeChecked();
       expect(age).toBeVisible();
       await waitFor(() =>
         expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeDisabled(),

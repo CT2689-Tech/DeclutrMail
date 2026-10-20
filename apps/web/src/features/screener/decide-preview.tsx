@@ -201,7 +201,7 @@ export function DecidePreview({
     : verb === 'keep'
       ? `Keep ${name}?`
       : verb === 'unsubscribe'
-        ? `Unsubscribe from ${name}?`
+        ? WS5_COPY['preview.title.unsubThisSender']
         : isCleanupAction
           ? cleanupActionTitle(
               verb === 'later' ? 'Later' : verb === 'delete' ? 'Delete' : 'Archive',

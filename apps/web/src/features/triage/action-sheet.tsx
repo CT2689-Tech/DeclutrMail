@@ -416,7 +416,7 @@ export function ActionSheet({
         }
         title={
           verb === 'Unsubscribe'
-            ? `Unsubscribe from ${row.senderName}?`
+            ? WS5_COPY['preview.title.unsubThisSender']
             : isCleanupAction && !facts.nothingToMove
               ? cleanupActionTitle(
                   verb === 'Later' ? 'Later' : verb === 'Delete' ? 'Delete' : 'Archive',
