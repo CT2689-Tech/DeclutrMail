@@ -6,7 +6,7 @@ import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 import { UnsubscribeBacklogDialog } from './unsubscribe-backlog/unsubscribe-backlog-dialog';
 import { someProtectedSelectionCopy } from './unsubscribe-backlog/preview-copy';
 import { pickBucketCount, TIME_WINDOW_PRESETS } from './action-window';
-import { DeleteImpact, DeletePreview } from './delete-preview';
+import { DeleteImpact, DeletePreview } from '@/components/delete-preview';
 import { ActionReachControl, ActionWindowControl } from '@/components/action-scope-controls';
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
@@ -1533,7 +1533,10 @@ export function ConfirmActionModal({
             {isDeleteVerb ? (
               <DeletePreview
                 olderThanDays={olderThanDays}
-                options={windowOptions}
+                options={windowOptions.map(({ days, count }) => ({
+                  days,
+                  disabled: count === undefined,
+                }))}
                 onWindowChange={setOlderThanDays}
                 showWindow={showWindowSelect}
               >

@@ -16,6 +16,7 @@ import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy'
 import { afterLead } from '@/lib/copy/after-lead';
 import { useNow } from '@/lib/use-now';
 import { ActionReachControl } from '@/components/action-scope-controls';
+import { DeleteImpact, DeletePreview, deleteAgeLabel } from '@/components/delete-preview';
 import type { ActionReach } from '@/lib/api/actions';
 
 import {
@@ -27,6 +28,7 @@ import {
 import { VERB_LABEL } from './verbs';
 
 const { color, font, radius, space, text } = tokens;
+const DELETE_AGE_OPTIONS = [null, 30, 90, 180, 365].map((days) => ({ days }));
 
 /**
  * Live impact figure — the sender's current-inbox count from
@@ -188,9 +190,11 @@ export function DecidePreview({
       ? `Keep ${name}?`
       : verb === 'unsubscribe'
         ? `Unsubscribe from ${name}?`
-        : verb === 'later'
-          ? `Move ${liveCount === null ? 'email' : emailsLabel(liveCount)} to Later?`
-          : `${VERB_LABEL[verb]} ${liveCount === null ? 'email' : emailsLabel(liveCount)}?`;
+        : verb === 'delete'
+          ? `Delete emails from ${name}?`
+          : verb === 'later'
+            ? `Move ${liveCount === null ? 'email' : emailsLabel(liveCount)} to Later?`
+            : `${VERB_LABEL[verb]} ${liveCount === null ? 'email' : emailsLabel(liveCount)}?`;
   const explanation = zero
     ? null
     : verb === 'unsubscribe'
@@ -200,7 +204,9 @@ export function DecidePreview({
         : primary.unsubscribeChannel.summary
       : verb === 'keep'
         ? 'No email moves.'
-        : `From ${name}. ${destination ?? ''}`;
+        : verb === 'delete'
+          ? primary.futureMail.summary
+          : `From ${name}. ${destination ?? ''}`;
 
   // ── One muted line: how to undo it ──────────────────────────────────
   // Keep records an app-only decision when there is no email to move.
@@ -208,9 +214,6 @@ export function DecidePreview({
     ? 'Choose Keep to record a decision without moving email.'
     : [
         primary.activityUndo.summary,
-        // Delete is the one verb where the reader plausibly fears the
-        // opposite (CLAUDE.md §2.3).
-        ...(verb === 'delete' && primary.futureMail.inPreview ? [primary.futureMail.summary] : []),
         ...(primary.bulkReturnNotice === null ? [] : [primary.bulkReturnNotice]),
       ].join(' ');
 
@@ -231,11 +234,13 @@ export function DecidePreview({
   // The verb and the count, as on the Senders and Triage confirms.
   const restingLabel = overriding
     ? `${VERB_LABEL[verb]} anyway`
-    : moves && liveCount !== null && liveCount > 0
-      ? verb === 'later'
-        ? `Move ${emailsLabel(liveCount)} to Later`
-        : `${VERB_LABEL[verb]} ${emailsLabel(liveCount)}`
-      : VERB_LABEL[verb];
+    : verb === 'delete'
+      ? 'Delete'
+      : moves && liveCount !== null && liveCount > 0
+        ? verb === 'later'
+          ? `Move ${emailsLabel(liveCount)} to Later`
+          : `${VERB_LABEL[verb]} ${emailsLabel(liveCount)}`
+        : VERB_LABEL[verb];
   const confirmLabel = confirming ? 'Confirming…' : restingLabel;
 
   // A bare "0" beside the row's "Messages received" count reads as lost
@@ -249,20 +254,23 @@ export function DecidePreview({
   // archived mail IS in scope. With the chips on screen,
   // `verbActsBeyondInbox` swaps "only acts on" for "acts on inbox mail by
   // default" (ADR-0028).
-  const scopeCopy =
+  const scopeNotice =
     moves && typeof effectiveCount === 'number' && !allMailReach
-      ? inboxScopeNoticeCopy(
-          describeInboxScope({
-            inboxTotal: inboxTotal ?? effectiveCount,
-            windowCount: effectiveCount,
-            olderThanDays: windowDays,
-            recentArrivals: null,
-          }),
-          VERB_LABEL[verb],
-          'this sender',
-          { verbActsBeyondInbox: reachAvailable },
-        )
+      ? describeInboxScope({
+          inboxTotal: inboxTotal ?? effectiveCount,
+          windowCount: effectiveCount,
+          olderThanDays: windowDays,
+          recentArrivals: null,
+        })
       : null;
+  const scopeCopy =
+    scopeNotice === null
+      ? null
+      : verb === 'delete' && scopeNotice.kind === 'empty-window'
+        ? `Your inbox has ${emailsLabel(scopeNotice.inboxTotal)} from this sender, but none are ${deleteAgeLabel(scopeNotice.olderThanDays).toLowerCase()}.`
+        : inboxScopeNoticeCopy(scopeNotice, VERB_LABEL[verb], 'this sender', {
+            verbActsBeyondInbox: reachAvailable,
+          });
   // ── Details ─────────────────────────────────────────────────────────
   const facts: SheetFactItem[] = [];
   if (moves && liveCount !== null) {
@@ -362,57 +370,27 @@ export function DecidePreview({
         </p>
       )}
 
-      <p style={mutedLine}>{note}</p>
+      {verb !== 'delete' && <p style={mutedLine}>{note}</p>}
 
-      {/* ADR-0028 reach — Delete only. Unchecked stays inbox-only. */}
-      {verb === 'delete' && liveInboxNumber(inboxCount) != null && (
+      {verb === 'delete' && (
         <div style={{ marginTop: space[3] }}>
-          <ActionReachControl
-            value={activeReach}
-            inboxCount={liveInboxNumber(inboxCount)}
-            allMailCount={allMailCount}
-            onChange={(next) => onReachChange?.(next)}
-          />
-        </div>
-      )}
-
-      {verb === 'delete' && onWindowChange && (
-        <label
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: space[2],
-            marginTop: space[3],
-            fontSize: text.sm,
-            color: color.fgMuted,
-          }}
-        >
-          How far back to delete
-          <select
-            aria-label="How far back to delete"
-            value={windowDays === null ? 'all' : String(windowDays)}
-            onChange={(event) =>
-              onWindowChange(
-                event.currentTarget.value === 'all' ? null : Number(event.currentTarget.value),
-              )
-            }
-            style={{
-              minHeight: 40,
-              padding: `0 ${space[3]}px`,
-              border: `1px solid ${color.lineSoft}`,
-              borderRadius: radius.md,
-              background: color.card,
-              color: color.fg,
-              font: 'inherit',
-            }}
+          <DeletePreview
+            olderThanDays={windowDays}
+            options={DELETE_AGE_OPTIONS}
+            showWindow={onWindowChange !== undefined}
+            onWindowChange={(days) => onWindowChange?.(days)}
           >
-            <option value="all">Any age</option>
-            <option value="30">30 days+</option>
-            <option value="90">3 months+</option>
-            <option value="180">6 months+</option>
-            <option value="365">1 year+</option>
-          </select>
-        </label>
+            {/* ADR-0028 reach — unchecked stays inbox-only. */}
+            {liveInboxNumber(inboxCount) != null && (
+              <ActionReachControl
+                value={activeReach}
+                inboxCount={liveInboxNumber(inboxCount)}
+                allMailCount={allMailCount}
+                onChange={(next) => onReachChange?.(next)}
+              />
+            )}
+          </DeletePreview>
+        </div>
       )}
 
       {/* Protected acknowledgement (D42/D245) — stated before the
@@ -431,6 +409,17 @@ export function DecidePreview({
         <Disclosure style={{ marginTop: space[2] }}>
           <SheetFactList facts={facts} />
         </Disclosure>
+      )}
+
+      {verb === 'delete' && (
+        <div style={{ marginTop: space[3] }}>
+          <DeleteImpact
+            count={previewBlocked ? null : liveCount}
+            includesArchived={allMailReach}
+            olderThanDays={windowDays}
+            note={note}
+          />
+        </div>
       )}
 
       <div className="dm-confirm-footer" style={{ marginTop: space[3] }}>

@@ -687,12 +687,13 @@ describe('TriageScreen — D226 mutation wiring', () => {
       expect(within(dialog).getByText(/^Inbox only\. We check again/)).toBeDefined();
 
       fireEvent.click(archived);
-      expect(
-        within(dialog).getByText(/Inbox and archived email both move to Gmail Trash/),
-      ).toBeDefined();
+      expect(within(dialog).getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+        '412 emails will move to Gmail Trash.',
+      );
       expect(within(dialog).getByText(/^Inbox and archived email\. We check again/)).toBeDefined();
-      // '412' is the armed headline figure once archived mail is included.
-      expect(within(dialog).getByRole('heading', { name: 'Delete 412 emails?' })).toBeDefined();
+      expect(
+        within(dialog).getByRole('heading', { name: `Delete emails from ${GROUPON.senderName}?` }),
+      ).toBeDefined();
       expect(archived).toBeChecked();
 
       const confirm = within(dialog).getByRole('button', { name: /^Delete/i });
@@ -708,14 +709,17 @@ describe('TriageScreen — D226 mutation wiring', () => {
       renderScreen(createTestQueryClient());
       expandRow(GROUPON.senderName);
       fireEvent.keyDown(window, { key: 'd' });
-      // '47' is on the Inbox-only chip AND the armed headline figure.
       await waitFor(() =>
-        expect(screen.getByRole('heading', { name: 'Delete 47 emails?' })).toBeDefined(),
+        expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+          '47 emails will move to Gmail Trash.',
+        ),
       );
       expect(screen.getByRole('checkbox', { name: 'Include archived email' })).not.toBeChecked();
+      expect(screen.queryByRole('combobox', { name: 'Email age' })).toBeNull();
       await confirmOpenSheet('Delete', false);
       await waitFor(() => expect(enqueues).toHaveLength(1));
       expect(enqueues[0]!.primary).not.toHaveProperty('reach');
+      expect(enqueues[0]!.primary).toMatchObject({ type: 'delete', olderThanDays: null });
     });
 
     it('keeps Inbox only selected on an empty inbox and points at the archived chip', async () => {
@@ -791,7 +795,9 @@ describe('TriageScreen — D226 mutation wiring', () => {
       fireEvent.keyDown(window, { key: 'd' });
       const dialog = await screen.findByRole('dialog');
       await waitFor(() =>
-        expect(within(dialog).getByRole('heading', { name: / 47 emails\?$/ })).toBeDefined(),
+        expect(within(dialog).getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+          '47 emails will move to Gmail Trash.',
+        ),
       );
       expect(reachRow()).toBeNull();
     });

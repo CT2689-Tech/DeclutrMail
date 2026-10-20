@@ -2,17 +2,11 @@ import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { DeleteImpact, DeletePreview } from './delete-preview';
 
 const meta = {
-  title: 'Senders/DeletePreview',
+  title: 'Actions/DeletePreview',
   component: DeletePreview,
   args: {
     olderThanDays: 180,
-    options: [
-      { days: null, count: 722 },
-      { days: 30, count: 514 },
-      { days: 90, count: 186 },
-      { days: 180, count: 84 },
-      { days: 365, count: 24 },
-    ],
+    options: [{ days: null }, { days: 30 }, { days: 90 }, { days: 180 }, { days: 365 }],
     onWindowChange: () => undefined,
     showWindow: true,
     children: (
@@ -54,5 +48,5 @@ export const Empty: Story = {
   },
 };
 export const MissingAgeBucket: Story = {
-  args: { options: [{ days: null, count: 722 }, { days: 180 }], children: null },
+  args: { options: [{ days: null }, { days: 180, disabled: true }], children: null },
 };

@@ -397,9 +397,11 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     fireEvent.keyDown(window, { key: 'd' });
     await screen.findByRole('checkbox', { name: 'Include archived email' });
 
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
     fireEvent.keyDown(window, { key: 'Enter' });
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(Object.keys(bodies[0]!)).not.toContain('reach');
+    expect(bodies[0]).toMatchObject({ verb: 'delete', olderThanDays: 180 });
   });
 
   it('widens a zero-match Delete to any age and sends the matching unwindowed scope', async () => {
@@ -408,10 +410,10 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'd' });
-    await screen.findByRole('combobox', { name: 'How far back to delete' });
+    await screen.findByRole('combobox', { name: 'Email age' });
     expect(screen.getByRole('button', { name: /^Delete( [\d,]+ emails?)? for/ })).toBeDisabled();
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'How far back to delete' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: 'all' },
     });
     expect(screen.getByRole('button', { name: /^Delete( [\d,]+ emails?)? for/ })).toBeEnabled();

@@ -5,8 +5,6 @@ import { SCREENER_QUEUE } from './data';
 import { DecidePreview } from './decide-preview';
 
 const row = SCREENER_QUEUE[0]!;
-/** Escape a content string before it builds a matcher (CLAUDE.md §8). */
-const esc = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 describe('DecidePreview — live-preview confirm gate', () => {
   it.each(['archive', 'later', 'delete'] as const)(
@@ -122,7 +120,7 @@ describe('DecidePreview — live-preview confirm gate', () => {
 });
 
 describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
-  it('renders Include archived email off by default, with the inbox count in the headline', () => {
+  it('renders Include archived email off by default, with the inbox count in the impact summary', () => {
     render(
       <DecidePreview
         verb="delete"
@@ -140,9 +138,13 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
     const includeArchived = screen.getByRole('checkbox', { name: 'Include archived email' });
     expect(includeArchived).not.toBeChecked();
     expect(includeArchived).toHaveStyle({ minHeight: '48px' });
-    expect(screen.getByRole('heading', { name: 'Delete 2 emails?' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: `Delete emails from ${row.senderName}?` }),
+    ).toBeInTheDocument();
     expect(screen.queryByText('Both choices cover the same emails right now.')).toBeNull();
-    expect(screen.getByText(/They move to Gmail Trash\./)).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+      '2 emails will move to Gmail Trash.',
+    );
     expect(
       screen.getByText(/^Inbox only\. We check again right before anything moves/),
     ).toBeInTheDocument();
@@ -213,13 +215,9 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
     expect(onReachChange).toHaveBeenCalledWith('all_mail');
 
     rerender(<DecidePreview {...props} reach="all_mail" />);
-    // The armed headline figure IS the all-mail count, and the headline
-    // follows the chip — it must not keep claiming the inbox alone.
-    expect(
-      screen.getByText(
-        new RegExp(`^From ${esc(row.senderName)}\\. Inbox and archived email both move`),
-      ),
-    ).toBeInTheDocument();
+    const impact = screen.getByRole('region', { name: 'Delete impact' });
+    expect(impact).toHaveTextContent('9 emails will move to Gmail Trash.');
+    expect(impact).toHaveTextContent('Inbox and archived email');
     expect(screen.queryByText(/^2 emails from/)).toBeNull();
     expect(
       screen.getByText(/^Inbox and archived email\. We check again right before anything moves/),
@@ -266,6 +264,56 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
 });
 
 describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () => {
+  it('shows the existing selected age with a cutoff, and keeps the count out of Delete', () => {
+    const onWindowChange = vi.fn();
+    render(
+      <DecidePreview
+        verb="delete"
+        row={row}
+        inboxCount={2}
+        inboxTotal={9}
+        windowDays={180}
+        onWindowChange={onWindowChange}
+        confirming={false}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const age = screen.getByRole('combobox', { name: 'Email age' });
+    expect(age).toHaveValue('180');
+    expect(age).toHaveAccessibleDescription(/Approximate cutoff:/);
+    expect(screen.getByRole('option', { name: 'Older than 90 days' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: `Delete for ${row.senderName}` })).toHaveTextContent(
+      /^Delete$/,
+    );
+    fireEvent.change(age, { target: { value: '30' } });
+    expect(onWindowChange).toHaveBeenCalledWith(30);
+  });
+
+  it.each(['loading', 'unavailable'] as const)(
+    'hides a cached archived impact while the preview is %s',
+    (inboxCount) => {
+      const onConfirm = vi.fn();
+      render(
+        <DecidePreview
+          verb="delete"
+          row={row}
+          inboxCount={inboxCount}
+          allMailCount={9}
+          reach="all_mail"
+          confirming={false}
+          onConfirm={onConfirm}
+          onCancel={vi.fn()}
+        />,
+      );
+      expect(screen.queryByRole('region', { name: 'Delete impact' })).toBeNull();
+      const confirm = screen.getByRole('button', { name: `Delete for ${row.senderName}` });
+      expect(confirm).toBeDisabled();
+      fireEvent.click(confirm);
+      expect(onConfirm).not.toHaveBeenCalled();
+    },
+  );
+
   it('names the active window next to the live count, and only for Delete', () => {
     render(
       <DecidePreview
@@ -324,12 +372,14 @@ describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () =
     const notice = screen.getByRole('status');
     expect(notice).toHaveTextContent(/\b9\b/);
     expect(notice).toHaveTextContent(/older than/i);
-    expect(notice).toHaveTextContent(/6 months\+/i);
+    expect(notice).toHaveTextContent(/180 days/i);
     // Codex review 2026-09-03 (QA-delete-20260903-01): the zero-match
     // header must not contradict this exact notice — "Nothing to move"
     // would sit directly above "9 emails ... are in your inbox."
     expect(screen.queryByText(/Nothing to move/)).toBeNull();
-    expect(screen.getByText(/They move to Gmail Trash\./)).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+      'No emails match this scope.',
+    );
   });
 
   it('names the selected time window at all-mail reach without an inbox-only notice', () => {
@@ -372,7 +422,7 @@ describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () =
       />,
     );
     expect(screen.getByRole('button', { name: /^Delete/i })).toBeDisabled();
-    fireEvent.change(screen.getByRole('combobox', { name: 'How far back to delete' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: 'all' },
     });
     expect(onWindowChange).toHaveBeenCalledWith(null);
@@ -506,9 +556,9 @@ describe('DecidePreview — zero-match header (QA-delete-20260903-01)', () => {
       />,
     );
     expect(screen.queryByText(/Nothing to move/)).toBeNull();
-    expect(
-      screen.getByText(/Inbox and archived email both move to Gmail Trash/),
-    ).toBeInTheDocument();
+    const impact = screen.getByRole('region', { name: 'Delete impact' });
+    expect(impact).toHaveTextContent('No emails match this scope.');
+    expect(impact).toHaveTextContent('Inbox and archived email · Older than 180 days');
   });
 
   it('still reads "Nothing to move" at all-mail reach when the true all-mail total is also zero', () => {
@@ -559,6 +609,11 @@ describe('DecidePreview — zero-match header (QA-delete-20260903-01)', () => {
         onCancel={() => {}}
       />,
     );
-    expect(screen.getByRole('heading', { name: 'Delete 1 email?' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: `Delete emails from ${row.senderName}?` }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+      '1 email will move to Gmail Trash.',
+    );
   });
 });

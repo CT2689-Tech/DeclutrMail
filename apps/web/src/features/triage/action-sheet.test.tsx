@@ -33,6 +33,31 @@ beforeEach(() => {
 const row = TRIAGE_QUEUE[0]!; // Groupon — high-confidence Archive
 
 describe('ActionSheet — D226 mandatory preview surface', () => {
+  it('uses the Delete review layout without adding an age choice or changing confirmation details', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ActionSheet
+        open
+        verb="Delete"
+        row={row}
+        inboxCount={128}
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('dialog')).toHaveAccessibleDescription(
+      /Future email is unchanged.*128 emails will move to Gmail Trash.*Inbox only.*Any age/,
+    );
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByText(/Approximate cutoff/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(onConfirm).toHaveBeenCalledWith({
+      archiveHistoric: false,
+      wakeAt: null,
+      rememberPreference: false,
+    });
+  });
+
   it('shows the account before expanding Details, including while the count loads', () => {
     render(
       <ActionSheet

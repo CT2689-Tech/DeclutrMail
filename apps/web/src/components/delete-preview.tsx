@@ -13,7 +13,7 @@ export function DeletePreview({
   children,
 }: {
   olderThanDays: number | null;
-  options: readonly { days: number | null; count?: number | undefined }[];
+  options: readonly { days: number | null; disabled?: boolean }[];
   onWindowChange: (days: number | null) => void;
   showWindow: boolean;
   children: ReactNode;
@@ -43,10 +43,10 @@ export function DeletePreview({
               <option
                 key={option.days ?? 'all'}
                 value={option.days ?? 'all'}
-                disabled={option.count === undefined}
+                disabled={option.disabled}
               >
                 {deleteAgeLabel(option.days)}
-                {option.count === undefined ? ' (unavailable)' : ''}
+                {option.disabled ? ' (unavailable)' : ''}
               </option>
             ))}
           </select>
@@ -115,7 +115,7 @@ export function DeleteImpact({
   );
 }
 
-function deleteAgeLabel(days: number | null): string {
+export function deleteAgeLabel(days: number | null): string {
   if (days === null) return 'Any age';
   return days === 365 ? 'Older than 1 year' : `Older than ${days} days`;
 }

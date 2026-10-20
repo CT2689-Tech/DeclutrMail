@@ -10,6 +10,8 @@ import {
   unsubscribeTitle,
 } from '@/features/senders/unsubscribe-backlog/preview-copy';
 import { ActionReachControl, DELETE_ARCHIVED_HINT } from '@/components/action-scope-controls';
+import { DeleteImpact } from '@/components/delete-preview';
+import { buildActionPresentation } from '@declutrmail/shared/actions';
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import type { ActionReach } from '@declutrmail/shared/contracts';
@@ -255,6 +257,17 @@ export function ActionSheet({
     wakeAt: selectedWakeAt,
     reach: verb === 'Unsubscribe' && effectiveMode !== 'delete' ? 'inbox_only' : reach,
   });
+  const deleteEffect =
+    verb === 'Delete'
+      ? buildActionPresentation({
+          verb: 'delete',
+          liveCount: countKnown,
+          planUndoDeadline: null,
+          unsubscribeChannel: null,
+          wakeAt: null,
+          reach,
+        }).primary
+      : null;
   const confirm = () =>
     onConfirm({
       archiveHistoric: effectiveArchiveHistoric,
@@ -342,6 +355,7 @@ export function ActionSheet({
       data-dm-preview-mode="modal"
     >
       <PreviewSheet
+        layout={verb === 'Delete' ? 'review' : 'compact'}
         context={
           mailboxEmail ? <MailboxActionContextView mailboxEmail={mailboxEmail} /> : undefined
         }
@@ -364,17 +378,35 @@ export function ActionSheet({
                 row.senderName,
                 countKnown ?? 0,
               )
-            : facts.title
+            : verb === 'Delete' && !facts.nothingToMove
+              ? `Delete emails from ${row.senderName}?`
+              : facts.title
         }
-        subtitle={reachHint ?? facts.subtitle ?? undefined}
+        subtitle={
+          deleteEffect && !facts.nothingToMove
+            ? deleteEffect.futureMail.summary
+            : (reachHint ?? facts.subtitle ?? undefined)
+        }
         note={
-          verb === 'Unsubscribe'
-            ? effectiveMode === 'delete'
-              ? WS5_COPY['f1.honesty.delete']
-              : effectiveMode === 'archive'
-                ? WS5_COPY['f1.honesty.archive']
-                : WS5_COPY['f1.honesty.unsubOnly']
-            : (facts.note ?? undefined)
+          verb === 'Delete'
+            ? undefined
+            : verb === 'Unsubscribe'
+              ? effectiveMode === 'delete'
+                ? WS5_COPY['f1.honesty.delete']
+                : effectiveMode === 'archive'
+                  ? WS5_COPY['f1.honesty.archive']
+                  : WS5_COPY['f1.honesty.unsubOnly']
+              : (facts.note ?? undefined)
+        }
+        summary={
+          deleteEffect ? (
+            <DeleteImpact
+              count={archivedUncounted || previewSenderGone ? null : countKnown}
+              includesArchived={reach === 'all_mail'}
+              olderThanDays={null}
+              note={facts.nothingToMove ? '' : deleteEffect.activityUndo.summary}
+            />
+          ) : undefined
         }
         primary={{
           label:
@@ -382,7 +414,9 @@ export function ActionSheet({
               ? unsubscribeButton(effectiveMode, countKnown, isProtectedRow)
               : isProtectedRow
                 ? `${verb} anyway`
-                : facts.primaryLabel,
+                : verb === 'Delete'
+                  ? 'Delete'
+                  : facts.primaryLabel,
           onClick: confirm,
           tone:
             verb === 'Delete' || (verb === 'Unsubscribe' && effectiveMode === 'delete')

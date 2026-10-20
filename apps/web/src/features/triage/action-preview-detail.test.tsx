@@ -207,12 +207,15 @@ describe('Triage preview — the count lives in the title, once', () => {
     },
   );
 
-  it('asks the question with the count when there is mail to move', () => {
+  it('names the sender and puts the Delete count in the impact summary', () => {
     renderPreview({ verb: 'Delete', inboxCount: 1 });
-    const dialog = screen.getByRole('dialog', { name: 'Delete 1 email?' });
-    expect(within(dialog).getByRole('button', { name: 'Delete 1 email' })).toBeEnabled();
+    const dialog = screen.getByRole('dialog', { name: `Delete emails from ${row.senderName}?` });
+    expect(within(dialog).getByRole('button', { name: 'Delete' })).toBeEnabled();
     // Where it goes and how to undo it, each stated.
     expect(dialog).toHaveAccessibleDescription(/move to Gmail Trash/);
+    expect(within(dialog).getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+      '1 email will move to Gmail Trash.',
+    );
     expect(within(dialog).getByText(/Undo/)).toBeInTheDocument();
   });
 
