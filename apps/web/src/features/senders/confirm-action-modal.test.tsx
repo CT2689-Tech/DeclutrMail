@@ -255,7 +255,12 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
       />,
     );
 
-    expect(screen.getByRole('heading', { name: 'Archive 1 email?' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: `Archive emails from ${sender.name}?` }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+      '1 email will leave your inbox and stay in Gmail.',
+    );
     expect(container.textContent).not.toMatch(/1\s*emails/);
   });
 
@@ -405,7 +410,12 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     // title comes off the request's senders, not `selectedCount -
     // skipped` — those agreed only before the quota cap gave a request a
     // second reason to cover fewer senders than the selection.
-    expect(screen.getByRole('heading', { name: 'Archive 4 emails?' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: `Archive emails from ${sender.name}?` }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+      '4 emails will leave your inbox and stay in Gmail.',
+    );
     expect(screen.queryByText(/from 40 senders/)).not.toBeInTheDocument();
     expect(screen.getByText(/This covers 1 of the 40 senders you picked/)).toBeInTheDocument();
     expect(screen.getByText(/all your free total allows this month/)).toBeInTheDocument();
@@ -459,8 +469,11 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     expect(screen.queryByText(/4 senders you selected/)).not.toBeInTheDocument();
     // The title is the acted-on count, stated by the caller.
     expect(
-      screen.getByRole('heading', { name: 'Archive 4 emails from 2 senders?' }),
+      screen.getByRole('heading', { name: 'Archive emails from 2 senders?' }),
     ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+      '4 emails will leave your inbox and stay in Gmail.',
+    );
     // And the scope line keeps the real selection total intact.
     expect(screen.getByLabelText('Senders included in this bulk action')).toHaveTextContent(
       '5 selected · 2 in this preview · 1 Protected excluded',
@@ -2320,13 +2333,11 @@ describe('ConfirmActionModal — Delete title names its destination', () => {
   });
 });
 
-// QA-archive-20260901-01: this modal's eyebrow was the one D226 preview
-// surface that dropped the verb entirely ("Preview · before anything
-// changes"), while Triage's identical sheets both name it. Shares the
-// same `n` the H3 title one line below already states, so the two never
-// drift from each other.
-describe('ConfirmActionModal — the title names the verb and the count (QA-archive-20260901-01)', () => {
-  it('names the verb and the live email count for a single sender', () => {
+// QA-archive-20260901-01: preserve the explicit action and live scope.
+// Archive now names the sender in the title and states the live count once,
+// in the impact summary beside the final action.
+describe('ConfirmActionModal — Archive names the sender and previews the live impact (QA-archive-20260901-01)', () => {
+  it('names the sender and puts the live email count in the impact summary', () => {
     render(
       <ConfirmActionModal
         request={request('Archive')}
@@ -2335,7 +2346,12 @@ describe('ConfirmActionModal — the title names the verb and the count (QA-arch
         compositePreview={livePreview}
       />,
     );
-    expect(screen.getByRole('heading', { name: 'Archive 4 emails?' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: `Archive emails from ${sender.name}?` }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+      '4 emails will leave your inbox and stay in Gmail.',
+    );
   });
 
   it('names the verb and the real sender count for a bulk selection', () => {
@@ -2358,8 +2374,11 @@ describe('ConfirmActionModal — the title names the verb and the count (QA-arch
       />,
     );
     expect(
-      screen.getByRole('heading', { name: 'Archive 4 emails from 2 senders?' }),
+      screen.getByRole('heading', { name: 'Archive emails from 2 senders?' }),
     ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+      '4 emails will leave your inbox and stay in Gmail.',
+    );
   });
 
   // Codex review 2026-09-03: `request.actionableCount` is a snapshot
@@ -2392,8 +2411,11 @@ describe('ConfirmActionModal — the title names the verb and the count (QA-arch
       />,
     );
     expect(
-      screen.getByRole('heading', { name: 'Archive 4 emails from 1 sender?' }),
+      screen.getByRole('heading', { name: 'Archive emails from 1 sender?' }),
     ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+      '4 emails will leave your inbox and stay in Gmail.',
+    );
     expect(screen.queryByText(/2 senders/)).toBeNull();
     // …and the one it skipped is said once, in the note.
     expect(screen.getByText(/1 Protected sender is skipped\./)).toBeInTheDocument();
@@ -2755,7 +2777,7 @@ describe('ConfirmActionModal — explicit period and scope choices', () => {
       expect(period).toHaveValue(verb === 'Delete' ? '180' : 'all');
       fireEvent.click(
         screen.getByRole('button', {
-          name: new RegExp(verb === 'Delete' ? '^Delete$' : `${verb} 7`),
+          name: new RegExp(`^${verb}$`),
         }),
       );
       expect(onConfirm).toHaveBeenLastCalledWith(
@@ -2764,7 +2786,7 @@ describe('ConfirmActionModal — explicit period and scope choices', () => {
       fireEvent.change(period, { target: { value: '365' } });
       fireEvent.click(
         screen.getByRole('button', {
-          name: new RegExp(verb === 'Delete' ? '^Delete$' : `${verb} 7`),
+          name: new RegExp(`^${verb}$`),
         }),
       );
       expect(onConfirm).toHaveBeenLastCalledWith(expect.objectContaining({ olderThanDays: 365 }));
@@ -2869,7 +2891,76 @@ describe('ConfirmActionModal — explicit period and scope choices', () => {
   });
 });
 
-describe('ConfirmActionModal — Delete-only layout A', () => {
+describe('ConfirmActionModal — Senders Archive layout A', () => {
+  it('keeps Any age and inbox-only submission even when archived email is available', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={request('Archive')}
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+        compositePreview={livePreviewWithAllMail}
+      />,
+    );
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+    expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
+    expect(document.querySelector('time[datetime]')).toBeNull();
+    const impact = screen.getByRole('region', { name: 'Archive impact' });
+    expect(impact).toHaveTextContent('4 emails will leave your inbox and stay in Gmail.');
+    expect(impact).toHaveTextContent('Inbox only · Any age');
+    expect(screen.getByRole('dialog')).toHaveAccessibleDescription(
+      /4 emails will leave your inbox and stay in Gmail/,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    expect(onConfirm).toHaveBeenCalledWith({ olderThanDays: null, archiveHistoric: false });
+  });
+
+  it('keeps age editable after a zero match and restores the default on reopen', () => {
+    const pending = request('Archive');
+    const props = { request: pending, onCancel: vi.fn(), onConfirm: vi.fn() };
+    const preview = { ...livePreview, counts: { ...buckets, olderThan365d: 0 } };
+    const { rerender } = render(<ConfirmActionModal {...props} compositePreview={preview} />);
+    const age = screen.getByRole('combobox', { name: 'Email age' });
+    fireEvent.change(age, { target: { value: '365' } });
+    expect(
+      screen.getByRole('heading', {
+        name: `No emails older than 1 year from ${sender.name}`,
+      }),
+    ).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+      'No emails match this scope.',
+    );
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
+    expect(document.querySelector('time[datetime]')).not.toBeNull();
+    fireEvent.change(age, { target: { value: '30' } });
+    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+      '3 emails will leave your inbox and stay in Gmail.',
+    );
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeEnabled();
+    rerender(<ConfirmActionModal {...props} request={null} compositePreview={preview} />);
+    rerender(<ConfirmActionModal {...props} compositePreview={preview} />);
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+  });
+
+  it('hides cached counts and blocks confirmation while the live preview is unavailable', () => {
+    const props = { request: request('Archive'), onCancel: vi.fn(), onConfirm: vi.fn() };
+    const { rerender } = render(<ConfirmActionModal {...props} compositePreview={livePreview} />);
+    rerender(
+      <ConfirmActionModal {...props} compositePreview={livePreview} compositePreviewLoading />,
+    );
+    expect(screen.queryByRole('region', { name: 'Archive impact' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
+    rerender(
+      <ConfirmActionModal {...props} compositePreview={livePreview} compositePreviewError />,
+    );
+    expect(screen.queryByRole('region', { name: 'Archive impact' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(props.onConfirm).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConfirmActionModal — Delete layout A and other actions', () => {
   it('keeps the 180-day inbox-only payload while showing one impact and a short button', () => {
     const onConfirm = vi.fn();
     const before = Date.now();
@@ -2923,23 +3014,20 @@ describe('ConfirmActionModal — Delete-only layout A', () => {
     );
   });
 
-  it.each(['Archive', 'Unsubscribe', 'Later'] as const)(
-    'keeps %s on its existing presentation',
-    (verb) => {
-      render(
-        <ConfirmActionModal
-          request={request(verb)}
-          onCancel={vi.fn()}
-          onConfirm={vi.fn()}
-          compositePreview={livePreview}
-        />,
-      );
-      expect(screen.queryByRole('region', { name: 'Delete impact' })).toBeNull();
-      expect(screen.queryByRole('combobox', { name: 'Email age' })).toBeNull();
-      if (verb !== 'Later')
-        expect(screen.getByRole('combobox', { name: /How far back/i })).toHaveValue('all');
-    },
-  );
+  it.each(['Unsubscribe', 'Later'] as const)('keeps %s on its existing presentation', (verb) => {
+    render(
+      <ConfirmActionModal
+        request={request(verb)}
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+        compositePreview={livePreview}
+      />,
+    );
+    expect(screen.queryByRole('region', { name: 'Delete impact' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Email age' })).toBeNull();
+    if (verb !== 'Later')
+      expect(screen.getByRole('combobox', { name: /How far back/i })).toHaveValue('all');
+  });
 });
 
 it('records a loaded preview once, not loading, failed, or closed renders', () => {

@@ -6,7 +6,7 @@ import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 import { UnsubscribeBacklogDialog } from './unsubscribe-backlog/unsubscribe-backlog-dialog';
 import { someProtectedSelectionCopy } from './unsubscribe-backlog/preview-copy';
 import { pickBucketCount, TIME_WINDOW_PRESETS } from './action-window';
-import { DeleteImpact, DeletePreview } from '@/components/delete-preview';
+import { CleanupImpact, CleanupPreview, cleanupAgeLabel } from '@/components/cleanup-preview';
 import { ActionReachControl, ActionWindowControl } from '@/components/action-scope-controls';
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
@@ -290,6 +290,7 @@ export function ConfirmActionModal({
   // the summary line + "Show what currently matches" header.
   const isArchiveVerb = verb === 'Archive';
   const isDeleteVerb = verb === 'Delete';
+  const isCleanupVerb = isArchiveVerb || isDeleteVerb;
   const isUnsubVerb = verb === 'Unsubscribe';
   const isLaterVerb = verb === 'Later';
   // Every A/L/D primary moves current inbox mail. Archive/Delete expose a
@@ -514,17 +515,19 @@ export function ConfirmActionModal({
     ? `No emails left to move to Trash. There is no email from ${
         countedSubject
       } in Inbox or archived.`
-    : inboxScopeVerbLabel
-      ? inboxScopeNoticeCopy(
-          inboxScopeNotice,
-          inboxScopeVerbLabel,
-          countedSubject,
-          // With the reach chips on screen, "only acts on mail still in
-          // the inbox" would be false one sentence before the hint that
-          // says how to reach past it (ADR-0028).
-          { verbActsBeyondInbox: reachAvailable },
-        )
-      : null;
+    : isArchiveVerb && inboxScopeNotice.kind === 'empty-window'
+      ? `Your inbox has ${emailsLabel(inboxScopeNotice.inboxTotal)} from ${countedSubject}, but none are ${cleanupAgeLabel(inboxScopeNotice.olderThanDays).toLowerCase()}.`
+      : inboxScopeVerbLabel
+        ? inboxScopeNoticeCopy(
+            inboxScopeNotice,
+            inboxScopeVerbLabel,
+            countedSubject,
+            // With the reach chips on screen, "only acts on mail still in
+            // the inbox" would be false one sentence before the hint that
+            // says how to reach past it (ADR-0028).
+            { verbActsBeyondInbox: reachAvailable },
+          )
+        : null;
   // ADR-0028 — when the inbox is empty but the mailbox still holds mail
   // this Delete COULD reach, point at the chip that reaches it. Modal-
   // local on purpose: the shared notice is also rendered by surfaces
@@ -873,9 +876,11 @@ export function ConfirmActionModal({
 
   const title = (() => {
     if (zeroTitle) {
-      return windowedZero
-        ? `Nothing older than ${windowName(olderThanDays)} from ${zeroWho}`
-        : `Nothing in your inbox${allMailScope ? ' or archive' : ''} from ${zeroWho}`;
+      return windowedZero && isArchiveVerb
+        ? `No emails ${cleanupAgeLabel(olderThanDays).toLowerCase()} from ${zeroWho}`
+        : windowedZero
+          ? `Nothing older than ${windowName(olderThanDays)} from ${zeroWho}`
+          : `Nothing in your inbox${allMailScope ? ' or archive' : ''} from ${zeroWho}`;
     }
     if (isArchiveVerb || isDeleteVerb) {
       return liveCount === null
@@ -964,7 +969,7 @@ export function ConfirmActionModal({
     // Name the override in the button itself — the click IS the
     // acknowledgement, so it must not read like an ordinary confirm.
     if (needsProtectedOverride && !hasSecondaryAction) return `${verbWord} anyway`;
-    if (isDeleteVerb) return 'Delete';
+    if (isCleanupVerb) return verbWord;
     if (hasSecondaryAction)
       return `Unsubscribe + ${secondaryVerb === 'delete' ? 'Delete' : 'Archive'}`;
     if (primaryActsOnInbox && liveCount !== null && liveCount > 0) {
@@ -1076,7 +1081,7 @@ export function ConfirmActionModal({
       />,
     );
   }
-  if (showWindowSelect && !isDeleteVerb) {
+  if (showWindowSelect && !isCleanupVerb) {
     controls.push(
       <ActionWindowControl
         key="window"
@@ -1440,7 +1445,7 @@ export function ConfirmActionModal({
     // context that competes with the cookie banner and the selection FAB.
     <div style={{ position: 'relative', zIndex: OVERLAY_Z.modal }}>
       <PreviewSheet
-        layout={isDeleteVerb ? 'review' : 'compact'}
+        layout={isCleanupVerb ? 'review' : 'compact'}
         context={
           activeMailboxEmail ? (
             <MailboxActionContextView mailboxEmail={activeMailboxEmail} />
@@ -1460,9 +1465,9 @@ export function ConfirmActionModal({
             <AvatarStack senders={senders} />
           )
         }
-        title={isDeleteVerb && !zeroTitle ? `Delete emails from ${fromWho}?` : title}
+        title={isCleanupVerb && !zeroTitle ? `${verbWord} emails from ${fromWho}?` : title}
         subtitle={
-          isDeleteVerb && !zeroTitle ? (
+          isArchiveVerb && !zeroTitle ? undefined : isDeleteVerb && !zeroTitle ? (
             <span id="dm-confirm-lead">{primary.futureMail.summary}</span>
           ) : subtitle === null ? undefined : (
             <span id="dm-confirm-lead" style={{ textWrap: 'balance' }}>
@@ -1470,10 +1475,11 @@ export function ConfirmActionModal({
             </span>
           )
         }
-        note={isDeleteVerb || note === '' ? undefined : note}
+        note={isCleanupVerb || note === '' ? undefined : note}
         summary={
-          isDeleteVerb ? (
-            <DeleteImpact
+          isCleanupVerb ? (
+            <CleanupImpact
+              action={isArchiveVerb ? 'Archive' : 'Delete'}
               count={archivedUncounted ? null : liveCount}
               includesArchived={allMailScope}
               olderThanDays={olderThanDays}
@@ -1527,11 +1533,11 @@ export function ConfirmActionModal({
           )
         }
       >
-        {isDeleteVerb || selectionSummary || controls.length > 0 ? (
+        {isCleanupVerb || selectionSummary || controls.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: space[3] }}>
             {selectionSummary}
-            {isDeleteVerb ? (
-              <DeletePreview
+            {isCleanupVerb ? (
+              <CleanupPreview
                 olderThanDays={olderThanDays}
                 options={windowOptions.map(({ days, count }) => ({
                   days,
@@ -1541,7 +1547,7 @@ export function ConfirmActionModal({
                 showWindow={showWindowSelect}
               >
                 {controls}
-              </DeletePreview>
+              </CleanupPreview>
             ) : (
               controls
             )}

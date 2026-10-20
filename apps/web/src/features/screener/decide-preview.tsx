@@ -16,7 +16,7 @@ import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy'
 import { afterLead } from '@/lib/copy/after-lead';
 import { useNow } from '@/lib/use-now';
 import { ActionReachControl } from '@/components/action-scope-controls';
-import { DeleteImpact, DeletePreview, deleteAgeLabel } from '@/components/delete-preview';
+import { CleanupImpact, CleanupPreview, cleanupAgeLabel } from '@/components/cleanup-preview';
 import type { ActionReach } from '@/lib/api/actions';
 
 import {
@@ -267,7 +267,7 @@ export function DecidePreview({
     scopeNotice === null
       ? null
       : verb === 'delete' && scopeNotice.kind === 'empty-window'
-        ? `Your inbox has ${emailsLabel(scopeNotice.inboxTotal)} from this sender, but none are ${deleteAgeLabel(scopeNotice.olderThanDays).toLowerCase()}.`
+        ? `Your inbox has ${emailsLabel(scopeNotice.inboxTotal)} from this sender, but none are ${cleanupAgeLabel(scopeNotice.olderThanDays).toLowerCase()}.`
         : inboxScopeNoticeCopy(scopeNotice, VERB_LABEL[verb], 'this sender', {
             verbActsBeyondInbox: reachAvailable,
           });
@@ -374,7 +374,7 @@ export function DecidePreview({
 
       {verb === 'delete' && (
         <div style={{ marginTop: space[3] }}>
-          <DeletePreview
+          <CleanupPreview
             olderThanDays={windowDays}
             options={DELETE_AGE_OPTIONS}
             showWindow={onWindowChange !== undefined}
@@ -389,7 +389,7 @@ export function DecidePreview({
                 onChange={(next) => onReachChange?.(next)}
               />
             )}
-          </DeletePreview>
+          </CleanupPreview>
         </div>
       )}
 
@@ -413,7 +413,8 @@ export function DecidePreview({
 
       {verb === 'delete' && (
         <div style={{ marginTop: space[3] }}>
-          <DeleteImpact
+          <CleanupImpact
+            action="Delete"
             count={previewBlocked ? null : liveCount}
             includesArchived={allMailReach}
             olderThanDays={windowDays}

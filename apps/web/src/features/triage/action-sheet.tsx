@@ -10,7 +10,7 @@ import {
   unsubscribeTitle,
 } from '@/features/senders/unsubscribe-backlog/preview-copy';
 import { ActionReachControl, DELETE_ARCHIVED_HINT } from '@/components/action-scope-controls';
-import { DeleteImpact } from '@/components/delete-preview';
+import { CleanupImpact } from '@/components/cleanup-preview';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
@@ -400,7 +400,8 @@ export function ActionSheet({
         }
         summary={
           deleteEffect ? (
-            <DeleteImpact
+            <CleanupImpact
+              action="Delete"
               count={archivedUncounted || previewSenderGone ? null : countKnown}
               includesArchived={reach === 'all_mail'}
               olderThanDays={null}

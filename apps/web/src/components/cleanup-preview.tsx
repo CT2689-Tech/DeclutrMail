@@ -2,10 +2,10 @@
 
 import { useId, type ReactNode } from 'react';
 import { useNow } from '@/lib/use-now';
-import styles from './delete-preview.module.css';
+import styles from './cleanup-preview.module.css';
 
 /** Presentation only. The existing confirmation owns scope, counts and submission. */
-export function DeletePreview({
+export function CleanupPreview({
   olderThanDays,
   options,
   onWindowChange,
@@ -45,7 +45,7 @@ export function DeletePreview({
                 value={option.days ?? 'all'}
                 disabled={option.disabled}
               >
-                {deleteAgeLabel(option.days)}
+                {cleanupAgeLabel(option.days)}
                 {option.disabled ? ' (unavailable)' : ''}
               </option>
             ))}
@@ -74,39 +74,43 @@ export function DeletePreview({
   );
 }
 
-/** The affected count and recovery stay visible beside the final Delete button. */
-export function DeleteImpact({
+/** The affected count and recovery stay visible beside the final cleanup action. */
+export function CleanupImpact({
+  action,
   count,
   includesArchived,
   olderThanDays,
   note,
 }: {
+  action: 'Archive' | 'Delete';
   count: number | null;
   includesArchived: boolean;
   olderThanDays: number | null;
   note: string;
 }) {
+  const destination =
+    action === 'Archive' ? 'leave your inbox and stay in Gmail' : 'move to Gmail Trash';
   return (
     <>
       {count === null && (
-        <p className={styles.recovery}>Matching emails move to Gmail Trash after you confirm.</p>
+        <p className={styles.recovery}>Matching emails {destination} after you confirm.</p>
       )}
       {count !== null && (
         <div
           className={styles.impact}
           role="region"
-          aria-label="Delete impact"
+          aria-label={`${action} impact`}
           aria-live="polite"
           aria-atomic="true"
         >
           <p>
             {count === 0
               ? 'No emails match this scope.'
-              : `${count.toLocaleString('en-US')} ${count === 1 ? 'email' : 'emails'} will move to Gmail Trash.`}
+              : `${count.toLocaleString('en-US')} ${count === 1 ? 'email' : 'emails'} will ${destination}.`}
           </p>
           <span>
             {includesArchived ? 'Inbox and archived email' : 'Inbox only'} ·{' '}
-            {deleteAgeLabel(olderThanDays)}
+            {cleanupAgeLabel(olderThanDays)}
           </span>
         </div>
       )}
@@ -115,7 +119,7 @@ export function DeleteImpact({
   );
 }
 
-export function deleteAgeLabel(days: number | null): string {
+export function cleanupAgeLabel(days: number | null): string {
   if (days === null) return 'Any age';
   return days === 365 ? 'Older than 1 year' : `Older than ${days} days`;
 }

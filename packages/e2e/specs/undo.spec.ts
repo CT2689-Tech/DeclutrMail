@@ -90,7 +90,7 @@ test('Archive one sender via preview, then restore it through the undo tray', as
     }
   }
   test.skip(target === null, 'no unprotected sender with 1–5 inbox messages on the first page');
-  const { id: senderId, domain: senderDomain, inboxCount } = target!;
+  const { id: senderId, name: senderName, domain: senderDomain, inboxCount } = target!;
   const senderKey = await senderKeyById(sql, mailboxId, senderId);
 
   // ---- Senders list → the target row's ⋯ popover → Archive.
@@ -103,20 +103,22 @@ test('Archive one sender via preview, then restore it through the undo tray', as
   await card.getByRole('menuitem', { name: 'Archive', exact: true }).click();
 
   // ---- D226 mandatory preview sheet — real count, then confirm.
-  // The sheet is named by its title, which states the live count and
-  // the verb as a question ("Archive 3 emails?", ADR-0042).
+  // The title names the sender; the impact summary states the live count.
   const count = inboxCount.toLocaleString('en-US');
   const modal = page.getByRole('dialog', {
-    name: `Archive ${count} email${inboxCount === 1 ? '' : 's'}?`,
+    name: `Archive emails from ${senderName}?`,
   });
   await expect(modal).toBeVisible();
   // The sender's domain and the counting note sit in the sheet's
   // Details disclosure — present in the DOM, one click away.
   await expect(modal).toContainText(senderDomain);
   await expect(modal).toContainText(/We check again right before anything moves/);
-  // The confirm button names the verb, live count and email unit.
+  await expect(modal.getByRole('region', { name: 'Archive impact' })).toContainText(
+    `${count} email${inboxCount === 1 ? '' : 's'} will leave your inbox and stay in Gmail.`,
+  );
+  // The confirm button stays short; the live count remains beside it.
   const confirm = modal.getByRole('button', {
-    name: `Archive ${count} email${inboxCount === 1 ? '' : 's'}`,
+    name: 'Archive',
     exact: true,
   });
   await expect(confirm).toBeEnabled();

@@ -969,8 +969,8 @@ describe('SenderDetailRoute', () => {
       }
       const confirm = await within(dialog).findByRole('button', {
         name:
-          verb === 'Delete'
-            ? /^Delete$/
+          verb === 'Delete' || verb === 'Archive'
+            ? new RegExp(`^${verb}$`)
             : verb === 'Later'
               ? /^Move \d+ emails? to Later$/
               : new RegExp(`^${verb} \\d+ emails?$`),
@@ -1212,7 +1212,7 @@ describe('SenderDetailRoute', () => {
       if (verb === 'Delete' && includeArchived()) fireEvent.click(includeArchived()!);
       if (verb !== 'Later') {
         const windowControl = within(dialog).queryByRole('combobox', {
-          name: verb === 'Delete' ? 'Email age' : /How far back/i,
+          name: 'Email age',
         });
         if (windowControl) {
           fireEvent.change(windowControl, {
@@ -1225,8 +1225,8 @@ describe('SenderDetailRoute', () => {
       }
       const confirm = await within(dialog).findByRole('button', {
         name:
-          verb === 'Delete'
-            ? /^Delete$/
+          verb === 'Delete' || verb === 'Archive'
+            ? new RegExp(`^${verb}$`)
             : verb === 'Later'
               ? new RegExp(`^Move ${affected} emails? to Later$`)
               : new RegExp(`^${verb} ${affected} emails?$`),
@@ -2115,7 +2115,9 @@ describe('SenderDetailRoute', () => {
         await tick(500);
         expect(previewGets).toBeGreaterThan(previewGetsBefore);
         expect(
-          within(screen.getByRole('dialog')).getByRole('heading', { name: 'Archive 5 emails?' }),
+          within(screen.getByRole('dialog')).getByRole('heading', {
+            name: /^Archive emails from .+\?$/,
+          }),
         ).toBeInTheDocument();
         fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
         await tick(200);

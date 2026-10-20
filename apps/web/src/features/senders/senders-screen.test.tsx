@@ -1746,7 +1746,7 @@ describe('SendersScreen — edge states', () => {
       if (verb === 'Delete' && includeArchived()) fireEvent.click(includeArchived()!);
       if (verb !== 'Later') {
         const windowControl = within(dialog).queryByRole('combobox', {
-          name: verb === 'Delete' ? 'Email age' : /How far back/i,
+          name: 'Email age',
         });
         if (windowControl) {
           fireEvent.change(windowControl, {
@@ -1759,8 +1759,8 @@ describe('SendersScreen — edge states', () => {
       }
       const confirm = await within(screen.getByRole('dialog')).findByRole('button', {
         name:
-          verb === 'Delete'
-            ? /^Delete$/
+          verb === 'Delete' || verb === 'Archive'
+            ? new RegExp(`^${verb}$`)
             : verb === 'Later'
               ? new RegExp(`^Move ${affected} emails? to Later$`)
               : new RegExp(`^${verb} ${affected} emails?$`),
@@ -2008,12 +2008,15 @@ describe('SendersScreen — edge states', () => {
     await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
     await screen.findByText(/We check again right before anything moves/);
 
-    // Pick the narrowest window — the chip states 12 of the 250.
+    // Pick the narrowest window; the impact summary states 12 of the 250.
     const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByRole('option', { name: /1 year\+/i })).toHaveTextContent('12');
-    fireEvent.change(within(dialog).getByRole('combobox', { name: /How far back/i }), {
+    expect(within(dialog).getByRole('option', { name: 'Older than 1 year' })).toBeEnabled();
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Email age' }), {
       target: { value: '365' },
     });
+    expect(within(dialog).getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+      '12 emails will leave your inbox and stay in Gmail.',
+    );
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await waitFor(() => expect(postedBody).not.toBeNull());
@@ -3301,8 +3304,8 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       }
       const confirm = await within(dialog).findByRole('button', {
         name:
-          verb === 'Delete'
-            ? /^Delete$/
+          verb === 'Delete' || verb === 'Archive'
+            ? new RegExp(`^${verb}$`)
             : verb === 'Later'
               ? /^Move \d+ emails? to Later$/
               : new RegExp(`^${verb} \\d+ emails?$`),
@@ -3403,7 +3406,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       ).toBeVisible();
       expect(dialog).not.toHaveTextContent(/person|people/i);
       if (withProtected) expect(dialog).toHaveTextContent('1 Protected sender is skipped.');
-      const confirm = await within(dialog).findByRole('button', { name: /^Archive \d+ emails?$/ });
+      const confirm = await within(dialog).findByRole('button', { name: 'Archive' });
       await waitFor(() => expect(confirm).toBeEnabled());
       fireEvent.click(confirm);
       await waitFor(() => expect(posted).toHaveLength(1));
@@ -5083,18 +5086,22 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     // Mandatory D226 preview with the AGGREGATED real count (never the
     // fabricated tracer numbers).
     await screen.findByText(/We check again right before anything moves/);
-    // The aggregated total (12 + 18) is the title's count.
+    // The stable title names the selection; the impact uses the aggregated count.
     expect(
       within(screen.getByRole('dialog')).getByRole('heading', {
-        name: 'Archive 30 emails from 2 senders?',
+        name: 'Archive emails from 2 senders?',
       }),
     ).toBeInTheDocument();
-    // Per-window options read the AGGREGATED totals too (8 + 9 = 17 for
-    // "30 days+") — never the single-sender composite preview, which is
-    // absent on bulk flows.
-    expect(
-      within(screen.getByRole('dialog')).getByRole('option', { name: /30 days\+/i }),
-    ).toHaveTextContent('17');
+    const dialog = screen.getByRole('dialog');
+    const impact = within(dialog).getByRole('region', { name: 'Archive impact' });
+    expect(impact).toHaveTextContent('30 emails will leave your inbox and stay in Gmail.');
+    // Changing age uses the aggregated buckets, not a single sender's count.
+    const age = within(dialog).getByRole('combobox', { name: 'Email age' });
+    expect(age).toHaveValue('all');
+    fireEvent.change(age, { target: { value: '30' } });
+    expect(impact).toHaveTextContent('17 emails will leave your inbox and stay in Gmail.');
+    fireEvent.change(age, { target: { value: 'all' } });
+    expect(impact).toHaveTextContent('30 emails will leave your inbox and stay in Gmail.');
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     // Real receipt appears only after the batch poll reports done.
@@ -6018,7 +6025,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.keyDown(document.body, { key: 'a' });
 
     // The preview covers the 1 eligible sender AND says what it dropped.
-    await screen.findByRole('heading', { name: 'Archive 12 emails from 1 sender?' });
+    await screen.findByRole('heading', { name: 'Archive emails from 1 sender?' });
     expect(screen.getByText(/1 Protected sender is skipped\./)).toBeInTheDocument();
     // The selection bar and the preview fact both state the Protected skip.
     expect(
