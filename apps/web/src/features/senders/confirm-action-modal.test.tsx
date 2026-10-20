@@ -2279,9 +2279,11 @@ describe('ConfirmActionModal — each fact is stated once (D226)', () => {
       />,
     );
     expect(screen.getByText(backlogMail('archive', 4))).toBeInTheDocument();
+    // The same Includes fact now sits once in Details. The backlog
+    // sentence above is still the only match-count phrasing.
     expect(
-      screen.queryByText('Inbox only. We check again right before anything moves.'),
-    ).toBeNull();
+      screen.getAllByText('Inbox only. We check again right before anything moves.'),
+    ).toHaveLength(1);
   });
 });
 

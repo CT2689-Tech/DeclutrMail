@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 import { pluralCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import type { CompositeActionPreviewResult } from '@/lib/api/use-action';
+import type { ActionRequest } from '../data';
 import { ConfirmActionModal } from '../confirm-action-modal';
 import { makeSender } from '../testing/make-sender';
+import { UnsubscribeBacklogDialog } from './unsubscribe-backlog-dialog';
 import { backlogMailLine, unsubscribeTitle } from './preview-copy';
 
 function backlogLine(mode: 'archive' | 'delete', n: number): string {
@@ -56,6 +58,23 @@ describe('Unsubscribe default choice', () => {
     expect(details).toHaveTextContent(PREVIEW_DETAILS.lastSeen.label);
     expect(details).toHaveTextContent('1 day ago');
     expect(details).toHaveTextContent(previewIncludesValue(false, null));
+  });
+
+  it('omits the received line when the sender row has no count', () => {
+    render(
+      <UnsubscribeBacklogDialog
+        request={
+          {
+            verb: 'Unsubscribe',
+            senders: [{ id: 'thin', name: 'Acme', unsubscribeMethod: 'one_click' }],
+          } as ActionRequest
+        }
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.queryByText(/received/)).toBeNull();
   });
 
   it('keeps Details on Unsubscribe only without an includes row', () => {

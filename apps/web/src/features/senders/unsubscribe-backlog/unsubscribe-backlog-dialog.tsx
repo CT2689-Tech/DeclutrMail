@@ -287,16 +287,21 @@ export function UnsubscribeBacklogDialog({
 
   const singleFacts: SheetFactItem[] = [];
   if (single && onlySender) {
-    const domain = compositePreview?.sender.domain || onlySender.domain;
-    if (domain !== '') {
+    // Inbox Report and the sample Senders screen pass a thin sender
+    // (id, name, unsubscribe method). A missing count is not zero.
+    const domain = compositePreview?.sender?.domain || onlySender.domain;
+    if (typeof domain === 'string' && domain !== '') {
       singleFacts.push({ label: PREVIEW_DETAILS.domain.label, value: domain });
     }
-    singleFacts.push({
-      label: PREVIEW_DETAILS.sender.label,
-      value: `${onlySender.monthlyVolume == null ? '—' : shown(onlySender.monthlyVolume)} in the last 90 days · ${shown(onlySender.totalReceived)} received`,
-    });
-    const days = compositePreview?.sender.lastSeenDays ?? onlySender.lastDays;
-    if (days != null) {
+    const received = onlySender.totalReceived;
+    if (typeof received === 'number') {
+      singleFacts.push({
+        label: PREVIEW_DETAILS.sender.label,
+        value: `${onlySender.monthlyVolume == null ? '—' : shown(onlySender.monthlyVolume)} in the last 90 days · ${shown(received)} received`,
+      });
+    }
+    const days = compositePreview?.sender?.lastSeenDays ?? onlySender.lastDays;
+    if (typeof days === 'number') {
       singleFacts.push({
         label: PREVIEW_DETAILS.lastSeen.label,
         value: days === 0 ? 'Today' : `${shown(days)} day${days === 1 ? '' : 's'} ago`,
