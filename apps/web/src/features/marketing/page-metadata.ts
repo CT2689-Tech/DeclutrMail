@@ -24,12 +24,15 @@ const OG_IMAGE = {
 
 export function marketingPageMetadata({
   title,
+  socialTitle = title,
   description,
   path,
   markdownAlternate,
   routeOwnCard = false,
 }: {
   title: string;
+  /** Override the share-card title while keeping the document's SEO title. */
+  socialTitle?: string;
   description: string;
   path: string;
   /**
@@ -62,7 +65,7 @@ export function marketingPageMetadata({
       ...(markdownAlternate ? { types: { 'text/markdown': markdownAlternate } } : {}),
     },
     openGraph: {
-      title,
+      title: socialTitle,
       description,
       url: path,
       siteName: 'DeclutrMail',
@@ -72,7 +75,7 @@ export function marketingPageMetadata({
     },
     twitter: {
       card: 'summary_large_image',
-      title,
+      title: socialTitle,
       description,
       ...(routeOwnCard ? {} : { images: [{ url: OG_IMAGE.url, alt: OG_IMAGE.alt }] }),
     },
