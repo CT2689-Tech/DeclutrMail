@@ -33,7 +33,7 @@ function DeleteStory(args: ComponentProps<typeof DecidePreview>) {
           {...args}
           inboxCount={typeof args.inboxCount === 'number' ? count : args.inboxCount}
           inboxTotal={inbox.all}
-          allMailCount={allMailCount}
+          allMailCount={typeof args.inboxCount === 'number' ? allMailCount : null}
           allMailTotal={inbox.all + archived.all}
           windowDays={days}
           reach={reach}
