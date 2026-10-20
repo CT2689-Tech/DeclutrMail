@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "observed_date": "2026-10-20",
+  "source_repository": "https://github.com/coreyhaines31/marketingskills",
+  "source_commit": "e85f3cbc2e4a79bf33b2a12e9bdd9087d414735b",
+  "license": "MIT",
+  "review_scope": "SKILL instructions, file inventory, dependency and authorization boundaries; not a line-by-line security audit of every reference or snippet. No bundled script/snippet executed or deployed.",
+  "skills": [
+    {
+      "name": "ai-seo",
+      "version": "2.10.1",
+      "path": "skills/ai-seo",
+      "source_url": "https://github.com/coreyhaines31/marketingskills/tree/e85f3cbc2e4a79bf33b2a12e9bdd9087d414735b/skills/ai-seo",
+      "files": 17,
+      "exact_source_match": true,
+      "tree_sha256": "c71381f930d3a44c84f45347332d1a4079d36fed857ebba7a4b507f2ceaf0c9f"
+    },
+    {
+      "name": "schema",
+      "version": "2.0.2",
+      "path": "skills/schema",
+      "source_url": "https://github.com/coreyhaines31/marketingskills/tree/e85f3cbc2e4a79bf33b2a12e9bdd9087d414735b/skills/schema",
+      "files": 3,
+      "exact_source_match": true,
+      "tree_sha256": "b9dfd1423cbd751aa7ea35fe8ca94d86fd42ee4e114babce1387b4b0133cf5f6"
+    },
+    {
+      "name": "site-architecture",
+      "version": "2.1.0",
+      "path": "skills/site-architecture",
+      "source_url": "https://github.com/coreyhaines31/marketingskills/tree/e85f3cbc2e4a79bf33b2a12e9bdd9087d414735b/skills/site-architecture",
+      "files": 6,
+      "exact_source_match": true,
+      "tree_sha256": "4565a7add8b06705309721bbcdf568f922a370253cfe921e2f7c4a29f1768156"
+    },
+    {
+      "name": "ads",
+      "version": "2.6.2",
+      "path": "skills/ads",
+      "source_url": "https://github.com/coreyhaines31/marketingskills/tree/e85f3cbc2e4a79bf33b2a12e9bdd9087d414735b/skills/ads",
+      "files": 18,
+      "exact_source_match": true,
+      "tree_sha256": "0b78fe5d7f85c71fd94b8fa7a43b1f9f2e906b91da781571fa2f7aea748a9411"
+    },
+    {
+      "name": "ad-creative",
+      "version": "2.12.1",
+      "path": "skills/ad-creative",
+      "source_url": "https://github.com/coreyhaines31/marketingskills/tree/e85f3cbc2e4a79bf33b2a12e9bdd9087d414735b/skills/ad-creative",
+      "files": 14,
+      "exact_source_match": true,
+      "tree_sha256": "f5b59142f88ab64fa50088fd40a4bd18707144fee2919d72ef24ead25ae8687c"
+    },
+    {
+      "name": "analytics",
+      "version": "2.2.1",
+      "path": "skills/analytics",
+      "source_url": "https://github.com/coreyhaines31/marketingskills/tree/e85f3cbc2e4a79bf33b2a12e9bdd9087d414735b/skills/analytics",
+      "files": 5,
+      "exact_source_match": true,
+      "tree_sha256": "f443487cf66dd3c113090ba005bd8ffac5d751321c7e5602bf5709645e93880a"
+    },
+    {
+      "name": "ab-testing",
+      "version": "2.0.2",
+      "path": "skills/ab-testing",
+      "source_url": "https://github.com/coreyhaines31/marketingskills/tree/e85f3cbc2e4a79bf33b2a12e9bdd9087d414735b/skills/ab-testing",
+      "files": 4,
+      "exact_source_match": true,
+      "tree_sha256": "01f42520f86679d880d12bc18b64d7b682bdf2e04adc34cde9e7c6c76b955001"
+    },
+    {
+      "name": "link-building",
+      "version": "1.0.1",
+      "path": "skills/link-building",
+      "source_url": "https://github.com/coreyhaines31/marketingskills/tree/e85f3cbc2e4a79bf33b2a12e9bdd9087d414735b/skills/link-building",
+      "files": 5,
+      "exact_source_match": true,
+      "tree_sha256": "188f9e829ea9f9f23a7407fd1e3f26743c0fd36500c1f761dab95fc6131cf45b"
+    },
+    {
+      "name": "public-relations",
+      "version": "1.2.1",
+      "path": "skills/public-relations",
+      "source_url": "https://github.com/coreyhaines31/marketingskills/tree/e85f3cbc2e4a79bf33b2a12e9bdd9087d414735b/skills/public-relations",
+      "files": 10,
+      "exact_source_match": true,
+      "tree_sha256": "0658bbf75782528136e958890a0c852e4b75ee3273bcaf570c66b92480ad9b57"
+    },
+    {
+      "name": "conversion-tracking",
+      "version": "1.0.0",
+      "path": "skills/conversion-tracking",
+      "source_url": "https://github.com/coreyhaines31/marketingskills/tree/e85f3cbc2e4a79bf33b2a12e9bdd9087d414735b/skills/conversion-tracking",
+      "files": 75,
+      "exact_source_match": true,
+      "tree_sha256": "45ad7ead3204c0d05656920db307535ee40bc05cb0fe7d874480c02219644d36"
+    }
+  ]
+}
