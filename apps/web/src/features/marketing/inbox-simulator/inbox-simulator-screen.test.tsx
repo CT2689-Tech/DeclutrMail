@@ -461,9 +461,7 @@ describe('InboxSimulatorScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: /Groupon — expand triage detail/ }));
     fireEvent.click(screen.getAllByRole('button', { name: /Later \(L\)/ })[0]!);
     const dialog = sheetFor(firstRow.senderName);
-    expect(
-      within(dialog).getByRole('button', { name: /^Move [\d,]+ emails? to Later$/ }),
-    ).toBeEnabled();
+    expect(within(dialog).getByRole('button', { name: /^Later$/ })).toBeEnabled();
   });
 
   it('records Unsubscribe + Delete at the chosen scope and preserves its receipt and Undo after reload', async () => {

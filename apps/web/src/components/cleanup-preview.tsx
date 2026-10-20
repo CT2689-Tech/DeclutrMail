@@ -88,14 +88,18 @@ export function CleanupImpact({
   olderThanDays,
   note,
 }: {
-  action: 'Archive' | 'Delete';
+  action: 'Archive' | 'Delete' | 'Later';
   count: number | null;
   includesArchived: boolean;
   olderThanDays: number | null;
   note: string;
 }) {
   const destination =
-    action === 'Archive' ? 'leave your inbox and stay in Gmail' : 'move to Gmail Trash';
+    action === 'Archive'
+      ? 'leave your inbox and stay in Gmail'
+      : action === 'Later'
+        ? 'move to Gmail’s DeclutrMail/Later label'
+        : 'move to Gmail Trash';
   return (
     <>
       {count === null && (

@@ -1,5 +1,6 @@
 'use client';
 
+import { LaterReturnControl, isFutureReturnTime } from '@/components/later-return-control';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
 import { Button, Disclosure, SheetFactList, tokens } from '@declutrmail/shared';
 import { isPluralCopy, pluralCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
@@ -50,6 +51,7 @@ export interface InlinePreview {
   quotaRemaining?: number | null | undefined;
   inboxCount: PreviewCount;
   wakeAt?: string | null;
+  onWakeAtChange?: ((wakeAt: string | null) => void) | undefined;
   onCancel?: (() => void) | undefined;
 }
 
@@ -123,7 +125,8 @@ export function InlinePreviewBlock({
   // Confirm ONLY. Switching to a different verb stays live, as it does in
   // the sheet where `confirmDisabled` gates the button and nothing else —
   // a zero Archive count must not trap the row out of Delete or Later.
-  const confirmDisabled = busy || blocked || nothingToActOn;
+  const returnInvalid = preview.verb === 'Later' && !isFutureReturnTime(preview.wakeAt);
+  const confirmDisabled = busy || blocked || nothingToActOn || returnInvalid;
   // Same facts as the sheet (`buildPreviewFacts`), laid out as one line:
   // count + where it goes, then how to undo it. Everything the sheet keeps
   // behind "Details" stays behind a disclosure here too.
@@ -131,7 +134,8 @@ export function InlinePreviewBlock({
     preview.verb === 'Unsubscribe'
       ? (preview.backlogMode ?? (preview.archiveHistoric ? 'archive' : 'unsub_only'))
       : 'unsub_only';
-  const isCleanupAction = preview.verb === 'Archive' || preview.verb === 'Delete';
+  const isCleanupAction =
+    preview.verb === 'Archive' || preview.verb === 'Delete' || preview.verb === 'Later';
   const facts = buildPreviewFacts({
     olderThanDays: isCleanupAction ? (preview.ageControl?.olderThanDays ?? null) : null,
     verb: preview.verb,
@@ -151,11 +155,11 @@ export function InlinePreviewBlock({
   const hasDetails = facts.disclosures.length > 0 || preview.detailSlot != null;
   const cleanupEffect = isCleanupAction
     ? buildActionPresentation({
-        verb: preview.verb === 'Delete' ? 'delete' : 'archive',
+        verb: preview.verb === 'Delete' ? 'delete' : preview.verb === 'Later' ? 'later' : 'archive',
         liveCount: countKnown,
         planUndoDeadline: null,
         unsubscribeChannel: null,
-        wakeAt: null,
+        wakeAt: preview.verb === 'Later' ? (preview.wakeAt ?? null) : null,
       }).primary
     : null;
   return (
@@ -173,10 +177,12 @@ export function InlinePreviewBlock({
       {accountContext != null && <div style={{ marginBottom: space[3] }}>{accountContext}</div>}
       <h3 style={{ ...tokens.typography.dialogTitle, margin: 0, color: color.fg }}>
         {isCleanupAction && !facts.nothingToMove
-          ? `${preview.verb} emails from ${row.senderName}?`
+          ? preview.verb === 'Later'
+            ? `Move emails from ${row.senderName} to Later?`
+            : `${preview.verb} emails from ${row.senderName}?`
           : facts.title}
       </h3>
-      {preview.verb !== 'Archive' && facts.subtitle && (
+      {preview.verb !== 'Archive' && preview.verb !== 'Later' && facts.subtitle && (
         <p
           style={{
             margin: `${space[2]}px 0 0`,
@@ -265,6 +271,12 @@ export function InlinePreviewBlock({
           {null}
         </CleanupPreview>
       )}
+      {preview.verb === 'Later' && preview.onWakeAtChange && (
+        <div style={{ marginTop: space[3] }}>
+          <LaterReturnControl value={preview.wakeAt ?? null} onChange={preview.onWakeAtChange} />
+        </div>
+      )}
+      {returnInvalid && <p role="status">Choose a future return time.</p>}
       {hasDetails && (
         <Disclosure style={{ marginTop: space[2] }}>
           <SheetFactList facts={facts.disclosures} />
@@ -293,7 +305,9 @@ export function InlinePreviewBlock({
       {isCleanupAction && (
         <div style={{ marginTop: space[3] }}>
           <CleanupImpact
-            action={preview.verb === 'Delete' ? 'Delete' : 'Archive'}
+            action={
+              preview.verb === 'Delete' ? 'Delete' : preview.verb === 'Later' ? 'Later' : 'Archive'
+            }
             count={countKnown}
             includesArchived={false}
             olderThanDays={preview.ageControl?.olderThanDays ?? null}

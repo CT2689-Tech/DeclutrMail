@@ -156,7 +156,7 @@ export function buildPreviewFacts({
   const nothingToMove = movesCurrentInbox && liveCount === 0;
 
   const title = nothingToMove
-    ? (verb === 'Archive' || verb === 'Delete') && olderThanDays !== null
+    ? (verb === 'Archive' || verb === 'Delete' || verb === 'Later') && olderThanDays !== null
       ? `No emails older than ${olderThanDays === 365 ? '1 year' : `${olderThanDays} days`} from ${subject}`
       : `Nothing in your inbox${allMail ? ' or archive' : ''} from ${subject}`
     : verb === 'Archive'
@@ -226,7 +226,7 @@ export function buildPreviewFacts({
       label: PREVIEW_DETAILS.includes.label,
       value: previewIncludesValue(
         allMail,
-        verb === 'Archive' || verb === 'Delete' ? olderThanDays : null,
+        verb === 'Archive' || verb === 'Delete' || verb === 'Later' ? olderThanDays : null,
       ),
     });
   }

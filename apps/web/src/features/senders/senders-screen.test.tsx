@@ -1757,12 +1757,16 @@ describe('SendersScreen — edge states', () => {
       if (verb === 'Delete' && includeArchived()?.getAttribute('aria-checked') !== 'true') {
         fireEvent.click(includeArchived()!);
       }
+      if (verb === 'Later')
+        expect(screen.getByRole('region', { name: 'Later impact' })).toHaveTextContent(
+          `${affected} emails will move`,
+        );
       const confirm = await within(screen.getByRole('dialog')).findByRole('button', {
         name:
           verb === 'Delete' || verb === 'Archive'
             ? new RegExp(`^${verb}$`)
             : verb === 'Later'
-              ? new RegExp(`^Move ${affected} emails? to Later$`)
+              ? /^Later$/
               : new RegExp(`^${verb} ${affected} emails?$`),
       });
       await waitFor(() => expect(confirm).toBeEnabled());
@@ -3307,7 +3311,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
           verb === 'Delete' || verb === 'Archive'
             ? new RegExp(`^${verb}$`)
             : verb === 'Later'
-              ? /^Move \d+ emails? to Later$/
+              ? /^Later$/
               : new RegExp(`^${verb} \\d+ emails?$`),
       });
       await waitFor(() => expect(confirm).toBeEnabled());

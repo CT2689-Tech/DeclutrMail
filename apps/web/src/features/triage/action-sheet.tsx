@@ -11,6 +11,7 @@ import {
 } from '@/features/senders/unsubscribe-backlog/preview-copy';
 import { ActionReachControl, DELETE_ARCHIVED_HINT } from '@/components/action-scope-controls';
 import { CleanupImpact, CleanupPreview } from '@/components/cleanup-preview';
+import { LaterReturnControl, isFutureReturnTime } from '@/components/later-return-control';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
@@ -155,7 +156,8 @@ export function ActionSheet({
   const effectiveMode =
     actionKey !== null && chosenActionKey === actionKey ? backlogMode : defaultBacklog;
   const effectiveArchiveHistoric = effectiveMode === 'archive';
-  const ageControl = verb === 'Archive' || verb === 'Delete' ? detail?.ageControl : undefined;
+  const ageControl =
+    verb === 'Archive' || verb === 'Delete' || verb === 'Later' ? detail?.ageControl : undefined;
   const olderThanDays = ageControl?.olderThanDays ?? null;
 
   // Archive/Later/Delete always move inbox mail. Unsubscribe only does when the
@@ -169,8 +171,7 @@ export function ActionSheet({
     (verb === 'Unsubscribe' && effectiveMode !== 'unsub_only');
   const previewUnavailable = inboxCount === 'unavailable';
   const previewPending = inboxCount === 'loading';
-  const wakeAtInvalid =
-    verb === 'Later' && (selectedWakeAt === null || Date.parse(selectedWakeAt) <= Date.now());
+  const wakeAtInvalid = verb === 'Later' && !isFutureReturnTime(selectedWakeAt);
   // A mail-moving verb with zero matches is a no-op that still costs a
   // cleanup action on Free. Senders already blocks this (`nothingToActOn`,
   // confirm-action-modal.tsx); triage did not, so the two surfaces disagreed
@@ -221,7 +222,7 @@ export function ActionSheet({
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
         e.preventDefault();
         onConfirm({
-          ...(verb === 'Archive' || verb === 'Delete' ? { olderThanDays } : {}),
+          ...(verb === 'Archive' || verb === 'Delete' || verb === 'Later' ? { olderThanDays } : {}),
           archiveHistoric: effectiveArchiveHistoric,
           ...(verb === 'Unsubscribe' ? { backlogMode: effectiveMode } : {}),
           ...((verb === 'Delete' || (verb === 'Unsubscribe' && effectiveMode === 'delete')) &&
@@ -263,20 +264,20 @@ export function ActionSheet({
     wakeAt: selectedWakeAt,
     reach: verb === 'Unsubscribe' && effectiveMode !== 'delete' ? 'inbox_only' : reach,
   });
-  const isCleanupAction = verb === 'Archive' || verb === 'Delete';
+  const isCleanupAction = verb === 'Archive' || verb === 'Delete' || verb === 'Later';
   const cleanupEffect = isCleanupAction
     ? buildActionPresentation({
-        verb: verb === 'Archive' ? 'archive' : 'delete',
+        verb: verb === 'Archive' ? 'archive' : verb === 'Later' ? 'later' : 'delete',
         liveCount: countKnown,
         planUndoDeadline: null,
         unsubscribeChannel: null,
-        wakeAt: null,
+        wakeAt: verb === 'Later' ? selectedWakeAt : null,
         reach,
       }).primary
     : null;
   const confirm = () =>
     onConfirm({
-      ...(verb === 'Archive' || verb === 'Delete' ? { olderThanDays } : {}),
+      ...(verb === 'Archive' || verb === 'Delete' || verb === 'Later' ? { olderThanDays } : {}),
       archiveHistoric: effectiveArchiveHistoric,
       ...(verb === 'Unsubscribe' ? { backlogMode: effectiveMode } : {}),
       ...((verb === 'Delete' || (verb === 'Unsubscribe' && effectiveMode === 'delete')) &&
@@ -391,11 +392,13 @@ export function ActionSheet({
                 countKnown ?? 0,
               )
             : isCleanupAction && !facts.nothingToMove
-              ? `${verb} emails from ${row.senderName}?`
+              ? verb === 'Later'
+                ? `Move emails from ${row.senderName} to Later?`
+                : `${verb} emails from ${row.senderName}?`
               : facts.title
         }
         subtitle={
-          verb === 'Archive' && !facts.nothingToMove
+          (verb === 'Archive' || verb === 'Later') && !facts.nothingToMove
             ? undefined
             : cleanupEffect && !facts.nothingToMove
               ? cleanupEffect.futureMail.summary
@@ -415,14 +418,14 @@ export function ActionSheet({
         summary={
           cleanupEffect ? (
             <CleanupImpact
-              action={verb === 'Archive' ? 'Archive' : 'Delete'}
+              action={verb === 'Archive' ? 'Archive' : verb === 'Later' ? 'Later' : 'Delete'}
               count={archivedUncounted || previewSenderGone ? null : countKnown}
               includesArchived={verb === 'Delete' && reach === 'all_mail'}
               olderThanDays={olderThanDays}
               note={
                 facts.nothingToMove
                   ? ''
-                  : verb === 'Archive'
+                  : verb !== 'Delete'
                     ? (facts.note ?? '')
                     : cleanupEffect.activityUndo.summary
               }
@@ -497,43 +500,7 @@ export function ActionSheet({
               </CleanupPreview>
             )}
             {verb === 'Later' && (
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: space[3],
-                  minHeight: 48,
-                  padding: `0 ${space[2]}px 0 ${space[4]}px`,
-                  borderRadius: radius.lg,
-                  background: color.fill,
-                  fontSize: text.md,
-                  fontWeight: 500,
-                  textAlign: 'left',
-                }}
-              >
-                <span>Returns</span>
-                <input
-                  type="datetime-local"
-                  aria-label="Later return time"
-                  value={selectedWakeAt === null ? '' : toLocalDateTimeInput(selectedWakeAt)}
-                  min={toLocalDateTimeInput(new Date(Date.now() + 60_000).toISOString())}
-                  onChange={(event) => {
-                    const next = new Date(event.currentTarget.value);
-                    setSelectedWakeAt(Number.isNaN(next.getTime()) ? null : next.toISOString());
-                  }}
-                  style={{
-                    border: 'none',
-                    background: 'transparent',
-                    color: color.fg,
-                    fontFamily: font.sans,
-                    fontSize: text.md,
-                    fontVariantNumeric: 'tabular-nums',
-                    minHeight: 40,
-                    minWidth: 0,
-                  }}
-                />
-              </label>
+              <LaterReturnControl value={selectedWakeAt} onChange={setSelectedWakeAt} />
             )}
 
             {/* Unsubscribe only: Archive/Later already move every inbox
@@ -637,12 +604,6 @@ function StatusWithAction({
       )}
     </span>
   );
-}
-
-function toLocalDateTimeInput(iso: string): string {
-  const date = new Date(iso);
-  const two = (value: number) => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}T${two(date.getHours())}:${two(date.getMinutes())}`;
 }
 
 /**

@@ -122,6 +122,7 @@ export interface TriageActions {
   setPendingBacklogMode: (mode: UnsubscribeBacklogMode) => void;
   setPendingOlderThanDays: (days: number | null) => void;
   setPendingReach: (reach: ActionReach) => void;
+  setPendingWakeAt: (wakeAt: string | null) => void;
   /** Clear any pending action (cancel or post-confirm). */
   clearPending: () => void;
   /** Bump the session count by `by` confirmed decisions (default 1). */
@@ -180,9 +181,16 @@ export const useTriageStore = create<TriageState & TriageActions>((set) => ({
 
   setPendingOlderThanDays: (olderThanDays) =>
     set((s) =>
-      s.pendingAction?.verb === 'Archive' || s.pendingAction?.verb === 'Delete'
+      s.pendingAction?.verb === 'Archive' ||
+      s.pendingAction?.verb === 'Delete' ||
+      s.pendingAction?.verb === 'Later'
         ? { pendingAction: { ...s.pendingAction, olderThanDays } }
         : s,
+    ),
+
+  setPendingWakeAt: (wakeAt) =>
+    set((s) =>
+      s.pendingAction?.verb === 'Later' ? { pendingAction: { ...s.pendingAction, wakeAt } } : s,
     ),
 
   setPendingReach: (reach) =>

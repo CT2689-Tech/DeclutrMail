@@ -26,6 +26,7 @@ import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 import { afterLead } from '@/lib/copy/after-lead';
 import { pickBucketCount, TIME_WINDOW_PRESETS } from '@/features/senders/action-window';
 import { CleanupImpact, CleanupPreview } from '@/components/cleanup-preview';
+import { LaterReturnControl, isFutureReturnTime } from '@/components/later-return-control';
 import type { TriageDecisionRow } from './data';
 import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 import type { DomainBatch } from './domain-batch';
@@ -44,7 +45,7 @@ const { color, radius, space } = tokens;
  * Layout is the shared `PreviewSheet` (ADR-0042), in the same grammar as
  * the senders bulk sheet: Archive names the selection in the title and
  * puts count/destination/recovery beside the short action button. Later
- * retains its count title and recovery note. The per-sender list and
+ * uses the same layout with an editable return time. The per-sender list and
  * remaining facts stay behind "Details". Esc, the
  * backdrop and focus are the sheet's; ⌘⏎ confirms here.
  *
@@ -60,6 +61,7 @@ export function BatchActionSheet({
   wakeAt = null,
   olderThanDays = null,
   onWindowChange,
+  onWakeAtChange,
   mailboxEmail,
   onCancel,
   onConfirm,
@@ -76,6 +78,7 @@ export function BatchActionSheet({
   preview: BulkActionPreviewResult | 'loading' | 'unavailable';
   /** Exact Later return time carried through confirmation. */
   wakeAt?: string | null;
+  onWakeAtChange?: ((wakeAt: string | null) => void) | undefined;
   /** Explicit override for isolated previews; app surfaces use active auth context. */
   mailboxEmail?: string | undefined;
   onCancel: () => void;
@@ -94,7 +97,7 @@ export function BatchActionSheet({
    */
   quotaRemaining?: number | null | undefined;
 }) {
-  const wakeAtInvalid = verb === 'Later' && (wakeAt === null || Date.parse(wakeAt) <= Date.now());
+  const wakeAtInvalid = verb === 'Later' && !isFutureReturnTime(wakeAt);
   // Computed before the early-return guard below (`batch` can still be
   // null here) so the ⌘⏎ handler registered by the hook right after —
   // which must run on every render — can gate on it too. Codex review
@@ -122,14 +125,13 @@ export function BatchActionSheet({
   // cleanup actions on Free. The single-sender sheet refuses the same case
   // (`nothingToActOn` in action-sheet.tsx).
   const bucketUnavailable =
-    verb === 'Archive' &&
     typeof preview === 'object' &&
     preview.senders.some(
       (sender) => !sender.protected && pickBucketCount(sender.counts, olderThanDays) === undefined,
     );
   const total =
     typeof preview === 'object' && !bucketUnavailable
-      ? (pickBucketCount(preview.totals, verb === 'Archive' ? olderThanDays : null) ?? null)
+      ? (pickBucketCount(preview.totals, olderThanDays) ?? null)
       : null;
   const nothingToMove = total === 0 && !nothingActionable;
   const confirmDisabled =
@@ -181,21 +183,10 @@ export function BatchActionSheet({
         : 'No emails match this age from these senders'
       : verb === 'Archive'
         ? `Archive emails from ${who}?`
-        : total === null
-          ? `Move email from ${who} to Later?`
-          : `Move ${emailsLabel(total)} from ${who} to Later?`;
+        : `Move emails from ${who} to Later?`;
 
   // ── Where it goes (subtitle) ─────────────────────────────────────────
-  const destination =
-    verb === 'Archive'
-      ? 'They leave your inbox and stay in Gmail.'
-      : 'They wait in Gmail’s DeclutrMail/Later label, then return to your inbox.';
-  const subtitle =
-    nothingActionable || nothingToMove
-      ? null
-      : verb === 'Archive'
-        ? `From ${batch.domain}.`
-        : `From ${batch.domain}. ${destination}`;
+  const subtitle = nothingActionable || nothingToMove ? null : `From ${batch.domain}.`;
 
   // ── How to undo it (note) + Protected senders skipped, said once ─────
   const protectedCount = loaded?.protectedCount ?? 0;
@@ -247,7 +238,7 @@ export function BatchActionSheet({
   if (total !== null && total > 0) {
     facts.push({
       label: PREVIEW_DETAILS.includes.label,
-      value: previewIncludesValue(false, verb === 'Archive' ? olderThanDays : null),
+      value: previewIncludesValue(false, olderThanDays),
     });
   }
   if (primary.schedule.kind === 'scheduled') {
@@ -276,10 +267,8 @@ export function BatchActionSheet({
                 <span style={{ color: color.fgMuted }}>Protected</span>
               ) : (
                 <span style={countStyle}>
-                  {pickBucketCount(
-                    s.counts,
-                    verb === 'Archive' ? olderThanDays : null,
-                  )?.toLocaleString('en-US') ?? 'Unavailable'}
+                  {pickBucketCount(s.counts, olderThanDays)?.toLocaleString('en-US') ??
+                    'Unavailable'}
                 </span>
               )}
             </div>
@@ -291,12 +280,7 @@ export function BatchActionSheet({
   );
 
   const verbWord = verb === 'Archive' ? 'Archive' : 'Later';
-  const primaryLabel =
-    verb === 'Archive'
-      ? 'Archive'
-      : total !== null && total > 0
-        ? `Move ${emailsLabel(total)} to Later`
-        : verbWord;
+  const primaryLabel = verbWord;
 
   return (
     // This wrapper, not PreviewSheet's own z-index, is the stacking
@@ -308,7 +292,7 @@ export function BatchActionSheet({
       style={{ position: 'relative', zIndex: OVERLAY_Z.modal }}
     >
       <PreviewSheet
-        layout={verb === 'Archive' ? 'review' : 'compact'}
+        layout="review"
         context={
           mailboxEmail ? <MailboxActionContextView mailboxEmail={mailboxEmail} /> : undefined
         }
@@ -319,17 +303,15 @@ export function BatchActionSheet({
         }
         title={title}
         subtitle={subtitle ?? undefined}
-        note={verb === 'Archive' || note === '' ? undefined : note}
+        note={undefined}
         summary={
-          verb === 'Archive' ? (
-            <CleanupImpact
-              action="Archive"
-              count={nothingActionable ? 0 : total}
-              includesArchived={false}
-              olderThanDays={olderThanDays}
-              note={note}
-            />
-          ) : undefined
+          <CleanupImpact
+            action={verb}
+            count={nothingActionable ? 0 : total}
+            includesArchived={false}
+            olderThanDays={olderThanDays}
+            note={note}
+          />
         }
         details={details}
         primary={{
@@ -352,7 +334,7 @@ export function BatchActionSheet({
           )
         }
       >
-        {verb === 'Archive' && onWindowChange && (
+        {onWindowChange && (
           <CleanupPreview
             olderThanDays={olderThanDays}
             options={TIME_WINDOW_PRESETS.map(({ days }) => ({
@@ -371,13 +353,15 @@ export function BatchActionSheet({
             {null}
           </CleanupPreview>
         )}
+        {verb === 'Later' && onWakeAtChange && (
+          <LaterReturnControl value={wakeAt} onChange={onWakeAtChange} />
+        )}
       </PreviewSheet>
     </div>
   );
 }
 
 const fmt = (value: number) => value.toLocaleString('en-US');
-const emailsLabel = (count: number) => `${fmt(count)} email${count === 1 ? '' : 's'}`;
 const sendersLabel = (count: number) => `${fmt(count)} sender${count === 1 ? '' : 's'}`;
 
 const senderListStyle: CSSProperties = {

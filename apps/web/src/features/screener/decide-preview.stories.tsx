@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { cleanupAgeLabel } from '@/components/cleanup-preview';
 import { Button } from '@declutrmail/shared';
 import type { ActionReach } from '@declutrmail/shared/contracts';
-import { DEFAULT_DELETE_WINDOW_DAYS } from '@declutrmail/shared/actions';
+import { DEFAULT_DELETE_WINDOW_DAYS, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import { SCREENER_QUEUE } from './data';
 import { DecidePreview } from './decide-preview';
 
@@ -24,6 +24,9 @@ function CleanupStory(args: ComponentProps<typeof DecidePreview>) {
   const [days, setDays] = useState<number | null>(defaultDays);
   const [reach, setReach] = useState<ActionReach>('inbox_only');
   const [result, setResult] = useState('');
+  const [wakeAt, setWakeAt] = useState<string | null>(() =>
+    args.verb === 'later' ? defaultLaterWakeAtIso() : null,
+  );
   const bucket = (days ?? 'all') as keyof typeof inbox;
   const count = args.inboxCount === 0 ? 0 : inbox[bucket];
   const allMailCount = count + archived[bucket];
@@ -31,7 +34,12 @@ function CleanupStory(args: ComponentProps<typeof DecidePreview>) {
     <div style={{ maxWidth: 680, margin: '24px auto', padding: 16 }}>
       <p>
         Fictional mailbox · no Gmail changes. Screener{' '}
-        {isDelete ? 'Delete keeps its 180-day default' : 'Archive keeps Inbox only · Any age'}.
+        {isDelete
+          ? 'Delete keeps its 180-day default'
+          : args.verb === 'later'
+            ? 'Later starts at Any age, with a return in 7 days'
+            : 'Archive keeps Inbox only · Any age'}
+        .
       </p>
       {result && <p role="status">{result}</p>}
       {open ? (
@@ -41,6 +49,8 @@ function CleanupStory(args: ComponentProps<typeof DecidePreview>) {
           inboxTotal={args.inboxCount === 0 ? 0 : inbox.all}
           allMailCount={typeof args.inboxCount === 'number' ? allMailCount : null}
           allMailTotal={inbox.all + archived.all}
+          wakeAt={wakeAt}
+          onWakeAtChange={setWakeAt}
           windowDays={days}
           reach={reach}
           onWindowChange={setDays}
@@ -48,7 +58,7 @@ function CleanupStory(args: ComponentProps<typeof DecidePreview>) {
           onCancel={() => setOpen(false)}
           onConfirm={() => {
             setResult(
-              `Sample confirmation: ${reach === 'all_mail' ? allMailCount : count} emails, ${reach === 'all_mail' ? 'inbox and archived' : 'inbox only'}, ${cleanupAgeLabel(days).toLowerCase()}.`,
+              `Sample confirmation: ${reach === 'all_mail' ? allMailCount : count} emails, ${reach === 'all_mail' ? 'inbox and archived' : 'inbox only'}, ${cleanupAgeLabel(days).toLowerCase()}${args.verb === 'later' ? `; return ${wakeAt ? new Date(wakeAt).toLocaleString('en-US', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }) : 'not selected'}` : ''}.`,
             );
             setOpen(false);
           }}
@@ -57,11 +67,12 @@ function CleanupStory(args: ComponentProps<typeof DecidePreview>) {
         <Button
           onClick={() => {
             setDays(defaultDays);
+            setWakeAt(args.verb === 'later' ? defaultLaterWakeAtIso() : null);
             setReach('inbox_only');
             setOpen(true);
           }}
         >
-          Review {isDelete ? 'Delete' : 'Archive'}
+          Review {isDelete ? 'Delete' : args.verb === 'later' ? 'Later' : 'Archive'}
         </Button>
       )}
     </div>
@@ -99,6 +110,17 @@ export const ArchiveEmptyInbox: Story = { args: { verb: 'archive', inboxCount: 0
 export const ArchiveProtected: Story = {
   args: {
     verb: 'archive',
+    row: { ...sampleRow, isProtected: true, protectionReason: 'user_defined' },
+  },
+};
+
+export const LaterDefault: Story = { args: { verb: 'later', inboxCount: 128 } };
+export const LaterLoading: Story = { args: { verb: 'later', inboxCount: 'loading' } };
+export const LaterUnavailable: Story = { args: { verb: 'later', inboxCount: 'unavailable' } };
+export const LaterEmptyInbox: Story = { args: { verb: 'later', inboxCount: 0 } };
+export const LaterProtected: Story = {
+  args: {
+    verb: 'later',
     row: { ...sampleRow, isProtected: true, protectionReason: 'user_defined' },
   },
 };

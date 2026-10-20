@@ -7,6 +7,7 @@ import { UnsubscribeBacklogDialog } from './unsubscribe-backlog/unsubscribe-back
 import { someProtectedSelectionCopy } from './unsubscribe-backlog/preview-copy';
 import { pickBucketCount, TIME_WINDOW_PRESETS } from './action-window';
 import { CleanupImpact, CleanupPreview, cleanupAgeLabel } from '@/components/cleanup-preview';
+import { LaterReturnControl, isFutureReturnTime } from '@/components/later-return-control';
 import { ActionReachControl, ActionWindowControl } from '@/components/action-scope-controls';
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
@@ -290,13 +291,12 @@ export function ConfirmActionModal({
   // the summary line + "Show what currently matches" header.
   const isArchiveVerb = verb === 'Archive';
   const isDeleteVerb = verb === 'Delete';
-  const isCleanupVerb = isArchiveVerb || isDeleteVerb;
+  const isCleanupVerb = isArchiveVerb || isDeleteVerb || verb === 'Later';
   const isUnsubVerb = verb === 'Unsubscribe';
   const isLaterVerb = verb === 'Later';
-  // Every A/L/D primary moves current inbox mail. Archive/Delete expose a
-  // primary time-window; Later keeps its existing all-current-mail shape.
+  // Every A/L/D primary moves the inbox mail matching its selected age.
   const primaryActsOnInbox = isArchiveVerb || isLaterVerb || isDeleteVerb;
-  const primaryUsesWindow = isArchiveVerb || isDeleteVerb;
+  const primaryUsesWindow = isCleanupVerb;
   // Whether the secondary chip row is shown. Unsubscribe ONLY: it is the
   // one primary that does not touch existing inbox mail, so "what about
   // the backlog?" is a real, unanswered question. Later already moves
@@ -308,7 +308,7 @@ export function ConfirmActionModal({
   /** Unsubscribe with the backlog left alone — nothing in Gmail moves. */
   const unsubscribeMovesNothing = isUnsubVerb && !hasSecondaryAction;
 
-  // For Archive/Delete primary the time-window applies to the primary
+  // For Archive/Later/Delete primary the time-window applies to the primary
   // verb itself. For Unsubscribe with a non-null secondary, the
   // time-window applies to the secondary's historic mail.
   const showWindowRow = primaryUsesWindow || hasSecondaryAction;
@@ -456,7 +456,7 @@ export function ConfirmActionModal({
   // excluded — it cuts FUTURE mail, so it is real work at a zero backlog,
   // and it IS charged a unit.
   const nothingToActOn = primaryActsOnInbox && compositeCount === 0;
-  const wakeAtInvalid = isLaterVerb && (wakeAt === null || Date.parse(wakeAt) <= Date.now());
+  const wakeAtInvalid = isLaterVerb && !isFutureReturnTime(wakeAt);
 
   // Reconcile the two ORTHOGONAL populations this modal renders at once:
   // the context strip's arrival-scoped "N /mo" (last 30 days, any label)
@@ -685,9 +685,10 @@ export function ConfirmActionModal({
   // checked so the user can narrow; confirm stays closed until they do,
   // and the wire below never sends all_mail without the count.
   const archivedUncounted = deleteReachOffered && reach === 'all_mail' && allMailCounts == null;
-  const deleteCountUnavailable = isDeleteVerb && livePreviewReady && compositeCount === undefined;
+  const selectedCountUnavailable =
+    isCleanupVerb && livePreviewReady && compositeCount === undefined;
   const confirmDisabled =
-    deleteCountUnavailable ||
+    selectedCountUnavailable ||
     livePreviewBlocksConfirm ||
     nothingToActOn ||
     wakeAtInvalid ||
@@ -1097,23 +1098,7 @@ export function ConfirmActionModal({
     );
   }
   if (isLaterVerb) {
-    controls.push(
-      <label key="later" style={wellStyle}>
-        <span>Returns</span>
-        <input
-          type="datetime-local"
-          aria-label="Later return time"
-          value={wakeAt === null ? '' : toLocalDateTimeInput(wakeAt)}
-          min={toLocalDateTimeInput(new Date(Date.now() + 60_000).toISOString())}
-          onChange={(event) => {
-            const next = new Date(event.currentTarget.value);
-            setWakeAt(Number.isNaN(next.getTime()) ? null : next.toISOString());
-          }}
-          className="dm-field"
-          style={{ ...tokens.field, width: '100%', minWidth: 0 }}
-        />
-      </label>,
-    );
+    controls.push(<LaterReturnControl key="later" value={wakeAt} onChange={setWakeAt} />);
   }
   // Protected acknowledgement (D245 / D42). The sender is Protected and
   // this is an explicit single-sender action, so the path stays open —
@@ -1145,7 +1130,7 @@ export function ConfirmActionModal({
   // promise a wait that ends in the same disabled button.
   const status: ReactNode = unsubNothingToSend ? (
     NO_SENDABLE_UNSUB
-  ) : deleteCountUnavailable ? (
+  ) : selectedCountUnavailable ? (
     <StatusWithAction
       message="Couldn’t count this email age."
       action={onRetryPreview ? { label: 'Retry preview', onClick: onRetryPreview } : undefined}
@@ -1475,9 +1460,15 @@ export function ConfirmActionModal({
             <AvatarStack senders={senders} />
           )
         }
-        title={isCleanupVerb && !zeroTitle ? `${verbWord} emails from ${fromWho}?` : title}
+        title={
+          isCleanupVerb && !zeroTitle
+            ? isLaterVerb
+              ? `Move emails from ${fromWho} to Later?`
+              : `${verbWord} emails from ${fromWho}?`
+            : title
+        }
         subtitle={
-          isArchiveVerb && !zeroTitle ? undefined : isDeleteVerb && !zeroTitle ? (
+          (isArchiveVerb || isLaterVerb) && !zeroTitle ? undefined : isDeleteVerb && !zeroTitle ? (
             <span id="dm-confirm-lead">{primary.futureMail.summary}</span>
           ) : subtitle === null ? undefined : (
             <span id="dm-confirm-lead" style={{ textWrap: 'balance' }}>
@@ -1489,7 +1480,7 @@ export function ConfirmActionModal({
         summary={
           isCleanupVerb ? (
             <CleanupImpact
-              action={isArchiveVerb ? 'Archive' : 'Delete'}
+              action={isArchiveVerb ? 'Archive' : isLaterVerb ? 'Later' : 'Delete'}
               count={archivedUncounted ? null : liveCount}
               includesArchived={allMailScope}
               olderThanDays={olderThanDays}
@@ -1582,20 +1573,6 @@ function windowName(days: number | null): string {
   const preset = TIME_WINDOW_PRESETS.find((p) => p.days === days);
   return preset ? preset.label.replace(/\+$/, '') : `${days ?? 0} days`;
 }
-
-const wellStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: space[3],
-  minHeight: 48,
-  padding: `0 ${space[2]}px 0 ${space[4]}px`,
-  borderRadius: radius.lg,
-  background: color.fill,
-  fontSize: text.md,
-  fontWeight: 500,
-  textAlign: 'left',
-};
 
 const factNumberStyle: CSSProperties = {
   color: color.fg,
@@ -1690,7 +1667,7 @@ function newestInboxDays(preview: CompositeActionPreviewResult | undefined): num
 
 /**
  * `2026-04-12` — ISO-ORDERED but rendered from LOCAL calendar parts, the
- * same convention as `toLocalDateTimeInput` below.
+ * same local-clock convention as the Later return picker.
  *
  * Not `toISOString().slice(0,10)`: that prints the UTC day, so a message
  * received at 20:00 PST would show as the NEXT day and disagree with the
@@ -1702,8 +1679,3 @@ function newestInboxDays(preview: CompositeActionPreviewResult | undefined): num
  * subject instead of "Invalid Date" (the BE already drops dateless rows;
  * this is the render-side guard).
  */
-function toLocalDateTimeInput(iso: string): string {
-  const date = new Date(iso);
-  const two = (value: number) => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}T${two(date.getHours())}:${two(date.getMinutes())}`;
-}

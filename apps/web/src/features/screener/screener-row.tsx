@@ -54,6 +54,7 @@ export function ScreenerRow({
   onReachChange,
   onWindowChange,
   wakeAt = null,
+  onWakeAtChange,
   onToggleExpand,
   onVerbClick,
   onConfirm,
@@ -94,6 +95,7 @@ export function ScreenerRow({
   pendingReach?: ActionReach;
   onReachChange?: ((reach: ActionReach) => void) | undefined;
   wakeAt?: string | null;
+  onWakeAtChange?: ((wakeAt: string | null) => void) | undefined;
   onToggleExpand: () => void;
   onVerbClick: (verb: ScreenerDecideVerb) => void;
   onConfirm: () => void;
@@ -415,6 +417,7 @@ export function ScreenerRow({
               reach={pendingReach}
               onReachChange={onReachChange}
               wakeAt={wakeAt}
+              onWakeAtChange={onWakeAtChange}
               confirming={busy}
               onConfirm={onConfirm}
               onCancel={onCancel}

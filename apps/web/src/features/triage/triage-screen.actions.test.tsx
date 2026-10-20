@@ -3618,6 +3618,100 @@ describe('Archive Email age — preview and dispatch share one scope', () => {
       primary: { type: 'archive', olderThanDays: 30 },
     });
   });
+  it('keeps group Later age and return time in the bulk request', async () => {
+    const rows = TRIAGE_QUEUE.filter((r) => r.verdict === 'archive')
+      .slice(0, 3)
+      .map((r, i) => ({
+        ...r,
+        senderDomain: 'example.com',
+        senderEmail: `sender${i}@example.com`,
+      }));
+    const bodies: unknown[] = [];
+    const counts = {
+      all: 30,
+      olderThan30d: 20,
+      olderThan90d: 10,
+      olderThan180d: 3,
+      olderThan365d: 0,
+    };
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions/preview/bulk',
+        respond: () =>
+          jsonOk({
+            data: {
+              senders: rows.map((r) => ({
+                senderId: r.senderId,
+                name: r.senderName,
+                counts,
+                protected: false,
+              })),
+              totals: {
+                all: 90,
+                olderThan30d: 60,
+                olderThan90d: 30,
+                olderThan180d: 9,
+                olderThan365d: 0,
+              },
+              protectedCount: 0,
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          bodies.push(await req.json());
+          return jsonOk({
+            data: {
+              batchId: ACTION_ID,
+              status: 'queued',
+              senderCount: 3,
+              requestedTotal: 60,
+              wakeAt: null,
+              skipped: [],
+            },
+          });
+        },
+      },
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <TriageScreen state={{ kind: 'ready', rows, stats: TRIAGE_SESSION_STATS }} />
+      </QueryWrapper>,
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: /Move all 3 senders from example.com to Later/ }),
+    );
+    const age = await screen.findByRole('combobox', { name: 'Email age' });
+    expect(age).toHaveValue('all');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Later' })).toBeEnabled());
+    fireEvent.change(age, { target: { value: '365' } });
+    expect(screen.getByRole('button', { name: 'Later' })).toBeDisabled();
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(bodies).toHaveLength(0);
+    fireEvent.change(screen.getByLabelText('Later return time'), {
+      target: { value: '2099-11-01T10:30' },
+    });
+    fireEvent.change(age, { target: { value: '30' } });
+    expect(screen.getByRole('region', { name: 'Later impact' })).toHaveTextContent(
+      '60 emails will move',
+    );
+    fireEvent.click(screen.getByText('Details').closest('summary')!);
+    const breakdown = screen.getByRole('list', { name: 'Current per-sender matches' });
+    expect(within(breakdown).getAllByText('20')).toHaveLength(3);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({
+      selector: { type: 'senders', senderIds: rows.map((r) => r.senderId) },
+      primary: {
+        type: 'later',
+        olderThanDays: 30,
+        wakeAt: new Date('2099-11-01T10:30').toISOString(),
+      },
+    });
+  });
   it('hides stale age counts and examples during refetch, then blocks a missing bucket', async () => {
     const client = createTestQueryClient();
     const posted = vi.fn();
@@ -3892,5 +3986,126 @@ describe('Delete Email age — selected counts and requests', () => {
     expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
       '30 emails will move',
     );
+  });
+});
+
+describe('Later Email age and return time requests', () => {
+  let bodies: unknown[];
+  let preview = { ...PREVIEW_BODY, counts: { ...PREVIEW_BODY.counts, olderThan365d: 0 } };
+  beforeEach(() => {
+    bodies = [];
+    preview = { ...PREVIEW_BODY, counts: { ...PREVIEW_BODY.counts, olderThan365d: 0 } };
+    resetTriageStore();
+    h.mailbox = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    installFetchStub([
+      { method: 'GET', path: '/api/actions/preview', respond: () => jsonOk({ data: preview }) },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          bodies.push(await req.json());
+          return jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              compositeId: ACTION_ID,
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 5,
+              secondaryCount: null,
+            },
+          });
+        },
+      },
+      {
+        method: 'GET',
+        path: `/api/actions/${ACTION_ID}`,
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              status: 'executing',
+              requestedCount: 5,
+              affectedCount: 0,
+              undoToken: null,
+              errorCode: null,
+            },
+          }),
+      },
+    ]);
+  });
+  afterEach(resetFetchStub);
+
+  it.each(['modal click', 'modal keyboard', 'inline click', 'inline shortcut'] as const)(
+    '%s submits the displayed age and edited return time',
+    async (submit) => {
+      renderScreen(createTestQueryClient());
+      expandRow(GROUPON.senderName);
+      const before = Date.now();
+      if (submit.startsWith('inline'))
+        act(() => useTriageStore.getState().setRememberPreference('Later', true));
+      fireEvent.keyDown(window, { key: 'l' });
+      const age = await screen.findByRole('combobox', { name: 'Email age' });
+      expect(age).toHaveValue('all');
+      const time = screen.getByLabelText('Later return time') as HTMLInputElement;
+      expect(new Date(time.value).getTime()).toBeGreaterThanOrEqual(before + 7 * 86400000 - 60000);
+      await waitFor(() =>
+        expect(screen.getByRole('region', { name: 'Later impact' })).toHaveTextContent(
+          '47 emails will move',
+        ),
+      );
+      fireEvent.change(time, { target: { value: '2099-11-01T10:30' } });
+      fireEvent.change(age, { target: { value: '180' } });
+      expect(time).toHaveValue('2099-11-01T10:30');
+      expect(screen.getByRole('region', { name: 'Later impact' })).toHaveTextContent(
+        '5 emails will move',
+      );
+      if (submit.endsWith('click')) fireEvent.click(screen.getByRole('button', { name: 'Later' }));
+      else if (submit === 'inline shortcut') fireEvent.keyDown(window, { key: 'l' });
+      else fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await waitFor(() => expect(bodies).toHaveLength(1));
+      expect(bodies[0]).toMatchObject({
+        primary: {
+          type: 'later',
+          olderThanDays: 180,
+          wakeAt: new Date('2099-11-01T10:30').toISOString(),
+        },
+      });
+      expect((bodies[0] as { primary: object }).primary).not.toHaveProperty('reach');
+    },
+  );
+
+  it('blocks zero matches, invalid returns and missing counts; reopening resets both controls', async () => {
+    const client = createTestQueryClient();
+    renderScreen(client);
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'l' });
+    const age = await screen.findByRole('combobox', { name: 'Email age' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Later' })).toBeEnabled());
+    fireEvent.change(age, { target: { value: '365' } });
+    expect(screen.getByRole('button', { name: 'Later' })).toBeDisabled();
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    fireEvent.change(age, { target: { value: '180' } });
+    Reflect.deleteProperty(preview.counts, 'olderThan180d');
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ['composite-preview'] });
+    });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Later' })).toBeDisabled());
+    fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
+    expect(bodies).toHaveLength(0);
+    fireEvent.change(age, { target: { value: 'all' } });
+    fireEvent.change(screen.getByLabelText('Later return time'), { target: { value: '' } });
+    expect(screen.getByRole('button', { name: 'Later' })).toBeDisabled();
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(bodies).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.keyDown(window, { key: 'l' });
+    expect(await screen.findByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Later' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Later' }));
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({ primary: { type: 'later', olderThanDays: null } });
+    expect(
+      Date.parse((bodies[0] as { primary: { wakeAt: string } }).primary.wakeAt),
+    ).toBeGreaterThan(Date.now() + 7 * 86400000 - 60000);
   });
 });

@@ -3026,7 +3026,8 @@ describe('ConfirmActionModal — Delete layout A and other actions', () => {
     );
   });
 
-  it.each(['Unsubscribe', 'Later'] as const)('keeps %s on its existing presentation', (verb) => {
+  it('keeps Unsubscribe on its existing presentation', () => {
+    const verb = 'Unsubscribe';
     render(
       <ConfirmActionModal
         request={request(verb)}
@@ -3037,8 +3038,7 @@ describe('ConfirmActionModal — Delete layout A and other actions', () => {
     );
     expect(screen.queryByRole('region', { name: 'Delete impact' })).toBeNull();
     expect(screen.queryByRole('combobox', { name: 'Email age' })).toBeNull();
-    if (verb !== 'Later')
-      expect(screen.getByRole('combobox', { name: /How far back/i })).toHaveValue('all');
+    expect(screen.getByRole('combobox', { name: /How far back/i })).toHaveValue('all');
   });
 });
 
@@ -3087,5 +3087,61 @@ describe('Delete age availability', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     expect(onConfirm).toHaveBeenCalledWith({ olderThanDays: null, archiveHistoric: false });
+  });
+});
+
+describe('Later selected age and return time', () => {
+  it.each(['click', 'keyboard'] as const)('confirms both selected values via %s', (submit) => {
+    const onConfirm = vi.fn();
+    const before = Date.now();
+    render(
+      <ConfirmActionModal
+        request={request('Later')}
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+        compositePreview={livePreview}
+      />,
+    );
+    const age = screen.getByRole('combobox', { name: 'Email age' });
+    const time = screen.getByLabelText('Later return time') as HTMLInputElement;
+    expect(age).toHaveValue('all');
+    expect(new Date(time.value).getTime()).toBeGreaterThanOrEqual(before + 7 * 86400000 - 60000);
+    expect(screen.getByRole('region', { name: 'Later impact' })).toHaveTextContent(
+      '4 emails will move',
+    );
+    fireEvent.change(time, { target: { value: '2099-11-01T10:30' } });
+    fireEvent.change(age, { target: { value: '180' } });
+    expect(time).toHaveValue('2099-11-01T10:30');
+    expect(screen.getByRole('region', { name: 'Later impact' })).toHaveTextContent(
+      '1 email will move',
+    );
+    expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
+    if (submit === 'click') fireEvent.click(screen.getByRole('button', { name: 'Later' }));
+    else fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
+    expect(onConfirm).toHaveBeenCalledWith({
+      olderThanDays: 180,
+      wakeAt: new Date('2099-11-01T10:30').toISOString(),
+      archiveHistoric: false,
+    });
+  });
+
+  it('blocks an empty age or missing selected count and recovers through Any age', () => {
+    const props = { request: request('Later'), onCancel: vi.fn(), onConfirm: vi.fn() };
+    const { rerender } = render(<ConfirmActionModal {...props} compositePreview={livePreview} />);
+    const age = screen.getByRole('combobox', { name: 'Email age' });
+    fireEvent.change(age, { target: { value: '365' } });
+    expect(screen.getByRole('button', { name: 'Later' })).toBeDisabled();
+    expect(age).toBeEnabled();
+    fireEvent.change(age, { target: { value: '180' } });
+    const counts = { ...buckets };
+    Reflect.deleteProperty(counts, 'olderThan180d');
+    rerender(<ConfirmActionModal {...props} compositePreview={{ ...livePreview, counts }} />);
+    expect(screen.getByRole('button', { name: 'Later' })).toBeDisabled();
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(props.onConfirm).not.toHaveBeenCalled();
+    fireEvent.change(age, { target: { value: 'all' } });
+    expect(screen.getByRole('button', { name: 'Later' })).toBeEnabled();
+    fireEvent.change(screen.getByLabelText('Later return time'), { target: { value: '' } });
+    expect(screen.getByRole('button', { name: 'Later' })).toBeDisabled();
   });
 });

@@ -50,7 +50,9 @@ export function inlinePreviewFor(
   return {
     verb: pendingAction.verb,
     ageControl:
-      pendingAction.verb === 'Archive' || pendingAction.verb === 'Delete'
+      pendingAction.verb === 'Archive' ||
+      pendingAction.verb === 'Delete' ||
+      pendingAction.verb === 'Later'
         ? preview.detail?.ageControl
         : undefined,
     onCancel: preview.onCancel,
@@ -59,6 +61,7 @@ export function inlinePreviewFor(
     onBacklogMode: (mode) => useTriageStore.getState().setPendingBacklogMode(mode),
     inboxCount: preview.inboxCount,
     wakeAt: pendingAction.wakeAt,
+    onWakeAtChange: useTriageStore.getState().setPendingWakeAt,
     quotaRemaining: preview.quotaRemaining,
     detailSlot:
       preview.detail !== undefined &&

@@ -1,3 +1,4 @@
+import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 // Tests for the triage row's edge states (2026-07-02 audit W1 + W3).
 //
 //   W1 — narrow-viewport identity: below the xs ceiling the single-row
@@ -812,6 +813,7 @@ describe('TriageRow — inline zero-count no-op gate', () => {
   const inline = (verb: 'Archive' | 'Later' | 'Delete' | 'Unsubscribe', inboxCount: number) => ({
     verb,
     archiveHistoric: false,
+    wakeAt: verb === 'Later' ? defaultLaterWakeAtIso() : null,
     inboxCount,
   });
 
@@ -854,7 +856,7 @@ describe('TriageRow — inline zero-count no-op gate', () => {
         inlineConfirm(
           new RegExp(
             verb === 'Later'
-              ? '^Move 1 email to Later$'
+              ? '^Later$'
               : verb === 'Archive' || verb === 'Delete'
                 ? `^${verb}$`
                 : `^${verb} 1 email$`,

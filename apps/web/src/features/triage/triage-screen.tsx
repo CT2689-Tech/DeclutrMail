@@ -1,5 +1,7 @@
 'use client';
 
+import { isFutureReturnTime } from '@/components/later-return-control';
+
 import { pickBucketCount, TIME_WINDOW_PRESETS } from '@/features/senders/action-window';
 
 import { useActionPreviewAnalytics } from '@/lib/use-action-preview-analytics';
@@ -600,13 +602,16 @@ export function TriageScreen({
     (pendingAction?.verb === 'Delete' || pendingAction?.verb === 'Unsubscribe')
       ? deleteReach
       : 'inbox_only';
-  const hasAgeControl = pendingAction?.verb === 'Archive' || pendingAction?.verb === 'Delete';
+  const hasAgeControl =
+    pendingAction?.verb === 'Archive' ||
+    pendingAction?.verb === 'Delete' ||
+    pendingAction?.verb === 'Later';
   const previewAge =
     pendingAction?.verb === 'Delete'
       ? pendingAction.olderThanDays === undefined
         ? DEFAULT_DELETE_WINDOW_DAYS
         : pendingAction.olderThanDays
-      : pendingAction?.verb === 'Archive'
+      : pendingAction?.verb === 'Archive' || pendingAction?.verb === 'Later'
         ? (pendingAction.olderThanDays ?? null)
         : null;
   // The ONE count the preview arms — at the SELECTED reach.
@@ -1024,7 +1029,7 @@ export function TriageScreen({
       }
 
       if (
-        (verb === 'Archive' || verb === 'Delete') &&
+        (verb === 'Archive' || verb === 'Delete' || verb === 'Later') &&
         (pendingAction?.verb !== verb ||
           pendingAction.rowId !== row.id ||
           typeof previewInboxCount !== 'number' ||
@@ -1032,6 +1037,7 @@ export function TriageScreen({
           (details?.olderThanDays ?? null) !== previewAge)
       )
         return false;
+      if (verb === 'Later' && !isFutureReturnTime(details?.wakeAt)) return false;
       clearPending();
 
       // Keep — policy/verdict-only (D40: applies immediately). Settles
@@ -1184,7 +1190,7 @@ export function TriageScreen({
           primary: {
             type: primaryType,
             olderThanDays:
-              primaryType === 'archive' || primaryType === 'delete'
+              primaryType === 'archive' || primaryType === 'delete' || primaryType === 'later'
                 ? (details?.olderThanDays ?? null)
                 : null,
             ...(primaryType === 'later' && details?.wakeAt ? { wakeAt: details.wakeAt } : {}),
@@ -1383,7 +1389,9 @@ export function TriageScreen({
             ...(backlogMode ? { backlogMode } : {}),
             rememberPreference: true,
             wakeAt: pendingAction.wakeAt,
-            ...(verb === 'Archive' || verb === 'Delete' ? { olderThanDays: previewAge } : {}),
+            ...(verb === 'Archive' || verb === 'Delete' || verb === 'Later'
+              ? { olderThanDays: previewAge }
+              : {}),
           },
           'inline',
         );
@@ -1460,7 +1468,7 @@ export function TriageScreen({
     const { verb, batch, wakeAt } = pendingBatch;
     const selectedCount = pickBucketCount(
       bulkPreview.data?.totals,
-      verb === 'Archive' ? (pendingBatch.olderThanDays ?? null) : null,
+      pendingBatch.olderThanDays ?? null,
     );
     if (
       bulkPreview.isFetching ||
@@ -1468,14 +1476,14 @@ export function TriageScreen({
       selectedCount == null ||
       selectedCount === 0 ||
       !bulkPreview.data?.senders.some((sender) => !sender.protected) ||
-      (verb === 'Archive' &&
-        bulkPreview.data.senders.some(
-          (sender) =>
-            !sender.protected &&
-            pickBucketCount(sender.counts, pendingBatch.olderThanDays ?? null) === undefined,
-        ))
+      bulkPreview.data.senders.some(
+        (sender) =>
+          !sender.protected &&
+          pickBucketCount(sender.counts, pendingBatch.olderThanDays ?? null) === undefined,
+      )
     )
       return;
+    if (verb === 'Later' && !isFutureReturnTime(wakeAt)) return;
     const eligible = batch.eligibleRows;
     setPendingBatch(null);
     // A member held since the sheet opened may still be running; sending it
@@ -1490,7 +1498,7 @@ export function TriageScreen({
         senderIds: eligible.map((r) => r.senderId),
         primary: {
           type: verb === 'Archive' ? 'archive' : 'later',
-          olderThanDays: verb === 'Archive' ? (pendingBatch.olderThanDays ?? null) : null,
+          olderThanDays: pendingBatch.olderThanDays ?? null,
           ...(verb === 'Later' && wakeAt ? { wakeAt } : {}),
         },
       },
@@ -1886,6 +1894,9 @@ export function TriageScreen({
           setPendingBatch((current) => (current ? { ...current, olderThanDays } : current))
         }
         wakeAt={pendingBatch?.wakeAt ?? null}
+        onWakeAtChange={(wakeAt) =>
+          setPendingBatch((current) => (current ? { ...current, wakeAt } : current))
+        }
         mailboxEmail={activeEmail}
         onCancel={() => setPendingBatch(null)}
         onConfirm={onBatchConfirm}

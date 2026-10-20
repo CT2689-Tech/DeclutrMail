@@ -1,7 +1,7 @@
 import { useState, type ComponentProps } from 'react';
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { cleanupAgeLabel } from '@/components/cleanup-preview';
-import { DEFAULT_DELETE_WINDOW_DAYS } from '@declutrmail/shared/actions';
+import { DEFAULT_DELETE_WINDOW_DAYS, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import { Button } from '@declutrmail/shared';
 import type { ActionReach } from '@declutrmail/shared/contracts';
 import { pickBucketCount, TIME_WINDOW_PRESETS } from '@/features/senders/action-window';
@@ -32,6 +32,9 @@ function CleanupStory(args: ComponentProps<typeof ActionSheet>) {
   const [days, setDays] = useState<number | null>(defaultDays);
   const [reach, setReach] = useState<ActionReach>('inbox_only');
   const [result, setResult] = useState('');
+  const [wakeAt, setWakeAt] = useState<string | null>(() =>
+    args.verb === 'Later' ? defaultLaterWakeAtIso() : null,
+  );
   const inboxCount =
     typeof args.inboxCount === 'number'
       ? args.inboxCount === 0
@@ -57,6 +60,7 @@ function CleanupStory(args: ComponentProps<typeof ActionSheet>) {
         onClick={() => {
           setReach('inbox_only');
           setDays(defaultDays);
+          setWakeAt(args.verb === 'Later' ? defaultLaterWakeAtIso() : null);
           setOpen(true);
         }}
       >
@@ -66,10 +70,11 @@ function CleanupStory(args: ComponentProps<typeof ActionSheet>) {
       <ActionSheet
         {...args}
         open={open}
+        wakeAt={wakeAt}
         reach={activeReach}
         inboxCount={count}
         detail={{
-          ...(args.verb === 'Archive' || args.verb === 'Delete'
+          ...(args.verb === 'Archive' || args.verb === 'Delete' || args.verb === 'Later'
             ? {
                 ageControl: {
                   olderThanDays: days,
@@ -86,9 +91,9 @@ function CleanupStory(args: ComponentProps<typeof ActionSheet>) {
           },
         }}
         onCancel={() => setOpen(false)}
-        onConfirm={() => {
+        onConfirm={(details) => {
           setResult(
-            `Sample confirmation: ${args.verb} ${count} emails, ${activeReach === 'all_mail' ? 'inbox and archived' : 'inbox only'}, ${cleanupAgeLabel(days).toLowerCase()}.`,
+            `Sample confirmation: ${args.verb} ${count} emails, ${activeReach === 'all_mail' ? 'inbox and archived' : 'inbox only'}, ${cleanupAgeLabel(days).toLowerCase()}${args.verb === 'Later' ? `; return ${details.wakeAt ? new Date(details.wakeAt).toLocaleString('en-US', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }) : 'not selected'}` : ''}.`,
           );
           setOpen(false);
         }}
@@ -134,6 +139,9 @@ function InlineCleanupStory(args: ComponentProps<typeof ActionSheet>) {
   const [open, setOpen] = useState(true);
   const [days, setDays] = useState<number | null>(defaultDays);
   const [result, setResult] = useState('');
+  const [wakeAt, setWakeAt] = useState<string | null>(() =>
+    args.verb === 'Later' ? defaultLaterWakeAtIso() : null,
+  );
   const count =
     typeof args.inboxCount === 'number'
       ? args.inboxCount === 0
@@ -145,7 +153,7 @@ function InlineCleanupStory(args: ComponentProps<typeof ActionSheet>) {
       <p>
         {args.verb === 'Delete'
           ? 'Inline Delete layout preview · fictional mailbox. Delete still opens a confirmation window in the product.'
-          : 'Fictional mailbox · no Gmail changes. Triage inline Archive · Inbox only.'}
+          : `Fictional mailbox · no Gmail changes. Triage inline ${args.verb} · Inbox only.`}
       </p>
       {result && <p role="status">{result}</p>}
       {open ? (
@@ -153,6 +161,8 @@ function InlineCleanupStory(args: ComponentProps<typeof ActionSheet>) {
           row={args.row ?? sampleRow}
           preview={{
             verb: args.verb,
+            wakeAt,
+            onWakeAtChange: setWakeAt,
             archiveHistoric: false,
             inboxCount: count,
             ageControl: { olderThanDays: days, options: TIME_WINDOW_PRESETS, onChange: setDays },
@@ -162,7 +172,7 @@ function InlineCleanupStory(args: ComponentProps<typeof ActionSheet>) {
           shortcutLive={false}
           onConfirm={() => {
             setResult(
-              `Sample confirmation: ${args.verb} ${count} inbox emails, ${cleanupAgeLabel(days).toLowerCase()}.`,
+              `Sample confirmation: ${args.verb} ${count} inbox emails, ${cleanupAgeLabel(days).toLowerCase()}${args.verb === 'Later' ? `; return ${wakeAt ? new Date(wakeAt).toLocaleString('en-US', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }) : 'not selected'}` : ''}.`,
             );
             setOpen(false);
           }}
@@ -171,6 +181,7 @@ function InlineCleanupStory(args: ComponentProps<typeof ActionSheet>) {
         <Button
           onClick={() => {
             setDays(defaultDays);
+            setWakeAt(args.verb === 'Later' ? defaultLaterWakeAtIso() : null);
             setOpen(true);
           }}
         >
@@ -211,10 +222,13 @@ const batchCounts = {
   olderThan180d: 84,
   olderThan365d: 0,
 };
-function BatchArchiveStory(args: ComponentProps<typeof ActionSheet>) {
+function BatchCleanupStory(args: ComponentProps<typeof ActionSheet>) {
   const [days, setDays] = useState<number | null>(null);
   const [open, setOpen] = useState(true);
   const [result, setResult] = useState('');
+  const [wakeAt, setWakeAt] = useState<string | null>(() =>
+    args.verb === 'Later' ? defaultLaterWakeAtIso() : null,
+  );
   const preview =
     typeof args.inboxCount === 'number'
       ? {
@@ -232,19 +246,22 @@ function BatchArchiveStory(args: ComponentProps<typeof ActionSheet>) {
       : args.inboxCount;
   return (
     <div style={{ padding: 24 }}>
-      <p>Fictional mailbox · no Gmail changes. Triage group Archive keeps Inbox only · Any age.</p>
+      <p>Fictional mailbox · no Gmail changes. Triage group {args.verb} · Inbox only · Any age.</p>
       <Button
         onClick={() => {
           setDays(null);
+          setWakeAt(args.verb === 'Later' ? defaultLaterWakeAtIso() : null);
           setOpen(true);
         }}
       >
-        Review Archive
+        Review {args.verb}
       </Button>
       {result && <p role="status">{result}</p>}
       <BatchActionSheet
         open={open}
-        verb="Archive"
+        verb={args.verb === 'Later' ? 'Later' : 'Archive'}
+        wakeAt={wakeAt}
+        onWakeAtChange={setWakeAt}
         olderThanDays={days}
         onWindowChange={setDays}
         batch={batch}
@@ -253,7 +270,7 @@ function BatchArchiveStory(args: ComponentProps<typeof ActionSheet>) {
         onCancel={() => setOpen(false)}
         onConfirm={() => {
           setResult(
-            `Sample confirmation: Archive ${(pickBucketCount(batchCounts, days) ?? 0) * 2} inbox emails, ${cleanupAgeLabel(days).toLowerCase()}.`,
+            `Sample confirmation: ${args.verb} ${(pickBucketCount(batchCounts, days) ?? 0) * 2} inbox emails, ${cleanupAgeLabel(days).toLowerCase()}${args.verb === 'Later' ? `; return ${wakeAt ? new Date(wakeAt).toLocaleString('en-US', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }) : 'not selected'}` : ''}.`,
           );
           setOpen(false);
         }}
@@ -263,5 +280,21 @@ function BatchArchiveStory(args: ComponentProps<typeof ActionSheet>) {
 }
 export const ArchiveBatch: Story = {
   args: { verb: 'Archive' },
-  render: (args) => <BatchArchiveStory {...args} />,
+  render: (args) => <BatchCleanupStory {...args} />,
+};
+
+export const LaterDefault: Story = { args: { verb: 'Later' } };
+export const LaterLoading: Story = { args: { verb: 'Later', inboxCount: 'loading' } };
+export const LaterUnavailable: Story = { args: { verb: 'Later', inboxCount: 'unavailable' } };
+export const LaterEmptyInbox: Story = { args: { verb: 'Later', inboxCount: 0 } };
+export const LaterProtected: Story = {
+  args: { verb: 'Later', row: { ...sampleRow, protectionReason: 'manual' } },
+};
+export const LaterInline: Story = {
+  args: { verb: 'Later' },
+  render: (args) => <InlineCleanupStory {...args} />,
+};
+export const LaterBatch: Story = {
+  args: { verb: 'Later' },
+  render: (args) => <BatchCleanupStory {...args} />,
 };

@@ -17,6 +17,7 @@ import { afterLead } from '@/lib/copy/after-lead';
 import { useNow } from '@/lib/use-now';
 import { ActionReachControl } from '@/components/action-scope-controls';
 import { CleanupImpact, CleanupPreview, cleanupAgeLabel } from '@/components/cleanup-preview';
+import { LaterReturnControl, isFutureReturnTime } from '@/components/later-return-control';
 import type { ActionReach } from '@/lib/api/actions';
 
 import {
@@ -66,6 +67,7 @@ export function DecidePreview({
   reach = 'inbox_only',
   onReachChange,
   wakeAt,
+  onWakeAtChange,
   confirming,
   mailboxEmail,
   onConfirm,
@@ -106,6 +108,7 @@ export function DecidePreview({
   reach?: ActionReach;
   onReachChange?: ((reach: ActionReach) => void) | undefined;
   wakeAt?: string | null;
+  onWakeAtChange?: ((wakeAt: string | null) => void) | undefined;
   /** True while the decide POST / worker confirmation is in flight. */
   confirming: boolean;
   /** Explicit override for isolated previews; app surfaces use active auth context. */
@@ -115,7 +118,7 @@ export function DecidePreview({
 }) {
   useActionPreviewAnalytics(row.senderId, verb, typeof inboxCount === 'number');
   const name = row.senderName;
-  const isCleanupAction = verb === 'archive' || verb === 'delete';
+  const isCleanupAction = verb === 'archive' || verb === 'delete' || verb === 'later';
   // ADR-0028 reach. Widening stays possible only when the preview carries
   // the all-mail count. Without that count the checkbox stays disabled.
   const reachAvailable = verb === 'delete' && allMailCount != null;
@@ -192,12 +195,14 @@ export function DecidePreview({
       : verb === 'unsubscribe'
         ? `Unsubscribe from ${name}?`
         : isCleanupAction
-          ? `${VERB_LABEL[verb]} emails from ${name}?`
+          ? verb === 'later'
+            ? `Move emails from ${name} to Later?`
+            : `${VERB_LABEL[verb]} emails from ${name}?`
           : verb === 'later'
             ? `Move ${liveCount === null ? 'email' : emailsLabel(liveCount)} to Later?`
             : `${VERB_LABEL[verb]} ${liveCount === null ? 'email' : emailsLabel(liveCount)}?`;
   const explanation =
-    zero || verb === 'archive'
+    zero || verb === 'archive' || verb === 'later'
       ? null
       : verb === 'unsubscribe'
         ? primary.unsubscribeChannel.kind === 'not-applicable' ||
@@ -226,7 +231,9 @@ export function DecidePreview({
     moves && (typeof inboxCount !== 'number' || typeof effectiveCount !== 'number');
   // A zero-match Delete would only remove the review row while moving no
   // email. Keep is the explicit app-only decision for that intent.
-  const confirmDisabled = confirming || previewBlocked || (moves && liveCount === 0);
+  const returnInvalid = verb === 'later' && !isFutureReturnTime(wakeAt);
+  const confirmDisabled =
+    confirming || previewBlocked || (moves && liveCount === 0) || returnInvalid;
 
   // A Protected sender decided EXPLICITLY, one at a time — the path
   // D245 leaves open (it excludes Protected from bulk and automatic
@@ -396,6 +403,17 @@ export function DecidePreview({
         </div>
       )}
 
+      {verb === 'later' && onWakeAtChange && (
+        <div style={{ marginTop: space[3] }}>
+          <LaterReturnControl value={wakeAt ?? null} onChange={onWakeAtChange} />
+        </div>
+      )}
+      {returnInvalid && (
+        <p role="status" style={mutedLine}>
+          Choose a future return time.
+        </p>
+      )}
+
       {/* Protected acknowledgement (D42/D245) — stated before the
           confirm, never after the fact. `role="status"` so a screen
           reader hears it when the preview opens. */}
@@ -417,7 +435,7 @@ export function DecidePreview({
       {isCleanupAction && (
         <div style={{ marginTop: space[3] }}>
           <CleanupImpact
-            action={verb === 'archive' ? 'Archive' : 'Delete'}
+            action={verb === 'archive' ? 'Archive' : verb === 'later' ? 'Later' : 'Delete'}
             count={previewBlocked ? null : liveCount}
             includesArchived={allMailReach}
             olderThanDays={windowDays}

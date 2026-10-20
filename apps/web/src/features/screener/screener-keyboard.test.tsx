@@ -652,3 +652,109 @@ describe('Screener Delete selected age and archived count stay together', () => 
     },
   );
 });
+
+describe('Screener Later age and return requests', () => {
+  it.each(['click', 'Enter'] as const)(
+    '%s sends the chosen age and return time',
+    async (submit) => {
+      const bodies: unknown[] = [];
+      installFetchStub([
+        livePreviewHandler(20, undefined, 5),
+        {
+          method: 'POST',
+          path: '/api/screener/decide',
+          respond: async (req) => {
+            bodies.push(await req.json());
+            return jsonOk({
+              data: {
+                senderId: firstRow.senderId,
+                verb: 'later',
+                resolved: true,
+                execution: {
+                  kind: 'enqueued',
+                  actionId: '99999999-9999-4999-8999-999999999999',
+                  status: 'queued',
+                  requestedCount: submit === 'click' ? 5 : 20,
+                },
+              },
+            });
+          },
+        },
+      ]);
+      renderReady();
+      expandFirstRow();
+      const before = Date.now();
+      fireEvent.keyDown(window, { key: 'l' });
+      const age = await screen.findByRole('combobox', { name: 'Email age' });
+      expect(age).toHaveValue('all');
+      const time = screen.getByLabelText('Later return time') as HTMLInputElement;
+      expect(new Date(time.value).getTime()).toBeGreaterThanOrEqual(before + 7 * 86400000 - 60000);
+      await waitFor(() =>
+        expect(screen.getByRole('region', { name: 'Later impact' })).toHaveTextContent(
+          '20 emails will move',
+        ),
+      );
+      fireEvent.change(time, { target: { value: '2099-11-01T10:30' } });
+      fireEvent.change(age, { target: { value: '180' } });
+      expect(screen.getByRole('region', { name: 'Later impact' })).toHaveTextContent(
+        '5 emails will move',
+      );
+      expect(time).toHaveValue('2099-11-01T10:30');
+      expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
+      if (submit === 'Enter') {
+        fireEvent.change(age, { target: { value: 'all' } });
+        fireEvent.keyDown(window, { key: 'Enter' });
+      } else
+        fireEvent.click(screen.getByRole('button', { name: `Later for ${firstRow.senderName}` }));
+      await waitFor(() => expect(bodies).toHaveLength(1));
+      expect(bodies[0]).toMatchObject({
+        verb: 'later',
+        senderId: firstRow.senderId,
+        wakeAt: new Date('2099-11-01T10:30').toISOString(),
+      });
+      if (submit === 'click') expect(bodies[0]).toMatchObject({ olderThanDays: 180 });
+      else expect(bodies[0]).not.toHaveProperty('olderThanDays');
+      expect(bodies[0]).not.toHaveProperty('reach');
+    },
+  );
+
+  it('blocks invalid return times and empty ages, then resets on reopen', async () => {
+    const writes = vi.fn();
+    installFetchStub([
+      livePreviewHandler(20, undefined, 0),
+      {
+        method: 'POST',
+        path: '/api/screener/decide',
+        respond: () => {
+          writes();
+          return jsonServerError();
+        },
+      },
+    ]);
+    renderReady();
+    expandFirstRow();
+    fireEvent.keyDown(window, { key: 'l' });
+    const age = await screen.findByRole('combobox', { name: 'Email age' });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: `Later for ${firstRow.senderName}` }),
+      ).toBeEnabled(),
+    );
+    fireEvent.change(age, { target: { value: '180' } });
+    expect(screen.getByRole('button', { name: `Later for ${firstRow.senderName}` })).toBeDisabled();
+    fireEvent.keyDown(window, { key: 'Enter' });
+    fireEvent.change(age, { target: { value: 'all' } });
+    fireEvent.change(screen.getByLabelText('Later return time'), { target: { value: '' } });
+    expect(screen.getByRole('button', { name: `Later for ${firstRow.senderName}` })).toBeDisabled();
+    fireEvent.keyDown(window, { key: 'Enter' });
+    expect(writes).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.keyDown(window, { key: 'l' });
+    expect(await screen.findByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: `Later for ${firstRow.senderName}` }),
+      ).toBeEnabled(),
+    );
+  });
+});
