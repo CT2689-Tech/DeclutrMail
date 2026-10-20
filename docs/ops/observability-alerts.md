@@ -119,8 +119,9 @@ cannot hide the next one.
   `stuck_mailbox_watchdog.completed`. "Mailbox stuck: broken past grace window,
   unnoticed" opens one alert per mailbox and reason, named in the subject.
   Acknowledge a known one in the console; the next stuck mailbox still opens
-  its own alert. An alert closes about 30 minutes after its mailbox recovers, so
-  a mailbox that breaks again pages again. "Stuck-mailbox watchdog silent" pages
+  its own alert. It closes after 30 minutes without a stuck observation; this
+  can also mean the watchdog stopped. Only opening notifications are sent,
+  and current mailbox state must establish recovery. "Stuck-mailbox watchdog silent" pages
   when no sweep has completed for over an hour; while it is open, the first
   policy cannot see newly stuck mailboxes.
 - **GitHub watchdog (the backstop).** `sync-stuck-watchdog.yml` reads
