@@ -778,7 +778,18 @@ function normalizeAllMailBlock(
     | undefined,
 ): CompositeActionPreviewResult['allMail'] {
   const counts = raw?.counts;
-  if (!counts) return null;
+  // Unknown is not zero. A partial/malformed all-mail preview cannot
+  // support an age-scoped Delete, so keep the whole reach unavailable.
+  if (
+    !counts ||
+    ['all', 'olderThan30d', 'olderThan90d', 'olderThan180d', 'olderThan365d'].some(
+      (key) =>
+        typeof counts[key] !== 'number' ||
+        !Number.isSafeInteger(counts[key]) ||
+        (counts[key] as number) < 0,
+    )
+  )
+    return null;
   const bucket = (value: unknown): number =>
     typeof value === 'number' && Number.isFinite(value) ? value : 0;
   return {

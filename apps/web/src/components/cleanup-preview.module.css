@@ -1,0 +1,69 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.unsubscribeChoices :global(.dm-sheet-segment-option) {
+  padding-inline: 4px;
+}
+.age {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.age select,
+.age input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--dm-border);
+  border-radius: var(--dm-radius-md);
+  background: var(--dm-bg);
+  color: var(--dm-fg);
+  font: inherit;
+}
+.age small {
+  grid-column: 2;
+  color: var(--dm-fg-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+.impact {
+  padding: 18px;
+  border-radius: var(--dm-radius-md);
+  background: var(--dm-primary-soft);
+}
+.impact p {
+  margin: 0;
+  color: var(--dm-fg);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+.impact span {
+  display: block;
+  margin-top: 6px;
+  color: var(--dm-fg-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.recovery {
+  margin: 10px 0 0;
+  color: var(--dm-fg-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+@media (max-width: 620px) {
+  .age {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .age small {
+    grid-column: auto;
+  }
+}

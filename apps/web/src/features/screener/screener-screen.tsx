@@ -1,5 +1,7 @@
 'use client';
 
+import { isFutureReturnTime } from '@/components/later-return-control';
+
 import {
   editorialColumnStyle,
   editorialTitleStyle,
@@ -78,8 +80,8 @@ import { useUnconfirmedHolds } from '@/features/undo/unconfirmed-holds';
 
 const { color, text } = tokens;
 
-/** Select the exact server preview bucket the Delete choice will enqueue. */
-function deleteWindowCount(
+/** Select the exact server preview bucket the age choice will enqueue. */
+function actionWindowCount(
   counts: CompositeActionPreviewResult['counts'] | undefined,
   days: number | null,
 ): number | undefined {
@@ -375,14 +377,15 @@ export function ScreenerScreen({
   // Delete starts at the same safer six-month window as Senders. The
   // reader can widen it here when newer mail would otherwise count zero.
   const isPendingDelete = pending?.verb === 'delete';
+  const hasAgeWindow = isPendingDelete || pending?.verb === 'archive' || pending?.verb === 'later';
   // isFetching keeps a reopened preview in 'loading' while cached data
   // refetches — a cached count must never arm confirm (D226).
   const previewInboxCount = compositePreview.isError
     ? ('unavailable' as const)
     : compositePreview.isFetching || compositePreview.data == null
       ? ('loading' as const)
-      : isPendingDelete
-        ? (deleteWindowCount(compositePreview.data.counts, pending?.windowDays ?? null) ??
+      : hasAgeWindow
+        ? (actionWindowCount(compositePreview.data.counts, pending?.windowDays ?? null) ??
           'unavailable')
         : compositePreview.data.counts.all;
   // The TRUE un-windowed inbox count, for the empty-window notice (the
@@ -395,7 +398,7 @@ export function ScreenerScreen({
   const previewAllMailCount =
     typeof previewInboxCount === 'number'
       ? isPendingDelete
-        ? (deleteWindowCount(compositePreview.data?.allMail?.counts, pending?.windowDays ?? null) ??
+        ? (actionWindowCount(compositePreview.data?.allMail?.counts, pending?.windowDays ?? null) ??
           null)
         : (compositePreview.data?.allMail?.counts.all ?? null)
       : null;
@@ -409,8 +412,8 @@ export function ScreenerScreen({
   const pendingMovesMail =
     pending?.verb === 'archive' || pending?.verb === 'later' || pending?.verb === 'delete';
   const selectedPreviewCount =
-    isPendingDelete && pending?.reach === 'all_mail' && previewAllMailCount !== null
-      ? previewAllMailCount
+    isPendingDelete && pending?.reach === 'all_mail'
+      ? (previewAllMailCount ?? 'unavailable')
       : previewInboxCount;
   const pendingPreviewBlocked =
     pendingMovesMail && (typeof selectedPreviewCount !== 'number' || selectedPreviewCount === 0);
@@ -569,7 +572,11 @@ export function ScreenerScreen({
     (row: ScreenerQueueRow) => {
       if (pending == null || pending.rowId !== row.id) return;
       if (pending.mailboxId !== activeMailbox?.id) return;
-      if (pendingPreviewBlocked) return;
+      if (
+        pendingPreviewBlocked ||
+        (pending.verb === 'later' && !isFutureReturnTime(pending.wakeAt))
+      )
+        return;
       // `parkedRowId` joins the guard for THIS row only (a preview can
       // stay open across the park): the parked row may not re-dispatch,
       // while the queue-wide latch (`busyRowId`) frees at the overdue
@@ -594,11 +601,11 @@ export function ScreenerScreen({
           mailboxId,
           senderId: row.senderId,
           verb,
-          // QA-delete-20260829-01 — Delete's default window travels with
-          // the mutation exactly as it did in the preview that armed
+          // Archive and Delete carry the same age used in the preview that armed
           // this confirm; the two can never show one count and act on
           // another.
-          ...(verb === 'delete' && pending.windowDays !== null
+          ...((verb === 'delete' || verb === 'archive' || verb === 'later') &&
+          pending.windowDays !== null
             ? { olderThanDays: pending.windowDays }
             : {}),
           // ADR-0028 — only the non-default reach travels, and only on
@@ -922,7 +929,7 @@ export function ScreenerScreen({
                   pendingVerb={pending?.rowId === row.id ? pending.verb : null}
                   previewInboxCount={previewInboxCount}
                   previewInboxTotal={previewInboxTotal}
-                  previewWindowDays={isPendingDelete ? pending?.windowDays : null}
+                  previewWindowDays={hasAgeWindow ? pending?.windowDays : null}
                   onWindowChange={(windowDays) =>
                     setPending((cur) =>
                       cur && cur.rowId === row.id ? { ...cur, windowDays } : cur,
@@ -935,10 +942,16 @@ export function ScreenerScreen({
                     setPending((cur) => (cur && cur.rowId === row.id ? { ...cur, reach } : cur))
                   }
                   wakeAt={pending?.rowId === row.id ? pending.wakeAt : null}
+                  onWakeAtChange={(wakeAt) =>
+                    setPending((cur) => (cur && cur.rowId === row.id ? { ...cur, wakeAt } : cur))
+                  }
                   onToggleExpand={() => setExpandedRowId((cur) => (cur === row.id ? null : row.id))}
                   onVerbClick={(verb) => onVerbClick(verb, row)}
                   onConfirm={() => onConfirm(row)}
                   onCancel={() => setPending(null)}
+                  onRetryPreview={() => {
+                    void compositePreview.refetch();
+                  }}
                 />
               </div>
             ))}

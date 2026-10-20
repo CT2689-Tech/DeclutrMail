@@ -1,10 +1,9 @@
 // Storybook CSF3 stories for the Senders confirm sheet (D226, ADR-0042).
 //
-// The mandatory preview before any Senders mutation, on the shared
-// `PreviewSheet`: the count in the title, where the email goes in the
-// subtitle, how to undo it in the note — each once — with only the
-// supported scope/period controls in the body and other facts behind
-// "Details". Same grammar as Triage's ActionSheet.
+// The mandatory Senders preview uses PreviewSheet (D226, ADR-0042).
+// Archive and Delete share layout A: count/destination in one impact summary,
+// a short button, and explicit age controls with each action's existing defaults.
+// Unsubscribe and Later retain their existing presentation.
 
 import type { ComponentProps } from 'react';
 import type { CompositeActionPreviewResult } from '@/lib/api/use-action';
@@ -31,7 +30,7 @@ const meta: StoryMeta<typeof ConfirmActionModal> = {
     docs: {
       description: {
         component:
-          'The Senders D226 preview on the shared PreviewSheet (ADR-0042). Title = count + verb as a question, subtitle = whose email and where it goes, note = how to undo it; supported reach / window / backlog choosers remain visible even when counts tie; everything else sits behind Details.',
+          'The Senders D226 preview on the shared PreviewSheet (ADR-0042). Archive/Delete name the sender in the title and show the count, destination and recovery beside the final action; other actions retain their existing presentation; supported reach / window / backlog choosers remain visible even when counts tie; everything else sits behind Details.',
       },
     },
   },
@@ -127,7 +126,7 @@ export const UnsubscribeSubmitting: Story<typeof ConfirmActionModal> = {
   } satisfies Args,
 };
 
-/** Single sender, Archive — logo, "Archive 174 emails?", window chooser. */
+/** Single sender, Archive — inbox-only, Any age, count in the impact summary. */
 export const ArchiveOneSender: Story<typeof ConfirmActionModal> = {
   args: {
     ...base,
@@ -144,6 +143,33 @@ export const DeleteWithReach: Story<typeof ConfirmActionModal> = {
     request: { verb: 'Delete', senders: [macys] },
     compositePreview: preview,
   } satisfies Args,
+};
+
+/** Delete-only layout A: loading never displays a cached impact count. */
+export const DeleteLoading: Story<typeof ConfirmActionModal> = {
+  args: {
+    ...DeleteWithReach.args!,
+    compositePreviewLoading: true,
+  },
+};
+
+export const DeletePreviewFailed: Story<typeof ConfirmActionModal> = {
+  args: {
+    ...DeleteWithReach.args!,
+    compositePreviewError: true,
+    onRetryPreview: noop,
+  },
+};
+
+/** The date control stays available when only the selected age has no matches. */
+export const DeleteEmptyAge: Story<typeof ConfirmActionModal> = {
+  args: {
+    ...DeleteWithReach.args!,
+    compositePreview: {
+      ...preview,
+      counts: { ...buckets, olderThan180d: 0 },
+    },
+  },
 };
 
 /** Unsubscribe — the backlog chooser; the note says a sent request can't be recalled. */

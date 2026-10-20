@@ -121,3 +121,29 @@ describe('useTriageStore — honest session payoff', () => {
     expect(useTriageStore.getState().sessionMessagesMoved).toBe(20);
   });
 });
+
+describe('cleanup preview age and reach', () => {
+  it('starts Delete at 180 days, preserves explicit Any age, and clears scope for a new preview', () => {
+    const store = useTriageStore.getState();
+    store.openPending('Delete', 'row-1', 'sheet');
+    expect(useTriageStore.getState().pendingAction?.olderThanDays).toBe(180);
+    store.setPendingReach('all_mail');
+    store.setPendingOlderThanDays(null);
+    expect(useTriageStore.getState().pendingAction).toMatchObject({
+      olderThanDays: null,
+      reach: 'all_mail',
+    });
+    store.setPendingOlderThanDays(30);
+    expect(useTriageStore.getState().pendingAction).toMatchObject({
+      olderThanDays: 30,
+      reach: 'all_mail',
+    });
+    store.clearPending();
+    store.openPending('Delete', 'row-1', 'sheet');
+    expect(useTriageStore.getState().pendingAction?.olderThanDays).toBe(180);
+    expect(useTriageStore.getState().pendingAction?.reach).toBeUndefined();
+    store.openPending('Archive', 'row-2', 'inline');
+    expect(useTriageStore.getState().pendingAction?.olderThanDays).toBeUndefined();
+    expect(useTriageStore.getState().pendingAction?.reach).toBeUndefined();
+  });
+});

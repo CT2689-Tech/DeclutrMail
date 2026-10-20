@@ -99,21 +99,23 @@ describe('InboxReportFirstLanding', () => {
       fireEvent.click(
         await screen.findByRole('button', { name: 'Unsubscribe + archive 1 sender' }),
       );
-      const archive = await screen.findByRole('radio', { name: '+ Archive 4' });
+      const archive = await screen.findByRole('radio', { name: '+ Archive' });
       await waitFor(() => expect(archive).toBeEnabled());
       if (mode === 'delete') {
-        fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+        fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
         fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
       }
-      fireEvent.change(screen.getByRole('combobox', { name: 'How far back to act on' }), {
+      fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
         target: { value: '180' },
       });
-      expect(screen.getByRole('heading', { name: /Unsubscribe from/ })).toHaveTextContent(
-        mode === 'delete' ? 'delete 6 emails' : 'archive 1 email',
-      );
+      expect(
+        screen.getByRole('region', {
+          name: mode === 'delete' ? 'Delete impact' : 'Archive impact',
+        }),
+      ).toHaveTextContent(mode === 'delete' ? '6 emails' : '1 email');
       fireEvent.click(
         screen.getByRole('button', {
-          name: mode === 'delete' ? 'Unsubscribe + Delete 6 emails' : 'Unsubscribe + Archive',
+          name: mode === 'delete' ? 'Unsubscribe & delete' : 'Unsubscribe & archive',
         }),
       );
       await waitFor(() =>
@@ -179,13 +181,16 @@ describe('InboxReportFirstLanding', () => {
       </QueryWrapper>,
     );
     fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
-    const option = await screen.findByRole('radio', { name: '+ Delete 4' });
+    const option = await screen.findByRole('radio', { name: '+ Delete' });
     await waitFor(() => expect(option).toBeEnabled());
     fireEvent.click(option);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+      target: { value: 'all' },
+    });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
-    expect(screen.getByRole('dialog')).toHaveTextContent('delete 12 emails');
+    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent('12 emails');
     fireEvent.click(
-      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+      screen.getByRole('button', { name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/ }),
     );
     await waitFor(() =>
       expect(submitted).toMatchObject({ mode: 'delete', reach: 'all_mail', senderIds: ['s1'] }),
@@ -240,10 +245,10 @@ describe('InboxReportFirstLanding', () => {
       </QueryWrapper>,
     );
     fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
-    const archive = await screen.findByRole('radio', { name: '+ Archive 4' });
+    const archive = await screen.findByRole('radio', { name: '+ Archive' });
     await waitFor(() => expect(archive).toBeEnabled());
     fireEvent.click(archive);
-    const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
+    const confirm = screen.getByRole('button', { name: 'Unsubscribe & archive' });
     await waitFor(() => expect(confirm).toBeEnabled());
     fireEvent.click(confirm);
     await waitFor(() => expect(submitted?.senderIds).toEqual(['s1']));
@@ -753,25 +758,23 @@ describe('InboxReportFirstLanding', () => {
       }),
     );
     const archiveChoice = await screen.findByRole('radio', {
-      name: '+ Archive 7',
+      name: '+ Archive',
     });
-    expect(archiveChoice).toBeEnabled();
+    await waitFor(() => expect(archiveChoice).toBeEnabled());
     expect(archiveChoice).toBeChecked();
     expect(screen.getByRole('dialog')).not.toHaveTextContent('Unsubscribe from ?');
     expect(screen.getByRole('dialog')).not.toHaveTextContent('1 senders');
     expect(screen.getByRole('dialog')).not.toHaveTextContent(
       WS5_COPY['f1.preview.backlog.loading'],
     );
-    expect(screen.getByRole('dialog')).toHaveTextContent(
-      'Unsubscribe from Acme and archive 7 emails?',
-    );
+    expect(screen.getByRole('dialog')).toHaveTextContent('Unsubscribe from Acme?');
     expect(screen.getByRole('dialog')).toHaveTextContent(
       pluralCopy(WS5_COPY['f1.preview.backlog.archive'], 7, { n: 7 }),
     );
     fireEvent.click(archiveChoice);
-    const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
+    const confirm = screen.getByRole('button', { name: 'Unsubscribe & archive' });
     expect(confirm).toBeEnabled();
-    expect(screen.getByRole('dialog')).toHaveTextContent('archive 7 emails');
+    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent('7 emails');
     fireEvent.click(confirm);
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).toMatchObject({

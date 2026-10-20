@@ -36,6 +36,7 @@ export function inlinePreviewFor(
   preview: {
     inboxCount: PreviewCount;
     onCancel?: (() => void) | undefined;
+    onRetryPreview?: (() => void) | undefined;
     detail: ActionPreviewDetail | undefined;
     quotaRemaining: number | null | undefined;
   },
@@ -45,16 +46,26 @@ export function inlinePreviewFor(
   const count = typeof preview.inboxCount === 'number' ? preview.inboxCount : null;
   const backlogMode =
     pendingAction.verb === 'Unsubscribe'
-      ? (pendingAction.backlogMode ?? (count !== null && count > 0 ? 'archive' : 'unsub_only'))
+      ? (pendingAction.backlogMode ??
+        ((preview.detail?.inboxTotal ?? count ?? 0) > 0 ? 'archive' : 'unsub_only'))
       : 'unsub_only';
   return {
     verb: pendingAction.verb,
+    ageControl:
+      pendingAction.verb === 'Archive' ||
+      pendingAction.verb === 'Delete' ||
+      pendingAction.verb === 'Later' ||
+      (pendingAction.verb === 'Unsubscribe' && backlogMode !== 'unsub_only')
+        ? preview.detail?.ageControl
+        : undefined,
     onCancel: preview.onCancel,
+    onRetryPreview: preview.onRetryPreview,
     archiveHistoric: backlogMode === 'archive',
     backlogMode,
     onBacklogMode: (mode) => useTriageStore.getState().setPendingBacklogMode(mode),
     inboxCount: preview.inboxCount,
     wakeAt: pendingAction.wakeAt,
+    onWakeAtChange: useTriageStore.getState().setPendingWakeAt,
     quotaRemaining: preview.quotaRemaining,
     detailSlot:
       preview.detail !== undefined &&
@@ -94,6 +105,7 @@ export function TriageQueue({
   onAction,
   busyRowIds = NO_BUSY_ROWS,
   previewInboxCount = 'loading',
+  onRetryPreview,
   previewDetail,
   previewQuotaRemaining,
   allowBatching = true,
@@ -116,6 +128,7 @@ export function TriageQueue({
   busyRowIds?: ReadonlySet<string>;
   /** Live inbox count for the inline preview's impact figure (D226). */
   previewInboxCount?: PreviewCount;
+  onRetryPreview?: (() => void) | undefined;
   /** D226 verification detail, shared with the sheet path. */
   previewDetail?: ActionPreviewDetail | undefined;
   /** Cleanup allowance — independent of the preview, see `ActionSheet`. */
@@ -174,6 +187,7 @@ export function TriageQueue({
         const inlinePreview = inlinePreviewFor(row.id, pendingAction, {
           inboxCount: previewInboxCount,
           onCancel: clearPending,
+          onRetryPreview,
           detail: previewDetail,
           quotaRemaining: previewQuotaRemaining,
         });

@@ -21,6 +21,7 @@ import { fillCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { installFetchStub, resetFetchStub } from '@/test/fetch-stub';
+import { InlinePreviewBlock } from './inline-preview';
 import { ActionSheet } from './action-sheet';
 import { TRIAGE_QUEUE } from './fixtures';
 import { resetTriageStore, useTriageStore, type RememberableVerb } from './store';
@@ -33,6 +34,77 @@ beforeEach(() => {
 const row = TRIAGE_QUEUE[0]!; // Groupon — high-confidence Archive
 
 describe('ActionSheet — D226 mandatory preview surface', () => {
+  it('keeps Archive inbox-only and any age with the same confirmation details', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ActionSheet
+        open
+        verb="Archive"
+        row={row}
+        inboxCount={128}
+        detail={{
+          reachControl: {
+            reach: 'inbox_only',
+            inboxCount: 128,
+            allMailCount: 146,
+            onChange: vi.fn(),
+          },
+        }}
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole('heading', { name: `Archive emails from ${row.senderName}?` }),
+    ).toBeVisible();
+    expect(screen.getByRole('dialog')).toHaveAccessibleDescription(
+      /128 emails will leave your inbox and stay in Gmail.*Inbox only.*Any age/,
+    );
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
+    expect(screen.queryByText(/Approximate cutoff/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    expect(onConfirm).toHaveBeenCalledWith({
+      archiveHistoric: false,
+      olderThanDays: null,
+      wakeAt: null,
+      rememberPreference: false,
+    });
+  });
+
+  it('uses the Delete review layout with its controlled 180-day age and matching confirmation details', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ActionSheet
+        open
+        verb="Delete"
+        row={row}
+        inboxCount={84}
+        detail={{
+          ageControl: {
+            olderThanDays: 180,
+            options: [{ days: null }, { days: 180 }],
+            onChange: vi.fn(),
+          },
+        }}
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('dialog')).toHaveAccessibleDescription(
+      /Future email is unchanged.*84 emails will move to Gmail Trash.*Inbox only.*Older than 180 days/,
+    );
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
+    expect(screen.getByText(/Approximate cutoff/)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(onConfirm).toHaveBeenCalledWith({
+      archiveHistoric: false,
+      olderThanDays: 180,
+      wakeAt: null,
+      rememberPreference: false,
+    });
+  });
+
   it('shows the account before expanding Details, including while the count loads', () => {
     render(
       <ActionSheet
@@ -49,6 +121,7 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
     expect(account.closest('details')).toBeNull();
     expect(account).toBeVisible();
     expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
+    expect(screen.queryByRole('region', { name: 'Archive impact' })).toBeNull();
     expect(screen.getByRole('dialog')).toContainElement(document.activeElement as HTMLElement);
   });
   it('renders the modal title + preview body when open=true', () => {
@@ -123,7 +196,7 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
         />,
       );
 
-      expect(html).toContain('Try again');
+      expect(html).toContain('Retry preview');
       expect(html).toContain('Nothing can move until it loads.');
       expect(html).not.toContain('Try again to archive or delete');
       expect(html).toMatch(/<button[^>]*disabled=""/);
@@ -348,7 +421,7 @@ describe('ActionSheet — live-preview confirm gate', () => {
     expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ rememberPreference: true }));
   });
 
-  it('keeps the match sample and Gmail check on Unsubscribe + Delete', () => {
+  it('keeps the match sample and Gmail check on Unsubscribe & delete', () => {
     render(
       <ActionSheet
         open
@@ -369,7 +442,7 @@ describe('ActionSheet — live-preview confirm gate', () => {
     );
     expect(screen.getByText('Weekly deals')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Check in Gmail/ })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
     expect(screen.getByText('Weekly deals')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Check in Gmail/ })).toBeInTheDocument();
     expect(
@@ -423,11 +496,12 @@ describe('ActionSheet — live-preview confirm gate', () => {
     );
 
     expect(screen.getByRole('radio', { name: 'Unsubscribe only' })).toBeChecked();
-    fireEvent.click(screen.getByRole('radio', { name: '+ Archive 2' }));
-    const archiveConfirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
+    fireEvent.click(screen.getByRole('radio', { name: '+ Archive' }));
+    const archiveConfirm = screen.getByRole('button', { name: 'Unsubscribe & archive' });
     expect(archiveConfirm).toBeEnabled();
     fireEvent.click(archiveConfirm);
     expect(onConfirm).toHaveBeenLastCalledWith({
+      olderThanDays: null,
       archiveHistoric: true,
       backlogMode: 'archive',
       rememberPreference: false,
@@ -452,8 +526,13 @@ describe('ActionSheet — live-preview confirm gate', () => {
       />,
     );
 
-    // The count lives in the title, once; "current" in the Details line.
-    expect(screen.getByRole('heading', { name: 'Archive 2 emails?' })).toBeInTheDocument();
+    // The stable title names the sender; the impact summary contains the count.
+    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+      '2 emails will leave your inbox and stay in Gmail.',
+    );
+    expect(
+      screen.getByRole('heading', { name: `Archive emails from ${row.senderName}?` }),
+    ).toBeInTheDocument();
     expect(
       screen.getByText('Inbox only. We check again right before anything moves.'),
     ).toBeInTheDocument();
@@ -479,7 +558,7 @@ describe('ActionSheet — toggle a11y and checked parity (2026-08-12)', () => {
   it('exposes the backlog choice as radios and remember as a checkbox', () => {
     renderUnsubSheet();
 
-    const archive = screen.getByRole('radio', { name: '+ Archive 2' });
+    const archive = screen.getByRole('radio', { name: '+ Archive' });
     expect(archive).toBeChecked();
     fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
     expect(archive).not.toBeChecked();
@@ -914,8 +993,9 @@ describe('ActionSheet — the cleanup cost is stated whenever it can be spent', 
       screen.getByText(/This clears 1 email. You have 34 free this month/),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Uses 2 /)).toBeNull();
-    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 12' }));
-    expect(screen.getByText(WS5_COPY['f1.deleteNote'], { exact: false })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
+    fireEvent.click(screen.getByText('Details'));
+    expect(screen.getByText(/Gmail.*30 days/)).toBeInTheDocument();
     expect(
       screen.getByText(/This clears 1 email. You have 34 free this month/),
     ).toBeInTheDocument();
@@ -965,11 +1045,11 @@ describe('ActionSheet choice survives a preview refresh', () => {
     const first = TRIAGE_QUEUE[0]!;
     const second = { ...first, id: 'another-row', senderId: 'another-sender' };
     const { rerender } = render(<ActionSheet {...props} row={first} inboxCount={4} />);
-    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
     rerender(<ActionSheet {...props} row={second} inboxCount={4} />);
-    expect(screen.getByRole('radio', { name: '+ Archive 4' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: '+ Archive' })).toBeChecked();
     rerender(<ActionSheet {...props} row={first} inboxCount={4} />);
-    expect(screen.getByRole('radio', { name: '+ Archive 4' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: '+ Archive' })).toBeChecked();
   });
 
   it('uses the existing Archive default when the initial live count arrives', () => {
@@ -982,7 +1062,7 @@ describe('ActionSheet choice survives a preview refresh', () => {
     };
     const { rerender } = render(<ActionSheet {...props} inboxCount="loading" />);
     rerender(<ActionSheet {...props} inboxCount={4} />);
-    expect(screen.getByRole('radio', { name: '+ Archive 4' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: '+ Archive' })).toBeChecked();
   });
 
   it('preserves Unsubscribe only chosen while the live count is loading', () => {
@@ -1009,16 +1089,16 @@ describe('ActionSheet choice survives a preview refresh', () => {
       onConfirm,
     };
     const { rerender } = render(<ActionSheet {...props} inboxCount={4} />);
-    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
     rerender(<ActionSheet {...props} inboxCount={2} />);
-    expect(screen.getByRole('radio', { name: '+ Delete 2' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: '+ Delete' })).toBeChecked();
     fireEvent.click(
-      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+      screen.getByRole('button', { name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/ }),
     );
     expect(onConfirm).toHaveBeenLastCalledWith(expect.objectContaining({ backlogMode: 'delete' }));
     rerender(<ActionSheet {...props} inboxCount="unavailable" />);
     expect(
-      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+      screen.getByRole('button', { name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/ }),
     ).toBeDisabled();
     expect(screen.getByRole('heading')).not.toHaveTextContent('0 emails');
   });
@@ -1039,7 +1119,7 @@ describe('ActionSheet Unsubscribe preview recovery', () => {
       />,
     );
     expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry preview' }));
     expect(onRetryPreview).toHaveBeenCalledOnce();
   });
   it('shows a completed zero count as a way to choose Unsubscribe only', () => {
@@ -1051,14 +1131,42 @@ describe('ActionSheet Unsubscribe preview recovery', () => {
       onConfirm: vi.fn(),
     };
     const { rerender } = render(<ActionSheet {...props} inboxCount={4} />);
-    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
     rerender(<ActionSheet {...props} inboxCount={0} />);
     expect(
-      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+      screen.getByRole('button', { name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/ }),
     ).toBeDisabled();
-    expect(screen.getByText(WS5_COPY['f1.preview.backlog.none'])).toBeVisible();
+    expect(screen.getByText('Choose another age or Unsubscribe only.')).toBeVisible();
     expect(screen.queryByText(/Counting the inbox/)).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
     expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
   });
+});
+
+it('states inline Delete impact, recovery and future effect once outside Details', () => {
+  render(
+    <InlinePreviewBlock
+      row={row}
+      preview={{
+        verb: 'Delete',
+        archiveHistoric: false,
+        inboxCount: 84,
+        ageControl: {
+          olderThanDays: 180,
+          options: [{ days: null }, { days: 180 }],
+          onChange: vi.fn(),
+        },
+      }}
+      busy={false}
+      shortcutLive={false}
+      onConfirm={vi.fn()}
+    />,
+  );
+  const region = screen.getByRole('region', { name: `Preview · Delete ${row.senderName}` });
+  const visible = region.cloneNode(true) as HTMLElement;
+  visible.querySelector('details')?.remove();
+  expect(visible.textContent?.match(/Future email is unchanged\./g)).toHaveLength(1);
+  expect(visible.textContent?.match(/Undo from Activity for 30 days\./g)).toHaveLength(1);
+  expect(visible.textContent?.match(/84/g)).toHaveLength(1);
+  expect(screen.getByRole('button', { name: 'Delete' })).toHaveTextContent(/^Delete$/);
 });

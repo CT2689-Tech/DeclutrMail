@@ -254,6 +254,11 @@ export function useInFlightActions(mailboxId?: string) {
             return {
               ...item,
               leadSenderName: null,
+              // Brief Noise locks archive rows by sender key. The active
+              // list carries keys; a group rebuilt from the accepted handle
+              // has to as well, or the lock opens while this recovery runs.
+              ...(item.senderIds ? { senderIds: item.senderIds } : {}),
+              ...(item.senderKeys ? { senderKeys: item.senderKeys } : {}),
               total: status.total,
               done: status.done,
               failed: status.failed,
@@ -261,8 +266,18 @@ export function useInFlightActions(mailboxId?: string) {
             };
           }),
       );
-      // Failed reads keep the handles and the unknown/retry state intact.
-      observeActionFeedback(mailboxId, new Set(pending.map((item) => item.groupId)));
+      // A still-running recovery must keep its handle. The next active
+      // read can be empty again (the enqueue is not listed yet); retiring
+      // the handle here parks the tray until focus or another mutation.
+      // Failed reads throw before this line and keep every handle.
+      const terminal = new Set<string>();
+      for (const group of groups) {
+        if (!isRunning(group)) terminal.add(group.groupId);
+      }
+      for (const group of recovered) {
+        if (!isRunning(group)) terminal.add(group.groupId);
+      }
+      observeActionFeedback(mailboxId, terminal);
       groups.push(...recovered);
       return groups;
     },

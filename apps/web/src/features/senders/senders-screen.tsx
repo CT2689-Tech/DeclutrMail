@@ -825,6 +825,33 @@ function SendersScreenContent({
   const setPolicy = useSetSenderPolicy();
   const pendingToast = usePendingToast(actionMailboxId);
   const undoKeep = useUndoSenderKeep((result, senderId) => {
+    // The detail page writes the undo result into local policy state.
+    // The list row reads `policyType` from the list cache and, once the
+    // server drops the row, from the pin. Clearing `settled` alone leaves
+    // "Skipped in Triage" until a refetch, and a failed refetch keeps it.
+    qc.setQueriesData<{ pages: SenderListEnvelope[] }>(
+      { queryKey: ['senders', 'list'] },
+      (current) => {
+        if (!current) return current;
+        let changed = false;
+        const pages = current.pages.map((page) => ({
+          ...page,
+          data: page.data.map((row) => {
+            if (row.id !== senderId || row.policyType === result.policyType) return row;
+            changed = true;
+            return { ...row, policyType: result.policyType };
+          }),
+        }));
+        return changed ? { ...current, pages } : current;
+      },
+    );
+    setPinnedSenders((current) => {
+      const pin = current.get(senderId);
+      if (!pin || pin.row.policyType === result.policyType) return current;
+      const next = new Map(current);
+      next.set(senderId, { ...pin, row: { ...pin.row, policyType: result.policyType } });
+      return next;
+    });
     if (result.policyType === 'keep') return;
     setSettled((current) => {
       if (current.get(senderId)?.verb !== 'keep') return current;
@@ -1389,14 +1416,59 @@ function SendersScreenContent({
     async (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
       if (senders.length === 0) return;
       if (isMailMovingVerb(verb)) {
-        const unavailable = senders.find((subject) => {
+        const unresolved: Sender[] = [];
+        for (const subject of senders) {
           const current = currentListActionSender(qc, senderQueryKey, subject, verb);
-          return !current || !canPerformSenderAction(verb, current);
-        });
-        if (unavailable) {
-          setPendingAction(null);
-          toast('Review this sender’s updated email counts before trying again.', 'info');
-          return;
+          if (current && !canPerformSenderAction(verb, current)) {
+            setPendingAction(null);
+            toast('Review this sender’s updated email counts before trying again.', 'info');
+            return;
+          }
+          // Invalidated success is not a current read. Unsubscribe live-reads
+          // that gap; closing here dropped a confirm the preview still allowed.
+          if (!current) unresolved.push(subject);
+        }
+        if (unresolved.length > 0) {
+          if (unsubscribeFactsCheck.current) return;
+          const controller = new AbortController();
+          unsubscribeFactsCheck.current = controller;
+          const pendingOwner = pendingActionRef.current;
+          const confirmedScope = currentFeedbackScope.current;
+          setSubmitting(true);
+          try {
+            const fresh = await Promise.all(
+              unresolved.map(async (subject) => {
+                const detail = await fetchSenderDetail(subject.id, controller.signal);
+                return { ...subject, ...detail.data };
+              }),
+            );
+            if (
+              controller.signal.aborted ||
+              pendingActionRef.current !== pendingOwner ||
+              currentFeedbackScope.current !== confirmedScope
+            ) {
+              return;
+            }
+            // Release the read before downstream mutation/lock guards can
+            // refuse. A dispatch below owns its own submitting state.
+            setSubmitting(false);
+            if (fresh.some((row) => !canPerformSenderAction(verb, row))) {
+              setPendingAction(null);
+              toast('Review this sender’s updated email counts before trying again.', 'info');
+              return;
+            }
+          } catch {
+            if (
+              !controller.signal.aborted &&
+              pendingActionRef.current === pendingOwner &&
+              currentFeedbackScope.current === confirmedScope
+            ) {
+              setSubmitting(false);
+            }
+            return;
+          } finally {
+            if (unsubscribeFactsCheck.current === controller) unsubscribeFactsCheck.current = null;
+          }
         }
       }
       // One enqueue at a time. The confirm stays cancellable while a

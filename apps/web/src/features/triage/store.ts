@@ -40,7 +40,8 @@
 'use client';
 
 import { create } from 'zustand';
-import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
+import type { ActionReach } from '@declutrmail/shared/contracts';
+import { DEFAULT_DELETE_WINDOW_DAYS, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { UnsubscribeBacklogMode } from '@/features/senders/unsubscribe-backlog/preview-copy';
 import type { ActionVerb } from './types';
 
@@ -51,6 +52,10 @@ export type SheetableVerb = Extract<ActionVerb, 'Archive' | 'Unsubscribe' | 'Lat
 export type RememberableVerb = Exclude<SheetableVerb, 'Delete'>;
 
 export interface PendingAction {
+  /** Preview-only age. Delete starts at 180 days; Archive at Any age. */
+  olderThanDays?: number | null;
+  /** Delete reach (including Unsubscribe cleanup), scoped to this preview. */
+  reach?: ActionReach;
   verb: ActionVerb;
   rowId: string;
   /** Exact return time for a pending Later action; null for other verbs. */
@@ -115,6 +120,9 @@ export interface TriageActions {
   openPending: (verb: ActionVerb, rowId: string, surface: 'sheet' | 'inline') => void;
   /** Record the skip-sheet unsubscribe choice. */
   setPendingBacklogMode: (mode: UnsubscribeBacklogMode) => void;
+  setPendingOlderThanDays: (days: number | null) => void;
+  setPendingReach: (reach: ActionReach) => void;
+  setPendingWakeAt: (wakeAt: string | null) => void;
   /** Clear any pending action (cancel or post-confirm). */
   clearPending: () => void;
   /** Bump the session count by `by` confirmed decisions (default 1). */
@@ -160,15 +168,47 @@ export const useTriageStore = create<TriageState & TriageActions>((set) => ({
         surface,
         wakeAt: verb === 'Later' ? defaultLaterWakeAtIso() : null,
         backlogMode: null,
+        ...(verb === 'Delete' ? { olderThanDays: DEFAULT_DELETE_WINDOW_DAYS } : {}),
       },
     }),
 
   setPendingBacklogMode: (mode) =>
     set((s) =>
-      s.pendingAction ? { pendingAction: { ...s.pendingAction, backlogMode: mode } } : s,
+      s.pendingAction?.verb === 'Unsubscribe'
+        ? {
+            pendingAction: {
+              ...s.pendingAction,
+              backlogMode: mode,
+              olderThanDays: mode === 'delete' ? DEFAULT_DELETE_WINDOW_DAYS : null,
+              reach: 'inbox_only',
+            },
+          }
+        : s,
     ),
 
   clearPending: () => set({ pendingAction: null }),
+
+  setPendingOlderThanDays: (olderThanDays) =>
+    set((s) =>
+      s.pendingAction?.verb === 'Archive' ||
+      s.pendingAction?.verb === 'Delete' ||
+      s.pendingAction?.verb === 'Later' ||
+      s.pendingAction?.verb === 'Unsubscribe'
+        ? { pendingAction: { ...s.pendingAction, olderThanDays } }
+        : s,
+    ),
+
+  setPendingWakeAt: (wakeAt) =>
+    set((s) =>
+      s.pendingAction?.verb === 'Later' ? { pendingAction: { ...s.pendingAction, wakeAt } } : s,
+    ),
+
+  setPendingReach: (reach) =>
+    set((s) =>
+      s.pendingAction?.verb === 'Delete' || s.pendingAction?.verb === 'Unsubscribe'
+        ? { pendingAction: { ...s.pendingAction, reach } }
+        : s,
+    ),
 
   incrementSessionDecided: (by = 1) =>
     set((s) => ({ sessionDecidedCount: s.sessionDecidedCount + by })),

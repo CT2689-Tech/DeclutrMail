@@ -213,14 +213,6 @@
   background: #0c191e75;
   backdrop-filter: blur(5px);
 }
-.productionPreview {
-  --dm-card: var(--study-surface);
-  --dm-fg: var(--study-text);
-  --dm-fg-soft: var(--study-muted);
-  --dm-fg-muted: var(--study-muted);
-  --dm-primary: var(--study-primary);
-  --dm-border: var(--study-border);
-}
 .previewDisclaimer {
   position: fixed;
   top: 8px;

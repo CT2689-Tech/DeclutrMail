@@ -77,9 +77,7 @@ describe('InboxReportPanel', () => {
     expect(document.querySelectorAll('[data-report-glyphs] svg')).toHaveLength(10);
     expect(screen.queryByRole('button', { name: 'Make a share card' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
-    expect(screen.getByRole('dialog')).toHaveTextContent(
-      'Unsubscribe from 2 senders and archive 10 emails?',
-    );
+    expect(screen.getByRole('dialog')).toHaveTextContent('Unsubscribe from 2 senders?');
     expect(onFixConfirmed).not.toHaveBeenCalled();
   });
 
@@ -142,11 +140,9 @@ describe('InboxReportPanel', () => {
         },
       }),
     );
-    await waitFor(() => expect(screen.getByRole('radio', { name: '+ Archive 7' })).toBeEnabled());
-    expect(screen.getByRole('dialog')).toHaveTextContent(
-      'Unsubscribe from 2 senders and archive 7 emails?',
-    );
-    expect(screen.getByRole('radio', { name: '+ Archive 7' })).toBeChecked();
+    await waitFor(() => expect(screen.getByRole('radio', { name: '+ Archive' })).toBeEnabled());
+    expect(screen.getByRole('dialog')).toHaveTextContent('Unsubscribe from 2 senders?');
+    expect(screen.getByRole('radio', { name: '+ Archive' })).toBeChecked();
   });
 
   it('uses the calm fallback without a fix, a share card, or a celebration', () => {
@@ -316,9 +312,7 @@ describe('InboxReportPanel', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
-    expect(screen.getByRole('dialog')).toHaveTextContent(
-      'Unsubscribe from Acme and archive 4 emails?',
-    );
+    expect(screen.getByRole('dialog')).toHaveTextContent('Unsubscribe from Acme?');
     expect(screen.getByRole('dialog')).not.toHaveTextContent('1 senders');
   });
 
@@ -331,9 +325,7 @@ describe('InboxReportPanel', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
-    expect(screen.getByRole('dialog')).toHaveTextContent(
-      'Unsubscribe from 1 sender and archive 4 emails?',
-    );
+    expect(screen.getByRole('dialog')).toHaveTextContent('Unsubscribe from this sender?');
     expect(screen.getByRole('dialog')).not.toHaveTextContent('1 senders');
   });
 
@@ -470,7 +462,7 @@ describe('Inbox Report action preview recovery', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
-    const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
+    const confirm = screen.getByRole('button', { name: 'Unsubscribe & archive' });
     fireEvent.click(confirm);
     fireEvent.click(confirm);
     expect(onFixConfirmed).toHaveBeenCalledTimes(1);

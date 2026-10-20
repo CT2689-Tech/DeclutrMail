@@ -266,7 +266,7 @@ describe('HomeScreen', () => {
     );
   });
 
-  it('confirming Unsubscribe + Archive sends the request and shows the toast', async () => {
+  it('confirming Unsubscribe & archive sends the request and shows the toast', async () => {
     const posts: { body: unknown; mailbox: string | null }[] = [];
     const statusReads: string[] = [];
     stub({ report: () => jsonOk({ data: REPORT_WITH_FIX }) });

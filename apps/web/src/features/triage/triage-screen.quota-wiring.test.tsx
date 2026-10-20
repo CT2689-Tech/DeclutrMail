@@ -323,7 +323,7 @@ describe('TriageScreen — batch sheet does not arm confirm on a stale cached pr
     await screen.findByText(/Counting the email you already have/);
     expect(track.mock.calls.filter(([event]) => event === 'action_preview_viewed')).toHaveLength(1);
     release();
-    await screen.findByRole('button', { name: 'Try again' });
+    await screen.findByRole('button', { name: 'Retry preview' });
     expect(track.mock.calls.filter(([event]) => event === 'action_preview_viewed')).toHaveLength(1);
   });
 });

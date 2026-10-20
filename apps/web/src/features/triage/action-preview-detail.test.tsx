@@ -150,8 +150,13 @@ describe('Triage preview — verification detail (D226 parity)', () => {
     expect(screen.queryByTestId('mail-location-line')).toBeNull();
     expect(screen.queryByRole('link', { name: /Check in Gmail/ })).toBeNull();
     expect(screen.queryByText(/cleanup action/)).toBeNull();
-    // The mandatory D226 content is untouched: count + destination.
-    expect(screen.getByRole('heading', { name: 'Archive 17 emails?' })).toBeInTheDocument();
+    // The title names the sender; the mandatory live count and destination remain explicit.
+    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+      '17 emails will leave your inbox and stay in Gmail.',
+    );
+    expect(
+      screen.getByRole('heading', { name: `Archive emails from ${row.senderName}?` }),
+    ).toBeInTheDocument();
   });
 
   // Same rule the senders modal follows: a panel counting "what currently
@@ -194,7 +199,7 @@ describe('Triage preview — reasoning age label (D25, QA-archive-20260828-02)',
 
 // QA-delete-20260829-08 — a header that always promises a move read as
 // active even when the live count is 0.
-describe('Triage preview — the count lives in the title, once', () => {
+describe('Triage preview — the live count is stated once beside the action', () => {
   it.each(['Archive', 'Later', 'Delete'] as const)(
     'titles %s’s empty-inbox preview as nothing-to-move, not an active move',
     (verb) => {
@@ -207,12 +212,15 @@ describe('Triage preview — the count lives in the title, once', () => {
     },
   );
 
-  it('asks the question with the count when there is mail to move', () => {
+  it('names the sender and puts the Delete count in the impact summary', () => {
     renderPreview({ verb: 'Delete', inboxCount: 1 });
-    const dialog = screen.getByRole('dialog', { name: 'Delete 1 email?' });
-    expect(within(dialog).getByRole('button', { name: 'Delete 1 email' })).toBeEnabled();
+    const dialog = screen.getByRole('dialog', { name: `Delete emails from ${row.senderName}?` });
+    expect(within(dialog).getByRole('button', { name: 'Delete' })).toBeEnabled();
     // Where it goes and how to undo it, each stated.
     expect(dialog).toHaveAccessibleDescription(/move to Gmail Trash/);
+    expect(within(dialog).getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+      '1 email will move to Gmail Trash.',
+    );
     expect(within(dialog).getByText(/Undo/)).toBeInTheDocument();
   });
 
@@ -223,8 +231,8 @@ describe('Triage preview — the count lives in the title, once', () => {
     const outside = dialog.cloneNode(true) as HTMLElement;
     outside.querySelector('details')?.remove();
     expect(details).not.toBeNull();
-    // Title "Archive 174 emails?" + button "Archive 174" — one question, one answer.
-    expect((outside.textContent ?? '').match(/174/g)?.length).toBe(2);
+    // The persistent impact states the count; the title and button stay stable.
+    expect((outside.textContent ?? '').match(/174/g)?.length).toBe(1);
   });
 });
 

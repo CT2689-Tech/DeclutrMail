@@ -78,9 +78,41 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry preview' }));
     expect(onRetryPreview).toHaveBeenCalledTimes(1);
   });
+
+  it.each(['totals', 'sender'] as const)(
+    'offers retry without confirming when the selected %s age bucket is missing',
+    (missing) => {
+      const preview = structuredClone(readyPreview);
+      Reflect.deleteProperty(
+        missing === 'totals' ? preview.totals : preview.senders[0]!.counts,
+        'olderThan90d',
+      );
+      const onRetryPreview = vi.fn();
+      const onConfirm = vi.fn();
+      render(
+        <BatchActionSheet
+          open
+          verb="Archive"
+          batch={batch}
+          preview={preview}
+          olderThanDays={90}
+          onWindowChange={() => {}}
+          onCancel={() => {}}
+          onConfirm={onConfirm}
+          onRetryPreview={onRetryPreview}
+        />,
+      );
+      expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
+      fireEvent.click(screen.getByRole('button', { name: 'Retry preview' }));
+      fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
+      expect(onRetryPreview).toHaveBeenCalledOnce();
+      expect(onConfirm).not.toHaveBeenCalled();
+      expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('90');
+    },
+  );
 
   it('allows click and keyboard confirmation after the live preview resolves', () => {
     const onConfirm = vi.fn();
@@ -99,11 +131,12 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Archive( [\d,]+ emails?)?$/ }));
     fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
     expect(onConfirm).toHaveBeenCalledTimes(2);
-    // The count is the title and the button; its scope sits in Details.
-    expect(
-      screen.getByRole('heading', { name: /Archive 3 emails from 3 senders\?/ }),
-    ).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Archive 3 emails' })).toBeEnabled();
+    // The count is in the impact summary; the title names the live selection.
+    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+      '3 emails will leave your inbox and stay in Gmail.',
+    );
+    expect(screen.getByRole('heading', { name: /Archive emails from 3 senders\?/ })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeEnabled();
     expect(
       screen.getByText(/Inbox only\. We check again right before anything moves/),
     ).toBeInTheDocument();
@@ -384,7 +417,7 @@ describe('BatchActionSheet — PreviewSheet grammar', () => {
         onConfirm={() => {}}
       />,
     );
-    expect(screen.getByRole('heading', { name: 'Archive email from 3 senders?' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Archive emails from 3 senders?' })).toBeVisible();
     expect(screen.getByText(/Counting the email you already have/)).toBeInTheDocument();
   });
 

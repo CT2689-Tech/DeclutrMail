@@ -218,6 +218,8 @@ export function useEnqueueComposite() {
     {
       mailboxId?: string | undefined;
       senderId: string;
+      /** Index-aligned with the one sender. Brief Noise locks by key. */
+      senderKeys?: readonly string[];
       primary: {
         // D248 — single-sender composite is label verbs only; the
         // unsubscribe primary is multi-sender only and 400s here.
@@ -247,6 +249,9 @@ export function useEnqueueComposite() {
         mixedVerbs: variables.secondary !== undefined,
         senderCount: 1,
         senderIds: [variables.senderId],
+        ...(variables.senderKeys && variables.senderKeys.length > 0
+          ? { senderKeys: [...variables.senderKeys] }
+          : {}),
         startedAt: new Date().toISOString(),
       });
       // The server debits the monthly cleanup quota at enqueue, so the
@@ -289,6 +294,8 @@ export function useEnqueueBulkAction() {
     {
       mailboxId?: string | undefined;
       senderIds: string[];
+      /** Index-aligned with `senderIds`. Brief Noise locks by key. */
+      senderKeys?: readonly string[];
       primary: {
         type: CompositePrimaryVerb;
         olderThanDays?: number | null;
@@ -308,17 +315,22 @@ export function useEnqueueBulkAction() {
         idempotencyKey: newIdempotencyKey(),
       }),
     onSuccess: (_result, variables) => {
-      if (_result.senderCount > 0)
+      if (_result.senderCount > 0) {
+        const skipped = new Set(_result.skipped.map((item) => item.senderId));
+        const senderIds = variables.senderIds.filter((id) => !skipped.has(id));
+        const senderKeys = variables.senderKeys
+          ?.filter((_, index) => !skipped.has(variables.senderIds[index] ?? ''))
+          .filter((key): key is string => key !== '');
         acceptActionFeedback(variables.mailboxId, {
           groupId: _result.batchId,
           verb: variables.primary.type,
           mixedVerbs: variables.secondary !== undefined,
           senderCount: _result.senderCount,
-          senderIds: variables.senderIds.filter(
-            (id) => !_result.skipped.some((item) => item.senderId === id),
-          ),
+          senderIds,
+          ...(senderKeys && senderKeys.length === senderIds.length ? { senderKeys } : {}),
           startedAt: new Date().toISOString(),
         });
+      }
       // Bulk debits N quota units at enqueue — same staleness as the
       // composite hook above.
       void qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
@@ -445,6 +457,28 @@ export function useConfirmUnsubscribeBacklog() {
         },
         { ...(mailboxId ? { mailboxId } : {}) },
       ),
+    onSuccess: (result, variables) => {
+      // Combined cleanup is tray-owned: local unsubscribe toasts are
+      // suppressed, and a bulk cleanup has no local unsubscribe poller.
+      // Without a handle, an empty first GET /api/actions/active stops
+      // the tray until focus or another mutation.
+      if (!result.backlog) return;
+      const skipped = new Set(
+        result.senders
+          .filter((sender) => sender.unsubStatus === 'skipped')
+          .map((sender) => sender.senderId),
+      );
+      const senderIds = variables.senderIds.filter((id) => !skipped.has(id));
+      if (senderIds.length === 0) return;
+      acceptActionFeedback(variables.mailboxId, {
+        groupId: result.backlog.actionId,
+        verb: result.backlog.verb,
+        mixedVerbs: result.senders.some((sender) => sender.unsubStatus === 'requested'),
+        senderCount: senderIds.length,
+        senderIds,
+        startedAt: new Date().toISOString(),
+      });
+    },
   });
 }
 

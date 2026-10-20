@@ -54,16 +54,19 @@ describe('Unsubscribe uses the action preview contract', () => {
         onConfirm={onConfirm}
       />,
     );
-    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+      target: { value: 'all' },
+    });
     const includeArchived = screen.getByRole('checkbox', { name: 'Include archived email' });
     expect(includeArchived).not.toBeChecked();
-    fireEvent.change(screen.getByRole('combobox', { name: 'How far back to act on' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: '180' },
     });
-    expect(screen.getByRole('button', { name: 'Unsubscribe + Delete 1 email' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Unsubscribe & delete' })).toBeEnabled();
     fireEvent.click(includeArchived);
     expect(includeArchived).toBeChecked();
-    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Delete 3 emails' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe & delete' }));
     expect(onConfirm).toHaveBeenCalledWith({
       secondary: { type: 'delete', olderThanDays: 180 },
       archiveHistoric: false,
@@ -88,26 +91,31 @@ describe('Unsubscribe uses the action preview contract', () => {
         />,
       );
       if (mode === 'delete') {
-        fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+        fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
+        fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+          target: { value: 'all' },
+        });
         fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
       }
-      const window = screen.getByRole('combobox', { name: 'How far back to act on' });
+      const window = screen.getByRole('combobox', { name: 'Email age' });
       expect(window).toHaveValue('all');
       fireEvent.change(window, { target: { value: '180' } });
       expect(window).toHaveValue('180');
-      expect(screen.getByRole('heading')).toHaveTextContent(
-        mode === 'delete' ? 'delete 3 emails' : 'archive 1 email',
-      );
+      expect(
+        screen.getByRole('region', {
+          name: mode === 'delete' ? 'Delete impact' : 'Archive impact',
+        }),
+      ).toHaveTextContent(mode === 'delete' ? '3 emails' : '1 email');
       // Archive's inbox bucket is smaller than the widened Delete bucket.
       if (mode === 'archive') {
-        expect(screen.getByRole('option', { name: '6 months+ · 1' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Older than 180 days' })).toBeInTheDocument();
       } else {
-        expect(screen.getByRole('option', { name: '6 months+ · 3' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Older than 180 days' })).toBeInTheDocument();
         expect(screen.getByRole('checkbox', { name: 'Include archived email' })).toBeChecked();
       }
       fireEvent.click(
         screen.getByRole('button', {
-          name: mode === 'delete' ? 'Unsubscribe + Delete 3 emails' : 'Unsubscribe + Archive',
+          name: mode === 'delete' ? 'Unsubscribe & delete' : 'Unsubscribe & archive',
         }),
       );
       expect(onConfirm).toHaveBeenCalledWith({
@@ -129,33 +137,33 @@ describe('Unsubscribe uses the action preview contract', () => {
         onConfirm={onConfirm}
       />,
     );
-    fireEvent.change(screen.getByRole('combobox', { name: 'How far back to act on' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: '365' },
     });
-    expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeDisabled();
-    expect(screen.getByText(/No existing email matches this range/)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Unsubscribe & archive' })).toBeDisabled();
+    expect(screen.getByText('Choose another age or Unsubscribe only.')).toBeVisible();
     fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
     expect(onConfirm).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
-    expect(screen.queryByRole('combobox', { name: 'How far back to act on' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Email age' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
     expect(onConfirm).toHaveBeenCalledWith({
       secondary: null,
       archiveHistoric: false,
       senderIds: [sender.id],
     });
-    fireEvent.click(screen.getByRole('radio', { name: '+ Archive 0' }));
-    fireEvent.change(screen.getByRole('combobox', { name: 'How far back to act on' }), {
+    fireEvent.click(screen.getByRole('radio', { name: '+ Archive' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: 'all' },
     });
-    expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Unsubscribe & archive' })).toBeEnabled();
   });
 
   it('does not invent a missing age bucket or reuse a date range for another sender', () => {
     const onConfirm = vi.fn();
     const props = { request, onCancel: vi.fn(), onConfirm };
     const { rerender } = render(<ConfirmActionModal {...props} compositePreview={preview} />);
-    fireEvent.change(screen.getByRole('combobox', { name: 'How far back to act on' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: '90' },
     });
     rerender(
@@ -164,9 +172,9 @@ describe('Unsubscribe uses the action preview contract', () => {
         compositePreview={{ ...preview, counts: { all: 4 } as typeof counts }}
       />,
     );
-    expect(screen.getByRole('option', { name: '3 months+ · unavailable' })).toBeDisabled();
+    expect(screen.getByRole('option', { name: 'Older than 90 days (unavailable)' })).toBeDisabled();
     expect(screen.getByRole('heading')).not.toHaveTextContent('archive 0');
-    expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Unsubscribe & archive' })).toBeDisabled();
     fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
     expect(onConfirm).not.toHaveBeenCalled();
     rerender(
@@ -176,8 +184,8 @@ describe('Unsubscribe uses the action preview contract', () => {
         compositePreview={preview}
       />,
     );
-    expect(screen.getByRole('combobox', { name: 'How far back to act on' })).toHaveValue('all');
-    expect(screen.getByRole('heading')).toHaveTextContent('archive 4 emails');
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent('4 email');
   });
 
   it('uses eligible bulk age buckets for the title and each Details row, then locks on incomplete coverage', () => {
@@ -214,14 +222,15 @@ describe('Unsubscribe uses the action preview contract', () => {
     const { rerender } = render(
       <ConfirmActionModal {...props} bulkPreview={{ data, loading: false, error: false }} />,
     );
-    fireEvent.change(screen.getByRole('combobox', { name: 'How far back to act on' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: '90' },
     });
-    expect(screen.getByRole('heading')).toHaveTextContent('2 senders and archive 5 emails');
+    expect(screen.getByRole('heading')).toHaveTextContent('2 senders');
+    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent('5 emails');
     fireEvent.click(screen.getByText('Details'));
     expect(screen.getByText(/Second sample: 3 emails/)).toBeVisible();
     expect(screen.queryByText(/Protected sample.*500/)).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Archive' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe & archive' }));
     expect(props.onConfirm).toHaveBeenCalledWith({
       secondary: { type: 'archive', olderThanDays: 90 },
       archiveHistoric: true,
@@ -244,8 +253,8 @@ describe('Unsubscribe uses the action preview contract', () => {
         }}
       />,
     );
-    expect(screen.getByRole('heading')).toHaveTextContent('2 senders and archive 2 emails');
-    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Archive' }));
+    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent('2 email');
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe & archive' }));
     expect(props.onConfirm).toHaveBeenLastCalledWith(
       expect.objectContaining({
         senderIds: [sender.id, second.id],
@@ -268,7 +277,7 @@ describe('Unsubscribe uses the action preview contract', () => {
         }}
       />,
     );
-    expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Unsubscribe & archive' })).toBeDisabled();
     expect(screen.getByRole('heading')).not.toHaveTextContent('archive 2');
     fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
     expect(props.onConfirm).not.toHaveBeenCalled();
@@ -285,16 +294,19 @@ describe('Unsubscribe uses the action preview contract', () => {
       />,
     );
     expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
-    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+      target: { value: 'all' },
+    });
     const includeArchived = screen.getByRole('checkbox', {
       name: 'Include archived email',
     });
     expect(includeArchived).not.toBeChecked();
     fireEvent.click(includeArchived);
-    expect(screen.getByRole('heading')).toHaveTextContent('delete 9 emails');
+    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent('9 email');
     expect(screen.getByText(backlogLine('delete', 9))).toBeVisible();
     fireEvent.click(
-      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+      screen.getByRole('button', { name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/ }),
     );
     expect(onConfirm).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -303,11 +315,14 @@ describe('Unsubscribe uses the action preview contract', () => {
         senderIds: [sender.id],
       }),
     );
-    fireEvent.click(screen.getByRole('radio', { name: '+ Archive 4' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Archive' }));
+    fireEvent.click(screen.getByRole('radio', { name: '+ Archive' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe & archive' }));
     expect(onConfirm.mock.calls.at(-1)![0]).not.toHaveProperty('reach');
     expect(onConfirm.mock.calls.at(-1)![0]).toMatchObject({ senderIds: [sender.id] });
-    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+      target: { value: 'all' },
+    });
     expect(screen.getByRole('checkbox', { name: 'Include archived email' })).not.toBeChecked();
   });
 
@@ -315,14 +330,20 @@ describe('Unsubscribe uses the action preview contract', () => {
     render(
       <ConfirmActionModal
         request={request}
-        compositePreview={{ ...widePreview, counts: { ...counts, all: 0 } }}
+        compositePreview={{
+          ...widePreview,
+          counts: { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 },
+        }}
         onCancel={vi.fn()}
         onConfirm={vi.fn()}
       />,
     );
-    expect(screen.getByRole('radio', { name: '+ Archive 0' })).toBeDisabled();
-    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 0' }));
-    expect(screen.getByRole('button', { name: 'Unsubscribe + Delete 0 emails' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: '+ Archive' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+      target: { value: 'all' },
+    });
+    expect(screen.getByRole('button', { name: 'Unsubscribe & delete' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Unsubscribe only' })).toBeNull();
     expect(screen.getByRole('heading')).not.toHaveTextContent(/delete 0 emails/);
     expect(screen.queryByText(/0 emails you already have/)).toBeNull();
@@ -331,19 +352,22 @@ describe('Unsubscribe uses the action preview contract', () => {
     ).toBeVisible();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     expect(
-      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+      screen.getByRole('button', { name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/ }),
     ).toBeEnabled();
-    expect(screen.getByRole('heading')).toHaveTextContent('delete 9 emails');
+    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent('9 email');
   });
 
   it('never substitutes inbox counts when the selected widened preview disappears or refetches', () => {
     const props = { request, onCancel: vi.fn(), onConfirm: vi.fn() };
     const { rerender } = render(<ConfirmActionModal {...props} compositePreview={widePreview} />);
-    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+      target: { value: 'all' },
+    });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     rerender(<ConfirmActionModal {...props} compositePreview={preview} />);
     expect(
-      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+      screen.getByRole('button', { name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/ }),
     ).toBeDisabled();
     expect(screen.getByRole('checkbox', { name: 'Include archived email' })).toBeChecked();
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
@@ -352,7 +376,7 @@ describe('Unsubscribe uses the action preview contract', () => {
       <ConfirmActionModal {...props} compositePreview={widePreview} compositePreviewLoading />,
     );
     expect(
-      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+      screen.getByRole('button', { name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/ }),
     ).toBeDisabled();
     rerender(
       <ConfirmActionModal
@@ -394,9 +418,12 @@ describe('Unsubscribe uses the action preview contract', () => {
     const { rerender } = render(
       <ConfirmActionModal {...props} bulkPreview={{ data, loading: false, error: false }} />,
     );
-    fireEvent.click(screen.getByRole('radio', { name: '+ Delete 4' }));
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+      target: { value: 'all' },
+    });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
-    expect(screen.getByRole('heading')).toHaveTextContent('1 sender and delete 9 emails');
+    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent('9 email');
     rerender(
       <ConfirmActionModal
         {...props}
@@ -416,7 +443,7 @@ describe('Unsubscribe uses the action preview contract', () => {
       />,
     );
     expect(
-      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
+      screen.getByRole('button', { name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/ }),
     ).toBeDisabled();
   });
 
@@ -445,7 +472,10 @@ describe('Unsubscribe uses the action preview contract', () => {
           onConfirm={vi.fn()}
         />,
       );
-      if (mode === 'delete') fireEvent.click(screen.getByRole('radio', { name: '+ Delete 8' }));
+      if (mode === 'delete') fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
+      fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+        target: { value: 'all' },
+      });
       expect(screen.getByText('Details').closest('details')).not.toHaveAttribute('open');
       expect(screen.getByText(backlogLine(mode, 8))).toBeVisible();
     },
@@ -473,13 +503,11 @@ describe('Unsubscribe uses the action preview contract', () => {
         onConfirm={onConfirm}
       />,
     );
-    expect(screen.getByRole('heading')).toHaveTextContent(
-      'Unsubscribe from 1 sender and archive 4 emails',
-    );
+    expect(screen.getByRole('heading')).toHaveTextContent('Unsubscribe from 1 sender?');
     expect(
       screen.getByText(pluralCopy(WS5_COPY['f1.selection.someProtected'], 1, { k: '1' })),
     ).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Archive' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe & archive' }));
     expect(onConfirm).toHaveBeenCalledWith(
       expect.objectContaining({
         senderIds: [sender.id],
@@ -562,7 +590,7 @@ describe('Unsubscribe uses the action preview contract', () => {
         />,
       );
       expect(screen.getByRole('radio', { name: /\+ Archive/ })).toBeDisabled();
-      expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Unsubscribe & archive' })).toBeDisabled();
       expect(screen.getByRole('heading')).not.toHaveTextContent('4 emails');
       if (state === 'error') {
         expect(screen.getByText(WS5_COPY['f1.preview.backlog.error'])).toBeVisible();
@@ -601,15 +629,15 @@ describe('Unsubscribe uses the action preview contract', () => {
         onConfirm={vi.fn()}
       />,
     );
-    expect(screen.getByRole('heading')).toHaveTextContent('archive 1,139 emails');
+    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+      '1,139 emails',
+    );
     expect(screen.getByRole('heading').textContent).not.toMatch(/\b1139\b/);
     expect(screen.getByText(backlogMailLine('archive', 1139))).toBeVisible();
     expect(unsubscribeTitle('delete', sender.name, 1139)).toBe(
       `Unsubscribe from ${sender.name} and delete 1,139 emails?`,
     );
-    expect(backlogMailLine('delete', 1139)).toBe(
-      '1,139 emails you already have: moved to Gmail Trash (Delete)',
-    );
+    expect(backlogMailLine('delete', 1139)).toBe('1,139 emails will move to Gmail Trash.');
   });
 
   it.each(['loading', 'failure'] as const)(

@@ -49,6 +49,7 @@ export function TriageFocusStack({
   onAction,
   busyRowIds,
   previewInboxCount,
+  onRetryPreview,
   previewDetail,
   previewQuotaRemaining,
   onBatchVerb,
@@ -62,6 +63,7 @@ export function TriageFocusStack({
   onAction: (verb: ActionVerb, row: TriageDecisionRow) => void;
   busyRowIds: ReadonlySet<string>;
   previewInboxCount: PreviewCount;
+  onRetryPreview?: (() => void) | undefined;
   previewDetail: ActionPreviewDetail | undefined;
   previewQuotaRemaining: number | null | undefined;
   onBatchVerb: (verb: BatchVerb, batch: DomainBatch) => void;
@@ -108,6 +110,7 @@ export function TriageFocusStack({
         inlinePreview={inlinePreviewFor(row.id, pendingAction, {
           inboxCount: previewInboxCount,
           onCancel: clearPending,
+          onRetryPreview,
           detail: previewDetail,
           quotaRemaining: previewQuotaRemaining,
         })}

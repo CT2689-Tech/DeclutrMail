@@ -6,6 +6,8 @@ import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 import { UnsubscribeBacklogDialog } from './unsubscribe-backlog/unsubscribe-backlog-dialog';
 import { someProtectedSelectionCopy } from './unsubscribe-backlog/preview-copy';
 import { pickBucketCount, TIME_WINDOW_PRESETS } from './action-window';
+import { CleanupImpact, CleanupPreview, cleanupAgeLabel } from '@/components/cleanup-preview';
+import { LaterReturnControl, useFutureReturnTime } from '@/components/later-return-control';
 import { ActionReachControl, ActionWindowControl } from '@/components/action-scope-controls';
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
@@ -289,12 +291,12 @@ export function ConfirmActionModal({
   // the summary line + "Show what currently matches" header.
   const isArchiveVerb = verb === 'Archive';
   const isDeleteVerb = verb === 'Delete';
+  const isCleanupVerb = isArchiveVerb || isDeleteVerb || verb === 'Later';
   const isUnsubVerb = verb === 'Unsubscribe';
   const isLaterVerb = verb === 'Later';
-  // Every A/L/D primary moves current inbox mail. Archive/Delete expose a
-  // primary time-window; Later keeps its existing all-current-mail shape.
+  // Every A/L/D primary moves the inbox mail matching its selected age.
   const primaryActsOnInbox = isArchiveVerb || isLaterVerb || isDeleteVerb;
-  const primaryUsesWindow = isArchiveVerb || isDeleteVerb;
+  const primaryUsesWindow = isCleanupVerb;
   // Whether the secondary chip row is shown. Unsubscribe ONLY: it is the
   // one primary that does not touch existing inbox mail, so "what about
   // the backlog?" is a real, unanswered question. Later already moves
@@ -306,7 +308,7 @@ export function ConfirmActionModal({
   /** Unsubscribe with the backlog left alone — nothing in Gmail moves. */
   const unsubscribeMovesNothing = isUnsubVerb && !hasSecondaryAction;
 
-  // For Archive/Delete primary the time-window applies to the primary
+  // For Archive/Later/Delete primary the time-window applies to the primary
   // verb itself. For Unsubscribe with a non-null secondary, the
   // time-window applies to the secondary's historic mail.
   const showWindowRow = primaryUsesWindow || hasSecondaryAction;
@@ -454,7 +456,11 @@ export function ConfirmActionModal({
   // excluded — it cuts FUTURE mail, so it is real work at a zero backlog,
   // and it IS charged a unit.
   const nothingToActOn = primaryActsOnInbox && compositeCount === 0;
-  const wakeAtInvalid = isLaterVerb && (wakeAt === null || Date.parse(wakeAt) <= Date.now());
+  const { valid: returnTimeValid, recheck: recheckReturnTime } = useFutureReturnTime(
+    wakeAt,
+    isLaterVerb && request !== null,
+  );
+  const wakeAtInvalid = isLaterVerb && !returnTimeValid;
 
   // Reconcile the two ORTHOGONAL populations this modal renders at once:
   // the context strip's arrival-scoped "N /mo" (last 30 days, any label)
@@ -513,23 +519,27 @@ export function ConfirmActionModal({
     ? `No emails left to move to Trash. There is no email from ${
         countedSubject
       } in Inbox or archived.`
-    : inboxScopeVerbLabel
-      ? inboxScopeNoticeCopy(
-          inboxScopeNotice,
-          inboxScopeVerbLabel,
-          countedSubject,
-          // With the reach chips on screen, "only acts on mail still in
-          // the inbox" would be false one sentence before the hint that
-          // says how to reach past it (ADR-0028).
-          { verbActsBeyondInbox: reachAvailable },
-        )
-      : null;
+    : isCleanupVerb && inboxScopeNotice.kind === 'empty-window'
+      ? `Your inbox has ${emailsLabel(inboxScopeNotice.inboxTotal)} from ${countedSubject}, but none are ${cleanupAgeLabel(inboxScopeNotice.olderThanDays).toLowerCase()}.`
+      : inboxScopeVerbLabel
+        ? inboxScopeNoticeCopy(
+            inboxScopeNotice,
+            inboxScopeVerbLabel,
+            countedSubject,
+            // With the reach chips on screen, "only acts on mail still in
+            // the inbox" would be false one sentence before the hint that
+            // says how to reach past it (ADR-0028).
+            { verbActsBeyondInbox: reachAvailable },
+          )
+        : null;
   // ADR-0028 — when the inbox is empty but the mailbox still holds mail
   // this Delete COULD reach, point at the chip that reaches it. Modal-
   // local on purpose: the shared notice is also rendered by surfaces
   // that may have no reach control to point at (the Screener's chips
   // carry their own live counts instead of this hint).
-  const archivedReachCount = allMailCounts?.all ?? 0;
+  const archivedReachCount = isDeleteVerb
+    ? (pickBucketCount(allMailCounts, olderThanDays) ?? 0)
+    : (allMailCounts?.all ?? 0);
   const archivedReachHint =
     inboxScopeNotice.kind === 'empty-inbox' && reachAvailable && archivedReachCount > 0
       ? pluralCopy(WS2_COPY.preview.archivedReachHint, archivedReachCount, {
@@ -561,12 +571,11 @@ export function ConfirmActionModal({
           receivedTotal: request?.senders[0]?.totalReceived ?? null,
         })
       : null;
-  // Every window chip reads 0 when the inbox holds nothing from this
-  // sender — five identical zeros no choice can change. Suppress the row
-  // and let the notice carry the story. Deliberately a RENDER flag only:
-  // `showWindowRow` still governs `buildConfirmOpts`, so the wire payload
-  // is byte-identical either way.
-  const showWindowChips = showWindowRow && inboxScopeNotice.kind !== 'empty-inbox';
+  // Cleanup keeps Email age visible even with an empty inbox. Widening
+  // reach must preserve that visible age rather than silently reset it.
+  // Other actions retain their existing empty-inbox presentation.
+  const showWindowChips =
+    showWindowRow && (isCleanupVerb || inboxScopeNotice.kind !== 'empty-inbox');
   // With the chip row gone the "(older than N days)" qualifier describes
   // a control the user can no longer see.
   const showWindowQualifier = olderThanDays !== null && inboxScopeNotice.kind !== 'empty-inbox';
@@ -576,7 +585,9 @@ export function ConfirmActionModal({
   const tiedWindowCopy = livePreviewReady
     ? tiedWindowNoticeCopy(
         TIME_WINDOW_PRESETS.map((preset) => ({
-          label: preset.label,
+          label: isCleanupVerb
+            ? cleanupAgeLabel(preset.days).replace(/^Older than /, '')
+            : preset.label,
           count: pickBucketCount(bucketCounts, preset.days),
         })),
         // The age clause explains INBOX ties; at all-mail reach the tie
@@ -678,7 +689,10 @@ export function ConfirmActionModal({
   // checked so the user can narrow; confirm stays closed until they do,
   // and the wire below never sends all_mail without the count.
   const archivedUncounted = deleteReachOffered && reach === 'all_mail' && allMailCounts == null;
+  const selectedCountUnavailable =
+    isCleanupVerb && livePreviewReady && compositeCount === undefined;
   const confirmDisabled =
+    selectedCountUnavailable ||
     livePreviewBlocksConfirm ||
     nothingToActOn ||
     wakeAtInvalid ||
@@ -755,6 +769,7 @@ export function ConfirmActionModal({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
         e.preventDefault();
+        if (isLaterVerb && !recheckReturnTime()) return;
         onConfirm(buildConfirmOpts());
       }
     };
@@ -773,6 +788,7 @@ export function ConfirmActionModal({
     reachAvailable,
     activeReach,
     wakeAt,
+    recheckReturnTime,
     onConfirm,
     confirmDisabled,
     showSecondaryRow,
@@ -872,9 +888,11 @@ export function ConfirmActionModal({
 
   const title = (() => {
     if (zeroTitle) {
-      return windowedZero
-        ? `Nothing older than ${windowName(olderThanDays)} from ${zeroWho}`
-        : `Nothing in your inbox${allMailScope ? ' or archive' : ''} from ${zeroWho}`;
+      return windowedZero && isCleanupVerb
+        ? `No emails ${cleanupAgeLabel(olderThanDays).toLowerCase()} from ${zeroWho}`
+        : windowedZero
+          ? `Nothing older than ${windowName(olderThanDays)} from ${zeroWho}`
+          : `Nothing in your inbox${allMailScope ? ' or archive' : ''} from ${zeroWho}`;
     }
     if (isArchiveVerb || isDeleteVerb) {
       return liveCount === null
@@ -954,9 +972,6 @@ export function ConfirmActionModal({
         }`
       : [
           primary.activityUndo.summary,
-          // Delete is the one verb where the reader plausibly fears the
-          // opposite (CLAUDE.md §2.3).
-          ...(isDeleteVerb && primary.futureMail.inPreview ? [primary.futureMail.summary] : []),
           ...(primary.bulkReturnNotice === null ? [] : [primary.bulkReturnNotice]),
         ].join(' ');
   const note = [undoNote, skipSentence].filter((s): s is string => s !== null).join(' ');
@@ -966,6 +981,7 @@ export function ConfirmActionModal({
     // Name the override in the button itself — the click IS the
     // acknowledgement, so it must not read like an ordinary confirm.
     if (needsProtectedOverride && !hasSecondaryAction) return `${verbWord} anyway`;
+    if (isCleanupVerb) return verbWord;
     if (hasSecondaryAction)
       return `Unsubscribe + ${secondaryVerb === 'delete' ? 'Delete' : 'Archive'}`;
     if (primaryActsOnInbox && liveCount !== null && liveCount > 0) {
@@ -1077,7 +1093,7 @@ export function ConfirmActionModal({
       />,
     );
   }
-  if (showWindowSelect) {
+  if (showWindowSelect && !isCleanupVerb) {
     controls.push(
       <ActionWindowControl
         key="window"
@@ -1088,23 +1104,7 @@ export function ConfirmActionModal({
     );
   }
   if (isLaterVerb) {
-    controls.push(
-      <label key="later" style={wellStyle}>
-        <span>Returns</span>
-        <input
-          type="datetime-local"
-          aria-label="Later return time"
-          value={wakeAt === null ? '' : toLocalDateTimeInput(wakeAt)}
-          min={toLocalDateTimeInput(new Date(Date.now() + 60_000).toISOString())}
-          onChange={(event) => {
-            const next = new Date(event.currentTarget.value);
-            setWakeAt(Number.isNaN(next.getTime()) ? null : next.toISOString());
-          }}
-          className="dm-field"
-          style={{ ...tokens.field, width: '100%', minWidth: 0 }}
-        />
-      </label>,
-    );
+    controls.push(<LaterReturnControl key="later" value={wakeAt} onChange={setWakeAt} />);
   }
   // Protected acknowledgement (D245 / D42). The sender is Protected and
   // this is an explicit single-sender action, so the path stays open —
@@ -1136,6 +1136,11 @@ export function ConfirmActionModal({
   // promise a wait that ends in the same disabled button.
   const status: ReactNode = unsubNothingToSend ? (
     NO_SENDABLE_UNSUB
+  ) : selectedCountUnavailable ? (
+    <StatusWithAction
+      message="Couldn’t count this email age."
+      action={onRetryPreview ? { label: 'Retry preview', onClick: onRetryPreview } : undefined}
+    />
   ) : previewStateCopy !== null ? (
     <StatusWithAction
       message={previewStateCopy}
@@ -1147,6 +1152,8 @@ export function ConfirmActionModal({
             : onRetryPreview && { label: 'Retry preview', onClick: onRetryPreview }
       }
     />
+  ) : wakeAtInvalid ? (
+    <StatusWithAction message="Choose a future return time." />
   ) : nothingActionableBulk ? (
     // For Unsubscribe the count is of one-click senders only: mailto and
     // no-link senders may still be here, neither Protected nor gone.
@@ -1226,7 +1233,7 @@ export function ConfirmActionModal({
       value: <span data-testid="mail-location-line">{mailLocationValue(mailLocationLine)}</span>,
     });
   }
-  if (tiedWindowCopy) facts.push({ label: 'Windows', value: tiedWindowCopy });
+  if (tiedWindowCopy) facts.push({ label: 'Email age', value: tiedWindowCopy });
   if (showReach && allMailScope) {
     facts.push(
       { label: 'Never touched', value: 'Trash, Spam, Drafts, Chat' },
@@ -1441,6 +1448,7 @@ export function ConfirmActionModal({
     // context that competes with the cookie banner and the selection FAB.
     <div style={{ position: 'relative', zIndex: OVERLAY_Z.modal }}>
       <PreviewSheet
+        layout={isCleanupVerb ? 'review' : 'compact'}
         context={
           activeMailboxEmail ? (
             <MailboxActionContextView mailboxEmail={activeMailboxEmail} />
@@ -1460,15 +1468,34 @@ export function ConfirmActionModal({
             <AvatarStack senders={senders} />
           )
         }
-        title={title}
+        title={
+          isCleanupVerb && !zeroTitle
+            ? isLaterVerb
+              ? `Move emails from ${fromWho} to Later?`
+              : `${verbWord} emails from ${fromWho}?`
+            : title
+        }
         subtitle={
-          subtitle === null ? undefined : (
+          (isArchiveVerb || isLaterVerb) && !zeroTitle ? undefined : isDeleteVerb && !zeroTitle ? (
+            <span id="dm-confirm-lead">{primary.futureMail.summary}</span>
+          ) : subtitle === null ? undefined : (
             <span id="dm-confirm-lead" style={{ textWrap: 'balance' }}>
               {subtitle}
             </span>
           )
         }
-        note={note === '' ? undefined : note}
+        note={isCleanupVerb || note === '' ? undefined : note}
+        summary={
+          isCleanupVerb ? (
+            <CleanupImpact
+              action={isArchiveVerb ? 'Archive' : isLaterVerb ? 'Later' : 'Delete'}
+              count={archivedUncounted ? null : liveCount}
+              includesArchived={allMailScope}
+              olderThanDays={olderThanDays}
+              note={note}
+            />
+          ) : undefined
+        }
         details={details}
         primary={
           quotaShort
@@ -1491,7 +1518,10 @@ export function ConfirmActionModal({
                 // so a request that hangs can never seal the user in (see
                 // the `submitting` prop). The label + disabled carry it.
                 label: submitting ? 'Submitting…' : primaryLabel,
-                onClick: () => onConfirm(buildConfirmOpts()),
+                onClick: () => {
+                  if (isLaterVerb && !recheckReturnTime()) return;
+                  onConfirm(buildConfirmOpts());
+                },
                 // Delete's filled danger button is one of the sanctioned
                 // `color.danger` uses (ADR-0019); amber stays
                 // Unsubscribe's tone (ADR-0016 A5).
@@ -1515,10 +1545,24 @@ export function ConfirmActionModal({
           )
         }
       >
-        {selectionSummary || controls.length > 0 ? (
+        {isCleanupVerb || selectionSummary || controls.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: space[3] }}>
             {selectionSummary}
-            {controls}
+            {isCleanupVerb ? (
+              <CleanupPreview
+                olderThanDays={olderThanDays}
+                options={windowOptions.map(({ days, count }) => ({
+                  days,
+                  disabled: count === undefined,
+                }))}
+                onWindowChange={setOlderThanDays}
+                showWindow={isCleanupVerb || showWindowSelect}
+              >
+                {controls}
+              </CleanupPreview>
+            ) : (
+              controls
+            )}
           </div>
         ) : undefined}
       </PreviewSheet>
@@ -1540,20 +1584,6 @@ function windowName(days: number | null): string {
   const preset = TIME_WINDOW_PRESETS.find((p) => p.days === days);
   return preset ? preset.label.replace(/\+$/, '') : `${days ?? 0} days`;
 }
-
-const wellStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: space[3],
-  minHeight: 48,
-  padding: `0 ${space[2]}px 0 ${space[4]}px`,
-  borderRadius: radius.lg,
-  background: color.fill,
-  fontSize: text.md,
-  fontWeight: 500,
-  textAlign: 'left',
-};
 
 const factNumberStyle: CSSProperties = {
   color: color.fg,
@@ -1648,7 +1678,7 @@ function newestInboxDays(preview: CompositeActionPreviewResult | undefined): num
 
 /**
  * `2026-04-12` — ISO-ORDERED but rendered from LOCAL calendar parts, the
- * same convention as `toLocalDateTimeInput` below.
+ * same local-clock convention as the Later return picker.
  *
  * Not `toISOString().slice(0,10)`: that prints the UTC day, so a message
  * received at 20:00 PST would show as the NEXT day and disagree with the
@@ -1660,8 +1690,3 @@ function newestInboxDays(preview: CompositeActionPreviewResult | undefined): num
  * subject instead of "Invalid Date" (the BE already drops dateless rows;
  * this is the render-side guard).
  */
-function toLocalDateTimeInput(iso: string): string {
-  const date = new Date(iso);
-  const two = (value: number) => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}T${two(date.getHours())}:${two(date.getMinutes())}`;
-}

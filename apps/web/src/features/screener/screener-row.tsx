@@ -54,10 +54,12 @@ export function ScreenerRow({
   onReachChange,
   onWindowChange,
   wakeAt = null,
+  onWakeAtChange,
   onToggleExpand,
   onVerbClick,
   onConfirm,
   onCancel,
+  onRetryPreview,
 }: {
   row: ScreenerQueueRow;
   expanded: boolean;
@@ -94,10 +96,12 @@ export function ScreenerRow({
   pendingReach?: ActionReach;
   onReachChange?: ((reach: ActionReach) => void) | undefined;
   wakeAt?: string | null;
+  onWakeAtChange?: ((wakeAt: string | null) => void) | undefined;
   onToggleExpand: () => void;
   onVerbClick: (verb: ScreenerDecideVerb) => void;
   onConfirm: () => void;
   onCancel: () => void;
+  onRetryPreview?: (() => void) | undefined;
 }) {
   // Hydration-safe clock — `null` on the server and the first client
   // render, so a day-boundary crossing can't make the server and the
@@ -415,9 +419,11 @@ export function ScreenerRow({
               reach={pendingReach}
               onReachChange={onReachChange}
               wakeAt={wakeAt}
+              onWakeAtChange={onWakeAtChange}
               confirming={busy}
               onConfirm={onConfirm}
               onCancel={onCancel}
+              onRetryPreview={onRetryPreview}
             />
           )}
         </div>

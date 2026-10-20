@@ -247,6 +247,64 @@ describe('retained sender facts', () => {
     expect(reads).toBe(2);
   });
 
+  it('does not poll a hidden zero row while unsubscribe is still requested', async () => {
+    vi.useFakeTimers();
+    try {
+      let reads = 0;
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/senders/a',
+          respond: () => {
+            reads += 1;
+            return jsonOk({
+              data: { ...row, inboxCount: 0, archivedCount: 0, unsubStatus: 'requested' },
+            });
+          },
+        },
+      ]);
+      const client = createTestQueryClient();
+      const completedPins = new Map([['a', { row, index: 0, refreshFacts: true, completedAt: 1 }]]);
+      const { result } = renderHook(() => usePinnedSenders([], completedPins, new Set(['a'])), {
+        wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10);
+      });
+      expect(result.current).toHaveLength(0);
+      const afterHide = reads;
+      expect(afterHide).toBeGreaterThan(0);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      expect(reads).toBe(afterHide);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the pin when the detail envelope has no sender payload', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders/a',
+        // `{ data: null }` is a real envelope. A body with no `data` key
+        // never reaches the query — the client throws before that.
+        respond: () => jsonOk({ data: null }),
+      },
+    ]);
+    const client = createTestQueryClient();
+    const { result } = renderHook(() => usePinnedSenders([], pinned, new Set()), {
+      wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+    });
+    await waitFor(() =>
+      expect(client.getQueryState(sendersKeys.detail('a'))?.status).toBe('success'),
+    );
+    expect(result.current).toHaveLength(1);
+    expect(result.current[0]?.id).toBe('a');
+    expect(result.current[0]?.unsubStatus).toBe(row.unsubStatus);
+  });
+
   it('does not call cached data current after a terminal refresh fails', async () => {
     let unreadable = false;
     installFetchStub([

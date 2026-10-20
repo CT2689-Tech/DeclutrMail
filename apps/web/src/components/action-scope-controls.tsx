@@ -3,6 +3,7 @@
 import { SheetCheckbox, tokens } from '@declutrmail/shared';
 import type { ActionReach } from '@declutrmail/shared/contracts';
 import { WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import { CleanupSelect } from './cleanup-select';
 
 const { color, radius, space, text } = tokens;
 
@@ -71,14 +72,13 @@ export function ActionWindowControl({
       }}
     >
       <span>How far back</span>
-      <select
+      <CleanupSelect
         aria-label="How far back to act on"
         value={value === null ? 'all' : String(value)}
         onChange={(event) => {
           const next = event.currentTarget.value;
           onChange(next === 'all' ? null : Number(next));
         }}
-        className="dm-field"
         style={{ ...tokens.field, width: '100%', minWidth: 0 }}
       >
         {options.map((option) => (
@@ -91,7 +91,7 @@ export function ActionWindowControl({
             {option.count === undefined ? 'unavailable' : option.count.toLocaleString('en-US')}
           </option>
         ))}
-      </select>
+      </CleanupSelect>
     </label>
   );
 }

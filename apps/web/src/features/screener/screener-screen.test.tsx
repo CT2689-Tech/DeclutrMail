@@ -283,9 +283,9 @@ describe('ScreenerRow — expanded body (D73) + preview (D226)', () => {
     );
     expect(html).toContain('Preview · Archive');
     // The name contains the visible label (WCAG 2.5.3).
-    expect(html).toContain('aria-label="Archive 4 emails for');
+    expect(html).toContain('aria-label="Archive for');
     expect(html).toContain('Cancel');
-    expect(html).toContain('4');
+    expect(html).toContain('4 emails will leave your inbox and stay in Gmail.');
     assertNoScreenVerb(html);
   });
 
