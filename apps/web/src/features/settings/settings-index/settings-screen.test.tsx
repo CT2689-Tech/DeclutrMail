@@ -797,15 +797,16 @@ describe('SettingsScreen', () => {
     renderScreen();
 
     const toggle = await screen.findByRole('switch', {
-      name: /disable sync completion alerts/i,
+      name: /disable inbox ready email/i,
     });
+    expect(
+      screen.getByText('One email when we finish scanning a Gmail account you connect.'),
+    ).toBeInTheDocument();
     await userEvent.click(toggle);
 
     await waitFor(() => expect(patches).toEqual([{ syncComplete: false }]));
     await waitFor(() =>
-      expect(
-        screen.getByRole('switch', { name: /enable sync completion alerts/i }),
-      ).toBeInTheDocument(),
+      expect(screen.getByRole('switch', { name: /enable inbox ready email/i })).toBeInTheDocument(),
     );
     // The system row never grows a toggle — non-opt-out per D165.
     expect(screen.getByText('Always on')).toBeInTheDocument();
