@@ -536,7 +536,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     expect(screen.queryByText(/archive whatever/i)).not.toBeInTheDocument();
   });
 
-  it('keeps a single-sender unsubscribe closed when the preview failed, and keeps Archive and Delete off', () => {
+  it('keeps a single-sender Unsubscribe usable when the preview failed, and keeps Archive and Delete off', () => {
     const onConfirm = vi.fn();
     render(
       <ConfirmActionModal
@@ -547,18 +547,22 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
       />,
     );
 
-    const confirm = screen.getByRole('button', { name: 'Unsubscribe' });
-    expect(confirm).toBeDisabled();
+    expect(screen.getByText(WS5_COPY['f1.preview.backlog.error'])).toBeVisible();
+    expect(screen.queryByText(WS5_COPY['preview.state.loadFailed.unsub'])).not.toBeInTheDocument();
     // The preview never resolved, so Archive and Delete stay off and
-    // do not claim a zero count.
+    // do not claim a zero count. Unsubscribe only still confirms.
     expect(screen.getByRole('radio', { name: '+ Archive' })).toBeDisabled();
     expect(screen.getByRole('radio', { name: '+ Delete' })).toBeDisabled();
     expect(screen.queryByRole('radio', { name: /0 emails/ })).toBeNull();
     expect(screen.queryByRole('combobox', { name: /How far back|Email age/i })).toBeNull();
+    const confirm = screen.getByRole('button', { name: 'Unsubscribe' });
+    expect(confirm).toBeEnabled();
     fireEvent.click(confirm);
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
-    fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
-    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onConfirm).toHaveBeenCalledWith({
+      secondary: null,
+      archiveHistoric: false,
+      senderIds: [sender.id],
+    });
   });
 
   it('presents counts and subject samples as a current snapshot, not an exact future set', () => {
