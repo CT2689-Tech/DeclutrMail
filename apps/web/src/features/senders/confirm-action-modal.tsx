@@ -7,7 +7,7 @@ import { UnsubscribeBacklogDialog } from './unsubscribe-backlog/unsubscribe-back
 import { someProtectedSelectionCopy } from './unsubscribe-backlog/preview-copy';
 import { pickBucketCount, TIME_WINDOW_PRESETS } from './action-window';
 import { CleanupImpact, CleanupPreview, cleanupAgeLabel } from '@/components/cleanup-preview';
-import { LaterReturnControl, isFutureReturnTime } from '@/components/later-return-control';
+import { LaterReturnControl, useFutureReturnTime } from '@/components/later-return-control';
 import { ActionReachControl, ActionWindowControl } from '@/components/action-scope-controls';
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
@@ -456,7 +456,11 @@ export function ConfirmActionModal({
   // excluded — it cuts FUTURE mail, so it is real work at a zero backlog,
   // and it IS charged a unit.
   const nothingToActOn = primaryActsOnInbox && compositeCount === 0;
-  const wakeAtInvalid = isLaterVerb && !isFutureReturnTime(wakeAt);
+  const { valid: returnTimeValid, recheck: recheckReturnTime } = useFutureReturnTime(
+    wakeAt,
+    isLaterVerb && request !== null,
+  );
+  const wakeAtInvalid = isLaterVerb && !returnTimeValid;
 
   // Reconcile the two ORTHOGONAL populations this modal renders at once:
   // the context strip's arrival-scoped "N /mo" (last 30 days, any label)
@@ -581,7 +585,7 @@ export function ConfirmActionModal({
   const tiedWindowCopy = livePreviewReady
     ? tiedWindowNoticeCopy(
         TIME_WINDOW_PRESETS.map((preset) => ({
-          label: isDeleteVerb
+          label: isCleanupVerb
             ? cleanupAgeLabel(preset.days).replace(/^Older than /, '')
             : preset.label,
           count: pickBucketCount(bucketCounts, preset.days),
@@ -765,6 +769,7 @@ export function ConfirmActionModal({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
         e.preventDefault();
+        if (isLaterVerb && !recheckReturnTime()) return;
         onConfirm(buildConfirmOpts());
       }
     };
@@ -783,6 +788,7 @@ export function ConfirmActionModal({
     reachAvailable,
     activeReach,
     wakeAt,
+    recheckReturnTime,
     onConfirm,
     confirmDisabled,
     showSecondaryRow,
@@ -1146,6 +1152,8 @@ export function ConfirmActionModal({
             : onRetryPreview && { label: 'Retry preview', onClick: onRetryPreview }
       }
     />
+  ) : wakeAtInvalid ? (
+    <StatusWithAction message="Choose a future return time." />
   ) : nothingActionableBulk ? (
     // For Unsubscribe the count is of one-click senders only: mailto and
     // no-link senders may still be here, neither Protected nor gone.
@@ -1225,7 +1233,7 @@ export function ConfirmActionModal({
       value: <span data-testid="mail-location-line">{mailLocationValue(mailLocationLine)}</span>,
     });
   }
-  if (tiedWindowCopy) facts.push({ label: 'Windows', value: tiedWindowCopy });
+  if (tiedWindowCopy) facts.push({ label: 'Email age', value: tiedWindowCopy });
   if (showReach && allMailScope) {
     facts.push(
       { label: 'Never touched', value: 'Trash, Spam, Drafts, Chat' },
@@ -1510,7 +1518,10 @@ export function ConfirmActionModal({
                 // so a request that hangs can never seal the user in (see
                 // the `submitting` prop). The label + disabled carry it.
                 label: submitting ? 'Submitting…' : primaryLabel,
-                onClick: () => onConfirm(buildConfirmOpts()),
+                onClick: () => {
+                  if (isLaterVerb && !recheckReturnTime()) return;
+                  onConfirm(buildConfirmOpts());
+                },
                 // Delete's filled danger button is one of the sanctioned
                 // `color.danger` uses (ADR-0019); amber stays
                 // Unsubscribe's tone (ADR-0016 A5).

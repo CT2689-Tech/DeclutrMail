@@ -7,6 +7,28 @@ import { DecidePreview } from './decide-preview';
 const row = SCREENER_QUEUE[0]!;
 
 describe('DecidePreview — live-preview confirm gate', () => {
+  it('retries an unavailable preview without confirming or changing its selected age', () => {
+    const onRetryPreview = vi.fn();
+    const onConfirm = vi.fn();
+    render(
+      <DecidePreview
+        verb="delete"
+        row={row}
+        inboxCount="unavailable"
+        windowDays={180}
+        onWindowChange={vi.fn()}
+        confirming={false}
+        onRetryPreview={onRetryPreview}
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Retry preview' }));
+    expect(onRetryPreview).toHaveBeenCalledTimes(1);
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
+    expect(screen.getByRole('button', { name: /^Delete for/ })).toBeDisabled();
+  });
   it('keeps Archive inbox-only and any age with an editable age and no Delete scope', () => {
     const onConfirm = vi.fn();
     render(

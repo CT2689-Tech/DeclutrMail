@@ -36,6 +36,7 @@ export function inlinePreviewFor(
   preview: {
     inboxCount: PreviewCount;
     onCancel?: (() => void) | undefined;
+    onRetryPreview?: (() => void) | undefined;
     detail: ActionPreviewDetail | undefined;
     quotaRemaining: number | null | undefined;
   },
@@ -58,6 +59,7 @@ export function inlinePreviewFor(
         ? preview.detail?.ageControl
         : undefined,
     onCancel: preview.onCancel,
+    onRetryPreview: preview.onRetryPreview,
     archiveHistoric: backlogMode === 'archive',
     backlogMode,
     onBacklogMode: (mode) => useTriageStore.getState().setPendingBacklogMode(mode),
@@ -103,6 +105,7 @@ export function TriageQueue({
   onAction,
   busyRowIds = NO_BUSY_ROWS,
   previewInboxCount = 'loading',
+  onRetryPreview,
   previewDetail,
   previewQuotaRemaining,
   allowBatching = true,
@@ -125,6 +128,7 @@ export function TriageQueue({
   busyRowIds?: ReadonlySet<string>;
   /** Live inbox count for the inline preview's impact figure (D226). */
   previewInboxCount?: PreviewCount;
+  onRetryPreview?: (() => void) | undefined;
   /** D226 verification detail, shared with the sheet path. */
   previewDetail?: ActionPreviewDetail | undefined;
   /** Cleanup allowance — independent of the preview, see `ActionSheet`. */
@@ -183,6 +187,7 @@ export function TriageQueue({
         const inlinePreview = inlinePreviewFor(row.id, pendingAction, {
           inboxCount: previewInboxCount,
           onCancel: clearPending,
+          onRetryPreview,
           detail: previewDetail,
           quotaRemaining: previewQuotaRemaining,
         });

@@ -949,6 +949,9 @@ export function ScreenerScreen({
                   onVerbClick={(verb) => onVerbClick(verb, row)}
                   onConfirm={() => onConfirm(row)}
                   onCancel={() => setPending(null)}
+                  onRetryPreview={() => {
+                    void compositePreview.refetch();
+                  }}
                 />
               </div>
             ))}

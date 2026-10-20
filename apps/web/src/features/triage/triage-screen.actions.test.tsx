@@ -2337,6 +2337,118 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     expect(useTriageStore.getState().pendingAction).not.toBeNull();
   });
 
+  it.each(['list', 'focus'] as const)(
+    'retries an unavailable inline Later preview without losing selections or submitting (%s)',
+    async (mode) => {
+      let failing = false;
+      let reads = 0;
+      const enqueues: unknown[] = [];
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/actions/preview',
+          respond: () => {
+            reads += 1;
+            return failing ? jsonServerError('preview_down') : jsonOk({ data: PREVIEW_BODY });
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: async (req) => {
+            enqueues.push(await req.json());
+            return jsonOk({
+              data: {
+                actionId: ACTION_ID,
+                compositeId: ACTION_ID,
+                secondaryId: null,
+                status: 'queued',
+                primaryCount: 12,
+                secondaryCount: null,
+              },
+            });
+          },
+        },
+      ]);
+      storeTriageMode(mode);
+      useTriageStore.getState().setRememberPreference('Later', true);
+      const client = createTestQueryClient();
+      renderScreen(client);
+      if (mode === 'list') expandRow(GROUPON.senderName);
+      fireEvent.keyDown(window, { key: 'l' });
+      const region = await screen.findByRole('region', { name: /^Preview · Later / });
+      await waitFor(() =>
+        expect(within(region).getByRole('button', { name: /Later/ })).toBeEnabled(),
+      );
+      fireEvent.change(within(region).getByRole('combobox', { name: 'Email age' }), {
+        target: { value: '90' },
+      });
+      const wakeAt = useTriageStore.getState().pendingAction?.wakeAt;
+      failing = true;
+      await act(async () => {
+        await client.invalidateQueries({ queryKey: ['composite-preview'] });
+      });
+      await within(region).findByText(/couldn’t load the preview/i);
+      expect(within(region).getByRole('button', { name: /Later/ })).toBeDisabled();
+      const failedReads = reads;
+      failing = false;
+      fireEvent.click(within(region).getByRole('button', { name: 'Retry preview' }));
+      await waitFor(() =>
+        expect(within(region).getByRole('button', { name: /Later/ })).toBeEnabled(),
+      );
+      expect(reads).toBeGreaterThan(failedReads);
+      expect(within(region).getByRole('combobox', { name: 'Email age' })).toHaveValue('90');
+      expect(useTriageStore.getState().pendingAction?.wakeAt).toBe(wakeAt);
+      expect(enqueues).toHaveLength(0);
+      fireEvent.click(within(region).getByRole('button', { name: /Later/ }));
+      await waitFor(() => expect(enqueues).toHaveLength(1));
+      expect(enqueues[0]).toMatchObject({ primary: { type: 'later', olderThanDays: 90, wakeAt } });
+    },
+  );
+
+  it('can retry a failed first inline Unsubscribe preview while keeping future-only available', async () => {
+    let failing = true;
+    let reads = 0;
+    let writes = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () => {
+          reads += 1;
+          return failing ? jsonServerError('preview_down') : jsonOk({ data: PREVIEW_BODY });
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-backlog',
+        respond: () => {
+          writes += 1;
+          return jsonServerError('must_not_run');
+        },
+      },
+    ]);
+    useTriageStore.getState().setRememberPreference('Unsubscribe', true);
+    renderScreen(createTestQueryClient());
+    expandRow(LINKEDIN.senderName);
+    fireEvent.keyDown(window, { key: 'u' });
+    const region = await screen.findByRole('region', { name: /^Preview · Unsubscribe / });
+    const retry = await within(region).findByRole('button', { name: 'Retry preview' });
+    expect(within(region).getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
+    expect(within(region).getByRole('radio', { name: '+ Archive' })).toBeDisabled();
+    act(() => useTriageStore.getState().setPendingBacklogMode('unsub_only'));
+    const failedReads = reads;
+    failing = false;
+    fireEvent.click(retry);
+    await waitFor(() =>
+      expect(within(region).getByRole('radio', { name: '+ Archive' })).toBeEnabled(),
+    );
+    expect(reads).toBeGreaterThan(failedReads);
+    expect(within(region).getByRole('radio', { name: 'Unsubscribe only' })).toBeChecked();
+    expect(within(region).queryByRole('button', { name: 'Retry preview' })).toBeNull();
+    expect(writes).toBe(0);
+  });
+
   it('allows the second shortcut to confirm after the inline current-match preview resolves', async () => {
     const enqueues: unknown[] = [];
     addFetchHandlers([

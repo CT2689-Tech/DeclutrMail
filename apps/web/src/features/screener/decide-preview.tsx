@@ -22,7 +22,7 @@ import {
   UnsubscribeImpact,
   cleanupAgeLabel,
 } from '@/components/cleanup-preview';
-import { LaterReturnControl, isFutureReturnTime } from '@/components/later-return-control';
+import { LaterReturnControl, useFutureReturnTime } from '@/components/later-return-control';
 import type { ActionReach } from '@/lib/api/actions';
 
 import {
@@ -77,6 +77,7 @@ export function DecidePreview({
   mailboxEmail,
   onConfirm,
   onCancel,
+  onRetryPreview,
 }: {
   verb: ScreenerDecideVerb;
   row: ScreenerQueueRow;
@@ -120,6 +121,7 @@ export function DecidePreview({
   mailboxEmail?: string | undefined;
   onConfirm: () => void;
   onCancel: () => void;
+  onRetryPreview?: (() => void) | undefined;
 }) {
   useActionPreviewAnalytics(row.senderId, verb, typeof inboxCount === 'number');
   const name = row.senderName;
@@ -236,7 +238,8 @@ export function DecidePreview({
     moves && (typeof inboxCount !== 'number' || typeof effectiveCount !== 'number');
   // A zero-match Delete would only remove the review row while moving no
   // email. Keep is the explicit app-only decision for that intent.
-  const returnInvalid = verb === 'later' && !isFutureReturnTime(wakeAt);
+  const returnTimeValid = useFutureReturnTime(wakeAt, verb === 'later').valid;
+  const returnInvalid = verb === 'later' && !returnTimeValid;
   const confirmDisabled =
     confirming || previewBlocked || (moves && liveCount === 0) || returnInvalid;
 
@@ -373,7 +376,14 @@ export function DecidePreview({
         <p style={mutedLine}>{WS5_COPY['f1.preview.backlog.loading']}</p>
       )}
       {moves && effectiveCount === 'unavailable' && (
-        <p style={mutedLine}>{WS2_COPY.preview.loadFailed}</p>
+        <div role="status">
+          <p style={mutedLine}>{WS2_COPY.preview.loadFailed}</p>
+          {onRetryPreview && (
+            <Button tone="ghost" onClick={onRetryPreview}>
+              Retry preview
+            </Button>
+          )}
+        </div>
       )}
 
       {scopeCopy && (

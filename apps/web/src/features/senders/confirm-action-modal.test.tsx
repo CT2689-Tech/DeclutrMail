@@ -1080,40 +1080,43 @@ describe('ConfirmActionModal — preview trust affordances', () => {
     olderThan365d: 59,
   };
 
-  it('explains a tied window row instead of leaving 4 identical chips (B)', () => {
-    // The age MUST come from the INBOX-scoped sample, not
-    // `sender.lastSeenDays` (all-labels). Measured on the dev mailbox
-    // 2026-07-27, jobs-noreply@linkedin.com had lastSeenDays 3 while its
-    // newest INBOX message was 2,784 days old — the old wiring printed
-    // "3 days old" about a 7-year-old inbox.
-    const inbox182dAgo = new Date(Date.now() - 182 * 86_400_000).toISOString();
-    render(
-      <ConfirmActionModal
-        request={request('Archive')}
-        onCancel={() => {}}
-        onConfirm={() => {}}
-        compositePreview={{
-          ...livePreview,
-          // Deliberately contradicts the inbox sample: if the copy ever
-          // reads this field again, the assertion below fails.
-          sender: { ...livePreview.sender, lastSeenDays: 3 },
-          counts: tiedCounts,
-          recentMessages: {
-            ...subjects,
-            all: [{ subject: 'Oldest still in inbox', date: inbox182dAgo }],
-          },
-        }}
-      />,
-    );
-    expect(
-      screen.getByText(
-        /Nothing newer than 182 days, so every window through 6 months\+ matches the same 2,908\./,
-      ),
-    ).toBeTruthy();
-    // The chips themselves stay: merging them would let "All inbox" stand
-    // in for "6 months+", which can diverge at execution.
-    expect(screen.getByRole('combobox', { name: /How far back|Email age/i })).toBeTruthy();
-  });
+  it.each(['Archive', 'Later', 'Delete'] as const)(
+    'explains tied age buckets for %s using the same day labels',
+    (verb) => {
+      // The age MUST come from the INBOX-scoped sample, not
+      // `sender.lastSeenDays` (all-labels). Measured on the dev mailbox
+      // 2026-07-27, jobs-noreply@linkedin.com had lastSeenDays 3 while its
+      // newest INBOX message was 2,784 days old — the old wiring printed
+      // "3 days old" about a 7-year-old inbox.
+      const inbox182dAgo = new Date(Date.now() - 182 * 86_400_000).toISOString();
+      render(
+        <ConfirmActionModal
+          request={request(verb)}
+          onCancel={() => {}}
+          onConfirm={() => {}}
+          compositePreview={{
+            ...livePreview,
+            // Deliberately contradicts the inbox sample: if the copy ever
+            // reads this field again, the assertion below fails.
+            sender: { ...livePreview.sender, lastSeenDays: 3 },
+            counts: tiedCounts,
+            recentMessages: {
+              ...subjects,
+              all: [{ subject: 'Oldest still in inbox', date: inbox182dAgo }],
+            },
+          }}
+        />,
+      );
+      expect(
+        screen.getByText(
+          /Nothing newer than 182 days, so every window through 180 days matches the same 2,908\./,
+        ),
+      ).toBeTruthy();
+      // The chips themselves stay: merging them would let "All inbox" stand
+      // in for "6 months+", which can diverge at execution.
+      expect(screen.getByRole('combobox', { name: /How far back|Email age/i })).toBeTruthy();
+    },
+  );
 
   it('stays quiet when every window narrows something (B)', () => {
     render(

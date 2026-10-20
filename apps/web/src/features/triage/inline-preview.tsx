@@ -1,6 +1,6 @@
 'use client';
 
-import { LaterReturnControl, isFutureReturnTime } from '@/components/later-return-control';
+import { LaterReturnControl, useFutureReturnTime } from '@/components/later-return-control';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
 import { Button, Disclosure, SheetFactList, tokens } from '@declutrmail/shared';
 import { WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
@@ -59,6 +59,7 @@ export interface InlinePreview {
   wakeAt?: string | null;
   onWakeAtChange?: ((wakeAt: string | null) => void) | undefined;
   onCancel?: (() => void) | undefined;
+  onRetryPreview?: (() => void) | undefined;
 }
 
 /**
@@ -136,7 +137,8 @@ export function InlinePreviewBlock({
   // Confirm ONLY. Switching to a different verb stays live, as it does in
   // the sheet where `confirmDisabled` gates the button and nothing else —
   // a zero Archive count must not trap the row out of Delete or Later.
-  const returnInvalid = preview.verb === 'Later' && !isFutureReturnTime(preview.wakeAt);
+  const returnTimeValid = useFutureReturnTime(preview.wakeAt, preview.verb === 'Later').valid;
+  const returnInvalid = preview.verb === 'Later' && !returnTimeValid;
   const confirmDisabled = busy || blocked || nothingToActOn || returnInvalid;
   // Same facts as the sheet (`buildPreviewFacts`), laid out as one line:
   // count + where it goes, then how to undo it. Everything the sheet keeps
@@ -147,6 +149,8 @@ export function InlinePreviewBlock({
       : 'unsub_only';
   const isCleanupAction =
     preview.verb === 'Archive' || preview.verb === 'Delete' || preview.verb === 'Later';
+  const previewUnavailable =
+    (isCleanupAction || preview.verb === 'Unsubscribe') && preview.inboxCount === 'unavailable';
   const facts = buildPreviewFacts({
     olderThanDays:
       isCleanupAction || (preview.verb === 'Unsubscribe' && backlogMode !== 'unsub_only')
@@ -219,12 +223,17 @@ export function InlinePreviewBlock({
       {/* Why confirm is disabled while the live count is not a number —
           the same two lines the sheet's status shows. A disabled button
           with no reason reads as a broken one. */}
-      {blocked && (
+      {(blocked || previewUnavailable) && (
         <p style={{ margin: `${space[1]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
           {preview.inboxCount === 'unavailable'
             ? WS2_COPY.preview.loadFailed
             : WS5_COPY['f1.preview.backlog.loading']}
         </p>
+      )}
+      {previewUnavailable && preview.onRetryPreview && (
+        <Button tone="ghost" onClick={preview.onRetryPreview}>
+          Retry preview
+        </Button>
       )}
       {!isCleanupAction && preview.verb !== 'Unsubscribe' && facts.note !== null && (
         <p style={{ margin: `${space[1]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>

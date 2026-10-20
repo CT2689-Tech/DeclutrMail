@@ -196,7 +196,7 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
         />,
       );
 
-      expect(html).toContain('Try again');
+      expect(html).toContain('Retry preview');
       expect(html).toContain('Nothing can move until it loads.');
       expect(html).not.toContain('Try again to archive or delete');
       expect(html).toMatch(/<button[^>]*disabled=""/);
@@ -1119,7 +1119,7 @@ describe('ActionSheet Unsubscribe preview recovery', () => {
       />,
     );
     expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry preview' }));
     expect(onRetryPreview).toHaveBeenCalledOnce();
   });
   it('shows a completed zero count as a way to choose Unsubscribe only', () => {

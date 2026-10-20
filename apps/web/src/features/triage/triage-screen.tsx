@@ -1818,6 +1818,7 @@ export function TriageScreen({
               busyRowIds={busyRowIds}
               unknownVerbs={unknownVerbs}
               previewInboxCount={previewInboxCount}
+              onRetryPreview={() => void compositePreview.refetch()}
               previewDetail={previewDetail}
               previewQuotaRemaining={cleanupRemaining}
               onBatchVerb={onBatchVerb}
@@ -1831,6 +1832,7 @@ export function TriageScreen({
             busyRowIds={busyRowIds}
             unknownVerbs={unknownVerbs}
             previewInboxCount={previewInboxCount}
+            onRetryPreview={() => void compositePreview.refetch()}
             previewDetail={previewDetail}
             previewQuotaRemaining={cleanupRemaining}
             allowBatching={journey === 'daily'}

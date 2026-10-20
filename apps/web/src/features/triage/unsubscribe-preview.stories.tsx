@@ -42,10 +42,11 @@ function Story({
   const [days, setDays] = useState<number | null>(null);
   const [reach, setReach] = useState<'inbox_only' | 'all_mail'>('inbox_only');
   const [result, setResult] = useState('');
-  const count =
-    state === 'ready'
-      ? pickBucketCount(mode === 'delete' && reach === 'all_mail' ? allCounts : counts, days)!
-      : state;
+  const [recovered, setRecovered] = useState(false);
+  const ready = state === 'ready' || recovered;
+  const count = ready
+    ? pickBucketCount(mode === 'delete' && reach === 'all_mail' ? allCounts : counts, days)!
+    : state;
   const onMode = (next: UnsubscribeCleanupMode) => {
     setMode(next);
     setDays(next === 'delete' ? 180 : null);
@@ -88,6 +89,7 @@ function Story({
               onBacklogMode: onMode,
               ageControl: mode !== 'unsub_only' ? ageControl : undefined,
               inboxCount: count,
+              onRetryPreview: () => setRecovered(true),
               onCancel: () => setOpen(false),
             }}
             busy={false}
@@ -118,11 +120,12 @@ function Story({
               ageControl,
               reachControl: {
                 reach,
-                inboxCount: state === 'ready' ? pickBucketCount(counts, days)! : null,
-                allMailCount: state === 'ready' ? pickBucketCount(allCounts, days)! : null,
+                inboxCount: ready ? pickBucketCount(counts, days)! : null,
+                allMailCount: ready ? pickBucketCount(allCounts, days)! : null,
                 onChange: setReach,
               },
             }}
+            onRetryPreview={() => setRecovered(true)}
             onCancel={() => setOpen(false)}
             onConfirm={confirm}
           />
@@ -139,3 +142,5 @@ export const Default: StoryType = {};
 export const Inline: StoryType = { args: { inline: true } };
 export const Loading: StoryType = { args: { state: 'loading' } };
 export const Unavailable: StoryType = { args: { state: 'unavailable' } };
+
+export const InlineUnavailable: StoryType = { args: { inline: true, state: 'unavailable' } };

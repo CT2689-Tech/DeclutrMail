@@ -59,6 +59,7 @@ export function ScreenerRow({
   onVerbClick,
   onConfirm,
   onCancel,
+  onRetryPreview,
 }: {
   row: ScreenerQueueRow;
   expanded: boolean;
@@ -100,6 +101,7 @@ export function ScreenerRow({
   onVerbClick: (verb: ScreenerDecideVerb) => void;
   onConfirm: () => void;
   onCancel: () => void;
+  onRetryPreview?: (() => void) | undefined;
 }) {
   // Hydration-safe clock — `null` on the server and the first client
   // render, so a day-boundary crossing can't make the server and the
@@ -421,6 +423,7 @@ export function ScreenerRow({
               confirming={busy}
               onConfirm={onConfirm}
               onCancel={onCancel}
+              onRetryPreview={onRetryPreview}
             />
           )}
         </div>

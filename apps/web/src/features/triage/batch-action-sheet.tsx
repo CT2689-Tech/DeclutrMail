@@ -26,7 +26,7 @@ import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 import { afterLead } from '@/lib/copy/after-lead';
 import { pickBucketCount, TIME_WINDOW_PRESETS } from '@/features/senders/action-window';
 import { CleanupImpact, CleanupPreview } from '@/components/cleanup-preview';
-import { LaterReturnControl, isFutureReturnTime } from '@/components/later-return-control';
+import { LaterReturnControl, useFutureReturnTime } from '@/components/later-return-control';
 import type { TriageDecisionRow } from './data';
 import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 import type { DomainBatch } from './domain-batch';
@@ -97,7 +97,8 @@ export function BatchActionSheet({
    */
   quotaRemaining?: number | null | undefined;
 }) {
-  const wakeAtInvalid = verb === 'Later' && !isFutureReturnTime(wakeAt);
+  const returnTimeValid = useFutureReturnTime(wakeAt, open && verb === 'Later').valid;
+  const wakeAtInvalid = verb === 'Later' && !returnTimeValid;
   // Computed before the early-return guard below (`batch` can still be
   // null here) so the ⌘⏎ handler registered by the hook right after —
   // which must run on every render — can gate on it too. Codex review
@@ -208,15 +209,11 @@ export function BatchActionSheet({
     'Choose a future return time before confirming Later.'
   ) : preview === 'loading' ? (
     WS5_COPY['f1.preview.backlog.loading']
-  ) : preview === 'unavailable' ? (
+  ) : preview === 'unavailable' || total === null ? (
     <StatusWithAction
       message={WS2_COPY.preview.loadFailed}
-      action={
-        onRetryPreview ? { label: WS2_COPY.home.failed.retry, onClick: onRetryPreview } : undefined
-      }
+      action={onRetryPreview ? { label: 'Retry preview', onClick: onRetryPreview } : undefined}
     />
-  ) : total === null ? (
-    WS2_COPY.preview.loadFailed
   ) : nothingActionable ? (
     <StatusWithAction
       message="Every sender you picked is now Protected or has no email left."

@@ -16,7 +16,7 @@ import {
   UnsubscribeChoices,
   UnsubscribeImpact,
 } from '@/components/cleanup-preview';
-import { LaterReturnControl, isFutureReturnTime } from '@/components/later-return-control';
+import { LaterReturnControl, useFutureReturnTime } from '@/components/later-return-control';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
@@ -187,7 +187,8 @@ export function ActionSheet({
     (verb === 'Unsubscribe' && effectiveMode !== 'unsub_only');
   const previewUnavailable = inboxCount === 'unavailable';
   const previewPending = inboxCount === 'loading';
-  const wakeAtInvalid = verb === 'Later' && !isFutureReturnTime(selectedWakeAt);
+  const returnTimeValid = useFutureReturnTime(selectedWakeAt, open && verb === 'Later').valid;
+  const wakeAtInvalid = verb === 'Later' && !returnTimeValid;
   // A mail-moving verb with zero matches is a no-op that still costs a
   // cleanup action on Free. Senders already blocks this (`nothingToActOn`,
   // confirm-action-modal.tsx); triage did not, so the two surfaces disagreed
@@ -365,9 +366,7 @@ export function ActionSheet({
   ) : previewUnavailable ? (
     <StatusWithAction
       message={WS2_COPY.preview.loadFailed}
-      action={
-        onRetryPreview ? { label: WS2_COPY.home.failed.retry, onClick: onRetryPreview } : undefined
-      }
+      action={onRetryPreview ? { label: 'Retry preview', onClick: onRetryPreview } : undefined}
     />
   ) : archivedUncounted ? (
     WS5_COPY['f1.preview.archived.unavailable']

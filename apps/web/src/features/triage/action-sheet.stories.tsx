@@ -32,12 +32,14 @@ function CleanupStory(args: ComponentProps<typeof ActionSheet>) {
   const [days, setDays] = useState<number | null>(defaultDays);
   const [reach, setReach] = useState<ActionReach>('inbox_only');
   const [result, setResult] = useState('');
+  const [recovered, setRecovered] = useState(false);
+  const fixtureCount = recovered ? 128 : args.inboxCount;
   const [wakeAt, setWakeAt] = useState<string | null>(() =>
     args.verb === 'Later' ? defaultLaterWakeAtIso() : null,
   );
   const inboxCount =
-    typeof args.inboxCount === 'number'
-      ? args.inboxCount === 0
+    typeof fixtureCount === 'number'
+      ? fixtureCount === 0
         ? 0
         : (pickBucketCount(batchCounts, days) ?? 0)
       : null;
@@ -45,11 +47,11 @@ function CleanupStory(args: ComponentProps<typeof ActionSheet>) {
     inboxCount === null ? null : inboxCount + (pickBucketCount(archivedCounts, days) ?? 0);
   const activeReach = args.verb === 'Delete' ? reach : 'inbox_only';
   const count =
-    typeof args.inboxCount === 'number'
+    typeof fixtureCount === 'number'
       ? activeReach === 'all_mail'
         ? (allMailCount ?? 0)
         : (inboxCount ?? 0)
-      : args.inboxCount;
+      : fixtureCount;
   return (
     <div style={{ padding: 24 }}>
       <p>
@@ -90,6 +92,7 @@ function CleanupStory(args: ComponentProps<typeof ActionSheet>) {
             onChange: setReach,
           },
         }}
+        onRetryPreview={() => setRecovered(true)}
         onCancel={() => setOpen(false)}
         onConfirm={(details) => {
           setResult(
@@ -139,15 +142,17 @@ function InlineCleanupStory(args: ComponentProps<typeof ActionSheet>) {
   const [open, setOpen] = useState(true);
   const [days, setDays] = useState<number | null>(defaultDays);
   const [result, setResult] = useState('');
+  const [recovered, setRecovered] = useState(false);
+  const fixtureCount = recovered ? 128 : args.inboxCount;
   const [wakeAt, setWakeAt] = useState<string | null>(() =>
     args.verb === 'Later' ? defaultLaterWakeAtIso() : null,
   );
   const count =
-    typeof args.inboxCount === 'number'
-      ? args.inboxCount === 0
+    typeof fixtureCount === 'number'
+      ? fixtureCount === 0
         ? 0
         : (pickBucketCount(batchCounts, days) ?? 0)
-      : args.inboxCount;
+      : fixtureCount;
   return (
     <div style={{ maxWidth: 680, margin: '24px auto', padding: 16 }}>
       <p>
@@ -166,6 +171,7 @@ function InlineCleanupStory(args: ComponentProps<typeof ActionSheet>) {
             archiveHistoric: false,
             inboxCount: count,
             ageControl: { olderThanDays: days, options: TIME_WINDOW_PRESETS, onChange: setDays },
+            onRetryPreview: () => setRecovered(true),
             onCancel: () => setOpen(false),
           }}
           busy={false}
@@ -226,11 +232,13 @@ function BatchCleanupStory(args: ComponentProps<typeof ActionSheet>) {
   const [days, setDays] = useState<number | null>(null);
   const [open, setOpen] = useState(true);
   const [result, setResult] = useState('');
+  const [recovered, setRecovered] = useState(false);
+  const fixtureCount = recovered ? 128 : args.inboxCount;
   const [wakeAt, setWakeAt] = useState<string | null>(() =>
     args.verb === 'Later' ? defaultLaterWakeAtIso() : null,
   );
   const preview =
-    typeof args.inboxCount === 'number'
+    typeof fixtureCount === 'number'
       ? {
           senders: batchRows.map((row) => ({
             senderId: row.senderId,
@@ -243,7 +251,7 @@ function BatchCleanupStory(args: ComponentProps<typeof ActionSheet>) {
           ) as typeof batchCounts,
           protectedCount: 0,
         }
-      : args.inboxCount;
+      : fixtureCount;
   return (
     <div style={{ padding: 24 }}>
       <p>Fictional mailbox · no Gmail changes. Triage group {args.verb} · Inbox only · Any age.</p>
@@ -267,6 +275,7 @@ function BatchCleanupStory(args: ComponentProps<typeof ActionSheet>) {
         batch={batch}
         preview={preview}
         mailboxEmail="sample@example.com"
+        onRetryPreview={() => setRecovered(true)}
         onCancel={() => setOpen(false)}
         onConfirm={() => {
           setResult(
@@ -296,5 +305,22 @@ export const LaterInline: Story = {
 };
 export const LaterBatch: Story = {
   args: { verb: 'Later' },
+  render: (args) => <BatchCleanupStory {...args} />,
+};
+
+export const ArchiveInlineUnavailable: Story = {
+  args: { verb: 'Archive', inboxCount: 'unavailable' },
+  render: (args) => <InlineCleanupStory {...args} />,
+};
+export const LaterInlineUnavailable: Story = {
+  args: { verb: 'Later', inboxCount: 'unavailable' },
+  render: (args) => <InlineCleanupStory {...args} />,
+};
+export const ArchiveBatchUnavailable: Story = {
+  args: { verb: 'Archive', inboxCount: 'unavailable' },
+  render: (args) => <BatchCleanupStory {...args} />,
+};
+export const LaterBatchUnavailable: Story = {
+  args: { verb: 'Later', inboxCount: 'unavailable' },
   render: (args) => <BatchCleanupStory {...args} />,
 };

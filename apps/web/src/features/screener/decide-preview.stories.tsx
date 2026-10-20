@@ -19,6 +19,7 @@ const sampleRow = {
 
 function CleanupStory(args: ComponentProps<typeof DecidePreview>) {
   const [open, setOpen] = useState(true);
+  const [recovered, setRecovered] = useState(false);
   const isDelete = args.verb === 'delete';
   const defaultDays = isDelete ? DEFAULT_DELETE_WINDOW_DAYS : null;
   const [days, setDays] = useState<number | null>(defaultDays);
@@ -45,9 +46,9 @@ function CleanupStory(args: ComponentProps<typeof DecidePreview>) {
       {open ? (
         <DecidePreview
           {...args}
-          inboxCount={typeof args.inboxCount === 'number' ? count : args.inboxCount}
+          inboxCount={recovered || typeof args.inboxCount === 'number' ? count : args.inboxCount}
           inboxTotal={args.inboxCount === 0 ? 0 : inbox.all}
-          allMailCount={typeof args.inboxCount === 'number' ? allMailCount : null}
+          allMailCount={recovered || typeof args.inboxCount === 'number' ? allMailCount : null}
           allMailTotal={inbox.all + archived.all}
           wakeAt={wakeAt}
           onWakeAtChange={setWakeAt}
@@ -56,6 +57,7 @@ function CleanupStory(args: ComponentProps<typeof DecidePreview>) {
           onWindowChange={setDays}
           onReachChange={setReach}
           onCancel={() => setOpen(false)}
+          onRetryPreview={() => setRecovered(true)}
           onConfirm={() => {
             setResult(
               `Sample confirmation: ${reach === 'all_mail' ? allMailCount : count} emails, ${reach === 'all_mail' ? 'inbox and archived' : 'inbox only'}, ${cleanupAgeLabel(days).toLowerCase()}${args.verb === 'later' ? `; return ${wakeAt ? new Date(wakeAt).toLocaleString('en-US', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }) : 'not selected'}` : ''}.`,
