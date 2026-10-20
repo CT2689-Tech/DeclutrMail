@@ -87,6 +87,9 @@ Queue/mailbox/DB/scheduler values are five-minute samples stored as log
 must not be summed into users or jobs; mailbox reasons can overlap. Sync durations
 are worker attempts, including retries, not signup funnel conversion. Outcome `resolved` includes skipped/no-op runs and must never be labelled completed sync or used as a sync success rate. Scheduler
 success age is absent when no success exists; the missing-success rule covers it.
+Histogram percentiles can estimate a count of zero as a small positive value
+(observed p99: `0.00099`). The recovery-budget alert uses `> 0.5` to distinguish
+zero from one exhausted mailbox, and reduces across revisions by service.
 
 ## Launch capacity alerts
 
