@@ -1449,8 +1449,10 @@ function SendersScreenContent({
             ) {
               return;
             }
+            // Release the read before downstream mutation/lock guards can
+            // refuse. A dispatch below owns its own submitting state.
+            setSubmitting(false);
             if (fresh.some((row) => !canPerformSenderAction(verb, row))) {
-              setSubmitting(false);
               setPendingAction(null);
               toast('Review this sender’s updated email counts before trying again.', 'info');
               return;

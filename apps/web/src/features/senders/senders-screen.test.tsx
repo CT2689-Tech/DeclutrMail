@@ -3358,19 +3358,98 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       const dialog = await screen.findByRole('dialog');
       if (verb === 'Delete') {
         const window = await within(dialog).findByRole('combobox', {
-          name: 'How far back to act on',
+          name: 'Email age',
         });
         fireEvent.change(window, { target: { value: 'all' } });
       }
       const confirm = await within(dialog).findByRole('button', {
-        name:
-          verb === 'Later' ? /^Move \d+ emails? to Later$/ : new RegExp(`^${verb} \\d+ emails?$`),
+        name: new RegExp(`^${verb}$`),
       });
       await waitFor(() => expect(confirm).toBeEnabled());
       await lastClient.invalidateQueries({ queryKey: ['senders', 'list'], refetchType: 'none' });
       fireEvent.click(confirm);
       await waitFor(() => expect(posts).toBe(1));
       expect(detailReads).toBe(1);
+    },
+  );
+
+  it.each(['Archive', 'Later', 'Delete'] as const)(
+    'releases the refreshed %s confirm after a shared lock refuses dispatch',
+    async (verb) => {
+      let busy = true;
+      let posts = 0;
+      let reads = 0;
+      installFetchStub([
+        oneSenderHandler(),
+        compositePreviewHandler(12),
+        {
+          method: 'GET',
+          path: '/api/senders/a',
+          respond: () => {
+            reads += 1;
+            return jsonOk({ data: { ...ROW, inboxCount: 12, archivedCount: 0 } });
+          },
+        },
+        {
+          method: 'GET',
+          path: '/api/actions/active',
+          respond: () =>
+            jsonOk({
+              data: busy
+                ? [
+                    {
+                      groupId: 'other-tab',
+                      verb: 'archive',
+                      mixedVerbs: false,
+                      running: true,
+                      total: 1,
+                      done: 0,
+                      failed: 0,
+                      senderCount: 1,
+                      leadSenderName: 'Sender A',
+                      startedAt: '2026-09-28T10:00:00.000Z',
+                      senderIds: ['a'],
+                      senderKeys: ['sender-a-key'],
+                    },
+                  ]
+                : [],
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () => {
+            posts += 1;
+            return jsonOk({ data: { actionId: 'act-live', requestedCount: 12, status: 'queued' } });
+          },
+        },
+      ]);
+      renderScreenWithToasts();
+      fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+      fireEvent.keyDown(document.body, { key: verb[0]!.toLowerCase() });
+      const dialog = await screen.findByRole('dialog');
+      if (verb === 'Delete')
+        fireEvent.change(within(dialog).getByRole('combobox', { name: 'Email age' }), {
+          target: { value: 'all' },
+        });
+      const confirm = within(dialog).getByRole('button', { name: verb });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      await lastClient.invalidateQueries({ queryKey: ['senders', 'list'], refetchType: 'none' });
+      fireEvent.click(confirm);
+      await screen.findAllByText(
+        'Still confirming your last action for this sender — give it a moment.',
+      );
+      expect(reads).toBe(1);
+      expect(posts).toBe(0);
+      await waitFor(() => expect(confirm).toBeEnabled());
+      busy = false;
+      await act(async () => {
+        lastClient.setQueriesData({ queryKey: ['undo', 'in-flight'] }, []);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      fireEvent.click(confirm);
+      await waitFor(() => expect(posts).toBe(1));
+      expect(reads).toBe(2);
     },
   );
 
@@ -3397,7 +3476,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
     fireEvent.keyDown(document.body, { key: 'a' });
     const dialog = await screen.findByRole('dialog');
-    const confirm = await within(dialog).findByRole('button', { name: /^Archive \d+ emails?$/ });
+    const confirm = await within(dialog).findByRole('button', { name: /^Archive$/ });
     await waitFor(() => expect(confirm).toBeEnabled());
     await lastClient.invalidateQueries({ queryKey: ['senders', 'list'], refetchType: 'none' });
     const countsNotice = 'Review this sender’s updated email counts before trying again.';
@@ -3532,7 +3611,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(dialog).toHaveTextContent('1 sender with a recorded unsubscribe request is excluded.');
     expect(dialog).not.toHaveTextContent(/person|people/i);
     const confirm = await within(dialog).findByRole('button', {
-      name: /^Unsubscribe(?: \+ Archive)?$/,
+      name: /^Unsubscribe(?: & archive)?$/,
     });
     await waitFor(() => expect(confirm).toBeEnabled());
     fireEvent.click(confirm);
@@ -3577,7 +3656,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       fireEvent.keyDown(document.body, { key: 'u' });
       const dialog = await screen.findByRole('dialog');
       const confirm = await within(dialog).findByRole('button', {
-        name: /^Unsubscribe(?: \+ Archive)?$/,
+        name: /^Unsubscribe(?: & archive)?$/,
       });
       await waitFor(() => expect(confirm).toBeEnabled());
       act(() => {
@@ -3828,7 +3907,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       fireEvent.keyDown(document.body, { key: 'u' });
       const dialog = await screen.findByRole('dialog');
       const confirm = await within(dialog).findByRole('button', {
-        name: /^Unsubscribe(?: \+ Archive)?$/,
+        name: /^Unsubscribe(?: & archive)?$/,
       });
       await waitFor(() => expect(confirm).toBeEnabled());
       fireEvent.click(confirm);

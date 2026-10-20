@@ -544,6 +544,13 @@ function ReadyState({
   const pendingActionRef = useRef(pendingAction);
   pendingActionRef.current = pendingAction;
   const detailFactsCheck = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      detailFactsCheck.current?.abort();
+      detailFactsCheck.current = null;
+    },
+    [],
+  );
   const [receipt, setReceipt] = useState<
     (ActionReceipt & { mailboxId: string | undefined }) | null
   >(null);
@@ -857,6 +864,9 @@ function ReadyState({
           const fresh = await fetchSenderDetail(currentSender.id, controller.signal);
           if (controller.signal.aborted || pendingActionRef.current !== owner) return;
           sender = { ...currentSender, ...fresh.data };
+          // The read is finished. Refusal guards below leave no mutation
+          // in flight; dispatch branches take their own submitting state.
+          setSubmitting(false);
         } catch {
           if (!controller.signal.aborted && pendingActionRef.current === owner) {
             setSubmitting(false);
