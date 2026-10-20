@@ -518,7 +518,10 @@ describe('InboxSimulatorScreen', () => {
     const dialog = sheetFor('Groupon');
     const total = syntheticInboxCount(groupon) + syntheticArchivedCount(groupon);
     fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Include archived email' }));
-    expect(dialog).toHaveAccessibleName(new RegExp(`Delete ${total} emails`));
+    expect(dialog).toHaveAccessibleName(`Delete emails from ${groupon.senderName}?`);
+    expect(within(dialog).getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+      `${total} emails will move to Gmail Trash.`,
+    );
   });
 
   /** Archives the amazon.com batch (step 1) then unsubscribes LinkedIn

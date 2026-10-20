@@ -66,11 +66,11 @@
       "budgetKb": 297
     },
     "/(app)/triage/page": {
-      "measuredKb": 334.7,
+      "measuredKb": 334.6,
       "budgetKb": 352
     },
     "/(marketing)/alternatives/[tool]/page": {
-      "measuredKb": 170.8,
+      "measuredKb": 170.7,
       "budgetKb": 180
     },
     "/(marketing)/answers/best-way-to-clean-gmail-2026/page": {
@@ -114,7 +114,7 @@
       "budgetKb": 180
     },
     "/(marketing)/compare/page": {
-      "measuredKb": 170.8,
+      "measuredKb": 170.7,
       "budgetKb": 180
     },
     "/(marketing)/contact/page": {
@@ -130,7 +130,7 @@
       "budgetKb": 180
     },
     "/(marketing)/help/page": {
-      "measuredKb": 171,
+      "measuredKb": 170.9,
       "budgetKb": 180
     },
     "/(marketing)/how-it-works/page": {
@@ -174,8 +174,12 @@
       "budgetKb": 180
     },
     "/(marketing)/page": {
-      "measuredKb": 189,
-      "budgetKb": 199
+      "measuredKb": 189.8,
+      "budgetKb": 200
+    },
+    "/(marketing)/pricing/changelog/page": {
+      "measuredKb": 170.5,
+      "budgetKb": 180
     },
     "/(marketing)/pricing/page": {
       "measuredKb": 212.1,
@@ -190,7 +194,7 @@
       "budgetKb": 180
     },
     "/(marketing)/security/page": {
-      "measuredKb": 171,
+      "measuredKb": 170.9,
       "budgetKb": 180
     },
     "/(marketing)/sign-in/page": {
@@ -202,7 +206,7 @@
       "budgetKb": 180
     },
     "/(marketing)/vs/[competitor]/page": {
-      "measuredKb": 170.8,
+      "measuredKb": 170.7,
       "budgetKb": 180
     }
   }
