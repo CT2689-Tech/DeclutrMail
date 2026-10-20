@@ -2,6 +2,7 @@ import type { ActionJobStatus } from '../contracts/action-job-status';
 import type { ActionReach } from '../contracts/action-reach';
 import type { ActionVerb } from '../contracts/verb-constants';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '../entitlements/undo-window';
+import { WS5_COPY } from '../copy/launch/ws5';
 import type { UnsubscribeCapability } from './unsubscribe-capability';
 
 export type CurrentMailScope = 'none' | 'matching-current-inbox' | 'matching-archived';
@@ -748,7 +749,7 @@ function presentAction(input: PresentActionInput): PresentedAction {
     schedule.kind === 'scheduled' &&
     input.liveCount !== null &&
     input.liveCount >= LATER_BULK_RETURN_NOTICE_THRESHOLD
-      ? 'All of them share that one return.'
+      ? WS5_COPY['preview.later.bulkReturn']
       : null;
   const effectFacts = [
     currentMail.summary,

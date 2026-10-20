@@ -365,7 +365,11 @@ export function UnsubscribeBacklogDialog({
       </>
     ) : failed ? (
       <>
-        <span>{WS5_COPY['f1.preview.backlog.error']}</span>
+        <span>
+          {!single && mode === 'unsub_only'
+            ? WS5_COPY['preview.state.loadFailed.unsub']
+            : WS5_COPY['f1.preview.backlog.error']}
+        </span>
         {onRetryPreview && (
           <Button tone="default" size="sm" onClick={onRetryPreview}>
             {WS2_COPY.home.failed.retry}
@@ -377,7 +381,11 @@ export function UnsubscribeBacklogDialog({
     ) : mode !== 'unsub_only' && cleanupCount === null && !loading ? (
       'The cleanup preview for this range is unavailable. Choose another range.'
     ) : inboxCount === null ? (
-      WS5_COPY['f1.preview.backlog.loading']
+      !single && mode === 'unsub_only' && loading ? (
+        WS5_COPY['preview.state.checkingSenders']
+      ) : (
+        WS5_COPY['f1.preview.backlog.loading']
+      )
     ) : mode === 'delete' &&
       n === 0 &&
       offersReach &&

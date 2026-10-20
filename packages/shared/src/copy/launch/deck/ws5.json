@@ -355,5 +355,16 @@
     "one": "Move emails from 1 sender to Later?",
     "other": "Move emails from {k} senders to Later?"
   },
-  "preview.title.unsubThisSender": "Unsubscribe from this sender?"
+  "preview.title.unsubThisSender": "Unsubscribe from this sender?",
+  "preview.state.loading": "Counting the email you already have…",
+  "preview.state.checkingSenders": "Checking these senders…",
+  "preview.state.loadFailed": "Couldn’t load the preview. Nothing can move until it loads.",
+  "preview.state.loadFailed.unsub": "Couldn’t load the preview. Nothing is sent until it loads.",
+  "preview.state.senderGone": "This sender has no email in this Gmail account anymore.",
+  "preview.state.refreshSenders": "Refresh senders",
+  "preview.age.countFailed": "Couldn’t count the matching emails.",
+  "preview.selection.included": "{k} selected · {m} included",
+  "preview.selection.checking": "{k} selected · Checking which ones are included…",
+  "preview.selection.unavailable": "{k} selected · Couldn’t check which ones are included",
+  "preview.later.bulkReturn": "They all come back at the same time."
 }

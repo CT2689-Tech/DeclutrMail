@@ -590,11 +590,11 @@ describe('D226 Later says when the whole pile comes back at once', () => {
 
   it('names the shared return time once the reach crosses the threshold', () => {
     const p = later(1_718);
-    expect(p.bulkReturnNotice).toBe('All of them share that one return.');
+    expect(p.bulkReturnNotice).toBe('They all come back at the same time.');
     // In the shared copy too, so any surface rendering it inherits the
     // sentence without wiring a prop of its own.
-    expect(p.effectCopy).toContain('All of them share that one return.');
-    expect(p.previewCopy).toContain('All of them share that one return.');
+    expect(p.effectCopy).toContain('They all come back at the same time.');
+    expect(p.previewCopy).toContain('They all come back at the same time.');
   });
 
   // The count is stated once, in the headline, under its own "rechecked
@@ -621,20 +621,18 @@ describe('D226 Later says when the whole pile comes back at once', () => {
     expect(p.schedule.summary).toMatch(/^Returns to Inbox from /);
   });
 
-  it('never promises the mail arrives all at once', () => {
-    const notice = later(1_718).bulkReturnNotice ?? '';
-    expect(notice).not.toMatch(/together|at once|simultaneous|all in one/i);
-    expect(notice).toContain('one return');
+  it('says the whole pile comes back at the same time', () => {
+    expect(later(1_718).bulkReturnNotice).toBe('They all come back at the same time.');
   });
 
   it('stays quiet below the threshold', () => {
     expect(later(LATER_BULK_RETURN_NOTICE_THRESHOLD - 1).bulkReturnNotice).toBeNull();
-    expect(later(17).effectCopy).not.toContain('share that one return');
+    expect(later(17).effectCopy).not.toContain('come back at the same time');
   });
 
   it('fires exactly at the threshold', () => {
     expect(later(LATER_BULK_RETURN_NOTICE_THRESHOLD).bulkReturnNotice).toBe(
-      'All of them share that one return.',
+      'They all come back at the same time.',
     );
   });
 

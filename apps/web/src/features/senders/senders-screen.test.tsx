@@ -4217,7 +4217,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       /senders/,
     );
     expect(within(dialog).getByLabelText('Senders included in this bulk action')).toHaveTextContent(
-      '3 selected · 1 in this preview · 1 Protected excluded',
+      '3 selected · 1 included · 1 Protected excluded',
     );
     // Said once, in the note; the way to include it sits in Details.
     expect(within(dialog).getByText(/1 Protected sender is skipped\./)).toBeInTheDocument();
@@ -6286,7 +6286,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       screen.getAllByText('1 selected sender is Protected and will be left as it is.'),
     ).toHaveLength(2);
     expect(screen.getByLabelText('Senders included in this bulk action')).toHaveTextContent(
-      '2 selected · 1 in this preview · 1 Protected excluded',
+      '2 selected · 1 included · 1 Protected excluded',
     );
   });
 

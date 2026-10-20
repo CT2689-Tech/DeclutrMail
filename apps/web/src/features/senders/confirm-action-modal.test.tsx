@@ -156,7 +156,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
       fireEvent.click(confirm);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       expect(onConfirm).not.toHaveBeenCalled();
-      expect(screen.getAllByText(/Loading preview/i)).toHaveLength(1);
+      expect(screen.getAllByText('Counting the email you already have…')).toHaveLength(1);
 
       rerender(
         <ConfirmActionModal
@@ -476,7 +476,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     );
     // And the scope line keeps the real selection total intact.
     expect(screen.getByLabelText('Senders included in this bulk action')).toHaveTextContent(
-      '5 selected · 2 in this preview · 1 Protected excluded',
+      '5 selected · 2 included · 1 Protected excluded',
     );
     expect(screen.getByLabelText('Senders included in this bulk action')).toBeVisible();
   });
@@ -512,7 +512,9 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     fireEvent.click(confirm);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(screen.getAllByText(/Couldn’t load the preview/i)).toHaveLength(1);
+    expect(
+      screen.getAllByText('Couldn’t load the preview. Nothing can move until it loads.'),
+    ).toHaveLength(1);
   });
 
   it('fails closed with retry copy when the required preview is unavailable', () => {
@@ -528,7 +530,9 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
 
     expect(screen.getByRole('button', { name: /Archive/ })).toBeDisabled();
     // Said once, beside the Try again button — never body AND footer.
-    expect(screen.getAllByText(/Couldn’t load the preview/i)).toHaveLength(1);
+    expect(
+      screen.getAllByText('Couldn’t load the preview. Nothing can move until it loads.'),
+    ).toHaveLength(1);
     expect(screen.queryByText(/archive whatever/i)).not.toBeInTheDocument();
   });
 
@@ -2450,8 +2454,8 @@ describe('ConfirmActionModal — Archive names the sender and previews the live 
     );
     const summary = screen.getByLabelText('Senders included in this bulk action');
     expect(summary).toBeVisible();
-    expect(summary).toHaveTextContent('2 selected · Checking inclusion…');
-    expect(summary).not.toHaveTextContent('in this preview');
+    expect(summary).toHaveTextContent('2 selected · Checking which ones are included…');
+    expect(summary).not.toHaveTextContent('included ·');
     expect(summary).not.toHaveTextContent('Protected excluded');
     expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
   });
@@ -2471,7 +2475,7 @@ describe('ConfirmActionModal — Archive names the sender and previews the live 
       />,
     );
     expect(screen.queryByLabelText('Senders included in this bulk action')).toBeNull();
-    expect(screen.queryByText(/Checking inclusion/)).toBeNull();
+    expect(screen.queryByText(/Checking which ones are included/)).toBeNull();
     expect(
       screen.getByRole('heading', { name: 'Unsubscribe from Acme Newsletter?' }),
     ).toBeInTheDocument();
@@ -2489,8 +2493,8 @@ describe('ConfirmActionModal — Archive names the sender and previews the live 
       />,
     );
     const summary = screen.getByLabelText('Senders included in this bulk action');
-    expect(summary).toHaveTextContent('2 selected · Inclusion unavailable');
-    expect(summary).not.toHaveTextContent('Checking inclusion');
+    expect(summary).toHaveTextContent('2 selected · Couldn’t check which ones are included');
+    expect(summary).not.toHaveTextContent('Checking which ones are included…');
     expect(screen.getByRole('button', { name: /^Archive$/ })).toBeDisabled();
   });
 
@@ -2550,7 +2554,7 @@ describe('ConfirmActionModal — Archive names the sender and previews the live 
       ).toBeInTheDocument();
       expect(screen.getByLabelText('Senders included in this bulk action')).toBeVisible();
       expect(screen.getByLabelText('Senders included in this bulk action')).toHaveTextContent(
-        `${retained ? 2 : 3} selected · 1 in this preview · ${skipped} Protected excluded`,
+        `${retained ? 2 : 3} selected · 1 included · ${skipped} Protected excluded`,
       );
     },
   );
@@ -2638,13 +2642,67 @@ describe('ConfirmActionModal — Archive names the sender and previews the live 
     );
     expect(screen.getByRole('radio', { name: '+ Archive' })).toBeDisabled();
     expect(screen.queryByRole('radio', { name: /0 emails/ })).toBeNull();
-    expect(screen.queryByText(/Loading preview/i)).toBeNull();
+    expect(screen.getByText('Checking these senders…')).toBeVisible();
+    expect(screen.queryByText('Counting the email you already have…')).toBeNull();
     const confirm = screen.getByRole('button', { name: 'Unsubscribe' });
     expect(confirm).toBeDisabled();
     fireEvent.keyDown(window, { key: 'Enter' });
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     fireEvent.click(confirm);
     expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('says nothing is sent when bulk Unsubscribe only cannot load the preview', () => {
+    const one = makeSender({
+      id: 'sender-u3b',
+      displayName: 'Daily Roundup',
+      unsubscribeMethod: 'one_click',
+    });
+    const two = makeSender({
+      id: 'sender-u4b',
+      displayName: 'Flash Sale',
+      unsubscribeMethod: 'one_click',
+    });
+    render(
+      <ConfirmActionModal
+        request={{ verb: 'Unsubscribe', senders: [one, two] }}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        bulkPreview={{ data: undefined, loading: false, error: true }}
+      />,
+    );
+    expect(
+      screen.getByText('Couldn’t load the preview. Nothing is sent until it loads.'),
+    ).toBeVisible();
+    expect(
+      screen.queryByText('Couldn’t load the preview. Nothing can move until it loads.'),
+    ).toBeNull();
+    expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeDisabled();
+  });
+
+  it('counts existing email while Unsubscribe + Archive is still loading', () => {
+    const one = makeSender({
+      id: 'sender-u3c',
+      displayName: 'Daily Roundup',
+      unsubscribeMethod: 'one_click',
+      inboxCount: 4,
+    });
+    const two = makeSender({
+      id: 'sender-u4c',
+      displayName: 'Flash Sale',
+      unsubscribeMethod: 'one_click',
+      inboxCount: 2,
+    });
+    render(
+      <ConfirmActionModal
+        request={{ verb: 'Unsubscribe', senders: [one, two] }}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        bulkPreview={{ data: undefined, loading: true, error: false }}
+      />,
+    );
+    expect(screen.getByText('Counting the email you already have…')).toBeVisible();
+    expect(screen.queryByText('Checking these senders…')).toBeNull();
   });
 
   // Codex review 2026-09-03, round 4: `nothingActionableBulk` treated

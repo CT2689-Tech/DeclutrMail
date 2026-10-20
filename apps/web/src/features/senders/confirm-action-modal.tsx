@@ -49,7 +49,13 @@ import { mailLocationValue } from '@/features/triage/action-preview-detail';
 import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 import { afterLead } from '@/lib/copy/after-lead';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
-import { pluralCopy, WS1_COPY, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
+import {
+  fillCopy,
+  pluralCopy,
+  WS1_COPY,
+  WS2_COPY,
+  WS5_COPY,
+} from '@declutrmail/shared/copy/launch';
 import { fillStory, meterPreviewText, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
@@ -435,12 +441,19 @@ export function ConfirmActionModal({
   const livePreviewLoading = requiresLivePreview && !livePreviewUnavailable && !livePreviewReady;
   const livePreviewBlocksConfirm =
     requiresLivePreview && (livePreviewLoading || livePreviewUnavailable);
+  // Bulk Unsubscribe with no Archive or Delete checks senders. Every other
+  // preview here moves email that is already in the mailbox.
+  const bulkUnsubOnly = isBulk && isUnsubVerb && !hasSecondaryAction;
   const previewStateCopy = livePreviewUnavailable
     ? previewSenderGone
-      ? 'This sender has no email in this Gmail account anymore.'
-      : 'Couldn’t load the preview — nothing can run without one.'
+      ? WS5_COPY['preview.state.senderGone']
+      : bulkUnsubOnly
+        ? WS5_COPY['preview.state.loadFailed.unsub']
+        : WS5_COPY['preview.state.loadFailed']
     : livePreviewLoading
-      ? 'Loading preview…'
+      ? bulkUnsubOnly
+        ? WS5_COPY['preview.state.checkingSenders']
+        : WS5_COPY['preview.state.loading']
       : null;
 
   // Preview bucket count under the current chip selection — the ONE
@@ -1152,7 +1165,7 @@ export function ConfirmActionModal({
     NO_SENDABLE_UNSUB
   ) : selectedCountUnavailable ? (
     <StatusWithAction
-      message="Couldn’t count this email age."
+      message={WS5_COPY['preview.age.countFailed']}
       action={
         onRetryPreview ? { label: WS2_COPY.home.failed.retry, onClick: onRetryPreview } : undefined
       }
@@ -1164,7 +1177,10 @@ export function ConfirmActionModal({
         !livePreviewUnavailable
           ? undefined
           : previewSenderGone
-            ? onRefreshSenders && { label: 'Refresh senders', onClick: onRefreshSenders }
+            ? onRefreshSenders && {
+                label: WS5_COPY['preview.state.refreshSenders'],
+                onClick: onRefreshSenders,
+              }
             : onRetryPreview && { label: WS2_COPY.home.failed.retry, onClick: onRetryPreview }
       }
     />
@@ -1178,7 +1194,12 @@ export function ConfirmActionModal({
     ) : (
       <StatusWithAction
         message="Every sender you picked is now Protected or has no email left."
-        action={onRefreshSenders && { label: 'Refresh senders', onClick: onRefreshSenders }}
+        action={
+          onRefreshSenders && {
+            label: WS5_COPY['preview.state.refreshSenders'],
+            onClick: onRefreshSenders,
+          }
+        }
       />
     )
   ) : null;
@@ -1295,14 +1316,16 @@ export function ConfirmActionModal({
       aria-label="Senders included in this bulk action"
       style={{ fontSize: text.sm, color: color.fgMuted, lineHeight: 1.5, overflowWrap: 'anywhere' }}
     >
-      {fmt(selectedCount)} selected
       {requiresLivePreview
         ? livePreviewReady
-          ? ` · ${fmt(n)} in this preview`
+          ? fillCopy(WS5_COPY['preview.selection.included'], {
+              k: fmt(selectedCount),
+              m: fmt(n),
+            })
           : livePreviewLoading
-            ? ' · Checking inclusion…'
-            : ' · Inclusion unavailable'
-        : ''}
+            ? fillCopy(WS5_COPY['preview.selection.checking'], { k: fmt(selectedCount) })
+            : fillCopy(WS5_COPY['preview.selection.unavailable'], { k: fmt(selectedCount) })
+        : `${fmt(selectedCount)} selected`}
       {livePreviewReady && protectedSkipped > 0
         ? ` · ${fmt(protectedSkipped)} Protected excluded`
         : ''}
