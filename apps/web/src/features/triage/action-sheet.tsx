@@ -152,12 +152,6 @@ export function ActionSheet({
   // default immediately, before the reset effect runs. Otherwise a fast
   // Cmd/Ctrl-Enter could observe the previous action's `false` toggle.
   const countKnown = typeof inboxCount === 'number' ? inboxCount : null;
-  const inboxOptionCount =
-    detail?.inboxTotal !== undefined
-      ? detail.inboxTotal
-      : countKnown === null
-        ? null
-        : (detail?.reachControl?.inboxCount ?? countKnown);
   // Senders opens from the inbox total already on the row, then keeps that
   // choice when the preview arrives. The live count still decides when
   // Archive and Delete can be used. A row without an inbox total adopts
