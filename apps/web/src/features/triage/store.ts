@@ -51,6 +51,8 @@ export type SheetableVerb = Extract<ActionVerb, 'Archive' | 'Unsubscribe' | 'Lat
 export type RememberableVerb = Exclude<SheetableVerb, 'Delete'>;
 
 export interface PendingAction {
+  /** Archive only. A new preview starts at Any age; never persisted. */
+  olderThanDays?: number | null;
   verb: ActionVerb;
   rowId: string;
   /** Exact return time for a pending Later action; null for other verbs. */
@@ -115,6 +117,7 @@ export interface TriageActions {
   openPending: (verb: ActionVerb, rowId: string, surface: 'sheet' | 'inline') => void;
   /** Record the skip-sheet unsubscribe choice. */
   setPendingBacklogMode: (mode: UnsubscribeBacklogMode) => void;
+  setPendingOlderThanDays: (days: number | null) => void;
   /** Clear any pending action (cancel or post-confirm). */
   clearPending: () => void;
   /** Bump the session count by `by` confirmed decisions (default 1). */
@@ -169,6 +172,13 @@ export const useTriageStore = create<TriageState & TriageActions>((set) => ({
     ),
 
   clearPending: () => set({ pendingAction: null }),
+
+  setPendingOlderThanDays: (olderThanDays) =>
+    set((s) =>
+      s.pendingAction?.verb === 'Archive'
+        ? { pendingAction: { ...s.pendingAction, olderThanDays } }
+        : s,
+    ),
 
   incrementSessionDecided: (by = 1) =>
     set((s) => ({ sessionDecidedCount: s.sessionDecidedCount + by })),

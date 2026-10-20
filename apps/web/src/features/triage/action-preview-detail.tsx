@@ -8,6 +8,7 @@ import {
   type SheetFactItem,
 } from '@declutrmail/shared';
 import type { ActionReach } from '@declutrmail/shared/contracts';
+import type { CleanupAgeControl } from '@/components/cleanup-preview';
 import type { ActionVerb } from './types';
 import { PREVIEW_DETAILS, previewWhereNowFromSentence } from '@declutrmail/shared/copy';
 
@@ -30,6 +31,8 @@ const { color, space, text } = tokens;
  * render or an auth edge into a host that server-renders.
  */
 export interface ActionPreviewDetail {
+  /** The owner keeps count, sample and request on this same age selection. */
+  ageControl?: CleanupAgeControl | undefined;
   /**
    * "Where it is now" — the inbox/elsewhere split, ALREADY
    * rendered by the caller via `mailLocationCopy`.

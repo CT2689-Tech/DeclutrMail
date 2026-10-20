@@ -1544,7 +1544,7 @@ export function ConfirmActionModal({
                   disabled: count === undefined,
                 }))}
                 onWindowChange={setOlderThanDays}
-                showWindow={showWindowSelect}
+                showWindow={isArchiveVerb || showWindowSelect}
               >
                 {controls}
               </CleanupPreview>

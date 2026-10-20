@@ -2892,6 +2892,22 @@ describe('ConfirmActionModal — explicit period and scope choices', () => {
 });
 
 describe('ConfirmActionModal — Senders Archive layout A', () => {
+  it('keeps Email age visible at Any age even with an empty inbox', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Archive')}
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+        compositePreview={{
+          ...livePreview,
+          counts: { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 },
+        }}
+      />,
+    );
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
+  });
+
   it('keeps Any age and inbox-only submission even when archived email is available', () => {
     const onConfirm = vi.fn();
     render(

@@ -24,7 +24,8 @@ import { WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 
 import { afterLead } from '@/lib/copy/after-lead';
-import { CleanupImpact } from '@/components/cleanup-preview';
+import { pickBucketCount, TIME_WINDOW_PRESETS } from '@/features/senders/action-window';
+import { CleanupImpact, CleanupPreview } from '@/components/cleanup-preview';
 import type { TriageDecisionRow } from './data';
 import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 import type { DomainBatch } from './domain-batch';
@@ -57,6 +58,8 @@ export function BatchActionSheet({
   batch,
   preview,
   wakeAt = null,
+  olderThanDays = null,
+  onWindowChange,
   mailboxEmail,
   onCancel,
   onConfirm,
@@ -65,6 +68,8 @@ export function BatchActionSheet({
   quotaRemaining,
 }: {
   open: boolean;
+  olderThanDays?: number | null;
+  onWindowChange?: ((days: number | null) => void) | undefined;
   verb: BatchVerb;
   batch: DomainBatch | null;
   /** Aggregated preview — `'loading'` while loading, `'unavailable'` on failure. */
@@ -116,11 +121,21 @@ export function BatchActionSheet({
   // verbs only move inbox email, so confirming is a no-op that still costs
   // cleanup actions on Free. The single-sender sheet refuses the same case
   // (`nothingToActOn` in action-sheet.tsx).
-  const nothingToMove =
-    typeof preview === 'object' && !nothingActionable && preview.totals.all === 0;
+  const bucketUnavailable =
+    verb === 'Archive' &&
+    typeof preview === 'object' &&
+    preview.senders.some(
+      (sender) => !sender.protected && pickBucketCount(sender.counts, olderThanDays) === undefined,
+    );
+  const total =
+    typeof preview === 'object' && !bucketUnavailable
+      ? (pickBucketCount(preview.totals, verb === 'Archive' ? olderThanDays : null) ?? null)
+      : null;
+  const nothingToMove = total === 0 && !nothingActionable;
   const confirmDisabled =
     preview === 'loading' ||
     preview === 'unavailable' ||
+    total === null ||
     wakeAtInvalid ||
     nothingActionable ||
     nothingToMove;
@@ -144,7 +159,6 @@ export function BatchActionSheet({
   const unitsNeeded = actionableCount;
   const quotaShort = quotaRemaining != null && unitsNeeded > quotaRemaining;
   const loaded = typeof preview === 'object' ? preview : null;
-  const total = loaded === null ? null : loaded.totals.all;
   const presentation = buildActionPresentation({
     verb: verb === 'Archive' ? 'archive' : 'later',
     liveCount: total,
@@ -162,7 +176,9 @@ export function BatchActionSheet({
   const title = nothingActionable
     ? 'No senders left to act on'
     : nothingToMove
-      ? 'Nothing in your inbox from these senders'
+      ? olderThanDays === null
+        ? 'Nothing in your inbox from these senders'
+        : 'No emails match this age from these senders'
       : verb === 'Archive'
         ? `Archive emails from ${who}?`
         : total === null
@@ -208,6 +224,8 @@ export function BatchActionSheet({
         onRetryPreview ? { label: WS2_COPY.home.failed.retry, onClick: onRetryPreview } : undefined
       }
     />
+  ) : total === null ? (
+    WS2_COPY.preview.loadFailed
   ) : nothingActionable ? (
     <StatusWithAction
       message="Every sender you picked is now Protected or has no email left."
@@ -229,7 +247,7 @@ export function BatchActionSheet({
   if (total !== null && total > 0) {
     facts.push({
       label: PREVIEW_DETAILS.includes.label,
-      value: previewIncludesValue(false, null),
+      value: previewIncludesValue(false, verb === 'Archive' ? olderThanDays : null),
     });
   }
   if (primary.schedule.kind === 'scheduled') {
@@ -257,7 +275,12 @@ export function BatchActionSheet({
               {s.protected ? (
                 <span style={{ color: color.fgMuted }}>Protected</span>
               ) : (
-                <span style={countStyle}>{fmt(s.counts.all)}</span>
+                <span style={countStyle}>
+                  {pickBucketCount(
+                    s.counts,
+                    verb === 'Archive' ? olderThanDays : null,
+                  )?.toLocaleString('en-US') ?? 'Unavailable'}
+                </span>
               )}
             </div>
           ))}
@@ -303,7 +326,7 @@ export function BatchActionSheet({
               action="Archive"
               count={nothingActionable ? 0 : total}
               includesArchived={false}
-              olderThanDays={null}
+              olderThanDays={olderThanDays}
               note={note}
             />
           ) : undefined
@@ -328,7 +351,27 @@ export function BatchActionSheet({
             </>
           )
         }
-      />
+      >
+        {verb === 'Archive' && onWindowChange && (
+          <CleanupPreview
+            olderThanDays={olderThanDays}
+            options={TIME_WINDOW_PRESETS.map(({ days }) => ({
+              days,
+              disabled:
+                loaded !== null &&
+                (pickBucketCount(loaded.totals, days) === undefined ||
+                  loaded.senders.some(
+                    (sender) =>
+                      !sender.protected && pickBucketCount(sender.counts, days) === undefined,
+                  )),
+            }))}
+            onWindowChange={onWindowChange}
+            showWindow
+          >
+            {null}
+          </CleanupPreview>
+        )}
+      </PreviewSheet>
     </div>
   );
 }

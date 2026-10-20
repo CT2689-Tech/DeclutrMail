@@ -444,3 +444,124 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     expect(Object.keys(bodies[0]!)).not.toContain('reach');
   });
 });
+
+describe('Screener Archive Email age', () => {
+  it.each(['click', 'Enter'] as const)(
+    '%s confirms the age shown in the preview and resets on cancel',
+    async (submit) => {
+      const bodies: unknown[] = [];
+      installFetchStub([
+        livePreviewHandler(20, undefined, 5),
+        {
+          method: 'POST',
+          path: '/api/screener/decide',
+          respond: async (req) => {
+            bodies.push(await req.json());
+            return jsonOk({
+              data: {
+                senderId: firstRow.senderId,
+                verb: 'archive',
+                resolved: true,
+                execution: {
+                  kind: 'enqueued',
+                  actionId: '99999999-9999-4999-8999-999999999999',
+                  status: 'queued',
+                  requestedCount: 5,
+                },
+              },
+            });
+          },
+        },
+      ]);
+      renderReady();
+      expandFirstRow();
+      fireEvent.keyDown(window, { key: 'a' });
+      const age = await screen.findByRole('combobox', { name: 'Email age' });
+      expect(age).toHaveValue('all');
+      await waitFor(() =>
+        expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+          '20 emails',
+        ),
+      );
+      fireEvent.change(age, { target: { value: '180' } });
+      expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+        '5 emails will leave your inbox',
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      fireEvent.keyDown(window, { key: 'a' });
+      expect(await screen.findByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+      await waitFor(() =>
+        expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+          '20 emails',
+        ),
+      );
+      fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+        target: { value: '180' },
+      });
+      if (submit === 'Enter') fireEvent.keyDown(window, { key: 'Enter' });
+      else
+        fireEvent.click(screen.getByRole('button', { name: `Archive for ${firstRow.senderName}` }));
+      await waitFor(() => expect(bodies).toHaveLength(1));
+      expect(bodies[0]).toMatchObject({
+        verb: 'archive',
+        senderId: firstRow.senderId,
+        olderThanDays: 180,
+      });
+    },
+  );
+});
+
+describe('Screener Archive age cannot bypass the live count', () => {
+  it.each(['zero', 'missing'] as const)(
+    'blocks click and Enter for a %s age bucket',
+    async (state) => {
+      const posted = vi.fn();
+      const handler = livePreviewHandler(20);
+      installFetchStub([
+        {
+          ...handler,
+          respond: async () => {
+            const body = (await handler.respond().json()) as {
+              data: { counts: Record<string, number> };
+            };
+            if (state === 'zero') body.data.counts.olderThan180d = 0;
+            else delete body.data.counts.olderThan180d;
+            return jsonOk(body);
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/screener/decide',
+          respond: () => {
+            posted();
+            return jsonOk({ data: {} });
+          },
+        },
+      ]);
+      renderReady();
+      expandFirstRow();
+      fireEvent.keyDown(window, { key: 'a' });
+      const age = await screen.findByRole('combobox', { name: 'Email age' });
+      await waitFor(() =>
+        expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+          '20 emails',
+        ),
+      );
+      fireEvent.change(age, { target: { value: '180' } });
+      const confirm = screen.getByRole('button', { name: `Archive for ${firstRow.senderName}` });
+      expect(confirm).toBeDisabled();
+      expect(age).toBeEnabled();
+      fireEvent.click(confirm);
+      fireEvent.keyDown(window, { key: 'Enter' });
+      expect(posted).not.toHaveBeenCalled();
+      if (state === 'zero') {
+        expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+          'No emails match this scope',
+        );
+        expect(screen.getByText(/none are older than 180 days/)).toBeVisible();
+      } else expect(screen.queryByRole('region', { name: 'Archive impact' })).toBeNull();
+      fireEvent.change(age, { target: { value: 'all' } });
+      expect(confirm).toBeEnabled();
+    },
+  );
+});

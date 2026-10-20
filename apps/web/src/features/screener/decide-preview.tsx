@@ -28,7 +28,7 @@ import {
 import { VERB_LABEL } from './verbs';
 
 const { color, font, radius, space, text } = tokens;
-const DELETE_AGE_OPTIONS = [null, 30, 90, 180, 365].map((days) => ({ days }));
+const CLEANUP_AGE_OPTIONS = [null, 30, 90, 180, 365].map((days) => ({ days }));
 
 /**
  * Live impact figure — the sender's current-inbox count from
@@ -82,8 +82,8 @@ export function DecidePreview({
   inboxTotal?: number | null;
   /**
    * QA-delete-20260829-01 — the day-window currently applied to
-   * `inboxCount`, if any (Delete defaults to `DEFAULT_DELETE_WINDOW_DAYS`;
-   * every other verb passes `null` — no window, acts on the whole inbox).
+   * `inboxCount`, if any. Archive starts at Any age; Delete retains
+   * `DEFAULT_DELETE_WINDOW_DAYS`. Other verbs pass null.
    */
   windowDays?: number | null;
   onWindowChange?: ((days: number | null) => void) | undefined;
@@ -268,7 +268,7 @@ export function DecidePreview({
   const scopeCopy =
     scopeNotice === null
       ? null
-      : verb === 'delete' && scopeNotice.kind === 'empty-window'
+      : isCleanupAction && scopeNotice.kind === 'empty-window'
         ? `Your inbox has ${emailsLabel(scopeNotice.inboxTotal)} from this sender, but none are ${cleanupAgeLabel(scopeNotice.olderThanDays).toLowerCase()}.`
         : inboxScopeNoticeCopy(scopeNotice, VERB_LABEL[verb], 'this sender', {
             verbActsBeyondInbox: reachAvailable,
@@ -374,16 +374,16 @@ export function DecidePreview({
 
       {!isCleanupAction && <p style={mutedLine}>{note}</p>}
 
-      {verb === 'delete' && (
+      {isCleanupAction && (
         <div style={{ marginTop: space[3] }}>
           <CleanupPreview
             olderThanDays={windowDays}
-            options={DELETE_AGE_OPTIONS}
+            options={CLEANUP_AGE_OPTIONS}
             showWindow={onWindowChange !== undefined}
             onWindowChange={(days) => onWindowChange?.(days)}
           >
             {/* ADR-0028 reach — unchecked stays inbox-only. */}
-            {liveInboxNumber(inboxCount) != null && (
+            {verb === 'delete' && liveInboxNumber(inboxCount) != null && (
               <ActionReachControl
                 value={activeReach}
                 inboxCount={liveInboxNumber(inboxCount)}

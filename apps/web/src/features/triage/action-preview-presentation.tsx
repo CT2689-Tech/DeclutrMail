@@ -31,6 +31,7 @@ const { color } = tokens;
 export type PreviewCount = number | 'loading' | 'unavailable';
 
 export interface PreviewFactsInput {
+  olderThanDays?: number | null;
   verb: ActionVerb;
   row: TriageDecisionRow;
   /**
@@ -112,6 +113,7 @@ export function buildPreviewFacts({
   inboxCount,
   wakeAt = null,
   reach = 'inbox_only',
+  olderThanDays = null,
 }: PreviewFactsInput): PreviewFacts {
   const subject = row.senderName;
   const actionVerb = verb.toLowerCase() as 'keep' | 'archive' | 'unsubscribe' | 'later' | 'delete';
@@ -154,7 +156,9 @@ export function buildPreviewFacts({
   const nothingToMove = movesCurrentInbox && liveCount === 0;
 
   const title = nothingToMove
-    ? `Nothing in your inbox${allMail ? ' or archive' : ''} from ${subject}`
+    ? verb === 'Archive' && olderThanDays !== null
+      ? `No emails older than ${olderThanDays === 365 ? '1 year' : `${olderThanDays} days`} from ${subject}`
+      : `Nothing in your inbox${allMail ? ' or archive' : ''} from ${subject}`
     : verb === 'Archive'
       ? liveCount === null
         ? `Archive email from ${subject}?`
@@ -220,7 +224,7 @@ export function buildPreviewFacts({
   if (counts && liveCount !== null) {
     disclosures.push({
       label: PREVIEW_DETAILS.includes.label,
-      value: previewIncludesValue(allMail, null),
+      value: previewIncludesValue(allMail, verb === 'Archive' ? olderThanDays : null),
     });
   }
   // "from", a floor rather than a delivery time — see `presentationSchedule`.

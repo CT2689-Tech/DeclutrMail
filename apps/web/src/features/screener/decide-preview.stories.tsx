@@ -1,12 +1,13 @@
 import { useState, type ComponentProps } from 'react';
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
+import { cleanupAgeLabel } from '@/components/cleanup-preview';
 import { Button } from '@declutrmail/shared';
 import type { ActionReach } from '@declutrmail/shared/contracts';
 import { DEFAULT_DELETE_WINDOW_DAYS } from '@declutrmail/shared/actions';
 import { SCREENER_QUEUE } from './data';
 import { DecidePreview } from './decide-preview';
 
-const inbox = { all: 128, 30: 120, 90: 104, 180: 84, 365: 24 };
+const inbox = { all: 128, 30: 120, 90: 104, 180: 84, 365: 0 };
 const archived = { all: 18, 30: 18, 90: 16, 180: 12, 365: 6 };
 const sampleRow = {
   ...SCREENER_QUEUE[0]!,
@@ -37,17 +38,17 @@ function CleanupStory(args: ComponentProps<typeof DecidePreview>) {
         <DecidePreview
           {...args}
           inboxCount={typeof args.inboxCount === 'number' ? count : args.inboxCount}
-          inboxTotal={isDelete ? inbox.all : count}
+          inboxTotal={args.inboxCount === 0 ? 0 : inbox.all}
           allMailCount={typeof args.inboxCount === 'number' ? allMailCount : null}
           allMailTotal={inbox.all + archived.all}
           windowDays={days}
           reach={reach}
-          onWindowChange={isDelete ? setDays : undefined}
+          onWindowChange={setDays}
           onReachChange={setReach}
           onCancel={() => setOpen(false)}
           onConfirm={() => {
             setResult(
-              `Sample confirmation: ${reach === 'all_mail' ? allMailCount : count} emails, ${reach}, ${days ?? 'any age'}.`,
+              `Sample confirmation: ${reach === 'all_mail' ? allMailCount : count} emails, ${reach}, ${cleanupAgeLabel(days).toLowerCase()}.`,
             );
             setOpen(false);
           }}

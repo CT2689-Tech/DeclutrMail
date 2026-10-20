@@ -7,7 +7,7 @@ import { DecidePreview } from './decide-preview';
 const row = SCREENER_QUEUE[0]!;
 
 describe('DecidePreview — live-preview confirm gate', () => {
-  it('keeps Archive inbox-only and any age without adding Delete scope or age controls', () => {
+  it('keeps Archive inbox-only and any age with an editable age and no Delete scope', () => {
     const onConfirm = vi.fn();
     render(
       <DecidePreview
@@ -28,7 +28,7 @@ describe('DecidePreview — live-preview confirm gate', () => {
     expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
       '128 emails will leave your inbox and stay in Gmail.Inbox only · Any age',
     );
-    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
     expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
     expect(screen.queryByText(/Approximate cutoff/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: `Archive for ${row.senderName}` }));

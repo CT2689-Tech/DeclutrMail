@@ -3415,3 +3415,260 @@ describe('TriageScreen — a held row stays out of every batch', () => {
     expect(bulkBodies[0]!.senderIds).toHaveLength(archiveRows.length - 1);
   });
 });
+
+describe('Archive Email age — preview and dispatch share one scope', () => {
+  beforeEach(() => {
+    resetTriageStore();
+    h.mailbox = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () =>
+          jsonOk({
+            data: {
+              ...PREVIEW_BODY,
+              counts: { ...PREVIEW_BODY.counts, olderThan365d: 0 },
+              recentMessages: {
+                ...PREVIEW_BODY.recentMessages,
+                all: [{ subject: 'New inbox message', date: '2026-10-01T12:00:00Z' }],
+                olderThan30d: [{ subject: 'Older matching message', date: '2025-01-01T12:00:00Z' }],
+              },
+            },
+          }),
+      },
+    ]);
+  });
+  afterEach(resetFetchStub);
+
+  it.each(['sheet-click', 'sheet-keyboard', 'inline-click', 'inline-shortcut'] as const)(
+    '%s sends the age shown in its count, sample and Gmail search',
+    async (path) => {
+      const bodies: unknown[] = [];
+      addFetchHandlers([
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: async (req) => {
+            bodies.push(await req.json());
+            return jsonOk({
+              data: {
+                actionId: ACTION_ID,
+                compositeId: ACTION_ID,
+                secondaryId: null,
+                status: 'queued',
+                primaryCount: 30,
+                secondaryCount: null,
+              },
+            });
+          },
+        },
+      ]);
+      if (path.startsWith('inline'))
+        useTriageStore.getState().setRememberPreference('Archive', true);
+      renderScreen(createTestQueryClient());
+      expandRow(GROUPON.senderName);
+      fireEvent.keyDown(window, { key: 'a' });
+      const age = await screen.findByRole('combobox', { name: 'Email age' });
+      expect(age).toHaveValue('all');
+      await waitFor(() =>
+        expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+          '47 emails',
+        ),
+      );
+      fireEvent.change(age, { target: { value: '30' } });
+      expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+        '30 emails will leave your inbox',
+      );
+      expect(screen.getByText(/Approximate cutoff/)).toBeVisible();
+      fireEvent.click(screen.getByText('Details').closest('summary')!);
+      expect(screen.getByText('Older matching message')).toBeVisible();
+      expect(screen.queryByText('New inbox message')).toBeNull();
+      expect(screen.getByRole('link', { name: /Check in Gmail/ }).getAttribute('href')).toContain(
+        'older_than%3A30d',
+      );
+      if (path === 'sheet-keyboard') fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
+      else if (path === 'inline-shortcut') fireEvent.keyDown(window, { key: 'a' });
+      else fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+      await waitFor(() => expect(bodies).toHaveLength(1));
+      expect(bodies[0]).toMatchObject({
+        selector: { type: 'sender', senderId: GROUPON.senderId },
+        primary: { type: 'archive', olderThanDays: 30 },
+      });
+    },
+  );
+
+  it('keeps a zero-match age editable, blocks every confirm, and resets on cancel and a new sender', async () => {
+    const posted = vi.fn();
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => {
+          posted();
+          return jsonServerError();
+        },
+      },
+    ]);
+    renderScreen(createTestQueryClient());
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    const age = await screen.findByRole('combobox', { name: 'Email age' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Archive' })).toBeEnabled());
+    fireEvent.change(age, { target: { value: '365' } });
+    expect(age).toBeEnabled();
+    expect(screen.getByRole('heading', { name: /No emails older than 1 year/ })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(posted).not.toHaveBeenCalled();
+    fireEvent.change(age, { target: { value: 'all' } });
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeEnabled();
+    fireEvent.change(age, { target: { value: '90' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(await screen.findByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expandRow(LINKEDIN.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(await screen.findByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+  });
+
+  it('uses the same selected age for the group total, sender breakdown and bulk request', async () => {
+    const rows = TRIAGE_QUEUE.filter((r) => r.verdict === 'archive').slice(0, 3);
+    const bodies: unknown[] = [];
+    const counts = {
+      all: 30,
+      olderThan30d: 20,
+      olderThan90d: 10,
+      olderThan180d: 3,
+      olderThan365d: 0,
+    };
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions/preview/bulk',
+        respond: () =>
+          jsonOk({
+            data: {
+              senders: rows.map((r) => ({
+                senderId: r.senderId,
+                name: r.senderName,
+                counts,
+                protected: false,
+              })),
+              totals: {
+                all: 90,
+                olderThan30d: 60,
+                olderThan90d: 30,
+                olderThan180d: 9,
+                olderThan365d: 0,
+              },
+              protectedCount: 0,
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          bodies.push(await req.json());
+          return jsonOk({
+            data: {
+              batchId: ACTION_ID,
+              status: 'queued',
+              senderCount: 3,
+              requestedTotal: 60,
+              wakeAt: null,
+              skipped: [],
+            },
+          });
+        },
+      },
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <TriageScreen state={{ kind: 'ready', rows, stats: TRIAGE_SESSION_STATS }} />
+      </QueryWrapper>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Archive all 3 recommended senders/ }));
+    const age = await screen.findByRole('combobox', { name: 'Email age' });
+    expect(age).toHaveValue('all');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Archive' })).toBeEnabled());
+    fireEvent.change(age, { target: { value: '365' } });
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(bodies).toHaveLength(0);
+    fireEvent.change(age, { target: { value: '30' } });
+    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+      '60 emails will leave your inbox',
+    );
+    fireEvent.click(screen.getByText('Details').closest('summary')!);
+    const breakdown = screen.getByRole('list', { name: 'Current per-sender matches' });
+    expect(within(breakdown).getAllByText('20')).toHaveLength(3);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({
+      selector: { type: 'senders', senderIds: rows.map((r) => r.senderId) },
+      primary: { type: 'archive', olderThanDays: 30 },
+    });
+  });
+  it('hides stale age counts and examples during refetch, then blocks a missing bucket', async () => {
+    const client = createTestQueryClient();
+    const posted = vi.fn();
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => {
+          posted();
+          return jsonServerError();
+        },
+      },
+    ]);
+    renderScreen(client);
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    const age = await screen.findByRole('combobox', { name: 'Email age' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Archive' })).toBeEnabled());
+    fireEvent.change(age, { target: { value: '30' } });
+    fireEvent.click(screen.getByText('Details').closest('summary')!);
+    expect(screen.getByText('Older matching message')).toBeVisible();
+    let release!: (value: Response) => void;
+    const pending = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    installFetchStub([
+      { method: 'GET', path: '/api/actions/preview', respond: () => pending },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => {
+          posted();
+          return jsonServerError();
+        },
+      },
+    ]);
+    let refresh!: Promise<void>;
+    act(() => {
+      refresh = client.invalidateQueries({ queryKey: ['composite-preview'] });
+    });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled());
+    expect(screen.queryByRole('region', { name: 'Archive impact' })).toBeNull();
+    expect(screen.queryByText('Older matching message')).toBeNull();
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(posted).not.toHaveBeenCalled();
+    await act(async () => {
+      release(jsonOk({ data: { ...PREVIEW_BODY, counts: { all: 47 } } }));
+      await refresh;
+    });
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
+    expect(screen.queryByRole('region', { name: 'Archive impact' })).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByRole('option', { name: /Older than 30 days/ })).toBeDisabled(),
+    );
+    fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
+    expect(posted).not.toHaveBeenCalled();
+    fireEvent.change(age, { target: { value: 'all' } });
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeEnabled();
+  });
+});

@@ -3,7 +3,11 @@
 import { Button, Disclosure, SheetFactList, tokens } from '@declutrmail/shared';
 import { isPluralCopy, pluralCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import type { ReactNode } from 'react';
-import { CleanupImpact } from '@/components/cleanup-preview';
+import {
+  CleanupImpact,
+  CleanupPreview,
+  type CleanupAgeControl,
+} from '@/components/cleanup-preview';
 
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
@@ -26,6 +30,7 @@ const { color, radius, space, text } = tokens;
  * row or the focus card.
  */
 export interface InlinePreview {
+  ageControl?: CleanupAgeControl | undefined;
   verb: ActionVerb;
   archiveHistoric: boolean;
   /** Skip-sheet unsubscribe choice. Archive is the default when the inbox count is above zero. */
@@ -126,6 +131,7 @@ export function InlinePreviewBlock({
       ? (preview.backlogMode ?? (preview.archiveHistoric ? 'archive' : 'unsub_only'))
       : 'unsub_only';
   const facts = buildPreviewFacts({
+    olderThanDays: preview.verb === 'Archive' ? (preview.ageControl?.olderThanDays ?? null) : null,
     verb: preview.verb,
     row,
     archiveHistoric: preview.archiveHistoric || backlogMode === 'archive',
@@ -238,6 +244,16 @@ export function InlinePreviewBlock({
       preview.inboxCount > 0 ? (
         <MeterPreviewLine requested={preview.inboxCount} summary={cleanupSummary.data} />
       ) : null}
+      {preview.verb === 'Archive' && preview.ageControl && (
+        <CleanupPreview
+          olderThanDays={preview.ageControl.olderThanDays}
+          options={preview.ageControl.options}
+          onWindowChange={preview.ageControl.onChange}
+          showWindow
+        >
+          {null}
+        </CleanupPreview>
+      )}
       {hasDetails && (
         <Disclosure style={{ marginTop: space[2] }}>
           <SheetFactList facts={facts.disclosures} />
@@ -269,7 +285,7 @@ export function InlinePreviewBlock({
             action="Archive"
             count={countKnown}
             includesArchived={false}
-            olderThanDays={null}
+            olderThanDays={preview.ageControl?.olderThanDays ?? null}
             note={facts.note ?? ''}
           />
         </div>

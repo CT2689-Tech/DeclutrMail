@@ -65,6 +65,7 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
     expect(onConfirm).toHaveBeenCalledWith({
       archiveHistoric: false,
+      olderThanDays: null,
       wakeAt: null,
       rememberPreference: false,
     });

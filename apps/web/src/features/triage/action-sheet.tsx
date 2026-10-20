@@ -10,7 +10,7 @@ import {
   unsubscribeTitle,
 } from '@/features/senders/unsubscribe-backlog/preview-copy';
 import { ActionReachControl, DELETE_ARCHIVED_HINT } from '@/components/action-scope-controls';
-import { CleanupImpact } from '@/components/cleanup-preview';
+import { CleanupImpact, CleanupPreview } from '@/components/cleanup-preview';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
@@ -34,6 +34,7 @@ import type { SheetableVerb } from './store';
 const { color, font, radius, shadow, space, text } = tokens;
 
 export interface ConfirmDetails {
+  olderThanDays?: number | null;
   archiveHistoric: boolean;
   /** Unsubscribe backlog choice. Archive is the default when the inbox count is above zero. */
   backlogMode?: 'unsub_only' | 'archive' | 'delete';
@@ -131,7 +132,7 @@ export function ActionSheet({
   // The unsubscribe request is free. While the email meter is off, the
   // mail move still spends one cleanup action and the existing unit line
   // stays. Archive and Later ignore a separate historic toggle — both
-  // verbs already act on every inbox message from the sender.
+  // primaries already own their inbox scope (including Archive’s chosen age).
   const cleanupSummary = useCleanupSummary();
   const [backlogMode, setBacklogMode] = useState<'unsub_only' | 'archive' | 'delete'>('unsub_only');
   const [rememberPreference, setRememberPreference] = useState(false);
@@ -154,6 +155,8 @@ export function ActionSheet({
   const effectiveMode =
     actionKey !== null && chosenActionKey === actionKey ? backlogMode : defaultBacklog;
   const effectiveArchiveHistoric = effectiveMode === 'archive';
+  const ageControl = verb === 'Archive' ? detail?.ageControl : undefined;
+  const olderThanDays = ageControl?.olderThanDays ?? null;
 
   // Archive/Later/Delete always move inbox mail. Unsubscribe only does when the
   // user keeps the backlog option on. Any such action requires the live
@@ -218,6 +221,7 @@ export function ActionSheet({
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
         e.preventDefault();
         onConfirm({
+          ...(verb === 'Archive' ? { olderThanDays } : {}),
           archiveHistoric: effectiveArchiveHistoric,
           ...(verb === 'Unsubscribe' ? { backlogMode: effectiveMode } : {}),
           ...((verb === 'Delete' || (verb === 'Unsubscribe' && effectiveMode === 'delete')) &&
@@ -241,11 +245,13 @@ export function ActionSheet({
     onConfirm,
     confirmDisabled,
     reach,
+    olderThanDays,
   ]);
 
   if (!open || !row) return null;
 
   const facts = buildPreviewFacts({
+    olderThanDays,
     verb,
     row,
     archiveHistoric: effectiveArchiveHistoric,
@@ -270,6 +276,7 @@ export function ActionSheet({
     : null;
   const confirm = () =>
     onConfirm({
+      ...(verb === 'Archive' ? { olderThanDays } : {}),
       archiveHistoric: effectiveArchiveHistoric,
       ...(verb === 'Unsubscribe' ? { backlogMode: effectiveMode } : {}),
       ...((verb === 'Delete' || (verb === 'Unsubscribe' && effectiveMode === 'delete')) &&
@@ -346,7 +353,12 @@ export function ActionSheet({
     WS5_COPY['f1.preview.backlog.loading']
   ) : null;
 
-  const hasControls = showReach || verb === 'Later' || verb === 'Unsubscribe' || isProtectedRow;
+  const hasControls =
+    ageControl !== undefined ||
+    showReach ||
+    verb === 'Later' ||
+    verb === 'Unsubscribe' ||
+    isProtectedRow;
 
   return (
     <div
@@ -406,7 +418,7 @@ export function ActionSheet({
               action={verb === 'Archive' ? 'Archive' : 'Delete'}
               count={archivedUncounted || previewSenderGone ? null : countKnown}
               includesArchived={verb === 'Delete' && reach === 'all_mail'}
-              olderThanDays={null}
+              olderThanDays={olderThanDays}
               note={
                 facts.nothingToMove
                   ? ''
@@ -474,6 +486,16 @@ export function ActionSheet({
       >
         {hasControls ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: space[3] }}>
+            {ageControl && (
+              <CleanupPreview
+                olderThanDays={olderThanDays}
+                options={ageControl.options}
+                onWindowChange={ageControl.onChange}
+                showWindow
+              >
+                {null}
+              </CleanupPreview>
+            )}
             {verb === 'Later' && (
               <label
                 style={{

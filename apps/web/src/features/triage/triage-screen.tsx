@@ -1,5 +1,7 @@
 'use client';
 
+import { pickBucketCount, TIME_WINDOW_PRESETS } from '@/features/senders/action-window';
+
 import { useActionPreviewAnalytics } from '@/lib/use-action-preview-analytics';
 
 import {
@@ -403,6 +405,7 @@ export function TriageScreen({
   const [pendingBatch, setPendingBatch] = useState<{
     verb: BatchVerb;
     batch: DomainBatch;
+    olderThanDays?: number | null;
     wakeAt: string | null;
   } | null>(null);
   const [batchAction, setBatchAction] = useState<BatchHandle | null>(null);
@@ -611,6 +614,8 @@ export function TriageScreen({
     (pendingAction?.verb === 'Delete' || pendingAction?.verb === 'Unsubscribe')
       ? deleteReach
       : 'inbox_only';
+  const archiveAge =
+    pendingAction?.verb === 'Archive' ? (pendingAction.olderThanDays ?? null) : null;
   // The ONE count the preview arms — at the SELECTED reach.
   const previewInboxCount: PreviewCount = compositePreview.isError
     ? 'unavailable'
@@ -618,7 +623,7 @@ export function TriageScreen({
       ? 'loading'
       : activeReach === 'all_mail'
         ? (compositePreview.data.allMail?.counts.all ?? 'unavailable')
-        : compositePreview.data.counts.all;
+        : (pickBucketCount(compositePreview.data.counts, archiveAge) ?? 'unavailable');
   /**
    * Verification detail for the D226 preview — parity with the senders
    * confirm modal (founder review 2026-08-27).
@@ -637,7 +642,20 @@ export function TriageScreen({
 
   const previewDetail: ActionPreviewDetail | undefined = (() => {
     const data = compositePreview.data;
-    if (data == null || pendingRow == null) return undefined;
+    const ageControl =
+      pendingAction?.verb === 'Archive'
+        ? {
+            olderThanDays: archiveAge,
+            options: TIME_WINDOW_PRESETS.map(({ days }) => ({
+              days,
+              disabled: data != null && pickBucketCount(data.counts, days) === undefined,
+            })),
+            onChange: useTriageStore.getState().setPendingOlderThanDays,
+          }
+        : undefined;
+    if (pendingRow == null) return undefined;
+    if (data == null || (ageControl && (compositePreview.isFetching || compositePreview.isError)))
+      return ageControl ? { ageControl } : undefined;
     if (activeReach === 'all_mail' && data.allMail == null)
       return {
         reachControl: {
@@ -648,21 +666,35 @@ export function TriageScreen({
           onChange: setDeleteReach,
         },
       };
-    // Triage acts on every message from the sender at the selected
-    // reach, so the Gmail search mirrors that: no window, and `in:inbox`
-    // dropped at the widened reach. Approximate by construction — see
+    // Match the selected Archive age and reach in the Gmail handoff.
+    // Delete can widen reach; Archive stays in the inbox. Approximate — see
     // `buildActionScopeSearchLink`.
     const atAllMail = activeReach === 'all_mail' && data.allMail != null;
-    const armedTotal = atAllMail ? data.allMail!.counts.all : data.counts.all;
+    const armedTotal = atAllMail
+      ? data.allMail!.counts.all
+      : pickBucketCount(data.counts, archiveAge);
+    if (armedTotal === undefined) return { ageControl };
     const gmailScopeSearch = activeEmail
       ? GmailOpenLinkService.buildActionScopeSearchLink({
           mailboxEmail: activeEmail,
           from: pendingRow.senderEmail,
-          olderThanDays: null,
+          olderThanDays: archiveAge,
           inboxOnly: !atAllMail,
         })
       : null;
-    const sampleRows = ((atAllMail ? data.allMail!.recentMessages : data.recentMessages)?.all ?? [])
+    const sampleBucket =
+      archiveAge === null
+        ? 'all'
+        : archiveAge === 30
+          ? 'olderThan30d'
+          : archiveAge === 90
+            ? 'olderThan90d'
+            : archiveAge === 180
+              ? 'olderThan180d'
+              : 'olderThan365d';
+    const sampleRows = (
+      (atAllMail ? data.allMail!.recentMessages : data.recentMessages)?.[sampleBucket] ?? []
+    )
       .slice(0, 5)
       // Never advertise more rows than the count above it — the senders
       // panel once read "5 of 3" for exactly this reason.
@@ -686,6 +718,7 @@ export function TriageScreen({
       receivedTotal: null,
     });
     return {
+      ageControl,
       ...(mailLocationLine === null ? {} : { mailLocationLine }),
       ...(sampleRows.length > 0 ? { matchSample: { rows: sampleRows, total: armedTotal } } : {}),
       ...(gmailScopeSearch === null ? {} : { verifyInGmailUrl: gmailScopeSearch }),
@@ -1004,6 +1037,14 @@ export function TriageScreen({
         return false;
       }
 
+      if (
+        verb === 'Archive' &&
+        (pendingAction?.rowId !== row.id ||
+          typeof previewInboxCount !== 'number' ||
+          previewInboxCount === 0 ||
+          (details?.olderThanDays ?? null) !== (pendingAction.olderThanDays ?? null))
+      )
+        return false;
       clearPending();
 
       // Keep — policy/verdict-only (D40: applies immediately). Settles
@@ -1155,7 +1196,7 @@ export function TriageScreen({
           senderId: row.senderId,
           primary: {
             type: primaryType,
-            olderThanDays: null,
+            olderThanDays: primaryType === 'archive' ? (details?.olderThanDays ?? null) : null,
             ...(primaryType === 'later' && details?.wakeAt ? { wakeAt: details.wakeAt } : {}),
             // ADR-0028 — only a Delete whose preview OFFERED the choice
             // may carry it, and only the non-default value travels.
@@ -1240,6 +1281,7 @@ export function TriageScreen({
       return true;
     },
     [
+      previewInboxCount,
       busyRowIds,
       activeAction,
       intentRowId,
@@ -1350,6 +1392,7 @@ export function TriageScreen({
             ...(backlogMode ? { backlogMode } : {}),
             rememberPreference: true,
             wakeAt: pendingAction.wakeAt,
+            ...(verb === 'Archive' ? { olderThanDays: pendingAction.olderThanDays ?? null } : {}),
           },
           'inline',
         );
@@ -1417,6 +1460,24 @@ export function TriageScreen({
   const onBatchConfirm = useCallback(() => {
     if (pendingBatch == null) return;
     const { verb, batch, wakeAt } = pendingBatch;
+    const selectedCount = pickBucketCount(
+      bulkPreview.data?.totals,
+      verb === 'Archive' ? (pendingBatch.olderThanDays ?? null) : null,
+    );
+    if (
+      bulkPreview.isFetching ||
+      bulkPreview.isError ||
+      selectedCount == null ||
+      selectedCount === 0 ||
+      !bulkPreview.data?.senders.some((sender) => !sender.protected) ||
+      (verb === 'Archive' &&
+        bulkPreview.data.senders.some(
+          (sender) =>
+            !sender.protected &&
+            pickBucketCount(sender.counts, pendingBatch.olderThanDays ?? null) === undefined,
+        ))
+    )
+      return;
     const eligible = batch.eligibleRows;
     setPendingBatch(null);
     // A member held since the sheet opened may still be running; sending it
@@ -1431,7 +1492,7 @@ export function TriageScreen({
         senderIds: eligible.map((r) => r.senderId),
         primary: {
           type: verb === 'Archive' ? 'archive' : 'later',
-          olderThanDays: null,
+          olderThanDays: verb === 'Archive' ? (pendingBatch.olderThanDays ?? null) : null,
           ...(verb === 'Later' && wakeAt ? { wakeAt } : {}),
         },
       },
@@ -1502,6 +1563,8 @@ export function TriageScreen({
     pendingBatch,
     enqueueBulk,
     bulkPreview.data,
+    bulkPreview.isFetching,
+    bulkPreview.isError,
     actionMailboxId,
     journey,
     qc,
@@ -1819,6 +1882,10 @@ export function TriageScreen({
             : bulkPreview.isFetching
               ? 'loading'
               : (bulkPreview.data ?? 'loading')
+        }
+        olderThanDays={pendingBatch?.olderThanDays ?? null}
+        onWindowChange={(olderThanDays) =>
+          setPendingBatch((current) => (current ? { ...current, olderThanDays } : current))
         }
         wakeAt={pendingBatch?.wakeAt ?? null}
         mailboxEmail={activeEmail}

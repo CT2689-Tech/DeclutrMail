@@ -4,6 +4,12 @@ import { useId, type ReactNode } from 'react';
 import { useNow } from '@/lib/use-now';
 import styles from './cleanup-preview.module.css';
 
+export interface CleanupAgeControl {
+  olderThanDays: number | null;
+  options: readonly { days: number | null; disabled?: boolean }[];
+  onChange: (days: number | null) => void;
+}
+
 /** Presentation only. The existing confirmation owns scope, counts and submission. */
 export function CleanupPreview({
   olderThanDays,
