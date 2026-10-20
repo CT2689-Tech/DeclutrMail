@@ -2,6 +2,7 @@
 
 import { useId, type ReactNode } from 'react';
 import { useNow } from '@/lib/use-now';
+import { CleanupSelect } from './cleanup-select';
 import styles from './cleanup-preview.module.css';
 
 export interface CleanupAgeControl {
@@ -34,10 +35,9 @@ export function CleanupPreview({
       {showWindow && (
         <label className={styles.age}>
           <span>Email age</span>
-          <select
+          <CleanupSelect
             aria-label="Email age"
             aria-describedby={olderThanDays === null || cutoff !== null ? cutoffId : undefined}
-            className="dm-field"
             value={olderThanDays ?? 'all'}
             onChange={(event) =>
               onWindowChange(
@@ -55,7 +55,7 @@ export function CleanupPreview({
                 {option.disabled ? ' (unavailable)' : ''}
               </option>
             ))}
-          </select>
+          </CleanupSelect>
           {olderThanDays === null ? (
             <small id={cutoffId}>No date limit.</small>
           ) : (

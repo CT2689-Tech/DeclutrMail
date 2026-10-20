@@ -1,0 +1,21 @@
+.root {
+  position: relative;
+  display: inline-grid;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+.field {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  min-width: 0;
+}
+.chevron {
+  position: absolute;
+  inset-inline-end: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--dm-fg-muted);
+  pointer-events: none;
+}
