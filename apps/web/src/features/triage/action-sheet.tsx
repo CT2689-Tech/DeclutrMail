@@ -153,11 +153,10 @@ export function ActionSheet({
   // Cmd/Ctrl-Enter could observe the previous action's `false` toggle.
   const countKnown = typeof inboxCount === 'number' ? inboxCount : null;
   const inboxOptionCount =
-    detail?.inboxTotal !== undefined
-      ? detail.inboxTotal
-      : countKnown === null
-        ? null
-        : (detail?.reachControl?.inboxCount ?? countKnown);
+    detail?.inboxTotal ??
+    (countKnown === null
+      ? (row?.inboxCount ?? null)
+      : (detail?.reachControl?.inboxCount ?? countKnown));
   const defaultBacklog =
     verb === 'Unsubscribe' &&
     row?.protectionReason == null &&
