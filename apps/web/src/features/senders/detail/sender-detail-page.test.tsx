@@ -902,7 +902,7 @@ describe('SenderDetailRoute', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
       const dialog = await screen.findByRole('dialog');
       const confirm = await within(dialog).findByRole('button', {
-        name: /^Unsubscribe(?: & archive)?$/,
+        name: /^Unsubscribe(?: \+ Archive)?$/,
       });
       await waitFor(() => expect(confirm).toBeEnabled());
       Object.assign(current, { policyType: 'unsubscribe', unsubStatus: 'endpoint_accepted' });
@@ -958,7 +958,7 @@ describe('SenderDetailRoute', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
       const dialog = await screen.findByRole('dialog');
       const confirm = await within(dialog).findByRole('button', {
-        name: /^Unsubscribe(?: & archive)?$/,
+        name: /^Unsubscribe(?: \+ Archive)?$/,
       });
       await waitFor(() => expect(confirm).toBeEnabled());
       const readsBeforeConfirm = detailReads;
@@ -1026,7 +1026,7 @@ describe('SenderDetailRoute', () => {
       const view = renderDetail('linkedin', undefined, layout);
       fireEvent.click(await screen.findByRole('button', { name: /^Unsubscribe(?: \(U\))?$/ }));
       const dialog = await screen.findByRole('dialog');
-      const confirm = within(dialog).getByRole('button', { name: /^Unsubscribe(?: & archive)?$/ });
+      const confirm = within(dialog).getByRole('button', { name: /^Unsubscribe(?: \+ Archive)?$/ });
       await waitFor(() => expect(confirm).toBeEnabled());
       hold = true;
       await lastClient.invalidateQueries({
@@ -1096,7 +1096,7 @@ describe('SenderDetailRoute', () => {
     renderDetail();
     fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
     const dialog = await screen.findByRole('dialog');
-    const confirm = within(dialog).getByRole('button', { name: /^Unsubscribe(?: & archive)?$/ });
+    const confirm = within(dialog).getByRole('button', { name: /^Unsubscribe(?: \+ Archive)?$/ });
     await waitFor(() => expect(confirm).toBeEnabled());
     await lastClient.invalidateQueries({
       queryKey: sendersKeys.detail('linkedin'),
@@ -1150,7 +1150,7 @@ describe('SenderDetailRoute', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
     const dialog = await screen.findByRole('dialog');
     const confirm = await within(dialog).findByRole('button', {
-      name: /^Unsubscribe(?: & archive)?$/,
+      name: /^Unsubscribe(?: \+ Archive)?$/,
     });
     await waitFor(() => expect(confirm).toBeEnabled());
     failDetail = true;

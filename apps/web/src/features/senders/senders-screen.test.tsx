@@ -3611,7 +3611,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(dialog).toHaveTextContent('1 sender with a recorded unsubscribe request is excluded.');
     expect(dialog).not.toHaveTextContent(/person|people/i);
     const confirm = await within(dialog).findByRole('button', {
-      name: /^Unsubscribe(?: & archive)?$/,
+      name: /^Unsubscribe(?: \+ Archive)?$/,
     });
     await waitFor(() => expect(confirm).toBeEnabled());
     fireEvent.click(confirm);
@@ -3656,7 +3656,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       fireEvent.keyDown(document.body, { key: 'u' });
       const dialog = await screen.findByRole('dialog');
       const confirm = await within(dialog).findByRole('button', {
-        name: /^Unsubscribe(?: & archive)?$/,
+        name: /^Unsubscribe(?: \+ Archive)?$/,
       });
       await waitFor(() => expect(confirm).toBeEnabled());
       act(() => {
@@ -3907,7 +3907,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       fireEvent.keyDown(document.body, { key: 'u' });
       const dialog = await screen.findByRole('dialog');
       const confirm = await within(dialog).findByRole('button', {
-        name: /^Unsubscribe(?: & archive)?$/,
+        name: /^Unsubscribe(?: \+ Archive)?$/,
       });
       await waitFor(() => expect(confirm).toBeEnabled());
       fireEvent.click(confirm);
