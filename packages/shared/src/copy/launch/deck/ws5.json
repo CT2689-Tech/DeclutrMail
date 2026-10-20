@@ -4,12 +4,10 @@
     "one": "+ Archive",
     "other": "+ Archive"
   },
-  "f1.segment.archive.aria": "Unsubscribe and archive",
   "f1.segment.delete": {
     "one": "+ Delete",
     "other": "+ Delete"
   },
-  "f1.segment.delete.aria": "Unsubscribe and delete",
   "f1.segment.archive.loading": "+ Archive",
   "f1.segment.archive.loading.aria": "Unsubscribe and archive, counting emails",
   "f1.segment.delete.loading": "+ Delete",
@@ -305,7 +303,6 @@
   "preview.age.cutoff": "Emails from before about {date}.",
   "preview.age.rangeUnavailable": "Can’t preview emails from this far back. Choose a different How far back.",
   "preview.later.returnLabel": "Return to inbox",
-  "preview.later.returnTimeLabel": "When to return to your inbox",
   "preview.later.returnInvalid": "Choose a future return time.",
   "preview.impact.archive": {
     "one": "1 email will leave your inbox and stay in Gmail.",

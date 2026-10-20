@@ -99,9 +99,9 @@ describe('InboxReportPanel', () => {
       </QueryWrapper>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
-    const archive = screen.getByRole('radio', { name: 'Unsubscribe and archive' });
+    const archive = screen.getByRole('radio', { name: '+ Archive' });
     expect(archive).toBeDisabled();
-    expect(screen.getByRole('radio', { name: 'Unsubscribe and delete' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: '+ Delete' })).toBeDisabled();
     expect(screen.getByRole('dialog')).not.toHaveTextContent('archive 10 emails');
     expect(screen.getByRole('dialog')).not.toHaveTextContent('Archive 0');
     expect(screen.getByRole('dialog')).toHaveTextContent(WS5_COPY['f1.preview.backlog.loading']);
@@ -140,11 +140,9 @@ describe('InboxReportPanel', () => {
         },
       }),
     );
-    await waitFor(() =>
-      expect(screen.getByRole('radio', { name: 'Unsubscribe and archive' })).toBeEnabled(),
-    );
+    await waitFor(() => expect(screen.getByRole('radio', { name: '+ Archive' })).toBeEnabled());
     expect(screen.getByRole('dialog')).toHaveTextContent('Unsubscribe from 2 senders?');
-    expect(screen.getByRole('radio', { name: 'Unsubscribe and archive' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: '+ Archive' })).toBeChecked();
   });
 
   it('uses the calm fallback without a fix, a share card, or a celebration', () => {

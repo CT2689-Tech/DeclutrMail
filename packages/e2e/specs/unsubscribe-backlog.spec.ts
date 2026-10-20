@@ -253,7 +253,7 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
   const sendersSheet = confirmSheet(page);
   await expect(sendersSheet).toBeVisible();
   await expect(sendersSheet).toContainText('Whether their email stops is up to the sender.');
-  await sendersSheet.getByRole('radio', { name: 'Unsubscribe and delete' }).click();
+  await sendersSheet.getByRole('radio', { name: '+ Delete' }).click();
   const age = sendersSheet.getByRole('combobox', { name: 'How far back', exact: true });
   await expect(age).toHaveValue('180');
   await expect(sendersSheet.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
@@ -375,7 +375,7 @@ test('a spent monthly allowance refuses the mail move before any unsubscribe', a
     await card.getByRole('button', { name: 'More actions' }).click();
     await card.getByRole('menuitem', { name: 'Unsubscribe', exact: true }).click();
     const sheet = confirmSheet(page);
-    const archive = sheet.getByRole('radio', { name: 'Unsubscribe and archive', exact: true });
+    const archive = sheet.getByRole('radio', { name: '+ Archive', exact: true });
     await expect(archive).toBeEnabled();
     await archive.click();
     const confirm = sheet.getByRole('button', { name: 'Unsubscribe + Archive' });

@@ -410,7 +410,7 @@ export function UnsubscribeBacklogDialog({
     ) : failed ? (
       <>
         <span>
-          {!single && mode === 'unsub_only'
+          {single || mode === 'unsub_only'
             ? WS5_COPY['preview.state.loadFailed.unsub']
             : WS5_COPY['f1.preview.backlog.error']}
         </span>

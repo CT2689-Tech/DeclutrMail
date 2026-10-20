@@ -687,7 +687,7 @@ describe('Screener Later age and return requests', () => {
       fireEvent.keyDown(window, { key: 'l' });
       const age = await screen.findByRole('combobox', { name: 'How far back' });
       expect(age).toHaveValue('all');
-      const time = screen.getByLabelText('When to return to your inbox') as HTMLInputElement;
+      const time = screen.getByLabelText('Return to inbox') as HTMLInputElement;
       expect(new Date(time.value).getTime()).toBeGreaterThanOrEqual(before + 7 * 86400000 - 60000);
       await waitFor(() =>
         expect(screen.getByRole('region', { name: 'What Later will do' })).toHaveTextContent(
@@ -744,7 +744,7 @@ describe('Screener Later age and return requests', () => {
     expect(screen.getByRole('button', { name: `Later for ${firstRow.senderName}` })).toBeDisabled();
     fireEvent.keyDown(window, { key: 'Enter' });
     fireEvent.change(age, { target: { value: 'all' } });
-    fireEvent.change(screen.getByLabelText('When to return to your inbox'), {
+    fireEvent.change(screen.getByLabelText('Return to inbox'), {
       target: { value: '' },
     });
     expect(screen.getByRole('button', { name: `Later for ${firstRow.senderName}` })).toBeDisabled();

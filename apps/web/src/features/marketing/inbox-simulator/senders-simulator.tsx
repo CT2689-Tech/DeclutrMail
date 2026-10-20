@@ -946,7 +946,6 @@ export function SendersSimulator() {
                 Returns
                 <input
                   type="datetime-local"
-                  aria-label={WS5_COPY['preview.later.returnTimeLabel']}
                   value={wakeAt}
                   onChange={(event) => setWakeAt(event.target.value)}
                 />

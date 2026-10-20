@@ -2756,7 +2756,7 @@ describe('SenderDetailRoute', () => {
         ).toBeInTheDocument();
         expect(within(dialog).queryByRole('button', { name: 'Unsubscribe + Archive' })).toBeNull();
         const archiveChoice = await within(dialog).findByRole('radio', {
-          name: 'Unsubscribe and archive',
+          name: '+ Archive',
         });
         await waitFor(() => expect(archiveChoice).toBeEnabled());
         fireEvent.click(archiveChoice);
@@ -2788,7 +2788,7 @@ describe('SenderDetailRoute', () => {
         fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
         const dialog = await screen.findByRole('dialog');
         const archiveChoice = await within(dialog).findByRole('radio', {
-          name: 'Unsubscribe and archive',
+          name: '+ Archive',
         });
         await waitFor(() => expect(archiveChoice).toBeEnabled());
         fireEvent.click(archiveChoice);
@@ -2885,9 +2885,7 @@ describe('SenderDetailRoute', () => {
         await waitFor(() => expect(pill('done')).not.toBeNull());
         fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe (U)' }));
         const dialog = await screen.findByRole('dialog');
-        fireEvent.click(
-          await within(dialog).findByRole('radio', { name: 'Unsubscribe and archive' }),
-        );
+        fireEvent.click(await within(dialog).findByRole('radio', { name: '+ Archive' }));
         const confirm = await within(dialog).findByRole('button', {
           name: 'Unsubscribe + Archive',
         });
