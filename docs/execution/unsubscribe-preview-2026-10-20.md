@@ -6,16 +6,16 @@ Contract: supported one-click or manual mailto request, optional existing-email 
 
 The founder approved Archive default Any age and Delete default Older than 180 days, with Any age available. Preserve the initial unsubscribe-only/archive choice, reach defaults, supported channels, Protected single override and bulk exclusions. Changing cleanup mode resets its age to the corresponding default and reach to Inbox only. Selected age/reach must drive count, sample, group per-sender matches and submitted cleanup. Unsubscribe-only has no age filter and does not move existing mail.
 
-| State or transition                                  | UI and action contract                                          | Verification |
-| ---------------------------------------------------- | --------------------------------------------------------------- | ------------ |
-| Open / reopen / new selection                        | Existing initial mode; no stale filters                         | Pending      |
-| Archive / Delete / age / reach                       | One live impact count; exact options submitted                  | Pending      |
-| Unsubscribe only                                     | Existing email stays; no age or cleanup payload                 | Pending      |
-| Loading / failure / missing bucket / zero cleanup    | No cached/all-age fallback; cleanup blocked, choices editable   | Pending      |
-| Protected / bulk exclusions / unavailable channel    | Existing eligible recipients and explicit override preserved    | Pending      |
-| Confirm click / keyboard / repeated click            | Same options, existing latches and lifecycle                    | Pending      |
-| Accepted / partial / manual / unknown / retry / Undo | Existing outcome paths retained; source and regression coverage | Pending      |
-| Phone width / focus / cancellation                   | Shared review layout, native controls, no preview bypass        | Pending      |
+| State or transition                                  | UI and action contract                                          | Verification     |
+| ---------------------------------------------------- | --------------------------------------------------------------- | ---------------- |
+| Open / reopen / new selection                        | Existing initial mode; no stale filters                         | Verified locally |
+| Archive / Delete / age / reach                       | One live impact count; exact options submitted                  | Verified locally |
+| Unsubscribe only                                     | Existing email stays; no age or cleanup payload                 | Verified locally |
+| Loading / failure / missing bucket / zero cleanup    | No cached/all-age fallback; cleanup blocked, choices editable   | Verified locally |
+| Protected / bulk exclusions / unavailable channel    | Existing eligible recipients and explicit override preserved    | Verified locally |
+| Confirm click / keyboard / repeated click            | Same options, existing latches and lifecycle                    | Verified locally |
+| Accepted / partial / manual / unknown / retry / Undo | Existing outcome paths retained; source and regression coverage | Verified locally |
+| Phone width / focus / cancellation                   | Shared review layout, native controls, no preview bypass        | Verified locally |
 
 Production Gmail outcome is unverified for this candidate. Local browser fixtures and mocked request tests are separate evidence from provider completion.
 
@@ -33,7 +33,7 @@ Local evidence for the final candidate:
 - Negative control: forcing unfiltered cleanup payloads in Senders and Triage fails six selected request assertions. Exact candidate bytes are restored before final verification.
 - Workspace typecheck passes. Lint has zero errors and six existing unused-disable warnings. Formatting, static Storybook, production Next build with CI pricing/meter/pass flags, all **52 bundle budgets**, and **32 static-route prerender checks** pass; no budget rebaseline.
 - Built-in browser: default Any-age Archive128, Delete180 inbox84, including archived96 and Any-age all-mail146. Group totals256 /168 /192 /292 match the per-sender breakdown and sample confirmation. Triage Ctrl-Enter confirms the same filtered scope; zero age remains editable without changing cleanup mode. Screener one-click and mailto previews distinguish the request from the manual Gmail step, and Cancel is not confirmation. All five review tabs have no browser error logs.
-- At a 320px viewport, inline page and modal panel have equal client/scroll widths (310px); choices stack, fields fit and body scroll retains access to the controls above the persistent footer. Viewport sizing is reset. Review screenshots live outside the repository in `unsubscribe-pass/` under this chat's visualization directory. Static preview: localhost6026, Python PID80680, serving this worktree's Storybook output.
+- At a 320px viewport, inline page and modal panel have equal client/scroll widths (310px); choices stack, fields fit and body scroll retains access to the controls above the persistent footer. Viewport sizing is reset. Review screenshots live outside the repository in `unsubscribe-pass/` under this chat's visualization directory. Static preview: localhost6026, Python PID80680, serving this worktree's Storybook output. A final scoped padding correction keeps “Unsubscribe only” from breaking mid-word at the natural review width; the 320px stacked choices remain readable. Full web tests, Storybook and production build/budget/prerender checks pass after that correction.
 
 The first production-build attempt failed on an incomplete group-story fixture; the fixture is corrected. A later build reported ENOSPC during cache writes. Only disposable Next caches from this preview and the earlier Later candidate were removed; their delivered Storybook outputs were retained. The final production build passes. These earlier failures are not counted as successful verification.
 

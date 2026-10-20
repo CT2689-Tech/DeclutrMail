@@ -3,6 +3,9 @@
   flex-direction: column;
   gap: 16px;
 }
+.unsubscribeChoices :global(.dm-sheet-segment-option) {
+  padding-inline: 4px;
+}
 .age {
   display: grid;
   grid-template-columns: 80px minmax(0, 1fr);

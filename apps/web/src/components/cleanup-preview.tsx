@@ -27,16 +27,18 @@ export function UnsubscribeChoices({
   deleteDisabled: boolean;
 }) {
   return (
-    <SheetSegmented
-      label="Email you already have"
-      value={value}
-      onChange={onChange}
-      options={[
-        { value: 'unsub_only', label: 'Unsubscribe only' },
-        { value: 'archive', label: '+ Archive', disabled: archiveDisabled },
-        { value: 'delete', label: '+ Delete', disabled: deleteDisabled },
-      ]}
-    />
+    <div className={styles.unsubscribeChoices}>
+      <SheetSegmented
+        label="Email you already have"
+        value={value}
+        onChange={onChange}
+        options={[
+          { value: 'unsub_only', label: 'Unsubscribe only' },
+          { value: 'archive', label: '+ Archive', disabled: archiveDisabled },
+          { value: 'delete', label: '+ Delete', disabled: deleteDisabled },
+        ]}
+      />
+    </div>
   );
 }
 
