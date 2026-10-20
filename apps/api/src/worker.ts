@@ -21,7 +21,6 @@ import { writeWorkerHeartbeat } from '@declutrmail/workers';
 import {
   collectOperationalTelemetry,
   observeSyncAttempt,
-  OPERATIONAL_INTERVAL_MS,
   OPERATIONAL_QUEUES,
   type OperationalQueue,
 } from './ops/operational-telemetry.js';
@@ -31,10 +30,11 @@ import { createHash } from 'node:crypto';
 
 import Anthropic from '@anthropic-ai/sdk';
 import { Queue, Worker } from 'bullmq';
-import { drizzle } from 'drizzle-orm/postgres-js';
+import { createWorkerDatabase } from './db/worker-database.js';
+import { WorkerHealth, workerHealthResponse } from './ops/worker-health.js';
 import { eq, sql } from 'drizzle-orm';
 import postgres from 'postgres';
-import { mailboxAccounts, schema } from '@declutrmail/db';
+import { mailboxAccounts } from '@declutrmail/db';
 import { scheduleProductEvent } from './analytics/schedule-product-event.js';
 import { reconcileInitialSyncs } from './sync/initial-sync-reconciler.js';
 import {
@@ -322,8 +322,8 @@ function auditRequiredEnv(): void {
 /**
  * Cloud Run health probe (D158). Cloud Run requires every Service to
  * listen on `$PORT` and pass a startup probe within ~4 minutes, even
- * for headless workers. This tiny HTTP server responds 200 to anything,
- * 503 only while `bootstrapComplete` is still false. Kept local — not
+ * for headless workers. The probe requires completed bootstrap and a fresh
+ * successful database heartbeat; it fails when background DB work stalls. Kept local — not
  * a NestJS app — so a Nest framework error never breaks the health
  * signal that keeps the revision serving.
  *
@@ -333,14 +333,20 @@ function auditRequiredEnv(): void {
  */
 let bootstrapComplete = false;
 let workerAdmissionHeld = false;
+let heartbeatIsFresh = () => false;
 function startHealthServer(): void {
   // Lazy import keeps the import surface unchanged for local + tests.
   import('node:http')
     .then(({ createServer }) => {
       const port = Number.parseInt(process.env.PORT ?? '8080', 10);
       createServer((_req, res) => {
-        res.statusCode = bootstrapComplete ? 200 : 503;
-        res.end(workerAdmissionHeld ? 'admission-held' : bootstrapComplete ? 'ok' : 'starting');
+        const health = workerHealthResponse(
+          bootstrapComplete,
+          workerAdmissionHeld,
+          heartbeatIsFresh(),
+        );
+        res.statusCode = health.statusCode;
+        res.end(health.body);
       }).listen(port, () => {
         console.log(
           JSON.stringify({
@@ -461,18 +467,13 @@ async function bootstrap(): Promise<void> {
   bootStep('createSentryWorkerObserver_done');
 
   bootStep('postgres_pool_init');
-  // `prepare: false` is REQUIRED when `DATABASE_URL` points at Supabase's
-  // transaction-mode pooler (`*.pooler.supabase.com:6543`). The pooler
-  // routes per-statement to whatever backend is free, so cached prepared-
-  // statement names from a prior backend trigger
-  // `prepared statement "X" does not exist` mid-tx → silent ROLLBACK of
-  // multi-statement rebuilds (root cause of senders.total_received=0
-  // shipping to prod 2026-06-08; ADR-0022). Setting prepare:false on
-  // every `postgres()` call here forces simple-protocol queries.
   const workerBudgets = workerRuntimeConfig(process.env);
   bootStep('worker_resource_budgets', workerBudgets);
-  const pg = postgres(requireEnv('DATABASE_URL'), { prepare: false, max: workerBudgets.dbPoolMax });
-  const db = drizzle(pg, { schema });
+  const database = createWorkerDatabase(process.env);
+  const { db } = database;
+  bootStep('postgres_main_session_mode', {
+    host: safeHostPort(toSessionPoolUrl(requireEnv('DATABASE_URL'))),
+  });
   bootStep('postgres_pool_done');
 
   /**
@@ -482,33 +483,12 @@ async function bootstrap(): Promise<void> {
    */
   const LABEL_ACTION_CONCURRENCY = 10;
   /**
-   * Size of the dedicated advisory-lock pool.
-   *
-   * NOT sized to peak demand, and that is a deliberate, budgeted choice.
-   * SIX workers take this lock, and together they can hold 41 at once:
-   * IncrementalSync 20, LabelAction 10, AutopilotAction 5, SnoozeWake 4
-   * (one job, but its sweep wakes four mailboxes at a time), and
-   * SenderIndexSweep / AccountDeletionPurge at 1 each.
-   * (A comment on the autopilot registration below used to put the peak
-   * at 15 — it counted only the two workers in front of it, and missed
-   * IncrementalSync, which is both the largest consumer and the one that
-   * accumulated 26.5 h of lock wait.)
-   *
-   * The overcommit is survivable, not deadlocking: a holder's inner
-   * queries run on the MAIN pool, so every holder completes and releases
-   * and the reserve queue always drains. The cost is latency, not
-   * failure.
-   *
-   * Raising it to 41 is what the wait argues for and the CONNECTION
-   * BUDGET forbids today. Postgres reports `max_connections = 60` on the
-   * current Supabase compute tier, and the fixed pools already claim 31:
-   * this worker's main `pg` (postgres.js default 10) + this lock pool
-   * (10) + the outbox listener (1) + the API's own pool (10). At 41 the
-   * total would be 62, past the 60 — and exhausting connections fails requests
-   * outright, where an over-subscribed lock pool only queues. Deferred
-   * to the compute-tier decision recorded in FOUNDER-FOLLOWUPS.md
-   * (2026-08-22); `mailbox_lock.pool_wait` now measures what raising it
-   * would actually buy.
+   * Separate pools prevent lock holders from waiting for their own connection.
+   * The production session pool permits 15 clients: 3 main + 3 advisory-lock
+   * + 1 LISTEN = 7 per instance, or 14 during a two-revision rollout.
+   * Concurrent mailbox work queues for a lock slot; it does not pin main
+   * query slots while waiting. Raising either cap requires a provider budget
+   * change and a rollout budget including both instances.
    */
   const LOCK_POOL_MAX = workerBudgets.lockPoolMax;
   /**
@@ -530,7 +510,7 @@ async function bootstrap(): Promise<void> {
   // connection dies (prod 2026-08-12: a Delete queued 8m39s; all three
   // mailboxes held a leaked lock). Session mode pins one backend per
   // client connection, which is the contract session locks require.
-  // prepare:false — same Supabase tx-pooler reason as `pg` above (kept
+  // prepare:false — keep unnamed statements on the session pool (kept
   // for safety even though session mode would tolerate prepares).
   const databaseUrl = requireEnv('DATABASE_URL');
   const lockDatabaseUrl = toSessionPoolUrl(databaseUrl);
@@ -1485,35 +1465,14 @@ async function bootstrap(): Promise<void> {
   // BullMQ worker is the foreground loop.
   reconcilerHandle.unref();
 
-  let heartbeatInFlight: Promise<void> | null = null;
-  let operationalInFlight: Promise<void> | null = null;
-  let lastOperationalAt = 0;
+  const workerHealth = new WorkerHealth(
+    () => writeWorkerHeartbeat(db),
+    () => collectOperationalTelemetry(db, operationalQueues as OperationalQueue[]),
+    (kind) => console.error(JSON.stringify({ level: 'error', kind })),
+  );
+  heartbeatIsFresh = () => workerHealth.isFresh();
   function heartbeatTick(): void {
-    if (shuttingDown || !bootstrapComplete || heartbeatInFlight) return;
-    if (!operationalInFlight && Date.now() - lastOperationalAt >= OPERATIONAL_INTERVAL_MS) {
-      lastOperationalAt = Date.now();
-      operationalInFlight = collectOperationalTelemetry(db, operationalQueues as OperationalQueue[])
-        .catch(() =>
-          console.error(
-            JSON.stringify({
-              level: 'error',
-              kind: 'ops.collection',
-              source: 'collector',
-              success: 0,
-            }),
-          ),
-        )
-        .finally(() => {
-          operationalInFlight = null;
-        });
-    }
-    heartbeatInFlight = writeWorkerHeartbeat(db)
-      .catch(() => {
-        console.error(JSON.stringify({ level: 'error', kind: 'worker.heartbeat_failed' }));
-      })
-      .finally(() => {
-        heartbeatInFlight = null;
-      });
+    if (!shuttingDown && bootstrapComplete) workerHealth.tick();
   }
   heartbeatTick();
   const heartbeatHandle = setInterval(heartbeatTick, 60_000);
@@ -2496,18 +2455,9 @@ async function bootstrap(): Promise<void> {
   const autopilotActionBullWorker = new Worker<AutopilotActionJobData, AutopilotActionResult>(
     AUTOPILOT_ACTION_QUEUE,
     (job) => autopilotActionWorker.run(job),
-    // Each sweep holds a `lockPg` advisory-lock connection for one MATCH
-    // at a time — per-match holds since 2026-09-25, not the whole sweep —
-    // sharing the lock pool with five other consumers. This
-    // comment used to put combined peak demand at 15 > 10, counting
-    // only LabelActionWorker and this worker; the real figure is 41
-    // across six workers — see `LOCK_POOL_MAX` above, which carries the
-    // accounting and the connection budget that keeps the pool at 10.
-    // The overcommit is still ACCEPTED and still not a deadlock:
-    // `reserve()` queues (never fails) and a holder's inner queries run
-    // on the separate main `pg` pool, so it always completes and
-    // releases. What changed is that the queue is now measured —
-    // `mailbox_lock.pool_wait` logs any checkout over a second.
+    // Each match holds one dedicated lock connection; inner queries use the
+    // independent main pool. Excess callers queue within the session budget.
+    // `mailbox_lock.pool_wait` reports checkout waits over a second.
     // `perMailboxWorkerSettings()` pairs with `autopilotActionJobOptions`'s
     // `backoff` (2026-09-02 incident sweep).
     { connection, concurrency: 5, ...userFacingTuning, ...perMailboxWorkerSettings() },
@@ -3093,7 +3043,7 @@ async function bootstrap(): Promise<void> {
   // whichever backend served that one statement — NOTIFY never reaches
   // this connection and the dispatcher silently degrades to its 5s
   // polling fallback. Session mode makes the wake channel real.
-  // prepare:false — same Supabase tx-pooler reason as `pg` above.
+  // prepare:false — keep unnamed statements on the session pool.
   const outboxListenDatabaseUrl = toSessionPoolUrl(requireEnv('DATABASE_URL'));
   bootStep('outbox_listen_session_mode', {
     rewritten: outboxListenDatabaseUrl !== requireEnv('DATABASE_URL'),
@@ -3268,7 +3218,7 @@ async function bootstrap(): Promise<void> {
       console.error(JSON.stringify({ level: 'error', kind: 'email.runtime_drain_failed' }));
     });
     void (async () => {
-      if (heartbeatInFlight) await heartbeatInFlight;
+      await workerHealth.drain();
       if (stuckMailboxInFlight) await stuckMailboxInFlight;
       if (inFlight) {
         await inFlight;
@@ -3335,7 +3285,7 @@ async function bootstrap(): Promise<void> {
       await incrementalReconcilerQueue.close();
       await connection.quit();
       await lockPg.end();
-      await pg.end();
+      await database.close();
       process.exit(0);
     })().catch((err: unknown) => {
       const error = err instanceof Error ? err : new Error(String(err));

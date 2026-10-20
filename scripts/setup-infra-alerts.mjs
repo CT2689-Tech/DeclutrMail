@@ -75,7 +75,9 @@ function thresholdPolicy(title, filter, value, duration, aligner, reducer, group
           comparison: 'COMPARISON_GT',
           thresholdValue: value,
           duration,
-          evaluationMissingData: 'EVALUATION_MISSING_DATA_INACTIVE',
+          evaluationMissingData: filter.includes('logging.googleapis.com/user/ops_')
+            ? 'EVALUATION_MISSING_DATA_NO_OP'
+            : 'EVALUATION_MISSING_DATA_INACTIVE',
           aggregations: [
             {
               alignmentPeriod: '60s',
@@ -126,6 +128,7 @@ export function infrastructurePolicies({ runtime = false } = {}) {
       {
         displayName: '5xx ratio with a minimum traffic floor',
         conditionPrometheusQueryLanguage: {
+          labels: { service: 'declutrmail-api' },
           query: `(sum(increase(${errors}[5m])) / sum(increase(${requests}[5m])) > 0.05) and (sum(increase(${errors}[5m])) >= 3) and (sum(increase(${requests}[5m])) >= 20)`,
           duration: '300s',
           evaluationInterval: '60s',
@@ -201,6 +204,8 @@ export function infrastructurePolicies({ runtime = false } = {}) {
       0.8,
       '600s',
       'ALIGN_PERCENTILE_99',
+      'REDUCE_MAX',
+      ['resource.label.service_name'],
     );
     db.conditions[0].conditionThreshold.aggregations[0].alignmentPeriod = '300s';
     db.documentation = documentation(
@@ -208,16 +213,18 @@ export function infrastructurePolicies({ runtime = false } = {}) {
     );
     const failed = thresholdPolicy(
       'DeclutrMail runtime collection repeatedly failing',
-      logFilter('ops_collection_failed'),
-      0,
+      logFilter('ops_collection_success'),
+      0.5,
       '600s',
-      'ALIGN_SUM',
-      'REDUCE_SUM',
-      ['metric.label.source', 'metric.label.queue'],
+      'ALIGN_PERCENTILE_99',
+      'REDUCE_MAX',
+      ['resource.label.service_name', 'metric.label.source', 'metric.label.queue'],
     );
     failed.conditions[0].conditionThreshold.aggregations[0].alignmentPeriod = '300s';
+    failed.conditions[0].conditionThreshold.comparison = 'COMPARISON_LT';
+    failed.conditions[0].conditionThreshold.evaluationMissingData = 'EVALUATION_MISSING_DATA_NO_OP';
     failed.documentation = documentation(
-      'Runtime collection failures persist for 10 minutes. Inspect source-specific error logs; a successful collection from another queue must not hide this failure. Product behavior must continue if telemetry fails.',
+      'Explicit failed collection observations persist for 10 minutes. Recovery requires successful observations from the same source and queue. Missing data retains the previous condition until new evidence or policy auto-close; the separate coverage alert detects silence. Product behavior must continue if telemetry fails.',
     );
     const scheduler = {
       displayName: 'DeclutrMail scheduler success overdue',
@@ -236,21 +243,27 @@ export function infrastructurePolicies({ runtime = false } = {}) {
           seconds,
           '600s',
           'ALIGN_PERCENTILE_99',
+          'REDUCE_MIN',
+          ['resource.label.service_name', 'metric.label.worker'],
         );
         p.conditions[0].conditionThreshold.aggregations[0].alignmentPeriod = '300s';
+        p.conditions[0].conditionThreshold.evaluationMissingData = 'EVALUATION_MISSING_DATA_NO_OP';
         return p.conditions[0];
       }),
     };
     const missing = thresholdPolicy(
       'No scheduler success recorded',
-      `${logFilter('ops_scheduler_no_success')} AND metric.labels.worker!="WorkerHeartbeat"`,
-      0,
+      `${logFilter('ops_scheduler_success_observed')} AND metric.labels.worker!="WorkerHeartbeat"`,
+      0.5,
       '900s',
-      'ALIGN_SUM',
-      'REDUCE_SUM',
-      ['metric.label.worker'],
+      'ALIGN_PERCENTILE_99',
+      'REDUCE_MAX',
+      ['resource.label.service_name', 'metric.label.worker'],
     );
     missing.conditions[0].conditionThreshold.aggregations[0].alignmentPeriod = '300s';
+    missing.conditions[0].conditionThreshold.comparison = 'COMPARISON_LT';
+    missing.conditions[0].conditionThreshold.evaluationMissingData =
+      'EVALUATION_MISSING_DATA_NO_OP';
     scheduler.conditions.push(missing.conditions[0]);
     policies.push(wait, db, failed, scheduler, {
       displayName: 'DeclutrMail runtime observations missing or failing',

@@ -30,6 +30,30 @@ admin email channel. Do not create parallel notification channels.
    populated panels, labels, units, freshness and links. Billing export and invoice
    gaps remain explicit; no-data is never represented as zero spend.
 
+## Worker stall and recovery semantics
+
+The persistent worker's main postgres.js pool uses Supabase session mode, as do
+its separate advisory-lock and LISTEN pools. Supabase documents that postgres.js
+pipelining through the shared transaction pooler can hang replies; `prepare:false`
+does not disable pipelining. The production session pool allows 15 clients. The
+release bounds each worker to 3 main + 3 lock + 1 listener connections, allowing
+14 across a rolling replacement. Do not merge these pools: lock holders need the
+independent main pool to finish and release their locks.
+
+Cloud Run liveness requires a successful database heartbeat within three minutes,
+then restarts after three failed 30-second probes. A pending heartbeat does not
+stop five-minute operational collection. A successful startup is not proof of
+ongoing job progress.
+
+Scheduler ages and sampled health retain their previous alert evaluation when
+observations disappear (`NO_OP`); the independent coverage/uptime rules detect
+silence. Policy auto-close still applies. Collection and missing-scheduler-success
+alerts use distributions of explicit success/failure observations, not failure-only
+log counters whose synthetic zero intervals can incorrectly announce recovery.
+Scheduler observations reduce across revisions so a healthy replacement can clear
+the same worker condition. The stuck-mailbox event-window alert sends opening
+notifications only: its window expiring is not verified mailbox recovery.
+
 ## Signals and first response
 
 | Signal            | Initial trigger                                                                                          | Response                                                                                                                                                                                                                                   |
