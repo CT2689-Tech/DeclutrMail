@@ -10,4 +10,6 @@
 
 **Enforcement:** Worker database/progress tests and an isolated native-PostgreSQL integration test; negative controls removing the session rewrite, reinstating heartbeat-to-collector gating, and restoring `INACTIVE` each fail. Cloud Run liveness observes completed database heartbeats rather than startup alone.
 
+**Native alert follow-up:** Final production readback found false recovery-budget incidents with no failed mailboxes. Monitoring's exponential-histogram p99 estimated an explicit zero as `0.00099`; a strict `> 0` threshold therefore fired. Use `> 0.5` for this integer count, preserving detection of one exhausted mailbox, and reduce across revisions by service so retired revisions cannot strand incidents. The native observations and an old-code-failing regression cover zero and one; all sibling percentile thresholds were checked for this shape.
+
 **Source:** [Supabase postgres.js guidance](https://supabase.com/docs/guides/database/postgres-js), [Cloud Logging zero values](https://docs.cloud.google.com/logging/docs/logs-based-metrics).

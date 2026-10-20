@@ -301,13 +301,17 @@ export function infrastructurePolicies({ runtime = false } = {}) {
     const recovery = thresholdPolicy(
       'DeclutrMail initial recovery budget exhausted',
       logFilter('ops_initial_recovery_exhausted'),
-      0,
+      // Exponential histogram p99 estimates zero as 0.00099. Counts are
+      // integral: 0.5 separates healthy zero from one exhausted mailbox.
+      0.5,
       '600s',
       'ALIGN_PERCENTILE_99',
+      'REDUCE_MAX',
+      ['resource.label.service_name'],
     );
     recovery.conditions[0].conditionThreshold.aggregations[0].alignmentPeriod = '300s';
     recovery.documentation = documentation(
-      'At least one active mailbox has readiness failed and initial_recovery_attempts at the automatic limit. Inspect that mailbox before retrying by hand. Disconnected mailboxes are not counted. Missing samples are unknown.',
+      'At least one active mailbox has readiness failed and initial_recovery_attempts at the automatic limit. The integer-count threshold is 0.5 because histogram percentile estimates of zero are slightly positive. Revisions are reduced to one service observation. Inspect that mailbox before retrying by hand. Disconnected mailboxes are not counted. Missing samples are unknown.',
     );
     const deadLetters = counted(
       'DeclutrMail worker dead-letter growth',

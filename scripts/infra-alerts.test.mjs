@@ -356,7 +356,7 @@ test('launch alerts page only past the stated thresholds and stay off the offlin
   assert.ok(genericWait.filter.includes('metric.labels.queue!="initial-sync"'));
   const recovery = find('DeclutrMail initial recovery budget exhausted').conditions[0]
     .conditionThreshold;
-  assert.equal(recovery.thresholdValue, 0);
+  assert.equal(recovery.thresholdValue, 0.5);
   assert.equal(recovery.comparison, 'COMPARISON_GT');
   assert.equal(recovery.aggregations[0].perSeriesAligner, 'ALIGN_PERCENTILE_99');
   assert.equal(recovery.aggregations[0].alignmentPeriod, '300s');
@@ -420,6 +420,35 @@ test('launch alerts page only past the stated thresholds and stay off the offlin
     oauthCallbackShouldPage({ failuresLastHour: 3, failuresLastDay: 3, startsLastDay: 100 }),
     true,
   );
+});
+
+test('sampled count alerts distinguish native zero estimates and survive revision replacement', () => {
+  const policies = infrastructurePolicies({ runtime: true });
+  const recovery = policies.find(
+    (p) => p.displayName === 'DeclutrMail initial recovery budget exhausted',
+  ).conditions[0].conditionThreshold;
+  // Native Monitoring API observations on 2026-10-20, using the shared
+  // exponential histogram buckets: p99(0) is positive, not exactly zero.
+  const observedZeroP99 = 0.00099;
+  const observedOneP99 = 1.4729655737686156;
+  assert.equal(observedZeroP99 > recovery.thresholdValue, false, 'zero must not page');
+  assert.equal(observedOneP99 > recovery.thresholdValue, true, 'one must still page');
+  assert.equal(recovery.aggregations[0].crossSeriesReducer, 'REDUCE_MAX');
+  assert.deepEqual(recovery.aggregations[0].groupByFields, ['resource.label.service_name']);
+  for (const policy of policies) {
+    for (const condition of policy.conditions) {
+      const rule = condition.conditionThreshold;
+      const metric = RUNTIME_LOG_METRICS.find((m) =>
+        rule?.filter.includes(`metric.type="logging.googleapis.com/user/${m.name}"`),
+      );
+      if (
+        metric?.metricDescriptor.valueType === 'DISTRIBUTION' &&
+        rule.comparison === 'COMPARISON_GT' &&
+        rule.aggregations[0].perSeriesAligner.startsWith('ALIGN_PERCENTILE_')
+      )
+        assert.ok(rule.thresholdValue > observedZeroP99, `${policy.displayName}: zero estimate`);
+    }
+  }
 });
 
 test('launch log metrics keep OAuth on the API and Gmail quota on allowlisted workers', () => {
