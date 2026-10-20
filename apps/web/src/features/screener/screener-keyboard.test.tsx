@@ -479,19 +479,19 @@ describe('Screener Archive Email age', () => {
       const age = await screen.findByRole('combobox', { name: 'How far back' });
       expect(age).toHaveValue('all');
       await waitFor(() =>
-        expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+        expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
           '20 emails',
         ),
       );
       fireEvent.change(age, { target: { value: '180' } });
-      expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+      expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
         '5 emails will leave your inbox',
       );
       fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
       fireEvent.keyDown(window, { key: 'a' });
       expect(await screen.findByRole('combobox', { name: 'How far back' })).toHaveValue('all');
       await waitFor(() =>
-        expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+        expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
           '20 emails',
         ),
       );
@@ -543,7 +543,7 @@ describe('Screener Archive age cannot bypass the live count', () => {
       fireEvent.keyDown(window, { key: 'a' });
       const age = await screen.findByRole('combobox', { name: 'How far back' });
       await waitFor(() =>
-        expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+        expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
           '20 emails',
         ),
       );
@@ -555,11 +555,11 @@ describe('Screener Archive age cannot bypass the live count', () => {
       fireEvent.keyDown(window, { key: 'Enter' });
       expect(posted).not.toHaveBeenCalled();
       if (state === 'zero') {
-        expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+        expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
           'No emails match these choices',
         );
         expect(screen.getByText(/none are older than 180 days/)).toBeVisible();
-      } else expect(screen.queryByRole('region', { name: 'Archive impact' })).toBeNull();
+      } else expect(screen.queryByRole('region', { name: 'What Archive will do' })).toBeNull();
       fireEvent.change(age, { target: { value: 'all' } });
       expect(confirm).toBeEnabled();
     },
@@ -612,12 +612,12 @@ describe('Screener Delete selected age and archived count stay together', () => 
       const archived = await screen.findByRole('checkbox', { name: 'Include archived email' });
       expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('180');
       await waitFor(() =>
-        expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+        expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
           '5 emails will move',
         ),
       );
       fireEvent.click(archived);
-      expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+      expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
         '45 emails will move',
       );
       fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
@@ -636,12 +636,12 @@ describe('Screener Delete selected age and archived count stay together', () => 
       expect(screen.getByRole('checkbox', { name: 'Include archived email' })).toBeEnabled();
       const confirm = screen.getByRole('button', { name: `Delete for ${firstRow.senderName}` });
       expect(confirm).toBeDisabled();
-      expect(screen.queryByRole('region', { name: 'Delete impact' })).toBeNull();
+      expect(screen.queryByRole('region', { name: 'What Delete will do' })).toBeNull();
       fireEvent.click(confirm);
       fireEvent.keyDown(window, { key: 'Enter' });
       expect(bodies).toHaveLength(0);
       fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
-      expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+      expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
         '20 emails will move',
       );
       if (submit === 'click') fireEvent.click(confirm);
@@ -690,13 +690,13 @@ describe('Screener Later age and return requests', () => {
       const time = screen.getByLabelText('When to return to your inbox') as HTMLInputElement;
       expect(new Date(time.value).getTime()).toBeGreaterThanOrEqual(before + 7 * 86400000 - 60000);
       await waitFor(() =>
-        expect(screen.getByRole('region', { name: 'Later impact' })).toHaveTextContent(
+        expect(screen.getByRole('region', { name: 'What Later will do' })).toHaveTextContent(
           '20 emails will move',
         ),
       );
       fireEvent.change(time, { target: { value: '2099-11-01T10:30' } });
       fireEvent.change(age, { target: { value: '180' } });
-      expect(screen.getByRole('region', { name: 'Later impact' })).toHaveTextContent(
+      expect(screen.getByRole('region', { name: 'What Later will do' })).toHaveTextContent(
         '5 emails will move',
       );
       expect(time).toHaveValue('2099-11-01T10:30');

@@ -110,7 +110,7 @@ describe('InboxReportFirstLanding', () => {
       });
       expect(
         screen.getByRole('region', {
-          name: mode === 'delete' ? 'Delete impact' : 'Archive impact',
+          name: mode === 'delete' ? 'What Delete will do' : 'What Archive will do',
         }),
       ).toHaveTextContent(mode === 'delete' ? '6 emails' : '1 email');
       fireEvent.click(
@@ -188,7 +188,9 @@ describe('InboxReportFirstLanding', () => {
       target: { value: 'all' },
     });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
-    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent('12 emails');
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
+      '12 emails',
+    );
     fireEvent.click(
       screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
     );
@@ -776,7 +778,9 @@ describe('InboxReportFirstLanding', () => {
     fireEvent.click(archiveChoice);
     const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
     expect(confirm).toBeEnabled();
-    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent('7 emails');
+    expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
+      '7 emails',
+    );
     fireEvent.click(confirm);
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).toMatchObject({

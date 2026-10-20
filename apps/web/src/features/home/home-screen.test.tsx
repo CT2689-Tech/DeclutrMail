@@ -261,9 +261,7 @@ describe('HomeScreen', () => {
     expect(laterCard).toHaveTextContent('Later');
     expect(laterCard).not.toHaveTextContent('1 sender');
     fireEvent.click(unsubscribe);
-    expect(await screen.findByRole('alertdialog')).toHaveTextContent(
-      'Unsubscribe from 2 senders and archive 40 emails?',
-    );
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('Unsubscribe from 2 senders?');
   });
 
   it('confirming Unsubscribe + Archive sends the request and shows the toast', async () => {

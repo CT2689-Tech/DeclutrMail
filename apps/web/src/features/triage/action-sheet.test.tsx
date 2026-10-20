@@ -121,7 +121,7 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
     expect(account.closest('details')).toBeNull();
     expect(account).toBeVisible();
     expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
-    expect(screen.queryByRole('region', { name: 'Archive impact' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'What Archive will do' })).toBeNull();
     expect(screen.getByRole('dialog')).toContainElement(document.activeElement as HTMLElement);
   });
   it('renders the modal title + preview body when open=true', () => {
@@ -521,7 +521,7 @@ describe('ActionSheet — live-preview confirm gate', () => {
     );
 
     // The stable title names the sender; the impact summary contains the count.
-    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
       '2 emails will leave your inbox and stay in Gmail.',
     );
     expect(

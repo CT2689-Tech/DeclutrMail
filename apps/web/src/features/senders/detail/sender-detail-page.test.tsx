@@ -1471,7 +1471,7 @@ describe('SenderDetailRoute', () => {
         fireEvent.click(includeArchived()!);
       }
       if (verb === 'Later')
-        expect(screen.getByRole('region', { name: 'Later impact' })).toHaveTextContent(
+        expect(screen.getByRole('region', { name: 'What Later will do' })).toHaveTextContent(
           `${affected} emails will move`,
         );
       const confirm = await within(dialog).findByRole('button', {

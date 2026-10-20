@@ -297,14 +297,17 @@ export function UnsubscribeBacklogDialog({
     if (typeof received === 'number') {
       singleFacts.push({
         label: PREVIEW_DETAILS.sender.label,
-        value: `${onlySender.monthlyVolume == null ? '—' : shown(onlySender.monthlyVolume)} in the last 90 days · ${shown(received)} received`,
+        value: fillCopy(WS5_COPY['preview.details.volume'], {
+          n: onlySender.monthlyVolume == null ? '—' : shown(onlySender.monthlyVolume),
+          total: shown(received),
+        }),
       });
     }
     const days = compositePreview?.sender?.lastSeenDays ?? onlySender.lastDays;
     if (typeof days === 'number') {
       singleFacts.push({
         label: PREVIEW_DETAILS.lastSeen.label,
-        value: days === 0 ? 'Today' : `${shown(days)} day${days === 1 ? '' : 's'} ago`,
+        value: detailLastSeen(days),
       });
     }
     if (mode !== 'unsub_only' && cleanupCount !== null) {
@@ -480,19 +483,7 @@ export function UnsubscribeBacklogDialog({
           )
         }
         title={title}
-        subtitle={
-          <>
-            <span>{futureSummary}</span>
-            {recordedUnsubscribeCount > 0 && (
-              <span>
-                {' '}
-                {recordedUnsubscribeCount} sender
-                {recordedUnsubscribeCount === 1 ? '' : 's'} with a recorded unsubscribe request{' '}
-                {recordedUnsubscribeCount === 1 ? 'is' : 'are'} excluded.
-              </span>
-            )}
-          </>
-        }
+        subtitle={<span>{futureSummary}</span>}
         summary={
           <UnsubscribeImpact
             mode={mode}
@@ -503,10 +494,13 @@ export function UnsubscribeBacklogDialog({
           />
         }
         details={
-          singleFacts.length > 0 || !single || mode === 'delete' ? (
+          singleFacts.length > 0 || !single || mode === 'delete' || recordedUnsubscribeCount > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: space[2] }}>
               {singleFacts.length > 0 && <SheetFactList facts={singleFacts} />}
               {!single && previewLines}
+              {recordedUnsubscribeCount > 0 && (
+                <span>{WS5_COPY['preview.details.alreadyUnsubscribed']}</span>
+              )}
               {mode === 'delete' && <span>{WS5_COPY['f1.deleteNote']}</span>}
             </div>
           ) : undefined
@@ -599,6 +593,13 @@ export function UnsubscribeBacklogDialog({
 
 function shown(n: number): string {
   return n.toLocaleString('en-US');
+}
+
+/** `today` is a day count of 0. `one` / `other` are the counted forms. */
+function detailLastSeen(days: number): string {
+  const copy = WS5_COPY['preview.details.lastSeen'];
+  if (days === 0) return copy.today;
+  return pluralCopy(copy, days, { n: shown(days) });
 }
 
 function openingMode(

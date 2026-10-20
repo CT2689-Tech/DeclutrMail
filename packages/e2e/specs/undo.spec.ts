@@ -113,7 +113,7 @@ test('Archive one sender via preview, then restore it through the undo tray', as
   // Details disclosure — present in the DOM, one click away.
   await expect(modal).toContainText(senderDomain);
   await expect(modal).toContainText(/We check again right before anything moves/);
-  await expect(modal.getByRole('region', { name: 'Archive impact' })).toContainText(
+  await expect(modal.getByRole('region', { name: 'What Archive will do' })).toContainText(
     `${count} email${inboxCount === 1 ? '' : 's'} will leave your inbox and stay in Gmail.`,
   );
   // The confirm button stays short; the live count remains beside it.

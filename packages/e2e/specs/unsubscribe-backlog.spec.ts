@@ -258,7 +258,7 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
   await expect(age).toHaveValue('180');
   await expect(sendersSheet.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
   await age.selectOption('all');
-  await expect(sendersSheet.getByRole('region', { name: 'Delete impact' })).toContainText(
+  await expect(sendersSheet.getByRole('region', { name: 'What Delete will do' })).toContainText(
     '2 emails',
   );
   await expect(sendersSheet).toContainText(

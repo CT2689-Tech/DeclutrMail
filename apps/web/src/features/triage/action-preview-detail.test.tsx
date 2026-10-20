@@ -151,7 +151,7 @@ describe('Triage preview — verification detail (D226 parity)', () => {
     expect(screen.queryByRole('link', { name: /Check in Gmail/ })).toBeNull();
     expect(screen.queryByText(/cleanup action/)).toBeNull();
     // The title names the sender; the mandatory live count and destination remain explicit.
-    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
       '17 emails will leave your inbox and stay in Gmail.',
     );
     expect(
@@ -218,7 +218,7 @@ describe('Triage preview — the live count is stated once beside the action', (
     expect(within(dialog).getByRole('button', { name: 'Delete' })).toBeEnabled();
     // Where it goes and how to undo it, each stated.
     expect(dialog).toHaveAccessibleDescription(/move to Gmail Trash/);
-    expect(within(dialog).getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+    expect(within(dialog).getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
       '1 email will move to Gmail Trash.',
     );
     expect(within(dialog).getByText(/Undo/)).toBeInTheDocument();

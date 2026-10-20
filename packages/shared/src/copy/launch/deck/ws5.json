@@ -320,6 +320,10 @@
     "other": "{n} emails will move to Gmail Trash."
   },
   "preview.impact.none": "No emails match these choices.",
+  "preview.impact.aria.unsub": "What Unsubscribe will do",
+  "preview.impact.aria.archive": "What Archive will do",
+  "preview.impact.aria.delete": "What Delete will do",
+  "preview.impact.aria.later": "What Later will do",
   "preview.impact.facts.inbox": "Inbox only · {age}",
   "preview.impact.facts.allMail": "Inbox and archived email · {age}",
   "preview.impact.pending.archive": "Matching emails leave your inbox and stay in Gmail after you confirm.",
@@ -351,6 +355,13 @@
     "one": "Move emails from 1 sender to Later?",
     "other": "Move emails from {k} senders to Later?"
   },
+  "preview.details.volume": "{n} in the last 90 days · {total} in all",
+  "preview.details.lastSeen": {
+    "today": "Today",
+    "one": "1 day ago",
+    "other": "{n} days ago"
+  },
+  "preview.details.alreadyUnsubscribed": "Senders you’ve already unsubscribed from are left out.",
   "preview.title.unsubThisSender": "Unsubscribe from this sender?",
   "preview.title.bulk.unsub": {
     "one": "Unsubscribe from 1 sender?",

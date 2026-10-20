@@ -68,7 +68,11 @@ export function UnsubscribeImpact({
 }) {
   return mode === 'unsub_only' ? (
     <>
-      <div className={styles.impact} role="region" aria-label="Unsubscribe impact">
+      <div
+        className={styles.impact}
+        role="region"
+        aria-label={WS5_COPY['preview.impact.aria.unsub']}
+      >
         <p>{WS5_COPY['f1.preview.backlog.unsubOnly']}</p>
       </div>
       <p className={styles.recovery}>{note}</p>
@@ -162,7 +166,7 @@ export function CleanupImpact({
         <div
           className={styles.impact}
           role="region"
-          aria-label={`${action} impact`}
+          aria-label={impactAria(action)}
           aria-live="polite"
           aria-atomic="true"
         >
@@ -182,6 +186,21 @@ export function CleanupImpact({
       {note !== '' && <p className={styles.recovery}>{note}</p>}
     </>
   );
+}
+
+function impactAria(action: 'Archive' | 'Delete' | 'Later'): string {
+  switch (action) {
+    case 'Archive':
+      return WS5_COPY['preview.impact.aria.archive'];
+    case 'Delete':
+      return WS5_COPY['preview.impact.aria.delete'];
+    case 'Later':
+      return WS5_COPY['preview.impact.aria.later'];
+    default: {
+      const unreachable: never = action;
+      return unreachable;
+    }
+  }
 }
 
 export function cleanupAgeLabel(days: number | null): string {

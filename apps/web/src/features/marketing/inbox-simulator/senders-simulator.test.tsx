@@ -40,7 +40,7 @@ describe('SendersSimulator', () => {
       const moved = mode === 'Delete' ? 155 : 45;
       expect(
         within(preview()).getByRole('region', {
-          name: mode === 'Delete' ? 'Delete impact' : 'Archive impact',
+          name: mode === 'Delete' ? 'What Delete will do' : 'What Archive will do',
         }),
       ).toHaveTextContent(`${moved} emails`);
       fireEvent.click(
@@ -73,9 +73,9 @@ describe('SendersSimulator', () => {
       target: { value: 'all' },
     });
     fireEvent.click(within(preview()).getByRole('checkbox', { name: 'Include archived email' }));
-    expect(within(preview()).getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
-      '273 emails',
-    );
+    expect(
+      within(preview()).getByRole('region', { name: 'What Delete will do' }),
+    ).toHaveTextContent('273 emails');
     fireEvent.click(
       within(preview()).getByRole('button', {
         name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/,
@@ -94,9 +94,9 @@ describe('SendersSimulator', () => {
     });
     expect(includeArchived).not.toBeChecked();
     fireEvent.click(includeArchived);
-    expect(within(preview()).getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
-      '273 emails',
-    );
+    expect(
+      within(preview()).getByRole('region', { name: 'What Delete will do' }),
+    ).toHaveTextContent('273 emails');
   });
 
   it('opens Delete on Cancel and restores trigger focus on Escape', () => {
@@ -277,7 +277,7 @@ describe('SendersSimulator — WS5 sample surfaces', () => {
     const dialog = preview();
     expect(within(dialog).getAllByText('Unsubscribe only')).toHaveLength(1);
     expect(within(dialog).getByRole('heading')).toHaveTextContent('Unsubscribe from this sender?');
-    expect(within(dialog).getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+    expect(within(dialog).getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
       '111 emails',
     );
     expect(dialog).toHaveTextContent(

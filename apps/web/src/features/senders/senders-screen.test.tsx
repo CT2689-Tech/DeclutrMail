@@ -1758,7 +1758,7 @@ describe('SendersScreen — edge states', () => {
         fireEvent.click(includeArchived()!);
       }
       if (verb === 'Later')
-        expect(screen.getByRole('region', { name: 'Later impact' })).toHaveTextContent(
+        expect(screen.getByRole('region', { name: 'What Later will do' })).toHaveTextContent(
           `${affected} emails will move`,
         );
       const confirm = await within(screen.getByRole('dialog')).findByRole('button', {
@@ -2018,7 +2018,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.change(within(dialog).getByRole('combobox', { name: 'How far back' }), {
       target: { value: '365' },
     });
-    expect(within(dialog).getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+    expect(within(dialog).getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
       '12 emails will leave your inbox and stay in Gmail.',
     );
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
@@ -3612,7 +3612,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     renderScreen();
     await selectBothAndPress('u');
     const dialog = await screen.findByRole('dialog');
-    expect(dialog).toHaveTextContent('1 sender with a recorded unsubscribe request is excluded.');
+    expect(dialog).toHaveTextContent('Senders you’ve already unsubscribed from are left out.');
     expect(dialog).not.toHaveTextContent(/person|people/i);
     const confirm = await within(dialog).findByRole('button', {
       name: /^Unsubscribe(?: \+ Archive)?$/,
@@ -5346,7 +5346,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       }),
     ).toBeInTheDocument();
     const dialog = screen.getByRole('dialog');
-    const impact = within(dialog).getByRole('region', { name: 'Archive impact' });
+    const impact = within(dialog).getByRole('region', { name: 'What Archive will do' });
     expect(impact).toHaveTextContent('30 emails will leave your inbox and stay in Gmail.');
     // Changing age uses the aggregated buckets, not a single sender's count.
     const age = within(dialog).getByRole('combobox', { name: 'How far back' });
@@ -5460,7 +5460,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       if (mode === 'archive') fireEvent.change(age, { target: { value: '90' } });
       expect(
         within(dialog).getByRole('region', {
-          name: mode === 'delete' ? 'Delete impact' : 'Archive impact',
+          name: mode === 'delete' ? 'What Delete will do' : 'What Archive will do',
         }),
       ).toHaveTextContent(`${mode === 'delete' ? 7 : 11} emails`);
       const confirm = within(dialog).getByRole('button', { name: buttonName });
@@ -7197,18 +7197,18 @@ describe('Senders Unsubscribe selected-age network request', () => {
       fireEvent.click(deletion);
       const age = within(dialog).getByRole('combobox', { name: 'How far back' });
       expect(age).toHaveValue('180');
-      expect(within(dialog).getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+      expect(within(dialog).getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
         '3 emails',
       );
       if (anyAge) {
         fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Include archived email' }));
-        expect(within(dialog).getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
-          '7 emails',
-        );
+        expect(
+          within(dialog).getByRole('region', { name: 'What Delete will do' }),
+        ).toHaveTextContent('7 emails');
         fireEvent.change(age, { target: { value: 'all' } });
-        expect(within(dialog).getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
-          '20 emails',
-        );
+        expect(
+          within(dialog).getByRole('region', { name: 'What Delete will do' }),
+        ).toHaveTextContent('20 emails');
       }
       fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
       await waitFor(() => expect(bodies).toHaveLength(1));

@@ -54,7 +54,7 @@ describe('Unsubscribe default choice', () => {
     expect(details).toHaveTextContent(PREVIEW_DETAILS.domain.label);
     expect(details).toHaveTextContent(sender.domain);
     expect(details).toHaveTextContent(PREVIEW_DETAILS.sender.label);
-    expect(details).toHaveTextContent('12 in the last 90 days · 144 received');
+    expect(details).toHaveTextContent('12 in the last 90 days · 144 in all');
     expect(details).toHaveTextContent(PREVIEW_DETAILS.lastSeen.label);
     expect(details).toHaveTextContent('1 day ago');
     expect(details).toHaveTextContent(previewIncludesValue(false, null));
@@ -206,7 +206,7 @@ describe('Unsubscribe uses the action preview contract', () => {
       expect(window).toHaveValue('180');
       expect(
         screen.getByRole('region', {
-          name: mode === 'delete' ? 'Delete impact' : 'Archive impact',
+          name: mode === 'delete' ? 'What Delete will do' : 'What Archive will do',
         }),
       ).toHaveTextContent(mode === 'delete' ? '3 emails' : '1 email');
       // Archive's inbox bucket is smaller than the widened Delete bucket.
@@ -288,7 +288,9 @@ describe('Unsubscribe uses the action preview contract', () => {
       />,
     );
     expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('all');
-    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent('4 email');
+    expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
+      '4 email',
+    );
   });
 
   it('uses eligible bulk age buckets for the title and each Details row, then locks on incomplete coverage', () => {
@@ -329,7 +331,9 @@ describe('Unsubscribe uses the action preview contract', () => {
       target: { value: '90' },
     });
     expect(screen.getByRole('heading')).toHaveTextContent('2 senders');
-    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent('5 emails');
+    expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
+      '5 emails',
+    );
     fireEvent.click(screen.getByText('Details'));
     expect(screen.getByText(/Second sample: 3 emails/)).toBeVisible();
     expect(screen.queryByText(/Protected sample.*500/)).toBeNull();
@@ -356,7 +360,9 @@ describe('Unsubscribe uses the action preview contract', () => {
         }}
       />,
     );
-    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent('2 email');
+    expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
+      '2 email',
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Archive' }));
     expect(props.onConfirm).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -406,7 +412,9 @@ describe('Unsubscribe uses the action preview contract', () => {
     });
     expect(includeArchived).not.toBeChecked();
     fireEvent.click(includeArchived);
-    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent('9 email');
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
+      '9 email',
+    );
     expect(screen.getByText(backlogLine('delete', 9))).toBeVisible();
     fireEvent.click(
       screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
@@ -457,7 +465,9 @@ describe('Unsubscribe uses the action preview contract', () => {
     expect(
       screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
     ).toBeEnabled();
-    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent('9 email');
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
+      '9 email',
+    );
   });
 
   it('never substitutes inbox counts when the selected widened preview disappears or refetches', () => {
@@ -526,7 +536,9 @@ describe('Unsubscribe uses the action preview contract', () => {
       target: { value: 'all' },
     });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
-    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent('9 email');
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
+      '9 email',
+    );
     rerender(
       <ConfirmActionModal
         {...props}
@@ -733,7 +745,7 @@ describe('Unsubscribe uses the action preview contract', () => {
         onConfirm={vi.fn()}
       />,
     );
-    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
       '1,139 emails',
     );
     expect(screen.getByRole('heading')).toHaveTextContent('Unsubscribe from this sender?');

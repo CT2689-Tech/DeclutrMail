@@ -136,7 +136,7 @@ test('Keep via K: preview-on-cancel leaves queue intact; Keep removes the row se
     `Archive emails from ${senderName}?`,
   );
   await expect(sheet.getByRole('combobox', { name: 'How far back' })).toHaveValue('all');
-  await expect(sheet.getByRole('region', { name: 'Archive impact' })).toContainText(
+  await expect(sheet.getByRole('region', { name: 'What Archive will do' })).toContainText(
     '2 emails will leave your inbox and stay in Gmail.',
   );
   await page.keyboard.press('Escape');

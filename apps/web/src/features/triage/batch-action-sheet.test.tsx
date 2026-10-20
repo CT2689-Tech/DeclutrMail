@@ -149,7 +149,7 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
     fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
     expect(onConfirm).toHaveBeenCalledTimes(2);
     // The count is in the impact summary; the title names the live selection.
-    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
       '3 emails will leave your inbox and stay in Gmail.',
     );
     expect(screen.getByRole('heading', { name: /Archive emails from 3 senders\?/ })).toBeVisible();

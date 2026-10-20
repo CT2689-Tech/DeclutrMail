@@ -258,7 +258,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     expect(
       screen.getByRole('heading', { name: `Archive emails from ${sender.name}?` }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
       '1 email will leave your inbox and stay in Gmail.',
     );
     expect(container.textContent).not.toMatch(/1\s*emails/);
@@ -413,7 +413,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     expect(
       screen.getByRole('heading', { name: `Archive emails from ${sender.name}?` }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
       '4 emails will leave your inbox and stay in Gmail.',
     );
     expect(screen.queryByText(/from 40 senders/)).not.toBeInTheDocument();
@@ -471,7 +471,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     expect(
       screen.getByRole('heading', { name: 'Archive emails from 2 senders?' }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
       '4 emails will leave your inbox and stay in Gmail.',
     );
     // And the scope line keeps the real selection total intact.
@@ -1284,7 +1284,7 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
     expect(includeArchived).toBeEnabled();
     expect(includeArchived).toBeChecked();
     expect(screen.getByText(WS5_COPY['f1.preview.archived.unavailable'])).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: 'Delete impact' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'What Delete will do' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     expect(onConfirm).not.toHaveBeenCalled();
 
@@ -1321,7 +1321,7 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
     const includeArchived = screen.getByRole('checkbox', { name: 'Include archived email' });
     expect(includeArchived).not.toBeChecked();
     expect(includeArchived).toHaveStyle({ minHeight: '48px' });
-    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
       '1 email will move to Gmail Trash.',
     );
     expect(screen.queryByText('Both choices cover the same emails right now.')).toBeNull();
@@ -1357,7 +1357,7 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     // 180d default window over the all-mail buckets — the figure appears
     // on both the chip and the title, so assert the pair.
-    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
       '700 emails will move to Gmail Trash.',
     );
     expect(screen.getByRole('checkbox', { name: 'Include archived email' })).toBeChecked();
@@ -1428,7 +1428,7 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     expect(screen.queryByText(/in your inbox now/)).toBeNull();
     expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('180');
-    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
       '700 emails will move to Gmail Trash.',
     );
     expect(screen.getByRole('button', { name: /Delete/ })).toBeEnabled();
@@ -1589,11 +1589,11 @@ describe('ConfirmActionModal — ADR-0028 reach on a bulk selection (amendment 2
     fireEvent.click(screen.getByRole('button', { name: /Delete/ }));
     expect(onConfirm).toHaveBeenLastCalledWith(expect.not.objectContaining({ reach: 'all_mail' }));
 
-    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
       'will move to Gmail Trash.',
     );
     fireEvent.click(archived);
-    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
       '1,400 emails will move to Gmail Trash.',
     );
     expect(
@@ -1603,7 +1603,7 @@ describe('ConfirmActionModal — ADR-0028 reach on a bulk selection (amendment 2
     ).toBeInTheDocument();
     // The subtitle follows the chip — it must not keep describing inbox mail only.
     expect(screen.queryByText('They move to Gmail Trash.')).toBeNull();
-    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
       'Inbox and archived email',
     );
     fireEvent.click(screen.getByRole('button', { name: /Delete/ }));
@@ -2333,10 +2333,10 @@ describe('ConfirmActionModal — Delete title names its destination', () => {
       />,
     );
     // The stable title names the sender; the impact summary names the destination.
-    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
       '1 email will move to Gmail Trash.',
     );
-    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
       /move to Gmail Trash/,
     );
     expect(document.getElementById('dm-confirm-lead')).toHaveTextContent(
@@ -2361,7 +2361,7 @@ describe('ConfirmActionModal — Archive names the sender and previews the live 
     expect(
       screen.getByRole('heading', { name: `Archive emails from ${sender.name}?` }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
       '4 emails will leave your inbox and stay in Gmail.',
     );
   });
@@ -2388,7 +2388,7 @@ describe('ConfirmActionModal — Archive names the sender and previews the live 
     expect(
       screen.getByRole('heading', { name: 'Archive emails from 2 senders?' }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
       '4 emails will leave your inbox and stay in Gmail.',
     );
   });
@@ -2425,7 +2425,7 @@ describe('ConfirmActionModal — Archive names the sender and previews the live 
     expect(
       screen.getByRole('heading', { name: 'Archive emails from 1 sender?' }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
       '4 emails will leave your inbox and stay in Gmail.',
     );
     expect(screen.queryByText(/2 senders/)).toBeNull();
@@ -2546,7 +2546,7 @@ describe('ConfirmActionModal — Archive names the sender and previews the live 
           }}
         />,
       );
-      expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+      expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
         '1 email will move to Gmail Trash.',
       );
       expect(
@@ -2946,13 +2946,13 @@ describe('ConfirmActionModal — explicit period and scope choices', () => {
         compositePreview={livePreview}
       />,
     );
-    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
       '1 email will move to Gmail Trash.',
     );
     fireEvent.change(screen.getByRole('combobox', { name: /How far back|Email age/i }), {
       target: { value: '30' },
     });
-    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
       '3 emails will move to Gmail Trash.',
     );
     expect(screen.getByRole('button', { name: 'Delete' })).toBeEnabled();
@@ -2989,7 +2989,7 @@ describe('ConfirmActionModal — Senders Archive layout A', () => {
     expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('all');
     expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
     expect(document.querySelector('time[datetime]')).toBeNull();
-    const impact = screen.getByRole('region', { name: 'Archive impact' });
+    const impact = screen.getByRole('region', { name: 'What Archive will do' });
     expect(impact).toHaveTextContent('4 emails will leave your inbox and stay in Gmail.');
     expect(impact).toHaveTextContent('Inbox only · All time');
     expect(screen.getByRole('dialog')).toHaveAccessibleDescription(
@@ -3011,13 +3011,13 @@ describe('ConfirmActionModal — Senders Archive layout A', () => {
         name: `No emails older than 1 year from ${sender.name}`,
       }),
     ).toBeVisible();
-    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
       'No emails match these choices.',
     );
     expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
     expect(document.querySelector('time[datetime]')).not.toBeNull();
     fireEvent.change(age, { target: { value: '30' } });
-    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
       '3 emails will leave your inbox and stay in Gmail.',
     );
     expect(screen.getByRole('button', { name: 'Archive' })).toBeEnabled();
@@ -3032,12 +3032,12 @@ describe('ConfirmActionModal — Senders Archive layout A', () => {
     rerender(
       <ConfirmActionModal {...props} compositePreview={livePreview} compositePreviewLoading />,
     );
-    expect(screen.queryByRole('region', { name: 'Archive impact' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'What Archive will do' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
     rerender(
       <ConfirmActionModal {...props} compositePreview={livePreview} compositePreviewError />,
     );
-    expect(screen.queryByRole('region', { name: 'Archive impact' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'What Archive will do' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(props.onConfirm).not.toHaveBeenCalled();
@@ -3063,7 +3063,7 @@ describe('ConfirmActionModal — Delete layout A and other actions', () => {
     expect(screen.getByRole('option', { name: 'Older than 180 days' })).toBeVisible();
     expect(screen.getByRole('option', { name: 'Older than 90 days' })).toBeVisible();
     expect(screen.getByRole('checkbox', { name: 'Include archived email' })).not.toBeChecked();
-    const impact = screen.getByRole('region', { name: 'Delete impact' });
+    const impact = screen.getByRole('region', { name: 'What Delete will do' });
     expect(impact).toHaveTextContent('1 email will move to Gmail Trash.');
     expect(impact).toHaveTextContent('Inbox only · Older than 180 days');
     expect(screen.getAllByText('1 email will move to Gmail Trash.')).toHaveLength(1);
@@ -3081,11 +3081,13 @@ describe('ConfirmActionModal — Delete layout A and other actions', () => {
     const pending = request('Delete');
     const props = { request: pending, onCancel: vi.fn(), onConfirm: vi.fn() };
     const { rerender } = render(<ConfirmActionModal {...props} compositePreview={livePreview} />);
-    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent('1 email');
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
+      '1 email',
+    );
     rerender(
       <ConfirmActionModal {...props} compositePreview={livePreview} compositePreviewLoading />,
     );
-    expect(screen.queryByRole('region', { name: 'Delete impact' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'What Delete will do' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
     rerender(
       <ConfirmActionModal
@@ -3093,7 +3095,7 @@ describe('ConfirmActionModal — Delete layout A and other actions', () => {
         compositePreview={{ ...livePreview, counts: { ...buckets, olderThan180d: 2 } }}
       />,
     );
-    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
       '2 emails will move to Gmail Trash.',
     );
   });
@@ -3108,7 +3110,7 @@ describe('ConfirmActionModal — Delete layout A and other actions', () => {
         compositePreview={livePreview}
       />,
     );
-    expect(screen.queryByRole('region', { name: 'Delete impact' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'What Delete will do' })).toBeNull();
     expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('all');
   });
 });
@@ -3160,14 +3162,14 @@ describe('Delete age availability', () => {
     );
     expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('180');
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
-    expect(screen.queryByRole('region', { name: 'Delete impact' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'What Delete will do' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(onConfirm).not.toHaveBeenCalled();
     fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
       target: { value: 'all' },
     });
-    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
       '4 emails will move',
     );
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
@@ -3191,13 +3193,13 @@ describe('Later selected age and return time', () => {
     const time = screen.getByLabelText('When to return to your inbox') as HTMLInputElement;
     expect(age).toHaveValue('all');
     expect(new Date(time.value).getTime()).toBeGreaterThanOrEqual(before + 7 * 86400000 - 60000);
-    expect(screen.getByRole('region', { name: 'Later impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Later will do' })).toHaveTextContent(
       '4 emails will move',
     );
     fireEvent.change(time, { target: { value: '2099-11-01T10:30' } });
     fireEvent.change(age, { target: { value: '180' } });
     expect(time).toHaveValue('2099-11-01T10:30');
-    expect(screen.getByRole('region', { name: 'Later impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Later will do' })).toHaveTextContent(
       '1 email will move',
     );
     expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();

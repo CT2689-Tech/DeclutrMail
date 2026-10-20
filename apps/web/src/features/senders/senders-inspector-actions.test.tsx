@@ -187,7 +187,7 @@ async function confirmArchive() {
   const dialog = await screen.findByRole('dialog');
   const confirm = await within(dialog).findByRole('button', { name: 'Archive' });
   await waitFor(() => expect(confirm).toBeEnabled());
-  expect(within(dialog).getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+  expect(within(dialog).getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
     '12 emails will leave your inbox and stay in Gmail.',
   );
   fireEvent.click(confirm);
