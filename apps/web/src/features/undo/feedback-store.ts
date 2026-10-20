@@ -3,7 +3,7 @@ import type { InFlightActionGroup } from '@/lib/api/actions';
 
 export type AcceptedAction = Pick<
   InFlightActionGroup,
-  'groupId' | 'verb' | 'mixedVerbs' | 'senderCount' | 'senderIds' | 'startedAt'
+  'groupId' | 'verb' | 'mixedVerbs' | 'senderCount' | 'senderIds' | 'senderKeys' | 'startedAt'
 >;
 const scopeKey = (mailboxId?: string) => mailboxId ?? 'active-mailbox';
 const EMPTY: AcceptedAction[] = [];

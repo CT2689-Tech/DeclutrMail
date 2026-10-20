@@ -4,7 +4,9 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { activityLog, senderPolicies, senders } from '@declutrmail/db';
 import { MAILBOX_ACTION_LOCK_NS } from '@declutrmail/workers';
 
+import { AppException } from '../common/app-exception.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
+import { isPostgresLockTimeout } from '../db/postgres-lock-timeout.js';
 import type { SenderPolicyPatch, SenderPolicyResult } from './senders.types.js';
 
 /**
@@ -193,72 +195,81 @@ export class SendersPolicyService {
         message: 'We couldn’t find this sender in this Gmail account.',
       });
     }
-    return await this.db.transaction(async (tx) => {
-      // Also covers the missing-row case, which a row lock cannot lock.
-      // Share the projection/timer boundary and keep HTTP lock waits bounded.
-      await tx.execute(sql`SET LOCAL lock_timeout = '10s'`);
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(${MAILBOX_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`,
-      );
-      const [existing] = await tx
-        .select()
-        .from(senderPolicies)
-        .where(
-          and(
-            eq(senderPolicies.mailboxAccountId, mailboxAccountId),
-            eq(senderPolicies.senderKey, sender.senderKey),
-          ),
-        )
-        .limit(1)
-        .for('update');
-      if (existing?.policyType === 'keep' && existing.isProtected) {
-        throw new ConflictException({
-          code: 'PROTECTED_SENDER',
-          message: 'Unprotect this sender before undoing Keep.',
-        });
-      }
-      // Triage Keep writes the audit row first and projects the policy
-      // through the outbox. Undo has to revert that row even when the
-      // policy has not landed yet, or the sender stays out of the queue.
-      // A neutral timer row is not a later standing decision.
-      if (existing?.policyType != null && existing.policyType !== 'keep') {
-        return projectResult(senderId, existing, false);
-      }
-      let resultRow = existing ?? null;
-      if (existing?.policyType === 'keep') {
-        // Clear only the standing decision. The row can also own a Later
-        // timer, recovery state or protection provenance; deleting it would
-        // strand that mail or discard the user's independent choices.
-        const [neutral] = await tx
-          .update(senderPolicies)
-          .set({ policyType: null, updatedAt: sql`now()` })
+    try {
+      return await this.db.transaction(async (tx) => {
+        // Also covers the missing-row case, which a row lock cannot lock.
+        // Share the projection/timer boundary and keep HTTP lock waits bounded.
+        // LabelActionWorker holds this same lock for a Gmail mutation (45s).
+        // A timeout is contention, not a failed undo: the client can retry.
+        await tx.execute(sql`SET LOCAL lock_timeout = '10s'`);
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(${MAILBOX_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`,
+        );
+        const [existing] = await tx
+          .select()
+          .from(senderPolicies)
           .where(
             and(
               eq(senderPolicies.mailboxAccountId, mailboxAccountId),
               eq(senderPolicies.senderKey, sender.senderKey),
             ),
           )
-          .returning();
-        resultRow = neutral ?? null;
+          .limit(1)
+          .for('update');
+        if (existing?.policyType === 'keep' && existing.isProtected) {
+          throw new ConflictException({
+            code: 'PROTECTED_SENDER',
+            message: 'Unprotect this sender before undoing Keep.',
+          });
+        }
+        // Triage Keep writes the audit row first and projects the policy
+        // through the outbox. Undo has to revert that row even when the
+        // policy has not landed yet, or the sender stays out of the queue.
+        // A neutral timer row is not a later standing decision.
+        if (existing?.policyType != null && existing.policyType !== 'keep') {
+          return projectResult(senderId, existing, false);
+        }
+        let resultRow = existing ?? null;
+        if (existing?.policyType === 'keep') {
+          // Clear only the standing decision. The row can also own a Later
+          // timer, recovery state or protection provenance; deleting it would
+          // strand that mail or discard the user's independent choices.
+          const [neutral] = await tx
+            .update(senderPolicies)
+            .set({ policyType: null, updatedAt: sql`now()` })
+            .where(
+              and(
+                eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+                eq(senderPolicies.senderKey, sender.senderKey),
+              ),
+            )
+            .returning();
+          resultRow = neutral ?? null;
+        }
+        const reverted = await tx
+          .update(activityLog)
+          .set({ revertedAt: sql`now()` })
+          .where(
+            and(
+              eq(activityLog.mailboxAccountId, mailboxAccountId),
+              eq(activityLog.senderKey, sender.senderKey),
+              eq(activityLog.action, 'keep'),
+              isNull(activityLog.revertedAt),
+            ),
+          )
+          .returning({ id: activityLog.id });
+        return projectResult(
+          senderId,
+          resultRow,
+          existing?.policyType === 'keep' || reverted.length > 0,
+        );
+      });
+    } catch (error) {
+      if (isPostgresLockTimeout(error)) {
+        throw new AppException({ code: 'ACTION_STILL_RUNNING' });
       }
-      const reverted = await tx
-        .update(activityLog)
-        .set({ revertedAt: sql`now()` })
-        .where(
-          and(
-            eq(activityLog.mailboxAccountId, mailboxAccountId),
-            eq(activityLog.senderKey, sender.senderKey),
-            eq(activityLog.action, 'keep'),
-            isNull(activityLog.revertedAt),
-          ),
-        )
-        .returning({ id: activityLog.id });
-      return projectResult(
-        senderId,
-        resultRow,
-        existing?.policyType === 'keep' || reverted.length > 0,
-      );
-    });
+      throw error;
+    }
   }
 }
 

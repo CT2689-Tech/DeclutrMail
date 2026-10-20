@@ -12,12 +12,20 @@ import {
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { TOPICS } from '@declutrmail/events';
-import { autopilotApplyJobOptions } from '@declutrmail/workers';
+import { TransientError, autopilotApplyJobOptions } from '@declutrmail/workers';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildOutboxConsumer } from './outbox-consumer-router.js';
 import type { DrizzleDb } from '../db/db.module.js';
+
+function lockTimeoutError(): Error {
+  return Object.assign(new Error('Failed query: select pg_advisory_xact_lock'), {
+    cause: Object.assign(new Error('canceling statement due to lock timeout'), {
+      code: '55P03',
+    }),
+  });
+}
 
 /**
  * OutboxConsumerRouter spec (D204).
@@ -238,6 +246,71 @@ describe('OutboxConsumerRouter — D204 senders projection', () => {
     expect(rows[0]!.policyType).toBe('keep');
     // Keep ≠ Protect (manifest keep docstring) — modifiers untouched.
     expect(rows[0]!.isProtected).toBe(false);
+  });
+
+  it('retries a mailbox lock timeout once, then throws a retryable error', async () => {
+    let statements = 0;
+    const busy = {
+      transaction: async (fn: (tx: { execute: () => Promise<void> }) => Promise<void>) => {
+        await fn({
+          execute: async () => {
+            statements += 1;
+            // SET LOCAL, then the advisory lock. Only the lock times out.
+            if (statements % 2 === 0) throw lockTimeoutError();
+          },
+        });
+      },
+    } as unknown as DrizzleDb;
+    await expect(
+      buildOutboxConsumer(busy)({
+        id: 'evt-keep-lock',
+        topic: TOPICS.TRIAGE_VERDICT_APPLIED,
+        aggregateId: '00000000-0000-4000-8000-000000000099',
+        payload: {
+          mailboxAccountId: mailboxId,
+          senderKey: SENDER_KEY_A,
+          verdict: 'keep',
+          source: 'manual',
+          undoToken: null,
+          affectedCount: 0,
+        },
+        attempts: 1,
+        createdAt: new Date(),
+      }),
+    ).rejects.toBeInstanceOf(TransientError);
+    expect(statements).toBe(4);
+  });
+
+  it('does not retry a keep projection that fails for another reason', async () => {
+    let statements = 0;
+    const broken = {
+      transaction: async (fn: (tx: { execute: () => Promise<void> }) => Promise<void>) => {
+        await fn({
+          execute: async () => {
+            statements += 1;
+            if (statements === 2) throw new Error('relation "sender_policies" does not exist');
+          },
+        });
+      },
+    } as unknown as DrizzleDb;
+    await expect(
+      buildOutboxConsumer(broken)({
+        id: 'evt-keep-other',
+        topic: TOPICS.TRIAGE_VERDICT_APPLIED,
+        aggregateId: '00000000-0000-4000-8000-000000000098',
+        payload: {
+          mailboxAccountId: mailboxId,
+          senderKey: SENDER_KEY_A,
+          verdict: 'keep',
+          source: 'manual',
+          undoToken: null,
+          affectedCount: 0,
+        },
+        attempts: 1,
+        createdAt: new Date(),
+      }),
+    ).rejects.toThrow('relation "sender_policies" does not exist');
+    expect(statements).toBe(2);
   });
 
   it('does not re-apply keep after that audit row was undone', async () => {
