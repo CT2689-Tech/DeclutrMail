@@ -474,13 +474,16 @@ gcloud run deploy declutrmail-worker \
   --region=$REGION \
   --service-account=$RUNTIME_SA \
   --min-instances=1 \
-  --max-instances=3 \
+  --max-instances=1 \
   --memory=2Gi \
   --cpu=2 \
   --cpu-boost \
   --no-cpu-throttling \
+  --port=8080 \
+  --startup-probe="httpGet.path=/,httpGet.port=8080,periodSeconds=10,timeoutSeconds=5,failureThreshold=24" \
+  --liveness-probe="httpGet.path=/,httpGet.port=8080,periodSeconds=30,timeoutSeconds=5,failureThreshold=3" \
   --no-allow-unauthenticated \
-  --set-env-vars="NODE_ENV=production,REASONING_RATE_PER_MIN=400,WORKER_DRAIN_DELAY_SEC=10,WORKER_STALLED_INTERVAL_MS=60000,WORKER_CRON_DRAIN_DELAY_SEC=60,WORKER_CRON_STALLED_INTERVAL_MS=300000" \
+  --set-env-vars="NODE_ENV=production,REASONING_RATE_PER_MIN=400,WORKER_DB_POOL_MAX=3,WORKER_LOCK_POOL_MAX=3,WORKER_DRAIN_DELAY_SEC=10,WORKER_STALLED_INTERVAL_MS=60000,WORKER_CRON_DRAIN_DELAY_SEC=60,WORKER_CRON_STALLED_INTERVAL_MS=300000" \
   --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest,SENTRY_DSN=sentry-dsn-api:latest" \
   --project=$PROJECT
 ```

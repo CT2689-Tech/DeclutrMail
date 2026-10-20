@@ -98,6 +98,10 @@ export const RUNTIME_LOG_METRICS = [
   distribution('ops_scheduler_success_age', 'ops.scheduler_health', 'lastSuccessAgeSeconds', 's', [
     'worker',
   ]),
+  distribution('ops_collection_success', 'ops.collection', 'success', '1', ['source', 'queue']),
+  distribution('ops_scheduler_success_observed', 'ops.scheduler_health', 'successObserved', '1', [
+    'worker',
+  ]),
   distribution('ops_database_pressure', 'ops.database_health', 'utilizationRatio', '1'),
   distribution('ops_sync_attempt_duration', 'ops.sync_attempt', 'durationMs', 'ms', [
     'sync',

@@ -3,8 +3,8 @@ import { workerRuntimeConfig } from './worker-runtime-config.js';
 describe('worker resource budgets', () => {
   it('keeps independent bounded pools and a sweep-only SQL deadline', () => {
     expect(workerRuntimeConfig({})).toEqual({
-      dbPoolMax: 10,
-      lockPoolMax: 10,
+      dbPoolMax: 3,
+      lockPoolMax: 3,
       sweepStatementTimeoutMs: 25000,
     });
     expect(

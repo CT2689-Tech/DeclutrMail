@@ -16,8 +16,8 @@
  *
  *   1. `stuck_mailbox_unnoticed` is labelled by mailbox and reason, and the
  *      policy opens one alert per label pair. Acknowledging a known one in
- *      the console leaves the next one free to page. An alert closes about
- *      30 minutes after its mailbox recovers, so breaking again pages again.
+ *      the console leaves the next one free to page. An alert closes when its observation window expires; closure does not
+ *      prove recovery. Only opening notifications are sent.
  *   2. `stuck_mailbox_watchdog_completed` counts sweeps that ran to the end.
  *      A second policy pages when none has arrived for an hour, using
  *      PromQL `absent_over_time`, which fires even for a heartbeat that
@@ -96,7 +96,7 @@ export const COMPLETED_METRIC = {
 
 function perMailboxCondition(metricName) {
   return {
-    displayName: 'Mailbox stuck past the 2-hour grace window',
+    displayName: 'Stuck-mailbox observations in the last 30 minutes',
     conditionThreshold: {
       filter: `metric.type="logging.googleapis.com/user/${metricName}" AND resource.type="cloud_run_revision"`,
       comparison: 'COMPARISON_GT',
@@ -106,7 +106,7 @@ function perMailboxCondition(metricName) {
       // evaluationMissingData is set. One tick keeps the 30-minute sum above
       // zero for the whole window, so the alert opens about a minute later.
       duration: '60s',
-      // No line for a mailbox means it recovered: close its alert.
+      // This is an event window: silence is not proof of mailbox recovery.
       evaluationMissingData: 'EVALUATION_MISSING_DATA_INACTIVE',
       aggregations: [
         {
@@ -136,7 +136,7 @@ function silentCondition(serviceName, duration) {
 const STUCK_DOC = [
   'Mailbox `${metric.label.mailbox_account_id}` has been broken for more than 2 hours with nothing recovering it (`${metric.label.reason}`).',
   '',
-  'Each stuck mailbox has its own alert. This one stays open while the mailbox stays stuck and closes about 30 minutes after it recovers. Acknowledge it once someone owns it; a mailbox that breaks later opens its own alert.',
+  'Each stuck mailbox has its own alert. This event alert closes after 30 minutes without a stuck observation, including when the watchdog stops. Closure is not verified recovery; only opening notifications are sent. Check the independent watchdog-silence alert and current mailbox state. Acknowledge it once someone owns it; a mailbox that breaks later opens its own alert.',
   '',
   'Find it: `gcloud logging read \'resource.type="cloud_run_revision" AND jsonPayload.kind="mailbox.stuck_unnoticed" AND jsonPayload.mailboxAccountId="${metric.label.mailbox_account_id}"\' --project=declutrmail-ai-prod --freshness=1h` — the line carries `errorCode` and `stuckSinceHours`.',
   '',
@@ -164,7 +164,7 @@ export function stuckMailboxPolicy() {
       content: STUCK_DOC,
     },
     conditions: [perMailboxCondition(STUCK_METRIC.name)],
-    alertStrategy: { autoClose: '1800s' },
+    alertStrategy: { autoClose: '1800s', notificationPrompts: ['OPENED'] },
   };
 }
 
@@ -190,7 +190,7 @@ export function starveTestResources(project, runId, resource) {
       ...test,
       displayName: `TEST ONLY — stuck mailbox per-mailbox starve test ${runId}`,
       conditions: [perMailboxCondition(metric.name)],
-      alertStrategy: { autoClose: '1800s' },
+      alertStrategy: { autoClose: '1800s', notificationPrompts: ['OPENED'] },
     },
     silent: {
       ...test,

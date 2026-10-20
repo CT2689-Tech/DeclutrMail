@@ -75,7 +75,7 @@ test('sampled pressure has a full collection window and never treats missing sam
       const threshold = condition.conditionThreshold;
       if (!threshold?.filter.includes('logging.googleapis.com/user/ops_')) continue;
       assert.equal(threshold.aggregations[0].alignmentPeriod, '300s');
-      assert.equal(threshold.evaluationMissingData, 'EVALUATION_MISSING_DATA_INACTIVE');
+      assert.equal(threshold.evaluationMissingData, 'EVALUATION_MISSING_DATA_NO_OP');
       assert.ok(Number.parseInt(threshold.duration) >= 600);
     }
   }
@@ -557,5 +557,32 @@ test('dependabot rebases stay disabled and version updates stay one weekly group
   assert.equal(source.split('\n      security:').length - 1, 3);
   for (const group of ['framework:', 'nestjs:', 'lint-format:', 'dev-minor:']) {
     assert.equal(source.includes(group), false);
+  }
+});
+
+test('collection and scheduler recovery require explicit successful observations, not a quiet failure counter', () => {
+  const policies = infrastructurePolicies({ runtime: true });
+  const failed = policies.find((p) => p.displayName.includes('repeatedly failing')).conditions[0]
+    .conditionThreshold;
+  assert.ok(failed.filter.includes('/ops_collection_success'));
+  assert.equal(failed.comparison, 'COMPARISON_LT');
+  assert.equal(failed.evaluationMissingData, 'EVALUATION_MISSING_DATA_NO_OP');
+  const scheduler = policies.find((p) => p.displayName.includes('scheduler success overdue'));
+  const missing = scheduler.conditions.at(-1).conditionThreshold;
+  assert.ok(missing.filter.includes('/ops_scheduler_success_observed'));
+  assert.equal(missing.comparison, 'COMPARISON_LT');
+  for (const name of ['ops_collection_success', 'ops_scheduler_success_observed']) {
+    const metric = RUNTIME_LOG_METRICS.find((m) => m.name === name);
+    assert.equal(metric.metricDescriptor.valueType, 'DISTRIBUTION');
+    assert.ok(!metric.filter.includes('=0'));
+    assert.ok(!metric.filter.includes('=1'));
+  }
+  for (const condition of scheduler.conditions) {
+    const t = condition.conditionThreshold;
+    assert.ok(
+      t.aggregations[0].crossSeriesReducer,
+      'recovery must not leave an old revision stuck open',
+    );
+    assert.ok(t.aggregations[0].groupByFields.includes('metric.label.worker'));
   }
 });
