@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 import { pluralCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import type { CompositeActionPreviewResult } from '@/lib/api/use-action';
 import { ConfirmActionModal } from '../confirm-action-modal';
@@ -36,6 +37,44 @@ const preview: CompositeActionPreviewResult = {
 };
 
 describe('Unsubscribe default choice', () => {
+  it('puts the existing sender facts behind Details for one sender', () => {
+    render(
+      <ConfirmActionModal
+        request={request}
+        compositePreview={preview}
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+    const details = screen.getByText('Details').closest('details');
+    expect(details).not.toHaveAttribute('open');
+    fireEvent.click(screen.getByText('Details'));
+    expect(details).toHaveTextContent(PREVIEW_DETAILS.domain.label);
+    expect(details).toHaveTextContent(sender.domain);
+    expect(details).toHaveTextContent(PREVIEW_DETAILS.sender.label);
+    expect(details).toHaveTextContent('12 in the last 90 days · 144 received');
+    expect(details).toHaveTextContent(PREVIEW_DETAILS.lastSeen.label);
+    expect(details).toHaveTextContent('1 day ago');
+    expect(details).toHaveTextContent(previewIncludesValue(false, null));
+  });
+
+  it('keeps Details on Unsubscribe only without an includes row', () => {
+    const quiet = makeSender({ unsubscribeMethod: 'one_click', inboxCount: 0 });
+    render(
+      <ConfirmActionModal
+        request={{ verb: 'Unsubscribe', senders: [quiet] }}
+        compositePreview={{ ...preview, counts: { ...counts, all: 0 } }}
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText('Details'));
+    const details = screen.getByText('Details').closest('details');
+    expect(details).toHaveTextContent(PREVIEW_DETAILS.domain.label);
+    expect(details).not.toHaveTextContent(PREVIEW_DETAILS.includes.label);
+    expect(screen.getByRole('radio', { name: 'Unsubscribe only' })).toBeChecked();
+  });
+
   it('opens on + Archive when the row already has inbox mail and keeps that choice after the preview loads', () => {
     const row = makeSender({ unsubscribeMethod: 'one_click', inboxCount: 12 });
     const onConfirm = vi.fn();

@@ -155,10 +155,16 @@ export function PreviewSheet({
                 }
           }
         >
-          {icon != null && <div style={{ marginBottom: space[4] }}>{icon}</div>}
+          {icon != null && (
+            <div className="dm-sheet-icon" style={{ marginBottom: space[4] }}>
+              {icon}
+            </div>
+          )}
 
           {context != null && (
-            <div style={{ marginBottom: space[4], width: '100%' }}>{context}</div>
+            <div className="dm-sheet-context" style={{ marginBottom: space[4], width: '100%' }}>
+              {context}
+            </div>
           )}
 
           <h2
@@ -188,7 +194,11 @@ export function PreviewSheet({
             </div>
           )}
 
-          {children != null && <div style={{ marginTop: space[5], width: '100%' }}>{children}</div>}
+          {children != null && (
+            <div className="dm-sheet-controls" style={{ marginTop: space[5], width: '100%' }}>
+              {children}
+            </div>
+          )}
 
           {note != null && (
             <p

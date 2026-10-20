@@ -453,7 +453,7 @@ describe('ActionSheet — live-preview confirm gate', () => {
     expect(screen.queryByRole('link', { name: /Check in Gmail/ })).toBeNull();
   });
 
-  it('keeps a pure unsubscribe request confirmable when the backlog move is off', () => {
+  it('keeps Unsubscribe only closed until a failed preview resolves', () => {
     const onConfirm = vi.fn();
     const { rerender } = render(
       <ActionSheet
@@ -468,21 +468,15 @@ describe('ActionSheet — live-preview confirm gate', () => {
 
     fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
     const confirm = screen.getByRole('button', { name: /^Unsubscribe/ });
-    expect(confirm).toBeEnabled();
+    expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
-    expect(onConfirm).toHaveBeenCalledTimes(2);
-    expect(onConfirm).toHaveBeenLastCalledWith({
-      archiveHistoric: false,
-      backlogMode: 'unsub_only',
-      rememberPreference: false,
-      wakeAt: null,
-    });
+    expect(onConfirm).not.toHaveBeenCalled();
 
     const archiveWhileUnknown = screen.getByRole('radio', { name: /\+ Archive/ });
     expect(archiveWhileUnknown).toBeDisabled();
     fireEvent.click(archiveWhileUnknown);
-    expect(confirm).toBeEnabled();
+    expect(confirm).toBeDisabled();
 
     rerender(
       <ActionSheet
@@ -948,27 +942,46 @@ describe('ActionSheet — Later return-time picker', () => {
 // moment it could be spent. The allowance comes from `auth.me`, not from
 // the preview, so it never had a reason to wait.
 describe('ActionSheet — the cleanup cost is stated whenever it can be spent', () => {
-  it.each(['loading', 'unavailable'] as const)(
-    'does not charge an Unsubscribe whose preview is %s and whose confirm is armed',
-    (inboxCount) => {
-      render(
-        <ActionSheet
-          open={true}
-          verb="Unsubscribe"
-          row={row}
-          inboxCount={inboxCount}
-          quotaRemaining={34}
-          onCancel={() => {}}
-          onConfirm={() => {}}
-        />,
-      );
-      // Future-only unsubscribe is armed without a resolved mail count,
-      // and it does not spend a cleanup unit.
-      expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
-      expect(screen.getByText(WS5_COPY['f1.footer'])).toBeInTheDocument();
-      expect(screen.queryByText(/cleanup action/)).toBeNull();
-    },
-  );
+  it('does not charge an Unsubscribe whose preview is still loading', () => {
+    render(
+      <ActionSheet
+        open={true}
+        verb="Unsubscribe"
+        row={row}
+        inboxCount="loading"
+        quotaRemaining={34}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+    // Future-only unsubscribe stays armed while the count is in flight,
+    // and it does not spend a cleanup unit.
+    expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
+    expect(screen.getByText(WS5_COPY['f1.footer'])).toBeInTheDocument();
+    expect(screen.queryByText(/cleanup action/)).toBeNull();
+  });
+
+  it('disables Unsubscribe only when the preview fails, without charging it', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ActionSheet
+        open={true}
+        verb="Unsubscribe"
+        row={row}
+        inboxCount="unavailable"
+        quotaRemaining={34}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+      />,
+    );
+    const confirm = screen.getByRole('button', { name: 'Unsubscribe' });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(screen.getByText(WS5_COPY['f1.footer'])).toBeInTheDocument();
+    expect(screen.queryByText(/cleanup action/)).toBeNull();
+  });
 
   it('states one cleanup action when the backlog moves and the email meter is off', () => {
     render(
@@ -1105,7 +1118,7 @@ describe('ActionSheet choice survives a preview refresh', () => {
 });
 
 describe('ActionSheet Unsubscribe preview recovery', () => {
-  it('offers retry when future-only confirmation stays available', () => {
+  it('offers retry when Unsubscribe only is closed because the preview failed', () => {
     const onRetryPreview = vi.fn();
     render(
       <ActionSheet
@@ -1118,7 +1131,7 @@ describe('ActionSheet Unsubscribe preview recovery', () => {
         onConfirm={vi.fn()}
       />,
     );
-    expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetryPreview).toHaveBeenCalledOnce();
   });

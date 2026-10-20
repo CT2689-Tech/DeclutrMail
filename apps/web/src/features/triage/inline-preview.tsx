@@ -135,12 +135,6 @@ export function InlinePreviewBlock({
   onConfirm: () => void;
 }) {
   const { blocked, nothingToActOn } = inlinePreviewGates(preview);
-  // Confirm ONLY. Switching to a different verb stays live, as it does in
-  // the sheet where `confirmDisabled` gates the button and nothing else —
-  // a zero Archive count must not trap the row out of Delete or Later.
-  const returnTimeValid = useFutureReturnTime(preview.wakeAt, preview.verb === 'Later').valid;
-  const returnInvalid = preview.verb === 'Later' && !returnTimeValid;
-  const confirmDisabled = busy || blocked || nothingToActOn || returnInvalid;
   // Same facts as the sheet (`buildPreviewFacts`), laid out as one line:
   // count + where it goes, then how to undo it. Everything the sheet keeps
   // behind "Details" stays behind a disclosure here too.
@@ -148,6 +142,16 @@ export function InlinePreviewBlock({
     preview.verb === 'Unsubscribe'
       ? (preview.backlogMode ?? (preview.archiveHistoric ? 'archive' : 'unsub_only'))
       : 'unsub_only';
+  // Confirm ONLY. Switching to a different verb stays live, as it does in
+  // the sheet where `confirmDisabled` gates the button and nothing else —
+  // a zero Archive count must not trap the row out of Delete or Later.
+  const returnTimeValid = useFutureReturnTime(preview.wakeAt, preview.verb === 'Later').valid;
+  const returnInvalid = preview.verb === 'Later' && !returnTimeValid;
+  const unsubOnlyFailed =
+    preview.verb === 'Unsubscribe' &&
+    backlogMode === 'unsub_only' &&
+    preview.inboxCount === 'unavailable';
+  const confirmDisabled = busy || blocked || nothingToActOn || returnInvalid || unsubOnlyFailed;
   const isCleanupAction =
     preview.verb === 'Archive' || preview.verb === 'Delete' || preview.verb === 'Later';
   const previewUnavailable =

@@ -25,7 +25,15 @@
 
 'use client';
 
-import { useEffect, useLayoutEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type Ref,
+  type RefObject,
+} from 'react';
 import {
   VERB_REGISTRY,
   verbById,
@@ -96,6 +104,12 @@ export interface ActionPopoverProps {
   onClose: () => void;
 
   /**
+   * The control that opened this menu. Escape and a shortcut key return
+   * focus here, including when the shortcut opens a confirm on top.
+   */
+  returnFocusRef?: RefObject<HTMLElement | null> | undefined;
+
+  /**
    * Contextual aria-label for the popover container, such as
    * "Actions for Acme Deals" or "Bulk actions for 4 selected senders".
    * Required so repeated sender menus never share a generic name.
@@ -136,9 +150,10 @@ export function ActionPopover({
   onPick,
   onClose,
   ariaLabel,
+  returnFocusRef,
   style,
 }: ActionPopoverProps) {
-  const ref = useFocusTrap<HTMLDivElement>(true);
+  const ref = useFocusTrap<HTMLDivElement>(true, returnFocusRef ? { returnFocusRef } : undefined);
 
   // QA-senders-filtering-20260901-08 / design-system-agent PR #707
   // review: the same viewport-edge-clamp technique (measure the
@@ -204,6 +219,9 @@ export function ActionPopover({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
+        // Focus the opener before unmount so a confirm opened in the same
+        // turn records that button, not the body the menu leaves behind.
+        returnFocusRef?.current?.focus();
         onClose();
         return;
       }
@@ -224,13 +242,14 @@ export function ActionPopover({
       const verb = VERB_REGISTRY.find((v) => v.shortcut.toLowerCase() === e.key.toLowerCase());
       if (verb && verbs.includes(verb.id) && capabilities[verb.id] !== false) {
         e.preventDefault();
+        returnFocusRef?.current?.focus();
         onPick(verb.id);
         onClose();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [verbs, capabilities, onPick, onClose]);
+  }, [verbs, capabilities, onPick, onClose, returnFocusRef]);
 
   // Click-outside closes.
   useEffect(() => {
@@ -449,6 +468,8 @@ interface ActionPopoverTriggerProps {
   disabled?: boolean;
   /** Optional style overrides for positioning. */
   style?: CSSProperties;
+  /** The menu returns focus to this button. */
+  buttonRef?: Ref<HTMLButtonElement> | undefined;
   /** Optional child content; defaults to the `⋯` glyph. */
   children?: ReactNode;
 }
@@ -463,10 +484,12 @@ export function ActionPopoverTrigger({
   ariaLabel,
   disabled = false,
   style,
+  buttonRef,
   children = '⋯',
 }: ActionPopoverTriggerProps) {
   return (
     <button
+      ref={buttonRef}
       type="button"
       className="dm-tap-44"
       aria-label={ariaLabel}

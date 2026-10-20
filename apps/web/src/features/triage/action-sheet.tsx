@@ -199,6 +199,10 @@ export function ActionSheet({
   // real work at a zero backlog. The unsubscribe itself is free.
   const primaryActsOnInbox = verb === 'Archive' || verb === 'Later' || verb === 'Delete';
   const nothingToActOn = primaryActsOnInbox && inboxCount === 0;
+  // Senders keeps Unsubscribe only closed when the preview failed.
+  // Loading stays open: future mail can still be cut before the count lands.
+  const unsubOnlyFailed =
+    verb === 'Unsubscribe' && effectiveMode === 'unsub_only' && previewUnavailable;
   const archivedUncounted =
     reach === 'all_mail' &&
     detail?.reachControl?.allMailCount === null &&
@@ -207,6 +211,7 @@ export function ActionSheet({
   const confirmDisabled =
     previewSenderGone ||
     archivedUncounted ||
+    unsubOnlyFailed ||
     (requiresLivePreview && (previewPending || previewUnavailable || inboxCount === 0)) ||
     nothingToActOn ||
     wakeAtInvalid;
@@ -519,7 +524,7 @@ export function ActionSheet({
                 message from the sender, so the backlog toggle exists only
                 where the primary verb does NOT touch past mail. */}
             {verb === 'Unsubscribe' && (
-              <div>
+              <div className="dm-unsub-choice">
                 <UnsubscribeChoices
                   value={effectiveMode}
                   onChange={(mode) => {

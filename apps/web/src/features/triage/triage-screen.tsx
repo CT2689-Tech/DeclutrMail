@@ -589,13 +589,15 @@ export function TriageScreen({
   // preview refetches — a cached count must never arm confirm (D226).
   // ADR-0028 — Delete may reach archived mail too, by explicit choice.
   // Offered on the daily ritual only: onboarding's first cleanup stays
-  // about the inbox (founder decision 2026-09-19). And only when the
-  // preview carries the all-mail block — absent against an older API, so
-  // during a deploy skew the choice simply does not appear.
+  // about the inbox (founder decision 2026-09-19). A settled preview with
+  // no all-mail block still offers the control so the archived-count
+  // notice can say why it stays off. Loading and a failed read do not.
+  const previewSettled =
+    compositePreview.data != null && !compositePreview.isFetching && !compositePreview.isError;
   const reachOffered =
     journey === 'daily' &&
     (pendingAction?.verb === 'Delete' || pendingAction?.verb === 'Unsubscribe') &&
-    (compositePreview.data?.allMail != null || deleteReach === 'all_mail');
+    (previewSettled || deleteReach === 'all_mail');
   const activeReach: ActionReach =
     pendingAction?.surface === 'sheet' &&
     journey === 'daily' &&
@@ -766,17 +768,21 @@ export function TriageScreen({
   // action on Free. The sheet already refuses the zero case
   // (`nothingToActOn`, action-sheet.tsx), and this is the SAME decision
   // with the sheet skipped via D34, so it has to refuse it identically.
-  // Unsubscribe is excluded for the same reason it is in the sheet — it
-  // cuts FUTURE mail, so it is real work at a zero count.
+  // Unsubscribe only still cuts future mail at a zero count, and while
+  // the count is loading, so those stay confirmable. A failed preview
+  // does not: Senders keeps Unsubscribe only closed then, and Triage matches.
+  const inlineUnsubOnly =
+    pendingAction?.verb === 'Unsubscribe' &&
+    (pendingAction.backlogMode ?? ((unsubscribeInboxTotal ?? 0) > 0 ? 'archive' : 'unsub_only')) ===
+      'unsub_only';
   const inlinePreviewBlocked =
     pendingAction?.surface === 'inline' &&
-    (pendingAction.verb === 'Archive' ||
+    (((pendingAction.verb === 'Archive' ||
       pendingAction.verb === 'Later' ||
       pendingAction.verb === 'Delete' ||
-      (pendingAction.verb === 'Unsubscribe' &&
-        (pendingAction.backlogMode ??
-          ((unsubscribeInboxTotal ?? 0) > 0 ? 'archive' : 'unsub_only')) !== 'unsub_only')) &&
-    (typeof previewInboxCount !== 'number' || previewInboxCount === 0);
+      (pendingAction.verb === 'Unsubscribe' && !inlineUnsubOnly)) &&
+      (typeof previewInboxCount !== 'number' || previewInboxCount === 0)) ||
+      (inlineUnsubOnly && previewInboxCount === 'unavailable'));
 
   // Drive the async-action lifecycle off the polled status. On `done`
   // the queue is invalidated and the refetch drops the decided row —

@@ -991,6 +991,59 @@ button {
   .dm-sheet-segment-option {
     padding-inline: 4px;
   }
+  /* A 64px mark plus the account line pushes the cleanup choice below
+     the first screen of a 360px phone. Keep the choice in that screen. */
+  .dm-sheet-review {
+    max-height: calc(100dvh - 8px);
+  }
+  .dm-sheet-review .dm-sheet-body {
+    --dm-sheet-body-top-padding: 12px;
+    padding: 12px 16px 8px;
+  }
+  .dm-sheet-review .dm-sheet-icon {
+    margin-bottom: 8px !important;
+  }
+  .dm-sheet-review .dm-sheet-icon > *,
+  .dm-sheet-review .dm-sheet-icon > * > * {
+    width: 40px !important;
+    height: 40px !important;
+  }
+  .dm-sheet-review .dm-sheet-controls {
+    margin-top: 8px !important;
+  }
+  /* Pull the cleanup choice to the top of a short phone sheet. The header
+     text is not focusable, so the first tab stop is still the choice. */
+  .dm-sheet-review .dm-sheet-body:has(.dm-unsub-choice) {
+    display: flex;
+    flex-direction: column;
+  }
+  .dm-sheet-review .dm-sheet-body:has(.dm-unsub-choice) > .dm-sheet-controls,
+  .dm-sheet-review .dm-sheet-body:has(.dm-unsub-choice) > .dm-sheet-controls > div {
+    display: contents !important;
+  }
+  .dm-sheet-review .dm-unsub-choice {
+    order: -1;
+    margin-bottom: 8px;
+  }
+  .dm-sheet-review
+    .dm-sheet-body:has(.dm-unsub-choice)
+    > .dm-sheet-controls
+    > div
+    > :not(.dm-unsub-choice) {
+    margin-top: 12px;
+  }
+  .dm-sheet-review .dm-sheet-context {
+    margin-bottom: 8px !important;
+  }
+  .dm-sheet-review .dm-sheet-context > * {
+    padding: 4px 8px !important;
+  }
+  .dm-sheet-review h2 {
+    font-size: 20px !important;
+  }
+  .dm-sheet-review .dm-sheet-footer {
+    padding: 8px 16px calc(8px + env(safe-area-inset-bottom, 0px));
+  }
 }
 @media (max-width: 760px) {
   [data-dm-button],

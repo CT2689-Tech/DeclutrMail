@@ -614,6 +614,22 @@ describe('TriageScreen — D226 mutation wiring', () => {
     });
   });
 
+  it('shows the archived-count notice when Delete has no all-mail block', async () => {
+    renderScreen(createTestQueryClient());
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'd' });
+    const dialog = await screen.findByRole('dialog');
+    const archived = await within(dialog).findByRole('checkbox', {
+      name: 'Include archived email',
+    });
+    expect(archived).toBeDisabled();
+    expect(archived).not.toBeChecked();
+    expect(within(dialog).getByText(WS5_COPY['f1.preview.archived.unavailable'])).toBeVisible();
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: /^Delete/ })).toBeEnabled(),
+    );
+  });
+
   describe('ADR-0028 — Delete may reach archived mail, by explicit choice', () => {
     const PREVIEW_WITH_ALL_MAIL = {
       ...PREVIEW_BODY,
@@ -2439,9 +2455,12 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     fireEvent.keyDown(window, { key: 'u' });
     const region = await screen.findByRole('region', { name: /^Preview · Unsubscribe / });
     const retry = await within(region).findByRole('button', { name: 'Try again' });
-    expect(within(region).getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
+    const confirm = within(region).getByRole('button', { name: 'Unsubscribe' });
+    expect(confirm).toBeDisabled();
     expect(within(region).getByRole('radio', { name: '+ Archive' })).toBeDisabled();
     act(() => useTriageStore.getState().setPendingBacklogMode('unsub_only'));
+    fireEvent.keyDown(window, { key: 'u' });
+    expect(writes).toBe(0);
     const failedReads = reads;
     failing = false;
     fireEvent.click(retry);
@@ -2450,6 +2469,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     );
     expect(reads).toBeGreaterThan(failedReads);
     expect(within(region).getByRole('radio', { name: 'Unsubscribe only' })).toBeChecked();
+    expect(within(region).getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
     expect(within(region).queryByRole('button', { name: 'Try again' })).toBeNull();
     expect(writes).toBe(0);
   });

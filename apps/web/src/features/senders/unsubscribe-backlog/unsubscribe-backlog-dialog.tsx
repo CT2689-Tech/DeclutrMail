@@ -3,8 +3,20 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 
-import { Avatar, Button, PreviewSheet, tokens } from '@declutrmail/shared';
-import { normalizeProtectionReason, protectionReasonClause } from '@declutrmail/shared/copy';
+import {
+  Avatar,
+  Button,
+  PreviewSheet,
+  SheetFactList,
+  tokens,
+  type SheetFactItem,
+} from '@declutrmail/shared';
+import {
+  PREVIEW_DETAILS,
+  normalizeProtectionReason,
+  previewIncludesValue,
+  protectionReasonClause,
+} from '@declutrmail/shared/copy';
 import {
   fillCopy,
   isPluralCopy,
@@ -273,6 +285,30 @@ export function UnsubscribeBacklogDialog({
     );
   }
 
+  const singleFacts: SheetFactItem[] = [];
+  if (single && onlySender) {
+    const domain = compositePreview?.sender.domain || onlySender.domain;
+    if (domain !== '') {
+      singleFacts.push({ label: PREVIEW_DETAILS.domain.label, value: domain });
+    }
+    singleFacts.push({
+      label: PREVIEW_DETAILS.sender.label,
+      value: `${onlySender.monthlyVolume == null ? '—' : shown(onlySender.monthlyVolume)} in the last 90 days · ${shown(onlySender.totalReceived)} received`,
+    });
+    const days = compositePreview?.sender.lastSeenDays ?? onlySender.lastDays;
+    if (days != null) {
+      singleFacts.push({
+        label: PREVIEW_DETAILS.lastSeen.label,
+        value: days === 0 ? 'Today' : `${shown(days)} day${days === 1 ? '' : 's'} ago`,
+      });
+    }
+    if (mode !== 'unsub_only' && cleanupCount !== null) {
+      singleFacts.push({
+        label: PREVIEW_DETAILS.includes.label,
+        value: previewIncludesValue(includeArchived, activeWindow),
+      });
+    }
+  }
   const note =
     mode === 'delete'
       ? WS5_COPY['f1.honesty.delete']
@@ -462,8 +498,9 @@ export function UnsubscribeBacklogDialog({
           />
         }
         details={
-          !single || mode === 'delete' ? (
+          singleFacts.length > 0 || !single || mode === 'delete' ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: space[2] }}>
+              {singleFacts.length > 0 && <SheetFactList facts={singleFacts} />}
               {!single && previewLines}
               {mode === 'delete' && <span>{WS5_COPY['f1.deleteNote']}</span>}
             </div>

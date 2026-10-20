@@ -10,8 +10,10 @@
 // reading of unsub-ready (mailto is manual at launch per D230), and
 // the capability agreement between the primary CTA and the ⋯ popover.
 
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import { PreviewSheet } from '@declutrmail/shared';
 import { derivePrimaryVerbId, leadButtonTone, SenderActionRow } from './action-row';
 import { makeSender } from './testing/make-sender';
 import { canUnsubscribe } from './data';
@@ -166,6 +168,55 @@ describe('SenderActionRow — one-click unsub-ready row', () => {
     for (const label of ['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete']) {
       expect(within(menu).getByRole('menuitem', { name: label })).toBeInTheDocument();
     }
+  });
+});
+
+describe('SenderActionRow — menu focus returns to the opener', () => {
+  function openMenu() {
+    const opener = screen.getByRole('button', { name: 'More actions for Acme Deals' });
+    fireEvent.click(opener);
+    expect(screen.getByRole('menu', { name: 'Actions for Acme Deals' })).toBeInTheDocument();
+    return opener;
+  }
+
+  it('returns focus to the opener on Escape', () => {
+    render(<SenderActionRow sender={sender()} onAction={vi.fn()} />);
+    const opener = openMenu();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(opener).toHaveFocus();
+  });
+
+  it('returns focus to the opener on A, including after the confirm closes', () => {
+    function Host() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <SenderActionRow
+            sender={sender({ inboxCount: 3 })}
+            onAction={(req) => {
+              if (req.verb === 'Archive') setOpen(true);
+            }}
+          />
+          {open && (
+            <PreviewSheet
+              title="Archive emails?"
+              onClose={() => setOpen(false)}
+              primary={{ label: 'Archive', onClick: () => setOpen(false) }}
+            />
+          )}
+        </>
+      );
+    }
+    render(<Host />);
+    const opener = openMenu();
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    const dialog = screen.getByRole('dialog', { name: 'Archive emails?' });
+    expect(dialog).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(opener).toHaveFocus();
   });
 });
 

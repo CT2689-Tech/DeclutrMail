@@ -28,7 +28,7 @@ export function UnsubscribeChoices({
   deleteDisabled: boolean;
 }) {
   return (
-    <div className={styles.unsubscribeChoices}>
+    <div className={`${styles.unsubscribeChoices} dm-unsub-choice`}>
       <SheetSegmented
         label={WS5_COPY['f1.preview.existing.label']}
         value={value}
