@@ -48,7 +48,7 @@ function CleanupStory(args: ComponentProps<typeof DecidePreview>) {
           onCancel={() => setOpen(false)}
           onConfirm={() => {
             setResult(
-              `Sample confirmation: ${reach === 'all_mail' ? allMailCount : count} emails, ${reach}, ${cleanupAgeLabel(days).toLowerCase()}.`,
+              `Sample confirmation: ${reach === 'all_mail' ? allMailCount : count} emails, ${reach === 'all_mail' ? 'inbox and archived' : 'inbox only'}, ${cleanupAgeLabel(days).toLowerCase()}.`,
             );
             setOpen(false);
           }}

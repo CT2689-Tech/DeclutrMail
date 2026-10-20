@@ -855,8 +855,8 @@ describe('TriageRow — inline zero-count no-op gate', () => {
           new RegExp(
             verb === 'Later'
               ? '^Move 1 email to Later$'
-              : verb === 'Archive'
-                ? '^Archive$'
+              : verb === 'Archive' || verb === 'Delete'
+                ? `^${verb}$`
                 : `^${verb} 1 email$`,
           ),
         ),

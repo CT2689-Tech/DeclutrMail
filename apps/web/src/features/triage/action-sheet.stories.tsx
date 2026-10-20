@@ -1,6 +1,7 @@
 import { useState, type ComponentProps } from 'react';
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { cleanupAgeLabel } from '@/components/cleanup-preview';
+import { DEFAULT_DELETE_WINDOW_DAYS } from '@declutrmail/shared/actions';
 import { Button } from '@declutrmail/shared';
 import type { ActionReach } from '@declutrmail/shared/contracts';
 import { pickBucketCount, TIME_WINDOW_PRESETS } from '@/features/senders/action-window';
@@ -17,29 +18,45 @@ const sampleRow = {
   brandMark: false,
 };
 
+const archivedCounts = {
+  all: 18,
+  olderThan30d: 18,
+  olderThan90d: 16,
+  olderThan180d: 12,
+  olderThan365d: 6,
+};
+
 function CleanupStory(args: ComponentProps<typeof ActionSheet>) {
   const [open, setOpen] = useState(args.open);
-  const [days, setDays] = useState<number | null>(null);
+  const defaultDays = args.verb === 'Delete' ? DEFAULT_DELETE_WINDOW_DAYS : null;
+  const [days, setDays] = useState<number | null>(defaultDays);
   const [reach, setReach] = useState<ActionReach>('inbox_only');
   const [result, setResult] = useState('');
-  const inboxCount = typeof args.inboxCount === 'number' ? args.inboxCount : null;
-  const allMailCount = inboxCount === null ? null : inboxCount + 18;
+  const inboxCount =
+    typeof args.inboxCount === 'number'
+      ? args.inboxCount === 0
+        ? 0
+        : (pickBucketCount(batchCounts, days) ?? 0)
+      : null;
+  const allMailCount =
+    inboxCount === null ? null : inboxCount + (pickBucketCount(archivedCounts, days) ?? 0);
   const activeReach = args.verb === 'Delete' ? reach : 'inbox_only';
   const count =
-    activeReach === 'all_mail' && allMailCount !== null
-      ? allMailCount
-      : args.verb === 'Archive' && inboxCount !== null
-        ? inboxCount === 0
-          ? 0
-          : (pickBucketCount(batchCounts, days) ?? 0)
-        : args.inboxCount;
+    typeof args.inboxCount === 'number'
+      ? activeReach === 'all_mail'
+        ? (allMailCount ?? 0)
+        : (inboxCount ?? 0)
+      : args.inboxCount;
   return (
     <div style={{ padding: 24 }}>
-      <p>Fictional mailbox · no Gmail changes. Triage keeps its Any age default.</p>
+      <p>
+        Fictional mailbox · no Gmail changes. {args.verb} starts at{' '}
+        {cleanupAgeLabel(defaultDays).toLowerCase()}.
+      </p>
       <Button
         onClick={() => {
           setReach('inbox_only');
-          setDays(null);
+          setDays(defaultDays);
           setOpen(true);
         }}
       >
@@ -52,7 +69,7 @@ function CleanupStory(args: ComponentProps<typeof ActionSheet>) {
         reach={activeReach}
         inboxCount={count}
         detail={{
-          ...(args.verb === 'Archive'
+          ...(args.verb === 'Archive' || args.verb === 'Delete'
             ? {
                 ageControl: {
                   olderThanDays: days,
@@ -71,7 +88,7 @@ function CleanupStory(args: ComponentProps<typeof ActionSheet>) {
         onCancel={() => setOpen(false)}
         onConfirm={() => {
           setResult(
-            `Sample confirmation: ${args.verb} ${count} emails, ${activeReach}, ${cleanupAgeLabel(days).toLowerCase()}.`,
+            `Sample confirmation: ${args.verb} ${count} emails, ${activeReach === 'all_mail' ? 'inbox and archived' : 'inbox only'}, ${cleanupAgeLabel(days).toLowerCase()}.`,
           );
           setOpen(false);
         }}
@@ -112,9 +129,10 @@ export const ArchiveProtected: Story = {
   args: { verb: 'Archive', row: { ...sampleRow, protectionReason: 'manual' } },
 };
 
-function InlineArchiveStory(args: ComponentProps<typeof ActionSheet>) {
+function InlineCleanupStory(args: ComponentProps<typeof ActionSheet>) {
+  const defaultDays = args.verb === 'Delete' ? DEFAULT_DELETE_WINDOW_DAYS : null;
   const [open, setOpen] = useState(true);
-  const [days, setDays] = useState<number | null>(null);
+  const [days, setDays] = useState<number | null>(defaultDays);
   const [result, setResult] = useState('');
   const count =
     typeof args.inboxCount === 'number'
@@ -124,13 +142,17 @@ function InlineArchiveStory(args: ComponentProps<typeof ActionSheet>) {
       : args.inboxCount;
   return (
     <div style={{ maxWidth: 680, margin: '24px auto', padding: 16 }}>
-      <p>Fictional mailbox · no Gmail changes. Triage inline Archive keeps Inbox only · Any age.</p>
+      <p>
+        {args.verb === 'Delete'
+          ? 'Inline Delete layout preview · fictional mailbox. Delete still opens a confirmation window in the product.'
+          : 'Fictional mailbox · no Gmail changes. Triage inline Archive · Inbox only.'}
+      </p>
       {result && <p role="status">{result}</p>}
       {open ? (
         <InlinePreviewBlock
           row={args.row ?? sampleRow}
           preview={{
-            verb: 'Archive',
+            verb: args.verb,
             archiveHistoric: false,
             inboxCount: count,
             ageControl: { olderThanDays: days, options: TIME_WINDOW_PRESETS, onChange: setDays },
@@ -140,7 +162,7 @@ function InlineArchiveStory(args: ComponentProps<typeof ActionSheet>) {
           shortcutLive={false}
           onConfirm={() => {
             setResult(
-              `Sample confirmation: Archive ${count} inbox emails, ${cleanupAgeLabel(days).toLowerCase()}.`,
+              `Sample confirmation: ${args.verb} ${count} inbox emails, ${cleanupAgeLabel(days).toLowerCase()}.`,
             );
             setOpen(false);
           }}
@@ -148,11 +170,11 @@ function InlineArchiveStory(args: ComponentProps<typeof ActionSheet>) {
       ) : (
         <Button
           onClick={() => {
-            setDays(null);
+            setDays(defaultDays);
             setOpen(true);
           }}
         >
-          Review Archive
+          Review {args.verb}
         </Button>
       )}
     </div>
@@ -160,9 +182,13 @@ function InlineArchiveStory(args: ComponentProps<typeof ActionSheet>) {
 }
 export const ArchiveInline: Story = {
   args: { verb: 'Archive' },
-  render: (args) => <InlineArchiveStory {...args} />,
+  render: (args) => <InlineCleanupStory {...args} />,
 };
 
+export const DeleteInline: Story = {
+  args: { verb: 'Delete' },
+  render: (args) => <InlineCleanupStory {...args} />,
+};
 const batchRows = [
   sampleRow,
   {

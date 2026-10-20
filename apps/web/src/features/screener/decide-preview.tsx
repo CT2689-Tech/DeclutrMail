@@ -119,10 +119,10 @@ export function DecidePreview({
   // ADR-0028 reach. Widening stays possible only when the preview carries
   // the all-mail count. Without that count the checkbox stays disabled.
   const reachAvailable = verb === 'delete' && allMailCount != null;
-  const activeReach: ActionReach = reachAvailable ? reach : 'inbox_only';
+  const activeReach: ActionReach = verb === 'delete' ? reach : 'inbox_only';
   // The ONE count the preview arms — under the SELECTED reach.
   const effectiveCount: DecidePreviewCount =
-    activeReach === 'all_mail' && allMailCount != null ? allMailCount : inboxCount;
+    activeReach === 'all_mail' ? (allMailCount ?? 'unavailable') : inboxCount;
   const liveCount = typeof effectiveCount === 'number' ? effectiveCount : null;
   // What actually moves — only the label-modify verbs touch the inbox.
   // Declared before `title` (QA-delete-20260903-01): a zero-match Archive/
@@ -222,7 +222,8 @@ export function DecidePreview({
   const auth = useOptionalAuth();
   const activeMailboxEmail = mailboxEmail ?? (auth ? getActiveMailboxEmail(auth.me) : null);
 
-  const previewBlocked = moves && (inboxCount === 'loading' || inboxCount === 'unavailable');
+  const previewBlocked =
+    moves && (typeof inboxCount !== 'number' || typeof effectiveCount !== 'number');
   // A zero-match Delete would only remove the review row while moving no
   // email. Keep is the explicit app-only decision for that intent.
   const confirmDisabled = confirming || previewBlocked || (moves && liveCount === 0);

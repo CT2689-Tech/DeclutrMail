@@ -410,8 +410,8 @@ export function ScreenerScreen({
   const pendingMovesMail =
     pending?.verb === 'archive' || pending?.verb === 'later' || pending?.verb === 'delete';
   const selectedPreviewCount =
-    isPendingDelete && pending?.reach === 'all_mail' && previewAllMailCount !== null
-      ? previewAllMailCount
+    isPendingDelete && pending?.reach === 'all_mail'
+      ? (previewAllMailCount ?? 'unavailable')
       : previewInboxCount;
   const pendingPreviewBlocked =
     pendingMovesMail && (typeof selectedPreviewCount !== 'number' || selectedPreviewCount === 0);

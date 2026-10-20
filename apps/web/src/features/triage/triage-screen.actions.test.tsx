@@ -135,7 +135,7 @@ async function confirmOpenSheet(
 ) {
   const dialog = await screen.findByRole('dialog');
   if (waitForPreview) {
-    await waitFor(() => expect(liveCount('47')).toBeDefined());
+    await waitFor(() => expect(liveCount(verb === 'Delete' ? '5' : '47')).toBeDefined());
   }
   const confirm = within(dialog).getByRole('button', { name: new RegExp(`^${verb}`, 'i') });
   await waitFor(() => expect(confirm).not.toBeDisabled());
@@ -610,7 +610,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     await waitFor(() => expect(enqueues).toHaveLength(1));
     expect(enqueues[0]).toMatchObject({
       selector: { type: 'sender', senderId: GROUPON.senderId },
-      primary: { type: 'delete', olderThanDays: null },
+      primary: { type: 'delete', olderThanDays: 180 },
     });
   });
 
@@ -685,13 +685,19 @@ describe('TriageScreen — D226 mutation wiring', () => {
       });
       // Safe default: inbox only, and the copy says so.
       expect(archived).not.toBeChecked();
-      expect(within(dialog).getByText(/^Inbox only\. We check again/)).toBeDefined();
+      expect(
+        within(dialog).getByText(/^Inbox only \(older than 180 days\)\. We check again/),
+      ).toBeDefined();
 
       fireEvent.click(archived);
       expect(within(dialog).getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
-        '412 emails will move to Gmail Trash.',
+        '300 emails will move to Gmail Trash.',
       );
-      expect(within(dialog).getByText(/^Inbox and archived email\. We check again/)).toBeDefined();
+      expect(
+        within(dialog).getByText(
+          /^Inbox and archived email \(older than 180 days\)\. We check again/,
+        ),
+      ).toBeDefined();
       expect(
         within(dialog).getByRole('heading', { name: `Delete emails from ${GROUPON.senderName}?` }),
       ).toBeDefined();
@@ -712,15 +718,15 @@ describe('TriageScreen — D226 mutation wiring', () => {
       fireEvent.keyDown(window, { key: 'd' });
       await waitFor(() =>
         expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
-          '47 emails will move to Gmail Trash.',
+          '5 emails will move to Gmail Trash.',
         ),
       );
       expect(screen.getByRole('checkbox', { name: 'Include archived email' })).not.toBeChecked();
-      expect(screen.queryByRole('combobox', { name: 'Email age' })).toBeNull();
+      expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
       await confirmOpenSheet('Delete', false);
       await waitFor(() => expect(enqueues).toHaveLength(1));
       expect(enqueues[0]!.primary).not.toHaveProperty('reach');
-      expect(enqueues[0]!.primary).toMatchObject({ type: 'delete', olderThanDays: null });
+      expect(enqueues[0]!.primary).toMatchObject({ type: 'delete', olderThanDays: 180 });
     });
 
     it('keeps Inbox only selected on an empty inbox and points at the archived chip', async () => {
@@ -801,7 +807,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
       const dialog = await screen.findByRole('dialog');
       await waitFor(() =>
         expect(within(dialog).getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
-          '47 emails will move to Gmail Trash.',
+          '5 emails will move to Gmail Trash.',
         ),
       );
       expect(reachRow()).toBeNull();
@@ -3670,5 +3676,221 @@ describe('Archive Email age — preview and dispatch share one scope', () => {
     expect(posted).not.toHaveBeenCalled();
     fireEvent.change(age, { target: { value: 'all' } });
     expect(screen.getByRole('button', { name: 'Archive' })).toBeEnabled();
+  });
+});
+
+describe('Delete Email age — selected counts and requests', () => {
+  function fixture() {
+    return {
+      ...PREVIEW_BODY,
+      counts: { ...PREVIEW_BODY.counts, olderThan365d: 0 },
+      recentMessages: {
+        ...PREVIEW_BODY.recentMessages,
+        olderThan180d: [{ subject: 'Old inbox match', date: '2025-01-01T12:00:00Z' }],
+      },
+      allMail: {
+        counts: {
+          all: 80,
+          olderThan30d: 50,
+          olderThan90d: 25,
+          olderThan180d: 12,
+          olderThan365d: 0,
+        },
+        recentMessages: {
+          ...PREVIEW_BODY.recentMessages,
+          olderThan180d: [{ subject: 'Old archived match', date: '2025-01-02T12:00:00Z' }],
+        },
+      },
+    };
+  }
+  let preview = fixture();
+  let bodies: unknown[];
+  beforeEach(() => {
+    preview = fixture();
+    bodies = [];
+    resetTriageStore();
+    h.mailbox = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    installFetchStub([
+      { method: 'GET', path: '/api/actions/preview', respond: () => jsonOk({ data: preview }) },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          bodies.push(await req.json());
+          return jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              compositeId: ACTION_ID,
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 5,
+              secondaryCount: null,
+            },
+          });
+        },
+      },
+      {
+        method: 'GET',
+        path: `/api/actions/${ACTION_ID}`,
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              status: 'executing',
+              requestedCount: 5,
+              affectedCount: 0,
+              undoToken: null,
+              errorCode: null,
+            },
+          }),
+      },
+    ]);
+  });
+  afterEach(resetFetchStub);
+
+  it.each(['click', 'keyboard'] as const)(
+    'uses the 180-day bucket for modal %s confirmation',
+    async (submit) => {
+      renderScreen(createTestQueryClient());
+      expandRow(GROUPON.senderName);
+      fireEvent.keyDown(window, { key: 'd' });
+      const age = await screen.findByRole('combobox', { name: 'Email age' });
+      expect(age).toHaveValue('180');
+      await waitFor(() =>
+        expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+          '5 emails will move',
+        ),
+      );
+      expect(screen.getByText(/Approximate cutoff/)).toBeVisible();
+      fireEvent.click(screen.getByText('Details').closest('summary')!);
+      expect(screen.getByText('Old inbox match')).toBeVisible();
+      expect(screen.queryByText('Old archived match')).toBeNull();
+      const gmail = decodeURIComponent(
+        screen.getByRole('link', { name: /Check in Gmail/ }).getAttribute('href')!,
+      );
+      expect(gmail).toContain('in:inbox');
+      expect(gmail).toContain('older_than:180d');
+      if (submit === 'click') fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      else fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
+      await waitFor(() => expect(bodies).toHaveLength(1));
+      expect(bodies[0]).toMatchObject({
+        selector: { type: 'sender', senderId: GROUPON.senderId },
+        primary: { type: 'delete', olderThanDays: 180 },
+      });
+    },
+  );
+
+  it('keeps archived scope when age changes and sends explicit Any age', async () => {
+    renderScreen(createTestQueryClient());
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'd' });
+    const archived = await screen.findByRole('checkbox', { name: 'Include archived email' });
+    fireEvent.click(archived);
+    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+      '12 emails will move',
+    );
+    fireEvent.click(screen.getByText('Details').closest('summary')!);
+    expect(screen.getByText('Old archived match')).toBeVisible();
+    expect(
+      decodeURIComponent(
+        screen.getByRole('link', { name: /Check in Gmail/ }).getAttribute('href')!,
+      ),
+    ).not.toContain('in:inbox');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+      target: { value: 'all' },
+    });
+    expect(screen.getByRole('checkbox', { name: 'Include archived email' })).toBeChecked();
+    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+      '80 emails will move',
+    );
+    expect(screen.queryByText(/Approximate cutoff/)).toBeNull();
+    const gmail = decodeURIComponent(
+      screen.getByRole('link', { name: /Check in Gmail/ }).getAttribute('href')!,
+    );
+    expect(gmail).not.toContain('older_than:');
+    expect(gmail).not.toContain('in:inbox');
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({
+      primary: { type: 'delete', olderThanDays: null, reach: 'all_mail' },
+    });
+  });
+
+  it.each(['click', 'shortcut'] as const)(
+    'inline renderer preserves 180 days and confirms Any age via %s',
+    async (submit) => {
+      renderScreen(createTestQueryClient());
+      expandRow(GROUPON.senderName);
+      // Delete still always opens a modal in the product. Exercise its shared
+      // inline renderer without introducing a new skip-sheet preference.
+      act(() => useTriageStore.getState().openPending('Delete', GROUPON.id, 'inline'));
+      const age = await screen.findByRole('combobox', { name: 'Email age' });
+      expect(age).toHaveValue('180');
+      await waitFor(() =>
+        expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+          '5 emails will move',
+        ),
+      );
+      fireEvent.change(age, { target: { value: 'all' } });
+      expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+        '47 emails will move',
+      );
+      if (submit === 'click') fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      else fireEvent.keyDown(window, { key: 'd' });
+      await waitFor(() => expect(bodies).toHaveLength(1));
+      expect(bodies[0]).toMatchObject({ primary: { type: 'delete', olderThanDays: null } });
+      expect((bodies[0] as { primary: object }).primary).not.toHaveProperty('reach');
+    },
+  );
+
+  it('keeps a zero age editable and restores 180 days and Inbox only on a new preview', async () => {
+    renderScreen(createTestQueryClient());
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'd' });
+    const age = await screen.findByRole('combobox', { name: 'Email age' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Delete' })).toBeEnabled());
+    fireEvent.change(age, { target: { value: '365' } });
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+    expect(age).toBeEnabled();
+    expect(screen.getByRole('heading', { name: /No emails older than 1 year/ })).toBeVisible();
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(bodies).toHaveLength(0);
+    fireEvent.change(age, { target: { value: 'all' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.keyDown(window, { key: 'd' });
+    expect(await screen.findByRole('combobox', { name: 'Email age' })).toHaveValue('180');
+    await waitFor(() =>
+      expect(screen.getByRole('checkbox', { name: 'Include archived email' })).not.toBeChecked(),
+    );
+  });
+
+  it('never falls back to inbox counts if a selected archived age becomes unavailable', async () => {
+    const client = createTestQueryClient();
+    renderScreen(client);
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'd' });
+    const archived = await screen.findByRole('checkbox', { name: 'Include archived email' });
+    fireEvent.click(archived);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+      target: { value: '30' },
+    });
+    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+      '50 emails will move',
+    );
+    Reflect.deleteProperty(preview.allMail.counts, 'olderThan30d');
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ['composite-preview'] });
+    });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled());
+    expect(screen.getByRole('checkbox', { name: 'Include archived email' })).toBeChecked();
+    expect(screen.queryByRole('region', { name: 'Delete impact' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(bodies).toHaveLength(0);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
+    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+      '30 emails will move',
+    );
   });
 });

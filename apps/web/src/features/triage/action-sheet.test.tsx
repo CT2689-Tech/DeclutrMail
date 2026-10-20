@@ -21,6 +21,7 @@ import { fillCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { installFetchStub, resetFetchStub } from '@/test/fetch-stub';
+import { InlinePreviewBlock } from './inline-preview';
 import { ActionSheet } from './action-sheet';
 import { TRIAGE_QUEUE } from './fixtures';
 import { resetTriageStore, useTriageStore, type RememberableVerb } from './store';
@@ -71,26 +72,34 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
     });
   });
 
-  it('uses the Delete review layout without adding an age choice or changing confirmation details', () => {
+  it('uses the Delete review layout with its controlled 180-day age and matching confirmation details', () => {
     const onConfirm = vi.fn();
     render(
       <ActionSheet
         open
         verb="Delete"
         row={row}
-        inboxCount={128}
+        inboxCount={84}
+        detail={{
+          ageControl: {
+            olderThanDays: 180,
+            options: [{ days: null }, { days: 180 }],
+            onChange: vi.fn(),
+          },
+        }}
         onConfirm={onConfirm}
         onCancel={vi.fn()}
       />,
     );
     expect(screen.getByRole('dialog')).toHaveAccessibleDescription(
-      /Future email is unchanged.*128 emails will move to Gmail Trash.*Inbox only.*Any age/,
+      /Future email is unchanged.*84 emails will move to Gmail Trash.*Inbox only.*Older than 180 days/,
     );
-    expect(screen.queryByRole('combobox')).toBeNull();
-    expect(screen.queryByText(/Approximate cutoff/)).toBeNull();
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
+    expect(screen.getByText(/Approximate cutoff/)).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     expect(onConfirm).toHaveBeenCalledWith({
       archiveHistoric: false,
+      olderThanDays: 180,
       wakeAt: null,
       rememberPreference: false,
     });
@@ -1130,4 +1139,32 @@ describe('ActionSheet Unsubscribe preview recovery', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
     expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
   });
+});
+
+it('states inline Delete impact, recovery and future effect once outside Details', () => {
+  render(
+    <InlinePreviewBlock
+      row={row}
+      preview={{
+        verb: 'Delete',
+        archiveHistoric: false,
+        inboxCount: 84,
+        ageControl: {
+          olderThanDays: 180,
+          options: [{ days: null }, { days: 180 }],
+          onChange: vi.fn(),
+        },
+      }}
+      busy={false}
+      shortcutLive={false}
+      onConfirm={vi.fn()}
+    />,
+  );
+  const region = screen.getByRole('region', { name: `Preview · Delete ${row.senderName}` });
+  const visible = region.cloneNode(true) as HTMLElement;
+  visible.querySelector('details')?.remove();
+  expect(visible.textContent?.match(/Future email is unchanged\./g)).toHaveLength(1);
+  expect(visible.textContent?.match(/Undo from Activity for 30 days\./g)).toHaveLength(1);
+  expect(visible.textContent?.match(/84/g)).toHaveLength(1);
+  expect(screen.getByRole('button', { name: 'Delete' })).toHaveTextContent(/^Delete$/);
 });

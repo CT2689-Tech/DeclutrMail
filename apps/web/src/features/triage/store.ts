@@ -40,7 +40,8 @@
 'use client';
 
 import { create } from 'zustand';
-import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
+import type { ActionReach } from '@declutrmail/shared/contracts';
+import { DEFAULT_DELETE_WINDOW_DAYS, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { UnsubscribeBacklogMode } from '@/features/senders/unsubscribe-backlog/preview-copy';
 import type { ActionVerb } from './types';
 
@@ -51,8 +52,10 @@ export type SheetableVerb = Extract<ActionVerb, 'Archive' | 'Unsubscribe' | 'Lat
 export type RememberableVerb = Exclude<SheetableVerb, 'Delete'>;
 
 export interface PendingAction {
-  /** Archive only. A new preview starts at Any age; never persisted. */
+  /** Preview-only age. Delete starts at 180 days; Archive at Any age. */
   olderThanDays?: number | null;
+  /** Delete reach (including Unsubscribe cleanup), scoped to this preview. */
+  reach?: ActionReach;
   verb: ActionVerb;
   rowId: string;
   /** Exact return time for a pending Later action; null for other verbs. */
@@ -118,6 +121,7 @@ export interface TriageActions {
   /** Record the skip-sheet unsubscribe choice. */
   setPendingBacklogMode: (mode: UnsubscribeBacklogMode) => void;
   setPendingOlderThanDays: (days: number | null) => void;
+  setPendingReach: (reach: ActionReach) => void;
   /** Clear any pending action (cancel or post-confirm). */
   clearPending: () => void;
   /** Bump the session count by `by` confirmed decisions (default 1). */
@@ -163,6 +167,7 @@ export const useTriageStore = create<TriageState & TriageActions>((set) => ({
         surface,
         wakeAt: verb === 'Later' ? defaultLaterWakeAtIso() : null,
         backlogMode: null,
+        ...(verb === 'Delete' ? { olderThanDays: DEFAULT_DELETE_WINDOW_DAYS } : {}),
       },
     }),
 
@@ -175,8 +180,15 @@ export const useTriageStore = create<TriageState & TriageActions>((set) => ({
 
   setPendingOlderThanDays: (olderThanDays) =>
     set((s) =>
-      s.pendingAction?.verb === 'Archive'
+      s.pendingAction?.verb === 'Archive' || s.pendingAction?.verb === 'Delete'
         ? { pendingAction: { ...s.pendingAction, olderThanDays } }
+        : s,
+    ),
+
+  setPendingReach: (reach) =>
+    set((s) =>
+      s.pendingAction?.verb === 'Delete' || s.pendingAction?.verb === 'Unsubscribe'
+        ? { pendingAction: { ...s.pendingAction, reach } }
         : s,
     ),
 

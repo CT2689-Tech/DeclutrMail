@@ -28,7 +28,7 @@ import {
 } from '@declutrmail/shared';
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { useLocalState } from '@declutrmail/shared/hooks/use-local-state';
-import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
+import { DEFAULT_DELETE_WINDOW_DAYS, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { ActionReach } from '@declutrmail/shared/contracts';
 
 import {
@@ -263,24 +263,10 @@ export function TriageScreen({
   const nowMs = useNow();
   const daySubtitle =
     nowMs == null ? 'Today’s senders · one choice each' : triageDaySubtitle(onboardedAt, nowMs);
-  // ADR-0028 — the Delete preview's reach. Form state, local on purpose.
-  // Stored WITH the pending action it was chosen for, so a wider
-  // destructive scope can never be read for a different sender or verb —
-  // not even for the one render an effect-based reset would leave open.
-  const [deleteReachChoice, setDeleteReachChoice] = useState<{
-    owner: typeof pendingAction;
-    reach: ActionReach;
-  } | null>(null);
-  const deleteReach: ActionReach =
-    deleteReachChoice !== null && deleteReachChoice.owner === pendingAction
-      ? deleteReachChoice.reach
-      : 'inbox_only';
-  const setDeleteReach = useCallback(
-    (reach: ActionReach) => {
-      if (pendingAction !== null) setDeleteReachChoice({ owner: pendingAction, reach });
-    },
-    [pendingAction],
-  );
+  // Age and reach belong to one pending preview. Changing age preserves
+  // its explicit reach; opening a new action clears both synchronously.
+  const deleteReach = pendingAction?.reach ?? 'inbox_only';
+  const setDeleteReach = useTriageStore((s) => s.setPendingReach);
   const rememberPreference = useTriageStore((s) => s.rememberPreference);
   const openPending = useTriageStore((s) => s.openPending);
   const clearPending = useTriageStore((s) => s.clearPending);
@@ -607,23 +593,30 @@ export function TriageScreen({
   const reachOffered =
     journey === 'daily' &&
     (pendingAction?.verb === 'Delete' || pendingAction?.verb === 'Unsubscribe') &&
-    compositePreview.data?.allMail != null;
+    (compositePreview.data?.allMail != null || deleteReach === 'all_mail');
   const activeReach: ActionReach =
     pendingAction?.surface === 'sheet' &&
     journey === 'daily' &&
     (pendingAction?.verb === 'Delete' || pendingAction?.verb === 'Unsubscribe')
       ? deleteReach
       : 'inbox_only';
-  const archiveAge =
-    pendingAction?.verb === 'Archive' ? (pendingAction.olderThanDays ?? null) : null;
+  const hasAgeControl = pendingAction?.verb === 'Archive' || pendingAction?.verb === 'Delete';
+  const previewAge =
+    pendingAction?.verb === 'Delete'
+      ? pendingAction.olderThanDays === undefined
+        ? DEFAULT_DELETE_WINDOW_DAYS
+        : pendingAction.olderThanDays
+      : pendingAction?.verb === 'Archive'
+        ? (pendingAction.olderThanDays ?? null)
+        : null;
   // The ONE count the preview arms — at the SELECTED reach.
   const previewInboxCount: PreviewCount = compositePreview.isError
     ? 'unavailable'
     : compositePreview.isFetching || compositePreview.data == null
       ? 'loading'
       : activeReach === 'all_mail'
-        ? (compositePreview.data.allMail?.counts.all ?? 'unavailable')
-        : (pickBucketCount(compositePreview.data.counts, archiveAge) ?? 'unavailable');
+        ? (pickBucketCount(compositePreview.data.allMail?.counts, previewAge) ?? 'unavailable')
+        : (pickBucketCount(compositePreview.data.counts, previewAge) ?? 'unavailable');
   /**
    * Verification detail for the D226 preview — parity with the senders
    * confirm modal (founder review 2026-08-27).
@@ -642,58 +635,64 @@ export function TriageScreen({
 
   const previewDetail: ActionPreviewDetail | undefined = (() => {
     const data = compositePreview.data;
-    const ageControl =
-      pendingAction?.verb === 'Archive'
-        ? {
-            olderThanDays: archiveAge,
-            options: TIME_WINDOW_PRESETS.map(({ days }) => ({
-              days,
-              disabled: data != null && pickBucketCount(data.counts, days) === undefined,
-            })),
-            onChange: useTriageStore.getState().setPendingOlderThanDays,
-          }
-        : undefined;
-    if (pendingRow == null) return undefined;
-    if (data == null || (ageControl && (compositePreview.isFetching || compositePreview.isError)))
-      return ageControl ? { ageControl } : undefined;
-    if (activeReach === 'all_mail' && data.allMail == null)
-      return {
-        reachControl: {
+    const ageControl = hasAgeControl
+      ? {
+          olderThanDays: previewAge,
+          options: TIME_WINDOW_PRESETS.map(({ days }) => ({
+            days,
+            disabled:
+              data != null &&
+              pickBucketCount(
+                activeReach === 'all_mail' ? data.allMail?.counts : data.counts,
+                days,
+              ) === undefined,
+          })),
+          onChange: useTriageStore.getState().setPendingOlderThanDays,
+        }
+      : undefined;
+    const reachControl = reachOffered
+      ? {
           reach: activeReach,
           inboxCount:
-            compositePreview.isFetching || compositePreview.isError ? null : data.counts.all,
-          allMailCount: null,
+            compositePreview.isFetching || compositePreview.isError
+              ? null
+              : (pickBucketCount(data?.counts, previewAge) ?? null),
+          allMailCount:
+            compositePreview.isFetching || compositePreview.isError
+              ? null
+              : (pickBucketCount(data?.allMail?.counts, previewAge) ?? null),
           onChange: setDeleteReach,
-        },
-      };
-    // Match the selected Archive age and reach in the Gmail handoff.
+        }
+      : undefined;
+    if (pendingRow == null) return undefined;
+    if (data == null || (ageControl && (compositePreview.isFetching || compositePreview.isError)))
+      return { ageControl, ...(reachControl ? { reachControl } : {}) };
+    // Match the selected cleanup age and reach in the Gmail handoff.
     // Delete can widen reach; Archive stays in the inbox. Approximate — see
     // `buildActionScopeSearchLink`.
-    const atAllMail = activeReach === 'all_mail' && data.allMail != null;
-    const armedTotal = atAllMail
-      ? data.allMail!.counts.all
-      : pickBucketCount(data.counts, archiveAge);
-    if (armedTotal === undefined) return { ageControl };
+    const atAllMail = activeReach === 'all_mail';
+    const armedTotal = pickBucketCount(atAllMail ? data.allMail?.counts : data.counts, previewAge);
+    if (armedTotal === undefined) return { ageControl, ...(reachControl ? { reachControl } : {}) };
     const gmailScopeSearch = activeEmail
       ? GmailOpenLinkService.buildActionScopeSearchLink({
           mailboxEmail: activeEmail,
           from: pendingRow.senderEmail,
-          olderThanDays: archiveAge,
+          olderThanDays: previewAge,
           inboxOnly: !atAllMail,
         })
       : null;
     const sampleBucket =
-      archiveAge === null
+      previewAge === null
         ? 'all'
-        : archiveAge === 30
+        : previewAge === 30
           ? 'olderThan30d'
-          : archiveAge === 90
+          : previewAge === 90
             ? 'olderThan90d'
-            : archiveAge === 180
+            : previewAge === 180
               ? 'olderThan180d'
               : 'olderThan365d';
     const sampleRows = (
-      (atAllMail ? data.allMail!.recentMessages : data.recentMessages)?.[sampleBucket] ?? []
+      (atAllMail ? data.allMail?.recentMessages : data.recentMessages)?.[sampleBucket] ?? []
     )
       .slice(0, 5)
       // Never advertise more rows than the count above it — the senders
@@ -722,20 +721,7 @@ export function TriageScreen({
       ...(mailLocationLine === null ? {} : { mailLocationLine }),
       ...(sampleRows.length > 0 ? { matchSample: { rows: sampleRows, total: armedTotal } } : {}),
       ...(gmailScopeSearch === null ? {} : { verifyInGmailUrl: gmailScopeSearch }),
-      ...(reachOffered && data.allMail != null
-        ? {
-            reachControl: {
-              reach: activeReach,
-              inboxCount:
-                compositePreview.isFetching || compositePreview.isError ? null : data.counts.all,
-              allMailCount:
-                compositePreview.isFetching || compositePreview.isError
-                  ? null
-                  : data.allMail.counts.all,
-              onChange: setDeleteReach,
-            },
-          }
-        : {}),
+      ...(reachControl ? { reachControl } : {}),
     };
   })();
 
@@ -1038,11 +1024,12 @@ export function TriageScreen({
       }
 
       if (
-        verb === 'Archive' &&
-        (pendingAction?.rowId !== row.id ||
+        (verb === 'Archive' || verb === 'Delete') &&
+        (pendingAction?.verb !== verb ||
+          pendingAction.rowId !== row.id ||
           typeof previewInboxCount !== 'number' ||
           previewInboxCount === 0 ||
-          (details?.olderThanDays ?? null) !== (pendingAction.olderThanDays ?? null))
+          (details?.olderThanDays ?? null) !== previewAge)
       )
         return false;
       clearPending();
@@ -1196,7 +1183,10 @@ export function TriageScreen({
           senderId: row.senderId,
           primary: {
             type: primaryType,
-            olderThanDays: primaryType === 'archive' ? (details?.olderThanDays ?? null) : null,
+            olderThanDays:
+              primaryType === 'archive' || primaryType === 'delete'
+                ? (details?.olderThanDays ?? null)
+                : null,
             ...(primaryType === 'later' && details?.wakeAt ? { wakeAt: details.wakeAt } : {}),
             // ADR-0028 — only a Delete whose preview OFFERED the choice
             // may carry it, and only the non-default value travels.
@@ -1282,6 +1272,7 @@ export function TriageScreen({
     },
     [
       previewInboxCount,
+      previewAge,
       busyRowIds,
       activeAction,
       intentRowId,
@@ -1392,7 +1383,7 @@ export function TriageScreen({
             ...(backlogMode ? { backlogMode } : {}),
             rememberPreference: true,
             wakeAt: pendingAction.wakeAt,
-            ...(verb === 'Archive' ? { olderThanDays: pendingAction.olderThanDays ?? null } : {}),
+            ...(verb === 'Archive' || verb === 'Delete' ? { olderThanDays: previewAge } : {}),
           },
           'inline',
         );
@@ -1400,7 +1391,14 @@ export function TriageScreen({
       }
       onRowAction(verb, row);
     },
-    [pendingAction, previewInboxCount, inlinePreviewBlocked, dispatchAction, onRowAction],
+    [
+      pendingAction,
+      previewAge,
+      previewInboxCount,
+      inlinePreviewBlocked,
+      dispatchAction,
+      onRowAction,
+    ],
   );
 
   /**

@@ -49,7 +49,10 @@ export function inlinePreviewFor(
       : 'unsub_only';
   return {
     verb: pendingAction.verb,
-    ageControl: pendingAction.verb === 'Archive' ? preview.detail?.ageControl : undefined,
+    ageControl:
+      pendingAction.verb === 'Archive' || pendingAction.verb === 'Delete'
+        ? preview.detail?.ageControl
+        : undefined,
     onCancel: preview.onCancel,
     archiveHistoric: backlogMode === 'archive',
     backlogMode,

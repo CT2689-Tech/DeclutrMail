@@ -1,5 +1,6 @@
 'use client';
 
+import { buildActionPresentation } from '@declutrmail/shared/actions';
 import { Button, Disclosure, SheetFactList, tokens } from '@declutrmail/shared';
 import { isPluralCopy, pluralCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import type { ReactNode } from 'react';
@@ -130,8 +131,9 @@ export function InlinePreviewBlock({
     preview.verb === 'Unsubscribe'
       ? (preview.backlogMode ?? (preview.archiveHistoric ? 'archive' : 'unsub_only'))
       : 'unsub_only';
+  const isCleanupAction = preview.verb === 'Archive' || preview.verb === 'Delete';
   const facts = buildPreviewFacts({
-    olderThanDays: preview.verb === 'Archive' ? (preview.ageControl?.olderThanDays ?? null) : null,
+    olderThanDays: isCleanupAction ? (preview.ageControl?.olderThanDays ?? null) : null,
     verb: preview.verb,
     row,
     archiveHistoric: preview.archiveHistoric || backlogMode === 'archive',
@@ -147,6 +149,15 @@ export function InlinePreviewBlock({
       : cleanupCostLine(facts.unitsNeeded, preview.quotaRemaining);
   const countKnown = typeof preview.inboxCount === 'number' ? preview.inboxCount : null;
   const hasDetails = facts.disclosures.length > 0 || preview.detailSlot != null;
+  const cleanupEffect = isCleanupAction
+    ? buildActionPresentation({
+        verb: preview.verb === 'Delete' ? 'delete' : 'archive',
+        liveCount: countKnown,
+        planUndoDeadline: null,
+        unsubscribeChannel: null,
+        wakeAt: null,
+      }).primary
+    : null;
   return (
     <div
       role="region"
@@ -161,8 +172,8 @@ export function InlinePreviewBlock({
     >
       {accountContext != null && <div style={{ marginBottom: space[3] }}>{accountContext}</div>}
       <h3 style={{ ...tokens.typography.dialogTitle, margin: 0, color: color.fg }}>
-        {preview.verb === 'Archive' && !facts.nothingToMove
-          ? `Archive emails from ${row.senderName}?`
+        {isCleanupAction && !facts.nothingToMove
+          ? `${preview.verb} emails from ${row.senderName}?`
           : facts.title}
       </h3>
       {preview.verb !== 'Archive' && facts.subtitle && (
@@ -175,7 +186,7 @@ export function InlinePreviewBlock({
             textWrap: 'balance',
           }}
         >
-          {facts.subtitle}
+          {preview.verb === 'Delete' ? cleanupEffect?.futureMail.summary : facts.subtitle}
         </p>
       )}
       {/* Why confirm is disabled while the live count is not a number —
@@ -188,7 +199,7 @@ export function InlinePreviewBlock({
             : WS5_COPY['f1.preview.backlog.loading']}
         </p>
       )}
-      {preview.verb !== 'Archive' && facts.note !== null && (
+      {!isCleanupAction && facts.note !== null && (
         <p style={{ margin: `${space[1]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
           {facts.note}
         </p>
@@ -244,7 +255,7 @@ export function InlinePreviewBlock({
       preview.inboxCount > 0 ? (
         <MeterPreviewLine requested={preview.inboxCount} summary={cleanupSummary.data} />
       ) : null}
-      {preview.verb === 'Archive' && preview.ageControl && (
+      {isCleanupAction && preview.ageControl && (
         <CleanupPreview
           olderThanDays={preview.ageControl.olderThanDays}
           options={preview.ageControl.options}
@@ -279,14 +290,20 @@ export function InlinePreviewBlock({
           />
         </div>
       )}
-      {preview.verb === 'Archive' && (
+      {isCleanupAction && (
         <div style={{ marginTop: space[3] }}>
           <CleanupImpact
-            action="Archive"
+            action={preview.verb === 'Delete' ? 'Delete' : 'Archive'}
             count={countKnown}
             includesArchived={false}
             olderThanDays={preview.ageControl?.olderThanDays ?? null}
-            note={facts.note ?? ''}
+            note={
+              facts.nothingToMove
+                ? ''
+                : preview.verb === 'Delete'
+                  ? (cleanupEffect?.activityUndo.summary ?? '')
+                  : (facts.note ?? '')
+            }
           />
         </div>
       )}
@@ -314,8 +331,8 @@ export function InlinePreviewBlock({
         >
           {row.protectionReason != null && preview.verb !== 'Unsubscribe'
             ? `${preview.verb} anyway`
-            : preview.verb === 'Archive'
-              ? 'Archive'
+            : isCleanupAction
+              ? preview.verb
               : facts.primaryLabel}
         </Button>
         <span className="dm-key-hint" style={{ fontSize: text.xs, color: color.fgMuted }}>

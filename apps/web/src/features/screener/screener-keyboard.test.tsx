@@ -7,7 +7,7 @@
  * exercises the real handler in jsdom. Uses `keep` (no composite-preview
  * fetch) so the assertion needs no network stub.
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 
@@ -20,9 +20,9 @@ import { ScreenerScreen } from './screener-screen';
 vi.mock('@/lib/posthog', () => ({ track: vi.fn() }));
 vi.mock('@/lib/sentry', () => ({ captureFeatureException: vi.fn() }));
 
-function renderReady() {
+function renderReady(client = createTestQueryClient()) {
   return render(
-    <QueryWrapper client={createTestQueryClient()}>
+    <QueryWrapper client={client}>
       <ScreenerScreen state={{ kind: 'ready', rows: [...SCREENER_QUEUE] }} />
     </QueryWrapper>,
   );
@@ -562,6 +562,93 @@ describe('Screener Archive age cannot bypass the live count', () => {
       } else expect(screen.queryByRole('region', { name: 'Archive impact' })).toBeNull();
       fireEvent.change(age, { target: { value: 'all' } });
       expect(confirm).toBeEnabled();
+    },
+  );
+});
+
+describe('Screener Delete selected age and archived count stay together', () => {
+  it.each(['click', 'Enter'] as const)(
+    'blocks %s when an archived age is unavailable, then allows explicit narrowing',
+    async (submit) => {
+      const bodies: unknown[] = [];
+      let missing = false;
+      const client = createTestQueryClient();
+      const handler = livePreviewHandler(20, 45, 5);
+      installFetchStub([
+        {
+          ...handler,
+          respond: async () => {
+            const body = (await handler.respond().json()) as {
+              data: { allMail: { counts: Record<string, number> } };
+            };
+            if (missing) delete body.data.allMail.counts.olderThan30d;
+            return jsonOk(body);
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/screener/decide',
+          respond: async (req) => {
+            bodies.push(await req.json());
+            return jsonOk({
+              data: {
+                senderId: firstRow.senderId,
+                verb: 'delete',
+                resolved: true,
+                execution: {
+                  kind: 'enqueued',
+                  actionId: '99999999-9999-4999-8999-999999999999',
+                  status: 'queued',
+                  requestedCount: 20,
+                },
+              },
+            });
+          },
+        },
+      ]);
+      renderReady(client);
+      expandFirstRow();
+      fireEvent.keyDown(window, { key: 'd' });
+      const archived = await screen.findByRole('checkbox', { name: 'Include archived email' });
+      expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
+      await waitFor(() =>
+        expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+          '5 emails will move',
+        ),
+      );
+      fireEvent.click(archived);
+      expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+        '45 emails will move',
+      );
+      fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+        target: { value: '30' },
+      });
+      missing = true;
+      await act(async () => {
+        await client.invalidateQueries({ queryKey: ['composite-preview'] });
+      });
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: `Delete for ${firstRow.senderName}` }),
+        ).toBeDisabled(),
+      );
+      expect(screen.getByRole('checkbox', { name: 'Include archived email' })).toBeChecked();
+      expect(screen.getByRole('checkbox', { name: 'Include archived email' })).toBeEnabled();
+      const confirm = screen.getByRole('button', { name: `Delete for ${firstRow.senderName}` });
+      expect(confirm).toBeDisabled();
+      expect(screen.queryByRole('region', { name: 'Delete impact' })).toBeNull();
+      fireEvent.click(confirm);
+      fireEvent.keyDown(window, { key: 'Enter' });
+      expect(bodies).toHaveLength(0);
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
+      expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+        '20 emails will move',
+      );
+      if (submit === 'click') fireEvent.click(confirm);
+      else fireEvent.keyDown(window, { key: 'Enter' });
+      await waitFor(() => expect(bodies).toHaveLength(1));
+      expect(bodies[0]).toMatchObject({ verb: 'delete', olderThanDays: 30 });
+      expect(bodies[0]).not.toHaveProperty('reach');
     },
   );
 });

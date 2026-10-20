@@ -155,7 +155,7 @@ export function ActionSheet({
   const effectiveMode =
     actionKey !== null && chosenActionKey === actionKey ? backlogMode : defaultBacklog;
   const effectiveArchiveHistoric = effectiveMode === 'archive';
-  const ageControl = verb === 'Archive' ? detail?.ageControl : undefined;
+  const ageControl = verb === 'Archive' || verb === 'Delete' ? detail?.ageControl : undefined;
   const olderThanDays = ageControl?.olderThanDays ?? null;
 
   // Archive/Later/Delete always move inbox mail. Unsubscribe only does when the
@@ -221,7 +221,7 @@ export function ActionSheet({
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
         e.preventDefault();
         onConfirm({
-          ...(verb === 'Archive' ? { olderThanDays } : {}),
+          ...(verb === 'Archive' || verb === 'Delete' ? { olderThanDays } : {}),
           archiveHistoric: effectiveArchiveHistoric,
           ...(verb === 'Unsubscribe' ? { backlogMode: effectiveMode } : {}),
           ...((verb === 'Delete' || (verb === 'Unsubscribe' && effectiveMode === 'delete')) &&
@@ -276,7 +276,7 @@ export function ActionSheet({
     : null;
   const confirm = () =>
     onConfirm({
-      ...(verb === 'Archive' ? { olderThanDays } : {}),
+      ...(verb === 'Archive' || verb === 'Delete' ? { olderThanDays } : {}),
       archiveHistoric: effectiveArchiveHistoric,
       ...(verb === 'Unsubscribe' ? { backlogMode: effectiveMode } : {}),
       ...((verb === 'Delete' || (verb === 'Unsubscribe' && effectiveMode === 'delete')) &&

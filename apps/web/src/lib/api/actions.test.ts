@@ -390,6 +390,15 @@ describe('getCompositePreview — ADR-0028 allMail block', () => {
     expect(res.allMail).toBeNull();
   });
 
+  it.each([undefined, null, -1, 0.5, '7'])(
+    'leaves an invalid age bucket unavailable (%s), rather than inventing zero',
+    async (value) => {
+      const counts = { ...baseWire.counts, olderThan180d: value };
+      const res = await previewFromWire({ allMail: { counts, recentMessages: {} } });
+      expect(res.allMail).toBeNull();
+    },
+  );
+
   it('normalizes a healthy block, dropping malformed sample rows', async () => {
     const res = await previewFromWire({
       allMail: {

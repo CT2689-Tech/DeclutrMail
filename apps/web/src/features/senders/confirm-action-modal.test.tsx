@@ -820,11 +820,10 @@ describe('ConfirmActionModal — arrival volume vs INBOX-now counts', () => {
     expect(screen.queryByText(/moved out of it|already archived|already deleted/)).toBeNull();
   });
 
-  it('hides the window chips when no window can change the outcome', () => {
+  it('keeps Email age available even when the inbox is empty', () => {
     renderDelete(emptyInbox, 71);
-    expect(screen.queryByRole('combobox', { name: /How far back|Email age/i })).toBeNull();
-    // …and drops the qualifier that described the now-absent control.
-    expect(screen.queryByText(/older than 180 days/)).toBeNull();
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
   });
 
   it('names the window on the arrival figure and never renders a bare /mo', () => {
@@ -872,7 +871,7 @@ describe('ConfirmActionModal — arrival volume vs INBOX-now counts', () => {
     expect(screen.getByRole('combobox', { name: /How far back|Email age/i })).toBeTruthy();
     expect(
       screen.getByText(
-        /None of the 30 inbox emails from this sender are older than the 6 months\+ window\. Widen the window to include them\./,
+        /Your inbox has 30 emails from this sender, but none are older than 180 days\./,
       ),
     ).toBeTruthy();
   });
@@ -1405,27 +1404,22 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
         compositePreview={emptyInbox}
       />,
     );
-    // The window chips are suppressed (five zeros), but the reach row is
-    // exactly the escape hatch and must stay visible.
-    expect(screen.queryByRole('combobox', { name: /How far back|Email age/i })).toBeNull();
+    // Keep age explicit even on an empty inbox; widening reach preserves it.
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
     expect(reachRow()).not.toBeNull();
     expect(
-      screen.getByText('Turn on Include archived email to reach 977 archived emails.'),
+      screen.getByText('Turn on Include archived email to reach 700 archived emails.'),
     ).toBeInTheDocument();
     // With the reach control on screen, the notice must NOT claim Delete
     // "only acts on" inbox mail — the next sentence disproves it.
     expect(screen.getByText(/Delete acts on inbox email by default/)).toBeInTheDocument();
     expect(screen.queryByText(/only acts on email still in the inbox/)).toBeNull();
-    // Flipping the chip clears the inbox-scope narration AND arms the
-    // exact figure the chip advertised: the hidden 180d default resets
-    // to "All mail", so the user gets 977, not a silently-shaved 700.
+    // Widening reach preserves the visible 180-day selection.
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     expect(screen.queryByText(/in your inbox now/)).toBeNull();
-    expect((screen.getByRole('option', { name: 'Any age' }) as HTMLOptionElement).selected).toBe(
-      true,
-    );
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
     expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
-      '977 emails will move to Gmail Trash.',
+      '700 emails will move to Gmail Trash.',
     );
     expect(screen.getByRole('button', { name: /Delete/ })).toBeEnabled();
   });
@@ -2862,9 +2856,11 @@ describe('ConfirmActionModal — explicit period and scope choices', () => {
       />,
     );
     expect(
-      screen.getByRole('heading', { name: `Nothing older than 6 months from ${sender.name}` }),
+      screen.getByRole('heading', { name: `No emails older than 180 days from ${sender.name}` }),
     ).toBeInTheDocument();
-    expect(document.getElementById('dm-confirm-lead')).toHaveTextContent(/Widen the window/);
+    expect(document.getElementById('dm-confirm-lead')).toHaveTextContent(
+      /none are older than 180 days/,
+    );
     expect(screen.getByRole('combobox', { name: /How far back|Email age/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Delete/ })).toBeDisabled();
   });
@@ -3062,4 +3058,34 @@ it('records a loaded preview once, not loading, failed, or closed renders', () =
   rerender(<ConfirmActionModal {...props} request={null} />);
   rerender(<ConfirmActionModal {...props} compositePreview={livePreview} />);
   expect(track).toHaveBeenCalledTimes(2);
+});
+
+describe('Delete age availability', () => {
+  it('blocks a missing default bucket instead of submitting without an impact count', () => {
+    const counts = { ...buckets };
+    Reflect.deleteProperty(counts, 'olderThan180d');
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+        compositePreview={{ ...livePreview, counts }}
+      />,
+    );
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+    expect(screen.queryByRole('region', { name: 'Delete impact' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(onConfirm).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+      target: { value: 'all' },
+    });
+    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+      '4 emails will move',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(onConfirm).toHaveBeenCalledWith({ olderThanDays: null, archiveHistoric: false });
+  });
 });

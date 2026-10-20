@@ -515,7 +515,7 @@ export function ConfirmActionModal({
     ? `No emails left to move to Trash. There is no email from ${
         countedSubject
       } in Inbox or archived.`
-    : isArchiveVerb && inboxScopeNotice.kind === 'empty-window'
+    : isCleanupVerb && inboxScopeNotice.kind === 'empty-window'
       ? `Your inbox has ${emailsLabel(inboxScopeNotice.inboxTotal)} from ${countedSubject}, but none are ${cleanupAgeLabel(inboxScopeNotice.olderThanDays).toLowerCase()}.`
       : inboxScopeVerbLabel
         ? inboxScopeNoticeCopy(
@@ -533,7 +533,9 @@ export function ConfirmActionModal({
   // local on purpose: the shared notice is also rendered by surfaces
   // that may have no reach control to point at (the Screener's chips
   // carry their own live counts instead of this hint).
-  const archivedReachCount = allMailCounts?.all ?? 0;
+  const archivedReachCount = isDeleteVerb
+    ? (pickBucketCount(allMailCounts, olderThanDays) ?? 0)
+    : (allMailCounts?.all ?? 0);
   const archivedReachHint =
     inboxScopeNotice.kind === 'empty-inbox' && reachAvailable && archivedReachCount > 0
       ? pluralCopy(WS2_COPY.preview.archivedReachHint, archivedReachCount, {
@@ -565,12 +567,11 @@ export function ConfirmActionModal({
           receivedTotal: request?.senders[0]?.totalReceived ?? null,
         })
       : null;
-  // Every window chip reads 0 when the inbox holds nothing from this
-  // sender — five identical zeros no choice can change. Suppress the row
-  // and let the notice carry the story. Deliberately a RENDER flag only:
-  // `showWindowRow` still governs `buildConfirmOpts`, so the wire payload
-  // is byte-identical either way.
-  const showWindowChips = showWindowRow && inboxScopeNotice.kind !== 'empty-inbox';
+  // Cleanup keeps Email age visible even with an empty inbox. Widening
+  // reach must preserve that visible age rather than silently reset it.
+  // Other actions retain their existing empty-inbox presentation.
+  const showWindowChips =
+    showWindowRow && (isCleanupVerb || inboxScopeNotice.kind !== 'empty-inbox');
   // With the chip row gone the "(older than N days)" qualifier describes
   // a control the user can no longer see.
   const showWindowQualifier = olderThanDays !== null && inboxScopeNotice.kind !== 'empty-inbox';
@@ -580,7 +581,9 @@ export function ConfirmActionModal({
   const tiedWindowCopy = livePreviewReady
     ? tiedWindowNoticeCopy(
         TIME_WINDOW_PRESETS.map((preset) => ({
-          label: preset.label,
+          label: isDeleteVerb
+            ? cleanupAgeLabel(preset.days).replace(/^Older than /, '')
+            : preset.label,
           count: pickBucketCount(bucketCounts, preset.days),
         })),
         // The age clause explains INBOX ties; at all-mail reach the tie
@@ -682,7 +685,9 @@ export function ConfirmActionModal({
   // checked so the user can narrow; confirm stays closed until they do,
   // and the wire below never sends all_mail without the count.
   const archivedUncounted = deleteReachOffered && reach === 'all_mail' && allMailCounts == null;
+  const deleteCountUnavailable = isDeleteVerb && livePreviewReady && compositeCount === undefined;
   const confirmDisabled =
+    deleteCountUnavailable ||
     livePreviewBlocksConfirm ||
     nothingToActOn ||
     wakeAtInvalid ||
@@ -876,7 +881,7 @@ export function ConfirmActionModal({
 
   const title = (() => {
     if (zeroTitle) {
-      return windowedZero && isArchiveVerb
+      return windowedZero && isCleanupVerb
         ? `No emails ${cleanupAgeLabel(olderThanDays).toLowerCase()} from ${zeroWho}`
         : windowedZero
           ? `Nothing older than ${windowName(olderThanDays)} from ${zeroWho}`
@@ -1140,6 +1145,11 @@ export function ConfirmActionModal({
   // promise a wait that ends in the same disabled button.
   const status: ReactNode = unsubNothingToSend ? (
     NO_SENDABLE_UNSUB
+  ) : deleteCountUnavailable ? (
+    <StatusWithAction
+      message="Couldn’t count this email age."
+      action={onRetryPreview ? { label: 'Retry preview', onClick: onRetryPreview } : undefined}
+    />
   ) : previewStateCopy !== null ? (
     <StatusWithAction
       message={previewStateCopy}
@@ -1544,7 +1554,7 @@ export function ConfirmActionModal({
                   disabled: count === undefined,
                 }))}
                 onWindowChange={setOlderThanDays}
-                showWindow={isArchiveVerb || showWindowSelect}
+                showWindow={isCleanupVerb || showWindowSelect}
               >
                 {controls}
               </CleanupPreview>
