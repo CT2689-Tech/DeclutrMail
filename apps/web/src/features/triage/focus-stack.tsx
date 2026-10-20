@@ -107,13 +107,18 @@ export function TriageFocusStack({
         whyOpen={expandedRowId === row.id}
         onToggleWhy={() => toggleExpandedRow(row.id)}
         onAction={(verb) => onAction(verb, row)}
-        inlinePreview={inlinePreviewFor(row.id, pendingAction, {
-          inboxCount: previewInboxCount,
-          onCancel: clearPending,
-          onRetryPreview,
-          detail: previewDetail,
-          quotaRemaining: previewQuotaRemaining,
-        })}
+        inlinePreview={inlinePreviewFor(
+          row.id,
+          pendingAction,
+          {
+            inboxCount: previewInboxCount,
+            onCancel: clearPending,
+            onRetryPreview,
+            detail: previewDetail,
+            quotaRemaining: previewQuotaRemaining,
+          },
+          row.inboxCount,
+        )}
         inlinePreviewAccountContext={<MailboxActionContext />}
         // Constructed here (not inside the card) — same reason as the
         // list: the card stays free of the sender-policy mutation.

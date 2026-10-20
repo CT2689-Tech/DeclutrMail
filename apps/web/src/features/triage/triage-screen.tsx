@@ -768,12 +768,13 @@ export function TriageScreen({
   // action on Free. The sheet already refuses the zero case
   // (`nothingToActOn`, action-sheet.tsx), and this is the SAME decision
   // with the sheet skipped via D34, so it has to refuse it identically.
-  // Unsubscribe only still cuts future mail at a zero count, and while
-  // the count is loading, so those stay confirmable. A failed preview
-  // does not: Senders keeps Unsubscribe only closed then, and Triage matches.
+  // Unsubscribe only still cuts future mail at a zero count, and when the
+  // preview fails. While the count is loading, the confirm stays closed.
+  const inlineOpeningInbox =
+    typeof pendingRow?.inboxCount === 'number' ? pendingRow.inboxCount : unsubscribeInboxTotal;
   const inlineUnsubOnly =
     pendingAction?.verb === 'Unsubscribe' &&
-    (pendingAction.backlogMode ?? ((unsubscribeInboxTotal ?? 0) > 0 ? 'archive' : 'unsub_only')) ===
+    (pendingAction.backlogMode ?? ((inlineOpeningInbox ?? 0) > 0 ? 'archive' : 'unsub_only')) ===
       'unsub_only';
   const inlinePreviewBlocked =
     pendingAction?.surface === 'inline' &&
@@ -782,7 +783,7 @@ export function TriageScreen({
       pendingAction.verb === 'Delete' ||
       (pendingAction.verb === 'Unsubscribe' && !inlineUnsubOnly)) &&
       (typeof previewInboxCount !== 'number' || previewInboxCount === 0)) ||
-      (inlineUnsubOnly && previewInboxCount === 'unavailable'));
+      (inlineUnsubOnly && previewInboxCount === 'loading'));
 
   // Drive the async-action lifecycle off the polled status. On `done`
   // the queue is invalidated and the refetch drops the decided row —
@@ -1413,7 +1414,11 @@ export function TriageScreen({
         const backlogMode =
           verb === 'Unsubscribe'
             ? (pendingAction.backlogMode ??
-              ((unsubscribeInboxTotal ?? 0) > 0 ? 'archive' : 'unsub_only'))
+              ((typeof row.inboxCount === 'number'
+                ? row.inboxCount
+                : (unsubscribeInboxTotal ?? 0)) > 0
+                ? 'archive'
+                : 'unsub_only'))
             : undefined;
         // Second click on the same verb confirms the choice on screen.
         dispatchAction(

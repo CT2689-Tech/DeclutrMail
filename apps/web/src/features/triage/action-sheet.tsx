@@ -2,7 +2,7 @@
 
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Avatar, Button, PreviewSheet, tokens } from '@declutrmail/shared';
 import { WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import {
@@ -158,11 +158,25 @@ export function ActionSheet({
       : countKnown === null
         ? null
         : (detail?.reachControl?.inboxCount ?? countKnown);
+  // Senders opens from the inbox total already on the row, then keeps that
+  // choice when the preview arrives. A row without one adopts the first
+  // resolved preview count and keeps that too.
+  const rowInbox = typeof row?.inboxCount === 'number' ? row.inboxCount : null;
+  const choiceRef = useRef<{ key: string | null; inbox: number | null }>({
+    key: null,
+    inbox: null,
+  });
+  if (choiceRef.current.key !== actionKey) {
+    choiceRef.current = { key: actionKey, inbox: rowInbox ?? countKnown };
+  } else if (choiceRef.current.inbox === null && rowInbox === null && countKnown !== null) {
+    choiceRef.current = { key: actionKey, inbox: countKnown };
+  }
+  const openingInbox = rowInbox ?? choiceRef.current.inbox;
   const defaultBacklog =
     verb === 'Unsubscribe' &&
     row?.protectionReason == null &&
-    inboxOptionCount !== null &&
-    inboxOptionCount > 0
+    openingInbox !== null &&
+    openingInbox > 0
       ? 'archive'
       : 'unsub_only';
   const effectiveMode =
@@ -199,10 +213,11 @@ export function ActionSheet({
   // real work at a zero backlog. The unsubscribe itself is free.
   const primaryActsOnInbox = verb === 'Archive' || verb === 'Later' || verb === 'Delete';
   const nothingToActOn = primaryActsOnInbox && inboxCount === 0;
-  // Senders keeps Unsubscribe only closed when the preview failed.
-  // Loading stays open: future mail can still be cut before the count lands.
-  const unsubOnlyFailed =
-    verb === 'Unsubscribe' && effectiveMode === 'unsub_only' && previewUnavailable;
+  // Unsubscribe only stays closed while the count is loading, matching
+  // Senders. A failed read leaves it usable. Archive and Delete stay
+  // closed until the preview has loaded.
+  const unsubOnlyLoading =
+    verb === 'Unsubscribe' && effectiveMode === 'unsub_only' && previewPending;
   const archivedUncounted =
     reach === 'all_mail' &&
     detail?.reachControl?.allMailCount === null &&
@@ -211,7 +226,7 @@ export function ActionSheet({
   const confirmDisabled =
     previewSenderGone ||
     archivedUncounted ||
-    unsubOnlyFailed ||
+    unsubOnlyLoading ||
     (requiresLivePreview && (previewPending || previewUnavailable || inboxCount === 0)) ||
     nothingToActOn ||
     wakeAtInvalid;
@@ -371,7 +386,11 @@ export function ActionSheet({
     WS5_COPY['preview.later.returnInvalid']
   ) : previewUnavailable ? (
     <StatusWithAction
-      message={WS5_COPY['preview.state.loadFailed']}
+      message={
+        verb === 'Unsubscribe'
+          ? WS5_COPY['f1.preview.backlog.error']
+          : WS5_COPY['preview.state.loadFailed']
+      }
       action={
         onRetryPreview ? { label: WS2_COPY.home.failed.retry, onClick: onRetryPreview } : undefined
       }

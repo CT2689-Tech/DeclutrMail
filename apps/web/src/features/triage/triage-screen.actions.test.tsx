@@ -2464,10 +2464,11 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     const region = await screen.findByRole('region', { name: /^Preview · Unsubscribe / });
     const retry = await within(region).findByRole('button', { name: 'Try again' });
     const confirm = within(region).getByRole('button', { name: 'Unsubscribe' });
-    expect(confirm).toBeDisabled();
+    expect(confirm).toBeEnabled();
+    expect(within(region).getByText(WS5_COPY['f1.preview.backlog.error'])).toBeVisible();
     expect(within(region).getByRole('radio', { name: '+ Archive' })).toBeDisabled();
+    expect(within(region).getByRole('radio', { name: '+ Delete' })).toBeDisabled();
     act(() => useTriageStore.getState().setPendingBacklogMode('unsub_only'));
-    fireEvent.keyDown(window, { key: 'u' });
     expect(writes).toBe(0);
     const failedReads = reads;
     failing = false;

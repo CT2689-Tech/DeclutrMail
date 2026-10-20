@@ -4,6 +4,7 @@ import { useActionPreviewAnalytics } from '@/lib/use-action-preview-analytics';
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 
 import { Button, Disclosure, SheetFactList, tokens, type SheetFactItem } from '@declutrmail/shared';
+import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import {
   buildActionPresentation,
   describeInboxScope,
@@ -125,6 +126,7 @@ export function DecidePreview({
   onRetryPreview?: (() => void) | undefined;
 }) {
   useActionPreviewAnalytics(row.senderId, verb, typeof inboxCount === 'number');
+  const trapRef = useFocusTrap<HTMLDivElement>(verb === 'delete');
   const name = row.senderName;
   const isCleanupAction = verb === 'archive' || verb === 'delete' || verb === 'later';
   // ADR-0028 reach. Widening stays possible only when the preview carries
@@ -354,6 +356,7 @@ export function DecidePreview({
 
   return (
     <div
+      ref={trapRef}
       role="region"
       aria-label={`Preview · ${VERB_LABEL[verb]} ${name}`}
       data-dm-preview-mode="inline"

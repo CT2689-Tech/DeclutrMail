@@ -240,11 +240,15 @@ export function UnsubscribeBacklogDialog({
       ).length ?? 0)
     : 0;
   // A preview that is still loading or failed has not named the mail.
-  // Posting from that state would include ids the preview never confirmed.
-  // A dialog with no preview at all (a known inbox count, nothing in flight)
-  // is separate.
+  // Cleanup must wait. A single sender's Unsubscribe only does not move
+  // existing mail, so that choice stays usable when the read fails.
   const previewUnresolved = loading || failed;
-  const senderIds = previewUnresolved ? [] : includedSenders.map((sender) => sender.id);
+  const singleUnsubOnFailure = single && failed && !loading && mode === 'unsub_only';
+  const senderIds = singleUnsubOnFailure
+    ? request.senders.map((sender) => sender.id)
+    : previewUnresolved
+      ? []
+      : includedSenders.map((sender) => sender.id);
   const includeArchived = mode === 'delete' && activeReach === 'all_mail' && allMailCount !== null;
   const title = nothingActionable
     ? allProtectedSelectionCopy(request.senders.length, singleName)
@@ -326,7 +330,7 @@ export function UnsubscribeBacklogDialog({
   const button = unsubscribeButton(mode, cleanupCount, protectedSingle);
 
   const confirm = useCallback(() => {
-    if (previewUnresolved) return;
+    if (previewUnresolved && !singleUnsubOnFailure) return;
     const secondary = mode === 'unsub_only' ? null : mode;
     void track('unsub_backlog_confirmed', {
       mode,
@@ -355,16 +359,18 @@ export function UnsubscribeBacklogDialog({
     onConfirm,
     senderIds,
     previewUnresolved,
+    singleUnsubOnFailure,
   ]);
 
   // Archive and Delete stay disabled until the backlog count is known.
-  // Unsubscribe stays closed while the preview is loading or failed.
+  // Unsubscribe only stays closed while the preview is loading. A failed
+  // read still leaves it usable for one sender.
   const archivedRequested = mode === 'delete' && activeReach === 'all_mail';
   const confirmDisabled =
     submitting ||
     previewSenderGone ||
     nothingActionable ||
-    (mode === 'unsub_only' && previewUnresolved) ||
+    (mode === 'unsub_only' && previewUnresolved && !singleUnsubOnFailure) ||
     (archivedRequested && allMailCount === null) ||
     (mode !== 'unsub_only' && backlogOff);
   useEffect(() => {
@@ -410,7 +416,7 @@ export function UnsubscribeBacklogDialog({
     ) : failed ? (
       <>
         <span>
-          {single || mode === 'unsub_only'
+          {!single && mode === 'unsub_only'
             ? WS5_COPY['preview.state.loadFailed.unsub']
             : WS5_COPY['f1.preview.backlog.error']}
         </span>

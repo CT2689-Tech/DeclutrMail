@@ -6,6 +6,40 @@ import { DecidePreview } from './decide-preview';
 
 const row = SCREENER_QUEUE[0]!;
 
+describe('DecidePreview — Delete focus trap', () => {
+  it('keeps Tab inside the Delete preview', () => {
+    render(
+      <>
+        <button type="button">Outside the preview</button>
+        <DecidePreview
+          verb="delete"
+          row={row}
+          inboxCount={4}
+          windowDays={180}
+          onWindowChange={vi.fn()}
+          confirming={false}
+          onConfirm={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </>,
+    );
+    const preview = screen.getByRole('region', { name: /^Preview · Delete / });
+    const outside = screen.getByRole('button', { name: 'Outside the preview' });
+    const confirm = screen.getByRole('button', { name: /^Delete/ });
+    confirm.focus();
+    fireEvent.keyDown(preview, { key: 'Tab' });
+    expect(outside).not.toHaveFocus();
+    expect(preview.contains(document.activeElement)).toBe(true);
+    const first = preview.querySelector<HTMLElement>(
+      'button:not([disabled]), select:not([disabled]), a[href]',
+    );
+    first?.focus();
+    fireEvent.keyDown(preview, { key: 'Tab', shiftKey: true });
+    expect(outside).not.toHaveFocus();
+    expect(preview.contains(document.activeElement)).toBe(true);
+  });
+});
+
 describe('DecidePreview — live-preview confirm gate', () => {
   it('retries an unavailable preview without confirming or changing its selected age', () => {
     const onRetryPreview = vi.fn();

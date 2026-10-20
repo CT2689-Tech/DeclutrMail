@@ -147,11 +147,11 @@ export function InlinePreviewBlock({
   // a zero Archive count must not trap the row out of Delete or Later.
   const returnTimeValid = useFutureReturnTime(preview.wakeAt, preview.verb === 'Later').valid;
   const returnInvalid = preview.verb === 'Later' && !returnTimeValid;
-  const unsubOnlyFailed =
+  const unsubOnlyLoading =
     preview.verb === 'Unsubscribe' &&
     backlogMode === 'unsub_only' &&
-    preview.inboxCount === 'unavailable';
-  const confirmDisabled = busy || blocked || nothingToActOn || returnInvalid || unsubOnlyFailed;
+    preview.inboxCount === 'loading';
+  const confirmDisabled = busy || blocked || nothingToActOn || returnInvalid || unsubOnlyLoading;
   const isCleanupAction =
     preview.verb === 'Archive' || preview.verb === 'Delete' || preview.verb === 'Later';
   const previewUnavailable =
@@ -233,10 +233,12 @@ export function InlinePreviewBlock({
       {/* Why confirm is disabled while the live count is not a number —
           the same two lines the sheet's status shows. A disabled button
           with no reason reads as a broken one. */}
-      {(blocked || previewUnavailable) && (
+      {(blocked || previewUnavailable || unsubOnlyLoading) && (
         <p style={{ margin: `${space[1]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
           {preview.inboxCount === 'unavailable'
-            ? WS5_COPY['preview.state.loadFailed']
+            ? preview.verb === 'Unsubscribe'
+              ? WS5_COPY['f1.preview.backlog.error']
+              : WS5_COPY['preview.state.loadFailed']
             : WS5_COPY['f1.preview.backlog.loading']}
         </p>
       )}

@@ -107,6 +107,9 @@ describe('Unsubscribe default choice', () => {
     );
     expect(screen.getByRole('radio', { name: '+ Archive' })).toBeChecked();
     expect(screen.getByRole('radio', { name: 'Unsubscribe only' })).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: '+ Archive' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: '+ Delete' })).toBeDisabled();
 
     view.rerender(
       <ConfirmActionModal
@@ -708,7 +711,21 @@ describe('Unsubscribe uses the action preview contract', () => {
       expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeDisabled();
       expect(screen.getByRole('heading')).not.toHaveTextContent('4 emails');
       if (state === 'error') {
-        expect(screen.getByText(WS5_COPY['preview.state.loadFailed.unsub'])).toBeVisible();
+        expect(screen.getByText(WS5_COPY['f1.preview.backlog.error'])).toBeVisible();
+        expect(screen.getByRole('radio', { name: '+ Delete' })).toBeDisabled();
+        fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
+        expect(screen.getByText(WS5_COPY['f1.preview.backlog.error'])).toBeVisible();
+        expect(
+          screen.queryByText(WS5_COPY['preview.state.loadFailed.unsub']),
+        ).not.toBeInTheDocument();
+        const confirm = screen.getByRole('button', { name: 'Unsubscribe' });
+        expect(confirm).toBeEnabled();
+        fireEvent.click(confirm);
+        expect(onConfirm).toHaveBeenCalledWith({
+          secondary: null,
+          archiveHistoric: false,
+          senderIds: [sender.id],
+        });
         expect(screen.queryByText(WS2_COPY.preview.loadFailed)).not.toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: WS2_COPY.home.failed.retry }));
         expect(onRetryPreview).toHaveBeenCalledOnce();
@@ -828,11 +845,26 @@ describe('Unsubscribe uses the action preview contract', () => {
       );
       fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
       const confirm = screen.getByRole('button', { name: 'Unsubscribe' });
-      expect(confirm).toBeDisabled();
+      if (state === 'loading') {
+        expect(confirm).toBeDisabled();
+        fireEvent.click(confirm);
+        fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+        expect(onConfirm).not.toHaveBeenCalled();
+        return;
+      }
+      expect(screen.getByText(WS5_COPY['f1.preview.backlog.error'])).toBeVisible();
+      expect(
+        screen.queryByText(WS5_COPY['preview.state.loadFailed.unsub']),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole('radio', { name: '+ Archive' })).toBeDisabled();
+      expect(screen.getByRole('radio', { name: '+ Delete' })).toBeDisabled();
+      expect(confirm).toBeEnabled();
       fireEvent.click(confirm);
-      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
-      fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
-      expect(onConfirm).not.toHaveBeenCalled();
+      expect(onConfirm).toHaveBeenCalledWith({
+        secondary: null,
+        archiveHistoric: false,
+        senderIds: [sender.id],
+      });
     },
   );
 });

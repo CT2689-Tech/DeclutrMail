@@ -453,7 +453,7 @@ describe('ActionSheet — live-preview confirm gate', () => {
     expect(screen.queryByRole('link', { name: /Check in Gmail/ })).toBeNull();
   });
 
-  it('keeps Unsubscribe only closed until a failed preview resolves', () => {
+  it('keeps Unsubscribe only usable when the preview fails and blocks cleanup until it loads', () => {
     const onConfirm = vi.fn();
     const { rerender } = render(
       <ActionSheet
@@ -466,17 +466,25 @@ describe('ActionSheet — live-preview confirm gate', () => {
       />,
     );
 
+    expect(screen.getByText(WS5_COPY['f1.preview.backlog.error'])).toBeVisible();
+    expect(screen.queryByText(WS5_COPY['preview.state.loadFailed.unsub'])).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
-    const confirm = screen.getByRole('button', { name: /^Unsubscribe/ });
-    expect(confirm).toBeDisabled();
+    const confirm = screen.getByRole('button', { name: 'Unsubscribe' });
+    expect(confirm).toBeEnabled();
     fireEvent.click(confirm);
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
-    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onConfirm).toHaveBeenCalledWith({
+      archiveHistoric: false,
+      backlogMode: 'unsub_only',
+      rememberPreference: false,
+      wakeAt: null,
+    });
 
     const archiveWhileUnknown = screen.getByRole('radio', { name: '+ Archive' });
     expect(archiveWhileUnknown).toBeDisabled();
+    expect(screen.getByRole('radio', { name: '+ Delete' })).toBeDisabled();
     fireEvent.click(archiveWhileUnknown);
-    expect(confirm).toBeDisabled();
+    expect(screen.getByRole('radio', { name: 'Unsubscribe only' })).toBeChecked();
+    expect(confirm).toBeEnabled();
 
     rerender(
       <ActionSheet
@@ -956,14 +964,14 @@ describe('ActionSheet — the cleanup cost is stated whenever it can be spent', 
         onConfirm={() => {}}
       />,
     );
-    // Future-only unsubscribe stays armed while the count is in flight,
-    // and it does not spend a cleanup unit.
-    expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
+    // The confirm stays closed while the count is in flight, and a
+    // future-only unsubscribe does not spend a cleanup unit.
+    expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeDisabled();
     expect(screen.getByText(WS5_COPY['f1.footer'])).toBeInTheDocument();
     expect(screen.queryByText(/cleanup action/)).toBeNull();
   });
 
-  it('disables Unsubscribe only when the preview fails, without charging it', () => {
+  it('keeps a failed Unsubscribe only free of a cleanup charge', () => {
     const onConfirm = vi.fn();
     render(
       <ActionSheet
@@ -976,11 +984,16 @@ describe('ActionSheet — the cleanup cost is stated whenever it can be spent', 
         onConfirm={onConfirm}
       />,
     );
+    expect(screen.getByText(WS5_COPY['f1.preview.backlog.error'])).toBeVisible();
     const confirm = screen.getByRole('button', { name: 'Unsubscribe' });
-    expect(confirm).toBeDisabled();
+    expect(confirm).toBeEnabled();
     fireEvent.click(confirm);
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
-    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onConfirm).toHaveBeenCalledWith({
+      archiveHistoric: false,
+      backlogMode: 'unsub_only',
+      rememberPreference: false,
+      wakeAt: null,
+    });
     expect(screen.getByText(WS5_COPY['f1.footer'])).toBeInTheDocument();
     expect(screen.queryByText(/cleanup action/)).toBeNull();
   });
@@ -1067,6 +1080,24 @@ describe('ActionSheet choice survives a preview refresh', () => {
     expect(screen.getByRole('radio', { name: '+ Archive' })).toBeChecked();
   });
 
+  it('opens on + Archive while the preview loads when the row already has inbox mail', () => {
+    const props = {
+      open: true,
+      verb: 'Unsubscribe' as const,
+      row: { ...TRIAGE_QUEUE[0]!, inboxCount: 12 },
+      onCancel: vi.fn(),
+      onConfirm: vi.fn(),
+    };
+    const { rerender } = render(<ActionSheet {...props} inboxCount="loading" />);
+    expect(screen.getByRole('radio', { name: '+ Archive' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: '+ Archive' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: '+ Delete' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeDisabled();
+    rerender(<ActionSheet {...props} inboxCount={4} />);
+    expect(screen.getByRole('radio', { name: '+ Archive' })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeEnabled();
+  });
+
   it('uses the existing Archive default when the initial live count arrives', () => {
     const props = {
       open: true,
@@ -1133,7 +1164,10 @@ describe('ActionSheet Unsubscribe preview recovery', () => {
         onConfirm={vi.fn()}
       />,
     );
-    expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
+    expect(screen.getByText(WS5_COPY['f1.preview.backlog.error'])).toBeVisible();
+    expect(screen.getByRole('radio', { name: '+ Archive' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: '+ Delete' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetryPreview).toHaveBeenCalledOnce();
   });
