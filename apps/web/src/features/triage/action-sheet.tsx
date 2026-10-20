@@ -371,7 +371,7 @@ export function ActionSheet({
     WS5_COPY['preview.later.returnInvalid']
   ) : previewUnavailable ? (
     <StatusWithAction
-      message={WS2_COPY.preview.loadFailed}
+      message={WS5_COPY['preview.state.loadFailed']}
       action={
         onRetryPreview ? { label: WS2_COPY.home.failed.retry, onClick: onRetryPreview } : undefined
       }

@@ -197,6 +197,7 @@ describe('InboxReportFirstLanding', () => {
     await waitFor(() =>
       expect(submitted).toMatchObject({ mode: 'delete', reach: 'all_mail', senderIds: ['s1'] }),
     );
+    expect(submitted).not.toHaveProperty('olderThanDays');
   });
 
   it('posts only the report senders the live preview included', async () => {

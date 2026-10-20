@@ -1011,26 +1011,17 @@ button {
   .dm-sheet-review .dm-sheet-controls {
     margin-top: 8px !important;
   }
-  /* Pull the cleanup choice to the top of a short phone sheet. The header
-     text is not focusable, so the first tab stop is still the choice. */
+  /* Pull only the cleanup choice above the header. The slot is already a
+     flex item, so order does not need display: contents. Header text is
+     not focusable, so the first tab stop is still the choice. */
   .dm-sheet-review .dm-sheet-body:has(.dm-unsub-choice) {
     display: flex;
     flex-direction: column;
   }
-  .dm-sheet-review .dm-sheet-body:has(.dm-unsub-choice) > .dm-sheet-controls,
-  .dm-sheet-review .dm-sheet-body:has(.dm-unsub-choice) > .dm-sheet-controls > div {
-    display: contents !important;
-  }
-  .dm-sheet-review .dm-unsub-choice {
+  .dm-sheet-review .dm-sheet-choice-slot {
     order: -1;
+    margin-top: 0 !important;
     margin-bottom: 8px;
-  }
-  .dm-sheet-review
-    .dm-sheet-body:has(.dm-unsub-choice)
-    > .dm-sheet-controls
-    > div
-    > :not(.dm-unsub-choice) {
-    margin-top: 12px;
   }
   .dm-sheet-review .dm-sheet-context {
     margin-bottom: 8px !important;

@@ -236,7 +236,7 @@ export function InlinePreviewBlock({
       {(blocked || previewUnavailable) && (
         <p style={{ margin: `${space[1]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
           {preview.inboxCount === 'unavailable'
-            ? WS2_COPY.preview.loadFailed
+            ? WS5_COPY['preview.state.loadFailed']
             : WS5_COPY['f1.preview.backlog.loading']}
         </p>
       )}

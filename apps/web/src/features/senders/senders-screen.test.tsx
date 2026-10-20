@@ -4591,7 +4591,11 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       await waitFor(() => expect(confirm).toBeEnabled());
       fireEvent.click(confirm);
       await waitFor(() => expect(unsubPosts).toHaveLength(1));
-      expect(unsubPosts[0]).toMatchObject({ mode: 'archive', senderIds: ['a', 'b'] });
+      expect(unsubPosts[0]).toMatchObject({
+        mode: 'archive',
+        olderThanDays: null,
+        senderIds: ['a', 'b'],
+      });
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
       // The batch still owns both rows, so they cannot be selected into a

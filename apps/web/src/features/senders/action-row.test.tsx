@@ -218,6 +218,37 @@ describe('SenderActionRow — menu focus returns to the opener', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(opener).toHaveFocus();
   });
+
+  it('returns focus to the opener on a click, including after the confirm closes', () => {
+    function Host() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <SenderActionRow
+            sender={sender({ inboxCount: 3 })}
+            onAction={(req) => {
+              if (req.verb === 'Archive') setOpen(true);
+            }}
+          />
+          {open && (
+            <PreviewSheet
+              title="Archive emails?"
+              onClose={() => setOpen(false)}
+              primary={{ label: 'Archive', onClick: () => setOpen(false) }}
+            />
+          )}
+        </>
+      );
+    }
+    render(<Host />);
+    const opener = openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Archive' }));
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'Archive emails?' })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(opener).toHaveFocus();
+  });
 });
 
 describe('SenderActionRow — relevant actions', () => {

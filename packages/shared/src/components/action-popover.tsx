@@ -104,8 +104,9 @@ export interface ActionPopoverProps {
   onClose: () => void;
 
   /**
-   * The control that opened this menu. Escape and a shortcut key return
-   * focus here, including when the shortcut opens a confirm on top.
+   * The control that opened this menu. Escape, a shortcut, and a click
+   * return focus here before the pick runs, including when that pick
+   * opens a confirm on top.
    */
   returnFocusRef?: RefObject<HTMLElement | null> | undefined;
 
@@ -318,6 +319,7 @@ export function ActionPopover({
               reason={disabledReasons[verbId]}
               dimmed={dimmed}
               onPick={onPick}
+              returnFocusRef={returnFocusRef}
             />
           );
         })}
@@ -332,12 +334,14 @@ function Row({
   reason,
   dimmed,
   onPick,
+  returnFocusRef,
 }: {
   verb: VerbSpec;
   disabled: boolean;
   reason?: string | undefined;
   dimmed: boolean;
   onPick: (id: VerbId) => void;
+  returnFocusRef?: RefObject<HTMLElement | null> | undefined;
 }) {
   return (
     <>
@@ -356,7 +360,13 @@ function Row({
         role="menuitem"
         aria-disabled={disabled || undefined}
         onClick={() => {
-          if (!disabled) onPick(verb.id);
+          if (disabled) return;
+          // A click focuses this item, then the menu unmounts. Focus the
+          // opener first so a confirm opened in the same turn records
+          // that button — the menu trap will not restore once the
+          // confirm's aria-modal exists.
+          returnFocusRef?.current?.focus();
+          onPick(verb.id);
         }}
         style={{
           display: 'grid',

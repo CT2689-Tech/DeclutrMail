@@ -379,7 +379,7 @@ export function DecidePreview({
       )}
       {moves && effectiveCount === 'unavailable' && (
         <div role="status">
-          <p style={mutedLine}>{WS2_COPY.preview.loadFailed}</p>
+          <p style={mutedLine}>{WS5_COPY['preview.state.loadFailed']}</p>
           {onRetryPreview && (
             <Button tone="ghost" onClick={onRetryPreview}>
               {WS2_COPY.home.failed.retry}

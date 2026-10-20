@@ -1,6 +1,13 @@
 'use client';
 
-import { useEffect, useId, type ReactNode } from 'react';
+import {
+  Children,
+  isValidElement,
+  useEffect,
+  useId,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { useFocusTrap } from '../../hooks/use-focus-trap';
 import { OVERLAY_Z } from '../../tokens/overlay-layers';
 import { color, font, shadow, space, text, typography } from '../../tokens/tokens';
@@ -194,11 +201,7 @@ export function PreviewSheet({
             </div>
           )}
 
-          {children != null && (
-            <div className="dm-sheet-controls" style={{ marginTop: space[5], width: '100%' }}>
-              {children}
-            </div>
-          )}
+          {splitSheetChoice(children)}
 
           {note != null && (
             <p
@@ -281,5 +284,53 @@ export function PreviewSheet({
         </div>
       </div>
     </div>
+  );
+}
+
+function hasChoiceClass(node: ReactNode): boolean {
+  if (!isValidElement<{ className?: unknown }>(node)) return false;
+  const className = node.props.className;
+  return typeof className === 'string' && className.split(/\s+/).includes('dm-unsub-choice');
+}
+
+/**
+ * The unsubscribe choice lives in the caller's controls column. A 360px
+ * sheet lifts that column's choice above the header with flex order, which
+ * needs the choice to be its own flex item. Wider sheets keep the same
+ * sequence: the choice, then the window and reach controls.
+ */
+function splitSheetChoice(children: ReactNode): ReactNode {
+  if (children == null) return null;
+  const wrapped = (
+    <div className="dm-sheet-controls" style={{ marginTop: space[5], width: '100%' }}>
+      {children}
+    </div>
+  );
+  const items = Children.toArray(children);
+  const wrapper = items[0];
+  if (
+    items.length !== 1 ||
+    !isValidElement<{ children?: ReactNode; style?: CSSProperties }>(wrapper) ||
+    wrapper.type !== 'div' ||
+    hasChoiceClass(wrapper)
+  ) {
+    return wrapped;
+  }
+  const inner = Children.toArray(wrapper.props.children);
+  const index = inner.findIndex(hasChoiceClass);
+  if (index < 0) return wrapped;
+  const style = wrapper.props.style;
+  const rest = inner.slice(index + 1);
+  return (
+    <>
+      <div className="dm-sheet-choice-slot" style={{ marginTop: space[5], width: '100%' }}>
+        <div style={style}>{inner.slice(0, index + 1)}</div>
+      </div>
+      {rest.length > 0 ? (
+        <div className="dm-sheet-controls" style={{ marginTop: space[3], width: '100%' }}>
+          <div style={style}>{rest}</div>
+        </div>
+      ) : null}
+    </>
   );
 }

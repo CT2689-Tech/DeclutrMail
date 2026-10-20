@@ -1165,7 +1165,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     fireEvent.click(
       within(dialog).getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
     );
-    await waitFor(() => expect(submitted).toMatchObject({ mode: 'delete' }));
+    await waitFor(() => expect(submitted).toMatchObject({ mode: 'delete', olderThanDays: null }));
     expect(submitted).not.toHaveProperty('reach');
   });
 
@@ -2226,7 +2226,11 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     expect(preview).not.toHaveTextContent(WS5_COPY['f1.meterFree']);
     fireEvent.click(within(preview).getByRole('button', { name: 'Unsubscribe + Archive' }));
     await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0]).toMatchObject({ mode: 'archive', senderIds: [LINKEDIN.senderId] });
+    expect(bodies[0]).toMatchObject({
+      mode: 'archive',
+      olderThanDays: null,
+      senderIds: [LINKEDIN.senderId],
+    });
 
     const linkedIn = () => screen.getAllByText(LINKEDIN.senderName)[0]!.closest('[aria-busy]');
     await waitFor(() => expect(linkedIn()).not.toHaveAttribute('aria-busy', 'true'));
@@ -2242,7 +2246,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
       within(again).getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
     );
     await waitFor(() => expect(bodies).toHaveLength(2));
-    expect(bodies[1]).toMatchObject({ mode: 'delete' });
+    expect(bodies[1]).toMatchObject({ mode: 'delete', olderThanDays: 180 });
   });
 
   it('Escape clears the inline pending action, keeps the row expanded, fires no mutation', async () => {
