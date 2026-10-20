@@ -159,8 +159,9 @@ export function ActionSheet({
         ? null
         : (detail?.reachControl?.inboxCount ?? countKnown);
   // Senders opens from the inbox total already on the row, then keeps that
-  // choice when the preview arrives. A row without one adopts the first
-  // resolved preview count and keeps that too.
+  // choice when the preview arrives. The live count still decides when
+  // Archive and Delete can be used. A row without an inbox total adopts
+  // the first resolved preview count and keeps that too.
   const rowInbox = typeof row?.inboxCount === 'number' ? row.inboxCount : null;
   const choiceRef = useRef<{ key: string | null; inbox: number | null }>({
     key: null,
@@ -552,7 +553,7 @@ export function ActionSheet({
                     onBacklogModeChange?.(mode);
                     (onReachChange ?? detail?.reachControl?.onChange)?.('inbox_only');
                   }}
-                  archiveDisabled={inboxOptionCount === null}
+                  archiveDisabled={countKnown === null}
                   deleteDisabled={countKnown === null}
                 />
                 {emailMeter && effectiveMode !== 'unsub_only' ? (

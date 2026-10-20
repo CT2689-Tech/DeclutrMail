@@ -643,7 +643,9 @@ export function TriageScreen({
    */
   const cleanupRemaining = auth?.me.cleanupRemaining ?? null;
 
-  const unsubscribeInboxTotal = compositePreview.data?.counts.all ?? null;
+  // Row facts choose the opening option while the live preview loads.
+  // Only previewInboxCount above can arm a mail-moving confirmation.
+  const unsubscribeInboxTotal = compositePreview.data?.counts.all ?? pendingRow?.inboxCount ?? null;
   const previewDetail: ActionPreviewDetail | undefined = (() => {
     const data = compositePreview.data;
     const ageControl = hasAgeControl

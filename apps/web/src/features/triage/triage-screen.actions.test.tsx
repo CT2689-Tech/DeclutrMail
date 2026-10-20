@@ -164,6 +164,65 @@ describe('TriageScreen — D226 mutation wiring', () => {
     resetFetchStub();
   });
 
+  it.each(['list', 'focus'] as const)(
+    'uses the known inbox count for the loading Unsubscribe default in %s mode, in the sheet and inline',
+    async (mode) => {
+      storeTriageMode(mode);
+      let resolvePreview: (() => void) | undefined;
+      let writes = 0;
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/actions/preview',
+          respond: () =>
+            new Promise<Response>((resolve) => {
+              resolvePreview = () => resolve(jsonOk({ data: PREVIEW_BODY }));
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-backlog',
+          respond: () => {
+            writes += 1;
+            return jsonServerError();
+          },
+        },
+      ]);
+      const client = createTestQueryClient();
+      const knownRow = { ...LINKEDIN, inboxCount: 12 };
+      render(
+        <QueryWrapper client={client}>
+          <TriageScreen state={{ kind: 'ready', rows: [knownRow], stats: TRIAGE_SESSION_STATS }} />
+        </QueryWrapper>,
+      );
+      if (mode === 'list') expandRow(knownRow.senderName);
+      fireEvent.keyDown(window, { key: 'u' });
+      const sheet = await screen.findByRole('dialog');
+      expect(within(sheet).getByRole('radio', { name: '+ Archive' })).toBeChecked();
+      expect(within(sheet).getByRole('button', { name: 'Unsubscribe + Archive' })).toBeDisabled();
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      expect(writes).toBe(0);
+      fireEvent.click(within(sheet).getByRole('button', { name: 'Cancel' }));
+
+      act(() => useTriageStore.getState().setRememberPreference('Unsubscribe', true));
+      fireEvent.keyDown(window, { key: 'u' });
+      const inline = await screen.findByRole('region', { name: /^Preview · Unsubscribe / });
+      expect(within(inline).getByRole('radio', { name: '+ Archive' })).toBeChecked();
+      expect(within(inline).getByRole('button', { name: 'Unsubscribe + Archive' })).toBeDisabled();
+      fireEvent.keyDown(window, { key: 'u' });
+      expect(writes).toBe(0);
+
+      fireEvent.click(within(inline).getByRole('radio', { name: 'Unsubscribe only' }));
+      await waitFor(() => expect(resolvePreview).toBeDefined());
+      await act(async () => resolvePreview!());
+      await waitFor(() =>
+        expect(within(inline).getByRole('radio', { name: '+ Archive' })).toBeEnabled(),
+      );
+      expect(within(inline).getByRole('radio', { name: 'Unsubscribe only' })).toBeChecked();
+      expect(writes).toBe(0);
+    },
+  );
+
   it('counts confirmed decisions when the queue backfills, then resets on mailbox switch', async () => {
     const backfill = TRIAGE_QUEUE[2]!;
     addFetchHandlers([

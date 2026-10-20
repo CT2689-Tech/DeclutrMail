@@ -1063,6 +1063,30 @@ describe('ActionSheet — the cleanup cost is stated whenever it can be spent', 
 });
 
 describe('ActionSheet choice survives a preview refresh', () => {
+  it('uses the known row inbox count while loading without arming cleanup or changing an explicit choice', () => {
+    const props = {
+      open: true,
+      verb: 'Unsubscribe' as const,
+      row: { ...row, inboxCount: 12 },
+      onCancel: vi.fn(),
+      onConfirm: vi.fn(),
+    };
+    const { rerender } = render(<ActionSheet {...props} inboxCount="loading" />);
+    expect(screen.getByRole('radio', { name: '+ Archive' })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeDisabled();
+    expect(screen.queryByRole('region', { name: 'What Archive will do' })).toBeNull();
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(props.onConfirm).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
+    rerender(<ActionSheet {...props} inboxCount={4} />);
+    expect(screen.getByRole('radio', { name: 'Unsubscribe only' })).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
+    expect(props.onConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({ archiveHistoric: false, backlogMode: 'unsub_only' }),
+    );
+  });
+
   it('discards a previous sender choice when the open action changes', () => {
     const props = {
       open: true,
