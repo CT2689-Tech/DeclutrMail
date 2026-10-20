@@ -356,7 +356,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     fireEvent.keyDown(window, { key: 'a' });
     const dialog = await screen.findByRole('dialog');
     const refresh = await within(dialog).findByRole('button', { name: 'Refresh triage' });
-    expect(within(dialog).queryByRole('button', { name: 'Retry preview' })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Try again' })).toBeNull();
     expect(within(dialog).getByRole('button', { name: /^Archive/i })).toBeDisabled();
     fireEvent.click(refresh);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -722,7 +722,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
         ),
       );
       expect(screen.getByRole('checkbox', { name: 'Include archived email' })).not.toBeChecked();
-      expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
+      expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('180');
       await confirmOpenSheet('Delete', false);
       await waitFor(() => expect(enqueues).toHaveLength(1));
       expect(enqueues[0]!.primary).not.toHaveProperty('reach');
@@ -976,7 +976,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: undoKeys.all });
   });
 
-  it('confirms the displayed archived scope for Unsubscribe & delete', async () => {
+  it('confirms the displayed archived scope for Unsubscribe + Delete', async () => {
     let submitted: unknown = null;
     installFetchStub([
       {
@@ -1009,7 +1009,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     const option = await within(dialog).findByRole('radio', { name: '+ Delete' });
     await waitFor(() => expect(option).toBeEnabled());
     fireEvent.click(option);
-    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Email age' }), {
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'How far back' }), {
       target: { value: 'all' },
     });
     fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Include archived email' }));
@@ -1056,7 +1056,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     const deletion = await within(dialog).findByRole('radio', { name: '+ Delete' });
     await waitFor(() => expect(deletion).toBeEnabled());
     fireEvent.click(deletion);
-    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Email age' }), {
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'How far back' }), {
       target: { value: 'all' },
     });
     fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Include archived email' }));
@@ -1123,7 +1123,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     const deletion = await within(dialog).findByRole('radio', { name: '+ Delete' });
     await waitFor(() => expect(deletion).toBeEnabled());
     fireEvent.click(deletion);
-    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Email age' }), {
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'How far back' }), {
       target: { value: 'all' },
     });
     fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Include archived email' }));
@@ -1137,17 +1137,17 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(includeArchived).toBeChecked();
     await waitFor(() =>
       expect(
-        within(dialog).getByRole('button', { name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/ }),
+        within(dialog).getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
       ).toBeDisabled(),
     );
     fireEvent.click(includeArchived);
     await waitFor(() =>
       expect(
-        within(dialog).getByRole('button', { name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/ }),
+        within(dialog).getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
       ).toBeEnabled(),
     );
     fireEvent.click(
-      within(dialog).getByRole('button', { name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/ }),
+      within(dialog).getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
     );
     await waitFor(() => expect(submitted).toMatchObject({ mode: 'delete' }));
     expect(submitted).not.toHaveProperty('reach');
@@ -1211,7 +1211,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(dialog).toHaveTextContent(/Gmail.*30 days/);
     expect(dialog).not.toHaveTextContent(WS5_COPY['f1.meterFree']);
     fireEvent.click(
-      within(dialog).getByRole('button', { name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/ }),
+      within(dialog).getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
     );
 
     await waitFor(() =>
@@ -2206,7 +2206,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     );
     expect(preview).toHaveTextContent(WS5_COPY['f1.footer']);
     expect(preview).not.toHaveTextContent(WS5_COPY['f1.meterFree']);
-    fireEvent.click(within(preview).getByRole('button', { name: 'Unsubscribe & archive' }));
+    fireEvent.click(within(preview).getByRole('button', { name: 'Unsubscribe + Archive' }));
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).toMatchObject({ mode: 'archive', senderIds: [LINKEDIN.senderId] });
 
@@ -2219,7 +2219,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     await waitFor(() => expect(deleteChoice).toBeEnabled());
     fireEvent.click(deleteChoice);
     fireEvent.click(
-      within(again).getByRole('button', { name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/ }),
+      within(again).getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
     );
     await waitFor(() => expect(bodies).toHaveLength(2));
     expect(bodies[1]).toMatchObject({ mode: 'delete' });
@@ -2385,7 +2385,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
       await waitFor(() =>
         expect(within(region).getByRole('button', { name: /Later/ })).toBeEnabled(),
       );
-      fireEvent.change(within(region).getByRole('combobox', { name: 'Email age' }), {
+      fireEvent.change(within(region).getByRole('combobox', { name: 'How far back' }), {
         target: { value: '90' },
       });
       const wakeAt = useTriageStore.getState().pendingAction?.wakeAt;
@@ -2397,12 +2397,12 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
       expect(within(region).getByRole('button', { name: /Later/ })).toBeDisabled();
       const failedReads = reads;
       failing = false;
-      fireEvent.click(within(region).getByRole('button', { name: 'Retry preview' }));
+      fireEvent.click(within(region).getByRole('button', { name: 'Try again' }));
       await waitFor(() =>
         expect(within(region).getByRole('button', { name: /Later/ })).toBeEnabled(),
       );
       expect(reads).toBeGreaterThan(failedReads);
-      expect(within(region).getByRole('combobox', { name: 'Email age' })).toHaveValue('90');
+      expect(within(region).getByRole('combobox', { name: 'How far back' })).toHaveValue('90');
       expect(useTriageStore.getState().pendingAction?.wakeAt).toBe(wakeAt);
       expect(enqueues).toHaveLength(0);
       fireEvent.click(within(region).getByRole('button', { name: /Later/ }));
@@ -2438,7 +2438,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
     const region = await screen.findByRole('region', { name: /^Preview · Unsubscribe / });
-    const retry = await within(region).findByRole('button', { name: 'Retry preview' });
+    const retry = await within(region).findByRole('button', { name: 'Try again' });
     expect(within(region).getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
     expect(within(region).getByRole('radio', { name: '+ Archive' })).toBeDisabled();
     act(() => useTriageStore.getState().setPendingBacklogMode('unsub_only'));
@@ -2450,7 +2450,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     );
     expect(reads).toBeGreaterThan(failedReads);
     expect(within(region).getByRole('radio', { name: 'Unsubscribe only' })).toBeChecked();
-    expect(within(region).queryByRole('button', { name: 'Retry preview' })).toBeNull();
+    expect(within(region).queryByRole('button', { name: 'Try again' })).toBeNull();
     expect(writes).toBe(0);
   });
 
@@ -3608,7 +3608,7 @@ describe('Archive Email age — preview and dispatch share one scope', () => {
       renderScreen(createTestQueryClient());
       expandRow(GROUPON.senderName);
       fireEvent.keyDown(window, { key: 'a' });
-      const age = await screen.findByRole('combobox', { name: 'Email age' });
+      const age = await screen.findByRole('combobox', { name: 'How far back' });
       expect(age).toHaveValue('all');
       await waitFor(() =>
         expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
@@ -3619,7 +3619,7 @@ describe('Archive Email age — preview and dispatch share one scope', () => {
       expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
         '30 emails will leave your inbox',
       );
-      expect(screen.getByText(/Approximate cutoff/)).toBeVisible();
+      expect(screen.getByText(/Emails from before about/)).toBeVisible();
       fireEvent.click(screen.getByText('Details').closest('summary')!);
       expect(screen.getByText('Older matching message')).toBeVisible();
       expect(screen.queryByText('New inbox message')).toBeNull();
@@ -3652,7 +3652,7 @@ describe('Archive Email age — preview and dispatch share one scope', () => {
     renderScreen(createTestQueryClient());
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
-    const age = await screen.findByRole('combobox', { name: 'Email age' });
+    const age = await screen.findByRole('combobox', { name: 'How far back' });
     await waitFor(() => expect(screen.getByRole('button', { name: 'Archive' })).toBeEnabled());
     fireEvent.change(age, { target: { value: '365' } });
     expect(age).toBeEnabled();
@@ -3665,11 +3665,11 @@ describe('Archive Email age — preview and dispatch share one scope', () => {
     fireEvent.change(age, { target: { value: '90' } });
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     fireEvent.keyDown(window, { key: 'a' });
-    expect(await screen.findByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+    expect(await screen.findByRole('combobox', { name: 'How far back' })).toHaveValue('all');
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'a' });
-    expect(await screen.findByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+    expect(await screen.findByRole('combobox', { name: 'How far back' })).toHaveValue('all');
   });
 
   it('uses the same selected age for the group total, sender breakdown and bulk request', async () => {
@@ -3730,7 +3730,7 @@ describe('Archive Email age — preview and dispatch share one scope', () => {
       </QueryWrapper>,
     );
     fireEvent.click(screen.getByRole('button', { name: /Archive all 3 recommended senders/ }));
-    const age = await screen.findByRole('combobox', { name: 'Email age' });
+    const age = await screen.findByRole('combobox', { name: 'How far back' });
     expect(age).toHaveValue('all');
     await waitFor(() => expect(screen.getByRole('button', { name: 'Archive' })).toBeEnabled());
     fireEvent.change(age, { target: { value: '365' } });
@@ -3817,7 +3817,7 @@ describe('Archive Email age — preview and dispatch share one scope', () => {
     fireEvent.click(
       screen.getByRole('button', { name: /Move all 3 senders from example.com to Later/ }),
     );
-    const age = await screen.findByRole('combobox', { name: 'Email age' });
+    const age = await screen.findByRole('combobox', { name: 'How far back' });
     expect(age).toHaveValue('all');
     await waitFor(() => expect(screen.getByRole('button', { name: 'Later' })).toBeEnabled());
     fireEvent.change(age, { target: { value: '365' } });
@@ -3861,7 +3861,7 @@ describe('Archive Email age — preview and dispatch share one scope', () => {
     renderScreen(client);
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
-    const age = await screen.findByRole('combobox', { name: 'Email age' });
+    const age = await screen.findByRole('combobox', { name: 'How far back' });
     await waitFor(() => expect(screen.getByRole('button', { name: 'Archive' })).toBeEnabled());
     fireEvent.change(age, { target: { value: '30' } });
     fireEvent.click(screen.getByText('Details').closest('summary')!);
@@ -3981,14 +3981,14 @@ describe('Delete Email age — selected counts and requests', () => {
       renderScreen(createTestQueryClient());
       expandRow(GROUPON.senderName);
       fireEvent.keyDown(window, { key: 'd' });
-      const age = await screen.findByRole('combobox', { name: 'Email age' });
+      const age = await screen.findByRole('combobox', { name: 'How far back' });
       expect(age).toHaveValue('180');
       await waitFor(() =>
         expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
           '5 emails will move',
         ),
       );
-      expect(screen.getByText(/Approximate cutoff/)).toBeVisible();
+      expect(screen.getByText(/Emails from before about/)).toBeVisible();
       fireEvent.click(screen.getByText('Details').closest('summary')!);
       expect(screen.getByText('Old inbox match')).toBeVisible();
       expect(screen.queryByText('Old archived match')).toBeNull();
@@ -4007,7 +4007,7 @@ describe('Delete Email age — selected counts and requests', () => {
     },
   );
 
-  it('keeps archived scope when age changes and sends explicit Any age', async () => {
+  it('keeps archived scope when age changes and sends explicit All time', async () => {
     renderScreen(createTestQueryClient());
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'd' });
@@ -4023,14 +4023,14 @@ describe('Delete Email age — selected counts and requests', () => {
         screen.getByRole('link', { name: /Check in Gmail/ }).getAttribute('href')!,
       ),
     ).not.toContain('in:inbox');
-    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
       target: { value: 'all' },
     });
     expect(screen.getByRole('checkbox', { name: 'Include archived email' })).toBeChecked();
     expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
       '80 emails will move',
     );
-    expect(screen.queryByText(/Approximate cutoff/)).toBeNull();
+    expect(screen.queryByText(/Emails from before about/)).toBeNull();
     const gmail = decodeURIComponent(
       screen.getByRole('link', { name: /Check in Gmail/ }).getAttribute('href')!,
     );
@@ -4044,14 +4044,14 @@ describe('Delete Email age — selected counts and requests', () => {
   });
 
   it.each(['click', 'shortcut'] as const)(
-    'inline renderer preserves 180 days and confirms Any age via %s',
+    'inline renderer preserves 180 days and confirms All time via %s',
     async (submit) => {
       renderScreen(createTestQueryClient());
       expandRow(GROUPON.senderName);
       // Delete still always opens a modal in the product. Exercise its shared
       // inline renderer without introducing a new skip-sheet preference.
       act(() => useTriageStore.getState().openPending('Delete', GROUPON.id, 'inline'));
-      const age = await screen.findByRole('combobox', { name: 'Email age' });
+      const age = await screen.findByRole('combobox', { name: 'How far back' });
       expect(age).toHaveValue('180');
       await waitFor(() =>
         expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
@@ -4074,7 +4074,7 @@ describe('Delete Email age — selected counts and requests', () => {
     renderScreen(createTestQueryClient());
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'd' });
-    const age = await screen.findByRole('combobox', { name: 'Email age' });
+    const age = await screen.findByRole('combobox', { name: 'How far back' });
     await waitFor(() => expect(screen.getByRole('button', { name: 'Delete' })).toBeEnabled());
     fireEvent.change(age, { target: { value: '365' } });
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
@@ -4086,7 +4086,7 @@ describe('Delete Email age — selected counts and requests', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     fireEvent.keyDown(window, { key: 'd' });
-    expect(await screen.findByRole('combobox', { name: 'Email age' })).toHaveValue('180');
+    expect(await screen.findByRole('combobox', { name: 'How far back' })).toHaveValue('180');
     await waitFor(() =>
       expect(screen.getByRole('checkbox', { name: 'Include archived email' })).not.toBeChecked(),
     );
@@ -4099,7 +4099,7 @@ describe('Delete Email age — selected counts and requests', () => {
     fireEvent.keyDown(window, { key: 'd' });
     const archived = await screen.findByRole('checkbox', { name: 'Include archived email' });
     fireEvent.click(archived);
-    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
       target: { value: '30' },
     });
     expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
@@ -4177,7 +4177,7 @@ describe('Later Email age and return time requests', () => {
       if (submit.startsWith('inline'))
         act(() => useTriageStore.getState().setRememberPreference('Later', true));
       fireEvent.keyDown(window, { key: 'l' });
-      const age = await screen.findByRole('combobox', { name: 'Email age' });
+      const age = await screen.findByRole('combobox', { name: 'How far back' });
       expect(age).toHaveValue('all');
       const time = screen.getByLabelText('Later return time') as HTMLInputElement;
       expect(new Date(time.value).getTime()).toBeGreaterThanOrEqual(before + 7 * 86400000 - 60000);
@@ -4212,7 +4212,7 @@ describe('Later Email age and return time requests', () => {
     renderScreen(client);
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'l' });
-    const age = await screen.findByRole('combobox', { name: 'Email age' });
+    const age = await screen.findByRole('combobox', { name: 'How far back' });
     await waitFor(() => expect(screen.getByRole('button', { name: 'Later' })).toBeEnabled());
     fireEvent.change(age, { target: { value: '365' } });
     expect(screen.getByRole('button', { name: 'Later' })).toBeDisabled();
@@ -4232,7 +4232,7 @@ describe('Later Email age and return time requests', () => {
     expect(bodies).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     fireEvent.keyDown(window, { key: 'l' });
-    expect(await screen.findByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+    expect(await screen.findByRole('combobox', { name: 'How far back' })).toHaveValue('all');
     await waitFor(() => expect(screen.getByRole('button', { name: 'Later' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Later' }));
     await waitFor(() => expect(bodies).toHaveLength(1));
@@ -4292,9 +4292,9 @@ describe('Unsubscribe cleanup age requests', () => {
     expandRow(LINKEDIN.senderName);
     if (inline) act(() => useTriageStore.getState().setRememberPreference('Unsubscribe', true));
     fireEvent.keyDown(window, { key: 'u' });
-    const age = await screen.findByRole('combobox', { name: 'Email age' });
+    const age = await screen.findByRole('combobox', { name: 'How far back' });
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Unsubscribe & archive' })).toBeEnabled(),
+      expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeEnabled(),
     );
     return age;
   }
@@ -4315,7 +4315,7 @@ describe('Unsubscribe cleanup age requests', () => {
         ),
       ).toBeVisible();
       if (submit.endsWith('click'))
-        fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe & delete' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Delete' }));
       else if (submit === 'inline shortcut') fireEvent.keyDown(window, { key: 'u' });
       else fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(bodies).toHaveLength(1));
@@ -4328,14 +4328,14 @@ describe('Unsubscribe cleanup age requests', () => {
     },
   );
 
-  it('keeps archived scope when choosing Any age and submits that exact cleanup', async () => {
+  it('keeps archived scope when choosing All time and submits that exact cleanup', async () => {
     const age = await open();
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent('9 emails');
     fireEvent.change(age, { target: { value: 'all' } });
     expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent('59 emails');
-    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe & delete' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Delete' }));
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).toMatchObject({ mode: 'delete', olderThanDays: null, reach: 'all_mail' });
   });
@@ -4360,13 +4360,13 @@ describe('Unsubscribe cleanup age requests', () => {
       const age = await open(inline);
       fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
       fireEvent.change(age, { target: { value: '365' } });
-      const confirm = screen.getByRole('button', { name: 'Unsubscribe & delete' });
+      const confirm = screen.getByRole('button', { name: 'Unsubscribe + Delete' });
       expect(confirm).toBeDisabled();
       fireEvent.click(confirm);
       fireEvent.keyDown(window, inline ? { key: 'u' } : { key: 'Enter', ctrlKey: true });
       expect(bodies).toHaveLength(0);
       fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
-      expect(screen.queryByRole('combobox', { name: 'Email age' })).toBeNull();
+      expect(screen.queryByRole('combobox', { name: 'How far back' })).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
       await waitFor(() => expect(bodies).toHaveLength(1));
       expect(bodies[0]).toMatchObject({ mode: 'unsub_only' });
@@ -4382,7 +4382,7 @@ describe('Unsubscribe cleanup age requests', () => {
       expect(screen.getByRole('radio', { name: '+ Archive' })).toBeChecked();
       expect(age).toBeVisible();
       await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Unsubscribe & archive' })).toBeDisabled(),
+        expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeDisabled(),
       );
       fireEvent.keyDown(window, inline ? { key: 'u' } : { key: 'Enter', ctrlKey: true });
       expect(bodies).toHaveLength(0);
@@ -4394,12 +4394,12 @@ describe('Unsubscribe cleanup age requests', () => {
       expect(screen.getByRole('radio', { name: '+ Archive' })).toBeChecked();
       expect(age).toBeVisible();
       await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Unsubscribe & archive' })).toBeDisabled(),
+        expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeDisabled(),
       );
       fireEvent.keyDown(window, inline ? { key: 'u' } : { key: 'Enter', ctrlKey: true });
       expect(bodies).toHaveLength(0);
       fireEvent.change(age, { target: { value: 'all' } });
-      fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe & archive' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Archive' }));
       await waitFor(() => expect(bodies).toHaveLength(1));
       expect(bodies[0]).toMatchObject({ mode: 'archive', olderThanDays: null });
     },

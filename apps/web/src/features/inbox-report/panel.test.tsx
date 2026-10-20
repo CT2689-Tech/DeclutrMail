@@ -462,7 +462,7 @@ describe('Inbox Report action preview recovery', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
-    const confirm = screen.getByRole('button', { name: 'Unsubscribe & archive' });
+    const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
     fireEvent.click(confirm);
     fireEvent.click(confirm);
     expect(onFixConfirmed).toHaveBeenCalledTimes(1);

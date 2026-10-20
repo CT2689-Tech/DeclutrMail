@@ -20,7 +20,8 @@ import {
   CleanupImpact,
   CleanupPreview,
   UnsubscribeImpact,
-  cleanupAgeLabel,
+  cleanupActionTitle,
+  cleanupInboxHasNone,
 } from '@/components/cleanup-preview';
 import { LaterReturnControl, useFutureReturnTime } from '@/components/later-return-control';
 import type { ActionReach } from '@/lib/api/actions';
@@ -202,9 +203,10 @@ export function DecidePreview({
       : verb === 'unsubscribe'
         ? `Unsubscribe from ${name}?`
         : isCleanupAction
-          ? verb === 'later'
-            ? `Move emails from ${name} to Later?`
-            : `${VERB_LABEL[verb]} emails from ${name}?`
+          ? cleanupActionTitle(
+              verb === 'later' ? 'Later' : verb === 'delete' ? 'Delete' : 'Archive',
+              name,
+            )
           : verb === 'later'
             ? `Move ${liveCount === null ? 'email' : emailsLabel(liveCount)} to Later?`
             : `${VERB_LABEL[verb]} ${liveCount === null ? 'email' : emailsLabel(liveCount)}?`;
@@ -217,7 +219,7 @@ export function DecidePreview({
           ? primary.futureMail.summary
           : primary.unsubscribeChannel.summary
         : verb === 'keep'
-          ? 'No email moves.'
+          ? WS5_COPY['preview.zero.noMove']
           : verb === 'delete'
             ? primary.futureMail.summary
             : `From ${name}. ${destination ?? ''}`;
@@ -285,7 +287,7 @@ export function DecidePreview({
     scopeNotice === null
       ? null
       : isCleanupAction && scopeNotice.kind === 'empty-window'
-        ? `Your inbox has ${emailsLabel(scopeNotice.inboxTotal)} from this sender, but none are ${cleanupAgeLabel(scopeNotice.olderThanDays).toLowerCase()}.`
+        ? cleanupInboxHasNone(scopeNotice.inboxTotal, name, scopeNotice.olderThanDays)
         : inboxScopeNoticeCopy(scopeNotice, VERB_LABEL[verb], 'this sender', {
             verbActsBeyondInbox: reachAvailable,
           });
@@ -380,7 +382,7 @@ export function DecidePreview({
           <p style={mutedLine}>{WS2_COPY.preview.loadFailed}</p>
           {onRetryPreview && (
             <Button tone="ghost" onClick={onRetryPreview}>
-              Retry preview
+              {WS2_COPY.home.failed.retry}
             </Button>
           )}
         </div>
@@ -422,7 +424,7 @@ export function DecidePreview({
       )}
       {returnInvalid && (
         <p role="status" style={mutedLine}>
-          Choose a future return time.
+          {WS5_COPY['preview.later.returnInvalid']}
         </p>
       )}
 

@@ -56,31 +56,25 @@
   "f1.preview.future": "Future emails: we’ll send {Sender} a one-click unsubscribe request.",
   "f1.preview.future.mailto": "Future emails: we’ll open a prefilled email in Gmail for you to send to {Sender}.",
   "f1.preview.future.none": "Future emails: {Sender} has no unsubscribe link, so we can’t send a request.",
-  "f1.preview.future.unchecked": "Future emails: we haven’t checked how to unsubscribe yet.",
   "f1.preview.backlog.archive": {
-    "one": "{n} email will leave your inbox and stay in Gmail.",
+    "one": "1 email will leave your inbox and stay in Gmail.",
     "other": "{n} emails will leave your inbox and stay in Gmail."
   },
   "f1.preview.backlog.delete": {
-    "one": "{n} email will move to Gmail Trash.",
+    "one": "1 email will move to Gmail Trash.",
     "other": "{n} emails will move to Gmail Trash."
   },
   "f1.preview.backlog.loading": "Counting the email you already have…",
-  "f1.preview.backlog.error": "Couldn’t count the email you already have. Try again to archive or delete it.",
-  "f1.preview.backlog.unsubOnly": "Existing email stays where it is.",
-  "f1.preview.backlog.none": "There’s no email in your Inbox to move. Choose Unsubscribe only.",
-  "f1.preview.backlog.rangeUnavailable": "The cleanup preview for this range is unavailable. Choose another range.",
-  "f1.preview.backlog.emptyChoice": "Choose another age or Unsubscribe only.",
+  "f1.preview.backlog.unsubOnly": "Email you already have stays where it is.",
+  "f1.preview.future.unchecked": "Future emails: we haven’t checked how to unsubscribe yet.",
+  "f1.button.busy": "Unsubscribing…",
   "f1.preview.existing.label": "Email you already have",
-  "f1.preview.age.any": "Any age",
-  "f1.preview.age.days": "Older than {n} days",
-  "f1.preview.age.year": "Older than 1 year",
-  "f1.preview.later.return": "Return to inbox",
-  "f1.preview.later.time": "Later return time",
-  "f1.preview.archived.unavailable": "Archived email can’t be counted right now, so only email in your Inbox is included.",
-  "f1.preview.archived.hint": "To include email you’ve archived, turn on Include archived email.",
+  "f1.preview.backlog.error": "Couldn’t count the email you already have. Try again to archive or delete it.",
   "f1.preview.button.refreshSenders": "Refresh senders",
   "f1.preview.button.reviewSenders": "Review senders",
+  "f1.preview.archived.unavailable": "Archived email can’t be counted right now, so only email in your Inbox is included.",
+  "f1.preview.archived.hint": "To include email you’ve archived, turn on Include archived email.",
+  "f1.preview.backlog.none": "There’s no email in your Inbox to move. Choose Unsubscribe only.",
   "f1.preview.bulkMore": {
     "one": "and 1 more sender",
     "other": "and {k} more senders"
@@ -95,12 +89,11 @@
   "f1.footer": "Whether their email stops is up to the sender.",
   "f1.deleteNote": "Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash.",
   "f1.button.unsubOnly": "Unsubscribe",
-  "f1.button.busy": "Unsubscribing…",
-  "f1.button.archive": "Unsubscribe & archive",
-  "f1.button.delete": "Unsubscribe & delete",
+  "f1.button.archive": "Unsubscribe + Archive",
+  "f1.button.delete": "Unsubscribe + Delete",
   "f1.button.unsubOnly.protected": "Unsubscribe anyway",
-  "f1.button.archive.protected": "Unsubscribe & archive anyway",
-  "f1.button.delete.protected": "Unsubscribe & delete anyway",
+  "f1.button.archive.protected": "Unsubscribe + Archive anyway",
+  "f1.button.delete.protected": "Unsubscribe + Delete anyway",
   "f1.protected.lead": "{Sender} is Protected because {reason}.",
   "f1.protected.leadNoReason": "{Sender} is Protected.",
   "f1.button.cancel": "Cancel",
@@ -308,5 +301,59 @@
   "simplify.unsubStatus.draft": "We started the email in Gmail for you to send. We can’t see whether it was sent.",
   "simplify.unsubStatus.legacy": "We can’t confirm whether this earlier request went through.",
   "simplify.unsubReceipt.busy": "already in progress",
-  "simplify.unsubReceipt.sending": "still sending"
+  "simplify.unsubReceipt.sending": "still sending",
+  "preview.age.label": "How far back",
+  "preview.age.any": "All time",
+  "preview.age.olderThanDays": "Older than {n} days",
+  "preview.age.olderThanYear": "Older than 1 year",
+  "preview.age.unavailable": " (unavailable)",
+  "preview.age.noLimit": "No date limit.",
+  "preview.age.cutoff": "Emails from before about {date}.",
+  "preview.later.returnLabel": "Return to inbox",
+  "preview.later.returnInvalid": "Choose a future return time.",
+  "preview.impact.archive": {
+    "one": "1 email will leave your inbox and stay in Gmail.",
+    "other": "{n} emails will leave your inbox and stay in Gmail."
+  },
+  "preview.impact.later": {
+    "one": "1 email will move to Gmail’s DeclutrMail/Later label.",
+    "other": "{n} emails will move to Gmail’s DeclutrMail/Later label."
+  },
+  "preview.impact.delete": {
+    "one": "1 email will move to Gmail Trash.",
+    "other": "{n} emails will move to Gmail Trash."
+  },
+  "preview.impact.none": "No emails match these choices.",
+  "preview.impact.facts.inbox": "Inbox only · {age}",
+  "preview.impact.facts.allMail": "Inbox and archived email · {age}",
+  "preview.impact.pending.archive": "Matching emails leave your inbox and stay in Gmail after you confirm.",
+  "preview.impact.pending.later": "Matching emails move to Gmail’s DeclutrMail/Later label after you confirm.",
+  "preview.impact.pending.delete": "Matching emails move to Gmail Trash after you confirm.",
+  "preview.zero.olderThan": "No emails older than {age} from {Sender}",
+  "preview.zero.olderThan.bulk": "No emails older than {age} from these senders",
+  "preview.zero.nothing": "Nothing in your inbox from {Sender}",
+  "preview.zero.nothing.allMail": "Nothing in your inbox or archived email from {Sender}",
+  "preview.zero.nothing.bulk": "Nothing in your inbox from these senders",
+  "preview.zero.inboxHasNone": {
+    "one": "Your inbox has 1 email from {Sender}, but it isn’t older than {age}.",
+    "other": "Your inbox has {n} emails from {Sender}, but none are older than {age}."
+  },
+  "preview.zero.unsubHint": "Change How far back, or choose Unsubscribe only.",
+  "preview.zero.noMove": "No email moves.",
+  "preview.title.archive": "Archive emails from {Sender}?",
+  "preview.title.delete": "Delete emails from {Sender}?",
+  "preview.title.later": "Move emails from {Sender} to Later?",
+  "preview.title.bulk.archive": {
+    "one": "Archive emails from 1 sender?",
+    "other": "Archive emails from {k} senders?"
+  },
+  "preview.title.bulk.delete": {
+    "one": "Delete emails from 1 sender?",
+    "other": "Delete emails from {k} senders?"
+  },
+  "preview.title.bulk.later": {
+    "one": "Move emails from 1 sender to Later?",
+    "other": "Move emails from {k} senders to Later?"
+  },
+  "preview.title.unsubThisSender": "Unsubscribe from this sender?"
 }

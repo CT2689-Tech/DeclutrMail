@@ -23,10 +23,10 @@ describe('DecidePreview — live-preview confirm gate', () => {
         onCancel={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Retry preview' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetryPreview).toHaveBeenCalledTimes(1);
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
+    expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('180');
     expect(screen.getByRole('button', { name: /^Delete for/ })).toBeDisabled();
   });
   it('keeps Archive inbox-only and any age with an editable age and no Delete scope', () => {
@@ -48,11 +48,11 @@ describe('DecidePreview — live-preview confirm gate', () => {
       screen.getByRole('heading', { name: `Archive emails from ${row.senderName}?` }),
     ).toBeVisible();
     expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
-      '128 emails will leave your inbox and stay in Gmail.Inbox only · Any age',
+      '128 emails will leave your inbox and stay in Gmail.Inbox only · All time',
     );
-    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+    expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('all');
     expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
-    expect(screen.queryByText(/Approximate cutoff/)).toBeNull();
+    expect(screen.queryByText(/Emails from before about/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: `Archive for ${row.senderName}` }));
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
@@ -334,9 +334,9 @@ describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () =
         onCancel={vi.fn()}
       />,
     );
-    const age = screen.getByRole('combobox', { name: 'Email age' });
+    const age = screen.getByRole('combobox', { name: 'How far back' });
     expect(age).toHaveValue('180');
-    expect(age).toHaveAccessibleDescription(/Approximate cutoff:/);
+    expect(age).toHaveAccessibleDescription(/Emails from before about/);
     expect(screen.getByRole('option', { name: 'Older than 90 days' })).toBeEnabled();
     expect(screen.getByRole('button', { name: `Delete for ${row.senderName}` })).toHaveTextContent(
       /^Delete$/,
@@ -433,7 +433,7 @@ describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () =
     // would sit directly above "9 emails ... are in your inbox."
     expect(screen.queryByText(/Nothing to move/)).toBeNull();
     expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
-      'No emails match this scope.',
+      'No emails match these choices.',
     );
   });
 
@@ -477,7 +477,7 @@ describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () =
       />,
     );
     expect(screen.getByRole('button', { name: /^Delete/i })).toBeDisabled();
-    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
       target: { value: 'all' },
     });
     expect(onWindowChange).toHaveBeenCalledWith(null);
@@ -612,7 +612,7 @@ describe('DecidePreview — zero-match header (QA-delete-20260903-01)', () => {
     );
     expect(screen.queryByText(/Nothing to move/)).toBeNull();
     const impact = screen.getByRole('region', { name: 'Delete impact' });
-    expect(impact).toHaveTextContent('No emails match this scope.');
+    expect(impact).toHaveTextContent('No emails match these choices.');
     expect(impact).toHaveTextContent('Inbox and archived email · Older than 180 days');
   });
 

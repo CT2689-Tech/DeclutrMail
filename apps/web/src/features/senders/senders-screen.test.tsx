@@ -1746,7 +1746,7 @@ describe('SendersScreen — edge states', () => {
       if (verb === 'Delete' && includeArchived()) fireEvent.click(includeArchived()!);
       if (verb !== 'Later') {
         const windowControl = within(dialog).queryByRole('combobox', {
-          name: 'Email age',
+          name: 'How far back',
         });
         if (windowControl) {
           fireEvent.change(windowControl, {
@@ -2015,7 +2015,7 @@ describe('SendersScreen — edge states', () => {
     // Pick the narrowest window; the impact summary states 12 of the 250.
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByRole('option', { name: 'Older than 1 year' })).toBeEnabled();
-    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Email age' }), {
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'How far back' }), {
       target: { value: '365' },
     });
     expect(within(dialog).getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
@@ -2287,7 +2287,7 @@ describe('SendersScreen — edge states', () => {
     await screen.findByText(/couldn’t load the preview/i);
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByRole('button', { name: /archive/i })).toBeDisabled();
-    fireEvent.click(within(dialog).getByRole('button', { name: /retry preview/i }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(previewRequests).toBeGreaterThan(1));
 
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
@@ -2409,7 +2409,7 @@ describe('SendersScreen — edge states', () => {
     );
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(await within(dialog).findByRole('radio', { name: /^\+ Archive$/ }));
-    const confirm = await within(dialog).findByRole('button', { name: 'Unsubscribe & archive' });
+    const confirm = await within(dialog).findByRole('button', { name: 'Unsubscribe + Archive' });
     expect(
       within(dialog).getByText('Unsubscribing is free and doesn’t count.'),
     ).toBeInTheDocument();
@@ -2427,7 +2427,7 @@ describe('SendersScreen — edge states', () => {
   });
 
   it.each([0, 7])(
-    'reconciles Unsubscribe & delete with %i current emails remaining and one unsubscribe outcome',
+    'reconciles Unsubscribe + Delete with %i current emails remaining and one unsubscribe outcome',
     async (remaining) => {
       const deleted = 21 - remaining;
       const senderName = `Cleanup Sender ${remaining}`;
@@ -2528,17 +2528,17 @@ describe('SendersScreen — edge states', () => {
       const deleteChoice = await within(dialog).findByRole('radio', { name: /^\+ Delete$/ });
       await waitFor(() => expect(deleteChoice).toBeEnabled());
       fireEvent.click(deleteChoice);
-      fireEvent.change(within(dialog).getByRole('combobox', { name: 'Email age' }), {
+      fireEvent.change(within(dialog).getByRole('combobox', { name: 'How far back' }), {
         target: { value: 'all' },
       });
       fireEvent.click(await screen.findByRole('checkbox', { name: 'Include archived email' }));
       if (remaining > 0) {
-        fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+        fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
           target: { value: '30' },
         });
       }
       const confirm = await screen.findByRole('button', {
-        name: 'Unsubscribe & delete',
+        name: 'Unsubscribe + Delete',
       });
       await waitFor(() => expect(confirm).toBeEnabled());
       fireEvent.click(confirm);
@@ -2680,7 +2680,7 @@ describe('SendersScreen — edge states', () => {
       const dialog = screen.getByRole('dialog');
       fireEvent.click(within(dialog).getByRole('radio', { name: /^\+ Archive$/ }));
       const confirm = within(dialog).getByRole('button', {
-        name: 'Unsubscribe & archive',
+        name: 'Unsubscribe + Archive',
       });
       expect(confirm).toBeEnabled();
       fireEvent.click(confirm);
@@ -3305,7 +3305,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       const dialog = await screen.findByRole('dialog');
       if (verb === 'Delete') {
         const window = await within(dialog).findByRole('combobox', {
-          name: 'Email age',
+          name: 'How far back',
         });
         fireEvent.change(window, { target: { value: 'all' } });
       }
@@ -3358,7 +3358,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       const dialog = await screen.findByRole('dialog');
       if (verb === 'Delete') {
         const window = await within(dialog).findByRole('combobox', {
-          name: 'Email age',
+          name: 'How far back',
         });
         fireEvent.change(window, { target: { value: 'all' } });
       }
@@ -3429,7 +3429,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       fireEvent.keyDown(document.body, { key: verb[0]!.toLowerCase() });
       const dialog = await screen.findByRole('dialog');
       if (verb === 'Delete')
-        fireEvent.change(within(dialog).getByRole('combobox', { name: 'Email age' }), {
+        fireEvent.change(within(dialog).getByRole('combobox', { name: 'How far back' }), {
           target: { value: 'all' },
         });
       const confirm = within(dialog).getByRole('button', { name: verb });
@@ -3985,7 +3985,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     ).toBeVisible();
     fireEvent.click(await within(dialog).findByRole('radio', { name: '+ Archive' }));
     expect(within(dialog).getByRole('heading')).toHaveTextContent('Unsubscribe from 1 sender?');
-    const confirm = within(dialog).getByRole('button', { name: 'Unsubscribe & archive' });
+    const confirm = within(dialog).getByRole('button', { name: 'Unsubscribe + Archive' });
     await waitFor(() => expect(confirm).toBeEnabled());
     fireEvent.click(confirm);
     await waitFor(() => expect(posted).toHaveLength(1));
@@ -4580,7 +4580,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       const dialog = screen.getByRole('dialog');
       fireEvent.click(await within(dialog).findByRole('radio', { name: /^\+ Archive$/ }));
       const confirm = await within(dialog).findByRole('button', {
-        name: 'Unsubscribe & archive',
+        name: 'Unsubscribe + Archive',
       });
       await waitFor(() => expect(confirm).toBeEnabled());
       fireEvent.click(confirm);
@@ -4657,7 +4657,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       await selectBothAndPress('u');
       const dialog = await screen.findByRole('dialog');
       fireEvent.click(await within(dialog).findByRole('radio', { name: /^\+ Archive$/ }));
-      const confirm = await within(dialog).findByRole('button', { name: 'Unsubscribe & archive' });
+      const confirm = await within(dialog).findByRole('button', { name: 'Unsubscribe + Archive' });
       await waitFor(() => expect(confirm).toBeEnabled());
       fireEvent.click(confirm);
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -5188,7 +5188,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       const dialog = screen.getByRole('dialog');
       fireEvent.click(await within(dialog).findByRole('radio', { name: /^\+ Archive$/ }));
       const confirm = await within(dialog).findByRole('button', {
-        name: 'Unsubscribe & archive',
+        name: 'Unsubscribe + Archive',
       });
       await waitFor(() => expect(confirm).toBeEnabled());
       fireEvent.click(confirm);
@@ -5339,7 +5339,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     const impact = within(dialog).getByRole('region', { name: 'Archive impact' });
     expect(impact).toHaveTextContent('30 emails will leave your inbox and stay in Gmail.');
     // Changing age uses the aggregated buckets, not a single sender's count.
-    const age = within(dialog).getByRole('combobox', { name: 'Email age' });
+    const age = within(dialog).getByRole('combobox', { name: 'How far back' });
     expect(age).toHaveValue('all');
     fireEvent.change(age, { target: { value: '30' } });
     expect(impact).toHaveTextContent('17 emails will leave your inbox and stay in Gmail.');
@@ -5370,8 +5370,8 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
   });
 
   it.each([
-    ['archive', '+ Archive', 'Unsubscribe & archive'],
-    ['delete', '+ Delete', 'Unsubscribe & delete'],
+    ['archive', '+ Archive', 'Unsubscribe + Archive'],
+    ['delete', '+ Delete', 'Unsubscribe + Delete'],
   ] as const)(
     'sends one unsubscribe-backlog request for bulk %s',
     async (mode, radioName, buttonName) => {
@@ -5445,7 +5445,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       ).toBeNull();
       expect(within(dialog).queryByText(/We check again right before anything moves/)).toBeNull();
       fireEvent.click(await within(dialog).findByRole('radio', { name: radioName }));
-      const age = within(dialog).getByRole('combobox', { name: 'Email age' });
+      const age = within(dialog).getByRole('combobox', { name: 'How far back' });
       expect(age).toHaveValue(mode === 'delete' ? '180' : 'all');
       if (mode === 'archive') fireEvent.change(age, { target: { value: '90' } });
       expect(
@@ -5476,7 +5476,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     await selectBothAndPress('u');
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(await within(dialog).findByRole('radio', { name: /^\+ Archive$/ }));
-    const confirm = await within(dialog).findByRole('button', { name: 'Unsubscribe & archive' });
+    const confirm = await within(dialog).findByRole('button', { name: 'Unsubscribe + Archive' });
     await waitFor(() => expect(confirm).toBeEnabled());
     fireEvent.click(confirm);
   }
@@ -5688,7 +5688,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.keyDown(document.body, { key: 'u' });
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(await within(dialog).findByRole('radio', { name: /^\+ Archive$/ }));
-    const confirm = await within(dialog).findByRole('button', { name: 'Unsubscribe & archive' });
+    const confirm = await within(dialog).findByRole('button', { name: 'Unsubscribe + Archive' });
     await waitFor(() => expect(confirm).toBeEnabled());
     fireEvent.click(confirm);
     await waitFor(() => expect(bodies).toHaveLength(1));
@@ -6960,12 +6960,12 @@ describe('SendersScreen — a Protected sender names the reason before override'
         name: 'Unsubscribe',
       }),
     );
-    const confirmName = protectedRow ? 'Unsubscribe & archive anyway' : 'Unsubscribe & archive';
+    const confirmName = protectedRow ? 'Unsubscribe + Archive anyway' : 'Unsubscribe + Archive';
     if (protectedRow) {
       expect(
         await screen.findByText('Sender A is Protected because you starred a message.'),
       ).toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'Unsubscribe & archive' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Unsubscribe + Archive' })).toBeNull();
     }
     const archiveChoice = await screen.findByRole('radio', {
       name: /^\+ Archive$/,
@@ -7124,7 +7124,7 @@ describe('SendersScreen — a saved view keeps a size sort', () => {
 describe('Senders Unsubscribe selected-age network request', () => {
   afterEach(resetFetchStub);
   it.each([false, true])(
-    'posts the previewed Delete age and reach (Any age=%s)',
+    'posts the previewed Delete age and reach (All time=%s)',
     async (anyAge) => {
       useSendersStore.setState({ sort: 'total', direction: 'desc' });
       const bodies: unknown[] = [];
@@ -7185,7 +7185,7 @@ describe('Senders Unsubscribe selected-age network request', () => {
       const deletion = await within(dialog).findByRole('radio', { name: '+ Delete' });
       await waitFor(() => expect(deletion).toBeEnabled());
       fireEvent.click(deletion);
-      const age = within(dialog).getByRole('combobox', { name: 'Email age' });
+      const age = within(dialog).getByRole('combobox', { name: 'How far back' });
       expect(age).toHaveValue('180');
       expect(within(dialog).getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
         '3 emails',

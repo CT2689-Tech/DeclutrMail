@@ -859,7 +859,7 @@ export function SendersSimulator() {
           }}
           status={
             pending.verb === 'Later' && !(Date.parse(wakeAt) > Date.now())
-              ? 'Pick a future return time.'
+              ? WS5_COPY['preview.later.returnInvalid']
               : undefined
           }
           details={

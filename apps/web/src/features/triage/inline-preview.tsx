@@ -10,6 +10,7 @@ import {
   UnsubscribeChoices,
   UnsubscribeImpact,
   CleanupPreview,
+  cleanupActionTitle,
   type CleanupAgeControl,
 } from '@/components/cleanup-preview';
 
@@ -197,9 +198,14 @@ export function InlinePreviewBlock({
         {preview.verb === 'Unsubscribe'
           ? `Unsubscribe from ${row.senderName}?`
           : isCleanupAction && !facts.nothingToMove
-            ? preview.verb === 'Later'
-              ? `Move emails from ${row.senderName} to Later?`
-              : `${preview.verb} emails from ${row.senderName}?`
+            ? cleanupActionTitle(
+                preview.verb === 'Later'
+                  ? 'Later'
+                  : preview.verb === 'Delete'
+                    ? 'Delete'
+                    : 'Archive',
+                row.senderName,
+              )
             : facts.title}
       </h3>
       {preview.verb !== 'Archive' && preview.verb !== 'Later' && facts.subtitle && (
@@ -232,7 +238,7 @@ export function InlinePreviewBlock({
       )}
       {previewUnavailable && preview.onRetryPreview && (
         <Button tone="ghost" onClick={preview.onRetryPreview}>
-          Retry preview
+          {WS2_COPY.home.failed.retry}
         </Button>
       )}
       {!isCleanupAction && preview.verb !== 'Unsubscribe' && facts.note !== null && (
@@ -282,7 +288,7 @@ export function InlinePreviewBlock({
           <LaterReturnControl value={preview.wakeAt ?? null} onChange={preview.onWakeAtChange} />
         </div>
       )}
-      {returnInvalid && <p role="status">Choose a future return time.</p>}
+      {returnInvalid && <p role="status">{WS5_COPY['preview.later.returnInvalid']}</p>}
       {hasDetails && (
         <Disclosure style={{ marginTop: space[2] }}>
           <SheetFactList facts={facts.disclosures} />

@@ -27,14 +27,14 @@ describe('SendersSimulator', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
       if (mode === 'Delete') {
         fireEvent.click(within(preview()).getByRole('radio', { name: '+ Delete' }));
-        fireEvent.change(within(preview()).getByRole('combobox', { name: 'Email age' }), {
+        fireEvent.change(within(preview()).getByRole('combobox', { name: 'How far back' }), {
           target: { value: 'all' },
         });
         fireEvent.click(
           within(preview()).getByRole('checkbox', { name: 'Include archived email' }),
         );
       }
-      fireEvent.change(within(preview()).getByRole('combobox', { name: 'Email age' }), {
+      fireEvent.change(within(preview()).getByRole('combobox', { name: 'How far back' }), {
         target: { value: '180' },
       });
       const moved = mode === 'Delete' ? 155 : 45;
@@ -45,7 +45,7 @@ describe('SendersSimulator', () => {
       ).toHaveTextContent(`${moved} emails`);
       fireEvent.click(
         within(preview()).getByRole('button', {
-          name: mode === 'Delete' ? 'Unsubscribe & delete' : 'Unsubscribe & archive',
+          name: mode === 'Delete' ? 'Unsubscribe + Delete' : 'Unsubscribe + Archive',
         }),
       );
       const activity = screen.getByRole('region', { name: 'Sample activity' });
@@ -61,11 +61,11 @@ describe('SendersSimulator', () => {
     },
   );
 
-  it('uses archived scope for Unsubscribe & delete and restores that mail with sample Undo', () => {
+  it('uses archived scope for Unsubscribe + Delete and restores that mail with sample Undo', () => {
     render(<SendersSimulator />);
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
     fireEvent.click(within(preview()).getByRole('radio', { name: '+ Delete' }));
-    fireEvent.change(within(preview()).getByRole('combobox', { name: 'Email age' }), {
+    fireEvent.change(within(preview()).getByRole('combobox', { name: 'How far back' }), {
       target: { value: 'all' },
     });
     fireEvent.click(within(preview()).getByRole('checkbox', { name: 'Include archived email' }));
@@ -74,7 +74,7 @@ describe('SendersSimulator', () => {
     );
     fireEvent.click(
       within(preview()).getByRole('button', {
-        name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/,
+        name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/,
       }),
     );
     const activity = screen.getByRole('region', { name: 'Sample activity' });
@@ -82,7 +82,7 @@ describe('SendersSimulator', () => {
     fireEvent.click(within(activity).getByRole('button', { name: 'Undo' }));
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
     fireEvent.click(within(preview()).getByRole('radio', { name: '+ Delete' }));
-    fireEvent.change(within(preview()).getByRole('combobox', { name: 'Email age' }), {
+    fireEvent.change(within(preview()).getByRole('combobox', { name: 'How far back' }), {
       target: { value: 'all' },
     });
     const includeArchived = within(preview()).getByRole('checkbox', {
@@ -124,10 +124,10 @@ describe('SendersSimulator', () => {
     const returnTime = within(dialog).getByLabelText('Later return time');
     fireEvent.change(returnTime, { target: { value: '' } });
     expect(within(dialog).getByRole('button', { name: /^Later \d+/ })).toBeDisabled();
-    expect(within(dialog).getByRole('status')).toHaveTextContent('Pick a future return time.');
+    expect(within(dialog).getByRole('status')).toHaveTextContent('Choose a future return time.');
     fireEvent.change(returnTime, { target: { value: '2000-01-01T12:00' } });
     expect(within(dialog).getByRole('button', { name: /^Later \d+/ })).toBeDisabled();
-    expect(within(dialog).getByRole('status')).toHaveTextContent('Pick a future return time.');
+    expect(within(dialog).getByRole('status')).toHaveTextContent('Choose a future return time.');
   });
 
   it('opens a visible sender in the right inspector and follows the active filter', () => {
@@ -202,7 +202,7 @@ describe('SendersSimulator', () => {
     fireEvent.click(within(preview()).getByRole('button', { name: 'Archive 111' }));
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
     expect(within(preview()).getByRole('radio', { name: /\+ Archive/ })).toBeDisabled();
-    expect(preview()).toHaveTextContent('Existing email stays where it is.');
+    expect(preview()).toHaveTextContent('Email you already have stays where it is.');
     const confirm = within(preview()).getByRole('button', { name: 'Unsubscribe' });
     expect(confirm).toBeEnabled();
     fireEvent.click(confirm);
@@ -291,7 +291,7 @@ describe('SendersSimulator — WS5 sample surfaces', () => {
     expect(dialog).not.toHaveTextContent(/Unsubscribe and archive \d+ emails from /);
 
     fireEvent.click(within(dialog).getByRole('radio', { name: /\+ Delete/ }));
-    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Email age' }), {
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'How far back' }), {
       target: { value: 'all' },
     });
     expect(dialog).toHaveTextContent(WS5_COPY['f1.deleteNote']);
@@ -299,7 +299,7 @@ describe('SendersSimulator — WS5 sample surfaces', () => {
       pluralCopy(WS5_COPY['f1.preview.backlog.delete'], 111, { n: 111 }),
     );
     fireEvent.click(within(dialog).getByRole('radio', { name: /\+ Archive/ }));
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Unsubscribe & archive' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Unsubscribe + Archive' }));
     expect(
       screen
         .getAllByRole('status')
@@ -317,12 +317,12 @@ describe('SendersSimulator — WS5 sample surfaces', () => {
       }),
     );
     fireEvent.click(within(preview()).getByRole('radio', { name: /\+ Delete/ }));
-    fireEvent.change(within(preview()).getByRole('combobox', { name: 'Email age' }), {
+    fireEvent.change(within(preview()).getByRole('combobox', { name: 'How far back' }), {
       target: { value: 'all' },
     });
     fireEvent.click(
       within(preview()).getByRole('button', {
-        name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/,
+        name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/,
       }),
     );
     expect(

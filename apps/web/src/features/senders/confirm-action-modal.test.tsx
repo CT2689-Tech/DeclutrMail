@@ -527,7 +527,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     );
 
     expect(screen.getByRole('button', { name: /Archive/ })).toBeDisabled();
-    // Said once, beside the Retry preview button — never body AND footer.
+    // Said once, beside the Try again button — never body AND footer.
     expect(screen.getAllByText(/Couldn’t load the preview/i)).toHaveLength(1);
     expect(screen.queryByText(/archive whatever/i)).not.toBeInTheDocument();
   });
@@ -721,14 +721,14 @@ describe('ConfirmActionModal — backlog secondary belongs to Unsubscribe only',
       '+ Archive',
       'Unsubscribe from Acme Newsletter?',
       backlogMail('archive', 4),
-      'Unsubscribe & archive',
+      'Unsubscribe + Archive',
     ],
     [
       'delete',
       '+ Delete',
       'Unsubscribe from Acme Newsletter?',
       backlogMail('delete', 4),
-      'Unsubscribe & delete',
+      'Unsubscribe + Delete',
     ],
   ] as const)(
     'renders deck copy for the backlog verb when %s is picked',
@@ -744,7 +744,7 @@ describe('ConfirmActionModal — backlog secondary belongs to Unsubscribe only',
       );
 
       fireEvent.click(screen.getByRole('radio', { name: radioName }));
-      fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+      fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
         target: { value: 'all' },
       });
 
@@ -825,8 +825,8 @@ describe('ConfirmActionModal — arrival volume vs INBOX-now counts', () => {
 
   it('keeps Email age available even when the inbox is empty', () => {
     renderDelete(emptyInbox, 71);
-    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
-    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
+    expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('180');
+    expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('180');
   });
 
   it('names the window on the arrival figure and never renders a bare /mo', () => {
@@ -1363,7 +1363,7 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
       ),
     ).toBeInTheDocument();
     // The un-windowed option stops claiming "inbox" once the reach is wider.
-    expect(screen.getByRole('option', { name: 'Any age' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'All time' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: /All inbox/ })).toBeNull();
     // The widened scope + the per-message undo promise (ADR-0028 §5:
     // "Undo restores each message to where it was") are stated where
@@ -1411,7 +1411,7 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
       />,
     );
     // Keep age explicit even on an empty inbox; widening reach preserves it.
-    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
+    expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('180');
     expect(reachRow()).not.toBeNull();
     expect(
       screen.getByText('Turn on Include archived email to reach 700 archived emails.'),
@@ -1423,7 +1423,7 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
     // Widening reach preserves the visible 180-day selection.
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     expect(screen.queryByText(/in your inbox now/)).toBeNull();
-    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
+    expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('180');
     expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
       '700 emails will move to Gmail Trash.',
     );
@@ -1512,7 +1512,7 @@ describe('ConfirmActionModal — unsubscribe cleanup scope defaults', () => {
     expect(screen.getByRole('combobox', { name: /How far back|Email age/i })).toHaveValue('all');
 
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
-    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
       target: { value: 'all' },
     });
     expect(screen.getByRole('checkbox', { name: 'Include archived email' })).not.toBeChecked();
@@ -1527,7 +1527,7 @@ describe('ConfirmActionModal — unsubscribe cleanup scope defaults', () => {
       ),
     ).toBeInTheDocument();
     fireEvent.click(
-      screen.getByRole('button', { name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/ }),
+      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
     );
     expect(onConfirm).toHaveBeenCalledWith({
       secondary: { type: 'delete', olderThanDays: null },
@@ -1675,7 +1675,7 @@ describe('ConfirmActionModal — ADR-0028 reach on a bulk selection (amendment 2
     expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
     fireEvent.click(screen.getByRole('radio', { name: '+ Archive' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe & archive' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + Archive' }));
     expect(onConfirm).toHaveBeenCalledWith({
       secondary: { type: 'archive', olderThanDays: null },
       archiveHistoric: true,
@@ -1730,13 +1730,13 @@ describe('ConfirmActionModal — ADR-0028 reach on a bulk selection (amendment 2
     );
     expect(reachRow()).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
-    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
       target: { value: 'all' },
     });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     expect(screen.queryByText(/^Inbox \+ archived now/)).toBeNull();
     fireEvent.click(
-      screen.getByRole('button', { name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/ }),
+      screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
     );
     expect(onConfirm).toHaveBeenCalledWith({
       secondary: { type: 'delete', olderThanDays: null },
@@ -1892,7 +1892,7 @@ describe('ConfirmActionModal — unsubscribe preview lines (no capability breakd
       />,
     );
 
-    const confirm = screen.getByRole('button', { name: 'Unsubscribe & archive' });
+    const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
     expect(confirm).toBeEnabled();
     fireEvent.click(confirm);
     expect(onConfirm).toHaveBeenCalledWith({
@@ -2036,7 +2036,7 @@ describe('ConfirmActionModal — where the sender’s mail actually is', () => {
 
 /**
  * Prod 2026-08-25: an initial sync reissued every `senders.id`, so the
- * preview 404'd for ids the open page still held and "Retry preview"
+ * preview 404'd for ids the open page still held and "Try again"
  * refetched the same dead id forever. The id churn is fixed at the
  * source (`deriveSenderId`); this is the other half — a retry control
  * must only appear where retrying can change the outcome.
@@ -2057,7 +2057,7 @@ describe('ConfirmActionModal — a preview failure that retrying cannot fix', ()
       />,
     );
 
-    expect(screen.queryByRole('button', { name: 'Retry preview' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Refresh senders' }));
     expect(onRefreshSenders).toHaveBeenCalledTimes(1);
     expect(onRetryPreview).not.toHaveBeenCalled();
@@ -2080,7 +2080,7 @@ describe('ConfirmActionModal — a preview failure that retrying cannot fix', ()
     expect(screen.queryByText(/Couldn’t load the preview/)).not.toBeInTheDocument();
   });
 
-  it('still offers Retry preview for a failure that MIGHT clear on its own', () => {
+  it('still offers Try again for a failure that MIGHT clear on its own', () => {
     // The mutual exclusion matters in both directions: a transient
     // network failure keeps the retry it can actually recover from.
     const onRetryPreview = vi.fn();
@@ -2095,7 +2095,7 @@ describe('ConfirmActionModal — a preview failure that retrying cannot fix', ()
       />,
     );
     expect(screen.queryByRole('button', { name: 'Refresh senders' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Retry preview' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetryPreview).toHaveBeenCalledTimes(1);
   });
 
@@ -2173,7 +2173,7 @@ describe('ConfirmActionModal — composite preview tells one story (D226, D245)'
       />,
     );
     fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
-    expect(container.textContent).toContain('Existing email stays where it is.');
+    expect(container.textContent).toContain('Email you already have stays where it is.');
     expect(screen.queryByText('Unsubscribing is free and doesn’t count.')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
     expect(onConfirm).toHaveBeenCalledWith({
@@ -2203,7 +2203,9 @@ describe('ConfirmActionModal — each fact is stated once (D226)', () => {
       />,
     );
     fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
-    expect(occurrences(container.textContent ?? '', 'Existing email stays where it is.')).toBe(1);
+    expect(
+      occurrences(container.textContent ?? '', 'Email you already have stays where it is.'),
+    ).toBe(1);
   });
 
   // `recoveryFacts` emitted BOTH `activityUndo.summary` and
@@ -2290,7 +2292,7 @@ describe('ConfirmActionModal — unsubscribe has no current-match sample (D226)'
       />,
     );
     fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
-    expect(screen.getByText('Existing email stays where it is.')).toBeInTheDocument();
+    expect(screen.getByText('Email you already have stays where it is.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Show \d/ })).toBeNull();
     expect(screen.queryByRole('link', { name: /Check in Gmail/ })).toBeNull();
   });
@@ -2689,7 +2691,7 @@ describe('ConfirmActionModal — Archive names the sender and previews the live 
         /Future emails: we’ll open a prefilled email in Gmail for you to send to Support Updates\./,
       ),
     ).toBeInTheDocument();
-    const confirm = screen.getByRole('button', { name: 'Unsubscribe & archive' });
+    const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
     expect(confirm).toBeEnabled();
     fireEvent.click(confirm);
     expect(onConfirm).toHaveBeenCalledWith({
@@ -2842,7 +2844,7 @@ describe('ConfirmActionModal — explicit period and scope choices', () => {
       );
       fireEvent.click(
         screen.getByRole('button', {
-          name: secondary === 'archive' ? 'Unsubscribe & archive' : 'Unsubscribe & delete',
+          name: secondary === 'archive' ? 'Unsubscribe + Archive' : 'Unsubscribe + Delete',
         }),
       );
       expect(onConfirm).toHaveBeenCalledWith({
@@ -2898,7 +2900,7 @@ describe('ConfirmActionModal — explicit period and scope choices', () => {
 });
 
 describe('ConfirmActionModal — Senders Archive layout A', () => {
-  it('keeps Email age visible at Any age even with an empty inbox', () => {
+  it('keeps Email age visible at All time even with an empty inbox', () => {
     render(
       <ConfirmActionModal
         request={request('Archive')}
@@ -2910,11 +2912,11 @@ describe('ConfirmActionModal — Senders Archive layout A', () => {
         }}
       />,
     );
-    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+    expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('all');
     expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
   });
 
-  it('keeps Any age and inbox-only submission even when archived email is available', () => {
+  it('keeps All time and inbox-only submission even when archived email is available', () => {
     const onConfirm = vi.fn();
     render(
       <ConfirmActionModal
@@ -2924,12 +2926,12 @@ describe('ConfirmActionModal — Senders Archive layout A', () => {
         compositePreview={livePreviewWithAllMail}
       />,
     );
-    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+    expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('all');
     expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
     expect(document.querySelector('time[datetime]')).toBeNull();
     const impact = screen.getByRole('region', { name: 'Archive impact' });
     expect(impact).toHaveTextContent('4 emails will leave your inbox and stay in Gmail.');
-    expect(impact).toHaveTextContent('Inbox only · Any age');
+    expect(impact).toHaveTextContent('Inbox only · All time');
     expect(screen.getByRole('dialog')).toHaveAccessibleDescription(
       /4 emails will leave your inbox and stay in Gmail/,
     );
@@ -2942,7 +2944,7 @@ describe('ConfirmActionModal — Senders Archive layout A', () => {
     const props = { request: pending, onCancel: vi.fn(), onConfirm: vi.fn() };
     const preview = { ...livePreview, counts: { ...buckets, olderThan365d: 0 } };
     const { rerender } = render(<ConfirmActionModal {...props} compositePreview={preview} />);
-    const age = screen.getByRole('combobox', { name: 'Email age' });
+    const age = screen.getByRole('combobox', { name: 'How far back' });
     fireEvent.change(age, { target: { value: '365' } });
     expect(
       screen.getByRole('heading', {
@@ -2950,7 +2952,7 @@ describe('ConfirmActionModal — Senders Archive layout A', () => {
       }),
     ).toBeVisible();
     expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
-      'No emails match this scope.',
+      'No emails match these choices.',
     );
     expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
     expect(document.querySelector('time[datetime]')).not.toBeNull();
@@ -2961,7 +2963,7 @@ describe('ConfirmActionModal — Senders Archive layout A', () => {
     expect(screen.getByRole('button', { name: 'Archive' })).toBeEnabled();
     rerender(<ConfirmActionModal {...props} request={null} compositePreview={preview} />);
     rerender(<ConfirmActionModal {...props} compositePreview={preview} />);
-    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+    expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('all');
   });
 
   it('hides cached counts and blocks confirmation while the live preview is unavailable', () => {
@@ -2997,7 +2999,7 @@ describe('ConfirmActionModal — Delete layout A and other actions', () => {
     expect(
       screen.getByRole('heading', { name: `Delete emails from ${sender.name}?` }),
     ).toBeVisible();
-    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
+    expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('180');
     expect(screen.getByRole('option', { name: 'Older than 180 days' })).toBeVisible();
     expect(screen.getByRole('option', { name: 'Older than 90 days' })).toBeVisible();
     expect(screen.getByRole('checkbox', { name: 'Include archived email' })).not.toBeChecked();
@@ -3047,7 +3049,7 @@ describe('ConfirmActionModal — Delete layout A and other actions', () => {
       />,
     );
     expect(screen.queryByRole('region', { name: 'Delete impact' })).toBeNull();
-    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+    expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('all');
   });
 });
 
@@ -3070,6 +3072,20 @@ it('records a loaded preview once, not loading, failed, or closed renders', () =
 });
 
 describe('Delete age availability', () => {
+  it('keeps every age option available while the preview is loading', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+        compositePreviewLoading
+      />,
+    );
+    const age = screen.getByRole('combobox', { name: 'How far back' }) as HTMLSelectElement;
+    expect([...age.options].every((option) => !option.disabled)).toBe(true);
+    expect(age.textContent ?? '').not.toMatch(/unavailable/);
+  });
+
   it('blocks a missing default bucket instead of submitting without an impact count', () => {
     const counts = { ...buckets };
     Reflect.deleteProperty(counts, 'olderThan180d');
@@ -3082,13 +3098,13 @@ describe('Delete age availability', () => {
         compositePreview={{ ...livePreview, counts }}
       />,
     );
-    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
+    expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('180');
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
     expect(screen.queryByRole('region', { name: 'Delete impact' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(onConfirm).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
       target: { value: 'all' },
     });
     expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
@@ -3111,7 +3127,7 @@ describe('Later selected age and return time', () => {
         compositePreview={livePreview}
       />,
     );
-    const age = screen.getByRole('combobox', { name: 'Email age' });
+    const age = screen.getByRole('combobox', { name: 'How far back' });
     const time = screen.getByLabelText('Later return time') as HTMLInputElement;
     expect(age).toHaveValue('all');
     expect(new Date(time.value).getTime()).toBeGreaterThanOrEqual(before + 7 * 86400000 - 60000);
@@ -3134,10 +3150,10 @@ describe('Later selected age and return time', () => {
     });
   });
 
-  it('blocks an empty age or missing selected count and recovers through Any age', () => {
+  it('blocks an empty age or missing selected count and recovers through All time', () => {
     const props = { request: request('Later'), onCancel: vi.fn(), onConfirm: vi.fn() };
     const { rerender } = render(<ConfirmActionModal {...props} compositePreview={livePreview} />);
-    const age = screen.getByRole('combobox', { name: 'Email age' });
+    const age = screen.getByRole('combobox', { name: 'How far back' });
     fireEvent.change(age, { target: { value: '365' } });
     expect(screen.getByRole('button', { name: 'Later' })).toBeDisabled();
     expect(age).toBeEnabled();

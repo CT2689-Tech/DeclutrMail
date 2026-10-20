@@ -40,6 +40,23 @@ const readyPreview: BulkActionPreviewResult = {
   protectedCount: 0,
 };
 
+describe('BatchActionSheet — suggestion groups', () => {
+  it('does not render a domain line for a non-domain suggestion group', () => {
+    render(
+      <BatchActionSheet
+        open
+        verb="Archive"
+        batch={{ ...batch, domain: 'Archive-recommended' }}
+        preview={readyPreview}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+    expect(screen.queryByText('From Archive-recommended.')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Archive emails from 3 senders?' })).toBeVisible();
+  });
+});
+
 describe('BatchActionSheet — live-preview confirm gate', () => {
   it.each(['loading', 'unavailable'] as const)(
     'blocks click and keyboard confirmation while the preview is %s',
@@ -78,7 +95,7 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Retry preview' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetryPreview).toHaveBeenCalledTimes(1);
   });
 
@@ -106,11 +123,11 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
         />,
       );
       expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
-      fireEvent.click(screen.getByRole('button', { name: 'Retry preview' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
       fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
       expect(onRetryPreview).toHaveBeenCalledOnce();
       expect(onConfirm).not.toHaveBeenCalled();
-      expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('90');
+      expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('90');
     },
   );
 

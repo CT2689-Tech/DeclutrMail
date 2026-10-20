@@ -651,6 +651,7 @@ export function TriageScreen({
             days,
             disabled:
               data != null &&
+              !compositePreview.isFetching &&
               pickBucketCount(
                 activeReach === 'all_mail' ? data.allMail?.counts : data.counts,
                 days,

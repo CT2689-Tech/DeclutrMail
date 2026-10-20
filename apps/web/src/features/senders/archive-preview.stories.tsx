@@ -48,7 +48,7 @@ function ArchiveStory(args: ComponentProps<typeof ConfirmActionModal>) {
   return (
     <div style={{ padding: 24 }}>
       <p>
-        Fictional mailbox · no Gmail changes. Archive keeps its Inbox only and Any age defaults.
+        Fictional mailbox · no Gmail changes. Archive keeps its Inbox only and All time defaults.
       </p>
       <Button onClick={() => setOpen(true)}>Review Archive</Button>
       {result && <p role="status">{result}</p>}

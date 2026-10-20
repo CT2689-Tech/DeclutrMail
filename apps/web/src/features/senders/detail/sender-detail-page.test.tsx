@@ -1210,7 +1210,7 @@ describe('SenderDetailRoute', () => {
       const dialog = await screen.findByRole('dialog');
       if (verb === 'Delete') {
         const window = await within(dialog).findByRole('combobox', {
-          name: 'Email age',
+          name: 'How far back',
         });
         fireEvent.change(window, { target: { value: 'all' } });
       }
@@ -1459,7 +1459,7 @@ describe('SenderDetailRoute', () => {
       if (verb === 'Delete' && includeArchived()) fireEvent.click(includeArchived()!);
       if (verb !== 'Later') {
         const windowControl = within(dialog).queryByRole('combobox', {
-          name: 'Email age',
+          name: 'How far back',
         });
         if (windowControl) {
           fireEvent.change(windowControl, {
@@ -2754,14 +2754,14 @@ describe('SenderDetailRoute', () => {
         expect(
           await within(dialog).findByText(/is Protected because you marked it Protected\./),
         ).toBeInTheDocument();
-        expect(within(dialog).queryByRole('button', { name: 'Unsubscribe & archive' })).toBeNull();
+        expect(within(dialog).queryByRole('button', { name: 'Unsubscribe + Archive' })).toBeNull();
         const archiveChoice = await within(dialog).findByRole('radio', {
           name: /^\+ Archive$/,
         });
         await waitFor(() => expect(archiveChoice).toBeEnabled());
         fireEvent.click(archiveChoice);
         const confirm = await within(dialog).findByRole('button', {
-          name: 'Unsubscribe & archive anyway',
+          name: 'Unsubscribe + Archive anyway',
         });
         await waitFor(() => expect(confirm).toBeEnabled());
         expect(intents).toEqual([]);
@@ -2793,7 +2793,7 @@ describe('SenderDetailRoute', () => {
         await waitFor(() => expect(archiveChoice).toBeEnabled());
         fireEvent.click(archiveChoice);
         const confirm = await within(dialog).findByRole('button', {
-          name: 'Unsubscribe & archive',
+          name: 'Unsubscribe + Archive',
         });
         await waitFor(() => expect(confirm).toBeEnabled());
         fireEvent.click(confirm);
@@ -2887,7 +2887,7 @@ describe('SenderDetailRoute', () => {
         const dialog = await screen.findByRole('dialog');
         fireEvent.click(await within(dialog).findByRole('radio', { name: /^\+ Archive$/ }));
         const confirm = await within(dialog).findByRole('button', {
-          name: 'Unsubscribe & archive',
+          name: 'Unsubscribe + Archive',
         });
         await waitFor(() => expect(confirm).toBeEnabled());
         fireEvent.click(confirm);

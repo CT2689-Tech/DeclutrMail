@@ -15,6 +15,7 @@ import {
   CleanupPreview,
   UnsubscribeChoices,
   UnsubscribeImpact,
+  cleanupActionTitle,
 } from '@/components/cleanup-preview';
 import { LaterReturnControl, useFutureReturnTime } from '@/components/later-return-control';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
@@ -362,16 +363,18 @@ export function ActionSheet({
       action={onRefreshTriage ? { label: 'Refresh triage', onClick: onRefreshTriage } : undefined}
     />
   ) : nothingToActOn ? null : wakeAtInvalid ? (
-    'Pick a future return time.'
+    WS5_COPY['preview.later.returnInvalid']
   ) : previewUnavailable ? (
     <StatusWithAction
       message={WS2_COPY.preview.loadFailed}
-      action={onRetryPreview ? { label: 'Retry preview', onClick: onRetryPreview } : undefined}
+      action={
+        onRetryPreview ? { label: WS2_COPY.home.failed.retry, onClick: onRetryPreview } : undefined
+      }
     />
   ) : archivedUncounted ? (
     WS5_COPY['f1.preview.archived.unavailable']
   ) : verb === 'Unsubscribe' && requiresLivePreview && inboxCount === 0 ? (
-    WS5_COPY['f1.preview.backlog.emptyChoice']
+    WS5_COPY['preview.zero.unsubHint']
   ) : confirmDisabled ? (
     WS5_COPY['f1.preview.backlog.loading']
   ) : null;
@@ -410,9 +413,10 @@ export function ActionSheet({
           verb === 'Unsubscribe'
             ? `Unsubscribe from ${row.senderName}?`
             : isCleanupAction && !facts.nothingToMove
-              ? verb === 'Later'
-                ? `Move emails from ${row.senderName} to Later?`
-                : `${verb} emails from ${row.senderName}?`
+              ? cleanupActionTitle(
+                  verb === 'Later' ? 'Later' : verb === 'Delete' ? 'Delete' : 'Archive',
+                  row.senderName,
+                )
               : facts.title
         }
         subtitle={

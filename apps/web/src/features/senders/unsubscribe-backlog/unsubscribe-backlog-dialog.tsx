@@ -236,7 +236,7 @@ export function UnsubscribeBacklogDialog({
     ? allProtectedSelectionCopy(request.senders.length, singleName)
     : single
       ? singleName === ''
-        ? 'Unsubscribe from this sender?'
+        ? WS5_COPY['preview.title.unsubThisSender']
         : fillCopy(WS5_COPY['f1.title.unsubOnly'], { Sender: singleName })
       : `Unsubscribe from ${k.toLocaleString('en-US')} ${k === 1 ? 'sender' : 'senders'}?`;
 
@@ -375,7 +375,7 @@ export function UnsubscribeBacklogDialog({
     ) : archivedRequested && allMailCount === null && inboxCount !== null ? (
       WS5_COPY['f1.preview.archived.unavailable']
     ) : mode !== 'unsub_only' && cleanupCount === null && !loading ? (
-      WS5_COPY['f1.preview.backlog.rangeUnavailable']
+      'The cleanup preview for this range is unavailable. Choose another range.'
     ) : inboxCount === null ? (
       WS5_COPY['f1.preview.backlog.loading']
     ) : mode === 'delete' &&
@@ -385,7 +385,7 @@ export function UnsubscribeBacklogDialog({
       !includeArchived ? (
       DELETE_ARCHIVED_HINT
     ) : mode !== 'unsub_only' && n === 0 ? (
-      WS5_COPY['f1.preview.backlog.emptyChoice']
+      WS5_COPY['preview.zero.unsubHint']
     ) : null;
 
   return (

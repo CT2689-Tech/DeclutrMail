@@ -3,6 +3,7 @@ import { tokens } from '@declutrmail/shared';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
 import type { ActionReach } from '@declutrmail/shared/contracts';
 import { scoredAgeLabel } from '@declutrmail/shared/copy';
+import { cleanupNothingTitle } from '@/components/cleanup-preview';
 import {
   backlogDestination,
   futureMailLine,
@@ -156,9 +157,11 @@ export function buildPreviewFacts({
   const nothingToMove = movesCurrentInbox && liveCount === 0;
 
   const title = nothingToMove
-    ? (verb === 'Archive' || verb === 'Delete' || verb === 'Later') && olderThanDays !== null
-      ? `No emails older than ${olderThanDays === 365 ? '1 year' : `${olderThanDays} days`} from ${subject}`
-      : `Nothing in your inbox${allMail ? ' or archive' : ''} from ${subject}`
+    ? cleanupNothingTitle({
+        olderThanDays,
+        sender: subject,
+        allMail,
+      })
     : verb === 'Archive'
       ? liveCount === null
         ? `Archive email from ${subject}?`

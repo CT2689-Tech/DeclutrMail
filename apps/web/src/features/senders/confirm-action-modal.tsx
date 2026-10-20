@@ -6,7 +6,15 @@ import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 import { UnsubscribeBacklogDialog } from './unsubscribe-backlog/unsubscribe-backlog-dialog';
 import { someProtectedSelectionCopy } from './unsubscribe-backlog/preview-copy';
 import { pickBucketCount, TIME_WINDOW_PRESETS } from './action-window';
-import { CleanupImpact, CleanupPreview, cleanupAgeLabel } from '@/components/cleanup-preview';
+import {
+  CleanupImpact,
+  CleanupPreview,
+  cleanupActionTitle,
+  cleanupAgeLabel,
+  cleanupBulkTitle,
+  cleanupInboxHasNone,
+  cleanupNothingTitle,
+} from '@/components/cleanup-preview';
 import { LaterReturnControl, useFutureReturnTime } from '@/components/later-return-control';
 import { ActionReachControl, ActionWindowControl } from '@/components/action-scope-controls';
 
@@ -41,7 +49,7 @@ import { mailLocationValue } from '@/features/triage/action-preview-detail';
 import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
 import { afterLead } from '@/lib/copy/after-lead';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
-import { pluralCopy, WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { pluralCopy, WS1_COPY, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { fillStory, meterPreviewText, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
@@ -520,7 +528,11 @@ export function ConfirmActionModal({
         countedSubject
       } in Inbox or archived.`
     : isCleanupVerb && inboxScopeNotice.kind === 'empty-window'
-      ? `Your inbox has ${emailsLabel(inboxScopeNotice.inboxTotal)} from ${countedSubject}, but none are ${cleanupAgeLabel(inboxScopeNotice.olderThanDays).toLowerCase()}.`
+      ? cleanupInboxHasNone(
+          inboxScopeNotice.inboxTotal,
+          countedSubject,
+          inboxScopeNotice.olderThanDays,
+        )
       : inboxScopeVerbLabel
         ? inboxScopeNoticeCopy(
             inboxScopeNotice,
@@ -809,6 +821,7 @@ export function ConfirmActionModal({
         previewSenderGone={previewSenderGone}
         onRetryPreview={onRetryPreview}
         onRefreshSenders={onRefreshSenders}
+        preferredInboxCount={knownInboxTotal(request.senders)}
         submitting={submitting}
         onCancel={onCancel}
         onConfirm={onConfirm}
@@ -888,11 +901,12 @@ export function ConfirmActionModal({
 
   const title = (() => {
     if (zeroTitle) {
-      return windowedZero && isCleanupVerb
-        ? `No emails ${cleanupAgeLabel(olderThanDays).toLowerCase()} from ${zeroWho}`
-        : windowedZero
-          ? `Nothing older than ${windowName(olderThanDays)} from ${zeroWho}`
-          : `Nothing in your inbox${allMailScope ? ' or archive' : ''} from ${zeroWho}`;
+      return cleanupNothingTitle({
+        olderThanDays: windowedZero ? olderThanDays : null,
+        sender: zeroWho,
+        allMail: allMailScope,
+        bulkTheseSenders: !single && zeroWho === 'these senders',
+      });
     }
     if (isArchiveVerb || isDeleteVerb) {
       return liveCount === null
@@ -1139,7 +1153,9 @@ export function ConfirmActionModal({
   ) : selectedCountUnavailable ? (
     <StatusWithAction
       message="Couldn’t count this email age."
-      action={onRetryPreview ? { label: 'Retry preview', onClick: onRetryPreview } : undefined}
+      action={
+        onRetryPreview ? { label: WS2_COPY.home.failed.retry, onClick: onRetryPreview } : undefined
+      }
     />
   ) : previewStateCopy !== null ? (
     <StatusWithAction
@@ -1149,11 +1165,11 @@ export function ConfirmActionModal({
           ? undefined
           : previewSenderGone
             ? onRefreshSenders && { label: 'Refresh senders', onClick: onRefreshSenders }
-            : onRetryPreview && { label: 'Retry preview', onClick: onRetryPreview }
+            : onRetryPreview && { label: WS2_COPY.home.failed.retry, onClick: onRetryPreview }
       }
     />
   ) : wakeAtInvalid ? (
-    <StatusWithAction message="Choose a future return time." />
+    <StatusWithAction message={WS5_COPY['preview.later.returnInvalid']} />
   ) : nothingActionableBulk ? (
     // For Unsubscribe the count is of one-click senders only: mailto and
     // no-link senders may still be here, neither Protected nor gone.
@@ -1233,7 +1249,7 @@ export function ConfirmActionModal({
       value: <span data-testid="mail-location-line">{mailLocationValue(mailLocationLine)}</span>,
     });
   }
-  if (tiedWindowCopy) facts.push({ label: 'Email age', value: tiedWindowCopy });
+  if (tiedWindowCopy) facts.push({ label: WS5_COPY['preview.age.label'], value: tiedWindowCopy });
   if (showReach && allMailScope) {
     facts.push(
       { label: 'Never touched', value: 'Trash, Spam, Drafts, Chat' },
@@ -1470,9 +1486,12 @@ export function ConfirmActionModal({
         }
         title={
           isCleanupVerb && !zeroTitle
-            ? isLaterVerb
-              ? `Move emails from ${fromWho} to Later?`
-              : `${verbWord} emails from ${fromWho}?`
+            ? single
+              ? cleanupActionTitle(
+                  isLaterVerb ? 'Later' : isDeleteVerb ? 'Delete' : 'Archive',
+                  leadSender.name,
+                )
+              : cleanupBulkTitle(isLaterVerb ? 'Later' : isDeleteVerb ? 'Delete' : 'Archive', n)
             : title
         }
         subtitle={
@@ -1553,7 +1572,7 @@ export function ConfirmActionModal({
                 olderThanDays={olderThanDays}
                 options={windowOptions.map(({ days, count }) => ({
                   days,
-                  disabled: count === undefined,
+                  disabled: livePreviewReady && count === undefined,
                 }))}
                 onWindowChange={setOlderThanDays}
                 showWindow={isCleanupVerb || showWindowSelect}
@@ -1570,6 +1589,16 @@ export function ConfirmActionModal({
   );
 }
 
+/** Inbox mail already on the sender rows, before the preview request resolves. */
+function knownInboxTotal(senders: readonly { inboxCount?: number | null }[]): number | undefined {
+  let total = 0;
+  for (const sender of senders) {
+    if (typeof sender.inboxCount !== 'number') return undefined;
+    total += sender.inboxCount;
+  }
+  return total;
+}
+
 /** An Unsubscribe with no one-click sender left to send to. */
 const NO_SENDABLE_UNSUB =
   'No sendable unsubscribe for these senders. Archive moves their email out of your inbox instead.';
@@ -1578,12 +1607,6 @@ const fmt = (value: number) => value.toLocaleString('en-US');
 const emailsLabel = (count: number) => `${fmt(count)} email${count === 1 ? '' : 's'}`;
 const sendersLabel = (count: number) => `${fmt(count)} sender${count === 1 ? '' : 's'}`;
 const peopleLabel = (count: number) => (count === 1 ? '1 person' : `${fmt(count)} people`);
-
-/** "6 months" — the window a zero belongs to, from the preset the user sees. */
-function windowName(days: number | null): string {
-  const preset = TIME_WINDOW_PRESETS.find((p) => p.days === days);
-  return preset ? preset.label.replace(/\+$/, '') : `${days ?? 0} days`;
-}
 
 const factNumberStyle: CSSProperties = {
   color: color.fg,
@@ -1633,7 +1656,7 @@ function AvatarStack({ senders }: { senders: readonly Sender[] }) {
   );
 }
 
-/** A disabled-state line with its one way out ("Retry preview"). */
+/** A disabled-state line with its one way out ("Try again"). */
 function StatusWithAction({
   message,
   action,

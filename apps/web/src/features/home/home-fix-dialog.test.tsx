@@ -59,7 +59,7 @@ vi.mock('@declutrmail/shared/copy/launch', async () => {
         one: '1 email',
         other: '{n} emails',
       },
-      'f1.button.archive': 'Unsubscribe & archive',
+      'f1.button.archive': 'Unsubscribe + Archive',
       'f1.button.cancel': 'Cancel',
       'f1.honesty.archive':
         'The unsubscribe request can’t be recalled once delivered. The archive can be undone from Activity for 30 days.',
@@ -157,7 +157,7 @@ describe('HomeFixDialog focus trap', () => {
     expect(dialog).toHaveTextContent('Unsubscribe from 158 senders and archive 1,200 emails?');
     expect(dialog.parentElement).toHaveStyle({ zIndex: String(OVERLAY_Z.modal) });
     const cancel = screen.getByRole('button', { name: 'Cancel' });
-    const confirm = screen.getByRole('button', { name: 'Unsubscribe & archive' });
+    const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
     await waitFor(() => expect(cancel).toHaveFocus());
 
     await user.keyboard('{Tab}');

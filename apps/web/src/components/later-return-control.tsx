@@ -56,11 +56,11 @@ export function LaterReturnControl({
   const now = useNow(60_000);
   return (
     <label className={styles.age}>
-      <span>{WS5_COPY['f1.preview.later.return']}</span>
+      <span>{WS5_COPY['preview.later.returnLabel']}</span>
       <input
         className="dm-field"
         type="datetime-local"
-        aria-label={WS5_COPY['f1.preview.later.time']}
+        aria-label="Later return time"
         value={value === null ? '' : toLocalDateTimeInput(value)}
         min={now === null ? undefined : toLocalDateTimeInput(new Date(now + 60_000).toISOString())}
         onChange={(event) => {

@@ -254,7 +254,7 @@ function BatchCleanupStory(args: ComponentProps<typeof ActionSheet>) {
       : fixtureCount;
   return (
     <div style={{ padding: 24 }}>
-      <p>Fictional mailbox · no Gmail changes. Triage group {args.verb} · Inbox only · Any age.</p>
+      <p>Fictional mailbox · no Gmail changes. Triage group {args.verb} · Inbox only · All time.</p>
       <Button
         onClick={() => {
           setDays(null);
