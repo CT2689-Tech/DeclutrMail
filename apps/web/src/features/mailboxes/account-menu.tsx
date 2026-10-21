@@ -11,7 +11,7 @@ import {
   plusInboxLimitTitle,
   proWaitlistCta,
 } from '@declutrmail/shared/entitlements';
-import { tokens, toast } from '@declutrmail/shared';
+import { OVERLAY_Z, tokens, toast } from '@declutrmail/shared';
 import { WS6_COPY } from '@declutrmail/shared/copy/launch';
 
 import { useAuth } from '@/features/auth/auth-provider';
@@ -210,7 +210,7 @@ export function AccountMenu() {
             padding: 12,
             fontFamily: font.sans,
             fontSize: text.md,
-            zIndex: 90,
+            zIndex: OVERLAY_Z.modal,
           }}
         >
           <div className={styles.menuHeader}>
