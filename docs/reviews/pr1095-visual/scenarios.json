@@ -1,0 +1,781 @@
+[
+  {
+    "id": "home-single",
+    "title": "Home: one sender and affected count",
+    "group": "Home",
+    "surface": "home",
+    "verb": "Archive",
+    "state": "ready",
+    "count": 12,
+    "check": "Sender and count move from the heading into visible impact text; both remain in the accessible description."
+  },
+  {
+    "id": "home-bulk",
+    "title": "Home: multiple senders and affected count",
+    "group": "Home",
+    "surface": "home",
+    "verb": "Archive",
+    "state": "ready",
+    "bulk": true,
+    "count": 1200,
+    "check": "Heading counts senders; separate impact names the affected 1,200 emails."
+  },
+  {
+    "id": "senders-archive",
+    "title": "Senders: Archive default preview",
+    "group": "Cleanup previews",
+    "surface": "senders",
+    "verb": "Archive",
+    "state": "ready",
+    "widths": [1280, 360],
+    "check": "Compare heading, impact, age, destination, recovery note and accessible region name. Default age and destination are preserved."
+  },
+  {
+    "id": "senders-delete",
+    "title": "Senders: Delete default preview",
+    "group": "Cleanup previews",
+    "surface": "senders",
+    "verb": "Delete",
+    "state": "ready",
+    "widths": [1280, 360],
+    "check": "Compare heading, impact, age, destination, recovery note and accessible region name. Default age and destination are preserved."
+  },
+  {
+    "id": "senders-later",
+    "title": "Senders: Later default preview",
+    "group": "Cleanup previews",
+    "surface": "senders",
+    "verb": "Later",
+    "state": "ready",
+    "widths": [1280, 360],
+    "check": "Compare heading, impact, age, destination, recovery note and accessible region name. Default age and destination are preserved."
+  },
+  {
+    "id": "senders-cutoff",
+    "title": "Senders: dated cutoff explanation",
+    "group": "Cleanup previews",
+    "surface": "senders",
+    "verb": "Archive",
+    "state": "ready",
+    "actions": [
+      {
+        "type": "select",
+        "value": "30"
+      }
+    ],
+    "check": "Approximate cutoff changes to Emails from before about; selected date semantics are preserved."
+  },
+  {
+    "id": "senders-delete-archived",
+    "title": "Senders: Any age plus archived mail",
+    "group": "Cleanup previews",
+    "surface": "senders",
+    "verb": "Delete",
+    "state": "ready",
+    "actions": [
+      {
+        "type": "select",
+        "value": "all"
+      },
+      {
+        "type": "checkbox",
+        "name": "Include archived email"
+      }
+    ],
+    "check": "Archived reach requires an explicit choice; count and scope update together."
+  },
+  {
+    "id": "senders-loading",
+    "title": "Senders: loading count and available age choices",
+    "group": "Loading and recovery",
+    "surface": "senders",
+    "verb": "Archive",
+    "state": "loading",
+    "check": "Counting message replaces generic Loading preview; email-moving confirmation stays disabled."
+  },
+  {
+    "id": "senders-error",
+    "title": "Senders: failed cleanup preview and recovery",
+    "group": "Loading and recovery",
+    "surface": "senders",
+    "verb": "Archive",
+    "state": "error",
+    "check": "Nothing can move until the preview loads; Retry preview becomes Try again."
+  },
+  {
+    "id": "senders-gone",
+    "title": "Senders: sender no longer in this Gmail account",
+    "group": "Loading and recovery",
+    "surface": "senders",
+    "verb": "Archive",
+    "state": "sender-gone",
+    "check": "Sender-gone remains blocked and offers Refresh senders."
+  },
+  {
+    "id": "senders-zero",
+    "title": "Senders: no inbox email",
+    "group": "Zero results",
+    "surface": "senders",
+    "verb": "Archive",
+    "state": "zero",
+    "check": "No emails match these choices replaces No emails match this scope; cleanup stays blocked."
+  },
+  {
+    "id": "senders-zero-window",
+    "title": "Senders: no email older than 180 days",
+    "group": "Zero results",
+    "surface": "senders",
+    "verb": "Delete",
+    "state": "zero-window",
+    "check": "Selected age remains visible; no-op cleanup stays blocked."
+  },
+  {
+    "id": "senders-zero-one",
+    "title": "Senders: singular empty-age explanation",
+    "group": "Zero results",
+    "surface": "senders",
+    "verb": "Delete",
+    "state": "zero-one",
+    "count": 1,
+    "check": "Singular grammar changes from none are to it isn\u2019t."
+  },
+  {
+    "id": "senders-zero-all",
+    "title": "Senders: zero inbox and archived matches",
+    "group": "Zero results",
+    "surface": "senders",
+    "verb": "Delete",
+    "state": "ready",
+    "actions": [
+      {
+        "type": "checkbox",
+        "name": "Include archived email"
+      },
+      {
+        "type": "key",
+        "key": "F8"
+      }
+    ],
+    "check": "Zero title says archived email rather than archive.",
+    "refreshAllZero": true
+  },
+  {
+    "id": "senders-count-failed",
+    "title": "Senders: selected age disappears on refresh",
+    "group": "Loading and recovery",
+    "surface": "senders",
+    "verb": "Delete",
+    "state": "ready",
+    "refreshMissingAge": true,
+    "actions": [
+      {
+        "type": "key",
+        "key": "F8"
+      }
+    ],
+    "check": "The matching-count failure is explicit; missing bucket cannot arm cleanup."
+  },
+  {
+    "id": "unsub-default",
+    "title": "Senders: default Unsubscribe + Archive",
+    "group": "Unsubscribe",
+    "surface": "senders",
+    "verb": "Unsubscribe",
+    "state": "ready",
+    "widths": [1280, 320, 360],
+    "check": "Generic sender heading, + Archive button, complete impact and account context; phone choice moves ahead of header."
+  },
+  {
+    "id": "unsub-only",
+    "title": "Senders: future mail only",
+    "group": "Unsubscribe",
+    "surface": "senders",
+    "verb": "Unsubscribe",
+    "state": "ready",
+    "actions": [
+      {
+        "type": "radio",
+        "name": "Unsubscribe only"
+      }
+    ],
+    "check": "Existing email stays where it is becomes Email you already have stays where it is."
+  },
+  {
+    "id": "unsub-delete",
+    "title": "Senders: Unsubscribe + Delete",
+    "group": "Unsubscribe",
+    "surface": "senders",
+    "verb": "Unsubscribe",
+    "state": "ready",
+    "actions": [
+      {
+        "type": "radio",
+        "name": "+ Delete"
+      }
+    ],
+    "check": "Button uses + Delete; 180-day default and Gmail Trash explanation remain."
+  },
+  {
+    "id": "unsub-delete-archived",
+    "title": "Senders: Unsubscribe + Delete all ages and archived",
+    "group": "Unsubscribe",
+    "surface": "senders",
+    "verb": "Unsubscribe",
+    "state": "ready",
+    "actions": [
+      {
+        "type": "radio",
+        "name": "+ Delete"
+      },
+      {
+        "type": "select",
+        "value": "all"
+      },
+      {
+        "type": "checkbox",
+        "name": "Include archived email"
+      }
+    ],
+    "check": "Any age and explicit archived scope update the same impact count."
+  },
+  {
+    "id": "unsub-details",
+    "title": "Senders: Unsubscribe Details expanded",
+    "group": "Unsubscribe",
+    "surface": "senders",
+    "verb": "Unsubscribe",
+    "state": "ready",
+    "actions": [
+      {
+        "type": "details"
+      }
+    ],
+    "check": "Available domain, volume, last seen and Includes facts now appear in Details. Before may have no disclosure; report records that absence."
+  },
+  {
+    "id": "unsub-details-today",
+    "title": "Senders: Unsubscribe Details, last seen today",
+    "group": "Unsubscribe",
+    "surface": "senders",
+    "verb": "Unsubscribe",
+    "state": "ready",
+    "lastSeenDays": 0,
+    "actions": [
+      {
+        "type": "details"
+      }
+    ],
+    "check": "New Details fact uses the singular 1 day ago / Today form; main has no equivalent single-sender facts."
+  },
+  {
+    "id": "unsub-details-yesterday",
+    "title": "Senders: Unsubscribe Details, last seen yesterday",
+    "group": "Unsubscribe",
+    "surface": "senders",
+    "verb": "Unsubscribe",
+    "state": "ready",
+    "lastSeenDays": 1,
+    "actions": [
+      {
+        "type": "details"
+      }
+    ],
+    "check": "New Details fact uses the singular 1 day ago / Today form; main has no equivalent single-sender facts."
+  },
+  {
+    "id": "unsub-recorded",
+    "title": "Senders: earlier unsubscribes excluded",
+    "group": "Unsubscribe",
+    "surface": "senders",
+    "verb": "Unsubscribe",
+    "state": "ready",
+    "bulk": true,
+    "alreadyUnsubscribed": true,
+    "actions": [
+      {
+        "type": "details"
+      }
+    ],
+    "check": "Recorded unsubscribe exclusion moves into Details and loses the counted subtitle sentence."
+  },
+  {
+    "id": "unsub-protected-archive",
+    "title": "Senders: protected sender, Archive anyway",
+    "group": "Unsubscribe",
+    "surface": "senders",
+    "verb": "Unsubscribe",
+    "state": "ready",
+    "protected": true,
+    "actions": [
+      {
+        "type": "radio",
+        "name": "+ Archive"
+      }
+    ],
+    "check": "Protected suffix and notice remain; composite button changes & archive to + Archive."
+  },
+  {
+    "id": "unsub-protected-delete",
+    "title": "Senders: protected sender, Delete anyway",
+    "group": "Unsubscribe",
+    "surface": "senders",
+    "verb": "Unsubscribe",
+    "state": "ready",
+    "protected": true,
+    "actions": [
+      {
+        "type": "radio",
+        "name": "+ Delete"
+      }
+    ],
+    "check": "Protected suffix and notice remain; composite button changes & delete to + Delete."
+  },
+  {
+    "id": "unsub-loading",
+    "title": "Senders: known inbox count while preview loads",
+    "group": "Loading and recovery",
+    "surface": "senders",
+    "verb": "Unsubscribe",
+    "state": "loading",
+    "rowCount": 12,
+    "check": "After opens on + Archive from row metadata; confirmation still waits for a live preview."
+  },
+  {
+    "id": "unsub-error",
+    "title": "Senders: single-sender failed preview",
+    "group": "Loading and recovery",
+    "surface": "senders",
+    "verb": "Unsubscribe",
+    "state": "error",
+    "actions": [
+      {
+        "type": "radio",
+        "name": "Unsubscribe only"
+      }
+    ],
+    "check": "Net behavior change: final permits future-mail-only Unsubscribe for one sender after failure; main blocks it. Cleanup stays disabled."
+  },
+  {
+    "id": "unsub-zero",
+    "title": "Senders: zero Unsubscribe backlog",
+    "group": "Zero results",
+    "surface": "senders",
+    "verb": "Unsubscribe",
+    "state": "zero",
+    "check": "Unsubscribe only remains useful; the no-backlog hint preserves existing mail."
+  },
+  {
+    "id": "unsub-range-failed",
+    "title": "Senders: selected cleanup age unavailable",
+    "group": "Loading and recovery",
+    "surface": "senders",
+    "verb": "Unsubscribe",
+    "state": "ready",
+    "refreshMissingAge": true,
+    "actions": [
+      {
+        "type": "radio",
+        "name": "+ Delete"
+      },
+      {
+        "type": "key",
+        "key": "F8"
+      }
+    ],
+    "check": "Range wording becomes Can\u2019t preview this email age. Choose a different age; cleanup remains blocked."
+  },
+  {
+    "id": "bulk-ready",
+    "title": "Senders: bulk selection ready",
+    "group": "Bulk actions",
+    "surface": "senders",
+    "verb": "Archive",
+    "state": "ready",
+    "bulk": true,
+    "check": "Selected/included summary changes; loading/error never arm bulk cleanup."
+  },
+  {
+    "id": "bulk-loading",
+    "title": "Senders: bulk selection loading",
+    "group": "Bulk actions",
+    "surface": "senders",
+    "verb": "Archive",
+    "state": "loading",
+    "bulk": true,
+    "check": "Selected/included summary changes; loading/error never arm bulk cleanup."
+  },
+  {
+    "id": "bulk-error",
+    "title": "Senders: bulk selection error",
+    "group": "Bulk actions",
+    "surface": "senders",
+    "verb": "Archive",
+    "state": "error",
+    "bulk": true,
+    "check": "Selected/included summary changes; loading/error never arm bulk cleanup."
+  },
+  {
+    "id": "bulk-excluded",
+    "title": "Senders: bulk preview excludes a protected sender",
+    "group": "Bulk actions",
+    "surface": "senders",
+    "verb": "Archive",
+    "state": "ready",
+    "bulk": true,
+    "excluded": true,
+    "actions": [
+      {
+        "type": "details"
+      }
+    ],
+    "check": "Selected and included counts stay distinct; protected exclusions remain."
+  },
+  {
+    "id": "bulk-unsub-loading",
+    "title": "Senders: bulk future-only Unsubscribe loading",
+    "group": "Bulk actions",
+    "surface": "senders",
+    "verb": "Unsubscribe",
+    "state": "loading",
+    "bulk": true,
+    "actions": [
+      {
+        "type": "radio",
+        "name": "Unsubscribe only"
+      }
+    ],
+    "check": "Checking these senders / Nothing is sent replaces existing-email count language; bulk stays blocked."
+  },
+  {
+    "id": "bulk-unsub-error",
+    "title": "Senders: bulk future-only Unsubscribe error",
+    "group": "Bulk actions",
+    "surface": "senders",
+    "verb": "Unsubscribe",
+    "state": "error",
+    "bulk": true,
+    "actions": [
+      {
+        "type": "radio",
+        "name": "Unsubscribe only"
+      }
+    ],
+    "check": "Checking these senders / Nothing is sent replaces existing-email count language; bulk stays blocked."
+  },
+  {
+    "id": "triage-unsub",
+    "title": "Triage: Unsubscribe review sheet",
+    "group": "Triage",
+    "surface": "triage",
+    "verb": "Unsubscribe",
+    "state": "ready",
+    "widths": [1280, 320, 360],
+    "check": "Same new heading/button/impact copy and compact choice-first sheet. Account context remains visible."
+  },
+  {
+    "id": "triage-opening-loading",
+    "title": "Triage: opening row says 12, preview loading",
+    "group": "Triage",
+    "surface": "triage",
+    "verb": "Unsubscribe",
+    "state": "loading",
+    "rowCount": 12,
+    "check": "Opening + Archive appears immediately; live count still gates cleanup."
+  },
+  {
+    "id": "triage-future-loading",
+    "title": "Triage: future-only loading gate",
+    "group": "Triage",
+    "surface": "triage",
+    "verb": "Unsubscribe",
+    "state": "loading",
+    "rowCount": 0,
+    "check": "Final blocks future-only confirmation during loading. Main previously allowed it."
+  },
+  {
+    "id": "triage-zero-refresh",
+    "title": "Triage: opening zero then queue refresh",
+    "group": "Behavior",
+    "surface": "triage",
+    "verb": "Unsubscribe",
+    "state": "ready",
+    "rowCount": 0,
+    "refreshRowCount": 12,
+    "actions": [
+      {
+        "type": "key",
+        "key": "F8"
+      }
+    ],
+    "check": "Opening zero keeps Unsubscribe only. The rejected candidate flipped; final preserves the opening choice."
+  },
+  {
+    "id": "triage-live-refresh",
+    "title": "Triage: opening positive count then live zero",
+    "group": "Behavior",
+    "surface": "triage",
+    "verb": "Unsubscribe",
+    "state": "ready",
+    "rowCount": 12,
+    "refreshLiveCount": 0,
+    "actions": [
+      {
+        "type": "key",
+        "key": "F8"
+      }
+    ],
+    "check": "Final preserves the original + Archive choice but disables cleanup at zero instead of silently switching to future-only."
+  },
+  {
+    "id": "triage-unknown-refresh",
+    "title": "Triage: unknown row adopts first count once",
+    "group": "Behavior",
+    "surface": "triage",
+    "verb": "Unsubscribe",
+    "state": "ready",
+    "rowCount": "unknown",
+    "refreshLiveCount": 0,
+    "actions": [
+      {
+        "type": "key",
+        "key": "F8"
+      }
+    ],
+    "check": "The first resolved preview establishes the final default once; subsequent refresh does not silently select another action."
+  },
+  {
+    "id": "triage-archived-unavailable",
+    "title": "Triage: archived count unavailable",
+    "group": "Triage",
+    "surface": "triage",
+    "verb": "Delete",
+    "state": "missing-archived",
+    "check": "Compare the unavailable archived-count component and explanation. Parent-screen exposure of this choice is a separate wiring change covered by source/integration tests; this fixture supplies the same reach-control prop to both versions."
+  },
+  {
+    "id": "triage-error",
+    "title": "Triage: cleanup preview failure",
+    "group": "Loading and recovery",
+    "surface": "triage",
+    "verb": "Delete",
+    "state": "error",
+    "check": "Error recovery button is Try again; cleanup stays blocked."
+  },
+  {
+    "id": "triage-later-invalid",
+    "title": "Triage: invalid Later return time",
+    "group": "Later",
+    "surface": "triage",
+    "verb": "Later",
+    "state": "invalid-time",
+    "check": "Choose a future return time replaces Pick a future return time; accessible label matches Return to inbox."
+  },
+  {
+    "id": "triage-later-large",
+    "title": "Triage: Later for 240 emails",
+    "group": "Later",
+    "surface": "triage",
+    "verb": "Later",
+    "state": "ready",
+    "count": 240,
+    "widths": [1280, 360],
+    "check": "Main and final share the same truthful one-return notice. Rejected candidate incorrectly promised simultaneous returns."
+  },
+  {
+    "id": "inline-unsub",
+    "title": "Triage: inline Unsubscribe preview",
+    "group": "Triage inline",
+    "surface": "inline",
+    "verb": "Unsubscribe",
+    "state": "ready",
+    "mode": "archive",
+    "check": "Inline heading/button/impact and retry language use shared catalog; no provider action is executed."
+  },
+  {
+    "id": "inline-unsub-loading",
+    "title": "Triage: inline future-only loading gate",
+    "group": "Triage inline",
+    "surface": "inline",
+    "verb": "Unsubscribe",
+    "state": "loading",
+    "mode": "unsub_only",
+    "rowCount": 0,
+    "check": "Final confirmation is disabled while loading; this is a behavior change from main."
+  },
+  {
+    "id": "inline-error",
+    "title": "Triage: inline cleanup failure",
+    "group": "Triage inline",
+    "surface": "inline",
+    "verb": "Delete",
+    "state": "error",
+    "check": "Retry control becomes Try again; error still blocks cleanup."
+  },
+  {
+    "id": "batch-archive",
+    "title": "Triage: domain batch Archive",
+    "group": "Bulk actions",
+    "surface": "batch",
+    "verb": "Archive",
+    "state": "ready",
+    "bulk": true,
+    "check": "Same action/destination; title and impact are catalog-backed."
+  },
+  {
+    "id": "batch-recommended",
+    "title": "Triage: recommendation batch subtitle",
+    "group": "Bulk actions",
+    "surface": "batch",
+    "verb": "Archive",
+    "state": "ready",
+    "bulk": true,
+    "recommended": true,
+    "check": "Synthetic From Archive-recommended subtitle is removed; real domain subtitles remain."
+  },
+  {
+    "id": "batch-zero-window",
+    "title": "Triage: batch has zero old matches",
+    "group": "Zero results",
+    "surface": "batch",
+    "verb": "Archive",
+    "state": "zero-window",
+    "bulk": true,
+    "age": 180,
+    "check": "Heading states No emails older than 180 days from these senders."
+  },
+  {
+    "id": "batch-later-invalid",
+    "title": "Triage: batch invalid Later return time",
+    "group": "Later",
+    "surface": "batch",
+    "verb": "Later",
+    "state": "invalid-time",
+    "bulk": true,
+    "check": "Long invalid-time explanation becomes Choose a future return time."
+  },
+  {
+    "id": "batch-later-large",
+    "title": "Triage: batch Later at scale",
+    "group": "Later",
+    "surface": "batch",
+    "verb": "Later",
+    "state": "ready",
+    "bulk": true,
+    "count": 240,
+    "check": "Scheduled return and truthful large-batch notice are preserved from main."
+  },
+  {
+    "id": "screener-unsub",
+    "title": "Screener: inline Unsubscribe",
+    "group": "Screener",
+    "surface": "screener",
+    "verb": "Unsubscribe",
+    "state": "ready",
+    "check": "Generic heading and future-mail impact copy match sibling review surfaces."
+  },
+  {
+    "id": "screener-delete",
+    "title": "Screener: inline Delete and next-row Tab",
+    "group": "Screener",
+    "surface": "screener",
+    "verb": "Delete",
+    "state": "ready",
+    "actions": [
+      {
+        "type": "focus",
+        "namePattern": "^Delete for"
+      },
+      {
+        "type": "key",
+        "key": "Tab"
+      }
+    ],
+    "check": "Main and final let Tab leave the inline preview without cancelling; rejected candidate traps it."
+  },
+  {
+    "id": "screener-zero-one",
+    "title": "Screener: single email outside selected age",
+    "group": "Zero results",
+    "surface": "screener",
+    "verb": "Delete",
+    "state": "zero-one",
+    "count": 1,
+    "check": "Empty-window sentence names Acme Newsletter and uses singular grammar."
+  },
+  {
+    "id": "screener-error",
+    "title": "Screener: failed cleanup preview",
+    "group": "Loading and recovery",
+    "surface": "screener",
+    "verb": "Delete",
+    "state": "error",
+    "check": "Recovery button becomes Try again; no action can run."
+  },
+  {
+    "id": "screener-later-invalid",
+    "title": "Screener: invalid Later time",
+    "group": "Later",
+    "surface": "screener",
+    "verb": "Later",
+    "state": "invalid-time",
+    "check": "Visible label and accessible name agree; future-time validation remains."
+  },
+  {
+    "id": "menu-focus",
+    "title": "Senders: menu to confirmation to Cancel",
+    "group": "Behavior",
+    "surface": "menu",
+    "verb": "Archive",
+    "state": "ready",
+    "actions": [
+      {
+        "type": "button",
+        "name": "More actions for Acme Newsletter"
+      },
+      {
+        "type": "menuitem",
+        "namePattern": "^Archive"
+      },
+      {
+        "type": "button",
+        "name": "Cancel"
+      }
+    ],
+    "check": "Final returns focus to the surviving More actions opener. Main could leave focus on removed menu content/body."
+  },
+  {
+    "id": "demo-unsub",
+    "title": "Public demo: Unsubscribe controls",
+    "group": "Public demo",
+    "surface": "demo",
+    "verb": "Unsubscribe",
+    "state": "ready",
+    "actions": [
+      {
+        "type": "button",
+        "name": "Unsubscribe"
+      }
+    ],
+    "check": "Demo age selector becomes Email age; sample-only behavior and age option labels are preserved."
+  },
+  {
+    "id": "demo-later",
+    "title": "Public demo: Later date accessibility",
+    "group": "Public demo",
+    "surface": "demo",
+    "verb": "Later",
+    "state": "ready",
+    "actions": [
+      {
+        "type": "button",
+        "name": "Later"
+      },
+      {
+        "type": "fill",
+        "selector": "input[type=\"datetime-local\"]",
+        "value": "2000-01-01T12:00"
+      }
+    ],
+    "check": "Accessible input name matches Returns; invalid-time text is Choose a future return time."
+  }
+]

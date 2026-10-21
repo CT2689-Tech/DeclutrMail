@@ -1,0 +1,520 @@
+[
+  {
+    "key": "f1.button.archive",
+    "kind": "changed",
+    "before_catalog": "Unsubscribe & archive",
+    "after_catalog": "Unsubscribe + Archive",
+    "note": ""
+  },
+  {
+    "key": "f1.button.archive.protected",
+    "kind": "changed",
+    "before_catalog": "Unsubscribe & archive anyway",
+    "after_catalog": "Unsubscribe + Archive anyway",
+    "note": ""
+  },
+  {
+    "key": "f1.button.delete",
+    "kind": "changed",
+    "before_catalog": "Unsubscribe & delete",
+    "after_catalog": "Unsubscribe + Delete",
+    "note": ""
+  },
+  {
+    "key": "f1.button.delete.protected",
+    "kind": "changed",
+    "before_catalog": "Unsubscribe & delete anyway",
+    "after_catalog": "Unsubscribe + Delete anyway",
+    "note": ""
+  },
+  {
+    "key": "f1.preview.backlog.archive.one",
+    "kind": "changed",
+    "before_catalog": "{n} email will leave your inbox and stay in Gmail.",
+    "after_catalog": "1 email will leave your inbox and stay in Gmail.",
+    "note": ""
+  },
+  {
+    "key": "f1.preview.backlog.delete.one",
+    "kind": "changed",
+    "before_catalog": "{n} email will move to Gmail Trash.",
+    "after_catalog": "1 email will move to Gmail Trash.",
+    "note": ""
+  },
+  {
+    "key": "f1.preview.backlog.unsubOnly",
+    "kind": "changed",
+    "before_catalog": "Existing email stays where it is.",
+    "after_catalog": "Email you already have stays where it is.",
+    "note": ""
+  },
+  {
+    "key": "f1.segment.archive.aria.one",
+    "kind": "removed",
+    "before_catalog": "Unsubscribe and archive 1 email",
+    "after_catalog": null,
+    "note": ""
+  },
+  {
+    "key": "f1.segment.archive.aria.other",
+    "kind": "removed",
+    "before_catalog": "Unsubscribe and archive {n} emails",
+    "after_catalog": null,
+    "note": ""
+  },
+  {
+    "key": "f1.segment.delete.aria.one",
+    "kind": "removed",
+    "before_catalog": "Unsubscribe and delete 1 email",
+    "after_catalog": null,
+    "note": ""
+  },
+  {
+    "key": "f1.segment.delete.aria.other",
+    "kind": "removed",
+    "before_catalog": "Unsubscribe and delete {n} emails",
+    "after_catalog": null,
+    "note": ""
+  },
+  {
+    "key": "preview.age.any",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Any age",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.age.countFailed",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Couldn’t count the matching emails.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.age.cutoff",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Emails from before about {date}.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.age.label",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Email age",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.age.noLimit",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "No date limit.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.age.olderThanDays",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Older than {n} days",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.age.olderThanYear",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Older than 1 year",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.age.rangeUnavailable",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Can’t preview this email age. Choose a different age.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.age.unavailable",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": " (unavailable)",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.details.alreadyUnsubscribed",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Senders you’ve already unsubscribed from are left out.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.details.lastSeen.one",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "1 day ago",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.details.lastSeen.other",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "{n} days ago",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.details.lastSeen.today",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Today",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.details.volume",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "{n} in the last 90 days · {total} in all",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.impact.archive.one",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "1 email will leave your inbox and stay in Gmail.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.impact.archive.other",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "{n} emails will leave your inbox and stay in Gmail.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.impact.aria.archive",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "What Archive will do",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.impact.aria.delete",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "What Delete will do",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.impact.aria.later",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "What Later will do",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.impact.aria.unsub",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "What Unsubscribe will do",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.impact.delete.one",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "1 email will move to Gmail Trash.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.impact.delete.other",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "{n} emails will move to Gmail Trash.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.impact.facts.allMail",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Inbox and archived email · {age}",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.impact.facts.inbox",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Inbox only · {age}",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.impact.later.one",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "1 email will move to Gmail’s DeclutrMail/Later label.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.impact.later.other",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "{n} emails will move to Gmail’s DeclutrMail/Later label.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.impact.none",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "No emails match these choices.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.impact.pending.archive",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Matching emails leave your inbox and stay in Gmail after you confirm.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.impact.pending.delete",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Matching emails move to Gmail Trash after you confirm.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.impact.pending.later",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Matching emails move to Gmail’s DeclutrMail/Later label after you confirm.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.later.bulkReturn",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "All of them share that one return.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.later.returnInvalid",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Choose a future return time.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.later.returnLabel",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Return to inbox",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.selection.checking",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "{k} selected · Checking which ones are included…",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.selection.included",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "{k} selected · {m} included",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.selection.unavailable",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "{k} selected · Couldn’t check which ones are included",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.state.checkingSenders",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Checking these senders…",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.state.loadFailed",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Couldn’t load the preview. Nothing can move until it loads.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.state.loadFailed.unsub",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Couldn’t load the preview. Nothing is sent until it loads.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.state.loading",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Counting the email you already have…",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.state.refreshSenders",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Refresh senders",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.state.senderGone",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "This sender has no email in this Gmail account anymore.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.title.archive",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Archive emails from {Sender}?",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.title.bulk.archive.one",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Archive emails from 1 sender?",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.title.bulk.archive.other",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Archive emails from {k} senders?",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.title.bulk.delete.one",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Delete emails from 1 sender?",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.title.bulk.delete.other",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Delete emails from {k} senders?",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.title.bulk.later.one",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Move emails from 1 sender to Later?",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.title.bulk.later.other",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Move emails from {k} senders to Later?",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.title.bulk.unsub.one",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Unsubscribe from 1 sender?",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.title.bulk.unsub.other",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Unsubscribe from {k} senders?",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.title.delete",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Delete emails from {Sender}?",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.title.later",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Move emails from {Sender} to Later?",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.title.unsubThisSender",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Unsubscribe from this sender?",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.zero.inboxHasNone.one",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Your inbox has 1 email from {Sender}, but it isn’t older than {age}.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.zero.inboxHasNone.other",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Your inbox has {n} emails from {Sender}, but none are older than {age}.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.zero.noMove",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "No email moves.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.zero.nothing",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Nothing in your inbox from {Sender}",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.zero.nothing.allMail",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Nothing in your inbox or archived email from {Sender}",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.zero.nothing.bulk",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Nothing in your inbox from these senders",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.zero.olderThan",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "No emails older than {age} from {Sender}",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.zero.olderThan.bulk",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "No emails older than {age} from these senders",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  },
+  {
+    "key": "preview.zero.unsubHint",
+    "kind": "added",
+    "before_catalog": null,
+    "after_catalog": "Change Email age, or choose Unsubscribe only.",
+    "note": "Catalog entry addition can centralize pre-existing UI text; see rendered comparison, not absence of this key, for the user-visible before state."
+  }
+]

@@ -1,0 +1,105 @@
+name: PR 1095 immutable visual evidence
+
+on:
+  push:
+    branches: [codex/pr1095-visual-evidence]
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    name: Capture ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: before
+            sha: c1653a29e3e01cb489b68610bb9b2daa48404d04
+          - label: rejected
+            sha: 00c2d24215b458c71b3bbf564b82ea88332de76c
+          - label: after
+            sha: a7464ac4820bd00df215622bb972e7d2ec5120d5
+    defaults:
+      run:
+        working-directory: snapshot
+    steps:
+      - name: Check out the evidence harness
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: evidence
+          persist-credentials: false
+      - name: Check out the immutable source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.sha }}
+          path: snapshot
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: snapshot/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: snapshot/.nvmrc
+          cache: pnpm
+          cache-dependency-path: snapshot/pnpm-lock.yaml
+      - name: Install the source snapshot
+        run: pnpm install --frozen-lockfile
+      - name: Install the capture harness without changing production source
+        env:
+          SOURCE_LABEL: ${{ matrix.label }}
+          SOURCE_SHA: ${{ matrix.sha }}
+          HARNESS_SHA: ${{ github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          mkdir -p apps/web/src/test
+          cp ../evidence/docs/reviews/pr1095-visual/fixture.tsx apps/web/src/test/pr1095-visual-evidence.fixture.tsx
+          cp ../evidence/docs/reviews/pr1095-visual/scenarios.json apps/web/src/test/scenarios.json
+          cp ../evidence/docs/reviews/pr1095-visual/render-pr1095-visual-evidence.spec.ts packages/e2e/specs/render-pr1095-visual-evidence.spec.ts
+          cp ../evidence/docs/reviews/pr1095-visual/scenarios.json packages/e2e/specs/scenarios.json
+          cat > packages/e2e/pr1095-visual-evidence.config.ts <<'CONFIG'
+          import { defineConfig } from '@playwright/test';
+          import base from './playwright.config';
+          export default defineConfig({
+            ...base,
+            projects: base.projects?.filter((project) => project.name === 'render').map((project) => ({
+              ...project,
+              testMatch: /render-pr1095-visual-evidence\.spec\.ts/,
+            })),
+          });
+          CONFIG
+          node -e 'require("node:fs").writeFileSync("visual-evidence-source.json", JSON.stringify({sourceLabel:process.env.SOURCE_LABEL,sourceSha:process.env.SOURCE_SHA,harnessSha:process.env.HARNESS_SHA},null,2))'
+          git diff --exit-code
+      - name: Install the normal render browser
+        run: pnpm --filter @declutrmail/e2e exec playwright install --with-deps chromium
+      - name: Capture every scenario
+        env:
+          E2E_SKIP_STACK_SETUP: '1'
+          E2E_JSON_REPORT: ${{ github.workspace }}/snapshot/e2e-visual-report.json
+          SOURCE_LABEL: ${{ matrix.label }}
+          SOURCE_SHA: ${{ matrix.sha }}
+          HARNESS_SHA: ${{ github.sha }}
+          DM_EVIDENCE_OUTPUT_DIR: ${{ github.workspace }}/snapshot/visual-evidence/${{ matrix.label }}
+        run: >-
+          pnpm --filter @declutrmail/e2e exec playwright test
+          --config=pr1095-visual-evidence.config.ts --project=render
+          render-pr1095-visual-evidence.spec.ts --workers=1 --retries=0
+      - name: Reject missing or skipped coverage
+        if: ${{ !cancelled() }}
+        run: node scripts/assert-e2e-ran.mjs e2e-visual-report.json pr1095-visual-evidence
+      - name: Upload all screenshots and state evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr1095-visual-${{ matrix.label }}-${{ matrix.sha }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            snapshot/packages/e2e/test-results/
+            snapshot/visual-evidence/
+            snapshot/e2e-visual-report.json
+            snapshot/visual-evidence-source.json
+            evidence/docs/reviews/pr1095-visual/scenarios.json
