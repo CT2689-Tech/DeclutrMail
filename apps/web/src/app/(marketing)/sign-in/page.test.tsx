@@ -11,6 +11,17 @@ async function renderPage(params: Record<string, string | string[] | undefined> 
 }
 
 describe('/sign-in OAuth recovery', () => {
+  it.each([{}, { auth_result: 'gmail_access_missing' }, { returning: '1' }])(
+    'keeps the one-time Pass choice on the Google link: %j',
+    async (params) => {
+      const destination = '/billing?plan=plus&cycle=annual&offer=pass_onetime';
+      await renderPage({ ...params, returnTo: destination });
+      const href = screen
+        .getByRole('link', { name: /Continue with Google/i })
+        .getAttribute('href')!;
+      expect(new URL(href, 'https://app.test').searchParams.get('returnTo')).toBe(destination);
+    },
+  );
   it('explains the closed inbox-limit recovery without requiring a session', async () => {
     await renderPage({ auth_result: 'inbox_limit' });
 

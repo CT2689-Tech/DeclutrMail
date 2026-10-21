@@ -63,12 +63,15 @@ export function parseAppReturnTo(value: unknown): string | undefined {
     const plan = url.searchParams.get('plan');
     const cycle = url.searchParams.get('cycle');
     const promo = url.searchParams.get('promo');
+    const offer = url.searchParams.get('offer');
     if (
       (plan !== null || cycle !== null || promo !== null) &&
       ((plan !== 'plus' && plan !== 'pro') || (cycle !== 'monthly' && cycle !== 'annual'))
     )
       return undefined;
     if (promo !== null && (promo !== 'foundingPro' || plan !== 'pro' || cycle !== 'annual'))
+      return undefined;
+    if (offer !== null && (offer !== 'pass_onetime' || plan !== 'plus' || cycle !== 'annual'))
       return undefined;
     const from = url.searchParams.get('from');
     // An upgrade returns to work, never another checkout (or another nested intent).
@@ -81,6 +84,7 @@ export function parseAppReturnTo(value: unknown): string | undefined {
       query.set('cycle', cycle);
     }
     if (promo !== null) query.set('promo', promo);
+    if (offer !== null) query.set('offer', offer);
     if (from !== null) query.set('from', from);
     return query.size ? `/billing?${query}` : '/billing';
   }

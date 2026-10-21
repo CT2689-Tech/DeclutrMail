@@ -40,7 +40,30 @@ async function assertSignupRef(page: Page, ref: string) {
   // The API prefers the set-once first-party cookie; the query parameter
   // covers clicks where the client enhancer has already hydrated.
   expect(cookie ?? url.searchParams.get('ref')).toBe(ref);
+  return url;
 }
+
+test('signed-out Backlog Pass choice survives permissions to the OAuth boundary', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto('/pricing?ref=simulator');
+  await consent(page);
+  if (process.env.PRICING_V2 !== 'true' || process.env.BILLING_PASS_ENABLED !== 'true') {
+    await expect(page.getByRole('button', { name: 'Get Backlog Pass', exact: true })).toHaveCount(
+      0,
+    );
+    return;
+  }
+  await page.getByRole('button', { name: 'Get Backlog Pass', exact: true }).click();
+  await expect(page).toHaveURL(/\/sign-in\?returnTo=/);
+  const destination = '/billing?plan=plus&cycle=annual&offer=pass_onetime';
+  expect(new URL(page.url()).searchParams.get('returnTo')).toBe(destination);
+  const oauth = await assertSignupRef(page, 'simulator');
+  expect(oauth.searchParams.get('returnTo')).toBe(destination);
+  expect(errors).toEqual([]);
+});
 
 test('guide visitor evaluates privacy and pricing, tries cleanup and undo, then signs up', async ({
   page,
