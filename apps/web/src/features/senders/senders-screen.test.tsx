@@ -1746,7 +1746,7 @@ describe('SendersScreen — edge states', () => {
       if (verb === 'Delete' && includeArchived()) fireEvent.click(includeArchived()!);
       if (verb !== 'Later') {
         const windowControl = within(dialog).queryByRole('combobox', {
-          name: 'How far back',
+          name: 'Email age',
         });
         if (windowControl) {
           fireEvent.change(windowControl, {
@@ -2015,7 +2015,7 @@ describe('SendersScreen — edge states', () => {
     // Pick the narrowest window; the impact summary states 12 of the 250.
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByRole('option', { name: 'Older than 1 year' })).toBeEnabled();
-    fireEvent.change(within(dialog).getByRole('combobox', { name: 'How far back' }), {
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Email age' }), {
       target: { value: '365' },
     });
     expect(within(dialog).getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
@@ -2328,7 +2328,7 @@ describe('SendersScreen — edge states', () => {
     expect(within(dialog).getByRole('radio', { name: '+ Archive' })).toBeEnabled();
     expect(within(dialog).getByText('+ Archive')).toBeInTheDocument();
     expect(within(dialog).getByText('+ Delete')).toBeInTheDocument();
-    expect(within(dialog).queryByRole('combobox', { name: /How far back/i })).toBeNull();
+    expect(within(dialog).queryByRole('combobox', { name: /Email age/i })).toBeNull();
     expect(
       within(dialog).queryByRole('radio', { name: /Leave alone|Archive them|Delete them/i }),
     ).toBeNull();
@@ -2530,12 +2530,12 @@ describe('SendersScreen — edge states', () => {
       });
       await waitFor(() => expect(deleteChoice).toBeEnabled());
       fireEvent.click(deleteChoice);
-      fireEvent.change(within(dialog).getByRole('combobox', { name: 'How far back' }), {
+      fireEvent.change(within(dialog).getByRole('combobox', { name: 'Email age' }), {
         target: { value: 'all' },
       });
       fireEvent.click(await screen.findByRole('checkbox', { name: 'Include archived email' }));
       if (remaining > 0) {
-        fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
+        fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
           target: { value: '30' },
         });
       }
@@ -3307,7 +3307,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       const dialog = await screen.findByRole('dialog');
       if (verb === 'Delete') {
         const window = await within(dialog).findByRole('combobox', {
-          name: 'How far back',
+          name: 'Email age',
         });
         fireEvent.change(window, { target: { value: 'all' } });
       }
@@ -3360,7 +3360,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       const dialog = await screen.findByRole('dialog');
       if (verb === 'Delete') {
         const window = await within(dialog).findByRole('combobox', {
-          name: 'How far back',
+          name: 'Email age',
         });
         fireEvent.change(window, { target: { value: 'all' } });
       }
@@ -3431,7 +3431,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       fireEvent.keyDown(document.body, { key: verb[0]!.toLowerCase() });
       const dialog = await screen.findByRole('dialog');
       if (verb === 'Delete')
-        fireEvent.change(within(dialog).getByRole('combobox', { name: 'How far back' }), {
+        fireEvent.change(within(dialog).getByRole('combobox', { name: 'Email age' }), {
           target: { value: 'all' },
         });
       const confirm = within(dialog).getByRole('button', { name: verb });
@@ -5345,7 +5345,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     const impact = within(dialog).getByRole('region', { name: 'What Archive will do' });
     expect(impact).toHaveTextContent('30 emails will leave your inbox and stay in Gmail.');
     // Changing age uses the aggregated buckets, not a single sender's count.
-    const age = within(dialog).getByRole('combobox', { name: 'How far back' });
+    const age = within(dialog).getByRole('combobox', { name: 'Email age' });
     expect(age).toHaveValue('all');
     fireEvent.change(age, { target: { value: '30' } });
     expect(impact).toHaveTextContent('17 emails will leave your inbox and stay in Gmail.');
@@ -5451,7 +5451,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       ).toBeNull();
       expect(within(dialog).queryByText(/We check again right before anything moves/)).toBeNull();
       fireEvent.click(await within(dialog).findByRole('radio', { name: radioName }));
-      const age = within(dialog).getByRole('combobox', { name: 'How far back' });
+      const age = within(dialog).getByRole('combobox', { name: 'Email age' });
       expect(age).toHaveValue(mode === 'delete' ? '180' : 'all');
       if (mode === 'archive') fireEvent.change(age, { target: { value: '90' } });
       expect(
@@ -7130,7 +7130,7 @@ describe('SendersScreen — a saved view keeps a size sort', () => {
 describe('Senders Unsubscribe selected-age network request', () => {
   afterEach(resetFetchStub);
   it.each([false, true])(
-    'posts the previewed Delete age and reach (All time=%s)',
+    'posts the previewed Delete age and reach (Any age=%s)',
     async (anyAge) => {
       useSendersStore.setState({ sort: 'total', direction: 'desc' });
       const bodies: unknown[] = [];
@@ -7191,7 +7191,7 @@ describe('Senders Unsubscribe selected-age network request', () => {
       const deletion = await within(dialog).findByRole('radio', { name: '+ Delete' });
       await waitFor(() => expect(deletion).toBeEnabled());
       fireEvent.click(deletion);
-      const age = within(dialog).getByRole('combobox', { name: 'How far back' });
+      const age = within(dialog).getByRole('combobox', { name: 'Email age' });
       expect(age).toHaveValue('180');
       expect(within(dialog).getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
         '3 emails',

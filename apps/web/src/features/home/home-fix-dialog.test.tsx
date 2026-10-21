@@ -54,6 +54,10 @@ vi.mock('@declutrmail/shared/copy/launch', async () => {
       },
       'f1.button.archive': 'Unsubscribe + Archive',
       'f1.button.cancel': 'Cancel',
+      'f1.preview.backlog.archive': {
+        one: '1 email will leave your inbox and stay in Gmail.',
+        other: '{n} emails will leave your inbox and stay in Gmail.',
+      },
       'f1.honesty.archive':
         'The unsubscribe request can’t be recalled once delivered. The archive can be undone from Activity for 30 days.',
       'report.home.title': 'Your Inbox Report',
@@ -148,6 +152,7 @@ describe('HomeFixDialog focus trap', () => {
 
     const dialog = screen.getByRole('alertdialog');
     expect(dialog).toHaveTextContent('Unsubscribe from 158 senders?');
+    expect(dialog).toHaveTextContent('1,200 emails will leave your inbox and stay in Gmail.');
     expect(dialog.parentElement).toHaveStyle({ zIndex: String(OVERLAY_Z.modal) });
     const cancel = screen.getByRole('button', { name: 'Cancel' });
     const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
@@ -191,6 +196,8 @@ describe('HomeFixDialog focus trap', () => {
     );
     const dialog = screen.getByRole('alertdialog');
     expect(dialog).toHaveTextContent('Unsubscribe from this sender?');
+    expect(dialog).toHaveTextContent('Acme');
+    expect(dialog).toHaveTextContent('4 emails will leave your inbox and stay in Gmail.');
     expect(
       screen.getByRole('heading', { name: 'Unsubscribe from this sender?' }),
     ).not.toHaveTextContent('Acme');

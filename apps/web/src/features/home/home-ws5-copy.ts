@@ -71,6 +71,8 @@ export interface HomeFixCopy {
   titleThisSender: string;
   titleBulkOne: string;
   titleBulkOther: string;
+  impactOne: string;
+  impactOther: string;
   button: string;
   cancel: string;
   honesty: string;
@@ -88,6 +90,7 @@ export function homeFixCopy(): HomeFixCopy | null {
   const titleThisSender = ws5Text('preview.title.unsubThisSender');
   const review = ws5Text('report.fix.review');
   const titleBulk = ws5Plural('preview.title.bulk.unsub');
+  const impact = ws5Plural('f1.preview.backlog.archive');
   const button = ws5Text('f1.button.archive');
   const cancel = ws5Text('f1.button.cancel');
   const honesty = ws5Text('f1.honesty.archive');
@@ -98,6 +101,7 @@ export function homeFixCopy(): HomeFixCopy | null {
     titleThisSender === null ||
     review === null ||
     titleBulk === null ||
+    impact === null ||
     button === null ||
     cancel === null ||
     honesty === null ||
@@ -116,6 +120,8 @@ export function homeFixCopy(): HomeFixCopy | null {
     titleThisSender,
     titleBulkOne: titleBulk.one,
     titleBulkOther: titleBulk.other,
+    impactOne: impact.one,
+    impactOther: impact.other,
     button,
     cancel,
     honesty,

@@ -105,7 +105,7 @@ describe('InboxReportFirstLanding', () => {
         fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
         fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
       }
-      fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
+      fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
         target: { value: '180' },
       });
       expect(
@@ -184,7 +184,7 @@ describe('InboxReportFirstLanding', () => {
     const option = await screen.findByRole('radio', { name: '+ Delete' });
     await waitFor(() => expect(option).toBeEnabled());
     fireEvent.click(option);
-    fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: 'all' },
     });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));

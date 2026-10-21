@@ -254,7 +254,7 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
   await expect(sendersSheet).toBeVisible();
   await expect(sendersSheet).toContainText('Whether their email stops is up to the sender.');
   await sendersSheet.getByRole('radio', { name: '+ Delete' }).click();
-  const age = sendersSheet.getByRole('combobox', { name: 'How far back', exact: true });
+  const age = sendersSheet.getByRole('combobox', { name: 'Email age', exact: true });
   await expect(age).toHaveValue('180');
   await expect(sendersSheet.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
   await age.selectOption('all');

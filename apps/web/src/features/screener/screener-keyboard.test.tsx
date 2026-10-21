@@ -402,7 +402,7 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     fireEvent.keyDown(window, { key: 'd' });
     await screen.findByRole('checkbox', { name: 'Include archived email' });
 
-    expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('180');
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
     fireEvent.keyDown(window, { key: 'Enter' });
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(Object.keys(bodies[0]!)).not.toContain('reach');
@@ -415,10 +415,10 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'd' });
-    await screen.findByRole('combobox', { name: 'How far back' });
+    await screen.findByRole('combobox', { name: 'Email age' });
     expect(screen.getByRole('button', { name: /^Delete( [\d,]+ emails?)? for/ })).toBeDisabled();
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: 'all' },
     });
     expect(screen.getByRole('button', { name: /^Delete( [\d,]+ emails?)? for/ })).toBeEnabled();
@@ -476,7 +476,7 @@ describe('Screener Archive Email age', () => {
       renderReady();
       expandFirstRow();
       fireEvent.keyDown(window, { key: 'a' });
-      const age = await screen.findByRole('combobox', { name: 'How far back' });
+      const age = await screen.findByRole('combobox', { name: 'Email age' });
       expect(age).toHaveValue('all');
       await waitFor(() =>
         expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
@@ -489,13 +489,13 @@ describe('Screener Archive Email age', () => {
       );
       fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
       fireEvent.keyDown(window, { key: 'a' });
-      expect(await screen.findByRole('combobox', { name: 'How far back' })).toHaveValue('all');
+      expect(await screen.findByRole('combobox', { name: 'Email age' })).toHaveValue('all');
       await waitFor(() =>
         expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
           '20 emails',
         ),
       );
-      fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
+      fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
         target: { value: '180' },
       });
       if (submit === 'Enter') fireEvent.keyDown(window, { key: 'Enter' });
@@ -541,7 +541,7 @@ describe('Screener Archive age cannot bypass the live count', () => {
       renderReady();
       expandFirstRow();
       fireEvent.keyDown(window, { key: 'a' });
-      const age = await screen.findByRole('combobox', { name: 'How far back' });
+      const age = await screen.findByRole('combobox', { name: 'Email age' });
       await waitFor(() =>
         expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
           '20 emails',
@@ -610,7 +610,7 @@ describe('Screener Delete selected age and archived count stay together', () => 
       expandFirstRow();
       fireEvent.keyDown(window, { key: 'd' });
       const archived = await screen.findByRole('checkbox', { name: 'Include archived email' });
-      expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('180');
+      expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
       await waitFor(() =>
         expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
           '5 emails will move',
@@ -620,7 +620,7 @@ describe('Screener Delete selected age and archived count stay together', () => 
       expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
         '45 emails will move',
       );
-      fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
+      fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
         target: { value: '30' },
       });
       missing = true;
@@ -685,7 +685,7 @@ describe('Screener Later age and return requests', () => {
       expandFirstRow();
       const before = Date.now();
       fireEvent.keyDown(window, { key: 'l' });
-      const age = await screen.findByRole('combobox', { name: 'How far back' });
+      const age = await screen.findByRole('combobox', { name: 'Email age' });
       expect(age).toHaveValue('all');
       const time = screen.getByLabelText('Return to inbox') as HTMLInputElement;
       expect(new Date(time.value).getTime()).toBeGreaterThanOrEqual(before + 7 * 86400000 - 60000);
@@ -734,7 +734,7 @@ describe('Screener Later age and return requests', () => {
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'l' });
-    const age = await screen.findByRole('combobox', { name: 'How far back' });
+    const age = await screen.findByRole('combobox', { name: 'Email age' });
     await waitFor(() =>
       expect(
         screen.getByRole('button', { name: `Later for ${firstRow.senderName}` }),
@@ -752,7 +752,7 @@ describe('Screener Later age and return requests', () => {
     expect(writes).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     fireEvent.keyDown(window, { key: 'l' });
-    expect(await screen.findByRole('combobox', { name: 'How far back' })).toHaveValue('all');
+    expect(await screen.findByRole('combobox', { name: 'Email age' })).toHaveValue('all');
     await waitFor(() =>
       expect(
         screen.getByRole('button', { name: `Later for ${firstRow.senderName}` }),

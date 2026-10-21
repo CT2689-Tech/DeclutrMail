@@ -294,14 +294,14 @@
   "simplify.unsubStatus.legacy": "We can’t confirm whether this earlier request went through.",
   "simplify.unsubReceipt.busy": "already in progress",
   "simplify.unsubReceipt.sending": "still sending",
-  "preview.age.label": "How far back",
-  "preview.age.any": "All time",
+  "preview.age.label": "Email age",
+  "preview.age.any": "Any age",
   "preview.age.olderThanDays": "Older than {n} days",
   "preview.age.olderThanYear": "Older than 1 year",
   "preview.age.unavailable": " (unavailable)",
   "preview.age.noLimit": "No date limit.",
   "preview.age.cutoff": "Emails from before about {date}.",
-  "preview.age.rangeUnavailable": "Can’t preview emails from this far back. Choose a different How far back.",
+  "preview.age.rangeUnavailable": "Can’t preview this email age. Choose a different age.",
   "preview.later.returnLabel": "Return to inbox",
   "preview.later.returnInvalid": "Choose a future return time.",
   "preview.impact.archive": {
@@ -335,7 +335,7 @@
     "one": "Your inbox has 1 email from {Sender}, but it isn’t older than {age}.",
     "other": "Your inbox has {n} emails from {Sender}, but none are older than {age}."
   },
-  "preview.zero.unsubHint": "Change How far back, or choose Unsubscribe only.",
+  "preview.zero.unsubHint": "Change Email age, or choose Unsubscribe only.",
   "preview.zero.noMove": "No email moves.",
   "preview.title.archive": "Archive emails from {Sender}?",
   "preview.title.delete": "Delete emails from {Sender}?",
@@ -374,5 +374,5 @@
   "preview.selection.included": "{k} selected · {m} included",
   "preview.selection.checking": "{k} selected · Checking which ones are included…",
   "preview.selection.unavailable": "{k} selected · Couldn’t check which ones are included",
-  "preview.later.bulkReturn": "They all come back at the same time."
+  "preview.later.bulkReturn": "All of them share that one return."
 }

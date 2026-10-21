@@ -27,14 +27,14 @@ describe('SendersSimulator', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
       if (mode === 'Delete') {
         fireEvent.click(within(preview()).getByRole('radio', { name: '+ Delete' }));
-        fireEvent.change(within(preview()).getByRole('combobox', { name: 'How far back' }), {
+        fireEvent.change(within(preview()).getByRole('combobox', { name: 'Email age' }), {
           target: { value: 'all' },
         });
         fireEvent.click(
           within(preview()).getByRole('checkbox', { name: 'Include archived email' }),
         );
       }
-      fireEvent.change(within(preview()).getByRole('combobox', { name: 'How far back' }), {
+      fireEvent.change(within(preview()).getByRole('combobox', { name: 'Email age' }), {
         target: { value: '180' },
       });
       const moved = mode === 'Delete' ? 155 : 45;
@@ -65,7 +65,7 @@ describe('SendersSimulator', () => {
     render(<SendersSimulator />);
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
     fireEvent.click(within(preview()).getByRole('radio', { name: '+ Delete' }));
-    fireEvent.change(within(preview()).getByRole('combobox', { name: 'How far back' }), {
+    fireEvent.change(within(preview()).getByRole('combobox', { name: 'Email age' }), {
       target: { value: 'all' },
     });
     fireEvent.click(within(preview()).getByRole('checkbox', { name: 'Include archived email' }));
@@ -82,7 +82,7 @@ describe('SendersSimulator', () => {
     fireEvent.click(within(activity).getByRole('button', { name: 'Undo' }));
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
     fireEvent.click(within(preview()).getByRole('radio', { name: '+ Delete' }));
-    fireEvent.change(within(preview()).getByRole('combobox', { name: 'How far back' }), {
+    fireEvent.change(within(preview()).getByRole('combobox', { name: 'Email age' }), {
       target: { value: 'all' },
     });
     const includeArchived = within(preview()).getByRole('checkbox', {
@@ -186,7 +186,7 @@ describe('SendersSimulator', () => {
         WS3_COPY['ws3.demo.details.deleted.value'],
       ]),
     );
-    fireEvent.change(within(dialog).getByRole('combobox', { name: 'How far back to act on' }), {
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Email age to act on' }), {
       target: { value: '365' },
     });
     expect(within(dialog).getByRole('heading')).toHaveTextContent('76 emails');
@@ -289,7 +289,7 @@ describe('SendersSimulator — WS5 sample surfaces', () => {
     expect(dialog).not.toHaveTextContent(/Unsubscribe and archive \d+ emails from /);
 
     fireEvent.click(within(dialog).getByRole('radio', { name: '+ Delete' }));
-    fireEvent.change(within(dialog).getByRole('combobox', { name: 'How far back' }), {
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Email age' }), {
       target: { value: 'all' },
     });
     expect(dialog).toHaveTextContent(WS5_COPY['f1.deleteNote']);
@@ -315,7 +315,7 @@ describe('SendersSimulator — WS5 sample surfaces', () => {
       }),
     );
     fireEvent.click(within(preview()).getByRole('radio', { name: '+ Delete' }));
-    fireEvent.change(within(preview()).getByRole('combobox', { name: 'How far back' }), {
+    fireEvent.change(within(preview()).getByRole('combobox', { name: 'Email age' }), {
       target: { value: 'all' },
     });
     fireEvent.click(

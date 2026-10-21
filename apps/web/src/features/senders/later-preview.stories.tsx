@@ -48,8 +48,8 @@ function LaterStory(args: ComponentProps<typeof ConfirmActionModal>) {
   return (
     <div style={{ padding: 24 }}>
       <p>
-        Fictional mailbox · no Gmail changes. Later starts at Inbox only · All time, with a return
-        in 7 days.
+        Fictional mailbox · no Gmail changes. Later starts at Inbox only · Any age, with a return in
+        7 days.
       </p>
       <Button onClick={() => setOpen(true)}>Review Later</Button>
       {result && <p role="status">{result}</p>}

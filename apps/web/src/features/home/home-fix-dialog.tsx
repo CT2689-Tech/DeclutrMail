@@ -31,16 +31,17 @@ export function HomeFixDialog({
 }) {
   const copy = homeFixCopy();
   const title = copy === null ? null : dialogTitle(step, copy);
+  const emailCount = step.emailCount;
   const trapRef = useFocusTrap<HTMLDivElement>(title !== null, {
     initialFocusSelector: '#home-fix-cancel',
   });
-  if (copy === null || title === null) return null;
+  if (copy === null || title === null || emailCount === undefined) return null;
   return (
     <DialogFrame
       panelRef={trapRef}
       role="alertdialog"
       titleId="home-fix-title"
-      descriptionId="home-fix-honesty"
+      descriptionId="home-fix-impact home-fix-honesty"
       onDismiss={onCancel}
       onKeyDown={(event) => {
         if (
@@ -65,6 +66,12 @@ export function HomeFixDialog({
       <h2 id="home-fix-title" style={{ ...tokens.typography.dialogTitle, margin: 0 }}>
         {title}
       </h2>
+      <p id="home-fix-impact" style={{ fontSize: tokens.text.md, lineHeight: 1.5 }}>
+        {step.senderCount === 1 && step.senderName ? <strong>{step.senderName}: </strong> : null}
+        {fillDeck(emailCount === 1 ? copy.impactOne : copy.impactOther, {
+          n: formatCount(emailCount),
+        })}
+      </p>
       <p
         id="home-fix-honesty"
         style={{ color: tokens.color.fgSoft, fontSize: tokens.text.sm, lineHeight: 1.5 }}

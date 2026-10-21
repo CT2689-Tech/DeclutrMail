@@ -126,7 +126,7 @@ export const UnsubscribeSubmitting: Story<typeof ConfirmActionModal> = {
   } satisfies Args,
 };
 
-/** Single sender, Archive — inbox-only, All time, count in the impact summary. */
+/** Single sender, Archive — inbox-only, Any age, count in the impact summary. */
 export const ArchiveOneSender: Story<typeof ConfirmActionModal> = {
   args: {
     ...base,

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { SCREENER_QUEUE } from './data';
@@ -6,11 +7,12 @@ import { DecidePreview } from './decide-preview';
 
 const row = SCREENER_QUEUE[0]!;
 
-describe('DecidePreview — Delete focus trap', () => {
-  it('keeps Tab inside the Delete preview', () => {
+describe('DecidePreview — inline keyboard navigation', () => {
+  it('lets Tab leave the nonmodal Delete preview without cancelling it', async () => {
+    const user = userEvent.setup();
+    const onCancel = vi.fn();
     render(
       <>
-        <button type="button">Outside the preview</button>
         <DecidePreview
           verb="delete"
           row={row}
@@ -19,24 +21,22 @@ describe('DecidePreview — Delete focus trap', () => {
           onWindowChange={vi.fn()}
           confirming={false}
           onConfirm={vi.fn()}
-          onCancel={vi.fn()}
+          onCancel={onCancel}
         />
+        <button type="button">Next row action</button>
       </>,
     );
     const preview = screen.getByRole('region', { name: /^Preview · Delete / });
-    const outside = screen.getByRole('button', { name: 'Outside the preview' });
+    const outside = screen.getByRole('button', { name: 'Next row action' });
+    expect(preview).toHaveAttribute('data-dm-preview-mode', 'inline');
+    expect(screen.queryByRole('dialog')).toBeNull();
     const confirm = screen.getByRole('button', { name: /^Delete/ });
     confirm.focus();
-    fireEvent.keyDown(preview, { key: 'Tab' });
-    expect(outside).not.toHaveFocus();
-    expect(preview.contains(document.activeElement)).toBe(true);
-    const first = preview.querySelector<HTMLElement>(
-      'button:not([disabled]), select:not([disabled]), a[href]',
-    );
-    first?.focus();
-    fireEvent.keyDown(preview, { key: 'Tab', shiftKey: true });
-    expect(outside).not.toHaveFocus();
-    expect(preview.contains(document.activeElement)).toBe(true);
+    await user.tab();
+    expect(outside).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(confirm).toHaveFocus();
+    expect(onCancel).not.toHaveBeenCalled();
   });
 });
 
@@ -60,7 +60,7 @@ describe('DecidePreview — live-preview confirm gate', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetryPreview).toHaveBeenCalledTimes(1);
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('180');
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
     expect(screen.getByRole('button', { name: /^Delete for/ })).toBeDisabled();
   });
   it('keeps Archive inbox-only and any age with an editable age and no Delete scope', () => {
@@ -82,9 +82,9 @@ describe('DecidePreview — live-preview confirm gate', () => {
       screen.getByRole('heading', { name: `Archive emails from ${row.senderName}?` }),
     ).toBeVisible();
     expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
-      '128 emails will leave your inbox and stay in Gmail.Inbox only · All time',
+      '128 emails will leave your inbox and stay in Gmail.Inbox only · Any age',
     );
-    expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('all');
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
     expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
     expect(screen.queryByText(/Emails from before about/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: `Archive for ${row.senderName}` }));
@@ -368,7 +368,7 @@ describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () =
         onCancel={vi.fn()}
       />,
     );
-    const age = screen.getByRole('combobox', { name: 'How far back' });
+    const age = screen.getByRole('combobox', { name: 'Email age' });
     expect(age).toHaveValue('180');
     expect(age).toHaveAccessibleDescription(/Emails from before about/);
     expect(screen.getByRole('option', { name: 'Older than 90 days' })).toBeEnabled();
@@ -511,7 +511,7 @@ describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () =
       />,
     );
     expect(screen.getByRole('button', { name: /^Delete/i })).toBeDisabled();
-    fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: 'all' },
     });
     expect(onWindowChange).toHaveBeenCalledWith(null);

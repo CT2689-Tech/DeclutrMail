@@ -39,6 +39,19 @@ const preview: CompositeActionPreviewResult = {
 };
 
 describe('Unsubscribe default choice', () => {
+  it('exposes the actual Senders choice as a standalone phone layout slot', () => {
+    render(
+      <ConfirmActionModal
+        request={request}
+        compositePreview={preview}
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole('radio', { name: 'Unsubscribe only' }).closest('.dm-sheet-choice-slot'),
+    ).not.toBeNull();
+  });
   it('puts the existing sender facts behind Details for one sender', () => {
     render(
       <ConfirmActionModal
@@ -161,12 +174,12 @@ describe('Unsubscribe uses the action preview contract', () => {
       />,
     );
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
-    fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: 'all' },
     });
     const includeArchived = screen.getByRole('checkbox', { name: 'Include archived email' });
     expect(includeArchived).not.toBeChecked();
-    fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: '180' },
     });
     expect(screen.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeEnabled();
@@ -198,12 +211,12 @@ describe('Unsubscribe uses the action preview contract', () => {
       );
       if (mode === 'delete') {
         fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
-        fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
+        fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
           target: { value: 'all' },
         });
         fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
       }
-      const window = screen.getByRole('combobox', { name: 'How far back' });
+      const window = screen.getByRole('combobox', { name: 'Email age' });
       expect(window).toHaveValue('all');
       fireEvent.change(window, { target: { value: '180' } });
       expect(window).toHaveValue('180');
@@ -243,15 +256,15 @@ describe('Unsubscribe uses the action preview contract', () => {
         onConfirm={onConfirm}
       />,
     );
-    fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: '365' },
     });
     expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeDisabled();
-    expect(screen.getByText('Change How far back, or choose Unsubscribe only.')).toBeVisible();
+    expect(screen.getByText('Change Email age, or choose Unsubscribe only.')).toBeVisible();
     fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
     expect(onConfirm).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
-    expect(screen.queryByRole('combobox', { name: 'How far back' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Email age' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
     expect(onConfirm).toHaveBeenCalledWith({
       secondary: null,
@@ -259,7 +272,7 @@ describe('Unsubscribe uses the action preview contract', () => {
       senderIds: [sender.id],
     });
     fireEvent.click(screen.getByRole('radio', { name: '+ Archive' }));
-    fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: 'all' },
     });
     expect(screen.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeEnabled();
@@ -269,7 +282,7 @@ describe('Unsubscribe uses the action preview contract', () => {
     const onConfirm = vi.fn();
     const props = { request, onCancel: vi.fn(), onConfirm };
     const { rerender } = render(<ConfirmActionModal {...props} compositePreview={preview} />);
-    fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: '90' },
     });
     rerender(
@@ -290,7 +303,7 @@ describe('Unsubscribe uses the action preview contract', () => {
         compositePreview={preview}
       />,
     );
-    expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('all');
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
     expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
       '4 email',
     );
@@ -330,7 +343,7 @@ describe('Unsubscribe uses the action preview contract', () => {
     const { rerender } = render(
       <ConfirmActionModal {...props} bulkPreview={{ data, loading: false, error: false }} />,
     );
-    fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: '90' },
     });
     expect(screen.getByRole('heading')).toHaveTextContent('2 senders');
@@ -407,7 +420,7 @@ describe('Unsubscribe uses the action preview contract', () => {
     );
     expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
-    fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: 'all' },
     });
     const includeArchived = screen.getByRole('checkbox', {
@@ -434,7 +447,7 @@ describe('Unsubscribe uses the action preview contract', () => {
     expect(onConfirm.mock.calls.at(-1)![0]).not.toHaveProperty('reach');
     expect(onConfirm.mock.calls.at(-1)![0]).toMatchObject({ senderIds: [sender.id] });
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
-    fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: 'all' },
     });
     expect(screen.getByRole('checkbox', { name: 'Include archived email' })).not.toBeChecked();
@@ -454,7 +467,7 @@ describe('Unsubscribe uses the action preview contract', () => {
     );
     expect(screen.getByRole('radio', { name: '+ Archive' })).toBeDisabled();
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
-    fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: 'all' },
     });
     expect(screen.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
@@ -477,7 +490,7 @@ describe('Unsubscribe uses the action preview contract', () => {
     const props = { request, onCancel: vi.fn(), onConfirm: vi.fn() };
     const { rerender } = render(<ConfirmActionModal {...props} compositePreview={widePreview} />);
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
-    fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: 'all' },
     });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
@@ -535,7 +548,7 @@ describe('Unsubscribe uses the action preview contract', () => {
       <ConfirmActionModal {...props} bulkPreview={{ data, loading: false, error: false }} />,
     );
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
-    fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: 'all' },
     });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
@@ -591,7 +604,7 @@ describe('Unsubscribe uses the action preview contract', () => {
         />,
       );
       if (mode === 'delete') fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
-      fireEvent.change(screen.getByRole('combobox', { name: 'How far back' }), {
+      fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
         target: { value: 'all' },
       });
       expect(screen.getByText('Details').closest('details')).not.toHaveAttribute('open');

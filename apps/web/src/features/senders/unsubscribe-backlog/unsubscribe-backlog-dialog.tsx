@@ -547,19 +547,21 @@ export function UnsubscribeBacklogDialog({
           {protectedSkipped > 0 && includedSenders.length > 0 ? (
             <p>{someProtectedSelectionCopy(protectedSkipped)}</p>
           ) : null}
-          <UnsubscribeChoices
-            value={mode}
-            onChange={(next) => {
-              setMode(next);
-              setDeleteReach('inbox_only');
-              setOlderThanDays(next === 'delete' ? DEFAULT_DELETE_WINDOW_DAYS : null);
-              setWindowRequestKey(requestKey);
-            }}
-            archiveDisabled={allInboxCount === null || allInboxCount === 0}
-            deleteDisabled={
-              allInboxCount === null || (allInboxCount === 0 && !(allReachCount ?? 0))
-            }
-          />
+          <div className="dm-unsub-choice">
+            <UnsubscribeChoices
+              value={mode}
+              onChange={(next) => {
+                setMode(next);
+                setDeleteReach('inbox_only');
+                setOlderThanDays(next === 'delete' ? DEFAULT_DELETE_WINDOW_DAYS : null);
+                setWindowRequestKey(requestKey);
+              }}
+              archiveDisabled={allInboxCount === null || allInboxCount === 0}
+              deleteDisabled={
+                allInboxCount === null || (allInboxCount === 0 && !(allReachCount ?? 0))
+              }
+            />
+          </div>
           {mode !== 'unsub_only' && (
             <CleanupPreview
               olderThanDays={activeWindow}

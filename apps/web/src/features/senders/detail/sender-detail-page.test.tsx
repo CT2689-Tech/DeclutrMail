@@ -1210,7 +1210,7 @@ describe('SenderDetailRoute', () => {
       const dialog = await screen.findByRole('dialog');
       if (verb === 'Delete') {
         const window = await within(dialog).findByRole('combobox', {
-          name: 'How far back',
+          name: 'Email age',
         });
         fireEvent.change(window, { target: { value: 'all' } });
       }
@@ -1454,12 +1454,12 @@ describe('SenderDetailRoute', () => {
       const dialog = screen.getByRole('dialog');
       const includeArchived = () =>
         within(dialog).queryByRole('checkbox', { name: 'Include archived email' });
-      // An empty inbox hides How far back until archived email is included.
+      // An empty inbox hides Email age until archived email is included.
       // A tied age window hides the checkbox until the window changes.
       if (verb === 'Delete' && includeArchived()) fireEvent.click(includeArchived()!);
       if (verb !== 'Later') {
         const windowControl = within(dialog).queryByRole('combobox', {
-          name: 'How far back',
+          name: 'Email age',
         });
         if (windowControl) {
           fireEvent.change(windowControl, {

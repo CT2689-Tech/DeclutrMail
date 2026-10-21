@@ -35,6 +35,8 @@ const FIX: HomeFixCopy = {
   titleThisSender: WS5_COPY['preview.title.unsubThisSender'],
   titleBulkOne: WS5_COPY['preview.title.bulk.unsub'].one,
   titleBulkOther: WS5_COPY['preview.title.bulk.unsub'].other,
+  impactOne: WS5_COPY['f1.preview.backlog.archive'].one,
+  impactOther: WS5_COPY['f1.preview.backlog.archive'].other,
   button: WS5_COPY['f1.button.archive'],
   cancel: WS5_COPY['f1.button.cancel'],
   honesty: WS5_COPY['f1.honesty.archive'],

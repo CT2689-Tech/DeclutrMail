@@ -55,8 +55,8 @@ function UnsubscribeStory(args: ComponentProps<typeof ConfirmActionModal>) {
   return (
     <div style={{ padding: 24 }}>
       <p>
-        Fictional mailbox · no Gmail changes. Archive starts at All time; Delete starts at Older
-        than 180 days.
+        Fictional mailbox · no Gmail changes. Archive starts at Any age; Delete starts at Older than
+        180 days.
       </p>
       <Button onClick={() => setOpen(true)}>Review Unsubscribe</Button>
       {result && <p role="status">{result}</p>}

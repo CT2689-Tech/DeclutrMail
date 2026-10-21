@@ -578,7 +578,7 @@ describe('D245 absolute times render in one clock per surface', () => {
 // whole pile back at once on a date chosen while it was out of sight. The
 // preview stated the count and the return date in separate sentences and
 // left the reader to join them.
-describe('D226 Later says when the whole pile comes back at once', () => {
+describe('D226 Later names one scheduled return at scale', () => {
   const later = (liveCount: number | null, wakeAt: string | null = '2026-09-03T08:01:00.000Z') =>
     buildActionPresentation({
       verb: 'later',
@@ -590,11 +590,11 @@ describe('D226 Later says when the whole pile comes back at once', () => {
 
   it('names the shared return time once the reach crosses the threshold', () => {
     const p = later(1_718);
-    expect(p.bulkReturnNotice).toBe('They all come back at the same time.');
+    expect(p.bulkReturnNotice).toBe('All of them share that one return.');
     // In the shared copy too, so any surface rendering it inherits the
     // sentence without wiring a prop of its own.
-    expect(p.effectCopy).toContain('They all come back at the same time.');
-    expect(p.previewCopy).toContain('They all come back at the same time.');
+    expect(p.effectCopy).toContain('All of them share that one return.');
+    expect(p.previewCopy).toContain('All of them share that one return.');
   });
 
   // The count is stated once, in the headline, under its own "rechecked
@@ -621,18 +621,20 @@ describe('D226 Later says when the whole pile comes back at once', () => {
     expect(p.schedule.summary).toMatch(/^Returns to Inbox from /);
   });
 
-  it('says the whole pile comes back at the same time', () => {
-    expect(later(1_718).bulkReturnNotice).toBe('They all come back at the same time.');
+  it('names one scheduled return without promising simultaneous delivery', () => {
+    const notice = later(1_718).bulkReturnNotice ?? '';
+    expect(notice).not.toMatch(/together|at once|at the same time|simultaneous|all in one/i);
+    expect(notice).toContain('one return');
   });
 
   it('stays quiet below the threshold', () => {
     expect(later(LATER_BULK_RETURN_NOTICE_THRESHOLD - 1).bulkReturnNotice).toBeNull();
-    expect(later(17).effectCopy).not.toContain('come back at the same time');
+    expect(later(17).effectCopy).not.toContain('share that one return');
   });
 
   it('fires exactly at the threshold', () => {
     expect(later(LATER_BULK_RETURN_NOTICE_THRESHOLD).bulkReturnNotice).toBe(
-      'They all come back at the same time.',
+      'All of them share that one return.',
     );
   });
 

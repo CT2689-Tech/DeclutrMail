@@ -922,9 +922,9 @@ export function SendersSimulator() {
             )}
             {(mailVerb === 'archive' || mailVerb === 'delete') && (
               <label className="dm-senders-demo-window">
-                How far back
+                Email age
                 <select
-                  aria-label="How far back to act on"
+                  aria-label="Email age to act on"
                   value={olderThanDays ?? 'all'}
                   onChange={(event) =>
                     setOlderThanDays(

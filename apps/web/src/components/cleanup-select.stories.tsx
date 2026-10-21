@@ -5,11 +5,11 @@ const meta: Meta<typeof CleanupSelect> = {
   title: 'Actions/CleanupSelect',
   component: CleanupSelect,
   args: {
-    'aria-label': 'How far back',
+    'aria-label': 'Email age',
     defaultValue: '180',
     children: [
       <option key="all" value="all">
-        All time
+        Any age
       </option>,
       <option key="180" value="180">
         Older than 180 days

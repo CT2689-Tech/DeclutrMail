@@ -38,8 +38,8 @@ function CleanupStory(args: ComponentProps<typeof DecidePreview>) {
         {isDelete
           ? 'Delete keeps its 180-day default'
           : args.verb === 'later'
-            ? 'Later starts at All time, with a return in 7 days'
-            : 'Archive keeps Inbox only · All time'}
+            ? 'Later starts at Any age, with a return in 7 days'
+            : 'Archive keeps Inbox only · Any age'}
         .
       </p>
       {result && <p role="status">{result}</p>}
