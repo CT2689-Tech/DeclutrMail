@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { expect, test, type Locator } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 const webRoot = fileURLToPath(new URL('../../../apps/web', import.meta.url));
 const requireFromShared = createRequire(new URL('../../shared/package.json', import.meta.url));
@@ -66,7 +66,16 @@ if (process.env.DM_CLEANUP_REVIEW_DIR) {
 }
 let server: ReturnType<typeof createServer>;
 let url: string;
+const pageErrors = new WeakMap<Page, string[]>();
 test.use({ storageState: { cookies: [], origins: [] } });
+test.beforeEach(({ page }) => {
+  const errors: string[] = [];
+  pageErrors.set(page, errors);
+  page.on('pageerror', (error) => errors.push(error.message));
+});
+test.afterEach(({ page }) => {
+  expect(pageErrors.get(page), 'review components have no uncaught browser errors').toEqual([]);
+});
 test.beforeAll(async () => {
   server = createServer((req, res) => {
     const kind =
@@ -96,7 +105,8 @@ for (const viewport of [
         await page.goto(`${url}?surface=${surface}`);
         const opener = page.getByRole('button', { name: `Review ${surface}`, exact: true });
         await opener.click();
-        const dialog = page.getByRole('dialog');
+        const dialog = page.getByRole('alertdialog');
+        await expect(dialog).toContainText('fixture@example.invalid');
         for (const name of ['Unsubscribe only', '+ Archive', '+ Delete'])
           await fullyVisible(dialog.getByRole('radio', { name, exact: true }));
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(

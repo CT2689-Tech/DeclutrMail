@@ -127,7 +127,7 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
       fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
       expect(onRetryPreview).toHaveBeenCalledOnce();
       expect(onConfirm).not.toHaveBeenCalled();
-      expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('90');
+      expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('90');
     },
   );
 

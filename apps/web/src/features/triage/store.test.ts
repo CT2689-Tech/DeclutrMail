@@ -139,7 +139,7 @@ describe('useTriageStore — honest session payoff', () => {
 });
 
 describe('cleanup preview age and reach', () => {
-  it('starts Delete at 180 days, preserves explicit All time, and clears scope for a new preview', () => {
+  it('starts Delete at 180 days, preserves explicit Any age, and clears scope for a new preview', () => {
     const store = useTriageStore.getState();
     store.openPending('Delete', 'row-1', 'sheet');
     expect(useTriageStore.getState().pendingAction?.olderThanDays).toBe(180);

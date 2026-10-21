@@ -58,7 +58,7 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
       screen.getByRole('heading', { name: `Archive emails from ${row.senderName}?` }),
     ).toBeVisible();
     expect(screen.getByRole('dialog')).toHaveAccessibleDescription(
-      /128 emails will leave your inbox and stay in Gmail.*Inbox only.*All time/,
+      /128 emails will leave your inbox and stay in Gmail.*Inbox only.*Any age/,
     );
     expect(screen.queryByRole('combobox')).toBeNull();
     expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
@@ -94,7 +94,7 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
     expect(screen.getByRole('dialog')).toHaveAccessibleDescription(
       /Future email is unchanged.*84 emails will move to Gmail Trash.*Inbox only.*Older than 180 days/,
     );
-    expect(screen.getByRole('combobox', { name: 'How far back' })).toHaveValue('180');
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
     expect(screen.getByText(/Emails from before about/)).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     expect(onConfirm).toHaveBeenCalledWith({
@@ -1209,7 +1209,7 @@ describe('ActionSheet Unsubscribe preview recovery', () => {
     expect(
       screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
     ).toBeDisabled();
-    expect(screen.getByText('Change How far back, or choose Unsubscribe only.')).toBeVisible();
+    expect(screen.getByText('Change Email age, or choose Unsubscribe only.')).toBeVisible();
     expect(screen.queryByText(/Counting the inbox/)).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
     expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();

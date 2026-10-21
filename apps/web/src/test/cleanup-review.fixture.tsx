@@ -87,6 +87,7 @@ function Fixture() {
       </output>
       {open && surface === 'senders' && (
         <UnsubscribeBacklogDialog
+          mailboxEmail="fixture@example.invalid"
           request={{ verb: 'Unsubscribe', senders: [sender] }}
           compositePreview={preview}
           onCancel={cancel}
@@ -96,6 +97,7 @@ function Fixture() {
       {open && surface === 'triage' && (
         <ActionSheet
           open
+          mailboxEmail="fixture@example.invalid"
           verb="Unsubscribe"
           row={{ ...TRIAGE_QUEUE[0]!, senderName: sender.name, inboxCount: 12 }}
           inboxCount={reach === 'all_mail' ? allMailCount : inboxCount}
