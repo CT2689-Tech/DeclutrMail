@@ -163,10 +163,10 @@ export function ActionSheet({
   });
   if (choiceRef.current.key !== actionKey) {
     choiceRef.current = { key: actionKey, inbox: rowInbox ?? countKnown };
-  } else if (choiceRef.current.inbox === null && rowInbox === null && countKnown !== null) {
+  } else if (choiceRef.current.inbox === null && countKnown !== null) {
     choiceRef.current = { key: actionKey, inbox: countKnown };
   }
-  const openingInbox = rowInbox ?? choiceRef.current.inbox;
+  const openingInbox = choiceRef.current.inbox;
   const defaultBacklog =
     verb === 'Unsubscribe' &&
     row?.protectionReason == null &&

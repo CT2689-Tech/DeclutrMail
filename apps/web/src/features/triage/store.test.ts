@@ -111,6 +111,22 @@ describe('useTriageStore — pending action lifecycle (D226)', () => {
     useTriageStore.getState().clearPending();
     expect(useTriageStore.getState().pendingAction).toBeNull();
   });
+
+  it('reopening the same sender captures a new choice and ignores a stale preview resolution', () => {
+    const store = useTriageStore.getState();
+    store.openPending('Unsubscribe', 'row-1', 'inline');
+    const previous = useTriageStore.getState().pendingAction!;
+    store.clearPending();
+    store.openPending('Unsubscribe', 'row-1', 'inline', 0);
+    store.resolvePendingOpeningCount(previous, 12);
+    expect(useTriageStore.getState().pendingAction?.openingBacklogMode).toBe('unsub_only');
+
+    store.openPending('Unsubscribe', 'row-1', 'sheet', 12);
+    expect(useTriageStore.getState().pendingAction?.openingBacklogMode).toBe('archive');
+    store.clearPending();
+    store.resolvePendingOpeningCount(previous, 12);
+    expect(useTriageStore.getState().pendingAction).toBeNull();
+  });
 });
 
 describe('useTriageStore — honest session payoff', () => {

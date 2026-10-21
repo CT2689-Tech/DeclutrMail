@@ -72,6 +72,8 @@ export interface PendingAction {
    * the inline preview defaults to Archive when the inbox count is above zero.
    */
   backlogMode?: UnsubscribeBacklogMode | null;
+  /** Opening default, retained through queue and preview refreshes. */
+  openingBacklogMode?: 'unsub_only' | 'archive' | null;
 }
 
 export interface TriageState {
@@ -117,7 +119,14 @@ export interface TriageActions {
   /** Toggle: pass the currently-expanded id to collapse it. */
   toggleExpandedRow: (id: string) => void;
   /** Open the pending-action surface for `verb` on `rowId`. */
-  openPending: (verb: ActionVerb, rowId: string, surface: 'sheet' | 'inline') => void;
+  openPending: (
+    verb: ActionVerb,
+    rowId: string,
+    surface: 'sheet' | 'inline',
+    inboxCount?: number,
+  ) => void;
+  /** Adopt the first live inbox total only when opening had no count. */
+  resolvePendingOpeningCount: (pending: PendingAction, inboxCount: number) => void;
   /** Record the skip-sheet unsubscribe choice. */
   setPendingBacklogMode: (mode: UnsubscribeBacklogMode) => void;
   setPendingOlderThanDays: (days: number | null) => void;
@@ -160,7 +169,7 @@ export const useTriageStore = create<TriageState & TriageActions>((set) => ({
 
   toggleExpandedRow: (id) => set((s) => ({ expandedRowId: s.expandedRowId === id ? null : id })),
 
-  openPending: (verb, rowId, surface) =>
+  openPending: (verb, rowId, surface, inboxCount) =>
     set({
       pendingAction: {
         verb,
@@ -168,9 +177,29 @@ export const useTriageStore = create<TriageState & TriageActions>((set) => ({
         surface,
         wakeAt: verb === 'Later' ? defaultLaterWakeAtIso() : null,
         backlogMode: null,
+        ...(verb === 'Unsubscribe'
+          ? {
+              openingBacklogMode:
+                inboxCount === undefined ? null : inboxCount > 0 ? 'archive' : 'unsub_only',
+            }
+          : {}),
         ...(verb === 'Delete' ? { olderThanDays: DEFAULT_DELETE_WINDOW_DAYS } : {}),
       },
     }),
+
+  resolvePendingOpeningCount: (pending, inboxCount) =>
+    set((s) =>
+      s.pendingAction === pending &&
+      pending.verb === 'Unsubscribe' &&
+      pending.openingBacklogMode == null
+        ? {
+            pendingAction: {
+              ...pending,
+              openingBacklogMode: inboxCount > 0 ? 'archive' : 'unsub_only',
+            },
+          }
+        : s,
+    ),
 
   setPendingBacklogMode: (mode) =>
     set((s) =>

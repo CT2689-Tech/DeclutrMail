@@ -271,6 +271,7 @@ export function TriageScreen({
   const setDeleteReach = useTriageStore((s) => s.setPendingReach);
   const rememberPreference = useTriageStore((s) => s.rememberPreference);
   const openPending = useTriageStore((s) => s.openPending);
+  const resolvePendingOpeningCount = useTriageStore((s) => s.resolvePendingOpeningCount);
   const clearPending = useTriageStore((s) => s.clearPending);
   const setRememberPreference = useTriageStore((s) => s.setRememberPreference);
   const setExpandedRow = useTriageStore((s) => s.setExpandedRow);
@@ -643,9 +644,26 @@ export function TriageScreen({
    */
   const cleanupRemaining = auth?.me.cleanupRemaining ?? null;
 
-  // Row facts choose the opening option while the live preview loads.
-  // Only previewInboxCount above can arm a mail-moving confirmation.
-  const unsubscribeInboxTotal = compositePreview.data?.counts.all ?? pendingRow?.inboxCount ?? null;
+  const unsubscribeInboxTotal = compositePreview.data?.counts.all ?? null;
+  // The opening choice is client intent, not a live queue count. If no
+  // count was known at open, capture the first completed preview once.
+  useEffect(() => {
+    if (
+      pendingAction?.verb === 'Unsubscribe' &&
+      pendingAction.openingBacklogMode == null &&
+      !compositePreview.isFetching &&
+      !compositePreview.isError &&
+      compositePreview.data != null
+    ) {
+      resolvePendingOpeningCount(pendingAction, compositePreview.data.counts.all);
+    }
+  }, [
+    pendingAction,
+    compositePreview.data,
+    compositePreview.isFetching,
+    compositePreview.isError,
+    resolvePendingOpeningCount,
+  ]);
   const previewDetail: ActionPreviewDetail | undefined = (() => {
     const data = compositePreview.data;
     const ageControl = hasAgeControl
@@ -772,12 +790,12 @@ export function TriageScreen({
   // with the sheet skipped via D34, so it has to refuse it identically.
   // Unsubscribe only still cuts future mail at a zero count, and when the
   // preview fails. While the count is loading, the confirm stays closed.
-  const inlineOpeningInbox =
-    typeof pendingRow?.inboxCount === 'number' ? pendingRow.inboxCount : unsubscribeInboxTotal;
+  const inlineBacklogMode =
+    pendingAction?.backlogMode ??
+    pendingAction?.openingBacklogMode ??
+    ((unsubscribeInboxTotal ?? 0) > 0 ? 'archive' : 'unsub_only');
   const inlineUnsubOnly =
-    pendingAction?.verb === 'Unsubscribe' &&
-    (pendingAction.backlogMode ?? ((inlineOpeningInbox ?? 0) > 0 ? 'archive' : 'unsub_only')) ===
-      'unsub_only';
+    pendingAction?.verb === 'Unsubscribe' && inlineBacklogMode === 'unsub_only';
   const inlinePreviewBlocked =
     pendingAction?.surface === 'inline' &&
     (((pendingAction.verb === 'Archive' ||
@@ -1364,7 +1382,7 @@ export function TriageScreen({
       // preference is intentionally limited to lower-consequence verbs.
       const surface: 'sheet' | 'inline' =
         sheetableVerb !== 'Delete' && rememberPreference[sheetableVerb] ? 'inline' : 'sheet';
-      openPending(sheetableVerb, row.id, surface);
+      openPending(sheetableVerb, row.id, surface, row.inboxCount);
       // When inline preview is the surface, expand the row so the
       // preview is visible — and the user's eye is already there.
       if (surface === 'inline') {
@@ -1413,15 +1431,7 @@ export function TriageScreen({
         pendingAction.verb === verb
       ) {
         if (inlinePreviewBlocked) return;
-        const backlogMode =
-          verb === 'Unsubscribe'
-            ? (pendingAction.backlogMode ??
-              ((typeof row.inboxCount === 'number'
-                ? row.inboxCount
-                : (unsubscribeInboxTotal ?? 0)) > 0
-                ? 'archive'
-                : 'unsub_only'))
-            : undefined;
+        const backlogMode = verb === 'Unsubscribe' ? inlineBacklogMode : undefined;
         // Second click on the same verb confirms the choice on screen.
         dispatchAction(
           verb,
@@ -1447,7 +1457,7 @@ export function TriageScreen({
     [
       pendingAction,
       previewAge,
-      unsubscribeInboxTotal,
+      inlineBacklogMode,
       previewInboxCount,
       inlinePreviewBlocked,
       dispatchAction,

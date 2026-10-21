@@ -223,6 +223,146 @@ describe('TriageScreen — D226 mutation wiring', () => {
     },
   );
 
+  describe.each(['list', 'focus'] as const)('%s opening Unsubscribe choice', (mode) => {
+    it.each([0, 12])(
+      'retains the first resolved total %i when opening had no row count',
+      async (firstCount) => {
+        storeTriageMode(mode);
+        useTriageStore.getState().setRememberPreference('Unsubscribe', true);
+        let liveCount = firstCount;
+        const bodies: unknown[] = [];
+        installFetchStub([
+          {
+            method: 'GET',
+            path: '/api/actions/preview',
+            respond: () => jsonOk({ data: { ...PREVIEW_BODY, counts: { all: liveCount } } }),
+          },
+          {
+            method: 'POST',
+            path: '/api/actions/unsubscribe-backlog',
+            respond: async (req) => {
+              bodies.push(await req.json());
+              return jsonServerError();
+            },
+          },
+        ]);
+        const client = createTestQueryClient();
+        const content = (inboxCount?: number) => (
+          <QueryWrapper client={client}>
+            <TriageScreen
+              state={{
+                kind: 'ready',
+                rows: [{ ...LINKEDIN, ...(inboxCount === undefined ? {} : { inboxCount }) }],
+                stats: TRIAGE_SESSION_STATS,
+              }}
+            />
+          </QueryWrapper>
+        );
+        const view = render(content());
+        if (mode === 'list') expandRow(LINKEDIN.senderName);
+        fireEvent.keyDown(window, { key: 'u' });
+        const preview = await screen.findByRole('region', { name: /^Preview · Unsubscribe / });
+        const selectedName = firstCount > 0 ? '+ Archive' : 'Unsubscribe only';
+        const confirm = () =>
+          within(preview).getByRole('button', { name: /^Unsubscribe(?: \+ Archive)?$/ });
+        await waitFor(() => expect(confirm()).toBeEnabled());
+        expect(within(preview).getByRole('radio', { name: selectedName })).toBeChecked();
+
+        liveCount = firstCount === 0 ? 12 : 0;
+        view.rerender(content(liveCount));
+        await act(async () => {
+          await client.invalidateQueries({ queryKey: ['composite-preview'] });
+        });
+        expect(within(preview).getByRole('radio', { name: selectedName })).toBeChecked();
+        if (firstCount > 0) {
+          await waitFor(() => expect(confirm()).toBeDisabled());
+          fireEvent.keyDown(window, { key: 'u' });
+          expect(bodies).toHaveLength(0);
+          liveCount = 12;
+          await act(async () => {
+            await client.invalidateQueries({ queryKey: ['composite-preview'] });
+          });
+          await waitFor(() => expect(confirm()).toBeEnabled());
+        }
+        fireEvent.keyDown(window, { key: 'u' });
+        await waitFor(() => expect(bodies).toHaveLength(1));
+        expect(bodies[0]).toMatchObject({ mode: firstCount > 0 ? 'archive' : 'unsub_only' });
+      },
+    );
+
+    it.each([
+      [0, 12, 'sheet', 'click'],
+      [12, 0, 'sheet', 'click'],
+      [0, 12, 'sheet', 'shortcut'],
+      [12, 0, 'sheet', 'shortcut'],
+      [0, 12, 'inline', 'click'],
+      [12, 0, 'inline', 'click'],
+      [0, 12, 'inline', 'shortcut'],
+      [12, 0, 'inline', 'shortcut'],
+    ] as const)(
+      'preserves row count %i → %i through %s confirmation by %s',
+      async (initialCount, refreshedCount, surface, submit) => {
+        storeTriageMode(mode);
+        useTriageStore.getState().setRememberPreference('Unsubscribe', surface === 'inline');
+        const bodies: unknown[] = [];
+        installFetchStub([
+          {
+            method: 'GET',
+            path: '/api/actions/preview',
+            respond: () => jsonOk({ data: { ...PREVIEW_BODY, counts: { all: 12 } } }),
+          },
+          {
+            method: 'POST',
+            path: '/api/actions/unsubscribe-backlog',
+            respond: async (req) => {
+              bodies.push(await req.json());
+              return jsonServerError();
+            },
+          },
+        ]);
+        const client = createTestQueryClient();
+        const content = (inboxCount: number) => (
+          <QueryWrapper client={client}>
+            <TriageScreen
+              state={{
+                kind: 'ready',
+                rows: [{ ...LINKEDIN, inboxCount }],
+                stats: TRIAGE_SESSION_STATS,
+              }}
+            />
+          </QueryWrapper>
+        );
+        const view = render(content(initialCount));
+        if (mode === 'list') expandRow(LINKEDIN.senderName);
+        fireEvent.keyDown(window, { key: 'u' });
+        const preview =
+          surface === 'sheet'
+            ? await screen.findByRole('dialog')
+            : await screen.findByRole('region', { name: /^Preview · Unsubscribe / });
+        const expectedMode = initialCount > 0 ? 'archive' : 'unsub_only';
+        const selectedName = initialCount > 0 ? '+ Archive' : 'Unsubscribe only';
+        const confirm = () =>
+          within(preview).getByRole('button', { name: /^Unsubscribe(?: \+ Archive)?$/ });
+        await waitFor(() => expect(confirm()).toBeEnabled());
+        expect(within(preview).getByRole('radio', { name: selectedName })).toBeChecked();
+
+        // A queue-only refresh changes this same row while the composite
+        // preview remains 12. No segment interaction reaffirms the choice.
+        view.rerender(content(refreshedCount));
+        expect.soft(within(preview).getByRole('radio', { name: selectedName })).toBeChecked();
+        if (submit === 'click') fireEvent.click(confirm());
+        else
+          fireEvent.keyDown(
+            window,
+            surface === 'sheet' ? { key: 'Enter', metaKey: true } : { key: 'u' },
+          );
+        await waitFor(() => expect(bodies).toHaveLength(1));
+        expect(bodies[0]).toMatchObject({ mode: expectedMode, senderIds: [LINKEDIN.senderId] });
+        if (expectedMode === 'archive') expect(bodies[0]).toHaveProperty('olderThanDays', null);
+      },
+    );
+  });
+
   it('counts confirmed decisions when the queue backfills, then resets on mailbox switch', async () => {
     const backfill = TRIAGE_QUEUE[2]!;
     addFetchHandlers([

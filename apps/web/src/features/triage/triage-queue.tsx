@@ -40,20 +40,16 @@ export function inlinePreviewFor(
     detail: ActionPreviewDetail | undefined;
     quotaRemaining: number | null | undefined;
   },
-  /** Inbox mail already on the row, used only while the live preview loads. */
-  knownInboxCount?: number,
 ): InlinePreview | null {
   if (pendingAction == null || pendingAction.rowId !== rowId || pendingAction.surface !== 'inline')
     return null;
   const count = typeof preview.inboxCount === 'number' ? preview.inboxCount : null;
-  // The row's inbox total wins over a later preview so the opening choice
-  // does not move when the count arrives. Without one, the live count is
-  // the same signal Senders uses once the preview has resolved.
-  const openingInbox =
-    typeof knownInboxCount === 'number' ? knownInboxCount : (preview.detail?.inboxTotal ?? count);
+  const openingInbox = preview.detail?.inboxTotal ?? count;
   const backlogMode =
     pendingAction.verb === 'Unsubscribe'
-      ? (pendingAction.backlogMode ?? ((openingInbox ?? 0) > 0 ? 'archive' : 'unsub_only'))
+      ? (pendingAction.backlogMode ??
+        pendingAction.openingBacklogMode ??
+        ((openingInbox ?? 0) > 0 ? 'archive' : 'unsub_only'))
       : 'unsub_only';
   return {
     verb: pendingAction.verb,
@@ -190,18 +186,13 @@ export function TriageQueue({
         }
         const row = item.row;
         const expanded = expandedRowId === row.id;
-        const inlinePreview = inlinePreviewFor(
-          row.id,
-          pendingAction,
-          {
-            inboxCount: previewInboxCount,
-            onCancel: clearPending,
-            onRetryPreview,
-            detail: previewDetail,
-            quotaRemaining: previewQuotaRemaining,
-          },
-          row.inboxCount,
-        );
+        const inlinePreview = inlinePreviewFor(row.id, pendingAction, {
+          inboxCount: previewInboxCount,
+          onCancel: clearPending,
+          onRetryPreview,
+          detail: previewDetail,
+          quotaRemaining: previewQuotaRemaining,
+        });
         return (
           <div key={row.id} role="listitem">
             <TriageRow
