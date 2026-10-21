@@ -859,7 +859,7 @@ export function SendersSimulator() {
           }}
           status={
             pending.verb === 'Later' && !(Date.parse(wakeAt) > Date.now())
-              ? 'Pick a future return time.'
+              ? WS5_COPY['preview.later.returnInvalid']
               : undefined
           }
           details={
@@ -922,9 +922,9 @@ export function SendersSimulator() {
             )}
             {(mailVerb === 'archive' || mailVerb === 'delete') && (
               <label className="dm-senders-demo-window">
-                How far back
+                Email age
                 <select
-                  aria-label="How far back to act on"
+                  aria-label="Email age to act on"
                   value={olderThanDays ?? 'all'}
                   onChange={(event) =>
                     setOlderThanDays(
@@ -946,7 +946,6 @@ export function SendersSimulator() {
                 Returns
                 <input
                   type="datetime-local"
-                  aria-label="Later return time"
                   value={wakeAt}
                   onChange={(event) => setWakeAt(event.target.value)}
                 />

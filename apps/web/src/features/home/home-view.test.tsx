@@ -265,7 +265,7 @@ describe('HomeView', () => {
     );
     fireEvent.click(unsubscribe);
     expect(await screen.findByRole('alertdialog')).toHaveTextContent(
-      'Unsubscribe from 158 senders and archive 1,200 emails?',
+      'Unsubscribe from 158 senders?',
     );
     const laterCard = screen.getByRole('link', { name: 'Open Later' }).closest('article');
     expect(laterCard).toHaveTextContent(HOME_DECK.laterBody);

@@ -902,7 +902,7 @@ describe('SenderDetailRoute', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
       const dialog = await screen.findByRole('dialog');
       const confirm = await within(dialog).findByRole('button', {
-        name: /^Unsubscribe(?: & archive)?$/,
+        name: /^Unsubscribe(?: \+ Archive)?$/,
       });
       await waitFor(() => expect(confirm).toBeEnabled());
       Object.assign(current, { policyType: 'unsubscribe', unsubStatus: 'endpoint_accepted' });
@@ -958,7 +958,7 @@ describe('SenderDetailRoute', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
       const dialog = await screen.findByRole('dialog');
       const confirm = await within(dialog).findByRole('button', {
-        name: /^Unsubscribe(?: & archive)?$/,
+        name: /^Unsubscribe(?: \+ Archive)?$/,
       });
       await waitFor(() => expect(confirm).toBeEnabled());
       const readsBeforeConfirm = detailReads;
@@ -1026,7 +1026,7 @@ describe('SenderDetailRoute', () => {
       const view = renderDetail('linkedin', undefined, layout);
       fireEvent.click(await screen.findByRole('button', { name: /^Unsubscribe(?: \(U\))?$/ }));
       const dialog = await screen.findByRole('dialog');
-      const confirm = within(dialog).getByRole('button', { name: /^Unsubscribe(?: & archive)?$/ });
+      const confirm = within(dialog).getByRole('button', { name: /^Unsubscribe(?: \+ Archive)?$/ });
       await waitFor(() => expect(confirm).toBeEnabled());
       hold = true;
       await lastClient.invalidateQueries({
@@ -1096,7 +1096,7 @@ describe('SenderDetailRoute', () => {
     renderDetail();
     fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
     const dialog = await screen.findByRole('dialog');
-    const confirm = within(dialog).getByRole('button', { name: /^Unsubscribe(?: & archive)?$/ });
+    const confirm = within(dialog).getByRole('button', { name: /^Unsubscribe(?: \+ Archive)?$/ });
     await waitFor(() => expect(confirm).toBeEnabled());
     await lastClient.invalidateQueries({
       queryKey: sendersKeys.detail('linkedin'),
@@ -1150,7 +1150,7 @@ describe('SenderDetailRoute', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
     const dialog = await screen.findByRole('dialog');
     const confirm = await within(dialog).findByRole('button', {
-      name: /^Unsubscribe(?: & archive)?$/,
+      name: /^Unsubscribe(?: \+ Archive)?$/,
     });
     await waitFor(() => expect(confirm).toBeEnabled());
     failDetail = true;
@@ -1454,7 +1454,7 @@ describe('SenderDetailRoute', () => {
       const dialog = screen.getByRole('dialog');
       const includeArchived = () =>
         within(dialog).queryByRole('checkbox', { name: 'Include archived email' });
-      // An empty inbox hides How far back until archived email is included.
+      // An empty inbox hides Email age until archived email is included.
       // A tied age window hides the checkbox until the window changes.
       if (verb === 'Delete' && includeArchived()) fireEvent.click(includeArchived()!);
       if (verb !== 'Later') {
@@ -1471,7 +1471,7 @@ describe('SenderDetailRoute', () => {
         fireEvent.click(includeArchived()!);
       }
       if (verb === 'Later')
-        expect(screen.getByRole('region', { name: 'Later impact' })).toHaveTextContent(
+        expect(screen.getByRole('region', { name: 'What Later will do' })).toHaveTextContent(
           `${affected} emails will move`,
         );
       const confirm = await within(dialog).findByRole('button', {
@@ -2754,14 +2754,14 @@ describe('SenderDetailRoute', () => {
         expect(
           await within(dialog).findByText(/is Protected because you marked it Protected\./),
         ).toBeInTheDocument();
-        expect(within(dialog).queryByRole('button', { name: 'Unsubscribe & archive' })).toBeNull();
+        expect(within(dialog).queryByRole('button', { name: 'Unsubscribe + Archive' })).toBeNull();
         const archiveChoice = await within(dialog).findByRole('radio', {
-          name: /^\+ Archive$/,
+          name: '+ Archive',
         });
         await waitFor(() => expect(archiveChoice).toBeEnabled());
         fireEvent.click(archiveChoice);
         const confirm = await within(dialog).findByRole('button', {
-          name: 'Unsubscribe & archive anyway',
+          name: 'Unsubscribe + Archive anyway',
         });
         await waitFor(() => expect(confirm).toBeEnabled());
         expect(intents).toEqual([]);
@@ -2788,12 +2788,12 @@ describe('SenderDetailRoute', () => {
         fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
         const dialog = await screen.findByRole('dialog');
         const archiveChoice = await within(dialog).findByRole('radio', {
-          name: /^\+ Archive$/,
+          name: '+ Archive',
         });
         await waitFor(() => expect(archiveChoice).toBeEnabled());
         fireEvent.click(archiveChoice);
         const confirm = await within(dialog).findByRole('button', {
-          name: 'Unsubscribe & archive',
+          name: 'Unsubscribe + Archive',
         });
         await waitFor(() => expect(confirm).toBeEnabled());
         fireEvent.click(confirm);
@@ -2885,9 +2885,9 @@ describe('SenderDetailRoute', () => {
         await waitFor(() => expect(pill('done')).not.toBeNull());
         fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe (U)' }));
         const dialog = await screen.findByRole('dialog');
-        fireEvent.click(await within(dialog).findByRole('radio', { name: /^\+ Archive$/ }));
+        fireEvent.click(await within(dialog).findByRole('radio', { name: '+ Archive' }));
         const confirm = await within(dialog).findByRole('button', {
-          name: 'Unsubscribe & archive',
+          name: 'Unsubscribe + Archive',
         });
         await waitFor(() => expect(confirm).toBeEnabled());
         fireEvent.click(confirm);

@@ -7,25 +7,12 @@ import { fillDeck, formatCount } from './home-deck-copy';
 import type { HomeFixCandidate } from './home-next-steps';
 import { homeFixCopy, type HomeFixCopy } from './home-ws5-copy';
 
-function archivedEmails(count: number, copy: HomeFixCopy): string | null {
-  const template = count === 1 ? copy.emailsOne : copy.emailsOther;
-  return fillDeck(template, { n: formatCount(count) });
-}
-
 function dialogTitle(step: HomeFixCandidate, copy: HomeFixCopy): string | null {
   const emails = step.emailCount;
   if (emails === undefined || emails <= 0) return null;
-  if (step.senderCount === 1 && step.senderName) {
-    const template = emails === 1 ? copy.titleOne : copy.titleOther;
-    return fillDeck(template, { Sender: step.senderName, n: formatCount(emails) });
-  }
-  const emailCount = archivedEmails(emails, copy);
-  if (emailCount === null) return null;
+  if (step.senderCount === 1 && step.senderName) return copy.titleThisSender;
   const template = step.senderCount === 1 ? copy.titleBulkOne : copy.titleBulkOther;
-  return fillDeck(template, {
-    k: formatCount(step.senderCount),
-    emailCount,
-  });
+  return fillDeck(template, { k: formatCount(step.senderCount) });
 }
 
 /**
@@ -44,16 +31,17 @@ export function HomeFixDialog({
 }) {
   const copy = homeFixCopy();
   const title = copy === null ? null : dialogTitle(step, copy);
+  const emailCount = step.emailCount;
   const trapRef = useFocusTrap<HTMLDivElement>(title !== null, {
     initialFocusSelector: '#home-fix-cancel',
   });
-  if (copy === null || title === null) return null;
+  if (copy === null || title === null || emailCount === undefined) return null;
   return (
     <DialogFrame
       panelRef={trapRef}
       role="alertdialog"
       titleId="home-fix-title"
-      descriptionId="home-fix-honesty"
+      descriptionId="home-fix-impact home-fix-honesty"
       onDismiss={onCancel}
       onKeyDown={(event) => {
         if (
@@ -78,6 +66,12 @@ export function HomeFixDialog({
       <h2 id="home-fix-title" style={{ ...tokens.typography.dialogTitle, margin: 0 }}>
         {title}
       </h2>
+      <p id="home-fix-impact" style={{ fontSize: tokens.text.md, lineHeight: 1.5 }}>
+        {step.senderCount === 1 && step.senderName ? <strong>{step.senderName}: </strong> : null}
+        {fillDeck(emailCount === 1 ? copy.impactOne : copy.impactOther, {
+          n: formatCount(emailCount),
+        })}
+      </p>
       <p
         id="home-fix-honesty"
         style={{ color: tokens.color.fgSoft, fontSize: tokens.text.sm, lineHeight: 1.5 }}

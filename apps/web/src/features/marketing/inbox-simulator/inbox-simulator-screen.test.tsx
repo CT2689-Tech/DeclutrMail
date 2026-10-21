@@ -167,7 +167,7 @@ describe('InboxSimulatorScreen', () => {
     const dialog = sheetFor(firstRow.senderName);
     // The count lives in the question the sheet is named by (ADR-0042).
     expect(dialog).toHaveAccessibleName(`Archive emails from ${firstRow.senderName}?`);
-    expect(within(dialog).getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+    expect(within(dialog).getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
       /emails will leave your inbox and stay in Gmail/,
     );
     expect(screen.getByText(WS3_COPY['ws3.demo.activity.empty'])).toBeInTheDocument();
@@ -400,7 +400,7 @@ describe('InboxSimulatorScreen', () => {
 
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByRole('radio', { name: 'Unsubscribe only' })).not.toBeChecked();
-    expect(within(dialog).getByRole('radio', { name: /\+ Archive/ })).toBeChecked();
+    expect(within(dialog).getByRole('radio', { name: '+ Archive' })).toBeChecked();
     expect(within(dialog).getAllByText('Unsubscribe only')).toHaveLength(1);
   });
 
@@ -424,7 +424,7 @@ describe('InboxSimulatorScreen', () => {
     );
 
     const dialog = sheetFor(unsubscribableRow.senderName);
-    expect(within(dialog).getByRole('radio', { name: /\+ Archive/ })).toBeChecked();
+    expect(within(dialog).getByRole('radio', { name: '+ Archive' })).toBeChecked();
     fireEvent.click(within(dialog).getByRole('button', { name: /^Unsubscribe/ }));
 
     const expectedCount = syntheticInboxCount(unsubscribableRow);
@@ -464,7 +464,7 @@ describe('InboxSimulatorScreen', () => {
     expect(within(dialog).getByRole('button', { name: /^Later$/ })).toBeEnabled();
   });
 
-  it('records Unsubscribe & delete at the chosen scope and preserves its receipt and Undo after reload', async () => {
+  it('records Unsubscribe + Delete at the chosen scope and preserves its receipt and Undo after reload', async () => {
     const linkedin = TRIAGE_QUEUE.find((row) => row.id === 't-linkedin')!;
     const total = syntheticInboxCount(linkedin) + syntheticArchivedCount(linkedin);
     const { unmount } = render(<InboxSimulatorScreen />);
@@ -472,13 +472,13 @@ describe('InboxSimulatorScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'LinkedIn — expand triage detail' }));
     fireEvent.click(screen.getByRole('button', { name: /Unsubscribe \(U\)/ }));
     const dialog = sheetFor('LinkedIn');
-    fireEvent.click(within(dialog).getByRole('radio', { name: /\+ Delete/ }));
+    fireEvent.click(within(dialog).getByRole('radio', { name: '+ Delete' }));
     fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Include archived email' }));
-    expect(within(dialog).getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+    expect(within(dialog).getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
       `${total} emails`,
     );
     fireEvent.click(
-      within(dialog).getByRole('button', { name: /^Unsubscribe & delete(?: [\d,]+ emails?)?$/ }),
+      within(dialog).getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
     );
     expect(
       screen.getByText(new RegExp(`${total} sample messages also moved to Gmail Trash`)),
@@ -522,7 +522,7 @@ describe('InboxSimulatorScreen', () => {
     const total = syntheticInboxCount(groupon) + syntheticArchivedCount(groupon);
     fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Include archived email' }));
     expect(dialog).toHaveAccessibleName(`Delete emails from ${groupon.senderName}?`);
-    expect(within(dialog).getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+    expect(within(dialog).getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
       `${total} emails will move to Gmail Trash.`,
     );
   });

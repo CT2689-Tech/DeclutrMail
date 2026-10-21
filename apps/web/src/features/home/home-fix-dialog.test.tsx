@@ -47,20 +47,17 @@ vi.mock('@declutrmail/shared/copy/launch', async () => {
         one: 'It had less than 10% of its email marked read in Gmail in that time.',
         other: 'Each had less than 10% of its email marked read in Gmail in that time.',
       },
-      'f1.title.archive': {
-        one: 'Unsubscribe from {Sender} and archive 1 email?',
-        other: 'Unsubscribe from {Sender} and archive {n} emails?',
+      'preview.title.unsubThisSender': 'Unsubscribe from this sender?',
+      'preview.title.bulk.unsub': {
+        one: 'Unsubscribe from 1 sender?',
+        other: 'Unsubscribe from {k} senders?',
       },
-      'f1.title.bulk.archive': {
-        one: 'Unsubscribe from 1 sender and archive {emailCount}?',
-        other: 'Unsubscribe from {k} senders and archive {emailCount}?',
-      },
-      'f1.part.emails': {
-        one: '1 email',
-        other: '{n} emails',
-      },
-      'f1.button.archive': 'Unsubscribe & archive',
+      'f1.button.archive': 'Unsubscribe + Archive',
       'f1.button.cancel': 'Cancel',
+      'f1.preview.backlog.archive': {
+        one: '1 email will leave your inbox and stay in Gmail.',
+        other: '{n} emails will leave your inbox and stay in Gmail.',
+      },
       'f1.honesty.archive':
         'The unsubscribe request can’t be recalled once delivered. The archive can be undone from Activity for 30 days.',
       'report.home.title': 'Your Inbox Report',
@@ -154,10 +151,11 @@ describe('HomeFixDialog focus trap', () => {
     await user.click(open);
 
     const dialog = screen.getByRole('alertdialog');
-    expect(dialog).toHaveTextContent('Unsubscribe from 158 senders and archive 1,200 emails?');
+    expect(dialog).toHaveTextContent('Unsubscribe from 158 senders?');
+    expect(dialog).toHaveTextContent('1,200 emails will leave your inbox and stay in Gmail.');
     expect(dialog.parentElement).toHaveStyle({ zIndex: String(OVERLAY_Z.modal) });
     const cancel = screen.getByRole('button', { name: 'Cancel' });
-    const confirm = screen.getByRole('button', { name: 'Unsubscribe & archive' });
+    const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
     await waitFor(() => expect(cancel).toHaveFocus());
 
     await user.keyboard('{Tab}');
@@ -186,5 +184,22 @@ describe('HomeFixDialog focus trap', () => {
     expect(onConfirm).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     await waitFor(() => expect(open).toHaveFocus());
+  });
+
+  it('titles one named sender without a count', () => {
+    render(
+      <HomeFixDialog
+        step={{ ...step, senderCount: 1, emailCount: 4, senderName: 'Acme' }}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent('Unsubscribe from this sender?');
+    expect(dialog).toHaveTextContent('Acme');
+    expect(dialog).toHaveTextContent('4 emails will leave your inbox and stay in Gmail.');
+    expect(
+      screen.getByRole('heading', { name: 'Unsubscribe from this sender?' }),
+    ).not.toHaveTextContent('Acme');
   });
 });

@@ -25,11 +25,16 @@ import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 
 import { afterLead } from '@/lib/copy/after-lead';
 import { pickBucketCount, TIME_WINDOW_PRESETS } from '@/features/senders/action-window';
-import { CleanupImpact, CleanupPreview } from '@/components/cleanup-preview';
+import {
+  CleanupImpact,
+  CleanupPreview,
+  cleanupBulkTitle,
+  cleanupNothingTitle,
+} from '@/components/cleanup-preview';
 import { LaterReturnControl, useFutureReturnTime } from '@/components/later-return-control';
 import type { TriageDecisionRow } from './data';
 import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
-import type { DomainBatch } from './domain-batch';
+import { VERDICT_BATCH_LABELS, type DomainBatch } from './domain-batch';
 import type { BatchVerb } from './domain-batch-card';
 
 const { color, radius, space } = tokens;
@@ -173,21 +178,24 @@ export function BatchActionSheet({
     timeZone: 'viewer',
   });
   const { primary } = presentation;
-  const who = sendersLabel(actionableCount);
 
   // ── Selection or count (title) ────────────────────────────────────────────────
   const title = nothingActionable
     ? 'No senders left to act on'
     : nothingToMove
-      ? olderThanDays === null
-        ? 'Nothing in your inbox from these senders'
-        : 'No emails match this age from these senders'
-      : verb === 'Archive'
-        ? `Archive emails from ${who}?`
-        : `Move emails from ${who} to Later?`;
+      ? cleanupNothingTitle({
+          olderThanDays,
+          sender: 'these senders',
+          allMail: false,
+          bulkTheseSenders: true,
+        })
+      : cleanupBulkTitle(verb === 'Archive' ? 'Archive' : 'Later', actionableCount);
 
   // ── Where it goes (subtitle) ─────────────────────────────────────────
-  const subtitle = nothingActionable || nothingToMove ? null : `From ${batch.domain}.`;
+  const subtitle =
+    nothingActionable || nothingToMove || suggestionGroupLabel(batch.domain)
+      ? null
+      : `From ${batch.domain}.`;
 
   // ── How to undo it (note) + Protected senders skipped, said once ─────
   const protectedCount = loaded?.protectedCount ?? 0;
@@ -206,13 +214,15 @@ export function BatchActionSheet({
 
   // ── Status: why confirm is unavailable, and the way out ──────────────
   const status: ReactNode = wakeAtInvalid ? (
-    'Choose a future return time before confirming Later.'
+    WS5_COPY['preview.later.returnInvalid']
   ) : preview === 'loading' ? (
     WS5_COPY['f1.preview.backlog.loading']
   ) : preview === 'unavailable' || total === null ? (
     <StatusWithAction
-      message={WS2_COPY.preview.loadFailed}
-      action={onRetryPreview ? { label: 'Retry preview', onClick: onRetryPreview } : undefined}
+      message={WS5_COPY['preview.state.loadFailed']}
+      action={
+        onRetryPreview ? { label: WS2_COPY.home.failed.retry, onClick: onRetryPreview } : undefined
+      }
     />
   ) : nothingActionable ? (
     <StatusWithAction
@@ -358,8 +368,9 @@ export function BatchActionSheet({
   );
 }
 
-const fmt = (value: number) => value.toLocaleString('en-US');
-const sendersLabel = (count: number) => `${fmt(count)} sender${count === 1 ? '' : 's'}`;
+function suggestionGroupLabel(domain: string): boolean {
+  return (Object.values(VERDICT_BATCH_LABELS) as readonly string[]).includes(domain);
+}
 
 const senderListStyle: CSSProperties = {
   display: 'flex',

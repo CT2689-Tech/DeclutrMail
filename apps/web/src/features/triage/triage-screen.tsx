@@ -271,6 +271,7 @@ export function TriageScreen({
   const setDeleteReach = useTriageStore((s) => s.setPendingReach);
   const rememberPreference = useTriageStore((s) => s.rememberPreference);
   const openPending = useTriageStore((s) => s.openPending);
+  const resolvePendingOpeningCount = useTriageStore((s) => s.resolvePendingOpeningCount);
   const clearPending = useTriageStore((s) => s.clearPending);
   const setRememberPreference = useTriageStore((s) => s.setRememberPreference);
   const setExpandedRow = useTriageStore((s) => s.setExpandedRow);
@@ -589,13 +590,15 @@ export function TriageScreen({
   // preview refetches — a cached count must never arm confirm (D226).
   // ADR-0028 — Delete may reach archived mail too, by explicit choice.
   // Offered on the daily ritual only: onboarding's first cleanup stays
-  // about the inbox (founder decision 2026-09-19). And only when the
-  // preview carries the all-mail block — absent against an older API, so
-  // during a deploy skew the choice simply does not appear.
+  // about the inbox (founder decision 2026-09-19). A settled preview with
+  // no all-mail block still offers the control so the archived-count
+  // notice can say why it stays off. Loading and a failed read do not.
+  const previewSettled =
+    compositePreview.data != null && !compositePreview.isFetching && !compositePreview.isError;
   const reachOffered =
     journey === 'daily' &&
     (pendingAction?.verb === 'Delete' || pendingAction?.verb === 'Unsubscribe') &&
-    (compositePreview.data?.allMail != null || deleteReach === 'all_mail');
+    (previewSettled || deleteReach === 'all_mail');
   const activeReach: ActionReach =
     pendingAction?.surface === 'sheet' &&
     journey === 'daily' &&
@@ -642,6 +645,25 @@ export function TriageScreen({
   const cleanupRemaining = auth?.me.cleanupRemaining ?? null;
 
   const unsubscribeInboxTotal = compositePreview.data?.counts.all ?? null;
+  // The opening choice is client intent, not a live queue count. If no
+  // count was known at open, capture the first completed preview once.
+  useEffect(() => {
+    if (
+      pendingAction?.verb === 'Unsubscribe' &&
+      pendingAction.openingBacklogMode == null &&
+      !compositePreview.isFetching &&
+      !compositePreview.isError &&
+      compositePreview.data != null
+    ) {
+      resolvePendingOpeningCount(pendingAction, compositePreview.data.counts.all);
+    }
+  }, [
+    pendingAction,
+    compositePreview.data,
+    compositePreview.isFetching,
+    compositePreview.isError,
+    resolvePendingOpeningCount,
+  ]);
   const previewDetail: ActionPreviewDetail | undefined = (() => {
     const data = compositePreview.data;
     const ageControl = hasAgeControl
@@ -651,6 +673,7 @@ export function TriageScreen({
             days,
             disabled:
               data != null &&
+              !compositePreview.isFetching &&
               pickBucketCount(
                 activeReach === 'all_mail' ? data.allMail?.counts : data.counts,
                 days,
@@ -765,17 +788,22 @@ export function TriageScreen({
   // action on Free. The sheet already refuses the zero case
   // (`nothingToActOn`, action-sheet.tsx), and this is the SAME decision
   // with the sheet skipped via D34, so it has to refuse it identically.
-  // Unsubscribe is excluded for the same reason it is in the sheet — it
-  // cuts FUTURE mail, so it is real work at a zero count.
+  // Unsubscribe only still cuts future mail at a zero count, and when the
+  // preview fails. While the count is loading, the confirm stays closed.
+  const inlineBacklogMode =
+    pendingAction?.backlogMode ??
+    pendingAction?.openingBacklogMode ??
+    ((unsubscribeInboxTotal ?? 0) > 0 ? 'archive' : 'unsub_only');
+  const inlineUnsubOnly =
+    pendingAction?.verb === 'Unsubscribe' && inlineBacklogMode === 'unsub_only';
   const inlinePreviewBlocked =
     pendingAction?.surface === 'inline' &&
-    (pendingAction.verb === 'Archive' ||
+    (((pendingAction.verb === 'Archive' ||
       pendingAction.verb === 'Later' ||
       pendingAction.verb === 'Delete' ||
-      (pendingAction.verb === 'Unsubscribe' &&
-        (pendingAction.backlogMode ??
-          ((unsubscribeInboxTotal ?? 0) > 0 ? 'archive' : 'unsub_only')) !== 'unsub_only')) &&
-    (typeof previewInboxCount !== 'number' || previewInboxCount === 0);
+      (pendingAction.verb === 'Unsubscribe' && !inlineUnsubOnly)) &&
+      (typeof previewInboxCount !== 'number' || previewInboxCount === 0)) ||
+      (inlineUnsubOnly && previewInboxCount === 'loading'));
 
   // Drive the async-action lifecycle off the polled status. On `done`
   // the queue is invalidated and the refetch drops the decided row —
@@ -1354,7 +1382,7 @@ export function TriageScreen({
       // preference is intentionally limited to lower-consequence verbs.
       const surface: 'sheet' | 'inline' =
         sheetableVerb !== 'Delete' && rememberPreference[sheetableVerb] ? 'inline' : 'sheet';
-      openPending(sheetableVerb, row.id, surface);
+      openPending(sheetableVerb, row.id, surface, row.inboxCount);
       // When inline preview is the surface, expand the row so the
       // preview is visible — and the user's eye is already there.
       if (surface === 'inline') {
@@ -1403,11 +1431,7 @@ export function TriageScreen({
         pendingAction.verb === verb
       ) {
         if (inlinePreviewBlocked) return;
-        const backlogMode =
-          verb === 'Unsubscribe'
-            ? (pendingAction.backlogMode ??
-              ((unsubscribeInboxTotal ?? 0) > 0 ? 'archive' : 'unsub_only'))
-            : undefined;
+        const backlogMode = verb === 'Unsubscribe' ? inlineBacklogMode : undefined;
         // Second click on the same verb confirms the choice on screen.
         dispatchAction(
           verb,
@@ -1433,7 +1457,7 @@ export function TriageScreen({
     [
       pendingAction,
       previewAge,
-      unsubscribeInboxTotal,
+      inlineBacklogMode,
       previewInboxCount,
       inlinePreviewBlocked,
       dispatchAction,

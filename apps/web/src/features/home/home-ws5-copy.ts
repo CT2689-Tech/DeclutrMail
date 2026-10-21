@@ -68,12 +68,11 @@ export interface HomeFixCopy {
   review: string;
   supportOne: string;
   supportOther: string;
-  titleOne: string;
-  titleOther: string;
+  titleThisSender: string;
   titleBulkOne: string;
   titleBulkOther: string;
-  emailsOne: string;
-  emailsOther: string;
+  impactOne: string;
+  impactOther: string;
   button: string;
   cancel: string;
   honesty: string;
@@ -88,10 +87,10 @@ export function homeFixCopy(): HomeFixCopy | null {
   const heading = ws5Plural('report.fix.heading');
   const primary = ws5Plural('report.fix.primary');
   const support = ws5Plural('report.mostlyUnread.support');
-  const title = ws5Plural('f1.title.archive');
+  const titleThisSender = ws5Text('preview.title.unsubThisSender');
   const review = ws5Text('report.fix.review');
-  const titleBulk = ws5Plural('f1.title.bulk.archive');
-  const emails = ws5Plural('f1.part.emails');
+  const titleBulk = ws5Plural('preview.title.bulk.unsub');
+  const impact = ws5Plural('f1.preview.backlog.archive');
   const button = ws5Text('f1.button.archive');
   const cancel = ws5Text('f1.button.cancel');
   const honesty = ws5Text('f1.honesty.archive');
@@ -99,10 +98,10 @@ export function homeFixCopy(): HomeFixCopy | null {
     heading === null ||
     primary === null ||
     support === null ||
-    title === null ||
+    titleThisSender === null ||
     review === null ||
     titleBulk === null ||
-    emails === null ||
+    impact === null ||
     button === null ||
     cancel === null ||
     honesty === null ||
@@ -118,12 +117,11 @@ export function homeFixCopy(): HomeFixCopy | null {
     review,
     supportOne: support.one,
     supportOther: support.other,
-    titleOne: title.one,
-    titleOther: title.other,
+    titleThisSender,
     titleBulkOne: titleBulk.one,
     titleBulkOther: titleBulk.other,
-    emailsOne: emails.one,
-    emailsOther: emails.other,
+    impactOne: impact.one,
+    impactOther: impact.other,
     button,
     cancel,
     honesty,

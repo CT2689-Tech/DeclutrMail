@@ -2,7 +2,7 @@
 
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Avatar, Button, PreviewSheet, tokens } from '@declutrmail/shared';
 import { WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import {
@@ -15,6 +15,7 @@ import {
   CleanupPreview,
   UnsubscribeChoices,
   UnsubscribeImpact,
+  cleanupActionTitle,
 } from '@/components/cleanup-preview';
 import { LaterReturnControl, useFutureReturnTime } from '@/components/later-return-control';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
@@ -151,17 +152,26 @@ export function ActionSheet({
   // default immediately, before the reset effect runs. Otherwise a fast
   // Cmd/Ctrl-Enter could observe the previous action's `false` toggle.
   const countKnown = typeof inboxCount === 'number' ? inboxCount : null;
-  const inboxOptionCount =
-    detail?.inboxTotal !== undefined
-      ? detail.inboxTotal
-      : countKnown === null
-        ? null
-        : (detail?.reachControl?.inboxCount ?? countKnown);
+  // Senders opens from the inbox total already on the row, then keeps that
+  // choice when the preview arrives. The live count still decides when
+  // Archive and Delete can be used. A row without an inbox total adopts
+  // the first resolved preview count and keeps that too.
+  const rowInbox = typeof row?.inboxCount === 'number' ? row.inboxCount : null;
+  const choiceRef = useRef<{ key: string | null; inbox: number | null }>({
+    key: null,
+    inbox: null,
+  });
+  if (choiceRef.current.key !== actionKey) {
+    choiceRef.current = { key: actionKey, inbox: rowInbox ?? countKnown };
+  } else if (choiceRef.current.inbox === null && countKnown !== null) {
+    choiceRef.current = { key: actionKey, inbox: countKnown };
+  }
+  const openingInbox = choiceRef.current.inbox;
   const defaultBacklog =
     verb === 'Unsubscribe' &&
     row?.protectionReason == null &&
-    inboxOptionCount !== null &&
-    inboxOptionCount > 0
+    openingInbox !== null &&
+    openingInbox > 0
       ? 'archive'
       : 'unsub_only';
   const effectiveMode =
@@ -198,6 +208,11 @@ export function ActionSheet({
   // real work at a zero backlog. The unsubscribe itself is free.
   const primaryActsOnInbox = verb === 'Archive' || verb === 'Later' || verb === 'Delete';
   const nothingToActOn = primaryActsOnInbox && inboxCount === 0;
+  // Unsubscribe only stays closed while the count is loading, matching
+  // Senders. A failed read leaves it usable. Archive and Delete stay
+  // closed until the preview has loaded.
+  const unsubOnlyLoading =
+    verb === 'Unsubscribe' && effectiveMode === 'unsub_only' && previewPending;
   const archivedUncounted =
     reach === 'all_mail' &&
     detail?.reachControl?.allMailCount === null &&
@@ -206,6 +221,7 @@ export function ActionSheet({
   const confirmDisabled =
     previewSenderGone ||
     archivedUncounted ||
+    unsubOnlyLoading ||
     (requiresLivePreview && (previewPending || previewUnavailable || inboxCount === 0)) ||
     nothingToActOn ||
     wakeAtInvalid;
@@ -362,16 +378,22 @@ export function ActionSheet({
       action={onRefreshTriage ? { label: 'Refresh triage', onClick: onRefreshTriage } : undefined}
     />
   ) : nothingToActOn ? null : wakeAtInvalid ? (
-    'Pick a future return time.'
+    WS5_COPY['preview.later.returnInvalid']
   ) : previewUnavailable ? (
     <StatusWithAction
-      message={WS2_COPY.preview.loadFailed}
-      action={onRetryPreview ? { label: 'Retry preview', onClick: onRetryPreview } : undefined}
+      message={
+        verb === 'Unsubscribe'
+          ? WS5_COPY['f1.preview.backlog.error']
+          : WS5_COPY['preview.state.loadFailed']
+      }
+      action={
+        onRetryPreview ? { label: WS2_COPY.home.failed.retry, onClick: onRetryPreview } : undefined
+      }
     />
   ) : archivedUncounted ? (
     WS5_COPY['f1.preview.archived.unavailable']
   ) : verb === 'Unsubscribe' && requiresLivePreview && inboxCount === 0 ? (
-    'Choose another age or Unsubscribe only.'
+    WS5_COPY['preview.zero.unsubHint']
   ) : confirmDisabled ? (
     WS5_COPY['f1.preview.backlog.loading']
   ) : null;
@@ -408,11 +430,12 @@ export function ActionSheet({
         }
         title={
           verb === 'Unsubscribe'
-            ? `Unsubscribe from ${row.senderName}?`
+            ? WS5_COPY['preview.title.unsubThisSender']
             : isCleanupAction && !facts.nothingToMove
-              ? verb === 'Later'
-                ? `Move emails from ${row.senderName} to Later?`
-                : `${verb} emails from ${row.senderName}?`
+              ? cleanupActionTitle(
+                  verb === 'Later' ? 'Later' : verb === 'Delete' ? 'Delete' : 'Archive',
+                  row.senderName,
+                )
               : facts.title
         }
         subtitle={
@@ -515,7 +538,7 @@ export function ActionSheet({
                 message from the sender, so the backlog toggle exists only
                 where the primary verb does NOT touch past mail. */}
             {verb === 'Unsubscribe' && (
-              <div>
+              <div className="dm-unsub-choice">
                 <UnsubscribeChoices
                   value={effectiveMode}
                   onChange={(mode) => {
@@ -524,7 +547,7 @@ export function ActionSheet({
                     onBacklogModeChange?.(mode);
                     (onReachChange ?? detail?.reachControl?.onChange)?.('inbox_only');
                   }}
-                  archiveDisabled={inboxOptionCount === null}
+                  archiveDisabled={countKnown === null}
                   deleteDisabled={countKnown === null}
                 />
                 {emailMeter && effectiveMode !== 'unsub_only' ? (

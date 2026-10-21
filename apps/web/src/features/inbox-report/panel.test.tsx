@@ -302,7 +302,7 @@ describe('InboxReportPanel', () => {
     expect(screen.getByRole('button', { name: 'Undo' })).toHaveAccessibleName('Undo');
   });
 
-  it('uses the loaded sender name for a one-sender fix title', () => {
+  it('titles a named one-sender fix without the sender name', () => {
     render(
       <InboxReportPanel
         report={{ ...full, fix: { senderKeys: ['s1'], sendersCount: 1, inboxEmailCount: 4 } }}
@@ -312,7 +312,10 @@ describe('InboxReportPanel', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
-    expect(screen.getByRole('dialog')).toHaveTextContent('Unsubscribe from Acme?');
+    expect(
+      screen.getByRole('heading', { name: 'Unsubscribe from this sender?' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('heading')).not.toHaveTextContent('Acme');
     expect(screen.getByRole('dialog')).not.toHaveTextContent('1 senders');
   });
 
@@ -462,7 +465,7 @@ describe('Inbox Report action preview recovery', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
-    const confirm = screen.getByRole('button', { name: 'Unsubscribe & archive' });
+    const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
     fireEvent.click(confirm);
     fireEvent.click(confirm);
     expect(onFixConfirmed).toHaveBeenCalledTimes(1);

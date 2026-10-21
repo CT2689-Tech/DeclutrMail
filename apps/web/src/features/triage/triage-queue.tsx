@@ -44,10 +44,12 @@ export function inlinePreviewFor(
   if (pendingAction == null || pendingAction.rowId !== rowId || pendingAction.surface !== 'inline')
     return null;
   const count = typeof preview.inboxCount === 'number' ? preview.inboxCount : null;
+  const openingInbox = preview.detail?.inboxTotal ?? count;
   const backlogMode =
     pendingAction.verb === 'Unsubscribe'
       ? (pendingAction.backlogMode ??
-        ((preview.detail?.inboxTotal ?? count ?? 0) > 0 ? 'archive' : 'unsub_only'))
+        pendingAction.openingBacklogMode ??
+        ((openingInbox ?? 0) > 0 ? 'archive' : 'unsub_only'))
       : 'unsub_only';
   return {
     verb: pendingAction.verb,

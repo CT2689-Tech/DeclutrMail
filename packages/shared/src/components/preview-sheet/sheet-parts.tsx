@@ -28,6 +28,8 @@ export function SheetSegmented<T extends string>({
   options: readonly {
     value: T;
     label: string;
+    /** Screen-reader name when it differs from the visible label. */
+    ariaLabel?: string | undefined;
     count?: number | undefined;
     disabled?: boolean;
   }[];
@@ -66,6 +68,7 @@ export function SheetSegmented<T extends string>({
               className="dm-sheet-segment-option"
               role="radio"
               aria-checked={selected}
+              aria-label={opt.ariaLabel}
               tabIndex={opt === tabStop ? 0 : -1}
               disabled={opt.disabled}
               onClick={() => onChange(opt.value)}

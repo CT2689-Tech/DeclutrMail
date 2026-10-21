@@ -1,10 +1,44 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { SCREENER_QUEUE } from './data';
 import { DecidePreview } from './decide-preview';
 
 const row = SCREENER_QUEUE[0]!;
+
+describe('DecidePreview — inline keyboard navigation', () => {
+  it('lets Tab leave the nonmodal Delete preview without cancelling it', async () => {
+    const user = userEvent.setup();
+    const onCancel = vi.fn();
+    render(
+      <>
+        <DecidePreview
+          verb="delete"
+          row={row}
+          inboxCount={4}
+          windowDays={180}
+          onWindowChange={vi.fn()}
+          confirming={false}
+          onConfirm={vi.fn()}
+          onCancel={onCancel}
+        />
+        <button type="button">Next row action</button>
+      </>,
+    );
+    const preview = screen.getByRole('region', { name: /^Preview · Delete / });
+    const outside = screen.getByRole('button', { name: 'Next row action' });
+    expect(preview).toHaveAttribute('data-dm-preview-mode', 'inline');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    const confirm = screen.getByRole('button', { name: /^Delete/ });
+    confirm.focus();
+    await user.tab();
+    expect(outside).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(confirm).toHaveFocus();
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+});
 
 describe('DecidePreview — live-preview confirm gate', () => {
   it('retries an unavailable preview without confirming or changing its selected age', () => {
@@ -23,7 +57,7 @@ describe('DecidePreview — live-preview confirm gate', () => {
         onCancel={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Retry preview' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetryPreview).toHaveBeenCalledTimes(1);
     expect(onConfirm).not.toHaveBeenCalled();
     expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
@@ -47,12 +81,12 @@ describe('DecidePreview — live-preview confirm gate', () => {
     expect(
       screen.getByRole('heading', { name: `Archive emails from ${row.senderName}?` }),
     ).toBeVisible();
-    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
       '128 emails will leave your inbox and stay in Gmail.Inbox only · Any age',
     );
     expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
     expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
-    expect(screen.queryByText(/Approximate cutoff/)).toBeNull();
+    expect(screen.queryByText(/Emails from before about/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: `Archive for ${row.senderName}` }));
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
@@ -96,7 +130,7 @@ describe('DecidePreview — live-preview confirm gate', () => {
     // 1,400" finds it (WCAG 2.5.3).
     const confirm = screen.getByRole('button', { name: /^Archive for/ });
     expect(confirm).toHaveTextContent(/^Archive$/);
-    expect(screen.getByRole('region', { name: 'Archive impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent(
       '1,400 emails will leave your inbox and stay in Gmail.',
     );
   });
@@ -197,7 +231,7 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
       screen.getByRole('heading', { name: `Delete emails from ${row.senderName}?` }),
     ).toBeInTheDocument();
     expect(screen.queryByText('Both choices cover the same emails right now.')).toBeNull();
-    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
       '2 emails will move to Gmail Trash.',
     );
     expect(
@@ -270,7 +304,7 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
     expect(onReachChange).toHaveBeenCalledWith('all_mail');
 
     rerender(<DecidePreview {...props} reach="all_mail" />);
-    const impact = screen.getByRole('region', { name: 'Delete impact' });
+    const impact = screen.getByRole('region', { name: 'What Delete will do' });
     expect(impact).toHaveTextContent('9 emails will move to Gmail Trash.');
     expect(impact).toHaveTextContent('Inbox and archived email');
     expect(screen.queryByText(/^2 emails from/)).toBeNull();
@@ -336,7 +370,7 @@ describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () =
     );
     const age = screen.getByRole('combobox', { name: 'Email age' });
     expect(age).toHaveValue('180');
-    expect(age).toHaveAccessibleDescription(/Approximate cutoff:/);
+    expect(age).toHaveAccessibleDescription(/Emails from before about/);
     expect(screen.getByRole('option', { name: 'Older than 90 days' })).toBeEnabled();
     expect(screen.getByRole('button', { name: `Delete for ${row.senderName}` })).toHaveTextContent(
       /^Delete$/,
@@ -361,7 +395,7 @@ describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () =
           onCancel={vi.fn()}
         />,
       );
-      expect(screen.queryByRole('region', { name: 'Delete impact' })).toBeNull();
+      expect(screen.queryByRole('region', { name: 'What Delete will do' })).toBeNull();
       const confirm = screen.getByRole('button', { name: `Delete for ${row.senderName}` });
       expect(confirm).toBeDisabled();
       fireEvent.click(confirm);
@@ -432,8 +466,8 @@ describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () =
     // header must not contradict this exact notice — "Nothing to move"
     // would sit directly above "9 emails ... are in your inbox."
     expect(screen.queryByText(/Nothing to move/)).toBeNull();
-    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
-      'No emails match this scope.',
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
+      'No emails match these choices.',
     );
   });
 
@@ -611,8 +645,8 @@ describe('DecidePreview — zero-match header (QA-delete-20260903-01)', () => {
       />,
     );
     expect(screen.queryByText(/Nothing to move/)).toBeNull();
-    const impact = screen.getByRole('region', { name: 'Delete impact' });
-    expect(impact).toHaveTextContent('No emails match this scope.');
+    const impact = screen.getByRole('region', { name: 'What Delete will do' });
+    expect(impact).toHaveTextContent('No emails match these choices.');
     expect(impact).toHaveTextContent('Inbox and archived email · Older than 180 days');
   });
 
@@ -667,7 +701,7 @@ describe('DecidePreview — zero-match header (QA-delete-20260903-01)', () => {
     expect(
       screen.getByRole('heading', { name: `Delete emails from ${row.senderName}?` }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Delete impact' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
       '1 email will move to Gmail Trash.',
     );
   });

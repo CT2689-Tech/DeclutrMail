@@ -578,7 +578,7 @@ describe('D245 absolute times render in one clock per surface', () => {
 // whole pile back at once on a date chosen while it was out of sight. The
 // preview stated the count and the return date in separate sentences and
 // left the reader to join them.
-describe('D226 Later says when the whole pile comes back at once', () => {
+describe('D226 Later names one scheduled return at scale', () => {
   const later = (liveCount: number | null, wakeAt: string | null = '2026-09-03T08:01:00.000Z') =>
     buildActionPresentation({
       verb: 'later',
@@ -621,9 +621,9 @@ describe('D226 Later says when the whole pile comes back at once', () => {
     expect(p.schedule.summary).toMatch(/^Returns to Inbox from /);
   });
 
-  it('never promises the mail arrives all at once', () => {
+  it('names one scheduled return without promising simultaneous delivery', () => {
     const notice = later(1_718).bulkReturnNotice ?? '';
-    expect(notice).not.toMatch(/together|at once|simultaneous|all in one/i);
+    expect(notice).not.toMatch(/together|at once|at the same time|simultaneous|all in one/i);
     expect(notice).toContain('one return');
   });
 

@@ -165,17 +165,24 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
     await expect(triageSheet).not.toContainText('Unsubscribing is free and doesn’t count.');
     await expect(triageSheet).not.toContainText('cleanup action');
   }
-  await expect(triageSheet.getByRole('button', { name: 'Unsubscribe & archive' })).toBeEnabled();
+  await expect(triageSheet.getByRole('button', { name: 'Unsubscribe + Archive' })).toBeEnabled();
   const triagePost = page.waitForResponse(
     (response) =>
       response.url().includes('/api/actions/unsubscribe-backlog') &&
       response.request().method() === 'POST',
   );
-  await triageSheet.getByRole('button', { name: 'Unsubscribe & archive' }).click();
+  await triageSheet.getByRole('button', { name: 'Unsubscribe + Archive' }).click();
   const triageResponse = await triagePost;
   expect(triageResponse.ok()).toBe(true);
   const triageBody = (await triageResponse.json()) as { data?: { mode?: string } };
   expect(triageBody.data?.mode).toBe('archive');
+  const triageRequest = triageResponse.request().postDataJSON() as {
+    mode?: string;
+    olderThanDays?: number | null;
+    reach?: string | null;
+  };
+  expect(triageRequest).toMatchObject({ mode: 'archive', olderThanDays: null });
+  expect(triageRequest.reach ?? null).toBeNull();
   await expect(page.getByText(ARCHIVE_TOAST)).toBeVisible();
 
   // The default lane has no Gmail worker, so the archive job stays queued
@@ -246,12 +253,12 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
   const sendersSheet = confirmSheet(page);
   await expect(sendersSheet).toBeVisible();
   await expect(sendersSheet).toContainText('Whether their email stops is up to the sender.');
-  await sendersSheet.getByRole('radio', { name: /\+ Delete/ }).click();
+  await sendersSheet.getByRole('radio', { name: '+ Delete' }).click();
   const age = sendersSheet.getByRole('combobox', { name: 'Email age', exact: true });
   await expect(age).toHaveValue('180');
-  await expect(sendersSheet.getByRole('button', { name: 'Unsubscribe & delete' })).toBeDisabled();
+  await expect(sendersSheet.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
   await age.selectOption('all');
-  await expect(sendersSheet.getByRole('region', { name: 'Delete impact' })).toContainText(
+  await expect(sendersSheet.getByRole('region', { name: 'What Delete will do' })).toContainText(
     '2 emails',
   );
   await expect(sendersSheet).toContainText(
@@ -263,7 +270,7 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
       response.url().includes('/api/actions/unsubscribe-backlog') &&
       response.request().method() === 'POST',
   );
-  await sendersSheet.getByRole('button', { name: 'Unsubscribe & delete' }).click();
+  await sendersSheet.getByRole('button', { name: 'Unsubscribe + Delete' }).click();
   const sendersResponse = await sendersPost;
   expect(sendersResponse.ok()).toBe(true);
   const sendersBody = (await sendersResponse.json()) as { data?: { mode?: string } };
@@ -371,7 +378,7 @@ test('a spent monthly allowance refuses the mail move before any unsubscribe', a
     const archive = sheet.getByRole('radio', { name: '+ Archive', exact: true });
     await expect(archive).toBeEnabled();
     await archive.click();
-    const confirm = sheet.getByRole('button', { name: 'Unsubscribe & archive' });
+    const confirm = sheet.getByRole('button', { name: 'Unsubscribe + Archive' });
     await expect(confirm).toBeEnabled();
     const post = page.waitForResponse(
       (response) =>

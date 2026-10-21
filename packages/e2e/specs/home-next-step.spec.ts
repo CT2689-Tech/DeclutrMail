@@ -54,7 +54,7 @@ test('return visit opens Home and does not confirm a next step', async ({ page }
   await expect(page.locator('[data-home-impact]')).toContainText('3 emails in your inbox');
   await step.click();
   const dialog = page.getByRole('alertdialog');
-  await expect(dialog).toContainText('archive 3 emails');
+  await expect(dialog).toContainText('Unsubscribe from 1 sender?');
   await page.keyboard.press('Enter');
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await expect(step).toBeFocused();
@@ -78,7 +78,7 @@ for (const tier of ['pro', 'free'] as const) {
       const preview = page.getByRole('button', { name: 'Preview cleanup', exact: true });
       await expect(preview).toBeVisible();
       await preview.click();
-      await expect(page.getByRole('alertdialog')).toContainText('archive 3 emails');
+      await expect(page.getByRole('alertdialog')).toContainText('Unsubscribe from 1 sender?');
       await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
       await page.getByRole('button', { name: 'Cancel', exact: true }).click();
       await expect(preview).toBeFocused();

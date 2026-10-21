@@ -11,7 +11,7 @@
  * applies it immediately per D40 — no preview by design.
  */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ActionPopover, ActionPopoverTrigger, Button, Pill, tokens } from '@declutrmail/shared';
 import {
   actionHelpCopy,
@@ -82,6 +82,7 @@ export function SenderActionRow({
   compact?: boolean;
 }) {
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const menuOpenerRef = useRef<HTMLButtonElement>(null);
   // One in-flight action per sender: a second would mint a fresh
   // idempotency key (double cleanup unit, two undo tokens). The screen
   // refuses it too; disabling here is what makes that refusal visible.
@@ -143,12 +144,14 @@ export function SenderActionRow({
           standard menu-button affordance (silent-failure-hunter
           2026-06-03 advisory). */}
         <ActionPopoverTrigger
+          buttonRef={menuOpenerRef}
           onClick={() => setPopoverOpen(true)}
           ariaLabel={`More actions for ${senderLabel}`}
           disabled={busy}
         />
         {popoverOpen && !busy && (
           <ActionPopover
+            returnFocusRef={menuOpenerRef}
             ariaLabel={`Actions for ${senderLabel}`}
             verbs={(['keep', 'archive', 'unsubscribe', 'later', 'delete'] as const).filter(
               (verb) =>

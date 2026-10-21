@@ -3,8 +3,20 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 
-import { Avatar, Button, PreviewSheet, tokens } from '@declutrmail/shared';
-import { normalizeProtectionReason, protectionReasonClause } from '@declutrmail/shared/copy';
+import {
+  Avatar,
+  Button,
+  PreviewSheet,
+  SheetFactList,
+  tokens,
+  type SheetFactItem,
+} from '@declutrmail/shared';
+import {
+  PREVIEW_DETAILS,
+  normalizeProtectionReason,
+  previewIncludesValue,
+  protectionReasonClause,
+} from '@declutrmail/shared/copy';
 import {
   fillCopy,
   isPluralCopy,
@@ -16,8 +28,10 @@ import {
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import {
   allProtectedSelectionCopy,
+  bulkUnsubscribeTitle,
   someProtectedSelectionCopy,
   unsubscribeButton,
+  unsubscribeTitle,
 } from './preview-copy';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
@@ -226,19 +240,21 @@ export function UnsubscribeBacklogDialog({
       ).length ?? 0)
     : 0;
   // A preview that is still loading or failed has not named the mail.
-  // Posting from that state would include ids the preview never confirmed.
-  // A dialog with no preview at all (a known inbox count, nothing in flight)
-  // is separate.
+  // Cleanup must wait. A single sender's Unsubscribe only does not move
+  // existing mail, so that choice stays usable when the read fails.
   const previewUnresolved = loading || failed;
-  const senderIds = previewUnresolved ? [] : includedSenders.map((sender) => sender.id);
+  const singleUnsubOnFailure = single && failed && !loading && mode === 'unsub_only';
+  const senderIds = singleUnsubOnFailure
+    ? request.senders.map((sender) => sender.id)
+    : previewUnresolved
+      ? []
+      : includedSenders.map((sender) => sender.id);
   const includeArchived = mode === 'delete' && activeReach === 'all_mail' && allMailCount !== null;
   const title = nothingActionable
     ? allProtectedSelectionCopy(request.senders.length, singleName)
     : single
-      ? singleName === ''
-        ? 'Unsubscribe from this sender?'
-        : fillCopy(WS5_COPY['f1.title.unsubOnly'], { Sender: singleName })
-      : `Unsubscribe from ${k.toLocaleString('en-US')} ${k === 1 ? 'sender' : 'senders'}?`;
+      ? unsubscribeTitle(mode, singleName, n)
+      : bulkUnsubscribeTitle(mode, k, n);
 
   const visibleBulk = bulkRows.slice(0, BULK_PREVIEW_CAP);
   const hidden = Math.max(0, bulkRows.length - visibleBulk.length);
@@ -273,6 +289,38 @@ export function UnsubscribeBacklogDialog({
     );
   }
 
+  const singleFacts: SheetFactItem[] = [];
+  if (single && onlySender) {
+    // Inbox Report and the sample Senders screen pass a thin sender
+    // (id, name, unsubscribe method). A missing count is not zero.
+    const domain = compositePreview?.sender?.domain || onlySender.domain;
+    if (typeof domain === 'string' && domain !== '') {
+      singleFacts.push({ label: PREVIEW_DETAILS.domain.label, value: domain });
+    }
+    const received = onlySender.totalReceived;
+    if (typeof received === 'number') {
+      singleFacts.push({
+        label: PREVIEW_DETAILS.sender.label,
+        value: fillCopy(WS5_COPY['preview.details.volume'], {
+          n: onlySender.monthlyVolume == null ? '—' : shown(onlySender.monthlyVolume),
+          total: shown(received),
+        }),
+      });
+    }
+    const days = compositePreview?.sender?.lastSeenDays ?? onlySender.lastDays;
+    if (typeof days === 'number') {
+      singleFacts.push({
+        label: PREVIEW_DETAILS.lastSeen.label,
+        value: detailLastSeen(days),
+      });
+    }
+    if (mode !== 'unsub_only' && cleanupCount !== null) {
+      singleFacts.push({
+        label: PREVIEW_DETAILS.includes.label,
+        value: previewIncludesValue(includeArchived, activeWindow),
+      });
+    }
+  }
   const note =
     mode === 'delete'
       ? WS5_COPY['f1.honesty.delete']
@@ -282,7 +330,7 @@ export function UnsubscribeBacklogDialog({
   const button = unsubscribeButton(mode, cleanupCount, protectedSingle);
 
   const confirm = useCallback(() => {
-    if (previewUnresolved) return;
+    if (previewUnresolved && !singleUnsubOnFailure) return;
     const secondary = mode === 'unsub_only' ? null : mode;
     void track('unsub_backlog_confirmed', {
       mode,
@@ -311,16 +359,18 @@ export function UnsubscribeBacklogDialog({
     onConfirm,
     senderIds,
     previewUnresolved,
+    singleUnsubOnFailure,
   ]);
 
   // Archive and Delete stay disabled until the backlog count is known.
-  // Unsubscribe stays closed while the preview is loading or failed.
+  // Unsubscribe only stays closed while the preview is loading. A failed
+  // read still leaves it usable for one sender.
   const archivedRequested = mode === 'delete' && activeReach === 'all_mail';
   const confirmDisabled =
     submitting ||
     previewSenderGone ||
     nothingActionable ||
-    (mode === 'unsub_only' && previewUnresolved) ||
+    (mode === 'unsub_only' && previewUnresolved && !singleUnsubOnFailure) ||
     (archivedRequested && allMailCount === null) ||
     (mode !== 'unsub_only' && backlogOff);
   useEffect(() => {
@@ -365,7 +415,11 @@ export function UnsubscribeBacklogDialog({
       </>
     ) : failed ? (
       <>
-        <span>{WS5_COPY['f1.preview.backlog.error']}</span>
+        <span>
+          {!single && mode === 'unsub_only'
+            ? WS5_COPY['preview.state.loadFailed.unsub']
+            : WS5_COPY['f1.preview.backlog.error']}
+        </span>
         {onRetryPreview && (
           <Button tone="default" size="sm" onClick={onRetryPreview}>
             {WS2_COPY.home.failed.retry}
@@ -375,9 +429,13 @@ export function UnsubscribeBacklogDialog({
     ) : archivedRequested && allMailCount === null && inboxCount !== null ? (
       WS5_COPY['f1.preview.archived.unavailable']
     ) : mode !== 'unsub_only' && cleanupCount === null && !loading ? (
-      'The cleanup preview for this range is unavailable. Choose another range.'
+      WS5_COPY['preview.age.rangeUnavailable']
     ) : inboxCount === null ? (
-      WS5_COPY['f1.preview.backlog.loading']
+      !single && mode === 'unsub_only' && loading ? (
+        WS5_COPY['preview.state.checkingSenders']
+      ) : (
+        WS5_COPY['f1.preview.backlog.loading']
+      )
     ) : mode === 'delete' &&
       n === 0 &&
       offersReach &&
@@ -385,7 +443,7 @@ export function UnsubscribeBacklogDialog({
       !includeArchived ? (
       DELETE_ARCHIVED_HINT
     ) : mode !== 'unsub_only' && n === 0 ? (
-      'Choose another age or Unsubscribe only.'
+      WS5_COPY['preview.zero.unsubHint']
     ) : null;
 
   return (
@@ -431,19 +489,7 @@ export function UnsubscribeBacklogDialog({
           )
         }
         title={title}
-        subtitle={
-          <>
-            <span>{futureSummary}</span>
-            {recordedUnsubscribeCount > 0 && (
-              <span>
-                {' '}
-                {recordedUnsubscribeCount} sender
-                {recordedUnsubscribeCount === 1 ? '' : 's'} with a recorded unsubscribe request{' '}
-                {recordedUnsubscribeCount === 1 ? 'is' : 'are'} excluded.
-              </span>
-            )}
-          </>
-        }
+        subtitle={<span>{futureSummary}</span>}
         summary={
           <UnsubscribeImpact
             mode={mode}
@@ -454,9 +500,13 @@ export function UnsubscribeBacklogDialog({
           />
         }
         details={
-          !single || mode === 'delete' ? (
+          singleFacts.length > 0 || !single || mode === 'delete' || recordedUnsubscribeCount > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: space[2] }}>
+              {singleFacts.length > 0 && <SheetFactList facts={singleFacts} />}
               {!single && previewLines}
+              {recordedUnsubscribeCount > 0 && (
+                <span>{WS5_COPY['preview.details.alreadyUnsubscribed']}</span>
+              )}
               {mode === 'delete' && <span>{WS5_COPY['f1.deleteNote']}</span>}
             </div>
           ) : undefined
@@ -497,19 +547,21 @@ export function UnsubscribeBacklogDialog({
           {protectedSkipped > 0 && includedSenders.length > 0 ? (
             <p>{someProtectedSelectionCopy(protectedSkipped)}</p>
           ) : null}
-          <UnsubscribeChoices
-            value={mode}
-            onChange={(next) => {
-              setMode(next);
-              setDeleteReach('inbox_only');
-              setOlderThanDays(next === 'delete' ? DEFAULT_DELETE_WINDOW_DAYS : null);
-              setWindowRequestKey(requestKey);
-            }}
-            archiveDisabled={allInboxCount === null || allInboxCount === 0}
-            deleteDisabled={
-              allInboxCount === null || (allInboxCount === 0 && !(allReachCount ?? 0))
-            }
-          />
+          <div className="dm-unsub-choice">
+            <UnsubscribeChoices
+              value={mode}
+              onChange={(next) => {
+                setMode(next);
+                setDeleteReach('inbox_only');
+                setOlderThanDays(next === 'delete' ? DEFAULT_DELETE_WINDOW_DAYS : null);
+                setWindowRequestKey(requestKey);
+              }}
+              archiveDisabled={allInboxCount === null || allInboxCount === 0}
+              deleteDisabled={
+                allInboxCount === null || (allInboxCount === 0 && !(allReachCount ?? 0))
+              }
+            />
+          </div>
           {mode !== 'unsub_only' && (
             <CleanupPreview
               olderThanDays={activeWindow}
@@ -549,6 +601,13 @@ export function UnsubscribeBacklogDialog({
 
 function shown(n: number): string {
   return n.toLocaleString('en-US');
+}
+
+/** `today` is a day count of 0. `one` / `other` are the counted forms. */
+function detailLastSeen(days: number): string {
+  const copy = WS5_COPY['preview.details.lastSeen'];
+  if (days === 0) return copy.today;
+  return pluralCopy(copy, days, { n: shown(days) });
 }
 
 function openingMode(

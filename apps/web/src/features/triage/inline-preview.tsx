@@ -10,6 +10,7 @@ import {
   UnsubscribeChoices,
   UnsubscribeImpact,
   CleanupPreview,
+  cleanupActionTitle,
   type CleanupAgeControl,
 } from '@/components/cleanup-preview';
 
@@ -134,12 +135,6 @@ export function InlinePreviewBlock({
   onConfirm: () => void;
 }) {
   const { blocked, nothingToActOn } = inlinePreviewGates(preview);
-  // Confirm ONLY. Switching to a different verb stays live, as it does in
-  // the sheet where `confirmDisabled` gates the button and nothing else —
-  // a zero Archive count must not trap the row out of Delete or Later.
-  const returnTimeValid = useFutureReturnTime(preview.wakeAt, preview.verb === 'Later').valid;
-  const returnInvalid = preview.verb === 'Later' && !returnTimeValid;
-  const confirmDisabled = busy || blocked || nothingToActOn || returnInvalid;
   // Same facts as the sheet (`buildPreviewFacts`), laid out as one line:
   // count + where it goes, then how to undo it. Everything the sheet keeps
   // behind "Details" stays behind a disclosure here too.
@@ -147,6 +142,16 @@ export function InlinePreviewBlock({
     preview.verb === 'Unsubscribe'
       ? (preview.backlogMode ?? (preview.archiveHistoric ? 'archive' : 'unsub_only'))
       : 'unsub_only';
+  // Confirm ONLY. Switching to a different verb stays live, as it does in
+  // the sheet where `confirmDisabled` gates the button and nothing else —
+  // a zero Archive count must not trap the row out of Delete or Later.
+  const returnTimeValid = useFutureReturnTime(preview.wakeAt, preview.verb === 'Later').valid;
+  const returnInvalid = preview.verb === 'Later' && !returnTimeValid;
+  const unsubOnlyLoading =
+    preview.verb === 'Unsubscribe' &&
+    backlogMode === 'unsub_only' &&
+    preview.inboxCount === 'loading';
+  const confirmDisabled = busy || blocked || nothingToActOn || returnInvalid || unsubOnlyLoading;
   const isCleanupAction =
     preview.verb === 'Archive' || preview.verb === 'Delete' || preview.verb === 'Later';
   const previewUnavailable =
@@ -195,11 +200,16 @@ export function InlinePreviewBlock({
       {accountContext != null && <div style={{ marginBottom: space[3] }}>{accountContext}</div>}
       <h3 style={{ ...tokens.typography.dialogTitle, margin: 0, color: color.fg }}>
         {preview.verb === 'Unsubscribe'
-          ? `Unsubscribe from ${row.senderName}?`
+          ? WS5_COPY['preview.title.unsubThisSender']
           : isCleanupAction && !facts.nothingToMove
-            ? preview.verb === 'Later'
-              ? `Move emails from ${row.senderName} to Later?`
-              : `${preview.verb} emails from ${row.senderName}?`
+            ? cleanupActionTitle(
+                preview.verb === 'Later'
+                  ? 'Later'
+                  : preview.verb === 'Delete'
+                    ? 'Delete'
+                    : 'Archive',
+                row.senderName,
+              )
             : facts.title}
       </h3>
       {preview.verb !== 'Archive' && preview.verb !== 'Later' && facts.subtitle && (
@@ -223,16 +233,18 @@ export function InlinePreviewBlock({
       {/* Why confirm is disabled while the live count is not a number —
           the same two lines the sheet's status shows. A disabled button
           with no reason reads as a broken one. */}
-      {(blocked || previewUnavailable) && (
+      {(blocked || previewUnavailable || unsubOnlyLoading) && (
         <p style={{ margin: `${space[1]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
           {preview.inboxCount === 'unavailable'
-            ? WS2_COPY.preview.loadFailed
+            ? preview.verb === 'Unsubscribe'
+              ? WS5_COPY['f1.preview.backlog.error']
+              : WS5_COPY['preview.state.loadFailed']
             : WS5_COPY['f1.preview.backlog.loading']}
         </p>
       )}
       {previewUnavailable && preview.onRetryPreview && (
         <Button tone="ghost" onClick={preview.onRetryPreview}>
-          Retry preview
+          {WS2_COPY.home.failed.retry}
         </Button>
       )}
       {!isCleanupAction && preview.verb !== 'Unsubscribe' && facts.note !== null && (
@@ -282,7 +294,7 @@ export function InlinePreviewBlock({
           <LaterReturnControl value={preview.wakeAt ?? null} onChange={preview.onWakeAtChange} />
         </div>
       )}
-      {returnInvalid && <p role="status">Choose a future return time.</p>}
+      {returnInvalid && <p role="status">{WS5_COPY['preview.later.returnInvalid']}</p>}
       {hasDetails && (
         <Disclosure style={{ marginTop: space[2] }}>
           <SheetFactList facts={facts.disclosures} />
