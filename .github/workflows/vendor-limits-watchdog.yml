@@ -135,7 +135,7 @@ jobs:
 
       - name: Publish one daily operational warning summary
         # Activate only after the scheduled WIF identity can read warnings and
-        # publish the summary, and the admin inbox received the verification email.
+        # publish the summary. The apply receipt is the smoke log hash, not inbox proof.
         if: always() && steps.collect.outcome != 'skipped' && env.GCP_WIF_PROVIDER != '' && vars.OPS_ALERT_DIGEST_ENABLED == 'true'
         run: node scripts/alert-email-routing.mjs digest
 

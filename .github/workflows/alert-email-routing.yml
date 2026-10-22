@@ -19,7 +19,7 @@ on:
         description: 'Hash from the immediately preceding plan or prepare report'
         type: string
       digest_receipt:
-        description: 'SHA-256 of the observed verification-email ID; never enter the raw Gmail ID'
+        description: 'SHA-256 of the smoke ROUTING_VERIFICATION log insertId and day; not a Gmail message id'
         type: string
 
 permissions:

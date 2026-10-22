@@ -31,6 +31,7 @@ import {
   verificationLogEntry,
   verificationReceipt,
   digestAlertFilter,
+  digestDeliveryEnabled,
 } from './alert-email-routing.mjs';
 
 const channel = {
@@ -317,7 +318,10 @@ test('plan is read-only and preflight failures do not mutate policies', async ()
 });
 
 test('apply cannot mute warning emails while scheduled delivery is disabled', async () => {
-  for (const digestEnabled of [undefined, 'false', 'TRUE', true]) {
+  for (const value of ['true', 'TRUE', 'True']) assert.equal(digestDeliveryEnabled(value), true);
+  for (const value of [undefined, '', 'false', '1', true])
+    assert.equal(digestDeliveryEnabled(value), false);
+  for (const digestEnabled of [undefined, '', 'false', '1', true]) {
     const db = backend();
     await assert.rejects(
       runRouting('apply', {
@@ -332,6 +336,15 @@ test('apply cannot mute warning emails while scheduled delivery is disabled', as
     assert.equal(db.writes.length, 0);
     assert.deepEqual(db.policies(), fixture());
   }
+  const enabled = backend(fixture(), { verificationEntries: [smokeEntry] });
+  await runRouting('apply', {
+    request: enabled.request,
+    report: report(),
+    expectedHash: planHash(fixture()),
+    receipt: smokeReceipt,
+    digestEnabled: 'TRUE',
+  });
+  assert.ok(enabled.writes.length > 0);
 });
 
 test('prepare creates backstops without muting any original email, apply requires receipt and unchanged plan', async () => {
@@ -486,6 +499,36 @@ test('digest does not publish before activation; after activation zero warnings 
   assert.ok(outage.writes.some((w) => w.url.endsWith('/entries:write')));
 });
 
+test('digest fails when any daily policy, including reconnect, is off immediate email', async () => {
+  const base = fixture();
+  const reconnect = {
+    ...reconnectMailboxPolicy(),
+    name: 'projects/declutrmail-ai-prod/alertPolicies/reconnect',
+    enabled: true,
+    combiner: 'OR',
+    notificationChannels: [channel.name],
+    userLabels: { notification_route: 'immediate' },
+  };
+  const healthy = backend([...base, reconnect]);
+  const skipped = report();
+  await runRouting('digest', { request: healthy.request, report: skipped });
+  assert.equal(skipped.notConfigured, true);
+  assert.equal(healthy.writes.length, 0);
+  for (const misrouted of [
+    { ...reconnect, notificationChannels: [] },
+    { ...reconnect, userLabels: { notification_route: 'daily' } },
+  ]) {
+    const db = backend([...base, misrouted]);
+    const result = report();
+    await assert.rejects(
+      runRouting('digest', { request: db.request, report: result }),
+      /Daily warning delivery path is missing after activation/,
+    );
+    assert.notEqual(result.notConfigured, true);
+    assert.equal(db.writes.length, 0);
+  }
+});
+
 test('pagination is complete or fails explicitly, and native empty protobuf lists compare correctly', async () => {
   let calls = 0;
   assert.deepEqual(
@@ -603,4 +646,12 @@ test('rollout and scheduled digest use existing WIF and daily cadence without pa
   assert.ok(!/secrets\.(PADDLE|RAZORPAY|RESEND|SUPABASE)/.test(workflow));
   const daily = readFileSync('.github/workflows/vendor-limits-watchdog.yml', 'utf8');
   assert.equal(daily.split('node scripts/alert-email-routing.mjs digest').length - 1, 1);
+  const digestStep = daily.slice(daily.indexOf('Publish one daily operational warning summary'));
+  assert.match(
+    digestStep,
+    /if: always\(\) && steps\.collect\.outcome != 'skipped' && env\.GCP_WIF_PROVIDER != '' && vars\.OPS_ALERT_DIGEST_ENABLED == 'true'\n {8}run: node scripts\/alert-email-routing\.mjs digest/,
+  );
+  assert.match(workflow, /smoke ROUTING_VERIFICATION log insertId and day/);
+  assert.doesNotMatch(workflow, /Gmail ID/);
+  assert.doesNotMatch(workflow, /inbox delivery/);
 });

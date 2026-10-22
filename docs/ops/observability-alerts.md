@@ -19,7 +19,7 @@ admin email channel. Do not create parallel notification channels.
 2. Run `node scripts/setup-infra-alerts.mjs declutrmail-ai-prod --runtime --metrics-only --apply` to provision log metrics without alerts. Runtime distributions have
    no historical backfill. Validate emitted observations against metric readback;
    allow ingestion delay. Do not substitute older daily DB connection samples.
-3. Apply reviewed policies using `--apply --worker --runtime`. Before daily routing is verified, an emergency threshold or filter repair also passes `--allow-unverified-routing` on that command. The worker uptime
+3. Apply reviewed policies using `--apply --worker --runtime`. Before daily routing is verified, an emergency threshold or filter repair also passes `--allow-unverified-routing` on that command. That apply keeps each policy's existing notification channels and assigns the admin email channel when a policy has none. The worker uptime
    check additionally refuses installation if its endpoint is not currently healthy.
    Runtime rules require the telemetry deployment first; `--runtime` explicitly
    opts in to runtime rules. Activation refuses missing/stale/failed-only samples for any expected source; at least one successful observation within 20 minutes is required for mailbox/scheduler/database/reconnect/recovery and each of the four expected queues.
@@ -73,8 +73,10 @@ remain local. No notification channel is created.
 - Emergency threshold or filter repairs, before that daily path is verified,
   pass `--allow-unverified-routing` with `--apply` on
   `scripts/setup-infra-alerts.mjs` and `scripts/setup-stuck-mailbox-alert.mjs`.
-  The argument is on that command, not a repository setting. It does not mute
-  warning emails and does not mark delivery verified.
+  The argument is on that command, not a repository setting. It keeps existing
+  notification channels. A policy with none, including a newly created
+  "DeclutrMail Gmail reconnect required" policy, gets the existing admin email
+  channel. It does not clear channels and does not mark delivery verified.
 
 Rollout order: dispatch **plan**, inspect its encrypted policy diff, then **prepare**
 with that plan hash and reviewed main SHA. Prepare installs only the digest,
@@ -82,18 +84,20 @@ reconnect diagnostic and aggregate escalation; existing email channels remain.
 Dispatch **smoke**, then **apply** with a fresh plan hash and the receipt bound
 to that smoke log entry: SHA-256 of its insertId and day
 (`ROUTING_VERIFICATION <run-id>`). An arbitrary 64-character hex string is refused.
-No raw Gmail ID enters workflow inputs.
+The workflow input `digest_receipt` is that smoke-log hash, not a Gmail message id.
+Smoke writes the verification log row. It does not prove the admin inbox received mail.
 Application refuses unavailable native queries, changed plans or missing
 receipts, reads every changed policy back, and attempts restoration on failure.
 Run **plan** and **smoke** through the protected-main workflow using the
 same WIF identity as the daily watchdog. Plan lists policies and channels only.
 Prepare and apply run preflight, which verifies incident, digest-log, and probe
-reads; smoke verifies publication and inbox delivery.
+reads; smoke publishes the verification log row and does not prove inbox delivery.
 Human-admin access alone does not establish scheduled delivery. Set repository
-variable `OPS_ALERT_DIGEST_ENABLED=true` before **apply**, only after these
-checks and the verification-email receipt. Without this explicit
-activation, the existing vendor watchdog skips the new digest step. Do not mute
-warning channels while scheduled access remains unavailable.
+variable `OPS_ALERT_DIGEST_ENABLED` to `true` before **apply**, only after these
+checks and the smoke-log receipt. The watchdog condition and the apply script
+both treat any letter case of `true` as enabled. An empty value stays disabled.
+Without this explicit activation, the existing vendor watchdog skips the new
+digest step. Do not mute warning channels while scheduled access remains unavailable.
 
 Dispatch **verify** for independent configuration readback and **digest** for the
 first real daily summary without running vendor/billing collectors. Receiving a
@@ -219,7 +223,9 @@ cannot hide the next one.
 plan. `--apply` converges both log metrics and both policies in place and
 refuses the silent-watchdog policy until the worker has logged a completed sweep
 in the last 20 minutes. Before daily routing is verified, an emergency repair
-also passes `--allow-unverified-routing`. It does not mute warning email. Switching the first policy to per-mailbox opens one
+also passes `--allow-unverified-routing`. It keeps existing notification channels
+and assigns the admin email channel when a policy has none, including a new
+Gmail reconnect policy. Switching the first policy to per-mailbox opens one
 alert, and sends one email, for each mailbox already stuck.
 
 `--starve-test` then proves on production data that a freshly stuck mailbox

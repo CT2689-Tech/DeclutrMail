@@ -9,6 +9,7 @@ import {
   watchdogSilentPolicy,
   starveTestResources,
   alertsPageQuery,
+  setupStuckMailboxAlert,
 } from './setup-stuck-mailbox-alert.mjs';
 
 const WORKER = readFileSync('packages/workers/src/stuck-mailbox-watchdog.ts', 'utf8');
@@ -157,4 +158,52 @@ test('starve-test lines never reach the production alert, and its test policies 
   assert.equal(r.entry.jsonPayload.starveTest, 'run1');
   assert.equal(r.entry.jsonPayload.kind, 'mailbox.stuck_unnoticed');
   assert.deepEqual(r.entry.resource, resource);
+});
+
+test('emergency stuck apply keeps channels and gives reconnect the admin channel', async () => {
+  const project = 'test-project';
+  const admin = `projects/${project}/notificationChannels/admin`;
+  const kept = `projects/${project}/notificationChannels/kept`;
+  const policies = [
+    {
+      name: `projects/${project}/alertPolicies/stuck`,
+      displayName: 'Mailbox stuck: broken past grace window, unnoticed',
+      notificationChannels: [kept],
+      enabled: true,
+    },
+  ];
+  const writes = [];
+  let serial = 0;
+  const request = async (url, method = 'GET', body) => {
+    const path = new URL(url).pathname;
+    if (path.endsWith('/entries:list')) return { entries: [{ insertId: 'heartbeat' }] };
+    if (method === 'PUT') return {};
+    if (method === 'POST' || method === 'PATCH') {
+      writes.push(structuredClone(body));
+      return { ...body, name: body.name ?? `projects/${project}/alertPolicies/new${++serial}` };
+    }
+    if (path.endsWith('/notificationChannels'))
+      return {
+        notificationChannels: [
+          {
+            name: admin,
+            type: 'email',
+            enabled: true,
+            labels: { email_address: 'admin@declutrmail.ai' },
+          },
+        ],
+      };
+    if (path.endsWith('/alertPolicies')) return { alertPolicies: policies };
+    throw new Error(`unexpected ${method} ${url}`);
+  };
+  await setupStuckMailboxAlert(project, { apply: true, allowUnverifiedRouting: true, request });
+  assert.ok(writes.length >= 3);
+  assert.ok(writes.every((body) => body.notificationChannels?.length > 0));
+  const stuck = writes.find(
+    (p) => p.displayName === 'Mailbox stuck: broken past grace window, unnoticed',
+  );
+  assert.deepEqual(stuck.notificationChannels, [kept]);
+  const reconnect = writes.find((p) => p.displayName === 'DeclutrMail Gmail reconnect required');
+  assert.deepEqual(reconnect.notificationChannels, [admin]);
+  assert.equal(reconnect.userLabels.notification_route, 'immediate');
 });

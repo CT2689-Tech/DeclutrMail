@@ -120,6 +120,11 @@ export function verificationReceipt(entry) {
   return createHash('sha256').update(`${entry.insertId}\n${entry.jsonPayload.day}`).digest('hex');
 }
 
+/** Agrees with Actions `vars.OPS_ALERT_DIGEST_ENABLED == 'true'` (case-insensitive). */
+export function digestDeliveryEnabled(value) {
+  return typeof value === 'string' && value.toLowerCase() === 'true';
+}
+
 export function digestAlertFilter(now = Date.now()) {
   const since = new Date(now - 24 * 60 * 60 * 1000).toISOString();
   // alerts.list filter/orderBy use the discovery names state and close_time.
@@ -344,7 +349,7 @@ export async function runRouting(
   mode,
   { request, report, expectedHash, receipt, digestEnabled } = {},
 ) {
-  if (mode === 'apply' && digestEnabled !== 'true')
+  if (mode === 'apply' && !digestDeliveryEnabled(digestEnabled))
     throw new Error('Scheduled daily digest must be enabled before muting warnings');
   const state = await inventory(request, mode !== 'digest');
   report.before = state.policies.filter((p) => OWNED.has(p.displayName));
@@ -354,8 +359,7 @@ export async function runRouting(
       const alreadyRouted = state.policies.some(
         (p) =>
           DAILY_POLICIES.has(p.displayName) &&
-          p.displayName !== RECONNECT_POLICY &&
-          (p.userLabels?.notification_route === 'daily' || p.notificationChannels?.length === 0),
+          (p.userLabels?.notification_route === 'daily' || !p.notificationChannels?.length),
       );
       if (alreadyRouted) throw new Error('Daily warning delivery path is missing after activation');
       report.notConfigured = true;

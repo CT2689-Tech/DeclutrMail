@@ -1,5 +1,5 @@
 import { pathToFileURL } from 'node:url';
-import { gcpToken, gcpRequest } from './infra-observability.mjs';
+import { gcpSend } from './infra-observability.mjs';
 import {
   notificationPolicy,
   coverageNotifications,
@@ -425,6 +425,7 @@ export async function setupAlerts(
     metricsOnly = false,
     apply = false,
     allowUnverifiedRouting = false,
+    request,
   } = {},
 ) {
   if (metricsOnly && !runtime) throw new Error('--metrics-only requires --runtime');
@@ -436,7 +437,7 @@ export async function setupAlerts(
           logMetrics: runtime ? [...RUNTIME_LOG_METRICS, ...LAUNCH_LOG_METRICS] : [],
           policies: plan,
           workerRequested: worker,
-          note: 'Plan only. Worker check ID and endpoint must be verified before applying. Emergency threshold or filter repairs before daily routing is verified require --allow-unverified-routing with --apply. That does not mute warning email.',
+          note: 'Plan only. Worker check ID and endpoint must be verified before applying. Emergency threshold or filter repairs before daily routing is verified require --allow-unverified-routing with --apply. That keeps existing notification channels and assigns the admin email channel when a policy has none.',
         },
         null,
         2,
@@ -444,15 +445,14 @@ export async function setupAlerts(
     );
     return plan;
   }
-  const token = gcpToken();
+  const send = gcpSend(request);
   const root = `https://monitoring.googleapis.com/v3/projects/${project}`;
   async function listAll(collection) {
     const records = [];
     let next = '';
     do {
-      const data = await gcpRequest(
+      const data = await send(
         `${root}/${collection}${next ? `?pageToken=${encodeURIComponent(next)}` : ''}`,
-        token,
       );
       records.push(...(data[collection] ?? []));
       next = data.nextPageToken;
@@ -481,17 +481,20 @@ export async function setupAlerts(
     const routed = runtime
       ? coverageNotifications(policy, heartbeat[0].name.split('/').at(-1))
       : policy;
+    const prior = old[0]?.notificationChannels;
+    const input =
+      allowUnverifiedRouting && prior?.length ? { ...routed, notificationChannels: prior } : routed;
     const value = {
-      ...notificationPolicy(routed, channel.name),
+      ...notificationPolicy(input, channel.name, { preserveChannels: allowUnverifiedRouting }),
       enabled: true,
       combiner: 'OR',
     };
     if (old[0])
-      await gcpRequest(`https://monitoring.googleapis.com/v3/${old[0].name}`, token, 'PATCH', {
+      await send(`https://monitoring.googleapis.com/v3/${old[0].name}`, 'PATCH', {
         ...value,
         name: old[0].name,
       });
-    else await gcpRequest(`${root}/alertPolicies`, token, 'POST', value);
+    else await send(`${root}/alertPolicies`, 'POST', value);
     console.log(policy.displayName);
   }
   if (runtime) {
@@ -499,7 +502,7 @@ export async function setupAlerts(
     for (const metric of [...RUNTIME_LOG_METRICS, ...LAUNCH_LOG_METRICS]) {
       const url = `${logging}/${metric.name}`;
       // PUT is the Logging API create-or-update operation for a named metric.
-      await gcpRequest(url, token, 'PUT', metric);
+      await send(url, 'PUT', metric);
     }
   }
   if (metricsOnly) return;
@@ -515,7 +518,7 @@ export async function setupAlerts(
     let next = '';
     do {
       if (next) params.set('pageToken', next);
-      const data = await gcpRequest(`${root}/timeSeries?${params}`, token);
+      const data = await send(`${root}/timeSeries?${params}`);
       series.push(...(data.timeSeries ?? []));
       next = data.nextPageToken;
     } while (next);
@@ -529,10 +532,10 @@ export async function setupAlerts(
     if (response.status !== 200 || (await response.json()).status !== 'ok')
       throw new Error('Deploy and verify worker heartbeat first; uptime monitor was not installed');
     const title = 'DeclutrMail worker heartbeat';
-    const checks = (await gcpRequest(`${root}/uptimeCheckConfigs`, token)).uptimeCheckConfigs ?? [];
+    const checks = (await send(`${root}/uptimeCheckConfigs`)).uptimeCheckConfigs ?? [];
     const check =
       checks.find((c) => c.displayName === title) ??
-      (await gcpRequest(`${root}/uptimeCheckConfigs`, token, 'POST', {
+      (await send(`${root}/uptimeCheckConfigs`, 'POST', {
         displayName: title,
         period: '60s',
         timeout: '10s',

@@ -12,7 +12,7 @@ export function assertDailyRoutingReady(policies, { reconnect = false, verified 
       throw new Error('Daily warning email receipt must be verified first');
   }
 }
-/** Emergency setup applies pass allowUnverified. It does not mute warnings. */
+/** Emergency setup applies pass allowUnverified. Channel preservation is separate. */
 export function enforceDailyRouting(policies, { allowUnverified = false, ...options } = {}) {
   if (allowUnverified) return;
   assertDailyRoutingReady(policies, options);
@@ -51,13 +51,16 @@ const SUBJECTS = {
     'DeclutrMail mailbox lock failure — check which process holds it',
 };
 
-export function notificationPolicy(policy, channelName) {
+export function notificationPolicy(policy, channelName, { preserveChannels = false } = {}) {
   const value = structuredClone(policy);
   const daily = DAILY_POLICIES.has(value.displayName);
   const outage = OUTAGES.has(value.displayName);
   const digest = value.displayName === DIGEST_POLICY;
   value.severity = daily || digest ? 'WARNING' : outage ? 'CRITICAL' : 'ERROR';
-  value.userLabels = { ...value.userLabels, notification_route: daily ? 'daily' : 'immediate' };
+  value.userLabels = {
+    ...value.userLabels,
+    notification_route: daily && !preserveChannels ? 'daily' : 'immediate',
+  };
   value.documentation = {
     ...value.documentation,
     mimeType: 'text/markdown',
@@ -83,7 +86,14 @@ export function notificationPolicy(policy, channelName) {
     if (!value.documentation.content?.includes('A CLOSED notification is an incident closure'))
       value.documentation.content = (value.documentation.content ?? '') + note;
   }
-  if (channelName) value.notificationChannels = daily ? [] : [channelName];
+  if (channelName) {
+    if (preserveChannels) {
+      // Emergency setup must not take a policy off email. Keep a channel list
+      // that already delivers; otherwise use the existing admin channel.
+      const kept = policy.notificationChannels;
+      value.notificationChannels = kept?.length ? [...kept] : [channelName];
+    } else value.notificationChannels = daily ? [] : [channelName];
+  }
   return value;
 }
 

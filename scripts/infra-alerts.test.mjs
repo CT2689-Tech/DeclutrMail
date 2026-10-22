@@ -9,6 +9,7 @@ import {
   oauthCallbackShouldPage,
   deadLetterShouldPage,
   gmailRateLimitShouldPage,
+  setupAlerts,
 } from './setup-infra-alerts.mjs';
 import {
   RUNTIME_LOG_METRICS,
@@ -615,4 +616,79 @@ test('collection and scheduler recovery require explicit successful observations
     );
     assert.ok(t.aggregations[0].groupByFields.includes('metric.label.worker'));
   }
+});
+
+test('emergency infra apply keeps channels and never writes an empty list', async () => {
+  const project = 'test-project';
+  const admin = `projects/${project}/notificationChannels/admin`;
+  const kept = `projects/${project}/notificationChannels/kept`;
+  const policies = [
+    {
+      name: `projects/${project}/alertPolicies/latency`,
+      displayName: 'DeclutrMail API sustained high latency',
+      notificationChannels: [kept],
+      enabled: true,
+    },
+    {
+      name: `projects/${project}/alertPolicies/memory`,
+      displayName: 'DeclutrMail Cloud Run memory pressure',
+      notificationChannels: [],
+      enabled: true,
+    },
+  ];
+  const writes = [];
+  const endTime = new Date().toISOString();
+  const request = async (url, method = 'GET', body) => {
+    const path = new URL(url).pathname;
+    if (method === 'POST' || method === 'PATCH' || method === 'PUT') {
+      if (path.includes('/alertPolicies')) writes.push(structuredClone(body));
+      if (method === 'POST' && path.endsWith('/alertPolicies'))
+        return { ...body, name: `projects/${project}/alertPolicies/new${writes.length}` };
+      return body ?? {};
+    }
+    if (path.endsWith('/notificationChannels'))
+      return {
+        notificationChannels: [
+          {
+            name: admin,
+            type: 'email',
+            enabled: true,
+            labels: { email_address: 'admin@declutrmail.ai' },
+          },
+        ],
+      };
+    if (path.endsWith('/alertPolicies')) return { alertPolicies: policies };
+    if (path.endsWith('/uptimeCheckConfigs'))
+      return {
+        uptimeCheckConfigs: [
+          {
+            name: `projects/${project}/uptimeCheckConfigs/worker-check`,
+            displayName: 'DeclutrMail worker heartbeat',
+          },
+        ],
+      };
+    if (path.endsWith('/timeSeries'))
+      return {
+        timeSeries: EXPECTED_RUNTIME_COLLECTIONS.map(({ source, queue }) => ({
+          metric: { labels: queue ? { source, queue } : { source } },
+          points: [{ interval: { endTime }, value: { int64Value: '1' } }],
+        })),
+      };
+    throw new Error(`unexpected ${method} ${url}`);
+  };
+  await setupAlerts(project, {
+    apply: true,
+    runtime: true,
+    allowUnverifiedRouting: true,
+    request,
+  });
+  assert.ok(writes.length > 0);
+  assert.ok(writes.every((body) => body.notificationChannels?.length > 0));
+  const latency = writes.find((p) => p.displayName === 'DeclutrMail API sustained high latency');
+  assert.deepEqual(latency.notificationChannels, [kept]);
+  assert.equal(latency.userLabels.notification_route, 'immediate');
+  const memory = writes.find((p) => p.displayName === 'DeclutrMail Cloud Run memory pressure');
+  assert.deepEqual(memory.notificationChannels, [admin]);
+  const database = writes.find((p) => p.displayName === 'DeclutrMail database connection pressure');
+  assert.deepEqual(database.notificationChannels, [admin]);
 });
