@@ -46,6 +46,11 @@
 import { pathToFileURL } from 'node:url';
 
 import { gcpRequest, gcpToken } from './infra-observability.mjs';
+import {
+  notificationPolicy,
+  RECONNECT_POLICY,
+  assertDailyRoutingReady,
+} from './alert-notification-policy.mjs';
 
 const ALERT_EMAIL = 'admin@declutrmail.ai';
 const WORKER_SERVICE = 'declutrmail-worker';
@@ -156,6 +161,8 @@ const SILENT_DOC = [
 ].join('\n');
 
 export function stuckMailboxPolicy() {
+  const condition = perMailboxCondition(STUCK_METRIC.name);
+  condition.conditionThreshold.filter += ' AND metric.labels.reason!="needs_reconnect"';
   return {
     displayName: 'Mailbox stuck: broken past grace window, unnoticed',
     documentation: {
@@ -163,9 +170,23 @@ export function stuckMailboxPolicy() {
       subject: 'Mailbox stuck: ${metric.label.mailbox_account_id} (${metric.label.reason})',
       content: STUCK_DOC,
     },
-    conditions: [perMailboxCondition(STUCK_METRIC.name)],
+    conditions: [condition],
     alertStrategy: { autoClose: '1800s', notificationPrompts: ['OPENED'] },
   };
+}
+
+export function reconnectMailboxPolicy() {
+  const value = stuckMailboxPolicy();
+  value.displayName = RECONNECT_POLICY;
+  value.documentation = {
+    mimeType: 'text/markdown',
+    content:
+      'An isolated Gmail grant requires reconnection. This per-mailbox diagnostic remains enabled and is included in the daily operational summary. Other sync failures retain immediate per-mailbox emails; a separate aggregate rule escalates multiple reconnect requirements.',
+  };
+  value.conditions[0].conditionThreshold.filter =
+    perMailboxCondition(STUCK_METRIC.name).conditionThreshold.filter +
+    ' AND metric.labels.reason="needs_reconnect"';
+  return value;
 }
 
 export function watchdogSilentPolicy() {
@@ -246,7 +267,7 @@ export async function setupStuckMailboxAlert(project, { apply = false } = {}) {
       JSON.stringify(
         {
           logMetrics: [STUCK_METRIC, COMPLETED_METRIC],
-          policies: [stuckMailboxPolicy(), watchdogSilentPolicy()],
+          policies: [stuckMailboxPolicy(), reconnectMailboxPolicy(), watchdogSilentPolicy()],
           note: 'Plan only. --apply converges these in place; --starve-test proves them without paging anyone.',
         },
         null,
@@ -270,6 +291,7 @@ export async function setupStuckMailboxAlert(project, { apply = false } = {}) {
   if (channels.length !== 1)
     throw new Error(`Expected one enabled ${ALERT_EMAIL} email channel, found ${channels.length}`);
   const existing = await listAll(`${root}/alertPolicies`, 'alertPolicies', token);
+  assertDailyRoutingReady(existing, { reconnect: true });
   async function upsert(policy) {
     const old = existing.filter((p) => p.displayName === policy.displayName);
     if (old.length > 1) throw new Error(`Duplicate alert policy: ${policy.displayName}`);
@@ -277,7 +299,7 @@ export async function setupStuckMailboxAlert(project, { apply = false } = {}) {
       ...policy,
       combiner: 'OR',
       enabled: true,
-      notificationChannels: [channels[0].name],
+      ...notificationPolicy(policy, channels[0].name),
     };
     if (old[0])
       await gcpRequest(`${MONITORING}/${old[0].name}`, token, 'PATCH', {
@@ -288,6 +310,7 @@ export async function setupStuckMailboxAlert(project, { apply = false } = {}) {
     console.log(`alert policy "${policy.displayName}"`);
   }
   await upsert(stuckMailboxPolicy());
+  await upsert(reconnectMailboxPolicy());
   const heartbeat = await latestEntry(
     project,
     token,

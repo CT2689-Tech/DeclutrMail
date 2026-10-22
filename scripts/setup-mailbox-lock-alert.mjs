@@ -33,6 +33,7 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { gcpToken } from './infra-observability.mjs';
+import { notificationPolicy } from './alert-notification-policy.mjs';
 
 export const METRIC_NAME = 'mailbox_lock_errors';
 export const POLICY_DISPLAY_NAME = 'Mailbox lock: leak or acquisition failure';
@@ -114,14 +115,17 @@ const RUNBOOK = [
 ].join('\n');
 
 export function expectedPolicy(channelName) {
-  return {
-    displayName: POLICY_DISPLAY_NAME,
-    combiner: 'OR',
-    enabled: true,
-    notificationChannels: [channelName],
-    documentation: { mimeType: 'text/markdown', content: RUNBOOK },
-    conditions: [lockCondition(METRIC_NAME)],
-  };
+  return notificationPolicy(
+    {
+      displayName: POLICY_DISPLAY_NAME,
+      combiner: 'OR',
+      enabled: true,
+      notificationChannels: [channelName],
+      documentation: { mimeType: 'text/markdown', content: RUNBOOK },
+      conditions: [lockCondition(METRIC_NAME)],
+    },
+    channelName,
+  );
 }
 
 /**
