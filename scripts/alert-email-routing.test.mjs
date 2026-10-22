@@ -267,7 +267,7 @@ test('plan is read-only and preflight failures do not mutate policies', async ()
         request: broken.request,
         report: report(),
         expectedHash: planHash(fixture()),
-        receipt: 'receipt123',
+        receipt: 'a'.repeat(64),
       }),
     );
     assert.equal(broken.writes.length, 0);
@@ -303,7 +303,7 @@ test('prepare creates backstops without muting any original email, apply require
       request: db.request,
       report: report(),
       expectedHash: 'stale',
-      receipt: 'receipt123',
+      receipt: 'a'.repeat(64),
     }),
     /changed/,
   );
@@ -312,7 +312,7 @@ test('prepare creates backstops without muting any original email, apply require
     request: db.request,
     report: report(),
     expectedHash: prepared.nextPlanHash,
-    receipt: 'receipt123',
+    receipt: 'a'.repeat(64),
   });
   const actual = db.policies();
   assertDailyRoutingReady(actual, { reconnect: true });
@@ -343,7 +343,7 @@ test('failed rollout restores original policies and leaves unrelated policies un
       request: db.request,
       report: result,
       expectedHash: planHash(initial),
-      receipt: 'receipt123',
+      receipt: 'a'.repeat(64),
     }),
   );
   assert.equal(result.rollback.filter((r) => r.restored === false).length, 0);

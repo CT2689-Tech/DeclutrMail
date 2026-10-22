@@ -75,7 +75,8 @@ with that plan hash and reviewed main SHA. Prepare installs only the digest,
 reconnect diagnostic and aggregate escalation; existing email channels remain.
 Dispatch **smoke**, find the matching `ROUTING_VERIFICATION <run-id>` email in the
 admin inbox, then **apply** with a fresh plan hash and that observed Gmail receipt
-ID. Application refuses unavailable native queries, changed plans or missing
+fingerprint (SHA-256 of the ID, so no raw Gmail ID enters workflow inputs).
+Application refuses unavailable native queries, changed plans or missing
 receipts, reads every changed policy back, and attempts restoration on failure.
 Dispatch **verify** for independent configuration readback and **digest** for the
 first real daily summary without running vendor/billing collectors. Receiving a

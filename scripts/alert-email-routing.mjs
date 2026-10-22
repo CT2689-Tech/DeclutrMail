@@ -329,7 +329,7 @@ export async function runRouting(mode, { request, report, expectedHash, receipt 
   if (!['prepare', 'apply'].includes(mode)) throw new Error('Invalid routing mode');
   if (!expectedHash || expectedHash !== report.planHash)
     throw new Error('Reviewed plan changed; read a fresh plan');
-  if (mode === 'apply' && !/^[A-Za-z0-9_-]{6,80}$/.test(receipt ?? ''))
+  if (mode === 'apply' && !/^[a-f0-9]{64}$/.test(receipt ?? ''))
     throw new Error('Observed digest email receipt required before muting warnings');
   if (mode === 'apply')
     plan.find((p) => p.displayName === DIGEST_POLICY).userLabels.delivery_verified = 'true';

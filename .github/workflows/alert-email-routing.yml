@@ -19,7 +19,7 @@ on:
         description: 'Hash from the immediately preceding plan or prepare report'
         type: string
       digest_receipt:
-        description: 'Observed Gmail receipt ID for this rollout verification email'
+        description: 'SHA-256 of the observed verification-email ID; never enter the raw Gmail ID'
         type: string
 
 permissions:
