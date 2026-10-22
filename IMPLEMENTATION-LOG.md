@@ -442,3 +442,16 @@ then. Home strings that need a rewrite are requested, not invented.
 No billing state, OAuth scope, migration or mail-changing default is
 changed. See `docs/execution/ws2b-home-v1-2026-10-11.md`. Preview visual
 review is separate from this record.
+
+## Operational alert email routing — 2026-10-22
+
+Relates to D159 and D160. Operational rules now have explicit urgency, subjects,
+opening/closure behavior and four-hour critical reminders. Advisory pressure and
+isolated reconnect incidents stay enabled and enter the existing daily watchdog's
+aggregate summary; an independent multi-mailbox reconnect rule retains escalation.
+The coverage rule yields only to repeatedly failed multi-location worker probes.
+Native scheduler/collection detection stays unchanged. A main-only WIF rollout
+retains encrypted backups and requires an observed digest email before muting
+warning channels. Tests cover unavailable inputs, sparse probes, replay, transient
+warnings, plan drift and rollback. See `docs/ops/observability-alerts.md`; production
+application, receipt verification and measured noise reduction are separate evidence.

@@ -1,5 +1,10 @@
 import { pathToFileURL } from 'node:url';
 import { gcpToken, gcpRequest } from './infra-observability.mjs';
+import {
+  notificationPolicy,
+  coverageNotifications,
+  assertDailyRoutingReady,
+} from './alert-notification-policy.mjs';
 
 import {
   RUNTIME_LOG_METRICS,
@@ -459,14 +464,21 @@ export async function setupAlerts(
     throw new Error('Exactly one enabled existing admin notification channel required');
   const channel = matches[0];
   const existing = await listAll('alertPolicies');
+  const checks = runtime ? await listAll('uptimeCheckConfigs') : [];
+  const heartbeat = checks.filter((c) => c.displayName === 'DeclutrMail worker heartbeat');
+  if (runtime && !metricsOnly && heartbeat.length !== 1)
+    throw new Error('Exactly one existing worker heartbeat check required for coverage routing');
+  if (!metricsOnly) assertDailyRoutingReady(existing);
   async function upsert(policy) {
     const old = existing.filter((p) => p.displayName === policy.displayName);
     if (old.length > 1) throw new Error(`Duplicate alert policy: ${policy.displayName}`);
+    const routed = runtime
+      ? coverageNotifications(policy, heartbeat[0].name.split('/').at(-1))
+      : policy;
     const value = {
-      ...policy,
+      ...notificationPolicy(routed, channel.name),
       enabled: true,
       combiner: 'OR',
-      notificationChannels: [channel.name],
     };
     if (old[0])
       await gcpRequest(`https://monitoring.googleapis.com/v3/${old[0].name}`, token, 'PATCH', {

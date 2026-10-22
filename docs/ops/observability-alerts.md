@@ -30,6 +30,61 @@ admin email channel. Do not create parallel notification channels.
    populated panels, labels, units, freshness and links. Billing export and invoice
    gaps remain explicit; no-data is never represented as zero spend.
 
+## Email routing and noise control
+
+Notification settings live in `scripts/alert-notification-policy.mjs`. The
+bounded `alert-email-routing` workflow reads and updates only the named operational
+policies, through existing Workload Identity on protected main. It neither changes
+application resources nor reads payment-provider credentials. Encrypted artifacts
+retain before/after policies, unavailable reads and rollback results; private keys
+remain local. No notification channel is created.
+
+- Major API availability, dependency readiness and worker heartbeat incidents have
+  explicit CRITICAL severity, opening and closure notifications, and four-hour
+  reminders. Missing uptime data retains the last evaluation. A closure can still
+  result from policy edits or automatic expiry; verify readiness and completed work.
+- Other immediate operational failures have ERROR severity, opening-only emails
+  and four-hour reminders. Native scheduler and collection-failure thresholds,
+  durations, and missing-data semantics stay intact. They remain independent
+  alerts: Google Cloud cannot inhibit their OR conditions using another policy
+  without rewriting detection. Do not claim one email for every whole-system incident.
+- Coverage notifications yield to a confirmed worker outage only when more than
+  one checker has three actual failing samples within three minutes. Sparse,
+  absent or mixed probes never suppress coverage. This changes notification
+  priority without rewriting the original coverage expression.
+- Latency, memory pressure, database pressure and isolated Gmail reconnect warnings
+  stay enabled as diagnostics and enter one daily aggregate summary. The existing
+  vendor watchdog publishes it at its existing 13:00 UTC cadence. The summary counts
+  open incidents and incidents closed in the preceding 24 hours, including brief
+  warnings; it contains no mailbox identities or log contents. No warning email is
+  emitted for a healthy empty summary. Read/publication failures fail the job;
+  missing delivery configuration after activation is an error, not an empty report.
+  Same-UTC-day replays skip an already published summary. The native log alert uses
+  a five-minute minimum rate limit so a delayed daily run does not suppress tomorrow.
+- Non-auth sync failures retain separate immediate per-mailbox incidents. Two or
+  more observed reconnect requirements sustained ten minutes have an independent
+  immediate aggregate alert; its observations inherit the existing two-hour grace.
+  OOM/container exits remain immediate. Snapshot count escalation uses histogram
+  sum/count, avoiding the approximate-zero percentile issue.
+- Deployment identities are removed from alert grouping while service, mailbox,
+  queue and source distinctions remain. Provisioning scripts use the same profiles
+  and refuse to mute warnings without the verified daily path in place.
+
+Rollout order: dispatch **plan**, inspect its encrypted policy diff, then **prepare**
+with that plan hash and reviewed main SHA. Prepare installs only the digest,
+reconnect diagnostic and aggregate escalation; existing email channels remain.
+Dispatch **smoke**, find the matching `ROUTING_VERIFICATION <run-id>` email in the
+admin inbox, then **apply** with a fresh plan hash and that observed Gmail receipt
+ID. Application refuses unavailable native queries, changed plans or missing
+receipts, reads every changed policy back, and attempts restoration on failure.
+Dispatch **verify** for independent configuration readback and **digest** for the
+first real daily summary without running vendor/billing collectors. Receiving a
+verification email proves that path at that time; it does not establish future
+delivery or measured noise reduction. Review actual receipts over the following week.
+
+Sources: [Cloud Monitoring notification controls](https://docs.cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.alertPolicies#AlertStrategy)
+and [incident fanout behavior](https://docs.cloud.google.com/monitoring/alerts/concepts-indepth).
+
 ## Worker stall and recovery semantics
 
 The persistent worker's main postgres.js pool uses Supabase session mode, as do

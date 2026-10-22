@@ -24,7 +24,8 @@ test('default CLI prints a plan and touches nothing', () => {
     plan.logMetrics.map((m) => m.name),
     ['stuck_mailbox_unnoticed', 'stuck_mailbox_watchdog_completed'],
   );
-  assert.equal(plan.policies.length, 2);
+  assert.equal(plan.policies.length, 3);
+  assert.ok(plan.policies.some((p) => p.displayName === 'DeclutrMail Gmail reconnect required'));
   assert.ok(plan.policies.every((p) => p.notificationChannels === undefined));
 });
 

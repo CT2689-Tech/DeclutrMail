@@ -1,0 +1,71 @@
+name: Review and apply alert email routing
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Plan, prepare backstops, verify an email, apply reviewed routing, or read back'
+        type: choice
+        options: [plan, prepare, smoke, apply, verify, digest]
+        default: plan
+      public_key:
+        description: 'RSA public key PEM only; private key remains local'
+        type: string
+        required: true
+      expected_sha:
+        description: 'Reviewed main SHA; required for prepare, smoke, and apply'
+        type: string
+      plan_hash:
+        description: 'Hash from the immediately preceding plan or prepare report'
+        type: string
+      digest_receipt:
+        description: 'Observed Gmail receipt ID for this rollout verification email'
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: declutrmail-alert-email-routing
+  cancel-in-progress: false
+
+jobs:
+  routing:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Verify routing contracts before authentication
+        run: node --test scripts/alert-email-routing.test.mjs
+      - name: Validate public key before authentication
+        env:
+          ALERT_ROUTING_PUBLIC_KEY: ${{ inputs.public_key }}
+        run: node --input-type=module -e 'import { validatePublicKey } from "./scripts/sentry-private-triage.mjs"; validatePublicKey(process.env.ALERT_ROUTING_PUBLIC_KEY);'
+      - name: Authenticate with existing Google Workload Identity
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Run bounded notification operation
+        env:
+          ROUTING_MODE: ${{ inputs.mode }}
+          ALERT_ROUTING_PUBLIC_KEY: ${{ inputs.public_key }}
+          ALERT_ROUTING_OUTPUT: ${{ runner.temp }}/alert-routing.encrypted.json
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          ALERT_ROUTING_PLAN_HASH: ${{ inputs.plan_hash }}
+          ALERT_ROUTING_DIGEST_RECEIPT: ${{ inputs.digest_receipt }}
+        run: node scripts/alert-email-routing.mjs "$ROUTING_MODE"
+      - name: Retain encrypted policy backup and readback
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: alert-email-routing-encrypted
+          path: ${{ runner.temp }}/alert-routing.encrypted.json
+          retention-days: 7
+          if-no-files-found: error
