@@ -63,11 +63,11 @@ function backend(initial = fixture(), options = {}) {
   const writes = [];
   let serial = 0;
   const request = async (url, method = 'GET', body) => {
-    if (method !== 'GET') {
+    const parsed = new URL(url);
+    if (method !== 'GET' && !parsed.pathname.endsWith('/entries:list')) {
       writes.push({ url, method, body: structuredClone(body) });
       if (options.failWrite === writes.length) throw new Error('native write unavailable');
     }
-    const parsed = new URL(url);
     if (method === 'GET' && parsed.pathname.endsWith('/alertPolicies'))
       return { alertPolicies: structuredClone(policies) };
     if (method === 'GET' && parsed.pathname.endsWith('/uptimeCheckConfigs'))
@@ -112,8 +112,10 @@ function backend(initial = fixture(), options = {}) {
       policies = policies.filter((p) => !parsed.pathname.endsWith(p.name));
       return {};
     }
-    if (parsed.pathname.endsWith('/entries:list'))
+    if (parsed.pathname.endsWith('/entries:list')) {
+      if (options.logsUnavailable) throw new Error('digest log read denied');
       return { entries: options.alreadyPublished ? [{}] : [] };
+    }
     if (parsed.pathname.endsWith('/entries:write')) return {};
     throw new Error(`Unexpected mock request ${method} ${url}`);
   };
@@ -260,10 +262,15 @@ test('plan is read-only and preflight failures do not mutate policies', async ()
   await runRouting('plan', { request: db.request, report: result });
   assert.equal(db.writes.length, 0);
   assert.equal(result.planHash, planHash(fixture()));
-  for (const options of [{ alertsUnavailable: true }, { sparse: true }]) {
+  for (const options of [
+    { alertsUnavailable: true },
+    { logsUnavailable: true },
+    { sparse: true },
+  ]) {
     const broken = backend(fixture(), options);
     await assert.rejects(
       runRouting('apply', {
+        digestEnabled: 'true',
         request: broken.request,
         report: report(),
         expectedHash: planHash(fixture()),
@@ -271,6 +278,24 @@ test('plan is read-only and preflight failures do not mutate policies', async ()
       }),
     );
     assert.equal(broken.writes.length, 0);
+  }
+});
+
+test('apply cannot mute warning emails while scheduled delivery is disabled', async () => {
+  for (const digestEnabled of [undefined, 'false', 'TRUE', true]) {
+    const db = backend();
+    await assert.rejects(
+      runRouting('apply', {
+        request: db.request,
+        report: report(),
+        expectedHash: planHash(fixture()),
+        receipt: 'a'.repeat(64),
+        digestEnabled,
+      }),
+      /Scheduled daily digest must be enabled/,
+    );
+    assert.equal(db.writes.length, 0);
+    assert.deepEqual(db.policies(), fixture());
   }
 });
 
@@ -292,6 +317,7 @@ test('prepare creates backstops without muting any original email, apply require
   const writes = db.writes.length;
   await assert.rejects(
     runRouting('apply', {
+      digestEnabled: 'true',
       request: db.request,
       report: report(),
       expectedHash: prepared.nextPlanHash,
@@ -300,6 +326,7 @@ test('prepare creates backstops without muting any original email, apply require
   );
   await assert.rejects(
     runRouting('apply', {
+      digestEnabled: 'true',
       request: db.request,
       report: report(),
       expectedHash: 'stale',
@@ -309,6 +336,7 @@ test('prepare creates backstops without muting any original email, apply require
   );
   assert.equal(db.writes.length, writes);
   await runRouting('apply', {
+    digestEnabled: 'true',
     request: db.request,
     report: report(),
     expectedHash: prepared.nextPlanHash,
@@ -340,6 +368,7 @@ test('failed rollout restores original policies and leaves unrelated policies un
   const result = report();
   await assert.rejects(
     runRouting('apply', {
+      digestEnabled: 'true',
       request: db.request,
       report: result,
       expectedHash: planHash(initial),

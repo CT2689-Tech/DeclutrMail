@@ -78,10 +78,25 @@ admin inbox, then **apply** with a fresh plan hash and that observed Gmail recei
 fingerprint (SHA-256 of the ID, so no raw Gmail ID enters workflow inputs).
 Application refuses unavailable native queries, changed plans or missing
 receipts, reads every changed policy back, and attempts restoration on failure.
+Run **plan** and **smoke** through the protected-main workflow using the
+same WIF identity as the daily watchdog. Preflight verifies policy, channel,
+incident and digest-log reads; smoke verifies publication and inbox delivery.
+Human-admin access alone does not establish scheduled delivery. Set repository
+variable `OPS_ALERT_DIGEST_ENABLED=true` before **apply**, only after these
+checks and the verification-email receipt. Without this explicit
+activation, the existing vendor watchdog skips the new digest step. Do not mute
+warning channels while scheduled access remains unavailable.
+
 Dispatch **verify** for independent configuration readback and **digest** for the
 first real daily summary without running vendor/billing collectors. Receiving a
 verification email proves that path at that time; it does not establish future
 delivery or measured noise reduction. Review actual receipts over the following week.
+
+Production activation is pending: the first plan run
+[39747620933](https://github.com/CT2689-Tech/DeclutrMail/actions/runs/39747620933)
+failed with HTTP 403 on `notificationChannels.list` before any policy writes.
+The existing CI identity cannot yet establish the daily route. The activation
+variable stays unset; existing production notification settings remain in place.
 
 Sources: [Cloud Monitoring notification controls](https://docs.cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.alertPolicies#AlertStrategy)
 and [incident fanout behavior](https://docs.cloud.google.com/monitoring/alerts/concepts-indepth).
