@@ -389,7 +389,7 @@ export async function runRouting(mode, { request, report, expectedHash, receipt 
             editable(p),
           )
         )
-          throw new Error('Rollback readback failed');
+          throw new Error('Rollback readback failed', { cause: err });
         report.rollback.push({ name: p.displayName, restored: true });
       } catch {
         report.rollback.push({ name: p.displayName, restored: false });
