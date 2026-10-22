@@ -49,7 +49,7 @@ import { gcpRequest, gcpToken } from './infra-observability.mjs';
 import {
   notificationPolicy,
   RECONNECT_POLICY,
-  assertDailyRoutingReady,
+  enforceDailyRouting,
 } from './alert-notification-policy.mjs';
 
 const ALERT_EMAIL = 'admin@declutrmail.ai';
@@ -146,8 +146,9 @@ const STUCK_DOC = [
   'Find it: `gcloud logging read \'resource.type="cloud_run_revision" AND jsonPayload.kind="mailbox.stuck_unnoticed" AND jsonPayload.mailboxAccountId="${metric.label.mailbox_account_id}"\' --project=declutrmail-ai-prod --freshness=1h` — the line carries `errorCode` and `stuckSinceHours`.',
   '',
   '- `sync_failed` / `sync_stalled`: the first scan never finished and nothing is retrying it. Check `dead_letter_jobs` and `provider_sync_state` for the mailbox.',
-  '- `needs_reconnect`: a revoked Gmail grant. The user has to reconnect; check the reconnect email and banner reached them.',
   '- `incremental_failed`: ongoing sync failing with a non-auth error and not recovering.',
+  '',
+  'A revoked Gmail grant (`needs_reconnect`) is not this alert. It is the daily reconnect warning.',
   '',
   'While "Stuck-mailbox watchdog silent" is open, this alert cannot see newly stuck mailboxes.',
 ].join('\n');
@@ -261,14 +262,17 @@ async function latestEntry(project, token, filter, sinceMs) {
   return data.entries?.[0];
 }
 
-export async function setupStuckMailboxAlert(project, { apply = false } = {}) {
+export async function setupStuckMailboxAlert(
+  project,
+  { apply = false, allowUnverifiedRouting = false } = {},
+) {
   if (!apply) {
     console.log(
       JSON.stringify(
         {
           logMetrics: [STUCK_METRIC, COMPLETED_METRIC],
           policies: [stuckMailboxPolicy(), reconnectMailboxPolicy(), watchdogSilentPolicy()],
-          note: 'Plan only. --apply converges these in place; --starve-test proves them without paging anyone.',
+          note: 'Plan only. --apply converges these in place; --starve-test proves them without paging anyone. Emergency threshold or filter repairs before daily routing is verified require --allow-unverified-routing with --apply. That does not mute warning email.',
         },
         null,
         2,
@@ -291,7 +295,7 @@ export async function setupStuckMailboxAlert(project, { apply = false } = {}) {
   if (channels.length !== 1)
     throw new Error(`Expected one enabled ${ALERT_EMAIL} email channel, found ${channels.length}`);
   const existing = await listAll(`${root}/alertPolicies`, 'alertPolicies', token);
-  assertDailyRoutingReady(existing, { reconnect: true });
+  enforceDailyRouting(existing, { reconnect: true, allowUnverified: allowUnverifiedRouting });
   async function upsert(policy) {
     const old = existing.filter((p) => p.displayName === policy.displayName);
     if (old.length > 1) throw new Error(`Duplicate alert policy: ${policy.displayName}`);
@@ -475,5 +479,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const args = process.argv.slice(2);
   const project = args.find((a) => !a.startsWith('--')) ?? 'declutrmail-ai-prod';
   if (args.includes('--starve-test')) await starveTest(project);
-  else await setupStuckMailboxAlert(project, { apply: args.includes('--apply') });
+  else
+    await setupStuckMailboxAlert(project, {
+      apply: args.includes('--apply'),
+      allowUnverifiedRouting: args.includes('--allow-unverified-routing'),
+    });
 }

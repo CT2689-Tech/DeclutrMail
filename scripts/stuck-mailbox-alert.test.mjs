@@ -27,6 +27,7 @@ test('default CLI prints a plan and touches nothing', () => {
   assert.equal(plan.policies.length, 3);
   assert.ok(plan.policies.some((p) => p.displayName === 'DeclutrMail Gmail reconnect required'));
   assert.ok(plan.policies.every((p) => p.notificationChannels === undefined));
+  assert.match(plan.note, /--allow-unverified-routing/);
 });
 
 test('each stuck mailbox is its own alert, so one already open cannot hide a new one', () => {
@@ -60,6 +61,8 @@ test('event-window closure is never announced as verified mailbox recovery', () 
   assert.ok(Number.parseInt(policy.alertStrategy.autoClose, 10) <= 1800);
   assert.deepEqual(policy.alertStrategy.notificationPrompts, ['OPENED']);
   assert.match(policy.documentation.content, /Closure is not verified recovery/);
+  assert.match(policy.documentation.content, /needs_reconnect`\) is not this alert/);
+  assert.doesNotMatch(policy.documentation.content, /The user has to reconnect/);
 });
 
 test('every policy it creates obeys the API limits that refused one live', () => {

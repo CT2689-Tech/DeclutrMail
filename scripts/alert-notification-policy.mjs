@@ -12,6 +12,11 @@ export function assertDailyRoutingReady(policies, { reconnect = false, verified 
       throw new Error('Daily warning email receipt must be verified first');
   }
 }
+/** Emergency setup applies pass allowUnverified. It does not mute warnings. */
+export function enforceDailyRouting(policies, { allowUnverified = false, ...options } = {}) {
+  if (allowUnverified) return;
+  assertDailyRoutingReady(policies, options);
+}
 export const DAILY_POLICIES = new Set([
   'DeclutrMail API sustained high latency',
   'DeclutrMail Cloud Run memory pressure',
@@ -34,16 +39,16 @@ const SUBJECTS = {
   'DeclutrMail Cloud Run memory pressure': 'DeclutrMail memory pressure warning',
   'DeclutrMail database connection pressure': 'DeclutrMail database connection warning',
   'DeclutrMail scheduler success overdue':
-    'DeclutrMail scheduled work overdue — inspect the run ledger',
+    'DeclutrMail scheduled work overdue — check recent scheduled runs',
   'DeclutrMail runtime collection repeatedly failing':
-    'DeclutrMail monitoring reads failing — inspect collection errors',
-  [COVERAGE_POLICY]: 'DeclutrMail monitoring coverage missing — inspect worker observations',
+    'DeclutrMail monitoring reads failing — check the monitoring job',
+  [COVERAGE_POLICY]: 'DeclutrMail monitoring coverage missing — check worker health',
   [RECONNECT_POLICY]: 'DeclutrMail Gmail reconnection required',
   [RECONNECT_BURST_POLICY]:
     'Multiple DeclutrMail Gmail connections need reconnection — investigate authorization',
   [DIGEST_POLICY]: 'DeclutrMail daily operational warnings',
   'Mailbox lock: leak or acquisition failure':
-    'DeclutrMail mailbox lock failure — inspect lock ownership',
+    'DeclutrMail mailbox lock failure — check which process holds it',
 };
 
 export function notificationPolicy(policy, channelName) {

@@ -1,0 +1,107 @@
+# PromQL semantics for the routing expressions at check_id=worker-check.
+# Absent, sparse, mixed, and one failing location do not inhibit coverage.
+# Two failing locations do. Reconnect means of zero and one do not fire; two does.
+rule_files:
+  - alert-promql.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: absent
+    interval: 1m
+    input_series: []
+    promql_expr_test:
+      - expr: |-
+          count((max_over_time(monitoring_googleapis_com:uptime_check_check_passed{monitored_resource="uptime_url",check_id="worker-check"}[3m]) == 0) and (count_over_time(monitoring_googleapis_com:uptime_check_check_passed{monitored_resource="uptime_url",check_id="worker-check"}[3m]) >= 3)) > 1
+        eval_time: 3m
+        exp_samples: []
+      - expr: |-
+          ((sum((sum by (source, queue) (increase(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="mailbox"}[20m])) <= bool 0) or absent_over_time(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="mailbox"}[20m])) + sum((sum by (source, queue) (increase(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="scheduler"}[20m])) <= bool 0) or absent_over_time(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="scheduler"}[20m])) + sum((sum by (source, queue) (increase(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="database"}[20m])) <= bool 0) or absent_over_time(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="database"}[20m])) + sum((sum by (source, queue) (increase(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="reconnect"}[20m])) <= bool 0) or absent_over_time(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="reconnect"}[20m])) + sum((sum by (source, queue) (increase(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="actions"}[20m])) <= bool 0) or absent_over_time(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="actions"}[20m])) + sum((sum by (source, queue) (increase(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="recovery"}[20m])) <= bool 0) or absent_over_time(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="recovery"}[20m])) + sum((sum by (source, queue) (increase(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="queue",queue="initial-sync"}[20m])) <= bool 0) or absent_over_time(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="queue",queue="initial-sync"}[20m])) + sum((sum by (source, queue) (increase(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="queue",queue="incremental-sync"}[20m])) <= bool 0) or absent_over_time(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="queue",queue="incremental-sync"}[20m])) + sum((sum by (source, queue) (increase(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="queue",queue="email-send"}[20m])) <= bool 0) or absent_over_time(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="queue",queue="email-send"}[20m])) + sum((sum by (source, queue) (increase(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="queue",queue="snooze-wake"}[20m])) <= bool 0) or absent_over_time(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="queue",queue="snooze-wake"}[20m]))) > 0) unless on() (count((max_over_time(monitoring_googleapis_com:uptime_check_check_passed{monitored_resource="uptime_url",check_id="worker-check"}[3m]) == 0) and (count_over_time(monitoring_googleapis_com:uptime_check_check_passed{monitored_resource="uptime_url",check_id="worker-check"}[3m]) >= 3)) > 1)
+        eval_time: 3m
+        exp_samples:
+          - labels: '{}'
+            value: 10
+  - name: sparse
+    interval: 1m
+    input_series:
+      - series: 'monitoring_googleapis_com:uptime_check_check_passed{monitored_resource="uptime_url",check_id="worker-check",checker_location="a"}'
+        values: '0'
+    promql_expr_test:
+      - expr: |-
+          count((max_over_time(monitoring_googleapis_com:uptime_check_check_passed{monitored_resource="uptime_url",check_id="worker-check"}[3m]) == 0) and (count_over_time(monitoring_googleapis_com:uptime_check_check_passed{monitored_resource="uptime_url",check_id="worker-check"}[3m]) >= 3)) > 1
+        eval_time: 3m
+        exp_samples: []
+  - name: mixed
+    interval: 1m
+    input_series:
+      - series: 'monitoring_googleapis_com:uptime_check_check_passed{monitored_resource="uptime_url",check_id="worker-check",checker_location="a"}'
+        values: '0 1 0 0'
+    promql_expr_test:
+      - expr: |-
+          count((max_over_time(monitoring_googleapis_com:uptime_check_check_passed{monitored_resource="uptime_url",check_id="worker-check"}[3m]) == 0) and (count_over_time(monitoring_googleapis_com:uptime_check_check_passed{monitored_resource="uptime_url",check_id="worker-check"}[3m]) >= 3)) > 1
+        eval_time: 3m
+        exp_samples: []
+  - name: one-location
+    interval: 1m
+    input_series:
+      - series: 'monitoring_googleapis_com:uptime_check_check_passed{monitored_resource="uptime_url",check_id="worker-check",checker_location="a"}'
+        values: '0 0 0 0'
+    promql_expr_test:
+      - expr: |-
+          count((max_over_time(monitoring_googleapis_com:uptime_check_check_passed{monitored_resource="uptime_url",check_id="worker-check"}[3m]) == 0) and (count_over_time(monitoring_googleapis_com:uptime_check_check_passed{monitored_resource="uptime_url",check_id="worker-check"}[3m]) >= 3)) > 1
+        eval_time: 3m
+        exp_samples: []
+  - name: two-locations
+    interval: 1m
+    input_series:
+      - series: 'monitoring_googleapis_com:uptime_check_check_passed{monitored_resource="uptime_url",check_id="worker-check",checker_location="a"}'
+        values: '0 0 0 0'
+      - series: 'monitoring_googleapis_com:uptime_check_check_passed{monitored_resource="uptime_url",check_id="worker-check",checker_location="b"}'
+        values: '0 0 0 0'
+    promql_expr_test:
+      - expr: |-
+          count((max_over_time(monitoring_googleapis_com:uptime_check_check_passed{monitored_resource="uptime_url",check_id="worker-check"}[3m]) == 0) and (count_over_time(monitoring_googleapis_com:uptime_check_check_passed{monitored_resource="uptime_url",check_id="worker-check"}[3m]) >= 3)) > 1
+        eval_time: 3m
+        exp_samples:
+          - labels: '{}'
+            value: 2
+      - expr: |-
+          ((sum((sum by (source, queue) (increase(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="mailbox"}[20m])) <= bool 0) or absent_over_time(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="mailbox"}[20m])) + sum((sum by (source, queue) (increase(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="scheduler"}[20m])) <= bool 0) or absent_over_time(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="scheduler"}[20m])) + sum((sum by (source, queue) (increase(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="database"}[20m])) <= bool 0) or absent_over_time(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="database"}[20m])) + sum((sum by (source, queue) (increase(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="reconnect"}[20m])) <= bool 0) or absent_over_time(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="reconnect"}[20m])) + sum((sum by (source, queue) (increase(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="actions"}[20m])) <= bool 0) or absent_over_time(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="actions"}[20m])) + sum((sum by (source, queue) (increase(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="recovery"}[20m])) <= bool 0) or absent_over_time(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="recovery"}[20m])) + sum((sum by (source, queue) (increase(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="queue",queue="initial-sync"}[20m])) <= bool 0) or absent_over_time(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="queue",queue="initial-sync"}[20m])) + sum((sum by (source, queue) (increase(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="queue",queue="incremental-sync"}[20m])) <= bool 0) or absent_over_time(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="queue",queue="incremental-sync"}[20m])) + sum((sum by (source, queue) (increase(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="queue",queue="email-send"}[20m])) <= bool 0) or absent_over_time(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="queue",queue="email-send"}[20m])) + sum((sum by (source, queue) (increase(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="queue",queue="snooze-wake"}[20m])) <= bool 0) or absent_over_time(logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="queue",queue="snooze-wake"}[20m]))) > 0) unless on() (count((max_over_time(monitoring_googleapis_com:uptime_check_check_passed{monitored_resource="uptime_url",check_id="worker-check"}[3m]) == 0) and (count_over_time(monitoring_googleapis_com:uptime_check_check_passed{monitored_resource="uptime_url",check_id="worker-check"}[3m]) >= 3)) > 1)
+        eval_time: 3m
+        exp_samples: []
+  - name: reconnect-zero
+    interval: 1m
+    input_series:
+      - series: 'logging_googleapis_com:user_ops_mailbox_affected_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}'
+        values: '0 0 0 0 0 0'
+      - series: 'logging_googleapis_com:user_ops_mailbox_affected_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}'
+        values: '0 0 0 0 0 0'
+    promql_expr_test:
+      - expr: |-
+          (sum(increase(logging_googleapis_com:user_ops_mailbox_affected_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}[5m])) / sum(increase(logging_googleapis_com:user_ops_mailbox_affected_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}[5m]))) >= 2
+        eval_time: 5m
+        exp_samples: []
+  - name: reconnect-one
+    interval: 1m
+    input_series:
+      - series: 'logging_googleapis_com:user_ops_mailbox_affected_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}'
+        values: '0 1 1 1 1 1'
+      - series: 'logging_googleapis_com:user_ops_mailbox_affected_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}'
+        values: '0 1 1 1 1 1'
+    promql_expr_test:
+      - expr: |-
+          (sum(increase(logging_googleapis_com:user_ops_mailbox_affected_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}[5m])) / sum(increase(logging_googleapis_com:user_ops_mailbox_affected_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}[5m]))) >= 2
+        eval_time: 5m
+        exp_samples: []
+  - name: reconnect-two
+    interval: 1m
+    input_series:
+      - series: 'logging_googleapis_com:user_ops_mailbox_affected_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}'
+        values: '0 2 2 2 2 2'
+      - series: 'logging_googleapis_com:user_ops_mailbox_affected_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}'
+        values: '0 1 1 1 1 1'
+    promql_expr_test:
+      - expr: |-
+          (sum(increase(logging_googleapis_com:user_ops_mailbox_affected_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}[5m])) / sum(increase(logging_googleapis_com:user_ops_mailbox_affected_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}[5m]))) >= 2
+        eval_time: 5m
+        exp_samples:
+          - labels: '{}'
+            value: 2

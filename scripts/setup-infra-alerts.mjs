@@ -3,7 +3,7 @@ import { gcpToken, gcpRequest } from './infra-observability.mjs';
 import {
   notificationPolicy,
   coverageNotifications,
-  assertDailyRoutingReady,
+  enforceDailyRouting,
 } from './alert-notification-policy.mjs';
 
 import {
@@ -419,7 +419,13 @@ export function assertRuntimeCoverage(series, now = Date.now()) {
 }
 export async function setupAlerts(
   project,
-  { worker = false, runtime = false, metricsOnly = false, apply = false } = {},
+  {
+    worker = false,
+    runtime = false,
+    metricsOnly = false,
+    apply = false,
+    allowUnverifiedRouting = false,
+  } = {},
 ) {
   if (metricsOnly && !runtime) throw new Error('--metrics-only requires --runtime');
   if (!apply) {
@@ -430,7 +436,7 @@ export async function setupAlerts(
           logMetrics: runtime ? [...RUNTIME_LOG_METRICS, ...LAUNCH_LOG_METRICS] : [],
           policies: plan,
           workerRequested: worker,
-          note: 'Plan only. Worker check ID and endpoint must be verified before applying.',
+          note: 'Plan only. Worker check ID and endpoint must be verified before applying. Emergency threshold or filter repairs before daily routing is verified require --allow-unverified-routing with --apply. That does not mute warning email.',
         },
         null,
         2,
@@ -468,7 +474,7 @@ export async function setupAlerts(
   const heartbeat = checks.filter((c) => c.displayName === 'DeclutrMail worker heartbeat');
   if (runtime && !metricsOnly && heartbeat.length !== 1)
     throw new Error('Exactly one existing worker heartbeat check required for coverage routing');
-  if (!metricsOnly) assertDailyRoutingReady(existing);
+  if (!metricsOnly) enforceDailyRouting(existing, { allowUnverified: allowUnverifiedRouting });
   async function upsert(policy) {
     const old = existing.filter((p) => p.displayName === policy.displayName);
     if (old.length > 1) throw new Error(`Duplicate alert policy: ${policy.displayName}`);
@@ -551,4 +557,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
     runtime: process.argv.includes('--runtime'),
     apply: process.argv.includes('--apply'),
     metricsOnly: process.argv.includes('--metrics-only'),
+    allowUnverifiedRouting: process.argv.includes('--allow-unverified-routing'),
   });

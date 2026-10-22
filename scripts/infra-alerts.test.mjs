@@ -31,6 +31,7 @@ test('default CLI is an offline review plan, not a production mutation', () => {
   assert.ok(plan.logMetrics.length > 0);
   assert.equal(plan.policies.length, infrastructurePolicies({ runtime: true }).length);
   assert.ok(plan.policies.every((p) => p.enabled === undefined && !p.notificationChannels));
+  assert.match(plan.note, /--allow-unverified-routing/);
 });
 test('runtime absence is gated until deployment and does not hide a missing source', () => {
   assert.ok(!JSON.stringify(infrastructurePolicies()).includes('ops_collection'));
