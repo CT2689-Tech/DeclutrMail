@@ -211,6 +211,11 @@ async function query(request, expression) {
 async function preflight(request, state, plan) {
   // Access failure is not an empty warning list; prove the digest reader before muting anything.
   const alerts = await listAll(request, 'alerts');
+  await request('https://logging.googleapis.com/v2/entries:list', 'POST', {
+    resourceNames: [`projects/${PROJECT}`],
+    filter: `logName="projects/${PROJECT}/logs/declutrmail-alert-digest"`,
+    pageSize: 1,
+  });
   const check = state.checks.find((c) => c.displayName === 'DeclutrMail worker heartbeat');
   const selector = `monitoring_googleapis_com:uptime_check_check_passed{monitored_resource="uptime_url",check_id="${id(check.name)}"}`;
   const probes = await query(request, `count(count_over_time(${selector}[3m]) >= 3)`);
@@ -269,7 +274,12 @@ async function publishDigest(request, payload, { verification = false } = {}) {
   return { published: true, day };
 }
 
-export async function runRouting(mode, { request, report, expectedHash, receipt } = {}) {
+export async function runRouting(
+  mode,
+  { request, report, expectedHash, receipt, digestEnabled } = {},
+) {
+  if (mode === 'apply' && digestEnabled !== 'true')
+    throw new Error('Scheduled daily digest must be enabled before muting warnings');
   const state = await inventory(request, mode !== 'digest');
   report.before = state.policies.filter((p) => OWNED.has(p.displayName));
   if (mode === 'digest') {
@@ -430,6 +440,7 @@ async function main() {
       report,
       expectedHash: process.env.ALERT_ROUTING_PLAN_HASH,
       receipt: process.env.ALERT_ROUTING_DIGEST_RECEIPT,
+      digestEnabled: process.env.OPS_ALERT_DIGEST_ENABLED,
     });
     console.log(
       `Alert routing ${mode} completed${report.notConfigured ? ' (not configured)' : ''}.`,

@@ -455,3 +455,10 @@ retains encrypted backups and requires an observed digest email before muting
 warning channels. Tests cover unavailable inputs, sparse probes, replay, transient
 warnings, plan drift and rollback. See `docs/ops/observability-alerts.md`; production
 application, receipt verification and measured noise reduction are separate evidence.
+
+The first production plan failed before writes: the existing WIF identity lacks
+the required Monitoring channel read. The scheduled digest now requires explicit
+`OPS_ALERT_DIGEST_ENABLED=true` activation after WIF reads and inbox receipt are
+verified. Until then the existing watchdog skips the new step and production
+warning channels remain unchanged. Human login and scheduled access are separate.
+Preflight also verifies the digest-log read needed for daily replay protection.

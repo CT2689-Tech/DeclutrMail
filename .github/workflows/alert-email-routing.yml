@@ -60,6 +60,7 @@ jobs:
           EXPECTED_SHA: ${{ inputs.expected_sha }}
           ALERT_ROUTING_PLAN_HASH: ${{ inputs.plan_hash }}
           ALERT_ROUTING_DIGEST_RECEIPT: ${{ inputs.digest_receipt }}
+          OPS_ALERT_DIGEST_ENABLED: ${{ vars.OPS_ALERT_DIGEST_ENABLED }}
         run: node scripts/alert-email-routing.mjs "$ROUTING_MODE"
       - name: Retain encrypted policy backup and readback
         if: always()
