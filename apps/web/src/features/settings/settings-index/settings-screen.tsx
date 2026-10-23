@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Button, ScreenIntro, toast, tokens } from '@declutrmail/shared';
 import { SETTINGS_PREVIEWS_TITLE } from '@declutrmail/shared/copy/screen-decisions';
-import { hasCapability, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { hasCapability } from '@declutrmail/shared/entitlements';
 import { DEFAULT_BRIEF_PREFS } from '@declutrmail/shared/contracts';
 import type { ActionSheetPrefs, EmailPrefs } from '@declutrmail/shared/contracts';
 
@@ -36,6 +36,7 @@ import {
   isBillingDisabledError,
   useBillingSubscription,
 } from '@/features/billing/api/use-billing-subscription';
+import { currentPlanTitle, deriveBillingViewState } from '@/features/billing/billing-model';
 import { reportPassSecondAccountGate } from '@/lib/entitlements/upgrade-gate';
 import { track } from '@/lib/posthog';
 import { replaceUrl } from '@/lib/replace-url';
@@ -282,8 +283,6 @@ export function SettingsScreen({
           // whole screen with it (the 2026-07-09 whole-screen class).
           { kind: 'ready', prefs: settingsView.data.briefPrefs ?? DEFAULT_BRIEF_PREFS };
 
-  const tier = billingView?.data?.tier ?? null;
-  const manifestTier = tier && tier in TIER_MANIFEST ? TIER_MANIFEST[tier] : null;
   // The card configures a Brief this workspace only receives on an
   // entitled tier. Under-tier settings would be a control with no
   // effect; /brief already carries the upgrade path, so nothing is
@@ -302,6 +301,18 @@ export function SettingsScreen({
     atInboxLimit,
   } = useTier();
   const briefUnlocked = hasCapability(entitledTier, 'brief');
+  // A Backlog Pass can grant a Plus entitlement without being a Plus
+  // subscription. Reuse Billing's plan projection so both pages name the
+  // same access, including a paid subscription overlapping a Pass.
+  const planView = deriveBillingViewState({
+    isLoading: billingView == null || billingView.isPending,
+    isError: billingView?.isError ?? false,
+    error: billingView?.error,
+    data: billingView?.data,
+    meTier: entitledTier,
+    pending: null,
+  });
+  const planName = planView.kind === 'plan' ? currentPlanTitle(planView) : null;
 
   function connectMailbox(reconnectMailboxId?: string) {
     if (inboxLimitReason === 'pass' && atInboxLimit && !reconnectMailboxId) {
@@ -447,11 +458,13 @@ export function SettingsScreen({
                 ? isBillingDisabledError(billingView.error)
                   ? { kind: 'disabled' }
                   : { kind: 'error', onRetry: () => void billing.refetch() }
-                : {
-                    kind: 'ready',
-                    planName: manifestTier?.name ?? billingView.data.tier,
-                    foundingMember: billingView.data.foundingMember,
-                  }
+                : planName === null
+                  ? { kind: 'error', onRetry: () => void billing.refetch() }
+                  : {
+                      kind: 'ready',
+                      planName,
+                      foundingMember: billingView.data.foundingMember,
+                    }
           }
         />
 

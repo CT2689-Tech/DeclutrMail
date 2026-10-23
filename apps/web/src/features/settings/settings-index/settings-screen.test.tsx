@@ -261,6 +261,63 @@ describe('SettingsScreen', () => {
     await waitFor(() => expect(screen.getAllByText(/^Synced .+ ago$/)).toHaveLength(2));
   });
 
+  it.each([
+    { paidTier: null, expected: 'Backlog Pass' },
+    { paidTier: 'plus', expected: 'Plus' },
+    { paidTier: 'pro', expected: 'Pro' },
+  ] as const)(
+    'names current access as $expected when a Pass overlaps paid tier $paidTier',
+    async ({ paidTier, expected }) => {
+      const tier = paidTier ?? 'plus';
+      me = { ...me, tier };
+      installFetchStub([
+        ...happyHandlers().filter((handler) => handler.path !== '/api/billing/subscription'),
+        {
+          method: 'GET',
+          path: '/api/billing/subscription',
+          respond: () =>
+            jsonOk({
+              data: {
+                ...SUBSCRIPTION_PAYLOAD,
+                tier,
+                subscription:
+                  paidTier === null
+                    ? null
+                    : {
+                        provider: 'paddle',
+                        tier: paidTier,
+                        status: 'active',
+                        grantsAccess: true,
+                        cycle: 'annual',
+                        currentPeriodEnd: '2027-10-23T00:00:00.000Z',
+                        cancelAtPeriodEnd: false,
+                        cancelSource: null,
+                        pauseUntil: null,
+                        foundingMember: false,
+                        scheduledChange: null,
+                      },
+                complimentary: {
+                  tier: 'plus',
+                  source: 'pass',
+                  expiresAt: '2026-11-12T00:00:00.000Z',
+                },
+              },
+            }),
+        },
+      ]);
+      renderScreen();
+      const summary = screen.getByRole('complementary', { name: 'Your plan' });
+      expect(await within(summary).findByText(expected)).toBeInTheDocument();
+      expect(
+        within(summary).queryByText(paidTier === null ? 'Plus' : 'Backlog Pass'),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Plan & billing' })).toHaveAttribute(
+        'href',
+        '/billing',
+      );
+    },
+  );
+
   it('hydrates the route fallback when settings and billing are already cached', async () => {
     const client = createTestQueryClient();
     client.setQueryData(ME_SETTINGS_QUERY_KEY, {
