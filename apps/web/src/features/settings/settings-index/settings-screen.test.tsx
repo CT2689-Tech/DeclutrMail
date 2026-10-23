@@ -226,9 +226,9 @@ describe('SettingsScreen', () => {
     for (const name of [
       'Gmail accounts',
       'Preview layout',
-      'Notifications',
-      'Policies and help',
-      'Account',
+      'Email notifications',
+      'Privacy and data',
+      'Your account',
     ]) {
       expect(screen.getByRole('heading', { level: 2, name })).toBeInTheDocument();
     }
@@ -905,7 +905,9 @@ describe('SettingsScreen', () => {
     renderScreen();
 
     await waitFor(() =>
-      expect(screen.getByRole('link', { name: /billing.*not enabled/i })).toBeInTheDocument(),
+      expect(
+        within(screen.getByRole('complementary', { name: 'Your plan' })).getByText('Not enabled'),
+      ).toBeInTheDocument(),
     );
     expect(screen.queryByText('Pro')).not.toBeInTheDocument();
     // The flag being off is deterministic — a retry would be noise.
@@ -989,6 +991,75 @@ describe('SettingsScreen', () => {
     // The rest of the page is intact (partial-error by construction).
     expect(screen.getByRole('heading', { name: 'Gmail accounts' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /retry/i }).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('keeps every preference visible in the anchor order, with account deletion last', async () => {
+    renderScreen();
+    await screen.findByText('Pro');
+    const contents = screen.getByRole('navigation', { name: 'On this page' });
+    const anchors = within(contents).getAllByRole('link');
+    expect(anchors.map((link) => link.getAttribute('href'))).toEqual([
+      '#mailboxes',
+      '#actions',
+      '#notifications',
+      '#more',
+      '#account',
+    ]);
+    const sections = anchors.map((link) =>
+      document.getElementById(link.getAttribute('href')!.slice(1))!,
+    );
+    for (const [index, section] of sections.entries()) {
+      expect(section).toBeVisible();
+      expect(section).toHaveAttribute('tabindex', '-1');
+      if (index > 0) {
+        expect(
+          sections[index - 1]!.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy();
+      }
+    }
+    expect(
+      within(sections.at(-1)!).getByRole('heading', { name: 'Delete account and data' }),
+    ).toBeInTheDocument();
+  });
+
+  it('focuses a direct section link after late settings and plan reads settle', async () => {
+    let releaseSettings!: (response: Response) => void;
+    let releasePlan!: (response: Response) => void;
+    const settingsResponse = new Promise<Response>((resolve) => {
+      releaseSettings = resolve;
+    });
+    const planResponse = new Promise<Response>((resolve) => {
+      releasePlan = resolve;
+    });
+    installFetchStub([
+      ...happyHandlers().filter(
+        (handler) =>
+          handler.path !== '/api/me/settings' && handler.path !== '/api/billing/subscription',
+      ),
+      { method: 'GET', path: '/api/me/settings', respond: () => settingsResponse },
+      { method: 'GET', path: '/api/billing/subscription', respond: () => planResponse },
+    ]);
+    setSettingsLocation('', '#notifications');
+    renderScreen();
+    const notifications = document.getElementById('notifications')!;
+    expect(notifications).toBeInTheDocument();
+    expect(scrollIntoViewSpy).not.toHaveBeenCalled();
+    await act(async () => releaseSettings(jsonOk({ data: SETTINGS_PAYLOAD })));
+    expect(scrollIntoViewSpy).not.toHaveBeenCalled();
+    await act(async () => releasePlan(jsonOk({ data: SUBSCRIPTION_PAYLOAD })));
+    await waitFor(() => expect(document.activeElement).toBe(notifications));
+    expect(scrollIntoViewSpy.mock.contexts).toContain(notifications);
+  });
+
+  it('moves keyboard focus to the next anchored section after a hash change', async () => {
+    renderScreen();
+    await screen.findByText('Pro');
+    act(() => {
+      window.history.replaceState(null, '', '/settings#more');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+    expect(document.activeElement).toBe(document.getElementById('more'));
+    expect(scrollIntoViewSpy.mock.contexts).toContain(document.getElementById('more'));
   });
 
   it('?cancelDeletion=1 scrolls to and highlights the Account section', async () => {
