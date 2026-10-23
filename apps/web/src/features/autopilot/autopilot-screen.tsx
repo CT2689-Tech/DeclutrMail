@@ -47,7 +47,7 @@ import { ActivateRuleModal } from './activate-rule-modal';
 import { ApproveConfirmModal } from './approve-confirm-modal';
 import { AutopilotBannerStack } from './autopilot-banner-stack';
 import { ObserveWindowBanner } from './observe-window-banner';
-import { PauseConfirmModal } from './pause-confirm-modal';
+import { PauseConfirmModal, type PauseRuleScope } from './pause-confirm-modal';
 import { ResumeConfirmModal } from './resume-confirm-modal';
 import { PausedBanner } from './paused-banner';
 import { PatternSuggestionCard } from './pattern-suggestion-card';
@@ -187,6 +187,14 @@ export function AutopilotRoute() {
     <AutopilotScreen
       embedded={!unsupported}
       state={state}
+      pauseScope={{
+        rules: [...(rulesQuery.data ?? []), ...(senderRulesQuery.data ?? [])],
+        complete:
+          senderRulesEntitled &&
+          mailboxId !== null &&
+          rulesQuery.isSuccess &&
+          senderRulesQuery.isSuccess,
+      }}
       pendingPagination={{
         pageKey: `${mailboxId ?? 'none'}:${cursor ?? 'first'}`,
         total: hydrated ? (suggestionsQuery.data?.meta?.total ?? null) : null,
@@ -316,12 +324,14 @@ export function AutopilotScreen({
   patternState = { kind: 'ready' },
   pendingPagination,
   embedded = false,
+  pauseScope,
 }: {
   embedded?: boolean;
   state: AutopilotScreenState;
   suggestionsState?: SectionState;
   patternState?: SectionState;
   pendingPagination?: PendingPagination;
+  pauseScope?: PauseRuleScope;
 }) {
   const auth = useOptionalAuth();
   const activeMailboxId = auth?.me.activeMailboxId ?? null;
@@ -357,6 +367,7 @@ export function AutopilotScreen({
   const [ruleFilter, setRuleFilter] = useState<'all' | 'watching' | 'acting' | 'inactive'>('all');
   useEffect(() => setRuleFilter('all'), [activeMailboxId]);
   const [pauseConfirmOpen, setPauseConfirmOpen] = useState(false);
+  const [pauseCommitScope, setPauseCommitScope] = useState<PauseRuleScope | null>(null);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [approveTarget, setApproveTarget] = useState<ApproveTarget | null>(null);
   useEffect(() => {
@@ -430,6 +441,9 @@ export function AutopilotScreen({
 
   const rules: AutopilotRuleDto[] =
     state.kind === 'ready' || state.kind === 'empty' ? state.rules : [];
+  const livePauseScope = pauseScope ?? { rules, complete: true };
+  const displayedPauseScope =
+    pauseAll.isPending && pauseCommitScope ? pauseCommitScope : livePauseScope;
   const ruleStatus = (rule: AutopilotRuleDto) =>
     !rule.enabled || rule.mode === 'paused' || (rule.mode === 'active' && !canActivate)
       ? 'inactive'
@@ -862,6 +876,8 @@ export function AutopilotScreen({
   // ── Pause-all (D105) ───────────────────────────────────────────────
 
   const onConfirmPauseAll = () => {
+    if (pauseAll.isPending) return;
+    setPauseCommitScope(livePauseScope);
     void track('autopilot_paused', { duration_kind: 'until_resumed' });
     addBreadcrumb({
       category: 'action',
@@ -1362,7 +1378,8 @@ export function AutopilotScreen({
 
       <PauseConfirmModal
         open={pauseConfirmOpen}
-        rules={rules}
+        rules={displayedPauseScope.rules}
+        complete={displayedPauseScope.complete}
         onCancel={() => {
           if (!pauseAll.isPending) setPauseConfirmOpen(false);
         }}

@@ -30,10 +30,15 @@ afterEach(() => {
 function fixture(initialStatus: number, deferPause = false) {
   let senderStatus = initialStatus;
   let preset = { ...AUTO_UNSUBSCRIBE_NOISY, mode: 'active' as 'active' | 'paused' };
+  let senderRules = [FIXTURE_RULES[0]!];
   let completePause: (() => void) | undefined;
   const pausedResponse = () => {
+    const pausedCount = [preset, ...(senderStatus === 200 ? senderRules : [])].filter(
+      (rule) => rule.mode !== 'paused',
+    ).length;
     preset = { ...preset, mode: 'paused' };
-    return jsonOk({ data: { pausedCount: 1 } });
+    senderRules = senderRules.map((rule) => ({ ...rule, mode: 'paused' }));
+    return jsonOk({ data: { pausedCount } });
   };
   const pause = vi.fn(() =>
     deferPause
@@ -44,7 +49,7 @@ function fixture(initialStatus: number, deferPause = false) {
   );
   const senderRead = vi.fn(() =>
     senderStatus === 200
-      ? jsonOk({ data: [FIXTURE_RULES[0]] })
+      ? jsonOk({ data: senderRules })
       : new Response(
           JSON.stringify({
             error: { code: senderStatus === 404 ? 'NOT_FOUND' : 'SERVICE_UNAVAILABLE' },
@@ -111,7 +116,12 @@ it('keeps legacy Pause all available and confirmed when the sender-rule endpoint
   fireEvent.click(pause);
   const dialog = await screen.findByRole('dialog');
   expect(
-    within(dialog).getByRole('heading', { name: 'Pause 1 Autopilot rule?' }),
+    within(dialog).getByRole('heading', { name: 'Pause all Autopilot rules?' }),
+  ).toBeInTheDocument();
+  expect(
+    within(dialog).getByText(
+      'The complete rule list is unavailable. All rules in this mailbox will pause.',
+    ),
   ).toBeInTheDocument();
   expect(state.pause).not.toHaveBeenCalled();
   fireEvent.click(within(dialog).getByRole('button', { name: 'Pause all' }));
@@ -145,6 +155,9 @@ it('keeps an open preset preview and focus through recovery, then returns focus 
   const cancel = within(dialog).getByRole('button', { name: 'Cancel' });
   cancel.focus();
   await waitFor(() => expect(cancel).toHaveFocus());
+  expect(
+    within(dialog).getByRole('heading', { name: 'Pause all Autopilot rules?' }),
+  ).toBeInTheDocument();
 
   state.setStatus(200);
   await act(() =>
@@ -153,6 +166,14 @@ it('keeps an open preset preview and focus through recovery, then returns focus 
   expect(await screen.findByTestId('sender-rule-library')).toBeInTheDocument();
   expect(screen.getByRole('dialog')).toBe(dialog);
   expect(cancel).toHaveFocus();
+  expect(
+    within(dialog).getByRole('heading', { name: 'Pause 2 Autopilot rules?' }),
+  ).toBeInTheDocument();
+  fireEvent.click(within(dialog).getByText('Details'));
+  const affectedRules = within(dialog).getByRole('list', { name: 'Rules that will pause' });
+  expect(within(affectedRules).getAllByRole('listitem')).toHaveLength(2);
+  expect(within(affectedRules).getByText('Newsletter cleanup')).toBeInTheDocument();
+  cancel.focus();
   const heading = screen.getByRole('heading', { name: 'Preset rules', level: 2 });
   expect(heading.closest('details')).toHaveAttribute('open');
   expect(opener).not.toBeInTheDocument();
@@ -168,6 +189,7 @@ it('keeps a pending preset pause through recovery and completes its focus handof
   opener.focus();
   fireEvent.click(opener);
   const dialog = await screen.findByRole('dialog');
+  const previewTitle = within(dialog).getByRole('heading', { name: 'Pause all Autopilot rules?' });
   fireEvent.click(within(dialog).getByRole('button', { name: 'Pause all' }));
   await waitFor(() => expect(state.pause).toHaveBeenCalledOnce());
   expect(within(dialog).getByRole('button', { name: 'Pausing…' })).toBeDisabled();
@@ -180,6 +202,14 @@ it('keeps a pending preset pause through recovery and completes its focus handof
   );
   expect(await screen.findByTestId('sender-rule-library')).toBeInTheDocument();
   expect(screen.getByRole('dialog')).toBe(dialog);
+  expect(within(dialog).getByRole('heading', { name: 'Pause all Autopilot rules?' })).toBe(
+    previewTitle,
+  );
+  expect(
+    within(dialog).getByText(
+      'The complete rule list is unavailable. All rules in this mailbox will pause.',
+    ),
+  ).toBeInTheDocument();
   expect(document.activeElement).toBe(focused);
   expect(within(dialog).getByRole('button', { name: 'Pausing…' })).toBeDisabled();
   expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
@@ -190,6 +220,7 @@ it('keeps a pending preset pause through recovery and completes its focus handof
   await waitFor(() =>
     expect(screen.getByRole('heading', { name: 'Preset rules', level: 2 })).toHaveFocus(),
   );
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Pause all' })).toBeDisabled());
   expect(
     screen.getByRole('heading', { name: 'Preset rules', level: 2 }).closest('details'),
   ).toHaveAttribute('open');
