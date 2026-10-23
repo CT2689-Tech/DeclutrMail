@@ -89,7 +89,18 @@ export function contains(actual, expected) {
       (actual ?? []).length === expected.length && expected.every((v, i) => contains(actual[i], v))
     );
   if (expected && typeof expected === 'object')
-    return Object.entries(expected).every(([k, v]) => contains(actual?.[k], v));
+    return Object.entries(expected).every(([k, v]) =>
+      contains(
+        k === 'thresholdValue' &&
+          actual &&
+          typeof actual === 'object' &&
+          !Array.isArray(actual) &&
+          actual[k] === undefined
+          ? 0
+          : actual?.[k],
+        v,
+      ),
+    );
   return actual === expected;
 }
 
@@ -390,7 +401,14 @@ export async function runRouting(
       const actual = await savePolicy(request, p);
       if (!p.name) created.push(actual);
       const readback = await request(`https://monitoring.googleapis.com/v3/${actual.name}`);
-      if (!contains(readback, editable(p))) throw new Error('Native policy readback mismatch');
+      if (!contains(readback, editable(p))) {
+        report.readbackMismatch = {
+          policy: p.displayName,
+          expected: editable(p),
+          actual: editable(readback),
+        };
+        throw new Error('Native policy readback mismatch');
+      }
     }
     report.after = (await listAll(request, 'alertPolicies')).filter((p) =>
       OWNED.has(p.displayName),
