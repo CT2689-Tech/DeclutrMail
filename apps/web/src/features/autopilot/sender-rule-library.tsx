@@ -143,6 +143,9 @@ export function SenderRuleLibraryScope({
   const runningPresets = presetRules.filter((rule) => rule.enabled && rule.mode !== 'paused');
   const runningCustom = (rules.data ?? []).filter((rule) => rule.enabled && rule.mode !== 'paused');
   const runningCount = runningPresets.length + runningCustom.length;
+  const pausablePresets = presetRules.filter((rule) => rule.mode !== 'paused');
+  const pausableCustom = (rules.data ?? []).filter((rule) => rule.mode !== 'paused');
+  const pausableCount = pausablePresets.length + pausableCustom.length;
   const canPause = presetsAvailable && rules.isSuccess && !rules.isError && runningCount > 0;
   const filtered = filteredRules(rules.data ?? []);
   const visibleRules = filtered.slice(page * 6, page * 6 + 6);
@@ -221,6 +224,7 @@ export function SenderRuleLibraryScope({
       setSenderRuleMode(rule, rule.mode === 'paused' ? 'observe' : 'paused', mailboxId),
     onSuccess: (rule) => {
       setSelected(rule);
+      setFocusReview((value) => value + 1);
       invalidate();
       setNotice(
         rule.mode === 'paused'
@@ -714,7 +718,7 @@ export function SenderRuleLibraryScope({
       )}
       {pauseOpen && !planLocked && (
         <ConfirmModalFrame
-          title={`Pause ${num(runningCount)} rules?`}
+          title={`Pause ${num(pausableCount)} rules?`}
           subtitle="Pause rules and automatic preset cleanups."
           note="Resume individual rules when you’re ready."
           confirmLabel="Pause all"
@@ -731,16 +735,15 @@ export function SenderRuleLibraryScope({
               pauseAll.mutate(undefined, {
                 onSuccess: () => {
                   setPauseOpen(false);
-                  invalidate();
                 },
               });
           }}
         >
           <ul>
-            {runningCustom.map((rule) => (
+            {pausableCustom.map((rule) => (
               <li key={rule.id}>{rule.name}</li>
             ))}
-            {runningPresets.map((rule) => (
+            {pausablePresets.map((rule) => (
               <li key={rule.id}>
                 {rule.name}
                 {rule.mode === 'active' ? ' · Active' : ' · Observe'}

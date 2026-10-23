@@ -3,6 +3,7 @@ import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/api/client';
 import type { SenderRule, SenderRulePreview } from '@/lib/api/autopilot-sender-rules';
+import type { AutopilotRuleDto } from '@/lib/api/autopilot';
 import { SenderRuleLibraryScope, senderRuleFailureCopy } from './sender-rule-library';
 import { AUTO_ARCHIVE_LOW_ENGAGEMENT } from './fixtures';
 
@@ -15,6 +16,7 @@ const api = vi.hoisted(() => ({
   preview: vi.fn(),
   execute: vi.fn(),
   pause: vi.fn(),
+  mode: vi.fn(),
   track: vi.fn(),
   feedback: vi.fn(),
   status: { data: undefined, isError: false, refetch: vi.fn() } as {
@@ -28,7 +30,7 @@ vi.mock('@/lib/api/autopilot-sender-rules', () => ({
   fetchRuleSenders: api.search,
   saveSenderRule: api.save,
   retireSenderRule: api.retire,
-  setSenderRuleMode: vi.fn(),
+  setSenderRuleMode: api.mode,
   previewSenderRule: api.preview,
   executeSenderRule: api.execute,
 }));
@@ -96,7 +98,12 @@ const makePreview = (
   ...overrides,
 });
 const clients: QueryClient[] = [];
-function setup(presetsAvailable = true) {
+function setup(
+  presetsAvailable = true,
+  presetRules: AutopilotRuleDto[] = [
+    { ...AUTO_ARCHIVE_LOW_ENGAGEMENT, enabled: true, mode: 'active' },
+  ],
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
   });
@@ -105,7 +112,7 @@ function setup(presetsAvailable = true) {
     <QueryClientProvider client={client}>
       <SenderRuleLibraryScope
         mailboxId="mailbox-a"
-        presetRules={[{ ...AUTO_ARCHIVE_LOW_ENGAGEMENT, enabled: true, mode: 'active' }]}
+        presetRules={presetRules}
         presetsAvailable={presetsAvailable}
       />
     </QueryClientProvider>
@@ -114,6 +121,7 @@ function setup(presetsAvailable = true) {
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  api.mode.mockReset();
   api.tier = 'pro';
   api.list.mockResolvedValue([rule]);
   api.search.mockImplementation((q: string) =>
@@ -148,6 +156,39 @@ async function loaded() {
 }
 
 describe('sender rule library', () => {
+  it('previews disabled non-paused presets that the global pause also changes', async () => {
+    const disabled = {
+      ...AUTO_ARCHIVE_LOW_ENGAGEMENT,
+      id: 'disabled-preset',
+      name: 'Disabled weekly preset',
+      enabled: false,
+      mode: 'observe' as const,
+    };
+    setup(true, [{ ...AUTO_ARCHIVE_LOW_ENGAGEMENT, enabled: true, mode: 'active' }, disabled]);
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Pause all' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('heading', { name: 'Pause 3 rules?' })).toBeInTheDocument();
+    expect(within(dialog).getByText('Disabled weekly preset · Observe')).toBeInTheDocument();
+    expect(within(dialog).getByRole('list').children).toHaveLength(3);
+    expect(api.pause).not.toHaveBeenCalled();
+  });
+
+  it('returns focus to the rule when pausing removes the options button', async () => {
+    api.mode.mockResolvedValue({ ...rule, version: 2, mode: 'paused' });
+    setup();
+    await loaded();
+    fireEvent.click(screen.getByText('Rule options'));
+    const pause = screen.getByRole('button', { name: 'Pause rule' });
+    pause.focus();
+    fireEvent.click(pause);
+
+    await screen.findByText('Rule paused.');
+    await waitFor(() => expect(screen.getByRole('heading', { name: rule.name })).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Resume rule' })).toBeEnabled());
+    expect(api.execute).not.toHaveBeenCalled();
+  });
+
   it('cannot approve the previous token while an exclusion refresh waits offline', async () => {
     setup();
     await loaded();

@@ -116,8 +116,8 @@ export const automationRules = pgTable(
     presetKey: text('preset_key'),
     /**
      * D196/D197 + D234. `true` for the 5 system presets; `false` for
-     * future custom rules. The V2 launch API rejects `false` on writes;
-     * the column is here so V2.1 unlock is API-only.
+     * approval-first sender-list rules. Preset routes reject custom-rule
+     * writes; the reviewed sender-rule API owns their configuration.
      */
     isPreset: boolean('is_preset').notNull().default(true),
     /** Display label. For presets, defaults to the preset's canonical title. */
