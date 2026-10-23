@@ -56,9 +56,10 @@ const FILTER_STYLE = {
 } as const;
 
 const SECTION_STYLE = {
+  scrollMarginTop: 24,
   background: color.card,
   border: `1px solid ${color.border}`,
-  borderRadius: radius.md,
+  borderRadius: radius.lg,
   padding: 'clamp(16px, 3vw, 22px)',
   display: 'flex',
   flexDirection: 'column',
@@ -107,8 +108,14 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
 
   if ((holdStreamPlaceholder && !streamRevealed) || invoices.isLoading) {
     return (
-      <section aria-label="Invoices" data-testid="invoice-history" style={SECTION_STYLE}>
-        <GroupTitle as="div">Invoices</GroupTitle>
+      <section
+        id="invoices"
+        tabIndex={-1}
+        aria-label="Invoices"
+        data-testid="invoice-history"
+        style={SECTION_STYLE}
+      >
+        <GroupTitle>Invoices</GroupTitle>
         <div
           aria-hidden="true"
           style={{ height: 72, background: color.fill, borderRadius: radius.lg }}
@@ -120,10 +127,16 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
 
   if (invoices.isError) {
     return (
-      <section aria-label="Invoices" data-testid="invoice-history" style={SECTION_STYLE}>
-        <GroupTitle as="div">Invoices</GroupTitle>
+      <section
+        id="invoices"
+        tabIndex={-1}
+        aria-label="Invoices"
+        data-testid="invoice-history"
+        style={SECTION_STYLE}
+      >
+        <GroupTitle>Invoices</GroupTitle>
         <RecoverableErrorState
-          headingLevel={2}
+          headingLevel={3}
           title="We couldn’t load your invoices"
           description="Try again to load your invoices."
           onRetry={() => invoices.refetch()}
@@ -145,8 +158,14 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
   });
 
   return (
-    <section aria-label="Invoices" data-testid="invoice-history" style={SECTION_STYLE}>
-      <GroupTitle as="div">Invoices</GroupTitle>
+    <section
+      id="invoices"
+      tabIndex={-1}
+      aria-label="Invoices"
+      data-testid="invoice-history"
+      style={SECTION_STYLE}
+    >
+      <GroupTitle>Invoices</GroupTitle>
       {data.invoices.length > 0 ? (
         <>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
@@ -237,7 +256,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
           </p>
         ) : (
           <EmptyState
-            headingLevel={2}
+            headingLevel={3}
             title="No invoices yet"
             description="Your first one appears here once a payment has been collected."
           />

@@ -1,11 +1,12 @@
 'use client';
 
 import linkStyles from './billing-links.module.css';
+import styles from './billing-screen.module.css';
 
 import {
   editorialColumnStyle,
   editorialTitleStyle,
-  EditorialKicker,
+  EditorialContents,
 } from '@/features/editorial/page';
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -877,17 +878,19 @@ export function BillingScreen({
   }
 
   return (
-    <div
-      style={{
-        ...editorialColumnStyle,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 20,
-      }}
-    >
-      <EditorialKicker>Plan & billing</EditorialKicker>
-      <h1 style={editorialTitleStyle}>Plan & billing</h1>
-      <p style={{ margin: 0, color: color.fgSoft }}>{billingAccountScope(plan)}</p>
+    <div className={styles.page} style={{ ...editorialColumnStyle, maxWidth: 1120 }}>
+      <BillingPageHeader description={billingAccountScope(plan)} comparePlans />
+      <BillingSectionAnchor />
+      <EditorialContents
+        items={[
+          { href: '#plan', label: 'Your plan' },
+          ...(!billingDark && paymentMethodSub
+            ? [{ href: '#payment', label: 'Payment details' }]
+            : []),
+          ...(!billingDark && hasBillingHistory ? [{ href: '#invoices', label: 'Invoices' }] : []),
+          { href: '#change-plan', label: 'Compare plans' },
+        ]}
+      />
       <ScreenIntro
         id="billing"
         title="Plan & billing"
@@ -906,17 +909,6 @@ export function BillingScreen({
           </a>
         </p>
       )}
-
-      {!billingDark && paymentMethodSub && paymentMethodSub.status === 'past_due' ? (
-        <PaymentMethodCard
-          provider={paymentMethodSub.provider}
-          isPastDue={paymentMethodSub.status === 'past_due'}
-          disabled={pending !== null}
-          disabledReason={
-            pending !== null ? 'Available once the payment above finishes confirming.' : null
-          }
-        />
-      ) : null}
 
       <CurrentPlanCard
         plan={plan}
@@ -943,6 +935,17 @@ export function BillingScreen({
           resumeCancellation.error ? resumeCancellationErrorMessage(resumeCancellation.error) : null
         }
       />
+
+      {!billingDark && paymentMethodSub && paymentMethodSub.status === 'past_due' ? (
+        <PaymentMethodCard
+          provider={paymentMethodSub.provider}
+          isPastDue={paymentMethodSub.status === 'past_due'}
+          disabled={pending !== null}
+          disabledReason={
+            pending !== null ? 'Available once the payment above finishes confirming.' : null
+          }
+        />
+      ) : null}
 
       {/* D119/ADR-0035. Tied to the GRANTING record: the instrument
           that matters is the one funding the current plan, and a
@@ -976,7 +979,6 @@ export function BillingScreen({
           and never fetches. */}
       {invoiceHistory ?? <InvoiceHistory enabled={!billingDark && hasBillingHistory} />}
 
-      <div id="change-plan" style={{ scrollMarginTop: 80 }} />
       <PlanPicker
         currentTier={plan.entitlementTier}
         grantingSub={grantingBackingSub}
@@ -1116,6 +1118,47 @@ export function BillingScreen({
         pauseError={pause.error ? pauseErrorMessage(pause.error) : null}
       />
     </div>
+  );
+}
+
+/** Restore a cold deep link after the billing read replaces its loading state. */
+function BillingSectionAnchor() {
+  useEffect(() => {
+    // Next can consume its hash scroll before client-only sections mount.
+    // Wait one frame for AppShell's route reset, then apply this mount's link
+    // once. Later billing polls must not interrupt the customer's position.
+    const frame = window.requestAnimationFrame(() => {
+      const id = window.location.hash.slice(1);
+      if (!['plan', 'payment', 'invoices', 'change-plan'].includes(id)) return;
+      const section = document.getElementById(id);
+      if (!section) return;
+      section.scrollIntoView({ behavior: 'instant', block: 'start' });
+      section.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+  return null;
+}
+
+function BillingPageHeader({
+  description = 'Your plan, payments and billing history.',
+  comparePlans = false,
+}: {
+  description?: string;
+  comparePlans?: boolean;
+}) {
+  return (
+    <header className={styles.header}>
+      <div className={styles.heading}>
+        <h1 style={editorialTitleStyle}>Plan & billing</h1>
+        <p className={styles.description}>{description}</p>
+      </div>
+      {comparePlans ? (
+        <a className={`${linkStyles.link} ${styles.compareLink}`} href="#change-plan">
+          Compare plans
+        </a>
+      ) : null}
+    </header>
   );
 }
 
@@ -1638,19 +1681,22 @@ function CurrentPlanCard({
 
   return (
     <section
+      id="plan"
+      tabIndex={-1}
       aria-label="Current plan"
       data-testid="current-plan-card"
       style={{
         background: color.card,
         border: `1px solid ${color.border}`,
-        borderRadius: radius.md,
-        padding: 'clamp(16px, 3vw, 22px)',
+        borderRadius: radius.lg,
+        padding: 'clamp(16px, 3vw, 24px)',
+        scrollMarginTop: 24,
         display: 'flex',
         flexDirection: 'column',
         gap: 14,
       }}
     >
-      <GroupTitle as="div">Current plan</GroupTitle>
+      <GroupTitle>Current plan</GroupTitle>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: -4 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
           <span
@@ -2380,45 +2426,26 @@ function BillingDisabledNotice() {
 
 function LoadingState() {
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      style={{
-        padding: '20px 24px 28px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-        maxWidth: 1180,
-      }}
-    >
-      {[120, 140].map((h, i) => (
-        <div
-          key={i}
-          aria-hidden="true"
-          style={{
-            height: h,
-            background: color.fill,
-            borderRadius: radius.xl,
-          }}
-        />
-      ))}
-      <span style={{ position: 'absolute', left: -9999 }}>Loading billing</span>
+    <div className={styles.page} style={{ ...editorialColumnStyle, maxWidth: 1120 }}>
+      <BillingPageHeader />
+      <div role="status" aria-live="polite" className={styles.loading}>
+        {[120, 140].map((height, index) => (
+          <div
+            key={index}
+            aria-hidden="true"
+            style={{ height, background: color.fill, borderRadius: radius.lg }}
+          />
+        ))}
+        <span style={{ position: 'absolute', left: -9999 }}>Loading billing…</span>
+      </div>
     </div>
   );
 }
 
 function BillingErrorState({ onRetry }: { onRetry: () => void }) {
   return (
-    <div
-      style={{
-        width: '100%',
-        boxSizing: 'border-box',
-        maxWidth: 720,
-        margin: '0 auto',
-        padding: '20px clamp(12px, 4vw, 24px) 28px',
-        fontFamily: font.sans,
-      }}
-    >
+    <div className={styles.page} style={{ ...editorialColumnStyle, maxWidth: 1120 }}>
+      <BillingPageHeader />
       <RecoverableErrorState
         headingLevel={2}
         title="We couldn’t load your billing details"
@@ -2437,16 +2464,8 @@ function BillingErrorState({ onRetry }: { onRetry: () => void }) {
  */
 function BillingUnknownState({ onRetry }: { onRetry: () => void }) {
   return (
-    <div
-      style={{
-        width: '100%',
-        boxSizing: 'border-box',
-        maxWidth: 720,
-        margin: '0 auto',
-        padding: '20px clamp(12px, 4vw, 24px) 28px',
-        fontFamily: font.sans,
-      }}
-    >
+    <div className={styles.page} style={{ ...editorialColumnStyle, maxWidth: 1120 }}>
+      <BillingPageHeader />
       <RecoverableErrorState
         headingLevel={2}
         title="We couldn’t read your billing details"

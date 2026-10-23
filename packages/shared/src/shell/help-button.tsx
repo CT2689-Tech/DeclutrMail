@@ -93,15 +93,11 @@ function HelpPopover({ onClose }: { onClose: () => void }) {
   return (
     <div
       ref={panelRef}
+      className="dm-help-popover"
       role="dialog"
       aria-label={`About ${help.title}`}
       style={{
-        position: 'absolute',
-        top: 40,
-        right: 0,
         zIndex: 90,
-        width: 320,
-        maxWidth: 'calc(100vw - 24px)',
         maxHeight: 'calc(100dvh - 96px)',
         overflowY: 'auto',
         overscrollBehavior: 'contain',

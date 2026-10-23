@@ -44,6 +44,91 @@ test.use({ locale: 'de-DE', timezoneId: 'Asia/Kolkata' });
 
 const api = new ApiClient();
 
+test('account navigation preserves desktop grouping, tablet access and section links', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 480 });
+  await page.goto('/settings');
+  await expect(page.getByRole('navigation', { name: 'On this page' })).toBeVisible();
+  const sidebar = page.getByRole('complementary', { name: 'Workspace navigation' });
+  expect((await sidebar.boundingBox())?.width).toBe(220);
+  await expect(sidebar.locator('.dm-sidebar-label').first()).toBeVisible();
+  await expect(
+    sidebar.getByRole('navigation', { name: 'Product navigation' }).getByRole('button'),
+  ).toHaveCount(5);
+  const account = sidebar.getByRole('navigation', { name: 'Account navigation' });
+  await expect(account.getByRole('link', { name: 'Settings', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  const billing = account.getByRole('link', { name: 'Plan & billing' });
+  const footer = await billing.boundingBox();
+  expect(footer).not.toBeNull();
+  expect(footer!.y + footer!.height).toBeLessThanOrEqual(480);
+
+  await page
+    .getByRole('navigation', { name: 'On this page' })
+    .getByRole('link', { name: 'Privacy and data' })
+    .click();
+  await expect(page.locator('#more')).toBeFocused();
+  await expect(page.locator('#more')).toBeInViewport();
+  await billing.click();
+  await expect(page.getByRole('heading', { name: 'Plan & billing', exact: true })).toBeVisible();
+  await expect(billing).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('.dm-main-scroll')).toHaveJSProperty('scrollTop', 0);
+  await page
+    .getByRole('navigation', { name: 'On this page' })
+    .getByRole('link', { name: 'Compare plans' })
+    .click();
+  await expect(page.locator('#change-plan')).toBeInViewport();
+
+  await page.setViewportSize({ width: 900, height: 600 });
+  expect((await sidebar.boundingBox())?.width).toBe(72);
+  await expect(sidebar.locator('.dm-sidebar-label').first()).toBeHidden();
+  await expect(account.getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
+  await expect(billing).toBeVisible();
+});
+
+test('phone account drawer reaches billing and keeps contextual help inside the viewport', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto('/settings');
+  await expect(page.getByRole('navigation', { name: 'On this page' })).toBeVisible();
+  const banner = page.getByTestId('cookie-consent-banner');
+  await expect(banner).toBeVisible();
+  const menu = page.getByRole('button', { name: 'Open navigation menu' });
+  await menu.click();
+  const drawer = page.getByRole('dialog', { name: 'Navigation menu' });
+  await expect(drawer).toBeVisible();
+  await expect(banner).toBeVisible();
+  // A first-visit banner must stay available after the modal drawer closes,
+  // without covering the account destinations while the drawer is open.
+  await page.keyboard.press('Escape');
+  await expect(drawer).toBeHidden();
+  await expect(menu).toBeFocused();
+  await banner.getByRole('button', { name: 'Essential only', exact: true }).click({ trial: true });
+  await menu.click();
+  await drawer.getByRole('button', { name: 'Plan & billing', exact: true }).click();
+  await expect(drawer).toBeHidden();
+  await expect(page.getByRole('heading', { name: 'Plan & billing', exact: true })).toBeVisible();
+  await banner.getByRole('button', { name: 'Essential only', exact: true }).click();
+  await expect(banner).toBeHidden();
+  await expect(page.getByRole('navigation', { name: 'Primary' }).getByRole('button')).toHaveCount(
+    5,
+  );
+  const help = page.getByRole('button', { name: 'About this screen' });
+  await help.click();
+  const popover = page.getByRole('dialog', { name: 'About Plan & billing' });
+  const bounds = await popover.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320);
+  await page.keyboard.press('Escape');
+  await expect(popover).toBeHidden();
+  await expect(help).toBeFocused();
+});
+
 /** Static routes that must hydrate from the server tree without recovery. */
 const HYDRATED_ROUTES = [
   '/home',
@@ -299,6 +384,18 @@ async function withBillingFixture(
     await sql.end();
   }
 }
+
+test('cold paid-account billing fragments reach payment and invoice sections', async ({ page }) => {
+  await withBillingFixture('paid-plus', async () => {
+    for (const id of ['payment', 'invoices']) {
+      await page.goto(`/billing#${id}`);
+      const section = page.locator(`#${id}`);
+      await expect(section).toBeVisible();
+      await expect(section).toBeFocused();
+      await expect(section).toBeInViewport();
+    }
+  });
+});
 
 test('live Pro complimentary billing hydrates on annual across repeated loads', async ({
   page,

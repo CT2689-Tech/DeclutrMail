@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Logo } from '../components/logo';
 import { WS2_COPY } from '../copy/launch/ws2';
-import { BRIEF_NAME, CATCH_UP_LATER_FIRST } from '../copy/screen-decisions';
+import { BILLING_NAME, BRIEF_NAME, CATCH_UP_LATER_FIRST } from '../copy/screen-decisions';
 import { font, motion, radius, text } from '../tokens/tokens';
 import { NAV_GROUP, useLabels, type LabelKey } from '../hooks/use-labels';
 
@@ -110,6 +110,8 @@ export function Sidebar({
   counts = {},
   locks = {},
   collapsed = false,
+  responsive = false,
+  hrefFor,
 }: {
   active: string;
   onNavigate: (id: string) => void;
@@ -118,6 +120,10 @@ export function Sidebar({
   locks?: Partial<Record<string, string>>;
   /** Compact five-section rail; false renders a labelled feature list. */
   collapsed?: boolean;
+  /** Five workspace groups: labelled at desktop widths, compact on tablets. */
+  responsive?: boolean;
+  /** Framework host supplies real URLs for account navigation links. */
+  hrefFor?: ((id: string) => string) | undefined;
 }) {
   const labels = useLabels();
   const [hint, setHint] = useState<{ label: string; top: number; left: number } | null>(null);
@@ -129,31 +135,34 @@ export function Sidebar({
     window.addEventListener('keydown', dismiss);
     return () => window.removeEventListener('keydown', dismiss);
   }, [hint]);
-  const showHint = (element: HTMLButtonElement, label: string) => {
-    if (!collapsed) return;
+  const showHint = (element: HTMLElement, label: string) => {
+    if (!collapsed && !responsive) return;
     const bounds = element.getBoundingClientRect();
+    if (responsive && bounds.width > 60) return;
     setHint({ label, left: bounds.right + 12, top: bounds.top });
   };
-  const items = collapsed ? WORKSPACE_NAV : NAV;
+  const grouped = collapsed || responsive;
+  const labelled = !collapsed || responsive;
+  const items = grouped ? WORKSPACE_NAV : NAV;
   return (
     <aside
-      className="dm-editorial-sidebar"
+      className={`dm-editorial-sidebar${responsive ? ' dm-responsive-sidebar' : ''}`}
       aria-label="Workspace navigation"
       onScroll={() => setHint(null)}
       data-collapsed={collapsed ? 'true' : 'false'}
       style={{
-        width: collapsed ? SIDEBAR_RAIL_WIDTH : SIDEBAR_WIDTH,
+        width: responsive ? undefined : collapsed ? SIDEBAR_RAIL_WIDTH : SIDEBAR_WIDTH,
         flexShrink: 0,
         height: '100%',
         boxSizing: 'border-box',
         overflowX: 'hidden',
-        overflowY: 'auto',
+        overflowY: 'hidden',
         background: 'var(--dm-nav-bg)',
         borderRight: '1px solid var(--dm-nav-active)',
         padding: '22px 12px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 32,
+        gap: 28,
         fontFamily: font.sans,
       }}
     >
@@ -163,7 +172,7 @@ export function Sidebar({
         aria-label="DeclutrMail Home"
         onClick={() => onNavigate('home')}
         style={{
-          width: collapsed ? 44 : '100%',
+          width: responsive ? undefined : collapsed ? 44 : '100%',
           alignSelf: 'center',
           height: 44,
           minHeight: 44,
@@ -171,22 +180,32 @@ export function Sidebar({
           background: 'transparent',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: collapsed ? 'center' : 'flex-start',
-          padding: collapsed ? 0 : '0 8px',
+          justifyContent: responsive ? undefined : collapsed ? 'center' : 'flex-start',
+          padding: responsive ? undefined : collapsed ? 0 : '0 8px',
           cursor: 'pointer',
         }}
       >
-        <Logo size={28} tone="reversed" variant={collapsed ? 'mark' : 'horizontal'} />
+        <Logo
+          size={28}
+          tone="reversed"
+          label={null}
+          className="dm-sidebar-logo"
+          variant={collapsed && !responsive ? 'mark' : 'horizontal'}
+        />
       </button>
       <nav
         aria-label="Product navigation"
+        className="dm-workspace-nav"
         style={{
           display: 'flex',
           flexDirection: 'column',
-          gap: collapsed ? 12 : 5,
+          gap: responsive ? undefined : collapsed ? 12 : 5,
           alignSelf: 'center',
-          width: collapsed ? 44 : '100%',
+          width: responsive ? undefined : collapsed ? 44 : '100%',
           flex: 1,
+          minHeight: 44,
+          overflowY: 'auto',
+          overflowX: 'hidden',
         }}
       >
         {items.map((item) => {
@@ -242,19 +261,19 @@ export function Sidebar({
               }}
               onMouseLeave={() => setHint(null)}
               aria-current={on ? 'page' : undefined}
-              aria-label={collapsed ? label : undefined}
+              aria-label={grouped ? label : undefined}
               aria-describedby={item.id === 'brief' ? 'nav-catchup-hint' : undefined}
-              aria-description={collapsed && context ? context : undefined}
-              title={collapsed ? hintLabel : undefined}
+              aria-description={grouped && context ? context : undefined}
+              title={grouped ? hintLabel : undefined}
               style={{
                 position: 'relative',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: collapsed ? 'center' : 'flex-start',
+                justifyContent: responsive ? undefined : collapsed ? 'center' : 'flex-start',
                 gap: 10,
                 height: 44,
                 flexShrink: 0,
-                padding: collapsed ? 0 : '0 10px',
+                padding: responsive ? undefined : collapsed ? 0 : '0 10px',
                 borderRadius: 10,
                 border: 'none',
                 ...(on
@@ -273,8 +292,12 @@ export function Sidebar({
               }}
             >
               <NavIcon d={item.icon} />
-              {!collapsed && <span style={{ flex: 1, minWidth: 0 }}>{label}</span>}
-              {!collapsed && lock && (
+              {labelled && (
+                <span className="dm-sidebar-label" style={{ flex: 1, minWidth: 0 }}>
+                  {label}
+                </span>
+              )}
+              {!grouped && lock && (
                 <span
                   className="dm-nav-lock"
                   aria-label={`${lock} feature`}
@@ -283,7 +306,7 @@ export function Sidebar({
                   {lock}
                 </span>
               )}
-              {!collapsed && countText != null && (
+              {!grouped && countText != null && (
                 <span
                   aria-label={countLabel}
                   style={{ fontSize: text.sm, fontVariantNumeric: 'tabular-nums' }}
@@ -291,7 +314,7 @@ export function Sidebar({
                   {countText}
                 </span>
               )}
-              {collapsed && hasCount && (
+              {grouped && hasCount && (
                 <span
                   aria-hidden="true"
                   data-testid={`nav-dot-${item.id}`}
@@ -313,42 +336,73 @@ export function Sidebar({
           {WS2_COPY.explain.catchup.replaceAll('{BRIEF_NAME}', BRIEF_NAME)}
         </p>
       </nav>
-      <button
-        type="button"
-        className="dm-rail-account"
-        aria-label="Workspace settings"
-        aria-current={active === 'settings' ? 'page' : undefined}
-        title="Workspace settings"
-        onClick={() => {
-          setHint(null);
-          onNavigate('settings');
-        }}
-        onMouseEnter={(event) => showHint(event.currentTarget, 'Workspace settings')}
-        onMouseLeave={() => setHint(null)}
-        onFocus={(event) => showHint(event.currentTarget, 'Workspace settings')}
-        onBlur={() => setHint(null)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 10,
-          width: collapsed ? 44 : '100%',
-          height: 44,
-          alignSelf: 'center',
-          minHeight: 44,
-          marginTop: 'auto',
-          background: 'var(--dm-nav-active)',
-          border: 0,
-          borderRadius: 10,
-          color: 'var(--dm-nav-fg)',
-          fontSize: 12,
-          cursor: 'pointer',
-        }}
-      >
-        <NavIcon d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2" />
-        {!collapsed && <span>Settings</span>}
-      </button>
-      {hint && collapsed && (
+      <nav className="dm-sidebar-account" aria-label="Account navigation">
+        <span className="dm-sidebar-account-heading" hidden={!labelled}>
+          Account
+        </span>
+        {[
+          {
+            id: 'settings',
+            label: 'Settings',
+            icon: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2',
+          },
+          { id: 'billing', label: BILLING_NAME, icon: 'M3 5h18v14H3V5Zm0 5h18M7 15h3' },
+        ].map((item) => {
+          const on = active === item.id || active.startsWith(`${item.id}/`);
+          const destinationProps = {
+            className: 'dm-nav-row dm-rail-account',
+            'aria-label': item.label,
+            'aria-current': on ? ('page' as const) : undefined,
+            title: item.label,
+            onMouseEnter: (event: React.MouseEvent<HTMLElement>) => {
+              onNavigateIntent?.(item.id);
+              showHint(event.currentTarget, item.label);
+            },
+            onMouseLeave: () => setHint(null),
+            onFocus: (event: React.FocusEvent<HTMLElement>) => {
+              onNavigateIntent?.(item.id);
+              showHint(event.currentTarget, item.label);
+            },
+            onBlur: () => setHint(null),
+          };
+          const content = (
+            <>
+              <NavIcon d={item.icon} />
+              {labelled && <span className="dm-sidebar-label">{item.label}</span>}
+            </>
+          );
+          const navigate = () => {
+            setHint(null);
+            onNavigate(item.id);
+          };
+          return hrefFor ? (
+            <a
+              key={item.id}
+              {...destinationProps}
+              href={hrefFor(item.id)}
+              onClick={(event) => {
+                if (
+                  event.button !== 0 ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.altKey
+                )
+                  return;
+                event.preventDefault();
+                navigate();
+              }}
+            >
+              {content}
+            </a>
+          ) : (
+            <button key={item.id} {...destinationProps} type="button" onClick={navigate}>
+              {content}
+            </button>
+          );
+        })}
+      </nav>
+      {hint && grouped && (
         <span aria-hidden="true" className="dm-nav-hint" style={{ top: hint.top, left: hint.left }}>
           {hint.label}
         </span>

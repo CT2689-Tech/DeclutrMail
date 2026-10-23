@@ -5,6 +5,7 @@ import { editorialColumnStyle, editorialTitleStyle } from '@/features/editorial/
 import Activity from './activity/loading';
 import Autopilot from './autopilot/loading';
 import Brief from './brief/loading';
+import Billing from './billing/loading';
 import Followups from './followups/loading';
 import Later from './later/loading';
 import Quiet from './quiet/loading';
@@ -20,13 +21,14 @@ const routes = [
   { View: Later, title: 'Later', kicker: 'Catch up', gap: 32 },
   { View: Quiet, title: 'Quiet hours', kicker: 'Automations / On your schedule', gap: 24 },
   { View: Screener, title: 'Screener', kicker: 'Clean up / New senders', gap: 24 },
-  { View: Settings, title: 'Settings', kicker: 'Settings', gap: 32 },
+  { View: Settings, title: 'Settings', kicker: null, gap: 28, maxWidth: 1120 },
+  { View: Billing, title: 'Plan & billing', kicker: null, gap: 28, maxWidth: 1120 },
 ];
 
 describe('Route loading continuity', () => {
   it.each(routes)(
     '$title retains the ready screen identity and editorial geometry',
-    ({ View, title, kicker, gap }) => {
+    ({ View, title, kicker, gap, maxWidth = 1480 }) => {
       render(<View />);
       const heading = screen.getByRole('heading', { level: 1, name: title });
       // Assert the streamed CSS text: jsdom does not compute font vars/clamp.
@@ -34,8 +36,9 @@ describe('Route loading continuity', () => {
       expect(html).toContain(`font-family:${editorialTitleStyle.fontFamily}`);
       expect(html).toContain(`font-size:${editorialTitleStyle.fontSize}`);
       expect(html).toContain(`padding:${editorialColumnStyle.padding}`);
-      expect(heading.parentElement).toHaveStyle({ maxWidth: '1480px', gap: `${gap}px` });
-      expect(screen.getAllByText(kicker)).toHaveLength(kicker === title ? 2 : 1);
+      expect(heading.parentElement).toHaveStyle({ maxWidth: `${maxWidth}px`, gap: `${gap}px` });
+      if (kicker) expect(screen.getAllByText(kicker)).toHaveLength(kicker === title ? 2 : 1);
+      else expect(screen.getAllByText(title)).toHaveLength(1);
       expect(screen.getByRole('status', { name: /Loading/i })).toHaveAttribute('aria-busy', 'true');
       expect(screen.queryByRole('button')).toBeNull();
     },

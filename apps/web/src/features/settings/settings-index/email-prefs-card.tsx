@@ -73,7 +73,7 @@ export function EmailPrefsCard({
   return (
     <SettingsGroup
       id="notifications"
-      title="Notifications"
+      title="Email notifications"
       footer={
         saveFailed && state.kind === 'ready' ? (
           <SettingsSaveError>Could not save the preference. Try again.</SettingsSaveError>
