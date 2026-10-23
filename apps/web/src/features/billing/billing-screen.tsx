@@ -880,6 +880,7 @@ export function BillingScreen({
   return (
     <div className={styles.page} style={{ ...editorialColumnStyle, maxWidth: 1120 }}>
       <BillingPageHeader description={billingAccountScope(plan)} comparePlans />
+      <BillingSectionAnchor />
       <EditorialContents
         items={[
           { href: '#plan', label: 'Your plan' },
@@ -1118,6 +1119,25 @@ export function BillingScreen({
       />
     </div>
   );
+}
+
+/** Restore a cold deep link after the billing read replaces its loading state. */
+function BillingSectionAnchor() {
+  useEffect(() => {
+    // Next can consume its hash scroll before client-only sections mount.
+    // Wait one frame for AppShell's route reset, then apply this mount's link
+    // once. Later billing polls must not interrupt the customer's position.
+    const frame = window.requestAnimationFrame(() => {
+      const id = window.location.hash.slice(1);
+      if (!['plan', 'payment', 'invoices', 'change-plan'].includes(id)) return;
+      const section = document.getElementById(id);
+      if (!section) return;
+      section.scrollIntoView({ behavior: 'instant', block: 'start' });
+      section.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+  return null;
 }
 
 function BillingPageHeader({

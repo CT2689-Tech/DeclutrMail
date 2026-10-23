@@ -5303,6 +5303,55 @@ describe('D119 billing-artifact render gates (screen-level)', () => {
     ]);
   }
 
+  it.each(['payment', 'invoices', 'change-plan'])(
+    'restores a cold #%s deep link after a delayed billing read without moving focus on later refreshes',
+    async (sectionId) => {
+      const previousUrl = window.location.href;
+      const scroll = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {});
+      let completeRead!: (response: Response) => void;
+      stubSubscription(() => new Promise<Response>((resolve) => (completeRead = resolve)));
+      window.history.replaceState(null, '', `/billing#${sectionId}`);
+      const client = createTestQueryClient();
+      const mounted = render(
+        <QueryWrapper client={client}>
+          <BillingScreen />
+        </QueryWrapper>,
+      );
+      try {
+        expect(screen.getByRole('status')).toHaveTextContent('Loading billing');
+        expect(document.getElementById(sectionId)).toBeNull();
+        await act(async () => completeRead(jsonOk({ data: PRO_SUB })));
+        const section = await screen.findByTestId(
+          sectionId === 'payment'
+            ? 'payment-method-card'
+            : sectionId === 'invoices'
+              ? 'invoice-history'
+              : 'plan-picker',
+        );
+        await waitFor(() => expect(scroll.mock.contexts).toContain(section));
+        expect(section).toHaveFocus();
+        const scrollCount = scroll.mock.calls.length;
+        const cancelButton = screen.getByRole('button', { name: 'Review cancellation' });
+        cancelButton.focus();
+        act(() =>
+          client.setQueryData(billingKeys.subscription(), {
+            ...PRO_SUB,
+            subscription: { ...SUB, currentPeriodEnd: '2026-12-01T12:00:00.000Z' },
+          }),
+        );
+        await waitFor(() =>
+          expect(screen.getByTestId('current-plan-card')).toHaveTextContent('Dec 1, 2026'),
+        );
+        expect(cancelButton).toHaveFocus();
+        expect(scroll).toHaveBeenCalledTimes(scrollCount);
+      } finally {
+        mounted.unmount();
+        scroll.mockRestore();
+        window.history.replaceState(null, '', previousUrl);
+      }
+    },
+  );
+
   it('billing dark renders NEITHER section and fetches no invoices', async () => {
     let invoicesFetched = false;
     installFetchStub([
