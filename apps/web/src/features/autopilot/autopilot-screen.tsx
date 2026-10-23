@@ -179,6 +179,10 @@ export function AutopilotRoute() {
     senderRulesEntitled &&
     mailboxId !== null &&
     isSenderRulesUnsupported(senderRulesQuery.error);
+  const [presetsExpanded, setPresetsExpanded] = useState(false);
+  useEffect(() => {
+    if (unsupported) setPresetsExpanded(true);
+  }, [unsupported]);
   const presetScreen = (
     <AutopilotScreen
       embedded={!unsupported}
@@ -202,16 +206,29 @@ export function AutopilotRoute() {
       patternState={hydrated ? sectionState(patternQuery, refetchPattern) : { kind: 'loading' }}
     />
   );
-  if (unsupported) return presetScreen;
-
   return (
-    <div style={{ ...editorialColumnStyle, display: 'grid', gap: 36 }}>
-      <SenderRuleLibrary
-        presetRules={rulesQuery.data ?? []}
-        presetsAvailable={rulesQuery.isSuccess && !rulesQuery.isError}
-      />
-      <details>
+    <div
+      style={{
+        ...(unsupported ? { minWidth: 0 } : editorialColumnStyle),
+        display: 'grid',
+        gap: unsupported ? 0 : 36,
+      }}
+    >
+      {!unsupported && (
+        <SenderRuleLibrary
+          presetRules={rulesQuery.data ?? []}
+          presetsAvailable={rulesQuery.isSuccess && !rulesQuery.isError}
+        />
+      )}
+      {/* Keep preset previews and pending mutations mounted across API recovery. */}
+      <details
+        open={unsupported || presetsExpanded}
+        onToggle={(event) => {
+          if (!unsupported) setPresetsExpanded(event.currentTarget.open);
+        }}
+      >
         <summary
+          hidden={unsupported}
           style={{ cursor: 'pointer', padding: '14px 0', color: color.fgSoft, fontSize: text.md }}
         >
           Preset rules ·{' '}
@@ -275,6 +292,22 @@ interface PendingPagination {
   onNext: () => void;
   onPrevious: () => void;
   onNewest: () => void;
+}
+
+function isVisiblePresetOpener(element: HTMLElement): boolean {
+  if (!element.isConnected || element.matches(':disabled')) return false;
+  for (let ancestor: HTMLElement | null = element; ancestor; ancestor = ancestor.parentElement) {
+    const style = window.getComputedStyle(ancestor);
+    if (ancestor.hidden || style.display === 'none' || style.visibility === 'hidden') return false;
+    if (
+      ancestor instanceof HTMLDetailsElement &&
+      !ancestor.open &&
+      !ancestor.querySelector(':scope > summary')?.contains(element)
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export function AutopilotScreen({
@@ -351,6 +384,31 @@ export function AutopilotScreen({
    * button, shown whenever `mode==='paused'` regardless of `enabled`).
    */
   const [resumeTarget, setResumeTarget] = useState<AutopilotRuleDto | null>(null);
+  const presetHeading = useRef<HTMLHeadingElement>(null);
+  const modalOpener = useRef<HTMLElement | null>(null);
+  const rememberModalOpener = () => {
+    modalOpener.current =
+      document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+        ? document.activeElement
+        : null;
+  };
+  const modalOpen =
+    pauseConfirmOpen || approveTarget !== null || confirmTarget !== null || resumeTarget !== null;
+  const wasModalOpen = useRef(false);
+  useEffect(() => {
+    const closed = wasModalOpen.current && !modalOpen;
+    wasModalOpen.current = modalOpen;
+    if (!closed) return;
+    // PreviewSheet restores its opener during cleanup. Recovery may have removed
+    // that legacy control, so finish the handoff to the visible preset heading.
+    const frame = requestAnimationFrame(() => {
+      if (document.querySelector('[aria-modal="true"]')) return;
+      const opener = modalOpener.current;
+      const target = opener && isVisiblePresetOpener(opener) ? opener : presetHeading.current;
+      if (target && isVisiblePresetOpener(target)) target.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [modalOpen]);
   /**
    * Which of the modal's two commits is running. The frame needs it to
    * put the busy label on the button the user actually clicked — one
@@ -543,6 +601,7 @@ export function AutopilotScreen({
    * unseen. The commit itself is `onResumeConfirm` below.
    */
   const onResume = (rule: AutopilotRuleDto) => {
+    rememberModalOpener();
     patchRule.reset();
     resumePreview.reset();
     setResumeTarget(rule);
@@ -579,6 +638,7 @@ export function AutopilotScreen({
    * preview the confirm button gates on (`activatePreviewState`).
    */
   const openConfirm = (rule: AutopilotRuleDto, intent: 'enable' | 'activate') => {
+    rememberModalOpener();
     patchRule.reset();
     activatePreview.reset();
     setPendingCommit(undefined);
@@ -685,6 +745,7 @@ export function AutopilotScreen({
 
   const openApprove = (target: ApproveTarget) => {
     if (target.matches.length === 0) return;
+    rememberModalOpener();
     approveMatches.reset();
     approveAllForRule.reset();
     setApproveTarget(target);
@@ -905,14 +966,25 @@ export function AutopilotScreen({
         }}
       >
         {embedded ? (
-          <h2 style={{ ...tokens.typography.sectionTitle, margin: 0 }}>Preset rules</h2>
+          <h2
+            ref={presetHeading}
+            tabIndex={-1}
+            style={{ ...tokens.typography.sectionTitle, margin: 0 }}
+          >
+            Preset rules
+          </h2>
         ) : (
-          <h1 style={editorialTitleStyle}>Autopilot</h1>
+          <h1 ref={presetHeading} tabIndex={-1} style={editorialTitleStyle}>
+            Autopilot
+          </h1>
         )}
         {!embedded && (
           <Button
             tone="default"
-            onClick={() => setPauseConfirmOpen(true)}
+            onClick={() => {
+              rememberModalOpener();
+              setPauseConfirmOpen(true);
+            }}
             disabled={state.kind !== 'ready' || !hasRunningRules}
             ariaLabel={embedded ? 'Pause every preset rule' : 'Pause every Autopilot rule'}
           >

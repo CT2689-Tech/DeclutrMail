@@ -27,13 +27,21 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-function fixture(initialStatus: number) {
+function fixture(initialStatus: number, deferPause = false) {
   let senderStatus = initialStatus;
   let preset = { ...AUTO_UNSUBSCRIBE_NOISY, mode: 'active' as 'active' | 'paused' };
-  const pause = vi.fn(() => {
+  let completePause: (() => void) | undefined;
+  const pausedResponse = () => {
     preset = { ...preset, mode: 'paused' };
     return jsonOk({ data: { pausedCount: 1 } });
-  });
+  };
+  const pause = vi.fn(() =>
+    deferPause
+      ? new Promise<Response>((resolve) => {
+          completePause = () => resolve(pausedResponse());
+        })
+      : pausedResponse(),
+  );
   const senderRead = vi.fn(() =>
     senderStatus === 200
       ? jsonOk({ data: [FIXTURE_RULES[0]] })
@@ -77,6 +85,10 @@ function fixture(initialStatus: number) {
     rerender: () => view.rerender(tree()),
     client,
     pause,
+    completePause: () => {
+      if (!completePause) throw new Error('Pause request is not pending');
+      completePause();
+    },
     senderRead,
     setStatus: (value: number) => {
       senderStatus = value;
@@ -122,6 +134,76 @@ it('recovers from the legacy preset surface to the growing library without a rel
   ).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Pause all' })).toBeEnabled();
   expect(state.senderRead).toHaveBeenCalledTimes(2);
+});
+
+it('keeps an open preset preview and focus through recovery, then returns focus to its heading', async () => {
+  const state = fixture(404);
+  const opener = await screen.findByRole('button', { name: 'Pause every Autopilot rule' });
+  opener.focus();
+  fireEvent.click(opener);
+  const dialog = await screen.findByRole('dialog');
+  const cancel = within(dialog).getByRole('button', { name: 'Cancel' });
+  cancel.focus();
+  await waitFor(() => expect(cancel).toHaveFocus());
+
+  state.setStatus(200);
+  await act(() =>
+    state.client.invalidateQueries({ queryKey: ['autopilot-sender-rules', 'mailbox-a'] }),
+  );
+  expect(await screen.findByTestId('sender-rule-library')).toBeInTheDocument();
+  expect(screen.getByRole('dialog')).toBe(dialog);
+  expect(cancel).toHaveFocus();
+  const heading = screen.getByRole('heading', { name: 'Preset rules', level: 2 });
+  expect(heading.closest('details')).toHaveAttribute('open');
+  expect(opener).not.toBeInTheDocument();
+
+  fireEvent.click(cancel);
+  await waitFor(() => expect(heading).toHaveFocus());
+  expect(state.pause).not.toHaveBeenCalled();
+});
+
+it('keeps a pending preset pause through recovery and completes its focus handoff', async () => {
+  const state = fixture(404, true);
+  const opener = await screen.findByRole('button', { name: 'Pause every Autopilot rule' });
+  opener.focus();
+  fireEvent.click(opener);
+  const dialog = await screen.findByRole('dialog');
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Pause all' }));
+  await waitFor(() => expect(state.pause).toHaveBeenCalledOnce());
+  expect(within(dialog).getByRole('button', { name: 'Pausing…' })).toBeDisabled();
+  await waitFor(() => expect(dialog).toContainElement(document.activeElement as HTMLElement));
+  const focused = document.activeElement;
+
+  state.setStatus(200);
+  await act(() =>
+    state.client.invalidateQueries({ queryKey: ['autopilot-sender-rules', 'mailbox-a'] }),
+  );
+  expect(await screen.findByTestId('sender-rule-library')).toBeInTheDocument();
+  expect(screen.getByRole('dialog')).toBe(dialog);
+  expect(document.activeElement).toBe(focused);
+  expect(within(dialog).getByRole('button', { name: 'Pausing…' })).toBeDisabled();
+  expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
+  expect(state.pause).toHaveBeenCalledOnce();
+
+  await act(async () => state.completePause());
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getByRole('heading', { name: 'Preset rules', level: 2 })).toHaveFocus(),
+  );
+  expect(
+    screen.getByRole('heading', { name: 'Preset rules', level: 2 }).closest('details'),
+  ).toHaveAttribute('open');
+});
+
+it('preserves a visible preset opener when cancelling without capability recovery', async () => {
+  fixture(404);
+  const opener = await screen.findByRole('button', { name: 'Pause every Autopilot rule' });
+  opener.focus();
+  fireEvent.click(opener);
+  const dialog = await screen.findByRole('dialog');
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  await waitFor(() => expect(opener).toHaveFocus());
 });
 
 it('keeps the plan CTA after a downgrade even when the missing-endpoint error is cached', async () => {
