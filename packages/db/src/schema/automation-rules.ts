@@ -195,6 +195,10 @@ export const automationRules = pgTable(
   },
   (table) => ({
     versionPositive: check('automation_rules_version_positive', sql`${table.version} > 0`),
+    /** Bounded library reads and limit checks must not scan other mailboxes. */
+    customLibraryIdx: index('automation_rules_custom_library_idx')
+      .on(table.mailboxAccountId, table.createdAt, table.id)
+      .where(sql`${table.isPreset} = false AND ${table.retiredAt} IS NULL`),
     /** One preset of a given kind per mailbox. Custom rules (preset_key=NULL) bypass. */
     mailboxPresetUniq: uniqueIndex('automation_rules_mailbox_preset_uniq')
       .on(table.mailboxAccountId, table.presetKey)
