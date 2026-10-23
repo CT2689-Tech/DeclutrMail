@@ -95,11 +95,21 @@ async function expectRouteHydrates(page: Page, route: string): Promise<void> {
   const response = await page.goto(route, { waitUntil: 'domcontentloaded' });
   await page.locator('body').waitFor({ state: 'visible' });
   if (route === '/autopilot') {
-    // A nonempty shell can precede the streamed sections and their diagnostics.
-    await expectScreenMounted(page);
+    // Free mounts the read-only preset preview; paid plans mount the library.
+    // The preview has no help registration or collapsible preset section.
+    const readOnlyPreview = page.getByTestId('autopilot-observe-preview');
+    const senderLibrary = page.getByTestId('sender-rule-library');
+    await expect(readOnlyPreview.or(senderLibrary)).toHaveCount(1);
     const essential = page.getByRole('button', { name: 'Essential only', exact: true });
     if (await essential.isVisible()) await essential.click();
-    await page.getByText(/^Preset rules ·/).click();
+    if (await senderLibrary.count()) {
+      // A nonempty shell can precede the streamed sections and their diagnostics.
+      await expectScreenMounted(page);
+      await page.getByText(/^Preset rules ·/).click();
+    } else {
+      await expect(readOnlyPreview).toBeVisible();
+      await expect(readOnlyPreview.getByRole('link', { name: /^Upgrade to / })).toBeVisible();
+    }
     await expect(page.getByRole('heading', { name: 'Rules', exact: true })).toBeVisible();
     for (const label of [
       'Loading Autopilot rules',
@@ -232,11 +242,11 @@ function manifestPrice(tier: 'plus' | 'pro', cycle: 'monthly' | 'annual'): strin
 }
 
 /**
- * Live complimentary Pro, then a normal paid Plus plan. Both restore the
- * synthetic workspace. The grant and the paid row belong to this spec.
+ * Free, complimentary Pro, and paid Plus fixtures restore the synthetic
+ * workspace. The grant and the paid row belong to this spec.
  */
 async function withBillingFixture(
-  setup: 'complimentary-pro' | 'paid-plus',
+  setup: 'free' | 'complimentary-pro' | 'paid-plus',
   run: () => Promise<void>,
 ): Promise<void> {
   const sql = dbConnect();
@@ -269,6 +279,9 @@ async function withBillingFixture(
         SET tier = 'pro', reason = 'hydration smoke', granted_by = 'e2e',
             expires_at = NULL, revoked_at = NULL, updated_at = now()
       `;
+    } else if (setup === 'free') {
+      await sql`DELETE FROM entitlement_grants WHERE email = ${BILLING_SEED.email}`;
+      await sql`UPDATE workspaces SET tier = 'free' WHERE id = ${BILLING_SEED.workspaceId}`;
     } else {
       await sql`DELETE FROM entitlement_grants WHERE email = ${BILLING_SEED.email}`;
       await sql`UPDATE workspaces SET tier = 'plus' WHERE id = ${BILLING_SEED.workspaceId}`;
@@ -344,6 +357,22 @@ test('a normal paid plan hydrates across repeated loads', async ({ page }) => {
       await expect(page.getByText(manifestPrice('plus', 'monthly')).first()).toBeVisible();
       await expect(page.getByTestId('current-plan-card')).toContainText('Plus');
     });
+  });
+});
+
+test('paid Autopilot library hydrates with its preset review section', async ({ page }) => {
+  await withBillingFixture('paid-plus', async () => {
+    await expectRouteHydrates(page, '/autopilot');
+    await expect(page.getByTestId('sender-rule-library')).toBeVisible();
+    await expect(page.getByTestId('autopilot-observe-preview')).toHaveCount(0);
+  });
+});
+
+test('Free Autopilot read-only preview hydrates with its upgrade link', async ({ page }) => {
+  await withBillingFixture('free', async () => {
+    await expectRouteHydrates(page, '/autopilot');
+    await expect(page.getByTestId('autopilot-observe-preview')).toBeVisible();
+    await expect(page.getByTestId('sender-rule-library')).toHaveCount(0);
   });
 });
 
