@@ -56,6 +56,7 @@ import { SuggestionGroup } from './suggestion-group';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
+import { SenderRuleLibrary } from './sender-rule-library';
 import { useHydrated } from '@/lib/use-hydrated';
 import type {
   AutopilotScreenState,
@@ -104,8 +105,8 @@ const PENDING_BUFFER_CAP = AUTOPILOT_PENDING_PAGE_SIZE;
  *      an explicit "Switch to Active" prompt. NO auto-promotion.
  *   4. **D105 master pause** — pause every rule via a previewed modal.
  *
- * Out of scope at V2 (D192/D197/D234): custom rule creation — presets
- * only; the API rejects `is_preset=false`.
+ * Sender-list rules use their own approval-first library and API. The preset
+ * lifecycle below retains its existing Observe and Active behavior.
  */
 export function AutopilotRoute() {
   const hydrated = useHydrated();
@@ -169,26 +170,49 @@ export function AutopilotRoute() {
   ]);
 
   return (
-    <AutopilotScreen
-      state={state}
-      pendingPagination={{
-        pageKey: `${mailboxId ?? 'none'}:${cursor ?? 'first'}`,
-        total: hydrated ? (suggestionsQuery.data?.meta?.total ?? null) : null,
-        hasNext: hydrated ? (suggestionsQuery.data?.meta?.pagination?.hasMore ?? false) : false,
-        hasPrevious: cursors.length > 0,
-        loading: suggestionsQuery.isFetching,
-        onNext: () => {
-          const next = suggestionsQuery.data?.meta?.pagination?.nextCursor;
-          if (next) setPages({ mailboxId, cursors: [...cursors, next] });
-        },
-        onPrevious: () => setPages({ mailboxId, cursors: cursors.slice(0, -1) }),
-        onNewest: () => setPages({ mailboxId, cursors: [] }),
-      }}
-      suggestionsState={
-        hydrated ? sectionState(suggestionsQuery, refetchSuggestions) : { kind: 'loading' }
-      }
-      patternState={hydrated ? sectionState(patternQuery, refetchPattern) : { kind: 'loading' }}
-    />
+    <div style={{ ...editorialColumnStyle, display: 'grid', gap: 36 }}>
+      <SenderRuleLibrary
+        presetRules={rulesQuery.data ?? []}
+        presetsAvailable={rulesQuery.isSuccess && !rulesQuery.isError}
+      />
+      <details>
+        <summary
+          style={{ cursor: 'pointer', padding: '14px 0', color: color.fgSoft, fontSize: text.md }}
+        >
+          Preset rules ·{' '}
+          {rulesQuery.isSuccess
+            ? `${(rulesQuery.data ?? []).filter((rule) => rule.enabled && rule.mode === 'active').length} Active`
+            : 'Status unavailable'}
+          {' · '}
+          {hydrated && suggestionsQuery.isSuccess
+            ? `${suggestionsQuery.data.meta?.total ?? suggestionsQuery.data.data.length} awaiting review`
+            : suggestionsQuery.isError
+              ? 'Review unavailable'
+              : 'Checking review…'}
+        </summary>
+        <AutopilotScreen
+          embedded
+          state={state}
+          pendingPagination={{
+            pageKey: `${mailboxId ?? 'none'}:${cursor ?? 'first'}`,
+            total: hydrated ? (suggestionsQuery.data?.meta?.total ?? null) : null,
+            hasNext: hydrated ? (suggestionsQuery.data?.meta?.pagination?.hasMore ?? false) : false,
+            hasPrevious: cursors.length > 0,
+            loading: suggestionsQuery.isFetching,
+            onNext: () => {
+              const next = suggestionsQuery.data?.meta?.pagination?.nextCursor;
+              if (next) setPages({ mailboxId, cursors: [...cursors, next] });
+            },
+            onPrevious: () => setPages({ mailboxId, cursors: cursors.slice(0, -1) }),
+            onNewest: () => setPages({ mailboxId, cursors: [] }),
+          }}
+          suggestionsState={
+            hydrated ? sectionState(suggestionsQuery, refetchSuggestions) : { kind: 'loading' }
+          }
+          patternState={hydrated ? sectionState(patternQuery, refetchPattern) : { kind: 'loading' }}
+        />
+      </details>
+    </div>
   );
 }
 
@@ -243,7 +267,9 @@ export function AutopilotScreen({
   suggestionsState = { kind: 'ready' },
   patternState = { kind: 'ready' },
   pendingPagination,
+  embedded = false,
 }: {
+  embedded?: boolean;
   state: AutopilotScreenState;
   suggestionsState?: SectionState;
   patternState?: SectionState;
@@ -846,13 +872,13 @@ export function AutopilotScreen({
   return (
     <div
       style={{
-        ...editorialColumnStyle,
+        ...(embedded ? { minWidth: 0 } : editorialColumnStyle),
         display: 'flex',
         flexDirection: 'column',
         gap: 32,
       }}
     >
-      <EditorialKicker>Automations / Your rules</EditorialKicker>
+      {!embedded && <EditorialKicker>Automations / Your rules</EditorialKicker>}
       {/* Header — one line: title + the master pause (D105). */}
       <div
         style={{
@@ -863,15 +889,21 @@ export function AutopilotScreen({
           gap: 16,
         }}
       >
-        <h1 style={editorialTitleStyle}>Autopilot</h1>
-        <Button
-          tone="default"
-          onClick={() => setPauseConfirmOpen(true)}
-          disabled={state.kind !== 'ready' || !hasRunningRules}
-          ariaLabel="Pause every Autopilot rule"
-        >
-          Pause all
-        </Button>
+        {embedded ? (
+          <h2 style={{ ...tokens.typography.sectionTitle, margin: 0 }}>Preset rules</h2>
+        ) : (
+          <h1 style={editorialTitleStyle}>Autopilot</h1>
+        )}
+        {!embedded && (
+          <Button
+            tone="default"
+            onClick={() => setPauseConfirmOpen(true)}
+            disabled={state.kind !== 'ready' || !hasRunningRules}
+            ariaLabel={embedded ? 'Pause every preset rule' : 'Pause every Autopilot rule'}
+          >
+            Pause all
+          </Button>
+        )}
       </div>
 
       {/* The explainer is tier-conditional: the under-tier wording must
@@ -880,15 +912,22 @@ export function AutopilotScreen({
           class as offering the Activate button. The Watch-first vs act
           choice itself is explained where it is made: the rule row's
           description and the turn-on preview. */}
-      <ScreenIntro
-        id="autopilot"
-        title="How Autopilot works"
-        body={
-          canActivate
-            ? 'Turning a rule on previews what it would do to email already in your inbox. Then let it act, or watch first and approve each batch.'
-            : `Rules collect matching email for you to approve. Rules that act on their own are part of ${ACT_PLAN_NAME}.`
-        }
-      />
+      {!embedded && (
+        <ScreenIntro
+          id="autopilot"
+          title="How Autopilot works"
+          body={
+            canActivate
+              ? 'Turning a rule on previews what it would do to email already in your inbox. Then let it act, or watch first and approve each batch.'
+              : `Rules collect matching email for you to approve. Rules that act on their own are part of ${ACT_PLAN_NAME}.`
+          }
+        />
+      )}
+      {embedded && (
+        <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
+          Presets can watch for your approval or act on their own when set to Active.
+        </p>
+      )}
 
       <AutopilotBannerStack banners={banners} />
       {state.kind !== 'loading' && state.kind !== 'error' && patternState.kind === 'loading' && (
@@ -902,7 +941,7 @@ export function AutopilotScreen({
         />
       )}
 
-      {state.kind === 'ready' && (
+      {!embedded && state.kind === 'ready' && (
         <nav
           aria-label="Autopilot next steps"
           style={{
