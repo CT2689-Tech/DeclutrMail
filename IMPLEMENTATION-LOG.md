@@ -462,3 +462,11 @@ the required Monitoring channel read. The scheduled digest now requires explicit
 verified. Until then the existing watchdog skips the new step and production
 warning channels remain unchanged. Human login and scheduled access are separate.
 Preflight also verifies the digest-log read needed for daily replay protection.
+
+## Alert digest provider-response handling — 2026-10-23
+
+Relates to D159 and D160. Digest replay protection now follows empty partial
+Logging search pages within the current UTC day and refuses incomplete searches.
+Plan hashes normalize provider object-key ordering; native reads with identical
+policy values had produced different hashes from map ordering alone. Regression
+checks cover both provider behaviors without weakening policy-value drift checks.

@@ -57,16 +57,28 @@ const FIELDS = [
 ];
 const NEW = [DIGEST_POLICY, RECONNECT_POLICY, RECONNECT_BURST_POLICY];
 const id = (name) => name?.split('/').at(-1);
+const canonical = (value) => {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === 'object')
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonical(value[key])]),
+    );
+  return value;
+};
 const editable = (p) =>
   Object.fromEntries(FIELDS.filter((k) => p[k] !== undefined).map((k) => [k, p[k]]));
 export const planHash = (policies) =>
   createHash('sha256')
     .update(
       JSON.stringify(
-        policies
-          .filter((p) => OWNED.has(p.displayName))
-          .sort((a, b) => a.displayName.localeCompare(b.displayName))
-          .map((p) => ({ name: p.name, displayName: p.displayName, ...editable(p) })),
+        canonical(
+          policies
+            .filter((p) => OWNED.has(p.displayName))
+            .sort((a, b) => a.displayName.localeCompare(b.displayName))
+            .map((p) => ({ name: p.name, displayName: p.displayName, ...editable(p) })),
+        ),
       ),
     )
     .digest('hex');
@@ -253,12 +265,26 @@ async function publishDigest(request, payload, { verification = false } = {}) {
     ? `verification-${process.env.GITHUB_RUN_ID}`
     : new Date().toISOString().slice(0, 10);
   if (!verification) {
-    const existing = await request('https://logging.googleapis.com/v2/entries:list', 'POST', {
+    const tomorrow = new Date(Date.parse(`${day}T00:00:00Z`) + 86400000).toISOString();
+    const search = {
       resourceNames: [`projects/${PROJECT}`],
-      filter: `logName="projects/${PROJECT}/logs/declutrmail-alert-digest" AND jsonPayload.kind="ops.alert_daily_summary" AND jsonPayload.day="${day}"`,
+      filter: `logName="projects/${PROJECT}/logs/declutrmail-alert-digest" AND jsonPayload.kind="ops.alert_daily_summary" AND jsonPayload.day="${day}" AND timestamp >= "${day}T00:00:00Z" AND timestamp < "${tomorrow}"`,
+      orderBy: 'timestamp desc',
       pageSize: 1,
-    });
-    if (existing.entries?.length) return { published: false, alreadyPublished: true, day };
+    };
+    const seen = new Set();
+    let token = '';
+    for (let page = 0; ; page++) {
+      const existing = await request('https://logging.googleapis.com/v2/entries:list', 'POST', {
+        ...search,
+        ...(token ? { pageToken: token } : {}),
+      });
+      if (existing.entries?.length) return { published: false, alreadyPublished: true, day };
+      token = existing.nextPageToken ?? '';
+      if (!token) break;
+      if (seen.has(token) || page >= 9) throw new Error('Digest replay search incomplete');
+      seen.add(token);
+    }
   }
   await request('https://logging.googleapis.com/v2/entries:write', 'POST', {
     logName: `projects/${PROJECT}/logs/declutrmail-alert-digest`,
