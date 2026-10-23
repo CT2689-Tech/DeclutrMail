@@ -32,7 +32,7 @@ import {
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { and, desc, eq, inArray, lte, ne, not, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lte, ne, not, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
 
@@ -703,10 +703,16 @@ export class AutopilotReadService {
   async pauseAll(mailboxAccountId: string): Promise<AutopilotPauseAllResult> {
     const updated = await this.db
       .update(automationRules)
-      .set({ mode: 'paused', modeChangedAt: sql`now()`, updatedAt: sql`now()` })
+      .set({
+        mode: 'paused',
+        modeChangedAt: sql`now()`,
+        updatedAt: sql`now()`,
+        version: sql`${automationRules.version} + 1`,
+      })
       .where(
         and(
           eq(automationRules.mailboxAccountId, mailboxAccountId),
+          isNull(automationRules.retiredAt),
           ne(automationRules.mode, 'paused'),
         ),
       )

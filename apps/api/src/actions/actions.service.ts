@@ -20,7 +20,9 @@ import {
   AUTOPILOT_CLAIM_KEY_PREFIXES,
   actionJobs,
   activityLog,
+  automationRules,
   mailMessages,
+  mailboxAccounts,
   senderActionWhere,
   senderPolicies,
   senders,
@@ -48,6 +50,8 @@ import {
 } from '@declutrmail/events';
 import {
   initialUnsubscribeLifecycleStatus,
+  AutopilotSenderRuleConditionsSchema,
+  isErrorCode,
   normalizeUnsubscribeLifecycleStatus,
   UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE,
   UNSUB_MANUAL_REQUIRED_ERROR_CODE,
@@ -64,6 +68,7 @@ import {
 
 import {
   EntitlementsService,
+  assertTierCapability,
   type EntitlementsExecutor,
 } from '../common/entitlements/entitlements.service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
@@ -186,6 +191,302 @@ export class ActionsService {
   ) {
     this.outbox = outbox ?? new OutboxPublisher();
     this.entitlements = entitlements ?? new EntitlementsService(db);
+  }
+
+  /** Approval-only Autopilot producer. The server preview owns every ID.
+   * Persist the whole batch before publishing; queue failures remain pollable.
+   */
+  async enqueueAutopilotFrozen(input: {
+    mailboxAccountId: string;
+    ruleId: string;
+    ruleVersion: number;
+    previewId: string;
+    action: 'archive' | 'delete';
+    reach: SenderActionReach;
+    olderThanDays: number | null;
+    targets: Array<{ senderId: string; senderKey: string; messageIds: string[] }>;
+  }): Promise<{
+    batchId: string;
+    actionIds: string[];
+    requestedCount: number;
+    enqueueFailedCount: number;
+  }> {
+    if (!this.queue)
+      throw new ServiceUnavailableException({
+        code: 'QUEUE_UNAVAILABLE',
+        message: 'Action queue unavailable.',
+      });
+    if (input.reach === 'all_mail' && input.action !== 'delete')
+      throw new BadRequestException('Only Delete may reach past the inbox.');
+    if (
+      input.targets.length > 100 ||
+      input.targets.reduce((n, t) => n + t.messageIds.length, 0) > 5000 ||
+      input.targets.some((t) => t.messageIds.length === 0) ||
+      new Set(input.targets.map((t) => t.senderKey)).size !== input.targets.length
+    )
+      throw new BadRequestException('Preview exceeds its execution limit.');
+    const persisted = await this.db.transaction(async (tx) => {
+      // Unlike the quota helper, this also serializes paid custom-rule batches.
+      const [mailbox] = await tx
+        .select({ id: mailboxAccounts.id })
+        .from(mailboxAccounts)
+        .where(
+          and(eq(mailboxAccounts.id, input.mailboxAccountId), eq(mailboxAccounts.status, 'active')),
+        )
+        .for('update')
+        .limit(1);
+      if (!mailbox) throw new NotFoundException('Mailbox not found.');
+      const workspace = await this.entitlements.lockCleanupWorkspace(input.mailboxAccountId, tx);
+      if (!workspace) throw new NotFoundException('Mailbox not found.');
+      assertTierCapability(workspace.tier, 'autopilot');
+      const [rule] = await tx
+        .select()
+        .from(automationRules)
+        .where(
+          and(
+            eq(automationRules.id, input.ruleId),
+            eq(automationRules.mailboxAccountId, input.mailboxAccountId),
+            eq(automationRules.isPreset, false),
+            isNull(automationRules.retiredAt),
+          ),
+        )
+        .for('update')
+        .limit(1);
+      if (!rule) throw new NotFoundException('Rule not found.');
+      const conditions = AutopilotSenderRuleConditionsSchema.safeParse(rule.conditions);
+      if (
+        !conditions.success ||
+        rule.scope !== 'account' ||
+        input.targets.some((t) => !conditions.data.senderKeys.includes(t.senderKey))
+      )
+        throw new BadRequestException('Preview senders do not belong to this rule.');
+      if (rule.version !== input.ruleVersion)
+        throw new ConflictException({
+          code: 'AUTOPILOT_RULE_CHANGED',
+          message: 'This rule changed. Refresh its preview.',
+        });
+      if (!rule.enabled || rule.mode !== 'observe')
+        throw new ConflictException({
+          code: 'AUTOPILOT_RULE_PAUSED',
+          message: 'Enable this rule before approving its preview.',
+        });
+      const keys = input.targets.map((t) => t.senderKey);
+      if (keys.length === 0)
+        throw new ConflictException({
+          code: 'AUTOPILOT_PREVIEW_EMPTY',
+          message: 'This preview has no emails to change.',
+        });
+      const owned = await tx
+        .select({ id: senders.id, senderKey: senders.senderKey })
+        .from(senders)
+        .where(
+          and(
+            eq(senders.mailboxAccountId, input.mailboxAccountId),
+            inArray(senders.senderKey, keys),
+          ),
+        );
+      const ownedByKey = new Map(owned.map((s) => [s.senderKey, s.id]));
+      const protectedRows = await tx
+        .select({ senderKey: senderPolicies.senderKey })
+        .from(senderPolicies)
+        .where(
+          and(
+            eq(senderPolicies.mailboxAccountId, input.mailboxAccountId),
+            inArray(senderPolicies.senderKey, keys),
+            eq(senderPolicies.isProtected, true),
+          ),
+        );
+      const protectedKeys = new Set(protectedRows.map((s) => s.senderKey));
+      const storageKey = (senderKey: string) => `autopilot-sender-${input.previewId}-${senderKey}`;
+      const existingRows = await tx
+        .select()
+        .from(actionJobs)
+        .where(
+          and(
+            eq(actionJobs.mailboxAccountId, input.mailboxAccountId),
+            inArray(actionJobs.idempotencyKey, keys.map(storageKey)),
+          ),
+        );
+      const existing = new Map(existingRows.map((r) => [r.idempotencyKey, r]));
+      const busy = await this.liveForwardJobSenderKeys(
+        input.mailboxAccountId,
+        keys,
+        tx,
+        keys.map(storageKey),
+      );
+      const ids = [...new Set(input.targets.flatMap((t) => t.messageIds))];
+      const current = ids.length
+        ? await tx
+            .select({ senderKey: mailMessages.senderKey, id: mailMessages.providerMessageId })
+            .from(mailMessages)
+            .where(
+              and(
+                senderActionWhere({
+                  mailboxAccountId: input.mailboxAccountId,
+                  senderKeys: keys,
+                  reach: input.reach,
+                  olderThanDays: input.olderThanDays,
+                }),
+                sql`not (${mailMessages.labelIds} && ARRAY['TRASH', 'SPAM', 'DRAFT', 'CHAT']::text[])`,
+                inArray(mailMessages.providerMessageId, ids),
+              ),
+            )
+        : [];
+      const currentIds = new Set(current.map((m) => `${m.senderKey}:${m.id}`));
+      const accepted = input.targets.map((target) => {
+        const replay = existing.get(storageKey(target.senderKey));
+        if (replay) return { target, replay, ids: replay.resolvedMessageIds };
+        if (
+          ownedByKey.get(target.senderKey) !== target.senderId ||
+          protectedKeys.has(target.senderKey)
+        )
+          throw new ConflictException({
+            code: 'AUTOPILOT_PREVIEW_CHANGED',
+            message: 'Sender details or protection changed. Refresh this preview.',
+          });
+        if (busy.has(target.senderKey))
+          throw new ConflictException({
+            code: 'SENDER_ACTION_IN_PROGRESS',
+            message: 'A sender in this preview already has an action running.',
+          });
+        const frozen = [...new Set(target.messageIds)].filter((id) =>
+          currentIds.has(`${target.senderKey}:${id}`),
+        );
+        if (frozen.length !== target.messageIds.length)
+          throw new ConflictException({
+            code: 'AUTOPILOT_PREVIEW_CHANGED',
+            message: 'These emails changed. Refresh this preview.',
+          });
+        return { target, replay: undefined, ids: frozen };
+      });
+      const fresh = accepted.filter((t) => !t.replay);
+      await this.entitlements.assertCleanupCapacityForWorkspace(
+        workspace,
+        isMeterV2()
+          ? fresh.reduce(
+              (n, t) => n + this.meterUnits(workspace.tier, input.action, t.ids.length),
+              0,
+            )
+          : fresh.length,
+        tx,
+      );
+      const rows: Array<{ existing: boolean; row: typeof actionJobs.$inferSelect }> = [];
+      let anchor: string | null = existingRows[0]?.compositeId ?? existingRows[0]?.id ?? null;
+      for (const item of accepted) {
+        if (item.replay) {
+          rows.push({ existing: true, row: item.replay });
+          continue;
+        }
+        const stored = await this.insertJob(
+          {
+            mailboxAccountId: input.mailboxAccountId,
+            verb: input.action,
+            direction: 'forward',
+            selector: {
+              type: 'sender',
+              senderId: item.target.senderId,
+              senderKey: item.target.senderKey,
+              autopilot: {
+                ruleId: input.ruleId,
+                ruleVersion: input.ruleVersion,
+                previewId: input.previewId,
+              },
+            },
+            resolvedMessageIds: item.ids,
+            requestedCount: item.ids.length,
+            quotaUnits: this.meterUnits(workspace.tier, input.action, item.ids.length),
+            idempotencyKey: storageKey(item.target.senderKey),
+            olderThanDays: input.olderThanDays,
+            reach: input.reach,
+            compositeId: anchor,
+          },
+          tx,
+        );
+        anchor ??= stored.row.id;
+        rows.push(stored);
+      }
+      return rows;
+    });
+    // Independent publishes are all attempted, even after one Redis failure.
+    // Re-publish queued replays too: a process can stop after commit but
+    // before publish. BullMQ's stable job ID makes this safe to repeat.
+    await Promise.allSettled(
+      persisted
+        .filter((r) => r.row.status === 'queued')
+        .map(({ row }) => this.enqueueJob(row.id, input.mailboxAccountId, row.idempotencyKey)),
+    );
+    const rows = await this.db
+      .select()
+      .from(actionJobs)
+      .where(
+        and(
+          eq(actionJobs.mailboxAccountId, input.mailboxAccountId),
+          inArray(
+            actionJobs.id,
+            persisted.map((r) => r.row.id),
+          ),
+        ),
+      );
+    return this.autopilotBatchResult(rows);
+  }
+
+  /** An already accepted preview survives cache expiry, edits and retirement.
+   * This path only republishes existing queue identities; it never inserts work.
+   */
+  async replayAutopilotFrozen(
+    mailboxAccountId: string,
+    ruleId: string,
+    previewId: string,
+  ): Promise<{
+    batchId: string;
+    actionIds: string[];
+    requestedCount: number;
+    enqueueFailedCount: number;
+  } | null> {
+    const rows = await this.db
+      .select()
+      .from(actionJobs)
+      .where(
+        and(
+          eq(actionJobs.mailboxAccountId, mailboxAccountId),
+          eq(actionJobs.direction, 'forward'),
+          eq(actionJobs.recoveryAttempt, 0),
+          sql`${actionJobs.selector}->'autopilot'->>'ruleId' = ${ruleId}`,
+          sql`${actionJobs.selector}->'autopilot'->>'previewId' = ${previewId}`,
+        ),
+      );
+    if (!rows.length) return null;
+    if (this.queue)
+      await Promise.allSettled(
+        rows
+          .filter((r) => r.status === 'queued')
+          .map((r) => this.enqueueJob(r.id, mailboxAccountId, r.idempotencyKey)),
+      );
+    const current = await this.db
+      .select()
+      .from(actionJobs)
+      .where(
+        and(
+          eq(actionJobs.mailboxAccountId, mailboxAccountId),
+          inArray(
+            actionJobs.id,
+            rows.map((r) => r.id),
+          ),
+        ),
+      );
+    return this.autopilotBatchResult(current);
+  }
+
+  private autopilotBatchResult(rows: Array<typeof actionJobs.$inferSelect>) {
+    const anchor = rows.find((r) => r.compositeId === null);
+    return {
+      batchId: anchor?.id ?? rows[0]!.compositeId!,
+      actionIds: rows.map((r) => r.id).sort(),
+      requestedCount: rows.reduce((n, r) => n + r.requestedCount, 0),
+      enqueueFailedCount: rows.filter(
+        (r) => r.status === 'failed' && r.errorCode === ENQUEUE_FAILED_ERROR_CODE,
+      ).length,
+    };
   }
 
   /**
@@ -1449,6 +1750,14 @@ export class ActionsService {
     const total = live.length;
     const done = live.filter((r) => r.status === 'done').length;
     const failed = live.filter((r) => r.status === 'failed').length;
+    const failureCodes = [
+      ...new Set(
+        live
+          .filter((r) => r.status === 'failed')
+          .map((r) => r.errorCode)
+          .filter(isErrorCode),
+      ),
+    ].sort();
     const terminal = done + failed === total;
     const anyProgress = done + failed > 0 || live.some((r) => r.status === 'executing');
     const status: ActionJobStatus = terminal
@@ -1498,6 +1807,7 @@ export class ActionsService {
       total,
       done,
       failed,
+      ...(failureCodes.length ? { failureCodes } : {}),
       requestedCount: live.reduce((sum, r) => sum + r.requestedCount, 0),
       affectedCount: live.reduce((sum, r) => sum + r.affectedCount, 0),
       skippedProtectedSenderIds: protectedSkippedSenderIds(current),
