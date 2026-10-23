@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/api/client';
 import type { SenderRule, SenderRulePreview } from '@/lib/api/autopilot-sender-rules';
 import type { AutopilotRuleDto } from '@/lib/api/autopilot';
+import { useUiStore } from '@declutrmail/shared';
 import { SenderRuleLibraryScope, senderRuleFailureCopy } from './sender-rule-library';
 import { AUTO_ARCHIVE_LOW_ENGAGEMENT } from './fixtures';
 
@@ -156,6 +157,16 @@ async function loaded() {
 }
 
 describe('sender rule library', () => {
+  it('registers approval-first help for the application shell', async () => {
+    setup();
+    await loaded();
+    expect(useUiStore.getState().screenHelp).toMatchObject({
+      id: 'autopilot-sender-rules',
+      title: 'Autopilot',
+    });
+    expect(useUiStore.getState().screenHelp?.body).toContain('Preview and approve each batch.');
+  });
+
   it('previews disabled non-paused presets that the global pause also changes', async () => {
     const disabled = {
       ...AUTO_ARCHIVE_LOW_ENGAGEMENT,

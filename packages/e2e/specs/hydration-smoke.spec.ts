@@ -5,6 +5,7 @@ import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { ApiClient, requireLiveStack } from '../helpers/api';
 import { dbConnect } from '../helpers/db';
 import { BILLING_SEED } from '../helpers/seed-billing';
+import { expectScreenMounted } from '../helpers/screen-ready';
 
 test.use({ locale: 'de-DE', timezoneId: 'Asia/Kolkata' });
 
@@ -95,6 +96,10 @@ async function expectRouteHydrates(page: Page, route: string): Promise<void> {
   await page.locator('body').waitFor({ state: 'visible' });
   if (route === '/autopilot') {
     // A nonempty shell can precede the streamed sections and their diagnostics.
+    await expectScreenMounted(page);
+    const essential = page.getByRole('button', { name: 'Essential only', exact: true });
+    if (await essential.isVisible()) await essential.click();
+    await page.getByText(/^Preset rules ·/).click();
     await expect(page.getByRole('heading', { name: 'Rules', exact: true })).toBeVisible();
     for (const label of [
       'Loading Autopilot rules',

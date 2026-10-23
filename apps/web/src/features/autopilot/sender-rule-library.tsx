@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Button, Skeleton } from '@declutrmail/shared';
+import { Button, ScreenIntro, Skeleton } from '@declutrmail/shared';
 import {
   hasCapability,
   minimumTierForCapability,
@@ -368,6 +368,12 @@ export function SenderRuleLibraryScope({
     !planLocked;
   return (
     <div className={styles.screen} data-testid="sender-rule-library">
+      <ScreenIntro
+        id="autopilot-sender-rules"
+        title="Autopilot"
+        body="Choose senders and save rules for Archive or Delete. Saving a sender rule never moves email. Preview and approve each batch. Preset rules have their own Observe and Active settings."
+        tip="Use Pause all to pause rules. Resume them individually when you’re ready."
+      />
       <header className={styles.header}>
         <div>
           <h1>Autopilot</h1>
