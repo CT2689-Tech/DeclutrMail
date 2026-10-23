@@ -1,0 +1,10 @@
+-- Disable sender-rule writes and drain approved jobs before rolling application code back.
+-- Enum values are append-only: keep the unused 'delete' value on rollback.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM automation_rules WHERE is_preset = false) THEN
+    RAISE EXCEPTION 'Retain sender-rule schema while custom rules exist';
+  END IF;
+END $$;
+ALTER TABLE automation_rules DROP CONSTRAINT automation_rules_version_positive;
+ALTER TABLE automation_rules DROP COLUMN retired_at;
+ALTER TABLE automation_rules DROP COLUMN version;

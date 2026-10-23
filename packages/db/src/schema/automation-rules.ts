@@ -101,6 +101,7 @@ export const autopilotActionKind = pgEnum('autopilot_action_kind', [
   'archive',
   'unsubscribe',
   'later',
+  'delete',
 ]);
 
 export const automationRules = pgTable(
@@ -123,6 +124,10 @@ export const automationRules = pgTable(
     isPreset: boolean('is_preset').notNull().default(true),
     /** Display label. For presets, defaults to the preset's canonical title. */
     name: text('name').notNull(),
+    /** Optimistic revision; approved sender cleanups bind to this version. */
+    version: integer('version').notNull().default(1),
+    /** Retirement stops new cleanups while preserving the rule's audit identity. */
+    retiredAt: timestamp('retired_at', { withTimezone: true, mode: 'date' }),
     /** D10 — Observe-first: rule does not fire until user enables. */
     enabled: boolean('enabled').notNull().default(false),
     /** D101 / D105 — observe → active → paused. */
@@ -191,6 +196,7 @@ export const automationRules = pgTable(
       .default(sql`now()`),
   },
   (table) => ({
+    versionPositive: check('automation_rules_version_positive', sql`${table.version} > 0`),
     /** One preset of a given kind per mailbox. Custom rules (preset_key=NULL) bypass. */
     mailboxPresetUniq: uniqueIndex('automation_rules_mailbox_preset_uniq')
       .on(table.mailboxAccountId, table.presetKey)
