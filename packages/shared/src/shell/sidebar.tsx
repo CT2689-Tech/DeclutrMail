@@ -27,8 +27,6 @@ export const NAV: readonly NavItem[] = [
     id: 'senders',
     icon: 'M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2M16 3a4 4 0 0 1 0 8m5 10v-2a4 4 0 0 0-3-3.87M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z',
   },
-  { id: 'triage', icon: 'M3 6h18M6 12h12M9 18h6' },
-  { id: 'screener', icon: 'M9 12l2 2 4-4M21 12c0 5-4 9-9 9s-9-4-9-9 4-9 9-9c1 0 2 0 3 .5' },
   { id: 'autopilot', icon: 'M12 2L2 7l10 5 10-5zM2 17l10 5 10-5M2 12l10 5 10-5' },
   { id: 'quiet', icon: 'M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2' },
   { id: 'brief', icon: 'M4 4h12l4 4v12a2 2 0 0 1-2 2H4zM14 4v4h6' },
@@ -199,16 +197,23 @@ export function Sidebar({
           const lock = locks[item.id];
           const context = members
             .flatMap((id) => {
+              const memberLabel =
+                id === 'triage'
+                  ? 'Guided Review'
+                  : id === 'screener'
+                    ? 'Needs first review'
+                    : labels[id];
               const value = counts[id];
               const description =
                 typeof value === 'object'
                   ? value.label
                   : value != null
-                    ? `${labels[id]}: ${value}`
+                    ? `${memberLabel}: ${value}`
                     : null;
-              return [description, locks[id] ? `${labels[id]}: ${locks[id]} feature` : null].filter(
-                (part): part is string => part !== null,
-              );
+              return [
+                description,
+                locks[id] ? `${memberLabel}: ${locks[id]} feature` : null,
+              ].filter((part): part is string => part !== null);
             })
             .join(' · ');
           const hintLabel = context ? `${label} · ${context}` : label;
@@ -373,7 +378,9 @@ export function SectionNavigation({
 }) {
   const labels = useLabels();
   const section = workspaceSection(active);
-  if (!section || section.members.length < 2) return null;
+  // Senders owns its views and review mode. Legacy aliases retain active/count
+  // context in Cleanup without adding another set of workspace tabs.
+  if (!section || section.id === 'senders' || section.members.length < 2) return null;
   return (
     <nav className="dm-section-navigation" aria-label={`${section.label} views`}>
       {section.members.map((id) => {

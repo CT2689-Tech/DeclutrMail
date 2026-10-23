@@ -33,7 +33,10 @@ describe('LaunchFilterRow phone targets', () => {
       join(dirname(fileURLToPath(import.meta.url)), 'sender-workspace.module.css'),
       'utf8',
     );
-    const phone = css.slice(css.lastIndexOf('@media (max-width: 760px)'));
+    const phone = (css.match(/@media \(max-width: 760px\) \{[\s\S]*?^\}/gm) ?? []).find((block) =>
+      block.includes('@container sender-list (max-width: 280px)'),
+    );
+    expect(phone).toBeDefined();
     expect(phone).toContain('grid-template-columns: 44px minmax(0, 1fr) 44px !important');
   });
 });

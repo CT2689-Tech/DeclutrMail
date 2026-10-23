@@ -36,7 +36,7 @@ const { color, radius, text } = tokens;
  * `?` never opens on top of another modal (e.g. the D226 action
  * sheet) — same dialog guard as the senders cheatsheet.
  */
-export function TriageKeyboardHelp() {
+export function TriageKeyboardHelp({ guided = false }: { guided?: boolean } = {}) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -56,7 +56,7 @@ export function TriageKeyboardHelp() {
   }, [open]);
 
   if (!open) return null;
-  return <TriageKeyboardHelpPanel onClose={() => setOpen(false)} />;
+  return <TriageKeyboardHelpPanel onClose={() => setOpen(false)} guided={guided} />;
 }
 
 /** Verb → what the shortcut does, in the user's terms (D227 verbs). */
@@ -73,7 +73,13 @@ const VERB_HELP: Record<(typeof VERB_ORDER)[number], string> = {
  * stateful wrapper so Storybook shows the open state (the wrapper
  * renders null until `?`).
  */
-export function TriageKeyboardHelpPanel({ onClose }: { onClose: () => void }) {
+export function TriageKeyboardHelpPanel({
+  onClose,
+  guided = false,
+}: {
+  onClose: () => void;
+  guided?: boolean;
+}) {
   const trapRef = useFocusTrap<HTMLDivElement>(true);
 
   return (
@@ -150,8 +156,12 @@ export function TriageKeyboardHelpPanel({ onClose }: { onClose: () => void }) {
         ))}
 
         <SectionLabel>Navigate</SectionLabel>
-        <ShortcutRow keys="→" label="Skip to the next sender" />
-        <ShortcutRow keys="Enter / Space" label="Open or close a list row" />
+        {!guided && (
+          <>
+            <ShortcutRow keys="→" label="Skip to the next sender" />
+            <ShortcutRow keys="Enter / Space" label="Open or close a list row" />
+          </>
+        )}
         <ShortcutRow keys="Z" label="Undo the last decision" />
 
         <SectionLabel>In a preview</SectionLabel>
@@ -161,10 +171,14 @@ export function TriageKeyboardHelpPanel({ onClose }: { onClose: () => void }) {
 
         {/* D37 — gestures are invisible without a legend; it lives
               here rather than as a caption on every card. */}
-        <SectionLabel>On touch</SectionLabel>
-        <ShortcutRow keys="Swipe →" label="Keep" />
-        <ShortcutRow keys="Swipe ←" label="Archive" />
-        <ShortcutRow keys="Swipe ↑" label="Later" />
+        {!guided && (
+          <>
+            <SectionLabel>On touch</SectionLabel>
+            <ShortcutRow keys="Swipe →" label="Keep" />
+            <ShortcutRow keys="Swipe ←" label="Archive" />
+            <ShortcutRow keys="Swipe ↑" label="Later" />
+          </>
+        )}
       </div>
     </DialogFrame>
   );

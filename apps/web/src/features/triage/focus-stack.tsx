@@ -55,8 +55,12 @@ export function TriageFocusStack({
   onBatchVerb,
   batchBusyDomain,
   unknownVerbs,
+  guided = false,
+  active = true,
 }: {
   item: FocusItem;
+  guided?: boolean;
+  active?: boolean;
   /** False when this is the only item — there is nowhere to skip to. */
   canSkip: boolean;
   onSkip: () => void;
@@ -80,7 +84,7 @@ export function TriageFocusStack({
   const dismissBatchDomain = useTriageStore((s) => s.dismissBatchDomain);
 
   useEffect(() => {
-    if (!canSkip) return;
+    if (!active || !canSkip || guided) return;
     const onKey = (e: KeyboardEvent) => {
       if (!isSkipKey(e) || isTypingTarget(e.target)) return;
       // A sheet owns the keyboard while it is open — Skip must not pull
@@ -91,7 +95,7 @@ export function TriageFocusStack({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [canSkip, onSkip]);
+  }, [active, canSkip, guided, onSkip]);
 
   const stageRef = useCardExit(focusItemKey(item));
 
@@ -101,6 +105,8 @@ export function TriageFocusStack({
     card = (
       <TriageFocusCard
         row={row}
+        guided={guided}
+        active={active}
         timeZone={timeZone}
         busy={busyRowIds.has(row.id)}
         unknownVerb={unknownVerbs.get(row.id) ?? null}
@@ -165,7 +171,7 @@ export function TriageFocusStack({
           {card}
         </div>
       </div>
-      {canSkip && (
+      {canSkip && !guided && (
         <div style={{ display: 'flex', justifyContent: 'center' }}>
           <Button
             tone="ghost"

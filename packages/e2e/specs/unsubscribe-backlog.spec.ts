@@ -136,13 +136,14 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
 
   await page.goto('/triage');
   await expectScreenMounted(page);
-  await page.getByRole('button', { name: 'List', exact: true }).click();
-  const escaped = senderName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const rowHeader = page.getByRole('button', {
-    name: new RegExp(`^${escaped} — (expand|collapse) triage detail$`),
-  });
+  const queue = page.getByRole('navigation', { name: 'Senders in this review' });
+  const rowHeader = queue.getByRole('button', { name: senderName, exact: true });
   await expect(rowHeader).toBeVisible();
   await rowHeader.click();
+  const toolbar = page.getByRole('toolbar', { name: `Decide on ${senderName}` });
+  if (!(await toolbar.getByRole('button', { name: 'Unsubscribe (U)' }).isVisible())) {
+    await toolbar.getByText('More actions', { exact: true }).click();
+  }
   await page
     .getByRole('toolbar', { name: `Decide on ${senderName}` })
     .getByRole('button', { name: 'Unsubscribe (U)' })

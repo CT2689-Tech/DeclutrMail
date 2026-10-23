@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { Button, Kbd, Tooltip, tokens } from '@declutrmail/shared';
 import { unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
 import { lessonForVerb } from '@/features/tour/verb-lessons';
 import { canArchive, canLater, canUnsubscribe, type TriageDecisionRow } from './data';
-import { VERB_ORDER, VERB_SHORTCUT, type ActionVerb } from './types';
+import { recommendedVerb, VERB_ORDER, VERB_SHORTCUT, type ActionVerb } from './types';
 
 const { color, font, text } = tokens;
 
@@ -55,6 +55,7 @@ export function ActionToolbar({
   layout = 'row',
   size = 'md',
   align = 'center',
+  guided = false,
 }: {
   row: TriageDecisionRow;
   onAction: (verb: ActionVerb) => void;
@@ -79,6 +80,8 @@ export function ActionToolbar({
   size?: 'md' | 'lg';
   /** Row layout only — the list row lines its verbs up under the name. */
   align?: 'center' | 'start';
+  /** Compact presentation only; dispatch, eligibility and shortcuts are unchanged. */
+  guided?: boolean;
 }) {
   const bar = layout === 'bar';
   // The capability reason is available on focus and visible below the
@@ -108,15 +111,91 @@ export function ActionToolbar({
     return () => window.removeEventListener('keydown', onKey);
   }, [keyboardEnabled, disabled, row, onAction]);
 
+  const suggested = recommendedVerb(row.verdict, row.confidence);
+  const primaryVerbs = guided
+    ? visibleVerbs.filter((verb) => verb === 'Keep' || verb === suggested)
+    : visibleVerbs;
+  const renderVerb = (verb: ActionVerb): ReactNode => {
+    // Why this verb is unavailable (W2 — a disabled pill with no
+    // reason is a dead end). Gate reasons only — the transient busy
+    // state already announces via the row's SR status line.
+    const reason = verbDisabledReason(verb, row);
+    const gated = verbDisabled(verb, row);
+    const tone = guided && verb === suggested ? 'primary' : 'default';
+    // D38 — what this verb does to the sender's mail, on hover AND
+    // on focus. A GATED verb's tooltip is its reason instead: it
+    // stays focusable (`inert`, not native `disabled`) so hover,
+    // focus and `aria-describedby` all reach it — the reason used
+    // to be a permanent grey sentence under the row.
+    const lesson = lessonForVerb(verb);
+    const button = (describedBy?: string) => (
+      <Button
+        tone={tone}
+        size={bar ? 'lg' : size}
+        disabled={disabled}
+        inert={!disabled && gated}
+        onClick={() => onAction(verb)}
+        style={{
+          ...(bar ? { width: '100%' } : null),
+          ...(verb === 'Delete' ? { color: color.dangerText } : null),
+        }}
+        {...(reason != null ? { title: reason } : {})}
+        {...(describedBy != null ? { ariaDescribedBy: describedBy } : {})}
+        {...(bar
+          ? {}
+          : {
+              iconRight: (
+                <span className="dm-key-hint">
+                  <Kbd style={{ background: color.card }}>{VERB_SHORTCUT[verb]}</Kbd>
+                </span>
+              ),
+            })}
+        ariaLabel={`${verb} (${VERB_SHORTCUT[verb]})`}
+      >
+        {verb}
+      </Button>
+    );
+    // Column flex so the Tooltip's inline wrapper stretches and the
+    // button's `width: 100%` resolves against the slot, not itself.
+    const slotStyle = bar
+      ? ({
+          display: 'flex',
+          flexDirection: 'column',
+          // Delete is a deliberate full-width final action.
+          ...(verb === 'Delete' && visibleVerbs.length % 2 === 1 ? { gridColumn: '1 / -1' } : null),
+        } as const)
+      : undefined;
+    const content =
+      reason != null ? (
+        reason
+      ) : lesson === undefined ? null : (
+        <>
+          <span style={{ fontWeight: 600 }}>{lesson.label}</span>
+          <br />
+          {lesson.effect}
+        </>
+      );
+    if (content == null) {
+      return (
+        <span key={verb} data-action={verb.toLowerCase()} style={slotStyle}>
+          {button()}
+        </span>
+      );
+    }
+    return (
+      <span key={verb} data-action={verb.toLowerCase()} style={slotStyle}>
+        <Tooltip content={content}>{({ describedBy }) => button(describedBy)}</Tooltip>
+      </span>
+    );
+  };
+
   return (
     <div
       role="toolbar"
       className="dm-action-toolbar"
       aria-label={`Decide on ${row.senderName}`}
       style={{
-        // Bar: a two-column grid — five labelled 44px targets do not fit
-        // one 375px row ("Unsubscribe" alone is ~115px).
-        ...(bar
+        ...(!guided && bar
           ? { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }
           : {
               display: 'flex',
@@ -128,81 +207,15 @@ export function ActionToolbar({
         fontFamily: font.sans,
       }}
     >
-      {visibleVerbs.map((verb) => {
-        // Why this verb is unavailable (W2 — a disabled pill with no
-        // reason is a dead end). Gate reasons only — the transient busy
-        // state already announces via the row's SR status line.
-        const reason = verbDisabledReason(verb, row);
-        const gated = verbDisabled(verb, row);
-        const tone = 'default';
-        // D38 — what this verb does to the sender's mail, on hover AND
-        // on focus. A GATED verb's tooltip is its reason instead: it
-        // stays focusable (`inert`, not native `disabled`) so hover,
-        // focus and `aria-describedby` all reach it — the reason used
-        // to be a permanent grey sentence under the row.
-        const lesson = lessonForVerb(verb);
-        const button = (describedBy?: string) => (
-          <Button
-            tone={tone}
-            size={bar ? 'lg' : size}
-            disabled={disabled}
-            inert={!disabled && gated}
-            onClick={() => onAction(verb)}
-            style={{
-              ...(bar ? { width: '100%' } : null),
-              ...(verb === 'Delete' ? { color: color.dangerText } : null),
-            }}
-            {...(reason != null ? { title: reason } : {})}
-            {...(describedBy != null ? { ariaDescribedBy: describedBy } : {})}
-            {...(bar
-              ? {}
-              : {
-                  iconRight: (
-                    <span className="dm-key-hint">
-                      <Kbd style={{ background: color.card }}>{VERB_SHORTCUT[verb]}</Kbd>
-                    </span>
-                  ),
-                })}
-            ariaLabel={`${verb} (${VERB_SHORTCUT[verb]})`}
-          >
-            {verb}
-          </Button>
-        );
-        // Column flex so the Tooltip's inline wrapper stretches and the
-        // button's `width: 100%` resolves against the slot, not itself.
-        const slotStyle = bar
-          ? ({
-              display: 'flex',
-              flexDirection: 'column',
-              // Delete is a deliberate full-width final action.
-              ...(verb === 'Delete' && visibleVerbs.length % 2 === 1
-                ? { gridColumn: '1 / -1' }
-                : null),
-            } as const)
-          : undefined;
-        const content =
-          reason != null ? (
-            reason
-          ) : lesson === undefined ? null : (
-            <>
-              <span style={{ fontWeight: 600 }}>{lesson.label}</span>
-              <br />
-              {lesson.effect}
-            </>
-          );
-        if (content == null) {
-          return (
-            <span key={verb} data-action={verb.toLowerCase()} style={slotStyle}>
-              {button()}
-            </span>
-          );
-        }
-        return (
-          <span key={verb} data-action={verb.toLowerCase()} style={slotStyle}>
-            <Tooltip content={content}>{({ describedBy }) => button(describedBy)}</Tooltip>
-          </span>
-        );
-      })}
+      {primaryVerbs.map(renderVerb)}
+      {guided && (
+        <details className="dm-disclosure" style={{ width: '100%' }}>
+          <summary style={{ minHeight: 44, cursor: 'pointer', padding: 12 }}>More actions</summary>
+          <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: 8 }}>
+            {visibleVerbs.filter((verb) => !primaryVerbs.includes(verb)).map(renderVerb)}
+          </div>
+        </details>
+      )}
       <span
         style={{
           width: '100%',
@@ -212,7 +225,9 @@ export function ActionToolbar({
           color: color.fgSoft,
         }}
       >
-        Keep skips this sender in Triage; Protected excludes bulk and automatic cleanup.
+        {guided
+          ? 'Keep skips future suggestions for this sender. Protected excludes bulk and automatic cleanup.'
+          : 'Keep skips this sender in Triage; Protected excludes bulk and automatic cleanup.'}
       </span>
       {unsubNoChannelReason != null && (
         <>

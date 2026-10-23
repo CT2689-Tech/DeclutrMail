@@ -526,3 +526,95 @@
 .statsSection .eyebrow {
   margin-bottom: 0;
 }
+
+.guidedReview {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.guidedHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.guidedNavigation {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.guidedColumns {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.65fr) minmax(0, 1.8fr);
+  gap: 24px;
+  align-items: start;
+}
+.guidedQueue {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  max-height: 65dvh;
+  overflow-y: auto;
+}
+.guidedQueueItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: var(--dm-radius-md);
+  background: transparent;
+  color: var(--dm-fg);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.guidedQueueItem > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.guidedQueueItem[aria-current] {
+  background: var(--dm-card);
+  border-color: var(--dm-line-soft);
+}
+.guidedQueueItem:focus-visible {
+  outline: 2px solid var(--dm-primary);
+  outline-offset: 2px;
+}
+.guidedQueueItem:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.guidedCard {
+  padding: 24px;
+  border: 1px solid var(--dm-line-soft);
+  border-radius: var(--dm-radius-lg);
+  background: var(--dm-card);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+@media (max-width: 760px) {
+  .guidedColumns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .guidedQueue {
+    display: none;
+  }
+  .guidedHeader {
+    align-items: stretch;
+  }
+  .guidedNavigation {
+    justify-content: space-between;
+    width: 100%;
+  }
+  .guidedCard {
+    padding: 20px 16px;
+  }
+}

@@ -21,25 +21,40 @@ export const SCREENER_GATE_COPY = {
   footnote: 'You can still move any sender to Later from Triage.',
 } as const;
 
+const FIRST_REVIEW_GATE_COPY = {
+  title: 'Needs first review',
+  pitch: SCREENER_GATE_COPY.pitch,
+  footnote: 'You can still review any sender from All senders.',
+} as const;
+
 /**
  * The shared paywall (`TierGate`) rather than a bespoke upsell: the
  * plan name, price, checkout link and money-back note all derive from
  * the manifest there, and the queue's reads never mount under-tier.
  */
-export function ScreenerRoute() {
+export function ScreenerRoute({
+  presentation = 'standalone',
+  active = true,
+}: {
+  presentation?: 'standalone' | 'senders';
+  /** Inactive mounted views keep polling their action handles, but do not own keys. */
+  active?: boolean;
+}) {
+  const copy = presentation === 'senders' ? FIRST_REVIEW_GATE_COPY : SCREENER_GATE_COPY;
   return (
-    <TierGate
-      capability="screener"
-      title={SCREENER_GATE_COPY.title}
-      pitch={SCREENER_GATE_COPY.pitch}
-      footnote={SCREENER_GATE_COPY.footnote}
-    >
-      <ScreenerQueueRoute />
+    <TierGate capability="screener" title={copy.title} pitch={copy.pitch} footnote={copy.footnote}>
+      <ScreenerQueueRoute presentation={presentation} active={active} />
     </TierGate>
   );
 }
 
-function ScreenerQueueRoute() {
+function ScreenerQueueRoute({
+  presentation,
+  active,
+}: {
+  presentation: 'standalone' | 'senders';
+  active: boolean;
+}) {
   const hydrated = useHydrated();
   const queue = useScreenerQueue();
   const count = useScreenerCount();
@@ -54,6 +69,8 @@ function ScreenerQueueRoute() {
   // SSR and the matching first browser render must both omit the live total.
   return (
     <ScreenerScreen
+      presentation={presentation}
+      active={active}
       state={state}
       totalPending={hydrated ? (count.data?.pending ?? null) : null}
       refreshFailed={queue.isError && queue.data !== undefined}

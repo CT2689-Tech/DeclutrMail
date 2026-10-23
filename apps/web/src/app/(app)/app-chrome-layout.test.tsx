@@ -19,11 +19,11 @@
  *      happy path.
  *
  *   5. Happy path: children render inside the shell, and the nav
- *      lists every built surface — including Screener (#220) and
- *      Billing (#219), restored after both shipped.
+ *      keeps Cleanup as one Senders destination, with review modes
+ *      owned by its workspace rather than repeated shell tabs.
  *
  *   6. Screener badge (D74/D77): the count query fires ONLY for tiers
- *      with the `screener` capability — a Free/Plus session must never
+ *      with the `screener` capability — a Free session must never
  *      hit an endpoint the server would 402.
  */
 
@@ -144,6 +144,23 @@ function renderLayout(client = createTestQueryClient()) {
 async function openUtilityNavigation() {
   await userEvent.click(await screen.findByRole('button', { name: 'Open navigation menu' }));
   return screen.getByRole('dialog', { name: 'Navigation menu' });
+}
+
+function cleanupRailButton() {
+  return within(screen.getByRole('navigation', { name: 'Product navigation' })).getByRole(
+    'button',
+    { name: 'Cleanup' },
+  );
+}
+
+async function expectPendingReviewCount(count: number) {
+  await vi.waitFor(() =>
+    expect(cleanupRailButton()).toHaveAttribute(
+      'aria-description',
+      expect.stringContaining(`${count} senders awaiting first review`),
+    ),
+  );
+  expect(screen.getByTestId('nav-dot-senders')).toBeInTheDocument();
 }
 
 function ok(payload: unknown): Response {
@@ -400,8 +417,8 @@ describe('(app) layout integration mounts — U-NAV', () => {
         'aria-description',
         expect.stringContaining('Senders: 1'),
       );
-      const section = within(screen.getByRole('navigation', { name: 'Cleanup views' }));
-      expect(section.getByRole('button', { name: /Senders/ })).toHaveTextContent('1');
+      expect(screen.getByTestId('nav-dot-senders')).toBeInTheDocument();
+      expect(screen.queryByRole('navigation', { name: 'Cleanup views' })).not.toBeInTheDocument();
     });
   });
 
@@ -565,13 +582,9 @@ describe('(app) layout integration mounts — U-NAV', () => {
     ]);
     expect(nav.getByRole('button', { name: 'Cleanup' })).toHaveAttribute('aria-current', 'page');
     expect(screen.queryByRole('button', { name: /expand sidebar|collapse sidebar/i })).toBeNull();
-    const section = within(screen.getByRole('navigation', { name: 'Cleanup views' }));
-    expect(section.getByRole('button', { name: /Senders/ })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
-    expect(section.getByRole('button', { name: 'Triage' })).toBeInTheDocument();
-    expect(section.getByRole('button', { name: 'Screener' })).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Cleanup views' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Triage' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Screener' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Workspace settings' })).toBeInTheDocument();
     const primary = within(screen.getByRole('navigation', { name: 'Primary' }));
     expect(primary.getAllByRole('button').map((row) => row.getAttribute('aria-label'))).toEqual([
@@ -595,7 +608,7 @@ describe('(app) layout integration mounts — U-NAV', () => {
     expect(screen.queryByTestId('deletion-grace-banner')).not.toBeInTheDocument();
   });
 
-  it('keeps every feature reachable through primary and contextual navigation', async () => {
+  it('keeps Cleanup in Senders and other feature groups in contextual navigation', async () => {
     installFetchStub(authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }));
     const { rerenderAt } = renderLayout();
     await screen.findByText('authed app body');
@@ -604,11 +617,7 @@ describe('(app) layout integration mounts — U-NAV', () => {
       {
         label: 'Cleanup',
         route: '/senders',
-        destinations: [
-          ['Senders', '/senders'],
-          ['Triage', '/triage'],
-          ['Screener', '/screener'],
-        ],
+        destinations: [],
       },
       {
         label: 'Automations',
@@ -634,6 +643,11 @@ describe('(app) layout integration mounts — U-NAV', () => {
       await userEvent.click(primary.getByRole('button', { name: group.label }));
       expect(pushSpy).toHaveBeenLastCalledWith(group.route);
       rerenderAt(group.route);
+      if (group.label === 'Cleanup') {
+        expect(screen.queryByRole('navigation', { name: 'Cleanup views' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Triage' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Screener' })).not.toBeInTheDocument();
+      }
       expect(primary.getByRole('button', { name: group.label })).toHaveAttribute(
         'aria-current',
         'page',
@@ -692,6 +706,7 @@ describe('(app) layout integration mounts — U-NAV', () => {
   });
 
   it('prefetches a section destination on intent before navigation', async () => {
+    pathnameRef.current = '/autopilot';
     installFetchStub([
       ...authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }),
       {
@@ -704,15 +719,15 @@ describe('(app) layout integration mounts — U-NAV', () => {
     const user = userEvent.setup();
     renderLayout();
 
-    const nav = await screen.findByRole('navigation', { name: 'Cleanup views' });
-    const triageNav = within(nav).getByRole('button', { name: 'Triage' });
-    await user.hover(triageNav);
+    const nav = await screen.findByRole('navigation', { name: 'Automations views' });
+    const quietNav = within(nav).getByRole('button', { name: 'Quiet hours' });
+    await user.hover(quietNav);
 
-    expect(prefetchSpy).toHaveBeenCalledWith('/triage');
+    expect(prefetchSpy).toHaveBeenCalledWith('/quiet');
     expect(pushSpy).not.toHaveBeenCalled();
 
-    await user.click(triageNav);
-    expect(pushSpy).toHaveBeenCalledWith('/triage');
+    await user.click(quietNav);
+    expect(pushSpy).toHaveBeenCalledWith('/quiet');
   });
 
   it('mounts the grace-period banner above the shell while a deletion is pending (D216)', async () => {
@@ -759,7 +774,7 @@ describe('(app) layout — screener badge tier gating (D74/D77)', () => {
     const nav = within(screen.getByRole('navigation', { name: 'Product navigation' }));
     expect(nav.getByRole('button', { name: 'Cleanup' })).toHaveAttribute(
       'aria-description',
-      expect.stringContaining('3 senders awaiting a first review in Screener'),
+      expect.stringContaining('3 senders awaiting first review'),
     );
     expect(countSpy).not.toHaveBeenCalled();
   });
@@ -776,9 +791,8 @@ describe('(app) layout — screener badge tier gating (D74/D77)', () => {
 
     renderLayout();
 
-    expect(
-      await screen.findByLabelText('3 senders awaiting a first review in Screener'),
-    ).toBeInTheDocument();
+    await screen.findByText('authed app body');
+    await expectPendingReviewCount(3);
   });
 
   it('polls the Screener count again after the tab is hidden and shown while online', async () => {
@@ -818,9 +832,8 @@ describe('(app) layout — screener badge tier gating (D74/D77)', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const { client: mounted } = renderLayout(client);
-      expect(
-        await screen.findByLabelText('3 senders awaiting a first review in Screener'),
-      ).toBeInTheDocument();
+      await screen.findByText('authed app body');
+      await expectPendingReviewCount(3);
       const baseline = reads;
       expect(baseline).toBeGreaterThan(0);
 
@@ -832,18 +845,17 @@ describe('(app) layout — screener badge tier gating (D74/D77)', () => {
         await vi.advanceTimersByTimeAsync(SCREENER_COUNT_POLL_MS);
       });
       expect(reads).toBe(baseline);
-      expect(
-        screen.getByLabelText('3 senders awaiting a first review in Screener'),
-      ).toBeInTheDocument();
+      expect(cleanupRailButton()).toHaveAttribute(
+        'aria-description',
+        expect.stringContaining('3 senders awaiting first review'),
+      );
 
       setVisibility('visible');
       await act(async () => {
         await vi.advanceTimersByTimeAsync(SCREENER_COUNT_POLL_MS);
       });
       expect(reads).toBe(baseline + 1);
-      expect(
-        await screen.findByLabelText('4 senders awaiting a first review in Screener'),
-      ).toBeInTheDocument();
+      await expectPendingReviewCount(4);
     } finally {
       vi.useRealTimers();
       focusManager.setFocused(undefined);
@@ -863,10 +875,16 @@ describe('(app) layout — screener badge tier gating (D74/D77)', () => {
       },
     ]);
 
-    renderLayout();
+    const { client } = renderLayout();
 
     expect(await screen.findByText('authed app body')).toBeInTheDocument();
-    expect(screen.queryByLabelText(/waiting in Screener/)).not.toBeInTheDocument();
+    await vi.waitFor(() =>
+      expect(client.getQueryData(['screener', 'count'])).toEqual({ pending: 0 }),
+    );
+    expect(cleanupRailButton()).not.toHaveAttribute(
+      'aria-description',
+      expect.stringContaining('awaiting first review'),
+    );
   });
 
   it('NEVER fires the count query for an under-tier workspace (the server would 402)', async () => {
@@ -879,12 +897,15 @@ describe('(app) layout — screener badge tier gating (D74/D77)', () => {
     renderLayout();
 
     expect(await screen.findByText('authed app body')).toBeInTheDocument();
-    // The nav still lists Screener (the route renders the D77 upsell
-    // for under-tier visitors) — but the badge query never fires and
-    // no badge renders. A 402 must never surface as an error state.
-    expect(screen.getAllByText('Screener').length).toBeGreaterThan(0);
+    // Cleanup stays reachable, while its first-review view owns the upsell.
+    // The shell never issues a doomed count query for an under-tier workspace.
+    expect(cleanupRailButton()).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Screener' })).not.toBeInTheDocument();
     expect(countSpy).not.toHaveBeenCalled();
-    expect(screen.queryByLabelText(/waiting in Screener/)).not.toBeInTheDocument();
+    expect(cleanupRailButton()).not.toHaveAttribute(
+      'aria-description',
+      expect.stringContaining('awaiting first review'),
+    );
   });
 });
 
@@ -1506,19 +1527,36 @@ describe('(app) layout — undo tray stays off account surfaces (D245)', () => {
     expect(await screen.findByText('authed app body')).toBeInTheDocument();
     expect(screen.getByTestId('triage-undo-tray')).toBeInTheDocument();
   });
+
+  it.each([
+    ['', false],
+    ['view=guided', true],
+    ['view=first-review', false],
+    ['view=guided&q=lumen', true],
+  ] as const)('sets the Undo shortcut for Senders query %s to %s', async (query, enabled) => {
+    pathnameRef.current = '/senders';
+    searchParamsRef.current = query;
+    installFetchStub(activeMailboxHandlers());
+    renderLayout();
+    await screen.findByText('authed app body');
+    expect(undoTrayPropsSpy).toHaveBeenLastCalledWith({
+      enableShortcut: enabled,
+      mailboxId: 'mb-1',
+    });
+  });
 });
 
 describe('nav plan chips after D251 (design-gate B1)', () => {
-  it('plus: Autopilot and Screener carry no lock chip; Daily brief still chips Pro', async () => {
+  it('plus: Cleanup and Autopilot remain unlocked; Daily Brief still chips Pro', async () => {
     installFetchStub(authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z', tier: 'plus' }));
     const { rerenderAt } = renderLayout();
     await screen.findByText('authed app body');
-    // Entitlement chips live beside their actual destination in contextual navigation.
-    const screener = within(screen.getByRole('navigation', { name: 'Cleanup views' })).getByRole(
-      'button',
-      { name: /^Screener/ },
+    // Cleanup views live inside Senders; the group still exposes truthful lock context.
+    expect(cleanupRailButton()).not.toHaveAttribute(
+      'aria-description',
+      expect.stringContaining('feature'),
     );
-    expect(within(screener).queryByLabelText(/^(Plus|Pro) feature$/)).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Cleanup views' })).not.toBeInTheDocument();
 
     rerenderAt('/autopilot');
     const autopilot = within(

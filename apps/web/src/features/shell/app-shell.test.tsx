@@ -55,15 +55,12 @@ describe('AppShell interactions', () => {
       </AppShell>,
     );
 
-    const triage = within(screen.getByRole('navigation', { name: 'Cleanup views' })).getByRole(
-      'button',
-      { name: 'Triage' },
-    );
+    const triage = within(sidebar()).getByRole('button', { name: 'Automations' });
     fireEvent.mouseEnter(triage);
     fireEvent.focus(triage);
     fireEvent.touchStart(triage);
 
-    expect(onNavigateIntent.mock.calls).toEqual([['triage'], ['triage'], ['triage']]);
+    expect(onNavigateIntent.mock.calls).toEqual([['autopilot'], ['autopilot'], ['autopilot']]);
     expect(onNavigate).not.toHaveBeenCalled();
 
     fireEvent.mouseEnter(within(sidebar()).getByRole('button', { name: 'Cleanup' }));
@@ -165,22 +162,22 @@ describe('AppShell — fixed workspace rail', () => {
     const onNavigate = vi.fn();
     render(
       <AppShell
-        active="senders"
+        active="autopilot"
         onNavigate={onNavigate}
-        counts={{ screener: { text: 3, label: '3 new senders' } }}
-        locks={{ screener: 'Pro' }}
+        counts={{ quiet: { text: 3, label: '3 windows' } }}
+        locks={{ quiet: 'Pro' }}
       >
         <div>Page content</div>
       </AppShell>,
     );
-    const child = within(screen.getByRole('navigation', { name: 'Cleanup views' })).getByRole(
+    const child = within(screen.getByRole('navigation', { name: 'Automations views' })).getByRole(
       'button',
-      { name: /Screener/ },
+      { name: /Quiet hours/ },
     );
-    expect(within(child).getByLabelText('3 new senders')).toBeInTheDocument();
+    expect(within(child).getByLabelText('3 windows')).toBeInTheDocument();
     expect(within(child).getByLabelText('Pro feature')).toBeInTheDocument();
     fireEvent.click(child);
-    expect(onNavigate).toHaveBeenCalledWith('screener');
+    expect(onNavigate).toHaveBeenCalledWith('quiet');
   });
 });
 

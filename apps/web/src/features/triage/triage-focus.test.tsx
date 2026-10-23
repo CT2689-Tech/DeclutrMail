@@ -128,7 +128,12 @@ function ready(rows: readonly (typeof TRIAGE_QUEUE)[number][]): TriageScreenStat
 function renderScreen(
   state: TriageScreenState,
   client: QueryClient = createTestQueryClient(),
-  props: { journey?: 'daily' | 'first_relief' } = {},
+  props: {
+    journey?: 'daily' | 'first_relief';
+    presentation?: 'triage' | 'guided';
+    active?: boolean;
+    onExitGuided?: () => void;
+  } = {},
 ) {
   const ui = (s: TriageScreenState) => (
     <QueryWrapper client={client}>
@@ -735,5 +740,55 @@ describe('focus mode — mobile', () => {
     fireEvent.pointerUp(surface, { ...touch, clientX: 80, clientY: 203 });
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(useTriageStore.getState().pendingAction?.verb).toBe('Archive');
+  });
+});
+
+describe('Guided Review inside Senders', () => {
+  it('uses the server order for Previous and Next without recording decisions', async () => {
+    let writes = 0;
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: /\/api\/actions/,
+        respond: () => {
+          writes += 1;
+          return jsonOk({ data: {} });
+        },
+      },
+    ]);
+    renderScreen(ready([GROUPON, LINKEDIN, SARAH]), undefined, { presentation: 'guided' });
+    await screen.findByRole('button', { name: 'Next sender' });
+    expect(cardTitle()).toBe(GROUPON.senderName);
+    expect(screen.queryByRole('group', { name: 'Review layout' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Next sender' }));
+    expect(cardTitle()).toBe(LINKEDIN.senderName);
+    fireEvent.click(screen.getByRole('button', { name: 'Previous' }));
+    expect(cardTitle()).toBe(GROUPON.senderName);
+    expect(writes).toBe(0);
+    expect(useTriageStore.getState().sessionDecidedCount).toBe(0);
+  });
+  it('keeps navigation disabled for an open mandatory preview', async () => {
+    renderScreen(ready([GROUPON, LINKEDIN]), undefined, { presentation: 'guided' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Archive (A)' }));
+    await screen.findByRole('dialog');
+    expect(screen.getByRole('button', { name: 'Next sender' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Back to Senders' })).toBeDisabled();
+    expect(cardTitle()).toBe(GROUPON.senderName);
+  });
+  it('leaves a hidden action owner polling without consuming verb shortcuts', async () => {
+    renderScreen(ready([GROUPON, LINKEDIN]), undefined, { presentation: 'guided', active: false });
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() => expect(useTriageStore.getState().pendingAction).toBeNull());
+  });
+  it('opens accurate guided keyboard help and keeps shortcuts inert while it owns the keyboard', async () => {
+    renderScreen(ready([GROUPON, LINKEDIN]), undefined, { presentation: 'guided' });
+    fireEvent.keyDown(window, { key: '?' });
+    const help = await screen.findByRole('dialog');
+    expect(within(help).getByRole('heading', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
+    expect(within(help).queryByText('Skip to the next sender')).toBeNull();
+    expect(within(help).queryByText('Open or close a list row')).toBeNull();
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(useTriageStore.getState().pendingAction).toBeNull();
+    expect(cardTitle()).toBe(GROUPON.senderName);
   });
 });

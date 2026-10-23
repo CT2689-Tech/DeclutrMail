@@ -9,7 +9,7 @@ import { RowActivityPill, rowActivityLabel, type SenderRowActivity } from './row
 describe('row activity — what a sender row says about its own action', () => {
   it.each([
     [{ phase: 'working', verb: 'keep' }, 'Keeping…'],
-    [{ phase: 'done', verb: 'keep', affectedCount: null }, 'Skipped in Triage'],
+    [{ phase: 'done', verb: 'keep', affectedCount: null }, 'Skipped in suggested review'],
     [{ phase: 'failed', verb: 'keep' }, 'Keep failed'],
     [{ phase: 'working', verb: 'archive' }, 'Archiving…'],
     [{ phase: 'working', verb: 'later' }, 'Moving to Later…'],

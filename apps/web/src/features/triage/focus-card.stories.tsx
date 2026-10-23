@@ -142,3 +142,13 @@ export const UnbrokenIdentity: Story<typeof TriageFocusCard> = {
   },
   render: (args: Args) => frame(<TriageFocusCard {...args} />),
 };
+
+/** Same sender/action contract, compact choices for the Senders guided workspace. */
+export const GuidedReview: Story<typeof TriageFocusCard> = {
+  args: { ...base, row: row('t-linkedin'), guided: true },
+  render: (args: Args) => frame(<TriageFocusCard {...args} />),
+};
+export const GuidedNoSuggestion: Story<typeof TriageFocusCard> = {
+  args: { ...base, row: { ...row('t-linkedin'), confidence: 0.4 }, guided: true },
+  render: (args: Args) => frame(<TriageFocusCard {...args} />),
+};

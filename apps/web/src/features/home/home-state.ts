@@ -85,13 +85,13 @@ export function composeHomeAction({ triagePending, screenerPending }: HomeAction
     return {
       // "today": the count is Triage's daily-clamped queue, not every waiting sender.
       label: `Review ${triagePending.toLocaleString('en-US')} today`,
-      href: '/triage',
+      href: '/senders?view=guided',
     };
   }
   if (screenerPending !== null && screenerPending > 0) {
     return {
       label: `Review ${screenerPending.toLocaleString('en-US')} new`,
-      href: '/screener',
+      href: '/senders?view=first-review',
     };
   }
   return { label: 'Review senders', href: '/senders' };

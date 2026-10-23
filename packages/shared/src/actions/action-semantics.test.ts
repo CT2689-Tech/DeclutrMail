@@ -417,7 +417,7 @@ describe('D245 composite presentation states one coherent story', () => {
       wakeAt: null,
       unsubscribeChannel: null,
     });
-    expect(keep.previewCopy).toContain('stops coming up in Triage');
+    expect(keep.previewCopy).toContain('stops appearing among suggested senders');
     expect(keep.previewCopy).toContain('Keep is not Protect');
     expect(keep.previewCopy).toContain('Autopilot');
   });
@@ -496,8 +496,10 @@ describe('D245 recovery copy states each fact once and says whose it is', () => 
 });
 
 describe('D245 Keep states the consequence it actually has', () => {
-  it('names the Triage effect rather than promising a memory', () => {
-    expect(ACTION_SEMANTICS.keep.futureMail.summary).toContain('stops coming up in Triage');
+  it('names the suggested-review effect rather than promising a memory', () => {
+    expect(ACTION_SEMANTICS.keep.futureMail.summary).toContain(
+      'stops appearing among suggested senders',
+    );
   });
 
   // Verified against the executors AND live on the dev mailbox: Autopilot

@@ -176,7 +176,15 @@ describe('D211 — edge-state inventory contract', () => {
     // EDGE_STATE_INVENTORY row, and a SCREEN_ROUTES entry), or an
     // inventory row outlives its deleted route (remove all three).
     const onDisk = collectRouteDirs();
-    const declared = (Object.values(SCREEN_ROUTES).filter((r) => r !== null) as string[]).sort();
+    // Guided and first review share Senders, while retaining their own
+    // edge-state declarations. Query-selected views are one route on disk.
+    const declared = [
+      ...new Set(
+        Object.values(SCREEN_ROUTES)
+          .filter((r): r is string => r !== null)
+          .map((route) => route.split('?')[0]!),
+      ),
+    ].sort();
     expect(declared, 'SCREEN_ROUTES must exactly mirror (app)/**/page.tsx route dirs').toEqual(
       onDisk,
     );

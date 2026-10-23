@@ -5,6 +5,7 @@ import { withSentryConfig } from '@sentry/nextjs/config';
 import { legacyDomainRedirects, wwwApexRedirects } from './src/lib/legacy-domain-redirects';
 import { noindexHeaderRules } from './src/lib/noindex-headers';
 import { welcomeRedirect } from './src/lib/welcome-redirect';
+import { cleanupRedirects } from './src/lib/cleanup-redirects';
 
 const nextConfig: NextConfig = {
   // `/pricing` stays dynamic so India sees INR, and Next otherwise streams
@@ -64,6 +65,7 @@ const nextConfig: NextConfig = {
   redirects: async () => [
     ...wwwApexRedirects(),
     ...legacyDomainRedirects(),
+    ...cleanupRedirects(),
     ...['dm_access', 'dm_refresh'].map((key) => ({
       source: '/',
       has: [

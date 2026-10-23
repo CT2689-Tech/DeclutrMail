@@ -19,6 +19,8 @@ const APP_ROUTES = [
   '/home',
   '/senders',
   '/triage',
+  '/senders?view=guided',
+  '/senders?view=first-review',
   '/screener',
   '/autopilot',
   '/quiet',

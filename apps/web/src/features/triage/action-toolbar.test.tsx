@@ -15,7 +15,7 @@
 // DOM regressions also verify keyboard ownership while dialogs are open.
 
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { VERB_LESSONS } from '@/features/tour/verb-lessons';
 import { ActionToolbar, resolveShortcut, verbDisabledReason } from './action-toolbar';
@@ -346,5 +346,31 @@ describe('ActionToolbar — dialog keyboard ownership', () => {
     view.rerender(<ActionToolbar row={rowById('t-groupon')} onAction={onAction} />);
     fireEvent.keyDown(window, { key: 'k' });
     expect(onAction).toHaveBeenCalledExactlyOnceWith('Keep');
+  });
+});
+
+describe('Guided action choices', () => {
+  it('shows the engine suggestion and Keep once, with only remaining verbs in More actions', () => {
+    render(<ActionToolbar row={rowById('t-groupon')} onAction={() => {}} guided />);
+    expect(screen.getAllByRole('button', { name: 'Keep (K)' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Archive (A)' })).toHaveLength(1);
+    const more = screen.getByText('More actions').closest('details')!;
+    expect(within(more).queryByRole('button', { name: 'Keep (K)', hidden: true })).toBeNull();
+    expect(within(more).queryByRole('button', { name: 'Archive (A)', hidden: true })).toBeNull();
+    expect(within(more).getAllByRole('button', { hidden: true })).toHaveLength(3);
+  });
+  it('does not manufacture a suggestion below the existing recommendation threshold', () => {
+    render(
+      <ActionToolbar
+        row={{ ...rowById('t-groupon'), confidence: 0.01 }}
+        onAction={() => {}}
+        guided
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Keep (K)' })).toBeInTheDocument();
+    const more = screen.getByText('More actions').closest('details')!;
+    expect(
+      within(more).getByRole('button', { name: 'Archive (A)', hidden: true }),
+    ).toBeInTheDocument();
   });
 });

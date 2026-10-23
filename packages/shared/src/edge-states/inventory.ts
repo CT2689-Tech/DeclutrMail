@@ -111,16 +111,17 @@ export type ScreenId =
   | 'app-global-error';
 
 /**
- * Screen → route dir under `apps/web/src/app/(app)`, or `null` for
+ * Screen → route dir under `apps/web/src/app/(app)`, including query-selected
+ * views that share a route, or `null` for
  * surfaces that are not (app) routes (the App Router error
  * boundaries live at `apps/web/src/app/*`). The inventory test
  * enumerates `page.tsx` route dirs on disk and asserts exact parity
- * with the non-null values here — adding a route without an
+ * with the unique non-null route paths here — adding a route without an
  * inventory row (or keeping a row for a deleted route) fails CI.
  */
 export const SCREEN_ROUTES: Record<ScreenId, string | null> = {
   home: 'home',
-  triage: 'triage',
+  triage: 'senders?view=guided',
   senders: 'senders',
   'sender-detail': 'senders/[id]',
   activity: 'activity',
@@ -134,7 +135,7 @@ export const SCREEN_ROUTES: Record<ScreenId, string | null> = {
   'admin-security': 'admin/security',
   billing: 'billing',
   quiet: 'quiet',
-  screener: 'screener',
+  screener: 'senders?view=first-review',
   later: 'later',
   'app-error-boundary': null,
   'app-not-found': null,

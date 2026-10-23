@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useRef } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { Button, Kbd, Pill, Tooltip, tokens } from '@declutrmail/shared';
 import { actionHelpCopy, unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
 import {
@@ -74,10 +74,14 @@ export function ActionToolbar({
   sender,
   onAction,
   shortcuts = false,
+  guided = false,
+  suggestedVerb = null,
 }: {
   sender: Sender;
   onAction: (req: ActionRequest) => void;
   shortcuts?: boolean;
+  guided?: boolean;
+  suggestedVerb?: Exclude<ActionVerb, 'Protect'> | null;
 }) {
   const reasonId = useId();
   const unavailableReason = unsubscribeUnavailableReason(sender.unsubscribeMethod);
@@ -108,6 +112,60 @@ export function ActionToolbar({
     return () => window.removeEventListener('keydown', onKey);
   }, [shortcuts]);
 
+  const visibleVerbs = VERBS.filter(
+    ({ verb }) => verb !== 'Unsubscribe' || unavailableReason === null,
+  );
+  const primaryVerbs = guided
+    ? visibleVerbs.filter(({ verb }) => verb === 'Keep' || verb === suggestedVerb)
+    : visibleVerbs;
+  const renderVerb = ({ verb, shortcut }: (typeof VERBS)[number]): ReactNode => {
+    const disabled = isVerbUnavailable(verb, sender);
+    const reason =
+      currentMailUnavailableReason(verb, sender) ??
+      (verb === 'Unsubscribe'
+        ? unsubscribeStatus
+          ? `${unsubscribeStatus.label}. ${unsubscribeStatus.title}`
+          : unavailableReason
+        : (verb === 'Archive' || verb === 'Later') && sender.inboxCount === 0
+          ? 'No inbox emails to move.'
+          : null);
+    const help =
+      reason ??
+      actionHelpCopy(verb.toLowerCase() as 'keep' | 'archive' | 'later' | 'delete' | 'unsubscribe');
+    const button = (describedBy?: string) => (
+      <Button
+        tone={guided && verb === suggestedVerb ? 'primary' : 'default'}
+        size="md"
+        inert={busy || disabled}
+        style={{
+          ...(verb === 'Delete' && !disabled ? { color: color.dangerText } : {}),
+        }}
+        {...(describedBy ? { ariaDescribedBy: describedBy } : {})}
+        onClick={() => onAction({ verb, senders: [sender] })}
+        {...(!shortcuts
+          ? {}
+          : {
+              iconRight: (
+                <span className="dm-key-hint">
+                  <Kbd>{shortcut}</Kbd>
+                </span>
+              ),
+            })}
+        ariaLabel={shortcuts ? `${verb} (${shortcut})` : verb}
+      >
+        {verb}
+      </Button>
+    );
+    return (
+      <span key={verb} data-action={verb.toLowerCase()}>
+        {help ? (
+          <Tooltip content={help}>{({ describedBy }) => button(describedBy)}</Tooltip>
+        ) : (
+          button()
+        )}
+      </span>
+    );
+  };
   return (
     <div
       role="toolbar"
@@ -122,57 +180,16 @@ export function ActionToolbar({
         fontFamily: font.sans,
       }}
     >
-      {VERBS.filter(({ verb }) => verb !== 'Unsubscribe' || unavailableReason === null).map(
-        ({ verb, shortcut }) => {
-          const disabled = isVerbUnavailable(verb, sender);
-          const reason =
-            currentMailUnavailableReason(verb, sender) ??
-            (verb === 'Unsubscribe'
-              ? unsubscribeStatus
-                ? `${unsubscribeStatus.label}. ${unsubscribeStatus.title}`
-                : unavailableReason
-              : (verb === 'Archive' || verb === 'Later') && sender.inboxCount === 0
-                ? 'No inbox emails to move.'
-                : null);
-          const help =
-            reason ??
-            actionHelpCopy(
-              verb.toLowerCase() as 'keep' | 'archive' | 'later' | 'delete' | 'unsubscribe',
-            );
-          const button = (describedBy?: string) => (
-            <Button
-              tone="default"
-              size="md"
-              inert={busy || disabled}
-              style={{
-                ...(verb === 'Delete' && !disabled ? { color: color.dangerText } : {}),
-              }}
-              {...(describedBy ? { ariaDescribedBy: describedBy } : {})}
-              onClick={() => onAction({ verb, senders: [sender] })}
-              {...(!shortcuts
-                ? {}
-                : {
-                    iconRight: (
-                      <span className="dm-key-hint">
-                        <Kbd>{shortcut}</Kbd>
-                      </span>
-                    ),
-                  })}
-              ariaLabel={shortcuts ? `${verb} (${shortcut})` : verb}
-            >
-              {verb}
-            </Button>
-          );
-          return (
-            <span key={verb} data-action={verb.toLowerCase()}>
-              {help ? (
-                <Tooltip content={help}>{({ describedBy }) => button(describedBy)}</Tooltip>
-              ) : (
-                button()
-              )}
-            </span>
-          );
-        },
+      {primaryVerbs.map(renderVerb)}
+      {guided && (
+        <details className="dm-disclosure" style={{ width: '100%' }}>
+          <summary style={{ minHeight: 44, cursor: 'pointer', padding: '12px 0' }}>
+            More actions
+          </summary>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {visibleVerbs.filter((entry) => !primaryVerbs.includes(entry)).map(renderVerb)}
+          </div>
+        </details>
       )}
       {unsubscribeStatus && (
         <span style={{ flexBasis: '100%', gridColumn: '1 / -1' }} title={unsubscribeStatus.title}>
@@ -217,7 +234,8 @@ export function ActionToolbar({
           color: color.fgSoft,
         }}
       >
-        Keep skips this sender in Triage; Protected excludes bulk and automatic cleanup.
+        Keep skips future suggestions for this sender; Protected excludes bulk and automatic
+        cleanup.
       </span>
       {activity &&
         !(

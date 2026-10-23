@@ -265,7 +265,7 @@ describe('SenderActionRow — relevant actions', () => {
   );
   it('states the saved Keep effect', () => {
     render(<SenderActionRow sender={sender({ policyType: 'keep' })} onAction={vi.fn()} />);
-    expect(screen.getByText('Skipped in Triage')).toBeInTheDocument();
+    expect(screen.getByText('Skipped in suggested review')).toBeInTheDocument();
     expect(screen.queryByText('Kept')).toBeNull();
   });
 });

@@ -6,8 +6,6 @@ import { NAV, Sidebar, SectionNavigation, WORKSPACE_NAV, workspaceSection } from
 const routes = [
   'home',
   'senders',
-  'triage',
-  'screener',
   'autopilot',
   'quiet',
   'brief',
@@ -18,8 +16,6 @@ const routes = [
 const labels = [
   'Home',
   'Senders',
-  'Triage',
-  'Screener',
   'Autopilot',
   'Quiet hours',
   'Daily Brief',
@@ -47,9 +43,9 @@ describe('Sidebar — approved workspace rail', () => {
     expect(html).not.toContain('Collapse sidebar');
   });
 
-  it('assigns every real feature to exactly one group without dropping routes', () => {
+  it('assigns visible destinations once and retains legacy review aliases in Cleanup', () => {
     expect(NAV.map((item) => item.id)).toEqual(routes);
-    const grouped = [...routes];
+    const grouped = ['home', 'senders', 'triage', 'screener', ...routes.slice(2)];
     if (CATCH_UP_LATER_FIRST) {
       const briefAt = grouped.indexOf('brief');
       grouped.splice(briefAt, 3, 'snoozed', 'brief', 'followups');
@@ -71,11 +67,11 @@ describe('Sidebar — approved workspace rail', () => {
 
   it('exposes child counts and gates without changing the group name', () => {
     const html = render({
-      counts: { screener: { text: 7, label: '7 new senders waiting in Screener' }, senders: 0 },
+      counts: { screener: { text: 7, label: '7 senders awaiting first review' }, senders: 0 },
       locks: { brief: 'Pro' },
     });
     expect(html).toContain(
-      'aria-label="Cleanup" aria-description="Senders: 0 · 7 new senders waiting in Screener"',
+      'aria-label="Cleanup" aria-description="Senders: 0 · 7 senders awaiting first review"',
     );
     expect(html).toContain('data-testid="nav-dot-senders"');
     expect(html).toContain(
@@ -85,14 +81,35 @@ describe('Sidebar — approved workspace rail', () => {
     expect(render({ counts: { senders: 0, triage: '0' } })).not.toContain('nav-dot-senders');
   });
 
+  it('uses review names in Cleanup hints for counts and gates', () => {
+    const html = render({ counts: { triage: 4 }, locks: { screener: 'Plus' } });
+    expect(html).toContain('Guided Review: 4');
+    expect(html).toContain('Needs first review: Plus feature');
+    expect(html).not.toContain('Triage:');
+    expect(html).not.toContain('Screener:');
+  });
+
+  it.each(['triage', 'screener'])(
+    'keeps Cleanup active for legacy %s aliases without another tab',
+    (active) => {
+      const html = render({ active });
+      expect(html).toContain('aria-current="page" aria-label="Cleanup"');
+      expect(html.match(/aria-current="page"/g)).toHaveLength(1);
+      expect(html).not.toContain('aria-label="Triage"');
+      expect(html).not.toContain('aria-label="Screener"');
+    },
+  );
+
   it('retains the complete labelled mobile drawer and real count/gate labels', () => {
     const html = render({
       collapsed: false,
-      counts: { screener: { text: 7, label: '7 new senders waiting in Screener' } },
+      counts: { senders: { text: 7, label: '7 senders' } },
       locks: { brief: 'Pro' },
     });
     for (const label of labels) expect(html).toContain(`>${label}</span>`);
-    expect(html).toContain('aria-label="7 new senders waiting in Screener"');
+    expect(html).toContain('aria-label="7 senders"');
+    expect(html).not.toContain('>Triage</span>');
+    expect(html).not.toContain('>Screener</span>');
     expect(html).toContain('aria-label="Pro feature"');
     expect(html).toContain('>7</span>');
   });
@@ -100,7 +117,6 @@ describe('Sidebar — approved workspace rail', () => {
 
 describe('SectionNavigation', () => {
   it.each([
-    ['screener', 'Cleanup views', ['Senders', 'Triage', 'Screener']],
     ['quiet', 'Automations views', ['Autopilot', 'Quiet hours']],
     [
       'snoozed',
@@ -120,16 +136,16 @@ describe('SectionNavigation', () => {
   it('keeps exact child counts and entitlement labels', () => {
     const html = renderToStaticMarkup(
       <SectionNavigation
-        active="triage"
+        active="autopilot"
         onNavigate={() => {}}
-        counts={{ screener: { text: 7, label: '7 new senders' } }}
-        locks={{ screener: 'Pro' }}
+        counts={{ quiet: { text: 7, label: '7 scheduled windows' } }}
+        locks={{ quiet: 'Pro' }}
       />,
     );
-    expect(html).toContain('aria-label="7 new senders"');
+    expect(html).toContain('aria-label="7 scheduled windows"');
     expect(html).toContain('aria-label="Pro feature"');
   });
-  it.each(['home', 'activity', 'settings', 'billing'])(
+  it.each(['home', 'senders', 'triage', 'screener', 'activity', 'settings', 'billing'])(
     'omits redundant context for %s',
     (active) => {
       expect(
