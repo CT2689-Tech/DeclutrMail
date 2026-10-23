@@ -96,7 +96,24 @@ passed serially, full lint and formatting passed, and implementation-log/policy
 audits passed. The broad web run had 4,884 passing tests, three existing skips
 and one obsolete Settings loading-geometry assertion. Updated that assertion to
 the chosen 1120px/28px layout and added Billing loading coverage; all 236 affected
-tests then passed. Storybook build passed. A fresh complete web run is in progress; protected CI
+tests then passed. Storybook build passed. The fresh complete web suite passed:
+4,889 tests, with three existing skips.
+
+The first protected CI pass found the phone drawer's pre-existing hard-coded
+overlay layers were below the first-visit cookie banner. The new Billing drawer
+test caught the banner intercepting its ordinary click at 320px. Moved the drawer
+scrim and panel to the existing shared modal/sheet layers, retaining the consent
+banner and its stored choice. The regression now explicitly starts with undecided
+consent, verifies Escape/focus recovery and consent-button reachability, then
+clicks Billing before choosing essential cookies. Other responsive, accessibility,
+journey, unit, build/budget, Lighthouse and CodeQL lanes passed on that first head.
+Independent repair review found no blockers. The repaired production build,
+51 bundle budgets, 32 prerenders, shared 937 tests, scoped lint/format and E2E
+typecheck passed. In the built-in browser on a fresh local origin, the old drawer
+layer 81 let the consent paragraph receive the Billing center-point hit; repaired
+layer 171 received that hit and the ordinary click reached Billing with consent
+still undecided. Escape restored the menu trigger, consent remained reachable,
+and Help fitted 320px with no browser errors. The repaired head's protected CI
 and release evidence are pending.
 
 The repository's isolated launcher initially failed because the current macOS

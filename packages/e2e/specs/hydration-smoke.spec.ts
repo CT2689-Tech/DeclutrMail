@@ -95,11 +95,25 @@ test('phone account drawer reaches billing and keeps contextual help inside the 
   await page.setViewportSize({ width: 320, height: 568 });
   await page.goto('/settings');
   await expect(page.getByRole('navigation', { name: 'On this page' })).toBeVisible();
-  await page.getByRole('button', { name: 'Open navigation menu' }).click();
+  const banner = page.getByTestId('cookie-consent-banner');
+  await expect(banner).toBeVisible();
+  const menu = page.getByRole('button', { name: 'Open navigation menu' });
+  await menu.click();
   const drawer = page.getByRole('dialog', { name: 'Navigation menu' });
+  await expect(drawer).toBeVisible();
+  await expect(banner).toBeVisible();
+  // A first-visit banner must stay available after the modal drawer closes,
+  // without covering the account destinations while the drawer is open.
+  await page.keyboard.press('Escape');
+  await expect(drawer).toBeHidden();
+  await expect(menu).toBeFocused();
+  await banner.getByRole('button', { name: 'Essential only', exact: true }).click({ trial: true });
+  await menu.click();
   await drawer.getByRole('button', { name: 'Plan & billing', exact: true }).click();
   await expect(drawer).toBeHidden();
   await expect(page.getByRole('heading', { name: 'Plan & billing', exact: true })).toBeVisible();
+  await banner.getByRole('button', { name: 'Essential only', exact: true }).click();
+  await expect(banner).toBeHidden();
   await expect(page.getByRole('navigation', { name: 'Primary' }).getByRole('button')).toHaveCount(
     5,
   );
