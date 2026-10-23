@@ -572,7 +572,7 @@ describe('(app) layout integration mounts — U-NAV', () => {
     );
     expect(section.getByRole('button', { name: 'Triage' })).toBeInTheDocument();
     expect(section.getByRole('button', { name: 'Screener' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Workspace settings' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
     const primary = within(screen.getByRole('navigation', { name: 'Primary' }));
     expect(primary.getAllByRole('button').map((row) => row.getAttribute('aria-label'))).toEqual([
       'Home',

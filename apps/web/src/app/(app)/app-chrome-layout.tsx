@@ -311,6 +311,7 @@ function AppChrome({ children }: { children: ReactNode }) {
             }
             onNavigate={(id) => router.push(shellRoute(id))}
             onNavigateIntent={(id) => router.prefetch(shellRoute(id))}
+            hrefFor={shellRoute}
             routeKey={pathname}
             locks={navLocks}
             counts={{

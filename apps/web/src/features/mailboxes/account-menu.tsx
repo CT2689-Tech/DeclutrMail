@@ -43,8 +43,8 @@ const { color, font, motion, radius, shadow, text } = tokens;
  *
  * Lists connected mailbox accounts, lets the user pick the active one,
  * manage a mailbox's connection/data, connect another Google account,
- * open Settings or Billing (account chores — they left the sidebar so
- * the nav is only the daily surfaces), or sign out.
+ * open Settings or Plan & billing alongside the sidebar Account group,
+ * or sign out.
  *
  * Manage opens the D245 outcome dialog: disconnect and retain indexed
  * history, or disconnect and permanently delete that mailbox's indexed

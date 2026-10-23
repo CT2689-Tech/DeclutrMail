@@ -43,7 +43,7 @@ export function RouteLoading({
 }: {
   /** The screen's own visible `<h1>` text. */
   title: string;
-  kicker: string;
+  kicker?: string;
   /** Triage has a deliberately narrower decision column. */
   variant?: 'triage';
   triageMode?: 'focus' | 'list';
@@ -69,7 +69,7 @@ export function RouteLoading({
         gap,
       }}
     >
-      <EditorialKicker>{kicker}</EditorialKicker>
+      {kicker ? <EditorialKicker>{kicker}</EditorialKicker> : null}
       <h1
         style={{
           ...editorialTitleStyle,

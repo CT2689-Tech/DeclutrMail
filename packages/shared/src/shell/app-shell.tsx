@@ -39,6 +39,7 @@ export function AppShell({
   active,
   onNavigate,
   onNavigateIntent,
+  hrefFor,
   counts,
   locks,
   routeKey,
@@ -51,6 +52,8 @@ export function AppShell({
   onNavigate: (id: string) => void;
   /** Early signal used by framework hosts to prefetch nav destinations. */
   onNavigateIntent?: ((id: string) => void) | undefined;
+  /** Real account URLs, preserving modified-click and open-in-new-tab behavior. */
+  hrefFor?: ((id: string) => string) | undefined;
   /** Per-item count — see `Sidebar`'s `counts` doc. */
   counts?: Partial<Record<string, NavCount>>;
   /** Per-item lock marker — see `Sidebar`'s `locks` doc. */
@@ -168,7 +171,8 @@ export function AppShell({
           onNavigateIntent={onNavigateIntent}
           counts={counts ?? {}}
           locks={locks ?? {}}
-          collapsed
+          responsive
+          hrefFor={hrefFor}
         />
       </div>
 
