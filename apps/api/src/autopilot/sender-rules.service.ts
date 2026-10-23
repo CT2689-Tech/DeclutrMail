@@ -515,7 +515,7 @@ export class SenderRulesService {
   private async metadata(
     mailboxId: string,
     keys: string[],
-    checkedAt: string,
+    checkedIso: string,
     scopes: CountScope[],
   ): Promise<SenderMetadata[]> {
     if (keys.length === 0 || scopes.length === 0) return [];
@@ -534,7 +534,7 @@ export class SenderRulesService {
       const filters = and(
         inbox && !inboxOnly ? sql`'INBOX' = any(${mailMessages.labelIds})` : undefined,
         days > minimumAge
-          ? sql`${mailMessages.internalDate} <= ${checkedAt}::timestamptz - (${days} || ' days')::interval`
+          ? sql`${mailMessages.internalDate} <= ${checkedIso}::timestamptz - (${days} || ' days')::interval`
           : undefined,
       );
       return filters
@@ -562,7 +562,7 @@ export class SenderRulesService {
           sql`not (${mailMessages.labelIds} && ARRAY['TRASH', 'SPAM', 'DRAFT', 'CHAT']::text[])`,
           inboxOnly ? sql`'INBOX' = any(${mailMessages.labelIds})` : undefined,
           minimumAge
-            ? sql`${mailMessages.internalDate} <= ${checkedAt}::timestamptz - (${minimumAge} || ' days')::interval`
+            ? sql`${mailMessages.internalDate} <= ${checkedIso}::timestamptz - (${minimumAge} || ' days')::interval`
             : undefined,
         ),
       )

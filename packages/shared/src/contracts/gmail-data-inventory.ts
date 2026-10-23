@@ -518,7 +518,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     ],
     derived: true,
     purpose:
-      'Keep previewed sender facts and explicitly approved email identifiers consistent. Sender-rule snapshots bind the rule revision, action and email scope. Cached rows contain identifiers and counts; names and addresses come from the saved sender list.',
+      'Keep previewed sender facts and explicitly approved email identifiers consistent. Sender-rule snapshots bind the rule revision, cleanup choice and email scope. Cached rows contain identifiers and counts; names and addresses come from the saved sender list.',
     retention: 'Automatically removed within five minutes of creating the preview.',
     removalTrigger: 'retention-policy',
     exportedIn: [],
