@@ -82,6 +82,9 @@ Application refuses unavailable native queries, changed plans or missing
 receipts, reads every changed policy back, and attempts restoration on failure.
 Plan fingerprints normalize object-key ordering from provider responses while
 retaining value and array changes as drift.
+Native readback treats an omitted numeric `thresholdValue` as its protobuf zero
+default. Other missing fields and changed thresholds still fail; encrypted
+failure reports retain the mismatched expected and actual policy definitions.
 Run **plan** and **smoke** through the protected-main workflow using the
 same WIF identity as the daily watchdog. Preflight verifies policy, channel,
 incident and digest-log reads; smoke verifies publication and inbox delivery.

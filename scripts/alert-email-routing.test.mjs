@@ -59,7 +59,14 @@ function fixture() {
   }));
 }
 function backend(initial = fixture(), options = {}) {
-  let policies = structuredClone(initial);
+  const nativePolicy = (policy) => {
+    const p = structuredClone(policy);
+    if (options.omitDefaultThreshold)
+      for (const c of p.conditions ?? [])
+        if (c.conditionThreshold?.thresholdValue === 0) delete c.conditionThreshold.thresholdValue;
+    return p;
+  };
+  let policies = initial.map(nativePolicy);
   const writes = [];
   const logSearches = [];
   let serial = 0;
@@ -94,10 +101,12 @@ function backend(initial = fixture(), options = {}) {
     if (method === 'GET' && parsed.pathname.includes('/alertPolicies/'))
       return structuredClone(policies.find((p) => `/${p.name}` === parsed.pathname.slice(3)));
     if (method === 'POST' && parsed.pathname.endsWith('/alertPolicies')) {
-      const p = {
+      const p = nativePolicy({
         ...structuredClone(body),
         name: `projects/declutrmail-ai-prod/alertPolicies/new${++serial}`,
-      };
+      });
+      if (options.wrongCreatedThreshold && p.displayName === 'DeclutrMail Gmail reconnect required')
+        p.conditions[0].conditionThreshold.thresholdValue = 1;
       policies.push(p);
       if (options.lostCreateResponse && serial === 1) throw new Error('Create response was lost');
       return structuredClone(p);
@@ -106,7 +115,7 @@ function backend(initial = fixture(), options = {}) {
       const i = policies.findIndex((p) => p.name === body.name);
       assert.ok(i >= 0);
       for (const key of parsed.searchParams.get('updateMask').split(',')) delete policies[i][key];
-      policies[i] = { ...policies[i], ...structuredClone(body) };
+      policies[i] = nativePolicy({ ...policies[i], ...structuredClone(body) });
       return structuredClone(policies[i]);
     }
     if (method === 'DELETE') {
@@ -412,6 +421,43 @@ test('a new policy committed before a lost create response is discovered and rol
   );
   assert.deepEqual(db.policies(), initial);
   assert.ok(db.writes.some((w) => w.method === 'DELETE'));
+});
+
+test('native omitted zero thresholds compare as zero, while other defaults and missing parents remain strict', async () => {
+  assert.ok(contains({ conditionThreshold: {} }, { conditionThreshold: { thresholdValue: 0 } }));
+  assert.ok(!contains({}, { conditionThreshold: { thresholdValue: 0 } }));
+  assert.ok(!contains({ conditionThreshold: 7 }, { conditionThreshold: { thresholdValue: 0 } }));
+  assert.ok(!contains({ conditionThreshold: [] }, { conditionThreshold: { thresholdValue: 0 } }));
+  assert.ok(!contains({}, { anotherValue: 0 }));
+  assert.ok(!contains({ thresholdValue: 1 }, { thresholdValue: 0 }));
+  assert.ok(!contains({}, { thresholdValue: 1 }));
+  const db = backend(fixture(), { omitDefaultThreshold: true });
+  const result = report();
+  await runRouting('prepare', {
+    request: db.request,
+    report: result,
+    expectedHash: planHash(db.policies()),
+  });
+  assert.equal(db.writes.length, 3);
+  assert.equal(result.after.length, fixture().length + 3);
+});
+
+test('a changed native threshold is rejected, retained privately, and rolled back', async () => {
+  const initial = fixture();
+  const db = backend(initial, { wrongCreatedThreshold: true });
+  const result = report();
+  await assert.rejects(
+    runRouting('prepare', {
+      request: db.request,
+      report: result,
+      expectedHash: planHash(initial),
+    }),
+    /Native policy readback mismatch/,
+  );
+  assert.equal(result.readbackMismatch.policy, 'DeclutrMail Gmail reconnect required');
+  assert.equal(result.readbackMismatch.expected.conditions[0].conditionThreshold.thresholdValue, 0);
+  assert.equal(result.readbackMismatch.actual.conditions[0].conditionThreshold.thresholdValue, 1);
+  assert.deepEqual(db.policies(), initial);
 });
 
 test('digest does not publish before activation; after activation zero warnings produce only INFO and same-day retries skip', async () => {

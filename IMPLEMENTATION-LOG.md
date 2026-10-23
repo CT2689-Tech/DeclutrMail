@@ -470,3 +470,9 @@ Logging search pages within the current UTC day and refuses incomplete searches.
 Plan hashes normalize provider object-key ordering; native reads with identical
 policy values had produced different hashes from map ordering alone. Regression
 checks cover both provider behaviors without weakening policy-value drift checks.
+
+The native preparation rehearsal then exposed protobuf omission of a zero
+threshold on the new reconnect diagnostic. Readback now recognizes that exact
+default, keeps other missing fields strict, and retains mismatched definitions
+in the encrypted failure report. A changed nonzero threshold still fails and
+rolls back all resources created during preparation. Relates to D159 and D160.
