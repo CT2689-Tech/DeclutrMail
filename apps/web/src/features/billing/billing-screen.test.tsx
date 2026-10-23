@@ -281,6 +281,7 @@ describe('BillingScreen — designed states', () => {
     stubSubscription(() => new Promise<Response>(() => {}));
     renderScreen();
     expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Plan & billing', level: 1 })).toBeInTheDocument();
   });
 
   it('503 BILLING_DISABLED renders the honest dark-state, not an error', async () => {
@@ -296,7 +297,9 @@ describe('BillingScreen — designed states', () => {
     expect(screen.getByTestId('plan-option-pro')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
     expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Compare plans' })).toHaveAttribute('href', '/pricing');
+    expect(
+      within(screen.getByTestId('plan-picker')).getByRole('link', { name: 'Compare plans' }),
+    ).toHaveAttribute('href', '/pricing');
     expect(screen.queryByText(/couldn’t load/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
@@ -5332,6 +5335,13 @@ describe('D119 billing-artifact render gates (screen-level)', () => {
     await screen.findByTestId('current-plan-card');
     expect(screen.queryByTestId('invoice-history')).not.toBeInTheDocument();
     expect(screen.queryByTestId('payment-method-card')).not.toBeInTheDocument();
+    const contents = screen.getByRole('navigation', { name: 'On this page' });
+    expect(within(contents).queryByRole('link', { name: 'Payment details' })).toBeNull();
+    expect(within(contents).queryByRole('link', { name: 'Invoices' })).toBeNull();
+    expect(within(contents).getByRole('link', { name: 'Your plan' })).toHaveAttribute(
+      'href',
+      '#plan',
+    );
   });
 
   it('free-but-PREVIOUSLY-paid keeps invoices reachable — the tax need outlives the subscription', async () => {
@@ -5348,9 +5358,34 @@ describe('D119 billing-artifact render gates (screen-level)', () => {
     expect(screen.queryByTestId('payment-method-card')).not.toBeInTheDocument();
   });
 
-  it('an active subscriber gets both sections', async () => {
+  it('keeps plan, payment and invoices visible together with working section shortcuts', async () => {
     stubBillingReads(PRO_SUB);
     renderScreen();
+    await screen.findByTestId('current-plan-card');
+    const contents = screen.getByRole('navigation', { name: 'On this page' });
+    const shortcuts = within(contents).getAllByRole('link');
+    expect(shortcuts.map((link) => link.textContent)).toEqual([
+      'Your plan',
+      'Payment details',
+      'Invoices',
+      'Compare plans',
+    ]);
+    const targets = shortcuts.map((link) => {
+      const target = document.getElementById(link.getAttribute('href')!.slice(1));
+      expect(target).toBeVisible();
+      expect(target).toHaveAttribute('tabindex', '-1');
+      expect(within(target!).getByRole('heading', { level: 2 })).toBeInTheDocument();
+      return target!;
+    });
+    for (let index = 1; index < targets.length; index++) {
+      expect(
+        targets[index - 1]!.compareDocumentPosition(targets[index]!) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    // The existing checkout-intent deep link reaches the picker itself.
+    expect(targets.at(-1)).toBe(screen.getByTestId('plan-picker'));
     expect(await screen.findByTestId('payment-method-card')).toBeInTheDocument();
     expect(await screen.findByTestId('invoice-history')).toBeInTheDocument();
   });

@@ -672,12 +672,17 @@ export function PlanPicker({
 
   return (
     <section
+      id="change-plan"
+      tabIndex={-1}
       aria-label="Plans"
       data-testid="plan-picker"
       style={{
         display: 'flex',
         flexDirection: 'column',
         gap: 16,
+        scrollMarginTop: 24,
+        paddingTop: 24,
+        borderTop: `1px solid ${color.border}`,
       }}
     >
       <div
