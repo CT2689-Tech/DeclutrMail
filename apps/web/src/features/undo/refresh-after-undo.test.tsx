@@ -23,6 +23,43 @@ function ReportWatch() {
 afterEach(() => resetFetchStub());
 
 describe('refreshAfterUndo', () => {
+  it('refreshes active sender-rule counts without replacing an open approval snapshot', async () => {
+    let matchingCount = 0;
+    let reads = 0;
+    const client = createTestQueryClient();
+    const previewKey = ['autopilot-sender-rule-preview', 'mb', 'rule'] as const;
+    client.setQueryData(previewKey, { previewId: 'approved-snapshot', totalCount: 3 });
+    function RuleWatch() {
+      useQuery({
+        queryKey: ['autopilot-sender-rules', 'mb'],
+        queryFn: async () => {
+          reads += 1;
+          return { matchingCount };
+        },
+        staleTime: 30_000,
+      });
+      return null;
+    }
+    const view = render(
+      <QueryWrapper client={client}>
+        <RuleWatch />
+      </QueryWrapper>,
+    );
+    await waitFor(() => expect(reads).toBe(1));
+    matchingCount = 3;
+
+    await refreshAfterUndo(client, 'mb');
+
+    expect(reads).toBe(2);
+    expect(client.getQueryData(['autopilot-sender-rules', 'mb'])).toEqual({ matchingCount: 3 });
+    expect(client.getQueryState(previewKey)?.isInvalidated).toBe(false);
+    expect(client.getQueryData(previewKey)).toEqual({
+      previewId: 'approved-snapshot',
+      totalCount: 3,
+    });
+    view.unmount();
+  });
+
   it('returns during the rebuild wait when the signal aborts', async () => {
     let reads = 0;
     installFetchStub([
