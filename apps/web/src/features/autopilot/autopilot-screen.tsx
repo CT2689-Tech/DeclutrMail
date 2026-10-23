@@ -35,6 +35,7 @@ import {
 import { useApproveAllForRule } from './api/use-approve-all-for-rule';
 import { useApproveMatches } from './api/use-approve-matches';
 import { useAutopilotRules } from './api/use-autopilot-rules';
+import { isSenderRulesUnsupported, useSenderRules } from './api/use-sender-rules';
 import { useDismissMatch } from './api/use-dismiss-match';
 import { usePatchRule } from './api/use-patch-rule';
 import { usePatternSuggestion } from './api/use-pattern-suggestion';
@@ -110,7 +111,8 @@ const PENDING_BUFFER_CAP = AUTOPILOT_PENDING_PAGE_SIZE;
  */
 export function AutopilotRoute() {
   const hydrated = useHydrated();
-  const mailboxId = useOptionalAuth()?.me.activeMailboxId ?? null;
+  const auth = useOptionalAuth();
+  const mailboxId = auth?.me.activeMailboxId ?? null;
   const [pages, setPages] = useState<{ mailboxId: string | null; cursors: string[] }>({
     mailboxId,
     cursors: [],
@@ -122,6 +124,8 @@ export function AutopilotRoute() {
   const rulesQuery = useAutopilotRules();
   const suggestionsQuery = usePendingSuggestions(mailboxId, cursor);
   const patternQuery = usePatternSuggestion();
+  const senderRulesEntitled = auth !== null && hasCapability(auth.me.tier, 'autopilot');
+  const senderRulesQuery = useSenderRules(mailboxId ?? undefined, senderRulesEntitled);
   const refetchRules = rulesQuery.refetch;
   const refetchSuggestions = suggestionsQuery.refetch;
   const refetchPattern = patternQuery.refetch;
@@ -169,6 +173,37 @@ export function AutopilotRoute() {
     retry,
   ]);
 
+  // Adopt capability failures only after the server and browser share their first render.
+  const unsupported =
+    hydrated &&
+    senderRulesEntitled &&
+    mailboxId !== null &&
+    isSenderRulesUnsupported(senderRulesQuery.error);
+  const presetScreen = (
+    <AutopilotScreen
+      embedded={!unsupported}
+      state={state}
+      pendingPagination={{
+        pageKey: `${mailboxId ?? 'none'}:${cursor ?? 'first'}`,
+        total: hydrated ? (suggestionsQuery.data?.meta?.total ?? null) : null,
+        hasNext: hydrated ? (suggestionsQuery.data?.meta?.pagination?.hasMore ?? false) : false,
+        hasPrevious: cursors.length > 0,
+        loading: suggestionsQuery.isFetching,
+        onNext: () => {
+          const next = suggestionsQuery.data?.meta?.pagination?.nextCursor;
+          if (next) setPages({ mailboxId, cursors: [...cursors, next] });
+        },
+        onPrevious: () => setPages({ mailboxId, cursors: cursors.slice(0, -1) }),
+        onNewest: () => setPages({ mailboxId, cursors: [] }),
+      }}
+      suggestionsState={
+        hydrated ? sectionState(suggestionsQuery, refetchSuggestions) : { kind: 'loading' }
+      }
+      patternState={hydrated ? sectionState(patternQuery, refetchPattern) : { kind: 'loading' }}
+    />
+  );
+  if (unsupported) return presetScreen;
+
   return (
     <div style={{ ...editorialColumnStyle, display: 'grid', gap: 36 }}>
       <SenderRuleLibrary
@@ -190,27 +225,7 @@ export function AutopilotRoute() {
               ? 'Review unavailable'
               : 'Checking review…'}
         </summary>
-        <AutopilotScreen
-          embedded
-          state={state}
-          pendingPagination={{
-            pageKey: `${mailboxId ?? 'none'}:${cursor ?? 'first'}`,
-            total: hydrated ? (suggestionsQuery.data?.meta?.total ?? null) : null,
-            hasNext: hydrated ? (suggestionsQuery.data?.meta?.pagination?.hasMore ?? false) : false,
-            hasPrevious: cursors.length > 0,
-            loading: suggestionsQuery.isFetching,
-            onNext: () => {
-              const next = suggestionsQuery.data?.meta?.pagination?.nextCursor;
-              if (next) setPages({ mailboxId, cursors: [...cursors, next] });
-            },
-            onPrevious: () => setPages({ mailboxId, cursors: cursors.slice(0, -1) }),
-            onNewest: () => setPages({ mailboxId, cursors: [] }),
-          }}
-          suggestionsState={
-            hydrated ? sectionState(suggestionsQuery, refetchSuggestions) : { kind: 'loading' }
-          }
-          patternState={hydrated ? sectionState(patternQuery, refetchPattern) : { kind: 'loading' }}
-        />
+        {presetScreen}
       </details>
     </div>
   );

@@ -17,7 +17,6 @@ import { useBatchStatus } from '@/lib/api/use-action';
 import { apiErrorCode } from '@/lib/api/client';
 import { newIdempotencyKey } from '@/lib/api/actions';
 import {
-  fetchSenderRules,
   saveSenderRule,
   retireSenderRule,
   setSenderRuleMode,
@@ -31,6 +30,7 @@ import { track } from '@/lib/posthog';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import type { AutopilotRuleDto } from '@/lib/api/autopilot';
 import { usePauseAll } from './api/use-pause-all';
+import { useSenderRules } from './api/use-sender-rules';
 import { ConfirmModalFrame } from './confirm-modal-frame';
 import { SenderRuleEditor, useDebouncedQuery } from './sender-rule-editor';
 import styles from './sender-rule-library.module.css';
@@ -138,12 +138,7 @@ export function SenderRuleLibraryScope({
             ? rule.mode === 'paused' || !rule.enabled
             : rule.enabled && rule.mode !== 'paused' && rule.matchingMessageCount > 0)),
     );
-  const rules = useQuery({
-    queryKey: ['autopilot-sender-rules', mailboxId],
-    queryFn: ({ signal }) => fetchSenderRules(signal, mailboxId),
-    retry: false,
-    enabled: mailboxId !== undefined && entitled,
-  });
+  const rules = useSenderRules(mailboxId, entitled);
   const planLocked = !entitled || apiErrorCode(rules.error) === 'PRO_FEATURE_REQUIRED';
   const runningPresets = presetRules.filter((rule) => rule.enabled && rule.mode !== 'paused');
   const runningCustom = (rules.data ?? []).filter((rule) => rule.enabled && rule.mode !== 'paused');
@@ -720,7 +715,7 @@ export function SenderRuleLibraryScope({
       {pauseOpen && !planLocked && (
         <ConfirmModalFrame
           title={`Pause ${num(runningCount)} rules?`}
-          subtitle="Stop rule matching and unattended preset actions."
+          subtitle="Pause rules and automatic preset cleanups."
           note="Resume individual rules when you’re ready."
           confirmLabel="Pause all"
           confirmBusyLabel="Pausing…"
