@@ -901,6 +901,8 @@ export interface BatchStatusResult {
   total: number;
   done: number;
   failed: number;
+  /** Known failure codes only; older API builds may omit them. */
+  failureCodes?: string[];
   requestedCount: number;
   affectedCount: number;
   /**

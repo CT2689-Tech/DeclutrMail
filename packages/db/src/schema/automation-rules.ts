@@ -21,12 +21,11 @@ import { mailboxAccounts } from './mailbox-accounts';
  *
  * One row is one Autopilot rule (preset or custom) for one mailbox.
  *
- * V2 launch ships ONLY preset rules (`is_preset = true`); the custom rule
- * builder UI is flag-disabled per D197, but the schema accepts
- * `is_preset = false` rows so the V2.1 unlock is a pure API + UI change
- * (no migration). D234 lives at the API layer.
+ * Presets retain their Observe/Active lifecycle. The founder-approved
+ * sender-list builder uses `is_preset = false` rows in Observe or Paused
+ * mode only; cleanup requires an explicit, versioned preview confirmation.
  *
- * Lifecycle (D10 + D101):
+ * Preset lifecycle (D10 + D101):
  *   1. New mailbox gets the 5 preset rows seeded with `enabled = false`,
  *      `mode = 'observe'`. The seed is an application-level concern —
  *      this migration creates only the empty table per the Atlas
@@ -54,8 +53,8 @@ import { mailboxAccounts } from './mailbox-accounts';
  * `conditions` and `action_payload` are jsonb. For presets, the matcher
  * logic lives in code (`packages/workers/src/autopilot-presets.ts` —
  * lands with the apply worker PR); the jsonb here mirrors the rule for
- * the read service / UI render. For custom rules (V2.1), the jsonb IS
- * the source of truth interpreted by the runtime matcher.
+ * the read service / UI render. Sender-list rules store bounded sender
+ * keys and age criteria; they use the reviewed label-action pipeline.
  *
  * `confidence_threshold` is non-null only for the two threshold-bearing
  * presets (#1, #2). It is a `numeric(3,2)` to match the engine's
@@ -78,8 +77,7 @@ import { mailboxAccounts } from './mailbox-accounts';
  *     apply worker's hot load path scans only enabled rules.
  *
  * CHECK invariant: `is_preset = true` IFF `preset_key IS NOT NULL`.
- * Custom rules MUST set `is_preset = false` AND `preset_key = NULL`;
- * the API layer additionally rejects `is_preset = false` at V2 (D234).
+ * Custom rules MUST set `is_preset = false` AND `preset_key = NULL`.
  */
 
 /** Lifecycle state for a rule. D10 + D101 + D105. */
@@ -207,9 +205,7 @@ export const automationRules = pgTable(
       .where(sql`${table.enabled} = true`),
     /**
      * Preset/custom invariant: `is_preset` and `preset_key IS NOT NULL`
-     * agree. The API layer additionally rejects `is_preset = false` at
-     * V2 (D234), but the schema enforces the structural invariant
-     * regardless of API version.
+     * agree, regardless of the API version.
      */
     presetKeyConsistent: check(
       'automation_rules_preset_key_consistent',
