@@ -250,70 +250,54 @@ async function withBillingFixture(
   run: () => Promise<void>,
 ): Promise<void> {
   const sql = dbConnect();
-  const [workspace] = await sql<{ tier: string }[]>`
-    SELECT tier FROM workspaces WHERE id = ${BILLING_SEED.workspaceId}
-  `;
-  const [grant] = await sql<
-    {
-      tier: string;
-      reason: string;
-      granted_by: string;
-      expires_at: Date | null;
-      revoked_at: Date | null;
-    }[]
-  >`
-    SELECT tier, reason, granted_by, expires_at, revoked_at
-    FROM entitlement_grants
-    WHERE email = ${BILLING_SEED.email}
-  `;
   try {
-    await sql`DELETE FROM subscriptions WHERE workspace_id = ${BILLING_SEED.workspaceId}`;
-    if (setup === 'complimentary-pro') {
-      await sql`UPDATE workspaces SET tier = 'pro' WHERE id = ${BILLING_SEED.workspaceId}`;
-      // Comp uniqueness is partial on source = 'comp'. A bare
-      // ON CONFLICT (email) does not match that index.
-      await sql`
-        INSERT INTO entitlement_grants (email, tier, reason, granted_by, source)
-        VALUES (${BILLING_SEED.email}, 'pro', 'hydration smoke', 'e2e', 'comp')
-        ON CONFLICT (email) WHERE source = 'comp' DO UPDATE
-        SET tier = 'pro', reason = 'hydration smoke', granted_by = 'e2e',
-            expires_at = NULL, revoked_at = NULL, updated_at = now()
-      `;
-    } else if (setup === 'free') {
-      await sql`DELETE FROM entitlement_grants WHERE email = ${BILLING_SEED.email}`;
-      await sql`UPDATE workspaces SET tier = 'free' WHERE id = ${BILLING_SEED.workspaceId}`;
-    } else {
-      await sql`DELETE FROM entitlement_grants WHERE email = ${BILLING_SEED.email}`;
-      await sql`UPDATE workspaces SET tier = 'plus' WHERE id = ${BILLING_SEED.workspaceId}`;
-      await sql`
-        INSERT INTO subscriptions (
-          workspace_id, provider, provider_subscription_id, tier, status,
-          provider_price_id, billing_cycle, current_period_end
-        ) VALUES (
-          ${BILLING_SEED.workspaceId}, 'paddle', 'sub_e2e_hydration_paid', 'plus', 'active',
-          'pri_e2e_hydration', 'monthly', now() + interval '30 days'
-        )
-      `;
-    }
-    await run();
-  } finally {
-    await sql`DELETE FROM subscriptions WHERE workspace_id = ${BILLING_SEED.workspaceId} AND provider_subscription_id = 'sub_e2e_hydration_paid'`;
-    if (workspace) {
+    const [workspace] = await sql<{ tier: string }[]>`
+      SELECT tier FROM workspaces WHERE id = ${BILLING_SEED.workspaceId}
+    `;
+    const grants = await sql<{ id: string }[]>`
+      SELECT id FROM entitlement_grants WHERE email = ${BILLING_SEED.email}
+    `;
+    const subscriptions = await sql<{ id: string }[]>`
+      SELECT id FROM subscriptions WHERE workspace_id = ${BILLING_SEED.workspaceId}
+    `;
+    if (!workspace) throw new Error('Hydration fixture requires its seeded synthetic workspace.');
+    // Fail before any write or teardown if the disposable seed has billing state.
+    expect(grants, 'Hydration fixture requires an empty grant baseline').toHaveLength(0);
+    expect(subscriptions, 'Hydration fixture requires an empty subscription baseline').toHaveLength(
+      0,
+    );
+
+    try {
+      if (setup === 'complimentary-pro') {
+        await sql`UPDATE workspaces SET tier = 'pro' WHERE id = ${BILLING_SEED.workspaceId}`;
+        await sql`
+          INSERT INTO entitlement_grants (email, tier, reason, granted_by, source)
+          VALUES (${BILLING_SEED.email}, 'pro', 'hydration smoke', 'e2e', 'comp')
+        `;
+      } else if (setup === 'free') {
+        await sql`UPDATE workspaces SET tier = 'free' WHERE id = ${BILLING_SEED.workspaceId}`;
+      } else {
+        await sql`UPDATE workspaces SET tier = 'plus' WHERE id = ${BILLING_SEED.workspaceId}`;
+        await sql`
+          INSERT INTO subscriptions (
+            workspace_id, provider, provider_subscription_id, tier, status,
+            provider_price_id, billing_cycle, current_period_end
+          ) VALUES (
+            ${BILLING_SEED.workspaceId}, 'paddle', 'sub_e2e_hydration_paid', 'plus', 'active',
+            'pri_e2e_hydration', 'monthly', now() + interval '30 days'
+          )
+        `;
+      }
+      await run();
+    } finally {
+      await sql`DELETE FROM subscriptions WHERE workspace_id = ${BILLING_SEED.workspaceId} AND provider_subscription_id = 'sub_e2e_hydration_paid'`;
       await sql`UPDATE workspaces SET tier = ${workspace.tier} WHERE id = ${BILLING_SEED.workspaceId}`;
-    }
-    if (grant) {
       await sql`
-        UPDATE entitlement_grants
-        SET tier = ${grant.tier},
-            reason = ${grant.reason},
-            granted_by = ${grant.granted_by},
-            expires_at = ${grant.expires_at},
-            revoked_at = ${grant.revoked_at}
-        WHERE email = ${BILLING_SEED.email}
+        DELETE FROM entitlement_grants WHERE email = ${BILLING_SEED.email}
+          AND source = 'comp' AND reason = 'hydration smoke' AND granted_by = 'e2e'
       `;
-    } else {
-      await sql`DELETE FROM entitlement_grants WHERE email = ${BILLING_SEED.email}`;
     }
+  } finally {
     await sql.end();
   }
 }
