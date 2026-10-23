@@ -99,6 +99,12 @@ export function gcpToken() {
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
 }
+/** One token for a setup run. Tests pass their own request and never call gcloud. */
+export function gcpSend(request) {
+  if (typeof request === 'function') return request;
+  const token = gcpToken();
+  return (url, method = 'GET', body) => gcpRequest(url, token, method, body);
+}
 export async function gcpRequest(url, token, method = 'GET', body) {
   const res = await fetch(url, {
     method,

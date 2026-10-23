@@ -12,6 +12,11 @@ export function assertDailyRoutingReady(policies, { reconnect = false, verified 
       throw new Error('Daily warning email receipt must be verified first');
   }
 }
+/** Emergency setup applies pass allowUnverified. Channel preservation is separate. */
+export function enforceDailyRouting(policies, { allowUnverified = false, ...options } = {}) {
+  if (allowUnverified) return;
+  assertDailyRoutingReady(policies, options);
+}
 export const DAILY_POLICIES = new Set([
   'DeclutrMail API sustained high latency',
   'DeclutrMail Cloud Run memory pressure',
@@ -34,25 +39,28 @@ const SUBJECTS = {
   'DeclutrMail Cloud Run memory pressure': 'DeclutrMail memory pressure warning',
   'DeclutrMail database connection pressure': 'DeclutrMail database connection warning',
   'DeclutrMail scheduler success overdue':
-    'DeclutrMail scheduled work overdue — inspect the run ledger',
+    'DeclutrMail scheduled work overdue — check recent scheduled runs',
   'DeclutrMail runtime collection repeatedly failing':
-    'DeclutrMail monitoring reads failing — inspect collection errors',
-  [COVERAGE_POLICY]: 'DeclutrMail monitoring coverage missing — inspect worker observations',
+    'DeclutrMail monitoring reads failing — check the monitoring job',
+  [COVERAGE_POLICY]: 'DeclutrMail monitoring coverage missing — check worker health',
   [RECONNECT_POLICY]: 'DeclutrMail Gmail reconnection required',
   [RECONNECT_BURST_POLICY]:
     'Multiple DeclutrMail Gmail connections need reconnection — investigate authorization',
   [DIGEST_POLICY]: 'DeclutrMail daily operational warnings',
   'Mailbox lock: leak or acquisition failure':
-    'DeclutrMail mailbox lock failure — inspect lock ownership',
+    'DeclutrMail mailbox lock failure — check which process holds it',
 };
 
-export function notificationPolicy(policy, channelName) {
+export function notificationPolicy(policy, channelName, { preserveChannels = false } = {}) {
   const value = structuredClone(policy);
   const daily = DAILY_POLICIES.has(value.displayName);
   const outage = OUTAGES.has(value.displayName);
   const digest = value.displayName === DIGEST_POLICY;
   value.severity = daily || digest ? 'WARNING' : outage ? 'CRITICAL' : 'ERROR';
-  value.userLabels = { ...value.userLabels, notification_route: daily ? 'daily' : 'immediate' };
+  value.userLabels = {
+    ...value.userLabels,
+    notification_route: daily && !preserveChannels ? 'daily' : 'immediate',
+  };
   value.documentation = {
     ...value.documentation,
     mimeType: 'text/markdown',
@@ -78,7 +86,14 @@ export function notificationPolicy(policy, channelName) {
     if (!value.documentation.content?.includes('A CLOSED notification is an incident closure'))
       value.documentation.content = (value.documentation.content ?? '') + note;
   }
-  if (channelName) value.notificationChannels = daily ? [] : [channelName];
+  if (channelName) {
+    if (preserveChannels) {
+      // Emergency setup must not take a policy off email. Keep a channel list
+      // that already delivers; otherwise use the existing admin channel.
+      const kept = policy.notificationChannels;
+      value.notificationChannels = kept?.length ? [...kept] : [channelName];
+    } else value.notificationChannels = daily ? [] : [channelName];
+  }
   return value;
 }
 
