@@ -585,7 +585,7 @@ describe('(app) layout integration mounts — U-NAV', () => {
     expect(screen.queryByRole('navigation', { name: 'Cleanup views' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Triage' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Screener' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Workspace settings' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
     const primary = within(screen.getByRole('navigation', { name: 'Primary' }));
     expect(primary.getAllByRole('button').map((row) => row.getAttribute('aria-label'))).toEqual([
       'Home',

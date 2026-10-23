@@ -1,0 +1,40 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+
+.heading {
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.description {
+  margin: 12px 0 0;
+  max-width: 640px;
+  color: var(--dm-fg-muted);
+  font-size: 13px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.compareLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.loading {
+  display: grid;
+  gap: 16px;
+}

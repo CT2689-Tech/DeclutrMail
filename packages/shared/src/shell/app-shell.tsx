@@ -12,6 +12,7 @@ import {
   typography,
 } from '../tokens/tokens';
 import { useFocusTrap } from '../hooks/use-focus-trap';
+import { OVERLAY_Z } from '../tokens/overlay-layers';
 import { BILLING_NAME } from '../copy/screen-decisions';
 import { useLabels, type LabelKey } from '../hooks/use-labels';
 import { UNDO_TRAY_INSET_VAR } from '../components/undo-tray/undo-tray';
@@ -39,6 +40,7 @@ export function AppShell({
   active,
   onNavigate,
   onNavigateIntent,
+  hrefFor,
   counts,
   locks,
   routeKey,
@@ -51,6 +53,8 @@ export function AppShell({
   onNavigate: (id: string) => void;
   /** Early signal used by framework hosts to prefetch nav destinations. */
   onNavigateIntent?: ((id: string) => void) | undefined;
+  /** Real account URLs, preserving modified-click and open-in-new-tab behavior. */
+  hrefFor?: ((id: string) => string) | undefined;
   /** Per-item count — see `Sidebar`'s `counts` doc. */
   counts?: Partial<Record<string, NavCount>>;
   /** Per-item lock marker — see `Sidebar`'s `locks` doc. */
@@ -168,7 +172,8 @@ export function AppShell({
           onNavigateIntent={onNavigateIntent}
           counts={counts ?? {}}
           locks={locks ?? {}}
-          collapsed
+          responsive
+          hrefFor={hrefFor}
         />
       </div>
 
@@ -180,7 +185,7 @@ export function AppShell({
             onClick={() => setDrawerOpen(false)}
             aria-hidden="true"
             className="dm-scrim"
-            style={{ position: 'fixed', inset: 0, zIndex: 80 }}
+            style={{ position: 'fixed', inset: 0, zIndex: OVERLAY_Z.modal }}
           />
           <div
             ref={drawerRef}
@@ -192,7 +197,7 @@ export function AppShell({
               top: 0,
               bottom: 0,
               left: 0,
-              zIndex: 81,
+              zIndex: OVERLAY_Z.sheet,
               width: 'min(340px, 100vw)',
               background: color.card,
               color: color.fg,

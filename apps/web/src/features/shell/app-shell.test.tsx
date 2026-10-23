@@ -68,8 +68,8 @@ describe('AppShell interactions', () => {
   });
 });
 
-describe('AppShell — fixed workspace rail', () => {
-  it('ignores old expansion preference and always renders five icon groups', () => {
+describe('AppShell — responsive workspace navigation', () => {
+  it('ignores old expansion preference and keeps five workspace groups', () => {
     window.localStorage.setItem('dm.sidebar.collapsed', 'false');
     render(
       <AppShell active="quiet" onNavigate={vi.fn()}>
@@ -84,7 +84,7 @@ describe('AppShell — fixed workspace rail', () => {
     expect(screen.queryByRole('button', { name: /Expand sidebar|Collapse sidebar/ })).toBeNull();
     expect(window.localStorage.getItem('dm.sidebar.collapsed')).toBe('false');
   });
-  it('routes brand and workspace settings controls', () => {
+  it('routes brand and settings controls', () => {
     const onNavigate = vi.fn();
     render(
       <AppShell active="senders" onNavigate={onNavigate}>
@@ -92,9 +92,28 @@ describe('AppShell — fixed workspace rail', () => {
       </AppShell>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'DeclutrMail Home' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Workspace settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
     expect(onNavigate.mock.calls).toEqual([['home'], ['settings']]);
   });
+  it('preserves real account URLs and modified clicks while using host routing normally', () => {
+    const onNavigate = vi.fn();
+    render(
+      <AppShell active="billing" onNavigate={onNavigate} hrefFor={(id) => `/${id}`}>
+        <div>Billing</div>
+      </AppShell>,
+    );
+    const account = within(screen.getByRole('navigation', { name: 'Account navigation' }));
+    const settings = account.getByRole('link', { name: 'Settings' });
+    const billing = account.getByRole('link', { name: 'Plan & billing' });
+    expect(settings).toHaveAttribute('href', '/settings');
+    expect(billing).toHaveAttribute('href', '/billing');
+    expect(billing).toHaveAttribute('aria-current', 'page');
+    expect(fireEvent.click(settings, { ctrlKey: true })).toBe(true);
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(fireEvent.click(settings)).toBe(false);
+    expect(onNavigate).toHaveBeenCalledWith('settings');
+  });
+
   it('offers account utilities without duplicating the primary routes and closes after navigation', () => {
     const onNavigate = vi.fn();
     render(

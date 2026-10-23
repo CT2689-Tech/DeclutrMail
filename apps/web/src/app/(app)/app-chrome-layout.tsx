@@ -113,7 +113,7 @@ function shellRoute(id: string): string {
  *
  * Account menu (D116 surface — partial): the topbar's right slot
  * carries the switcher / disconnect / connect-another / sign-out menu,
- * plus the Settings and Billing links that used to be sidebar rows.
+ * plus shortcuts to the sidebar's Settings and Billing destinations.
  * The menu reads `useAuth` so the AuthProvider must wrap this layout —
  * it does, right here: since the D134 public-route split, the
  * `(app)` group owns its own AuthProvider (the root `providers.tsx`
@@ -314,6 +314,7 @@ function AppChrome({ children }: { children: ReactNode }) {
             }
             onNavigate={(id) => router.push(shellRoute(id))}
             onNavigateIntent={(id) => router.prefetch(shellRoute(id))}
+            hrefFor={shellRoute}
             routeKey={pathname}
             locks={navLocks}
             counts={{

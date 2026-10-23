@@ -91,7 +91,7 @@ export function GroupTitle({
     <Tag
       tabIndex={tabIndex}
       style={{
-        margin: '0 0 8px',
+        margin: '0 0 14px',
         paddingLeft: inset ? ROW_INSET : 0,
         ...tokens.typography.sectionTitle,
         color: color.fg,
@@ -126,11 +126,11 @@ export function SettingsGroup({
   return (
     <section
       id={id}
-      tabIndex={focusable ? -1 : undefined}
+      tabIndex={focusable || id ? -1 : undefined}
       aria-label={title}
-      style={{ scrollMarginTop: 24, fontFamily: font.sans, ...style }}
+      style={{ scrollMarginTop: 24, fontFamily: font.sans, minWidth: 0, ...style }}
     >
-      <GroupTitle inset {...(headingTabIndex !== undefined ? { tabIndex: headingTabIndex } : {})}>
+      <GroupTitle {...(headingTabIndex !== undefined ? { tabIndex: headingTabIndex } : {})}>
         {title}
       </GroupTitle>
       <style>{GROUP_CSS}</style>
@@ -168,8 +168,8 @@ const rowStyle = {
   justifyContent: 'space-between',
   flexWrap: 'wrap',
   gap: 12,
-  minHeight: 56,
-  padding: `0 ${ROW_INSET}px`,
+  minHeight: 64,
+  padding: `2px ${ROW_INSET}px`,
   boxSizing: 'border-box',
 } as const;
 
@@ -188,14 +188,24 @@ export function SettingsRow({
 }) {
   return (
     <div className="dm-settings-row" style={{ ...rowStyle, ...style }}>
-      <div style={{ minWidth: 0, flex: '1 1 200px', padding: '10px 0' }}>
+      <div style={{ minWidth: 0, flex: '1 1 200px', padding: '10px 0', overflowWrap: 'anywhere' }}>
         <div style={{ fontSize: text.md, fontWeight: 500, color: color.fg }}>{label}</div>
         {detail != null && (
           <div style={{ fontSize: text.sm, color: color.fgMuted, marginTop: 2 }}>{detail}</div>
         )}
       </div>
       {children != null && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 8,
+            minWidth: 0,
+            maxWidth: '100%',
+            overflowWrap: 'anywhere',
+          }}
+        >
           {children}
         </div>
       )}
@@ -228,6 +238,8 @@ export function DrillRow({
           fontSize: text.md,
           color: color.fgMuted,
           minWidth: 0,
+          textAlign: 'right',
+          overflowWrap: 'anywhere',
         }}
       >
         {value}

@@ -34,7 +34,7 @@ const meta: StoryMeta<typeof AppShell> = {
     docs: {
       description: {
         component:
-          'App chrome. The fixed 72px rail groups the workspace into Home, Clean up, Automations, Catch up and Activity, with Settings below. Section navigation exposes child screens, counts and plan gates. The top bar holds account controls and contextual help. At 760px and below, the same five groups form a bottom navigation bar; the hamburger opens Settings, Billing, Help and account utilities.',
+          'App chrome. The responsive sidebar groups the workspace into Home, Cleanup, Automations, Catch up and Activity. Settings and Plan & billing sit in a bottom Account group. Labels appear at 1100px and above; tablets use a 72px rail. Section navigation exposes child screens, counts and plan gates. The top bar holds account controls and contextual help. At 760px and below, the same five groups form a bottom navigation bar; the hamburger opens Settings, Billing, Help and account utilities.',
       },
     },
   },
@@ -116,4 +116,40 @@ export const IconRail: Story = {
 export const MobileTabBar: Story = {
   parameters: { viewport: { defaultViewport: 'mobile1' } },
   render: Default.render!,
+};
+
+export const AccountSettings: Story = {
+  render: () => (
+    <div style={{ height: '100vh' }}>
+      <AppShell
+        active="settings"
+        onNavigate={() => undefined}
+        hrefFor={(id) => `/${id}`}
+        accountLabel="review@example.com"
+      >
+        <div style={{ padding: 32 }}>
+          <h1>Settings</h1>
+          <p>Manage your Gmail accounts and preferences.</p>
+        </div>
+      </AppShell>
+    </div>
+  ),
+};
+
+export const PlanAndBilling: Story = {
+  render: () => (
+    <div style={{ height: '100vh' }}>
+      <AppShell
+        active="billing"
+        onNavigate={() => undefined}
+        hrefFor={(id) => `/${id}`}
+        accountLabel="review@example.com"
+      >
+        <div style={{ padding: 32 }}>
+          <h1>Plan &amp; billing</h1>
+          <p>Check your current access and usage.</p>
+        </div>
+      </AppShell>
+    </div>
+  ),
 };

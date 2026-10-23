@@ -28,7 +28,7 @@ const render = (props: Partial<Parameters<typeof Sidebar>[0]> = {}) =>
   renderToStaticMarkup(<Sidebar active="senders" onNavigate={() => {}} collapsed {...props} />);
 
 describe('Sidebar — approved workspace rail', () => {
-  it('renders five named groups in order at 72px, plus brand and settings', () => {
+  it('renders five named groups in order at 72px, plus brand and account destinations', () => {
     const html = render();
     expect(html).toContain('width:72px');
     let position = -1;
@@ -38,10 +38,41 @@ describe('Sidebar — approved workspace rail', () => {
       position = next;
     }
     expect(html).toContain('aria-label="DeclutrMail Home"');
-    expect(html).toContain('aria-label="Workspace settings"');
+    expect(html).toContain('aria-label="Settings"');
     expect(html).not.toContain('Expand sidebar');
     expect(html).not.toContain('Collapse sidebar');
   });
+
+  it('keeps five labelled groups and separate account links in responsive mode', () => {
+    const html = render({
+      collapsed: false,
+      responsive: true,
+      active: 'settings/privacy',
+      hrefFor: (id) => `/${id}`,
+    });
+    expect(html).toContain('dm-responsive-sidebar');
+    for (const name of groups) expect(html).toContain(`>${name}</span>`);
+    expect(html.match(/<aside/g)).toHaveLength(1);
+    expect(html.match(/aria-current="page"/g)).toHaveLength(1);
+    expect(html).toContain('aria-label="Account navigation"');
+    expect(html).toContain(
+      'aria-label="Settings" aria-current="page" title="Settings" href="/settings"',
+    );
+    expect(html).toContain('href="/billing"');
+    expect(html.indexOf('href="/settings"')).toBeLessThan(html.indexOf('href="/billing"'));
+    expect(html).not.toContain('>Triage</span>');
+  });
+
+  it.each(['settings', 'settings/privacy', 'settings/help', 'billing'])(
+    'has exactly one account destination selected for %s',
+    (active) => {
+      const html = render({ active, responsive: true, collapsed: false });
+      expect(html.match(/aria-current="page"/g)).toHaveLength(1);
+      expect(html).toContain(
+        `aria-label="${active === 'billing' ? 'Plan &amp; billing' : 'Settings'}" aria-current="page"`,
+      );
+    },
+  );
 
   it('assigns visible destinations once and retains legacy review aliases in Cleanup', () => {
     expect(NAV.map((item) => item.id)).toEqual(routes);

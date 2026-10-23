@@ -61,9 +61,12 @@ export function PaymentMethodCard({
 
   return (
     <section
+      id="payment"
+      tabIndex={-1}
       aria-label="Payment method"
       data-testid="payment-method-card"
       style={{
+        scrollMarginTop: 24,
         background: color.card,
         // Past due is said in amber lettering below; the ring only marks
         // which surface needs attention.
@@ -77,7 +80,7 @@ export function PaymentMethodCard({
         gap: 10,
       }}
     >
-      <GroupTitle as="div">Payment method</GroupTitle>
+      <GroupTitle>Payment method</GroupTitle>
 
       <p style={{ margin: 0, fontSize: text.md, lineHeight: 1.55, color: color.fgMuted }}>
         {showSupportPath ? (
