@@ -96,8 +96,8 @@ passed serially, full lint and formatting passed, and implementation-log/policy
 audits passed. The broad web run had 4,884 passing tests, three existing skips
 and one obsolete Settings loading-geometry assertion. Updated that assertion to
 the chosen 1120px/28px layout and added Billing loading coverage; all 236 affected
-tests then passed. A fresh complete web run and Storybook build are in progress;
-protected CI and release evidence are pending.
+tests then passed. Storybook build passed. A fresh complete web run is in progress; protected CI
+and release evidence are pending.
 
 The repository's isolated launcher initially failed because the current macOS
 SWC native carrier needs the existing user's cache environment. A local-only
