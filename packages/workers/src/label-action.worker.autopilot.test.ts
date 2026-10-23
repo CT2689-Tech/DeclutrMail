@@ -186,9 +186,13 @@ describe('LabelActionWorker approved custom Autopilot', () => {
     return current!;
   }
   async function protect() {
-    await db
-      .insert(senderPolicies)
-      .values({ mailboxAccountId: mailboxId, senderKey: SENDER_KEY, isProtected: true });
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey: SENDER_KEY,
+      isProtected: true,
+      protectionReason: 'starred',
+      protectionSetAt: new Date(),
+    });
   }
   async function assertNoAction() {
     expect(gmail.calls).toEqual([]);
