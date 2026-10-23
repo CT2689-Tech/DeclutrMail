@@ -51,6 +51,7 @@ type PreviewRequest = {
   olderThanDays?: 30 | 90 | 180 | null | undefined;
   excludedSenderKeys?: string[] | undefined;
 };
+type CountScope = Pick<Definition, 'reach' | 'olderThanDays'>;
 type SenderMetadata = {
   id: string;
   senderKey: string;
@@ -101,8 +102,13 @@ export class SenderRulesService {
       mailboxId,
       [...new Set(rows.flatMap((r) => r.conditions.senderKeys))],
       checkedAt,
+      rows.map((row) => ({
+        reach: row.actionPayload.reach,
+        olderThanDays: row.conditions.olderThanDays,
+      })),
     );
-    return rows.map((row) => this.dto(row, metadata, checkedAt));
+    const metadataByKey = new Map(metadata.map((sender) => [sender.senderKey, sender]));
+    return rows.map((row) => this.dto(row, metadataByKey, checkedAt));
   }
 
   async create(
@@ -314,7 +320,9 @@ export class SenderRulesService {
     if (excluded.some((k) => !rule.conditions.senderKeys.includes(k)))
       throw new BadRequestException('Excluded senders must belong to this rule.');
     const checkedAt = new Date().toISOString();
-    const metadata = await this.metadata(mailboxId, rule.conditions.senderKeys, checkedAt);
+    const metadata = await this.metadata(mailboxId, rule.conditions.senderKeys, checkedAt, [
+      { reach, olderThanDays },
+    ]);
     const candidates = metadata.filter((s) => !s.protected && !excluded.includes(s.senderKey));
     const keys = candidates.map((s) => s.senderKey);
     const messages = keys.length
@@ -438,7 +446,13 @@ export class SenderRulesService {
     const checkedAt = new Date().toISOString();
     return this.dto(
       row,
-      await this.metadata(mailboxId, row.conditions.senderKeys, checkedAt),
+      new Map(
+        (
+          await this.metadata(mailboxId, row.conditions.senderKeys, checkedAt, [
+            { reach: row.actionPayload.reach, olderThanDays: row.conditions.olderThanDays },
+          ])
+        ).map((sender) => [sender.senderKey, sender]),
+      ),
       checkedAt,
     );
   }
@@ -458,8 +472,15 @@ export class SenderRulesService {
       throw new BadRequestException('Choose senders from the selected Gmail account.');
   }
 
-  private dto(row: SenderRule, metadata: SenderMetadata[], checkedAt: string): AutopilotSenderRule {
-    const selected = metadata.filter((s) => row.conditions.senderKeys.includes(s.senderKey));
+  private dto(
+    row: SenderRule,
+    metadata: ReadonlyMap<string, SenderMetadata>,
+    checkedAt: string,
+  ): AutopilotSenderRule {
+    const selected = [...new Set(row.conditions.senderKeys)].flatMap((key) => {
+      const sender = metadata.get(key);
+      return sender ? [sender] : [];
+    });
     const matching = selected.filter(
       (s) =>
         !s.protected && matchingCount(s, row.actionPayload.reach, row.conditions.olderThanDays) > 0,
@@ -490,30 +511,78 @@ export class SenderRulesService {
     };
   }
 
-  /** One grouped, bounded mirror read for the union of selected senders. */
+  /** Aggregate only requested buckets before joining the bounded sender identities. */
   private async metadata(
     mailboxId: string,
     keys: string[],
     checkedAt: string,
+    scopes: CountScope[],
   ): Promise<SenderMetadata[]> {
-    if (keys.length === 0) return [];
-    const bucket = (inbox: boolean, days: number) =>
-      sql<number>`count(${mailMessages.id}) filter (where ${inbox ? sql`'INBOX' = any(${mailMessages.labelIds})` : sql`true`} and ${days ? sql`${mailMessages.internalDate} <= ${checkedAt}::timestamptz - (${days} || ' days')::interval` : sql`true`})::int`;
-    const rows = await this.db
+    if (keys.length === 0 || scopes.length === 0) return [];
+    const required = new Set(
+      scopes.map(
+        (scope) => `${scope.reach === 'inbox_only' ? 'inbox' : 'all'}${scope.olderThanDays ?? 0}`,
+      ),
+    );
+    // These predicates are a union of the requested scopes, so they cannot
+    // discard a match. Restricting an inbox-only library also lets PostgreSQL
+    // use the existing partial inbox index instead of visiting archived mail.
+    const inboxOnly = scopes.every((scope) => scope.reach === 'inbox_only');
+    const minimumAge = Math.min(...scopes.map((scope) => scope.olderThanDays ?? 0));
+    const bucket = (inbox: boolean, days: number) => {
+      if (!required.has(`${inbox ? 'inbox' : 'all'}${days}`)) return sql<number>`0::int`;
+      const filters = and(
+        inbox && !inboxOnly ? sql`'INBOX' = any(${mailMessages.labelIds})` : undefined,
+        days > minimumAge
+          ? sql`${mailMessages.internalDate} <= ${checkedAt}::timestamptz - (${days} || ' days')::interval`
+          : undefined,
+      );
+      return filters
+        ? sql<number>`count(*) filter (where ${filters})::int`
+        : sql<number>`count(*)::int`;
+    };
+    const counts = this.db
+      .select({
+        senderKey: mailMessages.senderKey,
+        inbox0: bucket(true, 0).as('inbox0'),
+        inbox30: bucket(true, 30).as('inbox30'),
+        inbox90: bucket(true, 90).as('inbox90'),
+        inbox180: bucket(true, 180).as('inbox180'),
+        all0: bucket(false, 0).as('all0'),
+        all30: bucket(false, 30).as('all30'),
+        all90: bucket(false, 90).as('all90'),
+        all180: bucket(false, 180).as('all180'),
+      })
+      .from(mailMessages)
+      .where(
+        and(
+          eq(mailMessages.mailboxAccountId, mailboxId),
+          inArray(mailMessages.senderKey, keys),
+          eq(mailMessages.isOutbound, false),
+          sql`not (${mailMessages.labelIds} && ARRAY['TRASH', 'SPAM', 'DRAFT', 'CHAT']::text[])`,
+          inboxOnly ? sql`'INBOX' = any(${mailMessages.labelIds})` : undefined,
+          minimumAge
+            ? sql`${mailMessages.internalDate} <= ${checkedAt}::timestamptz - (${minimumAge} || ' days')::interval`
+            : undefined,
+        ),
+      )
+      .groupBy(mailMessages.senderKey)
+      .as('sender_rule_counts');
+    return this.db
       .select({
         id: senders.id,
         senderKey: senders.senderKey,
         name: senders.displayName,
         email: senders.email,
         protected: sql<boolean>`coalesce(${senderPolicies.isProtected}, false)`,
-        inbox0: bucket(true, 0),
-        inbox30: bucket(true, 30),
-        inbox90: bucket(true, 90),
-        inbox180: bucket(true, 180),
-        all0: bucket(false, 0),
-        all30: bucket(false, 30),
-        all90: bucket(false, 90),
-        all180: bucket(false, 180),
+        inbox0: sql<number>`coalesce(${counts.inbox0}, 0)`,
+        inbox30: sql<number>`coalesce(${counts.inbox30}, 0)`,
+        inbox90: sql<number>`coalesce(${counts.inbox90}, 0)`,
+        inbox180: sql<number>`coalesce(${counts.inbox180}, 0)`,
+        all0: sql<number>`coalesce(${counts.all0}, 0)`,
+        all30: sql<number>`coalesce(${counts.all30}, 0)`,
+        all90: sql<number>`coalesce(${counts.all90}, 0)`,
+        all180: sql<number>`coalesce(${counts.all180}, 0)`,
       })
       .from(senders)
       .leftJoin(
@@ -523,18 +592,8 @@ export class SenderRulesService {
           eq(senderPolicies.senderKey, senders.senderKey),
         ),
       )
-      .leftJoin(
-        mailMessages,
-        and(
-          eq(mailMessages.mailboxAccountId, senders.mailboxAccountId),
-          eq(mailMessages.senderKey, senders.senderKey),
-          eq(mailMessages.isOutbound, false),
-          sql`not (${mailMessages.labelIds} && ARRAY['TRASH', 'SPAM', 'DRAFT', 'CHAT']::text[])`,
-        ),
-      )
-      .where(and(eq(senders.mailboxAccountId, mailboxId), inArray(senders.senderKey, keys)))
-      .groupBy(senders.id, senderPolicies.isProtected);
-    return rows;
+      .leftJoin(counts, eq(counts.senderKey, senders.senderKey))
+      .where(and(eq(senders.mailboxAccountId, mailboxId), inArray(senders.senderKey, keys)));
   }
 }
 

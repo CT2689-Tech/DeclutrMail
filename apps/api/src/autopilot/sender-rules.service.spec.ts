@@ -221,6 +221,76 @@ describe('sender-list Autopilot rules', () => {
     });
   });
 
+  it('preserves every reach and age bucket together, including protected and empty senders', async () => {
+    const ages = [0, 29, 31, 89, 91, 179, 181];
+    for (const days of ages) {
+      await message(db, mailbox, `inbox-${days}`, A, days);
+      await message(db, mailbox, `archive-${days}`, A, days, []);
+    }
+    for (const label of ['TRASH', 'SPAM', 'DRAFT', 'CHAT'])
+      await message(db, mailbox, `excluded-${label}`, A, 200, ['INBOX', label]);
+    await message(db, mailbox, 'outbound-old', A, 200, ['INBOX'], true);
+    await message(db, mailbox, 'protected-old', B, 200);
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailbox,
+      senderKey: B,
+      isProtected: true,
+      protectionReason: 'user_defined',
+    });
+    const emptyKey = 'd'.repeat(64);
+    await seedSender(db, mailbox, emptyKey, 'No messages');
+    for (const reach of ['inbox_only', 'all_mail'] as const) {
+      for (const olderThanDays of [null, 30, 90, 180] as const) {
+        await service.create(mailbox, {
+          ...definition,
+          name: `${reach}-${olderThanDays ?? 0}`,
+          action: reach === 'all_mail' ? 'delete' : 'archive',
+          senderKeys: [A, B, emptyKey],
+          reach,
+          olderThanDays,
+        });
+      }
+    }
+    const rules = await service.list(mailbox);
+    expect(rules).toHaveLength(8);
+    for (const rule of rules) {
+      const expected = ages.filter(
+        (days) => rule.olderThanDays === null || days >= rule.olderThanDays,
+      ).length;
+      expect(rule).toMatchObject({
+        matchingMessageCount: expected * (rule.reach === 'all_mail' ? 2 : 1),
+        matchingSenderCount: 1,
+        protectedSenderCount: 1,
+      });
+      expect(rule.senders).toHaveLength(3);
+      const preview = await service.preview(mailbox, rule.id, { version: rule.version });
+      expect(preview).toMatchObject({
+        messageCount: rule.matchingMessageCount,
+        protectedSenderCount: 1,
+      });
+    }
+    // A preview override requests a different bucket than its saved rule.
+    expect(
+      await service.preview(mailbox, rules[0]!.id, {
+        version: 1,
+        action: 'delete',
+        reach: 'all_mail',
+        olderThanDays: 180,
+      }),
+    ).toMatchObject({ messageCount: 2, protectedSenderCount: 1 });
+    // Mirrored messages may outlive a sender-index row; they must not create
+    // a synthetic sender or inflate the visible rule's actionable total.
+    await db.delete(senders).where(eq(senders.senderKey, A));
+    for (const rule of await service.list(mailbox)) {
+      expect(rule).toMatchObject({
+        matchingMessageCount: 0,
+        matchingSenderCount: 0,
+        protectedSenderCount: 1,
+      });
+      expect(rule.senders).toHaveLength(2);
+    }
+  });
+
   it('uses optimistic versions for edits, pause and retire; stale previews cannot execute', async () => {
     await message(db, mailbox, 'old');
     const rule = await service.create(mailbox, definition);
