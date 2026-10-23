@@ -571,11 +571,7 @@ export function SenderRuleLibraryScope({
                       disabled={busy || !selected.enabled}
                       onClick={() => mode.mutate(selected)}
                     >
-                      {mode.isPending
-                        ? 'Saving…'
-                        : selected.mode === 'paused'
-                          ? 'Resume rule'
-                          : 'Pause rule'}
+                      {mode.isPending ? 'Saving…' : 'Pause rule'}
                     </Button>
                   )}
                   <p className={styles.muted}>Retire this rule when you’re finished with it.</p>

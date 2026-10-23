@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const webRoot = fileURLToPath(new URL('../../../apps/web', import.meta.url));
 const requireFromShared = createRequire(new URL('../../shared/package.json', import.meta.url));

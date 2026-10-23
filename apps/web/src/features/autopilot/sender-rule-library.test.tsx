@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '@/lib/api/client';
 import type { SenderRule, SenderRulePreview } from '@/lib/api/autopilot-sender-rules';
 import { SenderRuleLibraryScope, senderRuleFailureCopy } from './sender-rule-library';
 import { AUTO_ARCHIVE_LOW_ENGAGEMENT } from './fixtures';
@@ -273,6 +274,30 @@ describe('sender rule library', () => {
     api.status.data = { status: 'failed', affectedCount: 7, done: 1, total: 2 };
     view.rerender(view.tree());
     expect(screen.getByText(/7 emails moved; some actions failed/)).toBeInTheDocument();
+  });
+  it('keeps an open preview frozen and refreshes an explicitly stale rule', async () => {
+    const next = { ...rule, version: 2 };
+    api.list.mockResolvedValueOnce([rule]).mockResolvedValue([next]);
+    api.preview.mockImplementation((target: SenderRule, excluded: string[]) =>
+      Promise.resolve(makePreview(excluded, { version: target.version })),
+    );
+    api.execute.mockRejectedValueOnce(
+      new ApiError(409, { error: { code: 'AUTOPILOT_RULE_CHANGED' } }, 'changed'),
+    );
+    const view = setup();
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByRole('heading', { name: 'Archive 12 emails?' });
+    await view.client.invalidateQueries({ queryKey: ['autopilot-sender-rules', 'mailbox-a'] });
+    expect(api.preview).toHaveBeenCalledOnce();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Archive' }));
+    await within(dialog).findByText(/The rule changed/);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Refresh preview' }));
+    await waitFor(() =>
+      expect(api.preview).toHaveBeenLastCalledWith(next, [], expect.any(AbortSignal), 'mailbox-a'),
+    );
+    expect(api.execute).toHaveBeenCalledOnce();
   });
   it('blocks expired previews and provides a fresh preview', async () => {
     api.preview
