@@ -76,8 +76,28 @@ keys or live payment traffic. At 1280/900/320px, observed sidebar widths 220/72/
 hidden, one main and no document horizontal overflow. Settings preference Off
 persisted after reload, then was restored On. The Privacy and data anchor focused
 its target. Account Billing navigation reset the nested content scroll to zero.
-Phone help bounds and Escape/focus recovery passed. Paid-fixture cold fragments,
-remaining full checks and final build verification are pending.
+Phone help bounds and Escape/focus recovery passed.
+
+Final production-build browser pass used the same disposable API and a local
+loopback proxy for the build's relative client API paths. Cold `#invoices` and
+`#payment` focused the correct sections (observed top positions 96px and 80px),
+with no horizontal overflow. The synthetic paid Plus title agreed across both
+pages. Unavailable invoice-provider data rendered its retry state independently.
+Paid-account deletion was blocked with its existing Cancel your plan first
+explanation. Restored the original synthetic Pro tier and removed the sole fake
+subscription before opening the deletion review; nothing was confirmed or
+scheduled. At 320px the review fitted the viewport and Escape restored focus to
+Delete account. Phone drawer to Billing returned to scroll zero, with five tabs,
+one main and no document overflow. Final browser error log was empty.
+
+Production web build passed, including its type/lint validation. All 51 bundle
+budgets and 32 prerenders passed without rebaselining. All workspace typechecks
+passed serially, full lint and formatting passed, and implementation-log/policy
+audits passed. The broad web run had 4,884 passing tests, three existing skips
+and one obsolete Settings loading-geometry assertion. Updated that assertion to
+the chosen 1120px/28px layout and added Billing loading coverage; all 236 affected
+tests then passed. A fresh complete web run and Storybook build are in progress;
+protected CI and release evidence are pending.
 
 The repository's isolated launcher initially failed because the current macOS
 SWC native carrier needs the existing user's cache environment. A local-only
@@ -90,9 +110,8 @@ or environment policy change is included in the PR.
 The first unconstrained broad test run was stopped after host contention caused
 timing failures. Final runs use two Vitest workers; thresholds/retries are
 unchanged. A first typecheck found an unsupported Testing Library `exact` test
-option; removed it and the affected web typecheck passed. Final integrated
-typecheck, lint, formatting, full web suite, production build, budgets and
-protected CI results will be recorded before release readiness.
+option; removed it and the affected web typecheck passed. Final protected CI
+results will be recorded before release readiness.
 
 Independent design-system/React/UI/copy/flow source review: clear after both
 follow-up fixes. No new promoted component, state ownership, API contract,
