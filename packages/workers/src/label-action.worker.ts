@@ -1,15 +1,17 @@
-import { and, eq, inArray, notExists, sql, type SQL } from 'drizzle-orm';
+import { and, eq, exists, inArray, isNull, notExists, sql, type SQL } from 'drizzle-orm';
 import type { JobsOptions } from 'bullmq';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import {
   actionJobs,
   activityLog,
+  automationRules,
   invalidateInboxReportCache,
   mailboxAccounts,
   mailMessages,
   senderActionWhere,
   senderPolicies,
+  senders,
   undoJournal,
   workspaces,
 } from '@declutrmail/db';
@@ -17,11 +19,12 @@ import type { schema, SenderActionReach } from '@declutrmail/db';
 import { ActionLabelAppliedPayloadSchema, TOPICS } from '@declutrmail/events';
 import { getActionDescriptor } from '@declutrmail/shared/actions';
 import {
+  AutopilotSenderRuleConditionsSchema,
   LABEL_SENDER_PROTECTED_ERROR_CODE,
   RECOVERY_SENDER_PROTECTED_ERROR_CODE,
 } from '@declutrmail/shared/contracts';
 import type { ActionVerb, LabelChangePair } from '@declutrmail/shared/actions';
-import { undoWindowDaysFor } from '@declutrmail/shared/entitlements';
+import { hasCapability, undoWindowDaysFor } from '@declutrmail/shared/entitlements';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import {
@@ -32,12 +35,14 @@ import {
 } from './gmail-mutation-client.js';
 import { scheduleLaterReturn } from './later-return-timer.js';
 import type { OutboxPublisher } from './outbox-publisher.js';
+import { isQuietActive, msUntilQuietEnds } from './quiet-hours-state.js';
 import { backoffJobOptions } from './rate-limit-backoff.js';
 import {
   AuthExpiredError,
   InvalidGrantError,
   PermanentError,
   RateLimitError,
+  TransientError,
   ValidationError,
 } from './worker-errors.js';
 import { WORKER_POLICIES } from './worker-policies.js';
@@ -230,6 +235,8 @@ export interface LabelActionResult {
   skippedProtected?: true;
   /** Present only on a recovery attempt stopped for the same reason (it fails, retryable). */
   stoppedProtected?: true;
+  /** The approved action remains queued for the quiet-resume delivery. */
+  deferredQuiet?: true;
 }
 
 /**
@@ -256,6 +263,8 @@ export interface LabelActionDeps {
   gmailMutation: GmailMutationAccess;
   outbox: OutboxPublisher;
   lock: MailboxActionLock;
+  /** Requeue this same durable action with a new delayed queue delivery id. */
+  onQuietDeferred?: (payload: LabelActionJobData, delayMs: number) => Promise<void>;
 }
 
 /**
@@ -309,6 +318,9 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
       // job that a retry cannot fix.
       throw new ValidationError(`action_jobs row ${payload.actionId} not found`);
     }
+    if (job.mailboxAccountId !== payload.mailboxAccountId) {
+      throw new ValidationError('label-action mailbox does not match its durable action');
+    }
     if (job.status === 'done') {
       // Idempotent replay (BullMQ retry after a committed terminal tx).
       return { affectedCount: job.affectedCount, undoToken: job.undoToken, alreadyDone: true };
@@ -342,9 +354,34 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
 
     const change = labelChangeForVerb(job.verb);
 
-    return job.direction === 'reverse'
-      ? this.executeReverse(job, change.reverse)
-      : this.executeForward(job, change.forward, payload.protectedConfirmed === true);
+    if (job.direction === 'reverse') return this.executeReverse(job, change.reverse);
+    try {
+      return await this.executeForward(job, change.forward, payload.protectedConfirmed === true);
+    } catch (err) {
+      if (err instanceof CustomAutopilotBlocked) {
+        await db
+          .update(actionJobs)
+          .set({
+            status: 'failed',
+            errorCode: err.code,
+            affectedCount: 0,
+            ...settledQuotaUnits(0),
+            updatedAt: sql`now()`,
+          })
+          .where(eq(actionJobs.id, job.id));
+        return { affectedCount: 0, undoToken: null, alreadyDone: false };
+      }
+      if (err instanceof CustomAutopilotQuiet) {
+        if (!this.deps.onQuietDeferred) {
+          throw new Error('custom Autopilot quiet-resume queue is unavailable', { cause: err });
+        }
+        // No transaction is open here. A failed publish leaves the original
+        // delivery retryable; a successful one retains the frozen job row.
+        await this.deps.onQuietDeferred(payload, err.delayMs);
+        return { affectedCount: 0, undoToken: null, alreadyDone: false, deferredQuiet: true };
+      }
+      throw err;
+    }
   }
 
   /** Forward action — apply the verb, then issue undo + activity + event. */
@@ -360,6 +397,10 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     // narrow `job.verb` to the ACTION_LABEL_APPLIED schema's enum for the
     // event payload. `labelChangeForVerb` already assumes this.
     const labelVerb = job.verb as 'archive' | 'later' | 'delete';
+    const autopilot = customAutopilot(job);
+    if (autopilot && labelVerb !== 'archive' && labelVerb !== 'delete') {
+      throw new ValidationError('custom Autopilot supports Archive and Delete only');
+    }
 
     if (labelVerb === 'later' && (job.selector.type !== 'sender' || job.wakeAt === null)) {
       throw new ValidationError('Later action requires a sender selector and wake time');
@@ -378,10 +419,15 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     // Checked here, before any work; atomically with the `executing` write
     // as the first request leaves (`markExecuting`); and before every later
     // request (`assertNotProtected`).
-    const subject = protectionSubject(job, protectedConfirmed);
+    const subject = protectionSubject(
+      job,
+      autopilot && job.recoveryAttempt === 0 ? false : protectedConfirmed,
+    );
     if (subject !== null && (await this.subjectIsProtected(mailboxAccountId, subject))) {
       return this.stopProtected(job, 0);
     }
+    const startingCustom = autopilot && job.recoveryAttempt === 0 && neverReachedGmail(job);
+    if (startingCustom) await this.customStartPredicate(job);
 
     // Resolve the durable execution set (sender selector resolves the
     // job's reach — "in INBOX now", or inbox + archived for an ADR-0028
@@ -397,7 +443,16 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     // first request leaves, because the re-check reads it as "Gmail may
     // already have been changed".
     let ids = job.resolvedMessageIds;
-    if (ids.length === 0 && job.selector.type === 'sender') {
+    if (startingCustom) {
+      // Approval freezes the maximum set. Only shrink it before execution,
+      // so overlapping/manual changes cannot manufacture a misleading Undo.
+      // An empty approved set is final: never resolve it against new mail.
+      ids = await this.eligibleCustomIds(job, ids);
+      await db
+        .update(actionJobs)
+        .set({ resolvedMessageIds: ids, updatedAt: sql`now()` })
+        .where(eq(actionJobs.id, job.id));
+    } else if (!autopilot && ids.length === 0 && job.selector.type === 'sender') {
       ids = await this.resolveSenderActionIds(
         mailboxAccountId,
         job.selector.senderKey,
@@ -431,7 +486,8 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
         await tx.insert(activityLog).values({
           mailboxAccountId,
           senderKey,
-          source: 'manual',
+          source: autopilot ? 'autopilot' : 'manual',
+          ruleId: autopilot?.ruleId ?? null,
           action: job.verb,
           affectedCount: 0,
           actionJobId: job.id,
@@ -485,7 +541,19 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
             ? {
                 beforeFirstRequest: async () => {
                   hookRan = true;
-                  await this.markExecuting(job.id, mailboxAccountId, subject);
+                  const startPredicate = startingCustom
+                    ? await this.customStartPredicate(job)
+                    : undefined;
+                  if (
+                    startingCustom &&
+                    (await this.eligibleCustomIds(job, ids)).length !== ids.length
+                  ) {
+                    // A provider sync can observe an outside/manual change
+                    // during quota admission. Retry the still-queued action
+                    // with its newly narrowed set before recording any Undo.
+                    throw new TransientError('custom Autopilot message scope changed before send');
+                  }
+                  await this.markExecuting(job.id, mailboxAccountId, subject, startPredicate, job);
                 },
               }
             : subject === null
@@ -587,7 +655,8 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
       await tx.insert(activityLog).values({
         mailboxAccountId,
         senderKey,
-        source: 'manual',
+        source: autopilot ? 'autopilot' : 'manual',
+        ruleId: autopilot?.ruleId ?? null,
         action: job.verb,
         affectedCount: ids.length,
         undoToken: issued.token,
@@ -972,6 +1041,8 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     jobId: string,
     mailboxAccountId: string,
     subject: ProtectionSubject | null,
+    startPredicate?: SQL,
+    customJob?: ActionJobRow,
   ): Promise<void> {
     const { db } = this.deps;
     const [marked] = await db
@@ -983,6 +1054,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
           ...(subject === null
             ? []
             : [notExists(protectedSubjectRow(db, mailboxAccountId, subject))]),
+          ...(startPredicate ? [startPredicate] : []),
         ),
       )
       .returning({ id: actionJobs.id });
@@ -993,10 +1065,142 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
       .from(actionJobs)
       .where(eq(actionJobs.id, jobId))
       .limit(1);
+    if (still && startPredicate && customJob) {
+      if (subject !== null && (await this.subjectIsProtected(mailboxAccountId, subject))) {
+        throw new SenderProtectedAtSend();
+      }
+      // Classify a gate that changed after its read. A still-eligible but
+      // different snapshot retries without a provider request.
+      await this.customStartPredicate(customJob);
+      throw new TransientError('custom Autopilot changed before its Gmail request');
+    }
     if (still && subject !== null) {
       throw new SenderProtectedAtSend();
     }
     throw new ValidationError(`action_jobs row ${jobId} vanished before its Gmail request`);
+  }
+
+  /** Initial gates only: retries of possibly applied work finish the same durable ids. */
+  private async customStartPredicate(job: ActionJobRow): Promise<SQL> {
+    const autopilot = customAutopilot(job);
+    if (!autopilot || job.selector.type !== 'sender') {
+      throw new ValidationError('custom Autopilot requires a sender selector');
+    }
+    const { db } = this.deps;
+    const [rule] = await db
+      .select()
+      .from(automationRules)
+      .where(eq(automationRules.id, autopilot.ruleId))
+      .limit(1);
+    if (
+      !rule ||
+      rule.mailboxAccountId !== job.mailboxAccountId ||
+      rule.isPreset ||
+      rule.presetKey !== null ||
+      rule.scope !== 'account'
+    ) {
+      throw new CustomAutopilotBlocked('AUTOPILOT_RULE_INVALID');
+    }
+    if (rule.retiredAt !== null || !rule.enabled || rule.mode !== 'observe') {
+      throw new CustomAutopilotBlocked('AUTOPILOT_RULE_INACTIVE');
+    }
+    if (rule.version !== autopilot.ruleVersion) {
+      throw new CustomAutopilotBlocked('AUTOPILOT_RULE_CHANGED');
+    }
+    const conditions = AutopilotSenderRuleConditionsSchema.safeParse(rule.conditions);
+    if (!conditions.success || !conditions.data.senderKeys.includes(job.selector.senderKey)) {
+      throw new CustomAutopilotBlocked('AUTOPILOT_RULE_INVALID');
+    }
+    const [mailbox] = await db
+      .select({
+        quietState: mailboxAccounts.quietState,
+        tier: workspaces.tier,
+        status: mailboxAccounts.status,
+      })
+      .from(mailboxAccounts)
+      .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
+      .where(eq(mailboxAccounts.id, job.mailboxAccountId))
+      .limit(1);
+    if (!mailbox || mailbox.status !== 'active') {
+      throw new CustomAutopilotBlocked('AUTOPILOT_MAILBOX_INACTIVE');
+    }
+    if (!hasCapability(mailbox.tier, 'autopilot')) {
+      throw new CustomAutopilotBlocked('AUTOPILOT_NOT_ENTITLED');
+    }
+    const now = new Date();
+    if (isQuietActive(mailbox.quietState, now)) {
+      throw new CustomAutopilotQuiet(
+        Math.max(1, msUntilQuietEnds(mailbox.quietState, now) ?? 300_000),
+      );
+    }
+    const [sender] = await db
+      .select({ id: senders.id })
+      .from(senders)
+      .where(
+        and(
+          eq(senders.id, job.selector.senderId),
+          eq(senders.mailboxAccountId, job.mailboxAccountId),
+          eq(senders.senderKey, job.selector.senderKey),
+        ),
+      )
+      .limit(1);
+    if (!sender) throw new CustomAutopilotBlocked('AUTOPILOT_RULE_INVALID');
+
+    // The state evaluated above must still match in the statement that
+    // records the first possible Gmail mutation. No network is in a tx.
+    return exists(
+      db
+        .select({ one: sql`1` })
+        .from(automationRules)
+        .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, automationRules.mailboxAccountId))
+        .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
+        .innerJoin(
+          senders,
+          and(
+            eq(senders.mailboxAccountId, mailboxAccounts.id),
+            eq(senders.id, job.selector.senderId),
+            eq(senders.senderKey, job.selector.senderKey),
+          ),
+        )
+        .where(
+          and(
+            eq(automationRules.id, rule.id),
+            eq(automationRules.mailboxAccountId, job.mailboxAccountId),
+            eq(automationRules.version, autopilot.ruleVersion),
+            eq(automationRules.isPreset, false),
+            isNull(automationRules.presetKey),
+            isNull(automationRules.retiredAt),
+            eq(automationRules.enabled, true),
+            eq(automationRules.mode, 'observe'),
+            eq(automationRules.scope, 'account'),
+            eq(automationRules.conditions, rule.conditions),
+            eq(mailboxAccounts.status, 'active'),
+            eq(mailboxAccounts.quietState, mailbox.quietState),
+            eq(workspaces.tier, mailbox.tier),
+          ),
+        ),
+    );
+  }
+
+  private async eligibleCustomIds(job: ActionJobRow, ids: string[]): Promise<string[]> {
+    if (ids.length === 0 || job.selector.type !== 'sender') return [];
+    const rows = await this.deps.db
+      .select({ id: mailMessages.providerMessageId })
+      .from(mailMessages)
+      .where(
+        and(
+          senderActionWhere({
+            mailboxAccountId: job.mailboxAccountId,
+            senderKeys: [job.selector.senderKey],
+            olderThanDays: job.olderThanDays,
+            reach: job.reach,
+          }),
+          inArray(mailMessages.providerMessageId, ids),
+          sql`NOT (${mailMessages.labelIds} && ARRAY['TRASH', 'SPAM', 'DRAFT', 'CHAT']::text[])`,
+        ),
+      );
+    const eligible = new Set(rows.map((row) => row.id));
+    return [...new Set(ids)].filter((id) => eligible.has(id));
   }
 
   protected override async onTerminalFailure(
@@ -1012,7 +1216,12 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
           ...settledQuotaUnits(0),
           updatedAt: sql`now()`,
         })
-        .where(eq(actionJobs.id, payload.actionId));
+        .where(
+          and(
+            eq(actionJobs.id, payload.actionId),
+            eq(actionJobs.mailboxAccountId, payload.mailboxAccountId),
+          ),
+        );
     } catch (recordErr) {
       // Recording the failure must never mask the original error.
       console.error(
@@ -1138,6 +1347,39 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
 }
 
 type ActionJobRow = typeof actionJobs.$inferSelect;
+
+type CustomAutopilot = NonNullable<
+  Extract<ActionJobRow['selector'], { type: 'sender' }>['autopilot']
+>;
+
+function customAutopilot(job: ActionJobRow): CustomAutopilot | undefined {
+  if (!('autopilot' in job.selector)) return undefined;
+  const value = job.selector.autopilot;
+  if (
+    job.selector.type !== 'sender' ||
+    !value ||
+    typeof value.ruleId !== 'string' ||
+    !value.ruleId ||
+    !Number.isInteger(value.ruleVersion) ||
+    value.ruleVersion < 1 ||
+    typeof value.previewId !== 'string' ||
+    !value.previewId
+  )
+    throw new ValidationError('invalid custom Autopilot provenance');
+  return value;
+}
+
+class CustomAutopilotBlocked extends Error {
+  constructor(readonly code: string) {
+    super(code);
+  }
+}
+
+class CustomAutopilotQuiet extends Error {
+  constructor(readonly delayMs: number) {
+    super('custom Autopilot deferred during quiet');
+  }
+}
 
 /**
  * `action_jobs.error_code` `ActionsService.enqueueJob` writes when the queue
