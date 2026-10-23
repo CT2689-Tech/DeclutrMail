@@ -1,5 +1,6 @@
 import {
   actionJobs,
+  AUTOPILOT_PRESET_KEYS,
   automationRules,
   mailMessages,
   mailboxAccounts,
@@ -141,6 +142,41 @@ describe('sender-list Autopilot rules', () => {
       'already used',
     );
     expect(await service.list(mailbox)).toEqual([]);
+  });
+
+  it('keeps preset and custom libraries separate and omits retired rules from both', async () => {
+    await db
+      .insert(automationRules)
+      .values(
+        AUTOPILOT_PRESET_KEYS.map((presetKey) => ({
+          mailboxAccountId: mailbox,
+          isPreset: true,
+          presetKey,
+          name: presetKey,
+          actionKind: 'archive' as const,
+          conditions: {},
+          actionPayload: {},
+        })),
+      );
+    const live = await service.create(mailbox, definition);
+    const retired = await service.create(mailbox, { ...definition, name: 'Retired' });
+    await service.retire(mailbox, retired.id, 1);
+    const reads = new AutopilotReadService(db as never);
+    const presets = await reads.listRules(mailbox);
+    expect(presets).toHaveLength(5);
+    expect(presets.every((rule) => rule.isPreset)).toBe(true);
+    expect(await reads.getRule(mailbox, live.id)).toBeNull();
+    expect(await reads.getRule(mailbox, retired.id)).toBeNull();
+    expect((await service.list(mailbox)).map((rule) => rule.id)).toEqual([live.id]);
+    await db
+      .update(automationRules)
+      .set({ retiredAt: new Date() })
+      .where(eq(automationRules.id, presets[0]!.id));
+    expect(await reads.getRule(mailbox, presets[0]!.id)).toBeNull();
+    expect(await reads.listRules(mailbox)).toHaveLength(4);
+    // Four presets and one custom rule; retired rows stay untouched.
+    expect(await reads.pauseAll(mailbox)).toEqual({ pausedCount: 5 });
+    expect((await service.list(mailbox))[0]).toMatchObject({ mode: 'paused', version: 2 });
   });
 
   it('counts current inbound scope and protection across all rules in one grouped query', async () => {

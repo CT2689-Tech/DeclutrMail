@@ -159,7 +159,8 @@ export class AutopilotReadService {
   }
 
   /**
-   * List all rules for a mailbox. Returns rows in creation order
+   * List preset rules for a mailbox. Sender-list rules use their own API.
+   * Returns rows in creation order
    * (matches the seeded preset order: #1..#5). The page is small
    * (5 presets at V2 launch; ~10 once custom rules unlock per D197),
    * so no pagination yet — a future PR adds it if needed.
@@ -168,7 +169,13 @@ export class AutopilotReadService {
     const rows = await this.db
       .select()
       .from(automationRules)
-      .where(eq(automationRules.mailboxAccountId, mailboxAccountId))
+      .where(
+        and(
+          eq(automationRules.mailboxAccountId, mailboxAccountId),
+          eq(automationRules.isPreset, true),
+          isNull(automationRules.retiredAt),
+        ),
+      )
       .orderBy(automationRules.createdAt, automationRules.id);
     const digests = await this.observeDigests(mailboxAccountId);
     return rows.map((r) => projectRule(r, digests.get(r.id) ?? null));
@@ -180,7 +187,12 @@ export class AutopilotReadService {
       .select()
       .from(automationRules)
       .where(
-        and(eq(automationRules.mailboxAccountId, mailboxAccountId), eq(automationRules.id, id)),
+        and(
+          eq(automationRules.mailboxAccountId, mailboxAccountId),
+          eq(automationRules.id, id),
+          eq(automationRules.isPreset, true),
+          isNull(automationRules.retiredAt),
+        ),
       )
       .limit(1);
     if (!row) return null;
