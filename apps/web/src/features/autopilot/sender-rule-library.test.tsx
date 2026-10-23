@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/api/client';
 import type { SenderRule, SenderRulePreview } from '@/lib/api/autopilot-sender-rules';
@@ -7,6 +7,7 @@ import { SenderRuleLibraryScope, senderRuleFailureCopy } from './sender-rule-lib
 import { AUTO_ARCHIVE_LOW_ENGAGEMENT } from './fixtures';
 
 const api = vi.hoisted(() => ({
+  tier: 'pro' as 'free' | 'pro',
   list: vi.fn(),
   search: vi.fn(),
   save: vi.fn(),
@@ -39,7 +40,7 @@ vi.mock('@/lib/posthog', () => ({ track: api.track }));
 vi.mock('@/lib/api/use-action', () => ({ useBatchStatus: () => api.status }));
 vi.mock('@/features/undo/feedback-store', () => ({ acceptActionFeedback: api.feedback }));
 vi.mock('@/features/auth/auth-provider', () => ({
-  useOptionalAuth: () => ({ me: { activeMailboxId: 'mailbox-a', tier: 'pro' } }),
+  useOptionalAuth: () => ({ me: { activeMailboxId: 'mailbox-a', tier: api.tier } }),
   getActiveMailboxEmail: () => 'test@example.invalid',
 }));
 
@@ -113,6 +114,7 @@ function setup(presetsAvailable = true) {
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  api.tier = 'pro';
   api.list.mockResolvedValue([rule]);
   api.search.mockImplementation((q: string) =>
     Promise.resolve({
@@ -138,6 +140,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   clients.splice(0).forEach((client) => client.clear());
+  onlineManager.setOnline(true);
   vi.useRealTimers();
 });
 async function loaded() {
@@ -145,6 +148,75 @@ async function loaded() {
 }
 
 describe('sender rule library', () => {
+  it('cannot approve the previous token while an exclusion refresh waits offline', async () => {
+    setup();
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByRole('heading', { name: 'Archive 12 emails?' });
+    act(() => onlineManager.setOnline(false));
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /Alice/ }));
+    expect(await within(dialog).findByText('Waiting for connection…')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Archive' })).toBeDisabled();
+    expect(api.preview).toHaveBeenCalledTimes(1);
+    expect(api.execute).not.toHaveBeenCalled();
+    act(() => onlineManager.setOnline(true));
+    await within(dialog).findByRole('heading', { name: 'Archive 7 emails?' });
+    expect(within(dialog).getByRole('button', { name: 'Archive' })).toBeEnabled();
+  });
+  it('shows the plan path on Free without treating the capability gate as an outage', async () => {
+    api.tier = 'free';
+    setup();
+    expect(screen.getByRole('link', { name: 'Explore plans' })).toHaveAttribute('href', '/billing');
+    expect(screen.getByRole('button', { name: 'New rule' })).toBeDisabled();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(api.list).not.toHaveBeenCalled();
+  });
+
+  it('returns focus to the rule heading after selection and editor cancellation', async () => {
+    setup();
+    await loaded();
+    fireEvent.click(screen.getAllByRole('button', { name: /Newsletter cleanup Archive/ })[0]!);
+    await waitFor(() => expect(screen.getByRole('heading', { name: rule.name })).toHaveFocus());
+    fireEvent.click(screen.getByRole('button', { name: 'Edit rule' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: rule.name })).toHaveFocus());
+  });
+
+  it('keeps the focused sender mounted while an exclusion refreshes its exact preview', async () => {
+    let finish!: (value: SenderRulePreview) => void;
+    api.preview.mockResolvedValueOnce(makePreview()).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    setup();
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    const dialog = await screen.findByRole('dialog');
+    const checkbox = await within(dialog).findByRole('checkbox', { name: /Alice/ });
+    checkbox.focus();
+    fireEvent.click(checkbox);
+    await within(dialog).findByText('Refreshing preview…');
+    expect(checkbox).toHaveFocus();
+    expect(within(dialog).getByRole('button', { name: 'Archive' })).toBeDisabled();
+    await act(async () => finish(makePreview([alice.senderKey])));
+    await waitFor(() => expect(checkbox).toHaveFocus());
+  });
+
+  it('clears a rule retired elsewhere after a successful library refresh', async () => {
+    const { client } = setup();
+    await loaded();
+    api.list.mockResolvedValue([]);
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ['autopilot-sender-rules', 'mailbox-a'] });
+    });
+    expect(
+      await screen.findByRole('heading', { name: 'Your first sender rule' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Preview' })).not.toBeInTheDocument();
+  });
   it('saves a rule without previewing or executing email and retains selection across search', async () => {
     setup();
     await loaded();

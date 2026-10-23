@@ -4,7 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Button, Skeleton } from '@declutrmail/shared';
-import { undoWindowDaysFor } from '@declutrmail/shared/entitlements';
+import {
+  hasCapability,
+  minimumTierForCapability,
+  TIER_MANIFEST,
+  undoWindowDaysFor,
+} from '@declutrmail/shared/entitlements';
 import { useOptionalAuth, getActiveMailboxEmail } from '@/features/auth/auth-provider';
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { acceptActionFeedback } from '@/features/undo/feedback-store';
@@ -100,6 +105,8 @@ export function SenderRuleLibraryScope({
 }) {
   const auth = useOptionalAuth();
   const email = auth ? getActiveMailboxEmail(auth.me) : undefined;
+  const entitled = auth ? hasCapability(auth.me.tier, 'autopilot') : true;
+  const requiredPlan = TIER_MANIFEST[minimumTierForCapability('autopilot')].name;
   const qc = useQueryClient();
   const pauseAll = usePauseAll();
   const [pauseOpen, setPauseOpen] = useState(false);
@@ -114,6 +121,11 @@ export function SenderRuleLibraryScope({
   const [notice, setNotice] = useState('');
   const [receipt, setReceipt] = useState<SenderRuleExecution | null>(null);
   const [filter, setFilter] = useState<'all' | 'ready' | 'paused'>('all');
+  const reviewHeading = useRef<HTMLHeadingElement>(null);
+  const [focusReview, setFocusReview] = useState(0);
+  useEffect(() => {
+    if (focusReview > 0 && editing === null) reviewHeading.current?.focus();
+  }, [focusReview, editing, selected?.id]);
   const page = cursors.length;
   const filteredRules = (rulesData: SenderRule[]) =>
     rulesData.filter(
@@ -130,8 +142,9 @@ export function SenderRuleLibraryScope({
     queryKey: ['autopilot-sender-rules', mailboxId],
     queryFn: ({ signal }) => fetchSenderRules(signal, mailboxId),
     retry: false,
-    enabled: mailboxId !== undefined,
+    enabled: mailboxId !== undefined && entitled,
   });
+  const planLocked = !entitled || apiErrorCode(rules.error) === 'PRO_FEATURE_REQUIRED';
   const runningPresets = presetRules.filter((rule) => rule.enabled && rule.mode !== 'paused');
   const runningCustom = (rules.data ?? []).filter((rule) => rule.enabled && rule.mode !== 'paused');
   const runningCount = runningPresets.length + runningCustom.length;
@@ -140,10 +153,12 @@ export function SenderRuleLibraryScope({
   const visibleRules = filtered.slice(page * 6, page * 6 + 6);
   useEffect(() => {
     if (!rules.data || editing !== null || previewOpen) return;
+    if (selected && !rules.data.some((rule) => rule.id === selected.id))
+      setFocusReview((value) => value + 1);
     setSelected((current) => {
       const candidate = rules.data.find((rule) => rule.id === current?.id);
       if (candidate && (!current || candidate.version >= current.version)) return candidate;
-      return current ?? rules.data[0] ?? null;
+      return candidate ? current : (rules.data[0] ?? null);
     });
   }, [rules.data, editing, previewOpen]);
   const invalidate = () =>
@@ -157,8 +172,14 @@ export function SenderRuleLibraryScope({
         editing === 'create' ? createKey.current : undefined,
       ),
     onSuccess: (rule, config) => {
+      qc.setQueryData<SenderRule[]>(['autopilot-sender-rules', mailboxId], (current) =>
+        current?.some((item) => item.id === rule.id)
+          ? current.map((item) => (item.id === rule.id ? rule : item))
+          : [...(current ?? []), rule],
+      );
       setSelected(rule);
       setEditing(null);
+      setFocusReview((value) => value + 1);
       const sameConfig =
         rule.name === config.name &&
         rule.action === config.action &&
@@ -184,7 +205,11 @@ export function SenderRuleLibraryScope({
   const retire = useMutation({
     mutationFn: (rule: SenderRule) => retireSenderRule(rule, mailboxId),
     onSuccess: (_result, rule) => {
+      qc.setQueryData<SenderRule[]>(['autopilot-sender-rules', mailboxId], (current) =>
+        current?.filter((item) => item.id !== rule.id),
+      );
       setSelected(null);
+      setFocusReview((value) => value + 1);
       setNotice('Rule retired.');
       invalidate();
       void track('autopilot_sender_rule_changed', {
@@ -230,7 +255,10 @@ export function SenderRuleLibraryScope({
     staleTime: 0,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+    placeholderData: (previous) => previous,
   });
+  const previewChecking =
+    preview.isFetching || preview.isPlaceholderData || preview.fetchStatus === 'paused';
   const trackedPreview = useRef<string | null>(null);
   useEffect(() => {
     if (
@@ -295,6 +323,7 @@ export function SenderRuleLibraryScope({
     setSelected(rule);
     setEditing(null);
     setLibraryOpen(false);
+    setFocusReview((value) => value + 1);
     setNotice('');
     save.reset();
     retire.reset();
@@ -313,13 +342,21 @@ export function SenderRuleLibraryScope({
   };
   const refreshStalePreview = async () => {
     const result = await rules.refetch();
+    if (result.isError) return;
     const current = result.data?.find((rule) => rule.id === selected?.id);
-    if (current) setSelected(current);
+    if (!current) {
+      setPreviewOpen(false);
+      setSelected(result.data?.[0] ?? null);
+      setNotice('This rule was retired. Choose another rule or create a new one.');
+      setFocusReview((value) => value + 1);
+      return;
+    }
+    setSelected(current);
     refreshPreview();
   };
   const canConfirm =
     !!preview.data &&
-    !preview.isFetching &&
+    !previewChecking &&
     !preview.isError &&
     !expired &&
     preview.data.messageCount > 0 &&
@@ -328,7 +365,8 @@ export function SenderRuleLibraryScope({
     rules.isSuccess &&
     !rules.isError &&
     selected?.enabled === true &&
-    selected.mode === 'observe';
+    selected.mode === 'observe' &&
+    !planLocked;
   return (
     <div className={styles.screen} data-testid="sender-rule-library">
       <header className={styles.header}>
@@ -350,7 +388,7 @@ export function SenderRuleLibraryScope({
           <Button
             tone="primary"
             onClick={beginCreate}
-            disabled={busy || mailboxId === undefined || rules.isError}
+            disabled={busy || mailboxId === undefined || rules.isError || planLocked}
           >
             New rule
           </Button>
@@ -361,302 +399,325 @@ export function SenderRuleLibraryScope({
           {notice}
         </p>
       )}
-      <div className={styles.split}>
-        <aside className={styles.library} aria-label="Sender rule library">
-          <button
-            type="button"
-            className={styles.mobileToggle}
-            aria-expanded={libraryOpen}
-            aria-controls="sender-rule-library-content"
-            onClick={() => setLibraryOpen(!libraryOpen)}
-          >
-            <span>Your rules{selected ? ` · ${selected.name}` : ''}</span>
-            <span aria-hidden="true">{libraryOpen ? '−' : '+'}</span>
-          </button>
-          <div
-            id="sender-rule-library-content"
-            className={styles.libraryContent}
-            data-open={libraryOpen}
-          >
-            <div className={styles.libraryHead}>
-              <h2>Your sender rules</h2>
-              <span className={styles.count}>{rules.data?.length ?? '—'}</span>
-            </div>
-            <input
-              className={styles.input}
-              type="search"
-              aria-label="Search rules"
-              placeholder="Search rules…"
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setCursors([]);
-              }}
-            />
-            <div className={styles.filters} role="group" aria-label="Filter sender rules">
-              {(['all', 'ready', 'paused'] as const).map((value) => (
+      {planLocked ? (
+        <section className={styles.card} aria-label="Sender rules plan">
+          <span className={styles.badge}>Approval first</span>
+          <h2>Make room with your own rules</h2>
+          <p>
+            Sender rules are included with {requiredPlan}. Choose senders, preview the matching
+            emails, and approve each cleanup.
+          </p>
+          <Link href="/billing">Explore plans</Link>
+        </section>
+      ) : (
+        <div className={styles.split}>
+          <aside className={styles.library} aria-label="Sender rule library">
+            <button
+              type="button"
+              className={styles.mobileToggle}
+              aria-expanded={libraryOpen}
+              aria-controls="sender-rule-library-content"
+              onClick={() => setLibraryOpen(!libraryOpen)}
+            >
+              <span>Your rules{selected ? ` · ${selected.name}` : ''}</span>
+              <span aria-hidden="true">{libraryOpen ? '−' : '+'}</span>
+            </button>
+            <div
+              id="sender-rule-library-content"
+              className={styles.libraryContent}
+              data-open={libraryOpen}
+            >
+              <div className={styles.libraryHead}>
+                <h2>Your sender rules</h2>
+                <span className={styles.count}>{rules.data?.length ?? '—'}</span>
+              </div>
+              <input
+                className={styles.input}
+                type="search"
+                aria-label="Search rules"
+                placeholder="Search rules…"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setCursors([]);
+                }}
+              />
+              <div className={styles.filters} role="group" aria-label="Filter sender rules">
+                {(['all', 'ready', 'paused'] as const).map((value) => (
+                  <button
+                    type="button"
+                    className={styles.filter}
+                    key={value}
+                    aria-pressed={filter === value}
+                    onClick={() => {
+                      setFilter(value);
+                      setCursors([]);
+                    }}
+                  >
+                    {value === 'all' ? 'All rules' : value === 'ready' ? 'Ready' : 'Paused'}
+                  </button>
+                ))}
+              </div>
+              {rules.isFetching && (
+                <p role="status" className={styles.muted}>
+                  Loading rules…
+                </p>
+              )}
+              {rules.isError && (
+                <div role="alert">
+                  <p className={styles.error}>Rules couldn’t load. Try again.</p>
+                  <Button tone="ghost" onClick={() => void rules.refetch()}>
+                    Retry
+                  </Button>
+                </div>
+              )}
+              {visibleRules.map((rule) => (
                 <button
                   type="button"
-                  className={styles.filter}
-                  key={value}
-                  aria-pressed={filter === value}
-                  onClick={() => {
-                    setFilter(value);
-                    setCursors([]);
-                  }}
+                  key={rule.id}
+                  className={styles.row}
+                  aria-current={selected?.id === rule.id ? 'true' : undefined}
+                  disabled={busy}
+                  onClick={() => choose(rule)}
                 >
-                  {value === 'all' ? 'All rules' : value === 'ready' ? 'Ready' : 'Paused'}
+                  <span>
+                    <strong>{rule.name}</strong>
+                    <small>
+                      {rule.enabled
+                        ? `${rule.mode === 'paused' ? 'Paused' : verb(rule.action)} · ${rule.senders.length} senders`
+                        : 'Retired'}
+                    </small>
+                  </span>
+                  <span className={styles.count}>{num(rule.matchingMessageCount)}</span>
                 </button>
               ))}
-            </div>
-            {rules.isFetching && (
-              <p role="status" className={styles.muted}>
-                Loading rules…
-              </p>
-            )}
-            {rules.isError && (
-              <div role="alert">
-                <p className={styles.error}>Rules couldn’t load. Try again.</p>
-                <Button tone="ghost" onClick={() => void rules.refetch()}>
-                  Retry
-                </Button>
-              </div>
-            )}
-            {visibleRules.map((rule) => (
-              <button
-                type="button"
-                key={rule.id}
-                className={styles.row}
-                aria-current={selected?.id === rule.id ? 'true' : undefined}
-                disabled={busy}
-                onClick={() => choose(rule)}
-              >
-                <span>
-                  <strong>{rule.name}</strong>
-                  <small>
-                    {rule.enabled
-                      ? `${rule.mode === 'paused' ? 'Paused' : verb(rule.action)} · ${rule.senders.length} senders`
-                      : 'Retired'}
-                  </small>
-                </span>
-                <span className={styles.count}>{num(rule.matchingMessageCount)}</span>
-              </button>
-            ))}
-            {!rules.isPending && rules.data !== undefined && filtered.length === 0 && (
-              <p className={styles.empty}>
-                {query ? 'No rules match your search.' : 'Your rules will appear here.'}
-              </p>
-            )}
-            {(page > 0 || filtered.length > (page + 1) * 6) && (
-              <nav className={styles.pagination} aria-label="Rule pages">
-                <Button
-                  tone="ghost"
-                  size="sm"
-                  disabled={!cursors.length || rules.isFetching}
-                  onClick={() => setCursors(cursors.slice(0, -1))}
-                >
-                  Previous
-                </Button>
-                <span>Page {cursors.length + 1}</span>
-                <Button
-                  tone="ghost"
-                  size="sm"
-                  disabled={filtered.length <= (page + 1) * 6 || rules.isFetching}
-                  onClick={() => setCursors([...cursors, String(page + 1)])}
-                >
-                  Next
-                </Button>
-              </nav>
-            )}
-          </div>
-        </aside>
-        <div className={styles.review}>
-          <section className={styles.card} aria-label={editing ? 'Rule editor' : 'Selected rule'}>
-            {mailboxId === undefined ? (
-              <>
-                <h2>Choose a Gmail account</h2>
+              {!rules.isPending && rules.data !== undefined && filtered.length === 0 && (
                 <p className={styles.empty}>
-                  Choose a connected account to manage its sender rules.
+                  {query ? 'No rules match your search.' : 'Your rules will appear here.'}
                 </p>
-              </>
-            ) : editing ? (
-              <SenderRuleEditor
-                key={editing === 'create' ? 'new' : `${selected?.id}:${selected?.version}`}
-                rule={editing === 'edit' ? selected : null}
-                mailboxId={mailboxId}
-                saving={save.isPending}
-                error={save.isError ? ruleError(save.error, 'save') : null}
-                onSave={(config) => save.mutate(config)}
-                onCancel={() => setEditing(null)}
-              />
-            ) : selected ? (
-              <>
-                <div className={styles.top}>
-                  <span className={styles.badge}>
-                    {!selected.enabled
-                      ? 'Retired'
-                      : selected.mode === 'paused'
-                        ? 'Paused'
-                        : 'Approval first'}
-                  </span>
+              )}
+              {(page > 0 || filtered.length > (page + 1) * 6) && (
+                <nav className={styles.pagination} aria-label="Rule pages">
                   <Button
                     tone="ghost"
                     size="sm"
-                    onClick={() => {
-                      setEditing('edit');
-                      save.reset();
-                    }}
-                    disabled={busy || !selected.enabled}
+                    disabled={!cursors.length || rules.isFetching}
+                    onClick={() => setCursors(cursors.slice(0, -1))}
                   >
-                    Edit rule
+                    Previous
                   </Button>
-                </div>
-                <h2>{selected.name}</h2>
-                <p className={styles.muted}>Email from the senders you selected.</p>
-                <p className={styles.summary}>
-                  <strong>{senderRuleSummary(selected)}</strong>
-                </p>
-                <div className={styles.section}>
+                  <span>Page {cursors.length + 1}</span>
+                  <Button
+                    tone="ghost"
+                    size="sm"
+                    disabled={filtered.length <= (page + 1) * 6 || rules.isFetching}
+                    onClick={() => setCursors([...cursors, String(page + 1)])}
+                  >
+                    Next
+                  </Button>
+                </nav>
+              )}
+            </div>
+          </aside>
+          <div className={styles.review}>
+            <section className={styles.card} aria-label={editing ? 'Rule editor' : 'Selected rule'}>
+              {mailboxId === undefined ? (
+                <>
+                  <h2>Choose a Gmail account</h2>
+                  <p className={styles.empty}>
+                    Choose a connected account to manage its sender rules.
+                  </p>
+                </>
+              ) : editing ? (
+                <SenderRuleEditor
+                  key={editing === 'create' ? 'new' : `${selected?.id}:${selected?.version}`}
+                  rule={editing === 'edit' ? selected : null}
+                  mailboxId={mailboxId}
+                  saving={save.isPending}
+                  error={save.isError ? ruleError(save.error, 'save') : null}
+                  onSave={(config) => save.mutate(config)}
+                  onCancel={() => {
+                    setEditing(null);
+                    setFocusReview((value) => value + 1);
+                  }}
+                />
+              ) : selected ? (
+                <>
                   <div className={styles.top}>
-                    <h3>{num(selected.matchingMessageCount)} matching emails</h3>
-                    <span className={styles.count}>
-                      {num(selected.matchingSenderCount)} senders
+                    <span className={styles.badge}>
+                      {!selected.enabled
+                        ? 'Retired'
+                        : selected.mode === 'paused'
+                          ? 'Paused'
+                          : 'Approval first'}
                     </span>
+                    <Button
+                      tone="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setEditing('edit');
+                        save.reset();
+                      }}
+                      disabled={busy || !selected.enabled}
+                    >
+                      Edit rule
+                    </Button>
                   </div>
-                  {selected.senders.map((sender) => (
-                    <div className={styles.sender} key={sender.senderKey}>
-                      <span>
-                        <strong>{sender.name ?? sender.email ?? 'Unknown sender'}</strong>
-                        <small>{sender.email}</small>
+                  <h2 ref={reviewHeading} tabIndex={-1}>
+                    {selected.name}
+                  </h2>
+                  <p className={styles.muted}>Email from the senders you selected.</p>
+                  <p className={styles.summary}>
+                    <strong>{senderRuleSummary(selected)}</strong>
+                  </p>
+                  <div className={styles.section}>
+                    <div className={styles.top}>
+                      <h3>{num(selected.matchingMessageCount)} matching emails</h3>
+                      <span className={styles.count}>
+                        {num(selected.matchingSenderCount)} senders
                       </span>
-                      {sender.protected && <em>Protected</em>}
                     </div>
-                  ))}
-                </div>
-                <p className={styles.muted}>
-                  {selected.checkedAt
-                    ? `${Date.now() - Date.parse(selected.checkedAt) > 300000 ? 'Matches may have changed. ' : ''}Checked ${new Date(selected.checkedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. Preview refreshes the exact batch.`
-                    : 'Preview to check current matches.'}
-                </p>
-                <div className={styles.actions}>
-                  <Button
-                    tone="primary"
-                    disabled={busy || !selected.enabled || rules.isError}
-                    onClick={() => {
-                      if (selected.mode === 'paused') {
-                        mode.mutate(selected);
-                        return;
-                      }
-                      setExcluded([]);
-                      setPreviewOpen(true);
-                      refreshPreview();
-                    }}
-                  >
-                    {selected.mode === 'paused' ? 'Resume rule' : 'Preview'}
-                  </Button>
-                  <Button
-                    tone="ghost"
-                    size="sm"
-                    disabled={busy || rules.isFetching}
-                    onClick={() => void rules.refetch()}
-                  >
-                    Refresh rule
-                  </Button>
-                </div>
-                <details className={styles.section}>
-                  <summary className={styles.muted}>Rule options</summary>
-                  {selected.mode !== 'paused' && (
+                    {selected.senders.map((sender) => (
+                      <div className={styles.sender} key={sender.senderKey}>
+                        <span>
+                          <strong>{sender.name ?? sender.email ?? 'Unknown sender'}</strong>
+                          <small>{sender.email}</small>
+                        </span>
+                        {sender.protected && <em>Protected</em>}
+                      </div>
+                    ))}
+                  </div>
+                  <p className={styles.muted}>
+                    {selected.checkedAt
+                      ? `${Date.now() - Date.parse(selected.checkedAt) > 300000 ? 'Matches may have changed. ' : ''}Checked ${new Date(selected.checkedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. Preview refreshes the exact batch.`
+                      : 'Preview to check current matches.'}
+                  </p>
+                  <div className={styles.actions}>
+                    <Button
+                      tone="primary"
+                      disabled={busy || !selected.enabled || rules.isError}
+                      onClick={() => {
+                        if (selected.mode === 'paused') {
+                          mode.mutate(selected);
+                          return;
+                        }
+                        setExcluded([]);
+                        setPreviewOpen(true);
+                        refreshPreview();
+                      }}
+                    >
+                      {selected.mode === 'paused' ? 'Resume rule' : 'Preview'}
+                    </Button>
+                    <Button
+                      tone="ghost"
+                      size="sm"
+                      disabled={busy || rules.isFetching}
+                      onClick={() => void rules.refetch()}
+                    >
+                      Refresh rule
+                    </Button>
+                  </div>
+                  <details className={styles.section}>
+                    <summary className={styles.muted}>Rule options</summary>
+                    {selected.mode !== 'paused' && (
+                      <Button
+                        tone="ghost"
+                        disabled={busy || !selected.enabled}
+                        onClick={() => mode.mutate(selected)}
+                      >
+                        {mode.isPending ? 'Saving…' : 'Pause rule'}
+                      </Button>
+                    )}
+                    <p className={styles.muted}>Retire this rule when you’re finished with it.</p>
                     <Button
                       tone="ghost"
                       disabled={busy || !selected.enabled}
-                      onClick={() => mode.mutate(selected)}
+                      onClick={() => retire.mutate(selected)}
                     >
-                      {mode.isPending ? 'Saving…' : 'Pause rule'}
+                      {retire.isPending ? 'Retiring…' : 'Retire rule'}
                     </Button>
+                  </details>
+                  {mode.isError && (
+                    <p role="alert" className={styles.error}>
+                      {ruleError(mode.error, 'save')}
+                    </p>
                   )}
-                  <p className={styles.muted}>Retire this rule when you’re finished with it.</p>
-                  <Button
-                    tone="ghost"
-                    disabled={busy || !selected.enabled}
-                    onClick={() => retire.mutate(selected)}
-                  >
-                    {retire.isPending ? 'Retiring…' : 'Retire rule'}
-                  </Button>
-                </details>
-                {mode.isError && (
-                  <p role="alert" className={styles.error}>
-                    {ruleError(mode.error, 'save')}
-                  </p>
-                )}
-                {retire.isError && (
-                  <p role="alert" className={styles.error}>
-                    {ruleError(retire.error, 'retire')}
-                  </p>
-                )}
-              </>
-            ) : rules.isError ? (
-              <>
-                <h2>Sender rules unavailable</h2>
-                <p className={styles.error}>Try again to load your sender rules.</p>
-                <Button tone="ghost" onClick={() => void rules.refetch()}>
-                  Retry rules
-                </Button>
-              </>
-            ) : rules.isPending ? (
-              <>
-                <Skeleton width="70%" height={28} />
-                <p className={styles.muted}>Loading your sender rules…</p>
-              </>
-            ) : (
-              <>
-                <h2>Your first sender rule</h2>
-                <p className={styles.empty}>Choose the senders and what to do with their email.</p>
-                <Button tone="primary" onClick={beginCreate} disabled={mailboxId === undefined}>
-                  New rule
-                </Button>
-              </>
-            )}
-          </section>
-          {receipt && (
-            <section className={styles.section} aria-label="Batch progress" aria-live="polite">
-              {receipt.enqueueFailedCount > 0 && (
-                <p className={styles.error}>
-                  {num(receipt.enqueueFailedCount)} actions couldn’t be queued. Review Activity
-                  before trying again.
-                </p>
-              )}
-              {status.isError ? (
+                  {retire.isError && (
+                    <p role="alert" className={styles.error}>
+                      {ruleError(retire.error, 'retire')}
+                    </p>
+                  )}
+                </>
+              ) : rules.isError ? (
                 <>
-                  <p className={styles.error}>
-                    Progress couldn’t be checked. Review Activity or retry.
-                  </p>
-                  <Button tone="ghost" onClick={() => void status.refetch()}>
-                    Retry status
+                  <h2>Sender rules unavailable</h2>
+                  <p className={styles.error}>Try again to load your sender rules.</p>
+                  <Button tone="ghost" onClick={() => void rules.refetch()}>
+                    Retry rules
                   </Button>
                 </>
-              ) : status.data?.status === 'done' ? (
-                <p className={styles.notice}>{num(status.data.affectedCount)} emails moved.</p>
-              ) : status.data?.status === 'failed' ? (
-                <p className={styles.error}>
-                  {status.data.affectedCount > 0
-                    ? `${num(status.data.affectedCount)} emails moved; some actions failed.`
-                    : (senderRuleFailureCopy(status.data.failureCodes) ?? 'The batch failed.')}{' '}
-                  Review Activity to recover.
-                  {status.data.affectedCount > 0 && senderRuleFailureCopy(status.data.failureCodes)}
-                </p>
+              ) : rules.isPending ? (
+                <>
+                  <Skeleton width="70%" height={28} />
+                  <p className={styles.muted}>Loading your sender rules…</p>
+                </>
               ) : (
-                <p className={styles.muted}>
-                  {status.data?.status === 'executing'
-                    ? `Working · ${num(status.data.done)} of ${num(status.data.total)} steps finished.`
-                    : 'Batch queued.'}
-                </p>
+                <>
+                  <h2 ref={reviewHeading} tabIndex={-1}>
+                    Your first sender rule
+                  </h2>
+                  <p className={styles.empty}>
+                    Choose the senders and what to do with their email.
+                  </p>
+                  <Button tone="primary" onClick={beginCreate} disabled={mailboxId === undefined}>
+                    New rule
+                  </Button>
+                </>
               )}
-              <Link href="/activity">Activity and Undo</Link>
             </section>
-          )}
+            {receipt && (
+              <section className={styles.section} aria-label="Batch progress" aria-live="polite">
+                {receipt.enqueueFailedCount > 0 && (
+                  <p className={styles.error}>
+                    {num(receipt.enqueueFailedCount)} actions couldn’t be queued. Review Activity
+                    before trying again.
+                  </p>
+                )}
+                {status.isError ? (
+                  <>
+                    <p className={styles.error}>
+                      Progress couldn’t be checked. Review Activity or retry.
+                    </p>
+                    <Button tone="ghost" onClick={() => void status.refetch()}>
+                      Retry status
+                    </Button>
+                  </>
+                ) : status.data?.status === 'done' ? (
+                  <p className={styles.notice}>{num(status.data.affectedCount)} emails moved.</p>
+                ) : status.data?.status === 'failed' ? (
+                  <p className={styles.error}>
+                    {status.data.affectedCount > 0
+                      ? `${num(status.data.affectedCount)} emails moved; some actions failed.`
+                      : (senderRuleFailureCopy(status.data.failureCodes) ??
+                        'The batch failed.')}{' '}
+                    Review Activity to recover.
+                    {status.data.affectedCount > 0 &&
+                      senderRuleFailureCopy(status.data.failureCodes)}
+                  </p>
+                ) : (
+                  <p className={styles.muted}>
+                    {status.data?.status === 'executing'
+                      ? `Working · ${num(status.data.done)} of ${num(status.data.total)} steps finished.`
+                      : 'Batch queued.'}
+                  </p>
+                )}
+                <Link href="/activity">Activity and Undo</Link>
+              </section>
+            )}
+          </div>
         </div>
-      </div>
-      {pauseOpen && (
+      )}
+      {pauseOpen && !planLocked && (
         <ConfirmModalFrame
           title={`Pause ${num(runningCount)} rules?`}
           subtitle="Stop rule matching and unattended preset actions."
@@ -693,10 +754,10 @@ export function SenderRuleLibraryScope({
           </ul>
         </ConfirmModalFrame>
       )}
-      {previewOpen && selected && (
+      {previewOpen && selected && !planLocked && (
         <ConfirmModalFrame
           title={
-            preview.data && !preview.isFetching && !preview.isError
+            preview.data && !previewChecking && !preview.isError
               ? `${verb(preview.data.action)} ${num(preview.data.messageCount)} emails?`
               : 'Check this batch'
           }
@@ -731,7 +792,7 @@ export function SenderRuleLibraryScope({
             ) : undefined
           }
         >
-          {preview.isFetching ? (
+          {preview.isFetching && !preview.data ? (
             <p role="status" className={styles.muted}>
               Checking current email…
             </p>
@@ -741,13 +802,20 @@ export function SenderRuleLibraryScope({
             </p>
           ) : preview.data ? (
             <>
+              {previewChecking && (
+                <p role="status" className={styles.muted}>
+                  {preview.fetchStatus === 'paused'
+                    ? 'Waiting for connection…'
+                    : 'Refreshing preview…'}
+                </p>
+              )}
               <p className={styles.summary}>{senderRuleSummary(preview.data)}</p>
               {expired && (
                 <p role="alert" className={styles.error}>
                   This preview expired. Refresh to continue.
                 </p>
               )}
-              {preview.data.hasMore && (
+              {!previewChecking && preview.data.hasMore && (
                 <p className={styles.muted}>
                   This batch includes {num(preview.data.messageCount)} of{' '}
                   {num(preview.data.totalEligibleCount)} eligible emails. Preview again after it
@@ -757,40 +825,6 @@ export function SenderRuleLibraryScope({
               {preview.data.messageCount === 0 && (
                 <p className={styles.empty}>No matching email in this batch.</p>
               )}
-              <p className={styles.muted}>Choose which senders to include this time.</p>
-              {selected.senders.map((sender) => {
-                const match = preview.data!.senders.find(
-                  (item) => item.senderKey === sender.senderKey,
-                );
-                const protectedSender = sender.protected || match?.protected;
-                return (
-                  <label className={styles.sender} key={sender.senderKey}>
-                    <input
-                      type="checkbox"
-                      checked={!excluded.includes(sender.senderKey) && !protectedSender}
-                      disabled={protectedSender || execute.isPending}
-                      onChange={(e) => {
-                        execute.reset();
-                        idempotency.current = newIdempotencyKey();
-                        setExcluded((current) =>
-                          e.target.checked
-                            ? current.filter((key) => key !== sender.senderKey)
-                            : [...current, sender.senderKey],
-                        );
-                      }}
-                    />
-                    <span>
-                      <strong>{sender.name ?? sender.email ?? 'Unknown sender'}</strong>
-                      <small>{sender.email}</small>
-                    </span>
-                    {protectedSender ? (
-                      <em>Protected</em>
-                    ) : (
-                      <span className={styles.count}>{match ? num(match.messageCount) : '—'}</span>
-                    )}
-                  </label>
-                );
-              })}
               {preview.data.protectedSenderCount > 0 && (
                 <p className={styles.muted}>
                   {num(preview.data.protectedSenderCount)} Protected senders excluded.
@@ -798,6 +832,40 @@ export function SenderRuleLibraryScope({
               )}
             </>
           ) : null}
+          <p className={styles.muted}>Choose which senders to include this time.</p>
+          {selected.senders.map((sender) => {
+            const match = preview.data?.senders.find((item) => item.senderKey === sender.senderKey);
+            const protectedSender = sender.protected || match?.protected;
+            return (
+              <label className={styles.sender} key={sender.senderKey}>
+                <input
+                  type="checkbox"
+                  checked={!excluded.includes(sender.senderKey) && !protectedSender}
+                  disabled={protectedSender || execute.isPending}
+                  onChange={(e) => {
+                    execute.reset();
+                    idempotency.current = newIdempotencyKey();
+                    setExcluded((current) =>
+                      e.target.checked
+                        ? current.filter((key) => key !== sender.senderKey)
+                        : [...current, sender.senderKey],
+                    );
+                  }}
+                />
+                <span>
+                  <strong>{sender.name ?? sender.email ?? 'Unknown sender'}</strong>
+                  <small>{sender.email}</small>
+                </span>
+                {protectedSender ? (
+                  <em>Protected</em>
+                ) : (
+                  <span className={styles.count}>
+                    {previewChecking ? 'Checking…' : match ? num(match.messageCount) : '—'}
+                  </span>
+                )}
+              </label>
+            );
+          })}
         </ConfirmModalFrame>
       )}
     </div>
