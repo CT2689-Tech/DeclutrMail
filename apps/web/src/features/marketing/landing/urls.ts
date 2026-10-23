@@ -58,15 +58,18 @@ function publicBillingDestination(value?: string): string | undefined {
   const keys = [...query.keys()];
   if (
     new Set(keys).size !== keys.length ||
-    keys.some((key) => !['plan', 'cycle', 'promo'].includes(key))
+    keys.some((key) => !['plan', 'cycle', 'promo', 'offer'].includes(key))
   )
     return undefined;
   const plan = query.get('plan');
   const cycle = query.get('cycle');
   const promo = query.get('promo');
+  const offer = query.get('offer');
   if ((plan !== 'plus' && plan !== 'pro') || (cycle !== 'monthly' && cycle !== 'annual'))
     return undefined;
   if (promo !== null && (promo !== 'foundingPro' || plan !== 'pro' || cycle !== 'annual'))
+    return undefined;
+  if (offer !== null && (offer !== 'pass_onetime' || plan !== 'plus' || cycle !== 'annual'))
     return undefined;
   return value;
 }

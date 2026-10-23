@@ -12,7 +12,7 @@ const expected = new Map([
   ['quiet-hours.spec.ts', 1],
   ['brief-preview.spec.ts', 1],
   ['senders-search-typing.spec.ts', 3],
-  ['public-journeys.spec.ts', 2],
+  ['public-journeys.spec.ts', 3],
   ['cookie-consent.spec.ts', 2],
   ['journey-recovery.spec.ts', 4],
   ['unsubscribe-backlog.spec.ts', 4],

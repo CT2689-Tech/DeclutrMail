@@ -15,7 +15,7 @@ const files = [
   ['quiet-hours', 1],
   ['brief-preview', 1],
   ['senders-search-typing', 3],
-  ['public-journeys', 2],
+  ['public-journeys', 3],
   ['cookie-consent', 2],
   ['journey-recovery', 4],
   ['unsubscribe-backlog', 4],
