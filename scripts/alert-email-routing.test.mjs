@@ -61,6 +61,7 @@ function fixture() {
 function backend(initial = fixture(), options = {}) {
   let policies = structuredClone(initial);
   const writes = [];
+  const logSearches = [];
   let serial = 0;
   const request = async (url, method = 'GET', body) => {
     const parsed = new URL(url);
@@ -114,14 +115,28 @@ function backend(initial = fixture(), options = {}) {
     }
     if (parsed.pathname.endsWith('/entries:list')) {
       if (options.logsUnavailable) throw new Error('digest log read denied');
+      logSearches.push(structuredClone(body));
+      if (options.logPages) return options.logPages[logSearches.length - 1];
       return { entries: options.alreadyPublished ? [{}] : [] };
     }
     if (parsed.pathname.endsWith('/entries:write')) return {};
     throw new Error(`Unexpected mock request ${method} ${url}`);
   };
-  return { request, writes, policies: () => structuredClone(policies) };
+  return { request, writes, logSearches, policies: () => structuredClone(policies) };
 }
 const report = () => ({ mode: 'test' });
+
+test('plan hash tolerates provider object-key ordering while detecting value changes', () => {
+  const initial = fixture();
+  const reordered = JSON.parse(JSON.stringify(initial), (_key, value) =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).reverse())
+      : value,
+  );
+  assert.equal(planHash(reordered), planHash(initial));
+  reordered[0].enabled = false;
+  assert.notEqual(planHash(reordered), planHash(initial));
+});
 
 test('routine warnings are opening-only and daily, while major outages retain deliberate closure and reminders', () => {
   for (const p of fixture()) {
@@ -455,6 +470,43 @@ test('pagination is complete or fails explicitly, and native empty protobuf list
   );
   assert.ok(contains({}, { notificationChannels: [] }));
   assert.ok(!contains({}, { enabled: true }));
+});
+
+test('digest replay search follows empty partial pages and refuses incomplete searches', async () => {
+  const active = routingPlan(fixture(), checks, channel).map((p, i) => ({
+    ...p,
+    name: p.name ?? `projects/p/alertPolicies/a${i}`,
+  }));
+  active.find((p) => p.displayName === DIGEST_POLICY).userLabels.delivery_verified = 'true';
+  const prior = backend(active, {
+    logPages: [{ entries: [], nextPageToken: 'next' }, { entries: [{}] }],
+  });
+  const result = report();
+  await runRouting('digest', { request: prior.request, report: result });
+  assert.equal(result.digest.alreadyPublished, true);
+  assert.equal(prior.writes.length, 0);
+  assert.equal(prior.logSearches[1].pageToken, 'next');
+  const { pageToken: _token, ...second } = prior.logSearches[1];
+  assert.deepEqual(second, prior.logSearches[0]);
+  assert.match(second.filter, /timestamp >=/);
+  assert.match(second.filter, /timestamp </);
+  assert.equal(second.orderBy, 'timestamp desc');
+
+  const absent = backend(active, { logPages: [{ entries: [], nextPageToken: 'next' }, {}] });
+  await runRouting('digest', { request: absent.request, report: report() });
+  assert.equal(absent.writes.length, 1);
+
+  for (const pages of [
+    [{ nextPageToken: 'repeat' }, { nextPageToken: 'repeat' }],
+    Array.from({ length: 11 }, (_, i) => ({ nextPageToken: `page${i}` })),
+  ]) {
+    const incomplete = backend(active, { logPages: pages });
+    await assert.rejects(
+      runRouting('digest', { request: incomplete.request, report: report() }),
+      /replay search incomplete/,
+    );
+    assert.equal(incomplete.writes.length, 0);
+  }
 });
 
 test('rollout and scheduled digest use existing WIF and daily cadence without payment-provider operations', () => {

@@ -61,6 +61,8 @@ remain local. No notification channel is created.
   missing delivery configuration after activation is an error, not an empty report.
   Same-UTC-day replays skip an already published summary. The native log alert uses
   a five-minute minimum rate limit so a delayed daily run does not suppress tomorrow.
+  Replay reads are bounded to that UTC day and follow empty partial Logging pages;
+  repeated tokens or an incomplete search fail without publishing another summary.
 - Non-auth sync failures retain separate immediate per-mailbox incidents. Two or
   more observed reconnect requirements sustained ten minutes have an independent
   immediate aggregate alert; its observations inherit the existing two-hour grace.
@@ -78,6 +80,8 @@ admin inbox, then **apply** with a fresh plan hash and that observed Gmail recei
 fingerprint (SHA-256 of the ID, so no raw Gmail ID enters workflow inputs).
 Application refuses unavailable native queries, changed plans or missing
 receipts, reads every changed policy back, and attempts restoration on failure.
+Plan fingerprints normalize object-key ordering from provider responses while
+retaining value and array changes as drift.
 Run **plan** and **smoke** through the protected-main workflow using the
 same WIF identity as the daily watchdog. Preflight verifies policy, channel,
 incident and digest-log reads; smoke verifies publication and inbox delivery.
