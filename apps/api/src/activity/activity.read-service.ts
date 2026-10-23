@@ -73,7 +73,7 @@ import type {
   ActivityWeeklyReview,
   UndoState,
 } from './activity.types.js';
-import type { ActivityLogEntry } from '@declutrmail/db';
+import type { ActivityLogEntry, LabelActionSelector } from '@declutrmail/db';
 
 /** D55 — number of days each window covers; `'all'` returns `null`. */
 const WINDOW_DAYS: Record<Exclude<ActivityWindow, 'all'>, number> = {
@@ -127,6 +127,7 @@ interface ExecutionLineage {
   root: ExecutionAttempt;
   current: ExecutionAttempt;
   sender: ActivityRowFacts['sender'];
+  rule: ActivityRowFacts['rule'];
 }
 
 export interface SummarizeActivityParams {
@@ -343,7 +344,8 @@ export class ActivityReadService {
     batchSize: number,
     snapshotCreatedAt: Date,
   ): AsyncGenerator<ActivityRowFacts> {
-    if (params.source !== null && params.source !== 'manual') return;
+    if (params.source !== null && params.source !== 'manual' && params.source !== 'autopilot')
+      return;
     const useCustomRange = params.dateFrom !== null && params.dateFrom !== undefined;
     const hasCustomUpperBound = params.dateTo !== null && params.dateTo !== undefined;
     const lowerBound =
@@ -390,6 +392,7 @@ export class ActivityReadService {
 
   private async loadCurrentExecutionAttempts(args: {
     mailboxAccountId: string;
+    source: ActivityLogEntry['source'] | null;
     verbs?: ActivityVerbFilter[];
     lowerBound: Date | null;
     upperBound: Date | null;
@@ -429,6 +432,7 @@ export class ActivityReadService {
           ),
       ),
     ];
+    if (args.source) whereParts.push(eq(actionJobSourceSql(root.selector), args.source));
     if (args.verbs && args.verbs.length > 0) {
       const executionVerbs = args.verbs.filter((verb): verb is ExecutionVerb =>
         EXECUTION_VERBS.includes(verb as ExecutionVerb),
@@ -521,12 +525,55 @@ export class ActivityReadService {
         },
       ]),
     );
+    const rulesById = await this.hydrateOwnedCustomRules(
+      mailboxAccountId,
+      roots.map((root) => root.selector),
+    );
     return attempts.flatMap((current): ExecutionLineage[] => {
       const root = rootsById.get(current.rootActionId ?? current.id);
       if (!root) return [];
       const senderKey = root.selector.type === 'sender' ? root.selector.senderKey : null;
-      return [{ root, current, sender: senderKey ? (sendersByKey.get(senderKey) ?? null) : null }];
+      return [
+        {
+          root,
+          current,
+          sender: senderKey ? (sendersByKey.get(senderKey) ?? null) : null,
+          rule: rulesById.get(customRuleId(root.selector) ?? '') ?? null,
+        },
+      ];
     });
+  }
+
+  /** Hydrate one bounded page of root provenance, including retired rules.
+   * Metadata from another mailbox must never become a visible rule identity.
+   */
+  private async hydrateOwnedCustomRules(
+    mailboxAccountId: string,
+    selectors: readonly LabelActionSelector[],
+  ): Promise<Map<string, NonNullable<ActivityRowFacts['rule']>>> {
+    const ids = [
+      ...new Set(
+        selectors
+          .map(customRuleId)
+          .filter(
+            (id): id is string =>
+              id !== null &&
+              /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id),
+          ),
+      ),
+    ];
+    if (ids.length === 0) return new Map();
+    const rows = await this.db
+      .select({ id: automationRules.id, name: automationRules.name })
+      .from(automationRules)
+      .where(
+        and(
+          eq(automationRules.mailboxAccountId, mailboxAccountId),
+          eq(automationRules.isPreset, false),
+          inArray(automationRules.id, ids),
+        ),
+      );
+    return new Map(rows.map((row) => [row.id, row]));
   }
 
   private async loadActivityRows(
@@ -799,8 +846,8 @@ export class ActivityReadService {
    * (D245). Nothing changed, so there is no `activity_log` row; the job's
    * own marker is the durable record, shown as the same "skipped — sender
    * is Protected" line Autopilot's protection dismissals use, with no Undo.
-   * Unlike those, it is the user's own action, so it sits in the default
-   * feed — the lasting trace once the bottom pill has faded.
+   * Reviewed sender rules retain their Autopilot provenance; manual jobs
+   * retain Manual. Both remain visible after the bottom pill has faded.
    *
    * Dated by the click (`created_at`), like the queued line it replaces;
    * the skip lands a lock-wait later. That also keeps the read on the
@@ -824,7 +871,7 @@ export class ActivityReadService {
       limit,
       nowMs,
     } = params;
-    if (source !== null && source !== 'manual') return [];
+    if (source !== null && source !== 'manual' && source !== 'autopilot') return [];
     if (outcomes.length > 0 && !outcomes.includes('protected')) return [];
     const skipVerbs = verbs.filter((verb): verb is ExecutionVerb =>
       EXECUTION_VERBS.includes(verb as ExecutionVerb),
@@ -842,6 +889,7 @@ export class ActivityReadService {
       eq(actionJobs.errorCode, LABEL_SENDER_PROTECTED_ERROR_CODE),
       inArray(actionJobs.verb, skipVerbs.length > 0 ? skipVerbs : EXECUTION_VERBS),
     ];
+    if (source) whereParts.push(eq(actionJobSourceSql(actionJobs.selector), source));
     if (windowStart) whereParts.push(gte(clickedAt, windowStart));
     if (dateFrom) whereParts.push(gte(clickedAt, dateFrom));
     if (dateTo) whereParts.push(lt(clickedAt, dateTo));
@@ -858,6 +906,7 @@ export class ActivityReadService {
         id: actionJobs.id,
         occurredAt: clickedAt,
         verb: actionJobs.verb,
+        selector: actionJobs.selector,
         senderKey: senders.senderKey,
         senderDisplayName: senders.displayName,
         senderEmail: senders.email,
@@ -873,10 +922,14 @@ export class ActivityReadService {
       .where(and(...whereParts))
       .orderBy(desc(feedTime(clickedAt)), desc(actionJobs.id))
       .limit(limit + 1);
+    const rulesById = await this.hydrateOwnedCustomRules(
+      mailboxAccountId,
+      rows.map((row) => row.selector),
+    );
     return rows.map((row) => ({
       id: row.id,
       occurredAt: row.occurredAt.toISOString(),
-      source: 'manual',
+      source: actionJobSource(row.selector),
       action: row.verb as ExecutionVerb,
       affectedCount: 0,
       sender:
@@ -888,7 +941,7 @@ export class ActivityReadService {
               email: row.senderEmail,
               domain: domainOf(row.senderEmail),
             },
-      rule: null,
+      rule: rulesById.get(customRuleId(row.selector) ?? '') ?? null,
       feedbackRating: null,
       undoState: { kind: 'unavailable' },
       executionState: null,
@@ -1045,6 +1098,7 @@ export class ActivityReadService {
    */
   private executionScope(args: {
     mailboxAccountId: string;
+    source?: ActivityLogEntry['source'] | null;
     lowerBound: Date | null;
     upperBound: Date | null;
     senderQuery: string;
@@ -1085,6 +1139,7 @@ export class ActivityReadService {
       sql`(${current.recoveryAttempt}, ${current.createdAt}, ${current.id}) >= (${root.recoveryAttempt}, ${root.createdAt}, ${root.id})`,
       notAutopilotClaim(root.idempotencyKey),
     ];
+    if (args.source) scope.push(eq(actionJobSourceSql(root.selector), args.source));
     const senderScope = this.senderScopeFilter(
       args.mailboxAccountId,
       args.senderQuery,
@@ -1123,10 +1178,12 @@ export class ActivityReadService {
     upperBound: Date | null,
   ): Promise<ExecutionLineage[]> {
     return measureRequestOperation('activity.lineages', async () => {
-      if (params.source !== null && params.source !== 'manual') return [];
+      if (params.source !== null && params.source !== 'manual' && params.source !== 'autopilot')
+        return [];
       if (params.outcomes?.length && !params.outcomes.includes('failed')) return [];
       const { root, current, outcomeTime, where, join } = this.executionScope({
         mailboxAccountId: params.mailboxAccountId,
+        source: params.source,
         lowerBound,
         upperBound,
         senderQuery: params.senderQuery ?? '',
@@ -1182,9 +1239,14 @@ export class ActivityReadService {
         .where(where)
         .orderBy(desc(feedTime(outcomeTime)), desc(current.id))
         .limit(params.limit + 1);
+      const rulesById = await this.hydrateOwnedCustomRules(
+        params.mailboxAccountId,
+        lineages.map((lineage) => lineage.root.selector),
+      );
       return lineages.map(({ root, current, sender }) => ({
         root,
         current,
+        rule: rulesById.get(customRuleId(root.selector) ?? '') ?? null,
         sender: sender
           ? {
               ...sender,
@@ -1503,11 +1565,12 @@ function projectExecutionRows(
     outcomes?: ActivityReviewOutcome[];
   },
 ): ActivityRowFacts[] {
-  if (filters.source !== null && filters.source !== 'manual') return [];
   const senderNeedle = filters.senderQuery.toLocaleLowerCase();
 
   return lineages.flatMap((lineage): ActivityRowFacts[] => {
-    const { root, current, sender } = lineage;
+    const { root, current, sender, rule } = lineage;
+    const source = actionJobSource(root.selector);
+    if (filters.source !== null && filters.source !== source) return [];
     const outcomeTime = current.status === 'failed' ? current.updatedAt : current.createdAt;
     if (!EXECUTION_VERBS.includes(root.verb as ExecutionVerb)) return [];
     const action = root.verb as ExecutionVerb;
@@ -1533,11 +1596,11 @@ function projectExecutionRows(
       {
         id: current.id,
         occurredAt: outcomeTime.toISOString(),
-        source: 'manual',
+        source,
         action,
         affectedCount: 0,
         sender,
-        rule: null,
+        rule,
         feedbackRating: null,
         undoState: { kind: 'unavailable' },
         executionState: executionStateFor(lineage),
@@ -1793,6 +1856,21 @@ function notAutopilotClaim(idempotencyKey: SQLWrapper): SQL {
       (prefix) => sql`${idempotencyKey} not like ${`${prefix}%`}`,
     ),
   )!;
+}
+
+/** Original intent owns attribution across every recovery attempt. */
+function customRuleId(selector: LabelActionSelector): string | null {
+  if (selector.type !== 'sender') return null;
+  const id = selector.autopilot?.ruleId;
+  return typeof id === 'string' && id.length > 0 ? id : null;
+}
+
+function actionJobSource(selector: LabelActionSelector): 'manual' | 'autopilot' {
+  return customRuleId(selector) === null ? 'manual' : 'autopilot';
+}
+
+function actionJobSourceSql(selector: SQLWrapper): SQL<'manual' | 'autopilot'> {
+  return sql`case when ${selector}->>'type' = 'sender' and coalesce(${selector}->'autopilot'->>'ruleId', '') <> '' then 'autopilot' else 'manual' end`;
 }
 
 /**
