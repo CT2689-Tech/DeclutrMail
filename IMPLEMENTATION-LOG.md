@@ -476,3 +476,10 @@ threshold on the new reconnect diagnostic. Readback now recognizes that exact
 default, keeps other missing fields strict, and retains mismatched definitions
 in the encrypted failure report. A changed nonzero threshold still fails and
 rolls back all resources created during preparation. Relates to D159 and D160.
+
+Production alert routing was activated on October 23 after native preparation,
+rendered test-email receipt, apply/readback and a received real daily summary.
+The temporary IAM binding and role were removed; a subsequent CI digest read
+confirmed same-day duplicate suppression with the ongoing permissions only.
+The runbook now records this evidence in place of the earlier pending status.
+Relates to D159 and D160.
