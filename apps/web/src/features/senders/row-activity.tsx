@@ -47,7 +47,7 @@ const WORKING: Record<RowActivityVerb | 'keep', string> = {
 };
 
 const DONE: Record<RowActivityVerb | 'keep', string> = {
-  keep: 'Skipped in Triage',
+  keep: 'Skipped in suggested review',
   archive: 'Archived',
   later: 'Moved to Later',
   delete: 'Deleted',

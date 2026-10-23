@@ -1,0 +1,28 @@
+.views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  font-family: var(--dm-font-sans);
+  margin: 0 0 20px;
+}
+.views a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  border-bottom: 2px solid transparent;
+  color: var(--dm-fg-muted);
+  font-size: 13px;
+  text-decoration: none;
+}
+.views a:hover {
+  color: var(--dm-fg);
+}
+.views a[aria-current='page'] {
+  border-bottom-color: var(--dm-primary);
+  color: var(--dm-fg);
+}
+.views span {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}

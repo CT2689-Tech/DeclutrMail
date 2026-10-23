@@ -76,6 +76,42 @@ export const Default: Story<typeof ScreenerScreen> = {
   ),
 };
 
+export const NeedsFirstReview: Story<typeof ScreenerScreen> = {
+  render: () => (
+    <Shell>
+      <div style={{ maxWidth: 1100, margin: '24px auto', padding: '0 16px' }}>
+        <nav aria-label="Sender views">
+          <a href="/senders">All senders</a>{' '}
+          <a href="/senders?view=first-review" aria-current="page">
+            Needs first review
+          </a>
+        </nav>
+        <ScreenerScreen
+          presentation="senders"
+          state={{ kind: 'ready', rows: [...SCREENER_QUEUE] }}
+          totalPending={3259}
+        />
+      </div>
+    </Shell>
+  ),
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'The Senders first-review view uses the existing queue, real total and full action previews, without another set of filter and sort controls.',
+      },
+    },
+  },
+};
+
+export const NeedsFirstReviewEmpty: Story<typeof ScreenerScreen> = {
+  render: () => (
+    <Shell>
+      <ScreenerScreen presentation="senders" state={{ kind: 'empty' }} />
+    </Shell>
+  ),
+};
+
 export const Empty: Story<typeof ScreenerScreen> = {
   render: () => (
     <Shell>

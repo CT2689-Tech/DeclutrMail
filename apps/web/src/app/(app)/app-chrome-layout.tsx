@@ -4,7 +4,7 @@ import { isUserScopedAppPath } from '@declutrmail/shared/contracts/account-navig
 
 import { useEffect, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { AppShell, ToastHost } from '@declutrmail/shared';
 import {
   hasCapability,
@@ -53,6 +53,8 @@ const HeardFromPrompt = dynamic(
 );
 
 function shellRoute(id: string): string {
+  if (id === 'triage') return '/senders?view=guided';
+  if (id === 'screener') return '/senders?view=first-review';
   return id === 'snoozed' ? '/later' : `/${id}`;
 }
 
@@ -154,6 +156,7 @@ export function AppChromeLayout({ children }: { children: ReactNode }) {
 function AppChrome({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     const refreshServerScope = () => router.refresh();
@@ -324,7 +327,7 @@ function AppChrome({ children }: { children: ReactNode }) {
                 : {
                     screener: {
                       text: screenerPending > 99 ? '99+' : screenerPending,
-                      label: `${screenerPending} sender${screenerPending === 1 ? '' : 's'} awaiting a first review in Screener`,
+                      label: `${screenerPending} sender${screenerPending === 1 ? '' : 's'} awaiting first review`,
                     },
                   }),
             }}
@@ -357,7 +360,9 @@ function AppChrome({ children }: { children: ReactNode }) {
           receipts remain in /activity and on mailbox-backed surfaces. */}
       {hasActiveMailbox && !userScopedRoute && (
         <ProductUndoTray
-          enableShortcut={active === 'triage'}
+          enableShortcut={
+            active === 'triage' || (active === 'senders' && searchParams.get('view') === 'guided')
+          }
           mailboxId={me.activeMailboxId ?? undefined}
         />
       )}

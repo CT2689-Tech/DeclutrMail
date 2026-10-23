@@ -69,10 +69,7 @@ test('Keep via K: preview-on-cancel leaves queue intact; Keep removes the row se
   expect(target, 'synthetic policy-free sender must be queued').not.toBeNull();
   const { senderName, senderKey } = target!;
 
-  // ---- Open /triage. Focus mode is the default (one sender on stage);
-  // the target can sit anywhere in the queue, so switch to the list —
-  // "See all" — and find its row. The header's accessible name flips
-  // expand ↔ collapse with state, so match both.
+  // Guided Review retains the existing decision and preview contracts.
   await page.goto('/triage');
   await expectScreenMounted(page);
   await expect(page.getByRole('region', { name: 'Current decision' })).toBeVisible();
@@ -89,16 +86,10 @@ test('Keep via K: preview-on-cancel leaves queue intact; Keep removes the row se
   await expect(focus.getByRole('heading', { level: 2 })).toHaveText(originalName!);
   await identity.getByText('Sender details', { exact: true }).press('Enter');
   await expect(identity).not.toHaveAttribute('open');
-  await page.getByRole('button', { name: 'List', exact: true }).click();
-  const queue = page.getByRole('list', { name: 'Triage list' });
+  const queue = page.getByRole('navigation', { name: 'Senders in this review' });
   await expect(queue).toBeVisible();
-  const escaped = senderName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const rowHeader = page.getByRole('button', {
-    name: new RegExp(`^${escaped} — (expand|collapse) triage detail$`),
-  });
+  const rowHeader = queue.getByRole('button', { name: senderName, exact: true });
   await expect(rowHeader).toBeVisible();
-
-  // ---- Expand the row — the K/A/U/L toolbar mounts (D29/D227).
   await rowHeader.click();
   const toolbar = page.getByRole('toolbar', { name: `Decide on ${senderName}` });
   await expect(toolbar).toBeVisible();
@@ -173,7 +164,7 @@ test('Keep via K: preview-on-cancel leaves queue intact; Keep removes the row se
   expect(Number(events[0]?.count)).toBe(1);
   await page.reload();
   await expectScreenMounted(page);
-  await expect(page.getByRole('heading', { level: 1, name: 'Triage' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Guided Review' })).toBeVisible();
   expect(
     (await api.get<TriageQueueRow[]>('/api/triage/queue')).some(
       (row) => row.senderName === senderName,

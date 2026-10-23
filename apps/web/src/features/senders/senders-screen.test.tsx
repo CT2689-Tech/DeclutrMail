@@ -4684,7 +4684,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       expect(screen.queryAllByText(/Still confirming your last action/)).toHaveLength(held);
     });
 
-    it('Keep Undo posts /keep/undo and drops Skipped in Triage when the list refetch fails', async () => {
+    it('Keep Undo posts /keep/undo and drops Skipped in suggested review when the list refetch fails', async () => {
       let phase: 'initial' | 'kept' | 'undo' = 'initial';
       let undoPosts = 0;
       installFetchStub([
@@ -4745,7 +4745,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       renderScreenWithToasts();
       fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
       fireEvent.keyDown(document.body, { key: 'k' });
-      await screen.findByText('Skipped in Triage');
+      await screen.findByText('Skipped in suggested review');
       await waitFor(() => {
         const lists = lastClient.getQueriesData<{
           pages: Array<{ data: Array<{ policyType?: string | null }> }>;
@@ -4758,7 +4758,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       });
       fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
       await waitFor(() => expect(undoPosts).toBe(1));
-      await waitFor(() => expect(screen.queryByText('Skipped in Triage')).toBeNull());
+      await waitFor(() => expect(screen.queryByText('Skipped in suggested review')).toBeNull());
     });
 
     it('says so when SEVERAL senders are kept — it used to say nothing at all', async () => {
@@ -7216,4 +7216,150 @@ describe('Senders Unsubscribe selected-age network request', () => {
       });
     },
   );
+});
+
+describe('guided review from Senders', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    useSendersStore.setState({ sort: 'total', direction: 'desc' });
+  });
+  afterEach(() => resetFetchStub());
+
+  function reviewHandlers(writes: () => void) {
+    const rows = [
+      { ...ROW, inboxCount: 12, archivedCount: 0 },
+      {
+        ...ROW,
+        id: 'b',
+        displayName: 'Sender B',
+        email: 'b@example.invalid',
+        domain: 'example.invalid',
+        inboxCount: 6,
+        archivedCount: 0,
+      },
+    ];
+    return [
+      {
+        method: 'GET' as const,
+        path: '/api/senders',
+        respond: (_request: Request, url: URL) => {
+          const matching = rows.filter((row) =>
+            row.displayName
+              ?.toLowerCase()
+              .includes((url.searchParams.get('q') ?? '').toLowerCase()),
+          );
+          return jsonOk({
+            data: matching,
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 50 },
+              query: { totalMatching: matching.length, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          });
+        },
+      },
+      {
+        method: 'GET' as const,
+        path: /^\/api\/senders\/[ab]$/,
+        respond: (_request: Request, url: URL) =>
+          jsonOk({
+            data: {
+              ...rows.find((row) => url.pathname.endsWith('/' + row.id)),
+              recommendation: null,
+            },
+          }),
+      },
+      {
+        method: 'POST' as const,
+        path: /^\/api\//,
+        respond: () => {
+          writes();
+          return jsonServerError('must_not_run');
+        },
+      },
+      compositePreviewHandler(12),
+    ];
+  }
+  it('reviews actual selected rows without a Triage intersection, and Back preserves selection', async () => {
+    const writes = vi.fn();
+    installFetchStub(reviewHandlers(writes));
+    renderScreen();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /select sender b/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review selected (2)' }));
+    const current = await screen.findByRole(
+      'region',
+      { name: 'Current sender' },
+      { timeout: 10000 },
+    );
+    expect(within(current).getByRole('heading', { name: 'Sender A' })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: '?' });
+    const help = await screen.findByRole('dialog');
+    expect(within(help).getByRole('heading', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
+    expect(within(help).queryByText('Skip to the next sender')).toBeNull();
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(within(help).getByRole('heading', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
+    expect(writes).not.toHaveBeenCalled();
+    fireEvent.click(within(help).getByRole('button', { name: 'Close shortcuts' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next sender' }));
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('region', { name: 'Current sender' })).getByRole('heading', {
+          name: 'Sender B',
+        }),
+      ).toBeInTheDocument(),
+    );
+    expect(writes).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Previous' }));
+    await screen.findByRole('heading', { name: 'Sender A' });
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Senders' }));
+    expect(screen.getByRole('checkbox', { name: /select sender a/i })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /select sender b/i })).toBeChecked();
+  });
+  it('uses the existing mandatory Senders preview and keeps its subject fixed', async () => {
+    const writes = vi.fn();
+    installFetchStub(reviewHandlers(writes));
+    renderScreen();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review selected (1)' }));
+    await screen.findByRole('region', { name: 'Current sender' }, { timeout: 10000 });
+    fireEvent.click(screen.getByText('More actions'));
+    fireEvent.click(screen.getByRole('button', { name: 'Archive (A)' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      within(dialog).getByRole('heading', { name: /Archive emails from Sender A/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back to Senders' })).toBeDisabled();
+    expect(writes).not.toHaveBeenCalled();
+  });
+  it('restores the real filtered queue when guided entry has no local session', async () => {
+    const writes = vi.fn();
+    installFetchStub(reviewHandlers(writes));
+    const view = renderScreen();
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Search senders' }), {
+      target: { value: 'Sender B' },
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole('checkbox', { name: /select sender a/i })).toBeNull(),
+    );
+    // A URL/direct-entry change activates Guided without the Start button's snapshot.
+    view.rerender(
+      <QueryWrapper client={lastClient}>
+        <SendersScreen guided />
+      </QueryWrapper>,
+    );
+    const current = await screen.findByRole(
+      'region',
+      { name: 'Current sender' },
+      { timeout: 10000 },
+    );
+    expect(within(current).getByRole('heading', { name: 'Sender B' })).toBeInTheDocument();
+    expect(screen.getByText('Senders matching this view')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('navigation', { name: 'Senders in this review' })).queryByRole(
+        'button',
+        { name: 'Sender A' },
+      ),
+    ).toBeNull();
+    expect(writes).not.toHaveBeenCalled();
+  });
 });

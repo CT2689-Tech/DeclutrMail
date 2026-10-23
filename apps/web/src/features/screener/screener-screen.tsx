@@ -148,6 +148,8 @@ export function ScreenerScreen({
   totalPending = null,
   refreshFailed = false,
   onRefresh,
+  presentation = 'standalone',
+  active = true,
 }: {
   state?: ScreenerScreenState;
   /**
@@ -161,6 +163,10 @@ export function ScreenerScreen({
   totalPending?: number | null;
   refreshFailed?: boolean;
   onRefresh?: () => void;
+  /** Presentation only; both surfaces share the Screener decision lifecycle. */
+  presentation?: 'standalone' | 'senders';
+  /** Only the visible workspace can respond to global action shortcuts. */
+  active?: boolean;
 }) {
   const qc = useQueryClient();
   const auth = useOptionalAuth();
@@ -208,7 +214,7 @@ export function ScreenerScreen({
     // hook's "never scored, go look" case, which is exactly right here.
     expandedScreenerRow === null ? { stale: false } : (expandedScreenerRow.recommendation ?? null),
     {
-      enabled: expandedScreenerRow !== null,
+      enabled: active && expandedScreenerRow !== null,
       // The QUEUE prefix alone is not enough. `['screener','queue']` and
       // `['screener','count']` are siblings, so invalidating the former
       // never reaches the latter — and a re-score that graduates a
@@ -255,7 +261,7 @@ export function ScreenerScreen({
           ]
         : [],
     ),
-    { invalidate: SCREENER_QUEUE_KEY },
+    { enabled: active, invalidate: SCREENER_QUEUE_KEY },
   );
   /** The enqueued label-modify action being polled to terminal. */
   const [activeAction, setActiveAction] = useState<{
@@ -729,7 +735,7 @@ export function ScreenerScreen({
   // nothing is expanded or a decision is confirming, and never hijacks
   // typing in inputs. Without this the verb key hints were decorative.
   useEffect(() => {
-    if (state.kind !== 'ready') return;
+    if (!active || state.kind !== 'ready') return;
     const rows = state.rows;
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
@@ -770,6 +776,7 @@ export function ScreenerScreen({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [
+    active,
     state,
     pending,
     pendingRow,
@@ -784,15 +791,19 @@ export function ScreenerScreen({
   return (
     <div
       style={{
-        ...editorialColumnStyle,
+        ...(presentation === 'standalone' ? editorialColumnStyle : {}),
         display: 'flex',
         flexDirection: 'column',
         gap: 24,
       }}
     >
-      <EditorialKicker>New senders</EditorialKicker>
+      {presentation === 'standalone' && <EditorialKicker>New senders</EditorialKicker>}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-        <h1 style={editorialTitleStyle}>Screener</h1>
+        {presentation === 'standalone' ? (
+          <h1 style={editorialTitleStyle}>Screener</h1>
+        ) : (
+          <h2 style={{ margin: 0, fontSize: text.lg, color: color.fg }}>Needs first review</h2>
+        )}
         {/* Only the count query knows the true total — the queue loads a
             working window (top N), so `rows.length` is a page size. Until
             the count resolves, claim no number rather than presenting the
@@ -811,15 +822,17 @@ export function ScreenerScreen({
         Decide what happens to email from these senders. Until you do, their email keeps arriving as
         usual.
       </p>
-      <ScreenIntro
-        id="screener"
-        title="How the Screener works"
-        body="Review each undecided sender in context, then choose what should happen."
-        learnMore={{
-          href: '/methodology#action-method',
-          label: 'How action previews protect you',
-        }}
-      />
+      {presentation === 'standalone' && (
+        <ScreenIntro
+          id="screener"
+          title="How the Screener works"
+          body="Review each undecided sender in context, then choose what should happen."
+          learnMore={{
+            href: '/methodology#action-method',
+            label: 'How action previews protect you',
+          }}
+        />
+      )}
 
       {/* D230 manual path — after Unsubscribe on a mailto sender. */}
       {mailtoFollowup && (
@@ -846,61 +859,71 @@ export function ScreenerScreen({
       )}
       {state.kind === 'ready' && state.rows.length > 0 && (
         <>
-          <div className="dm-screener-filters">
-            <label
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'stretch',
-                gap: 8,
-                color: color.fgMuted,
-                fontSize: text.sm,
-              }}
-            >
-              Show
-              <select
-                aria-label="Filter loaded senders"
-                value={queueFilter}
-                onChange={(event) => setQueueFilter(event.target.value as typeof queueFilter)}
-                className="dm-field"
-                style={{ ...tokens.field, minWidth: 0, width: '100%' }}
+          {presentation === 'standalone' && (
+            <div className="dm-screener-filters">
+              <label
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'stretch',
+                  gap: 8,
+                  color: color.fgMuted,
+                  fontSize: text.sm,
+                }}
               >
-                <option value="all">All</option>
-                <option value="multiple">More than one email</option>
-                <option value="unsubscribe">Can unsubscribe</option>
-                <option value="protected">Protected</option>
-              </select>
-            </label>
-            <label
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'stretch',
-                gap: 8,
-                color: color.fgMuted,
-                fontSize: text.sm,
-              }}
-            >
-              Sort
-              <select
-                aria-label="Sort loaded senders"
-                value={queueSort}
-                onChange={(event) => setQueueSort(event.target.value as typeof queueSort)}
-                className="dm-field"
-                style={{ ...tokens.field, minWidth: 0, width: '100%' }}
+                Show
+                <select
+                  aria-label="Filter loaded senders"
+                  value={queueFilter}
+                  onChange={(event) => setQueueFilter(event.target.value as typeof queueFilter)}
+                  className="dm-field"
+                  style={{ ...tokens.field, minWidth: 0, width: '100%' }}
+                >
+                  <option value="all">All</option>
+                  <option value="multiple">More than one email</option>
+                  <option value="unsubscribe">Can unsubscribe</option>
+                  <option value="protected">Protected</option>
+                </select>
+              </label>
+              <label
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'stretch',
+                  gap: 8,
+                  color: color.fgMuted,
+                  fontSize: text.sm,
+                }}
               >
-                <option value="queued">Newest first</option>
-                <option value="most_mail">Most email received</option>
-                <option value="first_seen">First seen longest ago</option>
-              </select>
-            </label>
-            <span style={{ gridColumn: '1 / -1', color: color.fgMuted, fontSize: text.sm }}>
-              Showing {visibleRows.length} of {state.rows.length} loaded senders
-              {totalPending != null && totalPending > state.rows.length
-                ? ` · ${totalPending.toLocaleString('en-US')} total awaiting review`
-                : ''}
-            </span>
-          </div>
+                Sort
+                <select
+                  aria-label="Sort loaded senders"
+                  value={queueSort}
+                  onChange={(event) => setQueueSort(event.target.value as typeof queueSort)}
+                  className="dm-field"
+                  style={{ ...tokens.field, minWidth: 0, width: '100%' }}
+                >
+                  <option value="queued">Newest first</option>
+                  <option value="most_mail">Most email received</option>
+                  <option value="first_seen">First seen longest ago</option>
+                </select>
+              </label>
+              <span style={{ gridColumn: '1 / -1', color: color.fgMuted, fontSize: text.sm }}>
+                Showing {visibleRows.length} of {state.rows.length} loaded senders
+                {totalPending != null && totalPending > state.rows.length
+                  ? ` · ${totalPending.toLocaleString('en-US')} total awaiting review`
+                  : ''}
+              </span>
+            </div>
+          )}
+          {presentation === 'senders' &&
+            totalPending != null &&
+            totalPending > state.rows.length && (
+              <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
+                Showing {state.rows.length} of {totalPending.toLocaleString('en-US')} senders
+                awaiting review
+              </p>
+            )}
           {visibleRows.length === 0 && (
             <p role="status" style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
               No senders match this filter. Choose All to see everyone.

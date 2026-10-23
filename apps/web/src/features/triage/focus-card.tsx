@@ -9,7 +9,7 @@ import { InlinePreviewBlock, inlinePreviewGates, type InlinePreview } from './in
 import { SwipeOverlay } from './swipe-overlay';
 import { ProtectedMark } from './triage-row';
 import { TriageRowExpanded } from './triage-row-expanded';
-import type { ActionVerb } from './types';
+import { recommendedVerb, type ActionVerb } from './types';
 import { useSwipeVerb, type SwipeVerb } from './use-swipe-verb';
 import { focusFacts } from './why-line';
 
@@ -44,6 +44,8 @@ export function TriageFocusCard({
   inlinePreview,
   inlinePreviewAccountContext,
   unprotectSlot,
+  guided = false,
+  active = true,
 }: {
   row: TriageDecisionRow;
   /** Named account zone; standalone demo cards use UTC. */
@@ -70,6 +72,8 @@ export function TriageFocusCard({
   inlinePreviewAccountContext?: ReactNode;
   /** Forwarded to the inline preview's Protected notice (D245). */
   unprotectSlot?: ReactNode;
+  guided?: boolean;
+  active?: boolean;
 }) {
   const isNarrow = useIsAtMost('xs');
   const logoSize = isNarrow ? 48 : LOGO;
@@ -78,7 +82,7 @@ export function TriageFocusCard({
 
   // D37 — the same gestures as the list row, same gates, same path.
   const { drag, handlers: swipeHandlers } = useSwipeVerb({
-    enabled: isNarrow && !actionsDisabled,
+    enabled: active && isNarrow && !actionsDisabled,
     onVerb: (verb: SwipeVerb) => {
       if (verb === 'Archive' && !canArchive(row)) return;
       if (verb === 'Later' && !canLater(row)) return;
@@ -236,6 +240,11 @@ export function TriageFocusCard({
           {facts.unit}
         </span>
 
+        {guided && recommendedVerb(row.verdict, row.confidence) !== null && (
+          <p style={{ margin: '16px 0 0', fontWeight: 600 }}>
+            Suggested: {recommendedVerb(row.verdict, row.confidence)}
+          </p>
+        )}
         {facts.why !== null && (
           <p
             style={{
@@ -335,8 +344,9 @@ export function TriageFocusCard({
         <div style={{ width: '100%', marginTop: isNarrow ? space[4] : space[8] }}>
           <ActionToolbar
             row={row}
+            guided={guided}
             onAction={onAction}
-            keyboardEnabled={!actionsDisabled}
+            keyboardEnabled={active && !actionsDisabled}
             disabled={actionsDisabled}
             layout={isNarrow ? 'bar' : 'row'}
             // One row on desktop: five 44px capsules with key hints wrap

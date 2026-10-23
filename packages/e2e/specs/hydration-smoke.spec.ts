@@ -134,6 +134,8 @@ const HYDRATED_ROUTES = [
   '/home',
   '/senders',
   '/triage',
+  '/senders?view=guided',
+  '/senders?view=first-review',
   '/activity',
   '/autopilot',
   '/billing',

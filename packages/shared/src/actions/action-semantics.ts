@@ -143,7 +143,7 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
       // filters on. It does NOT rewrite `triage_decisions.verdict` —
       // that row still read `verdict='unsubscribe'` immediately after a
       // Keep — so even the verdict-gated Autopilot presets keep matching.
-      summary: 'This sender stops coming up in Triage.',
+      summary: 'This sender stops appearing among suggested senders.',
       inPreview: true,
     },
     unchanged: [

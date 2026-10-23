@@ -95,6 +95,30 @@ describe('Screener — explaining a reason when a row is opened', () => {
     await waitFor(() => expect(explained).toHaveLength(1));
     expect(explained[0]).toEqual({ senderIds: [opened.senderId] });
   });
+
+  it('waits for the workspace to become active before explaining an opened row', async () => {
+    const rows = templateRows();
+    const opened = rows.find((row) => row.recommendation !== null)!;
+    const client = createTestQueryClient();
+    client.setQueryData(ME_SETTINGS_QUERY_KEY, {
+      aiConsent: { explanations: 'allowed', brief: 'unset', reask: false },
+    });
+    const ui = (active: boolean) => (
+      <QueryWrapper client={client}>
+        <ScreenerScreen active={active} state={{ kind: 'ready', rows }} />
+      </QueryWrapper>
+    );
+    const view = render(ui(false));
+    fireEvent.click(
+      screen.getByRole('button', { name: `${opened.senderName} — expand sender detail` }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(explained).toHaveLength(0);
+    expect(rescored).toHaveLength(0);
+    view.rerender(ui(true));
+    await waitFor(() => expect(explained).toHaveLength(1));
+    expect(explained[0]).toEqual({ senderIds: [opened.senderId] });
+  });
 });
 
 describe('Screener — a stale reason on an opened row', () => {
@@ -116,5 +140,30 @@ describe('Screener — a stale reason on an opened row', () => {
     await waitFor(() => expect(rescored).toHaveLength(1));
     await new Promise((r) => setTimeout(r, 40));
     expect(explained).toHaveLength(0);
+  });
+
+  it('defers stale refresh while its workspace is hidden without losing the opened row', async () => {
+    const rows = templateRows().map((row) =>
+      row.recommendation ? { ...row, recommendation: { ...row.recommendation, stale: true } } : row,
+    );
+    const opened = rows.find((row) => row.recommendation !== null)!;
+    const client = createTestQueryClient();
+    const ui = (active: boolean) => (
+      <QueryWrapper client={client}>
+        <ScreenerScreen active={active} state={{ kind: 'ready', rows }} />
+      </QueryWrapper>
+    );
+    const view = render(ui(false));
+    fireEvent.click(
+      screen.getByRole('button', { name: `${opened.senderName} — expand sender detail` }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(rescored).toHaveLength(0);
+    view.rerender(ui(true));
+    await waitFor(() => expect(rescored).toHaveLength(1));
+    expect(explained).toHaveLength(0);
+    expect(
+      screen.getByRole('button', { name: `${opened.senderName} — collapse sender detail` }),
+    ).toBeInTheDocument();
   });
 });

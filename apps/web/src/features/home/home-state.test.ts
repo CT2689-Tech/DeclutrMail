@@ -61,14 +61,14 @@ describe('composeHomeAction', () => {
   it('continues Triage first', () => {
     expect(composeHomeAction({ triagePending: 8, screenerPending: 3 })).toEqual({
       label: 'Review 8 today',
-      href: '/triage',
+      href: '/senders?view=guided',
     });
   });
 
   it('then the Screener', () => {
     expect(composeHomeAction({ triagePending: 0, screenerPending: 1 })).toEqual({
       label: 'Review 1 new',
-      href: '/screener',
+      href: '/senders?view=first-review',
     });
   });
 
