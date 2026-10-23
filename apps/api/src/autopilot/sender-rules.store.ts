@@ -131,7 +131,7 @@ export class RedisSenderRulePreviewStore implements SenderRulePreviewStore {
         return 1
       `,
         2,
-        `declutr:autopilot-sender-preview-index:${value.mailboxId}`,
+        `declutr:autopilot-sender-previews:${value.mailboxId}`,
         key(value.mailboxId, value.ruleId, value.previewId),
         String(Date.now()),
         JSON.stringify(value),

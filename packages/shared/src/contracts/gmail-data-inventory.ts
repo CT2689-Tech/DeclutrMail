@@ -514,7 +514,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     storageRefs: [
       'redis:declutr:autopilot-preview:{mailboxAccountId}:{ruleId}:{previewId}',
       'redis:declutr:autopilot-sender-preview:{mailboxAccountId}:{ruleId}:{previewId}',
-      'redis:declutr:autopilot-sender-preview-index:{mailboxAccountId}',
+      'redis:declutr:autopilot-sender-previews:{mailboxAccountId}',
     ],
     derived: true,
     purpose:
