@@ -489,7 +489,7 @@ export function SenderRuleLibraryScope({
                     <strong>{rule.name}</strong>
                     <small>
                       {rule.enabled
-                        ? `${rule.mode === 'paused' ? 'Paused' : verb(rule.action)} · ${rule.senders.length} senders`
+                        ? `${rule.mode === 'paused' ? 'Paused' : verb(rule.action)} · ${rule.senders.length} ${rule.senders.length === 1 ? 'sender' : 'senders'}`
                         : 'Retired'}
                     </small>
                   </span>
@@ -579,7 +579,8 @@ export function SenderRuleLibraryScope({
                     <div className={styles.top}>
                       <h3>{num(selected.matchingMessageCount)} matching emails</h3>
                       <span className={styles.count}>
-                        {num(selected.matchingSenderCount)} senders
+                        {num(selected.matchingSenderCount)}{' '}
+                        {selected.matchingSenderCount === 1 ? 'sender' : 'senders'}
                       </span>
                     </div>
                     {selected.senders.map((sender) => (
