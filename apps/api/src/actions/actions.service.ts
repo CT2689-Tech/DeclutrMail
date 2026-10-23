@@ -297,7 +297,7 @@ export class ActionsService {
           ),
         );
       const protectedKeys = new Set(protectedRows.map((s) => s.senderKey));
-      const storageKey = (senderKey: string) => `autopilot-sender-${input.previewId}-${senderKey}`;
+      const storageKey = (senderKey: string) => `sender-rule-${input.previewId}-${senderKey}`;
       const existingRows = await tx
         .select()
         .from(actionJobs)

@@ -1,5 +1,6 @@
 import {
   actionJobs,
+  actionRecoveryPreviews,
   AUTOPILOT_PRESET_KEYS,
   automationRules,
   mailMessages,
@@ -13,6 +14,7 @@ import { freshTestDb } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { ActionsService } from '../actions/actions.service.js';
+import { ActionRecoveryService } from '../actions/action-recovery.service.js';
 import { SenderRulesService } from './sender-rules.service.js';
 import { AutopilotReadService } from './autopilot.read-service.js';
 import { MemorySenderRulePreviewStore, SENDER_RULE_PREVIEW_TTL_MS } from './sender-rules.store.js';
@@ -145,19 +147,17 @@ describe('sender-list Autopilot rules', () => {
   });
 
   it('keeps preset and custom libraries separate and omits retired rules from both', async () => {
-    await db
-      .insert(automationRules)
-      .values(
-        AUTOPILOT_PRESET_KEYS.map((presetKey) => ({
-          mailboxAccountId: mailbox,
-          isPreset: true,
-          presetKey,
-          name: presetKey,
-          actionKind: 'archive' as const,
-          conditions: {},
-          actionPayload: {},
-        })),
-      );
+    await db.insert(automationRules).values(
+      AUTOPILOT_PRESET_KEYS.map((presetKey) => ({
+        mailboxAccountId: mailbox,
+        isPreset: true,
+        presetKey,
+        name: presetKey,
+        actionKind: 'archive' as const,
+        conditions: {},
+        actionPayload: {},
+      })),
+    );
     const live = await service.create(mailbox, definition);
     const retired = await service.create(mailbox, { ...definition, name: 'Retired' });
     await service.retire(mailbox, retired.id, 1);
@@ -262,6 +262,7 @@ describe('sender-list Autopilot rules', () => {
     expect(accepted).toMatchObject({ requestedCount: 3, enqueueFailedCount: 0 });
     const [job] = await db.select().from(actionJobs);
     expect(job!.verb).toBe('delete');
+    expect(job!.idempotencyKey).toMatch(/^sender-rule-/);
     expect(job!.reach).toBe('all_mail');
     expect(job!.resolvedMessageIds.sort()).toEqual(['archive', 'old', 'young']);
     expect(job!.selector).toMatchObject({
@@ -283,6 +284,80 @@ describe('sender-list Autopilot rules', () => {
     const jobs = await db.select().from(actionJobs);
     expect(jobs).toHaveLength(2);
     expect(jobs.find((j) => j.id !== first.batchId)!.compositeId).toBe(first.batchId);
+  });
+
+  it('keeps reviewed rules visible and recoverable while excluding preset engine claims', async () => {
+    await message(db, mailbox, 'one');
+    const rule = await service.create(mailbox, definition);
+    const preview = await service.preview(mailbox, rule.id, { version: 1 });
+    const accepted = await service.execute(mailbox, rule.id, preview.previewId);
+    const actions = new ActionsService(db as never, queue as never);
+    expect((await actions.listInFlight(mailbox)).map((group) => group.groupId)).toContain(
+      accepted.batchId,
+    );
+    const [original] = await db
+      .select()
+      .from(actionJobs)
+      .where(eq(actionJobs.id, accepted.actionIds[0]!));
+    await db
+      .update(actionJobs)
+      .set({ status: 'failed', errorCode: 'TransientError' })
+      .where(eq(actionJobs.id, original!.id));
+    const [claim] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailbox,
+        verb: 'archive',
+        direction: 'forward',
+        selector: {
+          type: 'sender',
+          senderId: original!.selector.type === 'sender' ? original!.selector.senderId : '',
+          senderKey: A,
+        },
+        resolvedMessageIds: ['one'],
+        requestedCount: 1,
+        status: 'failed',
+        errorCode: 'TransientError',
+        idempotencyKey: `autopilot-${rule.id}`,
+      })
+      .returning();
+    expect((await actions.listInFlight(mailbox)).map((group) => group.groupId)).not.toContain(
+      claim!.id,
+    );
+    const recovery = new ActionRecoveryService(db as never, queue as never, queue as never);
+    await expect(
+      recovery.createPreview({ mailboxAccountId: mailbox, actionId: claim!.id }),
+    ).rejects.toThrow('Only failed');
+    const review = await recovery.createPreview({
+      mailboxAccountId: mailbox,
+      actionId: original!.id,
+    });
+    expect(review).toMatchObject({ status: 'verifying', rootActionId: original!.id });
+    await db
+      .update(actionRecoveryPreviews)
+      .set({
+        status: 'ready',
+        outcome: 'not_applied',
+        targetMessageIds: ['one'],
+        remainingMessageIds: ['one'],
+        verifiedCount: 1,
+        verifiedAt: new Date(),
+      })
+      .where(eq(actionRecoveryPreviews.id, review.previewId));
+    await service.patch(mailbox, rule.id, { version: 1, mode: 'paused' });
+    const retry = await recovery.confirmPreview({
+      mailboxAccountId: mailbox,
+      previewId: review.previewId,
+      idempotencyKey: 'explicit-review-confirm',
+      wakeAt: null,
+    });
+    const [child] = await db.select().from(actionJobs).where(eq(actionJobs.id, retry.actionId));
+    expect(child).toMatchObject({
+      rootActionId: original!.id,
+      recoveryAttempt: 1,
+      resolvedMessageIds: ['one'],
+      selector: original!.selector,
+    });
   });
 
   it('returns durable accepted handles after cache expiry, rule edits and retirement', async () => {
