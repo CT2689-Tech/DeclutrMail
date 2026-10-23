@@ -23,7 +23,7 @@ export const fetchRuleSenders = (
   mailboxId?: string,
 ) =>
   apiGet<AutopilotSenderSearchPage>('/api/autopilot/senders', {
-    query: { query, cursor },
+    query: { q: query, cursor },
     signal,
     mailboxId,
   }).then((e) => e.data);

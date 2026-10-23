@@ -10,6 +10,7 @@ import {
   buildBriefNoticeCleanup,
 } from './briefs/brief-ready-email.js';
 import 'reflect-metadata';
+import { senderRuleQuietResume } from './autopilot/sender-rule-quiet-queue.js';
 
 import {
   SupportRequestWorker,
@@ -107,7 +108,6 @@ import {
   InvalidGrantError,
   isWebsiteIconFallbackEnabled,
   LABEL_ACTION_QUEUE,
-  labelActionJobOptions,
   LabelActionWorker,
   OUTBOX_NOTIFY_CHANNEL,
   OutboxDispatcherWorker,
@@ -1228,17 +1228,7 @@ async function bootstrap(): Promise<void> {
     gmailMutation: gmailMutationAccess,
     outbox: new OutboxPublisher(),
     lock: mailboxLock,
-    onQuietDeferred: async (payload, delayMs) => {
-      const delay = Math.max(1_000, Math.ceil(delayMs));
-      // A delayed continuation is a new queue delivery of the same durable
-      // action, not a provider failure or a fresh cleanup approval.
-      const window = Math.floor((Date.now() + delay) / 60_000);
-      await senderRuleResumeQueue.add(LABEL_ACTION_QUEUE, payload, {
-        ...labelActionJobOptions(payload.idempotencyKey),
-        jobId: `${payload.actionId}-quiet-${window}`,
-        delay,
-      });
-    },
+    onQuietDeferred: senderRuleQuietResume(senderRuleResumeQueue),
   });
   labelActionWorker.setObserver(observer);
   labelActionWorker.setDeadLetterRecorder(deadLetterRecorder);
