@@ -107,6 +107,7 @@ import {
   InvalidGrantError,
   isWebsiteIconFallbackEnabled,
   LABEL_ACTION_QUEUE,
+  labelActionJobOptions,
   LabelActionWorker,
   OUTBOX_NOTIFY_CHANNEL,
   OutboxDispatcherWorker,
@@ -1221,11 +1222,23 @@ async function bootstrap(): Promise<void> {
    * (POST /api/undo/:token enqueues the reverse). Policy `perMailboxPolicy`
    * + the per-mailbox advisory lock serialize destructive mutations.
    */
+  const senderRuleResumeQueue = new Queue<LabelActionJobData>(LABEL_ACTION_QUEUE, { connection });
   const labelActionWorker = new LabelActionWorker({
     db,
     gmailMutation: gmailMutationAccess,
     outbox: new OutboxPublisher(),
     lock: mailboxLock,
+    onQuietDeferred: async (payload, delayMs) => {
+      const delay = Math.max(1_000, Math.ceil(delayMs));
+      // A delayed continuation is a new queue delivery of the same durable
+      // action, not a provider failure or a fresh cleanup approval.
+      const window = Math.floor((Date.now() + delay) / 60_000);
+      await senderRuleResumeQueue.add(LABEL_ACTION_QUEUE, payload, {
+        ...labelActionJobOptions(payload.idempotencyKey),
+        jobId: `${payload.actionId}-quiet-${window}`,
+        delay,
+      });
+    },
   });
   labelActionWorker.setObserver(observer);
   labelActionWorker.setDeadLetterRecorder(deadLetterRecorder);
@@ -3239,6 +3252,7 @@ async function bootstrap(): Promise<void> {
       await scoreBullWorker.close();
       await scoreExplainBullWorker.close();
       await labelActionBullWorker.close();
+      await senderRuleResumeQueue.close();
       await actionRecoveryBullWorker.close();
       await unsubExecutionBullWorker.close();
       await undoExpiryBullWorker.close();
