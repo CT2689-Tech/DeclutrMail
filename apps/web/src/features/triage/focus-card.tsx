@@ -79,6 +79,8 @@ export function TriageFocusCard({
   const logoSize = guided ? (isNarrow ? 40 : 48) : isNarrow ? 48 : LOGO;
   const actionsDisabled = busy || inlinePreviewGates(inlinePreview).blocked;
   const facts = focusFacts(row);
+  const emptyArchive = guided && row.inboxCount === 0 && row.verdict === 'archive';
+  const suggested = emptyArchive ? null : recommendedVerb(row.verdict, row.confidence);
 
   // D37 — the same gestures as the list row, same gates, same path.
   const { drag, handlers: swipeHandlers } = useSwipeVerb({
@@ -269,10 +271,8 @@ export function TriageFocusCard({
           </>
         )}
 
-        {guided && recommendedVerb(row.verdict, row.confidence) !== null && (
-          <p style={{ margin: '16px 0 0', fontWeight: 600 }}>
-            Suggested: {recommendedVerb(row.verdict, row.confidence)}
-          </p>
+        {guided && suggested !== null && (
+          <p style={{ margin: '16px 0 0', fontWeight: 600 }}>Suggested: {suggested}</p>
         )}
         {facts.why !== null && (
           <p
@@ -350,7 +350,7 @@ export function TriageFocusCard({
               borderTop: `1px solid ${color.lineSoft}`,
             }}
           >
-            <TriageRowExpanded row={row} timeZone={timeZone} />
+            <TriageRowExpanded row={row} timeZone={timeZone} showSuggestion={!emptyArchive} />
           </div>
         )}
 
@@ -374,6 +374,7 @@ export function TriageFocusCard({
           <ActionToolbar
             row={row}
             guided={guided}
+            suggestedVerb={suggested}
             onAction={onAction}
             keyboardEnabled={active && !actionsDisabled}
             disabled={actionsDisabled}

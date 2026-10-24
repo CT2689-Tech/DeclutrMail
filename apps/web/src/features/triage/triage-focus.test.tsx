@@ -744,13 +744,32 @@ describe('focus mode — mobile', () => {
 });
 
 describe('Guided Review inside Senders', () => {
+  it('does not suggest Archive for an empty Inbox, keeping its neutral action and preview', async () => {
+    renderScreen(ready([{ ...GROUPON, inboxCount: 0, last90dMessages: 191 }]), undefined, {
+      presentation: 'guided',
+    });
+    expect(await screen.findByText('Your Inbox is clear for this sender.')).toBeInTheDocument();
+    expect(screen.queryByText(/Suggested: Archive/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Why?' }));
+    expect(screen.queryByText(/Suggested: Archive/)).toBeNull();
+    expect(screen.getByText(GROUPON.reasoning)).toBeInTheDocument();
+    const more = screen.getByText('More actions').closest('details')!;
+    fireEvent.click(within(more).getByText('More actions'));
+    const archive = within(more).getByRole('button', { name: 'Archive (A)' });
+    expect(archive.style.background).toBe(tokens.color.fill);
+    fireEvent.click(archive);
+    await screen.findByRole('dialog');
+    expect(useTriageStore.getState().pendingAction?.verb).toBe('Archive');
+  });
   it.each([18, 1, 0])(
     'leads guided review with %s current Inbox emails, keeping history separate',
     async (inboxCount) => {
       renderScreen(ready([{ ...GROUPON, inboxCount, last90dMessages: 191 }]), undefined, {
         presentation: 'guided',
       });
-      await screen.findByRole('button', { name: 'Archive (A)' });
+      await screen.findByText(`${inboxCount === 1 ? 'email' : 'emails'} in Inbox now`);
+      if (inboxCount === 0) fireEvent.click(screen.getByText('More actions'));
+      else expect(screen.getByText('Suggested: Archive')).toBeInTheDocument();
       expect(document.querySelector('[data-dm-focus-count]')).toHaveTextContent(String(inboxCount));
       expect(
         within(card()).getByText(`${inboxCount === 1 ? 'email' : 'emails'} in Inbox now`),
@@ -778,6 +797,19 @@ describe('Guided Review inside Senders', () => {
     expect(within(card()).getByText('Current Inbox count unavailable')).toBeInTheDocument();
     expect(within(card()).getByText('0 received in the last 90 days')).toBeInTheDocument();
     expect(within(card()).queryByText('Your Inbox is clear for this sender.')).toBeNull();
+    expect(screen.getByText('Suggested: Archive')).toBeInTheDocument();
+  });
+  it('retains future-email Unsubscribe suggestions when the Inbox is empty', async () => {
+    renderScreen(ready([{ ...LINKEDIN, inboxCount: 0 }]), undefined, { presentation: 'guided' });
+    expect(await screen.findByText('Suggested: Unsubscribe')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Unsubscribe (U)' })).toBeInTheDocument();
+  });
+  it('keeps standalone Triage historical evidence unchanged at zero Inbox', async () => {
+    renderScreen(ready([{ ...GROUPON, inboxCount: 0, last90dMessages: 191 }]));
+    expect(document.querySelector('[data-dm-focus-count]')).toHaveTextContent('191');
+    expect(screen.getByRole('button', { name: 'Archive (A)' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Why?' }));
+    expect(screen.getByText(/Suggested: Archive/)).toBeInTheDocument();
   });
   it('uses the server order for Previous and Next without recording decisions', async () => {
     let writes = 0;

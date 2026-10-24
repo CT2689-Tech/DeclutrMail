@@ -152,3 +152,14 @@ export const GuidedNoSuggestion: Story<typeof TriageFocusCard> = {
   args: { ...base, row: { ...row('t-linkedin'), confidence: 0.4 }, guided: true },
   render: (args: Args) => frame(<TriageFocusCard {...args} />),
 };
+
+/** Known zero Inbox removes Archive emphasis; historical evidence stays available. */
+export const GuidedEmptyInbox: Story<typeof TriageFocusCard> = {
+  args: {
+    ...base,
+    row: { ...row('t-groupon'), inboxCount: 0, last90dMessages: 191 },
+    guided: true,
+    whyOpen: true,
+  },
+  render: (args: Args) => frame(<TriageFocusCard {...args} />),
+};
