@@ -131,7 +131,7 @@ describe('native sign-in handoff', () => {
             getSignInUrl: (nonce: string) => `https://accounts.google.test/sign-in?state=${nonce}`,
             getConsentUrl: (nonce: string) => `https://accounts.google.test/consent?state=${nonce}`,
             exchangeSignInCode: async () => ({ email: identity }),
-            exchangeCode: async () => ({ email: 'second@gmail.com', refreshToken: 'rt' }),
+            exchangeCode: async () => ({ email: 'person@gmail.com', refreshToken: 'rt' }),
           },
         },
         {
@@ -410,7 +410,7 @@ describe('native sign-in handoff', () => {
   });
 
   it('returns an unknown Google account to the sign-in page with the same closed result the web shows', async () => {
-    identity = 'stranger@gmail.com';
+    identity = 'friend@gmail.com';
     const { challenge } = pkce();
     const { link, parsed } = await signInInBrowser(challenge);
 
