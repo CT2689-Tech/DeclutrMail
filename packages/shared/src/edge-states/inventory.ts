@@ -92,6 +92,7 @@ export type ScreenId =
   | 'sender-detail'
   | 'activity'
   | 'autopilot'
+  | 'autopilot-settings'
   | 'brief'
   | 'followups'
   | 'later'
@@ -126,6 +127,7 @@ export const SCREEN_ROUTES: Record<ScreenId, string | null> = {
   'sender-detail': 'senders/[id]',
   activity: 'activity',
   autopilot: 'autopilot',
+  'autopilot-settings': 'autopilot/settings',
   brief: 'brief',
   followups: 'followups',
   'settings-senders': 'settings/senders',
@@ -668,9 +670,26 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     placeholder: { required: false, status: 'n/a' },
   },
 
-  // Quiet hours config (U18 — D92/D95). Per-mailbox cards, each with
-  // its own loading/error branch; `empty` = no connected mailboxes.
+  // The legacy route redirects before rendering a feature screen.
   quiet: {
+    loading: { required: false, status: 'n/a' },
+    empty: { required: false, status: 'n/a' },
+    error: { required: false, status: 'n/a' },
+    'partial-error': { required: false, status: 'n/a' },
+    offline: { required: false, status: 'n/a' },
+    unauthorized: { required: false, status: 'n/a' },
+    'sync-in-progress': { required: false, status: 'n/a' },
+    'sync-failed-transient': { required: false, status: 'n/a' },
+    'quota-exceeded': { required: false, status: 'n/a' },
+    'free-cap-reached': { required: false, status: 'n/a' },
+    'sender-deleted-upstream': { required: false, status: 'n/a' },
+    'account-deletion-pending': { required: false, status: 'n/a' },
+    placeholder: { required: false, status: 'n/a' },
+  },
+
+  // Schedule config (U18 — D92/D95). Per-mailbox cards, each with
+  // its own loading/error branch; `empty` = no connected mailboxes.
+  'autopilot-settings': {
     loading: {
       required: true,
       storybook: 'apps/web/src/features/quiet/quiet-hours-card.stories.tsx',

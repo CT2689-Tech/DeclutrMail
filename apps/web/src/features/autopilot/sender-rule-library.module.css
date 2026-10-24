@@ -13,9 +13,9 @@
 }
 .header h1 {
   margin: 0;
-  font-family: var(--dm-font-display);
+  font-family: var(--dm-font-sans);
   font-size: var(--dm-type-page-title);
-  font-weight: 400;
+  font-weight: 600;
   line-height: 1.12;
   letter-spacing: -0.035em;
 }
@@ -30,8 +30,8 @@
 }
 .split {
   display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(230px, 1fr);
-  grid-template-areas: 'review library';
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'library' 'review';
   gap: 24px;
   align-items: start;
 }
@@ -161,7 +161,7 @@
   margin: 0 0 14px;
 }
 .libraryHead h2 {
-  font-size: 15px;
+  font-size: 20px;
   font-weight: 500;
   margin: 0;
 }
@@ -220,8 +220,9 @@
   align-items: center;
   width: 100%;
   text-align: left;
-  padding: 12px 10px;
-  min-height: 68px;
+  padding: 20px 0;
+  min-height: 84px;
+  flex-wrap: wrap;
   border: 0;
   border-bottom: 1px solid var(--dm-line);
   background: transparent;
@@ -242,15 +243,44 @@
 }
 .row strong {
   display: block;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 550;
   overflow-wrap: anywhere;
 }
 .row small {
   display: block;
   margin-top: 4px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--dm-fg-muted);
+}
+.ruleSelect {
+  flex: 1 1 250px;
+  min-width: 0;
+  padding: 5px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.ruleSelect:focus-visible,
+.settingsLink:focus-visible,
+.libraryHead h2:focus-visible {
+  outline: 2px solid var(--dm-ring);
+  outline-offset: 4px;
+}
+.settingsLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--dm-border);
+  border-radius: 9px;
+  color: var(--dm-fg);
+  font-size: 14px;
+  text-decoration: none;
 }
 .pagination {
   display: flex;
@@ -368,7 +398,7 @@
     gap: 12px;
   }
   .libraryContent {
-    display: none;
+    display: block;
   }
   .libraryContent[data-open='true'] {
     display: block;
@@ -398,4 +428,28 @@
   .card h2 {
     font-size: 25px;
   }
+}
+
+.approvals {
+  border-top: 1px solid var(--dm-line);
+  padding-top: 24px;
+  min-width: 0;
+}
+.approvals h2 {
+  font-size: 20px;
+  font-weight: 500;
+  margin: 0;
+}
+.approvedBatch {
+  padding: 20px 0;
+  border-bottom: 1px solid var(--dm-line);
+  overflow-wrap: anywhere;
+}
+.approvedBatch > strong {
+  font-size: 15px;
+  font-weight: 550;
+}
+.approvedBatch > a {
+  margin-left: 12px;
+  font-size: 13px;
 }

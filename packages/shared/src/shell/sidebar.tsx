@@ -28,7 +28,6 @@ export const NAV: readonly NavItem[] = [
     icon: 'M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2M16 3a4 4 0 0 1 0 8m5 10v-2a4 4 0 0 0-3-3.87M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z',
   },
   { id: 'autopilot', icon: 'M12 2L2 7l10 5 10-5zM2 17l10 5 10-5M2 12l10 5 10-5' },
-  { id: 'quiet', icon: 'M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2' },
   { id: 'brief', icon: 'M4 4h12l4 4v12a2 2 0 0 1-2 2H4zM14 4v4h6' },
   { id: 'followups', icon: 'M4 4h16v12H9l-5 4V4Zm4 4h8M8 12h5' },
   { id: 'snoozed', icon: 'M12 6v6l4 2M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z' },
@@ -59,7 +58,7 @@ export const WORKSPACE_NAV = [
     id: 'autopilot',
     label: 'Automations',
     icon: 'm13 2-9 12h7l-1 8 10-12h-7l1-8Z',
-    members: ['autopilot', 'quiet'],
+    members: ['autopilot'],
   },
   {
     id: 'brief',

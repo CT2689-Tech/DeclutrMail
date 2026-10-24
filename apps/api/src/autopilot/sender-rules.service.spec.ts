@@ -9,10 +9,20 @@ import {
   senders,
   users,
   workspaces,
+  undoJournal,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  LabelActionWorker,
+  OutboxPublisher,
+  PASSTHROUGH_MAILBOX_LOCK,
+  type BatchModifyOptions,
+  type LabelChange,
+  type LabelActionJobData,
+  type WorkerContext,
+} from '@declutrmail/workers';
 import { ActionsService } from '../actions/actions.service.js';
 import { ActionRecoveryService } from '../actions/action-recovery.service.js';
 import { SenderRulesService } from './sender-rules.service.js';
@@ -103,6 +113,188 @@ describe('sender-list Autopilot rules', () => {
     );
   });
   afterEach(() => vi.restoreAllMocks());
+
+  it('previews two emails, waits through Schedule and a rule edit, runs only those two, then restores them through Undo', async () => {
+    await message(db, mailbox, 'approved-1');
+    await message(db, mailbox, 'approved-2');
+    await message(db, mailbox, 'excluded-1', B);
+    await message(db, mailbox, 'excluded-2', B);
+    const actions = new ActionsService(db as never, queue as never);
+    service = new SenderRulesService(db as never, actions, new MemorySenderRulePreviewStore());
+    const rule = await service.create(mailbox, {
+      ...definition,
+      name: 'Evening cleanup',
+      senderKeys: [A, B],
+    });
+    const clock = new Date();
+    clock.setUTCDate(clock.getUTCDate() + 1);
+    clock.setUTCHours(6, 59, 0, 0);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(clock);
+    try {
+      await db
+        .update(mailboxAccounts)
+        .set({
+          quietState: {
+            quiet_hours: {
+              enabled: true,
+              start_local: '22:00',
+              end_local: '07:00',
+              timezone: 'UTC',
+            },
+          },
+        })
+        .where(eq(mailboxAccounts.id, mailbox));
+      const preview = await service.preview(mailbox, rule.id, {
+        version: 1,
+        excludedSenderKeys: [B],
+      });
+      expect(preview.messageCount).toBe(2);
+      const approved = await service.execute(mailbox, rule.id, preview.previewId);
+      const deferred: Array<{ payload: LabelActionJobData; delay: number }> = [];
+      const provider: Array<{ ids: string[]; change: LabelChange }> = [];
+      const worker = new LabelActionWorker({
+        db: db as never,
+        outbox: new OutboxPublisher(),
+        lock: PASSTHROUGH_MAILBOX_LOCK,
+        gmailMutation: {
+          getClient: async () => ({
+            modifyLabels: async () => {},
+            ensureLabelId: async () => 'unused',
+            batchModify: async (
+              ids: string[],
+              change: LabelChange,
+              options: BatchModifyOptions = {},
+            ) => {
+              await options.beforeFirstRequest?.();
+              provider.push({ ids: [...ids], change });
+            },
+          }),
+        },
+        onQuietDeferred: async (payload, delay) => {
+          deferred.push({ payload, delay });
+        },
+      });
+      const context: WorkerContext = {
+        jobId: 'flow',
+        workerName: 'LabelActionWorker',
+        attempt: 1,
+        maxAttempts: 5,
+        startedAt: clock,
+        policy: 'perMailboxPolicy',
+      };
+      const [forward] = await db
+        .select()
+        .from(actionJobs)
+        .where(eq(actionJobs.id, approved.batchId));
+      const payload = {
+        actionId: forward!.id,
+        mailboxAccountId: mailbox,
+        idempotencyKey: forward!.idempotencyKey,
+      };
+      expect(await worker.processJob(payload, context)).toMatchObject({ deferredQuiet: true });
+      expect(provider).toEqual([]);
+      expect(deferred).toHaveLength(1);
+      expect(deferred[0]!.delay).toBe(60_000);
+      expect((await actions.listInFlight(mailbox))[0]!.autopilot).toMatchObject({
+        ruleName: 'Evening cleanup',
+        waitingUntil: new Date(clock.getTime() + 60_000).toISOString(),
+      });
+      await service.patch(mailbox, rule.id, {
+        version: 1,
+        name: 'Next cleanup',
+        senderKeys: [B],
+        action: 'delete',
+        olderThanDays: 180,
+      });
+      await message(db, mailbox, 'arrived-during-pause');
+      vi.setSystemTime(new Date(clock.getTime() + 60_000));
+      await worker.processJob(deferred[0]!.payload, context);
+      expect(provider).toEqual([
+        {
+          ids: ['approved-1', 'approved-2'],
+          change: { removeLabelIds: ['INBOX'] },
+        },
+      ]);
+      const complete = await actions.getBatchStatus(approved.batchId, mailbox);
+      expect(complete).toMatchObject({
+        status: 'done',
+        requestedCount: 2,
+        affectedCount: 2,
+        autopilot: { ruleName: 'Evening cleanup', waitingUntil: null },
+      });
+      expect(complete.undoToken).toBeTruthy();
+      const reverse = await actions.enqueueCompositeRevert({
+        mailboxAccountId: mailbox,
+        token: complete.undoToken!,
+      });
+      for (const handle of reverse) {
+        const [row] = await db.select().from(actionJobs).where(eq(actionJobs.id, handle.actionId));
+        await worker.processJob(
+          { actionId: row!.id, mailboxAccountId: mailbox, idempotencyKey: row!.idempotencyKey },
+          context,
+        );
+      }
+      expect(provider[1]).toEqual({
+        ids: ['approved-1', 'approved-2'],
+        change: { addLabelIds: ['INBOX'] },
+      });
+      expect(
+        await actions.getUndoStatus(
+          reverse.map((r) => r.actionId),
+          mailbox,
+        ),
+      ).toMatchObject({ status: 'done', affectedCount: 2 });
+      const messages = await db
+        .select()
+        .from(mailMessages)
+        .where(eq(mailMessages.mailboxAccountId, mailbox));
+      expect(messages.every((m) => m.labelIds.includes('INBOX'))).toBe(true);
+      expect((await db.select().from(undoJournal))[0]!.revertedAt).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['individual', 'all'] as const)(
+    'does not revive an approval after real %s Pause and Resume APIs',
+    async (kind) => {
+      await message(db, mailbox, 'approved');
+      const rule = await service.create(mailbox, definition);
+      const preview = await service.preview(mailbox, rule.id, { version: 1 });
+      const accepted = await service.execute(mailbox, rule.id, preview.previewId);
+      if (kind === 'all') await new AutopilotReadService(db as never).pauseAll(mailbox);
+      else await service.patch(mailbox, rule.id, { version: 1, mode: 'paused' });
+      await service.patch(mailbox, rule.id, { version: 2, mode: 'observe' });
+      const worker = new LabelActionWorker({
+        db: db as never,
+        outbox: new OutboxPublisher(),
+        lock: PASSTHROUGH_MAILBOX_LOCK,
+        gmailMutation: {
+          getClient: async () => {
+            throw new Error('revoked approval must not reach Gmail');
+          },
+        },
+      });
+      const [row] = await db.select().from(actionJobs).where(eq(actionJobs.id, accepted.batchId));
+      await worker.processJob(
+        { actionId: row!.id, mailboxAccountId: mailbox, idempotencyKey: row!.idempotencyKey },
+        {
+          jobId: 'revoked',
+          workerName: 'LabelActionWorker',
+          attempt: 1,
+          maxAttempts: 5,
+          startedAt: new Date(),
+          policy: 'perMailboxPolicy',
+        },
+      );
+      expect((await db.select().from(actionJobs))[0]).toMatchObject({
+        status: 'failed',
+        errorCode: 'AUTOPILOT_RULE_INACTIVE',
+        affectedCount: 0,
+      });
+    },
+  );
 
   it('creates approval-only rules and keeps preset and cross-mailbox rows separate', async () => {
     const rule = await service.create(mailbox, definition);
@@ -338,7 +530,12 @@ describe('sender-list Autopilot rules', () => {
     expect(job!.selector).toMatchObject({
       type: 'sender',
       senderKey: A,
-      autopilot: { ruleId: rule.id, ruleVersion: 1, previewId: preview.previewId },
+      autopilot: {
+        ruleId: rule.id,
+        ruleVersion: 1,
+        previewId: preview.previewId,
+        ruleName: definition.name,
+      },
     });
     expect((await service.list(mailbox))[0]!.action).toBe('archive');
   });

@@ -184,6 +184,7 @@ function readTable(file) {
  * stops redirecting there, so a page that starts rendering gets measured.
  */
 export const REDIRECTS = {
+  '/(app)/quiet/page': '/autopilot/settings',
   '/(marketing)/demo/page': '/inbox-simulator', // launch-post links, 308 (SEO sweep 2026-08-04)
   // Flag-off only. A build with PRICING_V2=true renders this page and
   // must drop this line so the rendered route is measured.
@@ -240,6 +241,8 @@ export function urlFor(route, prerendered) {
   if (url === '/beta') return '/beta?reason=not_invited';
   if (!url.includes('[')) return url;
   const built = Object.entries(prerendered).find(([, entry]) => entry.srcRoute === url);
+  // Comparison pages read runtime pricing, so a known slug may have no prerendered entry.
+  if (!built && url === '/vs/[competitor]') return '/vs/clean-email';
   return built?.[0] ?? url.replace(/\[[^\]]+\]+/g, 'budget-probe');
 }
 

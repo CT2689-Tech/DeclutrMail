@@ -73,7 +73,7 @@ export function useUpdateQuietHours(mailboxId: string) {
       // a second toast helps.
       if (err instanceof ApiError && err.status === 402) return;
       captureFeatureException(err, { surface: 'quiet', reason: 'save_hours_failed' });
-      toast('Couldn’t save quiet hours. Try again.', 'warn');
+      toast('Couldn’t save Schedule. Try again.', 'warn');
     },
   });
 }

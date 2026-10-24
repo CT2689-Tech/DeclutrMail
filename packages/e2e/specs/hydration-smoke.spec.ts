@@ -160,6 +160,7 @@ const HYDRATED_ROUTES = [
   '/brief',
   '/followups',
   '/later',
+  '/autopilot/settings',
   '/quiet',
   '/screener',
   '/settings',

@@ -58,6 +58,7 @@ function fixture(initialStatus: number, deferPause = false) {
         ),
   );
   installFetchStub([
+    { method: 'GET', path: '/api/actions/active', respond: () => jsonOk({ data: [] }) },
     { method: 'GET', path: '/api/autopilot/rules', respond: () => jsonOk({ data: [preset] }) },
     {
       method: 'GET',
@@ -138,7 +139,9 @@ it('recovers from the legacy preset surface to the growing library without a rel
     state.client.invalidateQueries({ queryKey: ['autopilot-sender-rules', 'mailbox-a'] }),
   );
   expect(await screen.findByTestId('sender-rule-library')).toBeInTheDocument();
-  expect(await screen.findByRole('heading', { name: 'Newsletter cleanup' })).toBeInTheDocument();
+  expect(
+    await screen.findByRole('button', { name: /^Newsletter cleanup Delete/ }),
+  ).toBeInTheDocument();
   expect(
     screen.queryByRole('button', { name: 'Pause every Autopilot rule' }),
   ).not.toBeInTheDocument();

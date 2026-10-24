@@ -18,6 +18,7 @@ const EXACT_SURFACES: Record<string, WebVitalEvent['surface']> = {
   '/activity': 'activity',
   '/admin/security': 'admin_security',
   '/autopilot': 'autopilot',
+  '/autopilot/settings': 'quiet',
   '/beta': 'beta',
   '/billing': 'billing',
   '/brief': 'brief',

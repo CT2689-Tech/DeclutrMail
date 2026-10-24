@@ -23,6 +23,7 @@ const APP_ROUTES = [
   '/senders?view=first-review',
   '/screener',
   '/autopilot',
+  '/autopilot/settings',
   '/quiet',
   '/brief',
   '/followups',

@@ -7,7 +7,7 @@
 // Variants covered (per D211 edge-state inventory + Storybook contract):
 //   • Unconfigured     — config null, defaults in the form
 //   • Configured       — saved window, quiet NOT active now
-//   • QuietNow         — saved window covering now ("Quiet now" pill)
+//   • QuietNow         — saved window covering now ("Actions paused" pill)
 //   • CrossesMidnight  — overnight window, "next day" hint visible
 //   • Loading          — skeleton stack
 //   • Error            — fetch failed branch with Retry
@@ -33,14 +33,14 @@ type Story<C extends (props: never) => unknown> = {
 };
 
 const meta: StoryMeta<typeof QuietHoursCard> = {
-  title: 'Quiet/QuietHoursCard',
+  title: 'Autopilot/Settings/Schedule',
   component: QuietHoursCard,
   parameters: {
     layout: 'padded',
     docs: {
       description: {
         component:
-          'Per-mailbox quiet-hours config card (U18 — D92/D95). One recurring daily window (local start/end + IANA timezone + enabled). While the window covers now, Autopilot holds its actions, suggestions the user approved included; K/A/U/L/D actions the user takes directly are never held. Windows may cross midnight (start > end). The "Quiet now" pill reports the SAME predicate the Autopilot sweep checks before acting.',
+          'Per-mailbox quiet-hours config card (U18 — D92/D95). One recurring daily window (local start/end + IANA timezone + enabled). While the window covers now, Autopilot holds its actions, suggestions the user approved included; K/A/U/L/D actions the user takes directly are never held. Windows may cross midnight (start > end). The "Actions paused" pill reports the SAME predicate the Autopilot sweep checks before acting.',
       },
     },
   },
@@ -105,7 +105,7 @@ export const Loading: Story<typeof QuietHoursCard> = {
 export const ErrorState: Story<typeof QuietHoursCard> = {
   args: {
     ...baseArgs,
-    state: { kind: 'error', message: 'We couldn’t load quiet hours right now.' },
+    state: { kind: 'error', message: 'We couldn’t load Schedule right now.' },
     onRetry: noop,
   },
 };

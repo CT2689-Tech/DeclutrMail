@@ -10,7 +10,7 @@ vi.mock('next/headers', () => ({
 
 import { ServerQueryHydration } from '@/lib/server-query-hydration';
 import SettingsPage from './settings/page';
-import QuietPage from './quiet/page';
+import QuietPage from './autopilot/settings/page';
 import ActivityPage from './activity/page';
 import AutopilotPage from './autopilot/page';
 import BriefPage from './brief/page';

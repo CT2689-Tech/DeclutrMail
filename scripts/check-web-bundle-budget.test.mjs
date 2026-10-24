@@ -253,6 +253,30 @@ test('a dynamic route is fetched at a path built from it, else at a placeholder'
   assert.match(out, /ok .*\/\(app\)\/zz-things\/\[id\]\/page/);
 });
 
+test('runtime-priced comparison pages still measure a real comparison', (t) => {
+  const own = 'app/(marketing)/vs/[competitor]/page-1.js';
+  const result = run(
+    fixture(t, {
+      pages: { '/(marketing)/vs/[competitor]/page': ['webpack-1.js', own] },
+      site: { '/vs/clean-email': page(...PUBLIC, 'app/(marketing)/vs/%5Bcompetitor%5D/page-1.js') },
+    }),
+  );
+  assert.equal(result.code, 0, result.out);
+  assert.match(result.out, /ok .*vs/);
+});
+
+test('the retired Quiet hours route must redirect to Autopilot settings', (t) => {
+  const own = 'app/(app)/quiet/page-1.js';
+  const result = run(
+    fixture(t, {
+      pages: { '/(app)/quiet/page': ['webpack-1.js', own] },
+      site: { '/quiet': { status: 308, location: '/autopilot/settings' } },
+    }),
+  );
+  assert.equal(result.code, 0, result.out);
+  assert.match(result.out, /declared redirect/);
+});
+
 test('beta recovery is measured even when organic beta redirects', (t) => {
   const own = 'app/(marketing)/beta/page-1.js';
   const { code, out } = run(

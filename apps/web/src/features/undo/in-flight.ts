@@ -71,11 +71,15 @@ export function workingNotice(group: InFlightActionGroup, confirmed = true): Und
       who: who(group),
     };
   }
+  const waitingUntil = group.autopilot?.waitingUntil;
+  const waiting = waitingUntil != null && Date.parse(waitingUntil) > Date.now();
   return {
     id: `run:${group.groupId}`,
     tone: 'working',
     verb: group.verb,
-    label: `${Date.now() - Date.parse(group.startedAt) >= ACTION_OVERDUE_MS ? 'Taking longer than usual · ' : ''}${group.mixedVerbs ? 'Working…' : WORKING[group.verb]}`,
+    label: waiting
+      ? `Scheduled · resumes ${new Date(waitingUntil).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}`
+      : `${Date.now() - Date.parse(group.startedAt) >= ACTION_OVERDUE_MS ? 'Taking longer than usual · ' : ''}${group.mixedVerbs ? 'Working…' : WORKING[group.verb]}`,
     who: who(group),
     // Only a one-job-per-sender decision can call its fraction senders.
     detail:
@@ -259,6 +263,7 @@ export function useInFlightActions(mailboxId?: string) {
               // has to as well, or the lock opens while this recovery runs.
               ...(item.senderIds ? { senderIds: item.senderIds } : {}),
               ...(item.senderKeys ? { senderKeys: item.senderKeys } : {}),
+              ...(status.autopilot ? { autopilot: status.autopilot } : {}),
               total: status.total,
               done: status.done,
               failed: status.failed,
@@ -285,7 +290,16 @@ export function useInFlightActions(mailboxId?: string) {
       if (!(query.state.data ?? []).some(isRunning) && !unobservedAcceptance) return false;
       // Never stop on an error while work is out: one 5xx used to freeze
       // "Archiving…" on screen until the next click (flow gate 2026-09-20).
-      return query.state.status === 'error' ? IN_FLIGHT_RETRY_MS : IN_FLIGHT_POLL_MS;
+      if (query.state.status === 'error') return IN_FLIGHT_RETRY_MS;
+      const running = (query.state.data ?? []).filter(isRunning);
+      return running.length > 0 &&
+        running.every(
+          (group) =>
+            group.autopilot?.waitingUntil &&
+            Date.parse(group.autopilot.waitingUntil) > Date.now() + 30_000,
+        )
+        ? 30_000
+        : IN_FLIGHT_POLL_MS;
     },
     // A job finishing in a background tab must not leave "Deleting…" up.
     refetchIntervalInBackground: true,

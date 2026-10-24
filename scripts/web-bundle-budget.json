@@ -13,6 +13,10 @@
       "measuredKb": 308.6,
       "budgetKb": 325
     },
+    "/(app)/autopilot/settings/page": {
+      "measuredKb": 291,
+      "budgetKb": 306
+    },
     "/(app)/billing/page": {
       "measuredKb": 298.7,
       "budgetKb": 314
@@ -31,10 +35,6 @@
     },
     "/(app)/later/page": {
       "measuredKb": 285.7,
-      "budgetKb": 300
-    },
-    "/(app)/quiet/page": {
-      "measuredKb": 285.5,
       "budgetKb": 300
     },
     "/(app)/screener/page": {

@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { expect, test, type Locator } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { expectNoUncontainedViewportEscape, expectNoViewportOverflow } from '../helpers/a11y';
 
 const webRoot = fileURLToPath(new URL('../../../apps/web', import.meta.url));
@@ -92,6 +92,17 @@ const paint = (choice: Locator) =>
     return { shadow: style.boxShadow, background: style.backgroundColor };
   });
 
+const settlePaint = (page: Page) =>
+  page.evaluate(async () => {
+    await document.fonts.ready;
+    await Promise.all(
+      document.getAnimations().map((animation) => animation.finished.catch(() => {})),
+    );
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+  });
+
 for (const width of [320, 375, 1280]) {
   for (const screen of ['goals', 'presets']) {
     test(`${screen} keep visible selection and unchanged dark/public paint at ${width}px`, async ({
@@ -147,10 +158,24 @@ for (const width of [320, 375, 1280]) {
       await expect.poll(() => paint(selected)).toMatchObject({ background: 'rgb(48, 42, 50)' });
       await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(30, 26, 33)');
       // Computed RGB values can round to their target before a theme
-      // transition finishes. Compare the final paint, pixel for pixel.
+      // transition finishes. Wait for its paint before comparing exact PNGs;
+      // screenshot's temporary animation disabling can otherwise race repaint.
+      await settlePaint(page);
       const darkWithStyles = await page.screenshot({ animations: 'disabled' });
       await page.evaluate(() => document.querySelector<HTMLStyleElement>('#app-styles')!.remove());
-      expect((await page.screenshot({ animations: 'disabled' })).equals(darkWithStyles)).toBe(true);
+      await settlePaint(page);
+      const darkWithoutStyles = await page.screenshot({ animations: 'disabled' });
+      if (!darkWithoutStyles.equals(darkWithStyles)) {
+        await test.info().attach('dark-with-app-styles', {
+          body: darkWithStyles,
+          contentType: 'image/png',
+        });
+        await test.info().attach('dark-without-app-styles', {
+          body: darkWithoutStyles,
+          contentType: 'image/png',
+        });
+      }
+      expect(darkWithoutStyles.equals(darkWithStyles)).toBe(true);
 
       await page.evaluate((styles) => {
         const sheet = document.createElement('style');
@@ -164,8 +189,10 @@ for (const width of [320, 375, 1280]) {
       await page.evaluate(() => document.querySelector('#dm-app-theme')!.remove());
       await expect.poll(() => paint(selected)).toMatchObject({ background: 'rgb(255, 252, 248)' });
       await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(246, 242, 235)');
+      await settlePaint(page);
       const publicWithStyles = await page.screenshot({ animations: 'disabled' });
       await page.evaluate(() => document.querySelector('#app-styles')!.remove());
+      await settlePaint(page);
       expect((await page.screenshot({ animations: 'disabled' })).equals(publicWithStyles)).toBe(
         true,
       );

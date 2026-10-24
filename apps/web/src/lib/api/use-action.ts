@@ -370,7 +370,11 @@ export function batchRefetchInterval(
   // reading it as "not loaded yet" (audit 2026-08-21).
   if (isError) return false;
   if (!data) return ACTION_POLL_MS;
-  return isTerminalStatus(data.status) ? false : ACTION_POLL_MS;
+  if (isTerminalStatus(data.status)) return false;
+  return data.autopilot?.waitingUntil &&
+    Date.parse(data.autopilot.waitingUntil) > Date.now() + 30_000
+    ? 30_000
+    : ACTION_POLL_MS;
 }
 
 /**
@@ -378,14 +382,20 @@ export function batchRefetchInterval(
  * every sibling row of the fan-out. `retry: false` — a read 4xx is a
  * designed state, never something to hammer (§8).
  */
-export function useBatchStatus(batchId: string | null, mailboxId?: string) {
+export function useBatchStatus(
+  batchId: string | null,
+  mailboxId?: string,
+  pollMs = ACTION_POLL_MS,
+) {
   const qc = useQueryClient();
   const query = useQuery({
     queryKey: ['batch-status', batchId, { mailboxId: mailboxId ?? null }] as const,
     queryFn: () => getBatchStatus(batchId as string, mailboxId ? { mailboxId } : undefined),
     enabled: batchId !== null,
-    refetchInterval: (query) =>
-      batchRefetchInterval(query.state.data, query.state.status === 'error'),
+    refetchInterval: (query) => {
+      const interval = batchRefetchInterval(query.state.data, query.state.status === 'error');
+      return interval === false ? false : Math.max(interval, pollMs);
+    },
     // Keep polling while the tab is unfocused (FOUNDER-FOLLOWUPS
     // 2026-07-10): the interval already self-terminates on a terminal
     // status, so this costs only the in-flight window — without it a

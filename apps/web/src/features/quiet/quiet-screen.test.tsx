@@ -1,10 +1,10 @@
 /**
- * Tests for `QuietRoute` (U18 — D92/D95) — the live wiring:
+ * Tests for `AutopilotSettingsRoute` (U18 — D92/D95) — the live wiring:
  *
  *   - empty branch (no mailboxes connected)
  *   - one card per mailbox, hydrated from GET /api/mailboxes/:id/quiet-hours
  *   - the save flow fires PUT with the edited config and the cache
- *     adopts the server's post-save state (the "Quiet now" pill flips
+ *     adopts the server's post-save state (the "Actions paused" pill flips
  *     from the response, never optimistically)
  */
 
@@ -17,7 +17,7 @@ import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { installFetchStub, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import type { Me } from '@/features/auth/api/use-me';
 import { captureFeatureException } from '@/lib/sentry';
-import { QuietRoute } from './quiet-screen';
+import { AutopilotSettingsRoute } from './quiet-screen';
 
 vi.mock('@declutrmail/shared', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -79,7 +79,7 @@ function jsonEnvelope(data: unknown): Response {
 function renderRoute() {
   return render(
     <QueryWrapper client={createTestQueryClient()}>
-      <QuietRoute />
+      <AutopilotSettingsRoute />
     </QueryWrapper>,
   );
 }
@@ -88,7 +88,7 @@ const quietPath = (id: string) => `/api/mailboxes/${id}/quiet-hours`;
 const saveStatus = (email: string) =>
   screen.getByRole('status', { name: `Save status for ${email}` });
 
-describe('QuietRoute', () => {
+describe('AutopilotSettingsRoute', () => {
   beforeEach(() => {
     installFetchStub([]);
   });
@@ -142,8 +142,8 @@ describe('QuietRoute', () => {
     expect(await screen.findByText('a@b.com')).toBeInTheDocument();
     expect(screen.getByText('b@b.com')).toBeInTheDocument();
     // Mailbox A is quiet right now; B has never been configured.
-    await waitFor(() => expect(screen.getByText('Quiet now')).toBeInTheDocument());
-    const starts = await screen.findAllByLabelText('Quiet window start');
+    await waitFor(() => expect(screen.getByText('Actions paused')).toBeInTheDocument());
+    const starts = await screen.findAllByLabelText('Pause window start');
     expect(starts[0]).toHaveValue('22:00');
   });
 
@@ -167,18 +167,18 @@ describe('QuietRoute', () => {
     ]);
 
     renderRoute();
-    const checkbox = await screen.findByRole('switch', { name: 'Enable quiet hours' });
+    const checkbox = await screen.findByRole('switch', { name: 'Use a daily pause window' });
     // In place and silent before the save: a region inserted together
     // with its text, or one that already says it, announces nothing.
     const region = saveStatus('a@b.com');
     expect(region.textContent).toBe('');
     await userEvent.click(checkbox); // enabled: true → false (dirty)
-    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Schedule' }));
 
     await waitFor(() => expect(putBody).not.toBeNull());
     expect(putBody).toEqual({ ...CONFIG, enabled: false });
     // Server said activeNow: true → the pill renders from the response.
-    await waitFor(() => expect(screen.getByText('Quiet now')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Actions paused')).toBeInTheDocument());
     // The SAME node says it, although the form remounted — not a toast.
     expect(saveStatus('a@b.com')).toBe(region);
     expect(region).toHaveTextContent('Saved');
@@ -220,10 +220,10 @@ describe('QuietRoute', () => {
     const client = createTestQueryClient();
     render(
       <QueryWrapper client={client}>
-        <QuietRoute />
+        <AutopilotSettingsRoute />
       </QueryWrapper>,
     );
-    await screen.findByRole('switch', { name: 'Enable quiet hours' });
+    await screen.findByRole('switch', { name: 'Use a daily pause window' });
 
     // The poll starts — in flight, not yet resolved.
     await act(async () => {
@@ -232,10 +232,10 @@ describe('QuietRoute', () => {
     await waitFor(() => expect(getCalls).toBe(2));
 
     // The save starts and finishes while the poll is still pending.
-    await userEvent.click(screen.getByRole('switch', { name: 'Enable quiet hours' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
-    await waitFor(() => expect(screen.getByLabelText('Quiet window start')).toHaveValue('22:00'));
-    expect(screen.getByRole('switch', { name: 'Enable quiet hours' })).not.toBeChecked();
+    await userEvent.click(screen.getByRole('switch', { name: 'Use a daily pause window' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Schedule' }));
+    await waitFor(() => expect(screen.getByLabelText('Pause window start')).toHaveValue('22:00'));
+    expect(screen.getByRole('switch', { name: 'Use a daily pause window' })).not.toBeChecked();
 
     // The stale poll resolves last, with the pre-save (enabled: true) data.
     // `waitFor` is the wrong tool below this point: `enabled: false` is
@@ -253,7 +253,7 @@ describe('QuietRoute', () => {
     expect(client.getQueryData(['quiet', 'hours', MAILBOX_A])).toMatchObject({
       config: { enabled: false },
     });
-    expect(screen.getByRole('switch', { name: 'Enable quiet hours' })).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Use a daily pause window' })).not.toBeChecked();
   });
 
   it('stops saying Saved once the form is edited again', async () => {
@@ -273,11 +273,11 @@ describe('QuietRoute', () => {
     ]);
 
     renderRoute();
-    await userEvent.click(await screen.findByRole('switch', { name: 'Enable quiet hours' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+    await userEvent.click(await screen.findByRole('switch', { name: 'Use a daily pause window' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Schedule' }));
     await waitFor(() => expect(saveStatus('a@b.com')).toHaveTextContent('Saved'));
 
-    await userEvent.click(screen.getByRole('switch', { name: 'Enable quiet hours' }));
+    await userEvent.click(screen.getByRole('switch', { name: 'Use a daily pause window' }));
 
     expect(saveStatus('a@b.com').textContent).toBe('');
   });
@@ -294,11 +294,11 @@ describe('QuietRoute', () => {
     ]);
 
     renderRoute();
-    await userEvent.click(await screen.findByRole('switch', { name: 'Enable quiet hours' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+    await userEvent.click(await screen.findByRole('switch', { name: 'Use a daily pause window' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Schedule' }));
 
     await waitFor(() =>
-      expect(toast).toHaveBeenCalledWith(expect.stringContaining('quiet hours'), 'warn'),
+      expect(toast).toHaveBeenCalledWith(expect.stringContaining('Schedule'), 'warn'),
     );
     expect(captureFeatureException).toHaveBeenCalledWith(expect.anything(), {
       surface: 'quiet',
@@ -332,14 +332,14 @@ describe('QuietRoute', () => {
     ]);
 
     renderRoute();
-    await userEvent.click(await screen.findByRole('switch', { name: 'Enable quiet hours' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+    await userEvent.click(await screen.findByRole('switch', { name: 'Use a daily pause window' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Schedule' }));
 
     // The mutation settling (isPending flips back false, restoring the
     // button's resting label) is the deterministic signal here — there is
     // no success toast to wait on for this path, by design.
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Save quiet hours' })).toBeInTheDocument(),
+      expect(screen.getByRole('button', { name: 'Save Schedule' })).toBeInTheDocument(),
     );
     expect(toast).not.toHaveBeenCalled();
     expect(captureFeatureException).not.toHaveBeenCalled();
@@ -365,8 +365,8 @@ describe('QuietRoute', () => {
     ]);
 
     const { unmount } = renderRoute();
-    await userEvent.click(await screen.findByRole('switch', { name: 'Enable quiet hours' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+    await userEvent.click(await screen.findByRole('switch', { name: 'Use a daily pause window' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Schedule' }));
     await waitFor(() => expect(failPut).toBeDefined());
 
     // The user navigates away while the PUT is still in flight.
@@ -374,7 +374,7 @@ describe('QuietRoute', () => {
     failPut?.();
 
     await waitFor(() =>
-      expect(toast).toHaveBeenCalledWith(expect.stringContaining('quiet hours'), 'warn'),
+      expect(toast).toHaveBeenCalledWith(expect.stringContaining('Schedule'), 'warn'),
     );
     expect(captureFeatureException).toHaveBeenCalledTimes(1);
   });
@@ -396,9 +396,9 @@ describe('QuietRoute', () => {
     ]);
 
     renderRoute();
-    await userEvent.click(await screen.findByRole('switch', { name: 'Enable quiet hours' }));
+    await userEvent.click(await screen.findByRole('switch', { name: 'Use a daily pause window' }));
     expect(screen.queryByText('Saved')).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Schedule' }));
 
     // The visible label, not its screen-reader twin in the save status.
     expect(
@@ -412,7 +412,9 @@ describe('QuietRoute', () => {
     const { unmount } = renderRoute();
     try {
       expect(await screen.findByTestId('quiet-card-loading')).toBeInTheDocument();
-      expect(screen.queryByRole('switch', { name: 'Enable quiet hours' })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('switch', { name: 'Use a daily pause window' }),
+      ).not.toBeInTheDocument();
     } finally {
       // Unmount first, so the paused read never resumes against the stub.
       unmount();
@@ -439,10 +441,10 @@ describe('QuietRoute', () => {
     const client = createTestQueryClient();
     render(
       <QueryWrapper client={client}>
-        <QuietRoute />
+        <AutopilotSettingsRoute />
       </QueryWrapper>,
     );
-    expect(await screen.findByText(/2 Autopilot actions/)).toBeInTheDocument();
+    expect(await screen.findByText(/2 preset approvals/)).toBeInTheDocument();
 
     failing = true;
     await act(async () => {
@@ -475,11 +477,11 @@ describe('QuietRoute', () => {
     const client = createTestQueryClient();
     render(
       <QueryWrapper client={client}>
-        <QuietRoute />
+        <AutopilotSettingsRoute />
       </QueryWrapper>,
     );
-    await userEvent.click(await screen.findByRole('switch', { name: 'Enable quiet hours' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+    await userEvent.click(await screen.findByRole('switch', { name: 'Use a daily pause window' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Schedule' }));
     await waitFor(() => expect(saveStatus('a@b.com')).toHaveTextContent('Saved'));
 
     failing = true;
@@ -491,7 +493,9 @@ describe('QuietRoute', () => {
 
     failing = false;
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    expect(await screen.findByRole('switch', { name: 'Enable quiet hours' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('switch', { name: 'Use a daily pause window' }),
+    ).toBeInTheDocument();
     expect(saveStatus('a@b.com').textContent).toBe('');
   });
 
@@ -519,11 +523,11 @@ describe('QuietRoute', () => {
     const client = createTestQueryClient();
     render(
       <QueryWrapper client={client}>
-        <QuietRoute />
+        <AutopilotSettingsRoute />
       </QueryWrapper>,
     );
-    await userEvent.click(await screen.findByRole('switch', { name: 'Enable quiet hours' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+    await userEvent.click(await screen.findByRole('switch', { name: 'Use a daily pause window' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Schedule' }));
     await waitFor(() => expect(saveStatus('a@b.com')).toHaveTextContent('Saved'));
 
     failing = true;
@@ -538,7 +542,9 @@ describe('QuietRoute', () => {
       await client.invalidateQueries();
     });
 
-    expect(await screen.findByRole('switch', { name: 'Enable quiet hours' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('switch', { name: 'Use a daily pause window' }),
+    ).toBeInTheDocument();
     expect(saveStatus('a@b.com').textContent).toBe('');
   });
 
@@ -604,7 +610,7 @@ describe('QuietRoute', () => {
 
     renderRoute();
 
-    await waitFor(() => expect(screen.getByText('Quiet now')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Actions paused')).toBeInTheDocument());
     expect(
       screen.queryByRole('status', { name: 'Quiet status for a@b.com' }),
     ).not.toBeInTheDocument();
@@ -623,7 +629,7 @@ describe('QuietRoute', () => {
 
     renderRoute();
 
-    expect(await screen.findByLabelText('Quiet window start')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Pause window start')).toBeInTheDocument();
     expect(
       screen.queryByRole('status', { name: 'Quiet status for a@b.com' }),
     ).not.toBeInTheDocument();
@@ -650,7 +656,7 @@ describe('QuietRoute', () => {
     expect(
       await screen.findByRole('status', { name: 'Quiet status for a@b.com' }),
     ).toBeInTheDocument();
-    const disconnected = screen.getByRole('region', { name: 'Quiet hours for b@b.com' });
+    const disconnected = screen.getByRole('region', { name: 'Schedule for b@b.com' });
     expect(within(disconnected).getByText('Disconnected')).toBeInTheDocument();
     expect(
       screen.queryByRole('status', { name: 'Quiet status for b@b.com' }),

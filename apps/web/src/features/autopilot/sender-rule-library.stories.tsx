@@ -107,6 +107,7 @@ export function createSenderRuleStoryFixture(scenario: SenderRuleStoryScenario) 
     localStorage.setItem('dm-cookie-consent', 'essential');
     installFetchStub([
       { method: 'GET', path: '/api/auth/me', respond: () => ok(me) },
+      { method: 'GET', path: '/api/actions/active', respond: () => ok([]) },
       {
         method: 'GET',
         path: rulePath,
@@ -362,7 +363,9 @@ export const AllPaused: Story = { args: { scenario: 'paused' } };
 export const BatchPreview: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole('button', { name: 'Preview' }));
+    await userEvent.click(
+      await canvas.findByRole('button', { name: `Preview batch for ${FIXTURE_RULES[0]!.name}` }),
+    );
     await expect(await canvas.findByRole('alertdialog')).toHaveAccessibleName('Delete 12 emails?');
   },
 };
@@ -370,7 +373,9 @@ export const ExpiredPreview: Story = {
   args: { scenario: 'expired' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole('button', { name: 'Preview' }));
+    await userEvent.click(
+      await canvas.findByRole('button', { name: `Preview batch for ${FIXTURE_RULES[0]!.name}` }),
+    );
     const dialog = within(await canvas.findByRole('alertdialog'));
     await expect(await dialog.findByText(/This preview expired/)).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Delete' })).toBeDisabled();
@@ -380,7 +385,9 @@ export const NoMatchesPreview: Story = {
   args: { scenario: 'empty-preview' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole('button', { name: 'Preview' }));
+    await userEvent.click(
+      await canvas.findByRole('button', { name: `Preview batch for ${FIXTURE_RULES[0]!.name}` }),
+    );
     const dialog = within(await canvas.findByRole('alertdialog'));
     await expect(await dialog.findByText('No matching email in this batch.')).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Delete' })).toBeDisabled();
@@ -389,7 +396,9 @@ export const NoMatchesPreview: Story = {
 export const EditWithRetainedSelection: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole('button', { name: 'Edit rule' }));
+    await userEvent.click(
+      await canvas.findByRole('button', { name: `Edit rule ${FIXTURE_RULES[0]!.name}` }),
+    );
     await userEvent.type(canvas.getByRole('searchbox', { name: 'Search name or email' }), 'Market');
     await waitFor(() => {
       expect(canvas.queryByRole('checkbox', { name: /Studio Weekly/ })).not.toBeInTheDocument();
@@ -433,7 +442,9 @@ export const SaveUnavailable: Story = {
 export const ExcludedSenderPreview: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole('button', { name: 'Preview' }));
+    await userEvent.click(
+      await canvas.findByRole('button', { name: `Preview batch for ${FIXTURE_RULES[0]!.name}` }),
+    );
     const dialog = within(await canvas.findByRole('alertdialog'));
     await dialog.findByRole('heading', { name: 'Delete 12 emails?' });
     await userEvent.click(dialog.getByRole('checkbox', { name: /Market Notes/ }));

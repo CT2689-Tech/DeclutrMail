@@ -3,26 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { CATCH_UP_LATER_FIRST } from '../copy/screen-decisions';
 import { NAV, Sidebar, SectionNavigation, WORKSPACE_NAV, workspaceSection } from './sidebar';
 
-const routes = [
-  'home',
-  'senders',
-  'autopilot',
-  'quiet',
-  'brief',
-  'followups',
-  'snoozed',
-  'activity',
-];
-const labels = [
-  'Home',
-  'Senders',
-  'Autopilot',
-  'Quiet hours',
-  'Daily Brief',
-  'Follow-ups',
-  'Later',
-  'Activity',
-];
+const routes = ['home', 'senders', 'autopilot', 'brief', 'followups', 'snoozed', 'activity'];
+const labels = ['Home', 'Senders', 'Autopilot', 'Daily Brief', 'Follow-ups', 'Later', 'Activity'];
 const groups = ['Home', 'Cleanup', 'Automations', 'Catch up', 'Activity'];
 const render = (props: Partial<Parameters<typeof Sidebar>[0]> = {}) =>
   renderToStaticMarkup(<Sidebar active="senders" onNavigate={() => {}} collapsed {...props} />);
@@ -148,7 +130,6 @@ describe('Sidebar — approved workspace rail', () => {
 
 describe('SectionNavigation', () => {
   it.each([
-    ['quiet', 'Automations views', ['Autopilot', 'Quiet hours']],
     [
       'snoozed',
       'Catch up views',
@@ -167,21 +148,28 @@ describe('SectionNavigation', () => {
   it('keeps exact child counts and entitlement labels', () => {
     const html = renderToStaticMarkup(
       <SectionNavigation
-        active="autopilot"
+        active="brief"
         onNavigate={() => {}}
-        counts={{ quiet: { text: 7, label: '7 scheduled windows' } }}
-        locks={{ quiet: 'Pro' }}
+        counts={{ brief: { text: 7, label: '7 briefs' } }}
+        locks={{ brief: 'Pro' }}
       />,
     );
-    expect(html).toContain('aria-label="7 scheduled windows"');
+    expect(html).toContain('aria-label="7 briefs"');
     expect(html).toContain('aria-label="Pro feature"');
   });
-  it.each(['home', 'senders', 'triage', 'screener', 'activity', 'settings', 'billing'])(
-    'omits redundant context for %s',
-    (active) => {
-      expect(
-        renderToStaticMarkup(<SectionNavigation active={active} onNavigate={() => {}} />),
-      ).toBe('');
-    },
-  );
+  it.each([
+    'autopilot',
+    'quiet',
+    'home',
+    'senders',
+    'triage',
+    'screener',
+    'activity',
+    'settings',
+    'billing',
+  ])('omits redundant context for %s', (active) => {
+    expect(renderToStaticMarkup(<SectionNavigation active={active} onNavigate={() => {}} />)).toBe(
+      '',
+    );
+  });
 });

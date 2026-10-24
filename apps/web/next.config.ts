@@ -63,6 +63,7 @@ const nextConfig: NextConfig = {
    * see the module docblock for why that gate is load-bearing.
    */
   redirects: async () => [
+    { source: '/quiet', destination: '/autopilot/settings', permanent: true },
     ...wwwApexRedirects(),
     ...legacyDomainRedirects(),
     ...cleanupRedirects(),

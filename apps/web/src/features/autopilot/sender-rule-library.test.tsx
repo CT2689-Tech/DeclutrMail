@@ -21,7 +21,9 @@ const api = vi.hoisted(() => ({
   track: vi.fn(),
   feedback: vi.fn(),
   status: { data: undefined, isError: false, refetch: vi.fn() } as {
-    data: undefined | { status: string; affectedCount: number; done: number; total: number };
+    data:
+      | undefined
+      | { status: string; affectedCount: number; done: number; total: number; failed?: number };
     isError: boolean;
     refetch: ReturnType<typeof vi.fn>;
   },
@@ -40,7 +42,12 @@ vi.mock('@/lib/api/autopilot', async (original) => ({
   postPauseAll: api.pause,
 }));
 vi.mock('@/lib/posthog', () => ({ track: api.track }));
-vi.mock('@/lib/api/use-action', () => ({ useBatchStatus: () => api.status }));
+vi.mock('@/lib/api/use-action', () => ({
+  useBatchStatus: () => api.status,
+  useRevertUndo: () => ({ mutate: vi.fn() }),
+  useUndoStatus: () => ({}),
+}));
+vi.mock('@/features/undo/in-flight', () => ({ useInFlightActions: () => ({ data: [] }) }));
 vi.mock('@/features/undo/feedback-store', () => ({ acceptActionFeedback: api.feedback }));
 vi.mock('@/features/auth/auth-provider', () => ({
   useOptionalAuth: () => ({ me: { activeMailboxId: 'mailbox-a', tier: api.tier } }),
@@ -153,10 +160,25 @@ afterEach(() => {
   vi.useRealTimers();
 });
 async function loaded() {
+  fireEvent.click(
+    await screen.findByRole('button', { name: new RegExp(`^${rule.name} (Archive|Delete)`) }),
+  );
   await screen.findByRole('heading', { name: rule.name });
 }
 
 describe('sender rule library', () => {
+  it('keeps a row-opened preview focused inside the dialog and returns to that row', async () => {
+    setup();
+    const opener = await screen.findByRole('button', { name: `Preview batch for ${rule.name}` });
+    opener.focus();
+    fireEvent.click(opener);
+    const dialog = await screen.findByRole('dialog');
+    const cancel = within(dialog).getByRole('button', { name: 'Cancel' });
+    await waitFor(() => expect(cancel).toHaveFocus());
+    fireEvent.click(cancel);
+    await waitFor(() => expect(opener).toHaveFocus());
+  });
+
   it('registers approval-first help for the application shell', async () => {
     setup();
     await loaded();
@@ -376,7 +398,9 @@ describe('sender rule library', () => {
       'mailbox-a',
       expect.objectContaining({ groupId: 'batch-a', verb: 'archive' }),
     );
-    expect(await screen.findByText('Batch queued.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Batch queued. Schedule applies before it starts.'),
+    ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Activity and Undo' })).toHaveAttribute(
       'href',
       '/activity',
@@ -389,15 +413,15 @@ describe('sender rule library', () => {
     const dialog = await screen.findByRole('dialog');
     await within(dialog).findByRole('heading', { name: 'Archive 12 emails?' });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Archive' }));
-    await screen.findByText('Batch queued.');
+    await screen.findByText('Batch queued. Schedule applies before it starts.');
     api.status.isError = true;
     view.rerender(view.tree());
     expect(screen.getByText(/Progress couldn’t be checked/)).toBeInTheDocument();
     expect(screen.queryByText('12 emails moved.')).not.toBeInTheDocument();
     api.status.isError = false;
-    api.status.data = { status: 'failed', affectedCount: 7, done: 1, total: 2 };
+    api.status.data = { status: 'failed', affectedCount: 7, done: 1, total: 2, failed: 1 };
     view.rerender(view.tree());
-    expect(screen.getByText(/7 emails moved; some actions failed/)).toBeInTheDocument();
+    expect(screen.getByText(/7 emails moved. 1 actions failed/)).toBeInTheDocument();
   });
   it('keeps an open preview frozen and refreshes an explicitly stale rule', async () => {
     const next = { ...rule, version: 2 };
@@ -482,15 +506,15 @@ describe('sender rule library', () => {
       Array.from({ length: 14 }, (_, i) => ({ ...rule, id: `rule-${i}`, name: `Rule ${i}` })),
     );
     setup();
-    await screen.findByRole('heading', { name: 'Rule 0' });
+    await screen.findByRole('button', { name: /^Rule 0 Archive/ });
     expect(screen.getAllByRole('button', { name: /^Rule \d+ Archive/ })).toHaveLength(6);
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    expect(screen.getByRole('button', { name: /Rule 6/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Rule 6 Archive/ })).toBeInTheDocument();
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search rules' }), {
       target: { value: 'Rule 13' },
     });
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: /Rule 13/ })).toBeInTheDocument(),
+      expect(screen.getByRole('button', { name: /^Rule 13 Archive/ })).toBeInTheDocument(),
     );
     expect(api.preview).not.toHaveBeenCalled();
     expect(api.list).toHaveBeenCalledOnce();

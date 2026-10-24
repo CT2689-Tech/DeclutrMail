@@ -111,6 +111,9 @@ interface InFlightRow {
   lead_sender_name: string | null;
   sender_ids: string[];
   sender_keys: string[];
+  rule_id: string | null;
+  rule_name: string | null;
+  waiting_until_ms: number | null;
 }
 
 /** NestJS DI token for the label-action BullMQ queue (D226). */
@@ -389,6 +392,7 @@ export class ActionsService {
               autopilot: {
                 ruleId: input.ruleId,
                 ruleVersion: input.ruleVersion,
+                ruleName: rule.name,
                 previewId: input.previewId,
               },
             },
@@ -1767,6 +1771,14 @@ export class ActionsService {
       : anyProgress
         ? 'executing'
         : 'queued';
+    const pending = live.filter((r) => r.status === 'queued' || r.status === 'executing');
+    const approval = current.find((r) => r.selector.type === 'sender' && r.selector.autopilot);
+    const identity = approval?.selector.type === 'sender' ? approval.selector.autopilot : undefined;
+    const waiting =
+      pending.length > 0 &&
+      pending.every(
+        (r) => r.status === 'queued' && (r.selector.quietDeferredUntilMs ?? 0) > Date.now(),
+      );
     const anchor = current.find((r) => r.id === batchId);
     const undoToken =
       anchor?.undoToken ?? current.map((r) => r.undoToken).find((t) => t !== null) ?? null;
@@ -1803,6 +1815,19 @@ export class ActionsService {
     return {
       batchId,
       feedbackVersion: 2,
+      ...(identity
+        ? {
+            autopilot: {
+              ruleId: identity.ruleId,
+              ruleName: identity.ruleName ?? null,
+              waitingUntil: waiting
+                ? new Date(
+                    Math.min(...pending.map((r) => r.selector.quietDeferredUntilMs!)),
+                  ).toISOString()
+                : null,
+            },
+          }
+        : {}),
       status,
       total,
       done,
@@ -1861,7 +1886,8 @@ export class ActionsService {
         where mailbox_account_id = ${mailboxAccountId}
           and direction = 'forward'
           and not (verb = 'unsubscribe' and idempotency_key like 'unsub:%')
-          and created_at > now() - make_interval(hours => ${IN_FLIGHT_MAX_AGE_HOURS}::int)
+          and (created_at > now() - make_interval(hours => ${IN_FLIGHT_MAX_AGE_HOURS}::int)
+            or (status in ('queued', 'executing') and selector->'autopilot'->>'ruleId' is not null))
           and (
             status in ('queued', 'executing')
             -- …or ended moments ago: a job quicker than one poll, or one whose
@@ -1880,7 +1906,11 @@ export class ActionsService {
           aj.requested_count,
           aj.created_at,
           aj.selector->>'senderId' as sender_id,
-          aj.selector->>'senderKey' as sender_key
+          aj.selector->>'senderKey' as sender_key,
+          aj.selector->'autopilot'->>'ruleId' as rule_id,
+          aj.selector->'autopilot'->>'ruleName' as rule_name,
+          case when jsonb_typeof(aj.selector->'quietDeferredUntilMs') = 'number'
+            then (aj.selector->>'quietDeferredUntilMs')::double precision else null end as deferred_until_ms
         from live l
         join lateral (
           -- Two indexed probes (pkey; composite_id idx) — an OR across the
@@ -1913,6 +1943,13 @@ export class ActionsService {
           count(distinct sender_id)::int as sender_count,
           count(distinct verb)::int as verb_count,
           min(created_at) as started_at,
+          min(rule_id) as rule_id,
+          min(rule_name) as rule_name,
+          case when count(*) filter (where status = 'executing') = 0
+            and count(*) filter (where status = 'queued') > 0
+            and count(*) filter (where status = 'queued' and deferred_until_ms > extract(epoch from now()) * 1000)
+              = count(*) filter (where status = 'queued')
+            then min(deferred_until_ms) filter (where status = 'queued') else null end as waiting_until_ms,
           -- the "filter (where ... is not null)" below is load-bearing:
           -- without it, array_agg(distinct ...) includes a literal NULL
           -- element for any legacy messages-selector row (unlike
@@ -1935,7 +1972,7 @@ export class ActionsService {
       )
       select
         g.group_id, g.total, g.done, g.failed, g.sender_count, g.verb_count,
-        g.sender_ids, g.sender_keys,
+        g.sender_ids, g.sender_keys, g.rule_id, g.rule_name, g.waiting_until_ms,
         to_char(g.started_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as started_at,
         l.verb,
         coalesce(nullif(s.display_name, ''), s.email::text) as lead_sender_name
@@ -1951,6 +1988,18 @@ export class ActionsService {
       ((result as { rows?: InFlightRow[] }).rows ?? (result as unknown as InFlightRow[])) || [];
     return rows.map((row) => ({
       groupId: row.group_id,
+      ...(row.rule_id
+        ? {
+            autopilot: {
+              ruleId: row.rule_id,
+              ruleName: row.rule_name,
+              waitingUntil:
+                row.waiting_until_ms === null
+                  ? null
+                  : new Date(Number(row.waiting_until_ms)).toISOString(),
+            },
+          }
+        : {}),
       verb: row.verb,
       mixedVerbs: row.verb_count > 1,
       running: row.done + row.failed < row.total,

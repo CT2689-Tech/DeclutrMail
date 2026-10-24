@@ -13,7 +13,7 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -271,16 +271,6 @@ describe('LabelActionWorker approved custom Autopilot', () => {
       { isPreset: true, presetKey: 'auto_archive_low_engagement' },
       'AUTOPILOT_RULE_INVALID',
     ],
-    [
-      'edited action/version',
-      { actionKind: 'delete' as const, version: 2 },
-      'AUTOPILOT_RULE_CHANGED',
-    ],
-    [
-      'unowned sender list',
-      { conditions: { kind: 'sender_list', senderKeys: ['b'.repeat(64)], olderThanDays: null } },
-      'AUTOPILOT_RULE_INVALID',
-    ],
   ])('safely stops a queued job when its rule is %s', async (_name, changes, errorCode) => {
     await message('approved');
     const row = await job();
@@ -290,19 +280,79 @@ describe('LabelActionWorker approved custom Autopilot', () => {
     await assertNoAction();
   });
 
-  it('rechecks rule edits after the quota wait before the first request leaves', async () => {
+  it.each([false, true])(
+    'runs the approved IDs and action after a rule edit (during quota wait: %s)',
+    async (duringWait) => {
+      await message('approved');
+      await message('new-arrival');
+      const row = await job();
+      const edit = async () => {
+        await db
+          .update(automationRules)
+          .set({
+            version: 2,
+            actionKind: 'delete',
+            conditions: { kind: 'sender_list', senderKeys: ['b'.repeat(64)], olderThanDays: 180 },
+          })
+          .where(eq(automationRules.id, ruleId));
+      };
+      if (duringWait) gmail.beforeHook = edit;
+      else await edit();
+      await run(row);
+      expect(await status(row)).toMatchObject({ status: 'done', affectedCount: 1 });
+      expect(gmail.calls).toEqual([{ ids: ['approved'], change: { removeLabelIds: ['INBOX'] } }]);
+    },
+  );
+
+  it('classifies a pause within the same millisecond as revoked without retrying Gmail', async () => {
     await message('approved');
     const row = await job();
-    gmail.beforeHook = async () => {
-      await db
-        .update(automationRules)
-        .set({ version: 2, actionKind: 'delete' })
-        .where(eq(automationRules.id, ruleId));
-    };
+    await db
+      .update(actionJobs)
+      .set({ createdAt: sql`'2026-10-24T00:00:00.000100Z'::timestamptz` })
+      .where(eq(actionJobs.id, row.id));
+    await db
+      .update(automationRules)
+      .set({
+        mode: 'observe',
+        version: 3,
+        modeChangedAt: sql`'2026-10-24T00:00:00.000200Z'::timestamptz`,
+      })
+      .where(eq(automationRules.id, ruleId));
     await run(row);
     expect(await status(row)).toMatchObject({
       status: 'failed',
-      errorCode: 'AUTOPILOT_RULE_CHANGED',
+      errorCode: 'AUTOPILOT_RULE_INACTIVE',
+      affectedCount: 0,
+    });
+    await assertNoAction();
+  });
+
+  it('does not revive a waiting approval after Pause and Resume before its next delivery', async () => {
+    await message('approved');
+    const row = await job();
+    await db
+      .update(mailboxAccounts)
+      .set({ quietState: { enabled: true } })
+      .where(eq(mailboxAccounts.id, mailboxId));
+    expect(await run(row)).toMatchObject({ deferredQuiet: true });
+    await db
+      .update(automationRules)
+      .set({ mode: 'paused', version: 2, modeChangedAt: new Date(Date.now() + 1000) })
+      .where(eq(automationRules.id, ruleId));
+    await db
+      .update(automationRules)
+      .set({ mode: 'observe', version: 3, modeChangedAt: new Date(Date.now() + 2000) })
+      .where(eq(automationRules.id, ruleId));
+    await db
+      .update(mailboxAccounts)
+      .set({ quietState: {} })
+      .where(eq(mailboxAccounts.id, mailboxId));
+    await run(row);
+    expect(await status(row)).toMatchObject({
+      status: 'failed',
+      errorCode: 'AUTOPILOT_RULE_INACTIVE',
+      affectedCount: 0,
     });
     await assertNoAction();
   });
