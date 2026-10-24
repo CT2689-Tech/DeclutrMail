@@ -225,9 +225,7 @@ export function ActionToolbar({
           color: color.fgSoft,
         }}
       >
-        {guided
-          ? 'Keep skips future suggestions for this sender. Protected excludes bulk and automatic cleanup.'
-          : 'Keep skips this sender in Triage; Protected excludes bulk and automatic cleanup.'}
+        Keep leaves your email where it is. Protected excludes bulk and automatic cleanup.
       </span>
       {unsubNoChannelReason != null && (
         <>

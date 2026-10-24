@@ -6,6 +6,7 @@ export function cleanupView(value: string | null | undefined): CleanupView {
 
 export function cleanupViewHref(view: CleanupView, search = ''): string {
   const params = new URLSearchParams(search);
+  if (view !== 'guided') params.delete('review');
   if (view === 'all') params.delete('view');
   else params.set('view', view);
   const query = params.toString();

@@ -16,10 +16,16 @@ export function GuidedSenderCard({
   senderId,
   onAction,
   active = true,
+  reviewToken,
+  reviewSaved = true,
+  onRetrySave,
 }: {
   senderId: string;
   onAction: (request: ActionRequest) => void;
   active?: boolean;
+  reviewToken?: string;
+  reviewSaved?: boolean;
+  onRetrySave?: () => void;
 }) {
   const query = useSenderDetail(senderId);
   const timeZone = useUserTimeZone();
@@ -107,9 +113,20 @@ export function GuidedSenderCard({
         guided
         suggestedVerb={suggestedVerb}
       />
-      <a href={`/senders/${encodeURIComponent(senderId)}?from=senders_table`}>
-        View sender details
-      </a>
+      {reviewSaved ? (
+        <a
+          href={`/senders/${encodeURIComponent(senderId)}?from=senders_table${reviewToken ? `&review=${encodeURIComponent(reviewToken)}` : ''}`}
+        >
+          View sender details
+        </a>
+      ) : (
+        <div role="status">
+          <p>Your browser couldn’t save this review. Keep this page open to preserve your place.</p>
+          <Button tone="ghost" onClick={() => onRetrySave?.()}>
+            Try saving review
+          </Button>
+        </div>
+      )}
     </section>
   );
 }

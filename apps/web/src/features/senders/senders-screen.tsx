@@ -116,6 +116,8 @@ import workspaceStyles from './sender-workspace.module.css';
 import { useSenderPane } from './use-sender-pane';
 import { GuidedReviewFrame } from './guided-review-frame';
 import { TriageKeyboardHelp } from '@/features/triage/keyboard-help';
+import { useGuidedReviewSession } from './use-guided-review-session';
+import { writeGuidedReviewToken } from './guided-review-session';
 import { prefetchSenderInspector } from './inspector-intent';
 
 const GuidedSenderCard = dynamic(
@@ -520,6 +522,9 @@ export function SendersScreen({
       onStartGuided={onStartGuided}
       onExitGuided={onExitGuided}
       senders={allSenders}
+      reviewScope={JSON.stringify(
+        sendersListQueryFromScreen({ compose, sort, direction, q: query.trim() }),
+      )}
       senderQueryKey={sendersKeys.list(
         sendersListQueryFromScreen({
           compose: showingWidened ? EMPTY_COMPOSE : compose,
@@ -652,6 +657,7 @@ function describeNarrowedFilters(compose: ComposeState): string {
 /** Renders the screen once the senders list is loaded. */
 function SendersScreenContent({
   senders: serverSenders,
+  reviewScope,
   guided = false,
   active = true,
   navigation,
@@ -688,6 +694,7 @@ function SendersScreenContent({
   clearSearchAndFilters,
 }: {
   senders: Sender[];
+  reviewScope: string;
   guided?: boolean;
   active?: boolean;
   navigation?: ReactNode;
@@ -896,7 +903,7 @@ function SendersScreenContent({
     // The detail page writes the undo result into local policy state.
     // The list row reads `policyType` from the list cache and, once the
     // server drops the row, from the pin. Clearing `settled` alone leaves
-    // "Skipped in suggested review" until a refetch, and a failed refetch keeps it.
+    // "Kept" until a refetch, and a failed refetch keeps it.
     qc.setQueriesData<{ pages: SenderListEnvelope[] }>(
       { queryKey: ['senders', 'list'] },
       (current) => {
@@ -1331,73 +1338,74 @@ function SendersScreenContent({
     [selected, senders],
   );
 
-  // A review captures the visible scope once; changing cards never rewrites list state.
-  const [guidedSession, setGuidedSession] = useState<{
-    mailboxId: string | undefined;
-    rows: Sender[];
-    label: string;
-    index: number;
-  } | null>(null);
+  // Only navigation context survives native detail navigation; current sender
+  // facts remain owned by GuidedSenderCard's authenticated detail read.
   const scopedReview = hasQuery || !isDefaultCompose(compose);
   const [suggestedVisited, setSuggestedVisited] = useState(guided && !scopedReview);
   const [localGuided, setLocalGuided] = useState(false);
   const reviewing = guided || localGuided;
-  const clearGuidedSession = useCallback(() => {
-    setGuidedSession(null);
-    setLocalGuided(false);
-  }, []);
-  useMailboxScopeReset(actionMailboxId, clearGuidedSession);
-  const session = guidedSession?.mailboxId === actionMailboxId ? guidedSession : null;
+  const review = useGuidedReviewSession({
+    userId: me.user.id,
+    mailboxId: actionMailboxId,
+    scope: reviewScope,
+    rows: senders,
+    reviewing,
+    scopeLoading,
+    refreshFailed,
+    onRestoreSelection: setSelected,
+    selectedIds: selected,
+  });
+  const session = review.session;
   const startGuided = () => {
-    const scoped = selectedSenders.length > 0 || hasQuery || !isDefaultCompose(compose);
+    const scoped = selectedSenders.length > 0 || scopedReview;
+    if (scopeLoading || (scoped && resultsReadOnly)) return;
     if (scoped)
-      setGuidedSession({
-        mailboxId: actionMailboxId,
-        rows: [...(selectedSenders.length > 0 ? selectedSenders : senders)],
-        label:
-          selectedSenders.length > 0
-            ? 'Selected senders'
-            : hasNextPage
-              ? 'Loaded senders matching this view'
-              : 'Senders matching this view',
-        index: 0,
-      });
+      review.start(
+        selectedSenders.length > 0 ? selectedSenders : senders,
+        selectedSenders.length > 0 ? 'selected' : hasNextPage ? 'loaded' : 'filtered',
+        selectedSenders.map((sender) => sender.id),
+      );
     else {
-      setGuidedSession(null);
+      review.clear();
       setSuggestedVisited(true);
     }
     if (onStartGuided) onStartGuided();
     else setLocalGuided(true);
   };
   const exitGuided = () => {
+    // Keep the completed entry's token in browser history. Returning to it
+    // must explain the ended session, rather than start a wider fresh queue.
+    review.clear(false);
     setLocalGuided(false);
     if (onExitGuided) onExitGuided();
+    else writeGuidedReviewToken(null);
   };
   useEffect(() => {
-    if (!guided || session !== null) return;
+    if (!guided || session !== null || review.token !== null || review.unavailable) return;
     if (!scopedReview) {
       setSuggestedVisited(true);
       return;
     }
-    // A refreshed filtered Guided link has no local snapshot. Wait for its
-    // real query instead of silently substituting the suggested queue.
-    if (scopeLoading || refreshFailed) return;
-    setGuidedSession({
-      mailboxId: actionMailboxId,
-      rows: [...senders],
-      label: hasNextPage ? 'Loaded senders matching this view' : 'Senders matching this view',
-      index: 0,
-    });
+    if (scopeLoading || refreshFailed || senders.length === 0) return;
+    review.start(senders, hasNextPage ? 'loaded' : 'filtered');
   }, [
     guided,
     session,
+    review.token,
+    review.unavailable,
+    review.start,
     scopedReview,
     scopeLoading,
     refreshFailed,
-    actionMailboxId,
     senders,
     hasNextPage,
   ]);
+  const sessionLabel =
+    session?.kind === 'selected'
+      ? 'Selected senders'
+      : session?.kind === 'loaded'
+        ? 'Loaded senders matching this view'
+        : 'Senders matching this view';
 
   // Phone (≤480px): rows drop the primary verb button for the `⋯` menu
   // (plus swipe-right), and the selection bar becomes the FAB.
@@ -3123,8 +3131,9 @@ function SendersScreenContent({
             <Button
               onClick={startGuided}
               disabled={
-                (selectedSenders.length > 0 || hasQuery || !isDefaultCompose(compose)) &&
-                (resultsReadOnly || senders.length === 0)
+                scopeLoading ||
+                ((selectedSenders.length > 0 || hasQuery || !isDefaultCompose(compose)) &&
+                  (resultsReadOnly || senders.length === 0))
               }
             >
               {selectedSenders.length
@@ -3549,21 +3558,15 @@ function SendersScreenContent({
         </div>
       )}
 
-      {reviewing && session && (
+      {reviewing && session && !review.unavailable && (
         <div className={workspaceStyles.workspace} inert={!active ? true : undefined}>
           <GuidedReviewFrame
             senders={session.rows}
             index={session.index}
-            label={session.label}
+            label={sessionLabel}
             navigationDisabled={pendingAction !== null}
             onExit={exitGuided}
-            onNavigate={(index) =>
-              setGuidedSession((current) =>
-                current && index >= 0 && index < current.rows.length
-                  ? { ...current, index }
-                  : current,
-              )
-            }
+            onNavigate={review.navigate}
           >
             {reviewSender ? (
               <GuidedSenderCard
@@ -3571,6 +3574,9 @@ function SendersScreenContent({
                 senderId={reviewSender.id}
                 onAction={requestAction}
                 active={active && reviewing}
+                reviewToken={session.token}
+                reviewSaved={session.saved}
+                onRetrySave={review.retrySave}
               />
             ) : (
               <EmptyState headingLevel={2} title="No senders in this review" />
@@ -3578,33 +3584,77 @@ function SendersScreenContent({
           </GuidedReviewFrame>
         </div>
       )}
-      {reviewing && session === null && scopedReview && (
+      {reviewing && review.unavailable && (
         <div className={workspaceStyles.workspace}>
           <header className={workspaceStyles.heading}>
-            <Button tone="ghost" onClick={exitGuided}>
-              Back to Senders
-            </Button>
             <h1 className={workspaceStyles.title}>Guided Review</h1>
           </header>
-          {refreshFailed ? (
-            <RecoverableErrorState
-              headingLevel={2}
-              title="Couldn’t load this review"
-              description="Your sender filters are still saved. Try again to review the matching senders."
-              onRetry={onRetry}
-            />
-          ) : (
-            <p role="status">Loading senders matching this view…</p>
-          )}
+          <RecoverableErrorState
+            headingLevel={2}
+            title="This review is no longer available"
+            description="It may have expired, or its sender filters or account changed. Return to Senders to start a new review."
+            onRetry={exitGuided}
+            retryLabel="Back to Senders"
+          />
         </div>
       )}
+      {reviewing &&
+        session === null &&
+        (scopedReview || review.token !== null) &&
+        !review.unavailable && (
+          <div className={workspaceStyles.workspace}>
+            <header className={workspaceStyles.heading}>
+              <Button tone="ghost" onClick={exitGuided}>
+                Back to Senders
+              </Button>
+              <h1 className={workspaceStyles.title}>Guided Review</h1>
+            </header>
+            {refreshFailed ? (
+              <RecoverableErrorState
+                headingLevel={2}
+                title="Couldn’t load this review"
+                description="Your sender filters are still saved. Try again to review the matching senders."
+                onRetry={onRetry}
+              />
+            ) : scopeLoading || review.token !== null ? (
+              <p role="status">Loading your review…</p>
+            ) : (
+              <EmptyState
+                headingLevel={2}
+                title="No senders in this review"
+                action={<Button onClick={exitGuided}>Back to Senders</Button>}
+              />
+            )}
+          </div>
+        )}
       {suggestedVisited && (
         <div
-          hidden={!reviewing || session !== null || scopedReview}
-          style={!reviewing || session !== null || scopedReview ? { display: 'none' } : undefined}
+          hidden={
+            !reviewing ||
+            session !== null ||
+            scopedReview ||
+            review.token !== null ||
+            review.unavailable
+          }
+          style={
+            !reviewing ||
+            session !== null ||
+            scopedReview ||
+            review.token !== null ||
+            review.unavailable
+              ? { display: 'none' }
+              : undefined
+          }
         >
           <SuggestedGuidedReview
-            active={active && reviewing && session === null && !scopedReview}
+            active={
+              active &&
+              reviewing &&
+              session === null &&
+              !scopedReview &&
+              review.token === null &&
+              !review.unavailable
+            }
             onExit={exitGuided}
           />
         </div>

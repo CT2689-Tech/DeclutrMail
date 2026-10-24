@@ -332,7 +332,7 @@ describe('<DomainGroupRow />', () => {
 
 it('shows a previously saved Keep decision after a compact row is revisited', () => {
   renderRow({ policyType: 'keep' }, { compact: true });
-  expect(screen.getByText('Skipped in suggested review')).toBeInTheDocument();
+  expect(screen.getByText('Kept')).toBeInTheDocument();
 });
 
 it('keeps the compact Protected state below the sender identity so the name has room', () => {

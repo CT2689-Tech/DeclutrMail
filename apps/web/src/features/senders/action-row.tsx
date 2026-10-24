@@ -186,7 +186,7 @@ export function SenderActionRow({
         </span>
       )}
       {!compact && !activity && sender.policyType === 'keep' && (
-        <span style={{ color: color.fgSoft }}>Skipped in suggested review</span>
+        <span style={{ color: color.fgSoft }}>Kept</span>
       )}
     </div>
   );
