@@ -1142,11 +1142,19 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
       throw new ValidationError('custom Autopilot requires a sender selector');
     }
     const { db } = this.deps;
-    const [rule] = await db
-      .select()
+    const [current] = await db
+      .select({
+        rule: automationRules,
+        revoked: sql<boolean>`${automationRules.modeChangedAt} > ${actionJobs.createdAt}`,
+      })
       .from(automationRules)
+      .innerJoin(
+        actionJobs,
+        and(eq(actionJobs.id, job.id), eq(actionJobs.mailboxAccountId, job.mailboxAccountId)),
+      )
       .where(eq(automationRules.id, autopilot.ruleId))
       .limit(1);
+    const rule = current?.rule;
     if (
       !rule ||
       rule.mailboxAccountId !== job.mailboxAccountId ||
@@ -1156,14 +1164,13 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     ) {
       throw new CustomAutopilotBlocked('AUTOPILOT_RULE_INVALID');
     }
-    if (rule.retiredAt !== null || !rule.enabled || rule.mode !== 'observe') {
+    if (rule.retiredAt !== null || !rule.enabled || rule.mode !== 'observe' || current?.revoked) {
       throw new CustomAutopilotBlocked('AUTOPILOT_RULE_INACTIVE');
     }
-    if (rule.version !== autopilot.ruleVersion) {
-      throw new CustomAutopilotBlocked('AUTOPILOT_RULE_CHANGED');
-    }
+    // Approval freezes the job's action and IDs. Later edits affect future
+    // previews; pause/retire still revoke admission before the first request.
     const conditions = AutopilotSenderRuleConditionsSchema.safeParse(rule.conditions);
-    if (!conditions.success || !conditions.data.senderKeys.includes(job.selector.senderKey)) {
+    if (!conditions.success) {
       throw new CustomAutopilotBlocked('AUTOPILOT_RULE_INVALID');
     }
     const [mailbox] = await db
@@ -1221,7 +1228,8 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
           and(
             eq(automationRules.id, rule.id),
             eq(automationRules.mailboxAccountId, job.mailboxAccountId),
-            eq(automationRules.version, autopilot.ruleVersion),
+            eq(automationRules.version, rule.version),
+            sql`${automationRules.modeChangedAt} <= ${actionJobs.createdAt}`,
             eq(automationRules.isPreset, false),
             isNull(automationRules.presetKey),
             isNull(automationRules.retiredAt),

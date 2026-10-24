@@ -5,6 +5,7 @@ const APP_PATHS = [
   '/triage',
   '/activity',
   '/autopilot',
+  '/autopilot/settings',
   '/later',
   '/brief',
   '/followups',

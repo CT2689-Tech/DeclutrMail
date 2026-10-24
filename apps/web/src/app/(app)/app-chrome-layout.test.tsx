@@ -622,10 +622,7 @@ describe('(app) layout integration mounts — U-NAV', () => {
       {
         label: 'Automations',
         route: '/autopilot',
-        destinations: [
-          ['Autopilot', '/autopilot'],
-          ['Quiet hours', '/quiet'],
-        ],
+        destinations: [],
       },
       {
         label: 'Catch up',
@@ -706,7 +703,7 @@ describe('(app) layout integration mounts — U-NAV', () => {
   });
 
   it('prefetches a section destination on intent before navigation', async () => {
-    pathnameRef.current = '/autopilot';
+    pathnameRef.current = '/brief';
     installFetchStub([
       ...authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }),
       {
@@ -719,15 +716,15 @@ describe('(app) layout integration mounts — U-NAV', () => {
     const user = userEvent.setup();
     renderLayout();
 
-    const nav = await screen.findByRole('navigation', { name: 'Automations views' });
-    const quietNav = within(nav).getByRole('button', { name: 'Quiet hours' });
+    const nav = await screen.findByRole('navigation', { name: 'Catch up views' });
+    const quietNav = within(nav).getByRole('button', { name: 'Follow-ups' });
     await user.hover(quietNav);
 
-    expect(prefetchSpy).toHaveBeenCalledWith('/quiet');
+    expect(prefetchSpy).toHaveBeenCalledWith('/followups');
     expect(pushSpy).not.toHaveBeenCalled();
 
     await user.click(quietNav);
-    expect(pushSpy).toHaveBeenCalledWith('/quiet');
+    expect(pushSpy).toHaveBeenCalledWith('/followups');
   });
 
   it('mounts the grace-period banner above the shell while a deletion is pending (D216)', async () => {
@@ -1560,8 +1557,8 @@ describe('nav plan chips after D251 (design-gate B1)', () => {
 
     rerenderAt('/autopilot');
     const autopilot = within(
-      screen.getByRole('navigation', { name: 'Automations views' }),
-    ).getByRole('button', { name: /^Autopilot/ });
+      screen.getByRole('navigation', { name: 'Product navigation' }),
+    ).getByRole('button', { name: 'Automations' });
     expect(within(autopilot).queryByLabelText(/^(Plus|Pro) feature$/)).toBeNull();
 
     rerenderAt('/brief');
@@ -1579,9 +1576,9 @@ describe('nav plan chips after D251 (design-gate B1)', () => {
     await screen.findByText('authed app body');
 
     const autopilot = within(
-      screen.getByRole('navigation', { name: 'Automations views' }),
-    ).getByRole('button', { name: /^Autopilot/ });
-    expect(within(autopilot).getByLabelText('Plus feature')).toBeInTheDocument();
+      screen.getByRole('navigation', { name: 'Product navigation' }),
+    ).getByRole('button', { name: 'Automations' });
+    expect(autopilot).toHaveAttribute('aria-description', expect.stringContaining('Plus feature'));
     expect(within(autopilot).queryByLabelText('Pro feature')).toBeNull();
   });
 });

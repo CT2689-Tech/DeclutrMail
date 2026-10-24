@@ -60,7 +60,16 @@ const { outputFiles } = await esbuild.build({
         build.onLoad({ filter: /.*/, namespace: 'sender-status' }, () => ({
           loader: 'tsx',
           resolveDir: webRoot,
-          contents: `import {useQuery} from '@tanstack/react-query';import {fixtureBatchStatus} from './src/features/autopilot/sender-rule-browser-data.fixture';export function useBatchStatus(id){return useQuery({queryKey:['fixture-batch',id],queryFn:()=>fixtureBatchStatus(id),enabled:!!id,refetchInterval:q=>q.state.data?.status==='executing'?300:false});}`,
+          contents: `import {useQuery} from '@tanstack/react-query';import {fixtureBatchStatus} from './src/features/autopilot/sender-rule-browser-data.fixture';export const useRevertUndo=()=>({mutate:()=>{},isPending:false});export const useUndoStatus=()=>({});export function useBatchStatus(id){return useQuery({queryKey:['fixture-batch',id],queryFn:()=>fixtureBatchStatus(id),enabled:!!id,refetchInterval:q=>q.state.data?.status==='executing'?300:false});}`,
+        }));
+        build.onResolve({ filter: /undo\/in-flight$/ }, () => ({
+          path: 'active',
+          namespace: 'sender-active',
+        }));
+        build.onLoad({ filter: /.*/, namespace: 'sender-active' }, () => ({
+          loader: 'ts',
+          resolveDir: webRoot,
+          contents: `export const useInFlightActions=()=>({data:[]});`,
         }));
         build.onResolve({ filter: /api\/autopilot$/ }, () => ({
           path: 'preset',
@@ -154,11 +163,11 @@ for (const viewport of [
     test.use({ viewport, reducedMotion: 'reduce' });
     test('searchable selection, saved defaults, exact preview and recovery', async ({ page }) => {
       await page.goto(url);
-      await expect(page.getByRole('heading', { name: 'Newsletter cleanup' })).toBeVisible();
+      await expect(page.getByRole('button', { name: /^Newsletter cleanup Delete/ })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      await page.getByRole('button', { name: 'Edit rule', exact: true }).click();
+      await page.getByRole('button', { name: 'Edit rule Newsletter cleanup', exact: true }).click();
       await expect(page.getByRole('button', { name: 'Remove Studio Weekly' })).toBeVisible();
       await expect(page.getByRole('checkbox', { name: /Family Book Club/ })).toBeDisabled();
       await page.getByRole('searchbox', { name: 'Search name or email' }).fill('Market');
@@ -194,7 +203,6 @@ for (const viewport of [
       ).toBeVisible();
       await page.keyboard.press('Escape');
       await expect(pause).toBeFocused();
-      if (viewport.width === 320) await page.getByRole('button', { name: /Your rules/ }).click();
       await page.getByRole('searchbox', { name: 'Search rules' }).fill('Travel');
       await page.getByRole('button', { name: /^Travel offers/ }).click();
       await expect(page.getByRole('heading', { name: 'Travel offers' })).toBeVisible();

@@ -131,7 +131,7 @@ export type LabelActionSelector = (
       senderId: string;
       senderKey: string;
       /** Approved custom Autopilot preview; message ids and scope remain on the job. */
-      autopilot?: { ruleId: string; ruleVersion: number; previewId: string };
+      autopilot?: { ruleId: string; ruleVersion: number; previewId: string; ruleName?: string };
     }
   | { type: 'messages' }
 ) & {

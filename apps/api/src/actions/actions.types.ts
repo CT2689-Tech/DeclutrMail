@@ -662,6 +662,9 @@ export interface BulkActionPreviewResult {
  * failures surface via `failed`).
  */
 export interface BatchStatusResult {
+  /** Frozen approval identity and confirmed Schedule deferral, absent on older builds. */
+  autopilot?: { ruleId: string; ruleName: string | null; waitingUntil: string | null };
+
   /** Execution-only combined feedback; absent on older API builds. */
   feedbackVersion?: 2;
   batchId: string;
@@ -719,6 +722,9 @@ export interface BatchStatusResult {
  * `groupId` is pollable at `GET /api/actions/batch/:id` for the outcome.
  */
 export interface InFlightActionGroup {
+  /** Frozen approval identity and confirmed Schedule deferral, absent on older builds. */
+  autopilot?: { ruleId: string; ruleName: string | null; waitingUntil: string | null };
+
   groupId: string;
   /**
    * The anchor job's verb (the one the user pressed). The full

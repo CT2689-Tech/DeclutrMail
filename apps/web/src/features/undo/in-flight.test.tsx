@@ -62,6 +62,26 @@ const status = (over: Partial<BatchStatusResult>): BatchStatusResult => ({
   ...over,
 });
 
+it('shows a confirmed Schedule wait instead of an overdue mutation', () => {
+  const scheduled = {
+    ...GROUP,
+    startedAt: new Date(Date.now() - 3 * 60 * 60_000).toISOString(),
+    autopilot: {
+      ruleId: 'rule',
+      ruleName: 'Evening cleanup',
+      waitingUntil: new Date(Date.now() + 60_000).toISOString(),
+    },
+  };
+  const notice = workingNotice(scheduled);
+  expect(notice.label).toContain('Scheduled · resumes');
+  expect(notice.label).not.toMatch(/Deleting|Taking longer/);
+  expect(workingNotice(scheduled, false).label).not.toContain('Scheduled');
+  expect(
+    workingNotice({ ...scheduled, autopilot: { ...scheduled.autopilot, waitingUntil: null } })
+      .label,
+  ).toContain('Taking longer');
+});
+
 describe('accepted-action feedback before the first progress read', () => {
   afterEach(resetFetchStub);
 
