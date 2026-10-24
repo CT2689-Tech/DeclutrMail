@@ -88,7 +88,7 @@ test('light appearance follows the app route and leaves public/dark paint unchan
       document.head.append(stylesheet);
       document.documentElement.dataset.theme = 'light';
     }, appTheme);
-    expect(await readAppearance()).toEqual(light);
+    await expect.poll(readAppearance).toEqual(light);
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
