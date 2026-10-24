@@ -63,11 +63,11 @@ test('light appearance follows the app route and leaves public/dark paint unchan
 
     // Public navigation removes the layout marker, even while its CSS remains.
     await page.evaluate(() => document.querySelector('#dm-app-theme')!.remove());
-    expect((await readAppearance()).headingWeights).toEqual(['400', '400', '400']);
     await expect.poll(readAppearance).toMatchObject({
       background: 'rgb(246, 242, 235)',
       card: 'rgb(255, 252, 248)',
       accent: 'rgb(89, 65, 95)',
+      headingWeights: ['400', '400', '400'],
     });
     const publicWithStyles = await page.screenshot();
     await page.evaluate(() => document.querySelector<HTMLStyleElement>('#app-styles')!.remove());
@@ -91,10 +91,10 @@ test('light appearance follows the app route and leaves public/dark paint unchan
       background: 'rgb(30, 26, 33)',
       card: 'rgb(48, 42, 50)',
       accent: 'rgb(209, 184, 214)',
+      headingWeights: ['400', '400', '400'],
     });
     const darkWithStyles = await page.screenshot();
     expect((await readAppearance()).headingFont).toContain('Fraunces');
-    expect((await readAppearance()).headingWeights).toEqual(['400', '400', '400']);
     await page.evaluate(() => document.querySelector('#app-styles')!.remove());
     expect((await page.screenshot()).equals(darkWithStyles)).toBe(true);
 
