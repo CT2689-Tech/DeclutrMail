@@ -121,10 +121,11 @@ export const actionJobStatus = pgEnum('action_job_status', [
  *                  write the per-sender `activity_log` row + outbox
  *                  event without re-resolving. `senderId` is kept for
  *                  audit/trace back to the external request.
- *   - `messages` — the concrete ids live in `resolved_message_ids`; the
- *                  selector itself carries no per-message data.
+ *   - `messages` — the concrete execution ids live in `resolved_message_ids`.
+ * `deleteUndo` is server-written recovery metadata, captured before Gmail
+ * can change labels. Recovery attempts inherit it with the selector.
  */
-export type LabelActionSelector =
+export type LabelActionSelector = (
   | {
       type: 'sender';
       senderId: string;
@@ -132,7 +133,17 @@ export type LabelActionSelector =
       /** Approved custom Autopilot preview; message ids and scope remain on the job. */
       autopilot?: { ruleId: string; ruleVersion: number; previewId: string };
     }
-  | { type: 'messages' };
+  | { type: 'messages' }
+) & {
+  /** Server-written due time after a successful Quiet resume publish; not a completion signal. */
+  quietDeferredUntilMs?: number;
+  deleteUndo?: {
+    version: 1;
+    messageIds: string[];
+    /** null means original Inbox placement is unavailable for legacy in-flight work. */
+    inboxMessageIds: string[] | null;
+  };
+};
 
 export const actionJobs = pgTable(
   'action_jobs',
