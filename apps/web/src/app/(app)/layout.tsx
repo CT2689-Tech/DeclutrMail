@@ -34,6 +34,7 @@ import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flag
 import { visitorPricingLocale } from '@/features/marketing/pricing/visitor-pricing-locale';
 import { ServerAppBoundary } from '@/features/auth/server-app-boundary';
 import { ThemeScript } from '@/features/theme/theme-script';
+import '@/features/theme/app-light-theme.css';
 
 import { AppChromeLayout } from './app-chrome-layout';
 
@@ -90,6 +91,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         </>
       )}
       <ThemeScript nonce={nonce} />
+      <span id="dm-app-theme" hidden />
       <BillingCurrencyProvider provider={regionProvider} locale={visitorLocale}>
         <ServerAppBoundary cookieHeader={cookieHeader}>
           <AppChromeLayout>{children}</AppChromeLayout>
