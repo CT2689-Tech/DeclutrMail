@@ -56,6 +56,7 @@ export function ActionToolbar({
   size = 'md',
   align = 'center',
   guided = false,
+  suggestedVerb,
 }: {
   row: TriageDecisionRow;
   onAction: (verb: ActionVerb) => void;
@@ -82,6 +83,8 @@ export function ActionToolbar({
   align?: 'center' | 'start';
   /** Compact presentation only; dispatch, eligibility and shortcuts are unchanged. */
   guided?: boolean;
+  /** Presentation override; null removes emphasis without changing action availability. */
+  suggestedVerb?: ActionVerb | null;
 }) {
   const bar = layout === 'bar';
   // The capability reason is available on focus and visible below the
@@ -111,7 +114,8 @@ export function ActionToolbar({
     return () => window.removeEventListener('keydown', onKey);
   }, [keyboardEnabled, disabled, row, onAction]);
 
-  const suggested = recommendedVerb(row.verdict, row.confidence);
+  const suggested =
+    suggestedVerb === undefined ? recommendedVerb(row.verdict, row.confidence) : suggestedVerb;
   const primaryVerbs = guided
     ? visibleVerbs.filter((verb) => verb === 'Keep' || verb === suggested)
     : visibleVerbs;

@@ -369,6 +369,149 @@ describe('guided review through native sender details', () => {
       ),
     ).toHaveLength(2);
   });
+  it('retains selected senders when exiting a native return before its rows finish loading', async () => {
+    window.history.replaceState(null, '', '/senders');
+    const list = renderList();
+    await startSelected();
+    const href = window.location.pathname + window.location.search;
+    list.unmount();
+    let resolve!: (value: Response) => void;
+    const pending = new Promise<Response>((done) => {
+      resolve = done;
+    });
+    overrideList = () => pending;
+    window.history.replaceState(null, '', href);
+    renderList();
+    await screen.findByText('Loading your review…');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Senders' }));
+    expect(sessionStorage.getItem(GUIDED_REVIEW_STORAGE_KEY)).toBeNull();
+    await act(async () => {
+      resolve(
+        jsonOk({
+          data: rows,
+          meta: {
+            pagination: { nextCursor: null, hasMore: false, limit: 50 },
+            query: { totalMatching: 15, asOf: '2026-10-23T00:00:00Z' },
+          },
+        }),
+      );
+    });
+    expect(await screen.findByRole('checkbox', { name: 'Select Google Pixel' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Select Google Photos' })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Review selected (2)' })).toBeInTheDocument();
+    expect(writes).toBe(0);
+  });
+  it.each(['user', 'mailbox', 'scope', 'token', 'expired', 'missing'])(
+    'does not restore a %s-mismatched saved selection on an early exit',
+    async (mismatch) => {
+      const list = renderList();
+      await startSelected();
+      const href = window.location.pathname + window.location.search;
+      const record = savedRecord();
+      list.unmount();
+      if (mismatch === 'user') record.userId = 'another-user';
+      if (mismatch === 'mailbox') record.mailboxId = 'another-mailbox';
+      if (mismatch === 'scope') record.scope = 'another-scope';
+      if (mismatch === 'token') record.token = 'another-token';
+      if (mismatch === 'expired') {
+        record.createdAt = Date.now() - GUIDED_REVIEW_TTL_MS - 1;
+        record.expiresAt = record.createdAt + GUIDED_REVIEW_TTL_MS;
+      }
+      if (mismatch === 'missing') sessionStorage.removeItem(GUIDED_REVIEW_STORAGE_KEY);
+      else sessionStorage.setItem(GUIDED_REVIEW_STORAGE_KEY, JSON.stringify(record));
+      let resolve!: (value: Response) => void;
+      const pending = new Promise<Response>((done) => {
+        resolve = done;
+      });
+      overrideList = () => pending;
+      window.history.replaceState(null, '', href);
+      renderList();
+      await screen.findByText('Loading your review…');
+      fireEvent.click(screen.getByRole('button', { name: 'Back to Senders' }));
+      await act(async () => {
+        resolve(
+          jsonOk({
+            data: rows,
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 50 },
+              query: { totalMatching: 15, asOf: '2026-10-23T00:00:00Z' },
+            },
+          }),
+        );
+      });
+      expect(
+        await screen.findByRole('checkbox', { name: 'Select Google Pixel' }),
+      ).not.toBeChecked();
+      expect(screen.getByRole('checkbox', { name: 'Select Google Photos' })).not.toBeChecked();
+      expect(sessionStorage.getItem(GUIDED_REVIEW_STORAGE_KEY)).toBeNull();
+      expect(writes).toBe(0);
+    },
+  );
+  it('does not resurrect selection cleared by a loaded action owner when exiting', async () => {
+    const list = renderList();
+    await startSelected();
+    const record = savedRecord();
+    list.unmount();
+    function Owner() {
+      const [selected, setSelected] = useState<Set<string>>(new Set());
+      const review = useGuidedReviewSession({
+        userId: 'user-1',
+        mailboxId: 'mailbox-1',
+        scope: record.scope,
+        rows: [],
+        reviewing: true,
+        scopeLoading: false,
+        refreshFailed: false,
+        onRestoreSelection: setSelected,
+        selectedIds: selected,
+      });
+      return (
+        <>
+          <output aria-label="Selection count">{selected.size}</output>
+          <button onClick={() => setSelected(new Set())}>Clear selection</button>
+          <button onClick={review.exit}>Exit review</button>
+        </>
+      );
+    }
+    render(<Owner />);
+    await waitFor(() => expect(screen.getByLabelText('Selection count')).toHaveTextContent('2'));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear selection' }));
+    expect(savedRecord().selectedIds).toEqual([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Exit review' }));
+    expect(screen.getByLabelText('Selection count')).toHaveTextContent('0');
+    expect(sessionStorage.getItem(GUIDED_REVIEW_STORAGE_KEY)).toBeNull();
+  });
+  it('retains a validated selection when exiting a failed native return', async () => {
+    const list = renderList();
+    await startSelected();
+    const record = savedRecord();
+    list.unmount();
+    function FailedReturn() {
+      const [selected, setSelected] = useState<Set<string>>(new Set());
+      const review = useGuidedReviewSession({
+        userId: 'user-1',
+        mailboxId: 'mailbox-1',
+        scope: record.scope,
+        rows: [],
+        reviewing: true,
+        scopeLoading: false,
+        refreshFailed: true,
+        onRestoreSelection: setSelected,
+        selectedIds: selected,
+      });
+      return (
+        <>
+          <output aria-label="Selection count">{selected.size}</output>
+          <button onClick={review.exit}>Back to Senders</button>
+        </>
+      );
+    }
+    render(<FailedReturn />);
+    expect(screen.getByLabelText('Selection count')).toHaveTextContent('0');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Senders' }));
+    expect(screen.getByLabelText('Selection count')).toHaveTextContent('2');
+    expect(sessionStorage.getItem(GUIDED_REVIEW_STORAGE_KEY)).toBeNull();
+  });
   it('waits for the initial owner before restoring, then clears for an actual account change', async () => {
     const list = renderList();
     await startSelected();

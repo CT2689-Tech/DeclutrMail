@@ -198,6 +198,26 @@ export function useGuidedReviewSession({
     latest.current = next;
     setStored(next);
   }, []);
+  const exit = useCallback(() => {
+    // A native detail return loses React selection before the sender read settles.
+    // Restore only navigation IDs; current sender facts still require that read.
+    if (!session && !unavailable && !requiresStart && token && userId && mailboxId) {
+      const restored = readGuidedReviewSession({ token, userId, mailboxId, scope });
+      if (restored) onRestoreSelection(new Set(restored.selectedIds));
+    }
+    // Loaded sessions keep the action owner's current selection, including clears.
+    clear(false);
+  }, [
+    session,
+    unavailable,
+    requiresStart,
+    token,
+    userId,
+    mailboxId,
+    scope,
+    onRestoreSelection,
+    clear,
+  ]);
   return {
     session,
     unavailable: unavailable || requiresStart,
@@ -205,6 +225,7 @@ export function useGuidedReviewSession({
     start,
     navigate,
     clear,
+    exit,
     retrySave,
   };
 }

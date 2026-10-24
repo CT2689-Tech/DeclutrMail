@@ -1373,7 +1373,7 @@ function SendersScreenContent({
   const exitGuided = () => {
     // Keep the completed entry's token in browser history. Returning to it
     // must explain the ended session, rather than start a wider fresh queue.
-    review.clear(false);
+    review.exit();
     setLocalGuided(false);
     if (onExitGuided) onExitGuided();
     else writeGuidedReviewToken(null);
