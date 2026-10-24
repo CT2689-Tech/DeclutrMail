@@ -78,3 +78,18 @@ html:not([data-theme='dark']):has(#dm-app-theme)
   --dm-onboarding-choice-shadow: 0 0 0 2px var(--dm-primary);
   --dm-onboarding-choice-bg: var(--dm-primary-wash);
 }
+
+/* Keep enabled Off switches distinct from disabled controls on flat cards. */
+html:not([data-theme='dark']):has(#dm-app-theme) .dm-switch-track[data-on='false'] {
+  box-shadow: inset 0 0 0 1px var(--dm-fg-muted);
+}
+
+html:not([data-theme='dark']):has(#dm-app-theme) .dm-switch-track[data-on='false'] .dm-switch-knob {
+  background: var(--dm-fg-muted);
+}
+
+html:not([data-theme='dark']):has(#dm-app-theme)
+  [data-testid='cookie-preferences']
+  input[type='radio'] {
+  accent-color: var(--dm-primary);
+}
