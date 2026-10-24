@@ -1,6 +1,6 @@
 {
   "snapshot_date": "2026-10-24",
-  "snapshot_ts": "2026-10-24T19:03:58Z",
+  "snapshot_ts": "2026-10-24T19:43:55Z",
   "gcp_project": "declutrmail-ai-prod",
   "cloud_run": {
     "api": {
@@ -8,20 +8,20 @@
       "latest_revision": [
         {
           "metadata": {
-            "creationTimestamp": "2026-10-24T16:52:18.904029Z",
-            "name": "declutrmail-api-00915-dag"
+            "creationTimestamp": "2026-10-24T19:43:39.867183Z",
+            "name": "declutrmail-api-00918-cuw"
           },
           "spec": {
             "containers": [
               {
-                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:f459861a1504bdc21c6395c0575a4cea4008dd7d69d586f050410a1e66f13ced"
+                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:be1277fa36aefd3bc6ee928e9b693bd15ed710b278faf52ffb102f961991119a"
               }
             ]
           },
           "status": {
             "conditions": [
               {
-                "status": "True"
+                "status": "Unknown"
               }
             ]
           }
@@ -192,13 +192,13 @@
       "latest_revision": [
         {
           "metadata": {
-            "creationTimestamp": "2026-10-24T16:51:11.689915Z",
-            "name": "declutrmail-worker-00267-s2j"
+            "creationTimestamp": "2026-10-24T19:42:32.846196Z",
+            "name": "declutrmail-worker-00268-cr9"
           },
           "spec": {
             "containers": [
               {
-                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:f459861a1504bdc21c6395c0575a4cea4008dd7d69d586f050410a1e66f13ced"
+                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:be1277fa36aefd3bc6ee928e9b693bd15ed710b278faf52ffb102f961991119a"
               }
             ]
           },
@@ -359,7 +359,7 @@
           "traffic": [
             {
               "percent": 100,
-              "revisionName": "declutrmail-worker-00267-s2j"
+              "revisionName": "declutrmail-worker-00268-cr9"
             }
           ]
         }
