@@ -58,7 +58,7 @@ refunds, legal tax-document generation and payment-method changes are excluded.
 - 330 API/provider tests passed, including real PGlite workspace isolation,
   legacy expired/revoked Pass discovery, customer/subscription deduplication,
   caps, mixed-provider failures, shared timeout and actual stalled-body abort.
-- 438 Billing web tests passed, including current-plan errors, null-subscription
+- 439 Billing web tests passed, including current-plan errors, null-subscription
   history and downloads, stream hydration, fresh per-click document reads, signed
   URL absence from both caches, and retained complimentary Pass behavior.
 - Shared 946, config 38 and events 76 tests passed, including entitlement literal
@@ -69,7 +69,8 @@ refunds, legal tax-document generation and payment-method changes are excluded.
   existing history stories cover loading, empty, failure, partial and omissions.
 - Negative controls failed against the original client gate, subscription-only
   service, server-created empty history, broader PDF eligibility and URL-retaining
-  mutation, then passed with the repairs.
+  mutation, then passed with the repairs. A later negative control also proved
+  capped empty history must not claim verified emptiness.
 - Isolated synthetic Postgres/Redis plus the production web build and API served
   HTTP: signed-out history 401; authenticated owned history 200 with the expected
   empty envelope; unowned document 404; Billing HTML 200 containing Payment history
@@ -104,10 +105,24 @@ evidence folder; no real account data is committed here.
 The independent reviewer inspected source and desktop/phone/error evidence and
 reported no remaining merge blocker. The synthetic grant/tier were restored,
 grant/subscription counts returned to zero, temporary services were stopped, and
-the three temporary download files were removed. No source runtime change followed
-this successful walkthrough. The original candidate's normal PR CI, CodeQL and all
-four authenticated browser lanes passed; this documentation refresh precedes the
-final candidate checks.
+the three temporary download files were removed. The original candidate's normal
+PR CI, CodeQL and all four authenticated browser lanes passed.
+
+Before merge, a final review found one more absence edge: empty plus truncated
+history still said "No invoices yet". A failing regression reproduced it. The
+limited-empty state now says "No invoices in this limited history" and retains
+Request older invoices. Partial/omitted copy also avoids unproven provider-response,
+invoice-existence and direct-delivery promises. Independent review confirmed the
+complete absence matrix; no API or download/navigation behavior changed.
+
+The final correction passed all 439 Billing tests, types/lint, production build,
+bundle/prerender budgets and Storybook build. Built-in browser checks of the built
+limited-empty component passed at desktop and 320px, with no horizontal overflow;
+the older-history link received keyboard focus. Omitted-empty and populated partial
+states retained accurate recovery copy, while complete empty history still showed
+"No invoices yet". Storybook emitted its existing Next runtime-config deprecation
+warning; no application or hydration error was observed. Temporary static server
+and viewport override were removed before the final coherent candidate push.
 
 ## Remaining release gates
 

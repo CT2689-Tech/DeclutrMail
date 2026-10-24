@@ -233,12 +233,8 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
       ) : null}
 
       {data.invoices.length === 0 ? (
-        // THREE distinct empty answers, never collapsed: a rail we could
-        // not ask (partial), rows that exist but none renderable
-        // (omitted — with wrong field names EVERY row drops, and calling
-        // that "no invoices yet" is the failed-read-as-empty defect,
-        // gate network 2026-08-16 CONFIRMED), and the genuine
-        // never-billed state (D212 EmptyState primitive).
+        // Failed, omitted and capped reads cannot prove an account never paid.
+        // Only a complete empty history can show "No invoices yet".
         partial ? (
           <div
             style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}
@@ -257,12 +253,18 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
           </div>
         ) : data.omittedRows > 0 ? (
           <p role="status" style={{ margin: 0, fontSize: text.md, color: color.amber }}>
-            Your invoices exist, but we couldn&rsquo;t display them. Email{' '}
+            We couldn&rsquo;t display this billing history. Email{' '}
             <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
               support@declutrmail.com
             </a>{' '}
-            and we&rsquo;ll send them to you directly.
+            for help with your invoices.
           </p>
+        ) : data.truncated ? (
+          <EmptyState
+            headingLevel={3}
+            title="No invoices in this limited history"
+            description="Request older invoices below to check beyond this list."
+          />
         ) : (
           <EmptyState
             headingLevel={3}
@@ -401,7 +403,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
 
       {partial && data.invoices.length > 0 ? (
         <p role="status" style={{ margin: 0, fontSize: text.sm, color: color.amber }}>
-          One of your payment providers didn&rsquo;t answer, so this list may be missing invoices.
+          Some payment history couldn&rsquo;t be loaded, so this list may be missing invoices.
           Reload to try again.
         </p>
       ) : null}

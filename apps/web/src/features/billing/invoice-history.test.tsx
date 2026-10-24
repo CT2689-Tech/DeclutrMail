@@ -271,6 +271,16 @@ describe('InvoiceHistory', () => {
     expect(await screen.findByText(/limited invoice history/i)).toBeInTheDocument();
   });
 
+  it('never treats an empty capped history as proof that no invoices exist', async () => {
+    apiGet.mockResolvedValue({
+      data: { invoices: [], unavailableProviders: [], truncated: true, omittedRows: 0 },
+    });
+    wrap(<InvoiceHistory />);
+    expect(await screen.findByText('No invoices in this limited history')).toBeInTheDocument();
+    expect(screen.queryByText('No invoices yet')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Request older invoices' })).toBeInTheDocument();
+  });
+
   it('never claims "no invoices yet" when rows exist but none were renderable', async () => {
     // The all-rows-dropped shape: the provider answered, every row was
     // unrenderable (wrong field names would do exactly this), and the
@@ -279,7 +289,7 @@ describe('InvoiceHistory', () => {
       data: { invoices: [], unavailableProviders: [], truncated: false, omittedRows: 4 },
     });
     wrap(<InvoiceHistory />);
-    expect(await screen.findByText(/your invoices exist/i)).toBeInTheDocument();
+    expect(await screen.findByText(/couldn’t display this billing history/i)).toBeInTheDocument();
     expect(screen.queryByText(/no invoices yet/i)).not.toBeInTheDocument();
   });
 
