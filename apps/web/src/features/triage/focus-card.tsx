@@ -79,8 +79,9 @@ export function TriageFocusCard({
   const logoSize = guided ? (isNarrow ? 40 : 48) : isNarrow ? 48 : LOGO;
   const actionsDisabled = busy || inlinePreviewGates(inlinePreview).blocked;
   const facts = focusFacts(row);
-  const emptyArchive = guided && row.inboxCount === 0 && row.verdict === 'archive';
-  const suggested = emptyArchive ? null : recommendedVerb(row.verdict, row.confidence);
+  const suppressSuggestion =
+    guided && row.inboxCount === 0 && (row.verdict === 'archive' || row.verdict === 'later');
+  const suggested = suppressSuggestion ? null : recommendedVerb(row.verdict, row.confidence);
 
   // D37 — the same gestures as the list row, same gates, same path.
   const { drag, handlers: swipeHandlers } = useSwipeVerb({
@@ -350,7 +351,7 @@ export function TriageFocusCard({
               borderTop: `1px solid ${color.lineSoft}`,
             }}
           >
-            <TriageRowExpanded row={row} timeZone={timeZone} showSuggestion={!emptyArchive} />
+            <TriageRowExpanded row={row} timeZone={timeZone} showSuggestion={!suppressSuggestion} />
           </div>
         )}
 

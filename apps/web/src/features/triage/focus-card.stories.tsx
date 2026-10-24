@@ -163,3 +163,14 @@ export const GuidedEmptyInbox: Story<typeof TriageFocusCard> = {
   },
   render: (args: Args) => frame(<TriageFocusCard {...args} />),
 };
+
+/** Later also has no current Inbox impact at zero; its action remains neutral. */
+export const GuidedEmptyInboxLater: Story<typeof TriageFocusCard> = {
+  args: {
+    ...base,
+    row: { ...row('t-shipping'), inboxCount: 0, last90dMessages: 191 },
+    guided: true,
+    whyOpen: true,
+  },
+  render: (args: Args) => frame(<TriageFocusCard {...args} />),
+};
